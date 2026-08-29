@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.0.0
+- Architecture document version: 2.1.0
 - Last reviewed: 2026-08-29
-- Current-source baseline: `5f92d161a00429d5424be93fafc1f57276dd137c`
+- Current-source baseline: `d8b27d52ace45184a0a6a808abebfb904ba279d9`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -51,8 +51,10 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 현재 `origin/main` 기준은 앱 독립 목표로 전환 중인 과도기다.
 
 - MerchOps, DataOps, SmartParser, Export Center, Settings와 History Viewer는 `MerchOpsDB` 및 여러 localStorage 계약을 공유한다.
-- `app-manifest.json`에서 `product-master`의 현재 소유자는 `merchops`다. SmartParser, Export Center, Settings, Master와 일부 DataOps 흐름도 기존 공통 writer 계약을 사용한다.
-- `Item_manager.html`은 독립 화면과 로컬 우선 동작을 갖춘 파일럿이지만, 상품 데이터 소유권이 ItemMaster로 이전 완료된 상태는 아니다.
+- `app-manifest.json`에서 `product-master`의 현재 소유자는 `merchops`다. SmartParser, Export Center, Settings, `Master.html`과 일부 DataOps 흐름도 기존 공통 writer 계약을 사용한다.
+- `Master.html`은 현재 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 구버전 마스터 앱이다. 신규 `ItemMaster.html`의 연동과 검증이 완료될 때까지만 호환 경로로 유지하며, 완료 후에는 삭제 대상이다.
+- `ItemMaster.html`은 `Master.html`의 조회·검색·카테고리·Excel 추가·갱신 역할을 승계하는 현 마스터 앱이다. 현재는 `oneapp-itemmaster-isolated-v1` 격리 DB를 사용하는 파일럿이며 manifest·공통 메뉴와 운영 상품 저장계약 전환은 아직 완료되지 않았다. 소스 구현과 저장 경계가 달라도 구조적 앱 역할은 `Master.html`과 동일하다.
+- `Item_manager.html`은 `ItemMaster.html`의 구버전이나 대체 대상이 아닌 별도 상품 관리 파일럿이다. `Master.html`에서 `ItemMaster.html`로 전환하는 동안과 전환 후에도 유지한다.
 - `CustomerMaster/partner_db.html`과 독립 `SmartInput` 운영 엔트리는 현재 기준선에 없다. `orderops/input.html`은 ORDER Q의 현행 보조 입력 화면이며 별도 SmartInput 앱 또는 전표 Repository 소유권 완료를 뜻하지 않는다. 목표 역할만으로 운영 앱 또는 데이터 소유자로 기록하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - NEXUS 포털·인증 Runtime은 롤백된 상태다. 현재 NEXUS 운영 범위는 정적 공통 UI 자산, 앱 이동과 테마이며 업무 Gateway나 업무 저장소를 통제하지 않는다.
@@ -108,7 +110,9 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
 | NEXUS 공통 UI | 운영 | 정적 헤더·앱 이동·일반/다크 테마. 포털·인증 Runtime은 롤백 상태 | 앱 연결과 공통 UI만 담당 |
-| ItemMaster (`Item_manager.html`) | 파일럿 | 기존 `product-master` 계약을 읽고 쓰지만 manifest 소유자는 아직 MerchOps | 상품 기준정보 단일 소유자, Read Adapter 제공 |
+| 구버전 Master (`Master.html`) | 파일럿·전환 중 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장계약을 사용 | ItemMaster 연동 완료 후 쓰기를 종료하고 삭제 |
+| ItemMaster (`ItemMaster.html`) | 파일럿·공식 경로 전환 전 | `Master.html`의 구조적 역할을 승계하며 현재는 격리 DB에서 독립 기능을 검증 | 기존 `master-lookup` 역할과 공식 경로를 승계하고 상품 기준정보 단일 소유자·Read Adapter 제공 |
+| Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
 | CustomerMaster (`partner_db.html`) | 계획(미등록) | 현재 기준선에 운영 엔트리와 manifest 등록 없음 | 거래처 기준정보 단일 소유자, Read Adapter 제공 |
 | SmartInput | 계획(미등록) | 독립 운영 엔트리와 manifest 등록 없음. `orderops/input.html`은 ORDER Q 보조 화면 | 전표 작성 작업본·양식 소유, 상품·거래처 Snapshot 소비 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
@@ -122,6 +126,8 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 - `파일럿`: 구현은 있으나 제한 검증 단계다. 목표 소유권을 전체 운영 소유권으로 간주하지 않는다.
 - `운영`: 배포된 기본 흐름, 데이터 계약과 롤백이 검증된 상태다.
 - 목표 역할은 방향을 뜻하며 현재 저장소 owner를 즉시 바꾸지 않는다.
+- `Master.html`에서 `ItemMaster.html`로의 전환은 같은 구조적 역할의 구현·공식 경로 교체이며 신규 업무 역할 추가가 아니다. 전환 시 기존 manifest 앱 ID `master-lookup`을 유지하고 이름과 경로만 검증된 `ItemMaster.html`로 변경한다.
+- `Item_manager.html`은 `master-lookup` 교체 대상이 아니며 기존 `item-manager` 앱 ID와 역할을 유지한다.
 - 소유권 전환은 소유 Repository, Read/Integration Adapter, 소비자 전환, 데이터 이전, 회귀검증, 독립 롤백과 manifest 갱신을 같은 별도 작업에서 완료해야 한다.
 - 미구축 앱의 이름이나 목표 계약을 기존 앱의 필수 Runtime 의존성으로 추가하지 않는다.
 - `계획(미등록)`은 아키텍처 목표만 기록된 상태다. 실제 개발이 승인되면 `plannedApplications` 등록 기준을 충족한 뒤 파일럿 승격 절차를 시작한다.
@@ -144,6 +150,21 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `orderops` | `orderops/list.html` | 파일럿 | 출고·재고·구매계획과 검토형 출력 |
 | `orderq-vnext` | `orderq/index.html` | 파일럿 | 주문 입력·수집·이행근거와 revision 동기화 |
 | `cloud-sync` | `code.gs` | 운영 Server Transport | 현행 master·이력·설정·DataOps·Shipping·ORDER Q API |
+
+`ItemMaster.html`은 실제 소스와 독립 검증이 존재하지만 아직 manifest 공식 경로로 전환되지 않은 파일럿이다. 구버전 교체 시 별도 운영 앱 ID를 중복 추가하지 않고 기존 `master-lookup`의 이름과 경로를 `ItemMaster`·`ItemMaster.html`로 갱신한다. `item-manager`와 `Item_manager.html` 등록은 그대로 유지한다.
+
+### 4.3 Master에서 ItemMaster로의 전환과 구버전 삭제
+
+`Master.html`은 지금 삭제하지 않는다. 다음 조건을 모두 충족한 뒤 구버전 쓰기를 종료하고 삭제한다.
+
+1. `ItemMaster.html`이 운영 상품 Repository와 승인된 Read/Integration Adapter에 연결된다.
+2. 조회·검색·카테고리·단건 등록·수정·Excel 추가·갱신 결과가 구버전과 동등하거나 확정 명세에 맞게 검증된다.
+3. manifest, 공통 메뉴와 모든 소비 앱의 공식 연결이 `ItemMaster.html`로 전환된다.
+4. 운영 상품 데이터, Revision과 변경이력을 이전·삭제 없이 보존하고 전환 실패 시 롤백할 수 있다.
+5. 실행 소스·설정·테스트에서 `Master.html`을 요구하는 참조가 0건임을 확인한다. Git 이력과 명시적 롤백 문서는 제외한다.
+6. `Item_manager.html`의 앱 ID, 경로, 기능과 저장계약이 그대로 유지되는지 확인한다.
+
+이 조건을 충족하기 전까지 `Master.html`은 호환 경로이고, 충족한 뒤에는 운영 앱으로 병행 유지하지 않는 삭제 대상이다.
 
 ---
 
@@ -272,6 +293,8 @@ Changing any action name, payload shape, response shape, authentication rule, or
 - `ONEAPP.ERRORS`
 
 As of this review, `settings.html`, `SmartParser.html`, `MerchOps.html`, `Master.html`, `Item_manager.html`, and `DataOps.html` explicitly load `coreEngine.js`.
+
+`ItemMaster.html`은 현재 `coreEngine.js`와 운영 `MerchOpsDB`를 사용하지 않고 `oneapp-itemmaster-isolated-v1`에서 독립 기능을 검증한다. 이 구현 차이는 전환 단계의 저장 경계이며, `Master.html`과 다른 구조적 앱 역할을 뜻하지 않는다.
 
 The `merchMarginRules_v878` normalize/select/calculate path is owned by `ONEAPP.PRICING`. SmartParser supplies the catalog warehouse only as calculation context and the final product `단위`; neither SmartParser nor MerchOps infers that unit from product name or specification. Exact non-wildcard warehouse-and-unit matches use the first saved rule, and every other case uses the single `*/*` default rule. Partial wildcard rules are not selected.
 
@@ -477,6 +500,7 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 | Information-change workflow | SmartParser direct master apply, existing history viewer, master refresh behavior, and cloud history backup |
 | Supplier exclusion or stopped-product management | SmartParser duplicate separation and save blocking, exclusion persistence and next-parse filtering, master/stopped-list/pending-status/history atomicity, MerchOps compatibility reads and worktable protection, rollback and failure injection |
 | Master add/update or master writer | Master, coreEngine, MerchOps refresh, DataOps synchronization, SmartParser, history, backup and rollback |
+| `Master.html`에서 `ItemMaster.html`로 전환 또는 구버전 삭제 | ItemMaster 운영 Repository·Adapter 연결, 구버전 기능 동등성, 기존 `master-lookup` ID와 공식 경로, 모든 메뉴·소비자 참조, `Item_manager.html` 유지, 데이터·이력 보존, 롤백과 구버전 참조 0건 |
 | DataOps out-of-list inventory master add or post-close sale resume | DataOps F6 location/search/duplicate/zero rules, masterAddUpdate single-product API, coreEngine revision and rollback, Master/SmartParser canonical `판매여부`, stop-management linked state, history, finalized snapshot boundary, and retry idempotency |
 | DataOps file classification or parsing | DataOps required/optional file policy, parsing errors, representative operational files, generated workbook, and regression tests |
 | OrderOps file classification or parsing | OrderOps four-way structural classification, administrator aliases, required order/inventory validation, current allocation calculations, local recovery exclusion, and integrated workbook regression tests |
@@ -613,6 +637,7 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 - 새 필드를 manifest 필수값으로 전환할 때는 schemaVersion, validator, 모든 기존 앱과 문서를 함께 갱신한다.
 - 목표 owner를 먼저 기록하거나 미구축 앱을 운영 의존성으로 등록하지 않는다.
 - CustomerMaster와 SmartInput은 실제 엔트리·Repository·Adapter·검증이 생기기 전까지 운영 애플리케이션 목록에 추가하지 않는다.
+- `ItemMaster.html`은 `Master.html`과 동일한 구조적 역할의 후속 구현이므로 별도 운영 앱 ID를 만들지 않는다. 전환 완료 시 기존 `master-lookup` 항목의 이름과 경로를 갱신하고 `item-manager` 항목은 변경하지 않는다.
 - ItemMaster의 `product-master` owner 전환은 기존 writer를 Adapter로 전환하고 migration·rollback을 검증한 별도 PR에서만 수행한다.
 
 ### 9.4 독립 롤백 원칙
@@ -762,10 +787,12 @@ Their business meaning must not be unified merely because the key number is the 
 2. **Read Adapter 도입**
    - 먼저 읽기 소비자를 revision Snapshot 계약으로 전환한다.
    - Adapter 실패·stale·empty·error와 로컬 fallback을 검증한다.
-3. **ItemMaster 소유권 전환**
-   - ItemMaster Repository와 쓰기 Adapter를 검증한다.
-   - MerchOps, SmartParser, DataOps, Export Center, Settings와 Master의 기존 쓰기를 소비자별로 전환한다.
+3. **ItemMaster 연동과 구버전 Master 교체**
+   - `ItemMaster.html`을 운영 상품 Repository와 승인된 Read/Integration Adapter에 연결하고 `Master.html`의 구조적 역할과 기능 동등성을 검증한다.
+   - 기존 manifest 앱 ID `master-lookup`을 유지한 채 공식 이름과 경로를 `ItemMaster`·`ItemMaster.html`로 전환한다. `Item_manager.html`과 `item-manager` 등록은 변경하지 않는다.
+   - MerchOps, SmartParser, DataOps, Export Center, Settings와 `Master.html`의 기존 읽기·쓰기를 소비자별로 전환한다.
    - 마지막 writer 전환·데이터 검증·롤백 완료 후에만 manifest의 `product-master` owner를 바꾼다.
+   - 공식 경로와 모든 소비자 전환, 운영 검증, 롤백과 `Master.html` 참조 0건을 확인한 뒤에만 구버전 파일을 삭제한다.
 4. **CustomerMaster 구축**
    - 앱 엔트리, Repository, customer Snapshot, 쓰기 Adapter와 동기화 경계를 구현한다.
    - 파일럿 검증 전에는 SmartInput·ORDER Q의 필수 운영 의존성으로 등록하지 않는다.
