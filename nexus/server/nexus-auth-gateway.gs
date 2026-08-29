@@ -18,11 +18,18 @@ var NEXUS_AUTH_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
 var NEXUS_AUTH_RECOVERY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 var NEXUS_AUTH_LOGIN_WINDOW_MS = 10 * 60 * 1000;
 var NEXUS_AUTH_LOGIN_LIMIT = 8;
+var NEXUS_AUTH_ACTIVATION_TTL_MS = 72 * 60 * 60 * 1000;
+var NEXUS_AUTH_VISIBLE_APP_IDS = Object.freeze([
+  'master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops',
+  'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext'
+]);
 var NEXUS_AUTH_PROPERTIES = Object.freeze({
   DB_ID: 'NEXUS_AUTH_DB_ID',
   PEPPER: 'NEXUS_AUTH_PEPPER',
   BOOTSTRAP_DIGEST: 'NEXUS_AUTH_BOOTSTRAP_DIGEST',
   BOOTSTRAP_EXPIRES_AT: 'NEXUS_AUTH_BOOTSTRAP_EXPIRES_AT',
+  LAST_DATA_BACKUP_AT: 'NEXUS_AUTH_LAST_DATA_BACKUP_AT',
+  LAST_DATA_BACKUP_DIGEST: 'NEXUS_AUTH_LAST_DATA_BACKUP_DIGEST',
   UPSTREAM_URL: 'NEXUS_AUTH_UPSTREAM_URL',
   FOUNDATION_READ: 'NEXUS_AUTH_SECRET_FOUNDATION_READ',
   FOUNDATION_WRITE: 'NEXUS_AUTH_SECRET_FOUNDATION_WRITE',
@@ -42,8 +49,12 @@ var NEXUS_AUTH_SHEETS = Object.freeze({
   AUDIT: 'Audit',
   RATE: 'RateLimits'
 });
+var NEXUS_AUTH_USERS_LEGACY_HEADERS = Object.freeze([
+  'userId', 'loginId', 'displayName', 'role', 'permissionsJson', 'passwordSalt', 'passwordHash', 'status',
+  'createdAt', 'createdBy', 'updatedAt', 'deletedAt', 'recoverUntil', 'inviteDigest', 'inviteExpiresAt', 'version'
+]);
 var NEXUS_AUTH_HEADERS = Object.freeze({
-  Users: ['userId', 'loginId', 'displayName', 'role', 'permissionsJson', 'passwordSalt', 'passwordHash', 'status', 'createdAt', 'createdBy', 'updatedAt', 'deletedAt', 'recoverUntil', 'inviteDigest', 'inviteExpiresAt', 'version'],
+  Users: NEXUS_AUTH_USERS_LEGACY_HEADERS.concat(['visibleAppIdsJson']),
   Sessions: ['sessionDigest', 'userId', 'issuedAt', 'expiresAt', 'lastSeenAt', 'revokedAt', 'device'],
   Audit: ['auditId', 'at', 'actorUserId', 'action', 'targetUserId', 'result', 'detailJson'],
   RateLimits: ['key', 'windowStart', 'count', 'blockedUntil']
@@ -134,10 +145,14 @@ function nexusAuthDispatch_(action, payload) {
   var session = nexusAuthRequireSession_(payload.sessionToken);
   if (action === 'nexus_auth_app_context') return nexusAuthIssueAppContext_(session, payload);
   if (action === 'nexus_admin_users') return nexusAuthAdminUsers_(session);
-  if (action === 'nexus_admin_invite') return nexusAuthAdminInvite_(session, payload);
-  if (action === 'nexus_admin_permissions') return nexusAuthAdminPermissions_(session, payload);
-  if (action === 'nexus_admin_delete_user') return nexusAuthAdminDelete_(session, payload);
-  if (action === 'nexus_admin_recover_user') return nexusAuthAdminRecover_(session, payload);
+  if (action === 'nexus_admin_user_create') return nexusAuthAdminUserCreate_(session, payload);
+  if (action === 'nexus_admin_user_update') return nexusAuthAdminUserUpdate_(session, payload);
+  if (action === 'nexus_admin_user_suspend') return nexusAuthAdminUserSuspend_(session, payload);
+  if (action === 'nexus_admin_user_restore') return nexusAuthAdminUserRestore_(session, payload);
+  if (action === 'nexus_admin_activation_reissue') return nexusAuthAdminActivationReissue_(session, payload);
+  if (action === 'nexus_admin_invite') return nexusAuthAdminInviteAlias_(session, payload);
+  if (action === 'nexus_admin_permissions' || action === 'nexus_admin_delete_user') return nexusAuthAdminDeprecated_(session);
+  if (action === 'nexus_admin_recover_user') return nexusAuthAdminUserRestore_(session, payload);
   if (action === 'nexus_admin_service_status') return nexusAuthServiceStatus_(session);
   if (action === 'nexus_admin_audit') return nexusAuthAdminAudit_(session, payload);
   throw new Error('NEXUS_AUTH_ACTION_UNSUPPORTED');
@@ -194,7 +209,7 @@ function nexusAuthBootstrap_(payload) {
       role: 'OWNER_MASTER', permissionsJson: JSON.stringify(NEXUS_AUTH_ALL_PERMISSIONS),
       passwordSalt: salt, passwordHash: nexusAuthPasswordHash_(verifier), status: 'ACTIVE',
       createdAt: now, createdBy: 'BOOTSTRAP', updatedAt: now, deletedAt: '', recoverUntil: '',
-      inviteDigest: '', inviteExpiresAt: '', version: 1
+      inviteDigest: '', inviteExpiresAt: '', version: 1, visibleAppIdsJson: ''
     };
     nexusAuthAppend_(NEXUS_AUTH_SHEETS.USERS, user);
     properties.deleteProperty(NEXUS_AUTH_PROPERTIES.BOOTSTRAP_DIGEST);
@@ -210,7 +225,7 @@ function nexusAuthActivate_(payload) {
   nexusAuthRequireInitialized_();
   var loginId = nexusAuthNormalizeLoginId_(payload.loginId);
   var user = nexusAuthFindUserByLogin_(loginId);
-  if (!user || user.status !== 'INVITED') throw new Error('NEXUS_AUTH_ACTIVATION_DENIED');
+  if (!user || ['INVITED', 'SUSPENDED'].indexOf(user.status) < 0 || !user.inviteDigest) throw new Error('NEXUS_AUTH_ACTIVATION_DENIED');
   if (Date.parse(user.inviteExpiresAt || '') <= Date.now()) throw new Error('NEXUS_AUTH_INVITE_EXPIRED');
   if (!nexusAuthConstantTime_(user.inviteDigest, nexusAuthSha256_(payload.inviteCode))) throw new Error('NEXUS_AUTH_ACTIVATION_DENIED');
   user.passwordSalt = nexusAuthValidateSalt_(payload.passwordSalt);
@@ -221,7 +236,7 @@ function nexusAuthActivate_(payload) {
   user.updatedAt = new Date().toISOString();
   user.version = Number(user.version || 0) + 1;
   nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
-  nexusAuthAudit_('ACTIVATE', user.userId, user.userId, 'SUCCESS', {});
+  nexusAuthAudit_('LOGIN_SUCCESS', user.userId, user.userId, 'SUCCESS', { activation: true });
   return nexusAuthIssueSession_(user, payload.device);
 }
 
@@ -233,11 +248,11 @@ function nexusAuthLogin_(payload) {
   var suppliedHash = nexusAuthPasswordHash_(nexusAuthValidateVerifier_(payload.passwordVerifier));
   if (!user || user.status !== 'ACTIVE' || !nexusAuthConstantTime_(user.passwordHash, suppliedHash)) {
     nexusAuthRateFail_(loginId);
-    nexusAuthAudit_('LOGIN', '', user ? user.userId : '', 'DENIED', { loginIdDigest: nexusAuthSha256_(loginId) });
+    nexusAuthAudit_('LOGIN_FAILURE', '', user ? user.userId : '', 'DENIED', { loginIdDigest: nexusAuthSha256_(loginId) });
     throw new Error('NEXUS_AUTH_LOGIN_DENIED');
   }
   nexusAuthRateClear_(loginId);
-  nexusAuthAudit_('LOGIN', user.userId, user.userId, 'SUCCESS', {});
+  nexusAuthAudit_('LOGIN_SUCCESS', user.userId, user.userId, 'SUCCESS', {});
   return nexusAuthIssueSession_(user, payload.device);
 }
 
@@ -380,10 +395,14 @@ function nexusAuthRequireAppContext_(rawToken, context, definition) {
 
 function nexusAuthSessionView_(context) {
   var user = context.user;
+  var visibility = nexusAuthVisibleApps_(user);
   return {
     user: {
       userId: user.userId, loginId: user.loginId, displayName: user.displayName,
-      role: user.role, permissions: nexusAuthPermissions_(user), status: user.status
+      role: user.role, accountType: user.role === 'OWNER_MASTER' ? 'OWNER_MASTER' : 'DELEGATED_USER',
+      permissions: nexusAuthPermissions_(user), status: user.status === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED',
+      visibleAppsConfigured: visibility.configured, visibleAppIds: visibility.visibleAppIds,
+      version: Number(user.version || 0)
     },
     expiresAt: context.session.expiresAt,
     serviceConnections: nexusAuthServiceBooleans_()
@@ -391,78 +410,245 @@ function nexusAuthSessionView_(context) {
 }
 
 function nexusAuthAdminUsers_(context) {
-  nexusAuthRequirePermission_(context.user, 'admin.users');
-  nexusAuthPurgeExpiredUsers_();
-  return nexusAuthUsers_().filter(function (user) { return user.status !== 'PURGED'; }).map(nexusAuthPublicUser_);
+  nexusAuthRequireOwnerMaster_(context.user);
+  return nexusAuthUsers_().filter(function (user) { return user.status !== 'PURGED'; }).map(nexusAuthAdminUserView_);
 }
 
-function nexusAuthAdminInvite_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.users');
+/**
+ * Creates a complete spreadsheet copy without changing the source database.
+ * The return value contains schema/count metadata and only digests of file IDs.
+ */
+function nexusAuthCreatePredeployBackup() {
+  nexusAuthRequireInitialized_();
+  return nexusAuthWithScriptLock_(function () {
+    var database = nexusAuthDb_();
+    var inspection = nexusAuthInspectAuthSchema_(database);
+    var capturedAt = new Date().toISOString();
+    var backupName = 'ONEAPP NEXUS Auth DB backup ' + capturedAt.replace(/[:.]/g, '-');
+    var backup = database.copy(backupName);
+    var backupDigest = nexusAuthSha256_(backup.getId());
+    var properties = PropertiesService.getScriptProperties();
+    properties.setProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_AT, capturedAt);
+    properties.setProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_DIGEST, backupDigest);
+    return {
+      backupCreated: true,
+      backupName: backupName,
+      backupFileIdDigest: backupDigest,
+      sourceFileIdDigest: nexusAuthSha256_(database.getId()),
+      capturedAt: capturedAt,
+      schema: inspection
+    };
+  });
+}
+
+/** Adds only the trailing Users.visibleAppIdsJson header; existing rows are untouched. */
+function nexusAuthMigrateVisibleApps() {
+  nexusAuthRequireInitialized_();
+  return nexusAuthWithScriptLock_(function () {
+    var properties = PropertiesService.getScriptProperties();
+    if (!properties.getProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_AT)
+        || !properties.getProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_DIGEST)) {
+      throw new Error('NEXUS_AUTH_BACKUP_REQUIRED');
+    }
+    var database = nexusAuthDb_();
+    var inspection = nexusAuthInspectAuthSchema_(database);
+    if (inspection.Users.schemaVersion === 'VISIBLE_APPS_V1') {
+      return { migrated: false, idempotent: true, schema: inspection };
+    }
+    if (inspection.Users.schemaVersion !== 'LEGACY_V24') throw new Error('NEXUS_AUTH_USERS_SCHEMA_CONFLICT');
+    var sheet = database.getSheetByName(NEXUS_AUTH_SHEETS.USERS);
+    sheet.getRange(1, NEXUS_AUTH_HEADERS.Users.length).setValue('visibleAppIdsJson');
+    SpreadsheetApp.flush();
+    var migrated = nexusAuthInspectAuthSchema_(database);
+    if (migrated.Users.schemaVersion !== 'VISIBLE_APPS_V1') throw new Error('NEXUS_AUTH_USERS_SCHEMA_CONFLICT');
+    return { migrated: true, idempotent: false, schema: migrated };
+  });
+}
+
+function nexusAuthInspectAuthSchema_(database) {
+  var result = {};
+  Object.keys(NEXUS_AUTH_HEADERS).forEach(function (sheetName) {
+    var sheet = database.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 1) throw new Error('NEXUS_AUTH_SCHEMA_CONFLICT');
+    var lastColumn = sheet.getLastColumn();
+    var headers = lastColumn > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(nexusAuthText_) : [];
+    var expected = NEXUS_AUTH_HEADERS[sheetName];
+    var schemaVersion = 'CURRENT';
+    if (sheetName === NEXUS_AUTH_SHEETS.USERS) {
+      if (nexusAuthArrayEquals_(headers, NEXUS_AUTH_USERS_LEGACY_HEADERS)) schemaVersion = 'LEGACY_V24';
+      else if (nexusAuthArrayEquals_(headers, expected)) schemaVersion = 'VISIBLE_APPS_V1';
+      else throw new Error('NEXUS_AUTH_USERS_SCHEMA_CONFLICT');
+    } else if (!nexusAuthArrayEquals_(headers, expected)) {
+      throw new Error('NEXUS_AUTH_SCHEMA_CONFLICT');
+    }
+    result[sheetName] = {
+      schemaVersion: schemaVersion,
+      headers: headers,
+      rowCount: Math.max(0, sheet.getLastRow() - 1),
+      metadataDigest: nexusAuthSha256_(JSON.stringify({ headers: headers, rowCount: Math.max(0, sheet.getLastRow() - 1) }))
+    };
+  });
+  return result;
+}
+
+function nexusAuthArrayEquals_(left, right) {
+  return left.length === right.length && left.every(function (value, index) { return value === right[index]; });
+}
+
+function nexusAuthRequireCurrentUsersSchema_() {
+  var inspection = nexusAuthInspectAuthSchema_(nexusAuthDb_());
+  if (inspection.Users.schemaVersion !== 'VISIBLE_APPS_V1') throw new Error('NEXUS_AUTH_USERS_MIGRATION_REQUIRED');
+  return true;
+}
+
+function nexusAuthAdminUserCreate_(context, payload) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'loginId', 'displayName', 'visibleAppIds']);
   var loginId = nexusAuthNormalizeLoginId_(payload.loginId);
-  if (nexusAuthFindUserByLogin_(loginId)) throw new Error('NEXUS_AUTH_LOGIN_ID_EXISTS');
-  var role = nexusAuthValidateRole_(payload.role);
-  if (role === 'OWNER_MASTER') throw new Error('NEXUS_AUTH_MASTER_UNIQUE');
-  var permissions = nexusAuthValidatePermissions_(payload.permissions, role);
-  var inviteCode = 'INV-' + nexusAuthRandomToken_(24);
-  var now = new Date();
-  var user = {
-    userId: 'USR-' + Utilities.getUuid(), loginId: loginId, displayName: nexusAuthDisplayName_(payload.displayName),
-    role: role, permissionsJson: JSON.stringify(permissions), passwordSalt: '', passwordHash: '', status: 'INVITED',
-    createdAt: now.toISOString(), createdBy: context.user.userId, updatedAt: now.toISOString(), deletedAt: '', recoverUntil: '',
-    inviteDigest: nexusAuthSha256_(inviteCode), inviteExpiresAt: new Date(now.getTime() + NEXUS_AUTH_INVITE_TTL_MS).toISOString(), version: 1
+  var displayName = nexusAuthDisplayName_(payload.displayName);
+  var configured = Object.prototype.hasOwnProperty.call(payload, 'visibleAppIds');
+  var visibleAppIds = configured ? nexusAuthValidateVisibleAppIds_(payload.visibleAppIds) : [];
+  return nexusAuthWithScriptLock_(function () {
+    if (nexusAuthFindUserByLogin_(loginId)) throw new Error('NEXUS_AUTH_LOGIN_ID_EXISTS');
+    var activationCode = 'ACT-' + nexusAuthRandomToken_(24);
+    var now = new Date();
+    var user = {
+      userId: 'USR-' + Utilities.getUuid(), loginId: loginId, displayName: displayName,
+      role: 'VIEWER', permissionsJson: JSON.stringify(NEXUS_AUTH_PROFILE_PERMISSIONS.VIEWER),
+      passwordSalt: '', passwordHash: '', status: 'SUSPENDED', createdAt: now.toISOString(),
+      createdBy: context.user.userId, updatedAt: now.toISOString(), deletedAt: '', recoverUntil: '',
+      inviteDigest: nexusAuthSha256_(activationCode),
+      inviteExpiresAt: new Date(now.getTime() + NEXUS_AUTH_ACTIVATION_TTL_MS).toISOString(),
+      version: 1, visibleAppIdsJson: configured ? JSON.stringify(visibleAppIds) : ''
+    };
+    nexusAuthAppend_(NEXUS_AUTH_SHEETS.USERS, user);
+    nexusAuthAudit_('USER_CREATE', context.user.userId, user.userId, 'SUCCESS', {
+      changedFields: ['displayName', 'visibleAppIds', 'status'], newVersion: 1, visibleAppIds: visibleAppIds
+    });
+    return { user: nexusAuthAdminUserView_(user), activationCode: activationCode };
+  });
+}
+
+function nexusAuthAdminInviteAlias_(context, payload) {
+  var forwarded = {
+    action: 'nexus_admin_user_create', sessionToken: payload.sessionToken, loginId: payload.loginId,
+    displayName: payload.displayName
   };
-  nexusAuthAppend_(NEXUS_AUTH_SHEETS.USERS, user);
-  nexusAuthAudit_('INVITE', context.user.userId, user.userId, 'SUCCESS', { role: role, permissions: permissions });
-  return { user: nexusAuthPublicUser_(user), inviteCode: inviteCode };
+  if (Object.prototype.hasOwnProperty.call(payload, 'visibleAppIds')) forwarded.visibleAppIds = payload.visibleAppIds;
+  var result = nexusAuthAdminUserCreate_(context, forwarded);
+  return { user: result.user, inviteCode: result.activationCode, activationCode: result.activationCode };
 }
 
-function nexusAuthAdminPermissions_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.users');
-  var user = nexusAuthFindUserById_(nexusAuthText_(payload.userId));
-  if (!user || user.status === 'PURGED') throw new Error('NEXUS_AUTH_USER_NOT_FOUND');
-  if (user.role === 'OWNER_MASTER') throw new Error('NEXUS_AUTH_MASTER_IMMUTABLE');
-  var role = nexusAuthValidateRole_(payload.role);
-  if (role === 'OWNER_MASTER') throw new Error('NEXUS_AUTH_MASTER_UNIQUE');
-  user.role = role;
-  user.permissionsJson = JSON.stringify(nexusAuthValidatePermissions_(payload.permissions, role));
-  user.updatedAt = new Date().toISOString();
-  user.version = Number(user.version || 0) + 1;
-  nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
-  nexusAuthRevokeUserSessions_(user.userId);
-  nexusAuthAudit_('PERMISSIONS', context.user.userId, user.userId, 'SUCCESS', { role: role, permissions: nexusAuthPermissions_(user) });
-  return nexusAuthPublicUser_(user);
+function nexusAuthAdminUserUpdate_(context, payload) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'userId', 'expectedVersion', 'displayName', 'visibleAppIds']);
+  var hasDisplayName = Object.prototype.hasOwnProperty.call(payload, 'displayName');
+  var hasVisibleAppIds = Object.prototype.hasOwnProperty.call(payload, 'visibleAppIds');
+  if (!hasDisplayName && !hasVisibleAppIds) throw new Error('NEXUS_AUTH_UPDATE_REQUIRED');
+  var displayName = hasDisplayName ? nexusAuthDisplayName_(payload.displayName) : '';
+  var visibleAppIds = hasVisibleAppIds ? nexusAuthValidateVisibleAppIds_(payload.visibleAppIds) : [];
+  return nexusAuthWithScriptLock_(function () {
+    var user = nexusAuthMutableDelegatedUser_(payload.userId);
+    var previousVersion = nexusAuthRequireExpectedVersion_(user, payload.expectedVersion);
+    var changedFields = [];
+    var previousVisibility = nexusAuthVisibleApps_(user);
+    if (hasDisplayName && user.displayName !== displayName) {
+      user.displayName = displayName;
+      changedFields.push('displayName');
+    }
+    if (hasVisibleAppIds) {
+      var canonical = JSON.stringify(visibleAppIds);
+      if (user.visibleAppIdsJson !== canonical) {
+        user.visibleAppIdsJson = canonical;
+        changedFields.push('visibleAppIds');
+      }
+    }
+    if (!changedFields.length) return nexusAuthAdminUserView_(user);
+    user.updatedAt = new Date().toISOString();
+    user.version = previousVersion + 1;
+    nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
+    if (changedFields.indexOf('displayName') >= 0) {
+      nexusAuthAudit_('USER_DISPLAY_NAME_CHANGE', context.user.userId, user.userId, 'SUCCESS', {
+        changedFields: ['displayName'], previousVersion: previousVersion, newVersion: user.version
+      });
+    }
+    if (changedFields.indexOf('visibleAppIds') >= 0) {
+      nexusAuthAudit_('USER_VISIBLE_APPS_CHANGE', context.user.userId, user.userId, 'SUCCESS', {
+        changedFields: ['visibleAppIds'], previousVersion: previousVersion, newVersion: user.version,
+        previousVisibleAppIds: previousVisibility.visibleAppIds, visibleAppIds: visibleAppIds
+      });
+    }
+    return nexusAuthAdminUserView_(user);
+  });
 }
 
-function nexusAuthAdminDelete_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.users');
-  var user = nexusAuthFindUserById_(nexusAuthText_(payload.userId));
-  if (!user || user.status === 'PURGED') throw new Error('NEXUS_AUTH_USER_NOT_FOUND');
-  if (user.role === 'OWNER_MASTER' || user.userId === context.user.userId) throw new Error('NEXUS_AUTH_MASTER_DELETE_DENIED');
-  var now = new Date();
-  user.status = 'DELETED';
-  user.deletedAt = now.toISOString();
-  user.recoverUntil = new Date(now.getTime() + NEXUS_AUTH_RECOVERY_TTL_MS).toISOString();
-  user.updatedAt = now.toISOString();
-  user.version = Number(user.version || 0) + 1;
-  nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
-  nexusAuthRevokeUserSessions_(user.userId);
-  nexusAuthAudit_('DELETE', context.user.userId, user.userId, 'SUCCESS', { recoverUntil: user.recoverUntil });
-  return nexusAuthPublicUser_(user);
+function nexusAuthAdminUserSuspend_(context, payload) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'userId', 'expectedVersion']);
+  return nexusAuthWithScriptLock_(function () {
+    var user = nexusAuthMutableDelegatedUser_(payload.userId);
+    var previousVersion = nexusAuthRequireExpectedVersion_(user, payload.expectedVersion);
+    nexusAuthRevokeUserSessions_(user.userId);
+    if (user.status === 'SUSPENDED') return nexusAuthAdminUserView_(user);
+    user.status = 'SUSPENDED';
+    user.updatedAt = new Date().toISOString();
+    user.version = previousVersion + 1;
+    nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
+    nexusAuthAudit_('USER_SUSPEND', context.user.userId, user.userId, 'SUCCESS', {
+      changedFields: ['status'], previousVersion: previousVersion, newVersion: user.version
+    });
+    return nexusAuthAdminUserView_(user);
+  });
 }
 
-function nexusAuthAdminRecover_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.users');
-  var user = nexusAuthFindUserById_(nexusAuthText_(payload.userId));
-  if (!user || user.status !== 'DELETED') throw new Error('NEXUS_AUTH_USER_NOT_RECOVERABLE');
-  if (Date.parse(user.recoverUntil || '') <= Date.now()) throw new Error('NEXUS_AUTH_RECOVERY_EXPIRED');
-  user.status = user.passwordHash ? 'ACTIVE' : 'INVITED';
-  user.deletedAt = '';
-  user.recoverUntil = '';
-  user.updatedAt = new Date().toISOString();
-  user.version = Number(user.version || 0) + 1;
-  nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
-  nexusAuthAudit_('RECOVER', context.user.userId, user.userId, 'SUCCESS', {});
-  return nexusAuthPublicUser_(user);
+function nexusAuthAdminUserRestore_(context, payload) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'userId', 'expectedVersion']);
+  return nexusAuthWithScriptLock_(function () {
+    var user = nexusAuthMutableDelegatedUser_(payload.userId);
+    var previousVersion = nexusAuthRequireExpectedVersion_(user, payload.expectedVersion);
+    if (!user.passwordHash) throw new Error('NEXUS_AUTH_ACTIVATION_REQUIRED');
+    if (user.status === 'ACTIVE') return nexusAuthAdminUserView_(user);
+    user.status = 'ACTIVE';
+    user.deletedAt = '';
+    user.recoverUntil = '';
+    user.updatedAt = new Date().toISOString();
+    user.version = previousVersion + 1;
+    nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
+    nexusAuthAudit_('USER_RESTORE', context.user.userId, user.userId, 'SUCCESS', {
+      changedFields: ['status'], previousVersion: previousVersion, newVersion: user.version
+    });
+    return nexusAuthAdminUserView_(user);
+  });
+}
+
+function nexusAuthAdminActivationReissue_(context, payload) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'userId', 'expectedVersion']);
+  return nexusAuthWithScriptLock_(function () {
+    var user = nexusAuthMutableDelegatedUser_(payload.userId);
+    var previousVersion = nexusAuthRequireExpectedVersion_(user, payload.expectedVersion);
+    if (user.status === 'ACTIVE') throw new Error('NEXUS_AUTH_USER_ALREADY_ACTIVE');
+    var activationCode = 'ACT-' + nexusAuthRandomToken_(24);
+    var now = new Date();
+    user.status = 'SUSPENDED';
+    user.deletedAt = '';
+    user.recoverUntil = '';
+    user.inviteDigest = nexusAuthSha256_(activationCode);
+    user.inviteExpiresAt = new Date(now.getTime() + NEXUS_AUTH_ACTIVATION_TTL_MS).toISOString();
+    user.updatedAt = now.toISOString();
+    user.version = previousVersion + 1;
+    nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
+    nexusAuthAudit_('USER_ACTIVATION_REISSUE', context.user.userId, user.userId, 'SUCCESS', {
+      changedFields: ['activation'], previousVersion: previousVersion, newVersion: user.version
+    });
+    return { user: nexusAuthAdminUserView_(user), activationCode: activationCode };
+  });
+}
+
+function nexusAuthAdminDeprecated_(context) {
+  nexusAuthRequireOwnerMaster_(context.user);
+  throw new Error('NEXUS_AUTH_ACTION_DEPRECATED');
 }
 
 function nexusAuthServiceStatus_(context) {
@@ -471,10 +657,16 @@ function nexusAuthServiceStatus_(context) {
 }
 
 function nexusAuthAdminAudit_(context, payload) {
-  nexusAuthRequirePermission_(context.user, 'admin.audit');
+  nexusAuthRequireOwnerMaster_(context.user);
+  nexusAuthAssertPayloadFields_(payload, ['action', 'sessionToken', 'limit']);
   var limit = Math.max(1, Math.min(200, Number(payload.limit || 100)));
-  return nexusAuthRows_(NEXUS_AUTH_SHEETS.AUDIT).slice(-limit).reverse().map(function (row) {
-    return { auditId: row.auditId, at: row.at, actorUserId: row.actorUserId, action: row.action, targetUserId: row.targetUserId, result: row.result, detail: nexusAuthParseJson_(row.detailJson, {}) };
+  var allowed = ['LOGIN', 'LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'USER_CREATE', 'USER_DISPLAY_NAME_CHANGE',
+    'USER_VISIBLE_APPS_CHANGE', 'USER_SUSPEND', 'USER_RESTORE', 'USER_ACTIVATION_REISSUE'];
+  return nexusAuthRows_(NEXUS_AUTH_SHEETS.AUDIT).filter(function (row) {
+    return allowed.indexOf(row.action) >= 0;
+  }).slice(-limit).reverse().map(function (row) {
+    var action = row.action === 'LOGIN' ? (row.result === 'SUCCESS' ? 'LOGIN_SUCCESS' : 'LOGIN_FAILURE') : row.action;
+    return { auditId: row.auditId, at: row.at, actorUserId: row.actorUserId, action: action, targetUserId: row.targetUserId, result: row.result, detail: nexusAuthParseJson_(row.detailJson, {}) };
   });
 }
 
@@ -904,6 +1096,77 @@ function nexusAuthPublicUser_(user) {
   };
 }
 
+function nexusAuthAdminUserView_(user) {
+  var visibility = nexusAuthVisibleApps_(user);
+  return {
+    userId: user.userId,
+    loginId: user.loginId,
+    displayName: user.displayName,
+    accountType: user.role === 'OWNER_MASTER' ? 'OWNER_MASTER' : 'DELEGATED_USER',
+    status: user.status === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED',
+    visibleAppIds: visibility.visibleAppIds,
+    visibleAppsConfigured: visibility.configured,
+    activationPending: user.status !== 'ACTIVE' && Boolean(user.inviteDigest),
+    activationExpiresAt: user.status !== 'ACTIVE' && user.inviteDigest ? user.inviteExpiresAt : '',
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    version: Number(user.version || 0)
+  };
+}
+
+function nexusAuthVisibleApps_(user) {
+  var raw = nexusAuthText_(user && user.visibleAppIdsJson);
+  if (!raw) return { configured: false, visibleAppIds: NEXUS_AUTH_VISIBLE_APP_IDS.slice() };
+  var parsed = nexusAuthParseJson_(raw, null);
+  if (!Array.isArray(parsed)) throw new Error('NEXUS_AUTH_VISIBLE_APPS_STORED_INVALID');
+  return { configured: true, visibleAppIds: nexusAuthValidateVisibleAppIds_(parsed) };
+}
+
+function nexusAuthValidateVisibleAppIds_(value) {
+  if (!Array.isArray(value)) throw new Error('NEXUS_AUTH_VISIBLE_APPS_INVALID');
+  var seen = {};
+  value.forEach(function (candidate) {
+    if (typeof candidate !== 'string' || candidate !== candidate.trim() || NEXUS_AUTH_VISIBLE_APP_IDS.indexOf(candidate) < 0 || seen[candidate]) {
+      throw new Error('NEXUS_AUTH_VISIBLE_APPS_INVALID');
+    }
+    seen[candidate] = true;
+  });
+  return NEXUS_AUTH_VISIBLE_APP_IDS.filter(function (appId) { return Boolean(seen[appId]); });
+}
+
+function nexusAuthRequireOwnerMaster_(user) {
+  if (!user || user.role !== 'OWNER_MASTER' || user.status !== 'ACTIVE') throw new Error('NEXUS_AUTH_ADMIN_DENIED');
+  return true;
+}
+
+function nexusAuthMutableDelegatedUser_(userId) {
+  var user = nexusAuthFindUserById_(nexusAuthText_(userId));
+  if (!user || user.status === 'PURGED') throw new Error('NEXUS_AUTH_USER_NOT_FOUND');
+  if (user.role === 'OWNER_MASTER') throw new Error('NEXUS_AUTH_MASTER_IMMUTABLE');
+  return user;
+}
+
+function nexusAuthRequireExpectedVersion_(user, value) {
+  var expected = Number(value);
+  var current = Number(user.version || 0);
+  if (!Number.isInteger(expected) || expected < 1) throw new Error('NEXUS_AUTH_EXPECTED_VERSION_REQUIRED');
+  if (expected !== current) throw new Error('NEXUS_AUTH_VERSION_CONFLICT');
+  return current;
+}
+
+function nexusAuthAssertPayloadFields_(payload, allowed) {
+  Object.keys(payload || {}).forEach(function (key) {
+    if (allowed.indexOf(key) < 0) throw new Error('NEXUS_AUTH_PAYLOAD_FIELD_DENIED');
+  });
+}
+
+function nexusAuthWithScriptLock_(callback) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return callback(); }
+  finally { lock.releaseLock(); }
+}
+
 function nexusAuthServiceBooleans_() {
   var properties = PropertiesService.getScriptProperties();
   return {
@@ -930,21 +1193,8 @@ function nexusAuthRevokeUserSessions_(userId) {
 }
 
 function nexusAuthPurgeExpiredUsers_() {
-  nexusAuthUsers_().forEach(function (user) {
-    if (user.status !== 'DELETED' || Date.parse(user.recoverUntil || '') > Date.now()) return;
-    user.loginId = 'purged-' + nexusAuthSha256_(user.userId).slice(0, 16);
-    user.displayName = '삭제된 사용자';
-    user.permissionsJson = '[]';
-    user.passwordSalt = '';
-    user.passwordHash = '';
-    user.inviteDigest = '';
-    user.inviteExpiresAt = '';
-    user.status = 'PURGED';
-    user.updatedAt = new Date().toISOString();
-    user.version = Number(user.version || 0) + 1;
-    nexusAuthWriteRow_(NEXUS_AUTH_SHEETS.USERS, user._row, user);
-    nexusAuthAudit_('PURGE', 'SYSTEM', user.userId, 'SUCCESS', {});
-  });
+  // Compatibility stub. User deletion and automatic anonymization are prohibited.
+  return 0;
 }
 
 function nexusAuthRateCheck_(loginId) {
@@ -1031,12 +1281,14 @@ function nexusAuthFindUserByLogin_(loginId) { return nexusAuthUsers_().find(func
 function nexusAuthFindUserById_(userId) { return nexusAuthUsers_().find(function (user) { return user.userId === userId; }) || null; }
 
 function nexusAuthAppend_(sheetName, value) {
+  if (sheetName === NEXUS_AUTH_SHEETS.USERS) nexusAuthRequireCurrentUsersSchema_();
   var sheet = nexusAuthDb_().getSheetByName(sheetName);
   var headers = NEXUS_AUTH_HEADERS[sheetName];
   sheet.appendRow(headers.map(function (header) { return value[header] === undefined ? '' : value[header]; }));
 }
 
 function nexusAuthWriteRow_(sheetName, rowNumber, value) {
+  if (sheetName === NEXUS_AUTH_SHEETS.USERS) nexusAuthRequireCurrentUsersSchema_();
   var sheet = nexusAuthDb_().getSheetByName(sheetName);
   var headers = NEXUS_AUTH_HEADERS[sheetName];
   sheet.getRange(Number(rowNumber), 1, 1, headers.length).setValues([headers.map(function (header) { return value[header] === undefined ? '' : value[header]; })]);
