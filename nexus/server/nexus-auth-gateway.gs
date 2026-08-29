@@ -430,7 +430,7 @@ function nexusAuthCreatePredeployBackup() {
     var properties = PropertiesService.getScriptProperties();
     properties.setProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_AT, capturedAt);
     properties.setProperty(NEXUS_AUTH_PROPERTIES.LAST_DATA_BACKUP_DIGEST, backupDigest);
-    return {
+    var result = {
       backupCreated: true,
       backupName: backupName,
       backupFileIdDigest: backupDigest,
@@ -438,6 +438,8 @@ function nexusAuthCreatePredeployBackup() {
       capturedAt: capturedAt,
       schema: inspection
     };
+    console.log(JSON.stringify(result));
+    return result;
   });
 }
 
@@ -453,7 +455,9 @@ function nexusAuthMigrateVisibleApps() {
     var database = nexusAuthDb_();
     var inspection = nexusAuthInspectAuthSchema_(database);
     if (inspection.Users.schemaVersion === 'VISIBLE_APPS_V1') {
-      return { migrated: false, idempotent: true, schema: inspection };
+      var idempotentResult = { migrated: false, idempotent: true, schema: inspection };
+      console.log(JSON.stringify(idempotentResult));
+      return idempotentResult;
     }
     if (inspection.Users.schemaVersion !== 'LEGACY_V24') throw new Error('NEXUS_AUTH_USERS_SCHEMA_CONFLICT');
     var sheet = database.getSheetByName(NEXUS_AUTH_SHEETS.USERS);
@@ -461,7 +465,9 @@ function nexusAuthMigrateVisibleApps() {
     SpreadsheetApp.flush();
     var migrated = nexusAuthInspectAuthSchema_(database);
     if (migrated.Users.schemaVersion !== 'VISIBLE_APPS_V1') throw new Error('NEXUS_AUTH_USERS_SCHEMA_CONFLICT');
-    return { migrated: true, idempotent: false, schema: migrated };
+    var migrationResult = { migrated: true, idempotent: false, schema: migrated };
+    console.log(JSON.stringify(migrationResult));
+    return migrationResult;
   });
 }
 
