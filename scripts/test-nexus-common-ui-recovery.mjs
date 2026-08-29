@@ -91,6 +91,8 @@ assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
+assert.match(uiCss, /grid-template-columns:\s*270px\s+minmax\(0,\s*1fr\)\s+270px/, 'desktop header must keep equal fixed side rails around the centered tabs');
+assert.match(uiCss, /\.nexus-ui-brand__current\s*\{[^}]*flex:\s*0\s+0\s+110px[^}]*width:\s*110px[^}]*max-width:\s*110px/s, 'current app/version slot must not move with text length');
 assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
 assert.match(uiCss, /--nexus-ui-table-header-bg:\s*#292f37/, 'dark table header must use the muted hierarchy');
 assert.match(uiCss, /--nexus-ui-table-row-bg:\s*#1d2228/, 'dark table rows must use the muted hierarchy');
@@ -104,7 +106,8 @@ assert.match(uiCss, /--nexus-ui-header-bg:\s*#101722/, 'dark header palette must
 assert.match(uiCss, /--nexus-ui-tab-group-bg:\s*#1a2330/, 'dark tab group palette must be preserved');
 assert.match(uiCss, /--nexus-ui-tab-active-bg:\s*#354153/, 'dark selected tab palette must be preserved');
 assert.match(uiCss, /\.nexus-ui-nav__track\s*\{[^}]*height:\s*44px[^}]*gap:\s*4px/s, 'tab group geometry is required');
-assert.match(uiCss, /\.nexus-ui-nav__link\s*\{[^}]*min-width:\s*96px[^}]*height:\s*38px[^}]*font-size:\s*13px[^}]*font-weight:\s*600/s, 'desktop tabs must be 38x96px at 13px/600');
+assert.match(uiCss, /\.nexus-ui-nav__track\s*\{[^}]*margin-inline:\s*auto/s, 'desktop tab group must remain centered independently of label length');
+assert.match(uiCss, /\.nexus-ui-nav__link\s*\{[^}]*width:\s*96px[^}]*min-width:\s*96px[^}]*height:\s*38px[^}]*font-size:\s*13px[^}]*font-weight:\s*600/s, 'desktop tabs must be fixed at 38x96px and 13px/600');
 assert.match(uiCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nexus-ui-nav__link\s*\{[^}]*min-width:\s*96px[^}]*height:\s*44px/s, 'mobile tabs must be 44x96px');
 assert.doesNotMatch(uiCss, /\.nexus-ui-nav__link::after/, 'selected tabs must not use an underline');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is required');

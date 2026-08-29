@@ -104,7 +104,7 @@ body.nexus-ui-mounted {
   z-index: 2147483000;
   inset: 0 0 auto;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 270px minmax(0, 1fr) 270px;
   align-items: center;
   width: 100%;
   height: var(--nexus-ui-header-height);
@@ -156,6 +156,11 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
 }
 
 .nexus-ui-brand__current {
+  display: inline-flex;
+  flex: 0 0 110px;
+  align-items: center;
+  justify-content: center;
+  width: 110px;
   max-width: 110px;
   overflow: hidden;
   padding: 5px 8px;
@@ -192,6 +197,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
   align-items: center;
   height: 44px;
   gap: 4px;
+  margin-inline: auto;
   padding: 3px;
   border-radius: 11px;
   background: var(--nexus-ui-tab-group-bg);
@@ -203,7 +209,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: auto;
+  width: 96px;
   min-width: 96px;
   height: 38px;
   min-height: 38px;
@@ -243,6 +249,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
   gap: 6px;
   height: 44px;
   margin-left: 10px;
+  justify-self: end;
   color: var(--nexus-ui-header-icon);
 }
 
@@ -354,6 +361,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
 
   .nexus-ui-nav__track {
     height: 44px;
+    margin-inline: 0;
     padding: 0;
     border-radius: 9px;
   }
