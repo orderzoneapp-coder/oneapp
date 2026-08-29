@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.3
+- Architecture document version: 2.1.4
 - Last reviewed: 2026-08-29
-- Current-source baseline: `5cbb7038b4d30af6a2e9175adfbc93a961a08059`
+- Current-source baseline: `2af794a7a7b8b4534b1d732369f7262ee9249b19`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -211,6 +211,8 @@ Production files must not be reorganized into folders without first updating and
 | 데스크톱 헤더 | 높이 64px, 탭 그룹 높이 44px, 탭 96×38px, 간격 4px, 모서리 8px, 글자 13px/600, 전환 150ms를 유지한다. |
 | 모바일 헤더 | 높이 104px, 탭 96×44px와 최소 44px 터치 영역을 유지한다. 로고와 테마 스위치는 겹치지 않고 탭 이동은 가로 사용이 가능해야 한다. |
 | 선택·포커스 | 선택 탭은 저채도 배경으로만 구분하고 밑줄을 사용하지 않는다. 키보드 포커스는 공통 포커스 토큰으로 명확히 표시한다. |
+| 앱헤더 | `Master.html`의 56px 단일 행 `AppHeader`를 구조 기준으로 사용한다. 왼쪽은 앱 식별·한 줄 목적, 오른쪽은 상태와 해당 앱의 주요 작업을 배치하고 글로벌 앱 이동·NEXUS 로고·화면 모드를 중복하지 않는다. |
+| 폭 계층 | 글로벌헤더와 앱헤더의 배경·구분선은 viewport 전체 폭을 사용한다. 섹션헤더, 업무 패널과 작업테이블은 정보 밀도와 집중도를 근거로 앱별 제한 폭·가로 스크롤을 사용할 수 있다. |
 | 화면 모드 | `일반모드`와 `다크모드`만 제공한다. 화면 모드 선택은 공통헤더에서 수행하며 앱별 환경설정에 중복 컨트롤을 만들지 않는다. |
 | 다크 화면 | `--nexus-ui-page-bg: #15181d`를 body와 빈 영역의 기준으로 사용하고 패널·표 머리글·표 행·입력을 저채도 의미 계층으로 분리한다. |
 | 일반 화면 | 공통 Light 토큰과 앱의 승인된 원래 밝은 배경을 정확히 복원하고 다크 전용 계산값을 남기지 않는다. |
@@ -228,6 +230,7 @@ Production files must not be reorganized into folders without first updating and
 - 화면 검증은 업무 저장·동기화·POST 없이 수행하고 인쇄·내보내기의 밝은 출력 회귀와 공통 자산 실패 시 앱 독립 실행을 함께 확인한다.
 - 업무 목적상 공통 계약과 다른 UI가 반드시 필요하면 사용자가 승인한 예외, 영향 요소, 접근성·반응형·출력 대안과 롤백을 앱 개발명세에 먼저 기록한다. 승인되지 않은 차이는 허용된 변형으로 간주하지 않는다.
 - SmartInput 등 현재 화면이 이 계약을 충족하지 않는 경우 문서 기준을 낮추지 않는다. 해당 차이는 구현 격차로 기록하고 업무 코드 변경과 분리된 앱별 UI/UX 작업에서 수정·검증한다.
+- `Master.html`은 앱헤더 구조 기준이다. 이 기준보다 먼저 구축된 `MerchOps.html`과 `DataOps.html`의 앱헤더는 기능을 보존한 채 같은 구조·전체 폭·공통 의미 토큰으로 전환하는 수정 대상이다. 각 앱의 System.IO, 섹션헤더와 작업테이블은 앱헤더와 구분한다.
 
 ### 5.2 현재 레거시 공유 브라우저 상태
 
