@@ -171,7 +171,7 @@ const makeRow = ({ code, role, source = {}, finalData = {}, inputOrder = 0 }) =>
   finalData: { ...finalData },
 });
 
-const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null }) => {
+const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null, noInboundActionQueue = { action: "", codes: [] } }) => {
   const { context, realXlsx, writtenFiles } = makeContext(name);
   const toasts = [];
   const alerts = [];
@@ -189,6 +189,7 @@ const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = n
     ui: {
       filterSteps: [],
       disabledFilterStepIds: [],
+      noInboundActionQueue,
       selectedRows: new Set(),
       showToast: (message) => toasts.push(String(message)),
       setAlertMsg: (message) => alerts.push(String(message)),
@@ -282,6 +283,64 @@ try {
   assert.equal(estimateShop[2][0], "20010002");
   assert.equal(estimateShop[2][15], 0);
   assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
+
+  const noInboundPolicyRows = [
+    makeRow({
+      code: "POLICY-NORMAL", role: "estimate",
+      source: { 품목명: "정상 입고가", 입고가: 10000, 출고가: 13000, 판매여부: 0, 재고수량: 7, 행사테마: "1" },
+    }),
+    makeRow({
+      code: "POLICY-NO-INBOUND", role: "estimate",
+      source: { 품목명: "입고가 없음", 입고가: 0, 출고가: 13000, 판매여부: 1, 재고수량: 7, 행사테마: "3" },
+    }),
+  ];
+  const stopPolicyResult = await runF8Scenario({
+    name: "no-inbound-stop-policy",
+    rows: noInboundPolicyRows,
+    noInboundActionQueue: { action: "stop", codes: ["POLICY-NO-INBOUND"] },
+  });
+  const stopPolicyShop = stopPolicyResult.context.XLSX.utils.sheet_to_json(stopPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  const stopPolicyErp = stopPolicyResult.context.XLSX.utils.sheet_to_json(stopPolicyResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
+  assert.deepEqual([stopPolicyShop[1][14], stopPolicyShop[2][14]], ["1", "0"], "stop selection must output sale 1 for normal rows and 0 for queued no-inbound rows without F7");
+  assert.deepEqual([stopPolicyShop[1][15], stopPolicyShop[2][15]], [999, 999], "stop selection must output stock 999 for every estimate row");
+  assert.deepEqual([stopPolicyShop[1][17], stopPolicyShop[2][17]], ["1", "1"], "stop selection must force theme2 for every estimate row");
+  assert.deepEqual([stopPolicyErp[1][0], stopPolicyErp[2][0]], ["POLICY-NORMAL", "POLICY-NO-INBOUND"], "the no-inbound shop policy must not change ERP output rows");
+
+  const spotPolicyResult = await runF8Scenario({
+    name: "no-inbound-spot-policy",
+    rows: noInboundPolicyRows,
+    noInboundActionQueue: { action: "spot", codes: ["POLICY-NO-INBOUND"] },
+  });
+  const spotPolicyShop = spotPolicyResult.context.XLSX.utils.sheet_to_json(spotPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.deepEqual([spotPolicyShop[1][14], spotPolicyShop[2][14]], ["1", "1"], "spot selection must output sale 1 for every estimate row without F7");
+  assert.deepEqual([spotPolicyShop[1][15], spotPolicyShop[2][15]], [999, 0], "spot selection must output stock 0 only for queued no-inbound rows");
+  assert.deepEqual([spotPolicyShop[1][17], spotPolicyShop[2][17]], ["1", "1"], "spot selection must force theme2 for every estimate row");
+
+  const committedStopPolicyResult = await runF8Scenario({
+    name: "no-inbound-committed-stop-policy",
+    rows: [
+      noInboundPolicyRows[0],
+      makeRow({
+        code: "POLICY-NO-INBOUND", role: "estimate",
+        source: { 품목명: "입고가 없음", 입고가: 0, 출고가: 13000, 판매여부: 1, 재고수량: 7, 행사테마: "3" },
+        finalData: { _noInboundActionCommitted: "stop" },
+      }),
+    ],
+  });
+  const committedStopPolicyShop = committedStopPolicyResult.context.XLSX.utils.sheet_to_json(committedStopPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.deepEqual([committedStopPolicyShop[1][14], committedStopPolicyShop[2][14]], ["1", "0"], "the committed marker must preserve the same F8 stop policy after F7 clears the queue");
+  assert.deepEqual([committedStopPolicyShop[1][15], committedStopPolicyShop[2][15]], [999, 999]);
+  assert.deepEqual([committedStopPolicyShop[1][17], committedStopPolicyShop[2][17]], ["1", "1"]);
+
+  const purchasePolicyIsolationResult = await runF8Scenario({
+    name: "no-inbound-policy-purchase-isolation",
+    rows: [makeRow({ code: "POLICY-PURCHASE", role: "purchase", source: { 품목명: "구매 격리", 입고가: 0, 출고가: 13000, 판매여부: 0, 재고수량: 5, 행사테마: "1" } })],
+    noInboundActionQueue: { action: "spot", codes: ["POLICY-PURCHASE"] },
+  });
+  const purchasePolicyIsolationShop = purchasePolicyIsolationResult.context.XLSX.utils.sheet_to_json(purchasePolicyIsolationResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.equal(purchasePolicyIsolationShop[1][14], "0", "purchase F8 sale must remain unchanged when an estimate no-inbound action is selected");
+  assert.equal(purchasePolicyIsolationShop[1][15], 5, "purchase F8 stock must remain unchanged when an estimate no-inbound action is selected");
+  assert.equal(purchasePolicyIsolationShop[1][17], "", "purchase F8 theme2 must remain unchanged when an estimate no-inbound action is selected");
 
   const transmissionResult = await runF8Scenario({
     name: "final-transmission-state",

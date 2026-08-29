@@ -185,8 +185,10 @@ assert.match(toolbar, /const selectIssueFilter = \(value\) =>[\s\S]*withoutIssue
   "selecting one issue filter must clear the other issue filters");
 assert.match(toolbar, /data-merch-no-inbound-action": "touch-choice"[\s\S]*\['spot', '싯가판매'\][\s\S]*\['stop', '판매정지'\]/,
   "the no-inbound action touch choices must be adjacent and conditionally visible");
+assert.match(toolbar, /F8 쇼핑몰업로드에는 즉시 반영되고 F7 저장 시 마스터에도 적용됩니다/,
+  "the no-inbound action guidance must explain immediate F8 output and separate F7 master storage");
 
-const versionMatches = [...html.matchAll(/v2\.1\.190_ConditionalWorkbenches/g)];
-assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.190");
+const versionMatches = [...html.matchAll(/v2\.1\.191_NoInboundQuickF8/g)];
+assert.ok(versionMatches.length >= 3, "all MerchOps version labels must use v2.1.191");
 
 console.log("MerchOps theme-none, promo-price, and fixed-layout contracts passed.");
