@@ -41,7 +41,7 @@
         "basic login and logout",
         "master or delegated-user identification",
         "independent work-app launcher",
-        "cached company Snapshot with background revision verification"
+        "authenticated company profile read with public-field projection and background revision verification"
       ],
       "dependencyMode": {
         "cachedSessionDisplay": "LOCAL_OPERATION",
@@ -459,11 +459,23 @@
       "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
       "writerPolicy": "The server requires a current Session, OWNER_MASTER/admin.company, an app-scoped Gateway context, and expectedRevision for every profile write.",
       "resources": {
-        "homeReadOperation": "company.public_profile_read",
+        "homeReadOperation": "company.profile_read",
+        "homeReadAppId": "nexus-home",
+        "homeReadPayload": {},
+        "homeProjectionFields": [
+          "companyName",
+          "businessNumber",
+          "representativeName",
+          "companyPhone",
+          "businessAddress",
+          "homepage",
+          "revision"
+        ],
+        "homeProjectionAudience": "authenticated NEXUS users",
         "adminReadOperation": "company.profile_read",
         "adminWriteOperation": "company.profile_write",
         "companyId": "ONEAPP",
-        "snapshotStorage": "sessionStorage-only non-authoritative cache",
+        "snapshotStorage": "sessionStorage-only non-authoritative public-field projection; full profile is never cached",
         "serverRevisionAndAudit": true
       }
     },

@@ -162,24 +162,42 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
       : cleanText(value);
   };
 
-  const validCompanySnapshot = (value) => value && typeof value === 'object'
-    && cleanText(value.companyName)
-    && Number.isInteger(Number(value.revision))
-    && Number(value.revision) >= 0;
+  const publicCompanyProjection = (profile) => {
+    if (!profile || typeof profile !== 'object') return null;
+    const revision = Number(profile.revision);
+    if (!cleanText(profile.companyName) || !Number.isInteger(revision) || revision < 0) return null;
+    return Object.freeze({
+      companyName: cleanText(profile.companyName),
+      businessNumber: cleanText(profile.businessNumber),
+      representativeName: cleanText(profile.representativeName),
+      companyPhone: cleanText(profile.companyPhone),
+      businessAddress: [cleanText(profile.address1), cleanText(profile.address2)].filter(Boolean).join(' '),
+      homepage: cleanText(profile.homepage),
+      revision,
+    });
+  };
+
+  const validCompanySnapshot = (value) => publicCompanyProjection({
+    ...value,
+    address1: value?.businessAddress,
+    address2: '',
+  });
 
   const readCompanySnapshot = () => {
     try {
       const cached = JSON.parse(sessionStorage.getItem(COMPANY_SNAPSHOT_KEY) || 'null');
-      return validCompanySnapshot(cached?.snapshot) ? cached : null;
+      const snapshot = validCompanySnapshot(cached?.snapshot);
+      return snapshot ? { snapshot, cachedAt: cleanText(cached.cachedAt) } : null;
     } catch {
       return null;
     }
   };
 
   const saveCompanySnapshot = (snapshot) => {
-    if (!validCompanySnapshot(snapshot)) return;
+    const projected = validCompanySnapshot(snapshot);
+    if (!projected) return;
     try {
-      sessionStorage.setItem(COMPANY_SNAPSHOT_KEY, JSON.stringify({ snapshot, cachedAt: new Date().toISOString() }));
+      sessionStorage.setItem(COMPANY_SNAPSHOT_KEY, JSON.stringify({ snapshot: projected, cachedAt: new Date().toISOString() }));
     } catch {}
   };
 
@@ -196,7 +214,8 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     companyStatus.textContent = status;
     companyStatus.dataset.status = status;
     companyNotice.textContent = message;
-    if (validCompanySnapshot(snapshot)) renderCompanySnapshot(snapshot);
+    const projected = validCompanySnapshot(snapshot);
+    if (projected) renderCompanySnapshot(projected);
     else if (status === 'ERROR') {
       companyName.textContent = '회사정보를 불러오지 못했습니다';
       companySummary.textContent = '서버 오류를 미등록 또는 0건으로 처리하지 않았습니다.';
@@ -222,28 +241,23 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     try {
       const result = await callCompanyGateway({
         appId: 'nexus-home',
-        operationId: 'company.public_profile_read',
+        operationId: 'company.profile_read',
         sessionToken,
-        payload: { knownRevision: Number(cached?.snapshot?.revision || 0) },
+        payload: {},
       });
-      if (result?.status === 'UNCHANGED' && cached) {
-        setCompanyState('READY', `서버 revision ${cached.snapshot.revision}과 일치합니다.`, cached.snapshot);
-        return;
-      }
-      if (result?.status === 'READY' && validCompanySnapshot(result.snapshot)) {
-        saveCompanySnapshot(result.snapshot);
-        setCompanyState('READY', `서버 revision ${result.snapshot.revision}을 확인했습니다.`, result.snapshot);
-        return;
-      }
-      if (result?.status === 'STALE_SERVER' && cached) {
+      const snapshot = publicCompanyProjection(result?.profile);
+      if (!snapshot) throw new Error('COMPANY_PROFILE_NOT_READY');
+      const cachedRevision = Number(cached?.snapshot?.revision || 0);
+      if (cached && snapshot.revision < cachedRevision) {
         setCompanyState('STALE', '서버 revision이 마지막 정상 Snapshot보다 낮아 기존 값을 보존했습니다.', cached.snapshot);
         return;
       }
-      if (cached) {
-        setCompanyState('STALE', '서버가 정상 회사정보를 반환하지 않아 마지막 Snapshot을 보존했습니다.', cached.snapshot);
-      } else {
-        setCompanyState('ERROR', '서버가 확인 가능한 회사정보를 반환하지 않았습니다.');
+      if (cached && snapshot.revision === cachedRevision) {
+        setCompanyState('READY', `서버 revision ${snapshot.revision}과 일치합니다.`, cached.snapshot);
+        return;
       }
+      saveCompanySnapshot(snapshot);
+      setCompanyState('READY', `서버 revision ${snapshot.revision}을 확인했습니다.`, snapshot);
     } catch {
       if (cached) {
         setCompanyState('STALE', '서버 확인이 지연되어 마지막 정상 Snapshot을 유지합니다.', cached.snapshot);

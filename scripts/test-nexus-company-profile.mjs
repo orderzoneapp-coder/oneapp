@@ -53,8 +53,14 @@ await assert.rejects(
 );
 
 assert.match(homeHtml, /id="companyStatus"[\s\S]*READY|data-status="STALE"/, 'home must expose company status semantics');
-assert.match(homeSource, /company\.public_profile_read/, 'home must use the read-only public projection operation');
-assert.match(homeSource, /knownRevision: Number\(cached\?\.snapshot\?\.revision \|\| 0\)/, 'home must verify the cached revision in background');
+assert.match(homeSource, /appId: 'nexus-home',[\s\S]*operationId: 'company\.profile_read',[\s\S]*payload: \{\}/, 'home must use the active v21 authenticated profile read contract');
+assert.match(homeSource, /const cachedRevision = Number\(cached\?\.snapshot\?\.revision \|\| 0\)/, 'home must compare the cached revision in background');
+assert.match(homeSource, /snapshot\.revision < cachedRevision[\s\S]*setCompanyState\('STALE'/, 'a lower server revision must preserve the last normal Snapshot');
+assert.match(homeSource, /snapshot\.revision === cachedRevision[\s\S]*setCompanyState\('READY'/, 'an equal server revision must become READY without rewriting the cache');
+assert.match(homeSource, /businessAddress: \[cleanText\(profile\.address1\), cleanText\(profile\.address2\)\]\.filter\(Boolean\)\.join\(' '\)/, 'home must project only non-empty address values');
+for (const forbidden of ['homePhone', 'mobile', 'taxInvoiceEmail', "profile.email"]) {
+  assert.doesNotMatch(homeSource.slice(homeSource.indexOf('const publicCompanyProjection'), homeSource.indexOf('const validCompanySnapshot')), new RegExp(forbidden.replace('.', '\\.')), `${forbidden} must not enter the cached projection`);
+}
 assert.match(homeSource, /if \(cached\)[\s\S]*setCompanyState\('STALE'/, 'a server failure must preserve the last normal Snapshot');
 assert.match(homeSource, /companyEditLink\.hidden = !isCompanyAdministrator\(session\)/, 'only a company administrator may see the edit entry');
 assert.doesNotMatch(homeSource, /localStorage/, 'the company Snapshot must not be persisted in localStorage');
@@ -71,4 +77,4 @@ assert.match(companySource, /jointBusinessEnabled[\s\S]*unitTaxationEnabled/, 'n
 assert.doesNotMatch(companySource, /FileReader|base64|birth|생년월일|localStorage/i, 'certificate originals, birth dates, and local browser defaults must not be stored');
 assert.doesNotMatch(transportSource, /window\.fetch\s*=/, 'the company transport must not replace the global fetch runtime');
 
-console.log('NEXUS company profile contracts passed (25 checks).');
+console.log('NEXUS company profile contracts passed (32 checks).');

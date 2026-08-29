@@ -58,7 +58,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별과 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다.
-- NEXUS 홈 회사정보 카드는 탭 Session에 저장한 마지막 정상 공개 Snapshot을 즉시 표시하고 `company.public_profile_read`로 revision을 백그라운드 확인한다. 서버 실패는 `ERROR` 또는 `STALE`이며 `EMPTY`나 0건으로 바꾸지 않는다.
+- NEXUS 홈 회사정보 카드는 탭 Session에 저장한 마지막 정상 공개필드 Snapshot을 즉시 표시하고, 인증 사용자용 활성 계약 `company.profile_read`를 `nexus-home` 앱 컨텍스트로 호출해 revision을 백그라운드 확인한다. 전체 응답에서는 회사명·사업자등록번호·대표자·회사전화·주소1/주소2 결합·홈페이지·revision만 명시 투영하며 자택전화·휴대전화·개인 이메일·세금계산서 이메일과 전체 profile은 캐시하지 않는다. 서버 실패는 `ERROR` 또는 `STALE`이며 `EMPTY`나 0건으로 바꾸지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
 - 기준 main `24429a1cdb53bbe084ef08b6516d012737a01808`에는 운영 중인 NEXUS Gateway·회사정보 Apps Script 서버 소스가 없었다. 클라이언트는 현행 배포 endpoint 계약을 사용하며 이 source/deployment drift를 서버 소스 복구 완료로 간주하지 않는다.
 - 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
@@ -114,7 +114,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
 | NEXUS 홈·공통 UI | 운영 | 기본 로그인·로그아웃과 앱 홈, 마지막 정상 회사정보 Snapshot·백그라운드 revision 확인, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 업무 앱 차단·전역 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
-| NEXUS 회사정보 | 운영 | 홈은 인증 사용자에게 공개 Snapshot을 읽기 전용 표시하고 관리자에게만 수정 진입을 표시. 관리 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정 | 회사 원본과 공개 Snapshot의 독립 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
+| NEXUS 회사정보 | 운영 | 홈은 인증 사용자에게 `company.profile_read` 응답의 공개필드 projection만 읽기 전용 표시하고 관리자에게만 수정 진입을 표시. 관리 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정 | 회사 원본과 공개필드 Snapshot의 독립 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
 | 상품관리 (`Master.html`) | 파일럿·공식 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장·revision·history·Cloud 계약을 사용 | 유일한 공식 상품관리 구현으로 유지 |
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
