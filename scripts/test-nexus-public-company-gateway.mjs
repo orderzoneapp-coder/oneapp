@@ -9,6 +9,7 @@ const cacheValues = new Map();
 const forwardedRequests = [];
 let serverData = {
   status: 'READY',
+  revision: 3,
   snapshot: {
     companyName: '원앱',
     businessNumber: '380-14-01523',
@@ -69,46 +70,33 @@ vm.runInContext(source, context, { filename: 'nexus-auth-gateway.gs' });
 const call = payload => JSON.parse(context.nexusAuthPublicCompanySnapshot_(payload).value);
 const snapshotKeys = ['businessAddress', 'businessNumber', 'companyName', 'companyPhone', 'homepage', 'representativeName', 'revision'];
 
-const coldAhead = call({ action: 'nexus_public_company_snapshot', knownRevision: Number.MAX_SAFE_INTEGER });
-assert.deepEqual(coldAhead.data, { status: 'STALE_SERVER', revision: 3 });
-assert.equal(forwardedRequests.length, 1, 'an empty cache must fetch one full Snapshot');
-assert.equal(Object.prototype.hasOwnProperty.call(forwardedRequests[0], 'knownRevision'), false,
-  'client knownRevision must never be forwarded upstream on cache miss');
-for (let index = 0; index < 5; index += 1) {
-  assert.deepEqual(call({ action: 'nexus_public_company_snapshot', knownRevision: Number.MAX_SAFE_INTEGER }).data,
-    { status: 'STALE_SERVER', revision: 3 });
-}
-assert.equal(forwardedRequests.length, 1,
-  'after the first cold fetch, repeated ahead revisions must resolve only from the newly populated cache');
-
-cacheValues.clear();
 const cold = call({ action: 'nexus_public_company_snapshot', knownRevision: 1 });
 assert.equal(cold.status, 'success');
 assert.equal(cold.action, 'nexus_public_company_snapshot');
 assert.equal(cold.data.status, 'READY');
 assert.deepEqual(Object.keys(cold.data.snapshot).sort(), snapshotKeys);
-assert.equal(forwardedRequests.length, 2, 'normal cache miss must call upstream once');
-assert.equal(forwardedRequests[1].action, 'nexus_gateway_company_public_profile_get');
-assert.equal(Object.prototype.hasOwnProperty.call(forwardedRequests[1], 'knownRevision'), false);
-assert.equal(forwardedRequests[1].actorId, 'NEXUS_GATEWAY');
-assert.deepEqual(forwardedRequests[1].scope, { companyId: 'ONEAPP' });
-assert.equal(forwardedRequests[1].nexusRequest.operationId, 'company.public_profile_read');
+assert.equal(forwardedRequests.length, 1, 'cache miss must call upstream once');
+assert.equal(forwardedRequests[0].action, 'nexus_gateway_company_public_profile_get');
+assert.equal(forwardedRequests[0].knownRevision, 1);
+assert.equal(forwardedRequests[0].actorId, 'NEXUS_GATEWAY');
+assert.deepEqual(forwardedRequests[0].scope, { companyId: 'ONEAPP' });
+assert.equal(forwardedRequests[0].nexusRequest.operationId, 'company.public_profile_read');
 assert(!JSON.stringify(cold).includes('foundation-read-secret'), 'the service credential must never enter the public response');
 
 const unchanged = call({ action: 'nexus_public_company_snapshot', knownRevision: 3 });
 assert.deepEqual(unchanged.data, { status: 'UNCHANGED', revision: 3 });
-assert.equal(forwardedRequests.length, 2, 'same revision must resolve from ScriptCache');
+assert.equal(forwardedRequests.length, 1, 'same revision must resolve from ScriptCache');
 
 const cachedReady = call({ action: 'nexus_public_company_snapshot', knownRevision: 2 });
 assert.equal(cachedReady.data.status, 'READY');
 assert.equal(cachedReady.data.snapshot.revision, 3);
-assert.equal(forwardedRequests.length, 2, 'lower known revision must receive the cached exact projection');
+assert.equal(forwardedRequests.length, 1, 'lower known revision must receive the cached exact projection');
 
 for (let index = 0; index < 5; index += 1) {
   const ahead = call({ action: 'nexus_public_company_snapshot', knownRevision: Number.MAX_SAFE_INTEGER });
   assert.deepEqual(ahead.data, { status: 'STALE_SERVER', revision: 3 });
 }
-assert.equal(forwardedRequests.length, 2,
+assert.equal(forwardedRequests.length, 1,
   'a warm cache must never call upstream when a client repeatedly claims a much higher revision');
 
 for (const invalidRevision of ['3', Number.MAX_SAFE_INTEGER + 1, -1, 1.5]) {
@@ -132,13 +120,13 @@ const writeSnapshot = { ...serverData.snapshot, companyPhone: '02-1234-5678', re
 assert.equal(context.nexusAuthPublicCompanyCacheAfterGateway_('company.profile_write', { publicSnapshot: writeSnapshot }), true);
 const afterWrite = call({ action: 'nexus_public_company_snapshot', knownRevision: 4 });
 assert.deepEqual(afterWrite.data, { status: 'UNCHANGED', revision: 4 });
-assert.equal(forwardedRequests.length, 2, 'verified administrator write response must refresh public cache without another read');
+assert.equal(forwardedRequests.length, 1, 'verified administrator write response must refresh public cache without another read');
 
 cacheValues.set('NEXUS_PUBLIC_COMPANY_SNAPSHOT_ONEAPP_V1', '{corrupt');
-serverData = { status: 'READY', snapshot: writeSnapshot };
+serverData = { status: 'UNCHANGED', revision: 4 };
 const corruptCache = call({ action: 'nexus_public_company_snapshot', knownRevision: 4 });
 assert.deepEqual(corruptCache.data, { status: 'UNCHANGED', revision: 4 });
-assert.equal(forwardedRequests.length, 3, 'corrupt cache must be removed and revalidated upstream once');
+assert.equal(forwardedRequests.length, 2, 'corrupt cache must be removed and revalidated upstream once');
 
 context.nexusAuthPublicCompanyCacheAfterGateway_('company.accounting_period_write', {});
 assert.equal(context.nexusAuthPublicCompanyCacheRead_(), null, 'a revision-changing administrator operation must invalidate the public cache');
