@@ -51,6 +51,21 @@ for (const [file, appId, base, title] of pages) {
   assert.ok(html.indexOf(init) < html.indexOf('<body'), `${file}: theme must initialize before body`);
 }
 
+for (const [file, appId] of [
+  ['Master.html', 'master-lookup'],
+  ['MerchOps.html', 'merchops'],
+  ['DataOps.html', 'dataops'],
+]) {
+  const html = await readFile(file, 'utf8');
+  assert.match(html, /nexus-app-header[^"`]*[\s\S]*?w-full|w-full[^"`]*[\s\S]*?nexus-app-header/, `${file}: the app header must use the full available width`);
+  assert.match(html, new RegExp(`data-nexus-app-header["']?\\s*[:=]\\s*["']${appId}["']`), `${file}: the canonical app-header marker is required`);
+  assert.match(html, /min-h-\[56px\]/, `${file}: the Master-based 56px app-header density is required`);
+}
+
+const merchOpsPage = await readFile('MerchOps.html', 'utf8');
+assert.match(merchOpsPage, /data-nexus-app-header["']?\s*:\s*["']merchops["'][\s\S]*?max-w-\[1500px\]\s+mx-auto/, 'MerchOps: focused sections may remain width-constrained below the full-width app header');
+assert.doesNotMatch(merchOpsPage, /data-nexus-app-header["']?\s*:\s*["']merchops["'][^\n]*max-w-\[1500px\]/, 'MerchOps: the app header itself must not inherit the worktable max width');
+
 const initSource = await readFile('nexus/common/nexus-ui-theme-init.js', 'utf8');
 const uiSource = await readFile('nexus/common/nexus-ui.js', 'utf8');
 const uiCss = await readFile('nexus/common/nexus-ui.css', 'utf8');
@@ -95,6 +110,7 @@ assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
+assert.match(uiCss, /\.nexus-ui-header\s*\{[^}]*width:\s*100%/s, 'the global header must span the full viewport width');
 assert.match(uiCss, /grid-template-columns:\s*270px\s+minmax\(0,\s*1fr\)\s+270px/, 'desktop header must keep equal fixed side rails around the centered tabs');
 assert.match(uiCss, /\.nexus-ui-brand__current\s*\{[^}]*flex:\s*0\s+0\s+110px[^}]*width:\s*110px[^}]*max-width:\s*110px/s, 'current app/version slot must not move with text length');
 assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
