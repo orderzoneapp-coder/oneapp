@@ -1,71 +1,66 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const html = readFileSync(resolve(root, 'ItemMaster.html'), 'utf8');
-const destructiveSeedPage = resolve(root, 'scripts', 'fixtures', 'itemmaster-isolated-seed.html');
+const master = readFileSync(resolve(root, 'Master.html'), 'utf8');
+const compatibility = readFileSync(resolve(root, 'ItemMaster.html'), 'utf8');
+const itemManager = readFileSync(resolve(root, 'Item_manager.html'), 'utf8');
+const manifest = JSON.parse(readFileSync(resolve(root, 'app-manifest.json'), 'utf8'));
+const nexusHome = readFileSync(resolve(root, 'nexus', 'nexus.js'), 'utf8');
+const nexusUi = readFileSync(resolve(root, 'nexus', 'common', 'nexus-ui.js'), 'utf8');
+const dashboard = readFileSync(resolve(root, 'dashboard.html'), 'utf8');
 
-assert.equal(
-  existsSync(destructiveSeedPage),
-  false,
-  'destructive ItemMaster seed page must never be published with the application'
-);
-
-const required = [
-  ['ItemMaster title', '<title>ONEAPP ItemMaster · 독립 상품관리</title>'],
-  ['isolated database', "DB_NAME: 'oneapp-itemmaster-isolated-v1'"],
-  ['product store', "MASTER_STORE: 'products'"],
-  ['snapshot key', "SNAPSHOT: 'itemMasterSnapshot_v1'"],
-  ['revision key', "REVISION: 'itemMasterRevision_v1'"],
-  ['Excel parser', 'parseMasterAddUpdateWorkbook'],
-  ['Excel analysis', 'analyzeUploadRows'],
-  ['approved execution plan', 'buildExecutionPlan'],
-  ['isolated save', 'saveMasterLocal(plan.nextMaster, addUpdateAnalysis.baseRevision)'],
-  ['revision conflict protection', "error?.code === 'ITEMMASTER_REVISION_CONFLICT'"],
-  ['Excel upload input', 'accept=".xlsx,.xls"'],
-  ['standalone header', 'ITEMMASTER'],
-  ['standalone label', '독립 상품관리'],
-  ['initial Excel import builder', 'buildInitialMasterImport'],
-  ['initial import confirmation', 'ItemMaster 최초 Excel 등록'],
-  ['initial import save', 'saveMasterLocal(initialImportDraft.masterMap, initialImportDraft.baseRevision)'],
-  ['single product editor', 'ProductEditorModal'],
-  ['single product validation', 'validateSingleProductInput(form)'],
-  ['single product save', 'handleSaveProduct'],
-  ['single product edit action', 'setEditingProduct(row)']
-];
-
-for (const [label, value] of required) {
-  assert.ok(html.includes(value), `${label} contract is missing`);
+for (const [label, value] of [
+  ['official app id', 'data-nexus-app-id="master-lookup"'],
+  ['official operating DB', "indexedDB.open('MerchOpsDB'"],
+  ['shared storage API', 'commitInitialRegistration'],
+  ['initial Excel builder', 'buildInitialMasterImport'],
+  ['initial confirmation', '상품관리 최초 Excel 등록'],
+  ['single-product editor', 'ProductEditorModal'],
+  ['single-product commit', 'commitSingleProductChange'],
+  ['single-product edit action', 'setEditingProduct(row)'],
+  ['empty-state guidance', '상품 DB가 비어 있습니다. Excel 최초 등록 또는 상품 단건 등록으로 시작하세요'],
+  ['legacy database existence check', 'indexedDB.databases'],
+  ['legacy backup', 'ONEAPP_ITEMMASTER_LEGACY_BACKUP_V1'],
+  ['legacy review', "allowEmptyMaster: true"],
+  ['legacy non-destructive notice', '자동 반영·덮어쓰기·삭제하지 않습니다.']
+]) {
+  assert.ok(master.includes(value), `${label} contract is missing from Master.html`);
 }
 
-const forbidden = [
-  ['operating database', /indexedDB\.open\(['"]MerchOpsDB/],
-  ['operating snapshot key', /merchMaster_v870/],
-  ['operating storage API', /ONEAPP\?*\.?STORAGE|ONEAPP\.STORAGE/],
-  ['operating history API', /ONEAPP\?*\.?HISTORY|ONEAPP\.HISTORY/],
-  ['operating localStorage', /\blocalStorage\s*\./],
-  ['network request', /\bfetch\s*\(/],
-  ['core engine', /coreEngine\.js/],
-  ['common runtime', /nexus\/common\/nexus-ui\.js/],
-  ['settings iframe', /IframeSettingsModal|settings\.html\?mode=iframe/],
-  ['old app route', /Dashboard\.html|Item_manager\.html|Pipeline\.html|Parser\.html|partner_db\.html|partners\.html/],
-  ['Pipeline feature', /\bPipeline\b/],
-  ['BOM feature', /\bBOM\b/],
-  ['catalog feature', /카탈로그|\bcatalog\b/i],
-  ['cloud action', /handlePush|handlePull|pullMerchOpsCloudMaster|pushMerchOpsCloudMaster/],
-  ['blocked initial import copy', /최초 등록은 1차 미구현|최초 등록 · 1차 미구현/],
-  ['disabled empty Excel upload', /disabled=\{isProcessing \|\| Object\.keys\(masterProducts\)\.length === 0\}/]
-];
+assert.doesNotMatch(master, /indexedDB\.deleteDatabase\(['"]oneapp-itemmaster-isolated-v1/);
 
-for (const [label, pattern] of forbidden) {
-  assert.equal(pattern.test(html), false, `${label} must not be present`);
+for (const [label, value] of [
+  ['compatibility title', '<title>상품관리 주소 안내 - NEXUS</title>'],
+  ['deprecation notice', '상품관리 주소가 하나로 통합되었습니다.'],
+  ['official link', '<a href="Master.html">공식 상품관리로 이동</a>'],
+  ['legacy preservation notice', '자동으로 삭제하거나 덮어쓰지 않습니다.']
+]) {
+  assert.ok(compatibility.includes(value), `${label} is missing from ItemMaster.html`);
 }
 
-assert.match(
-  html,
-  /db\.transaction\(\[STORAGE_KEYS\.MASTER_STORE, STORAGE_KEYS\.STATE_STORE\], 'readwrite'\)/,
-  'products, snapshot and revision must share one write transaction'
-);
+for (const [label, pattern] of [
+  ['script execution', /<script\b/i],
+  ['IndexedDB access', /\bindexedDB\b/],
+  ['isolated database runtime', /oneapp-itemmaster-isolated-v1/],
+  ['React application', /\bReact(?:DOM)?\b/],
+  ['Excel parser', /\bXLSX\b|masterAddUpdate\.js/],
+  ['write controls', /상품 단건 등록|수정 저장|추가·갱신 Excel/]
+]) {
+  assert.equal(pattern.test(compatibility), false, `${label} must not remain in the compatibility page`);
+}
 
-console.log('PASS ItemMaster standalone source contracts');
+const official = manifest.applications.find(application => application.id === 'master-lookup');
+assert.equal(official?.path, 'Master.html');
+assert.equal(manifest.applications.some(application => application.path === 'ItemMaster.html'), false);
+assert.equal(manifest.applications.find(application => application.id === 'item-manager')?.path, 'Item_manager.html');
+assert.match(nexusHome, /path:\s*['"]\/Master\.html['"]/);
+assert.match(nexusUi, /id:\s*['"]master-lookup['"][\s\S]*?path:\s*['"]Master\.html['"]/);
+assert.match(dashboard, /label:\s*['"]상품관리['"][\s\S]*?path:\s*['"]Master\.html['"]/);
+
+for (const feature of ['카탈로그', '행사테마', 'BOM']) {
+  assert.ok(itemManager.includes(feature), `Item_manager ${feature} feature must remain`);
+}
+
+console.log('PASS Master consolidation and ItemMaster compatibility source contracts');

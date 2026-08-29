@@ -679,7 +679,11 @@ assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
 assert.match(masterHtml, /api\.parseWorkbook\(arrayBuffer,\s*window\.XLSX\)/);
 assert.doesNotMatch(masterHtml, /const newMaster = \{\};[\s\S]{0,1500}saveMasterLocal\(newMaster\)/);
-assert.match(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
+assert.match(masterHtml, /buildInitialMasterImport/);
+assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitInitialRegistration/);
+assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitSingleProductChange/);
+assert.match(masterHtml, /상품 DB가 비어 있습니다[\s\S]*Excel 최초 등록 또는 상품 단건 등록/);
+assert.doesNotMatch(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
 assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);

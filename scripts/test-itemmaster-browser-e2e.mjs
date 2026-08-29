@@ -7,10 +7,11 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const browserProfile = mkdtempSync(join(tmpdir(), 'oneapp-itemmaster-e2e-'));
-const testCode = 'E2E-ITEM-001';
-const originalName = 'ItemMaster 저장 검증 상품';
-const editedName = 'ItemMaster 수정 검증 상품';
+const browserProfile = mkdtempSync(join(tmpdir(), 'oneapp-master-consolidation-e2e-'));
+const initialCode = 'E2E-INITIAL-001';
+const testCode = 'E2E-SINGLE-001';
+const originalName = '상품관리 저장 검증 상품';
+const editedName = '상품관리 수정 검증 상품';
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -24,7 +25,7 @@ const mimeTypes = {
 const server = createServer((request, response) => {
   try {
     const requestPath = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
-    const relativePath = requestPath === '/' ? 'ItemMaster.html' : requestPath.replace(/^\/+/, '');
+    const relativePath = requestPath === '/' ? 'Master.html' : requestPath.replace(/^\/+/, '');
     const filePath = normalize(resolve(root, relativePath));
     if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
       response.writeHead(403).end('Forbidden');
@@ -224,19 +225,67 @@ const clickModalButton = (client, headingText, buttonText) => evaluate(client, `
 })()`);
 
 const readStoredProduct = (client, code) => evaluate(client, `new Promise((resolve, reject) => {
-  const request = indexedDB.open('oneapp-itemmaster-isolated-v1', 1);
+  const request = indexedDB.open('MerchOpsDB', 2);
   request.onerror = () => reject(request.error);
   request.onsuccess = () => {
     const db = request.result;
-    const tx = db.transaction(['products', 'store'], 'readonly');
-    const productRequest = tx.objectStore('products').get(${JSON.stringify(code)});
-    const revisionRequest = tx.objectStore('store').get('itemMasterRevision_v1');
+    const tx = db.transaction(['master_products', 'store'], 'readonly');
+    const productRequest = tx.objectStore('master_products').get(${JSON.stringify(code)});
+    const revisionRequest = tx.objectStore('store').get('merchMaster_revision_v870');
     tx.onerror = () => reject(tx.error);
     tx.oncomplete = () => {
-      const result = { product: productRequest.result || null, revision: revisionRequest.result };
+      let history = [];
+      try { history = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]'); } catch (error) {}
+      const result = { product: productRequest.result || null, revision: revisionRequest.result, history };
       db.close();
       resolve(result);
     };
+  };
+})`);
+
+const uploadWorkbook = (client, rows, fileName) => evaluate(client, `(() => {
+  const rows = ${JSON.stringify(rows)};
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), '상품');
+  const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const file = new File([bytes], ${JSON.stringify(fileName)}, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const input = Array.from(document.querySelectorAll('input[type="file"]')).find(candidate => candidate.accept.includes('.xlsx'));
+  if (!input) throw new Error('Master Excel input not found');
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()`);
+
+const seedLegacyProducts = (client, products, revision = 7) => evaluate(client, `new Promise((resolve, reject) => {
+  const request = indexedDB.open('oneapp-itemmaster-isolated-v1', 1);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    if (!db.objectStoreNames.contains('products')) db.createObjectStore('products', { keyPath: '코드' });
+    if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+  };
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    const db = request.result;
+    const tx = db.transaction(['products', 'store'], 'readwrite');
+    const store = tx.objectStore('products');
+    ${JSON.stringify(products)}.forEach(product => store.put(product));
+    tx.objectStore('store').put(${JSON.stringify(revision)}, 'itemMasterRevision_v1');
+    tx.oncomplete = () => { db.close(); resolve(true); };
+    tx.onerror = () => reject(tx.error);
+  };
+})`);
+
+const readLegacyProducts = client => evaluate(client, `new Promise((resolve, reject) => {
+  const request = indexedDB.open('oneapp-itemmaster-isolated-v1');
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    const db = request.result;
+    const tx = db.transaction('products', 'readonly');
+    const values = tx.objectStore('products').getAll();
+    tx.oncomplete = () => { db.close(); resolve(values.result || []); };
+    tx.onerror = () => reject(tx.error);
   };
 })`);
 
@@ -278,16 +327,39 @@ try {
   await client.send('Runtime.enable');
 
   let pageLoaded = client.once('Page.loadEventFired');
-  await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/ItemMaster.html` });
+  await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/Master.html` });
   await pageLoaded;
   await waitForExpression(
     client,
-    `document.body?.innerText.includes('Excel 최초 등록 또는 단건 등록으로 시작하세요')`,
-    'empty ItemMaster application'
+    `document.body?.innerText.includes('Excel 최초 등록 또는 상품 단건 등록으로 시작하세요')`,
+    'empty official Master application'
   );
+  assert.equal(await evaluate(client, `document.querySelector('[data-legacy-itemmaster-notice]') === null`), true);
+
+  await uploadWorkbook(client, [
+    ['코드', '품목명', '규격', '단위'],
+    ['E2E-DUP', '중복 1', '1EA', 'EA'],
+    ['E2E-DUP', '중복 2', '1EA', 'EA']
+  ], 'invalid-duplicate.xlsx');
+  await waitForExpression(client, `document.body?.innerText.includes('최초 등록 검증 실패')`, 'initial duplicate-code validation');
+  assert.equal((await readStoredProduct(client, 'E2E-DUP')).product, null);
+
+  await uploadWorkbook(client, [
+    ['코드', '품목명', '규격', '단위', '1코드', '1그룹명', '2코드', '2그룹명', '3코드', '3그룹명'],
+    [initialCode, '최초 Excel 상품', '1EA', 'EA', 'E2E-C1', 'E2E 대분류', 'E2E-C2', 'E2E 중분류', 'E2E-C3', 'E2E 소분류']
+  ], 'initial-master.xlsx');
+  await waitForExpression(client, `document.body?.innerText.includes('상품관리 최초 Excel 등록')`, 'initial Excel confirmation');
+  await clickModalButton(client, '상품관리 최초 Excel 등록', '1건 최초 저장');
+  const initial = await waitFor(async () => {
+    const state = await readStoredProduct(client, initialCode);
+    return state.product?.품목명 === '최초 Excel 상품' && state.revision ? state : null;
+  }, 'initial product in official IndexedDB');
+  assert.ok(initial.history.some(log => log.recordType === 'master_initial_registration_job'));
 
   await clickButton(client, '상품 등록');
   await waitForExpression(client, `document.body?.innerText.includes('상품 단건 등록')`, 'product registration modal');
+  await clickModalButton(client, '상품 단건 등록', '상품 등록');
+  await waitForExpression(client, `document.body?.innerText.includes('필수값을 입력하세요')`, 'single-product required validation');
   await setLabeledInput(client, '상품코드', testCode);
   await setLabeledInput(client, '품목명', originalName);
   await setLabeledInput(client, '규격', '1EA');
@@ -302,10 +374,20 @@ try {
 
   const saved = await waitFor(async () => {
     const state = await readStoredProduct(client, testCode);
-    return state.product?.품목명 === originalName && state.revision === 1 ? state : null;
-  }, 'registered product in IndexedDB');
+    return state.product?.품목명 === originalName && state.revision !== initial.revision ? state : null;
+  }, 'registered product in official IndexedDB');
   assert.equal(saved.product.코드, testCode);
-  assert.equal(saved.revision, 1);
+  assert.ok(saved.history.some(log => log.code === testCode && log.actionType === 'master_create'));
+
+  await clickButton(client, '상품 등록');
+  await setLabeledInput(client, '상품코드', testCode);
+  await setLabeledInput(client, '품목명', '중복 차단 상품');
+  await setLabeledInput(client, '규격', '1EA');
+  await setLabeledInput(client, '단위', 'EA');
+  await clickModalButton(client, '상품 단건 등록', '상품 등록');
+  await waitForExpression(client, `document.body?.innerText.includes('이미 등록된 상품코드입니다')`, 'single-product duplicate validation');
+  assert.equal((await readStoredProduct(client, testCode)).revision, saved.revision);
+  await clickModalButton(client, '상품 단건 등록', '취소');
 
   await waitForExpression(client, `document.body?.innerText.includes(${JSON.stringify(testCode)})`, 'registered product row');
   await evaluate(client, `(() => {
@@ -315,15 +397,28 @@ try {
     button.click();
     return true;
   })()`);
-  await waitForExpression(client, `document.body?.innerText.includes('상품 수정')`, 'product edit modal');
   await setLabeledInput(client, '품목명', editedName);
   await clickModalButton(client, '상품 수정', '수정 저장');
-
   const edited = await waitFor(async () => {
     const state = await readStoredProduct(client, testCode);
-    return state.product?.품목명 === editedName && state.revision === 2 ? state : null;
-  }, 'edited product in IndexedDB');
-  assert.equal(edited.revision, 2);
+    return state.product?.품목명 === editedName && state.revision !== saved.revision ? state : null;
+  }, 'edited product in official IndexedDB');
+  assert.ok(edited.history.some(log => log.code === testCode && log.field === '품목명' && log.newVal === editedName));
+
+  await evaluate(client, `(() => {
+    const row = Array.from(document.querySelectorAll('tr')).find(row => row.textContent.includes(${JSON.stringify(testCode)}));
+    Array.from(row?.querySelectorAll('button') || []).find(button => button.textContent.includes('수정')).click();
+    return true;
+  })()`);
+  await setLabeledInput(client, '품목명', '충돌로 저장되지 않을 이름');
+  await evaluate(client, `(async () => {
+    const state = await ONEAPP.STORAGE.readMasterSnapshotState();
+    return ONEAPP.STORAGE.commitMasterStateOrThrow(state.masterMap, { expectedRevision: state.revision });
+  })()`);
+  await clickModalButton(client, '상품 수정', '수정 저장');
+  await waitForExpression(client, `document.body?.innerText.includes('입력 중 master가 변경되어 저장을 중단했습니다')`, 'single-product revision conflict');
+  assert.equal((await readStoredProduct(client, testCode)).product?.품목명, editedName);
+  await clickModalButton(client, '상품 수정', '취소');
 
   pageLoaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
@@ -331,9 +426,71 @@ try {
   await waitForExpression(client, `document.body?.innerText.includes(${JSON.stringify(editedName)})`, 'edited product after reload');
   const reloaded = await readStoredProduct(client, testCode);
   assert.equal(reloaded.product?.품목명, editedName);
-  assert.equal(reloaded.revision, 2);
 
-  console.log('PASS ItemMaster browser registration, edit, and reload persistence');
+  await seedLegacyProducts(client, [
+    {
+      코드: 'LEGACY-NEW-001', 품목코드: 'LEGACY-NEW-001', 품목명: '레거시 신규 상품', 규격: '1EA', 단위: 'EA',
+      '1코드': 'LEGACY-C1', '1그룹명': '레거시', '2코드': 'LEGACY-C2', '2그룹명': '레거시', '3코드': 'LEGACY-C3', '3그룹명': '레거시'
+    },
+    { ...initial.product, 품목명: '충돌 레거시 이름' },
+    reloaded.product
+  ]);
+  pageLoaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await pageLoaded;
+  await waitForExpression(client, `document.body?.innerText.includes('폐기된 ItemMaster 격리 DB 데이터 3건')`, 'legacy data notice');
+  assert.equal(await evaluate(client, `document.body.innerText.includes('신규 1건 · 동일 1건 · 충돌 1건')`), true);
+
+  await evaluate(client, `(() => {
+    window.__legacyDownload = null;
+    HTMLAnchorElement.prototype.click = function () { window.__legacyDownload = { download: this.download, href: this.href }; };
+    return true;
+  })()`);
+  await clickButton(client, 'JSON 백업');
+  assert.match((await evaluate(client, `window.__legacyDownload?.download || ''`)), /^ItemMaster-legacy-backup-/);
+
+  await clickButton(client, '추가·갱신 검토');
+  await waitForExpression(client, `document.body?.innerText.includes('추가·갱신 확인요청')`, 'legacy review confirmation');
+  assert.equal((await readStoredProduct(client, initialCode)).product?.품목명, '최초 Excel 상품');
+  await clickModalButton(client, '추가·갱신 확인요청', '이슈 확인 화면으로 이동');
+  await waitForExpression(client, `document.body?.innerText.includes('LEGACY-NEW-001')`, 'legacy review candidates');
+  await evaluate(client, `(() => {
+    const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes('LEGACY-NEW-001'));
+    const approve = Array.from(section?.querySelectorAll('button') || []).find(button => button.textContent.includes('상품 전체 승인'));
+    if (!approve) throw new Error('Legacy approve button not found');
+    approve.click();
+    return true;
+  })()`);
+  await wait(100);
+  await evaluate(client, `(() => {
+    const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes('LEGACY-NEW-001'));
+    const checkbox = section?.querySelector('input[type="checkbox"]');
+    if (!checkbox || checkbox.disabled) throw new Error('Legacy admin-complete checkbox unavailable');
+    checkbox.click();
+    return true;
+  })()`);
+  await clickButton(client, '승인 범위 저장');
+  const imported = await waitFor(async () => {
+    const state = await readStoredProduct(client, 'LEGACY-NEW-001');
+    return state.product?.품목명 === '레거시 신규 상품' ? state : null;
+  }, 'selectively imported legacy product');
+  assert.equal((await readStoredProduct(client, initialCode)).product?.품목명, '최초 Excel 상품');
+  assert.equal((await readLegacyProducts(client)).length, 3);
+  assert.ok(imported.history.some(log => log.code === 'LEGACY-NEW-001'));
+
+  pageLoaded = client.once('Page.loadEventFired');
+  await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/ItemMaster.html` });
+  await pageLoaded;
+  assert.equal(await evaluate(client, `document.title`), '상품관리 주소 안내 - NEXUS');
+  assert.equal(await evaluate(client, `document.querySelectorAll('script').length`), 0);
+  assert.equal(await evaluate(client, `document.querySelector('a[href="Master.html"]')?.textContent.trim()`), '공식 상품관리로 이동');
+
+  pageLoaded = client.once('Page.loadEventFired');
+  await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/Item_manager.html` });
+  await pageLoaded;
+  assert.equal(await evaluate(client, `document.title.length > 0 && document.body.innerText.length > 0`), true);
+
+  console.log('PASS Master initial registration, single edit persistence, legacy safety, and ItemMaster compatibility');
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) {
