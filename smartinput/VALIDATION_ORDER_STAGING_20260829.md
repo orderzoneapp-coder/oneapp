@@ -30,7 +30,7 @@
 | Same business key + same hash | idempotent success | pass |
 | Same business key + changed hash | conflict, no new order | `ORDER_BUSINESS_KEY_CONFLICT` |
 
-Normalized source SHA-256 for the acceptance run was `914e98d79a689ba9936e97ae983d4331f1c1a4eff2d838a75dcc7e82a11689bd`.
+Normalized source SHA-256 for the acceptance run was `ef0357a72bedc62178e172d0f4f80d6a6cfb88ec47e12d5a03346a4e2b795083`. The normalized structure includes every source-column label, order, and target mapping; renaming an unmapped header changes the hash.
 
 ## Workflow and failure isolation
 
@@ -38,7 +38,7 @@ Normalized source SHA-256 for the acceptance run was `914e98d79a689ba9936e97ae98
 - New-template analysis installs a provisional 14-column model immediately; template save persists all 14 labels, source keys, source positions, and optional standard-field mappings.
 - Existing-template flow restores the same 14-column model immediately and uses it without saving another template revision.
 - An unrelated manual work row remains recoverable under the dynamic column model; the source staging does not overwrite it.
-- Each ORDER Q order item keeps a reversible 14-column SmartInput source envelope in the writer-supported `rawText` field. No ORDER Q-owned schema or database version changed.
+- Each ORDER Q order item keeps its actual tab-separated ERP data row in `rawText`; the order-level `orderMessage` keeps the complete imported source including headers. No JSON envelope, ORDER Q-owned schema, or database version changed.
 - A two-customer browser scenario forced one group to fail. The successful group was removed, only the failed customer's row remained, and retry wrote only that failed group.
 - An unrelated work row present before the 93-row staging remained after all 18 staged groups succeeded.
 - Optional reference-read failures did not block file parsing, table editing, template save, local ORDER Q writes, or either ORDER Q reader.

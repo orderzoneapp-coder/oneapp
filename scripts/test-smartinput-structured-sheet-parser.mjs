@@ -86,6 +86,24 @@ assert.equal(parsedOrder.rows[0].itemCode, '105032110');
 assert.equal(parsedOrder.rows[0].memo, '오전 배송');
 assert.equal(parsedOrder.rows[1].unitPrice, 0, '숫자 0은 공란으로 바꾸면 안 된다.');
 
+const duplicateTargetMatrix = [
+  ['상품코드', '품목코드', '품목코드'],
+  ['ALIAS-CODE', 'CODE-1', 'CODE-2']
+];
+const parsedDuplicateTargets = parseStructuredSheet(duplicateTargetMatrix, {
+  fieldDefinitions: Array.from(contract.PRODUCT_FIELD_DEFINITIONS),
+  numberParser: contract.numberOrNull
+});
+assert.equal(parsedDuplicateTargets.sourceColumns.length, 3);
+assert.equal(new Set(parsedDuplicateTargets.sourceColumns.map(column => column.columnId)).size, 3,
+  '동일 targetFieldId 또는 중복 외부 헤더에서도 columnId는 각 원본 열마다 고유해야 한다.');
+assert.equal(new Set(parsedDuplicateTargets.sourceColumns.map(column => column.sourceValueKey)).size, 3);
+assert.ok(parsedDuplicateTargets.sourceColumns.every(column => column.columnId === column.sourceValueKey));
+assert.ok(parsedDuplicateTargets.sourceColumns.every(column => column.targetFieldId === 'itemCode'),
+  '고유 화면 열 ID와 표준 target mapping은 독립적으로 유지해야 한다.');
+assert.deepEqual(parsedDuplicateTargets.sourceColumns.map(column => parsedDuplicateTargets.rows[0].sourceValues[column.sourceValueKey]),
+  duplicateTargetMatrix[1]);
+
 const pricePreservationMatrix = [
   ['품목코드', '품목명', '단가'],
   ['BLANK', '공백 단가', ''],

@@ -501,7 +501,7 @@ try {
         domHeaders:[...document.querySelectorAll('#workTableHeadRow th')].slice(1,-1).map(cell=>cell.textContent.trim()),
         domFirstSourceValues:[...stagedDomRow.querySelectorAll('input[data-field]')].map(input=>input.value),
         expectedFirstSourceValues:columns.map(column=>rows[0].sourceValues[column.sourceValueKey]??rows[0][column.targetFieldId]??''),
-        provisionalColumns:columns.map(column=>({label:column.label,targetFieldId:column.targetFieldId,sourceValueKey:column.sourceValueKey})),
+        provisionalColumns:columns.map(column=>({columnId:column.columnId,label:column.label,targetFieldId:column.targetFieldId,sourceValueKey:column.sourceValueKey})),
         existingRowPreserved:columns.map((column,index)=>({label:column.label,value:existingDomRow.querySelectorAll('input[data-field]')[index]?.value||''})).filter(item=>item.value)
       };
     })()`);
@@ -523,6 +523,9 @@ try {
     assert.equal(stagedAcceptance.domFirstSourceValues.length, 14);
     assert.equal(stagedAcceptance.provisionalColumns.length, 14);
     assert.ok(stagedAcceptance.provisionalColumns.every(column => column.sourceValueKey), 'all original columns require stable source value keys');
+    assert.equal(new Set(stagedAcceptance.provisionalColumns.map(column => column.columnId)).size, 14);
+    assert.ok(stagedAcceptance.provisionalColumns.every(column => column.columnId === column.sourceValueKey),
+      'dynamic column IDs must be unique source keys, independent of target mappings');
     assert.deepEqual(stagedAcceptance.existingRowPreserved, [{ label: '품목명', value: '기존 보존 행' }, { label: '수량', value: '1' }]);
     const assigneeColumnId = stagedAcceptance.provisionalColumns.find(column => column.label === '담당').sourceValueKey;
     await input(client, `#workTableBody tr[data-row-id] input[data-field="${assigneeColumnId}"]`, '직접 담당');
@@ -554,18 +557,20 @@ try {
       const snapshot=await operations.getOperationsSnapshot();
       const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
       const template=window.__SMARTINPUT_DEBUG__.getState().templates.find(item=>item.templateId===mode.selectedTemplateId);
-      const detail=await intake.getOrder(orders[0].orderId);
-      const rawText=detail.items[0]?.rawText||'';
-      const envelope=rawText.startsWith('SMART_INPUT_SOURCE_ROW_V1\t')?JSON.parse(rawText.split('\t',2)[1]):null;
-      return {orders:orders.length,operations:snapshot.bundles.length,groupResults:mode.groupDeliveryResults.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,remainingRows:mode.rows.length,templateSave:mode.staging.templateSave.status,templateId:mode.selectedTemplateId,templateUpdatedAt:template.updatedAt,templateHeaders:template.columns.map(column=>column.label),templateColumns:template.columns.length,sourceEnvelopeColumns:envelope?.columns?.length||0,sourceEnvelopeValues:Object.keys(envelope?.values||{}).length};
+      const details=await Promise.all(orders.map(order=>intake.getOrder(order.orderId)));
+      const expectedRaw=${JSON.stringify(stagedAcceptance.expectedFirstSourceValues.join('\t'))};
+      const expectedHeader=${JSON.stringify(acceptanceHeaders.join('\t'))};
+      const sourceDetail=details.find(detail=>detail.items.some(item=>item.rawText===expectedRaw));
+      return {orders:orders.length,operations:snapshot.bundles.length,groupResults:mode.groupDeliveryResults.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,remainingRows:mode.rows.length,templateSave:mode.staging.templateSave.status,templateId:mode.selectedTemplateId,templateUpdatedAt:template.updatedAt,templateHeaders:template.columns.map(column=>column.label),templateColumns:template.columns.length,sourceRawExact:Boolean(sourceDetail),orderMessagePreservesSource:Boolean(sourceDetail?.order?.orderMessage?.includes(expectedHeader)&&sourceDetail.order.orderMessage.includes(expectedRaw)),rawEnvelopeCount:details.flatMap(detail=>detail.items).filter(item=>item.rawText.startsWith('SMART_INPUT_SOURCE_ROW_V1\t')).length};
     })()`);
     assert.deepEqual({ orders: consumerAcceptance.orders, operations: consumerAcceptance.operations, groupResults: consumerAcceptance.groupResults, success: consumerAcceptance.success, remainingRows: consumerAcceptance.remainingRows, templateSave: consumerAcceptance.templateSave },
       { orders: 18, operations: 18, groupResults: 18, success: 18, remainingRows: 1, templateSave: 'SAVED' },
       'continuous creation must preserve prior work and expose 18 orders through both ORDER Q readers');
     assert.deepEqual(consumerAcceptance.templateHeaders, acceptanceHeaders);
     assert.equal(consumerAcceptance.templateColumns, 14);
-    assert.equal(consumerAcceptance.sourceEnvelopeColumns, 14);
-    assert.equal(consumerAcceptance.sourceEnvelopeValues, 14, 'ORDER Q rawText metadata envelope must preserve all source values');
+    assert.equal(consumerAcceptance.sourceRawExact, true, 'ORDER Q item.rawText must retain the exact ERP source row');
+    assert.equal(consumerAcceptance.orderMessagePreservesSource, true, 'ORDER Q orderMessage must retain the full source header and data row');
+    assert.equal(consumerAcceptance.rawEnvelopeCount, 0, 'ORDER Q item.rawText must never contain a SmartInput JSON envelope');
     await click(client, '#existingTemplateModeButton');
     await evaluate(client, `(() => { const select=document.querySelector('#existingTemplateSelect');select.value=${JSON.stringify(consumerAcceptance.templateId)};select.dispatchEvent(new Event('change',{bubbles:true}));return select.value; })()`);
     await wait(250);

@@ -61,6 +61,11 @@ assert.equal(parsed.mappings.find(mapping => mapping.sourceHeader === '규격')?
 
 const sourceHash = await normalizedSourceHash(parsed, { mode: 'order', cryptoImpl: webcrypto });
 assert.match(sourceHash, /^[a-f0-9]{64}$/);
+const renamedHeaderMatrix = matrix.map(row => [...row]);
+renamedHeaderMatrix[1][1] = '담당자';
+const renamedHeaderParsed = parseStructuredSheet(renamedHeaderMatrix, { fieldDefinitions: fields, numberParser: contract.numberOrNull });
+const renamedHeaderHash = await normalizedSourceHash(renamedHeaderParsed, { mode: 'order', cryptoImpl: webcrypto });
+assert.notEqual(renamedHeaderHash, sourceHash, '미매핑 원본 헤더 변경도 source hash에 반영해야 한다.');
 const preparedRows = decorateStructuredRows(parsed.rows, {
   sourceBatchId: 'BATCH-93',
   sourceSheetName: '미판매현황',
@@ -78,13 +83,13 @@ const groups = groupVoucherRows('order', normalizedRows);
 assert.equal(groups.length, 18, '주문 그룹키는 거래처+일자+창고코드 기준이어야 한다.');
 assert.equal(new Set(groups.map(group => group.idempotencyKey)).size, 18);
 assert.ok(groups.every(group => group.businessKey === group.voucherGroupKey));
-const payload = buildOrderGroupPayload(groups[0], { sourceColumns: parsed.sourceColumns });
+const payload = buildOrderGroupPayload(groups[0], { orderMessage: parsed.rawText });
 assert.equal(payload.sourceId, sourceHash);
 assert.equal(payload.sourceMessageKey, groups[0].idempotencyKey);
-assert.match(payload.items[0].rawText, /^SMART_INPUT_SOURCE_ROW_V1\t/);
-const sourceEnvelope = JSON.parse(payload.items[0].rawText.split('\t', 2)[1]);
-assert.equal(sourceEnvelope.columns.length, 14);
-assert.equal(Object.keys(sourceEnvelope.values).length, 14);
+assert.equal(payload.items[0].rawText, dataRows[0].map(value => String(value ?? '')).join('\t'),
+  'ORDER Q item.rawText는 JSON envelope가 아니라 실제 ERP 원본 행이어야 한다.');
+assert.ok(payload.orderMessage.includes(headers.join('\t')), 'ORDER Q orderMessage는 전체 원본 헤더를 보존해야 한다.');
+assert.ok(payload.orderMessage.includes(payload.items[0].rawText), 'ORDER Q orderMessage는 원본 데이터행도 보존해야 한다.');
 
 const tableFieldIds = ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo'];
 const template = createTemplateRecord({ mode: 'order', name: '미출고 주문', mappings: parsed.mappings, columns: parsed.sourceColumns, tableFieldIds }, {

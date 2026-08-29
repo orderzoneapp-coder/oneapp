@@ -27,7 +27,7 @@ The recovery does not clear storage, bump the database version, or run a destruc
 
 Input templates are stored inside the existing settings record under `inputTemplates`; unrelated settings are merged and preserved. A new template saves every detected column's display name, order, source key, and optional standard-field mapping before order creation. An existing template applies that complete column model without rewriting it.
 
-ORDER Q receives only its existing order schema. SmartInput preserves the full source-row column/value envelope inside the already-supported item `rawText` field, so source metadata can be recovered without changing the ORDER Q-owned schema.
+ORDER Q receives only its existing order schema. Each item keeps the actual tab-separated ERP source row in `rawText`, while `orderMessage` keeps the full imported source including its headers. SmartInput templates and staging retain the complete column model without changing the ORDER Q-owned schema.
 
 ## Intentionally excluded
 

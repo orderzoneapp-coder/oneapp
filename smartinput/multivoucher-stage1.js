@@ -388,36 +388,22 @@ export function buildMinimumUploadMatrix(mode = 'order') {
 }
 
 export function buildOrderGroupPayload(group, common = {}) {
-  const { sourceColumns = [], ...payloadCommon } = common;
   const sourceHash = group.sourceHashes?.length === 1 ? group.sourceHashes[0] : text(common.sourceId || group.sourceBatchId);
   return {
-    ...payloadCommon,
-    customerId: group.deliveryCustomerId || payloadCommon.customerId || '',
-    customerName: group.deliveryCustomerName || payloadCommon.customerName || '',
-    orderDate: group.voucherDate || payloadCommon.orderDate,
-    deliveryExpectedDate: group.deliveryDate || payloadCommon.deliveryExpectedDate || '',
-    warehouseId: group.warehouseId || payloadCommon.warehouseId || '',
-    warehouseCode: group.warehouseCode || payloadCommon.warehouseCode || '',
-    warehouseName: group.warehouseCode || payloadCommon.warehouseName || '',
-    transactionType: group.transactionType || payloadCommon.transactionType || '',
+    ...common,
+    customerId: group.deliveryCustomerId || common.customerId || '',
+    customerName: group.deliveryCustomerName || common.customerName || '',
+    orderDate: group.voucherDate || common.orderDate,
+    deliveryExpectedDate: group.deliveryDate || common.deliveryExpectedDate || '',
+    warehouseId: group.warehouseId || common.warehouseId || '',
+    warehouseCode: group.warehouseCode || common.warehouseCode || '',
+    warehouseName: group.warehouseCode || common.warehouseName || '',
+    transactionType: group.transactionType || common.transactionType || '',
     sourceDocumentKey: group.idempotencyKey,
     sourceMessageKey: group.idempotencyKey,
     sourceId: sourceHash,
     items: group.rows.map((row, index) => ({
       ...row,
-      rawText: sourceColumns.length && Object.keys(row.sourceValues || {}).length
-        ? `SMART_INPUT_SOURCE_ROW_V1\t${JSON.stringify({
-          schemaVersion: 'SMART_INPUT_SOURCE_ROW_V1',
-          originalRawText: row.rawText || '',
-          columns: sourceColumns.map(column => ({
-            columnId: column.columnId || column.fieldId || '',
-            sourceValueKey: column.sourceValueKey || '',
-            sourceHeader: column.sourceHeader || column.label || '',
-            targetFieldId: column.targetFieldId || ''
-          })),
-          values: { ...(row.sourceValues || {}) }
-        })}`
-        : row.rawText,
       lineNo: index + 1,
       rawQuantity: row.rawQuantity,
       rawUnit: row.rawUnit,

@@ -22,7 +22,11 @@ export async function sha256Hex(value, cryptoImpl = globalThis.crypto) {
 export function normalizedParsedSource(parsed = {}, { mode = 'order' } = {}) {
   return JSON.stringify(stableValue({
     mode,
-    header: (parsed.mappings || []).map(mapping => ({ fieldId: mapping.fieldId, sourceHeader: canonicalCell(mapping.sourceHeader) })),
+    header: (parsed.sourceColumns || []).map((column, order) => ({
+      order,
+      label: canonicalCell(column.sourceHeader || column.label),
+      targetFieldId: text(column.targetFieldId)
+    })),
     rows: (parsed.rows || []).map(row => String(row.rawText ?? '')
       .split('\t')
       .map(canonicalCell))

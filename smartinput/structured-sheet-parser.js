@@ -42,8 +42,8 @@ export function buildStructuredSourceColumns(headerRow = [], mappings = []) {
     const mapping = mappingByColumn.get(columnIndex);
     const sourceValueKey = `source_${sourceFieldToken(normalizedHeader)}_${occurrence}`;
     return {
-      columnId: mapping?.fieldId || sourceValueKey,
-      fieldId: mapping?.fieldId || sourceValueKey,
+      columnId: sourceValueKey,
+      fieldId: sourceValueKey,
       targetFieldId: mapping?.fieldId || '',
       sourceValueKey,
       sourceHeader,
@@ -66,12 +66,10 @@ export function buildStructuredFieldIndex(fieldDefinitions = []) {
 }
 
 function resolveHeaderMappings(row, fieldIndex) {
-  const mappedFields = new Set();
   const mappings = [];
   (row || []).forEach((cell, columnIndex) => {
     const field = fieldIndex.get(normalizeStructuredFieldName(cell));
-    if (!field || mappedFields.has(field.id)) return;
-    mappedFields.add(field.id);
+    if (!field) return;
     mappings.push({
       columnIndex,
       fieldId: field.id,

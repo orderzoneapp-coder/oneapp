@@ -1,11 +1,11 @@
-import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.3.0';
+import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.3.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
   buildOrderGroupPayload,
   decorateStructuredRows,
   groupVoucherRows,
   structuredFieldsForMode
-} from './multivoucher-stage1.js?v=0.3.0';
+} from './multivoucher-stage1.js?v=0.3.1';
 import {
   TEMPLATE_MODES,
   createTemplateRecord,
@@ -20,7 +20,7 @@ import {
   createStaging,
   normalizedSourceHash,
   sha256Hex
-} from './source-staging.js?v=1.1.0';
+} from './source-staging.js?v=1.1.1';
 import { buildCatalogPriceSnapshot } from './estimate-output.js?v=0.1.4';
 import {
   createRecordId,
@@ -969,8 +969,7 @@ async function completeOrder({ targetRowIds = [], targetGroupKeys = [] } = {}) {
             warehouseName: modeDraft.header.warehouseName,
             sourceType: 'SMART_INPUT',
             sourceMessageKey: group.idempotencyKey,
-            orderMessage: modeDraft.sourceText,
-            sourceColumns: currentTableFields()
+            orderMessage: modeDraft.sourceText
           });
           payload.items = payload.items.map((row, index) => ({ ...row, lineNo: index + 1, finalQuantity: row.quantity, finalUnit: row.unit, price: row.unitPrice, rawQuantity: row.quantity, rawUnit: row.unit }));
           result = await saveOrderLocal(payload);
