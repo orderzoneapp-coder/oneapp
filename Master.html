@@ -106,6 +106,12 @@
             SYNC_TRIGGER: 'merchMaster_sync_trigger',
             CONFIG_TRIGGER: 'config_sync_trigger'
         };
+        const LEGACY_ITEMMASTER_DB = Object.freeze({
+            NAME: 'oneapp-itemmaster-isolated-v1',
+            PRODUCTS_STORE: 'products',
+            STATE_STORE: 'store',
+            REVISION_KEY: 'itemMasterRevision_v1'
+        });
 
         const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
 
@@ -260,6 +266,59 @@
             return {};
         };
 
+        const readLegacyItemMasterSnapshot = async () => {
+            if (!window.indexedDB || typeof window.indexedDB.databases !== 'function') {
+                return { status: 'unsupported', exists: false, masterMap: {}, revision: null };
+            }
+            const databases = await window.indexedDB.databases();
+            const exists = databases.some(entry => entry && entry.name === LEGACY_ITEMMASTER_DB.NAME);
+            if (!exists) return { status: 'absent', exists: false, masterMap: {}, revision: null };
+            const db = await new Promise((resolve, reject) => {
+                const request = window.indexedDB.open(LEGACY_ITEMMASTER_DB.NAME);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error || new Error('레거시 ItemMaster DB를 열지 못했습니다.'));
+            });
+            try {
+                if (!db.objectStoreNames.contains(LEGACY_ITEMMASTER_DB.PRODUCTS_STORE)) {
+                    return { status: 'error', exists: true, masterMap: {}, revision: null, error: '레거시 상품 Store를 찾지 못했습니다.' };
+                }
+                const storeNames = [LEGACY_ITEMMASTER_DB.PRODUCTS_STORE];
+                if (db.objectStoreNames.contains(LEGACY_ITEMMASTER_DB.STATE_STORE)) storeNames.push(LEGACY_ITEMMASTER_DB.STATE_STORE);
+                const result = await new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeNames, 'readonly');
+                    const productsRequest = tx.objectStore(LEGACY_ITEMMASTER_DB.PRODUCTS_STORE).getAll();
+                    const revisionRequest = storeNames.includes(LEGACY_ITEMMASTER_DB.STATE_STORE)
+                        ? tx.objectStore(LEGACY_ITEMMASTER_DB.STATE_STORE).get(LEGACY_ITEMMASTER_DB.REVISION_KEY)
+                        : null;
+                    const snapshotRequest = storeNames.includes(LEGACY_ITEMMASTER_DB.STATE_STORE)
+                        ? tx.objectStore(LEGACY_ITEMMASTER_DB.STATE_STORE).get('itemMasterSnapshot_v1')
+                        : null;
+                    tx.oncomplete = () => resolve({
+                        items: productsRequest.result || [],
+                        revision: revisionRequest ? revisionRequest.result : null,
+                        snapshot: snapshotRequest ? snapshotRequest.result : null
+                    });
+                    tx.onerror = () => reject(tx.error || new Error('레거시 ItemMaster DB를 읽지 못했습니다.'));
+                    tx.onabort = () => reject(tx.error || new Error('레거시 ItemMaster DB 읽기가 중단되었습니다.'));
+                });
+                const rawItems = result.items.length > 0
+                    ? result.items
+                    : Object.values(result.snapshot && typeof result.snapshot === 'object' ? result.snapshot : {});
+                const masterMap = masterArrayToMap(rawItems);
+                return {
+                    status: Object.keys(masterMap).length > 0 ? 'ready' : 'empty',
+                    exists: true,
+                    masterMap,
+                    rawItems,
+                    revision: result.revision ?? null
+                };
+            } catch (error) {
+                return { status: 'error', exists: true, masterMap: {}, revision: null, error: error.message };
+            } finally {
+                db.close();
+            }
+        };
+
         const extractMasterFromCloudResult = (result = {}) => {
             if (!result) return {};
             if (result.status === 'success' && result.data) {
@@ -411,6 +470,49 @@
             return api.parseWorkbook(arrayBuffer, window.XLSX);
         };
 
+        const buildInitialMasterImport = (parsed = {}, fileName = '') => {
+            const api = window.ONEAPP_MASTER_ADD_UPDATE;
+            if (!api) throw new Error('Master Excel 검증 모듈을 불러오지 못했습니다.');
+            const headers = Array.isArray(parsed.headers) ? parsed.headers : [];
+            const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+            const masterMap = {};
+            const errors = [];
+            rows.forEach((row, index) => {
+                const item = {};
+                headers.forEach(header => { item[header] = row[header]; });
+                const code = api.getRowCode(row);
+                if (!code) {
+                    errors.push(`Excel ${row.__rowNumber || index + 2}행: 상품코드 없음`);
+                    return;
+                }
+                item.코드 = code;
+                item.품목코드 = safeStr(item.품목코드 || code).trim();
+                const normalized = normalizeMasterItem(item, code);
+                const missing = api.REQUIRED_NEW_FIELDS.filter(field => !safeStr(normalized[field]).trim());
+                if (missing.length > 0) {
+                    errors.push(`Excel ${row.__rowNumber || index + 2}행 ${code}: ${missing.join(', ')} 누락`);
+                    return;
+                }
+                if (masterMap[normalized.코드]) {
+                    errors.push(`Excel ${row.__rowNumber || index + 2}행: 중복 상품코드 ${normalized.코드}`);
+                    return;
+                }
+                masterMap[normalized.코드] = normalized;
+            });
+            if (errors.length > 0) {
+                const preview = errors.slice(0, 10).join('\n');
+                const suffix = errors.length > 10 ? `\n외 ${errors.length - 10}건` : '';
+                throw new Error(`최초 등록 검증 실패 (${errors.length}건)\n${preview}${suffix}`);
+            }
+            if (Object.keys(masterMap).length === 0) throw new Error('최초 등록할 상품이 없습니다.');
+            return {
+                fileName,
+                masterMap,
+                count: Object.keys(masterMap).length,
+                baseRevision: masterPageRevision
+            };
+        };
+
 
         // ==========================================
         // 🧩 [아이콘 시스템] SafeIcon
@@ -533,6 +635,113 @@
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, []);
             return config;
+        };
+
+        const InitialImportConfirmModal = ({ draft, onSave, onCancel, isSaving }) => {
+            if (!draft) return null;
+            return (
+                <div className="fixed inset-0 z-[130] bg-slate-950/60 flex items-center justify-center p-5">
+                    <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="px-6 py-5 bg-indigo-50 border-b border-indigo-200">
+                            <h2 className="text-lg font-black text-indigo-900">상품관리 최초 Excel 등록</h2>
+                            <p className="text-xs text-indigo-700 mt-1">공식 상품 DB가 0건일 때만 실행되며 revision과 공식 history를 함께 기록합니다.</p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                                <div className="text-[11px] font-bold text-slate-500">파일</div>
+                                <div className="mt-1 text-sm font-bold text-slate-800 break-all">{draft.fileName}</div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                                    <div className="text-[11px] font-bold text-slate-500">검증 완료 상품</div>
+                                    <div className="mt-1 text-2xl font-black text-indigo-700">{draft.count.toLocaleString()}건</div>
+                                </div>
+                                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                                    <div className="text-[11px] font-bold text-slate-500">저장 기준 Revision</div>
+                                    <div className="mt-1 text-sm font-black text-slate-800 break-all">{safeStr(draft.baseRevision, '초기 상태')}</div>
+                                </div>
+                            </div>
+                            <p className="text-xs leading-5 text-slate-600">상품코드 중복과 품목명·규격·단위 누락 검사를 통과했습니다. 저장 직전 DB가 여전히 비어 있고 revision이 같은지 다시 확인합니다.</p>
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button onClick={onCancel} disabled={isSaving} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold disabled:opacity-50">취소</button>
+                            <button onClick={onSave} disabled={isSaving} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:bg-slate-400">
+                                {isSaving ? '저장 중...' : `${draft.count.toLocaleString()}건 최초 저장`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const PRODUCT_FORM_FIELDS = [
+            { key: '코드', label: '상품코드', required: true },
+            { key: '품목명', label: '품목명', required: true },
+            { key: '규격', label: '규격', required: true },
+            { key: '단위', label: '단위', required: true },
+            { key: '1코드', label: '대분류 코드' },
+            { key: '1그룹명', label: '대분류명' },
+            { key: '2코드', label: '중분류 코드' },
+            { key: '2그룹명', label: '중분류명' },
+            { key: '3코드', label: '소분류 코드' },
+            { key: '3그룹명', label: '소분류명' },
+            { key: '입고가', label: '입고가', type: 'number' },
+            { key: '출고가', label: '출고가', type: 'number' }
+        ];
+
+        const ProductEditorModal = ({ item, onCancel, onSave, isSaving }) => {
+            const [form, setForm] = useState({});
+            const [errorMessage, setErrorMessage] = useState('');
+            const isOpen = item !== null;
+            const isEditing = Boolean(item && safeStr(item.코드 || item.품목코드).trim());
+            useEffect(() => {
+                if (!isOpen) return;
+                setForm(item ? { ...item, 코드: safeStr(item.코드 || item.품목코드) } : {});
+                setErrorMessage('');
+            }, [item, isOpen]);
+            if (!isOpen) return null;
+            const handleSubmit = async () => {
+                try {
+                    const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(form);
+                    ['입고가', '출고가'].forEach(field => {
+                        if (safeStr(normalized[field]).trim() !== '') normalized[field] = Number(normalized[field]);
+                    });
+                    await onSave(normalized, { isEditing });
+                } catch (error) {
+                    setErrorMessage(error.message);
+                }
+            };
+            return (
+                <div className="fixed inset-0 z-[135] bg-slate-950/60 flex items-center justify-center p-5">
+                    <div className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                        <div className="px-6 py-5 bg-slate-900 text-white">
+                            <h2 className="text-lg font-black">{isEditing ? '상품 수정' : '상품 단건 등록'}</h2>
+                            <p className="text-xs text-slate-300 mt-1">공식 master·revision·history 계약으로 저장됩니다.</p>
+                        </div>
+                        <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {PRODUCT_FORM_FIELDS.map(field => (
+                                <label key={field.key} className="block">
+                                    <span className="text-[11px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span>
+                                    <input
+                                        type={field.type || 'text'}
+                                        value={form[field.key] ?? ''}
+                                        disabled={isEditing && field.key === '코드'}
+                                        onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))}
+                                        className="mt-1 w-full h-10 px-3 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
+                                    />
+                                </label>
+                            ))}
+                        </div>
+                        {errorMessage && <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">{errorMessage}</div>}
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button onClick={onCancel} disabled={isSaving} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold disabled:opacity-50">취소</button>
+                            <button onClick={handleSubmit} disabled={isSaving} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:bg-slate-400">
+                                {isSaving ? '저장 중...' : (isEditing ? '수정 저장' : '상품 등록')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
         const formatReviewValue = (value, present = true) => {
@@ -919,6 +1128,9 @@
             const [showAddUpdateReview, setShowAddUpdateReview] = useState(false);
             const [addUpdateError, setAddUpdateError] = useState('');
             const [addUpdateResult, setAddUpdateResult] = useState(null);
+            const [initialImportDraft, setInitialImportDraft] = useState(null);
+            const [editingProduct, setEditingProduct] = useState(null);
+            const [legacyState, setLegacyState] = useState({ status: 'checking', exists: false, masterMap: {}, rawItems: [], revision: null });
 
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
@@ -929,7 +1141,13 @@
             useEffect(() => {
                 loadMasterLocal().then(data => {
                     if (data && typeof data === 'object') setMasterProducts(data);
-                }).catch(console.error);
+                }).catch(error => {
+                    console.error(error);
+                    showToast(`❌ 마스터 불러오기 실패: ${error.message}`);
+                });
+                readLegacyItemMasterSnapshot().then(setLegacyState).catch(error => {
+                    setLegacyState({ status: 'error', exists: true, masterMap: {}, revision: null, error: error.message });
+                });
 
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
@@ -953,14 +1171,79 @@
                 setAddUpdateError('');
             };
 
+            const legacySummary = useMemo(() => {
+                const legacyMap = legacyState.status === 'ready' ? legacyState.masterMap : {};
+                const stableSerialize = window.ONEAPP_MASTER_ADD_UPDATE?.stableSerialize || JSON.stringify;
+                let newCount = 0;
+                let sameCount = 0;
+                let conflictCount = 0;
+                Object.entries(legacyMap).forEach(([code, item]) => {
+                    const current = masterProducts[code];
+                    if (!current) newCount += 1;
+                    else if (stableSerialize(current) === stableSerialize(item)) sameCount += 1;
+                    else conflictCount += 1;
+                });
+                return { total: Object.keys(legacyMap).length, newCount, sameCount, conflictCount };
+            }, [legacyState, masterProducts]);
+
+            const downloadLegacyBackup = () => {
+                if (legacyState.status !== 'ready') return;
+                const payload = {
+                    schemaVersion: 'ONEAPP_ITEMMASTER_LEGACY_BACKUP_V1',
+                    sourceDatabase: LEGACY_ITEMMASTER_DB.NAME,
+                    exportedAt: new Date().toISOString(),
+                    revision: legacyState.revision,
+                    productCount: legacySummary.total,
+                    products: Array.isArray(legacyState.rawItems) ? legacyState.rawItems : Object.values(legacyState.masterMap)
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement('a');
+                anchor.href = url;
+                anchor.download = `ItemMaster-legacy-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(anchor);
+                anchor.click();
+                anchor.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast(`✅ 레거시 격리 DB ${legacySummary.total.toLocaleString()}건 백업 파일 생성`);
+            };
+
+            const startLegacyReview = () => {
+                if (legacyState.status !== 'ready' || !window.ONEAPP_MASTER_ADD_UPDATE) return;
+                try {
+                    const values = Object.values(legacyState.masterMap);
+                    const allHeaders = new Set();
+                    values.forEach(item => Object.keys(item || {}).forEach(field => {
+                        if (!field.startsWith('__')) allHeaders.add(field);
+                    }));
+                    const headers = ['코드', ...[...allHeaders].filter(field => field !== '코드')];
+                    const rows = values.map((item, index) => ({
+                        ...item,
+                        __rowNumber: index + 1,
+                        __display: Object.fromEntries(headers.map(field => [field, item[field]]))
+                    }));
+                    const analysis = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
+                        headers,
+                        rows,
+                        currentMaster: masterProducts,
+                        revision: masterPageRevision,
+                        fileName: `레거시 ${LEGACY_ITEMMASTER_DB.NAME}`,
+                        allowEmptyMaster: true
+                    });
+                    analysis.sourceType = 'legacy-itemmaster-isolated';
+                    setAddUpdateAnalysis(analysis);
+                    setAddUpdateError('레거시 원본은 읽기 전용으로 유지됩니다. 신규·변경 항목을 검토해 명시적으로 승인한 값만 공식 master에 저장하세요.');
+                    setShowAddUpdateReview(false);
+                    setShowAddUpdateConfirm(true);
+                } catch (error) {
+                    showToast(`❌ 레거시 검토 준비 실패: ${error.message}`);
+                }
+            };
+
             const handleExcelUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
                 event.target.value = '';
-                if (Object.keys(masterProducts || {}).length === 0) {
-                    showToast('⚠️ 기존 master가 0건입니다. 이번 1차 범위에서 최초 등록은 차단되어 있습니다.');
-                    return;
-                }
                 const extension = safeStr(file.name).toLowerCase().split('.').pop();
                 if (!['xlsx', 'xls'].includes(extension)) {
                     showToast('❌ 추가·갱신은 xlsx 또는 xls 파일만 사용할 수 있습니다.');
@@ -979,6 +1262,10 @@
                 reader.onload = async (loadEvent) => {
                     try {
                         const parsed = parseMasterAddUpdateWorkbook(loadEvent.target.result);
+                        if (Object.keys(masterProducts || {}).length === 0) {
+                            setInitialImportDraft(buildInitialMasterImport(parsed, file.name));
+                            return;
+                        }
                         const analysis = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
                             ...parsed,
                             currentMaster: masterProducts,
@@ -1013,6 +1300,69 @@
                 reader.readAsArrayBuffer(file);
             };
 
+            const handleSaveInitialImport = async () => {
+                if (!initialImportDraft || !window.ONEAPP_MASTER_ADD_UPDATE?.commitInitialRegistration) return;
+                setIsProcessing(true);
+                setProcessMsg('공식 master·revision·history에 최초 상품을 저장 중...');
+                try {
+                    const result = await window.ONEAPP_MASTER_ADD_UPDATE.commitInitialRegistration({
+                        masterMap: initialImportDraft.masterMap,
+                        fileName: initialImportDraft.fileName,
+                        expectedRevision: initialImportDraft.baseRevision,
+                        storage: window.ONEAPP?.STORAGE,
+                        historyApi: window.ONEAPP?.HISTORY,
+                        localStorageRef: window.localStorage,
+                        actor: null
+                    });
+                    masterPageRevision = result.revision;
+                    setMasterProducts(result.masterMap);
+                    setInitialImportDraft(null);
+                    setAddUpdateResult(result);
+                    showToast(`✅ 상품관리 최초 등록 ${result.counts.createCount.toLocaleString()}건 완료`);
+                } catch (error) {
+                    console.error(error);
+                    const latestMaster = await loadMasterLocal().catch(() => ({}));
+                    setMasterProducts(latestMaster);
+                    setInitialImportDraft(null);
+                    showToast(`❌ 최초 등록 실패: ${error.message}`);
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
+            const handleSaveProduct = async (input, { isEditing } = {}) => {
+                setIsProcessing(true);
+                setProcessMsg(isEditing ? '상품 수정 내용을 공식 이력과 함께 저장 중...' : '신규 상품을 공식 이력과 함께 저장 중...');
+                try {
+                    const result = await window.ONEAPP_MASTER_ADD_UPDATE.commitSingleProductChange({
+                        item: input,
+                        isEditing,
+                        expectedRevision: masterPageRevision,
+                        storage: window.ONEAPP?.STORAGE,
+                        historyApi: window.ONEAPP?.HISTORY,
+                        localStorageRef: window.localStorage,
+                        actor: null
+                    });
+                    masterPageRevision = result.revision;
+                    setMasterProducts(result.masterMap);
+                    setEditingProduct(null);
+                    setAddUpdateResult(result);
+                    showToast(`✅ [${result.item.품목명}] ${isEditing ? '수정' : '등록'} 완료`);
+                } catch (error) {
+                    console.error(error);
+                    if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+                        const latestMaster = await loadMasterLocal();
+                        setMasterProducts(latestMaster);
+                        throw new Error('입력 중 master가 변경되어 저장을 중단했습니다. 최신 데이터에서 다시 시도하세요.');
+                    }
+                    throw error;
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
             const handleSaveAddUpdate = async () => {
                 if (!addUpdateAnalysis || !window.ONEAPP_MASTER_ADD_UPDATE) return;
                 setIsProcessing(true);
@@ -1026,7 +1376,8 @@
                         storage: window.ONEAPP?.STORAGE,
                         historyApi: window.ONEAPP?.HISTORY,
                         localStorageRef: window.localStorage,
-                        actor: null
+                        actor: null,
+                        allowEmptyMaster: addUpdateAnalysis.allowEmptyMaster === true
                     });
                     masterPageRevision = result.revision;
                     setMasterProducts(result.masterMap);
@@ -1048,7 +1399,8 @@
                                 currentMaster: latest.masterMap,
                                 revision: latest.revision,
                                 fileName: addUpdateAnalysis.fileName,
-                                masterMismatch: true
+                                masterMismatch: true,
+                                allowEmptyMaster: addUpdateAnalysis.allowEmptyMaster === true
                             });
                             setAddUpdateAnalysis(refreshed);
                             setShowAddUpdateReview(true);
@@ -1198,6 +1550,20 @@
                         </div>
                     )}
 
+                    <InitialImportConfirmModal
+                        draft={initialImportDraft}
+                        onSave={handleSaveInitialImport}
+                        onCancel={() => setInitialImportDraft(null)}
+                        isSaving={isProcessing}
+                    />
+
+                    <ProductEditorModal
+                        item={editingProduct}
+                        onCancel={() => setEditingProduct(null)}
+                        onSave={handleSaveProduct}
+                        isSaving={isProcessing}
+                    />
+
                     {showAddUpdateConfirm && (
                         <MasterAddUpdateConfirmModal
                             analysis={addUpdateAnalysis}
@@ -1227,19 +1593,17 @@
                                 <strong className="text-[12px] text-slate-700">상품 조회</strong>
                                 {Object.keys(masterProducts).length === 0 && (
                                     <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                                        최초 등록은 1차 미구현으로 차단됨
+                                        상품 DB가 비어 있습니다. Excel 최초 등록 또는 상품 단건 등록으로 시작하세요
                                     </span>
                                 )}
                             </div>
                             <div className="w-full lg:w-auto grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 min-w-0">
-                                <select value="add-update" onChange={() => {}} className="w-full sm:w-auto h-9 px-3 rounded-lg text-[12px] font-bold bg-slate-100 text-slate-700 border border-slate-300 outline-none">
-                                    <option value="add-update">추가·갱신</option>
-                                    <option value="initial" disabled>최초 등록 · 1차 미구현</option>
-                                    <option value="replace" disabled>전체교체 · 1차 미구현</option>
-                                </select>
-                                <label className={`w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center justify-center shadow-sm ${Object.keys(masterProducts).length === 0 || isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}>
-                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> 추가·갱신 Excel 비교
-                                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing || Object.keys(masterProducts).length === 0} />
+                                <button onClick={() => setEditingProduct({})} disabled={isProcessing} className="w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-slate-300 shadow-sm flex items-center justify-center">
+                                    <SafeIcon name="plus" size={13} className="mr-2" /> 상품 등록
+                                </button>
+                                <label className={`w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center justify-center shadow-sm ${isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}>
+                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> {Object.keys(masterProducts).length === 0 ? '최초 등록 Excel' : '추가·갱신 Excel 비교'}
+                                    <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing} />
                                 </label>
                                 {addUpdateAnalysis && !showAddUpdateConfirm && !showAddUpdateReview && (
                                     <button onClick={() => setShowAddUpdateReview(true)} className="h-9 px-4 rounded-lg text-[12px] font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
@@ -1252,6 +1616,24 @@
                                 </div>
                             </div>
                         </div>
+
+                        {legacyState.status === 'ready' && legacySummary.total > 0 && (
+                            <div className="px-3 sm:px-6 py-3 bg-amber-50 border-b border-amber-200 flex flex-col lg:flex-row lg:items-center gap-3 shrink-0" data-legacy-itemmaster-notice="ready">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-black text-amber-900">이 브라우저에서 폐기된 ItemMaster 격리 DB 데이터 {legacySummary.total.toLocaleString()}건을 찾았습니다.</div>
+                                    <div className="text-[11px] text-amber-800 mt-1">신규 {legacySummary.newCount.toLocaleString()}건 · 동일 {legacySummary.sameCount.toLocaleString()}건 · 충돌 {legacySummary.conflictCount.toLocaleString()}건. 자동 반영·덮어쓰기·삭제하지 않습니다.</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={downloadLegacyBackup} className="h-8 px-3 rounded-lg border border-amber-300 bg-white text-amber-900 text-[11px] font-bold hover:bg-amber-100">JSON 백업</button>
+                                    <button onClick={startLegacyReview} disabled={isProcessing} className="h-8 px-3 rounded-lg bg-amber-700 text-white text-[11px] font-black hover:bg-amber-800 disabled:bg-slate-400">추가·갱신 검토</button>
+                                </div>
+                            </div>
+                        )}
+                        {legacyState.status === 'error' && legacyState.exists && (
+                            <div className="px-3 sm:px-6 py-2 bg-rose-50 border-b border-rose-200 text-[11px] font-bold text-rose-800 shrink-0" data-legacy-itemmaster-notice="error">
+                                레거시 ItemMaster 격리 DB가 존재하지만 읽지 못했습니다. 원본은 변경하지 않았습니다: {legacyState.error}
+                            </div>
+                        )}
 
                         {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
                         <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
@@ -1310,6 +1692,7 @@
                                                 <th className="py-2.5 px-4 text-slate-600">품목명</th>
                                                 <th className="py-2.5 px-3 text-slate-600">규격</th>
                                                 {visMasterCols.map(h => <th key={h} className="py-2.5 px-3 text-slate-600">{h}</th>)}
+                                                <th className="py-2.5 px-3 text-slate-600 w-20">관리</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -1321,11 +1704,16 @@
                                                         <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '-')}</td>
                                                         <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '-')}</td>
                                                         {visMasterCols.map(h => <td key={h} className="py-2 px-3 text-slate-500">{safeStr(row[h], '-')}</td>)}
+                                                        <td className="py-2 px-3">
+                                                            <button onClick={() => setEditingProduct(row)} className="h-7 px-3 rounded-md border border-slate-300 text-[11px] font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300">
+                                                                <SafeIcon name="edit" size={11} className="mr-1" /> 수정
+                                                            </button>
+                                                        </td>
                                                     </tr>
                                                 );
                                             }) : (
                                                 <tr>
-                                                    <td colSpan={visMasterCols.length + 3} className="py-20 text-center text-slate-400">해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.</td>
+                                                    <td colSpan={visMasterCols.length + 4} className="py-20 text-center text-slate-400">{Object.keys(masterProducts).length === 0 ? '상품 DB가 비어 있습니다. 상단의 Excel 최초 등록 또는 상품 등록을 사용하세요.' : '해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.'}</td>
                                                 </tr>
                                             )}
                                         </tbody>

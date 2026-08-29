@@ -410,9 +410,12 @@
     currentMaster = {},
     revision,
     fileName = '',
-    masterMismatch = false
+    masterMismatch = false,
+    allowEmptyMaster = false
   } = {}) => {
-    const master = assertExistingMaster(currentMaster, '추가·갱신 비교 분석');
+    const master = allowEmptyMaster
+      ? buildMasterIndex(currentMaster)
+      : assertExistingMaster(currentMaster, '추가·갱신 비교 분석');
     const groups = new Map();
     const candidates = [];
     rows.forEach((row, index) => {
@@ -487,6 +490,7 @@
       baseRevision: revision,
       baseMaster: master,
       masterMismatch,
+      allowEmptyMaster,
       candidates
     };
     analysis.summary = summarize(candidates);
@@ -1156,6 +1160,232 @@
     };
   };
 
+  const validateInitialMaster = (masterMap = {}) => {
+    const master = buildMasterIndex(masterMap);
+    const entries = Object.entries(master);
+    if (entries.length === 0) {
+      throw createOperationalError(
+        ERROR_CODES.INITIAL_REGISTRATION_REQUIRED,
+        '최초 등록할 상품이 없습니다.'
+      );
+    }
+    entries.forEach(([code, item]) => {
+      const normalized = validateSingleProductInput({ ...item, 코드: code });
+      master[code] = { ...cloneValue(item), ...normalized, 코드: code, 품목코드: code };
+    });
+    return master;
+  };
+
+  const commitInitialRegistration = async ({
+    masterMap,
+    fileName = '',
+    expectedRevision,
+    storage,
+    historyApi,
+    localStorageRef,
+    actor = null
+  } = {}) => {
+    if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
+      throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
+    }
+    if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
+    const nextMaster = validateInitialMaster(masterMap);
+    const currentState = await storage.readMasterSnapshotState();
+    if (Object.keys(buildMasterIndex(currentState.masterMap)).length > 0) {
+      throw createOperationalError(
+        'MASTER_INITIAL_REGISTRATION_NOT_EMPTY',
+        '최초 등록 검토 중 master에 데이터가 생성되어 저장을 중단했습니다. 최신 화면에서 다시 확인하세요.'
+      );
+    }
+    if (currentState.revision !== expectedRevision) {
+      throw storage.createMasterRevisionConflictError
+        ? storage.createMasterRevisionConflictError('최초 등록 검토 중 master revision이 변경되었습니다.')
+        : createOperationalError('MERCH_MASTER_REVISION_CONFLICT', '최초 등록 검토 중 master revision이 변경되었습니다.');
+    }
+
+    const executionId = `master-initial-${Date.now()}-${global.crypto && typeof global.crypto.randomUUID === 'function' ? global.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+    const timestampISO = new Date().toISOString();
+    const count = Object.keys(nextMaster).length;
+    const logs = [normalizeOfficialLog(historyApi, {
+      id: `${executionId}-job`,
+      recordType: 'master_initial_registration_job',
+      executionId,
+      mode: '최초 등록',
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable',
+      timestampISO,
+      source: 'master_initial_registration',
+      sourceRole: 'master',
+      sourceLabel: '상품관리',
+      actionType: 'master_initial_registration',
+      applyMode: 'direct_master_apply',
+      path: 'Master > 최초 등록',
+      route: 'Master/최초등록',
+      field: '작업',
+      oldVal: '0건',
+      newVal: `${count}건`,
+      fileName,
+      createCount: count,
+      status: 'success',
+      memo: `검증된 Excel 최초 등록 ${count}건`
+    })];
+    const commitResult = await commitNarrowMasterMutation({
+      storage,
+      historyApi,
+      localStorageRef,
+      currentState,
+      nextMaster,
+      expectedRevision,
+      logs,
+      localWrites: { [MASTER_SYNC_TRIGGER_KEY]: timestampISO },
+      label: 'Master 최초 등록'
+    });
+    return {
+      status: 'success',
+      executionId,
+      revision: commitResult.revision,
+      masterMap: nextMaster,
+      historyCount: logs.length,
+      counts: {
+        createCount: count,
+        updateCount: 0,
+        appliedFieldCount: count,
+        sameCount: 0,
+        excludedCount: 0,
+        missingRetainedCount: 0,
+        blockedCount: 0,
+        failedCount: 0
+      },
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable'
+    };
+  };
+
+  const commitSingleProductChange = async ({
+    item,
+    isEditing = false,
+    expectedRevision,
+    storage,
+    historyApi,
+    localStorageRef,
+    actor = null
+  } = {}) => {
+    if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
+      throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
+    }
+    if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
+    const currentState = await storage.readMasterSnapshotState();
+    if (currentState.revision !== expectedRevision) {
+      throw storage.createMasterRevisionConflictError
+        ? storage.createMasterRevisionConflictError('상품 입력 중 master가 변경되었습니다. 최신 master에서 다시 확인하세요.')
+        : createOperationalError('MERCH_MASTER_REVISION_CONFLICT', '상품 입력 중 master가 변경되었습니다.');
+    }
+    const currentMaster = buildMasterIndex(currentState.masterMap);
+    const inputCode = normalizeSharedProductCode(item && (item.코드 || item.품목코드 || item['ERP 품목코드']));
+    const duplicate = Object.entries(currentMaster).find(([masterKey, masterItem]) => (
+      normalizeSharedProductCode(getMasterCode(masterItem, masterKey)) === inputCode
+    ));
+    if (!isEditing && duplicate) {
+      throw createOperationalError(
+        'MASTER_SINGLE_PRODUCT_DUPLICATE_CODE',
+        `이미 등록된 상품코드입니다: ${inputCode}`,
+        { productCode: inputCode }
+      );
+    }
+    if (isEditing && !duplicate) {
+      throw createOperationalError(
+        'MASTER_SINGLE_PRODUCT_NOT_FOUND',
+        `수정할 상품을 찾지 못했습니다: ${inputCode}`,
+        { productCode: inputCode }
+      );
+    }
+
+    const previousItem = duplicate ? cloneValue(duplicate[1]) : {};
+    const normalizedItem = validateSingleProductInput({ ...previousItem, ...cloneValue(item), 코드: inputCode });
+    const nextItem = { ...previousItem, ...normalizedItem, 코드: inputCode, 품목코드: inputCode };
+    const fields = [...new Set([...Object.keys(previousItem), ...Object.keys(nextItem)])]
+      .filter(field => !field.startsWith('__'))
+      .filter(field => !valuesEqual(previousItem[field], nextItem[field]));
+    if (fields.length === 0) {
+      throw createOperationalError('MASTER_SINGLE_PRODUCT_NO_CHANGE', '변경된 상품 정보가 없습니다.');
+    }
+    const nextMaster = cloneValue(currentMaster);
+    nextMaster[inputCode] = nextItem;
+    const executionId = `master-single-${Date.now()}-${global.crypto && typeof global.crypto.randomUUID === 'function' ? global.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+    const timestampISO = new Date().toISOString();
+    const basePayload = {
+      executionId,
+      mode: isEditing ? '단건 수정' : '단건 등록',
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable',
+      timestampISO,
+      source: 'master_single_product',
+      sourceRole: 'master',
+      sourceLabel: '상품관리',
+      applyMode: 'direct_master_apply',
+      path: isEditing ? 'Master > 상품 수정' : 'Master > 상품 등록',
+      route: isEditing ? 'Master/상품수정' : 'Master/상품등록',
+      code: inputCode,
+      name: nextItem.품목명,
+      spec: nextItem.규격,
+      unit: nextItem.단위
+    };
+    const logs = [
+      normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-job`,
+        recordType: 'master_add_update_job',
+        actionType: isEditing ? 'master_single_update_job' : 'master_single_create_job',
+        field: '작업',
+        oldVal: '',
+        newVal: '성공',
+        memo: `상품관리 ${isEditing ? '단건 수정' : '단건 등록'}`
+      }),
+      ...fields.map((field, index) => normalizeOfficialLog(historyApi, {
+        ...basePayload,
+        id: `${executionId}-detail-${index + 1}`,
+        recordType: 'master_add_update_detail',
+        actionType: isEditing ? 'master_update' : 'master_create',
+        field,
+        oldVal: previousItem[field] === undefined ? '' : previousItem[field],
+        newVal: nextItem[field] === undefined ? '' : nextItem[field],
+        finalValue: nextItem[field] === undefined ? '' : nextItem[field],
+        memo: `상품관리 관리자 확인 ${isEditing ? '수정' : '등록'}`
+      }))
+    ];
+    const commitResult = await commitNarrowMasterMutation({
+      storage,
+      historyApi,
+      localStorageRef,
+      currentState,
+      nextMaster,
+      expectedRevision,
+      logs,
+      localWrites: { [MASTER_SYNC_TRIGGER_KEY]: timestampISO },
+      label: `Master 상품 ${isEditing ? '수정' : '등록'}`
+    });
+    return {
+      status: 'success',
+      executionId,
+      revision: commitResult.revision,
+      item: cloneValue(nextItem),
+      masterMap: nextMaster,
+      historyCount: logs.length,
+      counts: {
+        createCount: isEditing ? 0 : 1,
+        updateCount: isEditing ? 1 : 0,
+        appliedFieldCount: fields.length,
+        sameCount: 0,
+        excludedCount: 0,
+        missingRetainedCount: 0,
+        blockedCount: 0,
+        failedCount: 0
+      },
+      actor: actor || null,
+      actorStatus: actor ? 'identified' : 'identity-system-unavailable'
+    };
+  };
+
   const normalizeStoppedProducts = (input = {}) => {
     const out = {};
     if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
@@ -1358,20 +1588,23 @@
     storage,
     historyApi,
     localStorageRef,
-    actor = null
+    actor = null,
+    allowEmptyMaster = false
   } = {}) => {
     if (!storage || typeof storage.commitMasterStateOrThrow !== 'function' || typeof storage.readMasterSnapshotState !== 'function') {
       throw new Error('공통 master 저장 엔진을 사용할 수 없습니다.');
     }
     if (!localStorageRef) throw new Error('공식 history 저장소를 사용할 수 없습니다.');
     const currentState = await storage.readMasterSnapshotState();
-    assertExistingMaster(currentState.masterMap, '추가·갱신 저장');
+    const currentMasterState = allowEmptyMaster
+      ? buildMasterIndex(currentState.masterMap)
+      : assertExistingMaster(currentState.masterMap, '추가·갱신 저장');
     if (currentState.revision !== expectedRevision) {
       const error = new Error('비교 이후 master가 변경되었습니다. 최신 master로 비교를 다시 생성해야 합니다.');
       error.code = 'MERCH_MASTER_REVISION_CONFLICT';
       throw error;
     }
-    const plan = buildExecutionPlan(analysis, currentState.masterMap);
+    const plan = buildExecutionPlan(analysis, currentMasterState);
     assertNewProductsComplete(plan, '추가·갱신 최종 저장 경계');
     if (plan.counts.savedProductCount === 0 || plan.details.length === 0) {
       const error = new Error('관리자 확인·승인을 마친 저장 대상이 없습니다.');
@@ -1490,6 +1723,9 @@
     normalizeSingleProductInput,
     validateSingleProductInput,
     commitSingleProductRegistration,
+    validateInitialMaster,
+    commitInitialRegistration,
+    commitSingleProductChange,
     commitSalesStatusChanges,
     stableSerialize
   };
