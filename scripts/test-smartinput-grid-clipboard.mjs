@@ -135,7 +135,7 @@ const app = fs.readFileSync('smartinput/smartinput.js', 'utf8');
 for (const label of ['품목코드', '품목명', '규격', '수량', '단위', '단가', '메모']) assert.match(html, new RegExp(label));
 assert.match(html, /id="workTableBody"/);
 assert.match(app, /buildGridPastePlan\(raw/);
-assert.match(app, /visibleFieldIds:\s*TABLE_FIELDS\.map/);
+assert.match(app, /visibleFieldIds:\s*currentTableFields\(\)\.map/);
 assert.match(app, /workTableBody'\)\.addEventListener\('paste', applyGridPaste\)/);
 assert.match(app, /contract\.markUserEdit\(next, cell\.fieldId, cell\.value\)/,
   'grid paste must use the same edit-preserving row contract as direct cell edits');

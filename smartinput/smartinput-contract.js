@@ -493,6 +493,17 @@
       },
       sourceText: '',
       activeMethod: 'text',
+      templateSessionMode: 'CREATE',
+      selectedTemplateId: '',
+      inputTemplate: null,
+      staging: {
+        status: 'EMPTY', sourceHash: '', sourceName: '', sheetName: '', headerRowNumber: 0,
+        mappings: [], rows: [], warnings: [], batch: null,
+        templateMode: 'CREATE', templateId: '', templateName: '', templateRevision: 0,
+        templateSave: { status: 'PENDING', message: '', templateId: '' }, createdAt: ''
+      },
+      processedSourceHashes: [],
+      groupDeliveryResults: [],
       batches: [],
       rows: [],
       voucherGroups: [],
@@ -702,6 +713,41 @@
   }
 
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
+    const inputTemplate = input.inputTemplate && typeof input.inputTemplate === 'object' ? {
+      templateId: text(input.inputTemplate.templateId),
+      name: text(input.inputTemplate.name),
+      revision: Math.max(1, Number(input.inputTemplate.revision || 1)),
+      columns: Array.isArray(input.inputTemplate.columns) ? input.inputTemplate.columns.map((column, index) => ({
+        fieldId: text(column.fieldId || column.fieldKey),
+        label: text(column.label || column.displayLabel || column.fieldId || column.fieldKey),
+        order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
+      })).filter(column => column.fieldId) : []
+    } : null;
+    const stagingInput = input.staging && typeof input.staging === 'object' ? input.staging : {};
+    const stagingRows = Array.isArray(stagingInput.rows) ? stagingInput.rows.map(row => normalizeRow(row)) : [];
+    const staging = {
+      status: ['PENDING', 'APPLIED', 'ALREADY_PROCESSED', 'CONFLICT'].includes(stagingInput.status)
+        ? stagingInput.status
+        : (stagingRows.length ? 'PENDING' : 'EMPTY'),
+      sourceHash: text(stagingInput.sourceHash),
+      sourceName: text(stagingInput.sourceName),
+      sheetName: text(stagingInput.sheetName),
+      headerRowNumber: Number(stagingInput.headerRowNumber || 0),
+      mappings: Array.isArray(stagingInput.mappings) ? stagingInput.mappings.map(mapping => ({ ...mapping })) : [],
+      rows: stagingRows,
+      warnings: Array.isArray(stagingInput.warnings) ? stagingInput.warnings.map(warning => ({ ...warning })) : [],
+      batch: stagingInput.batch && typeof stagingInput.batch === 'object' ? { ...stagingInput.batch } : null,
+      templateMode: stagingInput.templateMode === 'FILL' ? 'FILL' : 'CREATE',
+      templateId: text(stagingInput.templateId),
+      templateName: text(stagingInput.templateName),
+      templateRevision: Number(stagingInput.templateRevision || 0),
+      templateSave: stagingInput.templateSave && typeof stagingInput.templateSave === 'object' ? {
+        status: text(stagingInput.templateSave.status),
+        message: text(stagingInput.templateSave.message),
+        templateId: text(stagingInput.templateSave.templateId)
+      } : { status: 'PENDING', message: '', templateId: '' },
+      createdAt: text(stagingInput.createdAt)
+    };
     return {
       documentId: text(input.documentId) || fallback.documentId,
       catalogRecordId: text(input.catalogRecordId),
@@ -715,6 +761,21 @@
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),
       activeMethod: INPUT_METHODS.some(method => method.id === input.activeMethod) ? input.activeMethod : 'text',
+      templateSessionMode: input.templateSessionMode === 'FILL' ? 'FILL' : 'CREATE',
+      selectedTemplateId: text(input.selectedTemplateId),
+      inputTemplate,
+      staging,
+      processedSourceHashes: [...new Set((Array.isArray(input.processedSourceHashes) ? input.processedSourceHashes : []).map(text).filter(Boolean))],
+      groupDeliveryResults: Array.isArray(input.groupDeliveryResults) ? input.groupDeliveryResults.map(result => ({
+        voucherGroupKey: text(result.voucherGroupKey),
+        businessKey: text(result.businessKey),
+        customerName: text(result.customerName),
+        status: text(result.status),
+        sourceHash: text(result.sourceHash),
+        orderId: text(result.orderId),
+        errorCode: text(result.errorCode),
+        completedAt: text(result.completedAt)
+      })).filter(result => result.voucherGroupKey) : [],
       batches: Array.isArray(input.batches) ? input.batches.map(batch => ({ ...batch, rawText: String(batch.rawText ?? '') })) : [],
       rows: Array.isArray(input.rows) ? input.rows.map(row => normalizeRow(row)) : [],
       voucherGroups: Array.isArray(input.voucherGroups) ? input.voucherGroups.map(group => ({ ...group })) : [],

@@ -49,10 +49,27 @@ export async function loadWarehouseReferences() {
 }
 
 export async function saveOrderLocal(payload) {
-  if (bridge().createOrder) return bridge().createOrder(payload);
-  const module = await optionalImport('../orderq/order-intake-engine.js?v=0.7.1', 'ORDER_LOCAL_WRITER_UNAVAILABLE');
-  if (typeof module.createOrder !== 'function') throw Object.assign(new Error('ORDER_LOCAL_WRITER_UNAVAILABLE'), { code: 'ORDER_LOCAL_WRITER_UNAVAILABLE' });
-  return module.createOrder(payload);
+  try {
+    if (bridge().createOrder) return await bridge().createOrder(payload);
+    const module = await optionalImport('../orderq/order-intake-engine.js?v=0.7.1', 'ORDER_LOCAL_WRITER_UNAVAILABLE');
+    if (typeof module.createOrder !== 'function') throw Object.assign(new Error('ORDER_LOCAL_WRITER_UNAVAILABLE'), { code: 'ORDER_LOCAL_WRITER_UNAVAILABLE' });
+    return await module.createOrder(payload);
+  } catch (error) {
+    if (error?.code !== 'ORDER_SOURCE_MESSAGE_DUPLICATE') throw error;
+    const existing = error.existingOrder || null;
+    const existingSourceHash = String(existing?.sourceId || '').trim();
+    const incomingSourceHash = String(payload?.sourceId || '').trim();
+    if (existing && existingSourceHash && existingSourceHash === incomingSourceHash) {
+      return { order: existing, duplicate: true, idempotent: true };
+    }
+    throw Object.assign(new Error('같은 거래처·일자·창고의 기존 주문이 다른 원본으로 저장되어 있습니다.'), {
+      code: 'ORDER_BUSINESS_KEY_CONFLICT',
+      existingOrder: existing,
+      existingSourceHash,
+      incomingSourceHash,
+      cause: error
+    });
+  }
 }
 
 export async function syncOrderInBackground(orderId) {
