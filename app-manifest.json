@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-29",
+  "updatedAt": "2026-08-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -395,7 +395,7 @@
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, and token-protected ORDER Q vNext incremental records.",
+      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, token-protected ORDER Q vNext incremental records, and the revisioned NEXUS company profile boundary.",
       "apiActions": {
         "post": [
           "initSync",
@@ -409,7 +409,14 @@
           "shipping_plan_get",
           "orderq_sync_push",
           "orderq_sync_pull",
-          "orderq_order_head"
+          "orderq_order_head",
+          "nexus_gateway_company_profile_get",
+          "nexus_gateway_company_profile_write",
+          "nexus_gateway_company_accounting_period_get",
+          "nexus_gateway_company_accounting_period_write",
+          "nexus_gateway_company_certificate_extract",
+          "nexus_gateway_company_backup_create",
+          "nexus_gateway_company_migrate_oneapp"
         ],
         "get": [
           "full",
@@ -426,7 +433,8 @@
         "table-view-config",
         "cloud-url",
         "dataops-inventory-snapshot",
-        "shipping-purchase-plan"
+        "shipping-purchase-plan",
+        "company-profile"
       ]
     }
   ],
@@ -476,7 +484,12 @@
         "adminWriteOperation": "company.profile_write",
         "companyId": "ONEAPP",
         "snapshotStorage": "sessionStorage-only non-authoritative public-field projection; full profile is never cached",
-        "serverRevisionAndAudit": true
+        "serverRevisionAndAudit": true,
+        "upstreamSource": [
+          "code.gs",
+          "company-profile.gs"
+        ],
+        "upstreamDeploymentPolicy": "Preserve the existing ONEAPP Apps Script deployment ID; restore the company boundary without running migration; retain upstream v44 as the immediate rollback version."
       }
     },
     {

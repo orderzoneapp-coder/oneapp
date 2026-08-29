@@ -37,6 +37,8 @@ const SHIPPING_PLAN_MAX_ROWS = 300000;
 const SHIPPING_PLAN_MAX_CELLS = 5000000;
 const SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY = 'ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN';
 const ORDERQ_ACCESS_TOKEN_PROPERTY = 'ONEAPP_ORDERQ_ACCESS_TOKEN';
+const ONEAPP_NEXUS_GATEWAY_ACTOR = 'NEXUS_GATEWAY';
+const ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_PROPERTY = 'ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON';
 const SHIPPING_PLAN_INDEX_COLUMNS = [
   'format', 'planId', 'revision', 'basisDate', 'savedAt', 'sourceFileName', 'savedBy',
   'productRowCount', 'purchaseUploadRowCount', 'hash', 'rowCount', 'cellCount',
@@ -177,6 +179,68 @@ function sha256Hex(text) {
     const byte = value < 0 ? value + 256 : value;
     return byte.toString(16).padStart(2, '0');
   }).join('');
+}
+
+function oneappNexusGatewayCanonicalJson(value) {
+  if (value === null || value === undefined) return 'null';
+  if (Array.isArray(value)) return '[' + value.map(oneappNexusGatewayCanonicalJson).join(',') + ']';
+  if (typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + oneappNexusGatewayCanonicalJson(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+
+function oneappNexusGatewayAudit(payload, boundary, access, result, code, credentialId) {
+  const request = payload && payload.nexusRequest || {};
+  console.info(JSON.stringify({
+    event: 'ONEAPP_NEXUS_GATEWAY_AUDIT', protocol: String(request.contractVersion || request.protocol || 'LEGACY_V1'),
+    requestId: String(request.requestId || ''), userId: String(request.subjectUserId || ''), loginId: String(request.subjectLoginId || ''),
+    appId: String(request.appId || ''), operationId: String(request.operationId || ''), action: String(payload && payload.action || ''),
+    actorId: ONEAPP_NEXUS_GATEWAY_ACTOR, boundary, access, credentialId: String(credentialId || ''), result,
+    safeError: String(code || '').replace(/[^A-Z0-9_]/g, '').slice(0, 100), at: new Date().toISOString()
+  }));
+}
+
+function oneappNexusGatewayRequire(payload, boundary, access) {
+  const normalizedBoundary = String(boundary || '').toUpperCase();
+  const normalizedAccess = String(access || '').toUpperCase();
+  const request = payload && payload.nexusRequest || {};
+  const protocol = String(request.contractVersion || request.protocol || '');
+  if (protocol !== 'NEXUS_AUTH_V2' && protocol !== 'LEGACY_V1') return null;
+  let credentialId = '';
+  try {
+    if (String(payload && payload.actorId || '') !== ONEAPP_NEXUS_GATEWAY_ACTOR) throw new Error('ONEAPP_NEXUS_GATEWAY_ACTOR_DENIED');
+    if (normalizedBoundary !== 'FOUNDATION' || !/^(READ|WRITE)$/.test(normalizedAccess)) throw new Error('ONEAPP_NEXUS_GATEWAY_ROUTE_DENIED');
+    let bindings;
+    try { bindings = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_PROPERTY) || '[]')); }
+    catch (_) { throw new Error('ONEAPP_NEXUS_GATEWAY_BINDINGS_INVALID'); }
+    if (!Array.isArray(bindings) || !bindings.length) throw new Error('ONEAPP_NEXUS_GATEWAY_NOT_CONFIGURED');
+    const suppliedToken = String(payload && payload.token || '');
+    if (!suppliedToken) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+    const suppliedDigest = sha256Hex(suppliedToken);
+    const binding = bindings.find(row => row && /^[a-f0-9]{64}$/.test(String(row.tokenDigest || '')) && constantTimeTextEquals(String(row.tokenDigest), suppliedDigest));
+    if (!binding) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+    credentialId = String(binding.credentialId || '');
+    const requiredFields = ['credentialId', 'version', 'tokenDigest', 'actorId', 'roleIds', 'allowedScope', 'status', 'createdAt', 'activatedAt', 'retiredAt'];
+    if (requiredFields.some(key => !Object.prototype.hasOwnProperty.call(binding, key))) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_SCHEMA_INVALID');
+    const status = String(binding.status || '').toUpperCase();
+    if (!credentialId || String(binding.version || '') !== 'V2' || binding.actorId !== ONEAPP_NEXUS_GATEWAY_ACTOR || !['ACTIVE', 'RETIRING', 'RETIRED'].includes(status)) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_DENIED');
+    const retiringUntil = Date.parse(binding.retiredAt || '');
+    if (Number.isNaN(Date.parse(binding.createdAt)) || Number.isNaN(Date.parse(binding.activatedAt))
+        || (status !== 'ACTIVE' && Number.isNaN(retiringUntil))) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_TIME_INVALID');
+    if (status === 'RETIRED' || (status === 'RETIRING' && retiringUntil <= Date.now())) throw new Error('ONEAPP_NEXUS_GATEWAY_BINDING_RETIRED');
+    const roles = Array.isArray(binding.roleIds) ? binding.roleIds.map(value => String(value || '').toUpperCase()) : [];
+    const requiredRole = `${normalizedBoundary}_${normalizedAccess}`;
+    const writeImpliesRead = normalizedAccess === 'READ' && roles.includes(`${normalizedBoundary}_WRITE`);
+    if (!roles.includes(requiredRole) && !writeImpliesRead) throw new Error('ONEAPP_NEXUS_GATEWAY_ROLE_DENIED');
+    const allowedScope = binding.allowedScope && typeof binding.allowedScope === 'object' ? binding.allowedScope : {};
+    const requestedScope = payload && payload.scope && typeof payload.scope === 'object' ? payload.scope : {};
+    if (!String(allowedScope.companyId || '') || oneappNexusGatewayCanonicalJson(allowedScope) !== oneappNexusGatewayCanonicalJson(requestedScope)) throw new Error('ONEAPP_NEXUS_GATEWAY_SCOPE_DENIED');
+    oneappNexusGatewayAudit(payload, normalizedBoundary, normalizedAccess, 'SUCCESS', '', credentialId);
+    return { actorId: ONEAPP_NEXUS_GATEWAY_ACTOR, roleIds: roles, tokenDigest: suppliedDigest, allowedScope,
+      scopeDigest: sha256Hex(oneappNexusGatewayCanonicalJson(allowedScope)), deviceId: 'NEXUS_GATEWAY', environment: 'PRODUCTION', credentialId };
+  } catch (error) {
+    oneappNexusGatewayAudit(payload, normalizedBoundary, normalizedAccess, 'DENIED', error && error.message, credentialId);
+    throw error;
+  }
 }
 
 function requireShippingPlanAccess(payload) {
@@ -674,6 +738,40 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
     const action = String(payload.action || '');
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === 'nexus_gateway_company_profile_get') {
+      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileGet(ss, payload) }));
+    }
+    if (action === 'nexus_gateway_company_profile_write') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      if (!companyAuth) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileWrite(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_accounting_period_get') {
+      if (!oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ')) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingRead(ss, payload) }));
+    }
+    if (action === 'nexus_gateway_company_accounting_period_write') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      if (!companyAuth) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileAccountingWrite(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_certificate_extract') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'READ');
+      if (!companyAuth) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return jsonResponse({ status: 'success', action, data: companyProfileCertificateExtract(payload, companyAuth) });
+    }
+    if (action === 'nexus_gateway_company_backup_create') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      if (!companyAuth) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileBackupCreate(ss, payload, companyAuth) }));
+    }
+    if (action === 'nexus_gateway_company_migrate_oneapp') {
+      const companyAuth = oneappNexusGatewayRequire(payload, 'FOUNDATION', 'WRITE');
+      if (!companyAuth) throw new Error('ONEAPP_NEXUS_GATEWAY_ACCESS_DENIED');
+      return withScriptLock(() => jsonResponse({ status: 'success', action, data: companyProfileMigrateOneapp(ss, payload, companyAuth) }));
+    }
 
     if (action === 'orderq_sync_push') {
       requireOrderQAccess(payload);

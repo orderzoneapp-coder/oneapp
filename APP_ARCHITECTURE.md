@@ -60,7 +60,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별과 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다.
 - NEXUS 홈 회사정보 카드는 탭 Session에 저장한 마지막 정상 공개필드 Snapshot을 즉시 표시하고, 인증 사용자용 활성 계약 `company.profile_read`를 `nexus-home` 앱 컨텍스트로 호출해 revision을 백그라운드 확인한다. 전체 응답에서는 회사명·사업자등록번호·대표자·회사전화·주소1/주소2 결합·홈페이지·revision만 명시 투영하며 자택전화·휴대전화·개인 이메일·세금계산서 이메일과 전체 profile은 캐시하지 않는다. 서버 실패는 `ERROR` 또는 `STALE`이며 `EMPTY`나 0건으로 바꾸지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
-- 기준 main `24429a1cdb53bbe084ef08b6516d012737a01808`에는 운영 중인 NEXUS Gateway·회사정보 Apps Script 서버 소스가 없었다. 클라이언트는 현행 배포 endpoint 계약을 사용하며 이 source/deployment drift를 서버 소스 복구 완료로 간주하지 않는다.
+- 기준 main `24429a1cdb53bbe084ef08b6516d012737a01808`에는 운영 중인 NEXUS Gateway·회사정보 Apps Script 서버 소스가 없었고, 상류 ONEAPP Apps Script v44 롤백은 회사정보 모듈과 라우트를 포함하지 않아 인증된 `company.profile_read`를 처리하지 못했다. `code.gs`와 `company-profile.gs`는 기존 Foundation Gateway binding, revision, 감사, 원자적 백업, 1회 migration ledger 계약을 복원한다. 공식 배포는 기존 상류 deployment ID를 유지하고 v44를 롤백 기준으로 보존한다.
 - 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
 - `coreEngine.js`는 여러 앱이 사용하는 현행 공유 라이브러리지만, 앱 Core를 부팅시키거나 전체 앱 준비 상태를 결정하는 상위 Runtime으로 확대하지 않는다.
 - GitHub Pages는 현재 저장소 단위로 배포된다. 앱 독립 배포 목표는 우선 앱별 변경·검증·PR·롤백 범위를 분리하는 것이며, 물리적 배포 단위 분리는 별도 호스팅 변경이 승인될 때만 수행한다.
@@ -156,7 +156,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `core-engine` | `coreEngine.js` | 운영 공유 라이브러리 | 현행 저장·가격·이력·출력·Cloud·master 유틸리티 |
 | `orderops` | `orderops/list.html` | 파일럿 | 출고·재고·구매계획과 검토형 출력 |
 | `orderq-vnext` | `orderq/index.html` | 파일럿 | 주문 입력·수집·이행근거와 revision 동기화 |
-| `cloud-sync` | `code.gs` | 운영 Server Transport | 현행 master·이력·설정·DataOps·Shipping·ORDER Q API |
+| `cloud-sync` | `code.gs`, `company-profile.gs` | 운영 Server Transport | 현행 master·이력·설정·DataOps·Shipping·ORDER Q와 NEXUS 회사정보 API |
 
 `ItemMaster.html`은 manifest와 공통 메뉴에 등록하지 않는 정적 호환 페이지다. `master-lookup`과 `Master.html`, `item-manager`와 `Item_manager.html` 등록은 그대로 유지한다.
 
@@ -303,6 +303,13 @@ It must:
 | POST | `orderq_sync_push` | Token-protected incremental ORDER Q entity push with revision conflict, source-message duplicate prevention, and recoverable order-bundle writes |
 | POST | `orderq_sync_pull` | Token-protected incremental ORDER Q entity pull after the device cursor |
 | POST | `orderq_order_head` | Token-protected latest ORDER Q order bundle and revision lookup |
+| POST | `nexus_gateway_company_profile_get` | Foundation Gateway binding으로 서버 권위 회사정보와 회계기간 조회 |
+| POST | `nexus_gateway_company_profile_write` | 관리자·revision 검사를 거쳐 제공된 회사정보 필드만 원자적으로 갱신하고 감사 기록 |
+| POST | `nexus_gateway_company_accounting_period_get` | Foundation Gateway binding으로 회계기간 조회 |
+| POST | `nexus_gateway_company_accounting_period_write` | 관리자·profile revision·기간 revision 검사를 거쳐 회계기간 갱신 |
+| POST | `nexus_gateway_company_certificate_extract` | 영구 원본 저장 없이 허용 필드만 OCR 정규화 후보로 반환 |
+| POST | `nexus_gateway_company_backup_create` | 현재 회사정보와 회계기간의 명시적 서버 백업 생성 |
+| POST | `nexus_gateway_company_migrate_oneapp` | 작업 ID ledger로 보호되는 원앱 회사정보 1회 멱등 반영 |
 | GET | `full` or omitted | Return master, history, and configuration |
 | GET | `master_only` | Return product master and summary |
 | GET | `config_only` | Return configuration only |
@@ -318,6 +325,8 @@ The Shipping cloud contract is `ONEAPP_SHIPPING_PURCHASE_PLAN_V1`, and its embed
 All Shipping plan actions use POST bodies and the separate `ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN`. They do not read or write DataOps A/B snapshots, `ONEAPP_DATAOPS_CURRENT_SLOT`, `MasterDB`, `HistoryLogs`, or `AppConfig`. Local autosave is not cloud transfer; another computer can retrieve only revisions saved through the explicit cloud-save action.
 
 ORDER Q vNext actions use `ONEAPP_ORDERQ_ACCESS_TOKEN`, with the existing Shipping token as a compatibility fallback when a separate ORDER Q token has not been configured. Order and order-item writes are staged in `ORDER_TXN_LOG`, verified as a bundle, and restored to the previous bundle after a partial failure. Historical import facts are synchronized in shared purpose sheets; customer-specific sheets are prohibited.
+
+NEXUS 회사정보 상류 action은 활성 Gateway가 전달하는 `NEXUS_AUTH_V2` 요청과 기존 `ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON` credential·scope를 함께 검증한다. 읽기 라우트도 legacy 또는 direct 요청을 허용하지 않는다. 관리 쓰기는 `OWNER_MASTER`, `admin.company`, 앱 컨텍스트와 `expectedRevision`을 다시 확인하며, 서버 배포만으로 migration이나 기존 레코드 변경을 실행하지 않는다.
 
 Changing any action name, payload shape, response shape, authentication rule, or field normalization requires coordinated updates to:
 
