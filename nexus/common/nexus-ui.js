@@ -8,17 +8,17 @@
   const siteRoot = new URL('../../', scriptUrl);
   const asset = (path) => new URL(path, siteRoot).href;
   const APPS = Object.freeze([
+    Object.freeze({ id: 'master-lookup', label: '기준정보', path: 'Master.html' }),
     Object.freeze({ id: 'merchops', label: '가격·시세', path: 'MerchOps.html' }),
+    Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
+    Object.freeze({ id: 'orderops', label: '주문·출고', path: 'orderops/list.html' }),
     Object.freeze({ id: 'dataops', label: '재고·정산', path: 'DataOps.html' }),
     Object.freeze({ id: 'smart-parser', label: '문서분석', path: 'SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', path: 'export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', path: 'settings.html' }),
-    Object.freeze({ id: 'master-lookup', label: '기준정보', path: 'Master.html' }),
     Object.freeze({ id: 'item-manager', label: '상품등록', path: 'Item_manager.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', path: 'history_viewer.html' }),
-    Object.freeze({ id: 'orderops', label: '주문·출고', path: 'orderops/list.html' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문현황', path: 'orderq/index.html' }),
-    Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
   ]);
 
   const element = (tag, className, text) => {
