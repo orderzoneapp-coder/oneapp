@@ -12,8 +12,12 @@ const fixtureDir = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-fixtures-'));
 const screenshotDir = resolve(process.env.SMARTINPUT_SCREENSHOT_DIR || join(tmpdir(), 'oneapp-smartinput-screenshots'));
 mkdirSync(screenshotDir, { recursive: true });
 const tsvPath = join(fixtureDir, 'smartinput.tsv');
+const csvPath = join(fixtureDir, 'smartinput.csv');
+const xlsxPath = join(fixtureDir, 'smartinput.xlsx');
 const photoPath = join(fixtureDir, 'source.png');
 writeFileSync(tsvPath, '품목코드\t품목명\t수량\t단위\t단가\nTSV-1\tTSV 상품\t2\tEA\t1500');
+writeFileSync(csvPath, '품목코드,품목명,수량,단위,단가\nCSV-1,CSV 상품,4,EA,2100');
+writeFileSync(xlsxPath, 'XLSX_STUB_FIXTURE');
 writeFileSync(photoPath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
 
 const mimeTypes = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.tsv': 'text/tab-separated-values; charset=utf-8' };
@@ -262,6 +266,20 @@ try {
   const sheetNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#sheetFileInput' });
   await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [tsvPath] });
   await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='TSV-1')`, 'TSV import');
+  await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [csvPath] });
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='CSV-1')`, 'CSV import');
+  await evaluate(client, `(() => {
+    window.__SMARTINPUT_EXTERNALS__ = {
+      ...(window.__SMARTINPUT_EXTERNALS__ || {}),
+      XLSX: {
+        read: () => ({ SheetNames: ['Sheet1'], Sheets: { Sheet1: {} } }),
+        utils: { sheet_to_json: () => [['품목코드','품목명','수량','단위','단가'],['XLSX-1','Excel 상품','5','EA','3200']] }
+      }
+    };
+    return true;
+  })()`);
+  await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [xlsxPath] });
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='XLSX-1')`, 'Excel workbook import');
 
   await click(client, '[data-method="photo"]');
   const photoNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#photoFileInput' });
@@ -387,7 +405,7 @@ try {
   assert.deepEqual(runtimeErrors, [], `uncaught browser runtime errors: ${runtimeErrors.join(' | ')}`);
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);
 
-  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, screenshots: [lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
+  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, screenshots: [lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'csv', 'xlsx', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) browserProcess.kill();
