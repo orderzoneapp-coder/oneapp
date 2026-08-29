@@ -1,4 +1,4 @@
-import { APP_ID, SNAPSHOT_SCHEMA_VERSION, CUSTOMER_STATUS, clean, searchCustomerRows, sha256Hex } from './core.js';
+import { APP_ID, SNAPSHOT_SCHEMA_VERSION, CUSTOMER_QUALITY, CUSTOMER_STATUS, clean, resolveCanonicalCustomerId, searchCustomerRows, sha256Hex } from './core.js';
 import { STORE, getByKey } from './db.js';
 import { listCustomerData } from './repository.js';
 
@@ -34,17 +34,18 @@ export async function getCustomerSnapshot({ includeInactive = true } = {}) {
   const [{ customers, aliases, sourceLinks }, head] = await Promise.all([
     listCustomerData(), getByKey(STORE.META, 'headRevision'),
   ]);
-  const selected = customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED)
+  const selected = customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED && customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED)
     .filter((customer) => includeInactive || customer.status === CUSTOMER_STATUS.ACTIVE)
     .map(projectCustomer)
     .sort((left, right) => String(left.customerId).localeCompare(String(right.customerId)));
   const customerIds = new Set(selected.map((customer) => customer.customerId));
+  const effectiveCustomerId = (customerId) => resolveCanonicalCustomerId(customerId, customers);
   const data = {
     customers: selected,
-    aliases: aliases.filter((row) => customerIds.has(row.customerId) && row.active !== false)
-      .map((row) => ({ customerId: row.customerId, alias: row.alias || row.rawText || '', normalizedText: row.normalizedText || '', source: row.source || '' })),
-    sourceLinks: sourceLinks.filter((row) => customerIds.has(row.customerId) && row.active !== false)
-      .map((row) => ({ customerId: row.customerId, sourceSystem: row.sourceSystem, sourceCustomerCode: row.sourceCustomerCode, sourceCustomerName: row.sourceCustomerName || '', revision: Number(row.revision || 1) })),
+    aliases: aliases.filter((row) => customerIds.has(effectiveCustomerId(row.customerId)) && row.active !== false)
+      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), alias: row.alias || row.rawText || '', normalizedText: row.normalizedText || '', source: row.source || '' })),
+    sourceLinks: sourceLinks.filter((row) => customerIds.has(effectiveCustomerId(row.customerId)) && row.active !== false)
+      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), sourceSystem: row.sourceSystem, sourceCustomerCode: row.sourceCustomerCode, sourceCustomerName: row.sourceCustomerName || '', revision: Number(row.revision || 1) })),
   };
   const revision = Number(head?.value || 0);
   const contentHash = await sha256Hex(data);

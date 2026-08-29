@@ -8,7 +8,9 @@ import {
   clean,
   customerDisplayStatus,
   defaultHeaderMapping,
+  detectImportSourceSystem,
   missingCustomerFields,
+  resolveCanonicalCustomerId,
   searchCustomerRows,
   sha256Hex,
 } from './core.js';
@@ -21,7 +23,9 @@ import {
   listEvents,
   listHeaderMappings,
   listUserFields,
+  mapCustomerToCanonical,
   prepareImportBatch,
+  releaseCustomerCanonicalMapping,
   resolveImportRecord,
   saveCustomer,
   saveHeaderMapping,
@@ -40,6 +44,7 @@ const state = {
   workbook: null,
   file: null,
   fileHash: '',
+  detectedSourceSystem: '',
   mapping: [],
   importWork: null,
   legacyInspection: null,
@@ -70,6 +75,9 @@ const sourceCodeLabel = (sourceSystem = $('#importSourceSystem')?.value || 'OTHE
   ERP: 'ERP 거래처코드', SHOP: 'SHOP 회원 아이디', OTHER: '원본 거래처코드',
 }[clean(sourceSystem).toUpperCase()] || '원본 거래처코드');
 
+const operationalCustomers = () => state.data.customers.filter((customer) =>
+  customer.status !== CUSTOMER_STATUS.DELETED && customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED);
+
 const importFieldLabel = (fieldKey, sourceSystem) => fieldKey === 'sourceCustomerCode'
   ? sourceCodeLabel(sourceSystem)
   : (IMPORT_FIELD_LABELS[fieldKey] || FIELD_LABELS[fieldKey] || fieldKey);
@@ -92,7 +100,7 @@ async function withBusy(message, task) {
   setStatus(message, 'busy');
   try {
     const result = await task();
-    setStatus(`로컬 DB · 거래처 ${state.data.customers.filter((row) => row.status !== CUSTOMER_STATUS.DELETED).length.toLocaleString()}건`, 'ready');
+    setStatus(`로컬 DB · 거래처 ${operationalCustomers().length.toLocaleString()}건`, 'ready');
     return result;
   } catch (error) {
     console.error(error);
@@ -120,13 +128,19 @@ function visibleCustomers() {
   const group1 = $('#group1Filter').value;
   const group2 = $('#group2Filter').value;
   const manager = $('#managerFilter').value;
-  const base = state.data.customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED)
+  const searched = searchCustomerRows(
+    state.data.customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED),
+    state.data.aliases,
+    state.data.sourceLinks,
+    query,
+    500,
+  );
+  return searched
     .filter((customer) => status === 'ALL' || customer.status === status)
     .filter((customer) => group1 === 'ALL' || clean(customer.group1Name) === group1)
     .filter((customer) => group2 === 'ALL' || clean(customer.group2Name) === group2)
     .filter((customer) => manager === 'ALL' || clean(customer.contactName) === manager)
     .filter((customer) => state.summaryFilter === 'ALL' || customerDisplayStatus(customer) === state.summaryFilter);
-  return searchCustomerRows(base, state.data.aliases, state.data.sourceLinks, query, 500);
 }
 
 function renderFilterOptions() {
@@ -137,13 +151,14 @@ function renderFilterOptions() {
       .sort((left, right) => left.localeCompare(right, 'ko')).map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}`;
     select.value = [...select.options].some((option) => option.value === current) ? current : 'ALL';
   };
-  fill('#group1Filter', '그룹1', state.data.customers.map((row) => row.group1Name));
-  fill('#group2Filter', '그룹2', state.data.customers.map((row) => row.group2Name));
-  fill('#managerFilter', '담당자', state.data.customers.map((row) => row.contactName));
+  const customers = operationalCustomers();
+  fill('#group1Filter', '그룹1', customers.map((row) => row.group1Name));
+  fill('#group2Filter', '그룹2', customers.map((row) => row.group2Name));
+  fill('#managerFilter', '담당자', customers.map((row) => row.contactName));
 }
 
 function renderStats() {
-  const customers = state.data.customers.filter((row) => row.status !== CUSTOMER_STATUS.DELETED);
+  const customers = operationalCustomers();
   $('#totalCount').textContent = customers.length.toLocaleString();
   $('#completeCount').textContent = customers.filter((row) => customerDisplayStatus(row) === 'COMPLETE').length.toLocaleString();
   $('#incompleteCount').textContent = customers.filter((row) => customerDisplayStatus(row) === 'INCOMPLETE').length.toLocaleString();
@@ -264,9 +279,87 @@ async function resolveReviewAction(button) {
   });
 }
 
+function directSourceCodes(customerId) {
+  return state.data.sourceLinks.filter((link) => link.customerId === customerId && link.active !== false)
+    .map((link) => `${link.sourceSystem} ${link.sourceCustomerCode}`);
+}
+
+function customerForReference(reference, { canonical = false } = {}) {
+  const value = clean(reference);
+  const normalized = value.toLocaleLowerCase('ko');
+  if (!value) throw new Error('거래처 코드 또는 거래처명을 입력해 주세요.');
+  let candidates = state.data.customers.filter((customer) => clean(customer.customerId).toLocaleLowerCase('ko') === normalized);
+  if (!candidates.length) {
+    const linkedIds = new Set(state.data.sourceLinks.filter((link) => link.active !== false
+      && clean(link.sourceCustomerCode).toLocaleLowerCase('ko') === normalized).map((link) => link.customerId));
+    candidates = state.data.customers.filter((customer) => linkedIds.has(customer.customerId));
+  }
+  if (!candidates.length) candidates = state.data.customers.filter((customer) => clean(customer.customerName).toLocaleLowerCase('ko') === normalized);
+  if (candidates.length !== 1) throw new Error(candidates.length ? '같은 값에 해당하는 거래처가 여러 건입니다. NEXUS 거래처코드를 입력해 주세요.' : '입력한 거래처를 찾을 수 없습니다.');
+  if (!canonical) return candidates[0];
+  const canonicalId = resolveCanonicalCustomerId(candidates[0].customerId, state.data.customers);
+  return state.data.customers.find((customer) => customer.customerId === canonicalId) || candidates[0];
+}
+
+function renderCustomerReferenceOptions() {
+  const options = [];
+  state.data.customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED).forEach((customer) => {
+    const label = `${customer.customerName || '(상호 미입력)'} · ${customer.customerId}`;
+    options.push(`<option value="${escapeHtml(customer.customerId)}">${escapeHtml(label)}</option>`);
+    directSourceCodes(customer.customerId).forEach((sourceCode) => {
+      const code = sourceCode.replace(/^\S+\s+/, '');
+      options.push(`<option value="${escapeHtml(code)}">${escapeHtml(`${sourceCode} · ${label}`)}</option>`);
+    });
+  });
+  $('#customerReferenceOptions').innerHTML = options.join('');
+}
+
+function renderCanonicalMappings() {
+  const mapped = state.data.customers.filter((customer) => customer.status !== CUSTOMER_STATUS.DELETED
+    && customer.qualityStatus === CUSTOMER_QUALITY.SUPERSEDED && clean(customer.canonicalCustomerId));
+  $('#canonicalMappingsBody').innerHTML = mapped.map((source) => {
+    const canonicalId = resolveCanonicalCustomerId(source.customerId, state.data.customers);
+    const target = state.data.customers.find((customer) => customer.customerId === canonicalId);
+    return `<tr><td>${escapeHtml(source.customerId)}</td><td>${escapeHtml(source.customerName || '(상호 미입력)')}</td>
+      <td>${escapeHtml(directSourceCodes(source.customerId).join(' · ') || '-')}</td>
+      <td><strong>${escapeHtml(target?.customerId || canonicalId)}</strong><br>${escapeHtml(target?.customerName || '(대표 거래처 없음)')}</td>
+      <td><button type="button" class="cm-row-button" data-release-customer-mapping="${escapeHtml(source.customerId)}">연결 해제</button></td></tr>`;
+  }).join('');
+  $('#canonicalMappingsEmpty').hidden = mapped.length !== 0;
+}
+
+async function applyManualCustomerMapping() {
+  const source = customerForReference($('#mappingSourceReference').value);
+  const target = customerForReference($('#mappingTargetReference').value, { canonical: true });
+  if (source.customerId === target.customerId) throw new Error('분리된 거래처와 대표 거래처가 같습니다.');
+  if (!confirm(`${source.customerName || source.customerId}의 ERP·SHOP 코드를 ${target.customerName || target.customerId}의 NEXUS 코드로 연결할까요?`)) return;
+  await withBusy('NEXUS 거래처 연결 중', async () => {
+    await mapCustomerToCanonical(source.customerId, target.customerId);
+    $('#mappingSourceReference').value = '';
+    $('#mappingTargetReference').value = '';
+    await refreshAll();
+    await renderMappingManagement();
+    toast('분산 거래처를 대표 NEXUS 거래처에 연결했습니다.');
+  });
+}
+
+async function releaseManualCustomerMapping(customerId) {
+  const source = state.data.customers.find((customer) => customer.customerId === customerId);
+  if (!source) throw new Error('해제할 거래처를 찾을 수 없습니다.');
+  if (!confirm(`${source.customerName || source.customerId}의 대표 거래처 연결을 해제할까요? 원래 NEXUS 거래처로 다시 표시됩니다.`)) return;
+  await withBusy('NEXUS 거래처 연결 해제 중', async () => {
+    await releaseCustomerCanonicalMapping(source.customerId);
+    await refreshAll();
+    await renderMappingManagement();
+    toast('대표 거래처 연결을 해제했습니다.');
+  });
+}
+
 async function renderMappingManagement() {
   const [mappings, userFields] = await Promise.all([listHeaderMappings(), listUserFields()]);
   state.userFields = userFields;
+  renderCustomerReferenceOptions();
+  renderCanonicalMappings();
   $('#savedMappingsBody').innerHTML = mappings.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).map((row) => {
     const targetLabel = row.targetFieldKey === 'sourceCustomerCode' ? sourceCodeLabel(row.sourceSystem)
       : IMPORT_FIELD_LABELS[row.targetFieldKey] || FIELD_LABELS[row.targetFieldKey]
@@ -290,12 +383,13 @@ async function refreshAll() {
   renderStats();
   renderCustomerList();
   renderCompleteness();
-  setStatus(`로컬 DB · 거래처 ${state.data.customers.filter((row) => row.status !== CUSTOMER_STATUS.DELETED).length.toLocaleString()}건`);
+  setStatus(`로컬 DB · 거래처 ${operationalCustomers().length.toLocaleString()}건`);
 }
 
 async function openCustomerDialog(customerId = '') {
   const form = $('#customerForm');
   form.reset();
+  $('#customerSourceLinksList').textContent = '연결된 외부코드가 없습니다.';
   $$('[name]', form).forEach((field) => { if (field.type !== 'select-one') field.value = ''; });
   form.elements.status.value = CUSTOMER_STATUS.ACTIVE;
   $('#customerDialogTitle').textContent = customerId ? '거래처 수정' : '거래처 등록';
@@ -307,12 +401,10 @@ async function openCustomerDialog(customerId = '') {
     form.elements.revision.value = details.customer.revision;
     form.elements.status.value = details.customer.status;
     form.elements.aliases.value = details.aliases.map((row) => row.alias || row.rawText).filter(Boolean).join(', ');
-    const erp = details.sourceLinks.find((row) => row.sourceSystem === 'ERP');
-    const shop = details.sourceLinks.find((row) => row.sourceSystem === 'SHOP');
-    form.elements.erpCode.value = erp?.sourceCustomerCode || '';
-    form.elements.erpName.value = erp?.sourceCustomerName || '';
-    form.elements.shopCode.value = shop?.sourceCustomerCode || '';
-    form.elements.shopName.value = shop?.sourceCustomerName || '';
+    $('#customerSourceLinksList').innerHTML = details.sourceLinks.length
+      ? details.sourceLinks.sort((left, right) => left.sourceSystem.localeCompare(right.sourceSystem) || left.sourceCustomerCode.localeCompare(right.sourceCustomerCode))
+        .map((link) => `<span class="cm-badge" data-tone="success"><strong>${escapeHtml(link.sourceSystem)}</strong> ${escapeHtml(link.sourceCustomerCode)}</span>`).join('')
+      : '연결된 외부코드가 없습니다.';
   }
   form.elements.nexusCode.value = customerId || '저장 시 자동 생성';
   $('#customerDialog').showModal();
@@ -421,8 +513,11 @@ async function selectCustomerFile(file) {
       parseCustomerFile(file), fileHash(file), listHeaderMappings(), listUserFields(),
     ]);
     state.file = file; state.fileHash = hash; state.workbook = workbook; state.userFields = userFields;
+    state.detectedSourceSystem = detectImportSourceSystem(workbook.headers);
+    if (state.detectedSourceSystem) $('#importSourceSystem').value = state.detectedSourceSystem;
     state.mapping = defaultHeaderMapping(workbook.headers, storedMappings, userFields, $('#importSourceSystem').value);
-    $('#selectedFileName').textContent = `${file.name} · ${workbook.sheetName} · 헤더 ${Number(workbook.headerRowNumber || 1).toLocaleString()}행 자동 인식 · 데이터 ${workbook.rows.length.toLocaleString()}행`;
+    const detectedLabel = state.detectedSourceSystem ? ` · ${state.detectedSourceSystem} 원본 자동 판별` : '';
+    $('#selectedFileName').textContent = `${file.name} · ${workbook.sheetName} · 헤더 ${Number(workbook.headerRowNumber || 1).toLocaleString()}행 자동 인식 · 데이터 ${workbook.rows.length.toLocaleString()}행${detectedLabel}`;
     $('#importSourceCodeHeading').textContent = sourceCodeLabel();
     $('#mappingWorkbench').hidden = false;
     $('#importResult').hidden = true;
@@ -445,6 +540,9 @@ async function saveCurrentMappings() {
 
 async function analyzeSelectedImport() {
   if (!state.workbook) throw new Error('먼저 Excel 파일을 선택해 주세요.');
+  if (state.detectedSourceSystem && state.detectedSourceSystem !== $('#importSourceSystem').value) {
+    throw new Error(`선택한 파일은 ${state.detectedSourceSystem} 원본으로 판별되었습니다. 원본 종류를 확인해 주세요.`);
+  }
   if (!state.mapping.some((row) => row.targetFieldKey === 'sourceCustomerCode')) throw new Error(`${sourceCodeLabel()} 열을 반드시 연결해야 합니다.`);
   await withBusy('업로드 행 분석 중', async () => {
     const sourceSystem = $('#importSourceSystem').value;
@@ -605,6 +703,11 @@ function bindEvents() {
   });
   $('#resumeImportButton').addEventListener('click', () => resumeImport().catch(() => {}));
   $('#saveUserFieldsButton').addEventListener('click', () => saveUserFields().catch(() => {}));
+  $('#mapCustomerButton').addEventListener('click', () => applyManualCustomerMapping().catch(() => {}));
+  $('#canonicalMappingsBody').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-release-customer-mapping]');
+    if (button) releaseManualCustomerMapping(button.dataset.releaseCustomerMapping).catch(() => {});
+  });
   $('#refreshHistoryButton').addEventListener('click', () => renderHistory().catch((error) => toast(error.message, 'error')));
   $('#inspectLegacyButton').addEventListener('click', () => inspectLegacy().catch(() => {}));
   $('#migrateLegacyButton').addEventListener('click', () => migrateLegacy().catch(() => {}));

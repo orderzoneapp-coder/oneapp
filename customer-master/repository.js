@@ -7,6 +7,7 @@ import {
   normalizeCustomer,
   normalizeHeader,
   normalizeText,
+  resolveCanonicalCustomerId,
 } from './core.js';
 import { STORE, getAll, getByKey, openDb, requestResult, transactionDone } from './db.js';
 
@@ -64,14 +65,118 @@ export async function listCustomerData() {
 }
 
 export async function customerDetails(customerId) {
-  const [customer, aliases, sourceLinks] = await Promise.all([
-    getByKey(STORE.CUSTOMERS, customerId), getAll(STORE.ALIASES), getAll(STORE.SOURCE_LINKS),
+  const [customers, aliases, sourceLinks] = await Promise.all([
+    getAll(STORE.CUSTOMERS), getAll(STORE.ALIASES), getAll(STORE.SOURCE_LINKS),
   ]);
+  const canonicalCustomerId = resolveCanonicalCustomerId(customerId, customers);
+  const customer = customers.find((row) => row.customerId === canonicalCustomerId);
+  const memberIds = new Set(customers.filter((row) => resolveCanonicalCustomerId(row.customerId, customers) === canonicalCustomerId)
+    .map((row) => row.customerId));
   return {
     customer,
-    aliases: aliases.filter((row) => row.customerId === customerId && row.active !== false),
-    sourceLinks: sourceLinks.filter((row) => row.customerId === customerId && row.active !== false),
+    aliases: aliases.filter((row) => row.customerId === canonicalCustomerId && row.active !== false),
+    sourceLinks: sourceLinks.filter((row) => memberIds.has(row.customerId) && row.active !== false)
+      .map((row) => ({ ...row, canonicalCustomerId, sourceOwnerCustomerId: row.customerId })),
   };
+}
+
+export async function mapCustomerToCanonical(sourceCustomerId, targetCustomerId, options = {}) {
+  const timestamp = new Date().toISOString();
+  const actor = options.actor || currentActor();
+  const operationId = clean(options.operationId) || newId('OP-MAP');
+  const db = await openDb();
+  const tx = db.transaction([STORE.CUSTOMERS, STORE.EVENTS, STORE.META], 'readwrite');
+  const customers = tx.objectStore(STORE.CUSTOMERS);
+  const events = tx.objectStore(STORE.EVENTS);
+  const meta = tx.objectStore(STORE.META);
+  const replay = await requestResult(events.index('byOperationId').get(operationId));
+  if (replay) {
+    const replayed = await requestResult(customers.get(replay.customerId));
+    await transactionDone(tx);
+    return { customer: replayed, replayed: true, operationId };
+  }
+  const allCustomers = await requestResult(customers.getAll());
+  const source = allCustomers.find((row) => row.customerId === clean(sourceCustomerId));
+  const targetCanonicalId = resolveCanonicalCustomerId(targetCustomerId, allCustomers);
+  const target = allCustomers.find((row) => row.customerId === targetCanonicalId);
+  if (!source || source.status === CUSTOMER_STATUS.DELETED) {
+    tx.abort();
+    throw new Error('연결할 분산 거래처를 찾을 수 없습니다.');
+  }
+  if (!target || target.status === CUSTOMER_STATUS.DELETED || target.qualityStatus === CUSTOMER_QUALITY.SUPERSEDED) {
+    tx.abort();
+    throw new Error('대표 NEXUS 거래처를 찾을 수 없습니다.');
+  }
+  if (source.customerId === target.customerId || resolveCanonicalCustomerId(target.customerId, allCustomers) === source.customerId) {
+    tx.abort();
+    throw new Error('같은 거래처끼리 연결하거나 순환 연결할 수 없습니다.');
+  }
+  if (source.qualityStatus === CUSTOMER_QUALITY.SUPERSEDED && resolveCanonicalCustomerId(source.customerId, allCustomers) === target.customerId) {
+    tx.abort();
+    throw new Error('이미 선택한 대표 거래처에 연결되어 있습니다.');
+  }
+  const revision = Number(source.revision || 0) + 1;
+  const mapped = normalizeCustomer({
+    ...source,
+    qualityStatus: CUSTOMER_QUALITY.SUPERSEDED,
+    canonicalCustomerId: target.customerId,
+    preMappingQualityStatus: source.qualityStatus === CUSTOMER_QUALITY.SUPERSEDED
+      ? (source.preMappingQualityStatus || CUSTOMER_QUALITY.UNVERIFIED)
+      : source.qualityStatus,
+    revision,
+    updatedAt: timestamp,
+  }, source, timestamp);
+  customers.put(mapped);
+  const headRow = await requestResult(meta.get('headRevision'));
+  const headRevision = Number(headRow?.value || 0) + 1;
+  meta.put({ key: 'headRevision', value: headRevision, updatedAt: timestamp });
+  events.put({
+    eventId: newId('CE'), customerId: source.customerId, eventType: 'MAPPED_TO_CANONICAL', operationId,
+    entityRevision: revision, baseRevision: Number(source.revision || 0), headRevision,
+    occurredAt: timestamp, ...actorFields(actor),
+    payload: { source: 'MANUAL_CUSTOMER_MAPPING', before: source, after: mapped, targetCustomerId: target.customerId },
+  });
+  await transactionDone(tx);
+  return { customer: mapped, target, replayed: false, operationId, headRevision };
+}
+
+export async function releaseCustomerCanonicalMapping(sourceCustomerId, options = {}) {
+  const timestamp = new Date().toISOString();
+  const actor = options.actor || currentActor();
+  const operationId = clean(options.operationId) || newId('OP-UNMAP');
+  const db = await openDb();
+  const tx = db.transaction([STORE.CUSTOMERS, STORE.EVENTS, STORE.META], 'readwrite');
+  const customers = tx.objectStore(STORE.CUSTOMERS);
+  const events = tx.objectStore(STORE.EVENTS);
+  const meta = tx.objectStore(STORE.META);
+  const source = await requestResult(customers.get(clean(sourceCustomerId)));
+  if (!source || source.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED || !clean(source.canonicalCustomerId)) {
+    tx.abort();
+    throw new Error('해제할 수동 거래처 연결을 찾을 수 없습니다.');
+  }
+  const revision = Number(source.revision || 0) + 1;
+  const released = normalizeCustomer({
+    ...source,
+    qualityStatus: Object.values(CUSTOMER_QUALITY).includes(source.preMappingQualityStatus)
+      ? source.preMappingQualityStatus
+      : CUSTOMER_QUALITY.UNVERIFIED,
+    canonicalCustomerId: source.customerId,
+    preMappingQualityStatus: '',
+    revision,
+    updatedAt: timestamp,
+  }, source, timestamp);
+  customers.put(released);
+  const headRow = await requestResult(meta.get('headRevision'));
+  const headRevision = Number(headRow?.value || 0) + 1;
+  meta.put({ key: 'headRevision', value: headRevision, updatedAt: timestamp });
+  events.put({
+    eventId: newId('CE'), customerId: source.customerId, eventType: 'CANONICAL_MAPPING_RELEASED', operationId,
+    entityRevision: revision, baseRevision: Number(source.revision || 0), headRevision,
+    occurredAt: timestamp, ...actorFields(actor),
+    payload: { source: 'MANUAL_CUSTOMER_MAPPING', before: source, after: released, previousTargetCustomerId: source.canonicalCustomerId },
+  });
+  await transactionDone(tx);
+  return { customer: released, replayed: false, operationId, headRevision };
 }
 
 export async function saveCustomer(input, options = {}) {

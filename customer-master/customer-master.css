@@ -46,7 +46,7 @@ button { cursor: pointer; }
 .cm-stat.is-active { border-color: #9db4c8; background: var(--cm-accent-soft); }
 .cm-panel { min-width: 0; padding: 16px; border: 1px solid var(--cm-border); border-radius: var(--cm-radius); background: var(--cm-panel); box-shadow: 0 1px 2px rgba(16,24,40,.04); }
 .cm-toolbar { min-width: 0; margin-bottom: 12px; display: grid; grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(120px, auto)) auto; gap: 8px; }
-.cm-toolbar input, .cm-toolbar select, .cm-file-row select, .cm-form-grid input, .cm-form-grid select, .cm-form-grid textarea, .cm-table input, .cm-table select { width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--cm-border-strong); border-radius: 7px; background: #fff; color: var(--cm-text); }
+.cm-toolbar input, .cm-toolbar select, .cm-file-row select, .cm-form-grid input, .cm-form-grid select, .cm-form-grid textarea, .cm-table input, .cm-table select, .cm-manual-map-controls input { width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--cm-border-strong); border-radius: 7px; background: #fff; color: var(--cm-text); }
 .cm-search-wrap, .cm-toolbar > * { min-width: 0; }
 .cm-button, .cm-file-button { min-height: 38px; padding: 8px 13px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--cm-border-strong); border-radius: 7px; background: var(--cm-panel); color: var(--cm-text); font-size: 13px; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .cm-button:hover, .cm-file-button:hover { background: var(--cm-subtle); }
@@ -86,6 +86,13 @@ button { cursor: pointer; }
 .cm-import-summary { margin: 14px 0 8px; display: flex; flex-wrap: wrap; gap: 7px; }
 .cm-review-actions { min-width: 420px; margin-top: 7px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .cm-review-actions select { width: min(320px, 100%); min-width: 220px; min-height: 32px; }
+.cm-mapping-panel { margin-bottom: 12px; }
+.cm-algorithm-list { margin: 0 0 14px; padding: 12px 12px 12px 32px; border: 1px solid var(--cm-border); border-radius: 8px; background: var(--cm-subtle); color: var(--cm-muted); font-size: 12px; line-height: 1.65; }
+.cm-manual-map-controls { margin-bottom: 12px; display: grid; grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr) auto; align-items: end; gap: 8px; }
+.cm-manual-map-controls label { display: grid; gap: 5px; color: var(--cm-muted); font-size: 11px; font-weight: 750; }
+.cm-manual-map-controls > span { min-height: 38px; display: grid; place-items: center; color: var(--cm-muted); font-weight: 800; }
+.cm-source-link-list { margin: 10px 12px 0; padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; border: 1px solid var(--cm-border); border-radius: 7px; background: var(--cm-subtle); color: var(--cm-muted); font-size: 12px; }
+.cm-source-link-list .cm-badge { gap: 5px; }
 .cm-two-column { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .cm-data-state { min-height: 70px; padding: 12px; border: 1px solid var(--cm-border); border-radius: 8px; background: var(--cm-subtle); color: var(--cm-muted); font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
 .cm-dialog { width: min(920px, calc(100vw - 30px)); max-height: calc(100vh - 30px); padding: 0; border: 1px solid var(--cm-border-strong); border-radius: 12px; background: var(--cm-panel); color: var(--cm-text); box-shadow: 0 22px 70px rgba(15,23,42,.24); }
@@ -115,7 +122,7 @@ html[data-nexus-ui-theme="dark"] {
 }
 html[data-nexus-ui-theme="dark"] .cm-table th { background: var(--nexus-ui-table-header-bg); }
 html[data-nexus-ui-theme="dark"] .cm-table tbody tr:hover td { background: var(--nexus-ui-table-row-hover-bg); }
-html[data-nexus-ui-theme="dark"] :is(.cm-toolbar input,.cm-toolbar select,.cm-file-row select,.cm-form-grid input,.cm-form-grid select,.cm-form-grid textarea,.cm-table input,.cm-table select) { background: var(--nexus-ui-input-bg); color: var(--cm-text); }
+html[data-nexus-ui-theme="dark"] :is(.cm-toolbar input,.cm-toolbar select,.cm-file-row select,.cm-form-grid input,.cm-form-grid select,.cm-form-grid textarea,.cm-table input,.cm-table select,.cm-manual-map-controls input) { background: var(--nexus-ui-input-bg); color: var(--cm-text); }
 html[data-nexus-ui-theme="dark"] .cm-button--primary { color: var(--cm-text); }
 html[data-nexus-ui-theme="dark"] .cm-toast { background: #33485a; }
 
@@ -141,6 +148,8 @@ html[data-nexus-ui-theme="dark"] .cm-toast { background: #33485a; }
   .cm-file-row { align-items: stretch; flex-direction: column; }
   .cm-file-row select { width: 100%; }
   .cm-review-actions { min-width: 260px; }
+  .cm-manual-map-controls { grid-template-columns: 1fr; }
+  .cm-manual-map-controls > span { min-height: auto; }
   .cm-form-grid { grid-template-columns: 1fr; }
   .cm-span-2 { grid-column: span 1; }
 }
