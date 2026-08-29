@@ -139,19 +139,27 @@ function nexusAuthPublicCompanySnapshot_(payload) {
       contractVersion: NEXUS_AUTH_VERSION
     }
   };
-  if (hasKnownRevision) forwarded.knownRevision = knownRevision;
-
   var parsed = nexusAuthGatewayFetch_(forwarded);
   if (!parsed || parsed.status !== 'success') throw new Error(nexusAuthGatewayUpstreamError_(parsed));
   var data = parsed.data === undefined ? parsed : parsed.data;
   var status = nexusAuthText_(data && data.status).toUpperCase();
-  var revision = Number(data && data.revision);
-  if (!Number.isInteger(revision) || revision < 1) throw new Error('NEXUS_PUBLIC_COMPANY_RESPONSE_INVALID');
-  if (status === 'UNCHANGED' || status === 'STALE_SERVER') return nexusAuthPublicCompanyResponse_({ status: status, revision: revision });
   if (status !== 'READY') throw new Error('NEXUS_PUBLIC_COMPANY_RESPONSE_INVALID');
   var snapshot = nexusAuthPublicCompanyProject_(data && data.snapshot);
-  if (!snapshot || snapshot.revision !== revision) throw new Error('NEXUS_PUBLIC_COMPANY_RESPONSE_INVALID');
+  if (!snapshot) throw new Error('NEXUS_PUBLIC_COMPANY_RESPONSE_INVALID');
+  var hasResponseRevision = Object.prototype.hasOwnProperty.call(data || {}, 'revision');
+  var responseRevision = data && data.revision;
+  if (hasResponseRevision && (typeof responseRevision !== 'number' || !Number.isSafeInteger(responseRevision)
+      || responseRevision !== snapshot.revision)) {
+    throw new Error('NEXUS_PUBLIC_COMPANY_RESPONSE_INVALID');
+  }
+  var revision = snapshot.revision;
   nexusAuthPublicCompanyCacheWrite_(snapshot);
+  if (hasKnownRevision && knownRevision === snapshot.revision) {
+    return nexusAuthPublicCompanyResponse_({ status: 'UNCHANGED', revision: snapshot.revision });
+  }
+  if (hasKnownRevision && knownRevision > snapshot.revision) {
+    return nexusAuthPublicCompanyResponse_({ status: 'STALE_SERVER', revision: snapshot.revision });
+  }
   return nexusAuthPublicCompanyResponse_({ status: 'READY', revision: revision, snapshot: snapshot });
 }
 

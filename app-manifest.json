@@ -344,7 +344,7 @@
         "client": "nexus/common/nexus-auth.js",
         "configuration": "nexus/common/nexus-auth-config.js",
         "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
-        "gatewayVersion": 23,
+        "gatewayVersion": 24,
         "rollbackVersion": 21,
         "cacheVersion": "2.1.3",
         "sessionTtlHours": 12,

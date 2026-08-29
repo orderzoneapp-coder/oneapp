@@ -55,6 +55,10 @@ assert.match(gateway, /typeof knownRevision !== 'number' \|\| !Number\.isSafeInt
   'knownRevision must be a JSON number and a safe integer');
 assert.match(gateway, /knownRevision > cached\.revision[\s\S]+status: 'STALE_SERVER'/,
   'a client revision ahead of warm cache must resolve without upstream access');
+assert.doesNotMatch(gateway, /forwarded\.knownRevision\s*=/,
+  'cache miss must fetch a full Snapshot without forwarding the client revision');
+assert.match(gateway, /var revision = snapshot\.revision/,
+  'Gateway must derive READY revision from the exact upstream Snapshot used by v43');
 assert.match(gateway, /if \(action === NEXUS_PUBLIC_COMPANY_ACTION\) return nexusAuthPublicCompanySnapshot_\(payload\)/,
   'public read must be isolated before protected dispatch');
 assert.match(gateway, /nexusAuthPublicCompanyCacheAfterGateway_\(operationId, parsed\.data === undefined \? parsed : parsed\.data\)/,
