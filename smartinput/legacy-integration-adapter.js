@@ -1,3 +1,7 @@
+import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.8.1';
+
+export { extractOrderProductLines };
+
 const text = value => String(value ?? '').normalize('NFKC').trim();
 const normalize = value => text(value).toLowerCase().replace(/\s+/g, '');
 const moduleCache = new Map();
@@ -26,104 +30,6 @@ async function sha256(value) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function splitSourceMessages({ sourceType = 'KAKAO_TEXT', sourceId = '', rawText = '' } = {}) {
-  const source = String(rawText ?? '').replace(/\r\n?/g, '\n').trim();
-  if (!source) return [];
-  if (String(sourceType).toUpperCase() !== 'KAKAO_TEXT') {
-    return source.split(/\n\s*\n/).map((block, index) => ({
-      sourceMessageKey: `SMARTINPUT:${sourceId || 'LOCAL'}:${index + 1}`,
-      senderRaw: '',
-      timestampRaw: '',
-      rawText: block.trim()
-    })).filter(message => message.rawText);
-  }
-  const messages = [];
-  let current = null;
-  const commit = () => {
-    if (!current) return;
-    current.rawText = current.lines.join('\n').trim();
-    if (current.rawText) {
-      current.sourceMessageKey = `SMARTINPUT:${sourceId || 'LOCAL'}:${messages.length + 1}`;
-      messages.push(current);
-    }
-    current = null;
-  };
-  source.split('\n').forEach(line => {
-    const match = line.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/);
-    if (match) {
-      commit();
-      current = { senderRaw: text(match[1]), timestampRaw: text(match[2]), lines: [match[3]] };
-    } else if (current) current.lines.push(line);
-    else current = { senderRaw: '', timestampRaw: '', lines: [line] };
-  });
-  commit();
-  return messages;
-}
-
-const UNIT_ALIASES = Object.freeze({
-  box: 'BOX', 박스: '박스', ea: 'EA', 개: '개', 봉: '봉', 팩: '팩', 단: '단', 망: '망', 묶음: '묶음',
-  kg: 'kg', 키로: '키로', 통: '통', 병: '병', 포: '포', 롤: '롤', 장: '장', 대: '대', 판: '판'
-});
-const UNIT_SOURCE = Object.keys(UNIT_ALIASES).sort((left, right) => right.length - left.length).join('|');
-
-function parseOrderLine(rawLine) {
-  const rawText = text(rawLine).replace(/^[\-•·*]+\s*/, '').replace(/^\d+[.)]\s+/, '');
-  if (!rawText || /^(?:[/.]|ㅇ|네|넵|예|확인|감사|감사합니다|알겠습니다)$/i.test(rawText)) return null;
-  let working = rawText.replace(/(?:주세요|부탁드립니다|부탁해요|입니다|이에요|요)\s*$/i, '').trim();
-  let quantity = null;
-  let rawUnit = '';
-  const unitQuantity = working.match(new RegExp(`(-?\\d+(?:\\.\\d+)?)\\s*(${UNIT_SOURCE})$`, 'i'));
-  if (unitQuantity) {
-    quantity = Number(unitQuantity[1]);
-    rawUnit = UNIT_ALIASES[unitQuantity[2].toLowerCase()] || unitQuantity[2];
-    working = working.slice(0, unitQuantity.index).trim();
-  } else {
-    const terminalQuantity = working.match(/(-?\d+(?:\.\d+)?)$/);
-    if (terminalQuantity) {
-      quantity = Number(terminalQuantity[1]);
-      working = working.slice(0, terminalQuantity.index).trim();
-    }
-  }
-  let specText = '';
-  const specMatch = working.match(/(\d+(?:\.\d+)?\s*(?:개입|수|입))(?=\s|[가-힣A-Za-z]|$)/i);
-  if (specMatch) {
-    specText = specMatch[1].replace(/\s+/g, '');
-    working = `${working.slice(0, specMatch.index)} ${working.slice(specMatch.index + specMatch[0].length)}`.trim();
-  }
-  const productText = working.replace(/[,:;]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!productText && quantity === null) return null;
-  return {
-    rawText,
-    productText,
-    specText,
-    quantity,
-    rawUnit,
-    finalUnit: rawUnit,
-    excluded: quantity === null && !productText
-  };
-}
-
-function looksLikeOrder(rawText) {
-  return new RegExp(`\\d+(?:\\.\\d+)?\\s*(?:${UNIT_SOURCE})(?:요|주세요)?(?:\\s|$)`, 'i').test(rawText)
-    || /[가-힣A-Za-z][가-힣A-Za-z()/_\-\s]*\d+(?:\.\d+)?\s*(?:요|주세요)?$/im.test(rawText)
-    || String(rawText).split('\n').filter(line => /\d/.test(line)).length > 0;
-}
-
-export function extractOrderProductLines(input = {}) {
-  let lineNo = 0;
-  return splitSourceMessages(input).flatMap(message => {
-    if (!looksLikeOrder(message.rawText)) return [];
-    return message.rawText.split('\n').map(parseOrderLine).filter(Boolean).map(line => ({
-      ...line,
-      sourceLineNo: ++lineNo,
-      sourceMessageKey: message.sourceMessageKey,
-      senderRaw: message.senderRaw,
-      timestampRaw: message.timestampRaw,
-      eventType: 'ORDER'
-    }));
-  });
 }
 
 function splitTableRow(line) {

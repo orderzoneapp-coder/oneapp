@@ -10,6 +10,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const html = read('smartinput/index.html');
 const appSource = read('smartinput/smartinput.js');
 const adapterSource = read('smartinput/legacy-integration-adapter.js');
+const extractorSource = read('orderq/smartparser/order-text-extractor.js');
 const storeSource = read('smartinput/smartinput-data-store.js');
 const manifest = JSON.parse(read('app-manifest.json'));
 
@@ -23,6 +24,13 @@ assert.doesNotMatch(html, /<kbd|Alt\+[1234]|cdn\.jsdelivr\.net/i);
 assert.doesNotMatch(appSource, /\.altKey|Alt\+[1234]/i);
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
+assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
+  'the adapter must use the exact 0a order text extractor');
+assert.doesNotMatch(adapterSource, /function splitSourceMessages|function parseOrderLine|function looksLikeOrder/,
+  'the adapter must not replace the legacy parser chain with a reduced parser');
+for (const dependency of ['source-parser', 'order-event-detector', 'order-line-parser']) {
+  assert.match(extractorSource, new RegExp(`from ['"]\\./${dependency}\\.js\\?v=0\\.8\\.1['"]`));
+}
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
 assert.match(appSource, /renderMode\(\);[\s\S]*?hydrateReferences\(\);/, 'local shell must render before optional references');
@@ -66,6 +74,9 @@ assert.equal(normalizedDraft.modes.order.header.futureHeader, 'keep-header');
 assert.equal(normalizedDraft.modes.order.rows[0].futureRow, 'keep-row');
 
 const adapter = await import('../smartinput/legacy-integration-adapter.js');
+const legacyExtractor = await import('../orderq/smartparser/order-text-extractor.js?v=0.8.1');
+assert.equal(adapter.extractOrderProductLines, legacyExtractor.extractOrderProductLines,
+  'the compatibility adapter must re-export the canonical 0a extractor');
 const captured = await adapter.captureTextIntake({ sourceType: 'GENERAL_TEXT', sourceId: 'TEST', rawText: '테스트 거래처\n사과 2박스\n배 3개' });
 assert.match(captured.session.intakeSessionId, /^SI-LOCAL-/);
 assert.equal(captured.session.localOnly, true, 'pure text parsing must not write the removed raw intake store');
@@ -77,6 +88,20 @@ assert.equal(analyzed.document.localOnly, true);
 const fallback = adapter.extractOrderProductLines({ sourceType: 'KAKAO_TEXT', sourceId: 'TEST', rawText: '[테스트] [오후 1:00] 사과 2박스\n배 3개' });
 assert.equal(fallback.length, 2);
 assert.equal(fallback[0].senderRaw, '테스트');
+const parserChainFixture = [
+  '[테스트] [오후 1:00] 사과 좋은 거 2박스',
+  '2번 감자 3개',
+  '[테스트] [오후 1:01] 주문 취소',
+  '[테스트] [오후 1:02] 단가 3000원'
+].join('\n');
+const parserChainRows = adapter.extractOrderProductLines({ sourceType: 'KAKAO_TEXT', sourceId: 'CHAIN', rawText: parserChainFixture });
+assert.equal(parserChainRows.length, 2, 'cancel and information messages must not become product rows');
+assert.deepEqual(parserChainRows.map(row => row.eventType), ['ORDER', 'ORDER']);
+assert.equal(parserChainRows[0].productText, '사과');
+assert.equal(parserChainRows[0].attributeText, '좋은 거');
+assert.equal(parserChainRows[1].contextReference, '2번');
+assert.match(parserChainRows[0].sourceMessageKey, /^SMK-/);
+assert.equal(parserChainRows[0].sourceMessageKey, parserChainRows[1].sourceMessageKey);
 assert.equal((await adapter.loadPurchaseStage3Capability()).ready, false, 'missing official purchase contract must be scoped unavailable');
 assert.equal((await adapter.loadSaleStage4Capability()).ready, false, 'missing official sale contract must be scoped unavailable');
 await assert.rejects(adapter.createLiveCustomer({}), error => error.code === 'CUSTOMER_CREATE_UNAVAILABLE');
