@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>사용자 관리 - NEXUS</title>
+  <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
+  <link rel="stylesheet" href="/nexus/nexus.css?v=1.2.0">
+  <link rel="stylesheet" href="/nexus/admin/admin.css?v=1.0.0">
+  <script type="module" src="/nexus/admin/admin.js?v=1.0.0"></script>
+</head>
+<body>
+  <main class="nexus-shell nexus-admin-shell">
+    <header class="nexus-topbar">
+      <a class="nexus-home-logo" href="/nexus/" aria-label="NEXUS 홈">
+        <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
+      </a>
+      <div class="nexus-session-actions">
+        <a class="nexus-quiet-link" href="/nexus/">홈으로</a>
+        <button id="logoutButton" class="nexus-quiet-button" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <section id="accessDenied" class="nexus-admin-empty" hidden>
+      <h1>사용자 관리 권한이 없습니다</h1>
+      <p>이 화면은 최상위 관리자만 사용할 수 있습니다.</p>
+      <a class="nexus-quiet-link" href="/nexus/">NEXUS 홈으로</a>
+    </section>
+
+    <section id="adminPanel" class="nexus-admin-panel" hidden>
+      <div class="nexus-admin-heading">
+        <div>
+          <p class="nexus-eyebrow">OWNER MASTER</p>
+          <h1>사용자 관리</h1>
+          <p>일반 사용자의 이름, 사용 상태와 홈·탭 노출만 관리합니다.</p>
+        </div>
+        <button id="refreshButton" class="nexus-quiet-button" type="button">새로고침</button>
+      </div>
+      <p id="adminMessage" class="nexus-message nexus-admin-message" role="status" aria-live="polite"></p>
+
+      <section class="nexus-admin-section" aria-labelledby="createTitle">
+        <div class="nexus-admin-section__heading">
+          <div>
+            <h2 id="createTitle">일반 사용자 추가</h2>
+            <p>새 사용자는 활성화 전까지 사용 중지 상태입니다.</p>
+          </div>
+        </div>
+        <form id="createUserForm" class="nexus-admin-form">
+          <label>로그인 아이디
+            <input name="loginId" autocomplete="off" autocapitalize="none" spellcheck="false" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}">
+          </label>
+          <label>표시 이름
+            <input name="displayName" autocomplete="off" maxlength="60" required>
+          </label>
+          <fieldset class="nexus-app-picker">
+            <legend>홈·글로벌 탭에 표시할 앱</legend>
+            <div id="createAppPicker" class="nexus-app-picker__grid"></div>
+          </fieldset>
+          <button class="nexus-primary-button nexus-admin-submit" type="submit">사용자 추가</button>
+        </form>
+        <div id="activationResult" class="nexus-activation-result" hidden>
+          <strong>한 번만 표시되는 활성화 코드</strong>
+          <output id="activationCodeOutput"></output>
+          <p>안전한 별도 채널로 사용자에게 전달하세요. 이 화면을 벗어나면 다시 확인할 수 없습니다.</p>
+        </div>
+      </section>
+
+      <section class="nexus-admin-section" aria-labelledby="usersTitle">
+        <div class="nexus-admin-section__heading">
+          <div>
+            <h2 id="usersTitle">사용자 목록</h2>
+            <p>앱 숨김은 UI 편의 설정이며 직접 주소 접근을 차단하지 않습니다.</p>
+          </div>
+        </div>
+        <div id="userList" class="nexus-user-list"></div>
+      </section>
+
+      <section class="nexus-admin-section" aria-labelledby="auditTitle">
+        <div class="nexus-admin-section__heading">
+          <div>
+            <h2 id="auditTitle">최근 감사기록</h2>
+            <p>로그인·로그아웃과 최소 사용자 변경만 표시합니다.</p>
+          </div>
+        </div>
+        <ol id="auditList" class="nexus-audit-list"></ol>
+      </section>
+    </section>
+  </main>
+  <noscript>이 페이지를 사용하려면 JavaScript를 켜주세요.</noscript>
+</body>
+</html>

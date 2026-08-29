@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <title>NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
-  <link rel="stylesheet" href="/nexus/nexus.css?v=1.1.0">
-  <script type="module" src="/nexus/nexus.js?v=1.1.0"></script>
+  <link rel="stylesheet" href="/nexus/nexus.css?v=1.2.0">
+  <script type="module" src="/nexus/nexus.js?v=1.2.0"></script>
 </head>
 <body>
   <main class="nexus-shell">
@@ -16,6 +16,7 @@
         <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
       </a>
       <div id="homeActions" class="nexus-session-actions" hidden>
+        <a id="adminLink" class="nexus-quiet-link" href="/nexus/admin/" hidden>사용자 관리</a>
         <div class="nexus-user" aria-label="현재 로그인 사용자">
           <strong id="userDisplayName"></strong>
           <span id="userAccountType"></span>
@@ -40,6 +41,23 @@
 
         <button id="loginButton" class="nexus-primary-button" type="submit">NEXUS 입장</button>
         <p id="loginMessage" class="nexus-message" role="status" aria-live="polite"></p>
+        <button id="showActivationButton" class="nexus-text-button" type="button">최초 계정 활성화</button>
+      </form>
+      <form id="activationForm" class="nexus-login-card" hidden>
+        <div class="nexus-form-heading">
+          <strong>최초 계정 활성화</strong>
+          <button id="showLoginButton" class="nexus-text-button" type="button">로그인으로 돌아가기</button>
+        </div>
+        <label for="activationLoginId">아이디</label>
+        <input id="activationLoginId" name="loginId" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        <label for="activationCode">활성화 코드</label>
+        <input id="activationCode" name="activationCode" type="text" autocomplete="one-time-code" required>
+        <label for="activationPassword">새 비밀번호</label>
+        <input id="activationPassword" name="password" type="password" autocomplete="new-password" minlength="10" required>
+        <label for="activationPasswordConfirm">새 비밀번호 확인</label>
+        <input id="activationPasswordConfirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" required>
+        <button id="activationButton" class="nexus-primary-button" type="submit">계정 활성화</button>
+        <p id="activationMessage" class="nexus-message" role="status" aria-live="polite"></p>
       </form>
     </section>
 

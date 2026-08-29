@@ -20,6 +20,7 @@ assert.match(html, /id="companyEditLink"[^>]+hidden/, 'company edit entry must b
 for (const action of [
   'nexus_auth_challenge',
   'nexus_auth_login',
+  'nexus_auth_activate',
   'nexus_auth_session',
   'nexus_auth_logout',
 ]) {
@@ -34,12 +35,15 @@ assert.doesNotMatch(runtime, /localStorage/, 'the session token must not persist
 assert.match(runtime, /showHome\(cached\.session\);[\s\S]*setTimeout\(\(\) => \{[\s\S]*refreshSession\(cached\);[\s\S]*refreshCompany\(cached\.token\)/, 'a cached home must render before background session and company verification');
 assert.match(runtime, /role === 'OWNER_MASTER' \? 'MASTER' : '위임 사용자'/, 'roles must be presented as MASTER or delegated user without enforcing app permission');
 assert.doesNotMatch(runtime, /canUseApp|hasPermission|appContexts|nexus_proxy|window\.fetch\s*=/, 'basic login must not add app gating or a gateway runtime');
+assert.match(runtime, /oneapp\.nexus\.ui\.visibility\.v1/, 'home must publish the non-sensitive UI visibility projection');
+assert.match(runtime, /NEXUS_UI_VISIBILITY_V1/, 'home visibility projection must be schema-versioned');
+assert.match(runtime, /renderApps\(visibility\.visibleAppIds\)/, 'home cards must follow the UI visibility projection');
 assert.match(runtime, /setCompanyState\('READY'/, 'a verified company Snapshot must have a READY state');
 assert.match(runtime, /setCompanyState\('STALE'/, 'a preserved company Snapshot must have a STALE state');
 assert.match(runtime, /setCompanyState\('ERROR'/, 'an unavailable company Snapshot must have an ERROR state');
 assert.doesNotMatch(runtime, /localStorage/, 'home company state must not use localStorage');
 assert.match(commonUi, /logoFrame\.href = asset\('nexus\/'\)/, 'work-app logo must return to the NEXUS home');
-assert.doesNotMatch(commonUi, /displayName|loginId|sessionStorage|nexus[-_ ]auth/i, 'work-app header must not expose user information');
+assert.doesNotMatch(commonUi, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app header must not expose user information or auth tokens');
 assert.match(css, /min-height:\s*44px/, 'home controls must retain touch-sized interaction');
 
 const appPages = [
@@ -63,7 +67,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.3\.1/, `${file}: updated home-link runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.4\.0/, `${file}: updated visibility runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 

@@ -41,7 +41,7 @@ for (const [file, appId, base, title] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
-  const runtime = `${base}nexus-ui.js?v=1.3.1`;
+  const runtime = `${base}nexus-ui.js?v=1.4.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -99,7 +99,11 @@ assert.match(uiSource, /nav\.scrollLeft\s*=\s*Math\.max/, 'the overflowing globa
 assert.match(uiSource, /element\('a', 'nexus-ui-brand__logo'\)/, 'the NEXUS logo must be an actual link');
 assert.match(uiSource, /logoFrame\.href = asset\('nexus\/'\)/, 'the NEXUS logo must link to the NEXUS home');
 assert.match(uiSource, /logoFrame\.setAttribute\('aria-label', 'NEXUS 홈'\)/, 'the NEXUS home link must have an accessible name');
-assert.doesNotMatch(uiSource, /displayName|loginId|sessionStorage|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
+assert.match(uiSource, /oneapp\.nexus\.ui\.visibility\.v1/, 'common UI must read only the dedicated visibility projection');
+assert.match(uiSource, /NEXUS_UI_VISIBILITY_V1/, 'common UI visibility projection must be schema-versioned');
+assert.match(uiSource, /sessionStorage\.getItem/, 'common UI must synchronously read the same-tab visibility projection');
+assert.doesNotMatch(uiSource, /sessionStorage\.setItem/, 'common UI must never write the visibility projection');
+assert.doesNotMatch(uiSource, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
 for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '상품관리', '거래처관리', '상품등록', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
   assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
 }

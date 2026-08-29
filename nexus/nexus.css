@@ -74,6 +74,7 @@ a {
 
 .nexus-home-logo:focus-visible,
 .nexus-quiet-button:focus-visible,
+.nexus-quiet-link:focus-visible,
 .nexus-primary-button:focus-visible,
 .nexus-app-card:focus-visible,
 input:focus-visible {
@@ -120,6 +121,25 @@ input:focus-visible {
   background: transparent;
   color: #c2ccda;
   cursor: pointer;
+}
+
+.nexus-quiet-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--nexus-border);
+  border-radius: 9px;
+  color: #c2ccda;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nexus-quiet-link:hover {
+  border-color: var(--nexus-border-strong);
+  background: var(--nexus-panel-soft);
+  color: var(--nexus-text);
 }
 
 .nexus-quiet-button:hover {
@@ -177,6 +197,30 @@ input:focus-visible {
   color: #c6d0dd;
   font-size: 13px;
   font-weight: 700;
+}
+
+.nexus-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.nexus-text-button {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #9dc6e5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nexus-text-button:hover {
+  color: #d5eafb;
+  text-decoration: underline;
 }
 
 .nexus-login-card input {

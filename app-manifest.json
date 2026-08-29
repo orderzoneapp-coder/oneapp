@@ -35,11 +35,14 @@
         "item-manager",
         "history-viewer",
         "orderq-vnext",
+        "nexus-admin",
         "nexus-company"
       ],
       "coreCapabilities": [
         "basic login and logout",
+        "first-use delegated-user activation",
         "master or delegated-user identification",
+        "per-user home-card and global-tab visibility projection without access gating",
         "independent work-app launcher",
         "authenticated company profile read with public-field projection and background revision verification"
       ],
@@ -59,6 +62,30 @@
         "nexus-auth",
         "company-profile"
       ]
+    },
+    {
+      "id": "nexus-admin",
+      "name": "NEXUS User Administration",
+      "path": "nexus/admin/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Let only OWNER_MASTER create delegated users, update display names and non-authoritative app visibility, suspend or restore use, reissue one-time activation codes, and review minimal immutable audit events without deletion, capability, service, or approval controls.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "nexus-home"
+      ],
+      "services": [
+        "nexus-auth-gateway"
+      ],
+      "sharedContracts": [
+        "nexus-auth"
+      ],
+      "dependencyMode": {
+        "userRead": "SERVER_FINALIZE",
+        "userWrite": "SERVER_FINALIZE",
+        "auditRead": "SERVER_FINALIZE"
+      },
+      "offlinePolicy": "Authentication-service failure disables only administration; it does not redirect or block independent work-app entry and local work."
     },
     {
       "id": "nexus-company",
@@ -378,12 +405,12 @@
     {
       "id": "nexus-auth-gateway",
       "name": "NEXUS Auth Gateway Transport",
-      "path": "nexus/company-transport.js",
-      "kind": "external-service-transport",
+      "path": "nexus/server/nexus-auth-gateway.gs",
+      "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Call the deployed NEXUS_AUTH_V2 Apps Script endpoint with scoped app contexts; the server implementation deployed at the endpoint was not present in main at baseline 24429a1.",
+      "purpose": "Own the deployed NEXUS_AUTH_V2 user, Session, visibility, minimal audit, and retained company/Gateway contracts while preserving the official deployment ID and versioned rollback.",
       "productionWrites": true,
-      "sourceStatus": "DEPLOYED_SERVER_SOURCE_NOT_PRESENT_ON_BASELINE_MAIN",
+      "sourceStatus": "ACTIVE_V24_SOURCE_RECOVERED_AND_VERSIONED",
       "sharedContracts": [
         "nexus-auth",
         "company-profile"
@@ -444,16 +471,23 @@
       "owner": "nexus-auth-gateway",
       "consumers": [
         "nexus/index.html",
-        "nexus/company.html"
+        "nexus/admin/index.html",
+        "nexus/company.html",
+        "nexus/common/nexus-ui.js"
       ],
       "schemaVersion": "NEXUS_AUTH_V2",
       "resources": {
         "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
         "sessionStorageKey": "oneapp.nexus.home.session.v1",
+        "visibilityStorageKey": "oneapp.nexus.ui.visibility.v1",
+        "visibilitySchemaVersion": "NEXUS_UI_VISIBILITY_V1",
         "appContextAction": "nexus_auth_app_context",
         "gatewayAction": "nexus_gateway",
-        "baselineMain": "24429a1cdb53bbe084ef08b6516d012737a01808",
-        "serverSourceOnBaselineMain": false
+        "baselineMain": "b6073103ca5068f957d8f4a1218bd59182dbc596",
+        "recoveredGatewayVersion": 24,
+        "rollbackGatewayVersion": 21,
+        "serverSourceOnBaselineMain": false,
+        "serverSourceOnCurrentMain": true
       }
     },
     {
