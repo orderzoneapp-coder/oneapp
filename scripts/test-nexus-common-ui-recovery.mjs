@@ -17,35 +17,37 @@ const contrastRatio = (foreground, background) => {
 };
 
 const pages = [
-  ['MerchOps.html', 'merchops', 'nexus/common/'],
-  ['DataOps.html', 'dataops', 'nexus/common/'],
-  ['SmartParser.html', 'smart-parser', 'nexus/common/'],
-  ['export_center.html', 'export-center', 'nexus/common/'],
-  ['settings.html', 'settings', 'nexus/common/'],
-  ['Master.html', 'master-lookup', 'nexus/common/'],
-  ['Item_manager.html', 'item-manager', 'nexus/common/'],
-  ['history_viewer.html', 'history-viewer', 'nexus/common/'],
-  ['orderops/list.html', 'orderops', '../nexus/common/'],
-  ['orderq/index.html', 'orderq-vnext', '../nexus/common/'],
-  ['orderq/input.html', 'orderq-vnext', '../nexus/common/'],
-  ['orderq/operations.html', 'orderq-vnext', '../nexus/common/'],
-  ['orderq/parser.html', 'orderq-vnext', '../nexus/common/'],
-  ['orderq/collector.html', 'orderq-vnext', '../nexus/common/'],
-  ['orderq/cloud.html', 'orderq-vnext', '../nexus/common/'],
-  ['smartinput/index.html', 'smart-input', '../nexus/common/'],
+  ['MerchOps.html', 'merchops', 'nexus/common/', '가격·시세 - NEXUS'],
+  ['DataOps.html', 'dataops', 'nexus/common/', '재고·정산 - NEXUS'],
+  ['SmartParser.html', 'smart-parser', 'nexus/common/', '문서분석 - NEXUS'],
+  ['export_center.html', 'export-center', 'nexus/common/', '출력검증 - NEXUS'],
+  ['settings.html', 'settings', 'nexus/common/', '환경설정 - NEXUS'],
+  ['Master.html', 'master-lookup', 'nexus/common/', '기준정보 - NEXUS'],
+  ['Item_manager.html', 'item-manager', 'nexus/common/', '상품등록 - NEXUS'],
+  ['history_viewer.html', 'history-viewer', 'nexus/common/', '변경이력 - NEXUS'],
+  ['orderops/list.html', 'orderops', '../nexus/common/', '주문·출고 - NEXUS'],
+  ['orderq/index.html', 'orderq-vnext', '../nexus/common/', '주문현황 - NEXUS'],
+  ['orderq/input.html', 'orderq-vnext', '../nexus/common/', '주문서 입력 - NEXUS'],
+  ['orderq/operations.html', 'orderq-vnext', '../nexus/common/', '출고운영 - NEXUS'],
+  ['orderq/parser.html', 'orderq-vnext', '../nexus/common/', '주문분석 - NEXUS'],
+  ['orderq/collector.html', 'orderq-vnext', '../nexus/common/', '기초자료 수집 - NEXUS'],
+  ['orderq/cloud.html', 'orderq-vnext', '../nexus/common/', '클라우드 동기화 - NEXUS'],
+  ['smartinput/index.html', 'smart-input', '../nexus/common/', '스마트입력 - NEXUS'],
 ];
 
-for (const [file, appId, base] of pages) {
+for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.2.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
-  const runtime = `${base}nexus-ui.js?v=1.1.0`;
+  const runtime = `${base}nexus-ui.js?v=1.2.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${appCss}"`), `${file}: app theme CSS is required`);
   assert.ok(html.includes(`<script defer src="${runtime}"></script>`), `${file}: deferred common UI is required`);
+  assert.ok(html.includes(`<title>${title}</title>`), `${file}: browser title must use the Korean NEXUS convention`);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\/nexus\/assets\/nexus-favicon\.svg"\s*\/?>/, `${file}: NEXUS favicon is required`);
   assert.ok(html.indexOf(init) < html.indexOf('<body'), `${file}: theme must initialize before body`);
 }
 
@@ -76,6 +78,15 @@ assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle mus
 assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
+for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '기준정보', '상품등록', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
+  assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
+}
+assert.match(
+  uiSource,
+  /id:\s*'master-lookup'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
+  'rollback-era primary apps must lead the global header so SmartInput remains directly visible',
+);
+assert.doesNotMatch(uiSource, /label:\s*'(?:MerchOps|DataOps|Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'common header tab labels must not fall back to English product names');
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
@@ -127,6 +138,7 @@ for (const [label, foreground, background] of [
 for (const logo of [
   'nexus/assets/brand/oneapp-nexus-light.svg',
   'nexus/assets/brand/oneapp-nexus-dark.svg',
+  'nexus/assets/nexus-favicon.svg',
 ]) {
   const svg = await readFile(logo, 'utf8');
   assert.match(svg, /<svg\b/, `${logo}: valid SVG root is required`);

@@ -18,7 +18,7 @@ for (const page of pages) {
   const html = await readFile(page.file, 'utf8');
 
   assert.match(html, new RegExp(`data-nexus-app-id="${page.appId}"`), `${page.file}: common header app id must remain`);
-  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.1\.0/, `${page.file}: common header runtime must remain`);
+  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.2\.0/, `${page.file}: common header runtime must remain`);
   assert.match(html, /const AppHeader =/, `${page.file}: app work header is required`);
   assert.ok(html.includes(`>${page.title}<`), `${page.file}: app title is required`);
   assert.match(html, /min-h-\[56px\]/, `${page.file}: 56px app-header density is required`);
@@ -31,16 +31,17 @@ for (const page of pages) {
 
 const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 for (const [label, path] of [
-  ['MerchOps', 'MerchOps.html'],
-  ['DataOps', 'DataOps.html'],
-  ['Smart Parser', 'SmartParser.html'],
-  ['Export', 'export_center.html'],
-  ['설정', 'settings.html'],
-  ['Master', 'Master.html'],
-  ['상품관리', 'Item_manager.html'],
-  ['이력', 'history_viewer.html'],
-  ['ORDER Q', 'orderops/list.html'],
-  ['ORDER Q vNext', 'orderq/index.html'],
+  ['가격·시세', 'MerchOps.html'],
+  ['재고·정산', 'DataOps.html'],
+  ['문서분석', 'SmartParser.html'],
+  ['출력검증', 'export_center.html'],
+  ['환경설정', 'settings.html'],
+  ['기준정보', 'Master.html'],
+  ['상품등록', 'Item_manager.html'],
+  ['변경이력', 'history_viewer.html'],
+  ['주문·출고', 'orderops/list.html'],
+  ['주문현황', 'orderq/index.html'],
+  ['스마트입력', 'smartinput/index.html'],
 ]) {
   assert.ok(commonUi.includes(`label: '${label}', path: '${path}'`), `common header must retain ${label}`);
 }

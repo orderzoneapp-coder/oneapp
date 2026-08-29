@@ -215,7 +215,7 @@ const expectedDisplayVersion =
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
   3,
-  "dated V112 version must appear at title, loader, and header",
+  "dated V112 version must appear at metadata, loader, and header",
 );
 assert.match(source, /version:\s*'V1\.a22\.112_EvidenceReportPreflight'/);
 

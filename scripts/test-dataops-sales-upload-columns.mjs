@@ -569,9 +569,8 @@ assert.equal(emptyPreviewSheet["!merges"], undefined);
 const expectedDisplayVersion =
   "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
 assert.ok(
-  source.includes(
-    `<title>ONEAPP DataOps - 핵심 수불부 관리 (${expectedDisplayVersion})</title>`,
-  ),
+  source.includes(`<title>재고·정산 - NEXUS</title>`),
+  "the browser title must use the Korean NEXUS convention",
 );
 assert.ok(
   source.includes(
@@ -581,7 +580,7 @@ assert.ok(
 assert.equal(
   source.split(expectedDisplayVersion).length - 1,
   3,
-  "dated V112 version must appear at title, loader, and header",
+  "dated V112 version must appear at metadata, loader, and header",
 );
 assert.match(source, /version:\s*'V1\.a22\.112_EvidenceReportPreflight'/);
 
