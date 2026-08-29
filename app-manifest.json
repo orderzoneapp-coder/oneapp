@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-08",
+  "updatedAt": "2026-08-29",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -238,6 +238,42 @@
       ]
     },
     {
+      "id": "smart-input",
+      "name": "SmartInput",
+      "path": "smartinput/index.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Create and preserve order, purchase, sale, and estimate work drafts locally while isolating optional reference lookup, external input, synchronization, and server-finalize failures.",
+      "owner": "voucher-input",
+      "productionWrites": true,
+      "coreCapabilities": [
+        "four-mode voucher drafting",
+        "direct and text intake",
+        "structured file and clipboard intake",
+        "editable local work table",
+        "local draft recovery",
+        "local estimate catalog"
+      ],
+      "ownedContracts": [
+        "smartinput-local-work"
+      ],
+      "consumedContracts": [
+        "product-master",
+        "orderq-vnext-sync"
+      ],
+      "dependencyMode": {
+        "localDraftAndEstimate": "LOCAL_OPERATION",
+        "orderSaveThenSync": "BACKGROUND_SYNC",
+        "purchaseAndSaleFinalize": "SERVER_FINALIZE"
+      },
+      "offlinePolicy": "Render the application and preserve local drafts and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
+      "sharedContracts": [
+        "smartinput-local-work",
+        "product-master",
+        "orderq-vnext-sync"
+      ]
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
@@ -279,6 +315,32 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "smartinput-local-work",
+      "owner": "smart-input",
+      "consumers": [
+        "smartinput/index.html"
+      ],
+      "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
+      "localDatabase": "oneapp-smartinput",
+      "databaseVersion": 3,
+      "resources": {
+        "localStorage": [
+          "oneapp.smartinput.draft.v1",
+          "oneapp.smartinput.drafts.v1",
+          "oneapp.smartinput.delivery-history.v1",
+          "oneapp.smartinput.settings.v1"
+        ],
+        "indexedDbStores": [
+          "settings",
+          "customerLinkGroups",
+          "temporaryCustomers",
+          "customerAliasMappings",
+          "estimates",
+          "sourceImages"
+        ]
+      }
+    },
     {
       "id": "orderq-vnext-sync",
       "owner": "orderq-vnext",
