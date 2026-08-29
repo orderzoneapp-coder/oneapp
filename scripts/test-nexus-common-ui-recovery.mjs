@@ -37,8 +37,8 @@ const pages = [
 for (const [file, appId, base] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.1.0`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.1.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.2.0`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
   const runtime = `${base}nexus-ui.js?v=1.1.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
@@ -80,6 +80,14 @@ assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a 
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
 assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
+assert.match(uiCss, /--nexus-ui-table-header-bg:\s*#292f37/, 'dark table header must use the muted hierarchy');
+assert.match(uiCss, /--nexus-ui-table-row-bg:\s*#1d2228/, 'dark table rows must use the muted hierarchy');
+assert.match(uiCss, /--nexus-ui-table-row-hover-bg:\s*#282e36/, 'dark table hover must remain neutral');
+assert.match(uiCss, /--nexus-ui-selection-bg:\s*#303842/, 'selected tools must use a neutral surface');
+assert.match(uiCss, /--nexus-ui-info:\s*#b3c4d4/, 'dark information state must be low chroma');
+assert.match(uiCss, /--nexus-ui-success:\s*#b3c8ba/, 'dark success state must be low chroma');
+assert.match(uiCss, /--nexus-ui-warning:\s*#c4b8a8/, 'dark warning state must be low chroma');
+assert.match(uiCss, /--nexus-ui-danger:\s*#c7b1b4/, 'dark danger state must be low chroma');
 assert.match(uiCss, /--nexus-ui-header-bg:\s*#101722/, 'dark header palette must be preserved');
 assert.match(uiCss, /--nexus-ui-tab-group-bg:\s*#1a2330/, 'dark tab group palette must be preserved');
 assert.match(uiCss, /--nexus-ui-tab-active-bg:\s*#354153/, 'dark selected tab palette must be preserved');
@@ -91,6 +99,12 @@ assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is
 assert.match(appThemeCss, /\.bg-slate-50\\\/50/, 'dark empty-table backgrounds must be mapped');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body :is\(input, select, textarea\)/, 'dark inputs must outrank utility backgrounds');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body th/, 'dark table headers must retain a separate hierarchy');
+assert.match(appThemeCss, /\.bg-blue-600[\s\S]*?background-color:\s*var\(--nexus-ui-selection-bg\)/, 'solid blue tools must be neutralized');
+assert.match(appThemeCss, /\.bg-emerald-600[\s\S]*?background-color:\s*var\(--nexus-ui-success-bg\)/, 'success tools must use a quiet semantic surface');
+assert.match(appThemeCss, /data-nexus-ui-app="history-viewer"/, 'history worktable hard-coded surfaces must be covered');
+assert.match(appThemeCss, /data-nexus-ui-app="orderops"/, 'ORDER Q local palette must be bridged');
+assert.match(appThemeCss, /data-nexus-ui-app="orderq-vnext"/, 'ORDER Q vNext local palette must be bridged');
+assert.match(appThemeCss, /@media print[\s\S]*?--nexus-ui-page-bg:\s*#ffffff/, 'direct print must restore a bright background');
 
 for (const [label, foreground, background] of [
   ['dark tab', '8f9aaa', '1a2330'],
@@ -99,6 +113,12 @@ for (const [label, foreground, background] of [
   ['light active tab', '24364d', 'dfe7f0'],
   ['dark body text', 'd6d9de', '15181d'],
   ['dark muted text', '9299a3', '15181d'],
+  ['dark info state', 'b3c4d4', '2a323a'],
+  ['dark success state', 'b3c8ba', '2b342f'],
+  ['dark warning state', 'c4b8a8', '342f2a'],
+  ['dark danger state', 'c7b1b4', '352d2f'],
+  ['dark accent state', 'bbbdd0', '302f39'],
+  ['dark cyan state', 'b2c6c8', '293435'],
 ]) {
   assert.ok(contrastRatio(foreground, background) >= 4.5, `${label}: WCAG contrast must be at least 4.5:1`);
 }

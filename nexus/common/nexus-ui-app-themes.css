@@ -1,83 +1,321 @@
-html[data-nexus-ui-theme="dark"] {
+/*
+ * NEXUS shared work-area theme consumer.
+ *
+ * The common header remains the only Light/Dark controller. This stylesheet
+ * consumes data-nexus-ui-theme and applies the rollback-era muted worktable
+ * hierarchy to every application exposed by the common header. Selectable
+ * tools stay neutral; low-chroma color is reserved for semantic states.
+ */
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] {
   background: var(--nexus-ui-page-bg);
 }
 
-html[data-nexus-ui-theme="dark"] body {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body {
   background-color: var(--nexus-ui-page-bg) !important;
   color: var(--nexus-ui-text);
 }
 
-html[data-nexus-ui-theme="dark"] body :is(input, select, textarea) {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::selection {
+  background: var(--nexus-ui-selection-bg);
+  color: var(--nexus-ui-text);
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :focus-visible {
+  outline-color: var(--nexus-ui-focus);
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea) {
   border-color: var(--nexus-ui-border-strong) !important;
   background-color: var(--nexus-ui-input-bg) !important;
   color: var(--nexus-ui-text) !important;
   caret-color: var(--nexus-ui-text);
 }
 
-html[data-nexus-ui-theme="dark"] body :is(input, textarea)::placeholder {
-  color: var(--nexus-ui-muted);
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, textarea)::placeholder {
+  color: var(--nexus-ui-muted) !important;
+  opacity: 1;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(table, .panel, .card, .modal-content, .dialog-panel) {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea):disabled {
+  background-color: var(--nexus-ui-panel-subtle) !important;
+  color: var(--nexus-ui-muted) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body table {
   border-color: var(--nexus-ui-border);
+  background-color: var(--nexus-ui-table-row-bg);
   color: var(--nexus-ui-text);
 }
 
-html[data-nexus-ui-theme="dark"] body :is(th, td) {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(th, td) {
   border-color: var(--nexus-ui-border);
 }
 
-html[data-nexus-ui-theme="dark"] body th {
-  background-color: var(--nexus-ui-panel-subtle) !important;
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body th {
+  background-color: var(--nexus-ui-table-header-bg) !important;
   color: var(--nexus-ui-text) !important;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body tbody td {
+  background-color: var(--nexus-ui-table-row-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body tbody tr:hover > td {
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .panel,
+  .card,
+  .metric-card,
+  .shell,
+  .page-shell,
+  .workspace,
+  .work-area,
+  .table-wrap,
+  .modal-content,
+  .settings-modal-content,
+  .dialog-panel,
+  .toolbar-popover,
+  .column-sort-menu,
+  .column-value-list,
+  .purchase-autocomplete,
+  .product-suggestions
+) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+/* Neutral surfaces: the dominant layer for dense operational screens. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-white,
-  .bg-slate-50,
-  .bg-slate-100,
-  .bg-slate-200,
-  .bg-gray-50,
-  .bg-gray-100,
-  .bg-gray-200,
-  .bg-zinc-50,
-  .bg-zinc-100,
-  .bg-neutral-50,
-  .bg-neutral-100,
   .bg-white\/60,
   .bg-white\/70,
   .bg-white\/80,
   .bg-white\/90,
   .bg-white\/95,
-  .panel,
-  .card,
-  .modal-content,
-  .dialog-panel
+  .bg-gray-50,
+  .bg-zinc-50,
+  .bg-neutral-50
 ) {
   background-color: var(--nexus-ui-panel-bg) !important;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-slate-50,
+  .bg-slate-50\/40,
   .bg-slate-50\/50,
   .bg-slate-50\/60,
   .bg-slate-50\/70,
+  .bg-slate-100,
+  .bg-slate-100\/60,
   .bg-slate-100\/80,
-  .bg-slate-200\/50,
-  .bg-blue-50,
-  .bg-blue-50\/60,
-  .bg-indigo-50,
-  .bg-indigo-50\/60,
-  .bg-purple-50,
-  .bg-purple-50\/60,
-  .bg-emerald-50,
-  .bg-emerald-50\/60,
-  .bg-amber-50,
-  .bg-amber-50\/60
+  .bg-gray-100,
+  .bg-zinc-100,
+  .bg-neutral-100
 ) {
   background-color: var(--nexus-ui-panel-subtle) !important;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-slate-200,
+  .bg-slate-200\/50,
+  .bg-slate-300,
+  .bg-gray-200,
+  .bg-zinc-200,
+  .bg-neutral-200
+) {
+  background-color: var(--nexus-ui-selection-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .hover\:bg-white:hover,
+  .hover\:bg-white\/60:hover,
+  .hover\:bg-slate-50:hover,
+  .hover\:bg-slate-100:hover,
+  .hover\:bg-slate-200:hover,
+  .group:hover .group-hover\:bg-slate-50,
+  .group:hover .group-hover\:\!bg-slate-50
+) {
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .row-selected,
+  .bg-indigo-100\/70,
+  .\!bg-indigo-100\/70
+) {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-selection-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+/*
+ * Active tools use a single neutral selection layer. These are exact
+ * Tailwind class-token remaps, not a replacement of Tailwind's palette.
+ */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-blue-500,
+  .bg-blue-600,
+  .bg-blue-700,
+  .bg-sky-500,
+  .bg-sky-600,
+  .bg-sky-700,
+  .bg-indigo-500,
+  .bg-indigo-600,
+  .bg-indigo-700,
+  .bg-violet-500,
+  .bg-violet-600,
+  .bg-violet-700,
+  .bg-cyan-500,
+  .bg-cyan-600,
+  .bg-cyan-700,
+  .bg-teal-500,
+  .bg-teal-600,
+  .bg-teal-700,
+  .bg-purple-500,
+  .bg-purple-600,
+  .bg-purple-700
+) {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-selection-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .hover\:bg-blue-600:hover,
+  .hover\:bg-blue-700:hover,
+  .hover\:bg-sky-600:hover,
+  .hover\:bg-sky-700:hover,
+  .hover\:bg-indigo-600:hover,
+  .hover\:bg-indigo-700:hover,
+  .hover\:bg-violet-600:hover,
+  .hover\:bg-violet-700:hover,
+  .hover\:bg-cyan-600:hover,
+  .hover\:bg-cyan-700:hover,
+  .hover\:bg-teal-600:hover,
+  .hover\:bg-teal-700:hover,
+  .hover\:bg-purple-600:hover,
+  .hover\:bg-purple-700:hover
+) {
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+/* Quiet semantic surfaces: color remains only where it carries meaning. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-blue-50,
+  .bg-blue-50\/50,
+  .bg-blue-50\/60,
+  .bg-blue-100,
+  .bg-sky-50,
+  .bg-sky-100,
+  .bg-indigo-50,
+  .bg-indigo-50\/40,
+  .bg-indigo-50\/60,
+  .bg-indigo-50\/70,
+  .bg-indigo-100
+) {
+  background-color: var(--nexus-ui-info-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-cyan-50,
+  .bg-cyan-50\/60,
+  .bg-cyan-50\/70,
+  .bg-cyan-100,
+  .bg-teal-50,
+  .bg-teal-100
+) {
+  background-color: var(--nexus-ui-cyan-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-emerald-50,
+  .bg-emerald-50\/30,
+  .bg-emerald-50\/60,
+  .bg-emerald-50\/70,
+  .bg-emerald-100,
+  .bg-green-50,
+  .bg-green-100,
+  .bg-emerald-500,
+  .bg-emerald-600,
+  .bg-emerald-700,
+  .bg-green-500,
+  .bg-green-600,
+  .bg-green-700
+) {
+  border-color: var(--nexus-ui-success-border) !important;
+  background-color: var(--nexus-ui-success-bg) !important;
+  color: var(--nexus-ui-success) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-amber-50,
+  .bg-amber-50\/60,
+  .bg-amber-50\/70,
+  .bg-amber-50\/80,
+  .bg-amber-50\/95,
+  .bg-amber-100,
+  .bg-amber-100\/50,
+  .bg-yellow-50,
+  .bg-yellow-100,
+  .bg-orange-50,
+  .bg-orange-100,
+  .bg-amber-500,
+  .bg-amber-600,
+  .bg-amber-700,
+  .bg-yellow-500,
+  .bg-yellow-600,
+  .bg-yellow-700,
+  .bg-orange-500,
+  .bg-orange-600,
+  .bg-orange-700
+) {
+  border-color: var(--nexus-ui-warning-border) !important;
+  background-color: var(--nexus-ui-warning-bg) !important;
+  color: var(--nexus-ui-warning) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-rose-50,
+  .bg-rose-50\/30,
+  .bg-rose-50\/50,
+  .bg-rose-50\/60,
+  .bg-rose-50\/70,
+  .bg-rose-100,
+  .bg-rose-200,
+  .bg-red-50,
+  .bg-red-100,
+  .bg-rose-500,
+  .bg-rose-600,
+  .bg-rose-700,
+  .bg-red-500,
+  .bg-red-600,
+  .bg-red-700,
+  .\!bg-rose-100
+) {
+  border-color: var(--nexus-ui-danger-border) !important;
+  background-color: var(--nexus-ui-danger-bg) !important;
+  color: var(--nexus-ui-danger) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .bg-purple-50,
+  .bg-purple-50\/50,
+  .bg-purple-50\/70,
+  .bg-purple-100,
+  .bg-violet-50,
+  .bg-violet-100
+) {
+  background-color: var(--nexus-ui-accent-bg) !important;
+}
+
+/* Semantic text remaps. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-slate-950,
   .text-slate-900,
   .text-slate-800,
   .text-slate-700,
@@ -92,12 +330,13 @@ html[data-nexus-ui-theme="dark"] body :is(
   color: var(--nexus-ui-text) !important;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .text-slate-600,
   .text-slate-500,
   .text-slate-400,
   .text-gray-600,
   .text-gray-500,
+  .text-gray-400,
   .text-zinc-600,
   .text-zinc-500,
   .text-neutral-600,
@@ -106,29 +345,346 @@ html[data-nexus-ui-theme="dark"] body :is(
   color: var(--nexus-ui-muted) !important;
 }
 
-html[data-nexus-ui-theme="dark"] body :is(
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-blue-400,
+  .text-blue-500,
+  .text-blue-600,
+  .text-blue-700,
+  .text-blue-800,
+  .text-blue-900,
+  .text-sky-500,
+  .text-sky-600,
+  .text-sky-700,
+  .text-sky-800,
+  .text-indigo-500,
+  .text-indigo-600,
+  .text-indigo-700,
+  .text-indigo-800,
+  .text-indigo-900
+) {
+  color: var(--nexus-ui-info) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-cyan-500,
+  .text-cyan-600,
+  .text-cyan-700,
+  .text-cyan-800,
+  .text-teal-500,
+  .text-teal-600,
+  .text-teal-700,
+  .text-teal-800
+) {
+  color: var(--nexus-ui-cyan) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-emerald-500,
+  .text-emerald-600,
+  .text-emerald-700,
+  .text-emerald-800,
+  .text-emerald-900,
+  .text-green-500,
+  .text-green-600,
+  .text-green-700,
+  .text-green-800
+) {
+  color: var(--nexus-ui-success) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-amber-500,
+  .text-amber-600,
+  .text-amber-700,
+  .text-amber-800,
+  .text-amber-900,
+  .text-yellow-600,
+  .text-yellow-700,
+  .text-yellow-800,
+  .text-orange-500,
+  .text-orange-600,
+  .text-orange-700,
+  .text-orange-800,
+  .text-orange-900
+) {
+  color: var(--nexus-ui-warning) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-rose-500,
+  .text-rose-600,
+  .text-rose-700,
+  .text-rose-800,
+  .text-rose-900,
+  .text-red-500,
+  .text-red-600,
+  .text-red-700,
+  .text-red-800,
+  .text-red-900,
+  .\!text-rose-800
+) {
+  color: var(--nexus-ui-danger) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .text-purple-500,
+  .text-purple-600,
+  .text-purple-700,
+  .text-purple-800,
+  .text-purple-900,
+  .text-violet-500,
+  .text-violet-600,
+  .text-violet-700,
+  .text-violet-800
+) {
+  color: var(--nexus-ui-accent) !important;
+}
+
+/* Border and divider hierarchy follows the same semantic meaning. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .border-slate-100,
   .border-slate-200,
   .border-slate-300,
+  .border-slate-400,
   .border-gray-100,
   .border-gray-200,
   .border-gray-300,
-  .border-zinc-100,
-  .border-zinc-200,
-  .border-neutral-100,
-  .border-neutral-200,
   .divide-slate-100,
   .divide-slate-200,
+  .divide-slate-300,
   .divide-gray-100,
   .divide-gray-200
 ) {
   border-color: var(--nexus-ui-border) !important;
 }
 
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-blue-100,
+  .border-blue-200,
+  .border-blue-300,
+  .border-sky-100,
+  .border-sky-200,
+  .border-sky-300,
+  .border-indigo-100,
+  .border-indigo-200,
+  .border-indigo-300,
+  .border-violet-200
+) {
+  border-color: var(--nexus-ui-info-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-cyan-100,
+  .border-cyan-200,
+  .border-cyan-300,
+  .border-teal-100,
+  .border-teal-200,
+  .border-teal-300
+) {
+  border-color: var(--nexus-ui-cyan-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-emerald-100,
+  .border-emerald-200,
+  .border-emerald-300,
+  .border-green-100,
+  .border-green-200,
+  .border-green-300,
+  .divide-emerald-100,
+  .divide-green-100
+) {
+  border-color: var(--nexus-ui-success-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-amber-100,
+  .border-amber-200,
+  .border-amber-300,
+  .border-yellow-100,
+  .border-yellow-200,
+  .border-yellow-300,
+  .border-orange-100,
+  .border-orange-200,
+  .border-orange-300
+) {
+  border-color: var(--nexus-ui-warning-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-rose-100,
+  .border-rose-200,
+  .border-rose-300,
+  .border-red-100,
+  .border-red-200,
+  .border-red-300
+) {
+  border-color: var(--nexus-ui-danger-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .border-purple-100,
+  .border-purple-200,
+  .border-purple-300,
+  .border-violet-100,
+  .border-violet-200,
+  .border-violet-300
+) {
+  border-color: var(--nexus-ui-accent-border) !important;
+}
+
+/* Keep the worktable hierarchy above later utility-class remaps. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea):not([type="file"]) {
+  background-color: var(--nexus-ui-input-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body th:is(
+  .bg-white,
+  .bg-slate-50,
+  .bg-slate-100
+) {
+  background-color: var(--nexus-ui-table-header-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body tbody td:is(
+  .bg-white,
+  .bg-white\/60,
+  .bg-white\/70,
+  .bg-white\/80,
+  .bg-white\/90,
+  .bg-white\/95,
+  .bg-slate-50,
+  .bg-slate-50\/40,
+  .bg-slate-50\/50,
+  .bg-slate-50\/60,
+  .bg-slate-50\/70
+) {
+  background-color: var(--nexus-ui-table-row-bg) !important;
+}
+
+/* App-specific hard-coded surfaces that do not use Tailwind utilities. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="history-viewer"] body .metric-card {
+  box-shadow: none;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="history-viewer"] body .row-selected {
+  background-color: var(--nexus-ui-selection-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-loader {
+  background-color: var(--nexus-ui-page-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-loader .spinner {
+  border-color: var(--nexus-ui-border) !important;
+  border-top-color: var(--nexus-ui-info-border) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-loader :is(.loader-text, [data-load-watchdog]) {
+  color: var(--nexus-ui-muted) !important;
+}
+
+/* ORDER Q local palette bridge and dense-table states. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
+  --white: var(--nexus-ui-panel-bg);
+  --slate-50: var(--nexus-ui-table-row-bg);
+  --slate-100: var(--nexus-ui-panel-subtle);
+  --slate-200: var(--nexus-ui-border);
+  --slate-300: var(--nexus-ui-border-strong);
+  --slate-400: #7f8b99;
+  --slate-500: var(--nexus-ui-muted);
+  --slate-600: #bcc5cf;
+  --slate-700: #d2d8df;
+  --slate-800: #dce2e8;
+  --slate-900: var(--nexus-ui-text);
+  --teal-100: var(--nexus-ui-cyan-bg);
+  --teal-600: var(--nexus-ui-cyan);
+  --teal-700: var(--nexus-ui-cyan);
+  --blue-700: var(--nexus-ui-info);
+  --amber-700: var(--nexus-ui-warning);
+  --red-700: var(--nexus-ui-danger);
+  --red-100: var(--nexus-ui-danger-bg);
+  --green-700: var(--nexus-ui-success);
+  --green-100: var(--nexus-ui-success-bg);
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .global-header,
+  .source-layout,
+  .source-row,
+  .result-area,
+  .warehouse-color-reset,
+  .column-filter-actions button,
+  .filter-toggle-button,
+  .column-menu,
+  .view-preset-dialog
+) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .tab-button.active,
+  .table-tool-button.active,
+  .filter-toggle-button.active,
+  .vivid-color-toggle.active,
+  [data-save-view-preset]
+) {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-selection-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .table-tool-button:hover,
+  .filter-toggle-button:hover,
+  .result-filter-reset-button:hover,
+  .column-sort-menu button:hover,
+  .column-value-option:hover,
+  .manager-assignment-option:hover
+) {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .validation-notice-summary,
+  .purchase-input[data-negative-balance="true"],
+  td.ledger-negative-cell,
+  td.purchase-negative-cell,
+  td.ledger-negative-cell .inventory-total-frame
+) {
+  border-color: var(--nexus-ui-warning-border) !important;
+  background-color: var(--nexus-ui-warning-bg) !important;
+  color: var(--nexus-ui-warning) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .shortage-focus-button,
+  td.quantity-negative .inventory-total-frame,
+  td.warning-value
+) {
+  border-color: var(--nexus-ui-danger-border) !important;
+  background-color: var(--nexus-ui-danger-bg) !important;
+  color: var(--nexus-ui-danger) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body td.inventory-value {
+  background-color: var(--nexus-ui-success-bg) !important;
+  color: var(--nexus-ui-success) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .table-wrap td:focus-within {
+  background-color: var(--nexus-ui-selection-bg) !important;
+}
+
+/* ORDER Q vNext shares the same quiet worktable hierarchy. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] {
   --white: var(--nexus-ui-panel-bg);
-  --slate-50: var(--nexus-ui-panel-subtle);
-  --slate-100: #26303a;
+  --slate-50: var(--nexus-ui-table-row-bg);
+  --slate-100: var(--nexus-ui-panel-subtle);
   --slate-200: var(--nexus-ui-border);
   --slate-300: var(--nexus-ui-border-strong);
   --slate-400: #7f8b99;
@@ -140,32 +696,22 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] {
   --line: var(--nexus-ui-border);
   --ink: var(--nexus-ui-text);
   --muted: var(--nexus-ui-muted);
-  --teal-100: #183a37;
-  --teal-600: #5eead4;
-  --teal-700: #72ddc5;
-  --blue-700: #a9c8f8;
-  --amber-700: #e5c08b;
-  --red-700: #e9afb5;
-  --red-100: #3b2b2f;
-  --green-700: #abd3b6;
-  --green-100: #29382f;
+  --teal-100: var(--nexus-ui-cyan-bg);
+  --teal-600: var(--nexus-ui-cyan);
+  --teal-700: var(--nexus-ui-cyan);
+  --blue-700: var(--nexus-ui-info);
+  --amber-700: var(--nexus-ui-warning);
+  --red-700: var(--nexus-ui-danger);
+  --red-100: var(--nexus-ui-danger-bg);
+  --green-700: var(--nexus-ui-success);
+  --green-100: var(--nexus-ui-success-bg);
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
   .btn,
   .control,
-  .toolbar-popover,
-  .sort-menu button,
-  .product-suggestions,
-  .product-suggestion,
-  .document-filters select,
-  .history-search,
-  .expand-button,
-  .inline-edit-grid input,
-  .inline-edit-grid select,
-  .inline-remove-item,
-  .shell,
-  .table-wrap,
+  .summary,
+  .cloud-grid,
   .cloud-card,
   .document-row,
   .document-meta-grid span,
@@ -173,7 +719,10 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
   .document-memo,
   .detail-items,
   .change-history li,
-  .operations-alerts span
+  .operations-alerts,
+  .inline-edit-grid input,
+  .inline-edit-grid select,
+  .inline-remove-item
 ) {
   border-color: var(--nexus-ui-border) !important;
   background-color: var(--nexus-ui-panel-bg) !important;
@@ -181,72 +730,77 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
-  .summary,
-  .cloud-grid,
-  .document-detail-row > td,
-  .document-detail,
-  .operations-alerts,
-  .detail-items tfoot td
+  .btn.primary,
+  .control.active,
+  [aria-pressed="true"]
 ) {
-  background-color: var(--nexus-ui-panel-subtle) !important;
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-selection-bg) !important;
   color: var(--nexus-ui-text) !important;
 }
 
-html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
-  --white: var(--nexus-ui-panel-bg);
-  --slate-50: var(--nexus-ui-panel-subtle);
-  --slate-100: #26303a;
-  --slate-200: var(--nexus-ui-border);
-  --slate-300: var(--nexus-ui-border-strong);
-  --slate-400: #8995a3;
-  --slate-500: var(--nexus-ui-muted);
-  --slate-600: #b8c1cc;
-  --slate-700: #d0d7df;
-  --slate-900: var(--nexus-ui-text);
-  --teal-100: #193b37;
-  --blue-700: #aac7f4;
-  --amber-700: #e2be8b;
-  --red-700: #e5abb2;
-  --red-100: #3b2b2f;
-  --green-700: #a9d0b3;
-  --green-100: #29382f;
-}
-
-html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
-  .global-header,
-  .page-shell,
-  .panel,
-  .table-wrap,
-  .settings-modal-content,
-  .warehouse-color-reset,
-  .column-filter-actions button,
-  .filter-toggle-button
-) {
-  border-color: var(--nexus-ui-border) !important;
-  background-color: var(--nexus-ui-panel-bg) !important;
-  color: var(--nexus-ui-text) !important;
-}
-
-/* Keep form and table hierarchy above utility-class remaps. */
-html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea) {
-  background-color: var(--nexus-ui-input-bg) !important;
-}
-
-html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body th {
-  background-color: var(--nexus-ui-panel-subtle) !important;
-}
-
-html[data-nexus-ui-theme="dark"] body :is(
-  .hover\:bg-slate-50:hover,
-  .hover\:bg-slate-100:hover
-) {
-  background-color: var(--nexus-ui-panel-subtle) !important;
-}
-
-html[data-nexus-ui-theme="dark"] body ::-webkit-scrollbar-track {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-track {
   background: var(--nexus-ui-panel-subtle);
 }
 
-html[data-nexus-ui-theme="dark"] body ::-webkit-scrollbar-thumb {
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-thumb {
   background: var(--nexus-ui-border-strong);
+}
+
+/*
+ * Output boundary: application exports remain untouched. Direct print resets
+ * the shared and bridged palettes to bright paper-safe values.
+ */
+@media print {
+  html[data-nexus-ui-theme="dark"][data-nexus-ui-app] {
+    --nexus-ui-page-bg: #ffffff;
+    --nexus-ui-panel-bg: #ffffff;
+    --nexus-ui-panel-subtle: #f8fafc;
+    --nexus-ui-table-header-bg: #f1f5f9;
+    --nexus-ui-table-row-bg: #ffffff;
+    --nexus-ui-table-row-hover-bg: #f8fafc;
+    --nexus-ui-input-bg: #ffffff;
+    --nexus-ui-border: #dbe3ec;
+    --nexus-ui-border-strong: #cbd5e1;
+    --nexus-ui-text: #172033;
+    --nexus-ui-muted: #64748b;
+    --nexus-ui-selection-bg: #dfe7f0;
+    --nexus-ui-selection-border: #6489b2;
+    --nexus-ui-info: #31546d;
+    --nexus-ui-info-bg: #edf3f7;
+    --nexus-ui-info-border: #9bafbd;
+    --nexus-ui-success: #3d624c;
+    --nexus-ui-success-bg: #edf5f0;
+    --nexus-ui-success-border: #9fb4a7;
+    --nexus-ui-warning: #6f5d47;
+    --nexus-ui-warning-bg: #f6f2ec;
+    --nexus-ui-warning-border: #b9aa97;
+    --nexus-ui-danger: #755055;
+    --nexus-ui-danger-bg: #f6eff0;
+    --nexus-ui-danger-border: #b9a0a4;
+    --nexus-ui-accent: #5d596c;
+    --nexus-ui-accent-bg: #f1eff4;
+    --nexus-ui-accent-border: #aaa5b2;
+    --nexus-ui-cyan: #3f5f62;
+    --nexus-ui-cyan-bg: #edf4f4;
+    --nexus-ui-cyan-border: #9fb2b4;
+    --white: #ffffff;
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+    color-scheme: light;
+    background: #ffffff;
+  }
+
+  html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
 }
