@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const STORAGE_KEY = 'oneapp.nexus.ui.theme.v1';
   const LEGACY_KEYS = Object.freeze([
     'oneapp.nexus.v1.colorMode',

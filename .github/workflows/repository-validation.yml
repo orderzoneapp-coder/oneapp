@@ -32,11 +32,30 @@ jobs:
       - name: Validate manifest, files, and contracts
         run: node scripts/validate-repository.mjs
 
+      - name: Test SmartInput independent recovery
+        run: node scripts/test-smartinput-independent-recovery.mjs
+
+      - name: Test SmartInput clipboard and parsers
+        run: |
+          node scripts/test-smartinput-grid-clipboard.mjs
+          node scripts/test-smartinput-structured-sheet-parser.mjs
+          node scripts/test-smartinput-multivoucher-stage1.mjs
+          node scripts/test-smartinput-ocr.mjs
+
+      - name: Test SmartInput browser isolation and persistence
+        run: node scripts/test-smartinput-browser-e2e.mjs
+
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
+
+      - name: Test NEXUS basic login and home contracts
+        run: node scripts/test-nexus-basic-login-home.mjs
+
+      - name: Test Master and Item Manager app-header separation
+        run: node scripts/test-master-itemmanager-app-header.mjs
 
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
@@ -125,7 +144,10 @@ jobs:
       - name: Read a real Master XLSX and verify approval persistence
         run: node scripts/test-master-add-update-xlsx-e2e.mjs
 
-      - name: Test ItemMaster registration, edit, and reload persistence
+      - name: Test Master consolidation and ItemMaster compatibility contracts
+        run: node scripts/test-itemmaster-standalone.mjs
+
+      - name: Test Master registration, edit, legacy safety, and reload persistence
         run: node scripts/test-itemmaster-browser-e2e.mjs
 
       - name: Test MerchOps rule placement and SmartParser direct information apply
@@ -139,3 +161,9 @@ jobs:
 
       - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs
+
+      - name: Test CustomerMaster source-link and import contracts
+        run: node scripts/test-customer-master-independent.mjs
+
+      - name: Test CustomerMaster browser workflow and legacy XLS
+        run: node scripts/test-customer-master-browser-e2e.mjs

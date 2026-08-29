@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.0",
-  "updatedAt": "2026-08-08",
+  "updatedAt": "2026-08-29",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -14,6 +14,41 @@
     "archived": "Retained in Git history or releases and not deployed as an active entry point."
   },
   "applications": [
+    {
+      "id": "nexus-home",
+      "name": "NEXUS Home",
+      "path": "nexus/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, and launch independent work apps without gating their local execution.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "master-lookup",
+        "customer-master",
+        "merchops",
+        "smart-input",
+        "orderops",
+        "dataops",
+        "smart-parser",
+        "export-center",
+        "settings",
+        "item-manager",
+        "history-viewer",
+        "orderq-vnext"
+      ],
+      "coreCapabilities": [
+        "basic login and logout",
+        "master or delegated-user identification",
+        "independent work-app launcher"
+      ],
+      "dependencyMode": {
+        "cachedSessionDisplay": "LOCAL_OPERATION",
+        "sessionRefresh": "BACKGROUND_SYNC",
+        "login": "SERVER_FINALIZE",
+        "logoutAudit": "BACKGROUND_SYNC"
+      },
+      "offlinePolicy": "A cached unexpired home session remains visible while server verification is delayed, and work apps do not load the login runtime or wait for the authentication service."
+    },
     {
       "id": "merchops",
       "name": "MerchOps",
@@ -129,7 +164,7 @@
     },
     {
       "id": "master-lookup",
-      "name": "Master",
+      "name": "상품관리",
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
@@ -141,6 +176,37 @@
       "sharedContracts": [
         "product-master",
         "change-history"
+      ]
+    },
+    {
+      "id": "customer-master",
+      "name": "거래처관리",
+      "path": "customer-master/index.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Own and manage customer reference data, aliases, external-code mappings, revisions, local history, Excel upserts, snapshots, and a read-only consumer snapshot without requiring authentication or cloud availability.",
+      "owner": "customer-reference-data",
+      "productionWrites": true,
+      "coreCapabilities": [
+        "customer lookup and ranked search",
+        "single-customer create and revision-checked update",
+        "incomplete-information worksheet",
+        "customer-code Excel upsert",
+        "header and user-field mapping dictionary",
+        "local snapshot backup and restore",
+        "read-only legacy v17 migration"
+      ],
+      "ownedContracts": [
+        "customer-master"
+      ],
+      "dependencyMode": {
+        "localLookupAndEdit": "LOCAL_OPERATION",
+        "snapshotBackupAndRestore": "LOCAL_OPERATION",
+        "legacyV17Migration": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Render, search, edit, import, back up, and restore customer data from the app-owned IndexedDB without waiting for login, cloud, another app, or an external CDN.",
+      "sharedContracts": [
+        "customer-master"
       ]
     },
     {
@@ -238,6 +304,42 @@
       ]
     },
     {
+      "id": "smart-input",
+      "name": "SmartInput",
+      "path": "smartinput/index.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Create and preserve order, purchase, sale, and estimate work drafts locally while isolating optional reference lookup, external input, synchronization, and server-finalize failures.",
+      "owner": "voucher-input",
+      "productionWrites": true,
+      "coreCapabilities": [
+        "four-mode voucher drafting",
+        "direct and text intake",
+        "structured file and clipboard intake",
+        "editable local work table",
+        "local draft recovery",
+        "local estimate catalog"
+      ],
+      "ownedContracts": [
+        "smartinput-local-work"
+      ],
+      "consumedContracts": [
+        "product-master",
+        "orderq-vnext-sync"
+      ],
+      "dependencyMode": {
+        "localDraftAndEstimate": "LOCAL_OPERATION",
+        "orderSaveThenSync": "BACKGROUND_SYNC",
+        "purchaseAndSaleFinalize": "SERVER_FINALIZE"
+      },
+      "offlinePolicy": "Render the application and preserve local drafts and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
+      "sharedContracts": [
+        "smartinput-local-work",
+        "product-master",
+        "orderq-vnext-sync"
+      ]
+    },
+    {
       "id": "cloud-sync",
       "name": "ONEAPP Cloud Sync",
       "path": "code.gs",
@@ -279,6 +381,60 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "customer-master",
+      "owner": "customer-master",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_CUSTOMER_SNAPSHOT_V1",
+      "localDatabase": "oneapp-customermaster-v1",
+      "databaseVersion": 1,
+      "readAdapter": "ONEAPP_CUSTOMER_MASTER_READ_ADAPTER",
+      "resources": {
+        "indexedDbStores": [
+          "customers",
+          "customerAliases",
+          "customerEvents",
+          "customerSourceLinks",
+          "customerSourceLinkEvents",
+          "customerHeaderMappings",
+          "customerUserFieldDefinitions",
+          "importBatches",
+          "sourceRecords",
+          "migrationSnapshots",
+          "appMeta"
+        ],
+        "legacyReadOnlySource": {
+          "database": "oneapp-orderq-vnext",
+          "databaseVersion": 17
+        }
+      }
+    },
+    {
+      "id": "smartinput-local-work",
+      "owner": "smart-input",
+      "consumers": [
+        "smartinput/index.html"
+      ],
+      "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
+      "localDatabase": "oneapp-smartinput",
+      "databaseVersion": 3,
+      "resources": {
+        "localStorage": [
+          "oneapp.smartinput.draft.v1",
+          "oneapp.smartinput.drafts.v1",
+          "oneapp.smartinput.delivery-history.v1",
+          "oneapp.smartinput.settings.v1"
+        ],
+        "indexedDbStores": [
+          "settings",
+          "customerLinkGroups",
+          "temporaryCustomers",
+          "customerAliasMappings",
+          "estimates",
+          "sourceImages"
+        ]
+      }
+    },
     {
       "id": "orderq-vnext-sync",
       "owner": "orderq-vnext",
