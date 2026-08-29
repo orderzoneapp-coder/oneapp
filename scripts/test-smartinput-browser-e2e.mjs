@@ -7,6 +7,9 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const acceptanceXlsxPath = process.env.SMARTINPUT_ACCEPTANCE_XLSX ? resolve(process.env.SMARTINPUT_ACCEPTANCE_XLSX) : '';
+const acceptanceHeaders = ['일자', '담당', '창고코드', '단위', '품목코드', '품목명', '규격', '수량', '재고', '단가', '적요', '적요1', '거래처', '그룹'];
+if (acceptanceXlsxPath) assert.ok(existsSync(acceptanceXlsxPath), `acceptance workbook not found: ${acceptanceXlsxPath}`);
 const browserProfile = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-e2e-'));
 const fixtureDir = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-fixtures-'));
 const screenshotDir = resolve(process.env.SMARTINPUT_SCREENSHOT_DIR || join(tmpdir(), 'oneapp-smartinput-screenshots'));
@@ -248,7 +251,9 @@ try {
   await click(client, '[data-method="text"]');
   await input(client, '#sourceTextInput', 'OFF-1 오프라인상품 3 EA 1200');
   await click(client, '#analyzeTextButton');
-  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===1`, 'offline text row');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===0 && window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.length===1`, 'offline text staging');
+  await click(client, '#applyStagingButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===1`, 'offline text apply');
   await input(client, '#customerInput', '수동 거래처');
   await input(client, '#voucherDateInput', '2026-08-29');
   await input(client, '#warehouseInput', '수동 창고');
@@ -258,16 +263,22 @@ try {
   await click(client, '[data-method="paste"]');
   await input(client, '#pasteInput', '품목코드\t품목명\t수량\t단위\t단가\nP-1\t붙여넣기상품\t2\tEA\t2500');
   await click(client, '#analyzePasteButton');
-  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===2`, 'clipboard table row');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===1 && window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.some(row=>row.itemCode==='P-1')`, 'clipboard table staging');
+  await click(client, '#applyStagingButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===2`, 'clipboard table apply');
 
   await client.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1, connectionType: 'wifi' });
   await click(client, '[data-method="excel"]');
   const documentNode = await client.send('DOM.getDocument', { depth: -1, pierce: true });
   const sheetNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#sheetFileInput' });
   await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [tsvPath] });
-  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='TSV-1')`, 'TSV import');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.some(row=>row.itemCode==='TSV-1') && !window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='TSV-1')`, 'TSV staging');
+  await click(client, '#applyStagingButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='TSV-1')`, 'TSV apply');
   await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [csvPath] });
-  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='CSV-1')`, 'CSV import');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.some(row=>row.itemCode==='CSV-1') && !window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='CSV-1')`, 'CSV staging');
+  await click(client, '#applyStagingButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='CSV-1')`, 'CSV apply');
   await evaluate(client, `(() => {
     window.__SMARTINPUT_EXTERNALS__ = {
       ...(window.__SMARTINPUT_EXTERNALS__ || {}),
@@ -279,7 +290,9 @@ try {
     return true;
   })()`);
   await client.send('DOM.setFileInputFiles', { nodeId: sheetNode.nodeId, files: [xlsxPath] });
-  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='XLSX-1')`, 'Excel workbook import');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.some(row=>row.itemCode==='XLSX-1') && !window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='XLSX-1')`, 'Excel workbook staging');
+  await click(client, '#applyStagingButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.some(row=>row.itemCode==='XLSX-1')`, 'Excel workbook apply');
 
   await click(client, '[data-method="photo"]');
   const photoNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#photoFileInput' });
@@ -298,6 +311,21 @@ try {
   await click(client, '[data-mode="order"]');
   await click(client, '#completeButton');
   await waitForExpression(client, `document.querySelector('#deliveryMessage').textContent.includes('로컬 저장 완료')`, 'order local-first result');
+
+  await click(client, '[data-method="paste"]');
+  await input(client, '#pasteInput', '일자\t창고코드\t품목코드\t품목명\t수량\t단위\t단가\t거래처\n2026/08/29\t88\tPART-1\t부분성공 상품\t1\tEA\t1000\t성공 거래처\n2026/08/29\t88\tPART-2\t부분실패 상품\t1\tEA\t2000\t실패 거래처');
+  await click(client, '#analyzePasteButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.length===2`, 'two-group order staging');
+  await click(client, '#applyStagingButton');
+  await evaluate(client, `window.__SMARTINPUT_INTEGRATION_BRIDGE__={createOrder:async payload=>{if(payload.customerName==='실패 거래처'){const error=new Error('group failed');error.code='GROUP_FAILED';throw error;}return {order:{orderId:'PART-'+payload.customerName}};},syncOrder:async()=>({ok:true}),finalizePurchase:async()=>{const error=new Error('auth');error.code='AUTH_REQUIRED';throw error;},finalizeSale:async()=>{const error=new Error('revision');error.code='REVISION_CONFLICT';throw error;}}`);
+  await click(client, '#completeButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.groupDeliveryResults?.some(result=>result.status==='FAILED')`, 'partial order group failure');
+  assert.deepEqual(await evaluate(client, `(() => {const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;return {rows:mode.rows.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,failed:mode.groupDeliveryResults.filter(result=>result.status==='FAILED').length,retryVisible:!document.querySelector('#retryFailedButton').hidden,remainingCustomer:mode.rows[0]?.rowCustomerName};})()`),
+    { rows: 1, success: 1, failed: 1, retryVisible: true, remainingCustomer: '실패 거래처' },
+    'only the failed customer group must remain after partial order delivery');
+  await evaluate(client, `window.__SMARTINPUT_INTEGRATION_BRIDGE__.createOrder=async payload=>({order:{orderId:'RETRY-'+payload.customerName}})`);
+  await click(client, '#retryFailedButton');
+  await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length===0 && window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.groupDeliveryResults.every(result=>result.status==='SUCCESS')`, 'failed group retry');
 
   for (const [mode, code] of [['purchase', 'AUTH_REQUIRED'], ['sale', 'REVISION_CONFLICT']]) {
     await click(client, `[data-mode="${mode}"]`);
@@ -436,10 +464,146 @@ try {
   assert.equal(mobileLayout.canScrollModes, true, 'compact app-header controls must remain horizontally reachable on mobile');
   assert.deepEqual(mobileLayout.tabLabels, ['주문서', '구매', '판매', '견적서']);
   assert.ok(mobileLayout.rowsVisible >= 3, 'the work table must keep at least three visible rows on mobile');
+  let acceptance = null;
+  let acceptanceShot = '';
+  if (acceptanceXlsxPath) {
+    await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await evaluate(client, `localStorage.removeItem('oneapp.smartinput.draft.v1');localStorage.removeItem('oneapp.smartinput.drafts.v1');true`);
+    await client.send('Page.reload', { ignoreCache: true });
+    await waitForExpression(client, `Boolean(window.__SMARTINPUT_DEBUG__) && document.querySelectorAll('#workTableBody tr').length===3`, 'acceptance SmartInput shell');
+    await click(client, '#addRowButton');
+    await input(client, '#workTableBody tr[data-row-id] input[data-field="itemName"]', '기존 보존 행');
+    await input(client, '#workTableBody tr[data-row-id] input[data-field="quantity"]', '1');
+    await click(client, '[data-method="excel"]');
+    await input(client, '#newTemplateNameInput', '미출고 주문 검증');
+    const acceptanceDocument = await client.send('DOM.getDocument', { depth: -1, pierce: true });
+    const acceptanceSheetNode = await client.send('DOM.querySelector', { nodeId: acceptanceDocument.root.nodeId, selector: '#sheetFileInput' });
+    await client.send('DOM.setFileInputFiles', { nodeId: acceptanceSheetNode.nodeId, files: [acceptanceXlsxPath] });
+    await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.rows?.length===93`, '93-row acceptance staging', 30_000);
+    const stagedAcceptance = await evaluate(client, `(() => {
+      const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
+      const rows=mode.staging.rows;
+      const columns=mode.inputTemplate.columns;
+      const stagedDomRow=document.querySelector('#workTableBody tr[data-staged-row="true"]');
+      const existingDomRow=document.querySelector('#workTableBody tr[data-row-id]');
+      return {
+        status:mode.staging.status,
+        headerRowNumber:mode.staging.headerRowNumber,
+        sourceHash:mode.staging.sourceHash,
+        stagedRows:rows.length,
+        workRows:mode.rows.length,
+        customers:new Set(rows.map(row=>row.rowCustomerName)).size,
+        quantity:rows.reduce((sum,row)=>sum+Number(row.quantity||0),0),
+        amount:rows.reduce((sum,row)=>sum+Number(row.quantity||0)*Number(row.unitPrice||0),0),
+        halfQuantity:rows.some(row=>Number(row.quantity)===0.5),
+        normalizedBox:rows.some(row=>row.rawUnit==='bOX'&&row.unit==='BOX')&&mode.staging.warnings.some(w=>w.code==='UNIT_CASE_NORMALIZED'),
+        unitAndSpecSeparate:rows.some(row=>row.unit&&row.specification),
+        domHeaders:[...document.querySelectorAll('#workTableHeadRow th')].slice(1,-1).map(cell=>cell.textContent.trim()),
+        domFirstSourceValues:[...stagedDomRow.querySelectorAll('input[data-field]')].map(input=>input.value),
+        expectedFirstSourceValues:columns.map(column=>rows[0].sourceValues[column.sourceValueKey]??rows[0][column.targetFieldId]??''),
+        provisionalColumns:columns.map(column=>({columnId:column.columnId,label:column.label,targetFieldId:column.targetFieldId,sourceValueKey:column.sourceValueKey})),
+        existingRowPreserved:columns.map((column,index)=>({label:column.label,value:existingDomRow.querySelectorAll('input[data-field]')[index]?.value||''})).filter(item=>item.value)
+      };
+    })()`);
+    assert.deepEqual({
+      status: stagedAcceptance.status,
+      headerRowNumber: stagedAcceptance.headerRowNumber,
+      stagedRows: stagedAcceptance.stagedRows,
+      workRows: stagedAcceptance.workRows,
+      customers: stagedAcceptance.customers,
+      quantity: stagedAcceptance.quantity,
+      amount: stagedAcceptance.amount,
+      halfQuantity: stagedAcceptance.halfQuantity,
+      normalizedBox: stagedAcceptance.normalizedBox,
+      unitAndSpecSeparate: stagedAcceptance.unitAndSpecSeparate
+    }, { status: 'PENDING', headerRowNumber: 2, stagedRows: 93, workRows: 1, customers: 18, quantity: 184.5, amount: 2168350, halfQuantity: true, normalizedBox: true, unitAndSpecSeparate: true });
+    assert.match(stagedAcceptance.sourceHash, /^[a-f0-9]{64}$/);
+    assert.deepEqual(stagedAcceptance.domHeaders, acceptanceHeaders, 'staging DOM headers must immediately match A2:N2 exactly');
+    assert.deepEqual(stagedAcceptance.domFirstSourceValues, stagedAcceptance.expectedFirstSourceValues, 'the representative staging row must render all 14 original values');
+    assert.equal(stagedAcceptance.domFirstSourceValues.length, 14);
+    assert.equal(stagedAcceptance.provisionalColumns.length, 14);
+    assert.ok(stagedAcceptance.provisionalColumns.every(column => column.sourceValueKey), 'all original columns require stable source value keys');
+    assert.equal(new Set(stagedAcceptance.provisionalColumns.map(column => column.columnId)).size, 14);
+    assert.ok(stagedAcceptance.provisionalColumns.every(column => column.columnId === column.sourceValueKey),
+      'dynamic column IDs must be unique source keys, independent of target mappings');
+    assert.deepEqual(stagedAcceptance.existingRowPreserved, [{ label: '품목명', value: '기존 보존 행' }, { label: '수량', value: '1' }]);
+    const assigneeColumnId = stagedAcceptance.provisionalColumns.find(column => column.label === '담당').sourceValueKey;
+    await input(client, `#workTableBody tr[data-row-id] input[data-field="${assigneeColumnId}"]`, '직접 담당');
+    assert.equal(await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows[0].sourceValues[${JSON.stringify(assigneeColumnId)}]`), '직접 담당',
+      'direct edit must preserve a custom dynamic-column value');
+    await evaluate(client, `(() => {
+      const target=document.querySelector('#workTableBody tr[data-row-id] input[data-field=${JSON.stringify(assigneeColumnId)}]');
+      const event=new Event('paste',{bubbles:true,cancelable:true});
+      Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'붙여넣기 담당\\t99':''}});
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    })()`);
+    assert.deepEqual(await evaluate(client, `(() => {
+      const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
+      const row=mode.rows[0];
+      const columns=mode.inputTemplate.columns;
+      const assignee=columns.find(column=>column.label==='담당');
+      const warehouse=columns.find(column=>column.label==='창고코드');
+      return {assignee:row.sourceValues[assignee.sourceValueKey],warehouseSource:row.sourceValues[warehouse.sourceValueKey],warehouseTarget:row.rowWarehouseCode};
+    })()`), { assignee: '붙여넣기 담당', warehouseSource: '99', warehouseTarget: '99' },
+    'grid paste must preserve custom source values and update mapped standard fields under the dynamic column model');
+    acceptanceShot = await capture(client, 'smartinput-acceptance-93-staging.png');
+    await click(client, '#createFromStagingButton');
+    await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.groupDeliveryResults?.length===18`, '18 order-group results', 30_000);
+    const consumerAcceptance = await evaluate(client, `(async()=>{
+      const intake=await import('/orderq/order-intake-engine.js');
+      const operations=await import('/orderq/order-operations-repository.js');
+      const orders=await intake.listOrders();
+      const snapshot=await operations.getOperationsSnapshot();
+      const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
+      const template=window.__SMARTINPUT_DEBUG__.getState().templates.find(item=>item.templateId===mode.selectedTemplateId);
+      const details=await Promise.all(orders.map(order=>intake.getOrder(order.orderId)));
+      const expectedRaw=${JSON.stringify(stagedAcceptance.expectedFirstSourceValues.join('\t'))};
+      const expectedHeader=${JSON.stringify(acceptanceHeaders.join('\t'))};
+      const sourceDetail=details.find(detail=>detail.items.some(item=>item.rawText===expectedRaw));
+      return {orders:orders.length,operations:snapshot.bundles.length,groupResults:mode.groupDeliveryResults.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,remainingRows:mode.rows.length,templateSave:mode.staging.templateSave.status,templateId:mode.selectedTemplateId,templateUpdatedAt:template.updatedAt,templateHeaders:template.columns.map(column=>column.label),templateColumns:template.columns.length,sourceRawExact:Boolean(sourceDetail),orderMessagePreservesSource:Boolean(sourceDetail?.order?.orderMessage?.includes(expectedHeader)&&sourceDetail.order.orderMessage.includes(expectedRaw)),rawEnvelopeCount:details.flatMap(detail=>detail.items).filter(item=>item.rawText.startsWith('SMART_INPUT_SOURCE_ROW_V1\t')).length};
+    })()`);
+    assert.deepEqual({ orders: consumerAcceptance.orders, operations: consumerAcceptance.operations, groupResults: consumerAcceptance.groupResults, success: consumerAcceptance.success, remainingRows: consumerAcceptance.remainingRows, templateSave: consumerAcceptance.templateSave },
+      { orders: 18, operations: 18, groupResults: 18, success: 18, remainingRows: 1, templateSave: 'SAVED' },
+      'continuous creation must preserve prior work and expose 18 orders through both ORDER Q readers');
+    assert.deepEqual(consumerAcceptance.templateHeaders, acceptanceHeaders);
+    assert.equal(consumerAcceptance.templateColumns, 14);
+    assert.equal(consumerAcceptance.sourceRawExact, true, 'ORDER Q item.rawText must retain the exact ERP source row');
+    assert.equal(consumerAcceptance.orderMessagePreservesSource, true, 'ORDER Q orderMessage must retain the full source header and data row');
+    assert.equal(consumerAcceptance.rawEnvelopeCount, 0, 'ORDER Q item.rawText must never contain a SmartInput JSON envelope');
+    await click(client, '#existingTemplateModeButton');
+    await evaluate(client, `(() => { const select=document.querySelector('#existingTemplateSelect');select.value=${JSON.stringify(consumerAcceptance.templateId)};select.dispatchEvent(new Event('change',{bubbles:true}));return select.value; })()`);
+    await wait(250);
+    await client.send('Page.reload', { ignoreCache: false });
+    await waitForExpression(client, `Boolean(window.__SMARTINPUT_DEBUG__) && window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.selectedTemplateId===${JSON.stringify(consumerAcceptance.templateId)}`, 'existing template reload');
+    assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#workTableHeadRow th')].slice(1,-1).map(cell=>cell.textContent.trim())`), acceptanceHeaders,
+      'reloaded existing template must immediately restore the same 14-column order');
+    const rerunDocument = await client.send('DOM.getDocument', { depth: -1, pierce: true });
+    const rerunSheetNode = await client.send('DOM.querySelector', { nodeId: rerunDocument.root.nodeId, selector: '#sheetFileInput' });
+    await client.send('DOM.setFileInputFiles', { nodeId: rerunSheetNode.nodeId, files: [acceptanceXlsxPath] });
+    await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.status==='ALREADY_PROCESSED'`, 'same-source idempotency', 30_000);
+    const rerunOrders = await evaluate(client, `(async()=>{const intake=await import('/orderq/order-intake-engine.js');return (await intake.listOrders()).length;})()`);
+    assert.equal(rerunOrders, 18, 'same workbook rerun must create zero duplicate orders');
+    assert.equal(await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().templates.find(item=>item.templateId===${JSON.stringify(consumerAcceptance.templateId)}).updatedAt`), consumerAcceptance.templateUpdatedAt,
+      'existing template application must not resave its structure');
+    const idempotencyAcceptance = await evaluate(client, `(async()=>{
+      const intake=await import('/orderq/order-intake-engine.js');
+      const adapter=await import('/smartinput/integration-adapter.js');
+      const order=(await intake.listOrders())[0];
+      const payload={customerId:order.customerId,customerName:order.customerName,warehouseId:order.warehouseId,warehouseCode:order.warehouseCode,warehouseName:order.warehouseName,orderDate:order.orderDate,sourceType:'SMART_INPUT',sourceMessageKey:order.sourceMessageKey,sourceId:order.sourceId,items:[]};
+      const same=await adapter.saveOrderLocal(payload);
+      let conflictCode='';
+      try{await adapter.saveOrderLocal({...payload,sourceId:'changed-'+order.sourceId});}catch(error){conflictCode=error.code||error.message;}
+      return {sameHashIdempotent:same.idempotent===true,conflictCode,orders:(await intake.listOrders()).length};
+    })()`);
+    assert.deepEqual(idempotencyAcceptance, { sameHashIdempotent: true, conflictCode: 'ORDER_BUSINESS_KEY_CONFLICT', orders: 18 },
+      'same business key/hash must be idempotent and a changed hash must be blocked without another order');
+    acceptance = { ...stagedAcceptance, ...consumerAcceptance, rerunOrders, duplicateCreated: rerunOrders - consumerAcceptance.orders, ...idempotencyAcceptance };
+  }
   assert.deepEqual(runtimeErrors, [], `uncaught browser runtime errors: ${runtimeErrors.join(' | ')}`);
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);
 
-  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, sourceModeLayout, screenshots: [textSurfaceShot, photoSurfaceShot, lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'csv', 'xlsx', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
+  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, sourceModeLayout, acceptance, screenshots: [textSurfaceShot, photoSurfaceShot, lightShot, darkShot, mobileShot, acceptanceShot].filter(Boolean), preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'csv', 'xlsx', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) browserProcess.kill();

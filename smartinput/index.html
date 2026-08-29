@@ -9,7 +9,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="smartinput.css?v=1.1.1">
+  <link rel="stylesheet" href="smartinput.css?v=1.2.0">
 </head>
 <body>
   <main class="si-shell" id="smartInputApp">
@@ -55,6 +55,8 @@
           <span id="deliveryDescription" hidden>로컬 원장 저장을 먼저 완료하고 동기화는 이후 시도합니다.</span>
         </div>
         <p class="si-feature-message" id="deliveryMessage" role="status" aria-live="polite"></p>
+        <div class="si-group-results" id="groupDeliveryResults" aria-live="polite"></div>
+        <button type="button" class="si-button si-button--quiet si-retry-button" id="retryFailedButton" hidden>실패 그룹 재실행</button>
       </section>
     </section>
 
@@ -79,6 +81,12 @@
             <button type="button" class="si-button si-button--primary" id="directAddButton">빈 행 추가</button>
           </div>
           <div class="si-source-pane" data-pane="excel" hidden>
+            <div class="si-template-mode" role="group" aria-label="Excel 양식 방식">
+              <button type="button" id="newTemplateModeButton" aria-pressed="true">새 작업</button>
+              <button type="button" id="existingTemplateModeButton" aria-pressed="false">기존 양식</button>
+            </div>
+            <label class="si-template-control" id="newTemplateField"><span>양식명</span><input id="newTemplateNameInput" maxlength="80" autocomplete="off" placeholder="예: 미출고 주문"></label>
+            <label class="si-template-control" id="existingTemplateField" hidden><span>기존 양식</span><select id="existingTemplateSelect"><option value="">양식 선택</option></select></label>
             <label class="si-dropzone" for="sheetFileInput"><strong>Excel·CSV·TSV 파일 선택</strong><span>CSV·TSV는 오프라인에서, Excel은 선택 시 라이브러리를 불러옵니다.</span></label>
             <input id="sheetFileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,text/csv,text/tab-separated-values" hidden>
             <button type="button" class="si-button si-button--primary" id="sheetChooseButton">파일 선택</button>
@@ -109,11 +117,20 @@
       <article class="si-card si-table-card">
         <div class="si-section-heading">
           <h2>작업테이블</h2>
-          <div class="si-table-actions"><span id="rowSummary">0행</span><button type="button" class="si-button si-button--quiet" id="addRowButton">행 추가</button></div>
+          <div class="si-table-actions">
+            <span id="rowSummary">0행</span>
+            <span id="templateWorkflowResult" class="si-template-result" aria-live="polite"></span>
+            <button type="button" class="si-button si-button--quiet" id="discardStagingButton" hidden>추가 예정 해제</button>
+            <button type="button" class="si-button si-button--quiet" id="applyStagingButton" hidden>테이블에 추가</button>
+            <button type="button" class="si-button si-button--primary" id="createFromStagingButton" hidden>양식 저장·주문 생성</button>
+            <button type="button" class="si-button si-button--quiet" id="addRowButton">행 추가</button>
+          </div>
         </div>
         <div class="si-table-scroll" id="tableScroll" tabindex="0">
           <table>
-            <thead><tr><th scope="col">#</th><th scope="col">품목코드</th><th scope="col">품목명</th><th scope="col">규격</th><th scope="col">수량</th><th scope="col">단위</th><th scope="col">단가</th><th scope="col">메모</th><th scope="col"><span class="sr-only">삭제</span></th></tr></thead>
+            <thead><tr id="workTableHeadRow">
+              <th scope="col">#</th><th scope="col">품목코드</th><th scope="col">품목명</th><th scope="col">규격</th><th scope="col">수량</th><th scope="col">단위</th><th scope="col">단가</th><th scope="col">메모</th><th scope="col"><span class="sr-only">상태 또는 삭제</span></th>
+            </tr></thead>
             <tbody id="workTableBody"></tbody>
           </table>
         </div>
@@ -127,8 +144,8 @@
   </dialog>
   <div class="si-toast" id="toast" hidden role="status" aria-live="polite"></div>
 
-  <script src="smartinput-contract.js?v=0.4.16"></script>
-  <script type="module" src="smartinput.js?v=1.0.1"></script>
+  <script src="smartinput-contract.js?v=0.6.0"></script>
+  <script type="module" src="smartinput.js?v=1.2.1"></script>
   <script defer src="../nexus/common/nexus-ui.js?v=1.3.1"></script>
 </body>
 </html>
