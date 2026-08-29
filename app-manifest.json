@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.4.0",
-  "updatedAt": "2026-08-29",
+  "schemaVersion": "1.3.0",
+  "updatedAt": "2026-08-08",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -14,61 +14,6 @@
     "archived": "Retained in Git history or releases and not deployed as an active entry point."
   },
   "applications": [
-    {
-      "id": "nexus",
-      "name": "NEXUS",
-      "path": "nexus/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Provide the NEXUS login, invitation activation, and protected work-home entry.",
-      "navigatesTo": ["nexus-work-home", "nexus-admin"],
-      "sharedContracts": ["nexus-auth"]
-    },
-    {
-      "id": "nexus-work-home",
-      "name": "NEXUS Work Home",
-      "path": "nexus/home/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Show the signed-in user's permitted applications and the immediate public company projection.",
-      "navigatesTo": ["nexus-company", "nexus-admin", "merchops", "dataops", "smart-parser", "master-lookup", "item-manager", "orderops", "orderq-vnext"],
-      "sharedContracts": ["nexus-auth", "nexus-header", "company-public-footer"]
-    },
-    {
-      "id": "nexus-company",
-      "name": "NEXUS Company Profile",
-      "path": "nexus/company.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Let only OWNER_MASTER with admin.company maintain the protected company profile and accounting periods.",
-      "productionWrites": true,
-      "navigatesTo": ["nexus-work-home"],
-      "services": ["nexus-auth-gateway", "cloud-sync"],
-      "sharedContracts": ["nexus-auth", "nexus-header", "company-profile"]
-    },
-    {
-      "id": "nexus-admin",
-      "name": "NEXUS Master Administration",
-      "path": "nexus/admin/index.html",
-      "kind": "web-entry",
-      "status": "production",
-      "purpose": "Give OWNER_MASTER the protected user, permission, service, audit, and company-management entry.",
-      "productionWrites": true,
-      "navigatesTo": ["nexus-work-home", "nexus-company"],
-      "services": ["nexus-auth-gateway"],
-      "sharedContracts": ["nexus-auth", "nexus-header"]
-    },
-    {
-      "id": "nexus-auth-gateway",
-      "name": "NEXUS Authentication Gateway",
-      "path": "nexus/server/nexus-auth-gateway.gs",
-      "kind": "google-apps-script-service",
-      "status": "production",
-      "purpose": "Own protected authentication and server credentials while exposing one fixed read-only public company Snapshot action.",
-      "productionWrites": true,
-      "services": ["cloud-sync"],
-      "sharedContracts": ["nexus-auth", "company-public-footer"]
-    },
     {
       "id": "merchops",
       "name": "MerchOps",
@@ -334,75 +279,6 @@
     }
   ],
   "sharedDataContracts": [
-    {
-      "id": "nexus-auth",
-      "owner": "nexus-auth-gateway",
-      "consumers": ["nexus/index.html", "nexus/home/index.html", "nexus/admin/index.html", "nexus/company.html"],
-      "schemaVersion": "NEXUS_AUTH_V2",
-      "resources": {
-        "gateway": "nexus/server/nexus-auth-gateway.gs",
-        "client": "nexus/common/nexus-auth.js",
-        "configuration": "nexus/common/nexus-auth-config.js",
-        "productionWebApp": "https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec",
-        "gatewayVersion": 22,
-        "rollbackVersion": 21,
-        "cacheVersion": "2.1.3",
-        "sessionTtlHours": 12,
-        "uniqueMasterRole": "OWNER_MASTER"
-      }
-    },
-    {
-      "id": "nexus-header",
-      "owner": "nexus",
-      "consumers": ["nexus/home/index.html", "nexus/admin/index.html", "nexus/company.html"],
-      "schemaVersion": "NEXUS_HEADER_V3",
-      "resources": {
-        "component": "nexus/common/nexus-top.js",
-        "componentVersion": "1.10.0",
-        "configuration": "nexus/common/apps-config.js"
-      }
-    },
-    {
-      "id": "company-profile",
-      "owner": "nexus-company",
-      "consumers": ["nexus/company.html", "nexus/server/nexus-auth-gateway.gs", "code.gs"],
-      "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
-      "writerPolicy": "Protected reads and every management operation require OWNER_MASTER/admin.company at the client route and server Gateway.",
-      "resources": {
-        "serverModule": "company-profile.gs",
-        "companyId": "ONEAPP",
-        "upstreamVersion": 43,
-        "upstreamRollbackVersion": 41,
-        "profileSheet": "CompanyProfile_NEXUS",
-        "accountingPeriodSheet": "CompanyAccountingPeriods_NEXUS",
-        "auditSheet": "CompanyAudit_NEXUS"
-      }
-    },
-    {
-      "id": "company-public-footer",
-      "owner": "nexus",
-      "consumers": [
-        "nexus/home/index.html", "nexus/admin/index.html", "nexus/company.html",
-        "MerchOps.html", "DataOps.html", "SmartParser.html", "export_center.html", "settings.html",
-        "Master.html", "Item_manager.html", "history_viewer.html", "orderops/list.html",
-        "orderq/index.html", "orderq/input.html", "orderq/operations.html", "orderq/parser.html",
-        "orderq/collector.html", "orderq/cloud.html"
-      ],
-      "schemaVersion": "NEXUS_COMPANY_PUBLIC_FOOTER_V1",
-      "publicFields": ["companyName", "businessNumber", "representativeName", "companyPhone", "businessAddress", "homepage", "revision"],
-      "resources": {
-        "component": "nexus/common/nexus-company-footer.js",
-        "componentVersion": "1.1.0",
-        "commonUiLoader": "nexus/common/nexus-ui.js?v=1.1.0",
-        "publicGatewayAction": "nexus_public_company_snapshot",
-        "upstreamAction": "nexus_gateway_company_public_profile_get",
-        "revisionRequestField": "knownRevision",
-        "scriptCacheTtlSeconds": 60,
-        "clientRefreshTtlSeconds": 120,
-        "layoutMode": "normal document flow; no fixed or sticky overlay"
-      },
-      "privacyPolicy": "Snapshot keys are exactly the six public fields and revision. The unauthenticated action is fixed read-only, accepts only knownRevision, keeps service credentials server-side, and cannot route protected profile or management operations."
-    },
     {
       "id": "orderq-vnext-sync",
       "owner": "orderq-vnext",

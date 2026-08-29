@@ -24,7 +24,7 @@ for (const [file, appId, base] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.0.0`;
   const uiCss = `${base}nexus-ui.css?v=1.0.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.0.0`;
-  const runtime = `${base}nexus-ui.js?v=1.1.0`;
+  const runtime = `${base}nexus-ui.js?v=1.0.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -56,8 +56,6 @@ for (const forbidden of [
 assert.match(initSource, /oneapp\.nexus\.ui\.theme\.v1/, 'dedicated UI preference key is required');
 assert.equal((initSource.match(/localStorage\.setItem/g) || []).length, 1, 'only the theme preference may be written');
 assert.match(uiSource, /\['light', '일반모드'\], \['dark', '다크모드'\]/, 'only light/dark controls are allowed');
-assert.match(uiSource, /nexus-company-footer\.js\?v=\$\{COMPANY_FOOTER_VERSION\}/,
-  'the common UI must install the one shared public Footer asset without copying company data into pages');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
