@@ -102,20 +102,16 @@ function nexusAuthPublicCompanySnapshot_(payload) {
     if (allowedKeys.indexOf(key) < 0) throw new Error('NEXUS_PUBLIC_COMPANY_SCHEMA_DENIED');
   });
   var hasKnownRevision = Object.prototype.hasOwnProperty.call(payload || {}, 'knownRevision');
-  var knownRevision = payload && payload.knownRevision;
-  if (hasKnownRevision && (typeof knownRevision !== 'number' || !Number.isSafeInteger(knownRevision) || knownRevision < 0)) {
+  var knownRevision = Number(payload && payload.knownRevision);
+  if (hasKnownRevision && (!Number.isInteger(knownRevision) || knownRevision < 0)) {
     throw new Error('NEXUS_PUBLIC_COMPANY_REVISION_INVALID');
   }
 
   var cached = nexusAuthPublicCompanyCacheRead_();
-  if (cached) {
-    if (hasKnownRevision && knownRevision === cached.revision) {
-      return nexusAuthPublicCompanyResponse_({ status: 'UNCHANGED', revision: cached.revision });
-    }
-    if (hasKnownRevision && knownRevision > cached.revision) {
-      return nexusAuthPublicCompanyResponse_({ status: 'STALE_SERVER', revision: cached.revision });
-    }
-    return nexusAuthPublicCompanyResponse_({ status: 'READY', revision: cached.revision, snapshot: cached });
+  if (cached && (!hasKnownRevision || knownRevision <= cached.revision)) {
+    return nexusAuthPublicCompanyResponse_(hasKnownRevision && knownRevision === cached.revision
+      ? { status: 'UNCHANGED', revision: cached.revision }
+      : { status: 'READY', revision: cached.revision, snapshot: cached });
   }
 
   var credential = nexusAuthGatewayCredential_('FOUNDATION', 'READ');
