@@ -34,15 +34,23 @@ export const CUSTOMER_FIELDS = Object.freeze([
 ]);
 
 export const FIELD_LABELS = Object.freeze({
-  customerCode: '거래처코드', customerName: '거래처명', representativeName: '대표자',
+  customerCode: '기존 거래처코드', customerName: '거래처명', representativeName: '대표자',
   businessNumber: '사업자번호', businessType: '업태', businessItem: '종목', phone: '전화',
   fax: '팩스', mobile: '휴대폰', email: '이메일', postalCode: '우편번호', address: '주소',
   addressDetail: '상세주소', contactName: '담당자', contactPhone: '담당자 연락처',
   group1Code: '그룹1 코드', group1Name: '그룹1', group2Code: '그룹2 코드',
   group2Name: '그룹2', priceGroupCode: '단가그룹 코드', priceGroup: '단가그룹',
   paymentDay: '결제일', creditLimitAmount: '여신한도', creditPeriodDays: '여신기간',
-  bankAccountText: '계좌', transferInfo: '이체정보', memo: '적요', searchText: '검색어',
+  bankAccountText: '계좌', transferInfo: '이체정보', memo: '적요', searchText: '검색어', status: '사용 상태',
 });
+
+export const IMPORT_FIELD_LABELS = Object.freeze({
+  sourceCustomerCode: '원본 거래처코드',
+  sourceNickname: '원본 별칭',
+  sourceSearchText: '원본 검색어',
+});
+
+export const IMPORT_ONLY_FIELDS = Object.freeze(Object.keys(IMPORT_FIELD_LABELS));
 
 export const NUMBER_FIELDS = new Set([
   'creditLimitAmount', 'creditPeriodDays',
@@ -56,7 +64,6 @@ export const COMPLETENESS_FIELDS = Object.freeze([
 ]);
 
 const STANDARD_HEADERS = Object.freeze({
-  customerCode: ['거래처코드', '거래처 코드', '코드', '사업자번호(거래처코드)', '사업자번호 (거래처코드)'],
   customerName: ['거래처명', '상호', '이름(거래처명)'],
   representativeName: ['대표자', '대표자명'],
   businessNumber: ['사업자번호', '사업자 등록번호'],
@@ -71,6 +78,22 @@ const STANDARD_HEADERS = Object.freeze({
   paymentDay: ['결제일'], creditLimitAmount: ['여신한도', '여신한도금액'],
   creditPeriodDays: ['여신기간', '여신기간(일)'], bankAccountText: ['계좌'],
   transferInfo: ['이체정보'], memo: ['적요', '메모', '비고'], searchText: ['검색창내용', '검색어'],
+  status: ['사용구분', '사용여부', '거래상태'],
+});
+
+const SOURCE_HEADERS = Object.freeze({
+  ERP: Object.freeze({
+    sourceCustomerCode: ['거래처코드', '거래처 코드', '코드', '사업자번호(거래처코드)', '사업자번호 (거래처코드)'],
+    sourceSearchText: ['검색창내용'],
+  }),
+  SHOP: Object.freeze({
+    sourceCustomerCode: ['아이디', '회원아이디', '회원 ID', '회원ID', '회원번호', '고객아이디'],
+    sourceNickname: ['닉네임', '별명'],
+  }),
+  OTHER: Object.freeze({
+    sourceCustomerCode: ['거래처코드', '거래처 코드', '아이디', '회원아이디', '회원번호', '코드'],
+    sourceNickname: ['닉네임', '별명'],
+  }),
 });
 
 export const clean = (value) => String(value ?? '').trim();
@@ -94,7 +117,8 @@ export function newId(prefix = 'ID') {
 
 export function normalizeCustomer(input = {}, previous = null, timestamp = new Date().toISOString()) {
   const customerId = clean(input.customerId || previous?.customerId || newId('CU'));
-  const customerCode = clean(input.customerCode ?? input.erpCustomerCode ?? previous?.customerCode ?? previous?.erpCustomerCode);
+  const customerCode = clean(input.customerCode) || clean(input.erpCustomerCode)
+    || clean(previous?.customerCode) || clean(previous?.erpCustomerCode) || customerId;
   const customerName = clean(input.customerName ?? previous?.customerName);
   const status = clean(input.status || previous?.status || CUSTOMER_STATUS.ACTIVE);
   const qualityStatus = clean(input.qualityStatus || previous?.qualityStatus || CUSTOMER_QUALITY.UNVERIFIED);
@@ -152,6 +176,7 @@ export function scoreCustomer(customer, aliases = [], sourceLinks = [], query = 
   const normalizedQuery = normalizeText(query);
   if (!normalizedQuery) return null;
   const looseQuery = looseCustomerName(query);
+  const nexusCode = normalizeText(customer.customerId);
   const code = customer.normalizedCustomerCode || normalizeText(customer.customerCode);
   const name = customer.normalizedName || normalizeText(customer.customerName);
   const looseName = customer.looseNormalizedName || looseCustomerName(customer.customerName);
@@ -162,7 +187,8 @@ export function scoreCustomer(customer, aliases = [], sourceLinks = [], query = 
     .map(normalizeText).filter(Boolean);
   const fieldValues = CUSTOMER_FIELDS.filter((field) => !['customerCode', 'customerName'].includes(field))
     .map((field) => normalizeText(customer[field])).filter(Boolean);
-  if (code && code === normalizedQuery) return { score: 1000, matchMethod: 'CODE_EXACT' };
+  if (nexusCode && nexusCode === normalizedQuery) return { score: 1000, matchMethod: 'NEXUS_CODE_EXACT' };
+  if (code && code === normalizedQuery) return { score: 990, matchMethod: 'LEGACY_CODE_EXACT' };
   if (sourceValues.includes(normalizedQuery)) return { score: 975, matchMethod: 'SOURCE_EXACT' };
   if (name && name === normalizedQuery) return { score: 950, matchMethod: 'NAME_EXACT' };
   if (aliasValues.includes(normalizedQuery)) return { score: 925, matchMethod: 'ALIAS_EXACT' };
@@ -188,8 +214,15 @@ export function defaultHeaderMapping(headers = [], storedMappings = [], userFiel
   Object.entries(STANDARD_HEADERS).forEach(([fieldKey, aliases]) => aliases.forEach((alias) => {
     lookup.set(normalizeHeader(alias), { fieldKey, fieldType: NUMBER_FIELDS.has(fieldKey) ? 'NUMBER' : 'TEXT', source: 'STANDARD' });
   }));
+  const system = clean(sourceSystem).toUpperCase() || 'OTHER';
+  Object.entries(SOURCE_HEADERS[system] || SOURCE_HEADERS.OTHER).forEach(([fieldKey, aliases]) => aliases.forEach((alias) => {
+    lookup.set(normalizeHeader(alias), { fieldKey, fieldType: 'TEXT', source: 'SOURCE' });
+  }));
   storedMappings.filter((row) => row.enabled !== false && clean(row.sourceSystem).toUpperCase() === clean(sourceSystem).toUpperCase())
-    .forEach((row) => lookup.set(row.normalizedHeader, { fieldKey: row.targetFieldKey, fieldType: row.targetType || 'TEXT', source: 'SAVED' }));
+    .forEach((row) => lookup.set(row.normalizedHeader, {
+      fieldKey: row.targetFieldKey === 'customerCode' ? 'sourceCustomerCode' : row.targetFieldKey,
+      fieldType: row.targetType || 'TEXT', source: 'SAVED',
+    }));
   userFieldDefinitions.filter((row) => row.enabled && clean(row.displayName)).forEach((row) => {
     [row.displayName, ...(row.headerAliases || [])].forEach((alias) => lookup.set(normalizeHeader(alias), {
       fieldKey: row.fieldKey, fieldType: row.fieldType, source: 'USER',
@@ -213,6 +246,7 @@ export function isCustomerSystemRow(rawRow = {}) {
 
 export function mappedImportRow(rawRow, mapping) {
   const values = {};
+  const sourceValues = {};
   const fieldExclusions = [];
   const unmatchedValues = {};
   mapping.forEach((entry) => {
@@ -222,6 +256,17 @@ export function mappedImportRow(rawRow, mapping) {
       return;
     }
     if (rawValue === undefined || rawValue === null || clean(rawValue) === '') return;
+    if (IMPORT_ONLY_FIELDS.includes(entry.targetFieldKey)) {
+      sourceValues[entry.targetFieldKey] = rawValue === 0 ? 0 : String(rawValue);
+      return;
+    }
+    if (entry.targetFieldKey === 'status') {
+      const normalized = normalizeText(rawValue);
+      if (/^(yes|y|1|사용|사용중|정상|active)$/.test(normalized)) values.status = CUSTOMER_STATUS.ACTIVE;
+      else if (/^(no|n|0|미사용|중단|거래중단|inactive)$/.test(normalized)) values.status = CUSTOMER_STATUS.INACTIVE;
+      else fieldExclusions.push({ fieldKey: 'status', header: entry.header, rawValue, reasonCode: 'STATUS_FIELD_PARSE_FAILED' });
+      return;
+    }
     if (entry.fieldType === 'NUMBER' || NUMBER_FIELDS.has(entry.targetFieldKey)) {
       const parsed = Number(String(rawValue).replace(/,/g, '').trim());
       if (!Number.isFinite(parsed)) {
@@ -233,18 +278,59 @@ export function mappedImportRow(rawRow, mapping) {
     }
     values[entry.targetFieldKey] = rawValue === 0 ? 0 : String(rawValue);
   });
-  return { values, fieldExclusions, unmatchedValues };
+  return { values, sourceValues, fieldExclusions, unmatchedValues };
 }
 
-export function analyzeImportRows(rows = [], mapping = [], existingCustomers = []) {
+function uniqueIndex(rows, valueForRow) {
+  const index = new Map();
+  rows.forEach((row) => {
+    const value = valueForRow(row);
+    if (!value) return;
+    index.set(value, [...(index.get(value) || []), row]);
+  });
+  return index;
+}
+
+function shopLinkIndexes(existingCustomers) {
+  return {
+    business: uniqueIndex(existingCustomers, (row) => clean(row.businessNumber).replace(/\D/g, '')),
+    mobile: uniqueIndex(existingCustomers, (row) => clean(row.mobile).replace(/\D/g, '')),
+    email: uniqueIndex(existingCustomers, (row) => normalizeText(row.email)),
+    name: uniqueIndex(existingCustomers, (row) => looseCustomerName(row.customerName)),
+  };
+}
+
+function shopLinkCandidate(values, indexes) {
+  const businessNumber = clean(values.businessNumber).replace(/\D/g, '');
+  const mobile = clean(values.mobile).replace(/\D/g, '');
+  const email = normalizeText(values.email);
+  const name = looseCustomerName(values.customerName);
+  const unique = (index, key) => key && index.get(key)?.length === 1 ? index.get(key)[0] : null;
+  const businessMatch = businessNumber.length >= 10 ? unique(indexes.business, businessNumber) : null;
+  if (businessMatch) return { customer: businessMatch, matchMethod: 'BUSINESS_NUMBER_EXACT', review: false };
+  const mobileMatch = mobile.length >= 9 ? unique(indexes.mobile, mobile) : null;
+  if (mobileMatch && name && looseCustomerName(mobileMatch.customerName) === name) return { customer: mobileMatch, matchMethod: 'NAME_MOBILE_EXACT', review: false };
+  const emailMatch = email ? unique(indexes.email, email) : null;
+  if (emailMatch && name && looseCustomerName(emailMatch.customerName) === name) return { customer: emailMatch, matchMethod: 'NAME_EMAIL_EXACT', review: false };
+  const nameMatches = name ? (indexes.name.get(name) || []) : [];
+  if (nameMatches.length) return { customer: nameMatches[0], candidateCustomerIds: nameMatches.map((row) => row.customerId), matchMethod: 'NAME_REVIEW', review: true };
+  return null;
+}
+
+export function analyzeImportRows(rows = [], mapping = [], existingCustomers = [], options = {}) {
+  const sourceSystem = clean(options.sourceSystem || 'ERP').toUpperCase();
+  const rowNumbers = Array.isArray(options.rowNumbers) ? options.rowNumbers : [];
+  const sourceLinks = Array.isArray(options.sourceLinks) ? options.sourceLinks : [];
   const codeCounts = new Map();
   const prepared = rows.map((rawRow, index) => {
-    if (Object.values(rawRow || {}).every((value) => clean(value) === '')) return { rowNo: index + 2, rawRow, resultType: 'EMPTY_ROW_EXCLUDED' };
-    if (isCustomerSystemRow(rawRow)) return { rowNo: index + 2, rawRow, resultType: 'SYSTEM_ROW_EXCLUDED' };
+    const rowNo = Number(rowNumbers[index] || index + 2);
+    if (Object.values(rawRow || {}).every((value) => clean(value) === '')) return { rowNo, rawRow, resultType: 'EMPTY_ROW_EXCLUDED' };
+    if (isCustomerSystemRow(rawRow)) return { rowNo, rawRow, resultType: 'SYSTEM_ROW_EXCLUDED' };
     const mapped = mappedImportRow(rawRow, mapping);
-    const normalizedCode = normalizeText(mapped.values.customerCode);
+    mapped.sourceValues.sourceCustomerName = clean(mapped.values.customerName);
+    const normalizedCode = normalizeText(mapped.sourceValues.sourceCustomerCode);
     if (normalizedCode) codeCounts.set(normalizedCode, (codeCounts.get(normalizedCode) || 0) + 1);
-    return { rowNo: index + 2, rawRow, ...mapped, normalizedCode, resultType: 'PENDING' };
+    return { rowNo, rawRow, ...mapped, sourceSystem, normalizedCode, resultType: 'PENDING' };
   });
   const byCode = new Map();
   existingCustomers.forEach((customer) => {
@@ -252,24 +338,55 @@ export function analyzeImportRows(rows = [], mapping = [], existingCustomers = [
     if (!code) return;
     byCode.set(code, [...(byCode.get(code) || []), customer]);
   });
+  const customerById = new Map(existingCustomers.map((customer) => [customer.customerId, customer]));
+  const shopIndexes = sourceSystem === 'SHOP' ? shopLinkIndexes(existingCustomers) : null;
+  const sourceLinkByCode = new Map(sourceLinks.filter((row) => row.active !== false && clean(row.sourceSystem).toUpperCase() === sourceSystem)
+    .map((row) => [normalizeText(row.sourceCustomerCode), row]));
   return prepared.map((record) => {
     if (record.resultType !== 'PENDING') return record;
-    if (!record.normalizedCode) return { ...record, resultType: 'FAILED', reasonCode: 'CUSTOMER_CODE_MISSING' };
-    if ((codeCounts.get(record.normalizedCode) || 0) > 1) return { ...record, resultType: 'FAILED', reasonCode: 'DUPLICATE_CODE_IN_IMPORT' };
-    const matches = byCode.get(record.normalizedCode) || [];
-    if (matches.length > 1) return { ...record, resultType: 'FAILED', reasonCode: 'DUPLICATE_CUSTOMER_CODE_IN_DB' };
-    const existing = matches[0] || null;
-    const changedFields = existing ? Object.keys(record.values).filter((field) => {
-      const incoming = record.values[field];
+    if (!record.normalizedCode) return { ...record, resultType: 'FAILED', reasonCode: 'SOURCE_CODE_MISSING' };
+    if ((codeCounts.get(record.normalizedCode) || 0) > 1) return { ...record, resultType: 'FAILED', reasonCode: 'DUPLICATE_SOURCE_CODE_IN_IMPORT' };
+    const linked = sourceLinkByCode.get(record.normalizedCode);
+    let existing = linked ? customerById.get(linked.customerId) : null;
+    let matchMethod = linked ? 'SOURCE_LINK_EXACT' : '';
+    let linking = false;
+    if (linked && !existing) return { ...record, resultType: 'FAILED', reasonCode: 'SOURCE_LINK_CUSTOMER_MISSING' };
+    if (!existing && sourceSystem === 'ERP') {
+      const legacyMatches = byCode.get(record.normalizedCode) || [];
+      if (legacyMatches.length > 1) return { ...record, resultType: 'FAILED', reasonCode: 'DUPLICATE_LEGACY_CODE_IN_DB' };
+      existing = legacyMatches[0] || null;
+      if (existing) { matchMethod = 'LEGACY_ERP_CODE_EXACT'; linking = true; }
+    }
+    if (!existing && sourceSystem === 'SHOP') {
+      const candidate = shopLinkCandidate(record.values, shopIndexes);
+      if (candidate?.review) return {
+        ...record, resultType: 'LINK_REVIEW', reasonCode: 'NAME_ONLY_MATCH_REQUIRES_REVIEW',
+        candidateCustomerIds: candidate.candidateCustomerIds, matchMethod: candidate.matchMethod,
+        reviewValues: { ...record.values },
+      };
+      if (candidate?.customer) { existing = candidate.customer; matchMethod = candidate.matchMethod; linking = true; }
+    }
+    const effectiveValues = existing && sourceSystem === 'SHOP'
+      ? Object.fromEntries(Object.entries(record.values).filter(([field]) => !clean(existing[field])))
+      : record.values;
+    const changedFields = existing ? Object.keys(effectiveValues).filter((field) => {
+      const incoming = effectiveValues[field];
       if (incoming !== 0 && clean(incoming) === '') return false;
       return String(existing[field] ?? '') !== String(incoming ?? '');
-    }) : Object.keys(record.values);
+    }) : Object.keys(effectiveValues);
+    const sourceMetadataChanged = linked && [
+      ['sourceCustomerName', record.sourceValues.sourceCustomerName],
+      ['sourceNickname', record.sourceValues.sourceNickname],
+      ['sourceSearchText', record.sourceValues.sourceSearchText],
+    ].some(([field, incoming]) => clean(incoming) && clean(linked[field]) !== clean(incoming));
     return {
       ...record,
+      values: effectiveValues,
       existingCustomerId: existing?.customerId || '',
       expectedRevision: existing?.revision || 0,
       changedFields,
-      resultType: existing ? (changedFields.length ? 'READY_UPDATE' : 'UNCHANGED') : 'READY_CREATE',
+      matchMethod,
+      resultType: existing ? (linking ? 'READY_LINK' : (changedFields.length || sourceMetadataChanged ? 'READY_UPDATE' : 'UNCHANGED')) : 'READY_CREATE',
     };
   });
 }
@@ -284,6 +401,37 @@ export async function sha256Hex(value) {
   const bytes = new TextEncoder().encode(typeof value === 'string' ? value : stableStringify(value));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function tabularRows(matrix = []) {
+  const indexedRows = matrix.map((values, index) => ({ rowNumber: index + 1, values: Array.from(values || []) }))
+    .filter((row) => row.values.some((value) => clean(value) !== ''));
+  if (!indexedRows.length) return { headerRowNumber: 1, headers: [], rows: [], rowNumbers: [] };
+  const knownHeaders = new Set([
+    ...Object.values(STANDARD_HEADERS).flat(),
+    ...Object.values(SOURCE_HEADERS).flatMap((fields) => Object.values(fields).flat()),
+  ].map(normalizeHeader));
+  const candidates = indexedRows.slice(0, 30).map((row) => {
+    const recognized = new Set(row.values.map(normalizeHeader).filter((value) => knownHeaders.has(value)));
+    const nonempty = row.values.filter((value) => clean(value) !== '').length;
+    return { ...row, recognized: recognized.size, score: (recognized.size * 100) + nonempty };
+  });
+  const best = candidates.slice().sort((left, right) => right.score - left.score || left.rowNumber - right.rowNumber)[0];
+  const headerRow = best.recognized >= 2 ? best : indexedRows[0];
+  const seen = new Map();
+  const headers = headerRow.values.map((value, index) => {
+    const base = clean(value) || `열 ${index + 1}`;
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    return count === 1 ? base : `${base} (${count})`;
+  });
+  const dataRows = indexedRows.filter((row) => row.rowNumber > headerRow.rowNumber);
+  return {
+    headerRowNumber: headerRow.rowNumber,
+    headers,
+    rowNumbers: dataRows.map((row) => row.rowNumber),
+    rows: dataRows.map((row) => Object.fromEntries(headers.map((header, index) => [header, row.values[index] ?? '']))),
+  };
 }
 
 export function parseDelimited(text, delimiter = ',') {
@@ -304,6 +452,5 @@ export function parseDelimited(text, delimiter = ',') {
     else cell += character;
   }
   if (cell || row.length) { row.push(cell.replace(/\r$/, '')); rows.push(row); }
-  const headers = (rows.shift() || []).map((value, index) => clean(value) || `열 ${index + 1}`);
-  return { headers, rows: rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']))) };
+  return tabularRows(rows);
 }

@@ -5,11 +5,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserProfile = mkdtempSync(join(tmpdir(), 'oneapp-customer-master-e2e-'));
 const fixtureDir = mkdtempSync(join(tmpdir(), 'oneapp-customer-master-fixture-'));
 const xlsxPath = join(fixtureDir, 'customers.xlsx');
+const xlsPath = join(fixtureDir, 'members.xls');
 
 const storedZip = (entries) => {
   const localParts = [];
@@ -38,8 +40,19 @@ const storedZip = (entries) => {
 writeFileSync(xlsxPath, storedZip({
   'xl/workbook.xml': '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="거래처" sheetId="1" r:id="rId1"/></sheets></workbook>',
   'xl/_rels/workbook.xml.rels': '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-  'xl/worksheets/sheet1.xml': '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>거래처코드</t></is></c><c r="B1" t="inlineStr"><is><t>거래처명</t></is></c><c r="C1" t="inlineStr"><is><t>여신한도</t></is></c><c r="D1" t="inlineStr"><is><t>주소</t></is></c><c r="E1" t="inlineStr"><is><t>휴대폰</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>C001</t></is></c><c r="C2"><v>0</v></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>C002</t></is></c><c r="B3" t="inlineStr"><is><t>신규 거래처</t></is></c><c r="C3"><v>25000</v></c><c r="D3" t="inlineStr"><is><t>부산광역시</t></is></c><c r="E3" t="inlineStr"><is><t>010-2222-3333</t></is></c></row></sheetData></worksheet>',
+  'xl/worksheets/sheet1.xml': '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>회사명 : 원앱</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>거래처코드</t></is></c><c r="B2" t="inlineStr"><is><t>거래처명</t></is></c><c r="C2" t="inlineStr"><is><t>여신한도</t></is></c><c r="D2" t="inlineStr"><is><t>주소</t></is></c><c r="E2" t="inlineStr"><is><t>휴대폰</t></is></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>C001</t></is></c><c r="C3"><v>0</v></c></row><row r="4"><c r="A4" t="inlineStr"><is><t>C002</t></is></c><c r="B4" t="inlineStr"><is><t>신규 거래처</t></is></c><c r="C4"><v>25000</v></c><c r="D4" t="inlineStr"><is><t>부산광역시</t></is></c><c r="E4" t="inlineStr"><is><t>010-2222-3333</t></is></c></row></sheetData></worksheet>',
 }));
+
+const sheetJsContext = {};
+runInNewContext(readFileSync(join(root, 'customer-master', 'vendor', 'xlsx.full.min.js'), 'utf8'), sheetJsContext);
+const XLSX = sheetJsContext.XLSX;
+assert.ok(XLSX?.write && XLSX?.utils?.aoa_to_sheet, 'vendored SheetJS must initialize for XLS fixture creation');
+const xlsWorkbook = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(xlsWorkbook, XLSX.utils.aoa_to_sheet([
+  ['아이디', '이름(거래처명)', '닉네임', '휴대폰번호', '이메일'],
+  ['member-1', '테스트 거래처', '테스트상사', '010-9999-9999', 'shop@example.test'],
+]), '회원정보');
+writeFileSync(xlsPath, Buffer.from(XLSX.write(xlsWorkbook, { bookType: 'biff8', type: 'array' })));
 
 const mimeTypes = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 const server = createServer((request, response) => {
@@ -124,7 +137,7 @@ const evaluate = async (client, expression) => {
 };
 const click = (client, selector) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('Missing ${selector}'); element.click(); return true; })()`);
 const input = (client, selector, value) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('Missing ${selector}'); const proto=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)}); element.dispatchEvent(new Event('input',{bubbles:true})); element.dispatchEvent(new Event('change',{bubbles:true})); return true; })()`);
-const readDb = (client, name) => evaluate(client, `new Promise((resolve,reject)=>{const r=indexedDB.open(${JSON.stringify(name)});r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const stores=['customers','customerEvents','importBatches','sourceRecords'];const tx=db.transaction(stores,'readonly');const out={};let pending=stores.length;stores.forEach(store=>{const q=tx.objectStore(store).getAll();q.onsuccess=()=>{out[store]=q.result;if(--pending===0){db.close();resolve(out);}};q.onerror=()=>reject(q.error);});};})`);
+const readDb = (client, name) => evaluate(client, `new Promise((resolve,reject)=>{const r=indexedDB.open(${JSON.stringify(name)});r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const stores=['customers','customerEvents','customerSourceLinks','importBatches','sourceRecords'];const tx=db.transaction(stores,'readonly');const out={};let pending=stores.length;stores.forEach(store=>{const q=tx.objectStore(store).getAll();q.onsuccess=()=>{out[store]=q.result;if(--pending===0){db.close();resolve(out);}};q.onerror=()=>reject(q.error);});};})`);
 
 let browserProcess;
 let client;
@@ -180,11 +193,10 @@ try {
 
   await click(client, '#newCustomerButton');
   await waitFor(() => evaluate(client, `document.querySelector('#customerDialog').open`), 'customer dialog');
-  await input(client, '#customerForm [name="customerCode"]', 'C001');
   await input(client, '#customerForm [name="customerName"]', '테스트 거래처');
   await input(client, '#customerForm [name="address"]', '서울특별시');
   await input(client, '#customerForm [name="mobile"]', '010-1111-2222');
-  await input(client, '#customerForm [name="erpCode"]', 'ERP-C001');
+  await input(client, '#customerForm [name="erpCode"]', 'C001');
   await input(client, '#customerForm [name="aliases"]', '테스트상사');
   await click(client, '#saveCustomerButton');
   await waitFor(() => evaluate(client, `document.querySelector('#totalCount').textContent==='2' && !document.querySelector('#customerDialog').open`), 'first customer save');
@@ -195,6 +207,8 @@ try {
   await client.send('DOM.setFileInputFiles', { nodeId: fileNode.nodeId, files: [xlsxPath] });
   await evaluate(client, `document.querySelector('#customerFileInput').dispatchEvent(new Event('change',{bubbles:true}))`);
   await waitFor(() => evaluate(client, `!document.querySelector('#mappingWorkbench').hidden && document.querySelector('#selectedFileName').textContent.includes('거래처')`), 'XLSX mapping preview');
+  assert.equal(await evaluate(client, `document.querySelector('#selectedFileName').textContent.includes('헤더 2행 자동 인식')`), true);
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-index="0"]').value`), 'sourceCustomerCode');
   await click(client, '#analyzeImportButton');
   await waitFor(() => evaluate(client, `!document.querySelector('#importResult').hidden && !document.querySelector('#applyImportButton').disabled`), 'XLSX analysis');
   assert.equal(await evaluate(client, `document.querySelector('#importPreviewBody').innerText.includes('기존 거래처 수정')`), true);
@@ -204,16 +218,36 @@ try {
   const data = await readDb(client, dbName);
   assert.equal(data.customers.length, 3);
   assert.equal(data.customers.some((row) => row.customerId === 'LEGACY-1' && row.revision === 3), true);
-  const first = data.customers.find((row) => row.customerCode === 'C001');
+  const first = data.customers.find((row) => row.customerName === '테스트 거래처');
   assert.equal(first.customerName, '테스트 거래처', 'blank Excel value must preserve the stored name');
   assert.equal(first.creditLimitAmount, 0, 'numeric zero must be applied');
   assert.ok(first.revision >= 2, 'Excel update must advance revision');
   assert.equal(data.customerEvents.every((event) => event.operationId && event.actorId === null && event.actorState === 'UNVERIFIED_LOCAL'), true);
   assert.equal(data.sourceRecords.filter((row) => ['CREATED', 'UPDATED'].includes(row.resultType)).length, 2);
+  assert.equal(data.customerSourceLinks.length, 2, 'ERP codes must be stored as source links to NEXUS customers');
   const snapshot = await evaluate(client, `window.__CUSTOMER_MASTER_DEBUG__.createSnapshot()`);
   assert.equal(snapshot.schemaVersion, 'ONEAPP_CUSTOMER_SNAPSHOT_V1');
   assert.equal(snapshot.counts.customers, 3);
   assert.match(snapshot.contentHash, /^[a-f0-9]{64}$/);
+
+  await evaluate(client, `(() => { const select=document.querySelector('#importSourceSystem'); select.value='SHOP'; select.dispatchEvent(new Event('change',{bubbles:true})); return true; })()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#selectedFileName').textContent.includes('customers.xlsx') && !document.querySelector('#mappingWorkbench').hidden`), 'SHOP source mode');
+  await client.send('DOM.setFileInputFiles', { nodeId: fileNode.nodeId, files: [xlsPath] });
+  await evaluate(client, `document.querySelector('#customerFileInput').dispatchEvent(new Event('change',{bubbles:true}))`);
+  await waitFor(() => evaluate(client, `document.querySelector('#selectedFileName').textContent.includes('members.xls')`), 'legacy XLS mapping preview');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-index="0"]').value`), 'sourceCustomerCode');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-index="2"]').value`), 'sourceNickname');
+  assert.equal(await evaluate(client, `document.querySelector('#importSourceCodeHeading').textContent`), 'SHOP 회원 아이디');
+  await click(client, '#analyzeImportButton');
+  await waitFor(() => evaluate(client, `document.querySelector('#importSummary').textContent.includes('연결 확인 필요')`), 'SHOP name-only review');
+  assert.equal(await evaluate(client, `document.querySelector('#applyImportButton').disabled`), true, 'unresolved name-only matches must not be applied');
+  await click(client, '[data-resolve-review="LINK"]');
+  await waitFor(() => evaluate(client, `document.querySelector('#importSummary').textContent.includes('기존 거래처 연결')`), 'manual NEXUS link resolution');
+  await click(client, '#applyImportButton');
+  await waitFor(async () => (await readDb(client, dbName)).customerSourceLinks.some((row) => row.sourceSystem === 'SHOP' && row.sourceCustomerCode === 'member-1'), 'SHOP source link apply');
+  const linkedData = await readDb(client, dbName);
+  assert.equal(linkedData.customers.length, 3, 'manual SHOP link must not create a duplicate NEXUS customer');
+  assert.equal(linkedData.customerSourceLinks.length, 3);
   assert.deepEqual(runtimeErrors, []);
   assert.deepEqual(consoleErrors, []);
   console.log(`PASS CustomerMaster browser E2E · customers=${data.customers.length} · events=${data.customerEvents.length}`);

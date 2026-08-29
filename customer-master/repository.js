@@ -205,7 +205,7 @@ export async function listUserFields() { return getAll(STORE.USER_FIELDS); }
 
 export async function saveHeaderMapping({ sourceSystem = 'ERP', header, targetFieldKey, targetType = 'TEXT' }) {
   const normalizedHeader = normalizeHeader(header);
-  if (!normalizedHeader || !clean(targetFieldKey)) throw new Error('원본 헤더와 연결할 거래처 항목이 필요합니다.');
+  if (!normalizedHeader || !clean(targetFieldKey)) throw new Error('원본 헤더와 연결할 저장 항목이 필요합니다.');
   const system = clean(sourceSystem).toUpperCase();
   const mappingId = `${system}::${normalizedHeader}`;
   const db = await openDb();
@@ -255,12 +255,12 @@ export async function prepareImportBatch({ fileName, fileHash, sourceSystem, map
   const timestamp = new Date().toISOString();
   const importBatchId = newId('CIB');
   const batch = {
-    importBatchId, sourceType: 'CUSTOMER_CODE_UPSERT', sourceSystem: clean(sourceSystem).toUpperCase(),
+    importBatchId, sourceType: 'SOURCE_CODE_LINK_UPSERT', sourceSystem: clean(sourceSystem).toUpperCase(),
     fileName: clean(fileName), fileHash, mapping, rowCount: records.length, status: 'PREPARED',
     createdAt: timestamp, updatedAt: timestamp,
   };
   const sourceRecords = records.map((record) => ({
-    ...record, sourceRecordId: newId('CISR'), importBatchId, sourceType: 'CUSTOMER_CODE_UPSERT',
+    ...record, sourceRecordId: newId('CISR'), importBatchId, sourceType: 'SOURCE_CODE_LINK_UPSERT',
     appliedCustomerId: '', errorMessage: '', createdAt: timestamp, updatedAt: timestamp,
   }));
   const db = await openDb();
@@ -280,6 +280,31 @@ async function patchImportRecord(sourceRecordId, patch) {
   await transactionDone(tx);
 }
 
+export async function resolveImportRecord(sourceRecordId, { mode, customerId = '' } = {}) {
+  const record = await getByKey(STORE.SOURCE_RECORDS, sourceRecordId);
+  if (!record || record.resultType !== 'LINK_REVIEW') throw new Error('연결 확인 대상 행을 찾을 수 없습니다.');
+  const reviewValues = record.reviewValues || record.values || {};
+  if (mode === 'CREATE') {
+    const patch = {
+      resultType: 'READY_CREATE', reasonCode: '', matchMethod: 'MANUAL_NEW',
+      existingCustomerId: '', expectedRevision: 0, candidateCustomerIds: [], values: reviewValues,
+    };
+    await patchImportRecord(sourceRecordId, patch);
+    return { ...record, ...patch };
+  }
+  if (mode !== 'LINK' || !clean(customerId)) throw new Error('연결할 NEXUS 거래처를 선택해 주세요.');
+  const customer = await getByKey(STORE.CUSTOMERS, customerId);
+  if (!customer || customer.status === CUSTOMER_STATUS.DELETED) throw new Error('선택한 NEXUS 거래처를 찾을 수 없습니다.');
+  const values = Object.fromEntries(Object.entries(reviewValues).filter(([field]) => !clean(customer[field])));
+  const patch = {
+    resultType: 'READY_LINK', reasonCode: '', matchMethod: 'MANUAL_LINK',
+    existingCustomerId: customer.customerId, expectedRevision: Number(customer.revision || 0),
+    candidateCustomerIds: [], values,
+  };
+  await patchImportRecord(sourceRecordId, patch);
+  return { ...record, ...patch };
+}
+
 async function patchImportBatch(importBatchId, patch) {
   const db = await openDb();
   const tx = db.transaction(STORE.IMPORT_BATCHES, 'readwrite');
@@ -295,11 +320,11 @@ export async function applyImportBatch(importBatchId, onProgress = () => {}) {
   await patchImportBatch(importBatchId, { status: 'APPLYING' });
   let processed = 0;
   for (const record of records) {
-    if (['CREATED', 'UPDATED', 'UNCHANGED', 'EMPTY_ROW_EXCLUDED', 'SYSTEM_ROW_EXCLUDED'].includes(record.resultType)) {
+    if (['CREATED', 'UPDATED', 'LINKED', 'UNCHANGED', 'EMPTY_ROW_EXCLUDED', 'SYSTEM_ROW_EXCLUDED'].includes(record.resultType)) {
       processed += 1; onProgress(processed, records.length, record); continue;
     }
     const plannedResultType = record.resultType === 'FAILED' ? record.retryResultType : record.resultType;
-    if (!['READY_CREATE', 'READY_UPDATE'].includes(plannedResultType)) {
+    if (!['READY_CREATE', 'READY_UPDATE', 'READY_LINK'].includes(plannedResultType)) {
       processed += 1; onProgress(processed, records.length, record); continue;
     }
     try {
@@ -307,13 +332,22 @@ export async function applyImportBatch(importBatchId, onProgress = () => {}) {
         ...(record.values || {}),
         customerId: record.existingCustomerId || undefined,
         qualityStatus: CUSTOMER_QUALITY.UNVERIFIED,
+        aliases: [record.sourceValues?.sourceNickname, record.sourceValues?.sourceCustomerName]
+          .map(clean).filter((value, index, values) => value && values.indexOf(value) === index && normalizeText(value) !== normalizeText(record.values?.customerName)),
+        sourceLinks: [{
+          sourceSystem: record.sourceSystem,
+          sourceCustomerCode: record.sourceValues?.sourceCustomerCode,
+          sourceCustomerName: record.sourceValues?.sourceCustomerName,
+          sourceNickname: record.sourceValues?.sourceNickname,
+          sourceSearchText: record.sourceValues?.sourceSearchText,
+        }],
       }, {
         expectedRevision: record.existingCustomerId ? record.expectedRevision : undefined,
         operationId: `IMPORT-${importBatchId}-${record.sourceRecordId}`,
-        source: 'CUSTOMER_CODE_UPSERT',
+        source: 'SOURCE_CODE_LINK_UPSERT',
         allowIncompleteName: true,
       });
-      const resultType = record.existingCustomerId ? 'UPDATED' : 'CREATED';
+      const resultType = plannedResultType === 'READY_CREATE' ? 'CREATED' : plannedResultType === 'READY_LINK' ? 'LINKED' : 'UPDATED';
       await patchImportRecord(record.sourceRecordId, { resultType, retryResultType: '', appliedCustomerId: result.customer.customerId, errorMessage: '' });
     } catch (error) {
       await patchImportRecord(record.sourceRecordId, { resultType: 'FAILED', retryResultType: plannedResultType, errorMessage: String(error?.message || error) });
@@ -323,7 +357,11 @@ export async function applyImportBatch(importBatchId, onProgress = () => {}) {
   }
   const completed = (await getAll(STORE.SOURCE_RECORDS)).filter((row) => row.importBatchId === importBatchId);
   const failed = completed.filter((row) => row.resultType === 'FAILED').length;
-  await patchImportBatch(importBatchId, { status: failed ? 'PARTIAL' : 'APPLIED', processedCount: completed.length, failedCount: failed });
+  const pendingReviewCount = completed.filter((row) => row.resultType === 'LINK_REVIEW').length;
+  await patchImportBatch(importBatchId, {
+    status: failed || pendingReviewCount ? 'PARTIAL' : 'APPLIED',
+    processedCount: completed.length, failedCount: failed, pendingReviewCount,
+  });
   return completed;
 }
 
