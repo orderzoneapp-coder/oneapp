@@ -24,6 +24,7 @@
       "productionWrites": true,
       "navigatesTo": [
         "master-lookup",
+        "customer-master",
         "merchops",
         "smart-input",
         "orderops",
@@ -163,7 +164,7 @@
     },
     {
       "id": "master-lookup",
-      "name": "Master",
+      "name": "상품관리",
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
@@ -175,6 +176,37 @@
       "sharedContracts": [
         "product-master",
         "change-history"
+      ]
+    },
+    {
+      "id": "customer-master",
+      "name": "거래처관리",
+      "path": "customer-master/index.html",
+      "kind": "web-entry",
+      "status": "pilot",
+      "purpose": "Own and manage customer reference data, aliases, external-code mappings, revisions, local history, Excel upserts, snapshots, and a read-only consumer snapshot without requiring authentication or cloud availability.",
+      "owner": "customer-reference-data",
+      "productionWrites": true,
+      "coreCapabilities": [
+        "customer lookup and ranked search",
+        "single-customer create and revision-checked update",
+        "incomplete-information worksheet",
+        "customer-code Excel upsert",
+        "header and user-field mapping dictionary",
+        "local snapshot backup and restore",
+        "read-only legacy v17 migration"
+      ],
+      "ownedContracts": [
+        "customer-master"
+      ],
+      "dependencyMode": {
+        "localLookupAndEdit": "LOCAL_OPERATION",
+        "snapshotBackupAndRestore": "LOCAL_OPERATION",
+        "legacyV17Migration": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Render, search, edit, import, back up, and restore customer data from the app-owned IndexedDB without waiting for login, cloud, another app, or an external CDN.",
+      "sharedContracts": [
+        "customer-master"
       ]
     },
     {
@@ -349,6 +381,34 @@
     }
   ],
   "sharedDataContracts": [
+    {
+      "id": "customer-master",
+      "owner": "customer-master",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_CUSTOMER_SNAPSHOT_V1",
+      "localDatabase": "oneapp-customermaster-v1",
+      "databaseVersion": 1,
+      "readAdapter": "ONEAPP_CUSTOMER_MASTER_READ_ADAPTER",
+      "resources": {
+        "indexedDbStores": [
+          "customers",
+          "customerAliases",
+          "customerEvents",
+          "customerSourceLinks",
+          "customerSourceLinkEvents",
+          "customerHeaderMappings",
+          "customerUserFieldDefinitions",
+          "importBatches",
+          "sourceRecords",
+          "migrationSnapshots",
+          "appMeta"
+        ],
+        "legacyReadOnlySource": {
+          "database": "oneapp-orderq-vnext",
+          "databaseVersion": 17
+        }
+      }
+    },
     {
       "id": "smartinput-local-work",
       "owner": "smart-input",

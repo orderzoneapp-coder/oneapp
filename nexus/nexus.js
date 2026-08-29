@@ -5,7 +5,8 @@
   const STORAGE_KEY = 'oneapp.nexus.home.session.v1';
   const REQUEST_TIMEOUT_MS = 20000;
   const APPS = Object.freeze([
-    Object.freeze({ label: '기준정보', detail: '상품 기준정보 조회', path: '/Master.html' }),
+    Object.freeze({ label: '상품관리', detail: '상품 기준정보 조회·관리', path: '/Master.html' }),
+    Object.freeze({ label: '거래처관리', detail: '거래처 기준정보 조회·관리', path: '/customer-master/' }),
     Object.freeze({ label: '가격·시세', detail: '가격·상품 운영', path: '/MerchOps.html' }),
     Object.freeze({ label: '스마트입력', detail: '전표 작성 작업', path: '/smartinput/' }),
     Object.freeze({ label: '주문·출고', detail: '주문 및 출고 관리', path: '/orderops/list.html' }),
