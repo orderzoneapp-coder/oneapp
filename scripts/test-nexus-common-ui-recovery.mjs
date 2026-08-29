@@ -38,7 +38,7 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.2.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.2.1`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
   const runtime = `${base}nexus-ui.js?v=1.2.0`;
 
