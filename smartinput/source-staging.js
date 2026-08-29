@@ -42,6 +42,7 @@ export function normalizeStaging(input = {}, normalizeRow = value => value) {
     sheetName: text(input.sheetName),
     headerRowNumber: Number(input.headerRowNumber || 0),
     mappings: Array.isArray(input.mappings) ? input.mappings.map(mapping => ({ ...mapping })) : [],
+    columns: Array.isArray(input.columns) ? input.columns.map(column => ({ ...column })) : [],
     rows,
     warnings: Array.isArray(input.warnings) ? input.warnings.map(warning => ({ ...warning })) : [],
     batch: input.batch && typeof input.batch === 'object' ? { ...input.batch } : null,

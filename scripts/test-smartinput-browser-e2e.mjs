@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const acceptanceXlsxPath = process.env.SMARTINPUT_ACCEPTANCE_XLSX ? resolve(process.env.SMARTINPUT_ACCEPTANCE_XLSX) : '';
+const acceptanceHeaders = ['일자', '담당', '창고코드', '단위', '품목코드', '품목명', '규격', '수량', '재고', '단가', '적요', '적요1', '거래처', '그룹'];
 if (acceptanceXlsxPath) assert.ok(existsSync(acceptanceXlsxPath), `acceptance workbook not found: ${acceptanceXlsxPath}`);
 const browserProfile = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-e2e-'));
 const fixtureDir = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-fixtures-'));
@@ -482,6 +483,9 @@ try {
     const stagedAcceptance = await evaluate(client, `(() => {
       const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
       const rows=mode.staging.rows;
+      const columns=mode.inputTemplate.columns;
+      const stagedDomRow=document.querySelector('#workTableBody tr[data-staged-row="true"]');
+      const existingDomRow=document.querySelector('#workTableBody tr[data-row-id]');
       return {
         status:mode.staging.status,
         headerRowNumber:mode.staging.headerRowNumber,
@@ -493,7 +497,12 @@ try {
         amount:rows.reduce((sum,row)=>sum+Number(row.quantity||0)*Number(row.unitPrice||0),0),
         halfQuantity:rows.some(row=>Number(row.quantity)===0.5),
         normalizedBox:rows.some(row=>row.rawUnit==='bOX'&&row.unit==='BOX')&&mode.staging.warnings.some(w=>w.code==='UNIT_CASE_NORMALIZED'),
-        unitAndSpecSeparate:rows.some(row=>row.unit&&row.specification)
+        unitAndSpecSeparate:rows.some(row=>row.unit&&row.specification),
+        domHeaders:[...document.querySelectorAll('#workTableHeadRow th')].slice(1,-1).map(cell=>cell.textContent.trim()),
+        domFirstSourceValues:[...stagedDomRow.querySelectorAll('input[data-field]')].map(input=>input.value),
+        expectedFirstSourceValues:columns.map(column=>rows[0].sourceValues[column.sourceValueKey]??rows[0][column.targetFieldId]??''),
+        provisionalColumns:columns.map(column=>({label:column.label,targetFieldId:column.targetFieldId,sourceValueKey:column.sourceValueKey})),
+        existingRowPreserved:columns.map((column,index)=>({label:column.label,value:existingDomRow.querySelectorAll('input[data-field]')[index]?.value||''})).filter(item=>item.value)
       };
     })()`);
     assert.deepEqual({
@@ -509,6 +518,32 @@ try {
       unitAndSpecSeparate: stagedAcceptance.unitAndSpecSeparate
     }, { status: 'PENDING', headerRowNumber: 2, stagedRows: 93, workRows: 1, customers: 18, quantity: 184.5, amount: 2168350, halfQuantity: true, normalizedBox: true, unitAndSpecSeparate: true });
     assert.match(stagedAcceptance.sourceHash, /^[a-f0-9]{64}$/);
+    assert.deepEqual(stagedAcceptance.domHeaders, acceptanceHeaders, 'staging DOM headers must immediately match A2:N2 exactly');
+    assert.deepEqual(stagedAcceptance.domFirstSourceValues, stagedAcceptance.expectedFirstSourceValues, 'the representative staging row must render all 14 original values');
+    assert.equal(stagedAcceptance.domFirstSourceValues.length, 14);
+    assert.equal(stagedAcceptance.provisionalColumns.length, 14);
+    assert.ok(stagedAcceptance.provisionalColumns.every(column => column.sourceValueKey), 'all original columns require stable source value keys');
+    assert.deepEqual(stagedAcceptance.existingRowPreserved, [{ label: '품목명', value: '기존 보존 행' }, { label: '수량', value: '1' }]);
+    const assigneeColumnId = stagedAcceptance.provisionalColumns.find(column => column.label === '담당').sourceValueKey;
+    await input(client, `#workTableBody tr[data-row-id] input[data-field="${assigneeColumnId}"]`, '직접 담당');
+    assert.equal(await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows[0].sourceValues[${JSON.stringify(assigneeColumnId)}]`), '직접 담당',
+      'direct edit must preserve a custom dynamic-column value');
+    await evaluate(client, `(() => {
+      const target=document.querySelector('#workTableBody tr[data-row-id] input[data-field=${JSON.stringify(assigneeColumnId)}]');
+      const event=new Event('paste',{bubbles:true,cancelable:true});
+      Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'붙여넣기 담당\\t99':''}});
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    })()`);
+    assert.deepEqual(await evaluate(client, `(() => {
+      const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
+      const row=mode.rows[0];
+      const columns=mode.inputTemplate.columns;
+      const assignee=columns.find(column=>column.label==='담당');
+      const warehouse=columns.find(column=>column.label==='창고코드');
+      return {assignee:row.sourceValues[assignee.sourceValueKey],warehouseSource:row.sourceValues[warehouse.sourceValueKey],warehouseTarget:row.rowWarehouseCode};
+    })()`), { assignee: '붙여넣기 담당', warehouseSource: '99', warehouseTarget: '99' },
+    'grid paste must preserve custom source values and update mapped standard fields under the dynamic column model');
     acceptanceShot = await capture(client, 'smartinput-acceptance-93-staging.png');
     await click(client, '#createFromStagingButton');
     await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.groupDeliveryResults?.length===18`, '18 order-group results', 30_000);
@@ -518,17 +553,34 @@ try {
       const orders=await intake.listOrders();
       const snapshot=await operations.getOperationsSnapshot();
       const mode=window.__SMARTINPUT_DEBUG__.getState().draft.modes.order;
-      return {orders:orders.length,operations:snapshot.bundles.length,groupResults:mode.groupDeliveryResults.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,remainingRows:mode.rows.length,templateSave:mode.staging.templateSave.status,templateId:mode.selectedTemplateId};
+      const template=window.__SMARTINPUT_DEBUG__.getState().templates.find(item=>item.templateId===mode.selectedTemplateId);
+      const detail=await intake.getOrder(orders[0].orderId);
+      const rawText=detail.items[0]?.rawText||'';
+      const envelope=rawText.startsWith('SMART_INPUT_SOURCE_ROW_V1\t')?JSON.parse(rawText.split('\t',2)[1]):null;
+      return {orders:orders.length,operations:snapshot.bundles.length,groupResults:mode.groupDeliveryResults.length,success:mode.groupDeliveryResults.filter(result=>result.status==='SUCCESS').length,remainingRows:mode.rows.length,templateSave:mode.staging.templateSave.status,templateId:mode.selectedTemplateId,templateUpdatedAt:template.updatedAt,templateHeaders:template.columns.map(column=>column.label),templateColumns:template.columns.length,sourceEnvelopeColumns:envelope?.columns?.length||0,sourceEnvelopeValues:Object.keys(envelope?.values||{}).length};
     })()`);
     assert.deepEqual({ orders: consumerAcceptance.orders, operations: consumerAcceptance.operations, groupResults: consumerAcceptance.groupResults, success: consumerAcceptance.success, remainingRows: consumerAcceptance.remainingRows, templateSave: consumerAcceptance.templateSave },
       { orders: 18, operations: 18, groupResults: 18, success: 18, remainingRows: 1, templateSave: 'SAVED' },
       'continuous creation must preserve prior work and expose 18 orders through both ORDER Q readers');
+    assert.deepEqual(consumerAcceptance.templateHeaders, acceptanceHeaders);
+    assert.equal(consumerAcceptance.templateColumns, 14);
+    assert.equal(consumerAcceptance.sourceEnvelopeColumns, 14);
+    assert.equal(consumerAcceptance.sourceEnvelopeValues, 14, 'ORDER Q rawText metadata envelope must preserve all source values');
     await click(client, '#existingTemplateModeButton');
     await evaluate(client, `(() => { const select=document.querySelector('#existingTemplateSelect');select.value=${JSON.stringify(consumerAcceptance.templateId)};select.dispatchEvent(new Event('change',{bubbles:true}));return select.value; })()`);
-    await client.send('DOM.setFileInputFiles', { nodeId: acceptanceSheetNode.nodeId, files: [acceptanceXlsxPath] });
+    await wait(250);
+    await client.send('Page.reload', { ignoreCache: false });
+    await waitForExpression(client, `Boolean(window.__SMARTINPUT_DEBUG__) && window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.selectedTemplateId===${JSON.stringify(consumerAcceptance.templateId)}`, 'existing template reload');
+    assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#workTableHeadRow th')].slice(1,-1).map(cell=>cell.textContent.trim())`), acceptanceHeaders,
+      'reloaded existing template must immediately restore the same 14-column order');
+    const rerunDocument = await client.send('DOM.getDocument', { depth: -1, pierce: true });
+    const rerunSheetNode = await client.send('DOM.querySelector', { nodeId: rerunDocument.root.nodeId, selector: '#sheetFileInput' });
+    await client.send('DOM.setFileInputFiles', { nodeId: rerunSheetNode.nodeId, files: [acceptanceXlsxPath] });
     await waitForExpression(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.staging?.status==='ALREADY_PROCESSED'`, 'same-source idempotency', 30_000);
     const rerunOrders = await evaluate(client, `(async()=>{const intake=await import('/orderq/order-intake-engine.js');return (await intake.listOrders()).length;})()`);
     assert.equal(rerunOrders, 18, 'same workbook rerun must create zero duplicate orders');
+    assert.equal(await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().templates.find(item=>item.templateId===${JSON.stringify(consumerAcceptance.templateId)}).updatedAt`), consumerAcceptance.templateUpdatedAt,
+      'existing template application must not resave its structure');
     const idempotencyAcceptance = await evaluate(client, `(async()=>{
       const intake=await import('/orderq/order-intake-engine.js');
       const adapter=await import('/smartinput/integration-adapter.js');

@@ -1,11 +1,11 @@
-import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.2.0';
+import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.3.0';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
   buildOrderGroupPayload,
   decorateStructuredRows,
   groupVoucherRows,
   structuredFieldsForMode
-} from './multivoucher-stage1.js?v=0.2.0';
+} from './multivoucher-stage1.js?v=0.3.0';
 import {
   TEMPLATE_MODES,
   createTemplateRecord,
@@ -13,14 +13,14 @@ import {
   normalizeTemplateRecord,
   saveTemplateLibrary,
   templateFieldDefinitions
-} from './input-template-core.js?v=1.0.0';
+} from './input-template-core.js?v=1.1.0';
 import {
   applyStaging,
   clearStaging,
   createStaging,
   normalizedSourceHash,
   sha256Hex
-} from './source-staging.js?v=1.0.0';
+} from './source-staging.js?v=1.1.0';
 import { buildCatalogPriceSnapshot } from './estimate-output.js?v=0.1.4';
 import {
   createRecordId,
@@ -109,13 +109,55 @@ function currentTemplate() {
 }
 function currentTableFields() {
   const columns = current().inputTemplate?.columns || [];
-  const byId = new Map(TABLE_FIELDS.map(field => [field.id, field]));
-  const configured = columns.map(column => {
-    const field = byId.get(column.fieldId);
-    return field ? { ...field, label: column.label || field.label } : null;
-  }).filter(Boolean);
-  const configuredIds = new Set(configured.map(field => field.id));
-  return [...configured, ...TABLE_FIELDS.filter(field => !configuredIds.has(field.id))];
+  const standardFields = new Map(contract.PRODUCT_FIELD_DEFINITIONS.map(field => [field.id, field]));
+  const baseFields = TABLE_FIELDS.map((field, order) => ({
+    ...field,
+    columnId: field.id,
+    targetFieldId: field.id,
+    sourceValueKey: '',
+    sourceHeader: field.label,
+    order,
+    valueType: field.numeric ? 'NUMBER' : 'TEXT'
+  }));
+  if (!columns.length) return baseFields;
+  return columns.map((column, order) => {
+    const columnId = text(column.columnId || column.fieldId);
+    const targetFieldId = text(column.targetFieldId || (!column.sourceValueKey ? column.fieldId : ''));
+    const standard = standardFields.get(targetFieldId) || TABLE_FIELDS.find(field => field.id === targetFieldId) || {};
+    const valueType = column.valueType === 'NUMBER' || standard.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT';
+    return {
+      id: columnId,
+      columnId,
+      targetFieldId,
+      sourceValueKey: text(column.sourceValueKey),
+      sourceHeader: text(column.sourceHeader || column.label),
+      label: text(column.label || column.sourceHeader || standard.label || columnId),
+      order: Number.isFinite(Number(column.order)) ? Number(column.order) : order,
+      valueType,
+      numeric: valueType === 'NUMBER'
+    };
+  }).filter(column => column.columnId).sort((left, right) => left.order - right.order);
+}
+function tableCellValue(row, column) {
+  if (column.sourceValueKey && Object.prototype.hasOwnProperty.call(row.sourceValues || {}, column.sourceValueKey)) {
+    return row.sourceValues[column.sourceValueKey];
+  }
+  return row[column.targetFieldId || column.columnId] ?? '';
+}
+function markTableCellEdit(row, column, inputValue) {
+  const value = column.numeric ? contract.numberOrNull(inputValue) : inputValue;
+  let next = column.targetFieldId
+    ? (['itemCode', 'itemName'].includes(column.targetFieldId)
+      ? contract.markProductEdit(row, column.targetFieldId, value)
+      : contract.markUserEdit(row, column.targetFieldId, value))
+    : contract.normalizeRow(row);
+  if (column.sourceValueKey) {
+    next = contract.normalizeRow({
+      ...next,
+      sourceValues: { ...(next.sourceValues || {}), [column.sourceValueKey]: String(inputValue ?? '') }
+    });
+  }
+  return next;
 }
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -324,7 +366,7 @@ function renderWorkRow(row, index, { virtual = false, staged = false } = {}) {
   return `
     <tr${rowAttribute}>
       <td>${rowNumber}</td>
-      ${currentTableFields().map(field => `<td><input aria-label="${rowNumber}행 ${field.label}${staged ? ' 추가 예정' : ''}" data-field="${field.id}" value="${virtual ? '' : escapeHtml(row[field.id] ?? '')}"${field.numeric ? ' inputmode="decimal"' : ''}${staged ? ' readonly tabindex="-1"' : ''}></td>`).join('')}
+      ${currentTableFields().map(field => `<td><input aria-label="${rowNumber}행 ${field.label}${staged ? ' 추가 예정' : ''}" data-field="${escapeHtml(field.columnId)}" value="${virtual ? '' : escapeHtml(tableCellValue(row, field))}"${field.numeric ? ' inputmode="decimal"' : ''}${staged ? ' readonly tabindex="-1"' : ''}></td>`).join('')}
       <td>${virtual ? '' : staged ? '<span class="si-staged-badge">추가 예정</span>' : `<button type="button" class="si-row-delete" data-delete-row aria-label="${rowNumber}행 삭제">×</button>`}</td>
     </tr>`;
 }
@@ -492,6 +534,28 @@ async function stageMatrices(entries = [], { method, sourceName = '' } = {}) {
     : simpleTextLines(entry.parsed.rawText).map(row => ({ ...row, sourceFingerprint: batch.contentHash })));
   const warnings = parsedRows.flatMap((row, index) => (row.warnings || []).map(warning => ({ ...warning, rowNumber: row.sourceRowNo || row.sourceLineNo || index + 1 })));
   const activeTemplate = currentTemplate();
+  const detectedColumns = [];
+  const detectedKeys = new Set();
+  usable.flatMap(entry => entry.parsed.sourceColumns || []).forEach(column => {
+    if (detectedKeys.has(column.sourceValueKey)) return;
+    detectedKeys.add(column.sourceValueKey);
+    detectedColumns.push({ ...column, order: detectedColumns.length });
+  });
+  const displayColumns = current().templateSessionMode === TEMPLATE_MODES.FILL
+    ? activeTemplate?.columns || []
+    : detectedColumns;
+  if (current().templateSessionMode === TEMPLATE_MODES.CREATE) {
+    current().inputTemplate = normalizeTemplateRecord({
+      templateId: '',
+      mode,
+      name: text($('newTemplateNameInput').value),
+      revision: 1,
+      mappings: usable.flatMap(entry => entry.parsed.mappings || []),
+      columns: displayColumns
+    });
+  } else if (activeTemplate) {
+    current().inputTemplate = normalizeTemplateRecord(activeTemplate);
+  }
   const alreadyProcessed = (current().processedSourceHashes || []).includes(contentHash);
   current().staging = createStaging({
     status: alreadyProcessed ? 'ALREADY_PROCESSED' : 'PENDING',
@@ -500,6 +564,7 @@ async function stageMatrices(entries = [], { method, sourceName = '' } = {}) {
     sheetName: sheetNames.join(', '),
     headerRowNumber: usable[0]?.parsed.headerRowNumber || 0,
     mappings: usable.flatMap(entry => entry.parsed.mappings || []),
+    columns: displayColumns,
     rows: parsedRows,
     warnings,
     batch,
@@ -711,9 +776,17 @@ function applyGridPaste(event) {
     ? current().rows.length
     : current().rows.findIndex(row => row.rowId === rowElement.dataset.rowId);
   if (startRow < 0) return;
+  const columns = currentTableFields();
+  const columnById = new Map(columns.map(column => [column.columnId, column]));
   const plan = buildGridPastePlan(raw, {
-    fieldDefinitions: contract.PRODUCT_FIELD_DEFINITIONS,
-    visibleFieldIds: currentTableFields().map(field => field.id),
+    fieldDefinitions: columns.map(column => ({
+      id: column.columnId,
+      label: column.label,
+      valueType: column.valueType,
+      inputAliases: [column.sourceHeader].filter(Boolean),
+      masterAliases: []
+    })),
+    visibleFieldIds: columns.map(field => field.columnId),
     startFieldId: input.dataset.field,
     numberParser: contract.numberOrNull
   });
@@ -722,7 +795,10 @@ function applyGridPaste(event) {
     const rowIndex = startRow + offset;
     if (!current().rows[rowIndex]) current().rows.push(contract.normalizeRow());
     let next = current().rows[rowIndex];
-    sourceRow.cells.forEach(cell => { next = contract.markUserEdit(next, cell.fieldId, cell.value); });
+    sourceRow.cells.forEach(cell => {
+      const column = columnById.get(cell.fieldId);
+      if (column) next = markTableCellEdit(next, column, cell.value);
+    });
     current().rows[rowIndex] = next;
   });
   current().rows = contract.markDuplicatePossibilities(current().rows);
@@ -766,6 +842,7 @@ function savePendingTemplate() {
     mode: state.draft.activeMode,
     name,
     mappings: staging.mappings,
+    columns: staging.columns,
     tableFieldIds: TABLE_FIELDS.map(field => field.id)
   }, { templateId: createRecordId('SITPL'), now: nowIso() });
   state.templates = saveTemplateLibrary(localStorage, contract.SETTINGS_STORAGE_KEY, [...state.templates, record]);
@@ -892,7 +969,8 @@ async function completeOrder({ targetRowIds = [], targetGroupKeys = [] } = {}) {
             warehouseName: modeDraft.header.warehouseName,
             sourceType: 'SMART_INPUT',
             sourceMessageKey: group.idempotencyKey,
-            orderMessage: modeDraft.sourceText
+            orderMessage: modeDraft.sourceText,
+            sourceColumns: currentTableFields()
           });
           payload.items = payload.items.map((row, index) => ({ ...row, lineNo: index + 1, finalQuantity: row.quantity, finalUnit: row.unit, price: row.unitPrice, rawQuantity: row.quantity, rawUnit: row.unit }));
           result = await saveOrderLocal(payload);
@@ -1084,11 +1162,9 @@ $('workTableBody').addEventListener('input', event => {
     renderRowSummary();
   }
   if (index < 0) return;
-  const field = input.dataset.field;
-  const value = TABLE_FIELDS.find(item => item.id === field)?.numeric ? contract.numberOrNull(input.value) : input.value;
-  current().rows[index] = ['itemCode', 'itemName'].includes(field)
-    ? contract.markProductEdit(current().rows[index], field, value)
-    : contract.markUserEdit(current().rows[index], field, value);
+  const column = currentTableFields().find(item => item.columnId === input.dataset.field);
+  if (!column) return;
+  current().rows[index] = markTableCellEdit(current().rows[index], column, input.value);
   scheduleSave();
 });
 $('workTableBody').addEventListener('change', renderRows);

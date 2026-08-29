@@ -19,11 +19,22 @@ export function normalizeTemplateRecord(input = {}) {
     label: text(mapping.label || mapping.sourceHeader),
     valueType: mapping.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT'
   })).filter(mapping => mapping.normalizedSourceHeader && mapping.fieldId) : [];
-  const columns = Array.isArray(input.columns) ? input.columns.map((column, index) => ({
-    fieldId: text(column.fieldId || column.fieldKey),
-    label: text(column.label || column.displayLabel || column.fieldId || column.fieldKey),
-    order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
-  })).filter(column => column.fieldId).sort((left, right) => left.order - right.order) : [];
+  const columns = Array.isArray(input.columns) ? input.columns.map((column, index) => {
+    const columnId = text(column.columnId || column.fieldId || column.fieldKey);
+    const targetFieldId = text(column.targetFieldId || column.targetFieldKey
+      || (!text(column.sourceValueKey) ? column.fieldId || column.fieldKey : ''));
+    return {
+      columnId,
+      fieldId: columnId,
+      targetFieldId,
+      sourceValueKey: text(column.sourceValueKey),
+      sourceHeader: text(column.sourceHeader || column.label || column.displayLabel),
+      label: text(column.label || column.displayLabel || column.sourceHeader || columnId),
+      valueType: column.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+      sourceColumnIndex: Number.isFinite(Number(column.sourceColumnIndex)) ? Number(column.sourceColumnIndex) : index,
+      order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
+    };
+  }).filter(column => column.columnId).sort((left, right) => left.order - right.order) : [];
   return {
     templateId: text(input.templateId),
     mode: ['order', 'purchase', 'sale', 'estimate'].includes(input.mode) ? input.mode : 'order',
@@ -46,7 +57,7 @@ export function templateColumnsFromMappings(mappings = [], tableFieldIds = []) {
   });
 }
 
-export function createTemplateRecord({ mode, name, mappings = [], tableFieldIds = [] } = {}, {
+export function createTemplateRecord({ mode, name, mappings = [], columns = [], tableFieldIds = [] } = {}, {
   templateId,
   now = new Date().toISOString()
 } = {}) {
@@ -56,13 +67,14 @@ export function createTemplateRecord({ mode, name, mappings = [], tableFieldIds 
   if (!normalizedMappings.some(mapping => ['itemCode', 'itemName'].includes(mapping.fieldId))) {
     throw Object.assign(new Error('품목코드 또는 품목명 열을 확인하세요.'), { code: 'TEMPLATE_ITEM_IDENTITY_REQUIRED' });
   }
+  const normalizedColumns = normalizeTemplateRecord({ columns }).columns;
   return normalizeTemplateRecord({
     templateId,
     mode,
     name: templateName,
     revision: 1,
     mappings: normalizedMappings,
-    columns: templateColumnsFromMappings(normalizedMappings, tableFieldIds),
+    columns: normalizedColumns.length ? normalizedColumns : templateColumnsFromMappings(normalizedMappings, tableFieldIds),
     createdAt: now,
     updatedAt: now
   });

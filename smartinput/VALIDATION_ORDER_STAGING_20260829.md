@@ -13,6 +13,8 @@
 | Check | Expected | Result |
 |---|---:|---:|
 | Detected header | A2:N2 | row 2 |
+| Displayed staging headers | Exact A2:N2 names and order | `일자, 담당, 창고코드, 단위, 품목코드, 품목명, 규격, 수량, 재고, 단가, 적요, 적요1, 거래처, 그룹` |
+| Staging source values | 14 values per row retained | 14 of 14, including blank 재고/적요1 |
 | Title/output-time exclusion | A1 and final output-time row excluded | pass |
 | Staged rows | 93 | 93 |
 | Existing work rows before explicit action | preserved | 1 of 1 preserved |
@@ -33,7 +35,10 @@ Normalized source SHA-256 for the acceptance run was `914e98d79a689ba9936e97ae98
 ## Workflow and failure isolation
 
 - New-template flow reports template-save result independently, applies only the staged rows, then writes order groups.
-- Existing-template flow uses the saved mapping and column structure without saving another template revision.
+- New-template analysis installs a provisional 14-column model immediately; template save persists all 14 labels, source keys, source positions, and optional standard-field mappings.
+- Existing-template flow restores the same 14-column model immediately and uses it without saving another template revision.
+- An unrelated manual work row remains recoverable under the dynamic column model; the source staging does not overwrite it.
+- Each ORDER Q order item keeps a reversible 14-column SmartInput source envelope in the writer-supported `rawText` field. No ORDER Q-owned schema or database version changed.
 - A two-customer browser scenario forced one group to fail. The successful group was removed, only the failed customer's row remained, and retry wrote only that failed group.
 - An unrelated work row present before the 93-row staging remained after all 18 staged groups succeeded.
 - Optional reference-read failures did not block file parsing, table editing, template save, local ORDER Q writes, or either ORDER Q reader.
@@ -43,7 +48,7 @@ Normalized source SHA-256 for the acceptance run was `914e98d79a689ba9936e97ae98
 - Desktop 1440×1000: AppHeader 56px/full width, source 320px, work table 1096px × 741px scroll area.
 - Text/paste/photo primary surfaces used 90.9%/90.9%/87.2% of the parser body; Excel preview used 83.7% after compact template controls.
 - Mobile 390px: AppHeader 56px, four voucher tabs reachable, three initial work rows visible.
-- Direct grid paste, text paste, CSV, TSV, XLSX, photo-preview/OCR isolation, voice isolation, draft recovery, dark/light/mobile, and all four voucher modes passed.
+- Direct grid paste and cell edit with dynamic/custom columns, text paste, CSV, TSV, XLSX, photo-preview/OCR isolation, voice isolation, draft recovery, dark/light/mobile, and all four voucher modes passed.
 - Browser console errors: 0. Uncaught runtime errors: 0.
 
 ## Known contract/documentation gaps (not changed in this PR)

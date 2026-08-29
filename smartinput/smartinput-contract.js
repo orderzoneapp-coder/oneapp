@@ -498,7 +498,7 @@
       inputTemplate: null,
       staging: {
         status: 'EMPTY', sourceHash: '', sourceName: '', sheetName: '', headerRowNumber: 0,
-        mappings: [], rows: [], warnings: [], batch: null,
+        mappings: [], columns: [], rows: [], warnings: [], batch: null,
         templateMode: 'CREATE', templateId: '', templateName: '', templateRevision: 0,
         templateSave: { status: 'PENDING', message: '', templateId: '' }, createdAt: ''
       },
@@ -640,6 +640,7 @@
       intakeLineId: text(input.intakeLineId),
       sourceRegion: normalizeSourceRegion(input.sourceRegion),
       rawText: String(input.rawText ?? input.rawExpression ?? ''),
+      sourceValues: input.sourceValues && typeof input.sourceValues === 'object' ? { ...input.sourceValues } : {},
       inputOwnership: input.inputOwnership === 'USER' ? 'USER' : 'SOURCE',
       productId,
       masterProductId,
@@ -717,11 +718,21 @@
       templateId: text(input.inputTemplate.templateId),
       name: text(input.inputTemplate.name),
       revision: Math.max(1, Number(input.inputTemplate.revision || 1)),
-      columns: Array.isArray(input.inputTemplate.columns) ? input.inputTemplate.columns.map((column, index) => ({
-        fieldId: text(column.fieldId || column.fieldKey),
-        label: text(column.label || column.displayLabel || column.fieldId || column.fieldKey),
-        order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
-      })).filter(column => column.fieldId) : []
+      columns: Array.isArray(input.inputTemplate.columns) ? input.inputTemplate.columns.map((column, index) => {
+        const columnId = text(column.columnId || column.fieldId || column.fieldKey);
+        return {
+          columnId,
+          fieldId: columnId,
+          targetFieldId: text(column.targetFieldId || column.targetFieldKey
+            || (!text(column.sourceValueKey) ? column.fieldId || column.fieldKey : '')),
+          sourceValueKey: text(column.sourceValueKey),
+          sourceHeader: text(column.sourceHeader || column.label || column.displayLabel),
+          label: text(column.label || column.displayLabel || column.sourceHeader || columnId),
+          valueType: column.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+          sourceColumnIndex: Number.isFinite(Number(column.sourceColumnIndex)) ? Number(column.sourceColumnIndex) : index,
+          order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
+        };
+      }).filter(column => column.columnId).sort((left, right) => left.order - right.order) : []
     } : null;
     const stagingInput = input.staging && typeof input.staging === 'object' ? input.staging : {};
     const stagingRows = Array.isArray(stagingInput.rows) ? stagingInput.rows.map(row => normalizeRow(row)) : [];
@@ -734,6 +745,7 @@
       sheetName: text(stagingInput.sheetName),
       headerRowNumber: Number(stagingInput.headerRowNumber || 0),
       mappings: Array.isArray(stagingInput.mappings) ? stagingInput.mappings.map(mapping => ({ ...mapping })) : [],
+      columns: Array.isArray(stagingInput.columns) ? stagingInput.columns.map(column => ({ ...column })) : [],
       rows: stagingRows,
       warnings: Array.isArray(stagingInput.warnings) ? stagingInput.warnings.map(warning => ({ ...warning })) : [],
       batch: stagingInput.batch && typeof stagingInput.batch === 'object' ? { ...stagingInput.batch } : null,

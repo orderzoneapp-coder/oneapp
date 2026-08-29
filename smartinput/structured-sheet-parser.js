@@ -20,6 +20,41 @@ function fieldAliases(field) {
     .filter(Boolean);
 }
 
+function sourceFieldToken(value) {
+  const normalized = normalizeStructuredFieldName(value) || 'column';
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export function buildStructuredSourceColumns(headerRow = [], mappings = []) {
+  const mappingByColumn = new Map(mappings.map(mapping => [mapping.columnIndex, mapping]));
+  const occurrences = new Map();
+  return (headerRow || []).map((cell, columnIndex) => {
+    const sourceHeader = cellText(cell);
+    if (!sourceHeader) return null;
+    const normalizedHeader = normalizeStructuredFieldName(sourceHeader) || `column${columnIndex + 1}`;
+    const occurrence = (occurrences.get(normalizedHeader) || 0) + 1;
+    occurrences.set(normalizedHeader, occurrence);
+    const mapping = mappingByColumn.get(columnIndex);
+    const sourceValueKey = `source_${sourceFieldToken(normalizedHeader)}_${occurrence}`;
+    return {
+      columnId: mapping?.fieldId || sourceValueKey,
+      fieldId: mapping?.fieldId || sourceValueKey,
+      targetFieldId: mapping?.fieldId || '',
+      sourceValueKey,
+      sourceHeader,
+      label: sourceHeader,
+      order: columnIndex,
+      sourceColumnIndex: columnIndex,
+      valueType: mapping?.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT'
+    };
+  }).filter(Boolean);
+}
+
 export function buildStructuredFieldIndex(fieldDefinitions = []) {
   const index = new Map();
   fieldDefinitions.forEach(field => {
@@ -119,6 +154,7 @@ export function parseStructuredSheet(matrix = [], {
   }
 
   const fieldIndex = buildStructuredFieldIndex(fieldDefinitions);
+  const sourceColumns = buildStructuredSourceColumns(matrix[header.rowIndex] || [], header.mappings);
   const invalidCells = [];
   const rows = [];
   let sourceVoucherIndex = 1;
@@ -141,7 +177,11 @@ export function parseStructuredSheet(matrix = [], {
       return;
     }
     const values = {};
+    const sourceValues = {};
     const editedFields = {};
+    sourceColumns.forEach(column => {
+      sourceValues[column.sourceValueKey] = String(sourceRow?.[column.sourceColumnIndex] ?? '');
+    });
     header.mappings.forEach(mapping => {
       const rawValue = sourceRow?.[mapping.columnIndex] ?? '';
       const hasValue = cellText(rawValue) !== '';
@@ -176,6 +216,7 @@ export function parseStructuredSheet(matrix = [], {
     rows.push({
       ...values,
       rawText: (sourceRow || []).map(cell => String(cell ?? '')).join('\t'),
+      sourceValues,
       productText: values.itemName || '',
       sourceLineNo,
       sourceVoucherIndex: Number(values.sourceVoucherIndex) || sourceVoucherIndex,
@@ -191,6 +232,7 @@ export function parseStructuredSheet(matrix = [], {
     headerRowNumber: header.rowNumber,
     score: header.score,
     mappings: header.mappings,
+    sourceColumns,
     rows,
     invalidCells
   };
