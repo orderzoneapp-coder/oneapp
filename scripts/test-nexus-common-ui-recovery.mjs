@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+const relativeLuminance = (hex) => {
+  const channels = hex.match(/../g).map((value) => Number.parseInt(value, 16) / 255);
+  const linear = channels.map((value) => value <= 0.04045
+    ? value / 12.92
+    : ((value + 0.055) / 1.055) ** 2.4);
+  return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+};
+
+const contrastRatio = (foreground, background) => {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+};
+
 const pages = [
   ['MerchOps.html', 'merchops', 'nexus/common/'],
   ['DataOps.html', 'dataops', 'nexus/common/'],
@@ -21,10 +36,10 @@ const pages = [
 
 for (const [file, appId, base] of pages) {
   const html = await readFile(file, 'utf8');
-  const init = `${base}nexus-ui-theme-init.js?v=1.0.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.0.0`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.0.0`;
-  const runtime = `${base}nexus-ui.js?v=1.0.0`;
+  const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.1.0`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.1.0`;
+  const runtime = `${base}nexus-ui.js?v=1.1.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -55,12 +70,38 @@ for (const forbidden of [
 
 assert.match(initSource, /oneapp\.nexus\.ui\.theme\.v1/, 'dedicated UI preference key is required');
 assert.equal((initSource.match(/localStorage\.setItem/g) || []).length, 1, 'only the theme preference may be written');
-assert.match(uiSource, /\['light', '일반모드'\], \['dark', '다크모드'\]/, 'only light/dark controls are allowed');
+assert.match(uiSource, /dataset\.nexusUiTheme === 'dark' \? 'light' : 'dark'/, 'the header switch must only toggle light/dark');
+assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle must expose switch semantics');
+assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
+assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
+assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
+assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
+assert.match(uiCss, /--nexus-ui-header-bg:\s*#101722/, 'dark header palette must be preserved');
+assert.match(uiCss, /--nexus-ui-tab-group-bg:\s*#1a2330/, 'dark tab group palette must be preserved');
+assert.match(uiCss, /--nexus-ui-tab-active-bg:\s*#354153/, 'dark selected tab palette must be preserved');
+assert.match(uiCss, /\.nexus-ui-nav__track\s*\{[^}]*height:\s*44px[^}]*gap:\s*4px/s, 'tab group geometry is required');
+assert.match(uiCss, /\.nexus-ui-nav__link\s*\{[^}]*min-width:\s*96px[^}]*height:\s*38px[^}]*font-size:\s*13px[^}]*font-weight:\s*600/s, 'desktop tabs must be 38x96px at 13px/600');
+assert.match(uiCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nexus-ui-nav__link\s*\{[^}]*min-width:\s*96px[^}]*height:\s*44px/s, 'mobile tabs must be 44x96px');
+assert.doesNotMatch(uiCss, /\.nexus-ui-nav__link::after/, 'selected tabs must not use an underline');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is required');
+assert.match(appThemeCss, /\.bg-slate-50\\\/50/, 'dark empty-table backgrounds must be mapped');
+assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body :is\(input, select, textarea\)/, 'dark inputs must outrank utility backgrounds');
+assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body th/, 'dark table headers must retain a separate hierarchy');
+
+for (const [label, foreground, background] of [
+  ['dark tab', '8f9aaa', '1a2330'],
+  ['dark active tab', 'f4f7fb', '354153'],
+  ['light tab', '667085', 'f1f4f7'],
+  ['light active tab', '24364d', 'dfe7f0'],
+  ['dark body text', 'd6d9de', '15181d'],
+  ['dark muted text', '9299a3', '15181d'],
+]) {
+  assert.ok(contrastRatio(foreground, background) >= 4.5, `${label}: WCAG contrast must be at least 4.5:1`);
+}
 
 for (const logo of [
   'nexus/assets/brand/oneapp-nexus-light.svg',

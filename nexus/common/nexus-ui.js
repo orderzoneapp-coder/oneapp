@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const root = document.documentElement;
   const controller = window.ONEAPP_NEXUS_UI_THEME;
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
@@ -27,12 +27,13 @@
     return node;
   };
 
-  const updateThemeButtons = (header, theme) => {
-    header.querySelectorAll('[data-nexus-ui-theme-value]').forEach((button) => {
-      const active = button.dataset.nexusUiThemeValue === theme;
-      button.setAttribute('aria-pressed', String(active));
-      button.classList.toggle('is-active', active);
-    });
+  const updateThemeControl = (header, theme) => {
+    const toggle = header.querySelector('[data-nexus-ui-theme-toggle]');
+    if (!toggle) return;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-checked', String(dark));
+    toggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
+    toggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
   };
 
   const buildHeader = () => {
@@ -59,6 +60,7 @@
 
     const nav = element('nav', 'nexus-ui-nav');
     nav.setAttribute('aria-label', '앱 이동');
+    const navTrack = element('div', 'nexus-ui-nav__track');
     APPS.forEach((app) => {
       const link = element('a', 'nexus-ui-nav__link', app.label);
       link.href = asset(app.path);
@@ -67,32 +69,37 @@
         link.classList.add('is-current');
         link.setAttribute('aria-current', 'page');
       }
-      nav.appendChild(link);
+      navTrack.appendChild(link);
     });
+    nav.appendChild(navTrack);
 
     const themeGroup = element('div', 'nexus-ui-theme');
     themeGroup.setAttribute('role', 'group');
     themeGroup.setAttribute('aria-label', '화면 모드');
-    [['light', '일반모드'], ['dark', '다크모드']].forEach(([theme, label]) => {
-      const button = element('button', 'nexus-ui-theme__button', label);
-      button.type = 'button';
-      button.dataset.nexusUiThemeValue = theme;
-      button.addEventListener('click', () => {
-        const applied = controller?.apply
-          ? controller.apply(theme, { persist: true, emit: true, source: 'header' })
-          : theme;
-        if (!controller?.apply) {
-          root.dataset.nexusUiTheme = applied;
-          root.dataset.nexusTheme = applied;
-          root.style.colorScheme = applied;
-        }
-        updateThemeButtons(header, applied);
-      });
-      themeGroup.appendChild(button);
+    const lightIcon = element('span', 'nexus-ui-theme__icon', '☼');
+    lightIcon.setAttribute('aria-hidden', 'true');
+    const toggle = element('button', 'nexus-ui-theme__switch');
+    toggle.type = 'button';
+    toggle.dataset.nexusUiThemeToggle = '';
+    toggle.setAttribute('role', 'switch');
+    const darkIcon = element('span', 'nexus-ui-theme__icon', '☾');
+    darkIcon.setAttribute('aria-hidden', 'true');
+    toggle.addEventListener('click', () => {
+      const nextTheme = root.dataset.nexusUiTheme === 'dark' ? 'light' : 'dark';
+      const applied = controller?.apply
+        ? controller.apply(nextTheme, { persist: true, emit: true, source: 'header' })
+        : nextTheme;
+      if (!controller?.apply) {
+        root.dataset.nexusUiTheme = applied;
+        root.dataset.nexusTheme = applied;
+        root.style.colorScheme = applied;
+      }
+      updateThemeControl(header, applied);
     });
+    themeGroup.append(lightIcon, toggle, darkIcon);
 
     header.append(brand, nav, themeGroup);
-    updateThemeButtons(header, root.dataset.nexusUiTheme === 'dark' ? 'dark' : 'light');
+    updateThemeControl(header, root.dataset.nexusUiTheme === 'dark' ? 'dark' : 'light');
     return header;
   };
 
@@ -104,7 +111,7 @@
     const header = buildHeader();
     document.body.prepend(header);
     window.addEventListener('nexus-ui:theme-change', (event) => {
-      updateThemeButtons(header, event.detail?.theme === 'dark' ? 'dark' : 'light');
+      updateThemeControl(header, event.detail?.theme === 'dark' ? 'dark' : 'light');
     });
     const startedAt = Number(root.dataset.nexusUiInitStartedAt || 0);
     const readyMs = startedAt > 0 && typeof performance !== 'undefined'
