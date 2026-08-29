@@ -41,7 +41,7 @@ for (const [file, appId, base, title] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
-  const runtime = `${base}nexus-ui.js?v=1.3.0`;
+  const runtime = `${base}nexus-ui.js?v=1.3.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -94,6 +94,8 @@ assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle mus
 assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
+assert.match(uiSource, /revealCurrentApp/, 'the current app must be actively revealed in an overflowing global header');
+assert.match(uiSource, /nav\.scrollLeft\s*=\s*Math\.max/, 'the overflowing global header must center or edge-align the current app');
 assert.match(uiSource, /element\('a', 'nexus-ui-brand__logo'\)/, 'the NEXUS logo must be an actual link');
 assert.match(uiSource, /logoFrame\.href = asset\('nexus\/'\)/, 'the NEXUS logo must link to the NEXUS home');
 assert.match(uiSource, /logoFrame\.setAttribute\('aria-label', 'NEXUS 홈'\)/, 'the NEXUS home link must have an accessible name');

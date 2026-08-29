@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.3.1';
   const root = document.documentElement;
   const controller = window.ONEAPP_NEXUS_UI_THEME;
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
@@ -36,6 +36,21 @@
     toggle.setAttribute('aria-checked', String(dark));
     toggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
     toggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
+  };
+
+  const revealCurrentApp = (header) => {
+    const nav = header.querySelector('.nexus-ui-nav');
+    const currentLink = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !currentLink) return;
+    const reveal = () => {
+      const navRect = nav.getBoundingClientRect();
+      const currentRect = currentLink.getBoundingClientRect();
+      const currentCenter = nav.scrollLeft + (currentRect.left - navRect.left) + (currentRect.width / 2);
+      const centered = currentCenter - (nav.clientWidth / 2);
+      nav.scrollLeft = Math.max(0, Math.min(centered, nav.scrollWidth - nav.clientWidth));
+    };
+    requestAnimationFrame(reveal);
+    window.addEventListener('resize', reveal, { passive: true });
   };
 
   const buildHeader = () => {
@@ -115,6 +130,7 @@
     document.body.classList.add('nexus-ui-mounted');
     const header = buildHeader();
     document.body.prepend(header);
+    revealCurrentApp(header);
     window.addEventListener('nexus-ui:theme-change', (event) => {
       updateThemeControl(header, event.detail?.theme === 'dark' ? 'dark' : 'light');
     });

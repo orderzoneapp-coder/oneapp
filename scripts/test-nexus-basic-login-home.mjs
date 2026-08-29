@@ -57,7 +57,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.3\.0/, `${file}: updated home-link runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.3\.1/, `${file}: updated home-link runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 
