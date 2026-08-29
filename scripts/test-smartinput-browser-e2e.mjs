@@ -157,6 +157,66 @@ try {
   await waitForExpression(client, `[...document.querySelectorAll('[data-reference]')].every(element=>element.dataset.state==='error')`, 'isolated reference errors');
   assert.equal(await evaluate(client, `document.querySelector('#smartInputApp').offsetHeight > 0`), true);
 
+  const initialWorkTable = await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length,
+    summary: document.querySelector('#rowSummary').textContent,
+    emptyHidden: document.querySelector('#tableEmpty').hidden
+  })`);
+  assert.deepEqual(initialWorkTable, { actualRows: 0, visibleRows: 3, virtualRows: 3, summary: '0행 · 수량 0 · 금액 0', emptyHidden: true },
+    'an empty draft must show three editable UI-only rows without changing business totals');
+
+  await input(client, '#workTableBody tr[data-virtual-row="true"] input[data-field="itemName"]', '가상행 최초 입력');
+  assert.deepEqual(await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    itemName: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows[0]?.itemName,
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length,
+    summary: document.querySelector('#rowSummary').textContent
+  })`), { actualRows: 1, itemName: '가상행 최초 입력', visibleRows: 3, virtualRows: 2, summary: '1행 · 수량 0 · 금액 0' },
+  'the first value entered in a virtual row must create exactly one real row');
+  await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
+  assert.deepEqual(await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length
+  })`), { actualRows: 0, visibleRows: 3, virtualRows: 3 }, 'deleting the real row must restore three UI-only rows');
+
+  await evaluate(client, `(() => {
+    const target = document.querySelector('#workTableBody tr[data-virtual-row="true"] input[data-field="itemCode"]');
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: type => type === 'text/plain' ? 'GRID-1\\t붙여넣기 1\\t\\t2\\tEA\\t100\\nGRID-2\\t붙여넣기 2\\t\\t3\\tEA\\t200' : '' } });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  })()`);
+  assert.deepEqual(await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    itemCodes: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.map(row => row.itemCode),
+    quantities: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.map(row => row.quantity),
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length
+  })`), { actualRows: 2, itemCodes: ['GRID-1', 'GRID-2'], quantities: [2, 3], visibleRows: 3, virtualRows: 1 },
+  'grid paste starting on a virtual row must append only pasted real rows');
+  await click(client, '#addRowButton');
+  assert.deepEqual(await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length
+  })`), { actualRows: 3, visibleRows: 3, virtualRows: 0 }, 'three real rows must not render any virtual row');
+  await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
+  await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
+  await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
+  await click(client, '#addRowButton');
+  assert.deepEqual(await evaluate(client, `({
+    actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
+    visibleRows: document.querySelectorAll('#workTableBody tr').length,
+    virtualRows: document.querySelectorAll('#workTableBody tr[data-virtual-row="true"]').length,
+    actualRowFocused: Boolean(document.activeElement?.closest('tr[data-row-id]'))
+  })`), { actualRows: 1, visibleRows: 3, virtualRows: 2, actualRowFocused: true },
+  'the existing add-row action must still create and focus one real row');
+  await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
+
   const initialMode = await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().draft.activeMode`);
   for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit4']) {
     await client.send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: code.slice(-1), modifiers: 1 });
@@ -216,8 +276,8 @@ try {
     await input(client, '#voucherDateInput', '2026-08-29');
     await input(client, '#warehouseInput', `${mode} 창고`);
     await click(client, '#addRowButton');
-    await input(client, '#workTableBody tr:last-child input[data-field="itemName"]', `${mode} 상품`);
-    await input(client, '#workTableBody tr:last-child input[data-field="quantity"]', '1');
+    await input(client, '#workTableBody tr[data-row-id] input[data-field="itemName"]', `${mode} 상품`);
+    await input(client, '#workTableBody tr[data-row-id] input[data-field="quantity"]', '1');
     const rowCount = await evaluate(client, `window.__SMARTINPUT_DEBUG__.getState().draft.modes.${mode}.rows.length`);
     await click(client, '#completeButton');
     await waitForExpression(client, `document.querySelector('#deliveryMessage').textContent.includes('${code}')`, `${mode} finalize failure`);
@@ -227,8 +287,8 @@ try {
   await click(client, '[data-mode="estimate"]');
   await input(client, '#estimateNameInput', '브라우저 견적');
   await click(client, '#addRowButton');
-  await input(client, '#workTableBody tr:last-child input[data-field="itemName"]', '견적 상품');
-  await input(client, '#workTableBody tr:last-child input[data-field="quantity"]', '0');
+  await input(client, '#workTableBody tr[data-row-id] input[data-field="itemName"]', '견적 상품');
+  await input(client, '#workTableBody tr[data-row-id] input[data-field="quantity"]', '0');
   await click(client, '#completeButton');
   try {
     await waitForExpression(client, `document.querySelector('#deliveryMessage').dataset.state==='success'`, 'estimate local save');

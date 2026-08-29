@@ -43,6 +43,7 @@ const TABLE_FIELDS = Object.freeze([
   { id: 'unitPrice', label: '단가', numeric: true },
   { id: 'memo', label: '메모' }
 ]);
+const MIN_VISIBLE_WORK_ROWS = 3;
 
 function loadDraft() {
   try {
@@ -248,17 +249,39 @@ function renderSource() {
   setMethod(current().activeMethod || 'direct', { persist: false });
 }
 
-function renderRows() {
-  const rows = current().rows;
-  $('workTableBody').innerHTML = rows.map((row, index) => `
-    <tr data-row-id="${escapeHtml(row.rowId)}">
-      <td>${index + 1}</td>
-      ${TABLE_FIELDS.map(field => `<td><input aria-label="${index + 1}행 ${field.label}" data-field="${field.id}" value="${escapeHtml(row[field.id] ?? '')}"${field.numeric ? ' inputmode="decimal"' : ''}></td>`).join('')}
-      <td><button type="button" class="si-row-delete" data-delete-row aria-label="${index + 1}행 삭제">×</button></td>
-    </tr>`).join('');
-  $('tableEmpty').hidden = rows.length > 0;
+function renderWorkRow(row, index, { virtual = false } = {}) {
+  const rowNumber = index + 1;
+  const rowAttribute = virtual ? ' data-virtual-row="true"' : ` data-row-id="${escapeHtml(row.rowId)}"`;
+  return `
+    <tr${rowAttribute}>
+      <td>${rowNumber}</td>
+      ${TABLE_FIELDS.map(field => `<td><input aria-label="${rowNumber}행 ${field.label}" data-field="${field.id}" value="${virtual ? '' : escapeHtml(row[field.id] ?? '')}"${field.numeric ? ' inputmode="decimal"' : ''}></td>`).join('')}
+      <td>${virtual ? '' : `<button type="button" class="si-row-delete" data-delete-row aria-label="${rowNumber}행 삭제">×</button>`}</td>
+    </tr>`;
+}
+
+function renderRowSummary(rows = current().rows) {
   const summary = contract.summarizeRows(rows);
   $('rowSummary').textContent = `${summary.total}행 · 수량 ${summary.quantity.toLocaleString('ko-KR')} · 금액 ${summary.amount.toLocaleString('ko-KR')}`;
+}
+
+function renderRows() {
+  const rows = current().rows;
+  const virtualRowCount = Math.max(0, MIN_VISIBLE_WORK_ROWS - rows.length);
+  const actualRows = rows.map((row, index) => renderWorkRow(row, index));
+  const virtualRows = Array.from({ length: virtualRowCount }, (_, index) => renderWorkRow({}, rows.length + index, { virtual: true }));
+  $('workTableBody').innerHTML = [...actualRows, ...virtualRows].join('');
+  $('tableEmpty').hidden = rows.length + virtualRowCount > 0;
+  renderRowSummary(rows);
+}
+
+function materializeVirtualRow(rowElement) {
+  if (rowElement?.dataset.virtualRow !== 'true') return -1;
+  const row = contract.normalizeRow({ rowId: contract.createId('SIROW') });
+  current().rows.push(row);
+  rowElement.dataset.rowId = row.rowId;
+  delete rowElement.dataset.virtualRow;
+  return current().rows.length - 1;
 }
 
 function renderAll() {
@@ -276,7 +299,10 @@ function addBlankRow(seed = {}) {
   current().rows = contract.markDuplicatePossibilities([...current().rows, row]);
   renderRows();
   scheduleSave();
-  requestAnimationFrame(() => $('workTableBody').querySelector('tr:last-child input[data-field="itemCode"]')?.focus());
+  requestAnimationFrame(() => [...$('workTableBody').querySelectorAll('tr[data-row-id]')]
+    .find(element => element.dataset.rowId === row.rowId)
+    ?.querySelector('input[data-field="itemCode"]')
+    ?.focus());
 }
 
 function parseDelimitedCsv(source) {
@@ -515,7 +541,10 @@ function applyGridPaste(event) {
   if (!raw.includes('\t') && !raw.includes('\n')) return;
   event.preventDefault();
   const rowElement = input.closest('tr');
-  const startRow = current().rows.findIndex(row => row.rowId === rowElement.dataset.rowId);
+  const startRow = rowElement.dataset.virtualRow === 'true'
+    ? current().rows.length
+    : current().rows.findIndex(row => row.rowId === rowElement.dataset.rowId);
+  if (startRow < 0) return;
   const plan = buildGridPastePlan(raw, {
     fieldDefinitions: contract.PRODUCT_FIELD_DEFINITIONS,
     visibleFieldIds: TABLE_FIELDS.map(field => field.id),
@@ -701,7 +730,12 @@ $('draftList').addEventListener('click', event => { const button = event.target.
 $('workTableBody').addEventListener('input', event => {
   const input = event.target.closest('input[data-field]');
   if (!input) return;
-  const index = current().rows.findIndex(row => row.rowId === input.closest('tr').dataset.rowId);
+  const rowElement = input.closest('tr');
+  let index = current().rows.findIndex(row => row.rowId === rowElement.dataset.rowId);
+  if (index < 0 && text(input.value)) {
+    index = materializeVirtualRow(rowElement);
+    renderRowSummary();
+  }
   if (index < 0) return;
   const field = input.dataset.field;
   const value = TABLE_FIELDS.find(item => item.id === field)?.numeric ? contract.numberOrNull(input.value) : input.value;
