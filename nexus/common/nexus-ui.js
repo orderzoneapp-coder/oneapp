@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
+  const COMPANY_FOOTER_VERSION = '1.1.0';
   const root = document.documentElement;
   const controller = window.ONEAPP_NEXUS_UI_THEME;
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
@@ -26,6 +27,17 @@
     if (text != null) node.textContent = text;
     return node;
   };
+
+  const installCompanyFooter = () => {
+    if (document.getElementById('nexusCompanyFooterAsset')) return;
+    const script = document.createElement('script');
+    script.id = 'nexusCompanyFooterAsset';
+    script.src = asset(`nexus/common/nexus-company-footer.js?v=${COMPANY_FOOTER_VERSION}`);
+    script.async = true;
+    (document.head || document.documentElement).appendChild(script);
+  };
+
+  installCompanyFooter();
 
   const updateThemeButtons = (header, theme) => {
     header.querySelectorAll('[data-nexus-ui-theme-value]').forEach((button) => {

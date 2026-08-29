@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko" data-nexus-color-mode="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07111e">
+  <meta name="robots" content="noindex,nofollow">
+  <title>NEXUS 로그인</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/brand/oneapp-nexus-dark.svg">
+  <link rel="stylesheet" href="./common/nexus-auth.css?v=2.0.0">
+  <script src="./common/nexus-auth-config.js?v=2.0.1"></script>
+  <script src="./common/nexus-auth.js?v=2.1.3"></script>
+  <script src="./login.js?v=1.0.0" defer></script>
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-brand" aria-label="ONEAPP NEXUS">
+      <img src="./assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
+      <p class="auth-eyebrow">ONE LOGIN · ALL OPERATIONS</p>
+      <h1>업무 토큰 없이<br>로그인 한 번으로 시작합니다.</h1>
+      <p class="auth-lead">권한은 서버에서 판단하고 DataOps·ORDER Q·기준정보의 업무 자격증명은 브라우저에 노출하지 않습니다.</p>
+      <div class="auth-trust-grid" aria-label="보안 특징">
+        <span><strong>01</strong> 역할별 화면 분리</span>
+        <span><strong>02</strong> 서버 토큰 대행</span>
+        <span><strong>03</strong> 즉시 세션 회수</span>
+      </div>
+    </section>
+
+    <section class="auth-card" aria-labelledby="authTitle">
+      <div class="auth-card-head">
+        <span class="auth-kicker">NEXUS ACCESS</span>
+        <h2 id="authTitle">로그인</h2>
+        <p id="authDescription">발급받은 아이디와 비밀번호를 입력하세요.</p>
+      </div>
+      <div class="auth-tabs" role="tablist" aria-label="인증 방식">
+        <button type="button" class="is-active" data-auth-mode="login">로그인</button>
+        <button type="button" data-auth-mode="activate">초대 활성화</button>
+        <button type="button" data-auth-mode="bootstrap" hidden>마스터 등록</button>
+      </div>
+      <form id="authForm" novalidate>
+        <label class="auth-field" data-field="displayName" hidden><span>이름</span><input id="displayName" autocomplete="name" maxlength="60" placeholder="사용자 이름"></label>
+        <label class="auth-field"><span>아이디</span><input id="loginId" autocomplete="username" maxlength="64" required placeholder="영문 소문자·숫자 3자 이상"></label>
+        <label class="auth-field"><span>비밀번호</span><input id="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required placeholder="영문·숫자 포함 10자 이상"></label>
+        <label class="auth-field" data-field="inviteCode" hidden><span>초대 코드</span><input id="inviteCode" autocomplete="one-time-code" placeholder="INV-로 시작하는 코드"></label>
+        <label class="auth-field" data-field="bootstrapCode" hidden><span>최초 마스터 등록 코드</span><input id="bootstrapCode" autocomplete="one-time-code" placeholder="NX-로 시작하는 1회용 코드"></label>
+        <div id="authMessage" class="auth-message" role="alert" aria-live="polite"></div>
+        <button id="authSubmit" class="auth-primary" type="submit">NEXUS 입장</button>
+      </form>
+      <p class="auth-footnote">비밀번호 원문과 업무 토큰은 이 사이트의 저장소에 저장하지 않습니다.</p>
+    </section>
+  </main>
+</body>
+</html>

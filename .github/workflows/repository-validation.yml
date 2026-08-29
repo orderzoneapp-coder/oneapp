@@ -38,6 +38,21 @@ jobs:
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
+      - name: Test NEXUS Pages forward recovery boundary
+        run: node scripts/test-nexus-pages-forward-recovery.mjs
+
+      - name: Test NEXUS public company Gateway security and cache
+        run: node scripts/test-nexus-public-company-gateway.mjs
+
+      - name: Test NEXUS public company Footer
+        run: node scripts/test-nexus-company-public-footer.mjs
+
+      - name: Test NEXUS protected company profile service
+        run: node scripts/test-nexus-company-profile.mjs
+
+      - name: Test NEXUS protected company administration UI
+        run: node scripts/test-nexus-company-ui.mjs
+
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
 

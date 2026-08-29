@@ -1,0 +1,127 @@
+/* NEXUS header navigation policy v1.9.0 */
+.top {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.brand {
+  width: 144px;
+  justify-content: center;
+  padding-inline: 10px;
+}
+
+.track,
+.nav-section,
+.track .global-entries {
+  display: flex;
+  align-items: center;
+}
+
+.nav-section,
+.track .global-entries {
+  height: 38px;
+  gap: 4px;
+}
+
+.track {
+  width: max-content;
+}
+
+.track .global-entries {
+  border: 0;
+}
+
+.track .tab,
+.track .global-entry {
+  min-width: 96px;
+  height: 38px;
+  padding-inline: 14px;
+  gap: 0;
+  color: var(--header-text);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.track .tab:hover,
+.track .global-entry:hover {
+  color: var(--header-selected-text);
+  background: var(--header-hover-bg);
+}
+
+.track .tab[aria-current="page"],
+.track .tab.is-current,
+.track .global-entry.is-current {
+  color: var(--header-selected-text);
+  background: var(--header-selected-bg);
+  box-shadow: none;
+}
+
+.track .tab[aria-current="page"]::after,
+.track .tab.is-current::after,
+.track .global-entry.is-current::after {
+  content: none;
+}
+
+.workflow-divider {
+  width: 1px;
+  height: 24px;
+  margin: 7px 0;
+  flex: 0 0 auto;
+  background: var(--header-border);
+}
+
+.nav-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-menu-group + .settings-menu-group {
+  margin-top: 14px;
+}
+
+.settings-menu-group h4 {
+  margin: 0;
+  padding: 8px 0 5px;
+  color: var(--panel-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+@media (max-width: 900px) {
+  .brand {
+    width: 128px;
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 680px) {
+  .top {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .brand {
+    width: 104px;
+    padding-inline: 6px;
+  }
+
+  .track,
+  .nav-section,
+  .track .global-entries {
+    height: 44px;
+  }
+
+  .track .tab,
+  .track .global-entry {
+    min-width: 96px;
+    height: 44px;
+  }
+
+  .workflow-divider {
+    height: 24px;
+    margin-block: 10px;
+  }
+}

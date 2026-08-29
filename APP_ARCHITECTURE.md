@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.4.3
-- Last reviewed: 2026-08-13
+- Architecture document version: 1.5.0
+- Last reviewed: 2026-08-29
 - Machine-readable companion: app-manifest.json
 
 ## 1. Purpose
@@ -95,6 +95,11 @@ Shared storage or navigation does not make their business meaning identical.
 | `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
 | `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
 | `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
+| `nexus/index.html` | Web entry | Production | NEXUS login, invitation activation, and protected work-home entry |
+| `nexus/home/index.html` | Web entry | Production | Permission-filtered work home and immediate public company projection |
+| `nexus/admin/index.html` | Web entry | Production | OWNER_MASTER administration and company-management entry |
+| `nexus/company.html` | Web entry | Production | OWNER_MASTER and `admin.company` protected company profile maintenance |
+| `nexus/server/nexus-auth-gateway.gs` | Gateway service | Production | Protected session/permission gateway plus one fixed read-only public company Snapshot action |
 
 ---
 
@@ -232,7 +237,21 @@ Treat `coreEngine.js` as the intended shared contract, but do not remove duplica
 
 A shared-engine consolidation must not be performed as incidental refactoring during an unrelated feature or bug fix.
 
-### 5.5 Client-side safety baseline
+### 5.5 NEXUS common UI, public Footer, and protected company administration
+
+The 15 business screens registered by `docs/NEXUS_COMMON_UI_RECOVERY_SPEC_V1.md` retain the static, server-independent `nexus-ui.js` header contract. They do not receive the older NEXUS auth redirect, app-ready runtime, or protected business Gateway merely to display public company information.
+
+`nexus-ui.js` loads the single `nexus-company-footer.js` component asynchronously. The Footer synchronously renders the last valid local Snapshot, or the deployment default when no valid Snapshot exists, and never waits for a network response or application-ready signal. It remains the final element in normal document flow and must not use fixed or sticky positioning.
+
+The public Snapshot keys are exactly:
+
+`companyName,businessNumber,representativeName,companyPhone,businessAddress,homepage,revision`
+
+The public Gateway action is fixed as `nexus_public_company_snapshot`. It accepts only `knownRevision`, uses the server-held FOUNDATION_READ credential to call only `nexus_gateway_company_public_profile_get`, and returns only a READY exact projection or `UNCHANGED`/`STALE_SERVER` with revision. Target URLs, alternate actions, tokens, protected profile operations, and management operations are denied. A 60-second ScriptCache absorbs repeated public reads; an administrator profile write refreshes that cache from its verified `publicSnapshot`, while other revision-changing company writes invalidate it.
+
+Login, work home, administration, and company maintenance remain a separate protected route using `NEXUS_AUTH_V2`. The company management markup is created only after OWNER_MASTER and `admin.company` are confirmed. Every protected company read/write, accounting-period action, certificate extraction, backup, and migration is rechecked by the Gateway and upstream boundary. Public Footer availability does not grant protected record access.
+
+### 5.6 Client-side safety baseline
 
 The master Excel workflow in `settings.html` uses the shared core engine and applies these controls before production data changes:
 
