@@ -6,6 +6,7 @@ const homeSource = await readFile('nexus/nexus.js', 'utf8');
 const homeHtml = await readFile('nexus/index.html', 'utf8');
 const companySource = await readFile('nexus/company.js', 'utf8');
 const companyHtml = await readFile('nexus/company.html', 'utf8');
+const commonUiSource = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
 const storage = new Map();
 globalThis.sessionStorage = {
@@ -66,6 +67,11 @@ assert.match(homeSource, /companyEditLink\.hidden = !isCompanyAdministrator\(ses
 assert.doesNotMatch(homeSource, /localStorage/, 'the company Snapshot must not be persisted in localStorage');
 
 assert.match(companyHtml, /nexus-ui-theme-init\.js\?v=1\.3\.1/, 'company management must consume the current common UI contract');
+assert.match(companyHtml, /company\.js\?v=1\.0\.1/, 'company management must cache-bust the app-local header correction');
+assert.match(companySource, /window\.addEventListener\('nexus-ui:ready', applyCompanyCurrentLabel, \{ once: true \}\)/, 'company management must apply its label after the common UI is ready');
+assert.match(companySource, /dataset\.nexusUiReady === 'true'[\s\S]*applyCompanyCurrentLabel\(\)/, 'company management must also correct an already-mounted common header');
+assert.match(companySource, /current\.textContent = COMPANY_APP_LABEL;[\s\S]*current\.title = COMPANY_APP_LABEL;/, 'the app-local correction must set the current label text and title');
+assert.doesNotMatch(commonUiSource, /\{\s*id:\s*['"]company['"]/, 'company management must not become a global app navigation tab');
 assert.match(companySource, /company\.profile_read/, 'company management must read the protected full profile');
 assert.match(companySource, /company\.profile_write/, 'company management must use the protected write operation');
 assert.match(companySource, /expectedRevision: Number\(profile\.revision\)/, 'writes must include the current expectedRevision');
@@ -77,4 +83,4 @@ assert.match(companySource, /jointBusinessEnabled[\s\S]*unitTaxationEnabled/, 'n
 assert.doesNotMatch(companySource, /FileReader|base64|birth|생년월일|localStorage/i, 'certificate originals, birth dates, and local browser defaults must not be stored');
 assert.doesNotMatch(transportSource, /window\.fetch\s*=/, 'the company transport must not replace the global fetch runtime');
 
-console.log('NEXUS company profile contracts passed (32 checks).');
+console.log('NEXUS company profile contracts passed (37 checks).');
