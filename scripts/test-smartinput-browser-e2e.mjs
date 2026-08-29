@@ -86,6 +86,10 @@ class CdpClient {
       this.events.set(method, [...(this.events.get(method) || []), listener]);
     });
   }
+  on(method, listener) {
+    this.events.set(method, [...(this.events.get(method) || []), listener]);
+    return () => this.events.set(method, (this.events.get(method) || []).filter(value => value !== listener));
+  }
   close() { if (this.socket?.readyState === WebSocket.OPEN) this.socket.close(); }
 }
 
@@ -125,6 +129,12 @@ try {
   await client.send('Runtime.enable');
   await client.send('Network.enable');
   await client.send('DOM.enable');
+  const runtimeErrors = [];
+  const consoleErrors = [];
+  client.on('Runtime.exceptionThrown', event => runtimeErrors.push(event.exceptionDetails?.text || 'Runtime exception'));
+  client.on('Runtime.consoleAPICalled', event => {
+    if (event.type === 'error') consoleErrors.push(event.args?.map(value => value.value || value.description || '').join(' ') || 'console.error');
+  });
 
   let loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/seed.html` });
@@ -308,6 +318,37 @@ try {
   await waitForExpression(client, `document.querySelector('.nexus-ui-logo--light').naturalWidth>0`, 'light logo');
   await wait(180);
   await evaluate(client, `scrollTo(0,0)`);
+  const desktopLayout = await evaluate(client, `(() => {
+    const box = selector => document.querySelector(selector).getBoundingClientRect();
+    const appHeader = box('[data-nexus-app-header="smart-input"]');
+    const shell = box('.si-shell');
+    const workspace = box('.si-workspace');
+    const source = box('.si-source-card');
+    const table = box('.si-table-card');
+    const tableScroll = box('.si-table-scroll');
+    return {
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+      appHeader: { left: appHeader.left, width: appHeader.width, height: appHeader.height },
+      shell: { left: shell.left, width: shell.width, height: shell.height },
+      workspace: { height: workspace.height },
+      sourceWidth: source.width,
+      tableWidth: table.width,
+      tableBottom: table.bottom,
+      tableScrollHeight: tableScroll.height
+    };
+  })()`);
+  assert.ok(Math.abs(desktopLayout.appHeader.height - 56) <= 1, `app header must be 56px, observed ${desktopLayout.appHeader.height}`);
+  assert.ok(desktopLayout.appHeader.left <= 1 && desktopLayout.appHeader.width >= desktopLayout.viewportWidth - 1,
+    'app-header background and divider must span the viewport');
+  assert.ok(desktopLayout.shell.left <= 1 && desktopLayout.shell.width >= desktopLayout.viewportWidth - 1,
+    'SmartInput shell must use the full viewport width');
+  assert.ok(desktopLayout.tableWidth > desktopLayout.sourceWidth * 2,
+    `work table must receive remaining width (${desktopLayout.tableWidth}px vs ${desktopLayout.sourceWidth}px source)`);
+  assert.ok(desktopLayout.tableScrollHeight >= 600,
+    `work table must consume remaining viewport height, observed ${desktopLayout.tableScrollHeight}px`);
+  assert.ok(desktopLayout.tableBottom <= desktopLayout.viewportHeight + 1,
+    'desktop work table must fit in the remaining viewport height');
   const lightShot = await capture(client, 'smartinput-desktop-light.png');
   await evaluate(client, `scrollTo(0,0);document.documentElement.setAttribute('data-nexus-ui-theme','dark');document.documentElement.setAttribute('data-nexus-theme','dark')`);
   await waitForExpression(client, `document.querySelector('.nexus-ui-logo--dark').naturalWidth>0`, 'dark logo');
@@ -321,9 +362,32 @@ try {
   await wait(150);
   await evaluate(client, `document.activeElement?.blur();scrollTo(0,0)`);
   const mobileShot = await capture(client, 'smartinput-mobile-dark.png');
-  assert.equal(await evaluate(client, `(() => { const tabs=document.querySelector('.si-mode-tabs').getBoundingClientRect(); const header=document.querySelector('.nexus-ui-header').getBoundingClientRect(); const hero=document.querySelector('.si-hero').getBoundingClientRect(); return hero.top>=header.bottom && tabs.left>=0 && tabs.right<=innerWidth+1 && [...document.querySelectorAll('.si-mode-tabs button')].every(button=>{const box=button.getBoundingClientRect();return box.left>=tabs.left && box.right<=tabs.right;}); })()`), true, 'mobile shell and every voucher tab must stay fully visible below the common header');
+  const mobileLayout = await evaluate(client, `(() => {
+    const appHeader = document.querySelector('[data-nexus-app-header="smart-input"]');
+    const appBox = appHeader.getBoundingClientRect();
+    const globalBox = document.querySelector('.nexus-ui-header').getBoundingClientRect();
+    const tabs = document.querySelector('.si-mode-tabs');
+    return {
+      appTop: appBox.top,
+      appHeight: appBox.height,
+      globalBottom: globalBox.bottom,
+      viewportWidth: innerWidth,
+      appWidth: appBox.width,
+      canScrollModes: appHeader.scrollWidth > appHeader.clientWidth,
+      tabLabels: [...tabs.querySelectorAll('button')].map(button => button.textContent.trim()),
+      rowsVisible: document.querySelectorAll('#workTableBody tr').length
+    };
+  })()`);
+  assert.ok(mobileLayout.appTop >= mobileLayout.globalBottom - 1, 'mobile app header must remain below the common header');
+  assert.ok(Math.abs(mobileLayout.appHeight - 56) <= 1, `mobile app header must remain one 56px row, observed ${mobileLayout.appHeight}`);
+  assert.ok(mobileLayout.appWidth >= mobileLayout.viewportWidth - 1, 'mobile app-header background must span the viewport');
+  assert.equal(mobileLayout.canScrollModes, true, 'compact app-header controls must remain horizontally reachable on mobile');
+  assert.deepEqual(mobileLayout.tabLabels, ['주문서', '구매', '판매', '견적서']);
+  assert.ok(mobileLayout.rowsVisible >= 3, 'the work table must keep at least three visible rows on mobile');
+  assert.deepEqual(runtimeErrors, [], `uncaught browser runtime errors: ${runtimeErrors.join(' | ')}`);
+  assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);
 
-  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, screenshots: [lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'photo', 'voice'] }, null, 2));
+  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, screenshots: [lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) browserProcess.kill();
