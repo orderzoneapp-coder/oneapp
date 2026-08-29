@@ -1,38 +1,76 @@
-# SmartInput
+# SmartInput 독립 앱 기준
 
-`smartinput/index.html` is the independently runnable pilot entry for order, purchase, sale, and estimate drafting.
+- 작업 ID: `SMARTINPUT-STANDALONE-V1`
+- 앱 ID: `smart-input`
+- 운영 경로: `/smartinput/`
+- 진입 파일: `smartinput/index.html`
+- 표시명: `스마트입력`
+- 상태: 독립 운영 보완 단계
 
-## Runtime boundary
+## 목적
 
-- The shell, mode switching, direct/text/clipboard input, work-table editing, draft recovery, and estimate catalog are `LOCAL_OPERATION` features.
-- Order delivery calls the ORDER Q public writer first and treats cloud synchronization as `BACKGROUND_SYNC`. A sync failure cannot undo a successful local write.
-- Excel, CSV, TSV, text, paste, and verified OCR results are held as `추가 예정` rows. Existing work rows are not changed until the user explicitly applies the staging result or runs the continuous template/order action.
-- Structured-sheet staging adopts the detected source headers in their original order immediately. Every source value is retained under a stable source-column key; mapped values and custom columns such as 담당, 재고, 적요1, and 그룹 remain independently recoverable.
-- Order grouping uses customer + voucher date + warehouse code. Each group is written independently through the existing ORDER Q public writer, so successful groups can finish while failed groups remain available for retry.
-- A normalized source SHA-256 identifies a parsed source. The business key is the ORDER Q idempotency key: the same business key and source hash is an idempotent success; the same business key with a different source hash is blocked as a conflict.
-- Purchase and sale delivery are `SERVER_FINALIZE` operations. Missing capability, authentication, permission, revision, or server failures keep the affected draft rows unchanged.
-- Customer, product, and warehouse reads are independent optional adapters. Error is rendered as error, never as a normal empty result.
-- SheetJS and Tesseract are loaded only when their feature is invoked. Their failure does not affect the app shell or other input methods.
+NEXUS 공통헤더의 고정 스마트입력 진입점에서 주문서·구매·판매·견적 자료를 한 화면으로 접수하고, 원문·매칭·관리자 수정·전달 이력을 보존한다.
 
-## Preserved local contracts
+## 확정 화면 계약
 
-- Draft: `oneapp.smartinput.draft.v1`
-- Recent drafts: `oneapp.smartinput.drafts.v1`
-- Delivery history: `oneapp.smartinput.delivery-history.v1`
-- Settings: `oneapp.smartinput.settings.v1`
-- IndexedDB: `oneapp-smartinput`, version `3`
-- Stores: `settings`, `customerLinkGroups`, `temporaryCustomers`, `customerAliasMappings`, `estimates`, `sourceImages`
+- 앱 헤더 대상 탭: `주문서 / 구매 / 판매 / 견적서`. 전표 선택은 본문 상단정보에서 제거하고 스마트입력 로고와 하나의 그룹으로 묶어 중앙 작업테이블의 왼쪽 기준선을 함께 따라간다. 과거 `Alt+1~4` 단축키와 시각 힌트는 복원하지 않는다.
+- 폭 계약: 공통헤더는 브라우저 전체 폭, 스마트입력 작업영역은 중앙 최대 2400px로 원본과 입력표 확인 공간을 우선한다. 데스크톱에서는 파서와 입력표 사이 경계를 좌우로 끌어 파서 폭을 조절하고 전표 초안에 저장한다. 화면 높이와 세 영역의 위·아래 경계만 고정하며, 작업영역이 세로로 전환되는 1240px 이하에서는 폭 조절 손잡이를 숨긴다.
+- 반응형 계약: 사진 입력 화면은 1400px 이하에서 원본 영역과 입력표를 겹치지 않는 세로 작업 흐름으로 전환한다. 파서 내부 입력 방식·도구막대·사진 뷰어는 파서 카드 폭을 넘지 않고 사진 확대 영역만 뷰어 내부에서 독립 스크롤한다. 모바일에서는 상단 작업 버튼을 가로 스크롤로 보존하고 전표정보는 1열로 제공한다.
+- 3열 작업영역: 왼쪽 원문 파서 / 중앙 상단정보·전표 / 오른쪽 연결 앱. 1481px 이상 데스크톱에서는 세 영역의 하단을 브라우저 하단에 맞추고 페이지 전체 세로 스크롤을 만들지 않는다. 행이 늘어나면 중앙 입력표 본문만 독립 스크롤하며 전표 상단정보와 하단 저장 작업은 고정한다. 그보다 좁은 화면은 기존 세로 문서 흐름을 유지한다.
+- 입력 방식: 파서 상단은 `음성 / 일치·유사·불일치 상태칩 / 지우기`만 한 줄로 표시한다. 별도 입력 방식 버튼 없이 텍스트 직접입력·Ctrl+V, 텍스트·이미지·Excel 파일 끌어놓기를 파서 전체에서 받아 자동 판별한다. Excel은 시트 이름이나 전표 종류에 고정하지 않고 상품 필드명이 가장 많이 일치하는 헤더 행을 찾아 공통 표준 필드로 변환한 뒤 현재 선택한 전표 입력표에 즉시 반영한다. 사진 OCR은 명암·고대비 전처리와 표 영역 재인식을 수행하고 `수량 × 단가 = 금액` 및 합계가 모두 일치한 행만 전표에 입력한다.
+- 일체형 입력: 주황색 보더의 전표 선택은 앱 헤더 중앙의 고정 위치에 두고, 전표별 버튼 노출 여부가 달라도 좌우로 이동하지 않는다. 본문 상단정보는 한 줄 헤더로 통합하며 왼쪽에는 배송일자·출하창고·우측 끝의 거래유형, 오른쪽 고정 시작점에는 거래처와 견적서 선택·저장·카톡·Excel 작업을 배치한다. 견적 전용 작업이 나타나도 거래처 입력창의 왼쪽 위치와 상단정보 높이는 유지한다. 기준자료 상태는 상단 앱 상태에만 표시하고 본문 중복 상태줄과 별도 `표준 입력표` 제목 영역은 두지 않아 확보한 높이를 입력표에 사용한다. 세무 거래처는 본문에 노출하지 않고 다중 연결 거래처 검색 결과에서만 `세무거래처`로 구분한다.
+- 표준 그리드: 행 선택 다음의 첫 입력 열은 `상품 검색`으로 고정하며 상품코드·품명·검색어로 마스터 상품을 지정하면 같은 행의 품목코드·품목명·규격·단위·가격 필드를 자동 입력한다. 상품 검색 열은 순서 변경과 붙여넣기를 차단하되 헤더 경계로 너비를 조절해 전표별로 저장할 수 있다. 두 번째 입력 열인 품목코드부터 Excel 범위를 붙여넣을 수 있으며 첫 행의 모든 필드명을 공통 필드 사전과 검증해 미등록·빈 필드명·중복 필드 또는 행별 열 수 불일치가 있으면 전체 반영을 중단한다. 필드명 행은 매칭에만 사용하고 값으로 입력하지 않는다. Enter는 전표별 입력 순서가 1 이상인 다음 셀로, Tab은 다음 행의 상품 검색으로, 방향키는 상하좌우 인접 셀로 이동한다. 입력 순서 `0`은 Enter 동선에서 건너뛴다. 모든 단가·원가 셀은 숫자 증감 스피너 없이 엑셀처럼 입력한다. 헤더 경계 드래그는 열 너비를, 헤더 드래그앤드롭은 현재 전표의 열 순서를 변경해 전표별로 저장한다. 표 전체 폭은 표시 열의 실제 합계만 사용해 부족한 우측 공간은 비워 두고, 초과 폭은 입력표 내부 가로 스크롤로만 제공한다.
+- 원문 분석: 입력 즉시 자동 분석하고 원문은 그대로 유지한다. 수집 상품은 노랑, 마스터 미확정 상품은 빨강, 카카오톡 주문자명은 고정 청록색, 시간은 회색으로 구분한다.
+- 파서 초기화: 파서의 `지우기`는 현재 전표의 거래처·창고와 직접입력 행은 유지하고, 파서 원문·사진·분석 배치와 그 배치에서 생성된 상품행만 즉시 제거한다. 오류 표식처럼 단독으로 추출된 짧은 괄호 문구는 품목명 행으로 생성하지 않는다.
+- 매칭 상태: `일치 N · 확인 M · 미인식 K`. 색상과 문구를 함께 표시한다.
+- 주문 기록: 주문일자는 노출하지 않고 현재시각을 기록해 ORDER Q 호환 날짜를 내부 생성한다.
+- 현황 표시: `3/5`와 같은 순서형 단계 없이 원문·상품행·매칭·전달 상태를 실제 데이터로 표시한다.
+- 상품 기준: 공통 마스터와 ORDER Q 상품을 통합하며 공통 마스터 전용 상품도 실제 일치 처리한다.
+- 카카오톡 파싱: 날짜 구분선·안내·대화문은 원문에 보존하되 상품행에서 제외하고, 수량 구조가 있는 줄만 공통 추출기로 처리한다. 끝 문장부호를 정리하고 `상자` 단위를 인식하며 fallback도 같은 규칙을 사용한다.
+- 거래처 관계: 거래처 수를 강제하지 않고 배송처 1곳 이상과 세무거래처 정확히 1곳을 역할로 지정한다. 한 거래처가 `배송처 + 세무거래처`를 함께 맡을 수 있고, 배송처 여러 곳과 별도 세무거래처도 지원한다. 임시 거래처는 배송처로만 지정할 수 있다. 검색 결과가 한 곳이면 두 역할을 기본 선택하며 1:1 관계에서도 `배송처·세무거래처` 배지를 모두 표시한다. 주문은 관계와 무관하게 배송처별로 분리한다.
+- 주문자명 매핑: 수기로 확정한 원문 주문자명은 다음 동일 입력에서 배송 거래처를 자동 지정한다.
+- 배송일: 배송처별 가능 요일, 휴무일, 주문 마감시간을 반영한다.
+- 사진 입력: 원본 이미지는 전표 문서 ID와 함께 별도 저장하며 OCR 성공·실패와 관계없이 원본 뷰어에 유지한다. 성공한 추출행은 원본 옆 표준 입력표에 즉시 표시한다.
+- 견적서: 거래처명은 선택값이며 거래처 없이도 새 견적서를 작성·저장할 수 있다. 견적서 선택 목록에서 여러 견적서를 체크하고 `선택 상품 불러오기`를 누르면 현재 목록 순서대로 상품을 합치고 품목코드(없으면 품명·규격·단위) 중복을 제거해 새 견적서 입력표에 불러온다. 이 조합 결과는 원본 견적서를 바꾸지 않으며 사용자가 새 이름으로 저장한다. 기존 견적서를 직접 불러와 같은 이름으로 저장하면 수정하고, 다른 이름이면 목록 최하단에 신규 복사본을 생성한다. 거래처명이나 견적서명의 중복은 허용하며 편집 모달에서 견적서명·순서를 변경하거나 삭제한다. 같은 선택 목록이 카톡과 Excel 출력 범위가 되고, 카톡은 현재 목록 순서대로 견적서별 페이지를 만들며 Excel은 선택 견적서 상품을 합쳐 MerchOps F8의 `쇼핑몰업로드·ERP업데이트·확인요청` 형식으로 생성한다. 품목은 필수지만 수량은 선택값이므로 수량이 비어 있어도 저장할 수 있다. 미리보기 이미지 상단의 단가 필터에서 판매가를 최대 2개 선택해 `품명·규격 / 판매가1 / 판매가2` 열로 출력한다. 마지막 선택값은 다음 미리보기에도 유지하며 필터 자체는 PNG에 포함하지 않는다. 품목 20개까지는 한 줄, 21~40개는 좌우 두 줄, 41개부터는 다음 페이지로 생성한다.
+- 브랜드: 공통 배너와 스마트입력 앱 바는 확정 로고 원본을 사용하고 공통 테마의 일반·다크 모드에 맞는 로고를 자동 선택한다. 데스크톱의 스마트입력 로고는 중앙 메인 입력표의 왼쪽 경계에 맞추며 창 크기와 파서 폭 변경을 따라 이동한다. 작업영역이 한 열로 전환되면 기존 반응형 헤더 배치를 사용한다.
+- 환경설정: 처음에는 모든 그룹을 닫고 `전표별 상단 정보 열·전표별 표시 열·배송 정책` 순서로 노출한다. `주문서·구매·판매·견적서`마다 상단 정보 열, 표 열, Enter 입력 순서, 열 너비를 각각 저장한다. 전표 표시 열의 전체 필드 사전은 `품목정보·수량·단가·원가·부가정보` 순서이며 사용자지정 필드는 부가정보에 포함한다. 문자형·숫자형 사용자지정 필드는 각각 최대 10개다.
+- 품목코드만 모든 전표에서 필수 표시하며 숨길 수 없다. 상품명·규격을 포함한 나머지 열은 모두 선택사항이다. 현재 기본 표시 열은 유지하되 전체 마스터 필드를 필요할 때 표시 열에 추가할 수 있고, 마스터 상품 확정 시 실제 `masterProductId`와 선택한 마스터 필드값을 함께 연결한다.
+- 전표 작업: 전표 선택은 배경 채움 없이 주황색 라인으로만 현재 전표를 구분한다. 거래처 선택이 완료되면 첫 미입력 상품 검색 셀에 커서를 유지한다. `전표 초기화·저장`은 입력표 하단에 배치한다.
 
-The recovery does not clear storage, bump the database version, or run a destructive migration. Merely opening the page reads existing data and does not rewrite it.
+## 누적 입력 계약
 
-Input templates are stored inside the existing settings record under `inputTemplates`; unrelated settings are merged and preserved. A new template saves every detected column's display name, order, source key, and optional standard-field mapping before order creation. An existing template applies that complete column model without rewriting it.
+1. 분석 결과는 기존 행 아래에 추가한다.
+2. 동일 상품을 자동 합산하지 않고 중복 가능성만 표시한다.
+3. 관리자 수정 필드는 이후 분석으로 덮어쓰지 않는다.
+4. 모든 입력 차수는 원문과 생성 주문행을 연결하는 `batchId`, `sourceLineKey`, `intakeLineId`를 가진다.
+5. 원문은 공백과 줄바꿈을 보존한다.
+6. 로컬 초안은 탭별로 분리해 저장하며 저장 완료 후 새 주문을 계속 입력할 수 있다.
+7. 최근 전달 이력은 `oneapp.smartinput.delivery-history.v1`에 최대 30건 보존하고, 최종 주문의 업무 이력은 ORDER Q 원장이 소유한다.
+8. 원문 입력창을 수정하면 같은 실시간 원문 배치를 재분석하며, 직접입력 등 별도 배치와 관리자 수정값은 유지한다.
+9. 주문서 수량은 공란일 때 저장·전송을 차단하고 숫자 `0`과 음수는 그대로 저장한다.
 
-ORDER Q receives only its existing order schema. Each item keeps the actual tab-separated ERP source row in `rawText`, while `orderMessage` keeps the full imported source including its headers. SmartInput templates and staging retain the complete column model without changing the ORDER Q-owned schema.
+## 다중 전표 업로드 기반
 
-## Intentionally excluded
+- 주문서·구매·판매 모드는 화면에서 최소 Excel 업로드 양식을 내려받고 같은 헤더 별칭으로 다시 불러올 수 있다.
+- 행의 거래처·전표일자·배송/입출고일자·창고·외부전표번호가 상단 공통값보다 우선한다.
+- `sourceBatchId + sourceDocumentKey/sourceVoucherIndex/manualSplitKey + 업무 헤더`로 원본 전표를 분리하며, 같은 거래처·날짜만으로 서로 다른 원본을 합치지 않는다.
+- 입력표 검색은 표시 행만 필터하고 저장 대상·선택·원본 순서를 바꾸지 않는다.
+- 원본·표시·재고 기준 수량과 단위를 보존하고, 환산 근거가 없는 행은 공식 저장 대상에서 차단한다.
+- 주문은 그룹별 `sourceDocumentKey`를 ORDER Q `createOrder()`의 멱등키로 사용한다. 구매·판매는 그룹 초안만 복구하며 공식 저장은 후속 단계 전까지 비활성 상태를 유지한다.
 
-- Removed legacy NEXUS header/auth modules and legacy customer CSS
-- Global reference-readiness blocking and the former long customer bootstrap wait
-- Static imports of optional ORDER Q/server modules
-- General CRUD table engines, Excel-style range selection, and column insertion/deletion
-- Voucher-number keyboard shortcuts and their visual/accessibility hints
+## 공통 주문서 원장 판정
+
+ORDER Q vNext의 IndexedDB `oneapp-orderq-vnext`와 `orderq/order-intake-engine.js`의 `createOrder()`를 공통 주문서 원장으로 재사용한다.
+
+- `orderq/index.html`: 같은 원장을 조회하므로 저장 직후 주문서 조회 가능
+- `orders.html`: 주문현황 카드를 누르면 검증된 읽기 전용 어댑터가 같은 원장의 `SMART_INPUT` 출고 대상 주문을 기존 출고분석 입력으로 변환
+- 완료·전체취소 주문과 취소·제외 상품행은 출고분석에 다시 넣지 않으며, 어댑터는 원장을 수정하거나 Cloud Sync를 실행하지 않음
+- `orders.html` 연결은 별도 주문 저장소를 만들지 않고 원장 revision과 상품행을 source fingerprint로 고정해 읽음
+
+새 주문서 원장을 중복 생성하지 않는다. SmartInput은 입력 원본·초안·전달 상태를 소유하고, 저장 완료된 주문의 수정·취소·출고 판단은 ORDER Q가 소유한다.
+
+## 기존 앱 보호
+
+- 기존 입력 화면의 업무 UI는 변경하지 않는다. ORDER Q 후보 생성기는 통합 상품 카탈로그를 소비하도록 공통 계약만 보완한다.
+- Smart Parser의 앱 역할과 MerchOps 소속은 변경하지 않는다.
+- 공통헤더는 브랜드 다음에 스마트입력 고정 진입점을 표시하며 `/smartinput/`으로 연결한다.

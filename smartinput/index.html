@@ -1,151 +1,194 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" translate="no">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="외부 연동 없이도 전표 입력, 작업테이블 편집과 로컬 초안을 계속 사용할 수 있는 SmartInput">
+  <meta name="google" content="notranslate">
   <title>스마트입력 - NEXUS</title>
+  <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="smartinput.css?v=1.2.0">
+  <link rel="stylesheet" href="./smartinput.css?v=0.5.0">
 </head>
 <body>
-  <main class="si-shell" id="smartInputApp">
-    <header class="si-app-header" data-nexus-app-header="smart-input">
-      <div class="si-app-header__scroller">
-        <nav class="si-mode-tabs" role="tablist" aria-label="전표 종류">
-          <button type="button" role="tab" data-mode="order" aria-selected="true">주문서</button>
-          <button type="button" role="tab" data-mode="purchase" aria-selected="false">구매</button>
-          <button type="button" role="tab" data-mode="sale" aria-selected="false">판매</button>
-          <button type="button" role="tab" data-mode="estimate" aria-selected="false">견적서</button>
-        </nav>
-
-        <div class="si-app-header__actions">
-          <div class="si-save-state" id="saveState" data-state="idle" role="status" aria-live="polite">로컬 준비</div>
-          <button type="button" class="si-button si-button--quiet si-app-header__button" id="draftListButton">최근 초안 <span id="draftCount">0</span></button>
-          <button type="button" class="si-button si-button--quiet si-app-header__button" id="saveDraftButton">초안 저장</button>
-          <button type="button" class="si-button si-button--primary si-app-header__button" id="completeButton">주문 저장</button>
+  <header class="app-bar">
+    <div class="app-bar__inner">
+      <div class="app-status" id="appStatus" role="status" aria-live="polite">
+        <span class="app-status__dot" aria-hidden="true"></span>
+        <span>새 입력을 시작할 수 있습니다.</span>
+      </div>
+      <div class="app-bar__primary">
+        <a class="brand" href="./" aria-label="스마트입력 처음으로">
+          <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="">
+          <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="">
+          <span class="sr-only">스마트입력</span>
+        </a>
+        <div class="app-voucher-switcher">
+          <span class="sr-only">전표 선택</span>
+          <nav class="mode-tabs" aria-label="전표 선택">
+            <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span></button>
+            <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span></button>
+            <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span></button>
+            <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span></button>
+          </nav>
         </div>
       </div>
-    </header>
+      <div class="app-bar__actions">
+        <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
+        <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
+        <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
+        <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
+      </div>
+    </div>
+  </header>
 
-    <section class="si-context-bar" aria-label="전표 기본 정보와 연결 상태">
-      <section class="si-header-fields" aria-labelledby="voucherHeaderTitle">
-        <h2 class="sr-only" id="voucherHeaderTitle">주문서 기본 정보</h2>
-        <div class="si-field-grid">
-          <label><span id="customerLabel">거래처명</span><input id="customerInput" autocomplete="off" placeholder="직접 입력 가능"><small id="customerHint">거래처 조회와 무관하게 입력할 수 있습니다.</small></label>
-          <label><span id="dateLabel">배송일자</span><input id="voucherDateInput" type="date"></label>
-          <label><span id="warehouseLabel">출하창고</span><input id="warehouseInput" autocomplete="off" placeholder="직접 입력 가능"><small id="warehouseHint">창고 조회와 무관하게 입력할 수 있습니다.</small></label>
-          <label id="estimateNameField" hidden><span>견적서 이름</span><input id="estimateNameInput" autocomplete="off" placeholder="예: 8월 정기견적"></label>
-        </div>
-      </section>
-
-      <section class="si-health" aria-label="선택 기능 상태">
-        <div data-reference="customer"><span>거래처</span><strong>확인 중</strong><button type="button">다시 시도</button></div>
-        <div data-reference="product"><span>상품</span><strong>확인 중</strong><button type="button">다시 시도</button></div>
-        <div data-reference="warehouse"><span>창고</span><strong>확인 중</strong><button type="button">다시 시도</button></div>
-      </section>
-
-      <section class="si-delivery" aria-label="전표 저장 상태">
-        <div class="si-delivery__summary">
-          <span id="deliveryKind" hidden>BACKGROUND_SYNC</span>
-          <h2 id="deliveryTitle">ORDER Q 로컬 저장</h2>
-          <span id="deliveryDescription" hidden>로컬 원장 저장을 먼저 완료하고 동기화는 이후 시도합니다.</span>
-        </div>
-        <p class="si-feature-message" id="deliveryMessage" role="status" aria-live="polite"></p>
-        <div class="si-group-results" id="groupDeliveryResults" aria-live="polite"></div>
-        <button type="button" class="si-button si-button--quiet si-retry-button" id="retryFailedButton" hidden>실패 그룹 재실행</button>
-      </section>
-    </section>
-
-    <section class="si-workspace">
-      <article class="si-card si-source-card">
-        <div class="si-section-heading">
-          <h2>원본 확인</h2>
-          <span id="sourceStatus" class="si-badge">직접입력</span>
-        </div>
-        <div class="si-methods" role="tablist" aria-label="입력 방식">
-          <button type="button" data-method="direct" aria-selected="true">직접입력</button>
-          <button type="button" data-method="excel" aria-selected="false">Excel·파일</button>
-          <button type="button" data-method="text" aria-selected="false">텍스트</button>
-          <button type="button" data-method="paste" aria-selected="false">Ctrl+V</button>
-          <button type="button" data-method="photo" aria-selected="false">사진 OCR</button>
-          <button type="button" data-method="voice" aria-selected="false">음성 STT</button>
-        </div>
-
-        <div class="si-source-card__body">
-          <div class="si-source-pane" data-pane="direct">
-            <p>빈 행을 추가한 뒤 오른쪽 작업테이블에서 바로 입력하세요.</p>
-            <button type="button" class="si-button si-button--primary" id="directAddButton">빈 행 추가</button>
+  <main class="app-shell">
+    <h1 class="sr-only">스마트입력</h1>
+    <div class="workspace">
+      <section class="parser-card" aria-label="원본 자료 입력">
+        <div class="parser-toolbar" role="toolbar" aria-label="파서 작업">
+          <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
+          <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
+          <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>
+          <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+          <div class="activity-trail sr-only" id="activityTrail" role="status" aria-live="polite" hidden>
+            <span class="activity-trail__current" id="activityCurrent" hidden><i aria-hidden="true"></i><strong id="activityCurrentText"></strong></span><ol id="activityItems" aria-label="누적 입력현황"></ol>
           </div>
-          <div class="si-source-pane" data-pane="excel" hidden>
-            <div class="si-template-mode" role="group" aria-label="Excel 양식 방식">
-              <button type="button" id="newTemplateModeButton" aria-pressed="true">새 작업</button>
-              <button type="button" id="existingTemplateModeButton" aria-pressed="false">기존 양식</button>
+        </div>
+        <div class="parser-input-row">
+          <div class="source-editor" id="sourceEditor">
+            <div class="source-editor__body">
+              <pre class="source-highlight" id="sourceHighlight" aria-hidden="true"></pre>
+              <textarea id="sourceTextInput" rows="3" spellcheck="false" placeholder="텍스트·이미지·Excel 파일을&#10;붙여넣거나 끌어다 놓으세요.&#10;입력 내용을 자동으로 분석합니다."></textarea>
             </div>
-            <label class="si-template-control" id="newTemplateField"><span>양식명</span><input id="newTemplateNameInput" maxlength="80" autocomplete="off" placeholder="예: 미출고 주문"></label>
-            <label class="si-template-control" id="existingTemplateField" hidden><span>기존 양식</span><select id="existingTemplateSelect"><option value="">양식 선택</option></select></label>
-            <label class="si-dropzone" for="sheetFileInput"><strong>Excel·CSV·TSV 파일 선택</strong><span>CSV·TSV는 오프라인에서, Excel은 선택 시 라이브러리를 불러옵니다.</span></label>
-            <input id="sheetFileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,text/csv,text/tab-separated-values" hidden>
-            <button type="button" class="si-button si-button--primary" id="sheetChooseButton">파일 선택</button>
+            <div class="source-editor__meta"><span id="sourceLength">0자</span><span id="sourceNotice">직접 입력과 Ctrl+V도 지원합니다.</span></div>
           </div>
-          <div class="si-source-pane" data-pane="text" hidden>
-            <textarea id="sourceTextInput" rows="10" placeholder="품목코드 품목명 수량 단위 단가 순으로 입력하거나 표를 붙여넣으세요."></textarea>
-            <button type="button" class="si-button si-button--primary" id="analyzeTextButton">로컬 분석</button>
+          <div class="photo-viewer" id="photoViewer" hidden>
+            <div class="photo-viewer__toolbar" id="photoViewerToolbar" role="toolbar" aria-label="원본 사진 보기" hidden>
+              <strong>원본 사진</strong>
+              <div>
+                <button id="photoZoomOut" type="button" aria-label="사진 축소">−</button>
+                <button id="photoFit" type="button" aria-label="화면에 맞춤"><span id="photoZoomLabel">맞춤 100%</span></button>
+                <button id="photoZoomIn" type="button" aria-label="사진 확대">＋</button>
+                <button id="photoRotateLeft" type="button" aria-label="왼쪽으로 회전">↺</button>
+                <button id="photoRotateRight" type="button" aria-label="오른쪽으로 회전">↻</button>
+                <button id="photoOcrToggle" type="button" aria-expanded="false">인식 원문</button>
+              </div>
+            </div>
+            <div class="photo-viewer__viewport" id="photoViewport" tabindex="0" aria-label="원본 사진 확대 보기">
+              <div class="photo-empty-state" id="photoEmptyState">
+                <strong>원본 사진을 선택하세요</strong>
+                <p>거래명세서 전체가 선명하게 보이는 사진을 선택하면<br>원본을 유지한 채 입력표와 나란히 확인할 수 있습니다.</p>
+                <button class="button button--primary" id="photoEmptySelectButton" type="button">사진 선택</button>
+                <small>JPG·PNG 등 이미지 파일과 붙여넣기를 지원합니다.</small>
+              </div>
+              <div class="photo-viewer__stage" id="photoStage" hidden>
+                <div class="photo-viewer__layer" id="photoLayer">
+                  <img id="photoPreview" alt="입력 원본 사진" hidden>
+                  <span class="photo-viewer__region" id="photoRegion" aria-hidden="true" hidden></span>
+                </div>
+              </div>
+            </div>
+            <section class="photo-ocr-panel" id="photoOcrPanel" aria-label="인식 원문" hidden>
+              <div><strong>인식 원문</strong><button id="photoOcrClose" type="button" aria-label="인식 원문 닫기">×</button></div>
+              <pre id="photoOcrText">사진 분석 후 인식된 문자가 표시됩니다.</pre>
+            </section>
+            <div class="photo-viewer__meta" id="photoViewerMeta" hidden><span id="photoFileName"></span><span id="photoViewerNotice">원본 사진을 기준으로 입력값을 확인하세요.</span></div>
           </div>
-          <div class="si-source-pane" data-pane="paste" hidden>
-            <textarea id="pasteInput" rows="10" placeholder="Excel 표 또는 탭으로 구분된 표를 여기에 붙여넣으세요."></textarea>
-            <button type="button" class="si-button si-button--primary" id="analyzePasteButton">표 반영</button>
-          </div>
-          <div class="si-source-pane" data-pane="photo" hidden>
-            <input id="photoFileInput" type="file" accept="image/*" capture="environment">
-            <div class="si-photo-preview" id="photoPreview"><span>이미지를 선택하면 분석보다 먼저 표시됩니다.</span><img id="photoImage" alt="선택한 원본" hidden></div>
-            <button type="button" class="si-button si-button--primary" id="ocrButton" disabled>OCR 분석</button>
-            <p class="si-feature-message" id="ocrMessage"></p>
-          </div>
-          <div class="si-source-pane" data-pane="voice" hidden>
-            <p>브라우저가 음성 인식을 지원할 때 이 기능만 활성화됩니다.</p>
-            <button type="button" class="si-button si-button--primary" id="voiceButton">음성 입력 시작</button>
-            <p class="si-feature-message" id="voiceMessage"></p>
-          </div>
-          <pre class="si-source-preview" id="sourcePreview">아직 원본이 없습니다.</pre>
+          <button class="analyze-button" id="analyzeButton" type="button"><span aria-hidden="true">✦</span><strong>다시 분석</strong><small>원문은 그대로 유지</small></button>
         </div>
-      </article>
+        <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
+      </section>
 
-      <article class="si-card si-table-card">
-        <div class="si-section-heading">
-          <h2>작업테이블</h2>
-          <div class="si-table-actions">
-            <span id="rowSummary">0행</span>
-            <span id="templateWorkflowResult" class="si-template-result" aria-live="polite"></span>
-            <button type="button" class="si-button si-button--quiet" id="discardStagingButton" hidden>추가 예정 해제</button>
-            <button type="button" class="si-button si-button--quiet" id="applyStagingButton" hidden>테이블에 추가</button>
-            <button type="button" class="si-button si-button--primary" id="createFromStagingButton" hidden>양식 저장·주문 생성</button>
-            <button type="button" class="si-button si-button--quiet" id="addRowButton">행 추가</button>
+      <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절"><span></span></button>
+
+      <section class="workbench" aria-label="스마트입력 본문">
+        <div class="document-fields">
+          <div class="document-fields__left">
+            <label class="field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"><small id="deliveryPolicyHint">배송 가능일을 계산합니다.</small></label>
+            <label class="field" data-header-field="warehouse"><span>출하창고 <em>필수</em></span><input id="warehouseInput" type="text" list="warehouseOptions" placeholder="창고명 또는 코드"><datalist id="warehouseOptions"></datalist><small>배송·출고에 사용할 창고를 지정합니다.</small></label>
+            <label class="field" data-header-field="transactionType"><span>거래유형</span><select id="transactionTypeInput"><option>기타</option><option>카드</option><option>현금</option><option>현금영수증</option><option>사내사용</option></select><small>전표의 거래 처리 유형을 지정합니다.</small></label>
+          </div>
+          <div class="document-fields__right">
+            <label class="field field--customer" data-header-field="customer">
+              <span id="customerFieldLabel">배송 거래처 <em id="customerRequiredMark">필수</em></span>
+              <div class="input-action">
+                <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
+                <button id="customerSearchButton" type="button">찾기</button>
+              </div>
+              <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
+            </label>
+            <input id="taxCustomerInput" type="hidden">
+            <span id="customerRelationHint" hidden></span>
+            <div class="catalog-filter" id="catalogFilter" hidden>
+              <span>견적서 선택 · 상품 조합</span>
+              <div class="catalog-picker" id="catalogPicker">
+                <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">견적서 선택</button>
+                <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
+                  <div class="catalog-picker__heading"><span>견적서명</span><span>선택</span><span>관리</span></div>
+                  <div class="catalog-picker__list" id="catalogPickerList"></div>
+                  <div class="catalog-picker__footer"><span>선택 항목은 상품 불러오기·카톡·Excel에 함께 사용됩니다.</span><button class="button button--primary button--small" id="catalogComposeButton" type="button">선택 상품 불러오기</button></div>
+                </div>
+              </div>
+            </div>
+            <button class="button button--quiet button--small" id="catalogNewButton" type="button" hidden>새 견적서</button>
+            <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
+            <div class="estimate-output-actions" id="estimateOutputActions" hidden>
+              <button class="button button--quiet button--small" id="estimateNoticeButton" type="button">카톡 복사</button>
+              <button class="button button--quiet button--small" id="estimateExcelButton" type="button">견적 Excel</button>
+            </div>
           </div>
         </div>
-        <div class="si-table-scroll" id="tableScroll" tabindex="0">
-          <table>
-            <thead><tr id="workTableHeadRow">
-              <th scope="col">#</th><th scope="col">품목코드</th><th scope="col">품목명</th><th scope="col">규격</th><th scope="col">수량</th><th scope="col">단위</th><th scope="col">단가</th><th scope="col">메모</th><th scope="col"><span class="sr-only">상태 또는 삭제</span></th>
-            </tr></thead>
-            <tbody id="workTableBody"></tbody>
-          </table>
+
+        <section class="grid-card" aria-label="입력표">
+          <h2 class="sr-only">입력표</h2>
+          <div class="grid-toolbar">
+            <div class="grid-review-tools">
+              <label class="grid-search"><span class="sr-only">입력표 검색</span><input id="gridSearchInput" type="search" autocomplete="off" placeholder="상품명·코드·규격·거래처 검색"><button id="gridSearchClear" type="button" aria-label="검색 해제">×</button></label>
+              <div class="grid-stats"><strong id="gridRowCount">0행</strong><span id="gridSearchCount" hidden>검색 0행</span><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
+              <small id="voucherGroupSummary" class="voucher-group-summary"></small>
+            </div>
+            <div class="grid-toolbar__actions"><button class="button button--quiet button--small" id="uploadTemplateButton" type="button">업로드 양식</button><button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button><button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button><button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button><button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button></div>
+          </div>
+          <div class="table-scroll" id="tableScroll" tabindex="0">
+            <table>
+              <colgroup><col class="col-select"><col class="col-product-search" data-column="productSearch"><col class="col-code" data-column="itemCode"><col class="col-name" data-column="itemName"><col class="col-spec" data-column="specification"><col class="col-qty" data-column="quantity"><col class="col-unit" data-column="unit"><col class="col-price" data-column="unitPrice"><col class="col-supply" data-column="supplyAmount"><col class="col-memo" data-column="memo"><col class="col-description" data-column="description"><col class="col-notice" data-column="noticePrice"><col class="col-status" data-column="status"><col class="col-action"></colgroup>
+              <thead><tr><th class="select-column"><input id="selectAllRows" type="checkbox" aria-label="전체 행 선택"></th><th data-column="productSearch">상품 검색</th><th data-column="itemCode">품목코드</th><th data-column="itemName">품목명</th><th data-column="specification">규격</th><th data-column="quantity">수량</th><th data-column="unit">단위</th><th data-column="unitPrice">단가</th><th data-column="supplyAmount">공급가액</th><th data-column="memo">메모</th><th data-column="description">적요(직원)</th><th data-column="noticePrice">공지단가</th><th data-column="status">상태</th><th><span class="sr-only">행 작업</span></th></tr></thead>
+              <tbody id="inputRows"></tbody>
+              <tfoot><tr><td></td><td data-column="productSearch"></td><td data-column="itemCode"></td><td data-column="itemName">합계</td><td data-column="specification"></td><td data-column="quantity" id="totalQuantity">0</td><td data-column="unit"></td><td data-column="unitPrice"></td><td data-column="supplyAmount" id="totalAmount">0원</td><td data-column="memo"></td><td data-column="description"></td><td data-column="noticePrice"></td><td data-column="status"></td><td></td></tr></tfoot>
+            </table>
+          </div>
+          <footer class="voucher-footer-actions" aria-label="전표 작업">
+            <button class="button button--quiet" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
+            <button class="button button--primary" id="saveDraftButton" type="button">저장</button>
+          </footer>
+        </section>
+      </section>
+
+      <aside class="related-panel" aria-label="연결 앱">
+        <div class="aside-heading"><span>연결 앱</span><strong id="relatedModeLabel">주문서</strong></div>
+        <div class="related-list" id="orderLinks">
+          <a href="../orderq/index.html" target="_blank" rel="noopener"><span class="related-icon">Q</span><span><strong>주문서 조회</strong><small>저장된 주문서 확인</small></span><span aria-hidden="true">↗</span></a>
+          <a href="../orders.html" target="_blank" rel="noopener"><span class="related-icon related-icon--dark">O</span><span><strong>주문현황</strong><small>재고 확인·출고 판단</small></span><span aria-hidden="true">↗</span></a>
         </div>
-        <div class="si-empty" id="tableEmpty">입력 방식에서 원본을 추가하거나 빈 행을 만들어 시작하세요.</div>
-      </article>
-    </section>
+        <div class="related-empty" id="relatedEmpty" hidden><strong>연결 앱 준비 중</strong><p>확정된 연결 앱만 이곳에 표시합니다.</p></div>
+        <div class="delivery-card">
+          <span>전달 대상</span>
+          <strong id="deliveryTarget">공통 주문서 원장</strong>
+          <p id="deliveryDescription">ORDER Q vNext 저장소에 먼저 기록합니다.</p>
+          <div class="delivery-state"><span></span><em id="deliveryState">전달 전</em></div>
+        </div>
+        <button class="related-collapse" id="relatedCollapseButton" type="button" aria-expanded="false">연결 앱 열기</button>
+      </aside>
+    </div>
   </main>
 
-  <dialog id="draftDialog" class="si-dialog">
-    <form method="dialog"><header><h2>최근 초안</h2><button value="cancel" aria-label="닫기">×</button></header><div id="draftList"></div></form>
-  </dialog>
-  <div class="si-toast" id="toast" hidden role="status" aria-live="polite"></div>
-
-  <script src="smartinput-contract.js?v=0.6.0"></script>
-  <script type="module" src="smartinput.js?v=1.2.1"></script>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="./smartinput-contract.js?v=0.5.0"></script>
+  <script type="module" src="./smartinput.js?v=0.5.0"></script>
   <script defer src="../nexus/common/nexus-ui.js?v=1.3.1"></script>
 </body>
 </html>
