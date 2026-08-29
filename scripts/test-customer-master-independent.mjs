@@ -42,11 +42,13 @@ const detected = core.tabularRows([
 assert.equal(detected.headerRowNumber, 2, 'a report title row must not be mistaken for the Excel header');
 assert.deepEqual(detected.headers, ['담당자명', '거래처코드', '거래처명', '핸드폰번호']);
 assert.deepEqual(detected.rowNumbers, [3]);
+assert.equal(core.detectImportSourceSystem(detected.headers), 'ERP', 'ERP headers must select the ERP source mode');
 
 const shopMapping = core.defaultHeaderMapping(['아이디', '이름(거래처명)', '닉네임', '휴대폰번호'], [], [], 'SHOP');
 assert.equal(shopMapping[0].targetFieldKey, 'sourceCustomerCode');
 assert.equal(shopMapping[1].targetFieldKey, 'customerName');
 assert.equal(shopMapping[2].targetFieldKey, 'sourceNickname');
+assert.equal(core.detectImportSourceSystem(['아이디', '회원레벨', '가입일시', '이름(거래처명)']), 'SHOP', 'SHOP headers must select the SHOP source mode');
 const shopRecords = core.analyzeImportRows([
   { 아이디: 'member-1', '이름(거래처명)': '원앱 상사', 닉네임: '원앱', 휴대폰번호: '010-1234-5678' },
 ], shopMapping, [{ customerId: 'CU-NEXUS', customerCode: 'LEGACY', customerName: '원앱상사', mobile: '010-1234-5678', revision: 2 }], {
@@ -61,6 +63,12 @@ const ranked = core.searchCustomerRows([
   { customerId: 'B', customerCode: '200', customerName: '100' },
 ], [], [], '100');
 assert.equal(ranked[0].customerId, 'A', 'exact customer code must outrank exact name');
+const canonicalRanked = core.searchCustomerRows([
+  { customerId: 'CU-MAIN', customerCode: 'MAIN', customerName: '대표 거래처', qualityStatus: 'VERIFIED' },
+  { customerId: 'CU-SPLIT', customerCode: 'SPLIT', customerName: '분리 거래처', qualityStatus: 'SUPERSEDED', canonicalCustomerId: 'CU-MAIN' },
+], [], [{ customerId: 'CU-SPLIT', sourceSystem: 'SHOP', sourceCustomerCode: 'member-split', active: true }], 'member-split');
+assert.equal(canonicalRanked.length, 1);
+assert.equal(canonicalRanked[0].customerId, 'CU-MAIN', 'a mapped ERP or SHOP code must resolve to the canonical NEXUS customer');
 assert.equal(core.missingCustomerFields({ customerName: '상호', address: '', mobile: '' }).length, 2);
 
 const files = await readdir('customer-master');
@@ -78,7 +86,7 @@ const html = await read('customer-master/index.html');
 for (const label of ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '데이터 이전·복원']) {
   assert.ok(html.includes(`>${label}<`), `required tab label: ${label}`);
 }
-for (const label of ['거래처 등록', '변경 저장', '등록·수정 실행', 'Snapshot 내보내기', 'v17 데이터 확인']) {
+for (const label of ['거래처 등록', '변경 저장', '등록·수정 실행', '대표 거래처로 연결', 'Snapshot 내보내기', 'v17 데이터 확인']) {
   assert.ok(html.includes(`>${label}<`), `required button label: ${label}`);
 }
 

@@ -106,6 +106,20 @@ export function normalizeHeader(value) {
   return normalizeText(value).replace(/[\s_.\-/()]+/g, '');
 }
 
+export function detectImportSourceSystem(headers = []) {
+  const normalized = new Set(headers.map(normalizeHeader).filter(Boolean));
+  const score = (signals) => signals.reduce((total, [header, weight]) => total + (normalized.has(normalizeHeader(header)) ? weight : 0), 0);
+  const erpScore = score([
+    ['거래처코드', 5], ['거래처그룹1코드', 2], ['거래처그룹2코드', 2], ['단가그룹', 1], ['사용구분', 1],
+  ]);
+  const shopScore = score([
+    ['아이디', 5], ['회원아이디', 5], ['회원레벨', 2], ['가입일시', 2], ['로그인일시', 1], ['닉네임변경일자', 1],
+  ]);
+  if (erpScore >= 5 && erpScore > shopScore) return 'ERP';
+  if (shopScore >= 5 && shopScore > erpScore) return 'SHOP';
+  return '';
+}
+
 export function looseCustomerName(value) {
   return normalizeText(value).replace(/주식회사|유한회사|㈜|\(주\)|\s|[()\-_.]/g, '');
 }
@@ -201,10 +215,35 @@ export function scoreCustomer(customer, aliases = [], sourceLinks = [], query = 
   return null;
 }
 
+export function resolveCanonicalCustomerId(customerId, customers = []) {
+  const byId = customers instanceof Map ? customers : new Map(customers.map((customer) => [customer.customerId, customer]));
+  let currentId = clean(customerId);
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const customer = byId.get(currentId);
+    if (!customer || customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED) return currentId;
+    const nextId = clean(customer.canonicalCustomerId);
+    if (!nextId || nextId === currentId) return currentId;
+    currentId = nextId;
+  }
+  return clean(customerId);
+}
+
 export function searchCustomerRows(customers, aliases, sourceLinks, query, limit = 200) {
-  if (!clean(query)) return customers.slice().sort((a, b) => clean(a.customerName).localeCompare(clean(b.customerName), 'ko')).slice(0, limit);
-  return customers.map((customer) => ({ customer, match: scoreCustomer(customer, aliases, sourceLinks, query) }))
-    .filter((row) => row.match)
+  const byId = new Map(customers.map((customer) => [customer.customerId, customer]));
+  if (!clean(query)) return customers.filter((customer) => customer.qualityStatus !== CUSTOMER_QUALITY.SUPERSEDED)
+    .slice().sort((a, b) => clean(a.customerName).localeCompare(clean(b.customerName), 'ko')).slice(0, limit);
+  const rankedByCanonicalId = new Map();
+  customers.forEach((customer) => {
+    const match = scoreCustomer(customer, aliases, sourceLinks, query);
+    if (!match) return;
+    const canonicalId = resolveCanonicalCustomerId(customer.customerId, byId);
+    const canonical = byId.get(canonicalId) || customer;
+    const previous = rankedByCanonicalId.get(canonical.customerId);
+    if (!previous || match.score > previous.match.score) rankedByCanonicalId.set(canonical.customerId, { customer: canonical, match });
+  });
+  return [...rankedByCanonicalId.values()]
     .sort((left, right) => right.match.score - left.match.score || clean(left.customer.customerName).localeCompare(clean(right.customer.customerName), 'ko'))
     .slice(0, limit).map((row) => row.customer);
 }
