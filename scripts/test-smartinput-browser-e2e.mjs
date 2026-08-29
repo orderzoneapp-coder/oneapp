@@ -208,6 +208,7 @@ try {
   await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
   await click(client, '#workTableBody tr[data-row-id] [data-delete-row]');
   await click(client, '#addRowButton');
+  await waitForExpression(client, `Boolean(document.activeElement?.closest('tr[data-row-id]'))`, 'new real row focus');
   assert.deepEqual(await evaluate(client, `({
     actualRows: window.__SMARTINPUT_DEBUG__.getState().draft.modes.order.rows.length,
     visibleRows: document.querySelectorAll('#workTableBody tr').length,
