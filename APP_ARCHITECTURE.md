@@ -1,106 +1,155 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.4.3
-- Last reviewed: 2026-08-13
+- Architecture document version: 2.0.0
+- Last reviewed: 2026-08-29
+- Current-source baseline: `5f92d161a00429d5424be93fafc1f57276dd137c`
 - Machine-readable companion: app-manifest.json
 
-## 1. Purpose
+## 1. 문서 목적
 
-ONEAPP turns ERP, supplier, inventory, sales, and shopping-mall data into reviewed product information that can be applied back to operational systems.
+ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니라, 각 앱이 자기 기본 업무를 독립적으로 수행하고 필요한 정보만 계약을 통해 교환하는 앱 집합이다.
 
-Excel is a bidirectional review and correction medium, not a one-way export format.
+이 문서는 다음을 정의한다.
 
-This document defines:
+- 현재 운영 소스의 실제 구조와 한계
+- 목표 앱 독립 구조와 계층별 책임
+- 앱별 데이터 소유권과 Adapter 경계
+- 서버가 필요한 작업과 서버 없이 유지해야 하는 기능
+- 외부 장애 격리와 활성 작업본 보호
+- 앱 상태(계획·파일럿·운영), 독립 배포·검증·롤백 기준
+- 현재 공유 계약을 목표 구조로 옮길 때의 변경 영향
 
-- current application boundaries;
-- shared data contracts;
-- application relationships;
-- change-impact rules;
-- development-path classification;
-- validation and release processes;
-- recovery principles;
-- registration and promotion rules for planned applications.
-
-Detailed working rules for Codex and AI development tools are defined in `AGENTS.md`.
-
-Application-specific planning, development, and PM instructions may add stricter rules but must not override the shared contracts and architecture principles defined here.
+공통 작업 절차, Git, 역할, 승인, 병합·배포와 보고 규칙은 `AGENTS.md`를 따른다. 이 문서의 목표 구조는 구현 완료 선언이나 데이터 소유권 이전 승인이 아니다. 실제 소유권·저장소·운영 상태는 별도 개발, 마이그레이션, 검증과 `app-manifest.json` 갱신이 끝난 뒤에만 변경된다.
 
 ---
 
-## 2. Architecture principles
+## 2. 앱 독립성 원칙
 
-1. GitHub `main` is the production source of truth.
-2. Production changes must follow the development path assigned before implementation.
-3. Shared field names, storage keys, cloud actions, and navigation paths are contracts.
-4. A change to a shared contract must be reviewed against every consumer, even when only one screen is visibly changed.
-5. Planned applications do not become production dependencies until their owner, purpose, inputs, outputs, and status are recorded in `app-manifest.json`.
-6. Duplicate `_test` files are not a recovery source of truth.
-7. Recovery uses Git history, stable tags, PR reverts, and verified backups.
-8. A separately named preview page may be kept only when an alternate validation URL is operationally required.
-9. Existing operational behavior must be preserved unless a change is explicitly approved.
-10. An application must not change another application's business meaning merely because they share data or utilities.
-11. Automated test success does not by itself prove production readiness.
-12. Production completion requires deployed behavior to be checked in the actual operational flow.
-13. Technical safety is reviewed by development and PM roles.
-14. Final operational policy and production acceptance remain administrator decisions.
+1. 각 앱은 해당 앱 역할의 기본 기능을 다른 앱·공통 Runtime·서버의 정상 작동 여부와 관계없이 실행할 수 있어야 한다.
+2. 화면 표시, 로컬 조회, 검색, 계산과 작업본 편집은 검증된 로컬 데이터가 있으면 서버 응답을 기다리지 않는다.
+3. 데이터의 쓰기 소유자는 하나로 정하고, 다른 앱은 소유 앱의 명시된 Adapter 또는 서버 계약을 사용한다.
+4. 앱은 다른 앱의 IndexedDB, Object Store, localStorage 또는 원시 Repository에 직접 쓰지 않는다.
+5. Read Adapter는 읽기 전용 Snapshot 또는 조회 계약만 제공하며 소유 저장소를 수정하지 않는다.
+6. Integration Adapter 실패는 해당 연동 기능에만 영향을 주고 앱 Core와 무관한 기본 작업으로 전파되지 않는다.
+7. 공통 Runtime과 NEXUS 공통 UI는 앱 실행을 통제하거나 업무 데이터 준비 완료를 결정하지 않는다.
+8. 서버는 인증·권한·공유·동기화·충돌 조정·최종 확정처럼 서버 권위가 필요한 경계에서만 필수다.
+9. 서버 오류, 조회 실패와 미확정 상태를 정상 데이터 `0건`으로 바꾸지 않는다.
+10. 열린 전표와 활성 작업본은 생성 시점의 상품·거래처 Snapshot을 보존하며 마스터 변경으로 자동 덮어쓰지 않는다.
+11. 경고·충돌은 관리자에게 알리되 관련 없는 작업을 차단하지 않는다. 실제 데이터 무결성 위험이 있는 작업만 차단한다.
+12. 앱별로 독립 배포·검증·롤백이 가능해야 하며 공통 자산 실패 시에도 앱 본체의 기본 기능이 유지되어야 한다.
+13. 계획 또는 목표 역할은 현재 운영 완료로 표시하지 않는다. 상태 변경은 소스, 검증, 배포와 manifest가 일치할 때만 확정한다.
+14. 현재 운영 계약은 별도 승인된 이전 작업이 완료될 때까지 보존한다. 목표 구조를 이유로 기존 저장소를 즉시 통합·이전하거나 직접 접근을 일괄 차단하지 않는다.
+15. GitHub `main`은 운영 소스 기준이며 공유 필드, 저장 키, API action, payload와 경로 변경은 모든 소비자 영향·이전·롤백을 검토한다.
 
 ---
 
-## 3. System overview
+## 3. 현재 구조와 목표 구조
+
+### 3.1 현재 운영 구조
+
+현재 `origin/main` 기준은 앱 독립 목표로 전환 중인 과도기다.
+
+- MerchOps, DataOps, SmartParser, Export Center, Settings와 History Viewer는 `MerchOpsDB` 및 여러 localStorage 계약을 공유한다.
+- `app-manifest.json`에서 `product-master`의 현재 소유자는 `merchops`다. SmartParser, Export Center, Settings, Master와 일부 DataOps 흐름도 기존 공통 writer 계약을 사용한다.
+- `Item_manager.html`은 독립 화면과 로컬 우선 동작을 갖춘 파일럿이지만, 상품 데이터 소유권이 ItemMaster로 이전 완료된 상태는 아니다.
+- `CustomerMaster/partner_db.html`과 독립 `SmartInput` 운영 엔트리는 현재 기준선에 없다. `orderops/input.html`은 ORDER Q의 현행 보조 입력 화면이며 별도 SmartInput 앱 또는 전표 Repository 소유권 완료를 뜻하지 않는다. 목표 역할만으로 운영 앱 또는 데이터 소유자로 기록하지 않는다.
+- ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
+- NEXUS 포털·인증 Runtime은 롤백된 상태다. 현재 NEXUS 운영 범위는 정적 공통 UI 자산, 앱 이동과 테마이며 업무 Gateway나 업무 저장소를 통제하지 않는다.
+- `coreEngine.js`는 여러 앱이 사용하는 현행 공유 라이브러리지만, 앱 Core를 부팅시키거나 전체 앱 준비 상태를 결정하는 상위 Runtime으로 확대하지 않는다.
+- GitHub Pages는 현재 저장소 단위로 배포된다. 앱 독립 배포 목표는 우선 앱별 변경·검증·PR·롤백 범위를 분리하는 것이며, 물리적 배포 단위 분리는 별도 호스팅 변경이 승인될 때만 수행한다.
+
+이 현재 구조의 직접 공유 접근은 호환성 기준선이다. 새 기능이 이를 확대해서는 안 되며, 소유권 이전은 소비자별 Adapter 전환과 회귀검증을 갖춘 별도 작업으로 수행한다.
+
+### 3.2 목표 계층
+
+| 계층 | 책임 | 금지 경계 |
+|---|---|---|
+| 앱 Core | 화면, 검색, 계산, 작업, 로컬 작업 흐름 | 다른 앱·서버 상태로 기본 실행을 통제하지 않음 |
+| 앱 Repository | 해당 앱이 소유하는 원본·작업본·로컬 저장 관리 | 다른 앱의 원시 저장소를 직접 수정하지 않음 |
+| Read Adapter | 소유 데이터를 읽기 전용 Snapshot·조회 계약으로 제공 | 소비자 대신 쓰거나 업무 결정을 수행하지 않음 |
+| Integration Adapter | 다른 앱 정보 조회·전달, 계약 변환, 실패 격리 | 실패를 앱 전체 오류나 정상 0건으로 바꾸지 않음 |
+| Server Transport | 인증, 권한, 공유, 동기화, 충돌 조정, 최종 확정 | 화면 표시·로컬 조회·편집의 선행조건이 되지 않음 |
+| NEXUS 공통 UI | 헤더, 앱 이동, 테마, 공통 상태 표시 | 업무 IndexedDB·Repository·앱 준비 상태를 통제하지 않음 |
+
+### 3.3 목표 실행 흐름
 
 ```text
-External ERP / suppliers / shopping malls
-                   |
-                   v
-            SmartParser.html
-       parse, normalize, detect changes
-                   |
-                   v
-              MerchOps.html
-     review, compare, edit, approve, export
-        |             |              |
-        v             v              v
-   DataOps.html  export_center.html  settings.html
-   inventory and   output validation  shared policies
-   performance     and Excel output   and configuration
-        |
-        v
- history_viewer.html
+NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 앱
+                                                │
+                         ┌──────────────────────┴──────────────────────┐
+                         v                                             v
+                 앱 Core + 앱 Repository                      Integration Adapter
+                 즉시 표시·조회·계산                          외부 Snapshot 조회·전달
+                         │                                             │
+                         └──────── 필요한 작업만 Server Transport ────┘
+                                      인증·공유·동기화·최종 확정
 ```
 
-All applications exchange state through shared browser storage and, where configured, the Google Apps Script cloud synchronization service implemented by `code.gs`.
+- 앱 Core는 자신의 Repository에서 검증된 로컬 상태를 먼저 표시한다.
+- 외부 기준정보는 Read Adapter가 제공하는 불변 또는 revision이 있는 Snapshot으로 읽는다.
+- 백그라운드에서 새 revision을 받아도 활성 작업본을 자동 변경하지 않는다.
+- 서버 장애 시 로컬 기본 작업은 유지하고, 동기화·공유·최종 확정처럼 관계된 기능만 지연 또는 제한한다.
 
-ONEAPP is the company and shared development foundation.
+### 3.4 의존성 실행 방식
 
-MerchOps, DataOps, CustomerOps, ControlTower, SmartParser, HistoryViewer, Master, and related applications are separate operational solutions with their own purposes and workflows.
+앱의 각 기능은 `AGENTS.md`의 실행 방식 중 하나로 명시한다.
 
-Shared storage or navigation does not make their business meaning identical.
+| 방식 | 사용 조건 | 장애 시 동작 |
+|---|---|---|
+| `LOCAL_OPERATION` | 화면, 로컬 조회, 검색, 계산, 작업본 편집 | 외부 장애와 무관하게 계속 실행 |
+| `BACKGROUND_SYNC` | 로컬 결과를 먼저 확정하고 최신 정보·백업을 후행 확인 | 마지막 정상 상태를 유지하고 재시도 |
+| `SERVER_FINALIZE` | 인증·권한·공유 충돌·중앙 원장·최종 확정 | 해당 확정 작업만 보류하고 원인과 로컬 상태를 보존 |
 
 ---
 
-## 4. Component catalog
+## 4. 앱 책임과 상태
 
-| Component | Type | Status | Primary responsibility |
+| 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
-| `MerchOps.html` | Web entry | Production | Product master review, pricing, promotion, and Excel-based product-information application workflow; stopped-product state is consumed only for worktable protection and compatibility reads |
-| `DataOps.html` | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis; administrator-reviewed out-of-list inventory product selection and positive-count sale resume |
-| `SmartParser.html` | Web entry | Production | Parse external documents, resolve duplicate mappings, own supplier exclusions and stopped/sold-out product management, apply approved changes directly to the product master, and record change history |
-| `export_center.html` | Web entry | Production | Validate selected results, prepare output payloads, export Excel, and apply approved master changes |
-| `settings.html` | Web entry | Production | Manage mappings, pricing rules, visible columns, table views, cloud URL, and shared configuration |
-| `history_viewer.html` | Web entry | Production | Inspect product-change history and price trends |
-| `Master.html` | Web entry | Pilot | Product-master lookup and administrator-reviewed add/update; initial registration and full replacement are not active in the first phase |
-| `Item_manager.html` | Web entry | Pilot / transition | Existing category lookup and product-management route retained until approved feature migration and result verification are complete |
-| `orderops/list.html` | Web entry | Pilot | ORDER Q shipment management: four-way structure-first Excel intake, editable order status and order-aware inventory balance/stock-ledger review, purchase-plan editing and recovery, explicit revisioned cloud sharing, and integrated Excel output |
-| `orderq/index.html` (`input.html`, `parser.html`, `collector.html`, `cloud.html`) | Web entry group | Pilot | ORDER Q vNext manual/text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, parser evidence review, and token-protected revisioned cloud sync; existing `orderops/` remains an independent compatibility route |
-| `coreEngine.js` | Shared library | Production | Storage, pricing, history, export, cloud synchronization, and master-data utilities |
-| `code.gs` | Cloud service | Production | Google Apps Script API for master, history, configuration, the finalized DataOps inventory snapshot, and immutable Shipping purchase-plan revisions |
+| NEXUS 공통 UI | 운영 | 정적 헤더·앱 이동·일반/다크 테마. 포털·인증 Runtime은 롤백 상태 | 앱 연결과 공통 UI만 담당 |
+| ItemMaster (`Item_manager.html`) | 파일럿 | 기존 `product-master` 계약을 읽고 쓰지만 manifest 소유자는 아직 MerchOps | 상품 기준정보 단일 소유자, Read Adapter 제공 |
+| CustomerMaster (`partner_db.html`) | 계획(미등록) | 현재 기준선에 운영 엔트리와 manifest 등록 없음 | 거래처 기준정보 단일 소유자, Read Adapter 제공 |
+| SmartInput | 계획(미등록) | 독립 운영 엔트리와 manifest 등록 없음. `orderops/input.html`은 ORDER Q 보조 화면 | 전표 작성 작업본·양식 소유, 상품·거래처 Snapshot 소비 |
+| ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
+| MerchOps | 운영 | 현재 상품 master·가격·프로모션 활용 및 일부 master writer 역할 | 상품 활용·가공 업무 소유, ItemMaster Snapshot 소비 |
+| DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과 소유, 상품 변경은 ItemMaster Integration Adapter 사용 |
+| SmartParser | 운영 | 외부 문서 해석과 승인된 상품정보·중지상태 직접 반영 | 해석 결과 소유, 상품 변경은 ItemMaster Integration Adapter 사용 |
+
+### 4.1 상태와 소유권 전환
+
+- `계획`: 목적과 계약만 정의됐으며 운영 의존성과 운영 쓰기를 허용하지 않는다.
+- `파일럿`: 구현은 있으나 제한 검증 단계다. 목표 소유권을 전체 운영 소유권으로 간주하지 않는다.
+- `운영`: 배포된 기본 흐름, 데이터 계약과 롤백이 검증된 상태다.
+- 목표 역할은 방향을 뜻하며 현재 저장소 owner를 즉시 바꾸지 않는다.
+- 소유권 전환은 소유 Repository, Read/Integration Adapter, 소비자 전환, 데이터 이전, 회귀검증, 독립 롤백과 manifest 갱신을 같은 별도 작업에서 완료해야 한다.
+- 미구축 앱의 이름이나 목표 계약을 기존 앱의 필수 Runtime 의존성으로 추가하지 않는다.
+- `계획(미등록)`은 아키텍처 목표만 기록된 상태다. 실제 개발이 승인되면 `plannedApplications` 등록 기준을 충족한 뒤 파일럿 승격 절차를 시작한다.
+
+### 4.2 현재 manifest 등록 목록
+
+아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.0의 현재 등록 상태다.
+
+| 앱 ID | 현재 경로 | 상태 | 현재 책임 |
+|---|---|---|---|
+| `merchops` | `MerchOps.html` | 운영 | 상품정보 가공·가격·프로모션과 현재 product-master 계약 |
+| `dataops` | `DataOps.html` | 운영 | 매입·매출·재고·원가·성과 분석 |
+| `smart-parser` | `SmartParser.html` | 운영 | 외부 문서 해석, 공급자 제외, 현재 상품정보·중지상태 반영 |
+| `export-center` | `export_center.html` | 운영 | 검토 결과 확인, Excel 출력과 승인된 현행 master 반영 |
+| `settings` | `settings.html` | 운영 | 매핑·가격정책·열·보기·Cloud URL 설정 |
+| `master-lookup` | `Master.html` | 파일럿 | 상품 조회와 관리자 검토형 추가·수정 |
+| `item-manager` | `Item_manager.html` | 파일럿 | 상품 기초정보 조회·등록·수정 |
+| `history-viewer` | `history_viewer.html` | 운영 | 상품 변경이력·가격 추이 조회 |
+| `core-engine` | `coreEngine.js` | 운영 공유 라이브러리 | 현행 저장·가격·이력·출력·Cloud·master 유틸리티 |
+| `orderops` | `orderops/list.html` | 파일럿 | 출고·재고·구매계획과 검토형 출력 |
+| `orderq-vnext` | `orderq/index.html` | 파일럿 | 주문 입력·수집·이행근거와 revision 동기화 |
+| `cloud-sync` | `code.gs` | 운영 Server Transport | 현행 master·이력·설정·DataOps·Shipping·ORDER Q API |
 
 ---
 
-## 5. Runtime relationships
+## 5. 현재 Runtime 계약과 목표 경계
 
-### 5.1 Navigation
+### 5.1 현재 Navigation과 NEXUS 공통 UI
 
 MerchOps links to SmartParser, export center, settings, and history viewer using relative application URLs.
 
@@ -116,9 +165,13 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-### 5.2 Shared browser state
+현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·현재 앱 표시·테마만 제공한다. 공통 UI는 실행 중 manifest, Gateway 또는 업무 저장소를 조회하지 않으며, 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다. 향후 NEXUS 기능도 이 정적·비통제 경계를 기본으로 유지한다.
+
+### 5.2 현재 레거시 공유 브라우저 상태
 
 The current applications share the browser database `MerchOpsDB` and a set of `localStorage` keys.
+
+이 목록은 현재 호환성·마이그레이션 기준선이지 목표 공유 Repository가 아니다. 신규 앱과 신규 기능은 목록의 원시 저장소에 새 직접 쓰기를 추가하지 않는다. 기존 직접 writer를 제거하거나 소유권을 바꿀 때는 소유 앱 Adapter, 소비자 전환, 데이터 이전과 독립 롤백을 먼저 구현한다.
 
 Important contracts include:
 
@@ -161,7 +214,7 @@ It must:
 6. include a rollback plan;
 7. confirm production behavior after deployment.
 
-### 5.3 Cloud synchronization
+### 5.3 현재 Server Transport 계약
 
 `code.gs` exposes the following current API actions:
 
@@ -204,7 +257,9 @@ Changing any action name, payload shape, response shape, authentication rule, or
 - backup and restore validation;
 - rollback procedures.
 
-### 5.4 Shared engine status
+서버 호출은 현재 API 계약을 보존하되 모든 화면의 공통 선행조건으로 사용하지 않는다. 읽기 실패는 `EMPTY`와 구분된 오류·지연 상태로 반환하며, 마지막 정상 로컬 Snapshot이 있으면 이를 유지한다. 쓰기·동기화·최종 확정은 서버 권한과 revision 검사를 유지한다.
+
+### 5.4 현재 Shared Engine과 목표 Runtime 경계
 
 `coreEngine.js` defines the intended ONEAPP shared modules:
 
@@ -232,7 +287,9 @@ Treat `coreEngine.js` as the intended shared contract, but do not remove duplica
 
 A shared-engine consolidation must not be performed as incidental refactoring during an unrelated feature or bug fix.
 
-### 5.5 Client-side safety baseline
+`coreEngine.js`의 현재 사용은 즉시 제거하지 않는다. 다만 목표 구조에서 공통 라이브러리는 순수 계산·검증·직렬화처럼 앱을 통제하지 않는 기능만 제공한다. 공통 Runtime이 앱 Repository를 열거나 초기화하고, 앱 준비 여부를 결정하고, 서버 상태를 이유로 전체 앱을 차단하는 기능은 추가하지 않는다.
+
+### 5.5 클라이언트 안전과 장애 격리 기준
 
 The master Excel workflow in `settings.html` uses the shared core engine and applies these controls before production data changes:
 
@@ -249,9 +306,43 @@ The master Excel workflow in `settings.html` uses the shared core engine and app
 
 Equivalent safety controls must be preserved when another application writes the same master or history contracts.
 
+추가 장애 격리 기준은 다음과 같다.
+
+- Adapter 응답이 늦거나 실패해도 앱 셸과 로컬 기본 기능은 먼저 사용 가능해야 한다.
+- 외부 데이터 상태는 `READY`, `EMPTY`, `STALE`, `ERROR` 등 서로 구분 가능한 상태로 다루며 오류를 0건으로 정규화하지 않는다.
+- 외부 최신 revision은 활성 작업본과 분리해 보관하고, 사용자 또는 승인된 앱 정책 없이 자동 적용하지 않는다.
+- 서버 최종 확정이 실패하면 로컬 작업본, 입력값과 재시도 근거를 보존한다.
+- 차단은 저장 대상 손상, 필수 식별자 충돌, revision 충돌 또는 원자성 보장 실패처럼 실제 무결성 위험이 있는 작업 범위에 한정한다.
+
+### 5.6 Read Adapter와 Integration Adapter 계약
+
+Read Adapter는 소유 Repository가 제공하는 읽기 전용 경계다.
+
+- Snapshot에는 `schemaVersion`, 소유 앱 ID, `revision` 또는 동등한 불변 식별자를 둔다.
+- 소비 앱은 Snapshot을 자기 작업본에 복사할 수 있지만 소유 Repository를 직접 수정하지 않는다.
+- 소비 앱의 캐시는 원본 권위가 아니며 소유 앱의 write 규칙을 우회하지 않는다.
+- Adapter가 제공하지 않는 필드를 원시 Store에서 임의로 읽어 계약을 확장하지 않는다.
+
+Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 경계다.
+
+- 입력·출력 schema, 실패 상태, 재시도, idempotency와 권한을 명시한다.
+- 대상 앱이 없거나 실패하면 관련 연동만 보류하고 호출 앱의 다른 작업을 유지한다.
+- 쓰기 요청은 소유 앱 또는 Server Transport가 다시 검증한다.
+- Adapter 내부 구현과 대상 저장소 위치는 소비 앱 계약이 아니다.
+
+### 5.7 활성 작업본 보호와 독립 배포
+
+- 전표·분석표·가공표를 열 때 사용한 상품·거래처 정보는 작업본 Snapshot으로 보존한다.
+- 마스터 최신화 알림은 기존 작업본을 자동 덮어쓰지 않는다. 새 작업 또는 관리자가 선택한 재적용 시점에만 반영한다.
+- 각 앱은 자기 정적 자산, Repository migration, Adapter와 Server Transport 변경 범위를 구분해 배포한다.
+- 공통 UI와 Adapter 변경은 소비 앱의 fallback 검증 없이 필수 의존성으로 전환하지 않는다.
+- 롤백은 해당 앱 배포와 Adapter 계약을 이전 호환 버전으로 되돌릴 수 있어야 하며, 다른 앱의 정상 데이터나 확정 기록을 삭제하지 않는다.
+
 ---
 
-## 6. Primary business flows
+## 6. 현재 운영 업무 흐름(전환 기준선)
+
+이 절은 현행 동작의 호환성과 회귀검증을 위한 기준선이다. 여기 기록된 직접 공유 저장소 쓰기는 목표 구조의 승인된 방식이 아니며, 별도 소유권 전환 작업 전까지 유지되는 현재 동작을 뜻한다.
 
 ### 6.1 External information to shopping-mall update
 
@@ -378,6 +469,9 @@ Equivalent safety controls must be preserved when another application writes the
 | Product field, canonical name, or Excel mapping | MerchOps, SmartParser, DataOps, export center, settings, history viewer |
 | Pricing or margin calculation | coreEngine, MerchOps, DataOps, SmartParser, export center |
 | Storage key or IndexedDB schema | Every listed consumer plus migration and rollback |
+| New cross-app direct Repository write | Not allowed; define the owner and Integration Adapter instead |
+| Read Adapter schema or Snapshot revision | Owning Repository, every consumer, stale/error fallback, active-work protection and rollback |
+| Integration Adapter command or response | Owning app, caller, authorization, failure isolation, idempotency and retry |
 | Cloud action or payload | code.gs and every listed consumer; Shipping plan actions additionally require Shipping failure-injection and token-isolation tests |
 | Navigation path or filename | Every HTML entry point and deployed route |
 | Information-change workflow | SmartParser direct master apply, existing history viewer, master refresh behavior, and cloud history backup |
@@ -390,10 +484,21 @@ Equivalent safety controls must be preserved when another application writes the
 | Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 | Shared approval or audit rule | Every writer and reader of the affected data and history contract |
 | Data deletion or migration | All consumers, backup, recovery, migration verification, and production acceptance |
+| Common Runtime or NEXUS UI dependency | Every consumer's independent boot, no-server fallback, load-time budget and app-local rollback |
 
 The table defines minimum impact review.
 
 A development-path classification may require a broader review, but must not reduce the minimum review required for a shared contract.
+
+모든 앱 변경은 최소한 다음 독립성 질문에 답해야 한다.
+
+1. 앱의 기본 기능은 무엇이며 외부 장애 중에도 남는가?
+2. 이 앱이 소유하는 데이터와 외부에서 읽는 데이터는 무엇인가?
+3. 다른 앱 저장소에 직접 쓰는 새 경로가 생기지 않았는가?
+4. Adapter와 서버 실패가 관련 없는 기능으로 확산되지 않는가?
+5. 오류·미확정을 정상 0건으로 표시하지 않는가?
+6. 열린 작업본이 외부 revision으로 자동 변경되지 않는가?
+7. 앱 단독 배포·검증·롤백 증거가 있는가?
 
 ---
 
@@ -460,321 +565,71 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 
 ---
 
-## 9. Development, validation, release, and recovery
+## 9. 아키텍처 검증과 manifest 전환
 
-### 9.1 Development-path classification
+개발 분류, 역할, Git, 검증 판정, 병합·배포와 보고 절차는 `AGENTS.md`만 단일 원본으로 사용한다. 이 절은 앱 독립성에 필요한 아키텍처 증거만 정의한다.
 
-Every development task is classified before implementation as one of:
+### 9.1 앱 개발명세 필수 경계
 
-1. Fast-track change
-2. Standard development
-3. Critical development
+모든 앱 개발명세는 다음을 명시한다.
 
-Classification is based on:
+- 앱의 기본 기능
+- 앱이 소유하는 데이터와 Repository
+- 외부에서 읽어오는 데이터와 Snapshot 계약
+- 외부 장애 시 유지되는 기능
+- 서버가 반드시 필요한 작업
+- Read Adapter와 Integration Adapter
+- 활성 작업본 보호 방식
+- 독립 실행·배포·롤백 검증 방법
+- 현재 상태와 목표 상태
 
-- operational impact;
-- number of affected applications;
-- shared-contract impact;
-- data-write impact;
-- rollback difficulty;
-- validation requirements;
-- production risk.
+### 9.2 독립 실행 완료조건
 
-Code size alone does not determine the classification.
+앱 구현 또는 구조 변경은 관련 범위에서 다음을 검증한다.
 
-The planning owner records the selected path and its reason before development starts.
+1. 다른 앱이 로드되지 않아도 기본 화면과 로컬 기능이 실행된다.
+2. NEXUS 공통 UI 또는 공통 Runtime 로드 실패가 앱 Core를 차단하지 않는다.
+3. Server Transport 실패가 정상 0건으로 표시되지 않고 마지막 정상 상태와 오류가 구분된다.
+4. Read/Integration Adapter 실패는 관계된 기능에만 표시되고 다른 작업은 유지된다.
+5. 다른 앱의 원시 IndexedDB·Object Store·localStorage에 직접 쓰지 않는다.
+6. 외부 revision 변경이 열린 전표·활성 작업본을 자동 덮어쓰지 않는다.
+7. 서버 필수 작업만 해당 경계에서 권한·revision·원자성을 검사한다.
+8. 앱 변경만 독립적으로 배포하고 되돌릴 수 있다.
+9. 계획·파일럿·운영 상태가 실제 소스·검증·배포와 일치한다.
 
-If implementation reveals a wider impact or greater risk, the path must be raised to standard or critical development.
+### 9.3 `app-manifest.json` 단계적 확장
 
-A task must not remain fast-track merely because it began as a small request.
+이번 문서 PR에서는 `app-manifest.json` v1.3.0과 기존 운영 계약을 변경하지 않는다. 현재 JSON 구조와 validator는 애플리케이션 객체의 추가 필드를 허용하므로, 앱이 실제 구축·검증될 때 다음 필드를 단계적으로 등록할 수 있다.
 
-### 9.2 Fast-track change
-
-A fast-track change must satisfy all of the following:
-
-- It does not change a storage schema.
-- It does not rename or change a shared contract.
-- It does not delete, migrate, or transform existing production data.
-- It does not change shared Core behavior.
-- It does not change multiple applications' business behavior.
-- It does not affect authorization, approval, audit, payment, or settlement.
-- It can be validated through existing automated checks and a representative operational check.
-- It can be easily reverted.
-- Its change scope is limited to one application and one clearly bounded function or display area.
-
-Typical examples include:
-
-- wording or help-text changes;
-- display-order changes;
-- removal of an unnecessary output column;
-- limited display-condition fixes;
-- a narrow bug that incorrectly classifies a valid file as an error;
-- a presentation-only correction that does not alter stored data.
-
-Fast-track process:
-
-1. Confirm the approved requirement.
-2. Confirm the latest production source.
-3. Apply the minimal change.
-4. Run affected automated checks.
-5. Run one representative operational check.
-6. Commit and push.
-7. Use a PR or approved direct path according to repository rules.
-8. Merge and deploy.
-9. Verify the deployed application.
-10. Report the result to the planning owner.
-
-Separate PM review may be omitted.
-
-The planning owner's fast-track classification and development instruction count as pre-approval for the defined fast-track process.
-
-A developer must stop and request reclassification when:
-
-- the affected scope becomes larger;
-- a shared module must change;
-- unexpected data impact appears;
-- existing tests are insufficient;
-- another application's business behavior may change;
-- rollback is no longer simple.
-
-### 9.3 Standard development
-
-Standard development includes:
-
-- business-rule changes;
-- file parsing or input-classification changes;
-- multi-function changes;
-- multi-file changes;
-- meaningful regression risk;
-- new validation rules;
-- processing-flow changes that retain the existing data structure;
-- changes requiring review of an associated application.
-
-Standard development process:
-
-1. Confirm the approved requirement.
-2. Start from the latest `main`.
-3. Create or use one focused work branch.
-4. Change only files inside the declared impact scope.
-5. Validate:
-   - syntax;
-   - application load;
-   - affected business logic;
-   - representative operational data;
-   - relevant regression tests.
-6. Commit and push.
-7. Open or update one PR.
-8. Perform one PM review.
-9. If required, apply one grouped development correction.
-10. Perform one PM re-review.
-11. Confirm merge conditions.
-12. Merge.
-13. Confirm automatic deployment.
-14. Verify the deployed application.
-15. Report the final result to the planning owner.
-
-PM review for standard development is limited to:
-
-- agreement with the approved requirement;
-- affected logic and files;
-- CI results;
-- representative operational validation;
-- major regression risk;
-- major data omission, duplication, or save risk.
-
-Standard development must not be expanded into a full critical-development review without a newly identified critical risk.
-
-Minor recommendations that do not block the approved requirement must be recorded as separate follow-up work rather than expanding the current task.
-
-### 9.4 Critical development
-
-Critical development includes any of the following:
-
-- storage schema change;
-- shared-contract change;
-- data deletion;
-- data migration;
-- Master or shared storage-engine change;
-- changes affecting multiple applications;
-- authorization changes;
-- approval-flow changes;
-- audit-history changes;
-- concurrency or conflict control;
-- atomic writes;
-- rollback or recovery changes;
-- large-volume data processing;
-- production outage risk;
-- production data-loss risk;
-- difficult or uncertain recovery.
-
-Critical development process:
-
-1. Confirm operational requirements with the administrator.
-2. Define:
-   - current problem;
-   - target behavior;
-   - unchanged behavior;
-   - exception rules;
-   - rollback method;
-   - production acceptance conditions.
-3. Start from the latest `main`.
-4. Create a focused work branch.
-5. Apply only the approved scope.
-6. Validate with:
-   - syntax checks;
-   - targeted automated checks;
-   - cross-application regression checks;
-   - safe copied data;
-   - failure and rollback scenarios;
-   - large-volume tests where applicable.
-7. Commit and push.
-8. Open or update one Draft PR.
-9. Perform detailed PM review.
-10. Apply one grouped development correction where required.
-11. Perform one PM re-review.
-12. Confirm every required merge condition.
-13. Merge.
-14. Confirm automatic deployment.
-15. Verify production behavior.
-16. Confirm data, history, backup, and recovery results where applicable.
-17. Report the final result to the planning owner.
-
-Production source data must not be used for destructive validation.
-
-Use:
-
-- a safe copy;
-- a separate browser profile;
-- a test environment;
-- a controlled pilot dataset;
-
-as appropriate.
-
-Critical development must not be merged while a material validation item remains unknown.
-
-An unknown item must be reported as `not validated`, not assumed to be safe.
-
-### 9.5 PM validation outcome
-
-PM validation must end with one of:
-
-- Merge recommended
-- Conditional merge recommended
-- Merge blocked
-
-#### Merge recommended
-
-Required validation is complete and no blocking issue remains.
-
-#### Conditional merge recommended
-
-Code-level validation is acceptable, but explicit pre-merge or operational conditions remain.
-
-Every condition must be listed.
-
-#### Merge blocked
-
-A blocking defect, unacceptable risk, missing critical evidence, or unresolved shared-contract impact remains.
-
-### 9.6 Review and correction limit
-
-The standard collaboration limit is:
-
-1. PM first review
-2. One grouped developer correction
-3. One PM re-review
-4. Final PM decision
-
-Problems must be grouped and delivered together.
-
-They must not be sent one at a time in a repeating development-review loop.
-
-Additional validation may be allowed only for:
-
-- data-loss risk;
-- payment or settlement;
-- authentication or authorization;
-- security;
-- production outage;
-- irreversible recovery risk.
-
-### 9.7 Final reporting ownership
-
-Developers report the following to the planning owner:
-
-- implementation result;
-- changed files;
-- test result;
-- PR status;
-- merge and deployment status;
-- deployed operational result;
-- unresolved technical limits.
-
-PM reports the following to the planning owner:
-
-- validation scope;
-- confirmed findings;
-- remaining risks;
-- items not independently validated;
-- merge recommendation;
-- pre-merge conditions;
-- post-deployment checks.
-
-The planning owner provides the final user-facing report after:
-
-- development;
-- required PM validation;
-- merge;
-- deployment;
-- production verification;
-
-are complete.
-
-Developers and PM reviewers must not represent their own step as final completion of the entire collaboration process.
-
-### 9.8 Release terminology
-
-Development status uses the following stages:
-
-| Stage | Reporting term | Completion condition |
+| 필드 | 의미 | 등록 시점 |
 |---|---|---|
-| 1 | Code creation and review | Code drafted and impact scope reviewed |
-| 2 | Code application and testing | Project files updated and local tests passed |
-| 3 | PR registration and review | Commit, push, and PR registration completed; review in progress |
-| 4 | PR merge and deployment | PR merged and automatic deployment completed |
-| 5 | Production operation confirmed and complete | Production verification passed |
+| `coreCapabilities` | 서버·외부 앱 없이 제공하는 기본 기능 | 앱 기본 기능 구현·단독 검증 시 |
+| `ownedContracts` | 앱이 쓰기 권위를 갖는 데이터 계약 | 소유권 이전·migration·rollback 검증 완료 시 |
+| `consumedContracts` | Read/Integration Adapter로 소비하는 외부 계약 | 소비자 전환과 fallback 검증 시 |
+| `dependencyMode` | 기능별 `LOCAL_OPERATION`, `BACKGROUND_SYNC`, `SERVER_FINALIZE` 구분 | 외부 의존 경계 구현 시 |
+| `offlinePolicy` | 외부 장애 시 유지 기능, 마지막 정상 상태와 재시도 정책 | 장애 격리 검증 시 |
 
-Terminology rules:
+- 기존 `sharedContracts`, status와 productionWrites 의미를 임의로 바꾸지 않는다.
+- 새 필드를 manifest 필수값으로 전환할 때는 schemaVersion, validator, 모든 기존 앱과 문서를 함께 갱신한다.
+- 목표 owner를 먼저 기록하거나 미구축 앱을 운영 의존성으로 등록하지 않는다.
+- CustomerMaster와 SmartInput은 실제 엔트리·Repository·Adapter·검증이 생기기 전까지 운영 애플리케이션 목록에 추가하지 않는다.
+- ItemMaster의 `product-master` owner 전환은 기존 writer를 Adapter로 전환하고 migration·rollback을 검증한 별도 PR에서만 수행한다.
 
-- `Applied` means stage 2 only.
-- `PR registered` means stage 3.
-- `Deployment complete` means stage 4.
-- `Final complete` is used only after stage 5.
-- `Updated` must be accompanied by the current stage.
-- CI success alone is not production completion.
+### 9.4 독립 롤백 원칙
 
-### 9.9 Recovery
-
-- Use a stable Git tag for a verified production point.
-- Use GitHub Revert on the breaking PR or create a rollback PR from the verified commit.
-- Do not depend on stale `_test` copies for restoration.
-- Preserve required operational data before migrations or high-risk writes.
-- Verify restoration by reading back expected counts and structures.
-- If an emergency alternate URL is required, keep one explicitly named preview or stable page with:
-  - an owner;
-  - a purpose;
-  - a verification date.
-- An alternate URL is a validation entry point, not the source of truth.
-- A failed deployment must not be reported as successful merely because the merge completed.
-- Recovery completion requires the affected operational workflow to be checked again.
+- 앱 소스 롤백은 다른 앱의 Repository와 확정 데이터를 삭제하지 않는다.
+- Adapter 롤백은 직전 호환 schema와 읽기 경로를 유지한다.
+- Server Transport 롤백은 이미 확정된 revision·감사·원장 기록을 제거하지 않는다.
+- 공통 UI 롤백은 업무 앱의 저장소 migration을 요구하지 않아야 한다.
+- 데이터 소유권 이전은 이전 전 Snapshot, 양방향 검증 또는 명시된 cutover, 소비자 전환과 역이전 계획을 포함한다.
 
 ---
 
-## 10. Governance
+## 10. 문서 거버넌스
 
 - `app-manifest.json` is the machine-readable application inventory.
-- This document defines architectural intent, shared contracts, impact rules, and release policy.
-- `AGENTS.md` defines shared working rules for Codex and AI development tools.
+- This document defines architectural intent, current and target boundaries, shared contracts, ownership, dependency isolation, and impact rules.
+- `AGENTS.md` defines shared working, validation, Git, approval, release, and reporting rules for Codex and AI development tools.
 - Application-specific project instructions define role-specific behavior.
 - A PR that adds, renames, promotes, deprecates, or removes an application must update:
   - `app-manifest.json`;
@@ -787,10 +642,12 @@ Terminology rules:
 - A difference between documentation and actual code must be reported before either is assumed correct.
 - Architecture and manifest changes require explicit review.
 - These documents must not be rewritten incidentally during unrelated feature work.
+- 목표 구조와 현재 상태가 다르면 이 문서는 둘을 명시적으로 구분하고 `app-manifest.json`은 현재 검증된 상태만 기록한다.
+- `roles/PM.md`와 `roles/DEVELOPER.md`는 역할 경계 문서이므로 상위 규칙과 실제 충돌이 확인될 때만 변경한다.
 
 ---
 
-## 11. Development roadmap
+## 11. 현재 계약과 앱 독립성 전환 로드맵
 
 Roadmap work is delivered as separate pull requests and verified after each merge.
 
@@ -890,40 +747,36 @@ Their business meaning must not be unified merely because the key number is the 
 
 - Pin or self-host critical browser dependencies.
 - Introduce content-security controls.
-- Consolidate compatible shared logic through `coreEngine.js`.
+- Consolidate only proven-compatible, non-controlling calculation·validation·serialization utilities through `coreEngine.js`; do not centralize app boot or Repository ownership.
 - Do not remove local implementations until equivalence is proven.
 - Add consumer-contract tests before shared-logic replacement.
 - Separate shared-engine hardening from unrelated operational fixes.
 
-### 11.7 Collaboration-path verification
+### 11.7 앱 독립성 전환 순서
 
-The three development paths must themselves be periodically reviewed.
+목표 구조는 한 번에 전체 저장소를 갈아엎는 작업으로 수행하지 않는다. 다음 단계는 각각 별도 명세·PR·검증·롤백을 갖는다.
 
-#### Fast-track verification
+1. **현재 접근 목록 고정**
+   - 앱별 기본 기능, 현재 reader/writer, IndexedDB·localStorage·server 계약을 기록한다.
+   - 신규 직접 writer를 금지하고 현재 writer는 호환성 기준선으로 보존한다.
+2. **Read Adapter 도입**
+   - 먼저 읽기 소비자를 revision Snapshot 계약으로 전환한다.
+   - Adapter 실패·stale·empty·error와 로컬 fallback을 검증한다.
+3. **ItemMaster 소유권 전환**
+   - ItemMaster Repository와 쓰기 Adapter를 검증한다.
+   - MerchOps, SmartParser, DataOps, Export Center, Settings와 Master의 기존 쓰기를 소비자별로 전환한다.
+   - 마지막 writer 전환·데이터 검증·롤백 완료 후에만 manifest의 `product-master` owner를 바꾼다.
+4. **CustomerMaster 구축**
+   - 앱 엔트리, Repository, customer Snapshot, 쓰기 Adapter와 동기화 경계를 구현한다.
+   - 파일럿 검증 전에는 SmartInput·ORDER Q의 필수 운영 의존성으로 등록하지 않는다.
+5. **SmartInput 구축**
+   - 전표 작성 작업본과 양식을 자체 Repository가 소유한다.
+   - 상품·거래처는 Snapshot으로 복사하고 열린 전표를 최신 master로 자동 덮어쓰지 않는다.
+   - ORDER Q 전달 실패가 작성·로컬 저장을 손상시키지 않도록 격리한다.
+6. **NEXUS 공통 UI 유지**
+   - 정적 앱 이동·테마·공통 상태만 제공한다.
+   - 인증·공유가 필요해도 앱 Core의 준비 완료를 NEXUS Runtime이 결정하지 않는다.
+7. **상태 승격**
+   - 단독 실행, 장애 격리, 데이터 무결성, 운영 배포와 독립 롤백이 확인된 앱만 계획에서 파일럿, 파일럿에서 운영으로 승격한다.
 
-Confirm that fast-track work:
-
-- remains limited in scope;
-- does not bypass shared-contract review;
-- completes automated and representative operational checks;
-- reaches production verification without unnecessary PM delay.
-
-#### Standard-development verification
-
-Confirm that standard PM review:
-
-- remains focused;
-- does not expand into critical review without cause;
-- provides grouped feedback;
-- completes at most one correction and one re-review by default.
-
-#### Critical-development verification
-
-Confirm that critical development:
-
-- includes copied-data validation;
-- includes rollback evidence;
-- identifies unresolved production risks;
-- does not merge on assumptions.
-
-After the production MerchOps and DataOps workflows are stable, planned applications may be reviewed individually for promotion to Pilot status.
+이 문서 개정 자체는 위 구현, 소유권 이전, 신규 앱 등록 또는 운영 상태 승격을 수행하지 않는다.
