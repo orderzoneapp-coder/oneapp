@@ -51,11 +51,6 @@ const MODE_CONFIG = Object.freeze({
 
 const text = value => String(value ?? '').normalize('NFKC').trim();
 const keyText = value => text(value).toLowerCase().replace(/\s+/g, '');
-const normalizeUnit = value => {
-  const source = text(value);
-  if (/^(?:box|ea)$/i.test(source)) return source.toUpperCase();
-  return source;
-};
 const numberOrNull = value => {
   if (value === '' || value === null || value === undefined) return null;
   const parsed = Number(String(value).replace(/[,\s원₩]/g, ''));
@@ -139,18 +134,12 @@ export function normalizeStage1Row(row = {}, context = {}) {
     : numberOrNull(row.quantity);
   const quantity = numberOrNull(row.quantity ?? row.finalQuantity ?? rawQuantity);
   const rawUnit = text(row.rawUnit ?? row.unit);
-  const unitSource = text(row.unit ?? row.finalUnit ?? rawUnit);
-  const unit = normalizeUnit(unitSource);
-  const requestedBaseUnit = normalizeUnit(row.baseUnit);
+  const unit = text(row.unit ?? row.finalUnit ?? rawUnit);
+  const requestedBaseUnit = text(row.baseUnit);
   const factor = numberOrNull(row.unitConversionFactor);
   const sameUnit = !requestedBaseUnit || !unit || keyText(requestedBaseUnit) === keyText(unit);
   const resolvedFactor = factor ?? (sameUnit ? 1 : null);
   const baseQuantity = quantity === null || resolvedFactor === null ? null : quantity * resolvedFactor;
-  const warnings = Array.isArray(row.warnings) ? [...row.warnings] : [];
-  if (rawUnit && unit && rawUnit !== unit && keyText(rawUnit) === keyText(unit)
-    && !warnings.some(warning => warning?.code === 'UNIT_CASE_NORMALIZED')) {
-    warnings.push({ code: 'UNIT_CASE_NORMALIZED', from: rawUnit, to: unit, message: `${rawUnit} 단위를 ${unit}로 정리했습니다.` });
-  }
   return {
     ...row,
     rowCustomerCode: text(row.rowCustomerCode),
@@ -188,8 +177,7 @@ export function normalizeStage1Row(row = {}, context = {}) {
     baseUnit: requestedBaseUnit || unit,
     unitConversionFactor: resolvedFactor,
     unitConversionSource: text(row.unitConversionSource) || (resolvedFactor === 1 ? 'SAME_UNIT' : (resolvedFactor === null ? 'UNRESOLVED' : 'ROW_RULE')),
-    unitConversionStatus: resolvedFactor === null ? 'REVIEW_REQUIRED' : 'CONFIRMED',
-    warnings
+    unitConversionStatus: resolvedFactor === null ? 'REVIEW_REQUIRED' : 'CONFIRMED'
   };
 }
 
@@ -273,13 +261,6 @@ function sourcePartition(row) {
 
 export function buildVoucherGroupKey(mode, row, header = {}) {
   const role = groupRoleSnapshot(mode, row, header);
-  if (mode === 'order') {
-    const customerIdentity = role.deliveryCustomerId || role.deliveryCustomerCode || role.deliveryCustomerName
-      || row.rowCustomerId || row.rowCustomerCode || row.rowCustomerName || header.customerId || header.customerCode || header.customerName;
-    const orderDate = rowValue(row, 'rowVoucherDate', header.voucherDate || header.orderDate || header.deliveryDate);
-    const warehouse = rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName);
-    return `ORDER|${[customerIdentity, orderDate, warehouse].map(part => encodeURIComponent(keyText(part))).join('|')}`;
-  }
   const parts = [
     text(row.sourceBatchId || row.batchId || header.sourceBatchId),
     sourcePartition(row),
@@ -299,13 +280,15 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
     const voucherGroupKey = buildVoucherGroupKey(mode, row, header);
     if (!groups.has(voucherGroupKey)) {
       const role = groupRoleSnapshot(mode, row, header);
-      const idempotencyParts = mode === 'order'
-        ? ['SMART_INPUT_ORDER_V1', voucherGroupKey]
-        : [mode, row.sourceBatchId, voucherGroupKey, row.sourceFingerprint];
+      const idempotencyParts = [
+        mode,
+        row.sourceBatchId,
+        voucherGroupKey,
+        row.sourceFingerprint
+      ];
       groups.set(voucherGroupKey, {
         voucherGroupKey,
-        businessKey: mode === 'order' ? voucherGroupKey : '',
-        idempotencyKey: `${mode === 'order' ? '' : 'SMART_INPUT_STAGE1:'}${idempotencyParts.map(part => encodeURIComponent(text(part))).join('|')}`,
+        idempotencyKey: `SMART_INPUT_STAGE1:${idempotencyParts.map(part => encodeURIComponent(text(part))).join('|')}`,
         voucherType: mode,
         ...role,
         voucherDate: rowValue(row, 'rowVoucherDate', header.voucherDate || header.orderDate),
@@ -321,14 +304,12 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
         manualSplitKey: text(row.manualSplitKey),
         validationStatus: 'READY',
         validationErrors: [],
-        sourceHashes: [],
         rows: []
       });
     }
     const group = groups.get(voucherGroupKey);
     if (row.quantity === null) group.validationErrors.push(`${row.sourceRowNo || index + 1}행 수량 공란`);
     if (row.unitConversionStatus === 'REVIEW_REQUIRED') group.validationErrors.push(`${row.sourceRowNo || index + 1}행 단위 환산 확인 필요`);
-    if (row.sourceFingerprint && !group.sourceHashes.includes(row.sourceFingerprint)) group.sourceHashes.push(row.sourceFingerprint);
     group.rows.push({ ...row, voucherGroupKey });
   });
   return [...groups.values()].map(group => ({
@@ -388,7 +369,6 @@ export function buildMinimumUploadMatrix(mode = 'order') {
 }
 
 export function buildOrderGroupPayload(group, common = {}) {
-  const sourceHash = group.sourceHashes?.length === 1 ? group.sourceHashes[0] : text(common.sourceId || group.sourceBatchId);
   return {
     ...common,
     customerId: group.deliveryCustomerId || common.customerId || '',
@@ -400,8 +380,7 @@ export function buildOrderGroupPayload(group, common = {}) {
     warehouseName: group.warehouseCode || common.warehouseName || '',
     transactionType: group.transactionType || common.transactionType || '',
     sourceDocumentKey: group.idempotencyKey,
-    sourceMessageKey: group.idempotencyKey,
-    sourceId: sourceHash,
+    sourceId: group.sourceBatchId,
     items: group.rows.map((row, index) => ({
       ...row,
       lineNo: index + 1,
