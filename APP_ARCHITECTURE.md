@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.1
+- Architecture document version: 2.1.2
 - Last reviewed: 2026-08-29
-- Current-source baseline: `135f6eaf90e9badeb8f2633a1c3d54ae0d2c1598`
+- Current-source baseline: `fc20b24bb70abec5c3243edcb2ee07c6728c8f13`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -57,7 +57,8 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
 - `CustomerMaster/partner_db.html` 운영 엔트리는 현재 기준선에 없다. SmartInput은 `smartinput/index.html` 파일럿으로 등록되어 전표 작업본과 기존 로컬 저장 계약을 소유하지만, 상품·거래처·ORDER Q 원장의 소유권은 이전받지 않는다. `orderops/input.html`은 계속 ORDER Q의 보조 입력 화면이다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
-- NEXUS 포털·인증 Runtime은 롤백된 상태다. 현재 NEXUS 운영 범위는 정적 공통 UI 자산, 앱 이동과 테마이며 업무 Gateway나 업무 저장소를 통제하지 않는다.
+- NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별과 로그인·로그아웃 기록만 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다.
+- 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
 - `coreEngine.js`는 여러 앱이 사용하는 현행 공유 라이브러리지만, 앱 Core를 부팅시키거나 전체 앱 준비 상태를 결정하는 상위 Runtime으로 확대하지 않는다.
 - GitHub Pages는 현재 저장소 단위로 배포된다. 앱 독립 배포 목표는 우선 앱별 변경·검증·PR·롤백 범위를 분리하는 것이며, 물리적 배포 단위 분리는 별도 호스팅 변경이 승인될 때만 수행한다.
 
@@ -109,7 +110,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 | 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
-| NEXUS 공통 UI | 운영 | 정적 헤더·앱 이동·일반/다크 테마. 포털·인증 Runtime은 롤백 상태 | 앱 연결과 공통 UI만 담당 |
+| NEXUS 홈·공통 UI | 운영 | 기본 로그인·로그아웃과 앱 홈, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 앱 차단·업무 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
 | Master (`Master.html`) | 파일럿·유지 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장계약을 사용 | 현재 공식 주소·앱 ID·구현을 유지 |
 | ItemMaster (`ItemMaster.html`) | 파일럿·미등록 | manifest·공통 메뉴와 분리된 격리 DB에서 독립 기능을 검증 | 현재 독립 파일럿을 유지하며 통합·승계·운영 전환은 별도 사용자 결정 전 미확정 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
@@ -138,6 +139,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
+| `nexus-home` | `nexus/index.html` | 운영 | 기본 로그인·로그아웃 기록, 사용자 식별과 독립 업무 앱 이동 |
 | `merchops` | `MerchOps.html` | 운영 | 상품정보 가공·가격·프로모션과 현재 product-master 계약 |
 | `dataops` | `DataOps.html` | 운영 | 매입·매출·재고·원가·성과 분석 |
 | `smart-parser` | `SmartParser.html` | 운영 | 외부 문서 해석, 공급자 제외, 현재 상품정보·중지상태 반영 |
@@ -185,7 +187,9 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·현재 앱 표시·테마만 제공한다. 공통 UI는 실행 중 manifest, Gateway 또는 업무 저장소를 조회하지 않으며, 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다. 향후 NEXUS 기능도 이 정적·비통제 경계를 기본으로 유지한다.
+현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마만 제공한다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않으며, 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
+
+`nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시하고, 업무 앱 이동에는 권한별 필터나 서버 재검사를 적용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
 
 ### 5.2 현재 레거시 공유 브라우저 상태
 
