@@ -5303,14 +5303,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 safeStr(item2Orig._manualSubstitutionPartnerKey) === safeStr(item1Orig.batchKey);
             if (alreadyLinkedPair)
                 return prev;
-            let sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            let targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            // V1.a22.12: 스페이스바 치환은 선택 순서가 아니라 source/target 역할 판정 기준으로 처리한다.
-            // source = 실제 출고/원가출처 Lot, target = 거래처 판매상품/부족·마이너스 보정 대상.
-            const getManualFinalQty = (item = {}) => {
-                try { return STOCK_ENGINE_MODULE.getActualQty(item); }
-                catch (e) { return safeNum(item.실사 !== '' && item.실사 !== null && item.실사 !== undefined ? item.실사 : item.전산잔량); }
-            };
+            // 관리자 수기치환 방향은 첫 번째 선택 → 두 번째 선택으로 고정한다.
+            const sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            const targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
             const normalizeManualCode = (val) => safeStr(val, '').replace(/\.0$/, '').trim();
             // V1.a22.79: BOX 원물과 EA/소분을 스페이스로 연결할 때는 재고 부호가 아니라
             // MerchOps 마스터의 원물-소분 관계를 최우선으로 사용한다.
@@ -5347,24 +5342,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (bUnit === 'BOX' && (aUnit === '소분' || aIsSub)) return makePair(b, a, bInfo, aInfo, 'UNIT_FALLBACK');
                 return null;
             };
-            const scoreManualSource = (item = {}) => {
-                const finalQty = getManualFinalQty(item);
-                const systemQty = safeNum(item.전산잔량);
-                let score = 0;
-                if (finalQty > 0) score += 8;
-                if (systemQty > 0) score += 5;
-                if (safeNum(item.단가) > 0) score += 4;
-                if (safeNum(item.기초) + safeNum(item.입고) + safeNum(item.대체입고) > 0) score += 2;
-                return score;
-            };
-            const scoreManualTarget = (item = {}) => {
-                let score = 0;
-                if (safeNum(item.로스) < 0) score += 10;
-                if (safeNum(item.전산잔량) < 0) score += 8;
-                if (safeNum(item.출고) > 0) score += 3;
-                if ((item.이슈 || []).some(msg => safeStr(msg).includes('수량부족') || safeStr(msg).includes('잔량') || safeStr(msg).includes('소분오차'))) score += 3;
-                return score;
-            };
             const rawSubPair = resolveManualRawSubPair(item1Orig, item2Orig);
             // V1.a22.88: 대체판매에서는 마스터 원물/소분 관계가 판매전표와 실제출고 역할을 뒤집을 수 있다.
             // 단가가 있는 행과 단가 0 판매행이 연결되면, 단가 보유 행을 원가출처로 먼저 고정한다.
@@ -5384,65 +5361,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const purchase = safeNum(item.구매가 || item._purchasePrice || item._stockPurchasePrice);
                 return purchase > 0 ? purchase : 0;
             };
-            const hasManualPriceIssue = (item = {}) => (item.이슈 || []).some(msg => /단가없음|단가확인|매입내역 없음/.test(safeStr(msg)));
-            const isClearManualSalesTarget = (item = {}) => safeNum(item.단가) <= 0 && (
-                safeNum(item.출고) > 0 || safeNum(item.전산잔량) < 0 || hasManualPriceIssue(item)
-            );
-            const item1Cost = getManualOperationalCost(item1Orig);
-            const item2Cost = getManualOperationalCost(item2Orig);
-            const item1SalesTarget = isClearManualSalesTarget(item1Orig);
-            const item2SalesTarget = isClearManualSalesTarget(item2Orig);
-            if (item1SalesTarget && item2Cost > 0) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            }
-            else if (item2SalesTarget && item1Cost > 0) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (item1Cost > 0 && item2Cost <= 0) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (item2Cost > 0 && item1Cost <= 0) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            }
-            else if (rawSubPair) {
-                // 판매전표 역할이 명확하지 않을 때만 마스터 원물/소분 관계를 사용한다.
-                sourceItem = { ...rawSubPair.rawItem, 이슈: [...(rawSubPair.rawItem.이슈 || [])] };
-                targetItem = { ...rawSubPair.subItem, 이슈: [...(rawSubPair.subItem.이슈 || [])] };
-            }
-            else {
-                const item1SourceScore = scoreManualSource(item1Orig);
-                const item2SourceScore = scoreManualSource(item2Orig);
-                const item1TargetScore = scoreManualTarget(item1Orig);
-                const item2TargetScore = scoreManualTarget(item2Orig);
-                if (item1SourceScore > item2SourceScore && item2TargetScore >= item1TargetScore) {
-                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                }
-                else if (item2SourceScore > item1SourceScore && item1TargetScore >= item2TargetScore) {
-                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                }
-                else if (safeNum(item1Orig.로스) >= 0 && safeNum(item2Orig.로스) < 0) {
-                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                }
-                else if (safeNum(item2Orig.로스) >= 0 && safeNum(item1Orig.로스) < 0) {
-                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                }
-                else {
-                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                }
-            }
-            // 관리자 선택 방향은 첫 번째 선택 → 두 번째 선택으로 고정한다.
-            // 위의 과거 역할 추정 결과는 원가 방향 판단에만 참고하고 치환 방향을 바꾸지 않는다.
-            sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
             // 치환 방향과 원가 생성 방향을 분리한다. 마스터 원물/소분 관계가 있으면
             // 선택 순서와 무관하게 원물 원가를 보호하고 소분행에만 환산원가를 생성한다.
             const resolveManualCostDirection = () => {
@@ -5685,7 +5603,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             // V1.a22.12: 수기치환 확정 후 자동 후보 목록이 재계산될 때 해당 품목은 후보에서 빠진다.
             return newData;
         });
-    }, [setAlertMsg]);
+    }, []);
     const executeMasterSubstitutionCandidates = useCallback(() => {
         const executablePreviewRows = DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildExecutableRows({ productData, targetDateStr });
         if (executablePreviewRows.length === 0) {
