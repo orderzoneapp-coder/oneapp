@@ -17,6 +17,9 @@ const officialApps = [
 
 assert.match(homeHtml, /id="activationForm"[^>]+hidden/, 'first activation form must be opt-in');
 assert.match(homeHtml, /id="adminLink"[^>]+href="\/nexus\/admin\/"[^>]+hidden/, 'admin entry must be hidden until OWNER_MASTER is known');
+assert.match(homeHtml, /<footer class="nexus-footer">원앱 \| NEXUS 사내 업무 시스템<\/footer>/, 'fixed ownership Footer must be visible before and after login');
+assert.doesNotMatch(homeHtml, /nexus-company-card|companyStatus|companyName|companySummary|companyAddress|companyNotice|companyEditLink|READY|ERROR/, 'company-card status DOM must not remain on home');
+assert.doesNotMatch(homeRuntime, /company-transport|callCompanyGateway|company\.profile_read|refreshCompany|COMPANY_SNAPSHOT|revision/i, 'home startup must not call or depend on the company service');
 assert.match(homeRuntime, /crypto\.getRandomValues/, 'activation must create a fresh client salt');
 assert.match(homeRuntime, /name: 'PBKDF2'/, 'activation and login must preserve PBKDF2');
 assert.match(homeRuntime, /iterations[^\n]+310000|310000/, 'PBKDF2 iteration strength must not be reduced');

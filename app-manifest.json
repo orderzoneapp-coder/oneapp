@@ -20,7 +20,7 @@
       "path": "nexus/index.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Identify the master or delegated user, show the revision-checked company Snapshot, record login and logout through the deployed authentication service, and launch independent work apps without gating their local execution.",
+      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, show the fixed ONEAPP ownership Footer, and launch independent work apps without gating their local execution or depending on the company service.",
       "productionWrites": true,
       "navigatesTo": [
         "master-lookup",
@@ -35,8 +35,7 @@
         "item-manager",
         "history-viewer",
         "orderq-vnext",
-        "nexus-admin",
-        "nexus-company"
+        "nexus-admin"
       ],
       "coreCapabilities": [
         "basic login and logout",
@@ -44,23 +43,21 @@
         "master or delegated-user identification",
         "per-user home-card and global-tab visibility projection without access gating",
         "independent work-app launcher",
-        "authenticated company profile read with public-field projection and background revision verification"
+        "fixed ownership Footer without server or identity dependencies"
       ],
       "dependencyMode": {
         "cachedSessionDisplay": "LOCAL_OPERATION",
         "sessionRefresh": "BACKGROUND_SYNC",
         "login": "SERVER_FINALIZE",
         "logoutAudit": "BACKGROUND_SYNC",
-        "companySnapshotDisplay": "LOCAL_OPERATION",
-        "companyRevisionRefresh": "BACKGROUND_SYNC"
+        "ownershipFooter": "STATIC_UI"
       },
-      "offlinePolicy": "A cached unexpired home session and last normal company Snapshot remain visible while server verification is delayed, and work apps do not load the login runtime or wait for the authentication service.",
+      "offlinePolicy": "A cached unexpired home session and the fixed ownership Footer remain visible while authentication verification is delayed; company-service failure does not affect home, and work apps do not load the login runtime or wait for the authentication service.",
       "services": [
         "nexus-auth-gateway"
       ],
       "sharedContracts": [
-        "nexus-auth",
-        "company-profile"
+        "nexus-auth"
       ]
     },
     {
@@ -494,30 +491,16 @@
       "id": "company-profile",
       "owner": "nexus-company",
       "consumers": [
-        "nexus/index.html",
         "nexus/company.html",
         "nexus/company-transport.js"
       ],
       "schemaVersion": "NEXUS_COMPANY_PROFILE_V1",
       "writerPolicy": "The server requires a current Session, OWNER_MASTER/admin.company, an app-scoped Gateway context, and expectedRevision for every profile write.",
       "resources": {
-        "homeReadOperation": "company.profile_read",
-        "homeReadAppId": "nexus-home",
-        "homeReadPayload": {},
-        "homeProjectionFields": [
-          "companyName",
-          "businessNumber",
-          "representativeName",
-          "companyPhone",
-          "businessAddress",
-          "homepage",
-          "revision"
-        ],
-        "homeProjectionAudience": "authenticated NEXUS users",
         "adminReadOperation": "company.profile_read",
         "adminWriteOperation": "company.profile_write",
         "companyId": "ONEAPP",
-        "snapshotStorage": "sessionStorage-only non-authoritative public-field projection; full profile is never cached",
+        "homeDependency": "NONE; nexus/index.html renders a fixed ownership Footer without company reads",
         "serverRevisionAndAudit": true,
         "upstreamSource": [
           "code.gs",
@@ -827,10 +810,6 @@
     }
   ],
   "navigationEdges": [
-    [
-      "nexus-home",
-      "nexus-company"
-    ],
     [
       "nexus-company",
       "nexus-home"

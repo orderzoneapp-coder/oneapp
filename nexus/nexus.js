@@ -1,5 +1,3 @@
-import { callCompanyGateway, isCompanyAdministrator } from './company-transport.js?v=1.0.0';
-
 (() => {
   'use strict';
 
@@ -7,7 +5,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
   const STORAGE_KEY = 'oneapp.nexus.home.session.v1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
-  const COMPANY_SNAPSHOT_KEY = 'oneapp.nexus.company.snapshot.v1';
   const REQUEST_TIMEOUT_MS = 20000;
   const APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', detail: '상품 기준정보 조회·관리', path: '/Master.html' }),
@@ -57,12 +54,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
   const userAccountType = document.getElementById('userAccountType');
   const adminLink = document.getElementById('adminLink');
   const appGrid = document.getElementById('appGrid');
-  const companyStatus = document.getElementById('companyStatus');
-  const companyName = document.getElementById('companyName');
-  const companySummary = document.getElementById('companySummary');
-  const companyAddress = document.getElementById('companyAddress');
-  const companyNotice = document.getElementById('companyNotice');
-  const companyEditLink = document.getElementById('companyEditLink');
 
   const cleanText = (value) => String(value ?? '').trim();
 
@@ -200,118 +191,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     return projection;
   };
 
-  const formatBusinessNumber = (value) => {
-    const digits = cleanText(value).replace(/\D/g, '');
-    return /^\d{10}$/.test(digits)
-      ? `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`
-      : cleanText(value);
-  };
-
-  const publicCompanyProjection = (profile) => {
-    if (!profile || typeof profile !== 'object') return null;
-    const revision = Number(profile.revision);
-    if (!cleanText(profile.companyName) || !Number.isInteger(revision) || revision < 0) return null;
-    return Object.freeze({
-      companyName: cleanText(profile.companyName),
-      businessNumber: cleanText(profile.businessNumber),
-      representativeName: cleanText(profile.representativeName),
-      companyPhone: cleanText(profile.companyPhone),
-      businessAddress: [cleanText(profile.address1), cleanText(profile.address2)].filter(Boolean).join(' '),
-      homepage: cleanText(profile.homepage),
-      revision,
-    });
-  };
-
-  const validCompanySnapshot = (value) => publicCompanyProjection({
-    ...value,
-    address1: value?.businessAddress,
-    address2: '',
-  });
-
-  const readCompanySnapshot = () => {
-    try {
-      const cached = JSON.parse(sessionStorage.getItem(COMPANY_SNAPSHOT_KEY) || 'null');
-      const snapshot = validCompanySnapshot(cached?.snapshot);
-      return snapshot ? { snapshot, cachedAt: cleanText(cached.cachedAt) } : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const saveCompanySnapshot = (snapshot) => {
-    const projected = validCompanySnapshot(snapshot);
-    if (!projected) return;
-    try {
-      sessionStorage.setItem(COMPANY_SNAPSHOT_KEY, JSON.stringify({ snapshot: projected, cachedAt: new Date().toISOString() }));
-    } catch {}
-  };
-
-  const renderCompanySnapshot = (snapshot) => {
-    companyName.textContent = cleanText(snapshot.companyName) || '회사정보';
-    companySummary.textContent = [
-      formatBusinessNumber(snapshot.businessNumber),
-      cleanText(snapshot.representativeName) ? `대표 ${cleanText(snapshot.representativeName)}` : '',
-    ].filter(Boolean).join(' · ');
-    companyAddress.textContent = cleanText(snapshot.businessAddress);
-  };
-
-  const setCompanyState = (status, message, snapshot = null) => {
-    companyStatus.textContent = status;
-    companyStatus.dataset.status = status;
-    companyNotice.textContent = message;
-    const projected = validCompanySnapshot(snapshot);
-    if (projected) renderCompanySnapshot(projected);
-    else if (status === 'ERROR') {
-      companyName.textContent = '회사정보를 불러오지 못했습니다';
-      companySummary.textContent = '서버 오류를 미등록 또는 0건으로 처리하지 않았습니다.';
-      companyAddress.textContent = '';
-    }
-  };
-
-  const showCachedCompany = () => {
-    const cached = readCompanySnapshot();
-    if (cached) {
-      setCompanyState('STALE', '마지막 정상 Snapshot을 표시하고 서버 revision을 확인 중입니다.', cached.snapshot);
-      return cached;
-    }
-    companyName.textContent = '서버 확인 중';
-    companySummary.textContent = '회사정보와 revision을 확인하고 있습니다.';
-    companyAddress.textContent = '';
-    setCompanyState('STALE', '정상 Snapshot을 확인 중입니다.');
-    return null;
-  };
-
-  const refreshCompany = async (sessionToken) => {
-    const cached = readCompanySnapshot();
-    try {
-      const result = await callCompanyGateway({
-        appId: 'nexus-home',
-        operationId: 'company.profile_read',
-        sessionToken,
-        payload: {},
-      });
-      const snapshot = publicCompanyProjection(result?.profile);
-      if (!snapshot) throw new Error('COMPANY_PROFILE_NOT_READY');
-      const cachedRevision = Number(cached?.snapshot?.revision || 0);
-      if (cached && snapshot.revision < cachedRevision) {
-        setCompanyState('STALE', '서버 revision이 마지막 정상 Snapshot보다 낮아 기존 값을 보존했습니다.', cached.snapshot);
-        return;
-      }
-      if (cached && snapshot.revision === cachedRevision) {
-        setCompanyState('READY', `서버 revision ${snapshot.revision}과 일치합니다.`, cached.snapshot);
-        return;
-      }
-      saveCompanySnapshot(snapshot);
-      setCompanyState('READY', `서버 revision ${snapshot.revision}을 확인했습니다.`, snapshot);
-    } catch {
-      if (cached) {
-        setCompanyState('STALE', '서버 확인이 지연되어 마지막 정상 Snapshot을 유지합니다.', cached.snapshot);
-      } else {
-        setCompanyState('ERROR', '회사정보 서버에 연결하지 못했습니다.');
-      }
-    }
-  };
-
   const showLogin = (message = '') => {
     homePanel.hidden = true;
     homeActions.hidden = true;
@@ -319,7 +198,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     userDisplayName.textContent = '';
     userAccountType.textContent = '';
     sessionNotice.textContent = '';
-    companyEditLink.hidden = true;
     adminLink.hidden = true;
     setLoginMessage(message);
   };
@@ -330,10 +208,8 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     userDisplayName.textContent = cleanText(user.displayName) || cleanText(user.loginId) || '사용자';
     userAccountType.textContent = accountTypeLabel(cleanText(user.role));
     adminLink.hidden = cleanText(user.role) !== 'OWNER_MASTER';
-    companyEditLink.hidden = !isCompanyAdministrator(session);
     const visibility = projectVisibility(session);
     renderApps(visibility.visibleAppIds);
-    showCachedCompany();
     loginPanel.hidden = true;
     homePanel.hidden = false;
     homeActions.hidden = false;
@@ -420,7 +296,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
       loginForm.reset();
       setLoginMessage('');
       showHome(authenticated.session);
-      setTimeout(() => refreshCompany(authenticated.token), 0);
     } catch (error) {
       setLoginMessage(messageFor(error));
     } finally {
@@ -448,7 +323,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
       activationForm.reset();
       showActivation(false);
       showHome(authenticated.session);
-      setTimeout(() => refreshCompany(authenticated.token), 0);
     } catch (error) {
       setActivationMessage(messageFor(error));
     } finally {
@@ -472,7 +346,6 @@ import { callCompanyGateway, isCompanyAdministrator } from './company-transport.
     showHome(cached.session);
     setTimeout(() => {
       refreshSession(cached);
-      refreshCompany(cached.token);
     }, 0);
   } else {
     showLogin();
