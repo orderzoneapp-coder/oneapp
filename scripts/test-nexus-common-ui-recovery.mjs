@@ -22,7 +22,8 @@ const pages = [
   ['SmartParser.html', 'smart-parser', 'nexus/common/', '문서분석 - NEXUS'],
   ['export_center.html', 'export-center', 'nexus/common/', '출력검증 - NEXUS'],
   ['settings.html', 'settings', 'nexus/common/', '환경설정 - NEXUS'],
-  ['Master.html', 'master-lookup', 'nexus/common/', '기준정보 - NEXUS'],
+  ['Master.html', 'master-lookup', 'nexus/common/', '상품관리 - NEXUS'],
+  ['customer-master/index.html', 'customer-master', '../nexus/common/', '거래처관리 - NEXUS'],
   ['Item_manager.html', 'item-manager', 'nexus/common/', '상품등록 - NEXUS'],
   ['history_viewer.html', 'history-viewer', 'nexus/common/', '변경이력 - NEXUS'],
   ['orderops/list.html', 'orderops', '../nexus/common/', '주문·출고 - NEXUS'],
@@ -97,12 +98,12 @@ assert.match(uiSource, /element\('a', 'nexus-ui-brand__logo'\)/, 'the NEXUS logo
 assert.match(uiSource, /logoFrame\.href = asset\('nexus\/'\)/, 'the NEXUS logo must link to the NEXUS home');
 assert.match(uiSource, /logoFrame\.setAttribute\('aria-label', 'NEXUS 홈'\)/, 'the NEXUS home link must have an accessible name');
 assert.doesNotMatch(uiSource, /displayName|loginId|sessionStorage|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
-for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '기준정보', '상품등록', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
+for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '상품관리', '거래처관리', '상품등록', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
   assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
 }
 assert.match(
   uiSource,
-  /id:\s*'master-lookup'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
+  /id:\s*'master-lookup'[\s\S]*?id:\s*'customer-master'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
   'rollback-era primary apps must lead the global header so SmartInput remains directly visible',
 );
 assert.doesNotMatch(uiSource, /label:\s*'(?:MerchOps|DataOps|Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'common header tab labels must not fall back to English product names');

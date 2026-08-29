@@ -8,7 +8,8 @@
   const siteRoot = new URL('../../', scriptUrl);
   const asset = (path) => new URL(path, siteRoot).href;
   const APPS = Object.freeze([
-    Object.freeze({ id: 'master-lookup', label: '기준정보', path: 'Master.html' }),
+    Object.freeze({ id: 'master-lookup', label: '상품관리', path: 'Master.html' }),
+    Object.freeze({ id: 'customer-master', label: '거래처관리', path: 'customer-master/index.html' }),
     Object.freeze({ id: 'merchops', label: '가격·시세', path: 'MerchOps.html' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
     Object.freeze({ id: 'orderops', label: '주문·출고', path: 'orderops/list.html' }),

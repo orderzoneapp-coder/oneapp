@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.4
+- Architecture document version: 2.1.5
 - Last reviewed: 2026-08-29
-- Current-source baseline: `2af794a7a7b8b4534b1d732369f7262ee9249b19`
+- Current-source baseline: `d098439aa0afe86ddb538d5db9474782fa0df227`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -52,10 +52,10 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 
 - MerchOps, DataOps, SmartParser, Export Center, Settings와 History Viewer는 `MerchOpsDB` 및 여러 localStorage 계약을 공유한다.
 - `app-manifest.json`에서 `product-master`의 현재 소유자는 `merchops`다. SmartParser, Export Center, Settings, `Master.html`과 일부 DataOps 흐름도 기존 공통 writer 계약을 사용한다.
-- `Master.html`은 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 마스터 앱이다. 현재 공식 주소, 앱 ID, 공통 메뉴 연결과 구현을 유지한다.
+- `Master.html`은 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 상품관리 앱이다. 현재 공식 주소와 앱 ID를 유지하고 공통 표시 명칭은 `상품관리`를 사용한다.
 - `ItemMaster.html`은 `oneapp-itemmaster-isolated-v1` 격리 DB에서 독립 기능을 검증하는 별도 파일럿이다. manifest와 공통 메뉴에 등록되지 않았으며 `Master.html`의 확정 후속 구현, 공식 주소 또는 운영 상품 저장계약 소유자로 간주하지 않는다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
-- `CustomerMaster/partner_db.html` 운영 엔트리는 현재 기준선에 없다. SmartInput은 `smartinput/index.html` 파일럿으로 등록되어 전표 작업본과 기존 로컬 저장 계약을 소유하지만, 상품·거래처·ORDER Q 원장의 소유권은 이전받지 않는다. `orderops/input.html`은 계속 ORDER Q의 보조 입력 화면이다.
+- `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별과 로그인·로그아웃 기록만 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다.
 - 업무 앱 공통헤더는 사용자 정보를 표시하거나 인증 Runtime을 로드하지 않는다. 기존 권한별 앱 차단, 업무 Gateway 프록시와 앱 실행 통제 Runtime은 계속 롤백 상태다.
@@ -111,10 +111,10 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | 앱·영역 | 현재 상태 | 현재 사실 | 목표 역할 |
 |---|---|---|---|
 | NEXUS 홈·공통 UI | 운영 | 기본 로그인·로그아웃과 앱 홈, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 앱 차단·업무 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
-| Master (`Master.html`) | 파일럿·유지 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장계약을 사용 | 현재 공식 주소·앱 ID·구현을 유지 |
+| 상품관리 (`Master.html`) | 파일럿·유지 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장계약을 사용 | 현재 공식 주소·앱 ID·구현을 유지 |
 | ItemMaster (`ItemMaster.html`) | 파일럿·미등록 | manifest·공통 메뉴와 분리된 격리 DB에서 독립 기능을 검증 | 현재 독립 파일럿을 유지하며 통합·승계·운영 전환은 별도 사용자 결정 전 미확정 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
-| CustomerMaster (`partner_db.html`) | 계획(미등록) | 현재 기준선에 운영 엔트리와 manifest 등록 없음 | 거래처 기준정보 단일 소유자, Read Adapter 제공 |
+| 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전 | 거래처 기준정보 단일 소유자, Read Adapter 제공 |
 | SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·기존 DB v3·초안 키를 로컬 우선으로 운영. 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
 | MerchOps | 운영 | 현재 상품 master·가격·프로모션 활용 및 일부 master writer 역할 | 상품 활용·가공 업무 소유, ItemMaster Snapshot 소비 |
@@ -146,6 +146,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `export-center` | `export_center.html` | 운영 | 검토 결과 확인, Excel 출력과 승인된 현행 master 반영 |
 | `settings` | `settings.html` | 운영 | 매핑·가격정책·열·보기·Cloud URL 설정 |
 | `master-lookup` | `Master.html` | 파일럿 | 상품 조회와 관리자 검토형 추가·수정 |
+| `customer-master` | `customer-master/index.html` | 파일럿 | 거래처 조회·등록·수정·정보 보완·Excel 업서트·매핑·Snapshot·v17 읽기 전용 이전 |
 | `item-manager` | `Item_manager.html` | 파일럿 | 상품 기초정보 조회·등록·수정 |
 | `history-viewer` | `history_viewer.html` | 운영 | 상품 변경이력·가격 추이 조회 |
 | `core-engine` | `coreEngine.js` | 운영 공유 라이브러리 | 현행 저장·가격·이력·출력·Cloud·master 유틸리티 |
@@ -154,6 +155,8 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `cloud-sync` | `code.gs` | 운영 Server Transport | 현행 master·이력·설정·DataOps·Shipping·ORDER Q API |
 
 `ItemMaster.html`은 실제 소스와 독립 검증이 존재하지만 manifest와 공통 메뉴에 등록되지 않은 별도 파일럿이다. 현재 구현대로 격리 상태를 유지하며 `Master.html`의 후속 구현이나 삭제 근거로 사용하지 않는다. `master-lookup`과 `Master.html`, `item-manager`와 `Item_manager.html` 등록은 그대로 유지한다.
+
+`customer-master`의 쓰기는 앱 소유 Repository에 한정한다. 다른 앱은 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`가 발행하는 `ONEAPP_CUSTOMER_SNAPSHOT_V1` Snapshot만 소비하며, 소비자 연결 전까지 거래처관리 장애가 SmartInput·ORDER Q의 기존 업무를 차단하지 않는다.
 
 ### 4.3 Master·ItemMaster·Item Manager 현재 유지 기준
 
@@ -667,7 +670,7 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 
 ### 9.3 `app-manifest.json` 단계적 확장
 
-`app-manifest.json` v1.3.0의 기존 운영 계약은 유지한다. SmartInput 파일럿은 실제 엔트리와 독립 실행 경계가 구현되어 아래 선택 필드와 기존 로컬 계약을 등록하며, 다른 앱도 실제 구축·검증 시 같은 방식으로 단계적으로 등록할 수 있다.
+`app-manifest.json` v1.3.0의 기존 운영 계약은 유지한다. SmartInput과 거래처관리 파일럿은 실제 엔트리와 독립 실행 경계를 구현해 아래 선택 필드와 각자의 로컬 계약을 등록하며, 다른 앱도 실제 구축·검증 시 같은 방식으로 단계적으로 등록할 수 있다.
 
 | 필드 | 의미 | 등록 시점 |
 |---|---|---|
@@ -680,7 +683,7 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 - 기존 `sharedContracts`, status와 productionWrites 의미를 임의로 바꾸지 않는다.
 - 새 필드를 manifest 필수값으로 전환할 때는 schemaVersion, validator, 모든 기존 앱과 문서를 함께 갱신한다.
 - 목표 owner를 먼저 기록하거나 미구축 앱을 운영 의존성으로 등록하지 않는다.
-- CustomerMaster는 실제 엔트리·Repository·Adapter·검증이 생기기 전까지 운영 애플리케이션 목록에 추가하지 않는다. SmartInput은 자체 로컬 계약과 실패 격리 Adapter를 갖춘 파일럿으로 등록하되 외부 master·원장의 소유자로 승격하지 않는다.
+- 거래처관리는 자체 엔트리·Repository·Read Adapter와 로컬 이전·복원 경계를 갖춘 파일럿으로 등록한다. SmartInput·ORDER Q 소비자 연결, Cloud 동기화와 인증 통제는 이 파일럿 구축에 포함하지 않는다.
 - `ItemMaster.html`은 현재 manifest 미등록 독립 파일럿으로 유지하며 `Master.html`의 후속 구현이나 운영 소유자로 선등록하지 않는다. 기존 `master-lookup`·`Master.html`과 `item-manager`·`Item_manager.html` 항목도 변경하지 않는다.
 - 향후 ItemMaster의 `product-master` owner 전환을 검토하려면 먼저 별도 사용자 확정을 받고, 기존 writer의 Adapter 전환과 migration·rollback을 검증한 별도 PR에서만 수행한다.
 
@@ -837,8 +840,8 @@ Their business meaning must not be unified merely because the key number is the 
    - `Item_manager.html`은 기존 `item-manager` 공식 경로와 현재 구현을 유지한다.
    - 세 구현 사이의 통합·승계·주소 변경·삭제·소유권 이전은 현재 로드맵에 포함하지 않으며 필요 시 별도 사용자 확정과 개발명세로 시작한다.
 4. **CustomerMaster 구축**
-   - 앱 엔트리, Repository, customer Snapshot, 쓰기 Adapter와 동기화 경계를 구현한다.
-   - 파일럿 검증 전에는 SmartInput·ORDER Q의 필수 운영 의존성으로 등록하지 않는다.
+   - 독립 앱 엔트리, 소유 Repository, customer Snapshot Read Adapter와 v17 읽기 전용 이전 경계를 파일럿으로 구현한다.
+   - SmartInput·ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.
 5. **SmartInput 구축**
    - 전표 작성 작업본과 기존 로컬 저장 계약은 자체 Repository가 소유한다.
    - 상품·거래처는 Snapshot으로 복사하고 열린 전표를 최신 master로 자동 덮어쓰지 않는다.

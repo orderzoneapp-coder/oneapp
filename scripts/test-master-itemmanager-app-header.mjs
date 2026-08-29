@@ -5,7 +5,7 @@ const pages = [
   {
     file: 'Master.html',
     appId: 'master-lookup',
-    title: 'Master DB',
+    title: '상품관리',
   },
   {
     file: 'Item_manager.html',
@@ -36,7 +36,8 @@ for (const [label, path] of [
   ['문서분석', 'SmartParser.html'],
   ['출력검증', 'export_center.html'],
   ['환경설정', 'settings.html'],
-  ['기준정보', 'Master.html'],
+  ['상품관리', 'Master.html'],
+  ['거래처관리', 'customer-master/index.html'],
   ['상품등록', 'Item_manager.html'],
   ['변경이력', 'history_viewer.html'],
   ['주문·출고', 'orderops/list.html'],
