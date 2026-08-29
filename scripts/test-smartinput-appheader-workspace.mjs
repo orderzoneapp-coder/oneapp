@@ -52,12 +52,20 @@ assert.match(css, /\.si-workspace\s*\{[\s\S]*?grid-template-columns:\s*320px min
   'the source must stay constrained while the work table receives remaining width and height');
 assert.match(css, /\.si-table-scroll\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*max-height:\s*none;/,
   'the table scroller must consume the remaining card height');
-assert.match(css, /\.si-source-card__body\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) minmax\(96px, 28%\);[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
-  'the active source surface and source preview must consume the parser-card remainder');
+assert.match(css, /\.si-source-card__body\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+  'compact direct, file, and voice controls must leave the parser-card remainder to source preview');
+assert.match(css, /\.si-source-card__body:has\(\.si-source-pane:is\(\[data-pane="text"\], \[data-pane="paste"\], \[data-pane="photo"\]\):not\(\[hidden\]\)\)\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\);/,
+  'text, paste, and photo modes must switch the parser body to one full-height primary surface');
+assert.match(css, /\.si-source-card__body:has\([^}]+\) \.si-source-preview\s*\{[^}]*display:\s*none;/,
+  'text, paste, and photo modes must not show a second source-preview panel');
 assert.match(css, /\.si-source-pane\[data-pane="text"\] textarea,[\s\S]*?\.si-source-pane\[data-pane="paste"\] textarea\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*resize:\s*none;/,
   'text and paste surfaces must stretch like the prior full-height parser');
 assert.match(css, /\.si-photo-preview\s*\{[^}]*min-height:\s*0;[^}]*max-height:\s*none;/,
   'photo preview must use the available parser height instead of a short capped panel');
+assert.match(css, /\.si-photo-preview img\[hidden\]\s*\{[^}]*display:\s*none;/,
+  'the empty photo surface must not expose a broken hidden image');
+assert.match(css, /\.si-source-pane\[data-pane="photo"\]:not\(\[hidden\]\)\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/,
+  'photo controls must stay compact around one full-height preview surface');
 assert.doesNotMatch(css, /\.si-shell\s*\{[^}]*max-width|\.si-shell\s*\{[^}]*width:\s*min\(/s,
   'the SmartInput shell must not reintroduce a centered max-width cap');
 

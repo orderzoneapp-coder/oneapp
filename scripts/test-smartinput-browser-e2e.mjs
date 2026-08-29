@@ -336,6 +336,40 @@ try {
   await waitForExpression(client, `document.querySelector('.nexus-ui-logo--light').naturalWidth>0`, 'light logo');
   await wait(180);
   await evaluate(client, `scrollTo(0,0)`);
+  const sourceModeLayout = {};
+  for (const [method, mainSelector] of [['text', 'textarea'], ['paste', 'textarea'], ['photo', '.si-photo-preview'], ['direct', null], ['excel', '.si-dropzone'], ['voice', null]]) {
+    await click(client, `[data-method="${method}"]`);
+    sourceModeLayout[method] = await evaluate(client, `(() => {
+      const body = document.querySelector('.si-source-card__body');
+      const pane = document.querySelector('.si-source-pane:not([hidden])');
+      const preview = document.querySelector('.si-source-preview');
+      const main = ${mainSelector ? `pane.querySelector(${JSON.stringify(mainSelector)})` : 'pane'};
+      const bodyHeight = body.getBoundingClientRect().height;
+      return {
+        bodyHeight: Math.round(bodyHeight),
+        paneHeight: Math.round(pane.getBoundingClientRect().height),
+        mainHeight: Math.round(main.getBoundingClientRect().height),
+        mainRatio: Number((main.getBoundingClientRect().height / bodyHeight).toFixed(3)),
+        previewDisplay: getComputedStyle(preview).display,
+        previewHeight: Math.round(preview.getBoundingClientRect().height),
+        previewRatio: Number((preview.getBoundingClientRect().height / bodyHeight).toFixed(3))
+      };
+    })()`);
+  }
+  for (const method of ['text', 'paste', 'photo']) {
+    assert.equal(sourceModeLayout[method].previewDisplay, 'none', `${method} must expose one primary source surface without a second preview`);
+    assert.ok(sourceModeLayout[method].mainRatio >= 0.85,
+      `${method} primary source surface must consume at least 85% of the parser body, observed ${sourceModeLayout[method].mainRatio}`);
+  }
+  for (const method of ['direct', 'excel', 'voice']) {
+    assert.notEqual(sourceModeLayout[method].previewDisplay, 'none', `${method} must retain the source preview below compact controls`);
+    assert.ok(sourceModeLayout[method].previewRatio >= 0.7,
+      `${method} source preview must consume the parser remainder, observed ${sourceModeLayout[method].previewRatio}`);
+  }
+  await click(client, '[data-method="text"]');
+  const textSurfaceShot = await capture(client, 'smartinput-desktop-light-text.png');
+  await click(client, '[data-method="photo"]');
+  const photoSurfaceShot = await capture(client, 'smartinput-desktop-light-photo.png');
   const desktopLayout = await evaluate(client, `(() => {
     const box = selector => document.querySelector(selector).getBoundingClientRect();
     const appHeader = box('[data-nexus-app-header="smart-input"]');
@@ -405,7 +439,7 @@ try {
   assert.deepEqual(runtimeErrors, [], `uncaught browser runtime errors: ${runtimeErrors.join(' | ')}`);
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);
 
-  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, screenshots: [lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'csv', 'xlsx', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
+  console.log(JSON.stringify({ status: 'PASS', coldMs, warmMs, warmTargetMet: warmMs < 1000, desktopLayout, mobileLayout, sourceModeLayout, screenshots: [textSurfaceShot, photoSurfaceShot, lightShot, darkShot, mobileShot], preservedStores: Object.keys(beforeDb), modes: ['order', 'purchase', 'sale', 'estimate'], methods: ['direct', 'text', 'paste', 'tsv', 'csv', 'xlsx', 'photo', 'voice'], consoleErrors: consoleErrors.length, runtimeErrors: runtimeErrors.length }, null, 2));
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) browserProcess.kill();
