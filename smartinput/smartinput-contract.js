@@ -355,6 +355,7 @@
       .slice(0, 2);
     if (!estimateNoticePriceFields.length) estimateNoticePriceFields.push(...DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS);
     return {
+      ...value,
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
       defaultDeliveryWeekdays: normalizeWeekdays(value.defaultDeliveryWeekdays, DEFAULT_SETTINGS.defaultDeliveryWeekdays),
@@ -493,17 +494,6 @@
       },
       sourceText: '',
       activeMethod: 'text',
-      templateSessionMode: 'CREATE',
-      selectedTemplateId: '',
-      inputTemplate: null,
-      staging: {
-        status: 'EMPTY', sourceHash: '', sourceName: '', sheetName: '', headerRowNumber: 0,
-        mappings: [], columns: [], rows: [], warnings: [], batch: null,
-        templateMode: 'CREATE', templateId: '', templateName: '', templateRevision: 0,
-        templateSave: { status: 'PENDING', message: '', templateId: '' }, createdAt: ''
-      },
-      processedSourceHashes: [],
-      groupDeliveryResults: [],
       batches: [],
       rows: [],
       voucherGroups: [],
@@ -537,6 +527,8 @@
   function normalizeHeader(value = {}, fallback = {}) {
     const recordedAt = text(value.recordedAt || fallback.recordedAt) || new Date().toISOString();
     return {
+      ...fallback,
+      ...value,
       recordedAt,
       submittedAt: text(value.submittedAt || fallback.submittedAt),
       customerId: text(value.customerId || fallback.customerId),
@@ -599,6 +591,7 @@
         ? 'SIMILAR'
         : 'UNRESOLVED');
     const row = {
+      ...input,
       rowId: text(input.rowId) || createId('SIROW'),
       batchId: text(input.batchId || fallbackBatchId),
       batchSequence: Number(input.batchSequence || 0),
@@ -640,7 +633,6 @@
       intakeLineId: text(input.intakeLineId),
       sourceRegion: normalizeSourceRegion(input.sourceRegion),
       rawText: String(input.rawText ?? input.rawExpression ?? ''),
-      sourceValues: input.sourceValues && typeof input.sourceValues === 'object' ? { ...input.sourceValues } : {},
       inputOwnership: input.inputOwnership === 'USER' ? 'USER' : 'SOURCE',
       productId,
       masterProductId,
@@ -714,53 +706,9 @@
   }
 
   function normalizeModeDraft(mode, input = {}, fallback = createModeDraft(mode)) {
-    const inputTemplate = input.inputTemplate && typeof input.inputTemplate === 'object' ? {
-      templateId: text(input.inputTemplate.templateId),
-      name: text(input.inputTemplate.name),
-      revision: Math.max(1, Number(input.inputTemplate.revision || 1)),
-      columns: Array.isArray(input.inputTemplate.columns) ? input.inputTemplate.columns.map((column, index) => {
-        const columnId = text(column.columnId || column.fieldId || column.fieldKey);
-        return {
-          columnId,
-          fieldId: columnId,
-          targetFieldId: text(column.targetFieldId || column.targetFieldKey
-            || (!text(column.sourceValueKey) ? column.fieldId || column.fieldKey : '')),
-          sourceValueKey: text(column.sourceValueKey),
-          sourceHeader: text(column.sourceHeader || column.label || column.displayLabel),
-          label: text(column.label || column.displayLabel || column.sourceHeader || columnId),
-          valueType: column.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
-          sourceColumnIndex: Number.isFinite(Number(column.sourceColumnIndex)) ? Number(column.sourceColumnIndex) : index,
-          order: Number.isFinite(Number(column.order)) ? Number(column.order) : index
-        };
-      }).filter(column => column.columnId).sort((left, right) => left.order - right.order) : []
-    } : null;
-    const stagingInput = input.staging && typeof input.staging === 'object' ? input.staging : {};
-    const stagingRows = Array.isArray(stagingInput.rows) ? stagingInput.rows.map(row => normalizeRow(row)) : [];
-    const staging = {
-      status: ['PENDING', 'APPLIED', 'ALREADY_PROCESSED', 'CONFLICT'].includes(stagingInput.status)
-        ? stagingInput.status
-        : (stagingRows.length ? 'PENDING' : 'EMPTY'),
-      sourceHash: text(stagingInput.sourceHash),
-      sourceName: text(stagingInput.sourceName),
-      sheetName: text(stagingInput.sheetName),
-      headerRowNumber: Number(stagingInput.headerRowNumber || 0),
-      mappings: Array.isArray(stagingInput.mappings) ? stagingInput.mappings.map(mapping => ({ ...mapping })) : [],
-      columns: Array.isArray(stagingInput.columns) ? stagingInput.columns.map(column => ({ ...column })) : [],
-      rows: stagingRows,
-      warnings: Array.isArray(stagingInput.warnings) ? stagingInput.warnings.map(warning => ({ ...warning })) : [],
-      batch: stagingInput.batch && typeof stagingInput.batch === 'object' ? { ...stagingInput.batch } : null,
-      templateMode: stagingInput.templateMode === 'FILL' ? 'FILL' : 'CREATE',
-      templateId: text(stagingInput.templateId),
-      templateName: text(stagingInput.templateName),
-      templateRevision: Number(stagingInput.templateRevision || 0),
-      templateSave: stagingInput.templateSave && typeof stagingInput.templateSave === 'object' ? {
-        status: text(stagingInput.templateSave.status),
-        message: text(stagingInput.templateSave.message),
-        templateId: text(stagingInput.templateSave.templateId)
-      } : { status: 'PENDING', message: '', templateId: '' },
-      createdAt: text(stagingInput.createdAt)
-    };
     return {
+      ...fallback,
+      ...input,
       documentId: text(input.documentId) || fallback.documentId,
       catalogRecordId: text(input.catalogRecordId),
       catalogBaselinePrices: input.catalogBaselinePrices && typeof input.catalogBaselinePrices === 'object'
@@ -773,25 +721,11 @@
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),
       activeMethod: INPUT_METHODS.some(method => method.id === input.activeMethod) ? input.activeMethod : 'text',
-      templateSessionMode: input.templateSessionMode === 'FILL' ? 'FILL' : 'CREATE',
-      selectedTemplateId: text(input.selectedTemplateId),
-      inputTemplate,
-      staging,
-      processedSourceHashes: [...new Set((Array.isArray(input.processedSourceHashes) ? input.processedSourceHashes : []).map(text).filter(Boolean))],
-      groupDeliveryResults: Array.isArray(input.groupDeliveryResults) ? input.groupDeliveryResults.map(result => ({
-        voucherGroupKey: text(result.voucherGroupKey),
-        businessKey: text(result.businessKey),
-        customerName: text(result.customerName),
-        status: text(result.status),
-        sourceHash: text(result.sourceHash),
-        orderId: text(result.orderId),
-        errorCode: text(result.errorCode),
-        completedAt: text(result.completedAt)
-      })).filter(result => result.voucherGroupKey) : [],
       batches: Array.isArray(input.batches) ? input.batches.map(batch => ({ ...batch, rawText: String(batch.rawText ?? '') })) : [],
       rows: Array.isArray(input.rows) ? input.rows.map(row => normalizeRow(row)) : [],
       voucherGroups: Array.isArray(input.voucherGroups) ? input.voucherGroups.map(group => ({ ...group })) : [],
       purchaseSubmissions: Array.isArray(input.purchaseSubmissions) ? input.purchaseSubmissions.map(pointer => ({
+        ...pointer,
         purchaseDocumentId: text(pointer.purchaseDocumentId),
         commandId: text(pointer.commandId),
         state: text(pointer.state),
@@ -809,6 +743,7 @@
     if (!input || typeof input !== 'object' || input.schemaVersion !== SCHEMA_VERSION) return fallback;
     return {
       ...fallback,
+      ...input,
       draftId: text(input.draftId) || fallback.draftId,
       activeMode: MODE_ORDER.includes(input.activeMode) ? input.activeMode : 'order',
       modes: {
@@ -825,6 +760,7 @@
 
   function createBatch(input = {}) {
     return {
+      ...input,
       batchId: text(input.batchId) || createId('SIBATCH', input.now, input.random),
       sequence: Number(input.sequence || 1),
       method: text(input.method || 'text'),

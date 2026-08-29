@@ -133,11 +133,11 @@ assert.equal(unevenRows.rowErrors[0].reason, 'COLUMN_COUNT_MISMATCH');
 const html = fs.readFileSync('smartinput/index.html', 'utf8');
 const app = fs.readFileSync('smartinput/smartinput.js', 'utf8');
 for (const label of ['품목코드', '품목명', '규격', '수량', '단위', '단가', '메모']) assert.match(html, new RegExp(label));
-assert.match(html, /id="workTableBody"/);
-assert.match(app, /buildGridPastePlan\(raw/);
-assert.match(app, /visibleFieldIds:\s*columns\.map/);
-assert.match(app, /workTableBody'\)\.addEventListener\('paste', applyGridPaste\)/);
-assert.match(app, /markTableCellEdit\(next, column, cell\.value\)/,
-  'grid paste must use the same dynamic/custom-column edit contract as direct cell edits');
+assert.match(html, /id="inputRows"/);
+assert.match(app, /function applyGridPaste\(rawText, startRowId, startFieldId\)/);
+assert.match(app, /visibleFieldIds:\s*visibleGridPasteFields\(\)/);
+assert.match(app, /inputRows\.addEventListener\('paste'/);
+assert.match(app, /contract\.markProductEdit\(row, cell\.fieldId, cell\.value\)/,
+  'grid paste must use the same restored work-row edit contract as direct cell edits');
 
 console.log('SmartInput Excel grid clipboard tests passed.');
