@@ -124,5 +124,5 @@
 - 이 문서의 공통헤더·테마 코드는 계속 인증·업무 Gateway·업무 저장소와 분리한다.
 - `nexus-ui.js`는 별도 공통 자산 `nexus-company-footer.js`를 비차단으로 로드하는 역할만 추가한다. 헤더 준비와 업무 앱 실행은 Footer 네트워크 확인을 기다리지 않는다.
 - Footer는 공개 6필드와 revision만 갖는 별도 Snapshot 계약이며, 마지막 정상 로컬 Snapshot 또는 배포 기본값을 즉시 렌더한다.
-- 백그라운드 최신 확인은 무인증 고정 read-only action `nexus_public_company_snapshot`만 사용한다. 다른 action, target URL, token 또는 보호 회사정보 요청은 허용하지 않는다.
+- 백그라운드 최신 확인은 무인증 고정 read-only action `nexus_public_company_snapshot`만 사용한다. `knownRevision`은 JSON number인 non-negative safe integer만 허용하며, warm cache에서는 더 큰 revision을 포함한 모든 요청을 cache-only로 판정한다. 다른 action, target URL, token 또는 보호 회사정보 요청은 허용하지 않는다.
 - 이 후속 계약은 15개 업무 화면에 구 NEXUS 인증 redirect 또는 app-ready Runtime을 재도입하지 않는다.

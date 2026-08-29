@@ -92,6 +92,18 @@ assert.equal(cachedReady.data.status, 'READY');
 assert.equal(cachedReady.data.snapshot.revision, 3);
 assert.equal(forwardedRequests.length, 1, 'lower known revision must receive the cached exact projection');
 
+for (let index = 0; index < 5; index += 1) {
+  const ahead = call({ action: 'nexus_public_company_snapshot', knownRevision: Number.MAX_SAFE_INTEGER });
+  assert.deepEqual(ahead.data, { status: 'STALE_SERVER', revision: 3 });
+}
+assert.equal(forwardedRequests.length, 1,
+  'a warm cache must never call upstream when a client repeatedly claims a much higher revision');
+
+for (const invalidRevision of ['3', Number.MAX_SAFE_INTEGER + 1, -1, 1.5]) {
+  assert.throws(() => call({ action: 'nexus_public_company_snapshot', knownRevision: invalidRevision }),
+    /NEXUS_PUBLIC_COMPANY_REVISION_INVALID/);
+}
+
 for (const injected of [
   { targetUrl: 'https://attacker.invalid' },
   { operationId: 'company.profile_write' },
@@ -119,4 +131,4 @@ assert.equal(forwardedRequests.length, 2, 'corrupt cache must be removed and rev
 context.nexusAuthPublicCompanyCacheAfterGateway_('company.accounting_period_write', {});
 assert.equal(context.nexusAuthPublicCompanyCacheRead_(), null, 'a revision-changing administrator operation must invalidate the public cache');
 
-console.log('NEXUS public company gateway passed (exact projection, ScriptCache hit, knownRevision, injection denial, admin-write refresh).');
+console.log('NEXUS public company gateway passed (exact projection, cache-only warm reads, strict knownRevision, injection denial, admin-write refresh).');

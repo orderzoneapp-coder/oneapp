@@ -51,6 +51,10 @@ for (const route of ['/Master.html', '/Item_manager.html', '/MerchOps.html', '/o
 const gateway = read('nexus/server/nexus-auth-gateway.gs');
 assert.match(gateway, /NEXUS_PUBLIC_COMPANY_ACTION = 'nexus_public_company_snapshot'/, 'fixed public action missing');
 assert.match(gateway, /NEXUS_PUBLIC_COMPANY_CACHE_TTL_SECONDS = 60/, 'public ScriptCache TTL must be 60 seconds');
+assert.match(gateway, /typeof knownRevision !== 'number' \|\| !Number\.isSafeInteger\(knownRevision\)/,
+  'knownRevision must be a JSON number and a safe integer');
+assert.match(gateway, /knownRevision > cached\.revision[\s\S]+status: 'STALE_SERVER'/,
+  'a client revision ahead of warm cache must resolve without upstream access');
 assert.match(gateway, /if \(action === NEXUS_PUBLIC_COMPANY_ACTION\) return nexusAuthPublicCompanySnapshot_\(payload\)/,
   'public read must be isolated before protected dispatch');
 assert.match(gateway, /nexusAuthPublicCompanyCacheAfterGateway_\(operationId, parsed\.data === undefined \? parsed : parsed\.data\)/,
