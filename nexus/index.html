@@ -6,8 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <title>NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
-  <link rel="stylesheet" href="/nexus/nexus.css?v=1.0.0">
-  <script defer src="/nexus/nexus.js?v=1.0.0"></script>
+  <link rel="stylesheet" href="/nexus/nexus.css?v=1.1.0">
+  <script type="module" src="/nexus/nexus.js?v=1.1.0"></script>
 </head>
 <body>
   <main class="nexus-shell">
@@ -52,6 +52,24 @@
         </div>
         <p id="sessionNotice" class="nexus-session-notice" role="status" aria-live="polite"></p>
       </div>
+      <section class="nexus-company-card" aria-labelledby="companyCardTitle">
+        <div class="nexus-company-card__heading">
+          <div>
+            <p class="nexus-eyebrow">COMPANY PROFILE</p>
+            <h2 id="companyCardTitle">회사정보</h2>
+          </div>
+          <span id="companyStatus" class="nexus-company-status" data-status="STALE">STALE</span>
+        </div>
+        <div class="nexus-company-card__body">
+          <div>
+            <strong id="companyName">서버 확인 중</strong>
+            <p id="companySummary">마지막 정상 회사정보를 확인하고 있습니다.</p>
+            <p id="companyAddress"></p>
+          </div>
+          <a id="companyEditLink" class="nexus-company-edit" href="/nexus/company.html?mode=edit" hidden>회사정보 수정</a>
+        </div>
+        <p id="companyNotice" class="nexus-company-notice" role="status" aria-live="polite"></p>
+      </section>
       <nav id="appGrid" class="nexus-app-grid" aria-label="업무 앱"></nav>
     </section>
   </main>

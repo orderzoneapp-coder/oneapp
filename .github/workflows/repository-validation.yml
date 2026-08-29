@@ -54,6 +54,9 @@ jobs:
       - name: Test NEXUS basic login and home contracts
         run: node scripts/test-nexus-basic-login-home.mjs
 
+      - name: Test NEXUS company profile contracts
+        run: node scripts/test-nexus-company-profile.mjs
+
       - name: Test Master and Item Manager app-header separation
         run: node scripts/test-master-itemmanager-app-header.mjs
 
