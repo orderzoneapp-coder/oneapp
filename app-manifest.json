@@ -228,14 +228,20 @@
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide product-master lookup and a controlled, administrator-reviewed add/update workflow with cloud synchronization.",
+      "purpose": "Own the official product-reference management boundary on the existing MerchOpsDB contract, provide immutable read snapshots, receive idempotent change requests for review, and retain controlled administrator-reviewed master writes.",
+      "owner": "product-reference-data",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
       ],
+      "ownedContracts": [
+        "product-master",
+        "product-reference-change-request"
+      ],
       "sharedContracts": [
         "product-master",
-        "change-history"
+        "change-history",
+        "product-reference-change-request"
       ]
     },
     {
@@ -257,7 +263,8 @@
         "read-only legacy v17 migration"
       ],
       "ownedContracts": [
-        "customer-master"
+        "customer-master",
+        "customer-reference-change-request"
       ],
       "dependencyMode": {
         "localLookupAndEdit": "LOCAL_OPERATION",
@@ -266,7 +273,8 @@
       },
       "offlinePolicy": "Render, search, edit, import, back up, and restore customer data from the app-owned IndexedDB without waiting for login, cloud, another app, or an external CDN.",
       "sharedContracts": [
-        "customer-master"
+        "customer-master",
+        "customer-reference-change-request"
       ]
     },
     {
@@ -538,6 +546,21 @@
       }
     },
     {
+      "id": "customer-reference-change-request",
+      "owner": "customer-master",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
+      "receiverAdapter": "ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER",
+      "writerPolicy": "Only customer-master receives requests into its appMeta-owned additive inbox. Receipt remains PENDING and never applies customer master data automatically.",
+      "resources": {
+        "contractAsset": "reference-data/change-request-contract.js",
+        "adapterAsset": "customer-master/change-request-adapter.js",
+        "localDatabase": "oneapp-customermaster-v1",
+        "objectStore": "appMeta",
+        "inboxKey": "referenceChangeRequestsV1"
+      }
+    },
+    {
       "id": "smartinput-local-work",
       "owner": "smart-input",
       "consumers": [
@@ -686,16 +709,35 @@
     },
     {
       "id": "product-master",
-      "owner": "merchops",
+      "owner": "master-lookup",
       "consumers": [
         "orderq/input.html"
       ],
+      "schemaVersion": "ONEAPP_PRODUCT_SNAPSHOT_V1",
+      "readAdapter": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER",
+      "readAdapterVersion": "ONEAPP_PRODUCT_READ_ADAPTER_V1",
+      "writerPolicy": "master-lookup is the official owner. Existing direct writers are a frozen compatibility allowlist for later app-by-app conversion; no new cross-app direct writer is allowed.",
+      "legacyWriterAllowlist": [
+        "Master.html",
+        "MerchOps.html",
+        "SmartParser.html",
+        "settings.html",
+        "export_center.html",
+        "Item_manager.html",
+        "coreEngine.js",
+        "masterAddUpdate.js"
+      ],
+      "documentedButNotDetectedWriterCandidates": [
+        "DataOps.html"
+      ],
       "resources": {
+        "adapterAsset": "reference-data/product-master-read-adapter.js",
         "indexedDb": {
           "database": "MerchOpsDB",
           "store": "master_products",
           "keys": [
-            "merchMaster_v870"
+            "merchMaster_v870",
+            "merchMaster_revision_v870"
           ]
         },
         "localStorage": [
@@ -707,6 +749,21 @@
           "master_only",
           "chunk_master"
         ]
+      }
+    },
+    {
+      "id": "product-reference-change-request",
+      "owner": "master-lookup",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
+      "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
+      "writerPolicy": "Only master-lookup receives requests into the existing owner KV store. Receipt remains PENDING and never applies product master data automatically.",
+      "resources": {
+        "contractAsset": "reference-data/change-request-contract.js",
+        "adapterAsset": "reference-data/product-change-request-adapter.js",
+        "localDatabase": "MerchOpsDB",
+        "objectStore": "store",
+        "inboxKey": "oneappProductReferenceChangeRequests_v1"
       }
     },
     {

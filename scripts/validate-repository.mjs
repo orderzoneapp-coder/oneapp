@@ -268,6 +268,40 @@ function main() {
     if (contract.owner && !applicationIdSet.has(contract.owner)) {
       fail(label + " has an unknown owner: " + contract.owner);
     }
+    for (const assetField of ["adapterAsset", "contractAsset"]) {
+      const assetPath = contract.resources?.[assetField];
+      if (assetPath && !repositoryFileExists(assetPath)) {
+        fail(label + " points to a missing " + assetField + ": " + assetPath);
+      }
+    }
+  }
+
+  const productMasterContract = contracts.find((contract) => contract.id === "product-master");
+  if (productMasterContract?.owner !== "master-lookup") {
+    fail("Shared contract product-master must be owned by master-lookup.");
+  }
+  if (productMasterContract?.schemaVersion !== "ONEAPP_PRODUCT_SNAPSHOT_V1") {
+    fail("Shared contract product-master must publish ONEAPP_PRODUCT_SNAPSHOT_V1.");
+  }
+  if (productMasterContract?.readAdapter !== "ONEAPP_PRODUCT_MASTER_READ_ADAPTER") {
+    fail("Shared contract product-master must publish ONEAPP_PRODUCT_MASTER_READ_ADAPTER.");
+  }
+
+  const customerMasterContract = contracts.find((contract) => contract.id === "customer-master");
+  if (customerMasterContract?.owner !== "customer-master") {
+    fail("Shared contract customer-master must remain owned by customer-master.");
+  }
+  if (customerMasterContract?.schemaVersion !== "ONEAPP_CUSTOMER_SNAPSHOT_V1") {
+    fail("Shared contract customer-master must keep ONEAPP_CUSTOMER_SNAPSHOT_V1.");
+  }
+
+  for (const contractId of ["product-reference-change-request", "customer-reference-change-request"]) {
+    const changeRequestContract = contracts.find((contract) => contract.id === contractId);
+    if (!changeRequestContract) {
+      fail("Missing reference change-request contract: " + contractId);
+    } else if (changeRequestContract.schemaVersion !== "ONEAPP_REFERENCE_CHANGE_REQUEST_V1") {
+      fail("Reference change-request contract has the wrong schema: " + contractId);
+    }
   }
 
   const dependencyFields = ["navigatesTo", "runtimeDependencies", "services"];

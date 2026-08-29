@@ -4,6 +4,18 @@ import { listCustomerData } from './repository.js';
 
 export const CUSTOMER_READ_ADAPTER_VERSION = 'ONEAPP_CUSTOMER_READ_ADAPTER_V1';
 
+function cloneJson(value) {
+  if (typeof globalThis.structuredClone === 'function') return globalThis.structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  Object.values(value).forEach((entry) => deepFreeze(entry, seen));
+  return Object.freeze(value);
+}
+
 function projectCustomer(customer) {
   return {
     customerId: customer.customerId,
@@ -43,22 +55,44 @@ export async function getCustomerSnapshot({ includeInactive = true } = {}) {
   const data = {
     customers: selected,
     aliases: aliases.filter((row) => customerIds.has(effectiveCustomerId(row.customerId)) && row.active !== false)
-      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), alias: row.alias || row.rawText || '', normalizedText: row.normalizedText || '', source: row.source || '' })),
+      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), alias: row.alias || row.rawText || '', normalizedText: row.normalizedText || '', source: row.source || '' }))
+      .sort((left, right) => String(left.customerId).localeCompare(String(right.customerId)) || String(left.alias).localeCompare(String(right.alias), 'ko')),
     sourceLinks: sourceLinks.filter((row) => customerIds.has(effectiveCustomerId(row.customerId)) && row.active !== false)
-      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), sourceSystem: row.sourceSystem, sourceCustomerCode: row.sourceCustomerCode, sourceCustomerName: row.sourceCustomerName || '', revision: Number(row.revision || 1) })),
+      .map((row) => ({ customerId: effectiveCustomerId(row.customerId), sourceSystem: row.sourceSystem, sourceCustomerCode: row.sourceCustomerCode, sourceCustomerName: row.sourceCustomerName || '', revision: Number(row.revision || 1) }))
+      .sort((left, right) => String(left.customerId).localeCompare(String(right.customerId))
+        || String(left.sourceSystem).localeCompare(String(right.sourceSystem))
+        || String(left.sourceCustomerCode).localeCompare(String(right.sourceCustomerCode))),
   };
   const revision = Number(head?.value || 0);
   const contentHash = await sha256Hex(data);
-  return Object.freeze({
+  return deepFreeze({
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     adapterVersion: CUSTOMER_READ_ADAPTER_VERSION,
     ownerAppId: APP_ID,
+    status: selected.length > 0 ? 'READY' : 'EMPTY',
     snapshotId: `CUSTOMER-${revision}-${contentHash.slice(0, 12)}`,
     snapshotVersion: revision,
     snapshotCreatedAt: new Date().toISOString(),
     contentHash,
     data,
   });
+}
+
+export async function getCustomerSnapshotResult(options = {}) {
+  try {
+    const snapshot = await getCustomerSnapshot(options);
+    return deepFreeze({ status: snapshot.status, snapshot, error: null });
+  } catch (error) {
+    return deepFreeze({
+      status: 'ERROR',
+      snapshot: null,
+      error: {
+        code: String(error?.message || 'CUSTOMER_SNAPSHOT_READ_FAILED'),
+        message: '거래처 기준정보 Snapshot을 읽지 못했습니다.',
+        retryable: true,
+      },
+    });
+  }
 }
 
 export async function findCustomers(query, { limit = 20, includeInactive = false } = {}) {
@@ -76,6 +110,7 @@ export async function findCustomers(query, { limit = 20, includeInactive = false
 export const customerReadAdapter = Object.freeze({
   version: CUSTOMER_READ_ADAPTER_VERSION,
   getSnapshot: getCustomerSnapshot,
+  getSnapshotResult: getCustomerSnapshotResult,
   search: findCustomers,
 });
 

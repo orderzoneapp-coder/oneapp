@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.8
+- Architecture document version: 2.1.9
 - Last reviewed: 2026-08-30
-- Current-source baseline: `b6073103ca5068f957d8f4a1218bd59182dbc596`
+- Current-source baseline: `6a69056090a43356807a3adae8ce5728a5edb3e6`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -51,11 +51,14 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 현재 `origin/main` 기준은 앱 독립 목표로 전환 중인 과도기다.
 
 - MerchOps, DataOps, SmartParser, Export Center, Settings와 History Viewer는 `MerchOpsDB` 및 여러 localStorage 계약을 공유한다.
-- `app-manifest.json`에서 `product-master`의 현재 소유자는 `merchops`다. SmartParser, Export Center, Settings, `Master.html`과 일부 DataOps 흐름도 기존 공통 writer 계약을 사용한다.
+- `app-manifest.json`의 `product-master` 공식 소유자는 `master-lookup`이다. 물리 Repository는 기존 `MerchOpsDB/master_products`와 `merchMaster_v870`·`merchMaster_revision_v870`을 그대로 사용하며 데이터 이동이나 재초기화는 없다.
 - `Master.html`은 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 유일한 공식 상품관리 앱이다. 기존 주소·앱 ID·공통 표시 명칭 `상품관리`를 유지하며, 빈 DB 최초 Excel 등록과 상품 단건 등록·수정을 공용 revision·history 계약으로 수행한다.
+- `reference-data/product-master-read-adapter.js`는 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` 읽기 전용 경계를 제공한다. 조회는 record Store를 우선하고 기존 snapshot·revision으로 fallback하며 DB가 없을 때 생성하지 않는다.
+- 현행 상품 직접 writer는 `Master.html`, `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js` 경로에 남아 있다. 이는 후속 앱별 전환을 위한 동결 allowlist이며 새 cross-app 직접 writer를 허용하지 않는다. DataOps writer는 기존 문서상 후속 후보지만 이 기준 SHA의 `DataOps.html`에서는 직접 writer가 검출되지 않았다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
-- `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
+- `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
+- 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
@@ -116,10 +119,10 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 |---|---|---|---|
 | NEXUS 홈·공통 UI | 운영 | 기본 로그인·최초 활성화·로그아웃과 앱 홈, `OWNER_MASTER` 최소 사용자 관리, 사용자별 비민감 카드·탭 노출, 서버 비의존 고정 소유 Footer, 정적 헤더·로고 홈 이동·일반/다크 테마. 권한별 업무 앱 차단·전역 Gateway Runtime은 롤백 상태 | 사용자 식별과 앱 연결을 제공하되 업무 앱 실행은 통제하지 않음 |
 | NEXUS 회사정보 | 운영 | 전용 상세 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정하며, 홈·공통헤더·업무 앱은 회사정보 서버를 조회하지 않음 | 회사 원본과 전용 관리 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
-| 상품관리 (`Master.html`) | 파일럿·공식 | manifest의 `master-lookup` 공식 경로이며 기존 운영 상품 저장·revision·history·Cloud 계약을 사용 | 유일한 공식 상품관리 구현으로 유지 |
+| 상품관리 (`Master.html`) | 파일럿·공식 | `product-master` 공식 owner이며 기존 운영 상품 저장·revision·history·Cloud 계약, 읽기 Snapshot과 변경요청 inbox를 소유 | 유일한 공식 상품관리 구현과 Adapter owner로 유지 |
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
-| 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전 | 거래처 기준정보 단일 소유자, Read Adapter 제공 |
+| 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
 | SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·기존 DB v3·초안 키를 로컬 우선으로 운영. 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
 | MerchOps | 운영 | 현재 상품 master·가격·프로모션 활용 및 일부 master writer 역할 | 상품 활용·가공 업무와 현행 product-master 계약 유지 |
@@ -162,7 +165,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 `ItemMaster.html`은 manifest와 공통 메뉴에 등록하지 않는 정적 호환 페이지다. `master-lookup`과 `Master.html`, `item-manager`와 `Item_manager.html` 등록은 그대로 유지한다.
 
-`customer-master`의 쓰기는 앱 소유 Repository에 한정한다. 다른 앱은 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`가 발행하는 `ONEAPP_CUSTOMER_SNAPSHOT_V1` Snapshot만 소비하며, 소비자 연결 전까지 거래처관리 장애가 SmartInput·ORDER Q의 기존 업무를 차단하지 않는다.
+`customer-master`의 쓰기는 앱 소유 Repository에 한정한다. 다른 앱은 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`가 발행하는 `ONEAPP_CUSTOMER_SNAPSHOT_V1` Snapshot만 소비하며, 소비자 연결 전까지 거래처관리 장애가 SmartInput·ORDER Q의 기존 업무를 차단하지 않는다. 변경요청은 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`로만 접수하며 `appMeta.referenceChangeRequestsV1`에 additive 보존하고 자동 적용하지 않는다.
 
 ### 4.3 Master·ItemMaster·Item Manager 확정 기준
 
@@ -251,6 +254,9 @@ Important contracts include:
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
 | Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products` | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
+| Product read Snapshot | `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` | `master-lookup`이 제공하는 신규 공식 읽기 경계. 소비자 전환은 별도 작업 |
+| Product change-request inbox | `MerchOpsDB` / `store.oneappProductReferenceChangeRequests_v1` | `master-lookup`만 수신·조회. 기존 master·revision Store와 분리된 additive KV |
+| Customer change-request inbox | `oneapp-customermaster-v1` / `appMeta.referenceChangeRequestsV1` | `customer-master`만 수신·조회. 기존 customer Store·레코드와 분리된 additive KV |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | `merchHistory_v870` | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
 | Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
@@ -413,6 +419,17 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - 대상 앱이 없거나 실패하면 관련 연동만 보류하고 호출 앱의 다른 작업을 유지한다.
 - 쓰기 요청은 소유 앱 또는 Server Transport가 다시 검증한다.
 - Adapter 내부 구현과 대상 저장소 위치는 소비 앱 계약이 아니다.
+
+#### 5.6.1 상품·거래처 기준정보 확정 계약
+
+- 상품: `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` v`ONEAPP_PRODUCT_READ_ADAPTER_V1`가 `ONEAPP_PRODUCT_SNAPSHOT_V1`을 발행한다. `master_products` record Store, `store.merchMaster_v870`, 호환 localStorage 순으로 읽고 record Store를 우선한다. `merchMaster_revision_v870`이 없으면 canonical SHA-256을 동등한 불변 식별자로 사용한다.
+- 거래처: 기존 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER` v`ONEAPP_CUSTOMER_READ_ADAPTER_V1`와 `ONEAPP_CUSTOMER_SNAPSHOT_V1` 필드를 유지한다. canonical 고객만 발행하고 alias·source link를 canonical ID로 연결한다.
+- 두 Snapshot은 `status=READY|EMPTY`를 포함하고 `getSnapshotResult()`가 `ERROR`와 형식화된 재시도 정보를 제공한다. 기존 `getSnapshot()`은 오류 시 reject하며 정상 0건으로 변환하지 않는다.
+- Snapshot envelope, `data`, 배열과 행은 깊은 불변 객체다. 검색 helper는 전달받은 상품 Snapshot만 검색하며 Repository를 다시 열거나 수정하지 않는다.
+- 변경요청 schema와 validator는 `reference-data/change-request-contract.js`의 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`이다. domain-owner, base revision, 중복 field, 민감정보, ISO-8601과 필수값을 검증한다.
+- 상품 수신 경계는 `ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER`, 거래처 수신 경계는 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`다. 같은 idempotency key·같은 payload는 `DUPLICATE`, 다른 payload는 `CONFLICT`, 신규는 `PENDING`이며 owner 원본에 자동 적용하지 않는다.
+- Inbox migration은 기존 DB version과 Store 목록을 바꾸지 않는다. 상품은 `MerchOpsDB/store.oneappProductReferenceChangeRequests_v1`, 거래처는 `oneapp-customermaster-v1/appMeta.referenceChangeRequestsV1` 한 key만 추가한다. rollback은 이 key를 삭제하지 않으며 구버전은 알 수 없는 key를 무시한다.
+- 소비자 일괄 전환, SmartInput UI 연결, ORDER Q 전환, 기존 레거시 writer 제거와 Server Transport 추가는 이 계약 도입에 포함하지 않는다.
 
 ### 5.7 활성 작업본 보호와 독립 배포
 

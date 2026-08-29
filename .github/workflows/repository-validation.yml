@@ -175,3 +175,8 @@ jobs:
 
       - name: Test CustomerMaster browser workflow and legacy XLS
         run: node scripts/test-customer-master-browser-e2e.mjs
+
+      - name: Test product and customer reference-data contracts
+        run: |
+          node scripts/test-reference-data-contract.mjs
+          node scripts/test-reference-data-browser-e2e.mjs

@@ -49,6 +49,7 @@ const state = {
   importWork: null,
   legacyInspection: null,
   restoreSnapshot: null,
+  changeRequestInbox: { status: 'IDLE', requests: [], error: null },
   toastTimer: null,
 };
 
@@ -118,6 +119,7 @@ function activateTab(tabName) {
     view.hidden = !active;
   });
   if (tabName === 'history') renderHistory();
+  if (tabName === 'requests') renderChangeRequests();
   if (tabName === 'mapping') renderMappingManagement();
   if (tabName === 'data') refreshStorageState();
 }
@@ -375,6 +377,30 @@ async function renderHistory() {
   const names = new Map(state.data.customers.map((row) => [row.customerId, row.customerName || row.customerCode || row.customerId]));
   $('#historyBody').innerHTML = events.map((event) => `<tr><td>${escapeHtml(String(event.occurredAt || '').replace('T', ' ').slice(0, 19))}</td><td>${escapeHtml(names.get(event.customerId) || event.customerId)}</td><td>${escapeHtml(event.eventType)}</td><td>${Number(event.entityRevision || 0)}</td><td>${escapeHtml(event.actorName || event.actorId || '확인되지 않음')}</td><td>${escapeHtml(event.actorState || 'UNVERIFIED_LOCAL')}</td></tr>`).join('');
   $('#historyEmpty').hidden = events.length !== 0;
+}
+
+async function renderChangeRequests() {
+  const stateElement = $('#changeRequestInboxState');
+  stateElement.textContent = '변경요청 Inbox 확인 중';
+  try {
+    const { customerMasterChangeRequestAdapter } = await import('./change-request-adapter.js');
+    const result = await customerMasterChangeRequestAdapter.listChangeRequests({ limit: 200 });
+    state.changeRequestInbox = result;
+    const rows = result.requests || [];
+    $('#changeRequestInboxBody').innerHTML = rows.map((entry) => {
+      const request = entry.request || {};
+      return `<tr><td>${escapeHtml(String(entry.receivedAt || '').replace('T', ' ').slice(0, 19))}</td><td>${escapeHtml(request.requestId || '-')}</td><td>${escapeHtml(request.entityId || '-')}</td><td>${escapeHtml(request.operation || '-')}</td><td>${escapeHtml(request.source?.appId || '-')}</td><td><span class="cm-badge" data-tone="warning">${escapeHtml(entry.status || 'PENDING')}</span></td></tr>`;
+    }).join('');
+    $('#changeRequestInboxEmpty').hidden = rows.length !== 0;
+    stateElement.textContent = result.status === 'ERROR'
+      ? `Inbox 조회 오류: ${result.error?.code || 'UNKNOWN'}`
+      : `접수 ${rows.length.toLocaleString()}건 · 자동 승인·자동 반영 없음`;
+  } catch (error) {
+    state.changeRequestInbox = { status: 'ERROR', requests: [], error: { code: String(error?.message || error) } };
+    $('#changeRequestInboxBody').innerHTML = '';
+    $('#changeRequestInboxEmpty').hidden = true;
+    stateElement.textContent = `Inbox Adapter를 사용할 수 없습니다: ${String(error?.message || error)}`;
+  }
 }
 
 async function refreshAll() {
@@ -709,6 +735,7 @@ function bindEvents() {
     if (button) releaseManualCustomerMapping(button.dataset.releaseCustomerMapping).catch(() => {});
   });
   $('#refreshHistoryButton').addEventListener('click', () => renderHistory().catch((error) => toast(error.message, 'error')));
+  $('#refreshChangeRequestsButton').addEventListener('click', () => renderChangeRequests());
   $('#inspectLegacyButton').addEventListener('click', () => inspectLegacy().catch(() => {}));
   $('#migrateLegacyButton').addEventListener('click', () => migrateLegacy().catch(() => {}));
   $('#exportSnapshotButton').addEventListener('click', () => exportSnapshot().catch(() => {}));
@@ -734,6 +761,7 @@ async function initialize() {
     createSnapshot,
     inspectLegacyCustomerData,
     customerReadAdapter,
+    renderChangeRequests,
   });
   document.documentElement.dataset.customerMasterReady = 'true';
 }
