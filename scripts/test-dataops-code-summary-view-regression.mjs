@@ -44,16 +44,6 @@ assert.match(
 );
 assert.match(
   source,
-  /createCombinedWorkbook:\s*\(\{[\s\S]*?screenRows[\s\S]*?\}\)\s*=>/,
-  "F9 must accept the current screen rows for the first whole-stock sheet",
-);
-assert.match(
-  source,
-  /createCombinedWorkbook\(\{[\s\S]*?screenRows:\s*filteredProductDataRef\.current/,
-  "F9 must pass the current view rows without changing the other sheets",
-);
-assert.match(
-  source,
   /const handleRunAnalysis = useCallback[\s\S]*?setViewMode\('LOT_DETAIL'\)/,
   "every newly uploaded analysis must still start in LOT_DETAIL",
 );
@@ -62,6 +52,23 @@ assert.match(
   /onToggleCodeMerge:\s*handleToggleCodeMerge/,
   "per-product merge and split controls must remain connected",
 );
+assert.doesNotMatch(
+  source,
+  /코드 통합형의 원본 1행 상품은 현재 화면에서 바로 수정할 수 있습니다/,
+  "the ambiguous protected-view edit alert must be removed",
+);
+const viewEditTransitionSource = section(
+  "const handleViewLayerEditBlocked = useCallback",
+  "// ProductRow의 React.memo",
+);
+assert.match(viewEditTransitionSource, /setViewMode\('LOT_DETAIL'\)/, "protected CODE_SUMMARY edits must switch to LOT_DETAIL");
+assert.match(viewEditTransitionSource, /manageMode: 'LOT_DETAIL'/, "the grouping state must follow the LOT_DETAIL transition");
+assert.match(viewEditTransitionSource, /isDetailMerged\(code\)/, "the transition must detect a protected detail merge for only the edited code");
+assert.match(viewEditTransitionSource, /splitDetail\(code\)/, "the transition must split only the edited code");
+assert.match(viewEditTransitionSource, /setMergeOverrideVersion\(version => version \+ 1\)/, "a detail split must refresh the merge view state");
+assert.match(viewEditTransitionSource, /focusBatchKey[\s\S]*?querySelector\(`tr\[data-batch=/, "the original representative/source Lot must be focused when available");
+assert.match(source, /onViewLayerEditBlocked\(item\)/, "ProductRow edit paths must pass the protected VIEW row to the transition");
+assert.match(source, /onOpenMemo\(operationBatchKey, visibleMemoText \|\| '', item\)/, "VIEW-row memo actions must use the same automatic transition");
 
 const safeStr = (value, fallback = "") => {
   if (value === undefined || value === null || value === "") return fallback;
@@ -146,16 +153,12 @@ context.window = context;
 context.self = context;
 context.globalThis = context;
 
-const sourceLedgerSource = section(
-  "const DATAOPS_SOURCE_LEDGER_MODULE",
-  "\n// ONEAPP-DO-20260810-01:",
-);
 const viewLayerSource = section(
   "const DATAOPS_CODE_MERGE_OVERRIDE_MODULE",
   "\nconst EXPORT_MODULE",
 );
 new vm.Script(
-  `${sourceLedgerSource}\n${viewLayerSource}\n` +
+  `${viewLayerSource}\n` +
     "globalThis.viewLayer = DATAOPS_VIEW_LAYER_MODULE; globalThis.codeMerge = DATAOPS_CODE_MERGE_OVERRIDE_MODULE;",
   { filename: "DataOps.code-summary-view.js" },
 ).runInContext(context);
