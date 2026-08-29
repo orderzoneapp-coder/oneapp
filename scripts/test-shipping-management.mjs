@@ -14,7 +14,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
 assert.match(orderOpsHtml, /brand-badge">v1\.55</, "ORDER Q visible version must be v1.55");
-assert.match(orderOpsHtml, /<title>ONEAPP ORDER Q · 출고관리<\/title>/,
+assert.match(orderOpsHtml, /<title>주문·출고 - NEXUS<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
   "the public brand must identify ONEAPP ORDER Q shipment management");
