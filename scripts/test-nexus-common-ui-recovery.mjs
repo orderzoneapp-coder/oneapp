@@ -32,6 +32,7 @@ const pages = [
   ['orderq/parser.html', 'orderq-vnext', '../nexus/common/'],
   ['orderq/collector.html', 'orderq-vnext', '../nexus/common/'],
   ['orderq/cloud.html', 'orderq-vnext', '../nexus/common/'],
+  ['smartinput/index.html', 'smart-input', '../nexus/common/'],
 ];
 
 for (const [file, appId, base] of pages) {

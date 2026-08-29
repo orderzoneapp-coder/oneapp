@@ -18,6 +18,7 @@
     Object.freeze({ id: 'history-viewer', label: '이력', path: 'history_viewer.html' }),
     Object.freeze({ id: 'orderops', label: 'ORDER Q', path: 'orderops/list.html' }),
     Object.freeze({ id: 'orderq-vnext', label: 'ORDER Q vNext', path: 'orderq/index.html' }),
+    Object.freeze({ id: 'smart-input', label: 'SmartInput', path: 'smartinput/index.html' }),
   ]);
 
   const element = (tag, className, text) => {
