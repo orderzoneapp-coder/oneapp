@@ -51,6 +51,9 @@ jobs:
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
+      - name: Test NEXUS basic login and home contracts
+        run: node scripts/test-nexus-basic-login-home.mjs
+
       - name: Test Master and Item Manager app-header separation
         run: node scripts/test-master-itemmanager-app-header.mjs
 

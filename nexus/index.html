@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>NEXUS</title>
+  <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
+  <link rel="stylesheet" href="/nexus/nexus.css?v=1.0.0">
+  <script defer src="/nexus/nexus.js?v=1.0.0"></script>
+</head>
+<body>
+  <main class="nexus-shell">
+    <header class="nexus-topbar">
+      <a class="nexus-home-logo" href="/nexus/" aria-label="NEXUS 홈">
+        <img src="/nexus/assets/brand/oneapp-nexus-dark.svg" alt="ONEAPP NEXUS">
+      </a>
+      <div id="homeActions" class="nexus-session-actions" hidden>
+        <div class="nexus-user" aria-label="현재 로그인 사용자">
+          <strong id="userDisplayName"></strong>
+          <span id="userAccountType"></span>
+        </div>
+        <button id="logoutButton" class="nexus-quiet-button" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <section id="loginPanel" class="nexus-login-panel" aria-labelledby="loginTitle">
+      <div class="nexus-login-copy">
+        <p class="nexus-eyebrow">ONEAPP WORKSPACE</p>
+        <h1 id="loginTitle">업무를 시작합니다</h1>
+        <p>등록된 NEXUS 계정으로 로그인하세요.</p>
+      </div>
+
+      <form id="loginForm" class="nexus-login-card">
+        <label for="loginId">아이디</label>
+        <input id="loginId" name="loginId" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+
+        <label for="password">비밀번호</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" required>
+
+        <button id="loginButton" class="nexus-primary-button" type="submit">NEXUS 입장</button>
+        <p id="loginMessage" class="nexus-message" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="homePanel" class="nexus-home-panel" aria-labelledby="homeTitle" hidden>
+      <div class="nexus-home-heading">
+        <div>
+          <p class="nexus-eyebrow">NEXUS HOME</p>
+          <h1 id="homeTitle">업무 앱</h1>
+          <p>필요한 앱을 선택하면 바로 이동합니다.</p>
+        </div>
+        <p id="sessionNotice" class="nexus-session-notice" role="status" aria-live="polite"></p>
+      </div>
+      <nav id="appGrid" class="nexus-app-grid" aria-label="업무 앱"></nav>
+    </section>
+  </main>
+  <noscript>이 페이지에서 로그인하려면 JavaScript를 켜주세요.</noscript>
+</body>
+</html>

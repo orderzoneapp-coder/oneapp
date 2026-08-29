@@ -134,6 +134,12 @@ body.nexus-ui-mounted {
   flex: 0 0 127px;
   width: 127px;
   height: 32px;
+  border-radius: 6px;
+}
+
+.nexus-ui-brand__logo:focus-visible {
+  outline: 2px solid var(--nexus-ui-focus);
+  outline-offset: 3px;
 }
 
 .nexus-ui-logo {

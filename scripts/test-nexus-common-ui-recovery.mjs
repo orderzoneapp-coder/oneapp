@@ -38,9 +38,9 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.2.1`;
+  const uiCss = `${base}nexus-ui.css?v=1.3.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
-  const runtime = `${base}nexus-ui.js?v=1.2.0`;
+  const runtime = `${base}nexus-ui.js?v=1.3.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -78,6 +78,10 @@ assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle mus
 assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
+assert.match(uiSource, /element\('a', 'nexus-ui-brand__logo'\)/, 'the NEXUS logo must be an actual link');
+assert.match(uiSource, /logoFrame\.href = asset\('nexus\/'\)/, 'the NEXUS logo must link to the NEXUS home');
+assert.match(uiSource, /logoFrame\.setAttribute\('aria-label', 'NEXUS 홈'\)/, 'the NEXUS home link must have an accessible name');
+assert.doesNotMatch(uiSource, /displayName|loginId|sessionStorage|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
 for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '기준정보', '상품등록', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
   assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
 }

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const root = document.documentElement;
   const controller = window.ONEAPP_NEXUS_UI_THEME;
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
@@ -46,7 +46,10 @@
     header.setAttribute('aria-label', 'NEXUS 공통헤더');
 
     const brand = element('div', 'nexus-ui-brand');
-    const logoFrame = element('span', 'nexus-ui-brand__logo');
+    const logoFrame = element('a', 'nexus-ui-brand__logo');
+    logoFrame.href = asset('nexus/');
+    logoFrame.setAttribute('aria-label', 'NEXUS 홈');
+    logoFrame.title = 'NEXUS 홈';
     const lightLogo = element('img', 'nexus-ui-logo nexus-ui-logo--light');
     lightLogo.src = asset('nexus/assets/brand/oneapp-nexus-light.svg');
     lightLogo.alt = 'ONEAPP NEXUS';

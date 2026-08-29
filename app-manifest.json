@@ -15,6 +15,40 @@
   },
   "applications": [
     {
+      "id": "nexus-home",
+      "name": "NEXUS Home",
+      "path": "nexus/index.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, and launch independent work apps without gating their local execution.",
+      "productionWrites": true,
+      "navigatesTo": [
+        "master-lookup",
+        "merchops",
+        "smart-input",
+        "orderops",
+        "dataops",
+        "smart-parser",
+        "export-center",
+        "settings",
+        "item-manager",
+        "history-viewer",
+        "orderq-vnext"
+      ],
+      "coreCapabilities": [
+        "basic login and logout",
+        "master or delegated-user identification",
+        "independent work-app launcher"
+      ],
+      "dependencyMode": {
+        "cachedSessionDisplay": "LOCAL_OPERATION",
+        "sessionRefresh": "BACKGROUND_SYNC",
+        "login": "SERVER_FINALIZE",
+        "logoutAudit": "BACKGROUND_SYNC"
+      },
+      "offlinePolicy": "A cached unexpired home session remains visible while server verification is delayed, and work apps do not load the login runtime or wait for the authentication service."
+    },
+    {
       "id": "merchops",
       "name": "MerchOps",
       "path": "MerchOps.html",
