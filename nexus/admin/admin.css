@@ -222,6 +222,7 @@
 }
 
 .nexus-audit-item {
+  min-width: 0;
   padding: 13px 14px;
   border: 1px solid var(--nexus-border);
   border-radius: 9px;
@@ -232,6 +233,20 @@
 .nexus-audit-item p {
   color: var(--nexus-muted);
   font-size: 12px;
+}
+
+.nexus-audit-item__heading {
+  min-width: 0;
+}
+
+.nexus-audit-item__heading strong,
+.nexus-audit-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nexus-audit-item time {
+  flex: 0 0 auto;
 }
 
 .nexus-audit-item p {
