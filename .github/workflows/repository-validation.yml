@@ -158,3 +158,9 @@ jobs:
 
       - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs
+
+      - name: Test CustomerMaster source-link and import contracts
+        run: node scripts/test-customer-master-independent.mjs
+
+      - name: Test CustomerMaster browser workflow and legacy XLS
+        run: node scripts/test-customer-master-browser-e2e.mjs

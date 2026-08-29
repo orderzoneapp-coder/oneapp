@@ -7,7 +7,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="customer-master"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="customer-master.css?v=1.0.2">
+  <link rel="stylesheet" href="customer-master.css?v=1.0.3">
   <script defer src="../nexus/common/nexus-ui.js?v=1.3.1"></script>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <title>거래처관리 - NEXUS</title>
@@ -56,7 +56,7 @@
           </div>
           <div class="cm-table-wrap cm-customer-table-wrap">
             <table class="cm-table cm-customer-table">
-              <thead><tr><th>거래처코드</th><th>거래처명</th><th>연락처·주소</th><th>그룹1</th><th>그룹2</th><th>담당자</th><th>상태</th><th>작업</th></tr></thead>
+              <thead><tr><th>NEXUS 거래처코드</th><th>거래처명</th><th>연락처·주소</th><th>그룹1</th><th>그룹2</th><th>담당자</th><th>상태</th><th>작업</th></tr></thead>
               <tbody id="customerTableBody"></tbody>
             </table>
           </div>
@@ -73,7 +73,7 @@
           </div>
           <div class="cm-table-wrap">
             <table class="cm-table cm-grid-table" id="completenessTable">
-              <thead><tr><th>행</th><th>거래처코드</th><th>상호</th><th>주소</th><th>휴대폰 번호</th><th>보완 항목</th></tr></thead>
+              <thead><tr><th>행</th><th>NEXUS 거래처코드</th><th>상호</th><th>주소</th><th>휴대폰 번호</th><th>보완 항목</th></tr></thead>
               <tbody id="completenessBody"></tbody>
             </table>
           </div>
@@ -84,22 +84,23 @@
       <section class="cm-view" data-view="excel" hidden>
         <section class="cm-panel">
           <div class="cm-section-head">
-            <div><h2>거래처코드 기준 Excel 등록·수정</h2><p>빈 값은 기존값을 유지하고 숫자 0은 정상값으로 반영합니다. 행별로 독립 저장합니다.</p></div>
+            <div><h2>ERP·SHOP 원본코드 기준 등록·연결</h2><p>NEXUS 거래처코드는 자동 생성하고 ERP 거래처코드와 SHOP 회원 아이디를 각각 연결합니다. 빈 값은 기존값을 유지하고 숫자 0은 정상값으로 반영합니다.</p></div>
             <button class="cm-button" id="resumeImportButton" type="button" hidden>중단 작업 이어서</button>
           </div>
           <div class="cm-file-row">
-            <select id="importSourceSystem" aria-label="원본 시스템"><option value="ERP">ERP</option><option value="SHOP">SHOP</option><option value="OTHER">기타</option></select>
-            <label class="cm-file-button">Excel 파일 선택<input id="customerFileInput" type="file" accept=".xlsx,.csv,.tsv" hidden></label>
+            <select id="importSourceSystem" aria-label="원본 시스템"><option value="ERP">ERP 거래처</option><option value="SHOP">SHOP 회원</option><option value="OTHER">기타 원본</option></select>
+            <label class="cm-file-button">Excel 파일 선택<input id="customerFileInput" type="file" accept=".xlsx,.xls,.csv,.tsv" hidden></label>
             <span id="selectedFileName">선택된 파일 없음</span>
           </div>
           <div id="mappingWorkbench" hidden>
             <h3>열 매핑</h3>
-            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>원본 열</th><th>거래처 항목</th><th>판정</th></tr></thead><tbody id="mappingPreviewBody"></tbody></table></div>
+            <p class="cm-list-note" id="mappingSummary">Excel 원본 열을 거래처관리의 저장 항목에 연결합니다.</p>
+            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>Excel 원본 열</th><th>저장할 거래처 정보</th><th>판정</th></tr></thead><tbody id="mappingPreviewBody"></tbody></table></div>
             <div class="cm-section-actions"><button class="cm-button" id="saveMappingsButton" type="button">현재 매핑 저장</button><button class="cm-button cm-button--primary" id="analyzeImportButton" type="button">업로드 분석</button></div>
           </div>
           <div id="importResult" hidden>
             <div class="cm-import-summary" id="importSummary"></div>
-            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>Excel 행</th><th>거래처코드</th><th>거래처명</th><th>처리 예정·결과</th><th>제외·실패 사유</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div>
+            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>Excel 행</th><th id="importSourceCodeHeading">원본 코드</th><th>원본 거래처명</th><th>처리 예정·결과</th><th>제외·실패 사유</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div>
             <div class="cm-section-actions"><span id="importProgress"></span><button class="cm-button cm-button--primary" id="applyImportButton" type="button">등록·수정 실행</button></div>
           </div>
         </section>
@@ -109,7 +110,7 @@
         <div class="cm-two-column">
           <section class="cm-panel">
             <div class="cm-section-head"><div><h2>Excel 헤더 매핑</h2><p>저장한 매핑은 다음 파일 분석부터 적용됩니다.</p></div></div>
-            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>원본</th><th>헤더</th><th>거래처 항목</th><th>수정일</th></tr></thead><tbody id="savedMappingsBody"></tbody></table></div>
+            <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>원본</th><th>헤더</th><th>저장할 거래처 정보</th><th>수정일</th></tr></thead><tbody id="savedMappingsBody"></tbody></table></div>
             <div class="cm-empty" id="savedMappingsEmpty" hidden>저장된 사용자 매핑이 없습니다.</div>
           </section>
           <section class="cm-panel">
@@ -151,7 +152,7 @@
       <header><div><small>Customer Master</small><h2 id="customerDialogTitle">거래처 등록</h2></div><button type="button" class="cm-icon-button" data-close-dialog aria-label="닫기">×</button></header>
       <input type="hidden" name="customerId"><input type="hidden" name="revision">
       <div class="cm-form-grid">
-        <label>거래처명 *<input name="customerName" required></label><label>거래처코드<input name="customerCode"></label>
+        <label>거래처명 *<input name="customerName" required></label><label>NEXUS 거래처코드<input name="nexusCode" readonly value="저장 시 자동 생성"></label>
         <label>대표자<input name="representativeName"></label><label>사업자번호<input name="businessNumber"></label>
         <label>업태<input name="businessType"></label><label>종목<input name="businessItem"></label>
         <label>전화<input name="phone"></label><label>팩스<input name="fax"></label>
@@ -173,6 +174,7 @@
   </dialog>
 
   <div class="cm-toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script type="module" src="app.js?v=1.0.1"></script>
+  <script src="vendor/xlsx.full.min.js?v=0.20.3"></script>
+  <script type="module" src="app.js?v=1.1.0"></script>
 </body>
 </html>

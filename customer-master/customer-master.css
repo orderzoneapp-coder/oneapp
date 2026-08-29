@@ -84,6 +84,8 @@ button { cursor: pointer; }
 .cm-file-row span { color: var(--cm-muted); font-size: 12px; }
 #mappingWorkbench h3 { margin: 14px 0 8px; font-size: 14px; }
 .cm-import-summary { margin: 14px 0 8px; display: flex; flex-wrap: wrap; gap: 7px; }
+.cm-review-actions { min-width: 420px; margin-top: 7px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.cm-review-actions select { width: min(320px, 100%); min-width: 220px; min-height: 32px; }
 .cm-two-column { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .cm-data-state { min-height: 70px; padding: 12px; border: 1px solid var(--cm-border); border-radius: 8px; background: var(--cm-subtle); color: var(--cm-muted); font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
 .cm-dialog { width: min(920px, calc(100vw - 30px)); max-height: calc(100vh - 30px); padding: 0; border: 1px solid var(--cm-border-strong); border-radius: 12px; background: var(--cm-panel); color: var(--cm-text); box-shadow: 0 22px 70px rgba(15,23,42,.24); }
@@ -138,6 +140,7 @@ html[data-nexus-ui-theme="dark"] .cm-toast { background: #33485a; }
   .cm-section-head { align-items: stretch; flex-direction: column; }
   .cm-file-row { align-items: stretch; flex-direction: column; }
   .cm-file-row select { width: 100%; }
+  .cm-review-actions { min-width: 260px; }
   .cm-form-grid { grid-template-columns: 1fr; }
   .cm-span-2 { grid-column: span 1; }
 }

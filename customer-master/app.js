@@ -3,6 +3,7 @@ import {
   CUSTOMER_QUALITY,
   CUSTOMER_STATUS,
   FIELD_LABELS,
+  IMPORT_FIELD_LABELS,
   analyzeImportRows,
   clean,
   customerDisplayStatus,
@@ -21,6 +22,7 @@ import {
   listHeaderMappings,
   listUserFields,
   prepareImportBatch,
+  resolveImportRecord,
   saveCustomer,
   saveHeaderMapping,
   saveUserField,
@@ -53,13 +55,24 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character
 
 const resultLabels = Object.freeze({
   READY_CREATE: '신규 등록', READY_UPDATE: '기존 거래처 수정', CREATED: '신규', UPDATED: '수정',
+  READY_LINK: '기존 거래처 연결', LINKED: '연결 완료', LINK_REVIEW: '연결 확인 필요',
   UNCHANGED: '변경 없음', FAILED: '실패', EMPTY_ROW_EXCLUDED: '빈 행 제외', SYSTEM_ROW_EXCLUDED: '시스템 행 제외',
 });
 
 const reasonLabels = Object.freeze({
-  CUSTOMER_CODE_MISSING: '거래처코드 없음', DUPLICATE_CODE_IN_IMPORT: '파일 내부 중복 거래처코드',
-  DUPLICATE_CUSTOMER_CODE_IN_DB: 'DB에 같은 거래처코드가 여러 건 존재', NUMBER_FIELD_PARSE_FAILED: '숫자 항목 변환 실패',
+  SOURCE_CODE_MISSING: '원본 코드 없음', DUPLICATE_SOURCE_CODE_IN_IMPORT: '파일 내부 중복 원본 코드',
+  DUPLICATE_LEGACY_CODE_IN_DB: '기존 DB에 같은 ERP 코드가 여러 건 존재', SOURCE_LINK_CUSTOMER_MISSING: '외부코드 연결 대상 거래처 없음',
+  NAME_ONLY_MATCH_REQUIRES_REVIEW: '이름만 일치하여 자동 연결하지 않음', NUMBER_FIELD_PARSE_FAILED: '숫자 항목 변환 실패',
+  STATUS_FIELD_PARSE_FAILED: '사용 상태 값 변환 실패',
 });
+
+const sourceCodeLabel = (sourceSystem = $('#importSourceSystem')?.value || 'OTHER') => ({
+  ERP: 'ERP 거래처코드', SHOP: 'SHOP 회원 아이디', OTHER: '원본 거래처코드',
+}[clean(sourceSystem).toUpperCase()] || '원본 거래처코드');
+
+const importFieldLabel = (fieldKey, sourceSystem) => fieldKey === 'sourceCustomerCode'
+  ? sourceCodeLabel(sourceSystem)
+  : (IMPORT_FIELD_LABELS[fieldKey] || FIELD_LABELS[fieldKey] || fieldKey);
 
 function setStatus(message, type = 'ready') {
   $('#appStatus').dataset.state = type;
@@ -152,7 +165,7 @@ function renderCustomerList() {
     const address = [customer.address, customer.addressDetail].map(clean).filter(Boolean).join(' ');
     const contact = [customer.mobile || customer.phone, address].map(clean).filter(Boolean).join(' · ');
     return `<tr data-customer-id="${escapeHtml(customer.customerId)}">
-      <td>${escapeHtml(customer.customerCode || '-')}</td>
+      <td>${escapeHtml(customer.customerId || '-')}</td>
       <td><strong>${escapeHtml(customer.customerName || '(상호 미입력)')}</strong><small>Rev.${Number(customer.revision || 1)}</small></td>
       <td>${escapeHtml(contact || '-')}</td><td>${escapeHtml(customer.group1Name || '-')}</td><td>${escapeHtml(customer.group2Name || '-')}</td>
       <td>${escapeHtml(customer.contactName || '-')}</td><td>${statusBadge(customer)}</td>
@@ -168,7 +181,7 @@ function renderCompleteness() {
     .sort((left, right) => clean(left.customerName).localeCompare(clean(right.customerName), 'ko'));
   $('#completenessBody').innerHTML = customers.map((customer, rowIndex) => {
     const missing = missingCustomerFields(customer).map(([, label]) => label).join(', ');
-    return `<tr data-customer-id="${escapeHtml(customer.customerId)}"><td>${rowIndex + 1}</td><td>${escapeHtml(customer.customerCode || '-')}</td>
+    return `<tr data-customer-id="${escapeHtml(customer.customerId)}"><td>${rowIndex + 1}</td><td>${escapeHtml(customer.customerId || '-')}</td>
       ${['customerName', 'address', 'mobile'].map((field, columnIndex) => `<td><input data-grid-input data-row="${rowIndex}" data-column="${columnIndex}" data-customer-id="${escapeHtml(customer.customerId)}" data-field="${field}" value="${escapeHtml(customer[field] || '')}" aria-label="${escapeHtml(FIELD_LABELS[field])}"></td>`).join('')}
       <td data-issue-label="${escapeHtml(customer.customerId)}">${escapeHtml(missing)}</td></tr>`;
   }).join('');
@@ -183,13 +196,24 @@ function renderIssueChangeCount() {
 }
 
 function fieldOptions(selected = '') {
-  const standard = CUSTOMER_FIELDS.filter((field) => !/^user(?:Text|Number)/.test(field));
+  const sourceSystem = $('#importSourceSystem').value;
+  const special = ['sourceCustomerCode', 'sourceNickname', 'sourceSearchText'];
+  const standard = [...CUSTOMER_FIELDS.filter((field) => field !== 'customerCode' && !/^user(?:Text|Number)/.test(field)), 'status'];
   const userFields = state.userFields?.filter((row) => row.enabled && clean(row.displayName)) || [];
-  return `<option value="">미매핑</option>${standard.map((field) => `<option value="${field}"${selected === field ? ' selected' : ''}>${escapeHtml(FIELD_LABELS[field] || field)}</option>`).join('')}${userFields.map((field) => `<option value="${field.fieldKey}"${selected === field.fieldKey ? ' selected' : ''}>${escapeHtml(field.displayName)}</option>`).join('')}`;
+  return `<option value="">저장하지 않음</option>${special.map((field) => `<option value="${field}"${selected === field ? ' selected' : ''}>${escapeHtml(importFieldLabel(field, sourceSystem))}</option>`).join('')}${standard.map((field) => `<option value="${field}"${selected === field ? ' selected' : ''}>${escapeHtml(importFieldLabel(field, sourceSystem))}</option>`).join('')}${userFields.map((field) => `<option value="${field.fieldKey}"${selected === field.fieldKey ? ' selected' : ''}>${escapeHtml(field.displayName)}</option>`).join('')}`;
+}
+
+function renderMappingSummary() {
+  const mapped = state.mapping.filter((entry) => entry.targetFieldKey).length;
+  const skipped = state.mapping.length - mapped;
+  const codeMapped = state.mapping.some((entry) => entry.targetFieldKey === 'sourceCustomerCode');
+  $('#mappingSummary').textContent = `${mapped.toLocaleString()}개 자동 연결 · ${skipped.toLocaleString()}개 저장하지 않음${codeMapped ? '' : ` · ${sourceCodeLabel()}를 지정해야 분석할 수 있습니다.`}`;
 }
 
 async function renderMappingPreview() {
-  $('#mappingPreviewBody').innerHTML = state.mapping.map((entry, index) => `<tr><td>${escapeHtml(entry.header)}</td><td><select data-mapping-index="${index}">${fieldOptions(entry.targetFieldKey)}</select></td><td>${entry.source === 'UNMATCHED' ? '<span class="cm-badge" data-tone="warning">미매핑 열</span>' : `<span class="cm-badge" data-tone="success">${escapeHtml(entry.source)}</span>`}</td></tr>`).join('');
+  const sourceLabels = { STANDARD: '자동 연결', SOURCE: '원본코드 연결', SAVED: '저장된 연결', USER: '사용자 필드', MANUAL: '직접 선택' };
+  $('#mappingPreviewBody').innerHTML = state.mapping.map((entry, index) => `<tr><td>${escapeHtml(entry.header)}</td><td><select data-mapping-index="${index}">${fieldOptions(entry.targetFieldKey)}</select></td><td>${entry.source === 'UNMATCHED' ? '<span class="cm-badge" data-tone="warning">저장하지 않음</span>' : `<span class="cm-badge" data-tone="success">${escapeHtml(sourceLabels[entry.source] || entry.source)}</span>`}</td></tr>`).join('');
+  renderMappingSummary();
 }
 
 function importSummary(records) {
@@ -204,22 +228,51 @@ function importSummary(records) {
 
 function renderImportWork() {
   const records = state.importWork?.records || [];
+  const previewRecords = [
+    ...records.filter((record) => record.resultType === 'LINK_REVIEW'),
+    ...records.filter((record) => record.resultType !== 'LINK_REVIEW'),
+  ].slice(0, 500);
   $('#importResult').hidden = false;
   $('#importSummary').innerHTML = importSummary(records);
-  $('#importPreviewBody').innerHTML = records.slice(0, 500).map((record) => {
+  $('#importPreviewBody').innerHTML = previewRecords.map((record) => {
     const reason = reasonLabels[record.reasonCode] || record.errorMessage || '';
     const fieldIssues = (record.fieldExclusions || []).map((row) => `${row.header}: ${reasonLabels[row.reasonCode] || row.reasonCode}`).join(', ');
     const unmatched = Object.keys(record.unmatchedValues || {}).length ? `미매핑 열 ${Object.keys(record.unmatchedValues).join(', ')}` : '';
-    return `<tr><td>${record.rowNo}</td><td>${escapeHtml(record.values?.customerCode || '')}</td><td>${escapeHtml(record.values?.customerName || '')}</td><td>${escapeHtml(resultLabels[record.resultType] || record.resultType)}</td><td>${escapeHtml([reason, fieldIssues, unmatched].filter(Boolean).join(' · '))}</td></tr>`;
+    const candidates = (record.candidateCustomerIds || []).map((customerId) => state.data.customers.find((customer) => customer.customerId === customerId)).filter(Boolean);
+    const reviewControls = record.resultType === 'LINK_REVIEW' ? `<div class="cm-review-actions">
+      <select data-review-customer aria-label="연결할 NEXUS 거래처">${candidates.map((customer) => `<option value="${escapeHtml(customer.customerId)}">${escapeHtml(customer.customerName || '(상호 미입력)')} · ${escapeHtml(customer.customerId)}</option>`).join('')}</select>
+      <button type="button" class="cm-row-button" data-resolve-review="LINK">기존 거래처 연결</button>
+      <button type="button" class="cm-row-button" data-resolve-review="CREATE">신규 생성</button>
+    </div>` : '';
+    return `<tr data-source-record-id="${escapeHtml(record.sourceRecordId || '')}"><td>${record.rowNo}</td><td>${escapeHtml(record.sourceValues?.sourceCustomerCode || '')}</td><td>${escapeHtml(record.sourceValues?.sourceCustomerName || record.values?.customerName || '')}</td><td>${escapeHtml(resultLabels[record.resultType] || record.resultType)}${reviewControls}</td><td>${escapeHtml([reason, fieldIssues, unmatched].filter(Boolean).join(' · '))}</td></tr>`;
   }).join('');
   $('#applyImportButton').disabled = !records.some((row) =>
-    ['READY_CREATE', 'READY_UPDATE'].includes(row.resultType === 'FAILED' ? row.retryResultType : row.resultType));
+    ['READY_CREATE', 'READY_UPDATE', 'READY_LINK'].includes(row.resultType === 'FAILED' ? row.retryResultType : row.resultType));
+}
+
+async function resolveReviewAction(button) {
+  const row = button.closest('[data-source-record-id]');
+  const sourceRecordId = row?.dataset.sourceRecordId;
+  const mode = button.dataset.resolveReview;
+  if (!sourceRecordId || !['LINK', 'CREATE'].includes(mode)) return;
+  const customerId = mode === 'LINK' ? $('[data-review-customer]', row)?.value : '';
+  await withBusy(mode === 'LINK' ? '기존 거래처 연결 준비 중' : '신규 거래처 생성 준비 중', async () => {
+    const updated = await resolveImportRecord(sourceRecordId, { mode, customerId });
+    state.importWork.records = state.importWork.records.map((record) => record.sourceRecordId === sourceRecordId ? updated : record);
+    renderImportWork();
+    toast(mode === 'LINK' ? '선택한 NEXUS 거래처에 연결하도록 지정했습니다.' : '새 NEXUS 거래처로 생성하도록 지정했습니다.');
+  });
 }
 
 async function renderMappingManagement() {
   const [mappings, userFields] = await Promise.all([listHeaderMappings(), listUserFields()]);
   state.userFields = userFields;
-  $('#savedMappingsBody').innerHTML = mappings.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).map((row) => `<tr><td>${escapeHtml(row.sourceSystem)}</td><td>${escapeHtml(row.originalHeader)}</td><td>${escapeHtml(FIELD_LABELS[row.targetFieldKey] || userFields.find((field) => field.fieldKey === row.targetFieldKey)?.displayName || row.targetFieldKey)}</td><td>${escapeHtml(String(row.updatedAt || '').replace('T', ' ').slice(0, 16))}</td></tr>`).join('');
+  $('#savedMappingsBody').innerHTML = mappings.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).map((row) => {
+    const targetLabel = row.targetFieldKey === 'sourceCustomerCode' ? sourceCodeLabel(row.sourceSystem)
+      : IMPORT_FIELD_LABELS[row.targetFieldKey] || FIELD_LABELS[row.targetFieldKey]
+        || userFields.find((field) => field.fieldKey === row.targetFieldKey)?.displayName || row.targetFieldKey;
+    return `<tr><td>${escapeHtml(row.sourceSystem)}</td><td>${escapeHtml(row.originalHeader)}</td><td>${escapeHtml(targetLabel)}</td><td>${escapeHtml(String(row.updatedAt || '').replace('T', ' ').slice(0, 16))}</td></tr>`;
+  }).join('');
   $('#savedMappingsEmpty').hidden = mappings.length !== 0;
   $('#userFieldsBody').innerHTML = userFields.sort((left, right) => left.fieldType.localeCompare(right.fieldType) || left.displayOrder - right.displayOrder).map((row) => `<tr data-user-field="${row.fieldKey}"><td><input type="checkbox" data-user-enabled${row.enabled ? ' checked' : ''}></td><td>${row.fieldType === 'NUMBER' ? '숫자' : '텍스트'}</td><td><input data-user-name value="${escapeHtml(row.displayName || '')}" placeholder="표시명"></td><td><input data-user-aliases value="${escapeHtml((row.headerAliases || []).join(', '))}" placeholder="쉼표로 구분"></td></tr>`).join('');
 }
@@ -261,6 +314,7 @@ async function openCustomerDialog(customerId = '') {
     form.elements.shopCode.value = shop?.sourceCustomerCode || '';
     form.elements.shopName.value = shop?.sourceCustomerName || '';
   }
+  form.elements.nexusCode.value = customerId || '저장 시 자동 생성';
   $('#customerDialog').showModal();
   setTimeout(() => form.elements.customerName.focus(), 0);
 }
@@ -368,7 +422,8 @@ async function selectCustomerFile(file) {
     ]);
     state.file = file; state.fileHash = hash; state.workbook = workbook; state.userFields = userFields;
     state.mapping = defaultHeaderMapping(workbook.headers, storedMappings, userFields, $('#importSourceSystem').value);
-    $('#selectedFileName').textContent = `${file.name} · ${workbook.sheetName} · ${workbook.rows.length.toLocaleString()}행`;
+    $('#selectedFileName').textContent = `${file.name} · ${workbook.sheetName} · 헤더 ${Number(workbook.headerRowNumber || 1).toLocaleString()}행 자동 인식 · 데이터 ${workbook.rows.length.toLocaleString()}행`;
+    $('#importSourceCodeHeading').textContent = sourceCodeLabel();
     $('#mappingWorkbench').hidden = false;
     $('#importResult').hidden = true;
     await renderMappingPreview();
@@ -390,11 +445,14 @@ async function saveCurrentMappings() {
 
 async function analyzeSelectedImport() {
   if (!state.workbook) throw new Error('먼저 Excel 파일을 선택해 주세요.');
-  if (!state.mapping.some((row) => row.targetFieldKey === 'customerCode')) throw new Error('거래처코드 열을 반드시 연결해야 합니다.');
+  if (!state.mapping.some((row) => row.targetFieldKey === 'sourceCustomerCode')) throw new Error(`${sourceCodeLabel()} 열을 반드시 연결해야 합니다.`);
   await withBusy('업로드 행 분석 중', async () => {
-    const records = analyzeImportRows(state.workbook.rows, state.mapping, state.data.customers);
+    const sourceSystem = $('#importSourceSystem').value;
+    const records = analyzeImportRows(state.workbook.rows, state.mapping, state.data.customers, {
+      sourceSystem, sourceLinks: state.data.sourceLinks, rowNumbers: state.workbook.rowNumbers,
+    });
     state.importWork = await prepareImportBatch({
-      fileName: state.file.name, fileHash: state.fileHash, sourceSystem: $('#importSourceSystem').value,
+      fileName: state.file.name, fileHash: state.fileHash, sourceSystem,
       mapping: state.mapping, records,
     });
     renderImportWork();
@@ -414,7 +472,10 @@ async function executeImport() {
     renderImportWork();
     await refreshAll();
     const failed = records.filter((row) => row.resultType === 'FAILED').length;
-    toast(failed ? `${failed.toLocaleString()}개 행은 실패 사유를 확인해 주세요.` : 'Excel 등록·수정을 완료했습니다.', failed ? 'error' : 'info');
+    const pendingReview = records.filter((row) => row.resultType === 'LINK_REVIEW').length;
+    toast(failed || pendingReview
+      ? `실패 ${failed.toLocaleString()}건 · 연결 확인 ${pendingReview.toLocaleString()}건이 남았습니다.`
+      : 'Excel 등록·연결을 완료했습니다.', failed ? 'error' : 'info');
   });
 }
 
@@ -533,10 +594,15 @@ function bindEvents() {
     if (!select) return;
     const index = Number(select.dataset.mappingIndex);
     state.mapping[index] = { ...state.mapping[index], targetFieldKey: select.value, source: select.value ? 'MANUAL' : 'UNMATCHED' };
+    renderMappingSummary();
   });
   $('#saveMappingsButton').addEventListener('click', () => saveCurrentMappings().catch(() => {}));
   $('#analyzeImportButton').addEventListener('click', () => analyzeSelectedImport().catch((error) => toast(error.message, 'error')));
   $('#applyImportButton').addEventListener('click', () => executeImport().catch(() => {}));
+  $('#importPreviewBody').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-resolve-review]');
+    if (button) resolveReviewAction(button).catch(() => {});
+  });
   $('#resumeImportButton').addEventListener('click', () => resumeImport().catch(() => {}));
   $('#saveUserFieldsButton').addEventListener('click', () => saveUserFields().catch(() => {}));
   $('#refreshHistoryButton').addEventListener('click', () => renderHistory().catch((error) => toast(error.message, 'error')));

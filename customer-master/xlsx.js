@@ -1,4 +1,4 @@
-import { clean, parseDelimited } from './core.js';
+import { parseDelimited, tabularRows } from './core.js';
 
 const textDecoder = new TextDecoder('utf-8');
 
@@ -71,16 +71,6 @@ function columnIndex(reference) {
   return [...letters].reduce((value, character) => (value * 26) + character.charCodeAt(0) - 64, 0) - 1;
 }
 
-function uniqueHeaders(values) {
-  const seen = new Map();
-  return values.map((value, index) => {
-    const base = clean(value) || `열 ${index + 1}`;
-    const count = (seen.get(base) || 0) + 1;
-    seen.set(base, count);
-    return count === 1 ? base : `${base} (${count})`;
-  });
-}
-
 function sheetRows(document, sharedStrings) {
   const matrix = [];
   [...document.getElementsByTagName('row')].forEach((rowNode) => {
@@ -100,14 +90,7 @@ function sheetRows(document, sharedStrings) {
     });
     matrix[rowNumber - 1] = row;
   });
-  while (matrix.length && (!matrix[0] || matrix[0].every((value) => clean(value) === ''))) matrix.shift();
-  const headerValues = matrix.shift() || [];
-  const headers = uniqueHeaders(headerValues);
-  return {
-    headers,
-    rows: matrix.filter((row) => row?.some((value) => clean(value) !== ''))
-      .map((row) => Object.fromEntries(headers.map((header, index) => [header, row?.[index] ?? '']))),
-  };
+  return tabularRows(matrix);
 }
 
 export async function parseXlsxBuffer(buffer) {
@@ -142,6 +125,17 @@ export async function parseCustomerFile(file) {
     const parsed = parseDelimited(await file.text(), extension === 'tsv' ? '\t' : ',');
     return { sheetName: extension.toUpperCase(), ...parsed };
   }
-  if (extension !== 'xlsx') throw new Error('지원 형식은 .xlsx, .csv, .tsv입니다.');
+  if (extension === 'xls') {
+    const XLSX = globalThis.XLSX;
+    if (!XLSX?.read || !XLSX?.utils?.sheet_to_json) throw new Error('구형 Excel(.xls) 파서를 불러오지 못했습니다. 앱을 새로고침해 주세요.');
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false, cellText: true, cellNF: true });
+    const sheetName = workbook.SheetNames?.[0];
+    if (!sheetName || !workbook.Sheets?.[sheetName]) throw new Error('XLS 파일에 읽을 수 있는 시트가 없습니다.');
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      header: 1, raw: true, defval: '', blankrows: true,
+    });
+    return { sheetName, ...tabularRows(matrix) };
+  }
+  if (extension !== 'xlsx') throw new Error('지원 형식은 .xlsx, .xls, .csv, .tsv입니다.');
   return parseXlsxBuffer(await file.arrayBuffer());
 }
