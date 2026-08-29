@@ -6,6 +6,7 @@ import {
 } from './company-transport.js?v=1.0.0';
 
 const SNAPSHOT_KEY = 'oneapp.nexus.company.snapshot.v1';
+const COMPANY_APP_LABEL = '회사정보';
 const FIELD_SECTIONS = Object.freeze([
   Object.freeze({
     id: 'basic', title: '기본정보', fields: Object.freeze([
@@ -51,6 +52,21 @@ let profile = null;
 let periods = [];
 let dirty = false;
 let saving = false;
+
+const applyCompanyCurrentLabel = () => {
+  const current = document.querySelector('.nexus-ui-brand__current');
+  if (!current) return;
+  current.textContent = COMPANY_APP_LABEL;
+  current.title = COMPANY_APP_LABEL;
+};
+
+const bindCompanyCurrentLabel = () => {
+  if (document.documentElement.dataset.nexusUiReady === 'true') {
+    applyCompanyCurrentLabel();
+    return;
+  }
+  window.addEventListener('nexus-ui:ready', applyCompanyCurrentLabel, { once: true });
+};
 
 const display = (value) => {
   if (Array.isArray(value)) return value.length ? value.join(', ') : '미등록';
@@ -348,6 +364,7 @@ const bind = () => {
 };
 
 const start = async () => {
+  bindCompanyCurrentLabel();
   buildForm();
   bind();
   if (!sessionBundle) {
