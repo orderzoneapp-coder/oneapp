@@ -33,6 +33,7 @@
       <button type="button" class="cm-tab" data-tab="excel">Excel 등록·수정</button>
       <button type="button" class="cm-tab" data-tab="mapping">매핑사전</button>
       <button type="button" class="cm-tab" data-tab="history">변경이력</button>
+      <button type="button" class="cm-tab" data-tab="requests">변경요청</button>
       <button type="button" class="cm-tab" data-tab="data">데이터 이전·복원</button>
     </nav>
 
@@ -145,6 +146,15 @@
           <div class="cm-section-head"><div><h2>거래처 변경이력</h2><p>작업자 확인 상태, 변경 Revision과 작업 시각을 원본 그대로 표시합니다.</p></div><button class="cm-button" id="refreshHistoryButton" type="button">새로고침</button></div>
           <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>작업 시각</th><th>거래처</th><th>작업</th><th>Revision</th><th>작업자</th><th>확인 상태</th></tr></thead><tbody id="historyBody"></tbody></table></div>
           <div class="cm-empty" id="historyEmpty" hidden>변경이력이 없습니다.</div>
+        </section>
+      </section>
+
+      <section class="cm-view" data-view="requests" hidden>
+        <section class="cm-panel">
+          <div class="cm-section-head"><div><h2>거래처 기준정보 변경요청 Inbox</h2><p>요청 접수 상태만 읽기 전용으로 표시합니다. 접수는 승인이나 거래처 원본 자동 반영을 의미하지 않습니다.</p></div><button class="cm-button" id="refreshChangeRequestsButton" type="button">새로고침</button></div>
+          <div class="cm-data-state" id="changeRequestInboxState">Inbox 확인 전</div>
+          <div class="cm-table-wrap"><table class="cm-table"><thead><tr><th>접수 시각</th><th>요청 ID</th><th>대상 거래처</th><th>작업</th><th>요청 앱</th><th>상태</th></tr></thead><tbody id="changeRequestInboxBody"></tbody></table></div>
+          <div class="cm-empty" id="changeRequestInboxEmpty" hidden>접수된 거래처 변경요청이 없습니다.</div>
         </section>
       </section>
 

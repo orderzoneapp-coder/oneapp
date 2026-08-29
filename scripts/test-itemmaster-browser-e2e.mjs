@@ -161,6 +161,12 @@ class CdpClient {
     this.events.set(method, listeners.filter(candidate => candidate !== listener));
   }
 
+  on(method, listener) {
+    const listeners = this.events.get(method) || [];
+    listeners.push(listener);
+    this.events.set(method, listeners);
+  }
+
   close() {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.close();
   }
@@ -325,6 +331,10 @@ try {
   await client.connect();
   await client.send('Page.enable');
   await client.send('Runtime.enable');
+  const runtimeErrors = [];
+  const consoleErrors = [];
+  client.on('Runtime.exceptionThrown', event => runtimeErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'Runtime exception'));
+  client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') consoleErrors.push(event.args?.map(value => value.value || value.description || '').join(' ') || 'console.error'); });
 
   let pageLoaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/Master.html` });
@@ -427,6 +437,12 @@ try {
   const reloaded = await readStoredProduct(client, testCode);
   assert.equal(reloaded.product?.품목명, editedName);
 
+  // The duplicate and revision-conflict cases above intentionally exercise
+  // visible error paths. Measure console safety from the normal owner/inbox
+  // and compatibility flows that follow.
+  runtimeErrors.length = 0;
+  consoleErrors.length = 0;
+
   await seedLegacyProducts(client, [
     {
       코드: 'LEGACY-NEW-001', 품목코드: 'LEGACY-NEW-001', 품목명: '레거시 신규 상품', 규격: '1EA', 단위: 'EA',
@@ -478,6 +494,25 @@ try {
   assert.equal((await readLegacyProducts(client)).length, 3);
   assert.ok(imported.history.some(log => log.code === 'LEGACY-NEW-001'));
 
+  const requestReceipt = await evaluate(client, `(async()=>{
+    const module=await import('/reference-data/product-change-request-adapter.js?master-ui=1');
+    return module.productMasterChangeRequestAdapter.submitChangeRequest({
+      schemaVersion:'ONEAPP_REFERENCE_CHANGE_REQUEST_V1',requestId:'MASTER-UI-REQ-1',idempotencyKey:'MASTER-UI-IDEM-1',
+      domain:'PRODUCT',ownerAppId:'master-lookup',entityId:${JSON.stringify(testCode)},operation:'UPDATE',
+      baseSnapshotId:'PRODUCT-${edited.revision}',baseRevision:${JSON.stringify(edited.revision)},
+      changes:[{field:'품목명',beforeValue:${JSON.stringify(editedName)},proposedValue:'검토 제안 상품명'}],
+      reason:'Master inbox browser test',source:{appId:'browser-test'},actor:{actorId:null,actorName:'browser',actorState:'UNVERIFIED_LOCAL'},requestedAt:'2026-08-30T00:00:00.000Z'
+    });
+  })()`);
+  assert.equal(requestReceipt.status, 'PENDING', JSON.stringify(requestReceipt));
+  await clickButton(client, 'Inbox 새로고침');
+  try {
+    await waitForExpression(client, `document.querySelector('[data-product-change-request-inbox="READY"]')?.innerText.includes(${JSON.stringify(testCode)}) && document.body.innerText.includes('자동 승인·자동 master 반영 없음')`, 'product read-only change-request inbox');
+  } catch (error) {
+    const diagnostic = await evaluate(client, `({status:document.querySelector('[data-product-change-request-inbox]')?.getAttribute('data-product-change-request-inbox'),text:document.querySelector('[data-product-change-request-inbox]')?.innerText,global:window.ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER?.version})`);
+    throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}`);
+  }
+
   pageLoaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/ItemMaster.html` });
   await pageLoaded;
@@ -490,7 +525,10 @@ try {
   await pageLoaded;
   assert.equal(await evaluate(client, `document.title.length > 0 && document.body.innerText.length > 0`), true);
 
-  console.log('PASS Master initial registration, single edit persistence, legacy safety, and ItemMaster compatibility');
+  assert.deepEqual(runtimeErrors, [], `browser runtime errors: ${runtimeErrors.join(' | ')}`);
+  assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);
+
+  console.log('PASS Master initial registration, inbox diagnostics, console, legacy safety, and ItemMaster compatibility');
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) {

@@ -83,7 +83,7 @@ assert.match(sources, /oneapp-orderq-vnext/);
 assert.match(sources, /LEGACY_EXPECTED_VERSION\s*=\s*17/);
 
 const html = await read('customer-master/index.html');
-for (const label of ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '데이터 이전·복원']) {
+for (const label of ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '변경요청', '데이터 이전·복원']) {
   assert.ok(html.includes(`>${label}<`), `required tab label: ${label}`);
 }
 for (const label of ['거래처 등록', '변경 저장', '등록·수정 실행', '대표 거래처로 연결', 'Snapshot 내보내기', 'v17 데이터 확인']) {
@@ -99,10 +99,12 @@ const manifest = JSON.parse(await read('app-manifest.json'));
 const app = manifest.applications.find((entry) => entry.id === 'customer-master');
 assert.equal(app.path, 'customer-master/index.html');
 assert.equal(app.status, 'pilot');
-assert.deepEqual(app.sharedContracts, ['customer-master']);
+assert.deepEqual(app.sharedContracts, ['customer-master', 'customer-reference-change-request']);
 const contract = manifest.sharedDataContracts.find((entry) => entry.id === 'customer-master');
 assert.equal(contract.owner, 'customer-master');
 assert.equal(contract.localDatabase, 'oneapp-customermaster-v1');
 assert.deepEqual(contract.consumers, [], 'consumer apps must be connected in separate verified work');
+assert.match(await read('customer-master/read-adapter.js'), /getCustomerSnapshotResult/);
+assert.match(await read('customer-master/read-adapter.js'), /status:\s*selected\.length\s*>\s*0\s*\?\s*'READY'\s*:\s*'EMPTY'/);
 
 console.log('PASS independent CustomerMaster contracts and import rules');

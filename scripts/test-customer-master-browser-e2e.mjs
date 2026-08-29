@@ -178,7 +178,7 @@ try {
   console.log('CustomerMaster E2E · independent app ready');
   assert.equal(await evaluate(client, 'document.title'), '거래처관리 - NEXUS');
   assert.equal(await evaluate(client, `document.querySelector('[data-nexus-app-header="customer-master"]')?.offsetHeight >= 56`), true);
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('.cm-tab')].map(element=>element.textContent.trim())`), ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '데이터 이전·복원']);
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('.cm-tab')].map(element=>element.textContent.trim())`), ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '변경요청', '데이터 이전·복원']);
 
   await click(client, '.cm-tab[data-tab="data"]');
   await click(client, '#inspectLegacyButton');
@@ -268,6 +268,64 @@ try {
   const linkedData = await readDb(client, dbName);
   assert.equal(linkedData.customers.length, 3, 'manual SHOP link must not create a duplicate NEXUS customer');
   assert.equal(linkedData.customerSourceLinks.length, 3);
+
+  const readContract = await evaluate(client, `(async()=>{
+    const adapter=window.__CUSTOMER_MASTER_DEBUG__.customerReadAdapter;
+    const first=await adapter.getSnapshotResult();
+    const second=await adapter.getSnapshot();
+    const beforeName=first.snapshot.data.customers[0].customerName;
+    try{first.snapshot.data.customers[0].customerName='mutated';}catch{}
+    return {status:first.status,schema:first.snapshot.schemaVersion,adapterVersion:first.snapshot.adapterVersion,sameHash:first.snapshot.contentHash===second.contentHash,frozen:Object.isFrozen(first.snapshot)&&Object.isFrozen(first.snapshot.data)&&Object.isFrozen(first.snapshot.data.customers)&&Object.isFrozen(first.snapshot.data.customers[0]),unchanged:first.snapshot.data.customers[0].customerName===beforeName};
+  })()`);
+  assert.equal(readContract.status, 'READY');
+  assert.equal(readContract.schema, 'ONEAPP_CUSTOMER_SNAPSHOT_V1');
+  assert.equal(readContract.adapterVersion, 'ONEAPP_CUSTOMER_READ_ADAPTER_V1');
+  assert.equal(readContract.sameHash, true);
+  assert.equal(readContract.frozen, true);
+  assert.equal(readContract.unchanged, true);
+
+  const forcedReadFailure = await evaluate(client, `(async()=>{
+    const original=IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction=function(){throw new Error('FORCED_CUSTOMER_READ_FAILURE');};
+    try{return await window.__CUSTOMER_MASTER_DEBUG__.customerReadAdapter.getSnapshotResult();}
+    finally{IDBDatabase.prototype.transaction=original;}
+  })()`);
+  assert.equal(forcedReadFailure.status, 'ERROR');
+  assert.equal(forcedReadFailure.snapshot, null, 'customer read failure must not masquerade as zero customers');
+
+  const customerRequest = {
+    schemaVersion: 'ONEAPP_REFERENCE_CHANGE_REQUEST_V1', requestId: 'CUSTOMER-REQ-1', idempotencyKey: 'CUSTOMER-IDEM-1',
+    domain: 'CUSTOMER', ownerAppId: 'customer-master', entityId: first.customerId, operation: 'UPDATE',
+    baseSnapshotId: mappedSnapshot.snapshotId, baseRevision: first.revision,
+    changes: [{ field: 'customerName', beforeValue: first.customerName, proposedValue: '검토 제안명' }],
+    reason: 'Customer browser contract test', source: { appId: 'browser-test' },
+    actor: { actorId: null, actorName: 'browser', actorState: 'UNVERIFIED_LOCAL' }, requestedAt: '2026-08-30T00:00:00.000Z',
+  };
+  const requestReceipts = await evaluate(client, `(async()=>{
+    const module=await import('/customer-master/change-request-adapter.js?browser=1');
+    const request=${JSON.stringify(customerRequest)};
+    const first=await module.customerMasterChangeRequestAdapter.submitChangeRequest(request);
+    const replay=await module.customerMasterChangeRequestAdapter.submitChangeRequest(request);
+    const conflict=await module.customerMasterChangeRequestAdapter.submitChangeRequest({...request,changes:[{field:'customerName',beforeValue:request.changes[0].beforeValue,proposedValue:'다른 제안'}]});
+    const invalid=await module.customerMasterChangeRequestAdapter.submitChangeRequest({...request,requestId:'BAD',idempotencyKey:'BAD',ownerAppId:'master-lookup'});
+    const list=await module.customerMasterChangeRequestAdapter.listChangeRequests();
+    return {first,replay,conflict,invalid,list};
+  })()`);
+  assert.equal(requestReceipts.first.status, 'PENDING');
+  assert.equal(requestReceipts.replay.status, 'DUPLICATE');
+  assert.equal(requestReceipts.conflict.status, 'CONFLICT');
+  assert.equal(requestReceipts.invalid.status, 'REJECTED');
+  assert.equal(requestReceipts.list.requests.length, 1);
+
+  const inboxState = await evaluate(client, `new Promise((resolve,reject)=>{const r=indexedDB.open(${JSON.stringify(dbName)},1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const tx=db.transaction(['customers','appMeta'],'readonly');const count=tx.objectStore('customers').count();const inbox=tx.objectStore('appMeta').get('referenceChangeRequestsV1');tx.oncomplete=()=>{const result={version:db.version,stores:[...db.objectStoreNames],count:count.result,inbox:inbox.result};db.close();resolve(result);};tx.onerror=()=>reject(tx.error);};})`);
+  assert.equal(inboxState.version, 1, 'customer inbox must not require a DB version migration');
+  assert.deepEqual(inboxState.stores.sort(), ['appMeta','customerAliases','customerEvents','customerHeaderMappings','customerSourceLinkEvents','customerSourceLinks','customerUserFieldDefinitions','customers','importBatches','migrationSnapshots','sourceRecords'].sort());
+  assert.equal(inboxState.count, 3, 'request receipt must preserve customer records');
+  assert.equal(inboxState.inbox.value.requests.length, 1);
+  assert.equal((await readDb(client, dbName)).customers.find((row) => row.customerId === first.customerId).customerName, first.customerName, 'request receipt must not apply customer changes');
+
+  await click(client, '.cm-tab[data-tab="requests"]');
+  await waitFor(() => evaluate(client, `document.querySelector('#changeRequestInboxBody').innerText.includes('CUSTOMER-REQ-1') && document.querySelector('#changeRequestInboxState').textContent.includes('자동 승인·자동 반영 없음')`), 'customer read-only change-request inbox');
   assert.deepEqual(runtimeErrors, []);
   assert.deepEqual(consoleErrors, []);
   console.log(`PASS CustomerMaster browser E2E · customers=${data.customers.length} · events=${data.customerEvents.length}`);

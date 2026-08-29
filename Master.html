@@ -61,6 +61,9 @@
                 box.style.display = 'block';
             }
             window.__showBootError = showBootError;
+            window.__loadProductChangeRequestAdapter = function () {
+                return import('./reference-data/product-change-request-adapter.js');
+            };
             window.addEventListener('error', function (e) {
                 showBootError('스크립트 실행 오류', (e.message || 'Unknown error') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
             });
@@ -1131,12 +1134,23 @@
             const [initialImportDraft, setInitialImportDraft] = useState(null);
             const [editingProduct, setEditingProduct] = useState(null);
             const [legacyState, setLegacyState] = useState({ status: 'checking', exists: false, masterMap: {}, rawItems: [], revision: null });
+            const [changeRequestInbox, setChangeRequestInbox] = useState({ status: 'LOADING', requests: [], error: null });
 
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
             const [activeC3, setActiveC3] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
+
+            const refreshChangeRequestInbox = useCallback(async () => {
+                try {
+                    const module = await window.__loadProductChangeRequestAdapter();
+                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ limit: 5 });
+                    setChangeRequestInbox(result);
+                } catch (error) {
+                    setChangeRequestInbox({ status: 'ERROR', requests: [], error: { code: error.message || String(error) } });
+                }
+            }, []);
 
             useEffect(() => {
                 loadMasterLocal().then(data => {
@@ -1148,6 +1162,7 @@
                 readLegacyItemMasterSnapshot().then(setLegacyState).catch(error => {
                     setLegacyState({ status: 'error', exists: true, masterMap: {}, revision: null, error: error.message });
                 });
+                refreshChangeRequestInbox();
 
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
@@ -1634,6 +1649,33 @@
                                 레거시 ItemMaster 격리 DB가 존재하지만 읽지 못했습니다. 원본은 변경하지 않았습니다: {legacyState.error}
                             </div>
                         )}
+
+                        <section className="px-3 sm:px-6 py-2 bg-white border-b border-slate-200 shrink-0" data-product-change-request-inbox={changeRequestInbox.status}>
+                            <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[11px] font-black text-slate-700">상품 기준정보 변경요청 Inbox · 읽기 전용</div>
+                                    <div className={`text-[10px] mt-0.5 ${changeRequestInbox.status === 'ERROR' || changeRequestInbox.status === 'NOT_AVAILABLE' ? 'text-rose-700' : 'text-slate-500'}`}>
+                                        {changeRequestInbox.status === 'READY'
+                                            ? `미처리 요청 ${(changeRequestInbox.requests || []).length.toLocaleString()}건 표시 · 자동 승인·자동 master 반영 없음`
+                                            : changeRequestInbox.status === 'EMPTY'
+                                                ? '접수된 요청 없음 · 자동 승인·자동 master 반영 없음'
+                                                : changeRequestInbox.status === 'LOADING'
+                                                    ? 'Inbox 확인 중'
+                                                    : `Inbox 진단: ${changeRequestInbox.error?.code || changeRequestInbox.status}`}
+                                    </div>
+                                </div>
+                                {(changeRequestInbox.requests || []).length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5" aria-label="최근 상품 변경요청">
+                                        {changeRequestInbox.requests.map((entry) => (
+                                            <span key={`${entry.request?.requestId}-${entry.receivedAt}`} className="px-2 py-1 rounded-md bg-amber-50 border border-amber-200 text-[10px] text-amber-900" title={entry.request?.reason || ''}>
+                                                {entry.request?.entityId || '-'} · {entry.request?.operation || '-'} · {entry.status}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                <button type="button" onClick={refreshChangeRequestInbox} className="h-7 px-3 rounded-md border border-slate-300 bg-white text-[10px] font-bold text-slate-600 hover:bg-slate-50">Inbox 새로고침</button>
+                            </div>
+                        </section>
 
                         {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
                         <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
