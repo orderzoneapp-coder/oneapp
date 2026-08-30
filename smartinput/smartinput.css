@@ -212,7 +212,7 @@ input, select, textarea { color: var(--text); background: var(--surface); }
 .catalog-picker__heading span:not(:first-child) { text-align: center; }
 .catalog-picker__list { max-height: min(350px, calc(100dvh - 145px)); overflow: auto; overscroll-behavior: contain; }
 .catalog-picker__row { min-height: 46px; padding: 5px 8px 5px 12px; border-top: 1px solid var(--border); }
-.estimate-card { cursor: grab; user-select: none; }
+.estimate-card { cursor: grab; user-select: none; -webkit-user-select: none; }
 .estimate-card:active { cursor: grabbing; }
 .estimate-card.is-dragging { opacity: .42; }
 .estimate-card.is-drop-target { box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-soft); }

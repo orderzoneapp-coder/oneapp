@@ -30,6 +30,7 @@ assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.match(appSource, /flushLinkedRowsToSources/);
+assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate cards must support direct touch reordering as well as desktop drag');
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,

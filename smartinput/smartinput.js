@@ -163,6 +163,8 @@ const state = {
   gridPasteUndo: null,
   applyingGridPaste: false
   ,estimateDragSuppressed: false
+  ,estimateTouchDrag: null
+  ,estimateSelectionQueue: Promise.resolve()
   ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
   ,saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
@@ -2394,13 +2396,13 @@ function renderCatalogControls() {
     : '연동견적서 선택';
   $('catalogPickerList').innerHTML = records.length ? records.map(record => `
     <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''} ${state.noticeEstimateIds.includes(record.estimateId) ? 'is-selected' : ''}" draggable="true" data-estimate-kind="INDIVIDUAL" data-estimate-id="${esc(record.estimateId)}">
-      <button class="catalog-picker__load" type="button" data-load-estimate title="${esc(estimateTitle(record))}"><strong>${esc(estimateTitle(record))}${individualEstimateLinkCount(record.estimateId) ? `<em class="linked-estimate-badge">연동 ${individualEstimateLinkCount(record.estimateId)}</em>` : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+      <button class="catalog-picker__load" type="button" data-load-estimate title="${esc(estimateTitle(record))} · 터치 선택 · 길게 눌러 순서 이동"><strong>${esc(estimateTitle(record))}${individualEstimateLinkCount(record.estimateId) ? `<em class="linked-estimate-badge">연동 ${individualEstimateLinkCount(record.estimateId)}</em>` : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
       <span class="estimate-card__selection">${state.noticeEstimateIds.includes(record.estimateId) ? '선택됨' : '터치'}</span>
       <button class="catalog-picker__edit" type="button" data-edit-estimate>편집</button>
     </div>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
   $('linkedEstimateList').innerHTML = linkedRecords.length ? linkedRecords.map(record => `
     <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" draggable="true" data-estimate-kind="LINKED_GROUP" data-linked-estimate-id="${esc(record.estimateId)}">
-      <button class="catalog-picker__load" type="button" data-load-linked-estimate title="${esc(estimateTitle(record))}"><strong>${esc(estimateTitle(record))}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+      <button class="catalog-picker__load" type="button" data-load-linked-estimate title="${esc(estimateTitle(record))} · 터치 불러오기 · 길게 눌러 순서 이동"><strong>${esc(estimateTitle(record))}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
       <span class="linked-estimate-badge">연동 ${record.linkedEstimateSources?.length || 0}</span>
       <button class="catalog-picker__edit" type="button" data-edit-linked-estimate>관리</button>
     </div>`).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
@@ -2463,7 +2465,7 @@ function previewSelectedEstimates() {
 }
 
 async function persistEstimateLibrary(records = state.estimates) {
-  state.estimates = normalizeEstimateOrder(records);
+  state.estimates = records.map((record, index) => ({ ...record, sortOrder: index + 1 }));
   await Promise.all(state.estimates.map(record => saveEstimate(record)));
 }
 
@@ -2496,12 +2498,16 @@ async function finishEstimateCardDrop(event) {
   event.preventDefault();
   let payload;
   try { payload = JSON.parse(event.dataTransfer.getData('application/json')); } catch (_) { return; }
+  await persistEstimateCardOrder(payload, target);
+}
+
+async function persistEstimateCardOrder(payload, target) {
   const targetId = estimateCardId(target);
-  if (!payload?.estimateId || payload.estimateId === targetId || payload.kind !== target.dataset.estimateKind) return;
+  if (!payload?.estimateId || payload.estimateId === targetId || payload.kind !== target.dataset.estimateKind) return false;
   const sourceRecords = payload.kind === 'LINKED_GROUP' ? linkedEstimateRecords() : individualEstimateRecords();
   const from = sourceRecords.findIndex(record => record.estimateId === payload.estimateId);
   const to = sourceRecords.findIndex(record => record.estimateId === targetId);
-  if (from < 0 || to < 0) return;
+  if (from < 0 || to < 0) return false;
   const reordered = [...sourceRecords];
   const [moved] = reordered.splice(from, 1);
   reordered.splice(to, 0, moved);
@@ -2511,11 +2517,86 @@ async function finishEstimateCardDrop(event) {
   await persistEstimateLibrary(next);
   renderCatalogControls();
   toast('견적서 카드 순서를 변경했습니다.', 'success');
+  return true;
 }
 
 function clearEstimateCardDrag() {
   document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
   window.setTimeout(() => { state.estimateDragSuppressed = false; }, 80);
+}
+
+function beginEstimateTouchDrag(event) {
+  if (event.touches?.length !== 1 || event.target.closest('[data-edit-estimate], [data-edit-linked-estimate]')) return;
+  const card = event.target.closest('.estimate-card');
+  if (!card) return;
+  const touch = event.touches[0];
+  const drag = {
+    card,
+    estimateId: estimateCardId(card),
+    kind: card.dataset.estimateKind,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    lastX: touch.clientX,
+    lastY: touch.clientY,
+    active: false,
+    timer: null
+  };
+  drag.timer = window.setTimeout(() => {
+    if (state.estimateTouchDrag !== drag) return;
+    drag.active = true;
+    state.estimateDragSuppressed = true;
+    drag.card.classList.add('is-dragging');
+    drag.card.setAttribute('aria-grabbed', 'true');
+  }, 260);
+  state.estimateTouchDrag = drag;
+}
+
+function moveEstimateTouchDrag(event) {
+  const drag = state.estimateTouchDrag;
+  const touch = event.touches?.[0];
+  if (!drag || !touch) return;
+  drag.lastX = touch.clientX;
+  drag.lastY = touch.clientY;
+  if (!drag.active) {
+    if (Math.hypot(touch.clientX - drag.startX, touch.clientY - drag.startY) > 9) {
+      clearTimeout(drag.timer);
+      state.estimateTouchDrag = null;
+    }
+    return;
+  }
+  event.preventDefault();
+  const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.estimate-card');
+  document.querySelectorAll('.estimate-card.is-drop-target').forEach(item => item.classList.remove('is-drop-target'));
+  if (target && target !== drag.card && target.dataset.estimateKind === drag.kind) target.classList.add('is-drop-target');
+}
+
+async function finishEstimateTouchDrag(event) {
+  const drag = state.estimateTouchDrag;
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  state.estimateTouchDrag = null;
+  if (!drag.active) return;
+  event.preventDefault();
+  const touch = event.changedTouches?.[0];
+  const target = touch && document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.estimate-card');
+  try {
+    if (target) await persistEstimateCardOrder({ estimateId: drag.estimateId, kind: drag.kind }, target);
+  } finally {
+    drag.card.removeAttribute('aria-grabbed');
+    document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
+    window.setTimeout(() => { state.estimateDragSuppressed = false; }, 120);
+  }
+}
+
+function cancelEstimateTouchDrag() {
+  const drag = state.estimateTouchDrag;
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  state.estimateTouchDrag = null;
+  drag.card.removeAttribute('aria-grabbed');
+  drag.card.classList.remove('is-dragging');
+  document.querySelectorAll('.estimate-card.is-drop-target').forEach(card => card.classList.remove('is-drop-target'));
+  state.estimateDragSuppressed = false;
 }
 
 function openEstimateManageDialog(record) {
@@ -5480,23 +5561,26 @@ $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
 $('catalogPickerMenu').addEventListener('toggle', event => {
   $('catalogPickerButton').setAttribute('aria-expanded', String(event.newState === 'open'));
 });
-$('catalogPickerList').addEventListener('click', async event => {
+$('catalogPickerList').addEventListener('click', event => {
   if (state.estimateDragSuppressed) return;
   const row = event.target.closest('[data-estimate-id]');
   if (!row) return;
   const record = state.estimates.find(item => item.estimateId === row.dataset.estimateId);
   if (!record) return;
   if (event.target.closest('[data-edit-estimate]')) return openEstimateManageDialog(record);
-  try {
-    await flushLinkedRowsToSources();
-  } catch (error) {
-    return toast(error.message || '연동 원본 반영을 완료하지 못해 화면 전환을 중단했습니다.', 'error');
-  }
-  const selected = new Set(state.noticeEstimateIds);
-  if (selected.has(row.dataset.estimateId)) selected.delete(row.dataset.estimateId);
-  else selected.add(row.dataset.estimateId);
-  state.noticeEstimateIds = individualEstimateRecords().filter(record => selected.has(record.estimateId)).map(record => record.estimateId);
-  previewSelectedEstimates();
+  const estimateId = row.dataset.estimateId;
+  state.estimateSelectionQueue = state.estimateSelectionQueue.then(async () => {
+    if (['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(modeDraft().estimateKind) && (state.draftDirty || state.linkedWriteTimer)) {
+      await flushLinkedRowsToSources();
+    }
+    const selected = new Set(state.noticeEstimateIds);
+    if (selected.has(estimateId)) selected.delete(estimateId);
+    else selected.add(estimateId);
+    state.noticeEstimateIds = individualEstimateRecords().filter(item => selected.has(item.estimateId)).map(item => item.estimateId);
+    previewSelectedEstimates();
+  }).catch(error => {
+    toast(error.message || '연동 원본 반영을 완료하지 못해 견적서 선택을 중단했습니다.', 'error');
+  });
 });
 $('linkedEstimateGroupButton').addEventListener('click', createLinkedEstimateDraft);
 $('linkedEstimateList').addEventListener('click', async event => {
@@ -5506,10 +5590,12 @@ $('linkedEstimateList').addEventListener('click', async event => {
   if (!record) return;
   if (event.target.closest('[data-edit-linked-estimate]')) return openEstimateManageDialog(record);
   if (!event.target.closest('[data-edit-linked-estimate]')) {
-    try {
-      await flushLinkedRowsToSources();
-    } catch (error) {
-      return toast(error.message || '연동 원본 반영을 완료하지 못해 화면 전환을 중단했습니다.', 'error');
+    if (['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(modeDraft().estimateKind) && (state.draftDirty || state.linkedWriteTimer)) {
+      try {
+        await flushLinkedRowsToSources();
+      } catch (error) {
+        return toast(error.message || '연동 원본 반영을 완료하지 못해 화면 전환을 중단했습니다.', 'error');
+      }
     }
     closeCatalogPicker();
     loadCatalogRecord(record);
@@ -5521,6 +5607,13 @@ $('linkedEstimateList').addEventListener('click', async event => {
   list.addEventListener('drop', event => { finishEstimateCardDrop(event).catch(error => toast(error.message || '견적서 순서를 변경하지 못했습니다.', 'error')); });
   list.addEventListener('dragend', clearEstimateCardDrag);
   list.addEventListener('dragleave', event => event.target.closest('.estimate-card')?.classList.remove('is-drop-target'));
+  list.addEventListener('touchstart', beginEstimateTouchDrag, { passive: true });
+  list.addEventListener('touchmove', moveEstimateTouchDrag, { passive: false });
+  list.addEventListener('touchend', event => { finishEstimateTouchDrag(event).catch(error => toast(error.message || '견적서 순서를 변경하지 못했습니다.', 'error')); }, { passive: false });
+  list.addEventListener('touchcancel', cancelEstimateTouchDrag, { passive: true });
+  list.addEventListener('contextmenu', event => {
+    if (event.target.closest('.estimate-card')) event.preventDefault();
+  });
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
