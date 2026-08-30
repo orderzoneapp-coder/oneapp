@@ -83,7 +83,7 @@ for (const testCase of fixture.vendorChipCases) {
   assert.equal(
     vendorErrors.length > 0,
     testCase.blocking,
-    `${testCase.name}: 판매원본-칩 차단 판정`,
+    `${testCase.name}: 판매원본-칩 검증 판정`,
   );
   if (testCase.blocking) {
     assert.equal(vendorErrors[0].differenceQty, testCase.expectedDifference);
@@ -159,7 +159,7 @@ const preflight = context.preflightModule.run({
 });
 for (const testCase of fixture.preflightCases) {
   const issue = preflight.issues.find((candidate) => candidate.type === testCase.type);
-  assert.ok(issue, `${testCase.type} fixture must block F9`);
+  assert.ok(issue, `${testCase.type} fixture must remain in the F9 evidence report`);
   assert.ok(issue.batchKey || issue.code, `${testCase.type}: 상품 이동키가 필요합니다`);
   assert.ok(issue.code, `${testCase.type}: 상품코드가 필요합니다`);
   assert.ok(issue.name, `${testCase.type}: 상품명이 필요합니다`);
@@ -190,19 +190,16 @@ const exportHandler = section(
 );
 assert.match(exportHandler, /flushFocusedTableEdit/);
 assert.match(exportHandler, /DATAOPS_F9_PREFLIGHT_MODULE\.run/);
-assert.match(exportHandler, /if \(!preflightResult\.ok\)/);
+assert.doesNotMatch(exportHandler, /if \(!preflightResult\.ok\)/);
+assert.doesNotMatch(exportHandler, /setF9PreflightResult|return;\s*}\s*setIsProcessing/);
 assert.ok(
   exportHandler.indexOf("DATAOPS_F9_PREFLIGHT_MODULE.run") <
     exportHandler.indexOf("EXPORT_MODULE.createCombinedWorkbook"),
   "preflight must run before workbook creation",
 );
-const focusAndRecheck = section(
-  "const focusF9PreflightIssue = useCallback",
-  "// 🌟 성능 최적화",
-);
-assert.match(focusAndRecheck, /unit:\s*\{ \.\.\.CONFIG_MODULE\.defaultUnitFilter \}/);
-assert.match(focusAndRecheck, /const handleF9PreflightRecheck = useCallback\(async/);
-assert.match(focusAndRecheck, /flushFocusedTableEdit/);
+assert.doesNotMatch(source, /f9PreflightResult|setF9PreflightResult/);
+assert.doesNotMatch(source, /focusF9PreflightIssue|handleF9PreflightRecheck/);
+assert.doesNotMatch(source, /오류를 해결하기 전에는 workbook을 생성하지 않습니다|해당 상품으로 이동|다시 점검/);
 
 const closingReport = section(
   "buildClosingReportSheet:",
@@ -384,6 +381,15 @@ const normalWorkbook = context.fullExportModule.createCombinedWorkbook({
   substHistory: [],
 });
 assert.equal(normalWorkbook.exportFileNameDate, "20260812");
+const issueWorkbook = context.fullExportModule.createCombinedWorkbook({
+  productData: preflightItems,
+  targetDateStr: "2026-08-12",
+  preflightResult: preflight,
+  substHistory: [],
+});
+assert.ok(issueWorkbook.wb.Sheets["보고서"], "preflight issues must be included in the workbook instead of blocking it");
+const issueReportRows = context.XLSX.utils.sheet_to_json(issueWorkbook.wb.Sheets["보고서"], { defval: "" });
+assert.ok(issueReportRows.length >= preflight.issues.length, "all detected issues must remain in the workbook report");
 const workbookBytes = context.XLSX.write(normalWorkbook.wb, {
   bookType: "xlsx",
   type: "array",
@@ -407,8 +413,7 @@ assert.deepEqual(
   "재오픈한 F9 보고서도 계산근거 22열 계약을 유지해야 합니다",
 );
 
-assert.match(source, /해당 상품으로 이동/);
-assert.match(source, /다시 점검/);
+assert.doesNotMatch(source, /해당 상품으로 이동|다시 점검|오류를 해결하기 전에는 workbook을 생성하지 않습니다/);
 assert.match(source, /salesSourceEvidenceByProductKey/);
 assert.match(source, /NO_CODE\|\$\{safeStr\(evidenceName, '이름없음'\)\}/);
 assert.match(source, /V1\.a22\.112_EvidenceReportPreflight/);

@@ -1217,7 +1217,9 @@ const CONFIG_MODULE = Object.freeze({
         '40': '양념.소스',
         '50': '주방.잡화'
     }),
-    defaultUnitFilter: Object.freeze({ BOX: true, EA: true, SPLIT: true }),
+    // 단위 미선택은 모든 상품을 보여주는 실제 무필터 상태다.
+    // BOX/EA/소분을 명시적으로 선택했을 때만 단위 미분류(UNKNOWN)를 제외한다.
+    defaultUnitFilter: Object.freeze({ BOX: false, EA: false, SPLIT: false }),
     defaultFavoriteVendors: Object.freeze(['우리농산', '가락(마니농산)', '가락(창창)', '가락(청산유통)', '가락(호진농산)', '가락(랑희유통)', '가락(경복농산)', '가락(남경)', '가락(초원)']),
     splitSettingList: (value) => safeStr(value, '').split(/[\n,]+/).map(v => v.trim()).filter(Boolean),
     hasKeyword: (text, keywords = []) => {
@@ -4440,7 +4442,10 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
     DB_NAME: 'oneapp_dataops_work_v1',
     STORE_NAME: 'workspaces',
     CURRENT_KEY: 'current',
+    MANUAL_KEY: 'manual',
+    AUTOSAVE_KEY: 'autosave',
     VERSION: 1,
+    SNAPSHOT_VERSION: 2,
     openDb: () => new Promise((resolve, reject) => {
         if (typeof indexedDB === 'undefined') {
             reject(new Error('IndexedDB를 사용할 수 없습니다.'));
@@ -4478,26 +4483,41 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
             db.close();
         }
     },
-    save: async (state = {}) => {
-        const snapshot = {
-            version: DATAOPS_WORK_STATE_MODULE.VERSION,
-            savedAt: new Date().toISOString(),
-            productData: Array.isArray(state.productData) ? state.productData : [],
+    normalizeType: (type = 'autosave') => type === 'manual' ? 'manual' : 'autosave',
+    getKey: (type = 'autosave') => DATAOPS_WORK_STATE_MODULE.normalizeType(type) === 'manual'
+        ? DATAOPS_WORK_STATE_MODULE.MANUAL_KEY
+        : DATAOPS_WORK_STATE_MODULE.AUTOSAVE_KEY,
+    createSnapshot: (type, state = {}, options = {}) => {
+        const productData = Array.isArray(state.productData) ? state.productData : [];
+        if (productData.length === 0)
+            throw new Error('저장할 DataOps 작업이 없습니다.');
+        const snapshotType = DATAOPS_WORK_STATE_MODULE.normalizeType(type);
+        return {
+            version: DATAOPS_WORK_STATE_MODULE.SNAPSHOT_VERSION,
+            snapshotType,
+            savedAt: options.preserveSavedAt && safeStr(state.savedAt) ? safeStr(state.savedAt) : new Date().toISOString(),
+            productData,
             substHistory: Array.isArray(state.substHistory) ? state.substHistory : [],
             ackMultiCodes: Array.isArray(state.ackMultiCodes) ? state.ackMultiCodes : [],
             analysisPeriod: safeStr(state.analysisPeriod, '전체 기간'),
-            targetDateStr: safeStr(state.targetDateStr, '')
+            targetDateStr: safeStr(state.targetDateStr, ''),
+            screenState: state.screenState && typeof state.screenState === 'object' ? state.screenState : {}
         };
+    },
+    save: async (type = 'autosave', state = {}, options = {}) => {
+        const snapshotType = DATAOPS_WORK_STATE_MODULE.normalizeType(type);
+        const snapshot = DATAOPS_WORK_STATE_MODULE.createSnapshot(snapshotType, state, options);
+        const storageKey = DATAOPS_WORK_STATE_MODULE.getKey(snapshotType);
         await enqueueDataOpsWorkStateWrite(() =>
-            DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.put(snapshot, DATAOPS_WORK_STATE_MODULE.CURRENT_KEY)));
+            DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.put(snapshot, storageKey)));
         return snapshot;
     },
-    load: async () => {
+    readKey: async (storageKey) => {
         const db = await DATAOPS_WORK_STATE_MODULE.openDb();
         try {
             return await new Promise((resolve, reject) => {
                 const transaction = db.transaction(DATAOPS_WORK_STATE_MODULE.STORE_NAME, 'readonly');
-                const request = transaction.objectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME).get(DATAOPS_WORK_STATE_MODULE.CURRENT_KEY);
+                const request = transaction.objectStore(DATAOPS_WORK_STATE_MODULE.STORE_NAME).get(storageKey);
                 request.onsuccess = () => resolve(request.result || null);
                 request.onerror = () => reject(request.error || new Error('작업 복구 실패'));
             });
@@ -4506,10 +4526,34 @@ const DATAOPS_WORK_STATE_MODULE = Object.freeze({
             db.close();
         }
     },
-    clear: async () => {
+    load: async (type = 'autosave') => {
+        const snapshotType = DATAOPS_WORK_STATE_MODULE.normalizeType(type);
+        const direct = await DATAOPS_WORK_STATE_MODULE.readKey(DATAOPS_WORK_STATE_MODULE.getKey(snapshotType));
+        if (direct)
+            return { ...direct, snapshotType };
+        if (snapshotType !== 'autosave')
+            return null;
+        const legacy = await DATAOPS_WORK_STATE_MODULE.readKey(DATAOPS_WORK_STATE_MODULE.CURRENT_KEY);
+        if (!legacy)
+            return null;
+        const migrated = { ...legacy, snapshotType: 'autosave' };
         try {
-            await enqueueDataOpsWorkStateWrite(() =>
-                DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => store.delete(DATAOPS_WORK_STATE_MODULE.CURRENT_KEY)));
+            await DATAOPS_WORK_STATE_MODULE.save('autosave', migrated, { preserveSavedAt: true });
+        }
+        catch (error) {
+            // 레거시 current를 읽는 복구 경로는 마이그레이션 쓰기 실패와 무관하게 유지한다.
+            console.warn('DataOps 레거시 자동저장 마이그레이션 실패', error);
+        }
+        return migrated;
+    },
+    clear: async (type = 'all') => {
+        try {
+            const keys = type === 'all'
+                ? [DATAOPS_WORK_STATE_MODULE.MANUAL_KEY, DATAOPS_WORK_STATE_MODULE.AUTOSAVE_KEY, DATAOPS_WORK_STATE_MODULE.CURRENT_KEY]
+                : [DATAOPS_WORK_STATE_MODULE.getKey(type)];
+            await enqueueDataOpsWorkStateWrite(() => DATAOPS_WORK_STATE_MODULE.withStore('readwrite', store => {
+                keys.forEach(key => store.delete(key));
+            }));
             return true;
         }
         catch (error) {
@@ -4992,7 +5036,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
 /* =======================================================================
    3. 비즈니스 로직 훅 (useInventoryEngine)
    ======================================================================= */
-const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep }) => {
+const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, getWorkScreenState, onRestoreWorkScreenState }) => {
     const [productData, setProductData] = useState([]);
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
@@ -5001,10 +5045,25 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     const [substHistory, setSubstHistory] = useState([]);
     const [ackMultiCodes, setAckMultiCodes] = useState(new Set());
     const [workStateHydrated, setWorkStateHydrated] = useState(false);
-    const restoreWorkState = useCallback(async ({ silent = false } = {}) => {
+    const buildWorkStatePayload = useCallback(() => ({
+        productData,
+        substHistory,
+        ackMultiCodes: Array.from(ackMultiCodes),
+        analysisPeriod,
+        targetDateStr,
+        screenState: typeof getWorkScreenState === 'function' ? getWorkScreenState() : {}
+    }), [productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, getWorkScreenState]);
+    const restoreWorkState = useCallback(async (type = 'autosave', { silent = false } = {}) => {
         try {
-            const snapshot = await DATAOPS_WORK_STATE_MODULE.load();
-            if (!snapshot || !Array.isArray(snapshot.productData) || snapshot.productData.length === 0)
+            const snapshotType = DATAOPS_WORK_STATE_MODULE.normalizeType(type);
+            const snapshot = await DATAOPS_WORK_STATE_MODULE.load(snapshotType);
+            const typeLabel = snapshotType === 'manual' ? '직접 저장' : '자동저장';
+            if (!snapshot || !Array.isArray(snapshot.productData) || snapshot.productData.length === 0) {
+                if (!silent)
+                    setAlertMsg(`복구할 ${typeLabel} 작업이 없습니다.`);
+                return false;
+            }
+            if (!silent && !window.confirm(`${typeLabel} 작업으로 현재 화면을 교체할까요?\n\n저장시각: ${safeStr(snapshot.savedAt, '미상')}`))
                 return false;
             const restoredProductData = snapshot.productData.map(item => {
                 const systemQty = safeNum(item.기초) + safeNum(item.입고) + safeNum(item.대체입고) - safeNum(item.출고) - safeNum(item.대체출고);
@@ -5032,12 +5091,12 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             });
             setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(restoredProductData));
             setSubstHistory(Array.isArray(snapshot.substHistory) ? snapshot.substHistory : []);
-            setAckMultiCodes(new Set());
+            setAckMultiCodes(new Set(Array.isArray(snapshot.ackMultiCodes) ? snapshot.ackMultiCodes : []));
             setAnalysisPeriod(safeStr(snapshot.analysisPeriod, '전체 기간'));
             setTargetDateStr(safeStr(snapshot.targetDateStr, ''));
             setAppStep('closing');
-            if (!silent)
-                setAlertMsg(`저장된 DataOps 작업을 복구했습니다.\n\n저장시각: ${safeStr(snapshot.savedAt, '미상')}`);
+            if (typeof onRestoreWorkScreenState === 'function')
+                onRestoreWorkScreenState(snapshot.screenState || {}, snapshot);
             return true;
         }
         catch (error) {
@@ -5046,40 +5105,29 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 setAlertMsg('저장된 작업을 복구하지 못했습니다.');
             return false;
         }
-    }, [setAlertMsg, setAppStep]);
+    }, [setAlertMsg, setAppStep, onRestoreWorkScreenState]);
     useEffect(() => {
-        let active = true;
-        restoreWorkState({ silent: true }).finally(() => {
-            if (active)
-                setWorkStateHydrated(true);
-        });
-        return () => { active = false; };
-    }, [restoreWorkState]);
+        // 저장본은 사용자가 두 복구 버튼 중 하나를 명시적으로 선택할 때만 현재 화면에 적용한다.
+        setWorkStateHydrated(true);
+    }, []);
     useEffect(() => {
         if (!workStateHydrated || productData.length === 0)
             return;
         const timer = setTimeout(() => {
-            DATAOPS_WORK_STATE_MODULE.save({
-                productData,
-                substHistory,
-                ackMultiCodes: Array.from(ackMultiCodes),
-                analysisPeriod,
-                targetDateStr
-            }).catch(error => console.warn('DataOps 작업 자동저장 실패', error));
+            DATAOPS_WORK_STATE_MODULE.save('autosave', buildWorkStatePayload())
+                .catch(error => console.warn('DataOps 작업 자동저장 실패', error));
         }, 600);
         return () => clearTimeout(timer);
-    }, [workStateHydrated, productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr]);
+    }, [workStateHydrated, productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, buildWorkStatePayload]);
     const saveWorkState = useCallback(async () => {
+        if (productData.length === 0) {
+            setAlertMsg('저장할 DataOps 작업이 없습니다. 파일 분석 후 다시 저장하세요.');
+            return false;
+        }
         let localSnapshot = null;
         setIsProcessing(true);
         try {
-            localSnapshot = await DATAOPS_WORK_STATE_MODULE.save({
-                productData,
-                substHistory,
-                ackMultiCodes: Array.from(ackMultiCodes),
-                analysisPeriod,
-                targetDateStr
-            });
+            localSnapshot = await DATAOPS_WORK_STATE_MODULE.save('manual', buildWorkStatePayload());
         }
         catch (error) {
             console.warn('DataOps 작업 저장 실패', error);
@@ -5087,10 +5135,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             setIsProcessing(false);
             return false;
         }
-        setAlertMsg(`✅ DataOps 작업을 로컬에 저장했습니다.\n\n저장시각: ${localSnapshot.savedAt}\n클라우드 확정재고는 F9 마감에서만 갱신됩니다.`);
+        setAlertMsg(`✅ 현재 작업을 직접 저장했습니다.\n\n저장시각: ${localSnapshot.savedAt}\n자동저장과 별도로 보호됩니다.\n클라우드 확정재고는 F9 마감에서만 갱신됩니다.`);
         setIsProcessing(false);
         return true;
-    }, [productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, setAlertMsg, setIsProcessing]);
+    }, [productData, buildWorkStatePayload, setAlertMsg, setIsProcessing]);
     const resetEngine = useCallback(() => {
         setProductData([]);
         setAnalysisPeriod('전체 기간');
@@ -8643,7 +8691,6 @@ function App() {
     const [alertMsg, setAlertMsg] = useState('');
     // V1.a22.74: 02창고 마감오차는 일반 문장 팝업이 아니라 구매/판매 상세 박스 전용 팝업으로 표시한다.
     const [transferClosingAlert, setTransferClosingAlert] = useState(null);
-    const [f9PreflightResult, setF9PreflightResult] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, warnings: [], payload: null });
     const [showSettings, setShowSettings] = useState(false);
     const [undoUi, setUndoUi] = useState({ state: 'closed' });
@@ -8682,6 +8729,7 @@ function App() {
     const issueReviewSessionRef = useRef({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' });
     const issueFocusTimersRef = useRef([]);
     const focusedInputRef = useRef({ key: null, idx: -1 });
+    const workScrollTopRef = useRef(0);
     const activeIssueModeRef = useRef(null);
     const filteredProductDataRef = useRef([]); // V1.a22.12: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
     const viewRowCacheRef = useRef(new Map());
@@ -8839,8 +8887,92 @@ function App() {
         focusMergeCandidateAt(nextIndex, { silent: true });
         return true;
     }, [viewMode, getVisibleMergeCandidateRows, focusMergeCandidateAt, setAlertMsg]);
+    const getWorkScreenState = useCallback(() => ({
+        viewMode,
+        filters: {
+            ...filters,
+            category: Array.isArray(filters.category) ? [...filters.category] : filters.category,
+            unit: { ...CONFIG_MODULE.defaultUnitFilter, ...(filters.unit || {}) }
+        },
+        searchInputVal,
+        analysisMeta: { ...analysisMeta },
+        sourceFileNames: {
+            prev: safeStr(files.prev && files.prev.name),
+            in: safeStr(files.in && files.in.name),
+            out: safeStr(files.out && files.out.name),
+            end: safeStr(files.end && files.end.name)
+        },
+        activeIssueMode,
+        activeMultiCode,
+        selectedBatchKey: safeStr(focusedInputRef.current && focusedInputRef.current.key),
+        scrollTop: safeNum(workScrollTopRef.current),
+        systemUiCollapsed: !!systemUiCollapsed
+    }), [viewMode, filters, searchInputVal, analysisMeta, files, activeIssueMode, activeMultiCode, systemUiCollapsed]);
+    const restoreWorkScreenState = useCallback((screenState = {}, snapshot = {}) => {
+        const restoredViewMode = screenState.viewMode === 'CODE_SUMMARY' ? 'CODE_SUMMARY' : 'LOT_DETAIL';
+        const restoredFilters = screenState.filters && typeof screenState.filters === 'object' ? screenState.filters : {};
+        const restoredUnitFilter = restoredFilters.unit && typeof restoredFilters.unit === 'object'
+            ? { ...CONFIG_MODULE.defaultUnitFilter, ...restoredFilters.unit }
+            : { ...CONFIG_MODULE.defaultUnitFilter };
+        const restoredSearch = safeStr(screenState.searchInputVal, safeStr(restoredFilters.search));
+        const restoredAnalysisMeta = screenState.analysisMeta && typeof screenState.analysisMeta === 'object'
+            ? screenState.analysisMeta
+            : {};
+        const fallbackFileLabel = Object.entries(screenState.sourceFileNames || {})
+            .map(([role, name]) => name ? `${({ prev: '기초', in: '매입', out: '매출', end: '실사/마감' })[role] || role}:${name}` : '')
+            .filter(Boolean)
+            .join(' / ');
+        setViewMode(restoredViewMode);
+        setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: restoredViewMode }));
+        setFilters({
+            issuesOnly: false,
+            excludeZeroActual: false,
+            search: '',
+            reviewType: null,
+            category: [],
+            stockListType: 'ALL',
+            favoriteVendorOnly: false,
+            showHiddenMoveRows: false,
+            sortMode: 'DEFAULT',
+            sortDesc: false,
+            ...restoredFilters,
+            search: restoredSearch,
+            unit: restoredUnitFilter
+        });
+        setSearchInputVal(restoredSearch);
+        setAnalysisMeta({
+            fileLabel: safeStr(restoredAnalysisMeta.fileLabel, fallbackFileLabel || `${snapshot.snapshotType === 'manual' ? '직접 저장' : '자동저장'} DataOps 작업`),
+            analyzedAt: safeStr(restoredAnalysisMeta.analyzedAt, safeStr(snapshot.savedAt)),
+            status: 'done'
+        });
+        // 실제 File 객체와 원본 bytes는 저장하지 않는다. 복구 후 재분석 버튼은 파일 재선택 전까지 비활성 상태다.
+        setFiles({ prev: null, in: null, out: null, end: null });
+        setActiveIssueMode(screenState.activeIssueMode || null);
+        activeIssueModeRef.current = screenState.activeIssueMode || null;
+        setActiveMultiCode(screenState.activeMultiCode || null);
+        setSystemUiCollapsed(!!screenState.systemUiCollapsed);
+        const selectedBatchKey = safeStr(screenState.selectedBatchKey);
+        const restoredScrollTop = Math.max(0, safeNum(screenState.scrollTop));
+        focusedInputRef.current = { key: selectedBatchKey || null, idx: -1 };
+        workScrollTopRef.current = restoredScrollTop;
+        setTimeout(() => {
+            const container = document.getElementById('main-scroll-container');
+            if (container) container.scrollTo({ top: restoredScrollTop, behavior: 'auto' });
+            if (!selectedBatchKey) return;
+            const safeBatch = window.CSS && CSS.escape ? CSS.escape(selectedBatchKey) : selectedBatchKey.replace(/"/g, '\\"');
+            const row = document.querySelector(`tr[data-batch="${safeBatch}"]`);
+            const input = row && row.querySelector('input[data-field="actual-input"], input');
+            if (input) {
+                const rowIndex = Array.from(document.querySelectorAll('tr[data-batch]')).indexOf(row);
+                focusedInputRef.current = { key: selectedBatchKey, idx: rowIndex };
+                try { input.focus({ preventScroll: true }); }
+                catch (error) { input.focus(); }
+                if (container) container.scrollTo({ top: restoredScrollTop, behavior: 'auto' });
+            }
+        }, 120);
+    }, []);
     // 비즈니스 로직 엔진 연결
-    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
+    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, getWorkScreenState, onRestoreWorkScreenState: restoreWorkScreenState });
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
     const readOfficialProductSnapshot = useCallback(async () => {
@@ -9055,18 +9187,7 @@ function App() {
         const pad = (n) => String(n).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }, []);
-    const handleRestoreSavedWork = useCallback(async () => {
-        if (!window.confirm('현재 화면 작업을 저장된 작업으로 교체할까요?'))
-            return;
-        const restored = await restoreWorkState();
-        if (restored) {
-            setAnalysisMeta({
-                fileLabel: '저장된 DataOps 작업',
-                analyzedAt: formatAnalysisTime(new Date()),
-                status: 'done'
-            });
-        }
-    }, [restoreWorkState, formatAnalysisTime]);
+    const handleRestoreSavedWork = useCallback((type) => restoreWorkState(type), [restoreWorkState]);
     const resetAnalysisWorkspace = useCallback((nextStatus = 'selected') => {
         resetEngine();
         setViewMode('LOT_DETAIL');
@@ -9188,6 +9309,7 @@ function App() {
         };
         const onScroll = () => {
             guard.pendingTop = container.scrollTop;
+            workScrollTopRef.current = container.scrollTop;
             if (!guard.rafId)
                 guard.rafId = requestAnimationFrame(processScroll);
         };
@@ -12114,11 +12236,6 @@ ${balanceText}
             productData: closingProductData,
             transferClosingCheck: transferClosingAlert
         });
-        if (!preflightResult.ok) {
-            setF9PreflightResult(preflightResult);
-            return;
-        }
-        setF9PreflightResult(null);
         setIsProcessing(true);
         try {
             const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData: closingProductData, analysisPeriod, targetDateStr, closingStats, preflightResult, substHistory });
@@ -12240,57 +12357,6 @@ ${balanceText}
         handleBaseDataChange(batchKey, baseField, normalizedValue);
         return true;
     }, [handleManualStockChange, handleBaseDataChange, productData]);
-    const focusF9PreflightIssue = useCallback((issue = {}) => {
-        setViewMode('LOT_DETAIL');
-        setActiveIssueMode(null);
-        activeIssueModeRef.current = null;
-        setFilters(prev => ({
-            ...prev,
-            issuesOnly: false,
-            excludeZeroActual: false,
-            search: '',
-            reviewType: null,
-            category: [],
-            stockListType: 'ALL',
-            favoriteVendorOnly: false,
-            showHiddenMoveRows: true,
-            unit: { ...CONFIG_MODULE.defaultUnitFilter }
-        }));
-        const focusTarget = (attempt = 0) => {
-            const batchKey = safeStr(issue.batchKey);
-            const code = safeStr(issue.code);
-            const safeBatch = window.CSS && CSS.escape ? CSS.escape(batchKey) : batchKey.replace(/"/g, '\\"');
-            const safeCode = window.CSS && CSS.escape ? CSS.escape(code) : code.replace(/"/g, '\\"');
-            const row = (batchKey && document.querySelector(`tr[data-batch="${safeBatch}"]`))
-                || (code && document.querySelector(`tr[data-code="${safeCode}"]`));
-            if (!row) {
-                if (attempt < 10) setTimeout(() => focusTarget(attempt + 1), 70);
-                return;
-            }
-            const input = row.querySelector('input[data-field="actual-input"]') || row.querySelector('input');
-            scrollIssueRowIntoWorkCenter(row, input, 'f9Preflight');
-            row.classList.add('bg-rose-50');
-            setTimeout(() => row.classList.remove('bg-rose-50'), 1400);
-        };
-        setF9PreflightResult(null);
-        setTimeout(() => focusTarget(0), 0);
-    }, [scrollIssueRowIntoWorkCenter]);
-    const handleF9PreflightRecheck = useCallback(async () => {
-        const flushed = latestHandlers.current && typeof latestHandlers.current.flushFocusedTableEdit === 'function'
-            ? latestHandlers.current.flushFocusedTableEdit()
-            : false;
-        if (flushed) await new Promise(resolve => setTimeout(resolve, 0));
-        const result = DATAOPS_F9_PREFLIGHT_MODULE.run({
-            productData: productDataRef.current || productData,
-            transferClosingCheck: transferClosingAlert
-        });
-        if (result.ok) {
-            setF9PreflightResult(null);
-            setAlertMsg('✅ F9 사전점검 오류가 없습니다. F9를 다시 실행하면 workbook을 생성합니다.');
-            return;
-        }
-        setF9PreflightResult(result);
-    }, [productData, transferClosingAlert, setAlertMsg]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
     const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleOpenInventoryMasterAdd, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
     useEffect(() => {
@@ -12620,7 +12686,8 @@ ${balanceText}
                             React.createElement("span", { className: "ml-1 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 font-black" }, "F6")),
                         inventoryResumeRetryCount > 0 && React.createElement("button", { onClick: handleRetryInventoryMasterSalesResume, disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-black transition flex items-center border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 disabled:opacity-40" }, `판매재개 재시도 ${inventoryResumeRetryCount}`),
                         React.createElement("button", { onClick: () => saveWorkState(), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "관리자 수정·완료·대체/치환 상태를 브라우저 로컬 작업공간에 저장" }, "작업 저장"),
-                        React.createElement("button", { onClick: handleRestoreSavedWork, disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "마지막 저장 작업 복구" }, "작업 복구"),
+                        React.createElement("button", { onClick: () => handleRestoreSavedWork('manual'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "내가 직접 저장한 시점의 작업화면 복구" }, "직접 저장 복구"),
+                        React.createElement("button", { onClick: () => handleRestoreSavedWork('autosave'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "가장 최근 자동저장 시점의 작업화면 복구" }, "자동저장 복구"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
                         React.createElement("button", { onClick: handleCombinedExport, disabled: isClosingOutputBlocked, className: `h-9 px-3 rounded-lg text-[11px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
                             React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
@@ -12630,7 +12697,9 @@ ${balanceText}
                             React.createElement("i", { className: "fas fa-print mr-1.5 text-slate-600" }),
                             "\uD504\uB9B0\uD130",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F10")))),
-                    productData.length === 0 && React.createElement("button", { onClick: handleRestoreSavedWork, disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "마지막 저장 작업 복구" }, "작업 복구"),
+                    productData.length === 0 && React.createElement(React.Fragment, null,
+                        React.createElement("button", { onClick: () => handleRestoreSavedWork('manual'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "내가 직접 저장한 시점의 작업화면 복구" }, "직접 저장 복구"),
+                        React.createElement("button", { onClick: () => handleRestoreSavedWork('autosave'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "가장 최근 자동저장 시점의 작업화면 복구" }, "자동저장 복구")),
                     React.createElement("button", { onClick: () => setShowSettings(!showSettings), className: "h-9 px-3 bg-white border border-slate-300 text-slate-700 rounded-lg text-[11px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0" }, "\uB9E4\uD551\uC124\uC815")))),
         showSettings && (React.createElement("div", { className: "fixed top-[60px] bottom-0 left-0 right-0 z-50 flex justify-center items-start animate-[fadeIn_0.3s_ease-out] bg-slate-900/10 px-3 pb-4 overflow-y-auto" },
             React.createElement("div", { className: "bg-white border-2 border-blue-200 p-5 md:p-6 rounded-xl shadow-xl relative overflow-y-auto w-full max-w-7xl mx-0 md:mx-4 mt-3 mb-6 max-h-[calc(100vh-84px)]" },
@@ -12844,31 +12913,6 @@ ${balanceText}
                                             React.createElement("div", null, `수량 ${formatQty(detail.qty)}${detail.price ? ` / 단가 ${formatMoney(detail.price)}` : ''}${detail.note ? ` / ${detail.note}` : ''}`)))
                                             : React.createElement("div", { className: "px-3 py-3 text-xs text-slate-400" }, "판매내역 없음")))))))),
                 React.createElement("button", { id: "transfer-closing-alert-confirm-btn", autoFocus: true, onClick: () => setTransferClosingAlert(null), className: "mt-5 px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full" }, "확인")))),
-        f9PreflightResult && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[370] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4" },
-            React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-5xl modal-bounce overflow-hidden" },
-                React.createElement("div", { className: "px-6 py-4 bg-rose-600 text-white flex flex-wrap items-center justify-between gap-3" },
-                    React.createElement("div", null,
-                        React.createElement("h3", { className: "text-lg font-black" }, `F9 사전점검 오류 ${f9PreflightResult.issues.length}건`),
-                        React.createElement("p", { className: "text-xs text-rose-100 mt-1" }, "오류를 해결하기 전에는 workbook을 생성하지 않습니다.")),
-                    React.createElement("div", { className: "flex flex-wrap gap-1.5 justify-end" }, Object.entries(f9PreflightResult.counts || {}).map(([type, count]) => React.createElement("span", { key: type, className: "px-2 py-1 rounded bg-white/15 border border-white/25 text-[11px] font-bold" }, `${DATAOPS_F9_PREFLIGHT_MODULE.TYPE_LABELS[type] || type} ${count}`)))),
-                React.createElement("div", { className: "max-h-[65vh] overflow-y-auto divide-y divide-slate-200" },
-                    f9PreflightResult.issues.map((issue, issueIndex) => React.createElement("div", { key: issue.id || issueIndex, className: "p-4 bg-white hover:bg-slate-50" },
-                        React.createElement("div", { className: "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3" },
-                            React.createElement("div", { className: "min-w-0 flex-1" },
-                                React.createElement("div", { className: "flex flex-wrap items-center gap-2" },
-                                    React.createElement("span", { className: "px-2 py-0.5 rounded bg-rose-100 text-rose-700 text-[11px] font-black" }, issue.typeLabel),
-                                    React.createElement("span", { className: "font-black text-slate-900" }, `${issue.code || '코드없음'}  ${issue.name || ''}`),
-                                    issue.vendorOrLot && React.createElement("span", { className: "text-xs text-slate-500" }, issue.vendorOrLot)),
-                                React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mt-3 text-xs" },
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "수량  "), `${issue.sourceQty === '' ? '-' : formatQty(issue.sourceQty)} → ${issue.calculatedQty === '' ? '-' : formatQty(issue.calculatedQty)}${issue.differenceQty === '' ? '' : ` / 차이 ${formatQty(issue.differenceQty)}`}`),
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원가  "), `${issue.sourcePrice === '' ? '-' : formatMoney(issue.sourcePrice)} → ${issue.calculatedCost === '' ? '-' : formatMoney(issue.calculatedCost)}${issue.differenceAmount === '' ? '' : ` / 차이 ${formatMoney(issue.differenceAmount)}`}`),
-                                    React.createElement("div", { className: "bg-slate-100 rounded px-2.5 py-2 md:col-span-2" }, React.createElement("span", { className: "font-bold text-slate-500" }, "원본  "), [issue.fileName, issue.sheetName, issue.rowNumber ? `${issue.rowNumber}행` : ''].filter(Boolean).join(' / ') || '기존 저장본·작업이력 없음')),
-                                React.createElement("p", { className: "mt-2 text-sm font-bold text-slate-700" }, issue.reason),
-                                React.createElement("p", { className: "mt-1 text-xs text-rose-600" }, issue.action)),
-                            React.createElement("button", { type: "button", onClick: () => focusF9PreflightIssue(issue), className: "shrink-0 px-3 py-2 rounded-lg bg-slate-800 text-white text-xs font-black hover:bg-slate-900" }, "해당 상품으로 이동"))))),
-                React.createElement("div", { className: "px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2" },
-                    React.createElement("button", { type: "button", onClick: () => setF9PreflightResult(null), className: "px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-bold hover:bg-slate-100" }, "닫기"),
-                    React.createElement("button", { id: "f9-preflight-recheck-btn", type: "button", onClick: handleF9PreflightRecheck, className: "px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-black hover:bg-rose-700 shadow-sm" }, "다시 점검"))))),
         alertMsg && !confirmModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[300] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm modal-bounce text-center" },
                 React.createElement("i", { className: "fas fa-exclamation-triangle text-blue-500 text-4xl mb-4" }),

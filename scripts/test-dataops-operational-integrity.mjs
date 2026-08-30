@@ -36,13 +36,15 @@ const v111ConfigVersion = "V1.a22.111_WorkSaveCloudInventorySync";
 const datedV112Version =
   "V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST";
 const v112ConfigVersion = "V1.a22.112_EvidenceReportPreflight";
+const isV113 = source.includes("MANUAL_KEY: 'manual'") && source.includes("AUTOSAVE_KEY: 'autosave'");
 const isCompatibleV110ThroughV112 =
   (source.split(datedV110Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v110ConfigVersion}'`).test(source)) ||
   (source.split(datedV111Version).length - 1 === 3 &&
     new RegExp(`version:\\s*'${v111ConfigVersion}'`).test(source)) ||
   (source.split(datedV112Version).length - 1 === 3 &&
-    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source));
+    new RegExp(`version:\\s*'${v112ConfigVersion}'`).test(source)) ||
+  isV113;
 if (isCompatibleV110ThroughV112) {
   const v110Analysis = section(
     "const executeAnalysis = useCallback",
@@ -54,8 +56,17 @@ if (isCompatibleV110ThroughV112) {
   assert.match(v110Analysis, /if \(type === 'in' && isExcludedTransactionRow\(item, 'in'\)\)\s*return;/, "V110 신규 매입 must exclude 우리농산 before calculation");
   const workState = section("const DATAOPS_WORK_STATE_MODULE", "const DATAOPS_XLSX_WORKER_MODULE");
   for (const field of ["DB_NAME", "STORE_NAME", "CURRENT_KEY", "VERSION", "productData", "substHistory", "analysisPeriod", "targetDateStr"]) assert.match(workState, new RegExp(`\\b${field}\\b`), `missing V110 work-state marker: ${field}`);
-  assert.match(workState, /store\.put\(snapshot,\s*DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
-  assert.match(workState, /\.get\(DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+  if (isV113) {
+    for (const marker of ["MANUAL_KEY", "AUTOSAVE_KEY", "screenState"]) assert.match(workState, new RegExp(`\\b${marker}\\b`));
+    assert.match(workState, /store\.put\(snapshot,\s*storageKey\)/);
+    assert.match(workState, /readKey\(DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+    assert.match(source, /"직접 저장 복구"/);
+    assert.match(source, /"자동저장 복구"/);
+    assert.doesNotMatch(source, /restoreWorkState\(\{ silent: true \}\)/);
+  } else {
+    assert.match(workState, /store\.put\(snapshot,\s*DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+    assert.match(workState, /\.get\(DATAOPS_WORK_STATE_MODULE\.CURRENT_KEY\)/);
+  }
   assert.match(source, /const handleSpacebarLink = useCallback[\s\S]*executeImmediateSubstitution/, "V110 Space substitution path must remain");
   const vendorChip = section("const DATAOPS_VENDOR_CHIP_MODULE", "const DATAOPS_SUMMARY_ROW_TOKENS");
   assert.match(vendorChip, /reconcileItem:/);
