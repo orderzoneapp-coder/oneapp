@@ -10,14 +10,34 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="./smartinput.css?v=0.6.3">
+  <link rel="stylesheet" href="./smartinput.css?v=0.6.4">
 </head>
 <body>
   <header class="app-bar">
     <div class="app-bar__inner">
+      <a class="brand" href="./" aria-label="스마트입력 처음으로">
+        <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="" width="2172" height="724" decoding="async">
+        <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="" width="2201" height="714" decoding="async">
+        <span class="sr-only">스마트입력</span>
+      </a>
       <div class="app-status" id="appStatus">
         <span class="app-status__dot" aria-hidden="true"></span>
         <span class="app-status__message" id="appStatusMessage" role="status" aria-live="polite">새 입력을 시작할 수 있습니다.</span>
+      </div>
+      <div class="app-bar__primary">
+        <div class="app-voucher-switcher">
+          <span class="sr-only">전표 선택</span>
+          <nav class="mode-tabs" aria-label="전표 선택">
+            <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span></button>
+            <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span></button>
+            <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span></button>
+            <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span></button>
+          </nav>
+        </div>
+      </div>
+      <div class="app-bar__actions">
+        <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
+        <button class="button button--quiet" id="restoreAutosaveButton" type="button" disabled>자동저장 복구</button>
         <details class="reference-overview" id="referenceOverview">
           <summary aria-label="기준정보 상태 열기" aria-expanded="false"><span aria-hidden="true">기준정보</span></summary>
           <div class="reference-overview__panel" role="group" aria-label="상품·거래처 기준정보 상태">
@@ -36,29 +56,8 @@
             <button class="reference-overview__apply" type="button" id="referencePendingApply" hidden>현재 작업에 적용</button>
           </div>
         </details>
-      </div>
-      <div class="app-bar__primary">
-        <div class="app-voucher-switcher">
-          <span class="sr-only">전표 선택</span>
-          <nav class="mode-tabs" aria-label="전표 선택">
-            <button type="button" class="mode-tab is-active" data-mode="order" aria-selected="true"><span>주문서</span></button>
-            <button type="button" class="mode-tab" data-mode="purchase" aria-selected="false"><span>구매</span></button>
-            <button type="button" class="mode-tab" data-mode="sale" aria-selected="false"><span>판매</span></button>
-            <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span></button>
-          </nav>
-        </div>
-      </div>
-      <div class="app-bar__actions">
-        <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
-        <button class="button button--quiet" id="draftListButton" type="button">초안 목록</button>
         <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
-        <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
       </div>
-      <a class="brand" href="./" aria-label="스마트입력 처음으로">
-        <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="" width="2172" height="724" decoding="async">
-        <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="" width="2201" height="714" decoding="async">
-        <span class="sr-only">스마트입력</span>
-      </a>
     </div>
   </header>
 
@@ -154,7 +153,6 @@
               </div>
             </div>
             <button class="button button--quiet button--small" id="catalogNewButton" type="button" hidden>새 견적서</button>
-            <button class="button button--primary button--small" id="catalogSaveButton" type="button" hidden>저장</button>
             <div class="estimate-output-actions" id="estimateOutputActions" hidden>
               <button class="button button--quiet button--small" id="estimateNoticeButton" type="button">카톡 복사</button>
               <button class="button button--quiet button--small" id="estimateExcelButton" type="button">견적 Excel</button>
@@ -182,7 +180,7 @@
           </div>
           <footer class="voucher-footer-actions" aria-label="전표 작업">
             <button class="button button--quiet" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
-            <button class="button button--primary" id="saveDraftButton" type="button">저장</button>
+            <button class="button button--primary" id="completeButton" type="button">완료</button>
           </footer>
         </section>
       </section>
@@ -207,7 +205,7 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.5.0"></script>
-  <script type="module" src="./smartinput.js?v=0.6.4"></script>
+  <script type="module" src="./smartinput.js?v=0.6.5"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>

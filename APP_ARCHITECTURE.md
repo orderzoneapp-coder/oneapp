@@ -127,7 +127,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
-| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·기존 DB v3·초안 키를 로컬 우선으로 운영. 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
+| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v4의 최신 자동저장 1건·기존 호환 키를 로컬 우선으로 운영. 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 미등록 상품 PENDING 변경요청 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
@@ -898,7 +898,7 @@ Their business meaning must not be unified merely because the key number is the 
    - 독립 앱 엔트리, 소유 Repository, customer Snapshot Read Adapter와 v17 읽기 전용 이전 경계를 파일럿으로 구현한다.
    - SmartInput은 로컬 캐시 우선·장애 격리형 소비자로 연결하고, ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.
 5. **SmartInput 구축**
-   - 전표 작성 작업본과 기존 로컬 저장 계약은 자체 Repository가 소유한다.
+   - 전표 작성 작업본과 최신 자동저장 1건 갱신·복구 및 기존 호환 키는 자체 Repository가 소유한다.
    - 상품·거래처는 Snapshot으로 복사하고 열린 전표를 최신 master로 자동 덮어쓰지 않는다.
    - ORDER Q 전달 실패가 작성·로컬 저장을 손상시키지 않도록 격리한다.
 6. **NEXUS 공통 UI 유지**

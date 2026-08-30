@@ -1,5 +1,5 @@
 const DB_NAME = 'oneapp-smartinput';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
 
 export const DATA_STORES = Object.freeze({
@@ -8,7 +8,8 @@ export const DATA_STORES = Object.freeze({
   TEMPORARY_CUSTOMERS: 'temporaryCustomers',
   ALIAS_MAPPINGS: 'customerAliasMappings',
   ESTIMATES: 'estimates',
-  SOURCE_IMAGES: 'sourceImages'
+  SOURCE_IMAGES: 'sourceImages',
+  AUTOSAVE: 'autosave'
 });
 
 function requestResult(request) {
@@ -59,6 +60,9 @@ function openDatabase() {
         store.createIndex('byMode', 'mode', { unique: false });
         store.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
       }
+      if (!db.objectStoreNames.contains(DATA_STORES.AUTOSAVE)) {
+        db.createObjectStore(DATA_STORES.AUTOSAVE, { keyPath: 'key' });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('스마트입력 저장소를 열지 못했습니다.'));
@@ -85,6 +89,15 @@ async function getAll(storeName) {
   const rows = await requestResult(transaction.objectStore(storeName).getAll());
   db.close();
   return rows;
+}
+
+async function get(storeName, key) {
+  const db = await openDatabase();
+  if (!db) return readFallback()[storeName]?.[key] || null;
+  const transaction = db.transaction(storeName, 'readonly');
+  const record = await requestResult(transaction.objectStore(storeName).get(key));
+  db.close();
+  return record || null;
 }
 
 async function put(storeName, record, keyField) {
@@ -208,4 +221,18 @@ export function saveSourceImage(sourceImage) {
 
 export function deleteSourceImage(documentId) {
   return remove(DATA_STORES.SOURCE_IMAGES, documentId);
+}
+
+export function saveLatestAutosave(draft) {
+  const updatedAt = new Date().toISOString();
+  return put(DATA_STORES.AUTOSAVE, {
+    key: 'current',
+    schemaVersion: 'ONEAPP_SMART_INPUT_AUTOSAVE_V1',
+    updatedAt,
+    draft: JSON.parse(JSON.stringify(draft))
+  }, 'key');
+}
+
+export function loadLatestAutosave() {
+  return get(DATA_STORES.AUTOSAVE, 'current');
 }

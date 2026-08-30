@@ -147,15 +147,19 @@ try {
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
   assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right connected-app panel must be visible');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandRightGap:Math.abs(appInner.right-brand.right),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim()};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton'))};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
   assert.notEqual(visualZones.searchBackground, visualZones.excelBackground, 'product lookup and Excel entry cells must be visually distinct');
   assert.equal(visualZones.searchDivider, '2px', 'product lookup must have an explicit boundary before the Excel grid');
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
   assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
-  assert.ok(visualZones.brandRightGap <= 1, 'SmartInput logo must occupy the far-right edge of the app header');
+  assert.ok(visualZones.brandLeftGap <= 1, 'SmartInput logo must occupy the far-left edge of the app header');
   assert.equal(visualZones.headerHasReferenceCounts, false, 'product and customer counts must not remain as an app-header annotation');
   assert.match(visualZones.coachmark, /상품·거래처 기준정보/, 'reference counts must move into the reference coachmark panel');
+  assert.equal(visualZones.referenceBeforeSettings, true, 'reference status must sit immediately before settings');
+  assert.equal(visualZones.legacyButtons, 0, 'manual draft-list and duplicate save controls must be removed');
+  assert.equal(visualZones.completeText, '완료');
+  assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
@@ -188,7 +192,20 @@ try {
   const handleWidthAfter = await expr(client, `document.querySelector('col[data-column="itemName"]').getBoundingClientRect().width>${handleWidthBefore}&&document.querySelector('col[data-column="itemName"]').getBoundingClientRect().width`, 'keyboard column resize');
   assert.ok(handleWidthAfter > handleWidthBefore);
 
+  await expr(client, `!document.querySelector('#restoreAutosaveButton').disabled`, 'latest autosave ready');
+  const autosave = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',4);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.map(record=>({key:record.key,schemaVersion:record.schemaVersion,sourceText:record.draft?.modes?.order?.sourceText})));db.close();};};})`);
+  assert.equal(autosave.length, 1, 'autosave DB must overwrite one current record instead of building a list');
+  assert.equal(autosave[0].key, 'current');
+  assert.equal(autosave[0].schemaVersion, 'ONEAPP_SMART_INPUT_AUTOSAVE_V1');
+  assert.match(autosave[0].sourceText, /사과 2박스/);
+  await evaluate(client, `(() => {window.confirm=()=>true;document.querySelector('#sourceTextInput').value='화면에서만 바뀐 값';return true;})()`);
+  await click(client, '#restoreAutosaveButton');
+  await expr(client, `document.querySelector('#sourceTextInput').value.includes('사과 2박스')`, 'explicit latest autosave restore');
+
   await click(client, '#resetDraftButton');
+  await expr(client, `document.querySelector('#inputRows tr[data-default-row="true"]')`, 'reset before recovery');
+  await click(client, '#restoreAutosaveButton');
+  await expr(client, `document.querySelector('#sourceTextInput').value.includes('사과 2박스')`, 'reset round-trip recovery');
   await evaluate(client, `window.confirm=()=>true;document.querySelector('#resetDraftButton').click();true`);
   await expr(client, `document.querySelector('#inputRows tr[data-default-row="true"]')`, 'empty default row');
   await input(client, '#inputRows tr[data-default-row="true"] [data-product-search]', '마스터 사과');
@@ -273,11 +290,14 @@ try {
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '2');
   await input(client, '#inputRows [data-field="unitPrice"]', '1500');
-  await click(client, '#catalogSaveButton');
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '완료');
+  await click(client, '#completeButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'estimate save dialog');
   await input(client, '[data-estimate-name]', '격리 견적');
   await click(client, '[data-confirm-save]');
   await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('격리 견적')`, 'estimate persisted');
+  await click(client, '#completeButton');
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-estimate-name]'))`), false, 'a named estimate must complete without reopening the name dialog');
   await evaluate(client, `window.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:data=>data,book_append_sheet:()=>{}},writeFile:(book,name)=>window.__estimateExportName=name};true`);
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
@@ -294,7 +314,7 @@ try {
   const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
   assert.ok(mobile.app.height <= 170 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
-  assert.ok(Math.abs(mobile.appInner.right - mobile.brand.right) <= 1, 'mobile SmartInput logo must remain at the app-header far right');
+  assert.ok(Math.abs(mobile.appInner.x - mobile.brand.x) <= 1, 'mobile SmartInput logo must remain at the app-header far left');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

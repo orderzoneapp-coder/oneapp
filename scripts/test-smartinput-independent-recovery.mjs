@@ -22,6 +22,10 @@ assert.match(html, /nexus-ui\.js\?v=1\.4\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
 assert.doesNotMatch(html, /<kbd|Alt\+[1234]|cdn\.jsdelivr\.net/i);
 assert.doesNotMatch(appSource, /\.altKey|Alt\+[1234]/i);
+assert.doesNotMatch(html, /id="(?:draftListButton|saveDraftButton|catalogSaveButton)"/);
+assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
+assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>완료<\/button>/);
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
@@ -45,10 +49,12 @@ for (const removed of ['input-template-core.js', 'source-staging.js', 'workflow-
 }
 
 assert.match(storeSource, /const DB_NAME = 'oneapp-smartinput'/);
-assert.match(storeSource, /const DB_VERSION = 3/);
-for (const store of ['settings', 'customerLinkGroups', 'temporaryCustomers', 'customerAliasMappings', 'estimates', 'sourceImages']) {
+assert.match(storeSource, /const DB_VERSION = 4/);
+for (const store of ['settings', 'customerLinkGroups', 'temporaryCustomers', 'customerAliasMappings', 'estimates', 'sourceImages', 'autosave']) {
   assert.match(storeSource, new RegExp(`['"]${store}['"]`));
 }
+assert.match(storeSource, /saveLatestAutosave[\s\S]*key: 'current'/);
+assert.match(storeSource, /loadLatestAutosave[\s\S]*get\(DATA_STORES\.AUTOSAVE, 'current'\)/);
 assert.doesNotMatch(storeSource, /deleteDatabase|\.clear\s*\(/, 'rollback must not erase user data');
 
 const contractSource = read('smartinput/smartinput-contract.js');
@@ -110,5 +116,8 @@ const smartInput = manifest.applications.find(app => app.id === 'smart-input');
 assert.equal(smartInput.path, 'smartinput/index.html');
 assert.equal(smartInput.status, 'pilot');
 assert.equal(smartInput.owner, 'voucher-input');
+const localWork = manifest.sharedDataContracts.find(contract => contract.id === 'smartinput-local-work');
+assert.equal(localWork.databaseVersion, 4);
+assert.ok(localWork.resources.indexedDbStores.includes('autosave'));
 
 console.log('SmartInput 0a rollback and independent compatibility contracts PASS');

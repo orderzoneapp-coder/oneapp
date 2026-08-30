@@ -56,8 +56,10 @@ import {
   saveReferenceCache,
   saveSettings,
   saveSourceImage,
-  saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.3.2';
+  saveTemporaryCustomer,
+  loadLatestAutosave,
+  saveLatestAutosave
+} from './smartinput-data-store.js?v=0.4.0';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -144,6 +146,9 @@ const state = {
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
   draftDirty: false,
+  autosaveAvailable: false,
+  autosaveUpdatedAt: '',
+  autosaveLoading: true,
   toastTimer: null,
   recognition: null,
   listening: false,
@@ -185,15 +190,6 @@ function loadDraft() {
   }
 }
 
-function loadDraftList() {
-  try {
-    const rows = JSON.parse(localStorage.getItem(contract.DRAFT_LIST_STORAGE_KEY) || '[]');
-    return Array.isArray(rows) ? rows.filter(hasMeaningfulDraftContent) : [];
-  } catch (_) {
-    return [];
-  }
-}
-
 function hasMeaningfulDraftContent(draft) {
   const header = draft?.header || {};
   return Boolean(
@@ -204,22 +200,6 @@ function hasMeaningfulDraftContent(draft) {
     || String(header.taxCustomerId || header.taxCustomerName || '').trim()
     || String(header.warehouseId || header.warehouseName || '').trim()
   );
-}
-
-function saveModeDraftSnapshot() {
-  const current = modeDraft();
-  if (!current?.documentId) return;
-  const previous = loadDraftList();
-  if (!hasMeaningfulDraftContent(current)) {
-    const next = previous.filter(item => item.documentId !== current.documentId);
-    if (next.length !== previous.length) localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(next));
-    return;
-  }
-  const snapshot = JSON.parse(JSON.stringify({ ...current, mode: state.draft.activeMode, parentDraftId: state.draft.draftId }));
-  const next = [snapshot, ...previous.filter(item => item.documentId !== current.documentId)]
-    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
-    .slice(0, 30);
-  localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(next));
 }
 
 function modeDraft() {
@@ -262,7 +242,42 @@ function setSaveState(message = '', stateName = 'idle') {
   element.dataset.state = stateName;
 }
 
-function saveDraftNow() {
+function hasMeaningfulWorkspaceDraft(draft) {
+  return Object.values(draft?.modes || {}).some(hasMeaningfulDraftContent);
+}
+
+function updateAutosaveButton() {
+  const button = $('restoreAutosaveButton');
+  if (!button) return;
+  button.disabled = state.autosaveLoading || !state.autosaveAvailable || state.busy;
+  button.title = state.autosaveAvailable && state.autosaveUpdatedAt
+    ? `최근 자동저장 ${new Date(state.autosaveUpdatedAt).toLocaleString('ko-KR')}`
+    : '복구할 자동저장이 없습니다.';
+}
+
+let autosaveWriteQueue = Promise.resolve();
+
+function queueAutosaveSnapshot(draft) {
+  const snapshot = JSON.parse(JSON.stringify(draft));
+  const write = () => saveLatestAutosave(snapshot);
+  const queued = autosaveWriteQueue.then(write, write);
+  autosaveWriteQueue = queued.catch(() => undefined);
+  queued.then(record => {
+    state.autosaveLoading = false;
+    state.autosaveAvailable = hasMeaningfulWorkspaceDraft(snapshot);
+    state.autosaveUpdatedAt = record?.updatedAt || snapshot.updatedAt || new Date().toISOString();
+    updateAutosaveButton();
+    setSaveState('자동저장됨', 'saved');
+  }).catch(() => {
+    state.autosaveLoading = false;
+    updateAutosaveButton();
+    setSaveState('자동저장 실패', 'error');
+    setAppStatus('자동저장 DB에 기록하지 못했습니다. 입력 내용은 현재 화면과 호환 저장소에 유지됩니다.', 'warn');
+  });
+  return queued;
+}
+
+function saveDraftNow({ writeAutosave = true } = {}) {
   clearTimeout(state.saveTimer);
   if (state.draft.activeMode !== 'estimate') {
     modeDraft().voucherGroups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header)
@@ -270,24 +285,87 @@ function saveDraftNow() {
   }
   state.draft.updatedAt = new Date().toISOString();
   modeDraft().updatedAt = state.draft.updatedAt;
+  let compatibilitySaved = true;
   try {
     localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
-    saveModeDraftSnapshot();
     state.draftDirty = false;
-    setSaveState('저장됨', 'saved');
-    return true;
   } catch (_) {
-    setSaveState('저장 실패', 'error');
-    setAppStatus('초안을 저장하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
-    return false;
+    compatibilitySaved = false;
+    setAppStatus('호환 저장소에 기록하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
   }
+  if (writeAutosave) {
+    setSaveState('자동저장 중…', 'saving');
+    queueAutosaveSnapshot(state.draft);
+  } else {
+    setSaveState(state.autosaveAvailable ? '복구 가능' : '', 'saved');
+    updateAutosaveButton();
+  }
+  return compatibilitySaved;
 }
 
 function scheduleSave() {
   state.draftDirty = true;
-  setSaveState('저장 중…', 'saving');
+  setSaveState('자동저장 중…', 'saving');
   clearTimeout(state.saveTimer);
   state.saveTimer = window.setTimeout(saveDraftNow, 160);
+}
+
+async function initializeAutosave() {
+  try {
+    const record = await loadLatestAutosave();
+    if (record?.draft && hasMeaningfulWorkspaceDraft(record.draft)) {
+      state.autosaveAvailable = true;
+      state.autosaveUpdatedAt = record.updatedAt || record.draft.updatedAt || '';
+    } else if (hasMeaningfulWorkspaceDraft(state.draft)) {
+      const migrated = await saveLatestAutosave(state.draft);
+      state.autosaveAvailable = true;
+      state.autosaveUpdatedAt = migrated?.updatedAt || state.draft.updatedAt || '';
+    }
+  } catch (_) {
+    setSaveState('복구 확인 실패', 'error');
+  } finally {
+    state.autosaveLoading = false;
+    updateAutosaveButton();
+  }
+}
+
+async function restoreLatestAutosave() {
+  if (state.autosaveLoading || state.busy) return;
+  state.busy = true;
+  updateAutosaveButton();
+  try {
+    await autosaveWriteQueue;
+    const record = await loadLatestAutosave();
+    if (!record?.draft || !hasMeaningfulWorkspaceDraft(record.draft)) {
+      state.autosaveAvailable = false;
+      state.autosaveUpdatedAt = '';
+      return toast('복구할 자동저장이 없습니다.', 'error');
+    }
+    if (activeWorkspaceHasContent() && !window.confirm('현재 입력을 최근 자동저장 상태로 복구하시겠습니까? 현재 화면의 저장되지 않은 변경은 바뀔 수 있습니다.')) return;
+    clearTimeout(state.saveTimer);
+    state.draftDirty = false;
+    state.draft = contract.normalizeDraft(record.draft);
+    state.selectedRowIds.clear();
+    state.gridPasteUndo = null;
+    state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
+    state.pendingSourceName = '';
+    state.pendingStructuredImport = null;
+    Object.keys(state.sourceImages).forEach(restoreSourceImageForMode);
+    try { localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft)); } catch (_) {}
+    state.autosaveAvailable = true;
+    state.autosaveUpdatedAt = record.updatedAt || state.draft.updatedAt || '';
+    renderMode();
+    setAppStatus(`최근 자동저장을 복구했습니다${state.autosaveUpdatedAt ? ` · ${new Date(state.autosaveUpdatedAt).toLocaleString('ko-KR')}` : ''}.`);
+    toast('최근 자동저장을 복구했습니다.', 'success');
+  } catch (error) {
+    setAppStatus('자동저장을 복구하지 못했습니다. 현재 입력은 유지됩니다.', 'error');
+    toast(error.message || '자동저장 복구에 실패했습니다.', 'error');
+  } finally {
+    state.busy = false;
+    updateAutosaveButton();
+    renderDelivery();
+  }
 }
 
 function referencesReady() {
@@ -297,7 +375,7 @@ function referencesReady() {
 function referenceStatusMessage() {
   return state.referenceMessage || (state.referenceStatus === REFERENCE_DOMAIN_STATUS.LOADING
     ? '상품·거래처 기준정보를 불러오고 있습니다.'
-    : '일부 기준정보를 사용할 수 없습니다. 수동 입력과 초안 저장은 계속할 수 있습니다.');
+    : '일부 기준정보를 사용할 수 없습니다. 수동 입력과 자동저장은 계속할 수 있습니다.');
 }
 
 function referenceDomainLabel(domain) {
@@ -377,7 +455,7 @@ function refreshReferenceAggregate() {
   const productCount = state.references.product.active?.count;
   const customerCount = state.references.customer.active?.count;
   if (unavailable.length) {
-    state.referenceMessage = `${unavailable.map(referenceDomainLabel).join('·')} 기준정보 로드 실패 · 수동 입력과 초안 저장은 계속할 수 있습니다.`;
+    state.referenceMessage = `${unavailable.map(referenceDomainLabel).join('·')} 기준정보 로드 실패 · 수동 입력과 자동저장은 계속할 수 있습니다.`;
   } else if (pending.length) {
     state.referenceMessage = `${pending.map(referenceDomainLabel).join('·')} 새 revision 보류 · 기본은 다음 작업부터 적용`;
   } else if (degraded.length) {
@@ -414,11 +492,10 @@ function renderReferenceDomain(domain) {
 function renderReferenceControls() {
   $('analyzeButton').disabled = state.busy;
   $('customerSearchButton').disabled = state.busy;
-  $('saveDraftButton').disabled = state.busy;
   $('estimateNoticeButton').disabled = state.busy;
   $('estimateExcelButton').disabled = state.busy;
-  $('catalogSaveButton').disabled = state.busy;
   $('catalogComposeButton').disabled = state.busy || !state.noticeEstimateIds.length;
+  updateAutosaveButton();
   refreshReferenceAggregate();
   renderReferenceDomain('product');
   renderReferenceDomain('customer');
@@ -2053,53 +2130,6 @@ async function openSettingsDialog() {
   dialog.showModal();
 }
 
-function openDraftListDialog() {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'smart-dialog smart-draft-dialog';
-  dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Local Drafts</small><h2>최근 초안</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">최근 30개 초안을 이 기기에 보존합니다.</div>
-    <div class="smart-draft-results"></div>
-    <footer><button type="button" class="button button--quiet" data-close>닫기</button></footer>
-  </div>`;
-  document.body.append(dialog);
-  const results = dialog.querySelector('.smart-draft-results');
-  const render = () => {
-    const drafts = loadDraftList();
-    results.innerHTML = drafts.length ? drafts.map(item => `<article class="smart-draft-row" data-document-id="${esc(item.documentId)}">
-      <button type="button" data-open-draft><strong>${esc(contract.MODES[item.mode]?.label || item.mode)} · ${esc(item.header?.customerName || '거래처 미확정')}</strong><span>${Number(item.rows?.length || 0)}행 · 원본 ${Number(item.batches?.length || 0)}차</span><small>${item.updatedAt ? new Date(item.updatedAt).toLocaleString('ko-KR') : ''}</small></button>
-      <button type="button" class="row-remove" data-delete-draft aria-label="초안 삭제">×</button>
-    </article>`).join('') : '<div class="smart-dialog__empty">저장된 초안이 없습니다.</div>';
-    results.querySelectorAll('[data-document-id]').forEach(row => {
-      const documentId = row.dataset.documentId;
-      row.querySelector('[data-open-draft]').addEventListener('click', () => {
-        const item = loadDraftList().find(draft => draft.documentId === documentId);
-        if (!item || !contract.MODES[item.mode]) return;
-        syncSourceText();
-        state.draft.activeMode = item.mode;
-        state.draft.modes[item.mode] = contract.normalizeModeDraft(item.mode, item);
-        restoreSourceImageForMode(item.mode);
-        state.selectedRowIds.clear();
-        saveDraftNow();
-        renderMode();
-        dialog.close();
-        dialog.remove();
-      });
-      row.querySelector('[data-delete-draft]').addEventListener('click', () => {
-        const item = loadDraftList().find(draft => draft.documentId === documentId);
-        if (!item || !window.confirm(`${item.header?.customerName || '거래처 미확정'} 초안을 삭제하시겠습니까? 원본 ${Number(item.batches?.length || 0)}차가 함께 삭제됩니다.`)) return;
-        localStorage.setItem(contract.DRAFT_LIST_STORAGE_KEY, JSON.stringify(loadDraftList().filter(draft => draft.documentId !== documentId)));
-        render();
-      });
-    });
-  };
-  const finish = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
-  dialog.showModal();
-  render();
-}
-
 function estimateTitle(record) {
   return String(record?.catalogName || '').trim() || catalogCustomerName(record) || '견적서명 미지정';
 }
@@ -2199,7 +2229,6 @@ function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   $('catalogFilter').hidden = !visible;
   $('catalogNewButton').hidden = !visible;
-  $('catalogSaveButton').hidden = !visible;
   if (!visible) {
     closeCatalogPicker();
     return;
@@ -2623,8 +2652,9 @@ function renderDelivery() {
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
   $('completeButton').disabled = state.busy;
-  $('completeButton').hidden = isEstimate;
-  $('completeButton').textContent = '입력 완료';
+  $('completeButton').hidden = false;
+  $('completeButton').textContent = '완료';
+  updateAutosaveButton();
   if (visibleDelivery?.targetRecordId) {
     document.querySelector('#orderLinks a:first-child').href = `../orderq/index.html?focus=${encodeURIComponent(visibleDelivery.targetRecordId)}&saved=1`;
   } else {
@@ -3841,7 +3871,7 @@ function activatePendingReferences({ explicit = true, render = true } = {}) {
   ));
   if (explicit) {
     const detail = diffs.map(diff => `${referenceDomainLabel(diff.domain)} ${diff.fromRevision || '없음'} → ${diff.toRevision || '없음'} · +${diff.added} / -${diff.removed} / 변경 ${diff.changed}`).join('\n');
-    if (!window.confirm(`보류 중인 기준정보를 현재 작업에 적용하시겠습니까?\n${detail}\n관리자가 편집한 필드와 현재 초안·행 선택은 유지됩니다.`)) return false;
+    if (!window.confirm(`보류 중인 기준정보를 현재 작업에 적용하시겠습니까?\n${detail}\n관리자가 편집한 필드와 현재 입력·행 선택은 유지됩니다.`)) return false;
   }
   domains.forEach(domain => {
     const pending = state.references[domain].pending;
@@ -4384,6 +4414,12 @@ async function saveEstimateDocument(catalogName) {
 }
 
 async function completeOrder() {
+  if (state.draft.activeMode === 'estimate') {
+    if (!validateEstimateDocument()) return;
+    const loadedRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
+    const assignedName = String(loadedRecord?.catalogName || '').trim();
+    return assignedName ? saveEstimateDocument(assignedName) : openEstimateSaveDialog();
+  }
   if (state.draft.activeMode === 'purchase') return completePurchaseOfficial();
   if (state.draft.activeMode === 'sale') return completeSaleOfficial();
   return completeOrderLegacy();
@@ -4393,7 +4429,7 @@ async function completeSaleOfficial() {
   const current = modeDraft();
   if (!state.saleCapability.ready) {
     setAppStatus('공식 판매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
-    return toast('판매 원장 연결을 사용할 수 없습니다. 현재 작업과 초안은 유지됩니다.', 'error');
+    return toast('판매 원장 연결을 사용할 수 없습니다. 현재 작업과 자동저장은 유지됩니다.', 'error');
   }
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
@@ -4460,7 +4496,7 @@ async function completePurchaseOfficial() {
   const current = modeDraft();
   if (!state.purchaseCapability.ready) {
     setAppStatus('공식 구매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
-    return toast('구매 원장 연결을 사용할 수 없습니다. 현재 작업과 초안은 유지됩니다.', 'error');
+    return toast('구매 원장 연결을 사용할 수 없습니다. 현재 작업과 자동저장은 유지됩니다.', 'error');
   }
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
@@ -4662,7 +4698,6 @@ function buildVoucherGroupKeyForCurrentRow(row) {
 
 async function completeOrderLegacy() {
   const current = modeDraft();
-  if (state.draft.activeMode === 'estimate') return openEstimateSaveDialog();
   if (state.draft.activeMode !== 'order') {
     toast('구매·판매 전달 대상은 확정 후 활성화합니다.', 'error');
     return;
@@ -4837,6 +4872,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   const current = modeDraft();
   const hasData = current.rows.length || current.sourceText.trim();
   if (requireConfirmation && hasData && !window.confirm(`${contract.MODES[state.draft.activeMode].label} 입력 내용을 비우고 새로 작성하시겠습니까?`)) return;
+  if (hasData) saveDraftNow();
   const fallback = contract.createDraft().modes[state.draft.activeMode];
   fallback.header.warehouseId = current.header.warehouseId;
   fallback.header.warehouseCode = current.header.warehouseCode;
@@ -4852,18 +4888,10 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
   activatePendingReferences({ explicit: false, render: false });
-  saveDraftNow();
+  saveDraftNow({ writeAutosave: false });
   renderMode();
   sourceTextInput.focus();
   toast(successMessage, 'success');
-}
-
-function saveAndStartNextVoucher() {
-  if (!saveDraftNow()) {
-    toast('전표를 저장하지 못해 현재 입력 내용을 유지합니다.', 'error');
-    return;
-  }
-  resetCurrentMode(false, '전표를 저장하고 다음 입력을 시작합니다.');
 }
 
 async function hydrateReferences() {
@@ -5116,8 +5144,7 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
-$('saveDraftButton').addEventListener('click', saveAndStartNextVoucher);
-$('draftListButton').addEventListener('click', openDraftListDialog);
+$('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
 $('estimateNoticeButton').addEventListener('click', openEstimateNoticePreview);
 $('estimateExcelButton').addEventListener('click', exportEstimateExcel);
 $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
@@ -5155,7 +5182,6 @@ $('catalogNewButton').addEventListener('click', () => {
   startNewCatalog();
   toast('새 견적서를 시작했습니다.', 'success');
 });
-$('catalogSaveButton').addEventListener('click', openEstimateSaveDialog);
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
 $('relatedCollapseButton').addEventListener('click', event => {
@@ -5391,4 +5417,5 @@ window.addEventListener('pagehide', () => {
   if (state.draftDirty) saveDraftNow();
 });
 renderMode();
+initializeAutosave();
 hydrateReferences();
