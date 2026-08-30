@@ -2522,7 +2522,7 @@ async function persistEstimateCardOrder(payload, target) {
 
 function clearEstimateCardDrag() {
   document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
-  window.setTimeout(() => { state.estimateDragSuppressed = false; }, 80);
+  state.estimateDragSuppressed = false;
 }
 
 function beginEstimateTouchDrag(event) {

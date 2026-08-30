@@ -334,8 +334,10 @@ try {
   await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id]')?.dataset.estimateId===window.__estimateCardOrder[0]`, 'estimate card drag order restore');
   await wait(350);
   await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[0].click();true`);
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'first estimate card selected after drag');
   await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2&&document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'second estimate card selected');
+  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
   assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
   await expr(client, `!document.querySelector('#linkedEstimateGroupButton').disabled`, 'linked estimate members selected');
   await click(client, '#linkedEstimateGroupButton');
