@@ -211,8 +211,42 @@ export function saveEstimate(estimate) {
   return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
 }
 
+export async function commitEstimateBundle({ upserts = [], deletes = [] } = {}) {
+  const records = upserts.filter(record => record?.estimateId);
+  const ids = [...new Set(deletes.filter(Boolean))];
+  if (!records.length && !ids.length) return { upserts: [], deletes: [] };
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    value[DATA_STORES.ESTIMATES] ||= {};
+    records.forEach(record => { value[DATA_STORES.ESTIMATES][record.estimateId] = record; });
+    ids.forEach(estimateId => { delete value[DATA_STORES.ESTIMATES][estimateId]; });
+    writeFallback(value);
+    return { upserts: records, deletes: ids };
+  }
+  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
+  const store = transaction.objectStore(DATA_STORES.ESTIMATES);
+  records.forEach(record => store.put(record));
+  ids.forEach(estimateId => store.delete(estimateId));
+  await transactionDone(transaction);
+  db.close();
+  return { upserts: records, deletes: ids };
+}
+
+export async function saveEstimateBundle(estimates = []) {
+  const records = estimates.filter(record => record?.estimateId);
+  await commitEstimateBundle({ upserts: records });
+  return records;
+}
+
 export function deleteEstimate(estimateId) {
   return remove(DATA_STORES.ESTIMATES, estimateId);
+}
+
+export async function deleteEstimateBundle(estimateIds = []) {
+  const ids = [...new Set(estimateIds.filter(Boolean))];
+  await commitEstimateBundle({ deletes: ids });
+  return ids;
 }
 
 export function saveSourceImage(sourceImage) {

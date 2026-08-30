@@ -14,7 +14,7 @@ assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser mus
 assert.match(html, /class="workbench"/, 'the work table must remain');
 assert.match(html, /class="related-panel estimate-library-view"[^>]*id="estimateLibraryView"/, 'the right estimate library must remain a workspace sibling');
 assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"[\s\S]*id="linkedEstimateList"/, 'individual and linked estimate lists must remain available');
-assert.match(html, /id="voucherContextView"[\s\S]*id="voucherReadyState"[\s\S]*id="voucherContextList"/, 'non-estimate voucher modes must expose a live right-side inspection panel');
+assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*id="voucherReadyState"/, 'non-estimate voucher modes must expose a date-scoped right-side activity panel');
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibrarySwitchButton"[\s\S]*견적서목록[\s\S]*↔[\s\S]*연동견적서/, 'individual and linked estimate lists must use one pill switch');
@@ -27,8 +27,8 @@ assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || [])
   'all four voucher modes must remain');
 assert.doesNotMatch(html, /<kbd|Alt\+[1234]/i, 'Alt+1~4 affordances must stay excluded');
 
-assert.match(css, /\.workspace\s*\{[^}]*grid-template-columns:\s*minmax\(330px,[^}]*8px minmax\(0, 1fr\) 230px;/s,
-  'desktop must preserve parser, resizer, work table, and right estimate-list columns');
+assert.match(css, /\.workspace\.related-panel-open[\s\S]*grid-template-columns:[^;]*8px minmax\(0, 1fr\) var\(--related-pane-width\)/,
+  'desktop must preserve parser, resizer, work table, and adjustable right-panel columns');
 assert.match(css, /\.grid-card > \.work-action-bar\s*\{[\s\S]*border-bottom:\s*1px solid var\(--border\)/,
   'search and edit controls must be integrated with the grid card');
 assert.doesNotMatch(css, /is-estimate-library-open/, 'the estimate library must never replace the parser and table workspace');
@@ -42,5 +42,9 @@ assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{
   'all voucher modes must keep search, counts, and editing controls on one stable toolbar row');
 assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
+assert.match(html, /id="relatedPanelToggle"[\s\S]*id="relatedPanelResizer"[\s\S]*id="relatedPanelCloseButton"/,
+  'the right activity panel must expose slide toggle, resize handle, and close control');
+assert.match(css, /@media \(max-width:\s*820px\)[\s\S]*\.related-panel-resizer\s*\{\s*display:\s*none/,
+  'mobile must keep slide open-close without desktop width resizing');
 
 console.log('SmartInput protected desktop workspace contracts PASS');

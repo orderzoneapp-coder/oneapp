@@ -290,6 +290,7 @@ Important contracts include:
 | OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
 | ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
+| Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput reads only the selected voucher date for its sliding activity panel; `EMPTY` and `ERROR` remain distinct and neither path can modify the current worktable. |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
 
