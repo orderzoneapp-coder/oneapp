@@ -123,6 +123,7 @@ try {
   client = new CdpClient(targets[0].webSocketDebuggerUrl);
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable'), client.send('Network.enable')]);
+  client.on('Page.javascriptDialogOpening', () => { void client.send('Page.handleJavaScriptDialog', { accept: true }); });
   const exceptions = [];
   const consoleErrors = [];
   client.on('Runtime.exceptionThrown', event => exceptions.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'exception'));
@@ -142,13 +143,14 @@ try {
     throw new Error(`${error.message} · ${JSON.stringify(diagnostic)} · ${exceptions.join(' | ')}`);
   }
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
-  const metrics = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {title:document.title,global:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),resizer:q('#photoResizer'),workbench:q('.workbench'),related:q('.related-panel'),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
+  const metrics = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return {title:document.title,global:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),workbench:q('.workbench'),grid:q('.grid-card'),resizerDisplay:getComputedStyle(document.querySelector('#photoResizer')).display,related:Boolean(document.querySelector('.related-panel')),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
   console.log('SmartInput desktop metrics', metrics);
   assert.equal(metrics.title, '스마트입력 - NEXUS');
-  assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
-  assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right individual-estimate panel must be visible');
+  assert.ok(metrics.workbench.width > 1500 && Math.abs(metrics.parser.width - metrics.grid.width) <= 2, 'source intake and work table must share one full-width column');
+  assert.equal(metrics.resizerDisplay, 'none', 'the obsolete horizontal pane resizer must stay hidden in the one-column layout');
+  assert.equal(metrics.related, false, 'the obsolete fixed right rail must stay removed');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();const voucher=document.querySelector('.app-voucher-switcher').getBoundingClientRect();const header=document.querySelector('.header-fields');const headerBounds=header.getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),voucherHeaderGap:headerBounds.left-voucher.right,headerDivider:getComputedStyle(header).borderLeftWidth,headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton,#uploadTemplateButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton')),shareText:document.querySelector('#estimateNoticeButton')?.textContent.trim(),excelText:document.querySelector('#estimateExcelButton')?.textContent.trim(),outputsInFooter:Boolean(document.querySelector('.voucher-footer-actions>#estimateOutputActions')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton'))};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();const voucher=document.querySelector('.app-voucher-switcher').getBoundingClientRect();const customer=document.querySelector('.header-customer-group').getBoundingClientRect();const header=document.querySelector('.header-fields');const headerBounds=header.getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),voucherCustomerGap:customer.left-voucher.right,customerHeaderGap:headerBounds.left-customer.right,headerDivider:getComputedStyle(header).borderLeftWidth,customerInHeader:Boolean(document.querySelector('.app-bar .header-customer-group #customerInput')),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton,#uploadTemplateButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions #completeButton')),shareText:document.querySelector('#estimateNoticeButton')?.textContent.trim(),excelText:document.querySelector('#estimateExcelButton')?.textContent.trim(),outputsInFooter:Boolean(document.querySelector('.voucher-footer-actions #estimateOutputActions')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton'))};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
   assert.equal(visualZones.nativeSearchCells, 0, 'Excel cells must not expose native search × controls');
   assert.equal(visualZones.customerRegisterCoachmark, false, 'obsolete customer registration coachmark must not be exposed');
@@ -157,8 +159,9 @@ try {
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
   assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
   assert.ok(visualZones.brandLeftGap <= 1, 'SmartInput logo must occupy the far-left edge of the app header');
-  assert.ok(visualZones.voucherHeaderGap >= 16, 'voucher buttons and delivery-date fields must have a clear desktop gap');
-  assert.equal(visualZones.headerDivider, '1px', 'voucher buttons and delivery-date fields must use an explicit desktop divider');
+  assert.equal(visualZones.customerInHeader, true, 'customer entry must live in the app header');
+  assert.ok(visualZones.voucherCustomerGap >= 8 && visualZones.customerHeaderGap >= 8, 'voucher, customer and operational header groups must remain visually separated');
+  assert.equal(visualZones.headerDivider, '1px', 'customer and operational header groups must use an explicit divider');
   assert.equal(visualZones.headerHasReferenceCounts, false, 'product and customer counts must not remain as an app-header annotation');
   assert.match(visualZones.coachmark, /상품·거래처 기준정보/, 'reference counts must move into the reference coachmark panel');
   assert.equal(visualZones.referenceBeforeSettings, true, 'reference status must sit immediately before settings');
@@ -173,12 +176,10 @@ try {
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
   const darkShot = await capture(client, 'smartinput-0a-1920-dark.png');
 
-  const beforeResize = await evaluate(client, `document.querySelector('.parser-card').getBoundingClientRect().width`);
-  await evaluate(client, `(() => {const h=document.querySelector('#photoResizer');h.focus();for(let index=0;index<7;index+=1)h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
-  const afterResize = await expr(client, `Math.abs(document.querySelector('.parser-card').getBoundingClientRect().width-${beforeResize})>20&&document.querySelector('.parser-card').getBoundingClientRect().width`, 'parser resize');
-  assert.ok(afterResize > beforeResize, 'dragging the parser resizer must expand the source pane');
-  await click(client, '#relatedCollapseButton');
-  assert.equal(await evaluate(client, `document.querySelector('.related-panel').classList.contains('is-open')`), true, 'right panel must expand and collapse');
+  await click(client, '#sourcePanelToggleButton');
+  assert.equal(await evaluate(client, `document.querySelector('#sourceInputPanel').hidden&&document.querySelector('#sourcePanelToggleButton').getAttribute('aria-expanded')==='false'&&document.querySelector('#tableScroll').offsetWidth>0`), true, 'source intake must collapse without hiding the work table');
+  await click(client, '#sourcePanelToggleButton');
+  assert.equal(await evaluate(client, `!document.querySelector('#sourceInputPanel').hidden&&document.querySelector('#sourcePanelToggleButton').getAttribute('aria-expanded')==='true'`), true, 'source intake must reopen with the current work preserved');
 
   await input(client, '#sourceTextInput', '주문서 전환 보존');
   await click(client, '[data-mode="purchase"]');
@@ -324,6 +325,9 @@ try {
 
   await click(client, '[data-mode="estimate"]');
   assert.deepEqual(await evaluate(client, `({label:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),warehouse:document.querySelector('[data-header-field="warehouse"]').hidden,transactionType:document.querySelector('[data-header-field="transactionType"]').hidden})`), { label: '견적 작성일', warehouse: true, transactionType: true }, 'estimate header must expose creation date without operational warehouse/type fields');
+  assert.equal(await evaluate(client, `!document.querySelector('#estimateLibraryView').hidden&&document.querySelector('#estimateEditorView').hidden`), true, 'estimate mode must open the full-width individual-estimate list by default');
+  await click(client, '#newEstimateButton');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateLibraryView').hidden&&!document.querySelector('#estimateEditorView').hidden`), true, 'new estimate must open the full-width editor path');
   await click(client, '#addRowButton');
   await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
@@ -334,8 +338,13 @@ try {
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'estimate save dialog');
   await input(client, '[data-estimate-name]', '격리 견적');
   await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelector('#catalogPickerList [data-load-estimate]')?.textContent.includes('격리 견적')`, 'individual estimate persisted');
+  await expr(client, `document.querySelector('#catalogPickerList [data-select-estimate]')?.textContent.includes('격리 견적')`, 'individual estimate persisted');
   assert.equal(await evaluate(client, `document.querySelector('#customerInput').value`), '', 'successful voucher save must clear the customer field');
+  await click(client, '#completeButton');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'existing-name estimate save dialog');
+  await input(client, '[data-estimate-name]', '격리 견적');
+  await click(client, '[data-confirm-save]');
+  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===1&&!document.querySelector('[data-estimate-name]')`, 'exact-name overwrite without duplicate');
   await click(client, '#resetDraftButton');
   await click(client, '#addRowButton');
   await evaluate(client, `(() => {const element=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');element.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,'EST-2');element.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
@@ -352,6 +361,7 @@ try {
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'second estimate save dialog');
   await input(client, '[data-estimate-name]', '행사 원본 견적');
   await click(client, '[data-confirm-save]');
+  await click(client, '#estimateLibraryButton');
   await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'two individual estimates persisted');
   await evaluate(client, `(() => {const cards=[...document.querySelectorAll('#catalogPickerList [data-estimate-id]')];window.__estimateCardOrder=cards.map(card=>card.dataset.estimateId);const transfer=new DataTransfer();cards[0].dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[0].dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));return true;})()`);
   await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id]')?.dataset.estimateId===window.__estimateCardOrder[1]`, 'direct estimate card drag reorder');
@@ -362,25 +372,34 @@ try {
   await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'first estimate card selected after drag');
   await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
   await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'second estimate card selected');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateLibraryView').hidden`), false, 'multi-card touch selection must remain in the full-width list');
+  await click(client, '#viewSelectedEstimatesButton');
   await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
   assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
+  await click(client, '#estimateLibraryButton');
   await expr(client, `!document.querySelector('#linkedEstimateGroupButton').disabled`, 'linked estimate members selected');
   await click(client, '#linkedEstimateGroupButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');
   await input(client, '[data-estimate-name]', '가을 행사 연동견적');
   await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('가을 행사 연동견적')`, 'linked estimate persisted');
-  assert.match(await evaluate(client, `document.querySelector('#catalogPickerList [data-load-estimate] small')?.textContent`), /작성 .*수정/, 'estimate cards must distinguish immutable creation and latest modification dates');
+  assert.match(await evaluate(client, `document.querySelector('#catalogPickerList [data-select-estimate] small')?.textContent`), /작성 .*수정/, 'estimate cards must distinguish immutable creation and latest modification dates');
+  assert.ok(await evaluate(client, `document.querySelectorAll('#inputRows .linked-value-conflict').length>=1`), 'different source values must be identified instead of silently overwritten');
   await input(client, '#inputRows [data-field="quantity"]', '9');
   await wait(500);
-  await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#inputRows [data-field="quantity"]')?.value==='9'`, 'linked edit written through to individual estimate');
+  await click(client, '#estimateLibraryButton');
+  await expr(client, `!document.querySelector('#estimateLibraryView').hidden`, 'linked editor returns to full-width library');
+  await click(client, '#estimateLibrarySwitchButton');
+  await expr(client, `!document.querySelector('#linkedEstimateList').hidden&&document.querySelector('#linkedEstimateList [data-load-linked-estimate]')?.textContent.includes('가을 행사 연동견적')`, 'linked estimate full-width list');
+  await click(client, '#estimateLibrarySwitchButton');
+  await click(client, '#catalogPickerList [data-open-estimate]');
+  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].some(input=>input.value==='9')`, 'linked edit written through to individual estimate');
   await input(client, '#inputRows [data-field="quantity"]', '11');
   await wait(500);
-  await click(client, '#catalogPickerButton');
-  await expr(client, `Boolean(document.querySelector('#linkedEstimateList [data-load-linked-estimate]'))`, 'linked estimate picker');
+  await click(client, '#estimateLibraryButton');
+  await click(client, '#estimateLibrarySwitchButton');
+  await expr(client, `Boolean(document.querySelector('#linkedEstimateList [data-load-linked-estimate]'))`, 'linked estimate list');
   await click(client, '#linkedEstimateList [data-load-linked-estimate]');
-  await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('가을 행사 연동견적')&&document.querySelector('#inputRows [data-field="quantity"]')?.value==='11'`, 'individual edit reflected in linked estimate');
+  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].some(input=>input.value==='11')`, 'individual edit reflected in linked estimate');
   await evaluate(client, `window.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:data=>data,book_append_sheet:()=>{}},writeFile:(book,name)=>window.__estimateExportName=name};true`);
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
@@ -389,8 +408,9 @@ try {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
   const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));const headerFields=document.querySelector('.header-fields');return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,headerFields:q('.header-fields'),headerDivider:getComputedStyle(headerFields).borderTopWidth,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
+  console.log('SmartInput mobile metrics', mobile);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
-  assert.ok(mobile.app.height <= 230 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
+  assert.ok(mobile.app.height <= 300 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact while preserving customer and operational groups');
   assert.ok(Math.abs(mobile.appInner.x - mobile.brand.x) <= 1, 'mobile SmartInput logo must remain at the app-header far left');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
   assert.ok(mobile.headerFields.y >= Math.max(...mobile.tabs.map(tab => tab.bottom)) + 7, 'mobile header fields must be spaced below the voucher buttons');
@@ -409,8 +429,8 @@ try {
 
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height } }, null, 2));
-  console.log('SmartInput 0a browser E2E PASS');
+  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, singleColumn: Math.abs(metrics.parser.width - metrics.grid.width) <= 2, mobileHeaderHeight: mobile.header.height } }, null, 2));
+  console.log('SmartInput single-workspace browser E2E PASS');
 } finally {
   client?.close();
   if (browser && !browser.killed) browser.kill();

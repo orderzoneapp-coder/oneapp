@@ -33,6 +33,9 @@ assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.match(appSource, /flushLinkedRowsToSources/);
+assert.match(appSource, /flushLinkedIndividualToLibrary/, 'linked individual edits must write back for bidirectional synchronization');
+assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before same-value propagation');
+assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate cards must support direct touch reordering as well as desktop drag');
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
@@ -48,9 +51,12 @@ assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
 assert.match(appSource, /renderMode\(\);[\s\S]*?hydrateReferences\(\);/, 'local shell must render before optional references');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 
-for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'catalogPickerButton']) {
-  assert.match(html, new RegExp(marker), `${marker} from the 0a workspace must be restored`);
+for (const marker of ['parser-card', 'photoResizer', 'workbench', 'workspace--single', 'tableScroll', 'estimateLibraryView', 'catalogPickerList', 'linkedEstimateList']) {
+  assert.match(html, new RegExp(marker), `${marker} must remain in the single-workspace SmartInput shell`);
 }
+assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must live in the app header');
+assert.match(html, /id="sourcePanelToggleButton"/, 'source intake must be collapsible without losing the work table');
+assert.doesNotMatch(html, /class="related-panel"/, 'the obsolete fixed right-side panel must stay removed');
 assert.doesNotMatch(html + appSource, /추가 예정|양식 생성 모드|source-staging|input-template-core|workflow-core/i);
 for (const removed of ['input-template-core.js', 'source-staging.js', 'workflow-core.js', 'integration-adapter.js']) {
   assert.equal(fs.existsSync(path.join(root, 'smartinput', removed)), false, `${removed} must stay removed`);
