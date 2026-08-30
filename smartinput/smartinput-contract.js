@@ -467,6 +467,8 @@
       catalogRecordId: '',
       catalogBaselinePrices: {},
       catalogPreviousPrices: {},
+      estimateKind: 'INDIVIDUAL',
+      linkedEstimateSources: [],
       mode,
       header: {
         recordedAt,
@@ -694,6 +696,16 @@
       matchStatus: ['MATCHED', 'SIMILAR', 'UNRESOLVED'].includes(matchStatus) ? matchStatus : 'UNRESOLVED',
       candidateProducts,
       editedFields: input.editedFields && typeof input.editedFields === 'object' ? { ...input.editedFields } : {},
+      linkedSourceEstimateId: text(input.linkedSourceEstimateId),
+      linkedSourceEstimateName: text(input.linkedSourceEstimateName),
+      linkedSourceRowId: text(input.linkedSourceRowId),
+      linkedSourceEstimateIds: Array.isArray(input.linkedSourceEstimateIds) ? input.linkedSourceEstimateIds.map(text).filter(Boolean) : [],
+      linkedSourceRefs: Array.isArray(input.linkedSourceRefs) ? input.linkedSourceRefs.map(ref => ({
+        estimateId: text(ref.estimateId),
+        estimateName: text(ref.estimateName),
+        rowId: text(ref.rowId)
+      })).filter(ref => ref.estimateId && ref.rowId) : [],
+      linkedPriceConflict: Boolean(input.linkedPriceConflict),
       duplicatePossible: Boolean(input.duplicatePossible),
       reviewStatus: hasMasterIdentity ? 'CONFIRMED' : 'PENDING',
       productIdentityStatus: hasMasterIdentity ? 'MASTER_LINKED' : 'UNRESOLVED'
@@ -717,6 +729,12 @@
       catalogPreviousPrices: input.catalogPreviousPrices && typeof input.catalogPreviousPrices === 'object'
         ? { ...input.catalogPreviousPrices }
         : {},
+      estimateKind: ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(input.estimateKind) ? input.estimateKind : 'INDIVIDUAL',
+      linkedEstimateSources: Array.isArray(input.linkedEstimateSources) ? input.linkedEstimateSources.map(source => ({
+        estimateId: text(source.estimateId),
+        catalogName: text(source.catalogName),
+        updatedAt: text(source.updatedAt)
+      })).filter(source => source.estimateId) : [],
       mode,
       header: normalizeHeader(input.header, fallback.header),
       sourceText: String(input.sourceText ?? ''),

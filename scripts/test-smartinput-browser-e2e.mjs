@@ -113,8 +113,9 @@ try {
   assert.ok(executable, 'Chrome or Edge is required');
   browser = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
   const portFile = join(profile, 'DevToolsActivePort');
-  await waitFor(() => existsSync(portFile), 'browser debugging port');
-  const [debugPort] = readFileSync(portFile, 'utf8').trim().split(/\r?\n/);
+  const debugPort = await waitFor(() => {
+    try { return readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] || null; } catch (_) { return null; }
+  }, 'browser debugging port');
   const targets = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     return response.ok ? (await response.json()).filter(target => target.type === 'page') : null;
@@ -145,10 +146,12 @@ try {
   console.log('SmartInput desktop metrics', metrics);
   assert.equal(metrics.title, '스마트입력 - NEXUS');
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
-  assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right connected-app panel must be visible');
+  assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right individual-estimate panel must be visible');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton'))};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton'))};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
+  assert.equal(visualZones.nativeSearchCells, 0, 'Excel cells must not expose native search × controls');
+  assert.equal(visualZones.customerRegisterCoachmark, false, 'obsolete customer registration coachmark must not be exposed');
   assert.notEqual(visualZones.searchBackground, visualZones.excelBackground, 'product lookup and Excel entry cells must be visually distinct');
   assert.equal(visualZones.searchDivider, '2px', 'product lookup must have an explicit boundary before the Excel grid');
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
@@ -158,8 +161,10 @@ try {
   assert.match(visualZones.coachmark, /상품·거래처 기준정보/, 'reference counts must move into the reference coachmark panel');
   assert.equal(visualZones.referenceBeforeSettings, true, 'reference status must sit immediately before settings');
   assert.equal(visualZones.legacyButtons, 0, 'manual draft-list and duplicate save controls must be removed');
-  assert.equal(visualZones.completeText, '완료');
+  assert.equal(visualZones.completeText, '저장');
   assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
+  assert.equal(visualZones.sequence, 'No.');
+  assert.equal(visualZones.resetInTopBar, true, 'voucher reset must be in the top unified work bar');
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
@@ -175,7 +180,10 @@ try {
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개');
   await click(client, '#analyzeButton');
   await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2`, 'pure text parsing rows');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].map(input=>Number(input.value))`), [2, 3]);
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value))`), [2, 3]);
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'parsed information must always retain one trailing manual row');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows tr[data-default-row="true"] [data-supply-amount]').value`), '', 'empty calculated values must not be displayed');
+  await expr(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.order.rows.length===2`, 'blank parsed rows excluded from persistence');
   assert.match(await evaluate(client, `document.querySelector('#sourceTextInput').value`), /사과 2박스/, 'source text must remain visible during analysis');
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
@@ -268,7 +276,12 @@ try {
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: false });
   await loaded;
-  await expr(client, `document.querySelector('#photoPreview')?.dataset.sourceImageId==='E2E-SOURCE-IMAGE'&&!document.querySelector('#photoViewer').hidden`, 'source image reload');
+  try {
+    await expr(client, `document.querySelector('#photoPreview')?.dataset.sourceImageId==='E2E-SOURCE-IMAGE'&&!document.querySelector('#photoViewer').hidden`, 'source image reload', 30_000);
+  } catch (error) {
+    const sourceDiagnostic = await evaluate(client, `({method:JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'))?.modes?.order?.activeMethod,preview:document.querySelector('#photoPreview')?.dataset.sourceImageId,viewerHidden:document.querySelector('#photoViewer')?.hidden,status:document.querySelector('#appStatusMessage')?.textContent})`);
+    throw new Error(`${error.message} · ${JSON.stringify(sourceDiagnostic)}`);
+  }
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).futureRoot`), 'KEEP-UNKNOWN', 'unknown draft fields must survive reload');
   const photoShot = await capture(client, 'smartinput-0a-photo-reload.png');
 
@@ -285,35 +298,67 @@ try {
   }
 
   await click(client, '[data-mode="estimate"]');
+  assert.deepEqual(await evaluate(client, `({label:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),warehouse:document.querySelector('[data-header-field="warehouse"]').hidden,transactionType:document.querySelector('[data-header-field="transactionType"]').hidden})`), { label: '견적 작성일', warehouse: true, transactionType: true }, 'estimate header must expose creation date without operational warehouse/type fields');
   await click(client, '#addRowButton');
   await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '2');
   await input(client, '#inputRows [data-field="unitPrice"]', '1500');
-  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '완료');
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '저장');
   await click(client, '#completeButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'estimate save dialog');
   await input(client, '[data-estimate-name]', '격리 견적');
   await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('격리 견적')`, 'estimate persisted');
+  await expr(client, `document.querySelector('#catalogPickerList [data-load-estimate]')?.textContent.includes('격리 견적')`, 'individual estimate persisted');
+  assert.equal(await evaluate(client, `document.querySelector('#customerInput').value`), '', 'successful voucher save must clear the customer field');
+  await click(client, '#resetDraftButton');
+  await click(client, '#addRowButton');
+  await evaluate(client, `(() => {const element=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');element.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,'EST-2');element.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
+  assert.equal(await evaluate(client, `document.activeElement?.dataset?.field==='itemCode'&&document.activeElement?.closest('tr')?.dataset.defaultRow!=='true'&&document.querySelectorAll('#inputRows tr[data-default-row="true"]').length===1`), true, 'materializing the trailing row must preserve keyboard focus and append one new manual row without rerendering the active cell');
+  await input(client, '#inputRows [data-field="itemName"]', '행사 견적 상품');
+  await input(client, '#inputRows [data-field="quantity"]', '3');
+  await input(client, '#inputRows [data-field="unitPrice"]', '2400');
+  await input(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', 'EST-1');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="itemName"]', '견적 상품');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="quantity"]', '4');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="unitPrice"]', '1500');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'manual entry must materialize the row and immediately append exactly one new trailing row');
   await click(client, '#completeButton');
-  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-estimate-name]'))`), false, 'a named estimate must complete without reopening the name dialog');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'second estimate save dialog');
+  await input(client, '[data-estimate-name]', '행사 원본 견적');
+  await click(client, '[data-confirm-save]');
+  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'two individual estimates persisted');
+  await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[0].click();true`);
+  await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2&&document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
+  assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
+  await expr(client, `!document.querySelector('#linkedEstimateGroupButton').disabled`, 'linked estimate members selected');
+  await click(client, '#linkedEstimateGroupButton');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');
+  await input(client, '[data-estimate-name]', '가을 행사 연동견적');
+  await click(client, '[data-confirm-save]');
+  await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('가을 행사 연동견적')`, 'linked estimate persisted');
+  assert.match(await evaluate(client, `document.querySelector('#catalogPickerList [data-load-estimate] small')?.textContent`), /작성 .*수정/, 'estimate cards must distinguish immutable creation and latest modification dates');
+  await input(client, '#inputRows [data-field="quantity"]', '9');
+  await wait(500);
+  await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#inputRows [data-field="quantity"]')?.value==='9'`, 'linked edit written through to individual estimate');
+  await input(client, '#inputRows [data-field="quantity"]', '11');
+  await wait(500);
+  await click(client, '#catalogPickerButton');
+  await expr(client, `Boolean(document.querySelector('#linkedEstimateList [data-load-linked-estimate]'))`, 'linked estimate picker');
+  await click(client, '#linkedEstimateList [data-load-linked-estimate]');
+  await expr(client, `document.querySelector('#catalogPickerButton').textContent.includes('가을 행사 연동견적')&&document.querySelector('#inputRows [data-field="quantity"]')?.value==='11'`, 'individual edit reflected in linked estimate');
   await evaluate(client, `window.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:data=>data,book_append_sheet:()=>{}},writeFile:(book,name)=>window.__estimateExportName=name};true`);
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
   assert.match(await evaluate(client, `window.__estimateExportName`), /견적F8/);
-  await click(client, '#catalogPickerButton');
-  await expr(client, `Boolean(document.querySelector('[data-output-estimate]'))`, 'estimate picker');
-  await evaluate(client, `(() => {const checkbox=document.querySelector('[data-output-estimate]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
-  assert.equal(await evaluate(client, `!document.querySelector('#catalogComposeButton').disabled`), true, 'saved estimates must be selectable for compose');
-  await click(client, '#catalogComposeButton');
-  await expr(client, `document.querySelector('#inputRows [data-field="itemCode"]')?.value==='EST-1'`, 'estimate compose');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
   const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
-  assert.ok(mobile.app.height <= 170 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
+  assert.ok(mobile.app.height <= 230 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
   assert.ok(Math.abs(mobile.appInner.x - mobile.brand.x) <= 1, 'mobile SmartInput logo must remain at the app-header far left');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
