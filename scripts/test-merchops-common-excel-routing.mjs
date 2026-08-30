@@ -62,6 +62,32 @@ assert.equal(
   "ambiguous files must be blocked rather than loaded into the wrong role",
 );
 
+context.window.XLSX = {
+  utils: {
+    sheet_to_json(sheet) { return sheet.rows; },
+  },
+};
+const smartInputWorkbook = {
+  SheetNames: ["오류정보", "쇼핑몰업로드", "ERP업데이트"],
+  Sheets: {
+    오류정보: { rows: [["행", "오류"], [1, "상품코드 누락"]] },
+    쇼핑몰업로드: { rows: [["상품코드", "상품명", "규격", "판매가격"], ["P-1", "사과", "1kg", 1000]] },
+    ERP업데이트: { rows: [["품목코드", "품목명", "규격", "입고가", "출고가"], ["P-1", "사과", "1kg", 800, 1000]] },
+  },
+};
+const selectedSheet = context.window.selectMerchExcelDataSheet(smartInputWorkbook);
+assert.equal(selectedSheet.sheetName, "쇼핑몰업로드",
+  "SmartInput 오류정보가 첫 시트여도 MerchOps는 유효한 데이터 시트를 찾아야 한다");
+assert.equal(selectedSheet.headerRowIdx, 0,
+  "SmartInput 데이터 시트의 헤더 행을 직접 인식해야 한다");
+
+const smartInputSource = fs.readFileSync(path.join(ROOT, "smartinput", "smartinput.js"), "utf8");
+const shopSheetAt = smartInputSource.indexOf("'쇼핑몰업로드'");
+const erpSheetAt = smartInputSource.indexOf("'ERP업데이트'", shopSheetAt);
+const errorSheetAt = smartInputSource.indexOf("'오류정보'", erpSheetAt);
+assert.ok(shopSheetAt >= 0 && shopSheetAt < erpSheetAt && erpSheetAt < errorSheetAt,
+  "SmartInput 견적 Excel은 데이터 시트를 오류정보보다 먼저 생성해야 한다");
+
 const toolbarStart = html.indexOf("const MainToolbar = React.memo");
 const toolbarEnd = html.indexOf("const SessionExcludedPanel =", toolbarStart);
 const toolbar = html.slice(toolbarStart, toolbarEnd);

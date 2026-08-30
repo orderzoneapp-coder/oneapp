@@ -433,7 +433,8 @@
         "orderq/input.html",
         "orderq/parser.html",
         "orderq/collector.html",
-        "orderq/cloud.html"
+        "orderq/cloud.html",
+        "orderq/voucher-query.html"
       ],
       "services": [
         "cloud-sync"
@@ -441,6 +442,7 @@
       "sharedContracts": [
         "cloud-url",
         "orderq-vnext-sync",
+        "voucher-activity-snapshot",
         "product-master"
       ]
     },
@@ -469,6 +471,7 @@
         "customer-master",
         "product-reference-change-request",
         "customer-reference-change-request",
+        "voucher-activity-snapshot",
         "orderq-vnext-sync"
       ],
       "dependencyMode": {
@@ -485,6 +488,7 @@
         "customer-master",
         "product-reference-change-request",
         "customer-reference-change-request",
+        "voucher-activity-snapshot",
         "orderq-vnext-sync"
       ]
     },
@@ -670,6 +674,32 @@
           "estimates",
           "sourceImages",
           "autosave"
+        ]
+      }
+    },
+    {
+      "id": "voucher-activity-snapshot",
+      "owner": "orderq-vnext",
+      "consumers": [
+        "smart-input",
+        "orderq/voucher-query.html"
+      ],
+      "schemaVersion": "ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1",
+      "readAdapter": "ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1",
+      "writerPolicy": "ORDER Q owns voucher documents and lines. SmartInput and the query page consume a date-scoped read-only Snapshot and never write through this adapter.",
+      "resources": {
+        "adapterAsset": "orderq/voucher-activity-read-adapter.js",
+        "queryEntry": "orderq/voucher-query.html",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "documentStores": [
+          "orders",
+          "purchaseDocuments",
+          "salesDocuments"
+        ],
+        "lineStores": [
+          "orderItems",
+          "purchaseLines",
+          "salesLines"
         ]
       }
     },

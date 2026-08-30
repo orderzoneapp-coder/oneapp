@@ -6063,6 +6063,30 @@ window.detectMerchExcelRoleFromHeaders = (headers = [], context = {}) => {
     }
     return { role: bestRole, confidence: bestScore - secondScore, scores, reason: '' };
 };
+window.selectMerchExcelDataSheet = (wb) => {
+    if (!wb || !Array.isArray(wb.SheetNames) || !window.XLSX?.utils)
+        return null;
+    const preferredNames = ['쇼핑몰업로드', 'ERP업데이트'];
+    const orderedNames = [
+        ...preferredNames.filter(name => wb.SheetNames.includes(name)),
+        ...wb.SheetNames.filter(name => !preferredNames.includes(name) && name !== '오류정보'),
+        ...wb.SheetNames.filter(name => name === '오류정보')
+    ];
+    for (const sheetName of orderedNames) {
+        const ws = wb.Sheets[sheetName];
+        if (!ws)
+            continue;
+        const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+        if (!jsonAll.length)
+            continue;
+        const headerRowIdx = window.findMerchExcelHeaderRow(jsonAll, 25);
+        if (headerRowIdx === -1)
+            continue;
+        const jsonAllRaw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+        return { sheetName, ws, jsonAll, jsonAllRaw, headerRowIdx };
+    }
+    return null;
+};
 const parseExcelRobust = (file) => {
     return new Promise((resolve, reject) => {
         if (!window.XLSX)
@@ -6070,21 +6094,17 @@ const parseExcelRobust = (file) => {
         const processData = (data, type) => {
             try {
                 const wb = window.XLSX.read(data, { type: type, cellDates: true });
-                const ws = wb.Sheets[wb.SheetNames[0]];
+                const selectedSheet = window.selectMerchExcelDataSheet(wb);
+                if (!selectedSheet)
+                    return null;
+                const { jsonAll, jsonAllRaw, headerRowIdx, sheetName } = selectedSheet;
                 // 화면 표시용 값은 기존처럼 raw:false를 사용하되,
                 // 쇼핑몰 업로드 재출력용으로 원본 셀 자료형을 raw:true 배열에 별도 보존한다.
-                const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-                const jsonAllRaw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
-                if (jsonAll.length === 0)
-                    return [];
-                const headerRowIdx = window.findMerchExcelHeaderRow(jsonAll, 25);
-                if (headerRowIdx === -1)
-                    return null;
                 const baseSheetMeta = window.extractInventorySheetMeta
-                    ? window.extractInventorySheetMeta(jsonAll, headerRowIdx, wb.SheetNames[0])
+                    ? window.extractInventorySheetMeta(jsonAll, headerRowIdx, sheetName)
                     : {};
                 const headers = jsonAll[headerRowIdx] || [];
-                const sheetMeta = { ...baseSheetMeta, sheetName: wb.SheetNames[0], headerRowIdx, headers: [...headers] };
+                const sheetMeta = { ...baseSheetMeta, sheetName, headerRowIdx, headers: [...headers] };
                 let endIdx = jsonAll.length - 1;
                 while (endIdx > headerRowIdx) {
                     const rowArr = jsonAll[endIdx];

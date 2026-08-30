@@ -12,6 +12,8 @@ const appSource = read('smartinput/smartinput.js');
 const adapterSource = read('smartinput/legacy-integration-adapter.js');
 const extractorSource = read('orderq/smartparser/order-text-extractor.js');
 const storeSource = read('smartinput/smartinput-data-store.js');
+const voucherActivitySource = read('orderq/voucher-activity-read-adapter.js');
+const voucherQueryHtml = read('orderq/voucher-query.html');
 const manifest = JSON.parse(read('app-manifest.json'));
 
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
@@ -31,20 +33,35 @@ assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeBut
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>Excel 다운로드<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
-assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for live work inspection');
+assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
-assert.match(appSource, /flushLinkedRowsToSources/);
-assert.match(appSource, /flushLinkedIndividualToLibrary/, 'linked individual edits must write back for bidirectional synchronization');
+assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
+  'autosave must never write through to linked estimate originals');
+assert.match(appSource, /saveEstimateBundle\(bundle\)/, 'explicit Save must atomically persist the linked estimate bundle');
 assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before same-value propagation');
 assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
 assert.match(html, /id="estimateCreateButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must expose shared creation and selected deletion actions');
-assert.match(appSource, /records\.length === 1[\s\S]*loadCatalogRecord\(records\[0\], \{ preserveSelection: true \}\)/, 'a single selected estimate must immediately open its stored record while retaining its lit card');
-assert.match(appSource, /current\.estimateKind !== 'LINKED_GROUP'/, 'composition preview edits must not write through before linked-estimate creation');
+assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
+  'normal card selection must immediately switch to exactly one stored estimate');
+assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
 assert.doesNotMatch(appSource, /if \(current\.estimateKind !== 'LINKED_GROUP'\) current\.catalogRecordId = ''/, 'saving an individual estimate must retain its identity for subsequent in-place updates');
-assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
+assert.match(appSource, /from '\.\.\/orderq\/voucher-activity-read-adapter\.js/, 'SmartInput may consume the owner-issued read-only voucher activity adapter');
+assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\/(?!voucher-activity-read-adapter)/,
+  'SmartInput core must not statically import ORDER Q writer modules');
+assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1/);
+assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1/);
+for (const status of ['READY', 'EMPTY', 'ERROR']) assert.match(voucherActivitySource, new RegExp(`['"]${status}['"]`));
+assert.doesNotMatch(voucherActivitySource, /\b(?:readwrite|put|add|delete|clear)\b/,
+  'the owner-issued voucher activity adapter must stay read-only');
+assert.doesNotMatch(voucherActivitySource, /openOrderQDb/, 'the activity reader must not create or upgrade the owner database');
+assert.match(voucherActivitySource, /lineStore\.index\(config\.lineIndex\)\.getAll\(id\)/,
+  'activity lines must be queried by the selected document ids instead of scanning the full line store');
+assert.match(voucherActivitySource, /dateField: 'orderDate'[\s\S]*dateField: 'purchaseDate'[\s\S]*dateField: 'salesDate'/,
+  'date-scoped activity must use each official voucher date field');
+assert.match(voucherQueryHtml, /data-nexus-app-id="orderq-vnext"/);
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
   'the adapter must use the exact 0a order text extractor');
@@ -148,5 +165,10 @@ assert.equal(smartInput.owner, 'voucher-input');
 const localWork = manifest.sharedDataContracts.find(contract => contract.id === 'smartinput-local-work');
 assert.equal(localWork.databaseVersion, 4);
 assert.ok(localWork.resources.indexedDbStores.includes('autosave'));
+const voucherActivity = manifest.sharedDataContracts.find(contract => contract.id === 'voucher-activity-snapshot');
+assert.equal(voucherActivity.owner, 'orderq-vnext');
+assert.ok(voucherActivity.consumers.includes('smart-input'));
+assert.match(voucherActivity.writerPolicy, /read-only/i);
+assert.equal(voucherActivity.resources.queryEntry, 'orderq/voucher-query.html');
 
 console.log('SmartInput 0a rollback and independent compatibility contracts PASS');
