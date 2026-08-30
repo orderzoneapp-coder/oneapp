@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 import { buildProductSnapshot } from '../reference-data/product-master-read-adapter.js';
@@ -216,13 +217,107 @@ async function commandFor(harness, overrides = {}) {
 const html = fs.readFileSync(path.join(ROOT, 'MerchOps.html'), 'utf8');
 const business = html.slice(html.indexOf('const useMerchConfig ='));
 assert.doesNotMatch(business, /data\.setMasterProducts|commitMerchMasterState|commitMasterStateOrThrow/);
-for (const key of [
+const ownerReadOnlyKeys = [
   'oneapp_cloud_sync_url_v1', 'merchMarginRules_v878', 'merchMappings_v870', 'merchMasterLinks_v870',
-  'merchTableViewPresets_v1', 'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1', 'parserDict_v870',
-]) {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  assert.doesNotMatch(business, new RegExp(`localStorage\\.(?:setItem|removeItem)\\(['\"]${escaped}`), `${key} must remain read-only`);
+  'merchTableViewPresets_v1', 'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1',
+  'merchTableTemplateManualOverride_v870', 'merchActiveTableTemplateKey_v870', 'merchTableShortcuts_v870',
+  'merchVisUpload_v870', 'merchVisMaster_v870', 'merchUploadColumnMeta_v870', 'merchSharedColumnWidths_v1',
+  'parserDict_v870', 'merchCloudUrl_v870', 'parserCatalogWarehouseMap_v1',
+  'merchStoppedProducts_v2', 'pendingShopStatus', 'merchProductStatusRecords_v1',
+];
+for (const key of ownerReadOnlyKeys) {
+  assert.doesNotMatch(
+    html,
+    new RegExp('(?:global\\.|window\\.)?localStorage\\.(?:setItem|removeItem)\\([\'\"]' + key + '[\'\"]'),
+    key + ' must remain read-only across the complete MerchOps file',
+  );
 }
+assert.doesNotMatch(html, /localStorage\.(?:setItem|removeItem)\((?:ONEAPP_CLOUD_URL_KEY|window\.ONEAPP_CLOUD_URL_KEY|window\.MERCH_LEGACY_CLOUD_URL_KEY)/);
+assert.doesNotMatch(html, /localStorage\.(?:setItem|removeItem)\(window\.(?:MERCH_PRODUCT_STATUS_KEY|MERCH_SHARED_COLUMN_WIDTHS_KEY)/);
+assert.doesNotMatch(html, /(?:setIDB|STORAGE\.setIDB)\(['"](?:pending_shop_status|merchStoppedProducts_v2)['"]/);
+assert.doesNotMatch(html, /Object\.entries\(settingsKeys\)[\s\S]{0,600}localStorage\.setItem/);
+assert.doesNotMatch(html, /configKeyMap[\s\S]{0,1200}localStorage\.setItem/);
+
+const sliceBetween = (start, end) => {
+  const startIndex = html.indexOf(start);
+  const endIndex = html.indexOf(end, startIndex + start.length);
+  assert.ok(startIndex >= 0 && endIndex > startIndex, 'missing section: ' + start);
+  return html.slice(startIndex, endIndex);
+};
+const cloudUrlWriter = sliceBetween('CLOUD.setCloudSyncUrl =', 'CLOUD.buildMasterOnlyUrl');
+assert.match(cloudUrlWriter, /OWNER_ROUTED|createMerchOpsOwnerRoute/);
+assert.doesNotMatch(cloudUrlWriter, /setItem|removeItem/);
+const cloudMasterImport = sliceBetween('CLOUD.pullMerchMasterForDataOps =', 'CLOUD.getCachedMerchMasterForDataOps');
+assert.match(cloudMasterImport, /createMerchOpsOwnerRoute/);
+assert.doesNotMatch(cloudMasterImport, /commitMasterState|setItem|setIDB/);
+const cloudRestore = sliceBetween('CLOUD.restoreCloudData =', 'CLOUD.pullCloudBackup =');
+assert.match(cloudRestore, /createMerchOpsOwnerRoute/);
+assert.doesNotMatch(cloudRestore, /commitMasterState|setItem|setIDB|HISTORY_KEY/);
+const cloudPull = sliceBetween('CLOUD.pullCloudBackup =', 'MASTER EXCEL UPLOAD ENGINE');
+assert.match(cloudPull, /createMerchOpsOwnerRoute/);
+assert.doesNotMatch(cloudPull, /fetchJson|restoreCloudData|setItem|commitMasterState/);
+const masterRestore = sliceBetween('MASTER.restoreMasterBackup =', '// Info workgroup helper aliases.');
+assert.match(masterRestore, /product-master-backup-restore/);
+assert.match(masterRestore, /product-master-excel-apply/);
+assert.doesNotMatch(masterRestore, /commitMasterState|setItem|restoreLocalValue/);
+const startupCloudCompatibility = sliceBetween('window.setOneAppCloudSyncUrl =', 'window.appendOneAppCloudAction =');
+assert.match(startupCloudCompatibility, /cloud-url-write/);
+assert.doesNotMatch(startupCloudCompatibility, /setItem|removeItem/);
+assert.match(html, /Startup compatibility is read-only/);
+const stopWriterCompatibility = sliceBetween('window.saveMerchProductStatusRecords =', 'window.resolveMerchStatusRecordFields =');
+assert.match(stopWriterCompatibility, /smart-parser/);
+assert.match(stopWriterCompatibility, /stop-management-write/);
+assert.doesNotMatch(stopWriterCompatibility, /setItem|setIDB/);
+const sharedWidthWriterCompatibility = sliceBetween('window.saveMerchSharedColumnWidths =', 'window.getMerchColumnWidthValue =');
+assert.match(sharedWidthWriterCompatibility, /shared-table-view-write/);
+assert.match(sharedWidthWriterCompatibility, /shared-table-view-reset/);
+assert.doesNotMatch(sharedWidthWriterCompatibility, /setItem|removeItem/);
+const historyAppender = sliceBetween('window.persistMerchHistoryLogs =', 'window.getAllIDB =');
+assert.match(historyAppender, /localStorage\.setItem\('merchHistory_v870'/);
+assert.doesNotMatch(html.replace(historyAppender, ''), /localStorage\.setItem\('merchHistory_v870'/);
+
+const boundarySource = sliceBetween('const installMerchOpsOwnerBoundary =', 'const getMerchOpsOwnerAdapters =');
+let legacyWrites = 0;
+const legacyWriter = () => { legacyWrites += 1; return { ok: true }; };
+const route = (ownerAppId, action, ownerPath) => Object.freeze({ ok: false, status: 'OWNER_ROUTED', ownerAppId, action, ownerPath });
+const boundaryWindow = {
+  createMerchOpsOwnerRoute: route,
+  getOneAppCloudSyncUrl: () => 'https://example.invalid/read-only',
+  ONEAPP_DEFAULT_CLOUD_SYNC_URL: 'https://example.invalid/default',
+  ONEAPP_MERCHOPS_ADAPTERS_READY: Promise.resolve({ ok: true }),
+  ONEAPP: {
+    STORAGE: { commitMasterState: legacyWriter, commitMasterStateOrThrow: legacyWriter, replaceMasterState: legacyWriter },
+    CLOUD: {
+      getCloudSyncUrl: () => 'https://example.invalid/read-only',
+      setCloudSyncUrl: legacyWriter, ensureDefaultCloudSyncUrl: legacyWriter,
+      pullMerchMasterForDataOps: legacyWriter, pushCloudBackup: legacyWriter,
+      restoreCloudData: legacyWriter, pullCloudBackup: legacyWriter,
+      pushConfigBackup: legacyWriter, chunkUpload: legacyWriter,
+    },
+    CONFIG: { writeParserCatalogWarehouseMap: legacyWriter, setParserCatalogWarehouse: legacyWriter },
+    MASTER: { createMasterBackup: legacyWriter, restoreMasterBackup: legacyWriter, applyMasterExcelUpload: legacyWriter },
+  },
+};
+vm.runInNewContext(boundarySource, { window: boundaryWindow, Promise, Object });
+await boundaryWindow.ONEAPP_MERCHOPS_ADAPTERS_READY;
+await new Promise(resolve => setTimeout(resolve, 0));
+for (const [call, ownerAppId] of [
+  [() => boundaryWindow.setOneAppCloudSyncUrl('https://write.invalid'), 'settings'],
+  [() => boundaryWindow.pullCloudBackup({}), 'settings'],
+  [() => boundaryWindow.pushCloudBackup({}), 'settings'],
+  [() => boundaryWindow.ONEAPP.CLOUD.restoreCloudData({}), 'settings'],
+  [() => boundaryWindow.applyMasterExcelUpload({}), 'master-lookup'],
+  [() => boundaryWindow.restoreMasterBackup('backup'), 'master-lookup'],
+  [() => boundaryWindow.ONEAPP.STORAGE.commitMasterState({}), 'master-lookup'],
+  [() => boundaryWindow.commitMerchMasterState({}), 'master-lookup'],
+  [() => boundaryWindow.writeParserCatalogWarehouseMap({}), 'settings'],
+]) {
+  const result = await call();
+  assert.equal(result.status, 'OWNER_ROUTED');
+  assert.equal(result.ownerAppId, ownerAppId);
+}
+assert.equal(boundaryWindow.ensureOneAppCloudSyncUrl(), 'https://example.invalid/read-only');
+assert.equal(legacyWrites, 0, 'legacy global writers must be replaced before they can mutate owner data');
 assert.match(business, /data\.commitReviewedWork\(newMaster, localLogs/);
 assert.match(business, /data\.commitReviewedWork\(nextMaster, history/);
 assert.match(business, /status: 'OWNER_ROUTED', ownerAppId: 'settings'/);
@@ -236,4 +331,4 @@ const f9 = business.slice(business.indexOf('const handleOpenExportCenter ='), bu
 assert.match(f9, /ONEAPP\.EXPORT\.buildWorkingPayload/);
 assert.doesNotMatch(f9, /commitReviewedWork|setMasterProducts|commitMerchMasterState/);
 
-console.log('MerchOps owner-boundary, reviewed-command, rollback, settings-read, F8/F9 contracts passed.');
+console.log('MerchOps complete-file owner-boundary, reviewed-command, rollback, settings-read, F8/F9 contracts passed.');
