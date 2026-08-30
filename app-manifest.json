@@ -406,15 +406,15 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create and preserve order, purchase, sale, and estimate work drafts locally while consuming owner-issued product and customer Snapshots, deferring new revisions for active work, and isolating external input, synchronization, and server-finalize failures.",
+      "purpose": "Create order, purchase, sale, and estimate vouchers with one automatically updated local recovery state while consuming owner-issued product and customer Snapshots, deferring new revisions for active work, and isolating external input, synchronization, and server-finalize failures.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
-        "four-mode voucher drafting",
+        "four-mode voucher input and completion",
         "direct and text intake",
         "structured file and clipboard intake",
         "editable local work table",
-        "local draft recovery",
+        "latest-work autosave recovery",
         "local estimate catalog"
       ],
       "ownedContracts": [
@@ -428,13 +428,13 @@
         "orderq-vnext-sync"
       ],
       "dependencyMode": {
-        "localDraftAndEstimate": "LOCAL_OPERATION",
+        "localAutosaveAndEstimate": "LOCAL_OPERATION",
         "cachedReferenceSnapshot": "LOCAL_OPERATION",
         "referenceRevisionCheck": "BACKGROUND_SYNC",
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "SERVER_FINALIZE"
       },
-      "offlinePolicy": "Render the application and preserve local drafts and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
+      "offlinePolicy": "Render the application and preserve the latest local work state and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
       "sharedContracts": [
         "smartinput-local-work",
         "product-master",
@@ -608,8 +608,9 @@
         "smartinput/index.html"
       ],
       "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
+      "autosaveSchemaVersion": "ONEAPP_SMART_INPUT_AUTOSAVE_V1",
       "localDatabase": "oneapp-smartinput",
-      "databaseVersion": 3,
+      "databaseVersion": 4,
       "resources": {
         "localStorage": [
           "oneapp.smartinput.draft.v1",
@@ -623,7 +624,8 @@
           "temporaryCustomers",
           "customerAliasMappings",
           "estimates",
-          "sourceImages"
+          "sourceImages",
+          "autosave"
         ]
       }
     },

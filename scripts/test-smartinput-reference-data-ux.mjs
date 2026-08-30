@@ -130,7 +130,8 @@ const [smartInputSource, dataStoreSource, controllerSource, html] = await Promis
 assert.doesNotMatch(smartInputSource, /orderq\/product-master-search|loadProductCatalog|searchProductCatalog/, 'SmartInput must not treat ORDER Q history as the product master');
 assert.match(controllerSource, /transaction\(stores, 'readonly'\)/);
 assert.doesNotMatch(controllerSource, /transaction\([^\n]+['"]readwrite['"]/, 'direct fallback may only read owner stores');
-assert.match(dataStoreSource, /const DB_VERSION\s*=\s*3/, 'SmartInput DB v3 must remain unchanged');
+assert.match(dataStoreSource, /const DB_VERSION\s*=\s*4/, 'SmartInput DB v4 must add only the latest-work autosave store');
+assert.match(dataStoreSource, /AUTOSAVE:\s*['"]autosave['"]/);
 assert.match(dataStoreSource, /reference:product/);
 assert.match(dataStoreSource, /reference:customer/);
 assert.doesNotMatch(smartInputSource, /Alt\+1|altKey[^\n]+Digit[1-4]/i);
