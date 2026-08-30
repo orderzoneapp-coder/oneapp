@@ -9,7 +9,7 @@
     <script defer src="nexus/common/nexus-ui.js?v=1.4.0"></script>
     <meta name="google" content="notranslate">
     <title>가격·시세 - NEXUS</title>
-    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.192_OwnerBoundaries]">
+    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.193_OwnerBoundaryHardening]">
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -26,7 +26,15 @@
         import('./reference-data/product-change-request-adapter.js'),
         import('./reference-data/merchops-settings-read-adapter.js')
     ]).then(() => ({ ok: true, error: null })).catch(error => ({ ok: false, error }));
-    // v2.1.192: Product Snapshot read, reviewed F7 command, PENDING 변경요청, Settings/SmartParser read-only 경계를 적용한다.
+    window.createMerchOpsOwnerRoute = window.createMerchOpsOwnerRoute || ((ownerAppId, action, ownerPath) => Object.freeze({
+        ok: false,
+        status: 'OWNER_ROUTED',
+        ownerAppId: String(ownerAppId || ''),
+        action: String(action || ''),
+        ownerPath: String(ownerPath || ''),
+        message: `${String(action || '해당 변경')}은(는) ${String(ownerAppId || 'owner')} 소유 화면에서 수행해야 합니다.`
+    }));
+    // v2.1.193: legacy global writers까지 owner-routed fail-closed로 고정한다.
     // v2.1.191: 견적/시세 Quick F8 쇼핑몰업로드에서 입고가없음 처리 선택을 즉시 판매여부·재고·테마2 정책에 반영한다.
     // v2.1.190: 이슈 필터를 단일선택으로 통일하고 행사 작업대는 상위 행사테마 선택 시에만 노출하며 입고가없음의 싯가판매/판매정지 예약을 F7 일괄 저장에 연결한다.
     // v2.1.189: QuickF8 쇼핑몰업로드의 복합 상품코드 헤더를 인식하여 수정·재저장 파일도 다시 불러올 수 있게 한다.
@@ -567,21 +575,17 @@
     safeJSONParse(PARSER_CATALOG_WAREHOUSE_MAP_KEY, {})
   );
 
-  CONFIG.writeParserCatalogWarehouseMap = (input = {}) => {
-    const normalized = CONFIG.normalizeParserCatalogWarehouseMap(input);
-    STORAGE.writeLocalJSON(PARSER_CATALOG_WAREHOUSE_MAP_KEY, normalized, { label: '카탈로그별 창고 설정 저장' });
-    return normalized;
-  };
+  CONFIG.writeParserCatalogWarehouseMap = () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'parser-catalog-warehouse-write',
+    'settings.html'
+  );
 
-  CONFIG.setParserCatalogWarehouse = (catalogName, warehouseCode, inputMap) => {
-    const name = String(catalogName ?? '').trim();
-    if (!name) throw new Error('카탈로그명을 입력하세요.');
-    const next = CONFIG.normalizeParserCatalogWarehouseMap(inputMap === undefined
-      ? CONFIG.readParserCatalogWarehouseMap()
-      : inputMap);
-    next[name] = String(warehouseCode ?? '').trim();
-    return CONFIG.writeParserCatalogWarehouseMap(next);
-  };
+  CONFIG.setParserCatalogWarehouse = () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'parser-catalog-warehouse-write',
+    'settings.html'
+  );
 
   STORAGE.restoreLocalValue = (key, previousValue, options = {}) => {
     const safeKey = String(key || '').trim();
@@ -1244,21 +1248,14 @@
     }
   };
 
-  STORAGE.commitMasterStateOrThrow = async (data = {}, options = {}) => {
-    if (!Object.prototype.hasOwnProperty.call(options, 'expectedRevision')) {
-      const error = new Error('전체 마스터 저장에는 읽은 시점의 expectedRevision이 필요합니다.');
-      error.code = 'MERCH_MASTER_REVISION_REQUIRED';
-      throw error;
-    }
-    const result = await STORAGE.commitMasterState(data, options);
-    if (!result.ok) {
-      const error = new Error(result.error || '마스터 저장 실패');
-      error.code = result.conflict ? 'MERCH_MASTER_REVISION_CONFLICT' : (result.lockFailure ? 'MERCH_MASTER_LOCK_FAILURE' : 'MERCH_MASTER_COMMIT_FAILURE');
-      error.result = result;
-      throw error;
-    }
-    return result;
-  };
+  // MerchOps fallback runtime keeps the atomic primitive only for the
+  // versioned F7 command adapter. The historical public throw-writer is
+  // fail-closed so no legacy workflow can bypass the owner boundary.
+  STORAGE.commitMasterStateOrThrow = async () => global.createMerchOpsOwnerRoute(
+    'master-lookup',
+    'product-master-write',
+    'Master.html'
+  );
 
   STORAGE.safeJSONParse = safeJSONParse;
   STORAGE.safeJSONParseRaw = safeJSONParseRaw;
@@ -1908,31 +1905,21 @@
   CLOUD.getCloudSyncUrl = () => {
     try {
       const saved = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      return saved || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+      const legacy = String(global.localStorage.getItem('merchCloudUrl_v870') || '').trim();
+      return saved || legacy || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
     } catch (e) {
       return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
     }
   };
 
-  CLOUD.setCloudSyncUrl = (url) => {
-    const safeUrl = String(url || '').trim().replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
-    if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-    try {
-      global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, safeUrl);
-      global.localStorage.setItem('merchCloudUrl_v870', safeUrl);
-    } catch (e) {
-      throw new Error('클라우드 URL 저장에 실패했습니다.');
-    }
-    return safeUrl;
-  };
+  CLOUD.setCloudSyncUrl = () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'cloud-url-write',
+    'settings.html'
+  );
 
-  CLOUD.ensureDefaultCloudSyncUrl = () => {
-    try {
-      const current = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      if (!current) global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, ONEAPP_DEFAULT_CLOUD_SYNC_URL);
-    } catch (e) {}
-    return CLOUD.getCloudSyncUrl();
-  };
+  // Compatibility read only. It deliberately does not seed either Settings key.
+  CLOUD.ensureDefaultCloudSyncUrl = () => CLOUD.getCloudSyncUrl();
 
   CLOUD.buildMasterOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'master_only');
   CLOUD.buildConfigOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'config_only');
@@ -1975,16 +1962,11 @@
     };
   };
 
-  CLOUD.pushConfigBackup = async ({ url, data } = {}) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-    const configData = data || await CLOUD.buildCloudConfigPayload({});
-    const result = await CLOUD.fetchJson(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'config', data: configData })
-    }, '환경설정 백업');
-    return { ...result, data: configData };
-  };
+  CLOUD.pushConfigBackup = async () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'settings-cloud-backup-write',
+    'settings.html'
+  );
 
   CLOUD.pullConfigBackup = async ({ url } = {}) => {
     const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
@@ -2104,62 +2086,11 @@
     };
   };
 
-  CLOUD.pullMerchMasterForDataOps = async ({ url, onProgress } = {}) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-
-    if (typeof onProgress === 'function') {
-      onProgress({ step: 'download', message: 'MerchOps MasterDB 수신 중...' });
-    }
-
-    const requestUrl = CLOUD.buildMasterOnlyUrl(targetUrl);
-    const result = await CLOUD.fetchJson(requestUrl, { method: 'GET' }, 'MerchOps MasterDB 다운로드');
-    if (!result.data) throw new Error('MerchOps MasterDB 응답 형식 오류');
-
-    const rawMaster = result.data.master || {};
-    const normalizedMaster = {};
-
-    Object.entries(rawMaster).forEach(([code, item]) => {
-      const normalized = CLOUD.normalizeMasterItemForDataOps(item, code);
-      if (normalized.코드) normalizedMaster[normalized.코드] = normalized;
-    });
-
-    const masterItems = Object.values(normalizedMaster);
-    const rawSubdivision = CLOUD.buildRawSubdivisionFromMaster(normalizedMaster);
-    const linkedKeys = [DATAOPS_MASTER_CACHE_KEY, DATAOPS_RAW_SUBDIVISION_KEY];
-    const currentState = await STORAGE.readMasterState(linkedKeys);
-
-    await STORAGE.commitMasterStateOrThrow(normalizedMaster, {
-      expectedRevision: currentState.revision,
-      extraStoreEntries: {
-        [DATAOPS_MASTER_CACHE_KEY]: normalizedMaster,
-        [DATAOPS_RAW_SUBDIVISION_KEY]: rawSubdivision
-      }
-    });
-
-    const summary = {
-      ...(result.data.summary || {}),
-      normalizedCount: masterItems.length,
-      rawSubdivisionCount: rawSubdivision.relations.length,
-      rawSubdivisionIssueCount: rawSubdivision.issues.length,
-      syncedAt: new Date().toISOString(),
-      url: targetUrl
-    };
-
-    try {
-      global.localStorage.setItem(DATAOPS_MASTER_SUMMARY_KEY, JSON.stringify(summary));
-      global.localStorage.setItem('dataops_master_sync_trigger', Date.now().toString());
-    } catch (e) {}
-
-    if (typeof onProgress === 'function') {
-      onProgress({
-        step: 'done',
-        message: `마스터 ${summary.normalizedCount || 0}건 / 소분관계 ${summary.rawSubdivisionCount || 0}건 불러오기 완료`
-      });
-    }
-
-    return { status: 'success', master: normalizedMaster, rawSubdivision, summary };
-  };
+  CLOUD.pullMerchMasterForDataOps = async () => global.createMerchOpsOwnerRoute(
+    'master-lookup',
+    'product-master-cloud-import',
+    'Master.html'
+  );
 
   CLOUD.getCachedMerchMasterForDataOps = async () => {
     const master = await STORAGE.getIDB(DATAOPS_MASTER_CACHE_KEY).catch(() => null);
@@ -2173,138 +2104,29 @@
     };
   };
 
-  CLOUD.chunkUpload = async ({ url, action, data = [], chunkSize = 500, onProgress }) => {
-    if (!url) throw new Error('클라우드 URL이 없습니다.');
-    const items = Array.isArray(data) ? data : [];
+  CLOUD.chunkUpload = async () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'full-cloud-backup-write',
+    'settings.html'
+  );
 
-    for (let i = 0; i < items.length; i += chunkSize) {
-      const chunk = items.slice(i, i + chunkSize);
-      if (typeof onProgress === 'function') onProgress({ action, sent: Math.min(i + chunkSize, items.length), total: items.length });
-      await CLOUD.fetchJson(url, {
-        method: 'POST',
-        body: JSON.stringify({ action, data: chunk })
-      }, `${action} 업로드`);
-    }
+  CLOUD.pushCloudBackup = async () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'full-cloud-backup-write',
+    'settings.html'
+  );
 
-    return { status: 'success', total: items.length };
-  };
+  CLOUD.restoreCloudData = async () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'full-cloud-restore',
+    'settings.html'
+  );
 
-  CLOUD.pushCloudBackup = async ({ url, masterProducts = {}, historyLogs = [], config = {}, chunkSize = 500, onProgress }) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-
-    if (typeof onProgress === 'function') onProgress({ step: 'init', message: '서버 초기화 중...' });
-    await CLOUD.fetchJson(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'initSync' })
-    }, '클라우드 초기화');
-
-    const masterItems = Array.isArray(masterProducts) ? masterProducts : Object.values(masterProducts || {});
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_master',
-      data: masterItems,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'master', message: `마스터 데이터 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
-    const safeHistory = Array.isArray(historyLogs) ? historyLogs : [];
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_history',
-      data: safeHistory,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'history', message: `히스토리 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
-    if (typeof onProgress === 'function') onProgress({ step: 'config', message: '환경설정 및 대기열 업로드 중...' });
-    const configPayload = await CLOUD.buildCloudConfigPayload(config);
-    await CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload });
-
-    return { status: 'success', masterCount: masterItems.length, historyCount: safeHistory.length };
-  };
-
-  CLOUD.restoreCloudData = async (result = {}, hooks = {}) => {
-    if (!result || result.status !== 'success' || !result.data) throw new Error('복구 데이터 형식이 올바르지 않습니다.');
-    const data = result.data;
-    const hasMaster = !!(data.master && Object.keys(data.master).length > 0);
-    const hasPendingShopStatus = Object.prototype.hasOwnProperty.call(data, 'pendingShopStatus');
-
-    if (hasMaster) {
-      const currentState = await STORAGE.readMasterState(hasPendingShopStatus ? ['pending_shop_status'] : []);
-      await STORAGE.commitMasterStateOrThrow(data.master, {
-        expectedRevision: currentState.revision,
-        extraStoreEntries: hasPendingShopStatus
-          ? { pending_shop_status: data.pendingShopStatus }
-          : {}
-      });
-      global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-      if (typeof hooks.setMasterProducts === 'function') hooks.setMasterProducts(data.master);
-    }
-
-    if (data.history && Array.isArray(data.history)) {
-      global.localStorage.setItem(HISTORY_KEY, JSON.stringify(data.history));
-      if (typeof hooks.setHistoryLogs === 'function') hooks.setHistoryLogs(data.history);
-    }
-
-    if (data.dict && Object.keys(data.dict).length > 0) {
-      global.localStorage.setItem('parserDict_v870', JSON.stringify(data.dict));
-    }
-
-    if (!hasMaster && hasPendingShopStatus) {
-      await STORAGE.setIDB('pending_shop_status', data.pendingShopStatus);
-    }
-
-    const settingsKeys = data.settingsKeys || {};
-    Object.entries(settingsKeys).forEach(([key, value]) => {
-      try { if (value !== undefined && value !== null) global.localStorage.setItem(key, String(value)); } catch (e) {}
-    });
-
-    const appConfig = data.appConfig || {};
-    if (data.rules && data.rules.length > 0) {
-      global.localStorage.setItem('merchMarginRules_v878', JSON.stringify(data.rules));
-      if (typeof hooks.setMarginRules === 'function') hooks.setMarginRules(data.rules);
-    }
-
-    const configKeyMap = {
-      mappings: ['merchMappings_v870', 'setMappings'],
-      masterLinks: ['merchMasterLinks_v870', 'setMasterLinks'],
-      visibleUploadCols: ['merchVisUpload_v870', 'setVisibleUploadCols'],
-      visibleMasterCols: ['merchVisMaster_v870', 'setVisibleMasterCols'],
-      uploadColumnMeta: ['merchUploadColumnMeta_v870', 'setUploadColumnMeta'],
-      tableShortcuts: ['merchTableShortcuts_v870', 'setTableShortcuts'],
-      tableViewPresets: ['merchTableViewPresets_v1', 'setTableViewPresets']
-    };
-
-    Object.keys(configKeyMap).forEach(key => {
-      if (appConfig[key] !== undefined && appConfig[key] !== null) {
-        const [storageKey, hookName] = configKeyMap[key];
-        global.localStorage.setItem(storageKey, JSON.stringify(appConfig[key]));
-        if (typeof hooks[hookName] === 'function') hooks[hookName](appConfig[key]);
-      }
-    });
-    if (appConfig.activeTableTarget) {
-      global.localStorage.setItem('merchActiveTableTarget_v1', String(appConfig.activeTableTarget));
-      if (typeof hooks.setActiveTableTarget === 'function') hooks.setActiveTableTarget(appConfig.activeTableTarget);
-    }
-    if (appConfig.activeTableViewId) {
-      global.localStorage.setItem('merchActiveTableViewId_v1', String(appConfig.activeTableViewId));
-      if (typeof hooks.setActiveTableViewId === 'function') hooks.setActiveTableViewId(appConfig.activeTableViewId);
-    }
-
-    global.localStorage.setItem('config_sync_trigger', Date.now().toString());
-    return data;
-  };
-
-  CLOUD.pullCloudBackup = async ({ url, hooks = {}, onProgress }) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-    if (typeof onProgress === 'function') onProgress({ step: 'download', message: '클라우드 데이터 수신 중...' });
-
-    const result = await CLOUD.fetchJson(targetUrl, { method: 'GET' }, '클라우드 데이터 복원');
-    const data = await CLOUD.restoreCloudData(result, hooks);
-    return { status: 'success', data };
-  };
+  CLOUD.pullCloudBackup = async () => global.createMerchOpsOwnerRoute(
+    'settings',
+    'full-cloud-restore',
+    'settings.html'
+  );
 
 
 
@@ -2650,121 +2472,17 @@
     try { return await STORAGE.getIDB(MASTER_BACKUP_KEY) || []; } catch (e) { return []; }
   };
 
-  MASTER.restoreMasterBackup = async (backupId) => {
-    const backups = await MASTER.getMasterBackups();
-    const backup = backups.find(b => b && b.id === backupId);
-    if (!backup) throw new Error('백업을 찾을 수 없습니다.');
-    const currentState = await STORAGE.readMasterState();
-    const commitResult = await STORAGE.commitMasterStateOrThrow(backup.data || {}, {
-      expectedRevision: currentState.revision,
-      allowEmpty: Object.keys(backup.data || {}).length === 0
-    });
-    STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 복구 알림 저장' });
-    return { ...backup, revision: commitResult.revision };
-  };
+  MASTER.restoreMasterBackup = async () => global.createMerchOpsOwnerRoute(
+    'master-lookup',
+    'product-master-backup-restore',
+    'Master.html'
+  );
 
-  MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, expectedRevision, label = '마스터엑셀업로드' } = {}) => {
-    const validation = MASTER.validateMasterExcelAnalysis(analysis);
-    if (!validation.ok) throw new Error(validation.message);
-    const masterMap = MASTER.buildMasterIndex(currentMaster);
-    const currentState = await STORAGE.readMasterSnapshotState();
-    if (expectedRevision !== undefined && currentState.revision !== expectedRevision) {
-      throw STORAGE.createMasterRevisionConflictError();
-    }
-    if (STORAGE.stableSerialize(currentState.masterMap) !== STORAGE.stableSerialize(currentMaster)) {
-      throw STORAGE.createMasterRevisionConflictError('현재 마스터가 Excel 분석 이후 변경되었습니다. 새로고침 후 다시 분석해 주세요.');
-    }
-    const baseRevision = currentState.revision;
-    const backup = await MASTER.createMasterBackup(masterMap, label);
-    const historyLogs = [];
-    let updateCount = 0;
-    let createCount = 0;
-
-    analysis.candidates.forEach(candidate => {
-      if (!candidate || candidate.status === 'same') return;
-      const code = candidate.code;
-      if (!code) return;
-      if (candidate.status === 'create') {
-        masterMap[code] = { ...(candidate.item || {}), 코드: code, 품목코드: (candidate.item || {})['품목코드'] || code };
-        createCount++;
-        historyLogs.push(HISTORY.buildHistoryLog({
-          source: 'master_excel_upload', actionType: 'master_create', code,
-          name: masterMap[code]['품목명'] || '', field: '신규상품', oldVal: '', newVal: '추가', memo: label
-        }));
-        return;
-      }
-      if (candidate.status === 'update') {
-        const existing = masterMap[code] || { 코드: code, 품목코드: code };
-        const nextItem = { ...existing };
-        (candidate.sourceColumns || []).forEach(field => {
-          if (!field || field === '코드') return;
-          if (!Object.prototype.hasOwnProperty.call(candidate.item || {}, field)) return;
-          nextItem[field] = candidate.item[field];
-        });
-        nextItem['코드'] = code;
-        nextItem['품목코드'] = nextItem['품목코드'] || code;
-        masterMap[code] = nextItem;
-        updateCount++;
-        (candidate.changes || []).forEach(change => {
-          historyLogs.push(HISTORY.buildHistoryLog({
-            source: 'master_excel_upload', actionType: 'master_update', code,
-            name: nextItem['품목명'] || change.name || '', field: change.field,
-            oldVal: change.oldVal, newVal: change.newVal, memo: label
-          }));
-        });
-      }
-    });
-
-    let previousHistory = null;
-    try { previousHistory = global.localStorage.getItem(HISTORY_KEY); } catch (e) {}
-    let committedRevision = '';
-
-    HISTORY.assertHistoryForMutation(updateCount + createCount, historyLogs);
-    try {
-      const commitResult = await STORAGE.commitMasterStateOrThrow(masterMap, {
-        expectedRevision: baseRevision,
-        afterVerified: () => {
-          if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
-          return true;
-        },
-        afterVerifiedError: '마스터 업로드 히스토리 저장 실패'
-      });
-      committedRevision = commitResult.revision;
-      STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 변경 알림 저장' });
-      STORAGE.writeLocalValue('config_sync_trigger', Date.now().toString(), { label: '설정 변경 알림 저장' });
-    } catch (error) {
-      const rollbackFailures = [];
-      if (committedRevision) {
-        try {
-          await STORAGE.commitMasterStateOrThrow(backup.data || {}, {
-            expectedRevision: committedRevision,
-            allowEmpty: Object.keys(backup.data || {}).length === 0
-          });
-        }
-        catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '마스터 자동복구')); }
-      }
-      try { STORAGE.restoreLocalValue(HISTORY_KEY, previousHistory, { label: '변경 이력 자동복구' }); }
-      catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '변경 이력 자동복구')); }
-
-      const baseMessage = ERRORS.toActionableMessage(error, '마스터 적용');
-      if (rollbackFailures.length > 0) {
-        throw new Error(`${baseMessage} 자동복구에도 실패했습니다: ${rollbackFailures.join(' / ')}. 적용을 중단하고 백업 복구를 실행하세요.`);
-      }
-      throw new Error(`${baseMessage} 변경 전 데이터로 자동 복구했습니다.`);
-    }
-
-    return {
-      status: 'success',
-      validation,
-      backup,
-      masterMap,
-      revision: committedRevision,
-      updateCount,
-      createCount,
-      historyCount: historyLogs.length,
-      totalCount: Object.keys(masterMap).length
-    };
-  };
+  MASTER.applyMasterExcelUpload = async () => global.createMerchOpsOwnerRoute(
+    'master-lookup',
+    'product-master-excel-apply',
+    'Master.html'
+  );
 
   // Info workgroup helper aliases.
   global.normalizeShopSaleValue = global.normalizeShopSaleValue || normalizeShopSaleValue;
@@ -2786,13 +2504,13 @@
   global.getMasterIDBItems = global.getMasterIDBItems || STORAGE.getMasterItems;
   global.createMerchMasterRevision = global.createMerchMasterRevision || STORAGE.createMasterRevision;
   global.readMasterIDBState = global.readMasterIDBState || STORAGE.readMasterState;
-  global.replaceMasterIDBState = global.replaceMasterIDBState || STORAGE.replaceMasterState;
+  global.replaceMasterIDBState = async () => global.createMerchOpsOwnerRoute('master-lookup', 'product-master-replace', 'Master.html');
   global.verifyMasterIDBState = global.verifyMasterIDBState || STORAGE.verifyMasterState;
   global.isSameMerchMasterState = global.isSameMerchMasterState || STORAGE.isSameMasterState;
   global.mutateMerchFallbackLock = global.mutateMerchFallbackLock || STORAGE.mutateFallbackLock;
   global.acquireMerchFallbackStorageLock = global.acquireMerchFallbackStorageLock || STORAGE.acquireFallbackLock;
   global.withMerchStorageLock = global.withMerchStorageLock || STORAGE.withStorageLock;
-  global.commitMerchMasterState = global.commitMerchMasterState || STORAGE.commitMasterState;
+  global.commitMerchMasterState = async () => global.createMerchOpsOwnerRoute('master-lookup', 'product-master-write', 'Master.html');
   global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
   global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
   global.selectMerchMarginRule = global.selectMerchMarginRule || selectMerchMarginRule;
@@ -2805,8 +2523,8 @@
   global.PARSER_CATALOG_WAREHOUSE_MAP_KEY = global.PARSER_CATALOG_WAREHOUSE_MAP_KEY || PARSER_CATALOG_WAREHOUSE_MAP_KEY;
   global.normalizeParserCatalogWarehouseMap = global.normalizeParserCatalogWarehouseMap || CONFIG.normalizeParserCatalogWarehouseMap;
   global.readParserCatalogWarehouseMap = global.readParserCatalogWarehouseMap || CONFIG.readParserCatalogWarehouseMap;
-  global.writeParserCatalogWarehouseMap = global.writeParserCatalogWarehouseMap || CONFIG.writeParserCatalogWarehouseMap;
-  global.setParserCatalogWarehouse = global.setParserCatalogWarehouse || CONFIG.setParserCatalogWarehouse;
+  global.writeParserCatalogWarehouseMap = () => global.createMerchOpsOwnerRoute('settings', 'parser-catalog-warehouse-write', 'settings.html');
+  global.setParserCatalogWarehouse = () => global.createMerchOpsOwnerRoute('settings', 'parser-catalog-warehouse-write', 'settings.html');
   global.getWorkingSourceRole = global.getWorkingSourceRole || PRICING.getWorkingSourceRole;
   global.shouldUseMasterMarketPriceForRole = global.shouldUseMasterMarketPriceForRole || PRICING.shouldUseMasterMarketPriceForRole;
   global.shouldAllowMarketPriceRecalcForRole = global.shouldAllowMarketPriceRecalcForRole || PRICING.shouldAllowMarketPriceRecalcForRole;
@@ -2815,19 +2533,19 @@
   global.calculateSubStockInfo = global.calculateSubStockInfo || PRICING.calculateSubStockInfo;
   global.getMasterSalesState = global.getMasterSalesState || PRICING.getMasterSalesState;
   global.getOneAppCloudSyncUrl = global.getOneAppCloudSyncUrl || CLOUD.getCloudSyncUrl;
-  global.setOneAppCloudSyncUrl = global.setOneAppCloudSyncUrl || CLOUD.setCloudSyncUrl;
-  global.ensureDefaultCloudSyncUrl = global.ensureDefaultCloudSyncUrl || CLOUD.ensureDefaultCloudSyncUrl;
-  global.pullMerchMasterForDataOps = global.pullMerchMasterForDataOps || CLOUD.pullMerchMasterForDataOps;
+  global.setOneAppCloudSyncUrl = CLOUD.setCloudSyncUrl;
+  global.ensureDefaultCloudSyncUrl = CLOUD.ensureDefaultCloudSyncUrl;
+  global.pullMerchMasterForDataOps = CLOUD.pullMerchMasterForDataOps;
   global.getCachedMerchMasterForDataOps = global.getCachedMerchMasterForDataOps || CLOUD.getCachedMerchMasterForDataOps;
-  global.pushCloudBackup = global.pushCloudBackup || CLOUD.pushCloudBackup;
-  global.pullCloudBackup = global.pullCloudBackup || CLOUD.pullCloudBackup;
-  global.pushConfigBackup = global.pushConfigBackup || CLOUD.pushConfigBackup;
+  global.pushCloudBackup = CLOUD.pushCloudBackup;
+  global.pullCloudBackup = CLOUD.pullCloudBackup;
+  global.pushConfigBackup = CLOUD.pushConfigBackup;
   global.pullConfigBackup = global.pullConfigBackup || CLOUD.pullConfigBackup;
   global.analyzeMasterExcelUpload = global.analyzeMasterExcelUpload || MASTER.analyzeMasterExcelUpload;
   global.validateMasterExcelAnalysis = global.validateMasterExcelAnalysis || MASTER.validateMasterExcelAnalysis;
-  global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
+  global.applyMasterExcelUpload = MASTER.applyMasterExcelUpload;
   global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
-  global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;
+  global.restoreMasterBackup = MASTER.restoreMasterBackup;
 
 })(window);
     }
@@ -3433,20 +3151,14 @@
             }
         };
 
-        window.setOneAppCloudSyncUrl = (url = '') => {
-            const safeUrl = window.normalizeOneAppCloudSyncUrl(url || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL);
-            if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-            try {
-                localStorage.setItem(window.ONEAPP_CLOUD_URL_KEY, safeUrl);
-                localStorage.setItem(window.MERCH_LEGACY_CLOUD_URL_KEY, safeUrl);
-                localStorage.setItem('config_sync_trigger', Date.now().toString());
-            } catch (e) {}
-            return safeUrl;
-        };
+        window.setOneAppCloudSyncUrl = () => window.createMerchOpsOwnerRoute(
+            'settings',
+            'cloud-url-write',
+            'settings.html'
+        );
 
         window.ensureOneAppCloudSyncUrl = () => {
-            const url = window.getOneAppCloudSyncUrl();
-            return window.setOneAppCloudSyncUrl(url);
+            return window.getOneAppCloudSyncUrl();
         };
 
         window.appendOneAppCloudAction = (url = '', action = '') => {
@@ -3455,6 +3167,7 @@
             return base.includes('?') ? `${base}&action=${encodeURIComponent(action)}` : `${base}?action=${encodeURIComponent(action)}`;
         };
 
+        // Startup compatibility is read-only. Settings keys are never seeded here.
         try { window.ensureOneAppCloudSyncUrl(); } catch (e) {}
 
         window.MERCH_DATAOPS_SNAPSHOT_MODULE = Object.freeze({
@@ -5578,12 +5291,11 @@ window.readMerchProductStatusRecords = () => {
         return window.normalizeMerchProductStatusRecords(JSON.parse(raw));
     } catch (e) { return []; }
 };
-window.saveMerchProductStatusRecords = (records = []) => {
-    const safe = window.normalizeMerchProductStatusRecords(records);
-    localStorage.setItem(window.MERCH_PRODUCT_STATUS_KEY, JSON.stringify(safe));
-    localStorage.setItem('product_status_records_sync_trigger', Date.now().toString());
-    return safe;
-};
+window.saveMerchProductStatusRecords = () => window.createMerchOpsOwnerRoute(
+    'smart-parser',
+    'stop-management-write',
+    'SmartParser.html'
+);
 window.resolveMerchStatusRecordFields = (item = {}, code = '') => {
     const sources = item.sources || {};
     const finalData = item.finalData || {};
@@ -5604,33 +5316,11 @@ window.resolveMerchStatusRecordFields = (item = {}, code = '') => {
         relationType: pick('관계유형', '상품관계')
     };
 };
-window.upsertMerchProductStatusRecord = (record = {}) => {
-    const code = String(record.code || '').trim();
-    if (!code) return [];
-    const now = new Date().toISOString();
-    const records = window.readMerchProductStatusRecords();
-    const state = String(record.state || '업데이트 제외').trim();
-    const idx = records.findIndex(r => r.code === code && r.state === state && r.active !== false);
-    const nextRecord = {
-        id: idx >= 0 ? records[idx].id : `${code}_${state}_${Date.now()}`,
-        code,
-        name: String(record.name || '').trim(),
-        supplier: String(record.supplier || '').trim(),
-        relatedOwnProduct: String(record.relatedOwnProduct || '').trim(),
-        relationType: String(record.relationType || '').trim(),
-        state,
-        reason: String(record.reason || '').trim(),
-        memo: String(record.memo || '').trim(),
-        source: String(record.source || 'MerchOps').trim(),
-        active: true,
-        createdAt: idx >= 0 ? records[idx].createdAt : now,
-        updatedAt: now,
-        resolvedAt: ''
-    };
-    if (idx >= 0) records[idx] = { ...records[idx], ...nextRecord };
-    else records.unshift(nextRecord);
-    return window.saveMerchProductStatusRecords(records).slice(0, 5000);
-};
+window.upsertMerchProductStatusRecord = () => window.createMerchOpsOwnerRoute(
+    'smart-parser',
+    'stop-management-write',
+    'SmartParser.html'
+);
 
 window.normalizeMerchFilterSteps = (steps = [], fallbackPreset = null) => {
     const normalized = (Array.isArray(steps) ? steps : []).map((step, idx) => window.normalizeMerchFilterStep(step, idx)).filter(Boolean);
@@ -6208,19 +5898,16 @@ window.getMerchSharedColumnWidths = () => {
         return {};
     }
 };
-window.saveMerchSharedColumnWidths = (widths = {}) => {
-    const safe = window.normalizeMerchColumnWidths(widths || {});
-    try {
-        localStorage.setItem(window.MERCH_SHARED_COLUMN_WIDTHS_KEY, JSON.stringify(safe));
-    }
-    catch (e) { }
-    return safe;
-};
-window.removeMerchSharedColumnWidths = (labels = []) => {
-    const next = { ...window.getMerchSharedColumnWidths() };
-    (Array.isArray(labels) ? labels : []).forEach(label => { delete next[String(label || '')]; });
-    return window.saveMerchSharedColumnWidths(next);
-};
+window.saveMerchSharedColumnWidths = () => window.createMerchOpsOwnerRoute(
+    'settings',
+    'shared-table-view-write',
+    'settings.html'
+);
+window.removeMerchSharedColumnWidths = () => window.createMerchOpsOwnerRoute(
+    'settings',
+    'shared-table-view-reset',
+    'settings.html'
+);
 window.getMerchColumnWidthValue = (widths = {}, key = '', label = '', fallback = 86, sharedWidths = {}) => {
     const shared = window.normalizeMerchColumnWidths(sharedWidths || {});
     // 컬럼명 공통값을 양식별 저장값보다 우선 적용하여 다른 불러오기/양식에도 즉시 연동한다.
@@ -7056,6 +6743,66 @@ const writeMerchOpsWorkViewState = (state = {}) => {
 };
 window.readMerchOpsWorkViewState = readMerchOpsWorkViewState;
 window.writeMerchOpsWorkViewState = writeMerchOpsWorkViewState;
+
+const installMerchOpsOwnerBoundary = () => {
+    const route = (ownerAppId, action, ownerPath) => window.createMerchOpsOwnerRoute(ownerAppId, action, ownerPath);
+    const routeMaster = action => route('master-lookup', action, 'Master.html');
+    const routeSettings = action => route('settings', action, 'settings.html');
+    const readCloudUrl = () => window.getOneAppCloudSyncUrl
+        ? window.getOneAppCloudSyncUrl()
+        : (window.ONEAPP?.CLOUD?.getCloudSyncUrl?.() || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || '');
+
+    const storage = window.ONEAPP?.STORAGE;
+    if (storage) {
+        storage.commitMasterState = async () => routeMaster('product-master-write');
+        storage.commitMasterStateOrThrow = async () => routeMaster('product-master-write');
+        storage.replaceMasterState = async () => routeMaster('product-master-replace');
+    }
+
+    const cloud = window.ONEAPP?.CLOUD;
+    if (cloud) {
+        cloud.setCloudSyncUrl = () => routeSettings('cloud-url-write');
+        cloud.ensureDefaultCloudSyncUrl = readCloudUrl;
+        cloud.pullMerchMasterForDataOps = async () => routeMaster('product-master-cloud-import');
+        cloud.pushCloudBackup = async () => routeSettings('full-cloud-backup-write');
+        cloud.restoreCloudData = async () => routeSettings('full-cloud-restore');
+        cloud.pullCloudBackup = async () => routeSettings('full-cloud-restore');
+        cloud.pushConfigBackup = async () => routeSettings('settings-cloud-backup-write');
+        cloud.chunkUpload = async () => routeSettings('full-cloud-backup-write');
+    }
+
+    const config = window.ONEAPP?.CONFIG;
+    if (config) {
+        config.writeParserCatalogWarehouseMap = () => routeSettings('parser-catalog-warehouse-write');
+        config.setParserCatalogWarehouse = () => routeSettings('parser-catalog-warehouse-write');
+    }
+
+    const master = window.ONEAPP?.MASTER;
+    if (master) {
+        master.createMasterBackup = async () => routeMaster('product-master-backup-write');
+        master.restoreMasterBackup = async () => routeMaster('product-master-backup-restore');
+        master.applyMasterExcelUpload = async () => routeMaster('product-master-excel-apply');
+    }
+
+    window.setOneAppCloudSyncUrl = () => routeSettings('cloud-url-write');
+    window.ensureDefaultCloudSyncUrl = readCloudUrl;
+    window.ensureOneAppCloudSyncUrl = readCloudUrl;
+    window.pullMerchMasterForDataOps = async () => routeMaster('product-master-cloud-import');
+    window.pushCloudBackup = async () => routeSettings('full-cloud-backup-write');
+    window.pullCloudBackup = async () => routeSettings('full-cloud-restore');
+    window.pushConfigBackup = async () => routeSettings('settings-cloud-backup-write');
+    window.applyMasterExcelUpload = async () => routeMaster('product-master-excel-apply');
+    window.restoreMasterBackup = async () => routeMaster('product-master-backup-restore');
+    window.replaceMasterIDBState = async () => routeMaster('product-master-replace');
+    window.commitMerchMasterState = async () => routeMaster('product-master-write');
+    window.writeParserCatalogWarehouseMap = () => routeSettings('parser-catalog-warehouse-write');
+    window.setParserCatalogWarehouse = () => routeSettings('parser-catalog-warehouse-write');
+
+    return Object.freeze({ ok: true, status: 'OWNER_BOUNDARY_INSTALLED' });
+};
+window.installMerchOpsOwnerBoundary = installMerchOpsOwnerBoundary;
+Promise.resolve(window.ONEAPP_MERCHOPS_ADAPTERS_READY)
+    .then(installMerchOpsOwnerBoundary, installMerchOpsOwnerBoundary);
 
 const getMerchOpsOwnerAdapters = async () => {
     const loaded = await (window.ONEAPP_MERCHOPS_ADAPTERS_READY || Promise.resolve({ ok: false }));
@@ -10265,8 +10012,6 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         (_b = config.setActiveTableTarget) === null || _b === void 0 ? void 0 : _b.call(config, DEFAULT_TABLE_VIEW_TARGET);
         (_c = config.setActiveTableViewId) === null || _c === void 0 ? void 0 : _c.call(config, '');
         try {
-            localStorage.removeItem('merchTableTemplateManualOverride_v870');
-            localStorage.removeItem('merchActiveTableTemplateKey_v870');
             writeMerchOpsWorkViewState({ activeTableTarget: DEFAULT_TABLE_VIEW_TARGET, activeTableViewId: '' });
             window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: DEFAULT_TABLE_VIEW_TARGET, viewId: '', manual: false } }));
         }
@@ -14406,7 +14151,7 @@ const App = () => {
                             React.createElement("div", { className: "flex items-center gap-2" },
                                 React.createElement("h1", { className: "text-[15px] font-black text-slate-800 whitespace-nowrap" }, "MerchOps"),
                                 React.createElement("span", { className: "h-7 px-3 rounded-md bg-slate-100 text-slate-700 text-[11px] font-bold hidden sm:flex items-center", "aria-current": "page" }, "가격·시세"),
-                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.192_OwnerBoundaries")),
+                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.193_OwnerBoundaryHardening")),
                             React.createElement("p", { className: "hidden sm:block text-[10px] text-slate-500 mt-0.5 truncate" }, "상품 가격·프로모션 관리"))),
                     React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode, snapshotStatus: data.productSnapshotStatus, snapshotRevision: data.productSnapshotRevision, snapshotUpdateAvailable: data.productSnapshotUpdateAvailable }),
                     React.createElement("nav", { className: "flex flex-wrap gap-2 shrink-0 items-center justify-end", "aria-label": "MerchOps 주요 작업" },

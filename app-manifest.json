@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.2",
+  "schemaVersion": "1.3.3",
   "updatedAt": "2026-08-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -762,7 +762,7 @@
       "commandAdapter": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandAdapterVersion": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandSchemaVersion": "MERCHOPS_REVIEWED_WORK_APPLY_V1",
-      "writerPolicy": "master-lookup is the official owner. MerchOps may change existing product fields only through its reviewed F7 command adapter with expected Snapshot identity, field-level before/after/history, post-write verification, and rollback. No other MerchOps workflow may write product master data.",
+      "writerPolicy": "master-lookup is the official owner. MerchOps may change existing product fields only through its reviewed F7 command adapter with expected Snapshot identity, field-level before/after/history, post-write verification, and rollback. Bundled/external core legacy globals, cloud import/restore, backup restore, Excel apply, and public commit aliases fail closed with OWNER_ROUTED; no other MerchOps workflow may write product master data.",
       "legacyWriterAllowlist": [
         "Master.html",
         "SmartParser.html",

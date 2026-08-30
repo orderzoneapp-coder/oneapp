@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.12
+- Architecture document version: 2.1.13
 - Last reviewed: 2026-08-30
-- Current-source baseline: `c126048f084bd140c10ea031274429bb2cd56855`
+- Current-source baseline: `862cc19df7623e7a0b418dc0c0b98920e1c2c163`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -55,6 +55,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `Master.html`은 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 유일한 공식 상품관리 앱이다. 기존 주소·앱 ID·공통 표시 명칭 `상품관리`를 유지하며, 빈 DB 최초 Excel 등록과 상품 단건 등록·수정을 공용 revision·history 계약으로 수행한다.
 - `reference-data/product-master-read-adapter.js`는 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1` / `ONEAPP_PRODUCT_SNAPSHOT_V1` 읽기 전용 경계를 제공한다. 조회는 record Store를 우선하고 기존 snapshot·revision으로 fallback하며 DB가 없을 때 생성하지 않는다.
 - `reference-data/product-master-command-adapter.js`는 `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1` / `MERCHOPS_REVIEWED_WORK_APPLY_V1` 경계를 제공한다. MerchOps는 작업 시작 Snapshot ID·revision·hash와 필드별 before/after/history를 보낸 F7 reviewed patch로만 기존 상품을 변경하며, 행 삭제·신규 상품·임의 필드·일반 판매여부 변경은 거부한다. 충돌, history 실패, 연결상태 변경, 후검산 실패는 전체 변경을 rollback한다.
+- MerchOps의 bundled/external core 호환 API는 Adapter 로드 직후 owner boundary로 다시 고정한다. cloud URL seed·쓰기, full backup/restore, config 복원, master cloud import·Excel apply·backup restore 및 공개 master commit alias는 `OWNER_ROUTED`로 fail-closed하며 시작 시 Settings 키를 만들거나 덮어쓰지 않는다.
 - 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`을 제거했다. 남은 호환 writer는 `Master.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js`며 새 cross-app 직접 writer를 허용하지 않는다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
@@ -824,6 +825,7 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F9 sends the unchanged existing payload shape to Export Center for a separate review-and-output flow.
 - Missing products create additive `PENDING` owner requests and remain in the worktable; they are never auto-applied.
 - Settings-owned cloud URL, margin rules, mappings, links, table views, and SmartParser-owned dictionary/stop state are read-only. Cloud backup/restore, master upload/cleanup, and rename/delete actions route to their owner screens.
+- Legacy globals and the bundled core fallback enforce the same boundary: mutating calls return `OWNER_ROUTED`, while URL/config/Snapshot reads and non-mutating backup builders remain compatible.
 - SmartParser information changes are already applied through its owner path and are not queued into F7.
 - Supplier exclusion and stopped/sold-out product management are SmartParser-owned workflows; MerchOps keeps read-only stopped-state protection for its worktable.
 

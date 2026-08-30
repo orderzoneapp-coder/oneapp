@@ -181,7 +181,9 @@ const widthContractEnd = source.indexOf('const MERCH_RESIZE_HANDLE_CLASS', width
 assert.ok(widthContractStart >= 0 && widthContractEnd > widthContractStart, '열폭 저장 계약 구간을 찾을 수 있어야 한다.');
 const storage = new Map();
 const widthContext = {
-    window: {},
+    window: {
+        createMerchOpsOwnerRoute: (ownerAppId, action, ownerPath) => ({ ok: false, status: 'OWNER_ROUTED', ownerAppId, action, ownerPath })
+    },
     localStorage: {
         getItem: key => storage.has(key) ? storage.get(key) : null,
         setItem: (key, value) => storage.set(key, value)
@@ -191,11 +193,14 @@ const widthContext = {
 vm.runInNewContext(source.slice(widthContractStart, widthContractEnd), widthContext, { filename: 'MerchOps-width-contract.js' });
 const normalize = value => JSON.parse(JSON.stringify(widthContext.window.normalizeMerchColumnWidths(value)));
 assert.deepEqual(normalize({ min: 1, max: 900, rounded: 100.6, invalid: 0 }), { min: 48, max: 720, rounded: 101 }, '최소·최대·반올림 열폭 계약을 유지해야 한다.');
-widthContext.window.saveMerchSharedColumnWidths({ 입고가: 133 });
-assert.equal(widthContext.window.getMerchColumnWidthValue({ 'work:입고가': 111 }, 'work:입고가', '입고가', 86, widthContext.window.getMerchSharedColumnWidths()), 133, '공통 열폭은 양식별 열폭보다 우선해야 한다.');
+const saveRoute = widthContext.window.saveMerchSharedColumnWidths({ 입고가: 133 });
+assert.equal(saveRoute.status, 'OWNER_ROUTED', '공통 열폭 저장은 Settings owner로 fail-closed 해야 한다.');
+assert.equal(saveRoute.ownerAppId, 'settings');
+assert.equal(storage.size, 0, 'MerchOps 열폭 호환 API는 Settings 소유 값을 쓰면 안 된다.');
 assert.equal(widthContext.window.getMerchColumnWidthValue({ 'work:출고가': 122 }, 'work:출고가', '출고가', 86, {}), 122, '양식별 열폭을 유지해야 한다.');
-widthContext.window.removeMerchSharedColumnWidths(['입고가']);
-assert.deepEqual(normalize(widthContext.window.getMerchSharedColumnWidths()), {}, '열폭 초기화는 지정 공통 열폭을 제거해야 한다.');
+const resetRoute = widthContext.window.removeMerchSharedColumnWidths(['입고가']);
+assert.equal(resetRoute.status, 'OWNER_ROUTED', '공통 열폭 초기화도 Settings owner로 fail-closed 해야 한다.');
+assert.deepEqual(normalize(widthContext.window.getMerchSharedColumnWidths()), {}, 'Settings 값은 read-only로 유지해야 한다.');
 
 assert.match(gridSource, /열폭·테이블 양식 저장은 Settings에서 관리/, 'MerchOps는 Settings 소유 양식을 저장하지 않고 owner로 안내해야 한다.');
 assert.doesNotMatch(gridSource, /config\.setTableViewPresets\(prev/, 'MerchOps 열폭 UI는 Settings 소유 preset을 변경하면 안 된다.');

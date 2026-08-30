@@ -14,6 +14,9 @@ export const MERCHOPS_REVIEWED_WORK_COMMAND_SCHEMA_VERSION = 'MERCHOPS_REVIEWED_
 export const PRODUCT_MASTER_OWNER_APP_ID = 'master-lookup';
 
 const HISTORY_KEY = 'merchHistory_v870';
+// Capture the owner storage primitive before the MerchOps page hardens all
+// public legacy writer aliases. Only this versioned adapter retains it.
+const capturedOwnerCommitMasterState = globalThis.ONEAPP?.STORAGE?.commitMasterState;
 const PROTECTED_LINKED_KEYS = Object.freeze([
   'merchStoppedProducts_v2',
   'pending_shop_status',
@@ -188,6 +191,7 @@ function defaultDependencies(overrides = {}) {
   return {
     readSnapshotResult: overrides.readSnapshotResult || getProductSnapshotResult,
     commitMasterState: overrides.commitMasterState
+      || capturedOwnerCommitMasterState
       || globalThis.ONEAPP?.STORAGE?.commitMasterState
       || globalThis.commitMerchMasterState,
     readHistoryRaw: overrides.readHistoryRaw || readHistoryRawDefault,
