@@ -200,7 +200,8 @@ assert.match(merchSource.slice(f7Start, f7End), /resolveMerchWorkingField/, "F7 
 assert.match(merchSource.slice(f9Start, f9End), /ONEAPP\.EXPORT\.buildWorkingPayload/, "F9 must use the shared resolver-backed payload builder");
 assert.match(merchSource, /String\(v\) === String\(initialVal\) && !\(isMasterReferenceCell && userEdited\)/, "same-value edits on gray references must be recorded");
 assert.match(merchSource.slice(f8Start, f8End), /explicitSale\.hasValue && explicitSale\.isExplicitBlank\) return ''/, "F8 must preserve an explicit blank sale cell");
-assert.match(merchSource.slice(f7Start, f7End), /newMaster\[item\.코드\]\['판매여부'\] = explicitSale\.isExplicitBlank \? ''/, "F7 must preserve an explicit blank sale cell");
+assert.doesNotMatch(merchSource.slice(f7Start, f7End), /explicitSale/, "F7 must not apply general file or manual sale fields outside the explicit no-inbound policy");
+assert.match(merchSource.slice(f7Start, f7End), /입고가없음 \$\{queuedNoInboundLabel\}/, "F7 sale changes must retain explicit no-inbound evidence");
 assert.match(merchSource.slice(f7Start, f7End), /commitCandidateFields = new Set\(\[\.\.\.Object\.keys\(activeSourceForCommit\), \.\.\.Object\.keys\(item\.finalData\)\]\)/, "F7 must inspect source-owned fields even when finalData omits them");
 
 assert.doesNotMatch(exportSource, /working\.품목명 \|\| master\['품목명'\]/, "Export Center must not mix master reference into working name");

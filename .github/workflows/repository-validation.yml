@@ -123,32 +123,8 @@ jobs:
       - name: Test DataOps stock print readability
         run: node scripts/test-dataops-stock-print-readable.mjs
 
-      - name: Test MerchOps sale availability pipeline
-        run: node scripts/test-merchops-sale-pipeline.mjs
-
-      - name: Test MerchOps master-theme filters and fixed toolbar layout
-        run: node scripts/test-merchops-master-theme-filter-layout.mjs
-
-      - name: Test MerchOps common Excel routing and subordinate registration tools
-        run: node scripts/test-merchops-common-excel-routing.mjs
-
-      - name: Test MerchOps column resize performance contract
-        run: node scripts/test-merchops-column-resize-performance.mjs
-
-      - name: Test MerchOps promotion catalog comparison policy
-        run: node scripts/test-merchops-promo-catalog-compare.mjs
-
-      - name: Generate and reopen real MerchOps promotion catalog comparison XLSX
-        run: node scripts/test-merchops-promo-catalog-compare-xlsx-e2e.mjs
-
-      - name: Generate and reopen a real MerchOps F8 XLSX workbook
-        run: node scripts/test-merchops-f8-xlsx-e2e.mjs
-
-      - name: Test MerchOps storage atomicity and concurrent saves
-        run: node scripts/test-merchops-storage-atomicity.mjs
-
-      - name: Test shared master writers, CAS rollback, and mixed locks
-        run: node scripts/test-merchops-shared-storage.mjs
+      - name: Test complete MerchOps owner-boundary contract suite
+        run: node scripts/test-merchops-all.mjs
 
       - name: Test Master add/update review and rollback workflow
         run: node scripts/test-master-add-update.mjs
@@ -161,12 +137,6 @@ jobs:
 
       - name: Test Master registration, edit, legacy safety, and reload persistence
         run: node scripts/test-itemmaster-browser-e2e.mjs
-
-      - name: Test MerchOps rule placement and SmartParser direct information apply
-        run: node scripts/test-merchops-direct-info.mjs
-
-      - name: Test MerchOps Excel codes, bulk edit, and price filters
-        run: node scripts/test-merchops-spot-price.mjs
 
       - name: Test OrderOps allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs

@@ -87,7 +87,7 @@ assert.match(merch, /handleMasterLookup\?\.\(nextCategories\)/);
 assert.match(merch, /suppressMasterFallback: data\.suppressMasterFallback/);
 assert.match(merch, /masterLookupMode: data\.masterLookupMode/);
 assert.match(merch, /visibleTargetRowsRaw[\s\S]{0,500}isMerchUnmodifiedMasterLookupRow/);
-assert.match(merch, /조회 전용 마스터 행은 F7 반영 대상이 아닙니다/);
+assert.match(merch, /조회 전용 Snapshot 행은 F7 반영 대상이 아닙니다/);
 assert.match(merch, /작업 테이블이 비어 있습니다/);
 assert.match(merch, /선택한 마스터 조회 범위에 상품이 없습니다/);
 

@@ -793,11 +793,10 @@ assert.match(
   files["coreEngine.js"],
   /commitMasterStateOrThrow\(backup\.data \|\| \{\}, \{\s*expectedRevision: committedRevision/,
 );
-assert.match(files["MerchOps.html"], /catch \(error\) \{\s*result = \{\s*ok: false,[\s\S]*lockFailure: true/);
-assert.match(
-  files["MerchOps.html"],
-  /const migration = await window\.commitMerchMasterState\(state\.snapshot, \{\s*expectedRevision: state\.revision/,
-);
+const merchBusiness = files["MerchOps.html"].slice(files["MerchOps.html"].indexOf("const useMerchConfig ="));
+assert.doesNotMatch(merchBusiness, /commitMerchMasterState|commitMasterStateOrThrow|data\.setMasterProducts/);
+assert.match(merchBusiness, /data\.commitReviewedWork\(newMaster, localLogs/);
+assert.match(files["MerchOps.html"], /product-master-command-adapter\.js/);
 for (const name of ["Master.html", "Item_manager.html"]) {
   assert.doesNotMatch(files[name], /ROW-\$\{idx\}/);
   assert.match(files[name], /마스터 중복 코드가 있습니다/);

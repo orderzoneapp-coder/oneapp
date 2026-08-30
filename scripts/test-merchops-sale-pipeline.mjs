@@ -106,13 +106,14 @@ assert.match(
 );
 assert.doesNotMatch(f8Block, /if \(isEstimateQuickRow\(row\)\) return '1'/);
 
-assert.match(html, /\? '공통 일괄입력' : '엑셀 판매여부 반영'/);
+assert.match(html, /일반 파일·수기 판매여부는 Settings\/SmartParser 소유 상태로 유지/);
+assert.doesNotMatch(html.slice(html.indexOf('const handleCommitEstimate ='), html.indexOf('const toggleAllRows =')), /엑셀 판매여부 반영/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
 assert.match(html, /db\.transaction\(\['master_products', 'store'\], 'readwrite'\)/);
 assert.match(html, /masterStore\.clear\(\)/);
 assert.match(html, /try \{ tx\.abort\(\); \}/);
 assert.match(html, /await window\.verifyMasterIDBState\(data, revision\)/);
-assert.match(html, /afterVerified: \(\) => localLogs\.length === 0 \|\| data\.addHistoryLogs/);
+assert.match(html, /data\.commitReviewedWork\(newMaster, localLogs/);
 assert.match(html, /const \[historyLogs, setHistoryLogs\] = useState\(\(\) =>/);
 assert.match(html, /localStorage\.getItem\('merchHistory_v870'\) !== serializedLogs/);
 assert.match(html, /window\.withMerchStorageLock\('oneapp-merch-master-save'/);

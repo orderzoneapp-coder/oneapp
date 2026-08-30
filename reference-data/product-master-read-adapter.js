@@ -212,3 +212,4 @@ export const productMasterReadAdapter = deepFreeze({
 });
 
 globalThis.ONEAPP_PRODUCT_MASTER_READ_ADAPTER = productMasterReadAdapter;
+globalThis.ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1 = productMasterReadAdapter;

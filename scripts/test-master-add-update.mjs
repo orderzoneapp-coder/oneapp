@@ -661,8 +661,10 @@ await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history
 
 await scenario("25. MerchOps F7 회귀검사", () => {
   const merchOps = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
-  assert.match(merchOps, /afterVerifiedError:\s*'F7 히스토리 저장 실패'/);
-  assert.match(merchOps, /setMasterProducts\(newMaster,\s*\{/);
+  const business = merchOps.slice(merchOps.indexOf("const useMerchConfig ="));
+  assert.match(merchOps, /product-master-command-adapter\.js/);
+  assert.match(business, /commitReviewedWork\(newMaster, localLogs/);
+  assert.doesNotMatch(business, /data\.setMasterProducts|commitMerchMasterState|commitMasterStateOrThrow/);
   assert.match(merchOps, /expectedRevision/);
 });
 
