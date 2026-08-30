@@ -10,7 +10,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="./smartinput.css?v=0.7.0">
+  <link rel="stylesheet" href="./smartinput.css?v=0.6.7">
 </head>
 <body>
   <header class="app-bar">
@@ -30,18 +30,6 @@
             <button type="button" class="mode-tab" data-mode="estimate" aria-selected="false"><span>견적서</span></button>
           </nav>
         </div>
-      </div>
-      <div class="header-customer-group" aria-label="거래처 정보">
-        <label class="field field--customer" data-header-field="customer">
-          <span class="field-name-cell" id="customerFieldLabel">거래처명 <em id="customerRequiredMark">필수</em></span>
-          <div class="input-action">
-            <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
-            <button id="customerSearchButton" type="button">찾기</button>
-          </div>
-          <small id="customerHint" class="sr-only">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
-        </label>
-        <input id="taxCustomerInput" type="hidden">
-        <span id="customerRelationHint" hidden></span>
       </div>
       <div class="header-fields" aria-label="전표 기본정보">
         <label class="header-field" data-header-field="deliveryDate"><span>배송일자</span><input id="deliveryDateInput" type="date"></label>
@@ -80,32 +68,8 @@
 
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
-    <div class="workspace workspace--single">
-      <section class="workbench" aria-label="스마트입력 본문">
-        <nav class="estimate-workspace-tabs" id="estimateWorkspaceTabs" aria-label="견적서 화면" hidden>
-          <div>
-            <button class="button button--quiet" id="estimateLibraryButton" type="button">견적서 목록</button>
-            <button class="button button--quiet" id="estimateEditorButton" type="button">새 견적서 작성</button>
-          </div>
-          <button class="button button--quiet" id="estimateLibrarySwitchButton" type="button">연동견적서 보기</button>
-        </nav>
-
-        <section class="estimate-library-view" id="estimateLibraryView" aria-label="견적서 목록" hidden>
-          <header class="estimate-library-heading">
-            <div><small>ESTIMATE LIBRARY</small><h2 id="estimateLibraryTitle">견적서 목록</h2></div>
-            <p id="estimateLibrarySummary">저장된 개별 견적서를 터치해 함께 선택할 수 있습니다.</p>
-          </header>
-          <div class="estimate-library-grid saved-voucher-list" id="catalogPickerList"></div>
-          <div class="estimate-library-grid saved-voucher-list" id="linkedEstimateList" hidden></div>
-          <footer class="estimate-library-actions">
-            <button class="button button--quiet" id="newEstimateButton" type="button">새 견적서 작성</button>
-            <button class="button button--quiet" id="viewSelectedEstimatesButton" type="button" disabled>선택 견적서 보기</button>
-            <button class="button button--primary" id="linkedEstimateGroupButton" type="button" disabled>연동견적서 생성</button>
-          </footer>
-        </section>
-
-        <div class="estimate-editor-view" id="estimateEditorView">
-      <section class="parser-card" id="sourceInputPanel" aria-label="원본 자료 입력">
+    <div class="workspace">
+      <section class="parser-card" aria-label="원본 자료 입력">
         <div class="parser-toolbar" role="toolbar" aria-label="파서 작업">
           <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
           <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
@@ -161,12 +125,31 @@
         <div class="parser-progress" id="parserProgress" hidden><span></span><strong>자료를 분석하고 있습니다.</strong></div>
       </section>
 
-      <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절" hidden><span></span></button>
+      <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절"><span></span></button>
 
-        <section class="grid-card" aria-label="입력표">
-        <div class="document-fields work-action-bar" role="toolbar" aria-label="입력표 검색 및 편집">
+      <section class="workbench" aria-label="스마트입력 본문">
+        <div class="document-fields work-action-bar" role="toolbar" aria-label="입력표 빠른 작업">
           <div class="document-fields__right">
-            <button class="button button--quiet button--small source-panel-toggle" id="sourcePanelToggleButton" type="button" aria-expanded="true">원문 입력 접기</button>
+            <label class="field field--customer" data-header-field="customer">
+              <span class="field-name-cell" id="customerFieldLabel">배송 거래처 <em id="customerRequiredMark">필수</em></span>
+              <div class="input-action">
+                <input id="customerInput" type="text" autocomplete="off" placeholder="거래처명 또는 코드">
+                <button id="customerSearchButton" type="button">찾기</button>
+              </div>
+              <small id="customerHint">거래처가 인식되지 않으면 이 입력란으로 이동합니다.</small>
+            </label>
+            <input id="taxCustomerInput" type="hidden">
+            <span id="customerRelationHint" hidden></span>
+            <div class="catalog-filter" id="catalogFilter" hidden>
+              <span class="field-name-cell">연동견적서</span>
+              <div class="catalog-picker" id="catalogPicker">
+                <button class="catalog-picker__toggle" id="catalogPickerButton" type="button" aria-haspopup="true" aria-expanded="false">연동견적서 선택</button>
+                <div class="catalog-picker__menu" id="catalogPickerMenu" popover="auto">
+                  <div class="catalog-picker__heading"><span>연동견적서명</span><span>구분</span><span>관리</span></div>
+                  <div class="catalog-picker__list" id="linkedEstimateList"></div>
+                </div>
+              </div>
+            </div>
             <label class="grid-search"><span class="field-name-cell">상품 검색</span><input id="gridSearchInput" type="text" autocomplete="off" placeholder="상품명·코드·규격·거래처 검색"></label>
             <button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button>
             <button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button>
@@ -177,6 +160,7 @@
           <small id="deliveryPolicyHint" class="sr-only">배송 가능일을 계산합니다.</small>
         </div>
 
+        <section class="grid-card" aria-label="입력표">
           <h2 class="sr-only">입력표</h2>
           <div class="grid-toolbar">
             <div class="grid-review-tools">
@@ -193,29 +177,34 @@
             </table>
           </div>
           <footer class="voucher-footer-actions" aria-label="전표 작업">
-            <div class="voucher-footer-actions__primary">
-              <button class="button button--primary" id="completeButton" type="button">저장</button>
-              <div class="delivery-card delivery-card--compact">
-                <span>저장 대상</span>
-                <strong id="deliveryTarget">공통 주문서 원장</strong>
-                <p id="deliveryDescription">ORDER Q vNext 저장소에 먼저 기록합니다.</p>
-                <div class="delivery-state"><span></span><em id="deliveryState">전달 전</em></div>
-              </div>
-            </div>
+            <button class="button button--primary" id="completeButton" type="button">저장</button>
             <div class="estimate-output-actions" id="estimateOutputActions">
               <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공유</button>
               <button class="button button--quiet" id="estimateExcelButton" type="button">Excel 다운로드</button>
             </div>
           </footer>
         </section>
-        </div>
       </section>
+
+      <aside class="related-panel" aria-label="견적서 목록">
+        <div class="aside-heading"><span>견적서 목록</span><strong id="relatedModeLabel">주문서</strong></div>
+        <div class="catalog-picker__heading" id="savedVoucherHeading"><span>견적서명</span><span>상태</span><span>관리</span></div>
+        <div class="catalog-picker__list saved-voucher-list" id="catalogPickerList"></div>
+        <div class="catalog-picker__footer" id="catalogComposeArea" hidden><span>선택한 개별 견적서를 양방향으로 연결합니다.</span><button class="button button--primary button--small" id="linkedEstimateGroupButton" type="button">연동견적서 생성</button></div>
+        <div class="delivery-card">
+          <span>전달 대상</span>
+          <strong id="deliveryTarget">공통 주문서 원장</strong>
+          <p id="deliveryDescription">ORDER Q vNext 저장소에 먼저 기록합니다.</p>
+          <div class="delivery-state"><span></span><em id="deliveryState">전달 전</em></div>
+        </div>
+        <button class="related-collapse" id="relatedCollapseButton" type="button" aria-expanded="false">견적서 목록 열기</button>
+      </aside>
     </div>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.5.1"></script>
-  <script type="module" src="./smartinput.js?v=0.7.0"></script>
+  <script type="module" src="./smartinput.js?v=0.6.8"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>
