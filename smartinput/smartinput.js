@@ -4917,9 +4917,9 @@ async function hydrateReferences() {
     : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
   refreshReferenceAggregate();
   renderMode();
-  setAppStatus(state.referenceMessage, referencesReady() ? '' : 'warn');
+  setAppStatus(referencesReady() ? '기준정보 준비됨' : state.referenceMessage, referencesReady() ? '' : 'warn');
   if (referencesReady() && [results[2], smartDataResult[0]].some(result => result.status === 'rejected')) {
-    setAppStatus(`${state.referenceMessage} · 배송 또는 설정 자료 일부를 불러오지 못했습니다.`, 'warn');
+    setAppStatus('기준정보 준비됨 · 배송 또는 설정 자료 일부를 불러오지 못했습니다.', 'warn');
   }
 }
 
@@ -5018,31 +5018,6 @@ $('detailColumnsButton').addEventListener('click', () => {
   applyFormLayout();
 });
 const photoResizer = $('photoResizer');
-let brandAlignmentFrame = 0;
-function syncBrandToWorkbench() {
-  const primary = document.querySelector('.app-bar__primary');
-  const appBarInner = document.querySelector('.app-bar__inner');
-  const workspace = document.querySelector('.workspace');
-  const workbench = document.querySelector('.workbench');
-  if (!primary || !appBarInner || !workspace || !workbench) return;
-  const appBarBounds = appBarInner.getBoundingClientRect();
-  const workspaceBounds = workspace.getBoundingClientRect();
-  const workbenchBounds = workbench.getBoundingClientRect();
-  const hasSeparateMainPane = workbenchBounds.left - workspaceBounds.left > 24;
-  if (!hasSeparateMainPane) {
-    primary.removeAttribute('data-table-aligned');
-    appBarInner.style.removeProperty('--brand-workbench-left');
-    return;
-  }
-  appBarInner.style.setProperty('--brand-workbench-left', `${Math.round(workbenchBounds.left - appBarBounds.left)}px`);
-  primary.dataset.tableAligned = 'true';
-}
-
-function scheduleBrandAlignment() {
-  window.cancelAnimationFrame(brandAlignmentFrame);
-  brandAlignmentFrame = window.requestAnimationFrame(syncBrandToWorkbench);
-}
-
 function applyParserPaneWidth(requestedWidth) {
   const workspace = document.querySelector('.workspace');
   const bounds = workspace.getBoundingClientRect();
@@ -5051,7 +5026,6 @@ function applyParserPaneWidth(requestedWidth) {
   const width = Math.round(Math.max(330, Math.min(maximum, requestedWidth)));
   state.draft.ui.parserPaneWidth = width;
   workspace.style.setProperty('--parser-pane-width', `${width}px`);
-  scheduleBrandAlignment();
   window.requestAnimationFrame(renderPhotoTransform);
   return width;
 }
@@ -5405,15 +5379,8 @@ document.addEventListener('paste', event => {
 });
 
 window.addEventListener('resize', () => {
-  scheduleBrandAlignment();
   window.requestAnimationFrame(renderPhotoTransform);
 }, { passive: true });
-
-if ('ResizeObserver' in window) {
-  const brandAlignmentObserver = new ResizeObserver(scheduleBrandAlignment);
-  brandAlignmentObserver.observe(document.querySelector('.workspace'));
-  brandAlignmentObserver.observe(document.querySelector('.workbench'));
-}
 
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;
@@ -5424,5 +5391,4 @@ window.addEventListener('pagehide', () => {
   if (state.draftDirty) saveDraftNow();
 });
 renderMode();
-scheduleBrandAlignment();
 hydrateReferences();
