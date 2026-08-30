@@ -45,6 +45,7 @@ export async function buildProductSnapshot(sources = {}, options = {}) {
     ownerAppId: PRODUCT_OWNER_APP_ID,
     status,
     snapshotId: `PRODUCT-${snapshotVersion}-${contentHash.slice(0, 12)}`,
+    revision: explicitRevision || null,
     snapshotVersion,
     snapshotCreatedAt: options.now || new Date().toISOString(),
     contentHash,
