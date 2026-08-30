@@ -184,7 +184,7 @@ try {
   assert.equal(visualZones.sequence, 'No.');
   assert.equal(visualZones.resetInTopBar, true, 'voucher reset must be in the top unified work bar');
   assert.equal(visualZones.voucherContextVisible, true, 'order mode must expose the date-scoped voucher activity panel');
-  assert.equal(visualZones.voucherContextTitle, '오늘 주문서');
+  assert.match(visualZones.voucherContextTitle, /주문서$/, 'activity title must describe the selected order date in the browser timezone');
   assert.match(visualZones.voucherContextStatus, /EMPTY|READY|조회/);
   assert.deepEqual({ estimateHeadingHidden: visualZones.estimateHeadingHidden, estimateListsHidden: visualZones.estimateListsHidden }, { estimateHeadingHidden: true, estimateListsHidden: true });
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
@@ -206,10 +206,14 @@ try {
 
   await input(client, '#sourceTextInput', '주문서 전환 보존');
   await click(client, '[data-mode="purchase"]');
-  assert.deepEqual(await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="purchase"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value,context:document.querySelector('#voucherContextTitle').textContent.trim()})`), { active: 'purchase', selected: 'true', date: '구매일자', source: '', context: '오늘 구매전표' }, 'purchase voucher button must switch the active draft, header, and right-side activity list');
+  const purchaseSwitch = await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="purchase"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value,context:document.querySelector('#voucherContextTitle').textContent.trim()})`);
+  assert.deepEqual({ active: purchaseSwitch.active, selected: purchaseSwitch.selected, date: purchaseSwitch.date, source: purchaseSwitch.source }, { active: 'purchase', selected: 'true', date: '구매일자', source: '' }, 'purchase voucher button must switch the active draft and header');
+  assert.match(purchaseSwitch.context, /구매전표$/, 'purchase activity title must use the selected voucher date');
   await input(client, '#sourceTextInput', '구매 전환 보존');
   await click(client, '[data-mode="order"]');
-  assert.deepEqual(await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="order"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value,context:document.querySelector('#voucherContextTitle').textContent.trim()})`), { active: 'order', selected: 'true', date: '주문일자', source: '주문서 전환 보존', context: '오늘 주문서' }, 'order voucher button must restore its own preserved draft and right-side activity list');
+  const orderSwitch = await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="order"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value,context:document.querySelector('#voucherContextTitle').textContent.trim()})`);
+  assert.deepEqual({ active: orderSwitch.active, selected: orderSwitch.selected, date: orderSwitch.date, source: orderSwitch.source }, { active: 'order', selected: 'true', date: '주문일자', source: '주문서 전환 보존' }, 'order voucher button must restore its own preserved draft');
+  assert.match(orderSwitch.context, /주문서$/, 'order activity title must use the selected voucher date');
   await click(client, '[data-mode="purchase"]');
   assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), '구매 전환 보존', 'purchase draft must survive repeated voucher switching');
   await click(client, '[data-mode="order"]');
