@@ -107,7 +107,8 @@ const ensureTesseract = () => loadOptionalScript(
 );
 
 const $ = id => document.getElementById(id);
-const tabs = [...document.querySelectorAll('[data-mode]')];
+const modeTabs = document.querySelector('.mode-tabs');
+const tabs = [...modeTabs.querySelectorAll('.mode-tab[data-mode]')];
 const methodButtons = [...document.querySelectorAll('[data-method]')];
 const sourceTextInput = $('sourceTextInput');
 const inputRows = $('inputRows');
@@ -3088,20 +3089,33 @@ function renderMode() {
 }
 
 function setMode(mode) {
-  if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
-  syncSourceText();
+  if (!contract.MODES[mode] || mode === state.draft.activeMode) return false;
+  const previousMode = state.draft.activeMode;
+  clearTimeout(state.autoAnalyzeTimer);
+  if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
+  modeDraft().sourceText = sourceTextInput.value;
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
-  restoreSourceImageForMode(mode);
-  state.selectedRowIds.clear();
-  state.activeActivity = '';
-  state.pendingImageEvidence = null;
-  state.pendingOcrReview = null;
-  state.pendingSourceName = '';
-  state.pendingStructuredImport = null;
-  state.gridSearch = '';
-  saveDraftNow();
-  renderMode();
+  try {
+    restoreSourceImageForMode(mode);
+    state.selectedRowIds.clear();
+    state.activeActivity = '';
+    state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
+    state.pendingSourceName = '';
+    state.pendingStructuredImport = null;
+    state.gridSearch = '';
+    saveDraftNow();
+    renderMode();
+    return true;
+  } catch (error) {
+    state.draft.activeMode = previousMode;
+    restoreSourceImageForMode(previousMode);
+    renderMode();
+    setAppStatus('전표 화면을 변경하지 못했습니다. 현재 입력은 유지됩니다.', 'error');
+    toast(error.message || '전표 화면을 변경하지 못했습니다.', 'error');
+    return false;
+  }
 }
 
 function syncSourceText() {
@@ -5374,7 +5388,12 @@ async function hydrateReferences() {
   }
 }
 
-tabs.forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+modeTabs.addEventListener('click', event => {
+  const tab = event.target.closest('.mode-tab[data-mode]');
+  if (!tab || !modeTabs.contains(tab)) return;
+  event.preventDefault();
+  setMode(tab.dataset.mode);
+});
 methodButtons.forEach(button => button.addEventListener('click', () => {
   const method = updateMethod(button.dataset.method);
   if (method.id === 'direct') addDirectRow();

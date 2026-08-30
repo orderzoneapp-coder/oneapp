@@ -83,7 +83,7 @@ input, select, textarea { color: var(--text); background: var(--surface); }
 .app-voucher-switcher .mode-tab.is-active:hover { background: var(--accent-strong); }
 .app-voucher-switcher .mode-tab kbd { color: var(--text-faint); border-color: var(--border); background: var(--surface-muted); }
 .app-bar__actions { min-width: 320px; margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.header-fields { min-width: 360px; flex: 0 1 430px; display: flex; align-items: center; gap: 5px; }
+.header-fields { min-width: 360px; margin-left: 10px; padding-left: 12px; flex: 0 1 442px; display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--border-strong); }
 .header-fields.is-estimate { min-width: 190px; flex: 0 1 230px; }
 .header-field { min-width: 0; height: 36px; flex: 1 1 0; display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); }
 .header-field > span, .field-name-cell { flex: 0 0 auto; padding: 0 8px; display: flex; align-items: center; color: var(--navy); border-right: 1px solid var(--border-strong); background: var(--surface-strong); font-size: 10px; font-weight: 900; white-space: nowrap; }
@@ -590,7 +590,7 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 
 @media (max-width: 1180px) {
   .app-bar__inner { height: auto; padding-block: 7px; flex-wrap: wrap; }
-  .header-fields { order: 3; min-width: 0; width: 100%; flex: 1 0 100%; }
+  .header-fields { order: 3; min-width: 0; width: 100%; margin-left: 0; padding: 8px 0 0; flex: 1 0 100%; border-top: 1px solid var(--border); border-left: 0; }
   .app-bar__actions { margin-left: auto; }
   .app-status { min-width: 0; flex: 0 0 auto; }
   .app-status__dot, .app-status__message { display: none; }
