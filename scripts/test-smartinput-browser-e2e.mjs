@@ -147,12 +147,15 @@ try {
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
   assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right connected-app panel must be visible');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:document.querySelector('.brand')?.getBoundingClientRect().height};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandRightGap:Math.abs(appInner.right-brand.right),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim()};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
   assert.notEqual(visualZones.searchBackground, visualZones.excelBackground, 'product lookup and Excel entry cells must be visually distinct');
   assert.equal(visualZones.searchDivider, '2px', 'product lookup must have an explicit boundary before the Excel grid');
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
   assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
+  assert.ok(visualZones.brandRightGap <= 1, 'SmartInput logo must occupy the far-right edge of the app header');
+  assert.equal(visualZones.headerHasReferenceCounts, false, 'product and customer counts must not remain as an app-header annotation');
+  assert.match(visualZones.coachmark, /상품·거래처 기준정보/, 'reference counts must move into the reference coachmark panel');
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
@@ -288,9 +291,10 @@ try {
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
-  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
+  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
   assert.ok(mobile.app.height <= 170 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
+  assert.ok(Math.abs(mobile.appInner.right - mobile.brand.right) <= 1, 'mobile SmartInput logo must remain at the app-header far right');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

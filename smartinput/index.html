@@ -10,7 +10,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="./smartinput.css?v=0.6.2">
+  <link rel="stylesheet" href="./smartinput.css?v=0.6.3">
 </head>
 <body>
   <header class="app-bar">
@@ -19,9 +19,10 @@
         <span class="app-status__dot" aria-hidden="true"></span>
         <span class="app-status__message" id="appStatusMessage" role="status" aria-live="polite">새 입력을 시작할 수 있습니다.</span>
         <details class="reference-overview" id="referenceOverview">
-          <summary aria-label="기준정보 상태 열기" aria-expanded="false"><span aria-hidden="true">기준정보</span><span class="reference-overview__summary-text" id="referenceOverviewSummary">확인 중</span></summary>
+          <summary aria-label="기준정보 상태 열기" aria-expanded="false"><span aria-hidden="true">기준정보</span></summary>
           <div class="reference-overview__panel" role="group" aria-label="상품·거래처 기준정보 상태">
             <header><strong>기준정보 Snapshot</strong><small>새 revision은 다음 작업부터 적용합니다.</small></header>
+            <p class="reference-overview__coachmark" role="note"><span>상품·거래처 기준정보</span><strong id="referenceOverviewSummary">확인 중</strong></p>
             <article class="reference-domain" data-reference-domain="product">
               <div><strong>상품</strong><span id="productReferenceStatus" data-status="LOADING">LOADING</span></div>
               <dl><div><dt>출처</dt><dd id="productReferenceSource">확인 중</dd></div><div><dt>건수</dt><dd id="productReferenceCount">—</dd></div><div><dt>revision</dt><dd id="productReferenceRevision">—</dd></div><div><dt>갱신</dt><dd id="productReferenceUpdated">확인 전</dd></div></dl>
@@ -37,11 +38,6 @@
         </details>
       </div>
       <div class="app-bar__primary">
-        <a class="brand" href="./" aria-label="스마트입력 처음으로">
-          <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="" width="2172" height="724" decoding="async">
-          <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="" width="2201" height="714" decoding="async">
-          <span class="sr-only">스마트입력</span>
-        </a>
         <div class="app-voucher-switcher">
           <span class="sr-only">전표 선택</span>
           <nav class="mode-tabs" aria-label="전표 선택">
@@ -58,6 +54,11 @@
         <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
         <button class="button button--primary" id="completeButton" type="button">입력 완료</button>
       </div>
+      <a class="brand" href="./" aria-label="스마트입력 처음으로">
+        <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="" width="2172" height="724" decoding="async">
+        <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="" width="2201" height="714" decoding="async">
+        <span class="sr-only">스마트입력</span>
+      </a>
     </div>
   </header>
 
@@ -206,7 +207,7 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.5.0"></script>
-  <script type="module" src="./smartinput.js?v=0.6.3"></script>
+  <script type="module" src="./smartinput.js?v=0.6.4"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>
