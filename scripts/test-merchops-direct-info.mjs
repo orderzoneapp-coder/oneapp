@@ -134,20 +134,18 @@ for (const removed of [
 ]) {
   assert.ok(!parser.includes(removed), "SmartParser still contains deleted waiting logic: " + removed);
 }
-assert.match(parser, /actionType: '정보변경'/);
-assert.match(parser, /historyType: '정보변경'/);
-assert.match(parser, /changeType: '정보변경'/);
-assert.match(parser, /SmartParser > \$\{catalogLabel\} > 정보 마스터 즉시 반영/);
-assert.match(parser, /newMaster\[code\]\[fieldName\] = parsedVal/);
+assert.match(parser, /ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1/);
+assert.match(parser, /createProductChangeRequestsFromAnalysis/);
+assert.match(parser, /submitProductChangeRequest/);
+assert.match(parser, /PENDING 변경요청/);
+assert.match(parser, /owner 적용 전 마스터\/히스토리 변경 0건/);
 assert.match(parser, /handleUpdateMatchedText/);
 assert.match(parser, /_editedTextFields/);
-assert.match(parser, /hasExplicitTextEdit/);
-assert.match(parser, /const shouldApplyTextField = hasExplicitTextEdit \|\| updateTextData/);
-assert.match(parser, /if \(!shouldApplyTextField\) return/);
-assert.match(parser, /const hasApplicableValue = hasExplicitTextEdit \|\| !!parsedVal/);
+assert.match(parser, /hasExplicitEdit/);
+assert.match(parser, /if \(!hasExplicitEdit && !updateTextData\) return/);
 assert.match(parser, /저장할 품목명 수정/);
 assert.match(parser, /저장할 규격 수정/);
-assert.match(parser, /await saveMaster\(newMaster, sharedEntries\)/);
+assert.doesNotMatch(parser, /commitSmartParserMaster|commitMasterStateOrThrow|newMaster\[code\]/);
 
 assert.ok(!manifest.includes('"information-change-queue"'));
 assert.ok(!architecture.includes("merchInfoChangeQueue_v1"));
@@ -156,5 +154,5 @@ assert.match(history, /log\.actionType/);
 assert.match(history, /oldVal/);
 assert.match(history, /newVal/);
 
-console.log("MerchOps rule placement and SmartParser direct information-master tests passed.");
+console.log("MerchOps rule placement and SmartParser PENDING information-request tests passed.");
 

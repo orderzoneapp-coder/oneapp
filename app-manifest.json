@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.3",
+  "schemaVersion": "1.3.4",
   "updatedAt": "2026-08-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -194,7 +194,7 @@
       "path": "SmartParser.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Parse external documents, manage supplier exclusions and stopped or sold-out products, apply approved changes directly to the product master, and record changes in shared history.",
+      "purpose": "Parse external documents locally into immutable analysis results, match against Product Snapshots, submit reviewed product proposals as PENDING owner requests, and own supplier exclusions plus explicit atomic stop/resume commands.",
       "navigatesTo": [
         "merchops",
         "settings",
@@ -202,7 +202,8 @@
       ],
       "sharedContracts": [
         "product-master",
-        "change-history",
+        "product-reference-change-request",
+        "smartparser-analysis-result",
         "parser-dictionary",
         "pricing-rules",
         "parser-supplier-exclusions",
@@ -753,6 +754,7 @@
       "consumers": [
         "orderq/input.html",
         "smart-input",
+        "smart-parser",
         "DataOps.html",
         "MerchOps.html"
       ],
@@ -762,10 +764,19 @@
       "commandAdapter": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandAdapterVersion": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandSchemaVersion": "MERCHOPS_REVIEWED_WORK_APPLY_V1",
-      "writerPolicy": "master-lookup is the official owner. MerchOps may change existing product fields only through its reviewed F7 command adapter with expected Snapshot identity, field-level before/after/history, post-write verification, and rollback. Bundled/external core legacy globals, cloud import/restore, backup restore, Excel apply, and public commit aliases fail closed with OWNER_ROUTED; no other MerchOps workflow may write product master data.",
+      "writerPolicy": "master-lookup is the official owner. SmartParser reads immutable Product Snapshots and submits product proposals only through PENDING owner requests; its page has no raw product writer. The sole SmartParser exception is the versioned stop-management command adapter, limited to explicit STOP/RESUME/UPDATE_METADATA with expected Snapshot/revision and atomic sale-status/linked-state/history/mirror/notification handling. MerchOps may change existing product fields only through its reviewed F7 command adapter. Legacy globals and all other workflows fail closed with OWNER_ROUTED.",
+      "stopCommandException": {
+        "adapter": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1",
+        "schemaVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1",
+        "asset": "smartparser/stop-management-command-adapter.js",
+        "allowedActions": [
+          "STOP",
+          "RESUME",
+          "UPDATE_METADATA"
+        ]
+      },
       "legacyWriterAllowlist": [
         "Master.html",
-        "SmartParser.html",
         "settings.html",
         "export_center.html",
         "Item_manager.html",
@@ -799,7 +810,8 @@
       "owner": "master-lookup",
       "consumers": [
         "smart-input",
-        "merchops"
+        "merchops",
+        "smart-parser"
       ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
@@ -810,6 +822,18 @@
         "localDatabase": "MerchOpsDB",
         "objectStore": "store",
         "inboxKey": "oneappProductReferenceChangeRequests_v1"
+      }
+    },
+    {
+      "id": "smartparser-analysis-result",
+      "owner": "smart-parser",
+      "consumers": [
+        "SmartParser.html"
+      ],
+      "schemaVersion": "ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1",
+      "writerPolicy": "Pure local create/normalize/validate/clone/freeze contract. It stores no product master, history, stop state, server queue, raw source document, or credentials. Product proposals are submitted separately through the product owner PENDING request adapter.",
+      "resources": {
+        "contractAsset": "smartparser/analysis-result-contract.js"
       }
     },
     {
@@ -861,8 +885,11 @@
         "MerchOps.html",
         "DataOps.html"
       ],
-      "writerPolicy": "SmartParser owns general stop/resume management. DataOps may perform resume-only writes through masterAddUpdate.js after a finalized positive inventory count, using the existing atomic master/history/linked-state contract.",
+      "adapterVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1",
+      "commandSchemaVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1",
+      "writerPolicy": "SmartParser owns explicit general STOP/RESUME/UPDATE_METADATA only through its versioned command adapter, with normalized unique codes, expected Product Snapshot/revision, operation idempotency, atomic product sale status, stopped list, pending status, actual history, local mirrors and notifications, plus stale-safe rollback. Analysis results and PENDING product requests never invoke this command automatically. DataOps retains its existing post-close resume-only masterAddUpdate.js boundary.",
       "resources": {
+        "adapterAsset": "smartparser/stop-management-command-adapter.js",
         "indexedDb": {
           "database": "MerchOpsDB",
           "keys": [
@@ -882,7 +909,8 @@
       "owner": "settings",
       "consumers": [
         "settings.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "SmartParser.html"
       ],
       "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
       "consumerPolicy": "MerchOps reads the owner value into memory and never seeds, persists, resets, restores, or cloud-synchronizes it.",

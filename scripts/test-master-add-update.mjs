@@ -668,11 +668,15 @@ await scenario("25. MerchOps F7 회귀검사", () => {
   assert.match(merchOps, /expectedRevision/);
 });
 
-await scenario("26. SmartParser 반영 경로 회귀검사", () => {
+await scenario("26. SmartParser owner 요청·stop command 경로 회귀검사", () => {
   const smartParser = fs.readFileSync(path.join(ROOT, "SmartParser.html"), "utf8");
-  assert.match(smartParser, /commitSmartParserMaster/);
-  assert.match(smartParser, /commitMasterStateOrThrow\(data,\s*\{/);
-  assert.match(smartParser, /afterVerifiedError:\s*'SmartParser 히스토리\/공유상태 저장 실패'/);
+  const stopAdapter = fs.readFileSync(path.join(ROOT, "smartparser/stop-management-command-adapter.js"), "utf8");
+  assert.match(smartParser, /createProductChangeRequestsFromAnalysis/);
+  assert.match(smartParser, /submitProductChangeRequest/);
+  assert.match(smartParser, /commitSmartParserStopManagement\(command\)/);
+  assert.doesNotMatch(smartParser, /commitSmartParserMaster|commitMasterStateOrThrow/);
+  assert.match(stopAdapter, /commitMasterStateOrThrow\(master,\s*\{/);
+  assert.match(stopAdapter, /afterVerifiedError: 'SmartParser stop-management linked-state verification failed'/);
 });
 
 const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");

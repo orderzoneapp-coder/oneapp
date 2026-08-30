@@ -126,6 +126,9 @@ jobs:
       - name: Test complete MerchOps owner-boundary contract suite
         run: node scripts/test-merchops-all.mjs
 
+      - name: Test complete SmartParser analysis and owner-boundary suite
+        run: node scripts/test-smartparser-all.mjs
+
       - name: Test Master add/update review and rollback workflow
         run: node scripts/test-master-add-update.mjs
 

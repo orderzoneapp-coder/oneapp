@@ -608,6 +608,7 @@ const files = Object.fromEntries(
     "DataOps.html",
     "coreEngine.js",
     "masterAddUpdate.js",
+    "smartparser/stop-management-command-adapter.js",
     "app-manifest.json",
     "APP_ARCHITECTURE.md",
   ]
@@ -647,94 +648,14 @@ assert.deepEqual(
 );
 assert.ok(dataOpsCacheValues.has("dataops_master_sync_trigger"));
 
-const smartParserHelperStart = files["SmartParser.html"].indexOf("let smartParserMasterRevision = undefined");
-const smartParserHelperEnd = files["SmartParser.html"].indexOf("const useParserApp =", smartParserHelperStart);
-assert.ok(smartParserHelperStart >= 0 && smartParserHelperEnd > smartParserHelperStart);
-let smartParserCommitShouldFail = true;
-let smartParserHistoryWrites = 0;
-const smartParserStorageValues = new Map([
-  ["merchHistory_v870", JSON.stringify([{ id: "before" }])],
-]);
-const smartParserLocalStorage = createSharedLocalStorage(smartParserStorageValues);
-const smartParserWarnings = [];
-const smartParserContext = vm.createContext({
-  window: {
-    ONEAPP: {
-      STORAGE: {
-        commitMasterStateOrThrow: async (_data, options) => {
-          assert.ok(Object.prototype.hasOwnProperty.call(options, "expectedRevision"));
-          if (smartParserCommitShouldFail) throw new Error("forced master failure");
-          options.afterVerified?.();
-          return { ok: true, revision: "rev-smart-success" };
-        },
-      },
-    },
-  },
-  localStorage: smartParserLocalStorage,
-  saveMerchHistoryWithRetry: (logs) => {
-    smartParserHistoryWrites++;
-    smartParserLocalStorage.setItem("merchHistory_v870", JSON.stringify(logs));
-  },
-  console: {
-    log: console.log,
-    error: console.error,
-    warn: (...args) => smartParserWarnings.push(args),
-  },
-  Date,
-  Array,
-  String,
-  Error,
-});
-smartParserContext.window.window = smartParserContext.window;
-vm.runInContext(
-  `${files["SmartParser.html"].slice(smartParserHelperStart, smartParserHelperEnd)}
-window.__commitSmartParserMaster = commitSmartParserMaster;`,
-  smartParserContext,
-);
-let smartParserMemoryUpdates = 0;
-await assert.rejects(
-  smartParserContext.window.__commitSmartParserMaster(
-    dataA,
-    {},
-    [{ id: "success-only", code: "A" }],
-    {},
-    () => { smartParserMemoryUpdates++; },
-  ),
-  /forced master failure/,
-);
-assert.equal(smartParserMemoryUpdates, 0);
-assert.deepEqual(
-  JSON.parse(smartParserContext.localStorage.getItem("merchHistory_v870")),
-  [{ id: "before" }],
-  "SmartParser history must remain unchanged when the master commit fails",
-);
-assert.equal(smartParserHistoryWrites, 0);
-assert.equal(smartParserContext.localStorage.getItem("merchMaster_sync_trigger"), null);
-
-smartParserCommitShouldFail = false;
-const originalSmartParserSetItem = smartParserLocalStorage.setItem;
-smartParserLocalStorage.setItem = (key, value) => {
-  if (key === "merchMaster_sync_trigger") throw new Error("forced trigger failure");
-  return originalSmartParserSetItem(key, value);
-};
-await assert.rejects(
-  smartParserContext.window.__commitSmartParserMaster(
-    dataA,
-    {},
-    [{ id: "committed", code: "A" }],
-    { merchMaster_sync_trigger: "now" },
-    () => { smartParserMemoryUpdates++; },
-  ),
-  /forced trigger failure/,
-);
-assert.equal(smartParserWarnings.length, 0);
-assert.equal(smartParserMemoryUpdates, 0);
-assert.equal(smartParserHistoryWrites, 1);
-assert.deepEqual(
-  JSON.parse(smartParserContext.localStorage.getItem("merchHistory_v870")),
-  [{ id: "before" }],
-  "a notification failure inside the atomic commit must restore the previous history",
-);
+const smartParserStopAdapter = files["smartparser/stop-management-command-adapter.js"];
+assert.doesNotMatch(files["SmartParser.html"], /commitSmartParserMaster|commitMasterStateOrThrow/);
+assert.match(files["SmartParser.html"], /commitSmartParserStopManagement\(command\)/);
+assert.match(smartParserStopAdapter, /commitMasterStateOrThrow\(master, \{/);
+assert.match(smartParserStopAdapter, /afterVerified: \(\) => \{/);
+assert.match(smartParserStopAdapter, /restoreLocalStorage\(previousLocal\)/);
+assert.match(smartParserStopAdapter, /PRODUCT_SNAPSHOT_CONFLICT/);
+assert.match(smartParserStopAdapter, /staleRollbackSkipped/);
 
 for (const name of [
   "MerchOps.html",
@@ -746,12 +667,12 @@ for (const name of [
 ]) {
   assert.match(files[name], /<script src="coreEngine\.js"><\/script>/, `${name} must load the shared storage engine`);
 }
-assert.match(files["SmartParser.html"], /afterVerified: \(\) => \{\s*saveMerchHistoryWithRetry\(logs\)/);
-assert.match(files["SmartParser.html"], /await commitSmartParserMaster\(data, storeEntries, historyLogs/);
+assert.match(files["SmartParser.html"], /ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1/);
+assert.match(files["SmartParser.html"], /submitProductChangeRequest/);
 assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: settingsMasterRevision/);
 assert.match(files["settings.html"], /commitMasterStateOrThrow\(nextMaster, \{\s*expectedRevision: masterState\.revision/);
 assert.match(files["export_center.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: exportMasterRevision/);
-assert.match(files["SmartParser.html"], /commitMasterStateOrThrow\(data, \{\s*expectedRevision: smartParserMasterRevision/);
+assert.match(files["smartparser/stop-management-command-adapter.js"], /expectedRevision: command\.expectedRevision/);
 assert.match(
   files["settings.html"],
   /var activation = await activateMasterProduct\(rec\.code\);[\s\S]*?catch \(error\)[\s\S]*?완료 상태로 변경하지 않았습니다/,

@@ -286,6 +286,25 @@ function main() {
   if (productMasterContract?.readAdapter !== "ONEAPP_PRODUCT_MASTER_READ_ADAPTER") {
     fail("Shared contract product-master must publish ONEAPP_PRODUCT_MASTER_READ_ADAPTER.");
   }
+  if (productMasterContract?.legacyWriterAllowlist?.includes("SmartParser.html")) {
+    fail("SmartParser.html must not remain in the product-master legacy writer allowlist.");
+  }
+  if (productMasterContract?.stopCommandException?.asset !== "smartparser/stop-management-command-adapter.js") {
+    fail("product-master must declare the scoped SmartParser stop-command exception.");
+  }
+
+  const smartParserAnalysisContract = contracts.find((contract) => contract.id === "smartparser-analysis-result");
+  if (smartParserAnalysisContract?.owner !== "smart-parser") {
+    fail("Shared contract smartparser-analysis-result must be owned by smart-parser.");
+  }
+  if (smartParserAnalysisContract?.schemaVersion !== "ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1") {
+    fail("Shared contract smartparser-analysis-result must publish ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1.");
+  }
+
+  const stopManagementContract = contracts.find((contract) => contract.id === "stop-management");
+  if (stopManagementContract?.adapterVersion !== "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1") {
+    fail("stop-management must publish the versioned SmartParser command adapter.");
+  }
 
   const customerMasterContract = contracts.find((contract) => contract.id === "customer-master");
   if (customerMasterContract?.owner !== "customer-master") {

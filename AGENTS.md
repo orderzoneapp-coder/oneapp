@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Version: 2.3.3
-Last Updated: 2026-08-29
+Version: 2.3.4
+Last Updated: 2026-08-30
 
 ## 1. 적용 원칙
 
@@ -110,6 +110,8 @@ Last Updated: 2026-08-29
 - 같은 Origin의 웹앱은 다른 IndexedDB를 기술적으로 열 수 있으므로 경로 분리를 접근 통제로 간주하지 않는다.
 - 각 DB와 Object Store는 소유 모듈과 공개 읽기 계약을 명시한다.
 - 다른 소유자의 원시 Store 직접 쓰기를 금지한다.
+- SmartParser의 외부 문서 분석·매칭 결과는 불변 `ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1`로 확정하고 상품 원본 변경은 `master-lookup`의 `PENDING` 변경요청으로만 전달한다. 분석·요청 접수를 상품 반영 완료나 확정 이력으로 표시하지 않는다.
+- SmartParser의 사용자가 명시한 일반 판매정지·재개·관리정보 변경만 전용 versioned stop-management command Adapter에서 expected Product Snapshot/revision, 멱등 operation ID, master·linked state·history·mirror·notification 원자성으로 수행한다. 분석 결과가 이 command를 자동 호출해서는 안 된다.
 - 기존 직접 접근은 먼저 목록과 기준선을 고정하고, 신규 직접 쓰기부터 차단한다.
 - 기존 직접 읽기는 소유 앱의 Read Adapter로 단계적으로 전환하며 영향 확인 없이 일괄 금지하지 않는다.
 - 기존 업무 DB의 통합·이전·Schema 변경은 별도 사용자 승인 없이 공통 아키텍처 작업에 포함하지 않는다.
