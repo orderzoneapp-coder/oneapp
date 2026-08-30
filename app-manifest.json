@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.0",
+  "schemaVersion": "1.3.1",
   "updatedAt": "2026-08-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -377,7 +377,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create and preserve order, purchase, sale, and estimate work drafts locally while isolating optional reference lookup, external input, synchronization, and server-finalize failures.",
+      "purpose": "Create and preserve order, purchase, sale, and estimate work drafts locally while consuming owner-issued product and customer Snapshots, deferring new revisions for active work, and isolating external input, synchronization, and server-finalize failures.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -393,10 +393,15 @@
       ],
       "consumedContracts": [
         "product-master",
+        "customer-master",
+        "product-reference-change-request",
+        "customer-reference-change-request",
         "orderq-vnext-sync"
       ],
       "dependencyMode": {
         "localDraftAndEstimate": "LOCAL_OPERATION",
+        "cachedReferenceSnapshot": "LOCAL_OPERATION",
+        "referenceRevisionCheck": "BACKGROUND_SYNC",
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "SERVER_FINALIZE"
       },
@@ -404,6 +409,9 @@
       "sharedContracts": [
         "smartinput-local-work",
         "product-master",
+        "customer-master",
+        "product-reference-change-request",
+        "customer-reference-change-request",
         "orderq-vnext-sync"
       ]
     },
@@ -520,7 +528,9 @@
     {
       "id": "customer-master",
       "owner": "customer-master",
-      "consumers": [],
+      "consumers": [
+        "smart-input"
+      ],
       "schemaVersion": "ONEAPP_CUSTOMER_SNAPSHOT_V1",
       "localDatabase": "oneapp-customermaster-v1",
       "databaseVersion": 1,
@@ -548,7 +558,9 @@
     {
       "id": "customer-reference-change-request",
       "owner": "customer-master",
-      "consumers": [],
+      "consumers": [
+        "smart-input"
+      ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER",
       "writerPolicy": "Only customer-master receives requests into its appMeta-owned additive inbox. Receipt remains PENDING and never applies customer master data automatically.",
@@ -711,7 +723,8 @@
       "id": "product-master",
       "owner": "master-lookup",
       "consumers": [
-        "orderq/input.html"
+        "orderq/input.html",
+        "smart-input"
       ],
       "schemaVersion": "ONEAPP_PRODUCT_SNAPSHOT_V1",
       "readAdapter": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER",
@@ -754,7 +767,9 @@
     {
       "id": "product-reference-change-request",
       "owner": "master-lookup",
-      "consumers": [],
+      "consumers": [
+        "smart-input"
+      ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
       "writerPolicy": "Only master-lookup receives requests into the existing owner KV store. Receipt remains PENDING and never applies product master data automatically.",

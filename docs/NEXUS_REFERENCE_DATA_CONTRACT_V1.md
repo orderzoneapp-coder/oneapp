@@ -4,7 +4,8 @@
 - 착수 원격 `main`: `6a69056090a43356807a3adae8ce5728a5edb3e6`
 - 확인 문서: `AGENTS.md` v2.3.3, `APP_ARCHITECTURE.md` v2.1.8, `roles/DEVELOPER.md`, `app-manifest.json` v1.3.0
 - 구현 범위: owner 정렬, 읽기 Snapshot, 공통 변경요청 validator, owner별 멱등 inbox, 읽기 전용 진단
-- 제외: SmartInput·ORDER Q 소비자 전환, 기존 writer 제거, 서버·Apps Script 변경, 원본 DB·키 이동
+- PR #440 제외 범위: SmartInput·ORDER Q 소비자 전환, 기존 writer 제거, 서버·Apps Script 변경, 원본 DB·키 이동
+- 후속: `NEXUS-SI-REFDATA-UX-20260830-01`에서 SmartInput만 상품·거래처 Snapshot 소비자로 전환했다. ORDER Q 소비자 전환과 기존 writer 제거는 계속 제외한다.
 
 ## current와 target
 
@@ -124,7 +125,7 @@ const inbox = await customerMasterChangeRequestAdapter.listChangeRequests({ stat
 - 공유 원자 writer: `coreEngine.js`, `masterAddUpdate.js`
 - 문서상 후속 후보이나 current source 미검출: `DataOps.html`
 
-현재 reader에는 위 앱들과 History, ORDER Q 수기 상품검색이 포함된다. 이번 작업은 reader/consumer를 일괄 전환하지 않고 신규 직접 writer가 추가되지 않았는지만 고정한다. SmartInput 기준정보 UX와 최신 Snapshot 반영은 이 병합본의 공개 API를 사용하는 별도 후속 작업이다.
+PR #440 기준 reader에는 위 앱들과 History, ORDER Q 수기 상품검색이 포함된다. 후속 `NEXUS-SI-REFDATA-UX-20260830-01`은 SmartInput에 한해 이 공개 API를 사용하며 ORDER Q 이력을 상품 마스터 자동확정 근거에서 제외한다. 다른 reader/consumer의 일괄 전환과 기존 writer 제거는 수행하지 않는다.
 
 ## 장애 격리와 rollback
 
