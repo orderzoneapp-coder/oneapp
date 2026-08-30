@@ -9,6 +9,10 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+for (const logo of ['logo-light.png', 'logo-dark.png']) {
+  const bytes = readFileSync(join(root, 'nexus', 'assets', 'brand', 'apps', 'smart-input', logo));
+  assert.equal(bytes[25], 6, `${logo} must keep an RGBA alpha channel`);
+}
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-0a-e2e-'));
 const screenshotDir = resolve(process.env.SMARTINPUT_SCREENSHOT_DIR || join(tmpdir(), 'oneapp-smartinput-0a-screenshots'));
 mkdirSync(screenshotDir, { recursive: true });
@@ -142,7 +146,13 @@ try {
   assert.equal(metrics.title, '스마트입력 - NEXUS');
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
   assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right connected-app panel must be visible');
-  assert.ok(metrics.app.height >= 60, 'restored SmartInput app bar must remain usable below global header');
+  assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:document.querySelector('.brand')?.getBoundingClientRect().height};})()`);
+  assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
+  assert.notEqual(visualZones.searchBackground, visualZones.excelBackground, 'product lookup and Excel entry cells must be visually distinct');
+  assert.equal(visualZones.searchDivider, '2px', 'product lookup must have an explicit boundary before the Excel grid');
+  assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
+  assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
@@ -278,8 +288,10 @@ try {
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
-  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
+  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
+  assert.ok(mobile.app.height <= 170 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
+  assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
