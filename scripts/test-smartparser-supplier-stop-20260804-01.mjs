@@ -334,7 +334,10 @@ assert.doesNotMatch(merchSource, /removeItem\('merchWorkArchive_v1'/);
 assert.match(merchSource, /normalizeMerchStoppedProductsForRead/);
 assert.match(merchSource, /readMerchStoppedProductsForProtection/);
 assert.match(merchSource, /공유 정지자료는 상태 뱃지와 보호 필터에만 사용/);
-assert.match(merchSource, /품절\/정지 관리 및 판매재개는 SmartParser에서 직접 반영/);
+assert.match(merchSource, /SmartParser 전용 품절\/정지 관리/);
+const merchBusiness = merchSource.slice(merchSource.indexOf('const useMerchConfig ='));
+assert.doesNotMatch(merchBusiness, /localStorage\.(?:setItem|removeItem)\('parserDict_v870'/);
+assert.doesNotMatch(merchBusiness, /data\.setMasterProducts|commitMerchMasterState/);
 
 const stopContract = manifest.sharedDataContracts.find((contract) => contract.id === "stop-management");
 const exclusionContract = manifest.sharedDataContracts.find((contract) => contract.id === "parser-supplier-exclusions");

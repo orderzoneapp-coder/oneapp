@@ -197,12 +197,12 @@ assert.equal(widthContext.window.getMerchColumnWidthValue({ 'work:출고가': 12
 widthContext.window.removeMerchSharedColumnWidths(['입고가']);
 assert.deepEqual(normalize(widthContext.window.getMerchSharedColumnWidths()), {}, '열폭 초기화는 지정 공통 열폭을 제거해야 한다.');
 
-assert.match(gridSource, /columnWidths:\s*widths,\s*updatedAt:/, '열폭 저장은 활성 양식에 정규화된 값을 기록해야 한다.');
-assert.match(gridSource, /delete next\.columnWidths;/, '열폭 초기화는 활성 양식의 저장값을 제거해야 한다.');
+assert.match(gridSource, /열폭·테이블 양식 저장은 Settings에서 관리/, 'MerchOps는 Settings 소유 양식을 저장하지 않고 owner로 안내해야 한다.');
+assert.doesNotMatch(gridSource, /config\.setTableViewPresets\(prev/, 'MerchOps 열폭 UI는 Settings 소유 preset을 변경하면 안 된다.');
 assert.match(
     workflow,
-    /run:\s*node scripts\/test-merchops-column-resize-performance\.mjs/,
-    'GitHub Actions가 열폭 성능 검사를 실제 실행해야 한다.'
+    /run:\s*node scripts\/test-merchops-all\.mjs/,
+    'GitHub Actions가 열폭 성능 검사를 포함한 MerchOps runner를 실제 실행해야 한다.'
 );
 
 console.log('MerchOps column resize performance execution contract passed (2,000 rows, 500 mousemoves)');

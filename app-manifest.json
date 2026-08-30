@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.1",
+  "schemaVersion": "1.3.2",
   "updatedAt": "2026-08-30",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -115,26 +115,53 @@
       "path": "MerchOps.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Review and apply product master, pricing, promotion, and Excel-based product-information work while preserving read-only protection for stopped products.",
+      "purpose": "Consume an immutable owner-issued Product Snapshot, prepare pricing, promotion, and Excel-based product-information work, submit new products as PENDING owner requests, and apply only reviewed F7 field patches through the versioned product command boundary.",
+      "owner": "merchandising-operations",
+      "productionWrites": true,
       "navigatesTo": [
+        "master-lookup",
         "smart-parser",
         "export-center",
         "settings",
         "history-viewer"
       ],
-      "services": [
-        "cloud-sync"
+      "runtimeDependencies": [
+        "core-engine"
       ],
-      "sharedContracts": [
-        "product-master",
+      "ownedContracts": [
         "change-history",
+        "merchops-work-view-state"
+      ],
+      "consumedContracts": [
+        "product-master",
+        "product-reference-change-request",
         "parser-dictionary",
         "pricing-rules",
         "mapping-config",
         "table-view-config",
         "cloud-url",
         "stop-management"
-      ]
+      ],
+      "sharedContracts": [
+        "product-master",
+        "product-reference-change-request",
+        "change-history",
+        "parser-dictionary",
+        "pricing-rules",
+        "mapping-config",
+        "table-view-config",
+        "cloud-url",
+        "stop-management",
+        "merchops-work-view-state"
+      ],
+      "dependencyMode": {
+        "cachedProductSnapshot": "LOCAL_OPERATION",
+        "activeWorktable": "LOCAL_OPERATION",
+        "referenceRevisionCheck": "BACKGROUND_SYNC",
+        "reviewedF7Apply": "OWNER_COMMAND",
+        "newProductRequest": "OWNER_REQUEST"
+      },
+      "offlinePolicy": "Render with the last readable Product Snapshot and preserve current work locally. Module or owner-repository unavailability disables command/request writes without blocking F8, F9, or local work recovery."
     },
     {
       "id": "dataops",
@@ -726,15 +753,18 @@
       "consumers": [
         "orderq/input.html",
         "smart-input",
-        "DataOps.html"
+        "DataOps.html",
+        "MerchOps.html"
       ],
       "schemaVersion": "ONEAPP_PRODUCT_SNAPSHOT_V1",
       "readAdapter": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER",
-      "readAdapterVersion": "ONEAPP_PRODUCT_READ_ADAPTER_V1",
-      "writerPolicy": "master-lookup is the official owner. Existing direct writers are a frozen compatibility allowlist for later app-by-app conversion; no new cross-app direct writer is allowed.",
+      "readAdapterVersion": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1",
+      "commandAdapter": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
+      "commandAdapterVersion": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
+      "commandSchemaVersion": "MERCHOPS_REVIEWED_WORK_APPLY_V1",
+      "writerPolicy": "master-lookup is the official owner. MerchOps may change existing product fields only through its reviewed F7 command adapter with expected Snapshot identity, field-level before/after/history, post-write verification, and rollback. No other MerchOps workflow may write product master data.",
       "legacyWriterAllowlist": [
         "Master.html",
-        "MerchOps.html",
         "SmartParser.html",
         "settings.html",
         "export_center.html",
@@ -744,6 +774,7 @@
       ],
       "resources": {
         "adapterAsset": "reference-data/product-master-read-adapter.js",
+        "commandAdapterAsset": "reference-data/product-master-command-adapter.js",
         "indexedDb": {
           "database": "MerchOpsDB",
           "store": "master_products",
@@ -767,7 +798,8 @@
       "id": "product-reference-change-request",
       "owner": "master-lookup",
       "consumers": [
-        "smart-input"
+        "smart-input",
+        "merchops"
       ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
@@ -796,6 +828,11 @@
     {
       "id": "parser-dictionary",
       "owner": "smart-parser",
+      "consumers": [
+        "SmartParser.html",
+        "MerchOps.html"
+      ],
+      "consumerPolicy": "MerchOps reads the parser dictionary for work interpretation only and never writes, merges, resets, restores, or cloud-synchronizes it.",
       "resources": {
         "localStorage": [
           "parserDict_v870"
@@ -843,7 +880,14 @@
     {
       "id": "pricing-rules",
       "owner": "settings",
+      "consumers": [
+        "settings.html",
+        "MerchOps.html"
+      ],
+      "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
+      "consumerPolicy": "MerchOps reads the owner value into memory and never seeds, persists, resets, restores, or cloud-synchronizes it.",
       "resources": {
+        "readAdapterAsset": "reference-data/merchops-settings-read-adapter.js",
         "localStorage": [
           "merchMarginRules_v878"
         ],
@@ -853,6 +897,12 @@
     {
       "id": "mapping-config",
       "owner": "settings",
+      "consumers": [
+        "settings.html",
+        "MerchOps.html"
+      ],
+      "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
+      "consumerPolicy": "MerchOps reads mappings and links into work memory and does not persist owner configuration.",
       "resources": {
         "localStorage": [
           "merchMappings_v870",
@@ -863,6 +913,12 @@
     {
       "id": "table-view-config",
       "owner": "settings",
+      "consumers": [
+        "settings.html",
+        "MerchOps.html"
+      ],
+      "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
+      "consumerPolicy": "MerchOps consumes saved views read-only. Active work selection is stored only in merchops-work-view-state.",
       "resources": {
         "localStorage": [
           "merchActiveTableTarget_v1",
@@ -874,9 +930,29 @@
     {
       "id": "cloud-url",
       "owner": "settings",
+      "consumers": [
+        "settings.html",
+        "MerchOps.html"
+      ],
+      "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
+      "consumerPolicy": "MerchOps displays and routes this setting but performs no full backup, restore, seed, or write.",
       "resources": {
         "primaryLocalStorage": "oneapp_cloud_sync_url_v1",
         "legacyLocalStorage": "merchCloudUrl_v870"
+      }
+    },
+    {
+      "id": "merchops-work-view-state",
+      "owner": "merchops",
+      "consumers": [
+        "MerchOps.html"
+      ],
+      "schemaVersion": "MERCHOPS_WORK_VIEW_STATE_V1",
+      "writerPolicy": "Additive MerchOps-only current-work selection. It must not replace or mutate Settings-owned table-view configuration.",
+      "resources": {
+        "localStorage": [
+          "merchops_work_view_state_v1"
+        ]
       }
     }
   ],

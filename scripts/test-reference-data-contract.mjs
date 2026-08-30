@@ -133,9 +133,13 @@ assert.equal(customerRequestContract.resources.inboxKey, 'referenceChangeRequest
 
 const allowedWriterFiles = new Set(productContract.legacyWriterAllowlist);
 assert.deepEqual([...allowedWriterFiles].sort(), [
-  'Item_manager.html', 'Master.html', 'MerchOps.html', 'SmartParser.html', 'coreEngine.js',
+  'Item_manager.html', 'Master.html', 'SmartParser.html', 'coreEngine.js',
   'export_center.html', 'masterAddUpdate.js', 'settings.html',
 ].sort());
+assert.equal(productContract.readAdapterVersion, 'ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1');
+assert.equal(productContract.commandAdapter, 'ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1');
+assert.equal(productContract.commandSchemaVersion, 'MERCHOPS_REVIEWED_WORK_APPLY_V1');
+assert.equal(productContract.resources.commandAdapterAsset, 'reference-data/product-master-command-adapter.js');
 
 async function sourceFiles(directory = root) {
   const rows = [];
@@ -156,6 +160,16 @@ for (const path of await sourceFiles()) {
   }
 }
 for (const path of detectedWriters) {
+  if (path === 'MerchOps.html') {
+    const merchOpsSource = await readFile(join(root, path), 'utf8');
+    const businessSource = merchOpsSource.slice(merchOpsSource.indexOf('const useMerchConfig ='));
+    assert.doesNotMatch(
+      businessSource,
+      /commitMasterStateOrThrow|replaceMasterState\s*=|master_products[^\n]{0,160}readwrite/,
+      'MerchOps business workflows must not retain a direct product writer',
+    );
+    continue;
+  }
   assert.ok(allowedWriterFiles.has(path), `new cross-app product writer is not allowlisted: ${path}`);
 }
 assert.equal(detectedWriters.some((path) => path.startsWith('smartinput/')), false, 'SmartInput consumer/UI must remain outside this change');
