@@ -152,4 +152,20 @@ assert.match(source, /onRestoreWorkScreenState\(snapshot\.screenState \|\| \{\},
 assert.match(source, /setFiles\(\{ prev: null, in: null, out: null, end: null \}\)/);
 assert.doesNotMatch(source, /restoreWorkState\(\{ silent: true \}\)/, "saved work must not silently replace the current screen on load");
 
+const screenAutosaveStart = source.indexOf("const scheduleWorkScreenAutosave = useCallback");
+const screenAutosaveEnd = source.indexOf("const activeIssueModeRef", screenAutosaveStart);
+assert.ok(screenAutosaveStart >= 0 && screenAutosaveEnd > screenAutosaveStart, "screen autosave debounce must exist");
+const screenAutosaveSource = source.slice(screenAutosaveStart, screenAutosaveEnd);
+assert.match(screenAutosaveSource, /clearTimeout\(workScreenAutosaveTimerRef\.current\)/);
+assert.match(screenAutosaveSource, /setTimeout\(\(\) => \{[\s\S]*setWorkScreenRevision\(revision => revision \+ 1\)[\s\S]*\}, 200\)/);
+assert.match(source, /screenRevision:\s*workScreenRevision/);
+const focusHandlerStart = source.indexOf("const handleFocusInput = useCallback");
+const focusHandlerEnd = source.indexOf("const handleRunAnalysis = useCallback", focusHandlerStart);
+assert.ok(focusHandlerStart >= 0 && focusHandlerEnd > focusHandlerStart);
+assert.match(source.slice(focusHandlerStart, focusHandlerEnd), /focusedInputRef\.current = \{ key: focusKey, idx \};\s*scheduleWorkScreenAutosave\(\)/, "pure row focus changes must refresh autosave");
+const scrollHandlerStart = source.indexOf("const onScroll = () => {");
+const scrollHandlerEnd = source.indexOf("container.addEventListener('wheel'", scrollHandlerStart);
+assert.ok(scrollHandlerStart >= 0 && scrollHandlerEnd > scrollHandlerStart);
+assert.match(source.slice(scrollHandlerStart, scrollHandlerEnd), /workScrollTopRef\.current = container\.scrollTop;\s*scheduleWorkScreenAutosave\(\)/, "scroll-end state must refresh autosave");
+
 console.log("PASS test-dataops-work-recovery");
