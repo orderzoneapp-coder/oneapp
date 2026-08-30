@@ -145,6 +145,7 @@ const state = {
   selectedRowIds: new Set(),
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
+  linkedWriteTimer: null,
   draftDirty: false,
   autosaveAvailable: false,
   autosaveUpdatedAt: '',
@@ -161,6 +162,7 @@ const state = {
   columnDrag: null,
   gridPasteUndo: null,
   applyingGridPaste: false
+  ,estimateDragSuppressed: false
   ,purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' }
   ,saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
@@ -175,6 +177,52 @@ const ACTIVITY_LABELS = {
 };
 
 const DEFAULT_INPUT_ROW_ID = '__SMARTINPUT_DEFAULT_ROW__';
+
+const MEANINGFUL_ROW_FIELDS = Object.freeze([
+  'productId', 'masterProductId', 'itemCode', 'itemName', 'secondaryName', 'searchInfo',
+  'unregisteredProductQuery', 'specification', 'boxQuantity', 'quantity', 'unit', 'unitPrice',
+  'sourceUnitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice',
+  'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
+  'memo', 'description', 'rowCustomerCode', 'rowCustomerId', 'rowCustomerName',
+  'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName', 'billingCustomerId',
+  'billingCustomerCode', 'billingCustomerName', 'supplierCustomerId', 'supplierCustomerCode',
+  'supplierCustomerName', 'salesCustomerId', 'salesCustomerCode', 'salesCustomerName',
+  'rowVoucherDate', 'rowDeliveryDate', 'rowWarehouseId', 'rowWarehouseCode', 'rowVoucherNo'
+]);
+
+function hasEnteredValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return Boolean(value.trim());
+  if (typeof value === 'number') return Number.isFinite(value);
+  return Boolean(value);
+}
+
+function rowHasMeaningfulInput(row = {}) {
+  return MEANINGFUL_ROW_FIELDS.some(field => hasEnteredValue(row[field]))
+    || hasEnteredValue(row.rawText)
+    || Object.values(row.customValues || {}).some(hasEnteredValue);
+}
+
+function rowHasLinkedSource(row = {}) {
+  return Boolean(row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId));
+}
+
+function compactRowBlankValues(row) {
+  if (!row?.customValues || typeof row.customValues !== 'object') return row;
+  row.customValues = Object.fromEntries(Object.entries(row.customValues).filter(([, value]) => hasEnteredValue(value)));
+  return row;
+}
+
+function pruneEmptyWorkRows(current) {
+  if (!current?.rows) return false;
+  const before = current.rows.length;
+  current.rows = current.rows.filter(rowHasMeaningfulInput).map(compactRowBlankValues);
+  return before !== current.rows.length;
+}
+
+function manualLinkedRows(rows = []) {
+  return rows.filter(row => !rowHasLinkedSource(row) && rowHasMeaningfulInput(row));
+}
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -279,6 +327,7 @@ function queueAutosaveSnapshot(draft) {
 
 function saveDraftNow({ writeAutosave = true } = {}) {
   clearTimeout(state.saveTimer);
+  Object.values(state.draft.modes || {}).forEach(pruneEmptyWorkRows);
   if (state.draft.activeMode !== 'estimate') {
     modeDraft().voucherGroups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header)
       .map(({ rows, ...group }) => group);
@@ -306,6 +355,7 @@ function saveDraftNow({ writeAutosave = true } = {}) {
 function scheduleSave() {
   state.draftDirty = true;
   setSaveState('자동저장 중…', 'saving');
+  queueLinkedRowsWriteThrough();
   clearTimeout(state.saveTimer);
   state.saveTimer = window.setTimeout(saveDraftNow, 160);
 }
@@ -491,10 +541,10 @@ function renderReferenceDomain(domain) {
 
 function renderReferenceControls() {
   $('analyzeButton').disabled = state.busy;
-  $('customerSearchButton').disabled = state.busy;
+  $('customerSearchButton').disabled = state.busy || ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(modeDraft().estimateKind);
   $('estimateNoticeButton').disabled = state.busy;
   $('estimateExcelButton').disabled = state.busy;
-  $('catalogComposeButton').disabled = state.busy || !state.noticeEstimateIds.length;
+  $('linkedEstimateGroupButton').disabled = state.busy || state.noticeEstimateIds.length < 2;
   updateAutosaveButton();
   refreshReferenceAggregate();
   renderReferenceDomain('product');
@@ -507,8 +557,6 @@ function renderReferenceControls() {
     pendingApply.hidden = count === 0;
     pendingApply.textContent = count ? `현재 작업에 적용 (${count})` : '현재 작업에 적용';
   }
-  const customerRegister = $('customerRegisterLink');
-  if (customerRegister) customerRegister.hidden = Boolean(modeDraft().header.customerId);
 }
 
 function ingestLatestReference(domain, latest, { allowCurrent = false } = {}) {
@@ -792,7 +840,7 @@ function applyColumnWidths() {
 }
 
 function updateTableWidth(visibleColumns) {
-  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 38);
+  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 84);
   document.querySelector('#tableScroll table')?.style.setProperty('--table-render-width', `${total}px`);
 }
 
@@ -973,6 +1021,11 @@ function applyFormLayout() {
   renderCustomLayoutFields();
   applyVoucherColumnOrder();
   const headerFields = new Set(headerFieldsForMode());
+  if (state.draft.activeMode === 'estimate') {
+    headerFields.add('deliveryDate');
+    headerFields.delete('warehouse');
+    headerFields.delete('transactionType');
+  }
   document.querySelectorAll('[data-header-field]').forEach(element => {
     element.hidden = !headerFields.has(element.dataset.headerField);
   });
@@ -993,7 +1046,7 @@ function applyFormLayout() {
     .map(element => element.dataset.column);
   applyColumnWidths();
   updateTableWidth(visibleColumnIds);
-  inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 2));
+  inputRows.querySelector('.empty-row td')?.setAttribute('colspan', String(visibleColumns + 3));
   $('detailColumnsButton').hidden = !photoActive;
   $('detailColumnsButton').textContent = state.photoView.detailColumns ? '기본 열' : '상세 열';
   $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
@@ -1607,13 +1660,7 @@ async function chooseCustomer() {
             <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerIdentityLabel(customerItem))}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
             <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${hasRelationship ? `<span>관계 ${group.memberCustomerIds.length}</span>` : ''}${isDelivery ? '<span class="is-delivery">배송처</span>' : ''}${isTax ? '<span class="is-tax">세무거래처</span>' : ''}${linkMode ? `<label class="smart-tax-role ${isTemporary ? 'is-disabled' : ''}"><input type="radio" name="taxCustomerRole" value="${esc(customerItem.customerId)}" ${selectedTaxCustomerId === customerItem.customerId ? 'checked' : ''} ${isTemporary ? 'disabled' : ''}><span>세무</span></label>` : ''}</div>
           </article>`;
-        }).join('') || `<div class="smart-dialog__empty"><strong>${esc(emptyState)}</strong><a class="owner-register-link" data-customer-owner-register href="${ownerAppHref('customer')}" target="_blank" rel="noopener">거래처관리에서 등록</a></div>`;
-        results.querySelector('[data-customer-owner-register]')?.addEventListener('click', () => {
-          const name = input.value.trim() || $('customerInput').value.trim();
-          void queueOwnerRegistration('customer', { customerName: name }, {
-            idempotencyKey: `${modeDraft().documentId}:CUSTOMER_CREATE:${normalizedKey(name) || 'EMPTY'}`
-          });
-        });
+        }).join('') || `<div class="smart-dialog__empty"><strong>${esc(emptyState)}</strong></div>`;
         results.querySelectorAll('.smart-customer-row').forEach(row => {
           const customerId = row.dataset.customerId;
           row.querySelector('input[type="checkbox"]')?.addEventListener('change', event => {
@@ -2134,6 +2181,12 @@ function estimateTitle(record) {
   return String(record?.catalogName || '').trim() || catalogCustomerName(record) || '견적서명 미지정';
 }
 
+function formatEstimateDate(value) {
+  const timestamp = Date.parse(value || '');
+  if (!Number.isFinite(timestamp)) return '—';
+  return new Intl.DateTimeFormat('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).format(timestamp);
+}
+
 function catalogCustomerId(record) {
   return String(record?.customerId || record?.draft?.header?.customerId || '').trim();
 }
@@ -2158,9 +2211,21 @@ function availableCatalogs() {
   return normalizeEstimateOrder();
 }
 
+function individualEstimateRecords() {
+  return availableCatalogs().filter(record => record.estimateKind !== 'LINKED_GROUP');
+}
+
+function linkedEstimateRecords() {
+  return availableCatalogs().filter(record => record.estimateKind === 'LINKED_GROUP');
+}
+
+function individualEstimateLinkCount(estimateId) {
+  return linkedEstimateRecords().filter(group => (group.linkedEstimateSources || []).some(source => source.estimateId === estimateId)).length;
+}
+
 function selectedEstimateRecords() {
   const selectedIds = new Set(state.noticeEstimateIds);
-  return availableCatalogs().filter(record => selectedIds.has(record.estimateId));
+  return individualEstimateRecords().filter(record => selectedIds.has(record.estimateId));
 }
 
 function estimateRecordRows(record) {
@@ -2198,6 +2263,86 @@ function combinedEstimateRows(records = selectedEstimateRecords()) {
   return rows;
 }
 
+function materializeLinkedEstimateRows(records = selectedEstimateRecords()) {
+  const uniqueRows = new Map();
+  records.forEach(record => (record?.draft?.rows || []).forEach(sourceRow => {
+    const key = estimateProductKey(sourceRow);
+    if (!key) return;
+    const ref = { estimateId: record.estimateId, estimateName: estimateTitle(record), rowId: sourceRow.rowId };
+    const existing = uniqueRows.get(key);
+    if (existing) {
+      existing.linkedSourceRefs.push(ref);
+      existing.linkedSourceEstimateIds.push(record.estimateId);
+      existing.linkedSourceEstimateName = `${existing.linkedSourceRefs.length}개 견적서`;
+      return;
+    }
+    uniqueRows.set(key, contract.normalizeRow({
+      ...sourceRow,
+      rowId: `LINKED:${record.estimateId}:${sourceRow.rowId}`,
+      linkedSourceEstimateId: record.estimateId,
+      linkedSourceEstimateName: estimateTitle(record),
+      linkedSourceRowId: sourceRow.rowId,
+      linkedSourceEstimateIds: [record.estimateId],
+      linkedSourceRefs: [ref],
+      inputOwnership: 'SOURCE'
+    }));
+  }));
+  return [...uniqueRows.values()];
+}
+
+async function flushLinkedRowsToSources() {
+  clearTimeout(state.linkedWriteTimer);
+  state.linkedWriteTimer = null;
+  const current = modeDraft();
+  if (state.draft.activeMode !== 'estimate' || !['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(current.estimateKind)) return;
+  const changedRecords = new Map();
+  current.rows.forEach(linkedRow => {
+    const refs = linkedRow.linkedSourceRefs?.length ? linkedRow.linkedSourceRefs : [{ estimateId: linkedRow.linkedSourceEstimateId, rowId: linkedRow.linkedSourceRowId }];
+    refs.forEach(ref => {
+      if (!ref.estimateId || !ref.rowId) return;
+      const record = changedRecords.get(ref.estimateId)
+        || state.estimates.find(item => item.estimateId === ref.estimateId && item.estimateKind !== 'LINKED_GROUP');
+      if (!record?.draft?.rows) return;
+      const sourceIndex = record.draft.rows.findIndex(row => row.rowId === ref.rowId);
+      if (sourceIndex < 0) return;
+      const sourceRow = record.draft.rows[sourceIndex];
+      record.draft.rows[sourceIndex] = contract.normalizeRow({
+        ...sourceRow,
+        ...linkedRow,
+        rowId: sourceRow.rowId,
+        linkedSourceEstimateId: '', linkedSourceEstimateName: '', linkedSourceRowId: '', linkedSourceEstimateIds: [], linkedSourceRefs: []
+      });
+      changedRecords.set(record.estimateId, record);
+    });
+  });
+  if (!changedRecords.size) return;
+  const timestamp = new Date().toISOString();
+  for (const record of changedRecords.values()) {
+    const summary = contract.summarizeRows(record.draft.rows);
+    record.rowCount = summary.total;
+    record.amount = summary.amount;
+    record.updatedAt = timestamp;
+    record.draft.updatedAt = timestamp;
+    await saveEstimate(record);
+  }
+  current.linkedEstimateSources = (current.linkedEstimateSources || []).map(source => (
+    changedRecords.has(source.estimateId) ? { ...source, updatedAt: timestamp } : source
+  ));
+  state.estimates = normalizeEstimateOrder(state.estimates.map(record => changedRecords.get(record.estimateId) || record));
+}
+
+function queueLinkedRowsWriteThrough() {
+  const current = state.draft?.modes?.[state.draft.activeMode];
+  if (state.draft.activeMode !== 'estimate' || !['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(current?.estimateKind)) return;
+  clearTimeout(state.linkedWriteTimer);
+  state.linkedWriteTimer = window.setTimeout(() => {
+    flushLinkedRowsToSources().catch(error => {
+      setAppStatus('연동 견적서의 원본 반영에 실패했습니다. 현재 입력은 자동저장에 유지됩니다.', 'warn');
+      toast(error.message || '연동 원본 반영에 실패했습니다.', 'error');
+    });
+  }, 220);
+}
+
 function closeCatalogPicker() {
   const menu = $('catalogPickerMenu');
   if (menu.matches(':popover-open')) menu.hidePopover();
@@ -2208,7 +2353,7 @@ function positionCatalogPicker() {
   const button = $('catalogPickerButton');
   const menu = $('catalogPickerMenu');
   const bounds = button.getBoundingClientRect();
-  const width = Math.min(470, window.innerWidth - 24);
+  const width = Math.min(520, window.innerWidth - 24);
   const left = Math.max(12, Math.min(window.innerWidth - width - 12, bounds.right - width));
   const roomBelow = window.innerHeight - bounds.bottom - 12;
   menu.style.left = `${Math.round(left)}px`;
@@ -2228,46 +2373,93 @@ function toggleCatalogPicker() {
 function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   $('catalogFilter').hidden = !visible;
-  $('catalogNewButton').hidden = !visible;
+  $('catalogComposeArea').hidden = !visible;
+  $('savedVoucherHeading').hidden = !visible;
   if (!visible) {
     closeCatalogPicker();
+    $('catalogPickerList').innerHTML = '<div class="smart-dialog__empty">견적서 모드에서 개별 견적서를 관리합니다.</div>';
+    $('linkedEstimateList').innerHTML = '';
     return;
   }
   const current = modeDraft();
   state.estimates = normalizeEstimateOrder();
-  const records = availableCatalogs();
+  const records = individualEstimateRecords();
+  const linkedRecords = linkedEstimateRecords();
   const availableIds = new Set(records.map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
-  const currentRecord = records.find(record => record.estimateId === current.catalogRecordId);
   const selectedCount = state.noticeEstimateIds.length;
-  $('catalogPickerButton').textContent = currentRecord
-    ? `${estimateTitle(currentRecord)} · 선택 ${selectedCount}`
-    : `견적서 선택 · 선택 ${selectedCount}`;
+  const currentRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
+  $('catalogPickerButton').textContent = currentRecord?.estimateKind === 'LINKED_GROUP'
+    ? `${estimateTitle(currentRecord)} · 연동 ${currentRecord.linkedEstimateSources?.length || 0}`
+    : '연동견적서 선택';
   $('catalogPickerList').innerHTML = records.length ? records.map(record => `
-    <div class="catalog-picker__row ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" data-estimate-id="${esc(record.estimateId)}">
-      <button class="catalog-picker__load" type="button" data-load-estimate title="${esc(estimateTitle(record))}">${esc(estimateTitle(record))}</button>
-      <label class="catalog-picker__output"><input type="checkbox" data-output-estimate aria-label="${esc(estimateTitle(record))} 선택" ${state.noticeEstimateIds.includes(record.estimateId) ? 'checked' : ''}><span>선택</span></label>
+    <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''} ${state.noticeEstimateIds.includes(record.estimateId) ? 'is-selected' : ''}" draggable="true" data-estimate-kind="INDIVIDUAL" data-estimate-id="${esc(record.estimateId)}">
+      <button class="catalog-picker__load" type="button" data-load-estimate title="${esc(estimateTitle(record))}"><strong>${esc(estimateTitle(record))}${individualEstimateLinkCount(record.estimateId) ? `<em class="linked-estimate-badge">연동 ${individualEstimateLinkCount(record.estimateId)}</em>` : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+      <span class="estimate-card__selection">${state.noticeEstimateIds.includes(record.estimateId) ? '선택됨' : '터치'}</span>
       <button class="catalog-picker__edit" type="button" data-edit-estimate>편집</button>
     </div>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
-  $('catalogComposeButton').disabled = !selectedCount;
+  $('linkedEstimateList').innerHTML = linkedRecords.length ? linkedRecords.map(record => `
+    <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" draggable="true" data-estimate-kind="LINKED_GROUP" data-linked-estimate-id="${esc(record.estimateId)}">
+      <button class="catalog-picker__load" type="button" data-load-linked-estimate title="${esc(estimateTitle(record))}"><strong>${esc(estimateTitle(record))}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+      <span class="linked-estimate-badge">연동 ${record.linkedEstimateSources?.length || 0}</span>
+      <button class="catalog-picker__edit" type="button" data-edit-linked-estimate>관리</button>
+    </div>`).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
+  $('linkedEstimateGroupButton').disabled = selectedCount < 2;
 }
 
-function composeSelectedEstimates() {
+function createLinkedEstimateDraft() {
   const records = selectedEstimateRecords();
-  if (!records.length) return toast('상품을 불러올 견적서를 선택하세요.', 'error');
-  const rows = combinedEstimateRows(records);
-  if (!rows.length) return toast('선택한 견적서에 불러올 상품이 없습니다.', 'error');
-  closeCatalogPicker();
-  startNewCatalog();
+  if (records.length < 2) return toast('연동할 개별 견적서를 2개 이상 선택하세요.', 'error');
   const current = modeDraft();
+  const rows = [...materializeLinkedEstimateRows(records), ...manualLinkedRows(current.rows)];
+  if (!rows.length) return toast('선택한 견적서에 연동할 상품이 없습니다.', 'error');
+  closeCatalogPicker();
   current.rows = rows;
   current.catalogRecordId = '';
   current.catalogBaselinePrices = {};
   current.catalogPreviousPrices = {};
+  current.estimateKind = 'LINKED_GROUP';
+  current.linkedEstimateSources = records.map(record => ({
+    estimateId: record.estimateId,
+    catalogName: estimateTitle(record),
+    updatedAt: record.updatedAt || ''
+  }));
+  current.header.customerId = '';
+  current.header.customerCode = '';
+  current.header.customerName = '';
   current.delivery = { status: 'PENDING', targetId: '', targetRecordId: '', deliveredAt: '' };
   saveDraftNow();
   renderMode();
-  toast(`${records.length}개 견적서에서 중복을 제외한 ${rows.length}개 상품을 불러왔습니다.`, 'success');
+  openEstimateSaveDialog();
+}
+
+function previewSelectedEstimates() {
+  const records = selectedEstimateRecords();
+  const activeEstimate = modeDraft();
+  const retainedManualRows = ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(activeEstimate.estimateKind)
+    ? manualLinkedRows(activeEstimate.rows)
+    : [];
+  if (!records.length) {
+    const fallback = contract.createDraft().modes.estimate;
+    fallback.activeMethod = 'direct';
+    fallback.rows = retainedManualRows;
+    state.draft.modes.estimate = fallback;
+    saveDraftNow();
+    renderMode();
+    return;
+  }
+  const fallback = contract.createDraft().modes.estimate;
+  fallback.activeMethod = 'direct';
+  fallback.estimateKind = 'COMPOSITION_PREVIEW';
+  fallback.linkedEstimateSources = records.map(record => ({ estimateId: record.estimateId, catalogName: estimateTitle(record), updatedAt: record.updatedAt || '' }));
+  fallback.rows = [...materializeLinkedEstimateRows(records), ...retainedManualRows];
+  if (records.length === 1) fallback.header = { ...fallback.header, ...(records[0].draft?.header || {}), submittedAt: '' };
+  else clearCustomerAfterSave(fallback.header);
+  state.draft.modes.estimate = fallback;
+  state.selectedRowIds.clear();
+  saveDraftNow();
+  renderMode();
+  toast(`${records.length}개 견적서 · 중복 제거 ${fallback.rows.length}개 상품을 표시합니다.`, 'success');
 }
 
 async function persistEstimateLibrary(records = state.estimates) {
@@ -2275,20 +2467,71 @@ async function persistEstimateLibrary(records = state.estimates) {
   await Promise.all(state.estimates.map(record => saveEstimate(record)));
 }
 
+function estimateCardId(card) {
+  return card?.dataset.estimateId || card?.dataset.linkedEstimateId || '';
+}
+
+function beginEstimateCardDrag(event) {
+  const card = event.target.closest('.estimate-card');
+  if (!card || event.target.closest('input, [data-edit-estimate], [data-edit-linked-estimate]')) return event.preventDefault();
+  const payload = { estimateId: estimateCardId(card), kind: card.dataset.estimateKind };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('application/json', JSON.stringify(payload));
+  card.classList.add('is-dragging');
+}
+
+function moveEstimateCardDrag(event) {
+  const card = event.target.closest('.estimate-card');
+  if (!card || card.classList.contains('is-dragging')) return;
+  event.preventDefault();
+  state.estimateDragSuppressed = true;
+  event.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.estimate-card.is-drop-target').forEach(item => item.classList.remove('is-drop-target'));
+  card.classList.add('is-drop-target');
+}
+
+async function finishEstimateCardDrop(event) {
+  const target = event.target.closest('.estimate-card');
+  if (!target) return;
+  event.preventDefault();
+  let payload;
+  try { payload = JSON.parse(event.dataTransfer.getData('application/json')); } catch (_) { return; }
+  const targetId = estimateCardId(target);
+  if (!payload?.estimateId || payload.estimateId === targetId || payload.kind !== target.dataset.estimateKind) return;
+  const sourceRecords = payload.kind === 'LINKED_GROUP' ? linkedEstimateRecords() : individualEstimateRecords();
+  const from = sourceRecords.findIndex(record => record.estimateId === payload.estimateId);
+  const to = sourceRecords.findIndex(record => record.estimateId === targetId);
+  if (from < 0 || to < 0) return;
+  const reordered = [...sourceRecords];
+  const [moved] = reordered.splice(from, 1);
+  reordered.splice(to, 0, moved);
+  const next = payload.kind === 'LINKED_GROUP'
+    ? [...individualEstimateRecords(), ...reordered]
+    : [...reordered, ...linkedEstimateRecords()];
+  await persistEstimateLibrary(next);
+  renderCatalogControls();
+  toast('견적서 카드 순서를 변경했습니다.', 'success');
+}
+
+function clearEstimateCardDrag() {
+  document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
+  window.setTimeout(() => { state.estimateDragSuppressed = false; }, 80);
+}
+
 function openEstimateManageDialog(record) {
   if (!record) return;
   closeCatalogPicker();
-  const records = availableCatalogs();
-  const currentPosition = Math.max(1, records.findIndex(item => item.estimateId === record.estimateId) + 1);
+  const currentMembers = new Set((record.linkedEstimateSources || []).map(source => source.estimateId));
+  const memberEditor = record.estimateKind === 'LINKED_GROUP' ? `<fieldset class="linked-member-editor"><legend>연결된 개별 견적서</legend>${individualEstimateRecords().map(item => `<label><input type="checkbox" data-linked-member value="${esc(item.estimateId)}" ${currentMembers.has(item.estimateId) ? 'checked' : ''}><span>${esc(estimateTitle(item))}</span></label>`).join('')}</fieldset>` : '';
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-manage-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Estimate Library</small><h2>견적서 관리</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">견적서명과 목록 순서를 변경하거나 견적서를 삭제합니다.</div>
+    <div class="smart-dialog__message">${record.estimateKind === 'LINKED_GROUP' ? '연동견적서명과 연결된 개별 견적서를 관리합니다. 목록 순서는 카드를 직접 끌어서 바꿉니다.' : '견적서명을 변경하거나 삭제합니다. 목록 순서는 카드를 직접 끌어서 바꿉니다.'}</div>
     <div class="estimate-dialog-form">
       <label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(estimateTitle(record))}"></label>
-      <label><span>정렬 위치</span><select data-estimate-position>${records.map((_, index) => `<option value="${index + 1}" ${index + 1 === currentPosition ? 'selected' : ''}>${index + 1}번째</option>`).join('')}</select></label>
     </div>
+    ${memberEditor}
     <footer><button type="button" class="button button--danger" data-delete-estimate>삭제</button><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save-estimate>저장</button></footer>
   </div>`;
   document.body.append(dialog);
@@ -2301,20 +2544,36 @@ function openEstimateManageDialog(record) {
       dialog.querySelector('[data-estimate-name]').focus();
       return toast('견적서명을 입력하세요.', 'error');
     }
-    const targetPosition = Math.max(1, Math.min(records.length, Number(dialog.querySelector('[data-estimate-position]').value) || currentPosition));
-    const updatedRecord = { ...record, catalogName, updatedAt: new Date().toISOString() };
-    const next = state.estimates.filter(item => item.estimateId !== record.estimateId);
-    next.splice(targetPosition - 1, 0, updatedRecord);
+    const selectedMembers = record.estimateKind === 'LINKED_GROUP'
+      ? [...dialog.querySelectorAll('[data-linked-member]:checked')].map(input => state.estimates.find(item => item.estimateId === input.value)).filter(Boolean)
+      : [];
+    if (record.estimateKind === 'LINKED_GROUP' && selectedMembers.length < 2) return toast('연동견적서는 개별 견적서 2개 이상이 필요합니다.', 'error');
+    const linkedEstimateSources = selectedMembers.map(item => ({ estimateId: item.estimateId, catalogName: estimateTitle(item), updatedAt: item.updatedAt || '' }));
+    const updatedRecord = {
+      ...record,
+      catalogName,
+      linkedEstimateSources: record.estimateKind === 'LINKED_GROUP' ? linkedEstimateSources : [],
+      updatedAt: new Date().toISOString(),
+      draft: record.estimateKind === 'LINKED_GROUP'
+        ? JSON.parse(JSON.stringify(createCatalogOnlyDraft({ ...record.draft, estimateKind: 'LINKED_GROUP', linkedEstimateSources, rows: [...materializeLinkedEstimateRows(selectedMembers), ...manualLinkedRows(record.draft?.rows)] }, record.estimateId)))
+        : record.draft
+    };
+    const next = state.estimates.map(item => item.estimateId === record.estimateId ? updatedRecord : item);
     try {
       await persistEstimateLibrary(next);
       finish();
-      renderCatalogControls();
-      toast('견적서명과 순서를 저장했습니다.', 'success');
+      if (modeDraft().catalogRecordId === record.estimateId) loadCatalogRecord(updatedRecord);
+      else renderCatalogControls();
+      toast('견적서 정보를 저장했습니다.', 'success');
     } catch (error) {
       toast(error.message || '견적서 관리를 저장하지 못했습니다.', 'error');
     }
   });
   dialog.querySelector('[data-delete-estimate]').addEventListener('click', async () => {
+    const linkedBy = linkedEstimateRecords().filter(group => (group.linkedEstimateSources || []).some(source => source.estimateId === record.estimateId));
+    if (record.estimateKind !== 'LINKED_GROUP' && linkedBy.length) {
+      return toast(`${linkedBy.length}개 연동견적서에서 사용 중입니다. 먼저 연동 구성을 변경하세요.`, 'error');
+    }
     if (!window.confirm(`${estimateTitle(record)} 견적서를 삭제하시겠습니까?`)) return;
     try {
       await deleteEstimate(record.estimateId);
@@ -2376,14 +2635,20 @@ function loadCatalogRecord(record) {
   if (!record?.draft) return;
   syncSourceText();
   state.draft.activeMode = 'estimate';
-  const catalogDraft = createCatalogOnlyDraft(record.draft, record.estimateId);
+  const linkedRecords = record.estimateKind === 'LINKED_GROUP'
+    ? (record.linkedEstimateSources || []).map(source => state.estimates.find(item => item.estimateId === source.estimateId)).filter(Boolean)
+    : [];
+  const draftSource = record.estimateKind === 'LINKED_GROUP'
+    ? { ...record.draft, estimateKind: 'LINKED_GROUP', linkedEstimateSources: record.linkedEstimateSources || [], rows: [...materializeLinkedEstimateRows(linkedRecords), ...manualLinkedRows(record.draft?.rows)] }
+    : record.draft;
+  const catalogDraft = createCatalogOnlyDraft(draftSource, record.estimateId);
   catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
   catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
     ? { ...record.previousPrices }
     : { ...(catalogDraft.catalogPreviousPrices || {}) };
-  const linkedCustomer = customerById(catalogCustomerId(record));
-  catalogDraft.header.customerId = linkedCustomer?.customerId || catalogCustomerId(record);
-  catalogDraft.header.customerName = customerName(linkedCustomer) || catalogCustomerName(record);
+  const linkedCustomer = record.estimateKind === 'LINKED_GROUP' ? null : customerById(catalogCustomerId(record));
+  catalogDraft.header.customerId = linkedCustomer?.customerId || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record));
+  catalogDraft.header.customerName = customerName(linkedCustomer) || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record));
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
   state.sourceImages.estimate = null;
@@ -2398,10 +2663,14 @@ function loadCatalogRecord(record) {
   resetPhotoView();
   saveDraftNow();
   renderMode();
-  if (catalogDraft.header.customerId) {
+  if (record.estimateKind === 'LINKED_GROUP') {
+    $('customerHint').textContent = '연동견적서는 각 개별 견적서의 거래처를 유지합니다.';
+  } else if (catalogDraft.header.customerId) {
     $('customerHint').textContent = '견적서에 연결된 배송 거래처가 자동 지정되었습니다.';
   }
-  toast(`${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
+  toast(record.estimateKind === 'LINKED_GROUP'
+    ? `${estimateTitle(record)} 연동견적서를 불러왔습니다.`
+    : `${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
 }
 
 function startNewCatalog() {
@@ -2411,6 +2680,8 @@ function startNewCatalog() {
   fallback.activeMethod = 'direct';
   fallback.catalogBaselinePrices = {};
   fallback.catalogPreviousPrices = {};
+  fallback.estimateKind = 'INDIVIDUAL';
+  fallback.linkedEstimateSources = [];
   state.draft.modes.estimate = fallback;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
@@ -2532,18 +2803,38 @@ function syncRowSelectionControls() {
   $('deleteSelectedRows').disabled = !selectedCount;
 }
 
-function deleteSelectedGridRows() {
+async function deleteSelectedGridRows() {
   if (!state.selectedRowIds.size) return;
   invalidateGridPasteUndo();
+  const linkedRows = modeDraft().rows.filter(row => state.selectedRowIds.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
+  if (linkedRows.length) {
+    const removals = new Map();
+    linkedRows.forEach(row => (row.linkedSourceRefs?.length ? row.linkedSourceRefs : [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }]).forEach(ref => {
+      removals.set(ref.estimateId, new Set([...(removals.get(ref.estimateId) || []), ref.rowId]));
+    }));
+    const timestamp = new Date().toISOString();
+    for (const [estimateId, rowIds] of removals) {
+      const record = state.estimates.find(item => item.estimateId === estimateId && item.estimateKind !== 'LINKED_GROUP');
+      if (!record?.draft?.rows) continue;
+      record.draft.rows = record.draft.rows.filter(row => !rowIds.has(row.rowId));
+      const summary = contract.summarizeRows(record.draft.rows);
+      record.rowCount = summary.total;
+      record.amount = summary.amount;
+      record.updatedAt = timestamp;
+      record.draft.updatedAt = timestamp;
+      await saveEstimate(record);
+    }
+  }
   modeDraft().rows = modeDraft().rows.filter(row => !state.selectedRowIds.has(row.rowId));
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   state.selectedRowIds.clear();
   renderRows();
   saveDraftNow();
-  toast('선택한 품목을 삭제했습니다.', 'success');
+  toast(linkedRows.length ? '선택한 연동 행을 원본 견적서에서도 삭제했습니다.' : '선택한 품목을 삭제했습니다.', 'success');
 }
 
 function renderRows({ restoreFocus = true } = {}) {
+  pruneEmptyWorkRows(modeDraft());
   const rows = modeDraft().rows;
   const visibleRows = filterVoucherRows(rows, state.gridSearch);
   const defaultRow = {
@@ -2554,15 +2845,16 @@ function renderRows({ restoreFocus = true } = {}) {
     memo: '', description: '', noticePrice: '', customValues: {}, duplicatePossible: false,
     matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
   };
-  const displayedRows = rows.length ? rows : [defaultRow];
-  const renderedRows = rows.length ? visibleRows : displayedRows;
+  const renderedRows = [...visibleRows, defaultRow];
   inputRows.innerHTML = renderedRows.map(row => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
+    const sequence = isDefault ? rows.length + 1 : Math.max(1, rows.findIndex(item => item.rowId === row.rowId) + 1);
     const orderQProductMismatch = row.sourceType === 'ORDER_Q' && (
       (row.metaProductId && row.productId && row.metaProductId !== row.productId)
       || (row.metaProductCode && row.itemCode && row.metaProductCode.toUpperCase() !== row.itemCode.toUpperCase())
     );
-    const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
+    const hasAmountInputs = hasEnteredValue(row.quantity) && hasEnteredValue(row.unitPrice);
+    const amount = hasAmountInputs ? Number(row.quantity) * Number(row.unitPrice) : null;
     const productCells = optionalProductFields().map(field => {
       const excelNumber = field.valueType === 'NUMBER' && ['PRICE', 'COST'].includes(field.group);
       const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
@@ -2573,21 +2865,22 @@ function renderRows({ restoreFocus = true } = {}) {
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
+      <td class="row-sequence-cell">${sequence}</td>
       <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
-      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="search" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
-      <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
-      <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
+      <td data-column="itemCode"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
       <td data-column="quantity"><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
       <td data-column="unit"><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
       <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(row.sourceUnitPrice ?? row.unitPrice ?? '')}" aria-label="단가"></td>
-      <td data-column="supplyAmount"><input data-supply-amount value="${amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
+      <td data-column="supplyAmount"><input data-supply-amount value="${amount === null ? '' : amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
       <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
       <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
-      <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
+      <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${row.noticePrice === 0 && !row.editedFields?.noticePrice ? '' : esc(row.noticePrice ?? '')}" aria-label="공지단가"></td>
       ${productCells}
       ${customCells}
-      <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
+      <td data-column="status"><div class="row-status">${row.linkedSourceEstimateId ? `<em class="linked-row-badge" title="${esc(row.linkedSourceEstimateName)} 원본과 양방향 연동">연동 · ${esc(row.linkedSourceEstimateName)}</em>` : ''}<span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
     </tr>`;
   }).join('');
   syncRowSelectionControls();
@@ -2651,15 +2944,10 @@ function renderDelivery() {
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
-  $('completeButton').disabled = state.busy;
+  $('completeButton').disabled = state.busy || modeDraft().estimateKind === 'COMPOSITION_PREVIEW';
   $('completeButton').hidden = false;
-  $('completeButton').textContent = '완료';
+  $('completeButton').textContent = '저장';
   updateAutosaveButton();
-  if (visibleDelivery?.targetRecordId) {
-    document.querySelector('#orderLinks a:first-child').href = `../orderq/index.html?focus=${encodeURIComponent(visibleDelivery.targetRecordId)}&saved=1`;
-  } else {
-    document.querySelector('#orderLinks a:first-child').href = '../orderq/index.html';
-  }
 }
 
 function renderMode() {
@@ -2671,11 +2959,12 @@ function renderMode() {
   });
   $('relatedModeLabel').textContent = selected.label;
   const estimateMode = selected.id === 'estimate';
+  document.querySelector('.header-fields')?.classList.toggle('is-estimate', estimateMode);
   const modeLabels = selected.id === 'purchase'
     ? { customer: '구매처 ', date: '구매일자', warehouse: '입고창고 ' }
     : (selected.id === 'sale'
       ? { customer: '판매처 ', date: '판매일자', warehouse: '출하창고 ' }
-      : { customer: estimateMode ? '거래처명 ' : '배송 거래처 ', date: '배송일자', warehouse: '출하창고 ' });
+      : { customer: estimateMode ? '거래처명 ' : '배송 거래처 ', date: estimateMode ? '견적 작성일' : '배송일자', warehouse: '출하창고 ' });
   $('customerFieldLabel').firstChild.nodeValue = modeLabels.customer;
   document.querySelector('[data-header-field="deliveryDate"] > span').textContent = modeLabels.date;
   const warehouseLabel = document.querySelector('[data-header-field="warehouse"] > span');
@@ -2685,9 +2974,11 @@ function renderMode() {
   $('customerHint').textContent = estimateMode
     ? '견적서는 거래처 없이 저장하고 여러 업체에 공통 발송할 수 있습니다.'
     : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
-  $('orderLinks').hidden = selected.id !== 'order';
-  $('relatedEmpty').hidden = selected.id === 'order';
   $('estimateOutputActions').hidden = selected.id !== 'estimate';
+  const linkedEstimate = estimateMode && ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(modeDraft().estimateKind);
+  $('customerInput').disabled = linkedEstimate;
+  $('addRowButton').disabled = false;
+  $('addRowButton').title = '항상 유지되는 마지막 수기입력 행으로 이동합니다.';
   hydrateHeader();
   $('gridSearchInput').value = state.gridSearch;
   if (removeParserArtifactRows(modeDraft())) scheduleSave();
@@ -2704,13 +2995,13 @@ function renderMode() {
   const relatedOpen = Boolean(state.draft.ui.relatedOpen);
   document.querySelector('.related-panel').classList.toggle('is-open', relatedOpen);
   $('relatedCollapseButton').setAttribute('aria-expanded', String(relatedOpen));
-  $('relatedCollapseButton').textContent = relatedOpen ? '연결 앱 닫기' : '연결 앱 열기';
+  $('relatedCollapseButton').textContent = relatedOpen ? '견적서 목록 닫기' : '견적서 목록 열기';
   if (!referencesReady()) {
     setAppStatus(referenceStatusMessage(), 'warn');
   } else {
     setAppStatus(selected.id === 'order'
       ? '주문서 입력을 시작할 수 있습니다.'
-      : (selected.id === 'estimate' ? '견적서를 선택하거나 새 견적을 작성할 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+      : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 행 수정은 연결된 원본 모두에 반영됩니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
   if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
 }
@@ -2760,9 +3051,38 @@ function appendDirectRow() {
   return current.rows[current.rows.length - 1];
 }
 
-function materializeDefaultRow(tr) {
+function createTrailingDefaultRow(sourceRow) {
+  const trailing = sourceRow.cloneNode(true);
+  trailing.dataset.rowId = DEFAULT_INPUT_ROW_ID;
+  trailing.dataset.defaultRow = 'true';
+  trailing.dataset.status = state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY';
+  trailing.className = '';
+  const sequence = trailing.querySelector('.row-sequence-cell');
+  if (sequence) sequence.textContent = String(modeDraft().rows.length + 1);
+  const selector = trailing.querySelector('[data-select-row]');
+  if (selector) {
+    selector.dataset.selectRow = '';
+    selector.checked = false;
+    selector.disabled = true;
+  }
+  trailing.querySelectorAll('[data-product-search], [data-field], [data-custom-row-field], [data-supply-amount]').forEach(input => {
+    input.value = '';
+    delete input.dataset.matchSubmitted;
+  });
+  const status = trailing.querySelector('.row-status');
+  if (status) status.innerHTML = `<span>${rowStatusText(trailing.dataset.status)}</span>`;
+  return trailing;
+}
+
+function materializeDefaultRow(tr, sourceInput = document.activeElement) {
   if (!tr || tr.dataset.defaultRow !== 'true') return modeDraft().rows.find(row => row.rowId === tr?.dataset.rowId) || null;
   const row = appendDirectRow();
+  const trailing = createTrailingDefaultRow(tr);
+  const activeInput = tr.contains(sourceInput) ? sourceInput : [...tr.querySelectorAll('[data-product-search], [data-field], [data-custom-row-field]')].find(input => hasEnteredValue(input.value));
+  const activeField = gridFieldId(activeInput);
+  if (activeInput?.hasAttribute?.('data-product-search')) row.unregisteredProductQuery = activeInput.value;
+  else if (activeInput?.hasAttribute?.('data-custom-row-field')) row.customValues[activeField] = activeInput.value;
+  else if (activeField) Object.assign(row, contract.markProductEdit(row, activeField, activeInput.value));
   tr.dataset.rowId = row.rowId;
   tr.dataset.status = row.matchStatus;
   delete tr.dataset.defaultRow;
@@ -2773,8 +3093,9 @@ function materializeDefaultRow(tr) {
     selector.dataset.selectRow = row.rowId;
     selector.disabled = false;
   }
-  modeUi().activeCellId = `${row.rowId}|${gridFieldId(document.activeElement) || 'productSearch'}`;
+  modeUi().activeCellId = `${row.rowId}|${gridFieldId(activeInput) || 'productSearch'}`;
   state.draft.ui.selectedRowId = row.rowId;
+  tr.after(trailing);
   syncRowSelectionControls();
   updateSummaries();
   scheduleSave();
@@ -2783,10 +3104,7 @@ function materializeDefaultRow(tr) {
 
 function addDirectRow() {
   invalidateGridPasteUndo();
-  appendDirectRow();
-  renderRows();
-  saveDraftNow();
-  const last = inputRows.querySelector('tr:last-child input[data-product-search]');
+  const last = inputRows.querySelector('tr[data-default-row="true"] input[data-product-search]');
   last?.focus();
 }
 
@@ -2842,11 +3160,9 @@ function focusGridTarget(target) {
   if (!target) return;
   let rowId = target.rowId;
   if (target.append) {
-    const row = appendDirectRow();
-    rowId = row.rowId;
+    rowId = DEFAULT_INPUT_ROW_ID;
     modeUi().activeCellId = `${rowId}|${target.field}`;
-    renderRows();
-    saveDraftNow();
+    gridInput(rowId, target.field)?.focus({ preventScroll: true });
     return;
   }
   modeUi().activeCellId = `${rowId}|${target.field}`;
@@ -2906,7 +3222,7 @@ function visibleGridPasteFields() {
 function applyGridPaste(rawText, startRowId, startFieldId) {
   const current = modeDraft();
   const startRowIndex = startRowId === DEFAULT_INPUT_ROW_ID
-    ? 0
+    ? current.rows.length
     : current.rows.findIndex(row => row.rowId === startRowId);
   if (startRowIndex < 0 || startFieldId === 'productSearch') return false;
   const definitions = gridPasteFieldDefinitions();
@@ -2982,6 +3298,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
       pasteRow.cells.forEach(cell => {
         const definition = definitionById.get(cell.fieldId);
         if (!definition) return;
+        if (!hasEnteredValue(cell.value)) return;
         pastedCellCount += 1;
         if (definition.custom) {
           row.customValues = { ...(row.customValues || {}), [cell.fieldId]: cell.value };
@@ -2995,6 +3312,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
     identityRows.forEach(rowIndex => {
       current.rows[rowIndex] = matchGridPasteRow(current.rows[rowIndex]);
     });
+    pruneEmptyWorkRows(current);
     current.rows = contract.markDuplicatePossibilities(current.rows);
     const firstRow = current.rows[startRowIndex];
     modeUi().activeCellId = firstRow ? `${firstRow.rowId}|${startFieldId}` : '';
@@ -3062,6 +3380,7 @@ function removeParserArtifactRows(current) {
     .filter(batch => batch.sourceType !== 'MANUAL')
     .map(batch => batch.batchId));
   current.rows = (current?.rows || []).filter(row => {
+    if (!rowHasMeaningfulInput(row)) return false;
     if (!parserBatchIds.has(row.batchId)) return true;
     if (row.editedFields?.itemCode || row.editedFields?.itemName) return true;
     return !isParserArtifactLine({ productText: row.itemName, rawText: row.rawText });
@@ -3147,6 +3466,7 @@ function fallbackLines(rawText, batch) {
 }
 
 async function analyzeSource({ automatic = false } = {}) {
+  if (!automatic) clearTimeout(state.autoAnalyzeTimer);
   invalidateGridPasteUndo();
   if (state.busy) {
     if (automatic) scheduleAutoAnalysis(600);
@@ -4322,7 +4642,7 @@ function openEstimateSaveDialog() {
   if (!validateEstimateDocument()) return;
   const current = modeDraft();
   const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
-  const defaultName = loadedRecord ? estimateTitle(loadedRecord) : (current.header.customerName || '새 견적서');
+  const defaultName = loadedRecord ? estimateTitle(loadedRecord) : (current.estimateKind === 'LINKED_GROUP' ? '새 연동견적서' : (current.header.customerName || '새 견적서'));
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-save-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
@@ -4366,6 +4686,7 @@ async function saveEstimateDocument(catalogName) {
   renderDelivery();
   setAppStatus('견적서를 저장하고 있습니다.');
   try {
+    if (current.estimateKind === 'LINKED_GROUP') await flushLinkedRowsToSources();
     const timestamp = new Date().toISOString();
     const loadedRecord = state.estimates.find(item => item.estimateId === current.catalogRecordId);
     const updateLoadedRecord = Boolean(loadedRecord && requestedName === estimateTitle(loadedRecord));
@@ -4383,8 +4704,10 @@ async function saveEstimateDocument(catalogName) {
     const record = {
       estimateId,
       catalogName: requestedName,
-      customerId: current.header.customerId,
-      customerName: current.header.customerName,
+      estimateKind: current.estimateKind === 'LINKED_GROUP' ? 'LINKED_GROUP' : 'INDIVIDUAL',
+      linkedEstimateSources: current.estimateKind === 'LINKED_GROUP' ? current.linkedEstimateSources.map(source => ({ ...source })) : [],
+      customerId: current.estimateKind === 'LINKED_GROUP' ? '' : current.header.customerId,
+      customerName: current.estimateKind === 'LINKED_GROUP' ? '' : current.header.customerName,
       rowCount: summary.total,
       amount: summary.amount,
       previousPrices: priorPrices,
@@ -4397,7 +4720,10 @@ async function saveEstimateDocument(catalogName) {
     state.estimates = normalizeEstimateOrder(updateLoadedRecord
       ? state.estimates.map(item => item.estimateId === estimateId ? record : item)
       : [...state.estimates, record]);
+    clearCustomerAfterSave(current.header);
+    if (current.estimateKind !== 'LINKED_GROUP') current.catalogRecordId = '';
     saveDraftNow();
+    hydrateHeader();
     renderCatalogControls();
     renderDelivery();
     setAppStatus(`${estimateTitle(record)} · ${summary.total}품목 견적 저장 완료`);
@@ -4413,8 +4739,22 @@ async function saveEstimateDocument(catalogName) {
   }
 }
 
+function clearCustomerAfterSave(header) {
+  header.customerId = '';
+  header.customerCode = '';
+  header.customerName = '';
+  header.customerLinkGroupId = '';
+  header.taxCustomerId = '';
+  header.taxCustomerName = '';
+  header.isTemporaryCustomer = false;
+  header.rawOrdererName = '';
+  header.aliasMappingId = '';
+  header.customerMappingSource = '';
+}
+
 async function completeOrder() {
   if (state.draft.activeMode === 'estimate') {
+    if (modeDraft().estimateKind === 'COMPOSITION_PREVIEW') return toast('우측의 연동견적서 생성 버튼을 사용하세요.', 'warn');
     if (!validateEstimateDocument()) return;
     const loadedRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
     const assignedName = String(loadedRecord?.catalogName || '').trim();
@@ -4486,6 +4826,7 @@ async function completeSaleOfficial() {
       return toast(failed[0].error?.message || '판매전표 저장 실패', 'error');
     }
     current.rows = []; current.voucherGroups = [];
+    clearCustomerAfterSave(current.header);
     current.delivery = { status: 'SAVED', targetId: 'official-sale-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
     saveDraftNow(); renderMode(); setAppStatus(`공식 판매전표 ${succeeded.length}건 저장 완료`);
     toast(`판매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
@@ -4534,6 +4875,7 @@ async function completePurchaseOfficial() {
     }
     current.rows = [];
     current.voucherGroups = [];
+    clearCustomerAfterSave(current.header);
     current.delivery = { status: 'SAVED', targetId: 'official-purchase-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
     saveDraftNow();
     renderMode();
@@ -4718,7 +5060,7 @@ async function completeOrderLegacy() {
       setAppStatus('다중 전표 정보를 확인하세요.', 'error');
       return toast(`${errors[0]}을(를) 확인하세요.`, 'error');
     }
-    if (!current.header.taxCustomerId && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
+    if (!current.header.taxCustomerId && !current.header.customerName && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
     state.busy = true;
     renderDelivery();
     setAppStatus(`전표 그룹 ${groups.length}건을 공통 주문서 원장에 저장하고 있습니다.`);
@@ -4746,7 +5088,7 @@ async function completeOrderLegacy() {
     }
     return toast(first.message, 'error');
   }
-  if (!current.header.taxCustomerId && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
+  if (!current.header.taxCustomerId && !current.header.customerName && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
   state.busy = true;
   renderDelivery();
   setAppStatus('공통 주문서 원장에 저장하고 있습니다.');
@@ -4983,13 +5325,6 @@ referenceOverview.addEventListener('toggle', () => {
   referenceOverviewSummary.setAttribute('aria-expanded', String(referenceOverview.open));
   referenceOverviewSummary.setAttribute('aria-label', referenceOverview.open ? '기준정보 상태 닫기' : '기준정보 상태 열기');
 });
-$('customerRegisterLink').addEventListener('click', () => {
-  const customerNameValue = $('customerInput').value.trim() || modeDraft().header.customerName;
-  void queueOwnerRegistration('customer', { customerName: customerNameValue }, {
-    idempotencyKey: `${modeDraft().documentId}:CUSTOMER_CREATE:${normalizedKey(customerNameValue) || 'EMPTY'}`
-  });
-});
-
 sourceTextInput.addEventListener('input', syncSourceText);
 sourceTextInput.addEventListener('compositionstart', () => { state.sourceComposing = true; });
 sourceTextInput.addEventListener('compositionend', () => { state.sourceComposing = false; syncSourceText(); });
@@ -5091,12 +5426,6 @@ $('gridSearchInput').addEventListener('input', event => {
   state.gridSearch = event.target.value;
   renderRows({ restoreFocus: false });
 });
-$('gridSearchClear').addEventListener('click', () => {
-  state.gridSearch = '';
-  $('gridSearchInput').value = '';
-  renderRows({ restoreFocus: false });
-  $('gridSearchInput').focus();
-});
 $('uploadTemplateButton').addEventListener('click', downloadMinimumUploadTemplate);
 $('addRowButton').addEventListener('click', () => {
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
@@ -5151,36 +5480,47 @@ $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
 $('catalogPickerMenu').addEventListener('toggle', event => {
   $('catalogPickerButton').setAttribute('aria-expanded', String(event.newState === 'open'));
 });
-$('catalogPickerList').addEventListener('click', event => {
+$('catalogPickerList').addEventListener('click', async event => {
+  if (state.estimateDragSuppressed) return;
   const row = event.target.closest('[data-estimate-id]');
   if (!row) return;
   const record = state.estimates.find(item => item.estimateId === row.dataset.estimateId);
   if (!record) return;
   if (event.target.closest('[data-edit-estimate]')) return openEstimateManageDialog(record);
-  if (event.target.closest('[data-load-estimate]')) {
+  try {
+    await flushLinkedRowsToSources();
+  } catch (error) {
+    return toast(error.message || '연동 원본 반영을 완료하지 못해 화면 전환을 중단했습니다.', 'error');
+  }
+  const selected = new Set(state.noticeEstimateIds);
+  if (selected.has(row.dataset.estimateId)) selected.delete(row.dataset.estimateId);
+  else selected.add(row.dataset.estimateId);
+  state.noticeEstimateIds = individualEstimateRecords().filter(record => selected.has(record.estimateId)).map(record => record.estimateId);
+  previewSelectedEstimates();
+});
+$('linkedEstimateGroupButton').addEventListener('click', createLinkedEstimateDraft);
+$('linkedEstimateList').addEventListener('click', async event => {
+  const row = event.target.closest('[data-linked-estimate-id]');
+  if (!row) return;
+  const record = state.estimates.find(item => item.estimateId === row.dataset.linkedEstimateId);
+  if (!record) return;
+  if (event.target.closest('[data-edit-linked-estimate]')) return openEstimateManageDialog(record);
+  if (!event.target.closest('[data-edit-linked-estimate]')) {
+    try {
+      await flushLinkedRowsToSources();
+    } catch (error) {
+      return toast(error.message || '연동 원본 반영을 완료하지 못해 화면 전환을 중단했습니다.', 'error');
+    }
     closeCatalogPicker();
     loadCatalogRecord(record);
   }
 });
-$('catalogPickerList').addEventListener('change', event => {
-  const checkbox = event.target.closest('[data-output-estimate]');
-  const row = event.target.closest('[data-estimate-id]');
-  if (!checkbox || !row) return;
-  const selected = new Set(state.noticeEstimateIds);
-  if (checkbox.checked) selected.add(row.dataset.estimateId);
-  else selected.delete(row.dataset.estimateId);
-  state.noticeEstimateIds = state.estimates.filter(record => selected.has(record.estimateId)).map(record => record.estimateId);
-  const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
-  $('catalogPickerButton').textContent = currentRecord
-    ? `${estimateTitle(currentRecord)} · 선택 ${state.noticeEstimateIds.length}`
-    : `견적서 선택 · 선택 ${state.noticeEstimateIds.length}`;
-  $('catalogComposeButton').disabled = !state.noticeEstimateIds.length;
-});
-$('catalogComposeButton').addEventListener('click', composeSelectedEstimates);
-$('catalogNewButton').addEventListener('click', () => {
-  closeCatalogPicker();
-  startNewCatalog();
-  toast('새 견적서를 시작했습니다.', 'success');
+[...[$('catalogPickerList'), $('linkedEstimateList')]].forEach(list => {
+  list.addEventListener('dragstart', beginEstimateCardDrag);
+  list.addEventListener('dragover', moveEstimateCardDrag);
+  list.addEventListener('drop', event => { finishEstimateCardDrop(event).catch(error => toast(error.message || '견적서 순서를 변경하지 못했습니다.', 'error')); });
+  list.addEventListener('dragend', clearEstimateCardDrag);
+  list.addEventListener('dragleave', event => event.target.closest('.estimate-card')?.classList.remove('is-drop-target'));
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
@@ -5189,7 +5529,7 @@ $('relatedCollapseButton').addEventListener('click', event => {
   const open = panel.classList.toggle('is-open');
   state.draft.ui.relatedOpen = open;
   event.currentTarget.setAttribute('aria-expanded', String(open));
-  event.currentTarget.textContent = open ? '연결 앱 닫기' : '연결 앱 열기';
+  event.currentTarget.textContent = open ? '견적서 목록 닫기' : '견적서 목록 열기';
   scheduleSave();
 });
 
@@ -5212,7 +5552,7 @@ document.querySelector('.document-fields').addEventListener('input', event => {
 inputRows.addEventListener('input', event => {
   invalidateGridPasteUndo();
   const targetRow = event.target.closest('[data-row-id]');
-  if (targetRow?.dataset.defaultRow === 'true') materializeDefaultRow(targetRow);
+  if (targetRow?.dataset.defaultRow === 'true' && hasEnteredValue(event.target.value)) materializeDefaultRow(targetRow, event.target);
   if (event.target.closest('[data-product-search]')) return;
   const customInput = event.target.closest('[data-custom-row-field]');
   if (customInput) {
@@ -5252,7 +5592,7 @@ inputRows.addEventListener('keydown', event => {
   const field = gridFieldId(input);
   const rowTab = event.key === 'Tab';
   if (!rowTab && !['Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr);
+  if (tr.dataset.defaultRow === 'true' && input.value) materializeDefaultRow(tr, input);
   const rowId = tr.dataset.rowId;
   if (rowTab) {
     const rowTarget = nextRowEntryTarget(rowId, event.shiftKey);

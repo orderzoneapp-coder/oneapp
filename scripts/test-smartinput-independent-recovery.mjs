@@ -25,7 +25,11 @@ assert.doesNotMatch(appSource, /\.altKey|Alt\+[1234]/i);
 assert.doesNotMatch(html, /id="(?:draftListButton|saveDraftButton|catalogSaveButton)"/);
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>완료<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
+assert.match(html, /id="linkedEstimateList"/);
+assert.match(html, /id="catalogPickerList"/);
+assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
+assert.match(appSource, /flushLinkedRowsToSources/);
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
@@ -78,6 +82,14 @@ assert.equal(normalizedDraft.futureRoot, 'keep-root');
 assert.equal(normalizedDraft.modes.order.futureMode, 'keep-mode');
 assert.equal(normalizedDraft.modes.order.header.futureHeader, 'keep-header');
 assert.equal(normalizedDraft.modes.order.rows[0].futureRow, 'keep-row');
+const linkedDraft = contract.normalizeModeDraft('estimate', {
+  estimateKind: 'LINKED_GROUP',
+  linkedEstimateSources: [{ estimateId: 'E-1', catalogName: '개별 견적', updatedAt: '2026-08-30T00:00:00.000Z' }],
+  rows: [{ rowId: 'LINKED:E-1:R-1', linkedSourceEstimateId: 'E-1', linkedSourceEstimateName: '개별 견적', linkedSourceRowId: 'R-1', itemName: '연동상품', quantity: 1 }]
+});
+assert.equal(linkedDraft.estimateKind, 'LINKED_GROUP');
+assert.equal(linkedDraft.linkedEstimateSources[0].estimateId, 'E-1');
+assert.equal(linkedDraft.rows[0].linkedSourceRowId, 'R-1');
 
 const adapter = await import('../smartinput/legacy-integration-adapter.js');
 const legacyExtractor = await import('../orderq/smartparser/order-text-extractor.js?v=0.8.1');

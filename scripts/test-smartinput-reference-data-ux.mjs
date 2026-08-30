@@ -145,7 +145,7 @@ assert.doesNotMatch(scopedReload, /renderMode\(/, 'scoped reload must not trigge
 assert.match(html, /id="productReferenceReload"/);
 assert.match(html, /id="customerReferenceReload"/);
 assert.match(html, /id="referencePendingApply"/);
-assert.match(html, /거래처관리에서 등록/);
+assert.doesNotMatch(html, /거래처관리에서 등록/, 'obsolete fluorescent customer registration coachmark must stay removed');
 assert.doesNotMatch(html, /ItemMaster\.html/, 'deprecated compatibility page must not be presented as the product owner');
 assert.equal((smartInputSource.match(/productReferenceReload'\)\.addEventListener/g) || []).length, 1, 'product scoped reload event must bind once');
 assert.equal((smartInputSource.match(/customerReferenceReload'\)\.addEventListener/g) || []).length, 1, 'customer scoped reload event must bind once');
