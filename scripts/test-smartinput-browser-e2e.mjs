@@ -328,9 +328,16 @@ try {
   await input(client, '[data-estimate-name]', '행사 원본 견적');
   await click(client, '[data-confirm-save]');
   await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'two individual estimates persisted');
+  await evaluate(client, `(() => {const cards=[...document.querySelectorAll('#catalogPickerList [data-estimate-id]')];window.__estimateCardOrder=cards.map(card=>card.dataset.estimateId);const transfer=new DataTransfer();cards[0].dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[0].dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));return true;})()`);
+  await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id]')?.dataset.estimateId===window.__estimateCardOrder[1]`, 'direct estimate card drag reorder');
+  await evaluate(client, `(() => {const cards=[...document.querySelectorAll('#catalogPickerList [data-estimate-id]')];const transfer=new DataTransfer();cards[0].dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[0].dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));return true;})()`);
+  await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id]')?.dataset.estimateId===window.__estimateCardOrder[0]`, 'estimate card drag order restore');
+  await wait(350);
   await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[0].click();true`);
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'first estimate card selected after drag');
   await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]')[1].click();true`);
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2&&document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'second estimate card selected');
+  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'multiple estimate card preview with duplicate products removed');
   assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
   await expr(client, `!document.querySelector('#linkedEstimateGroupButton').disabled`, 'linked estimate members selected');
   await click(client, '#linkedEstimateGroupButton');
