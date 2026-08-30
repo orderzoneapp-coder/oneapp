@@ -37,10 +37,12 @@ assert.match(appSource, /flushLinkedRowsToSources/);
 assert.match(appSource, /flushLinkedIndividualToLibrary/, 'linked individual edits must write back for bidirectional synchronization');
 assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before same-value propagation');
 assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
-assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate cards must support direct touch reordering as well as desktop drag');
-assert.match(appSource, /data-estimate-select[\s\S]*data-open-estimate/, 'individual estimate cards must separate multi-select checkboxes from direct card opening');
-assert.match(html, /id="linkedEstimateGroupButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must expose linked creation and selected deletion actions');
-assert.match(appSource, /records\.length === 1[\s\S]*loadCatalogRecord\(records\[0\]\)/, 'a single selected estimate must open its stored record for in-place editing');
+assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
+assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
+assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
+assert.match(html, /id="estimateCreateButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must expose shared creation and selected deletion actions');
+assert.match(appSource, /records\.length === 1[\s\S]*loadCatalogRecord\(records\[0\], \{ preserveSelection: true \}\)/, 'a single selected estimate must immediately open its stored record while retaining its lit card');
+assert.match(appSource, /current\.estimateKind !== 'LINKED_GROUP'/, 'composition preview edits must not write through before linked-estimate creation');
 assert.doesNotMatch(appSource, /if \(current\.estimateKind !== 'LINKED_GROUP'\) current\.catalogRecordId = ''/, 'saving an individual estimate must retain its identity for subsequent in-place updates');
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
@@ -61,7 +63,7 @@ for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel
 }
 assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must live in the app header');
 assert.doesNotMatch(html, /workspace workspace--single|id="sourcePanelToggleButton"/, 'the desktop parser must not be collapsed into the grid work flow');
-assert.match(html, /id="estimateEditorButton"[^>]*>편집기로 돌아가기</, 'the explicit library view must retain an editor return path');
+assert.doesNotMatch(html, /estimateEditorButton|estimateLibraryButton|견적서 목록 전체보기/, 'the right list must coexist with the editor without a replacement view');
 assert.doesNotMatch(html + appSource, /추가 예정|양식 생성 모드|source-staging|input-template-core|workflow-core/i);
 for (const removed of ['input-template-core.js', 'source-staging.js', 'workflow-core.js', 'integration-adapter.js']) {
   assert.equal(fs.existsSync(path.join(root, 'smartinput', removed)), false, `${removed} must stay removed`);

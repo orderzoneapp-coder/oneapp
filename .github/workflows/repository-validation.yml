@@ -33,7 +33,9 @@ jobs:
         run: node scripts/validate-repository.mjs
 
       - name: Test SmartInput independent recovery
-        run: node scripts/test-smartinput-independent-recovery.mjs
+        run: |
+          node scripts/test-smartinput-independent-recovery.mjs
+          node scripts/test-smartinput-appheader-workspace.mjs
 
       - name: Test SmartInput clipboard and parsers
         run: |

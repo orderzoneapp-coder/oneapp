@@ -16,10 +16,12 @@ assert.match(html, /class="related-panel estimate-library-view"[^>]*id="estimate
 assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"[\s\S]*id="linkedEstimateList"/, 'individual and linked estimate lists must remain available');
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherReadyState"[\s\S]*id="voucherContextList"/, 'non-estimate voucher modes must expose a live right-side inspection panel');
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
-assert.match(html, /id="estimateLibraryButton"[^>]*>견적서 목록 전체보기</, 'the full library must require an explicit action');
-assert.match(html, /id="estimateEditorButton"[^>]*>편집기로 돌아가기</, 'the expanded library must expose an explicit preserved-editor return path');
+assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibrarySwitchButton"[\s\S]*견적서목록[\s\S]*↔[\s\S]*연동견적서/, 'individual and linked estimate lists must use one pill switch');
-assert.match(html, /id="linkedEstimateGroupButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'checked estimate cards must expose linked creation and deletion actions');
+assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="estimateRenameButton"[\s\S]*id="estimateCreateButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must use one selection summary and shared actions');
+assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
+assert.match(html, /id="gridSearchInput"[\s\S]*id="gridRowCount"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/, 'search, review counts, and row actions must share one toolbar row');
+assert.doesNotMatch(html, /class="grid-toolbar"|class="grid-review-tools"/, 'the former second status row must be removed');
 assert.match(html, /id="inputRows"/, 'the restored editable grid body must remain');
 assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || []).length, 4,
   'all four voucher modes must remain');
@@ -29,13 +31,16 @@ assert.match(css, /\.workspace\s*\{[^}]*grid-template-columns:\s*minmax\(330px,[
   'desktop must preserve parser, resizer, work table, and right estimate-list columns');
 assert.match(css, /\.grid-card > \.work-action-bar\s*\{[\s\S]*border-bottom:\s*1px solid var\(--border\)/,
   'search and edit controls must be integrated with the grid card');
-assert.match(css, /\.workspace\.is-estimate-library-open[\s\S]*> \.estimate-library-view/,
-  'the estimate library may replace the workspace only after explicit view activation');
+assert.doesNotMatch(css, /is-estimate-library-open/, 'the estimate library must never replace the parser and table workspace');
 assert.match(css, /\.voucher-context-item\s*\{[\s\S]*grid-template-columns:/,
   'the dynamic voucher inspection items must retain a compact actionable layout');
 assert.match(css, /@media \(min-width:\s*821px\) and \(max-width:\s*1480px\)[\s\S]*grid-template-columns:[^;]*8px minmax\(0, 1fr\)/,
   'intermediate desktop widths must preserve side-by-side parser and table columns');
-assert.match(css, /\.header-fields\.is-estimate[\s\S]*transactionType[\s\S]*display:\s*none !important/,
-  'estimate mode must hide warehouse and transaction fields');
+assert.match(css, /\.header-field\.is-layout-placeholder\s*\{[^}]*visibility:\s*hidden/,
+  'estimate mode must preserve the transaction field slot without exposing an irrelevant control');
+assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s,
+  'all voucher modes must keep search, counts, and editing controls on one stable toolbar row');
+assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
+  'card ordering must be isolated to a dedicated drag handle');
 
 console.log('SmartInput protected desktop workspace contracts PASS');
