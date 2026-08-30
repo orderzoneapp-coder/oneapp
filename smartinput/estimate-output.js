@@ -122,7 +122,7 @@ export function validateEstimateRows(rows = []) {
   if (!candidates.length) errors.push({
     code: 'EMPTY', rowIndex: null, item: '', field: '품목', originalValue: '',
     message: '출력할 견적 품목이 없습니다.',
-    guide: '빈 업로드 양식이 필요한지 확인하고 사용 여부를 판단하세요.'
+    guide: '견적 품목을 추가한 뒤 다시 출력하세요.'
   });
   const codeCounts = new Map();
   candidates.forEach(({ row, rowIndex }) => {

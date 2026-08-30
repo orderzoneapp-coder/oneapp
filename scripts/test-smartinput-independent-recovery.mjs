@@ -23,9 +23,12 @@ assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|cu
 assert.doesNotMatch(html, /<kbd|Alt\+[1234]|cdn\.jsdelivr\.net/i);
 assert.doesNotMatch(appSource, /\.altKey|Alt\+[1234]/i);
 assert.doesNotMatch(html, /id="(?:draftListButton|saveDraftButton|catalogSaveButton)"/);
+assert.doesNotMatch(html, /id="uploadTemplateButton"|>업로드 양식<\/button>/);
+assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButton/);
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>Excel 다운로드<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);

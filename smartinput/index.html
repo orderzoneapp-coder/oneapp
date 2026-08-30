@@ -154,7 +154,6 @@
             <button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button>
             <button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button>
             <button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button>
-            <button class="button button--quiet button--small" id="uploadTemplateButton" type="button">업로드 양식</button>
             <button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button>
             <button class="button button--quiet button--small reset-draft-button" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
           </div>
@@ -179,9 +178,9 @@
           </div>
           <footer class="voucher-footer-actions" aria-label="전표 작업">
             <button class="button button--primary" id="completeButton" type="button">저장</button>
-            <div class="estimate-output-actions" id="estimateOutputActions" hidden>
-              <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 복사</button>
-              <button class="button button--quiet" id="estimateExcelButton" type="button">견적 Excel</button>
+            <div class="estimate-output-actions" id="estimateOutputActions">
+              <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공유</button>
+              <button class="button button--quiet" id="estimateExcelButton" type="button">Excel 다운로드</button>
             </div>
           </footer>
         </section>
