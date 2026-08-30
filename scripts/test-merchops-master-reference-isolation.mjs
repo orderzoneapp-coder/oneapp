@@ -208,7 +208,13 @@ assert.doesNotMatch(exportSource, /working\.품목명 \|\| master\['품목명'\]
 assert.doesNotMatch(exportSource, /working\.시중가 \|\| 기준시중가/, "Export Center must not mix baseline into working market price");
 assert.doesNotMatch(exportSource, /getPromotionThemeString\(working\) \|\| getPromotionThemeString\(master\)/, "Export Center must not mix master theme into working theme");
 assert.doesNotMatch(exportSource, /saleIsGenerated/, "F9 must not generate sale availability from unrelated price fields");
-assert.match(exportSource, /'검색어등록', '창고', '단위', '1종코드'/, "F9 must preserve actual warehouse and unit working values");
+for (const field of ['검색어등록', '창고', '단위', '1종코드']) {
+  assert.match(
+    exportSource,
+    new RegExp(`readWorkingValue\\(working, \\['${field}'\\]\\)`),
+    `F9 must preserve the actual ${field} working value`,
+  );
+}
 assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\) return DEFAULT_EXPORT_STOCK_QTY/, "F9 must not generate stock 999 when the source column is missing");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
 assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");

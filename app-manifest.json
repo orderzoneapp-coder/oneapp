@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.4",
-  "updatedAt": "2026-08-30",
+  "schemaVersion": "1.3.5",
+  "updatedAt": "2026-08-31",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -129,12 +129,13 @@
         "core-engine"
       ],
       "ownedContracts": [
-        "change-history",
-        "merchops-work-view-state"
+        "merchops-work-view-state",
+        "merch-export-draft"
       ],
       "consumedContracts": [
         "product-master",
         "product-reference-change-request",
+        "change-history",
         "parser-dictionary",
         "pricing-rules",
         "mapping-config",
@@ -152,7 +153,8 @@
         "table-view-config",
         "cloud-url",
         "stop-management",
-        "merchops-work-view-state"
+        "merchops-work-view-state",
+        "merch-export-draft"
       ],
       "dependencyMode": {
         "cachedProductSnapshot": "LOCAL_OPERATION",
@@ -216,14 +218,24 @@
       "path": "export_center.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Validate selected work, generate Excel output, and apply approved master changes.",
+      "purpose": "Review the existing MerchOps F9 draft and generate Excel or image output without changing product master, history, or revision.",
       "navigatesTo": [
         "merchops"
       ],
+      "consumedContracts": [
+        "product-master",
+        "merch-export-draft"
+      ],
       "sharedContracts": [
         "product-master",
-        "change-history"
-      ]
+        "merch-export-draft"
+      ],
+      "dependencyMode": {
+        "draftReviewAndEdit": "LOCAL_OPERATION",
+        "productSnapshotReference": "LOCAL_OPERATION",
+        "excelAndImageOutput": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Preserve and render the existing draft when Product Snapshot is EMPTY, ERROR, unavailable, or stale. Output remains available from draft values and never writes product master or history."
     },
     {
       "id": "settings",
@@ -231,9 +243,11 @@
       "path": "settings.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Manage mappings, pricing policies, columns, table views, cloud URL, and shared configuration.",
+      "purpose": "Own mappings, pricing policies, columns, table views, cloud URL, and validated atomic settings backup and recovery while routing product and SmartParser operations to their owner apps.",
       "navigatesTo": [
-        "merchops"
+        "merchops",
+        "master-lookup",
+        "smart-parser"
       ],
       "runtimeDependencies": [
         "core-engine"
@@ -241,15 +255,32 @@
       "services": [
         "cloud-sync"
       ],
+      "ownedContracts": [
+        "settings-config",
+        "pricing-rules",
+        "mapping-config",
+        "table-view-config",
+        "cloud-url"
+      ],
+      "consumedContracts": [
+        "parser-dictionary",
+        "stop-management"
+      ],
       "sharedContracts": [
-        "product-master",
-        "change-history",
+        "settings-config",
         "parser-dictionary",
         "pricing-rules",
         "mapping-config",
         "table-view-config",
         "cloud-url"
-      ]
+      ],
+      "dependencyMode": {
+        "localConfiguration": "LOCAL_OPERATION",
+        "jsonBackupAndRestore": "LOCAL_OPERATION",
+        "cloudBackupAndRestore": "SERVER_FINALIZE",
+        "ownerRouting": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Render and edit locally owned configuration without waiting for cloud or another app. Cloud recovery validates the complete allowlist, captures a pre-image, rolls back on failure, and preserves unknown external fields."
     },
     {
       "id": "master-lookup",
@@ -265,7 +296,8 @@
       ],
       "ownedContracts": [
         "product-master",
-        "product-reference-change-request"
+        "product-reference-change-request",
+        "change-history"
       ],
       "sharedContracts": [
         "product-master",
@@ -328,18 +360,30 @@
       "path": "history_viewer.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Inspect product-change history and price trends.",
+      "purpose": "Read immutable local or cloud product-change history, inspect price trends, and export the exact current view without modifying the history repository.",
       "navigatesTo": [
         "merchops"
       ],
       "services": [
         "cloud-sync"
       ],
+      "consumedContracts": [
+        "product-master",
+        "change-history",
+        "cloud-url"
+      ],
       "sharedContracts": [
         "product-master",
         "change-history",
         "cloud-url"
-      ]
+      ],
+      "dependencyMode": {
+        "localHistoryView": "LOCAL_OPERATION",
+        "localProductReference": "LOCAL_OPERATION",
+        "cloudHistoryView": "BACKGROUND_SYNC",
+        "jsonCsvExport": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Render local history independently, distinguish READY, EMPTY, ERROR, and NOT_AVAILABLE, and keep cloud results in memory only. Product Snapshot or cloud failure never becomes a successful empty result."
     },
     {
       "id": "core-engine",
@@ -758,7 +802,9 @@
         "smart-input",
         "smart-parser",
         "DataOps.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "history-viewer",
+        "export-center"
       ],
       "schemaVersion": "ONEAPP_PRODUCT_SNAPSHOT_V1",
       "readAdapter": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER",
@@ -779,8 +825,6 @@
       },
       "legacyWriterAllowlist": [
         "Master.html",
-        "settings.html",
-        "export_center.html",
         "Item_manager.html",
         "coreEngine.js",
         "masterAddUpdate.js"
@@ -840,8 +884,16 @@
     },
     {
       "id": "change-history",
-      "owner": "merchops",
+      "owner": "master-lookup",
+      "consumers": [
+        "history-viewer",
+        "merchops"
+      ],
+      "schemaVersion": "ONEAPP_CHANGE_HISTORY_SNAPSHOT_V1",
+      "readAdapter": "ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1",
+      "writerPolicy": "master-lookup owns the repository. History Viewer and MerchOps consume immutable snapshots; append is allowed only inside approved owner commands that atomically verify product writes and history.",
       "resources": {
+        "readAdapterAsset": "reference-data/change-history-read-adapter.js",
         "localStorage": [
           "merchHistory_v870"
         ],
@@ -849,6 +901,62 @@
           "history",
           "chunk_history"
         ]
+      }
+    },
+    {
+      "id": "settings-config",
+      "owner": "settings",
+      "consumers": [
+        "settings",
+        "merchops",
+        "smart-parser",
+        "export-center"
+      ],
+      "schemaVersion": "ONEAPP_SETTINGS_CONFIG_BUNDLE_V1",
+      "ownerAdapter": "ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1",
+      "writerPolicy": "Settings writes only its versioned allowlist. JSON and cloud recovery validate all values before apply, capture a pre-image, rollback and verify on failure, preserve unknown cloud fields, and exclude product, history, pending, stop, and product-status live data.",
+      "opaqueRecoveryExceptions": [
+        "parserDict_v870",
+        "parserCatalogWarehouseMap_v1"
+      ],
+      "resources": {
+        "ownerAdapterAsset": "reference-data/settings-config-owner-adapter.js",
+        "localStorage": [
+          "merchVisMaster_v870",
+          "merchVisUpload_v870",
+          "merchMappings_v870",
+          "merchMasterLinks_v870",
+          "merchMarginRules_v878",
+          "merchUploadColumnMeta_v870",
+          "merchTableShortcuts_v870",
+          "merchTableViewPresets_v1",
+          "merchActiveTableTarget_v1",
+          "merchActiveTableViewId_v1",
+          "oneapp_cloud_sync_url_v1",
+          "merchCloudUrl_v870"
+        ],
+        "cloudAction": "config_only/config"
+      }
+    },
+    {
+      "id": "merch-export-draft",
+      "owner": "merchops",
+      "consumers": [
+        "export-center"
+      ],
+      "schemaVersion": "LEGACY_MERCH_EXPORT_DRAFT_WITH_OPTIONAL_META_V1",
+      "consumerPolicy": "Export Center reads and reviews the existing draft shape without changing it. Optional sidecar metadata binds the draft fingerprint to the Product Snapshot version for exact stale detection; legacy drafts use content comparison.",
+      "resources": {
+        "indexedDb": {
+          "database": "MerchOpsDB",
+          "store": "store",
+          "keys": [
+            "merch_export_draft",
+            "merch_export_draft_meta",
+            "ONEAPP_IMAGE_DATA_TEMP"
+          ]
+        },
+        "metaSchemaVersion": "ONEAPP_MERCH_EXPORT_DRAFT_META_V1"
       }
     },
     {
@@ -1026,6 +1134,14 @@
     [
       "settings",
       "merchops"
+    ],
+    [
+      "settings",
+      "master-lookup"
+    ],
+    [
+      "settings",
+      "smart-parser"
     ],
     [
       "history-viewer",
@@ -1215,6 +1331,10 @@
         "F7": "Apply current work to the MerchOps master after atomic storage and history verification.",
         "F8": "Create the Excel output from current work without changing the master.",
         "F9": "Open Export Center for review and downstream output."
+      },
+      "export-center": {
+        "F9": "Generate the reviewed Excel output without writing product master, history, revision, or sync triggers.",
+        "F10": "Generate the existing temporary image-output payload without changing product master."
       },
       "dataops": {
         "F6": "Open one out-of-list product search row below the selected inventory row using the confirmed local master.",

@@ -10312,6 +10312,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
     // 역할: 현재 선택/검색/화면 작업범위만 merch_export_draft로 패키징한다.
     // 금지: masterProducts 전체, finalData 전체 객체, sources 전체 객체를 그대로 넘기지 않는다.
     // 출력센터 이동: 현재 탭 이동 방식으로 새창 누적을 방지한다.
+    // 호환: 기존 merch_export_draft 배열 shape는 그대로 두고 Snapshot revision은 별도 sidecar key에 기록한다.
     // ============================================================
     const handleOpenExportCenter = useCallback(() => {
         if (Object.keys(data.managedItems).length === 0 && ui.activeTags.length === 0 && !data.masterLookupMode) {
@@ -10372,6 +10373,21 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
         setTimeout(async () => {
             try {
                 await window.setIDB('merch_export_draft', exportDraft);
+                try {
+                    const canonicalDraft = window.stableMerchSerialize(exportDraft);
+                    const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalDraft));
+                    const draftFingerprint = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+                    await window.setIDB('merch_export_draft_meta', {
+                        schemaVersion: 'ONEAPP_MERCH_EXPORT_DRAFT_META_V1',
+                        productSnapshotVersion: String(data.productSnapshotRevision || ''),
+                        draftFingerprint,
+                        draftCount: exportDraft.length,
+                        capturedAt: new Date().toISOString()
+                    });
+                }
+                catch (metaError) {
+                    console.warn('[Export Draft Meta] optional Product Snapshot metadata was not saved', metaError);
+                }
                 window.saveMerchOpsReturnUrl?.();
                 ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
                 window.location.href = window.getExportCenterUrl ? window.getExportCenterUrl() : 'export_center.html';
@@ -10385,7 +10401,7 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                 ui.setProcessMsg('');
             }
         }, 100);
-    }, [fullDisplayRows, ui.selectedRows, ui.activeTags, data.managedItems, data.masterProducts, data.masterLookupMode, ui]);
+    }, [fullDisplayRows, ui.selectedRows, ui.activeTags, data.managedItems, data.masterProducts, data.masterLookupMode, data.productSnapshotRevision, ui]);
     useEffect(() => {
         window.getIDB('merchops_session').then(state => {
             if (state) {

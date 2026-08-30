@@ -14,8 +14,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="coreEngine.js"></script>
-
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -32,6 +30,9 @@
 
     <script>
 const { useState, useEffect, useMemo, useCallback } = React;
+const getProductReadAdapter = async () => (
+    await import('./reference-data/product-master-read-adapter.js')
+).productMasterReadAdapter;
 const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 const hasOwn = (obj = {}, field = '') => !!obj && Object.prototype.hasOwnProperty.call(obj, field);
 const isExplicitBlank = (value) => value === undefined || value === null || String(value).trim() === '';
@@ -146,47 +147,75 @@ const navigateToMerchOps = () => {
     const candidates = getFallbackMerchUrls();
     window.location.href = candidates[0] || 'MerchOps.html';
 };
-const initIDB = () => new Promise((resolve, reject) => {
-    const request = indexedDB.open('MerchOpsDB', 2);
-    request.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains('store'))
-            db.createObjectStore('store');
-        if (!db.objectStoreNames.contains('master_products'))
-            db.createObjectStore('master_products', { keyPath: '코드' });
+const stableExportStringify = (value) => {
+    const normalize = (input) => {
+        if (Array.isArray(input)) return input.map(normalize);
+        if (input && typeof input === 'object') {
+            const result = {};
+            Object.keys(input).sort().forEach(key => {
+                if (input[key] !== undefined) result[key] = normalize(input[key]);
+            });
+            return result;
+        }
+        return input;
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-});
-const getAllIDB = async (storeName) => {
-    const db = await initIDB();
+    return JSON.stringify(normalize(value));
+};
+const exportDraftFingerprint = async (draft = []) => {
+    const bytes = new TextEncoder().encode(stableExportStringify(Array.isArray(draft) ? draft : []));
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+};
+const openExistingMerchOpsDB = async () => {
+    if (!globalThis.indexedDB) throw new Error('EXPORT_DRAFT_STORAGE_NOT_AVAILABLE');
+    if (typeof globalThis.indexedDB.databases === 'function') {
+        const databases = await globalThis.indexedDB.databases();
+        if (!databases.some(entry => entry?.name === 'MerchOpsDB')) throw new Error('EXPORT_DRAFT_STORAGE_NOT_AVAILABLE');
+    }
     return new Promise((resolve, reject) => {
-        if (!db.objectStoreNames.contains(storeName))
-            return resolve([]);
-        const tx = db.transaction(storeName, 'readonly');
-        const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(tx.error);
+        const request = globalThis.indexedDB.open('MerchOpsDB');
+        request.onupgradeneeded = () => {
+            request.transaction?.abort();
+            reject(new Error('EXPORT_DB_CREATION_BLOCKED'));
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('EXPORT_DB_OPEN_FAILED'));
+        request.onblocked = () => reject(new Error('EXPORT_DB_OPEN_BLOCKED'));
     });
 };
-const getIDB = async (key) => {
-    const db = await initIDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction('store', 'readonly');
-        const req = tx.objectStore('store').get(key);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(tx.error);
-    });
+const readExportStoreValue = async (key) => {
+    const db = await openExistingMerchOpsDB();
+    try {
+        if (!db.objectStoreNames.contains('store')) throw new Error('EXPORT_DRAFT_STORE_NOT_AVAILABLE');
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction('store', 'readonly');
+            const request = tx.objectStore('store').get(key);
+            let value;
+            request.onsuccess = () => { value = request.result; };
+            request.onerror = () => reject(request.error || new Error('EXPORT_DRAFT_READ_FAILED'));
+            tx.oncomplete = () => resolve(value);
+            tx.onerror = () => reject(tx.error || new Error('EXPORT_DRAFT_READ_FAILED'));
+            tx.onabort = () => reject(tx.error || new Error('EXPORT_DRAFT_READ_ABORTED'));
+        });
+    } finally {
+        db.close();
+    }
 };
-const setIDB = async (key, val) => {
-    if (['merchMaster_v870', 'merchMaster_revision_v870'].includes(key)) throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
-    const db = await initIDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction('store', 'readwrite');
-        tx.objectStore('store').put(val, key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+const writeExportTempValue = async (key, value) => {
+    if (key !== 'ONEAPP_IMAGE_DATA_TEMP') throw new Error('EXPORT_OUTPUT_KEY_NOT_ALLOWED');
+    const db = await openExistingMerchOpsDB();
+    try {
+        if (!db.objectStoreNames.contains('store')) throw new Error('EXPORT_DRAFT_STORE_NOT_AVAILABLE');
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction('store', 'readwrite');
+            tx.objectStore('store').put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('EXPORT_OUTPUT_WRITE_FAILED'));
+            tx.onabort = () => reject(tx.error || new Error('EXPORT_OUTPUT_WRITE_ABORTED'));
+        });
+    } finally {
+        db.close();
+    }
 };
 const getAppliedPrice = (row) => {
     const promo = parseNum(row === null || row === void 0 ? void 0 : row.행사가);
@@ -670,10 +699,26 @@ const getExportUnitRuleCandidates = (v) => {
     });
     return cands;
 };
-let exportMasterRevision = undefined;
+const legacyDraftHasProductMismatch = (draft = [], masterProducts = {}) => (Array.isArray(draft) ? draft : []).some(item => {
+    const baseline = item?.baselineSnapshot || {};
+    const master = masterProducts[item?.코드] || null;
+    if (!master) return false;
+    const numericPairs = [
+        ['기준입고가', '입고가'],
+        ['기준출고가', '출고가'],
+        ['기준시중가', '시중가'],
+        ['기준행사가', '행사가'],
+    ];
+    if (numericPairs.some(([baselineField, masterField]) => hasOwn(baseline, baselineField)
+        && parseNum(baseline[baselineField]) !== parseNum(master[masterField]))) return true;
+    if (hasOwn(baseline, '기준판매여부') && master.판매여부 !== undefined
+        && String(baseline.기준판매여부) !== String(master.판매여부)) return true;
+    return false;
+});
 const ExportApp = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [reviewRows, setReviewRows] = useState([]);
+    const [productSnapshotState, setProductSnapshotState] = useState({ status: 'LOADING', expectedRevision: '', actualRevision: '', legacy: false, errorCode: '' });
     const [marginRules] = useState(() => sanitizeExportMarginRules(safeJSONParse('merchMarginRules_v878', null)));
     const [activeIssue, setActiveIssue] = useState('all');
     const [sortMode, setSortMode] = useState('category');
@@ -702,15 +747,59 @@ const ExportApp = () => {
         const loadData = async () => {
             setIsProcessing(true);
             try {
-                const masterState = await window.ONEAPP.STORAGE.readMasterSnapshotState();
-                exportMasterRevision = masterState.revision;
-                const items = masterState.items;
-                const masterDict = {};
-                items.forEach(i => { if (i && i.코드)
-                    masterDict[i.코드] = i; });
-                setMasterProducts(masterDict);
-                const rawDraft = await getIDB('merch_export_draft') || [];
+                let rawDraft;
+                try {
+                    rawDraft = await readExportStoreValue('merch_export_draft') || [];
+                } catch (error) {
+                    setMasterProducts({});
+                    setReviewRows([]);
+                    setProductSnapshotState({
+                        status: 'NOT_AVAILABLE',
+                        expectedRevision: '',
+                        actualRevision: '',
+                        legacy: true,
+                        errorCode: String(error?.message || 'EXPORT_DRAFT_NOT_AVAILABLE'),
+                    });
+                    return;
+                }
                 const exportDraft = Array.isArray(rawDraft) ? rawDraft : [];
+                let draftMeta = null;
+                try { draftMeta = await readExportStoreValue('merch_export_draft_meta'); }
+                catch (error) { draftMeta = null; }
+                let productResult;
+                try {
+                    const adapter = await getProductReadAdapter();
+                    productResult = await adapter.getSnapshotResult();
+                } catch (error) {
+                    productResult = { status: 'ERROR', snapshot: null, error: { code: String(error?.message || 'PRODUCT_SNAPSHOT_ADAPTER_NOT_AVAILABLE') } };
+                }
+                const masterDict = {};
+                (productResult.snapshot?.data?.products || []).forEach(i => { if (i && (i.코드 || i.품목코드))
+                    masterDict[i.코드 || i.품목코드] = i; });
+                setMasterProducts(masterDict);
+                const actualRevision = String(productResult.snapshot?.snapshotVersion || '');
+                let expectedRevision = '';
+                let metaMatchesDraft = false;
+                if (draftMeta?.schemaVersion === 'ONEAPP_MERCH_EXPORT_DRAFT_META_V1') {
+                    try {
+                        const fingerprint = await exportDraftFingerprint(exportDraft);
+                        metaMatchesDraft = fingerprint === draftMeta.draftFingerprint;
+                        if (metaMatchesDraft) expectedRevision = String(draftMeta.productSnapshotVersion || '');
+                    } catch (error) { metaMatchesDraft = false; }
+                }
+                const legacyMismatch = productResult.status === 'READY' && !expectedRevision
+                    ? legacyDraftHasProductMismatch(exportDraft, masterDict)
+                    : false;
+                const stale = productResult.status === 'READY' && (
+                    (expectedRevision && actualRevision && expectedRevision !== actualRevision) || legacyMismatch
+                );
+                setProductSnapshotState({
+                    status: stale ? 'STALE' : (productResult.status || 'ERROR'),
+                    expectedRevision,
+                    actualRevision,
+                    legacy: !metaMatchesDraft,
+                    errorCode: String(productResult.error?.code || ''),
+                });
                 const rows = exportDraft.map(draft => {
                     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9;
                     const code = draft.코드;
@@ -721,10 +810,10 @@ const ExportApp = () => {
                     // 출력센터는 sources 전체를 작업대상으로 쓰지 않고, working 값과 source 메타만 참조한다.
                     const master = masterDict[code] || {};
                     const masterReference = draft.masterReference || master;
-                    const 기준입고가 = parseNum((_b = (_a = master['입고가']) !== null && _a !== void 0 ? _a : baseline.기준입고가) !== null && _b !== void 0 ? _b : 0);
-                    const 기준출고가 = parseNum((_d = (_c = master['출고가']) !== null && _c !== void 0 ? _c : baseline.기준출고가) !== null && _d !== void 0 ? _d : 0);
-                    const 기준시중가 = parseNum((_f = (_e = master['시중가']) !== null && _e !== void 0 ? _e : baseline.기준시중가) !== null && _f !== void 0 ? _f : 0);
-                    const 기준판매여부 = String((_h = (_g = master['판매여부']) !== null && _g !== void 0 ? _g : baseline.기준판매여부) !== null && _h !== void 0 ? _h : '-');
+                    const 기준입고가 = parseNum((_b = (_a = baseline.기준입고가) !== null && _a !== void 0 ? _a : master['입고가']) !== null && _b !== void 0 ? _b : 0);
+                    const 기준출고가 = parseNum((_d = (_c = baseline.기준출고가) !== null && _c !== void 0 ? _c : master['출고가']) !== null && _d !== void 0 ? _d : 0);
+                    const 기준시중가 = parseNum((_f = (_e = baseline.기준시중가) !== null && _e !== void 0 ? _e : master['시중가']) !== null && _f !== void 0 ? _f : 0);
+                    const 기준판매여부 = String((_h = (_g = baseline.기준판매여부) !== null && _g !== void 0 ? _g : master['판매여부']) !== null && _h !== void 0 ? _h : '-');
                     const 입고가 = readWorkingNumber(working, ['입고가']);
                     const 출고가 = readWorkingNumber(working, ['출고가']);
                     const 행사가 = readWorkingNumber(working, ['행사가']);
@@ -791,6 +880,9 @@ const ExportApp = () => {
             }
             catch (e) {
                 console.error('[Export Center Load Error]', e);
+                setProductSnapshotState(state => state.status === 'LOADING'
+                    ? { status: 'NOT_AVAILABLE', expectedRevision: '', actualRevision: '', legacy: true, errorCode: String(e?.message || 'EXPORT_DRAFT_READ_FAILED') }
+                    : state);
                 showToast('❌ 출력검증센터 데이터 로드 중 오류가 발생했습니다.');
             }
             finally {
@@ -1023,87 +1115,30 @@ const ExportApp = () => {
         showToast(`✅ 기본 ${groups} 그룹만 표시 · 해당 그룹 재고 999 적용 / 그 외는 실제재고만 적용`);
     }, [basicGroupInput, showToast]);
     // ============================================================
-    // [E-OUTPUT-02] 통합 엑셀 조립 공통 엔진
-    // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
-    // 정책: 마스터 반영 출력과 마스터 미반영 출력이 같은 엑셀 구조를 사용한다.
+    // [E-OUTPUT-02] 검토 후 통합 엑셀 출력
+    // 역할: 현재 reviewRows만으로 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
+    // 정책: F9와 화면 버튼은 같은 output-only handler를 사용하며 상품 원본을 변경하지 않는다.
     // ============================================================
     const buildIntegratedUploadWorkbook = useCallback((rows) => window.buildMerchIntegratedUploadWorkbook(rows), []);
-    // ============================================================
-    // [E-OUTPUT-02A] 최종 마스터 반영 + 통합 엑셀 출력
-    // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
-    // 기본 확정 플로우: F9는 마스터 반영 후 출력으로 유지한다.
-    // ============================================================
     const handleExportExcel = useCallback(() => {
         if (reviewRows.length === 0)
             return showToast('⚠️ 출력할 데이터가 없습니다.');
-        if (analysis.margin > 0 || analysis.anomaly > 0) {
-            if (!window.confirm(`역마진 ${analysis.margin}건, 큰변동 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`))
-                return;
-        }
+        const warning = analysis.margin > 0 || analysis.anomaly > 0
+            ? `역마진 ${analysis.margin}건, 큰변동 ${analysis.anomaly}건이 있습니다.\n\n`
+            : '';
+        const snapshotWarning = productSnapshotState.status === 'STALE'
+            ? '상품 Snapshot 버전이 달라 현재 작업 초안 기준으로 출력합니다.\n\n'
+            : productSnapshotState.status === 'ERROR' || productSnapshotState.status === 'EMPTY'
+                ? '상품 Snapshot을 정상 참조하지 못했지만 작업 초안은 보존되어 있습니다.\n\n'
+                : '';
+        if (!window.confirm(`${warning}${snapshotWarning}현재 검토 화면값으로 Excel을 출력합니다.\n상품 마스터와 변경이력은 수정되지 않습니다.\n계속할까요?`)) return;
         setIsProcessing(true);
-        showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
-        setTimeout(async () => {
+        showToast('⏳ 검토한 작업값으로 Excel 조립 중...');
+        setTimeout(() => {
             try {
-                const newMaster = { ...masterProducts };
-                reviewRows.forEach(item => {
-                    var _a, _b, _c, _d;
-                    const code = item.코드;
-                    const sale = getSaleState(item);
-                    const mItem = { ...(newMaster[code] || { 코드: code }) };
-                    const writeRaw = (stateField, targetField = stateField, valueField = stateField) => {
-                        if (!isReviewWorkingField(item, stateField)) return;
-                        mItem[targetField] = item[valueField] ?? '';
-                    };
-                    const writeNumber = (stateField, targetField = stateField, valueField = stateField) => {
-                        if (!isReviewWorkingField(item, stateField)) return;
-                        const state = item._fieldStates?.[stateField] || {};
-                        mItem[targetField] = state.isExplicitBlank ? '' : parseNum(item[valueField]);
-                    };
-                    ['품목명', '규격', '브랜드', '간단설명', '검색어등록', '창고', '단위', '1종코드', '1종규격'].forEach(field => writeRaw(field));
-                    ['입고가', '출고가', '행사가', '입고B', '1종연산', '경비', '외주비', '노무비', 'B판매가', 'B도매가', '시중가'].forEach(field => writeNumber(field));
-                    if (isReviewWorkingField(item, '도매A')) {
-                        const value = item._fieldStates?.도매A?.isExplicitBlank ? '' : parseNum(item.도매A);
-                        mItem['A판매'] = value;
-                        mItem['도매A'] = value;
-                    }
-                    if (isReviewWorkingField(item, '도매B')) {
-                        const value = item._fieldStates?.도매B?.isExplicitBlank ? '' : parseNum(item.도매B);
-                        mItem['B판매'] = value;
-                        mItem['도매B'] = value;
-                    }
-                    if (isReviewWorkingField(item, '재고수량')) mItem['재고수량'] = getReviewStockQty(item);
-                    if (isReviewWorkingField(item, '기본')) {
-                        mItem['기본'] = item.기본 ?? '';
-                        mItem['구분(기본)'] = item.기본 ?? '';
-                    }
-                    if (isReviewWorkingField(item, '판매여부')) {
-                        mItem['판매여부'] = item._fieldStates?.판매여부?.isExplicitBlank ? '' : sale.code;
-                    }
-                    if (isReviewWorkingField(item, '행사테마')) {
-                        mItem['행사테마'] = normalizePromotionThemeString(item.행사테마);
-                        const themeFlags = buildThemeFlags(item);
-                        mItem['테마1'] = themeFlags[0];
-                        mItem['테마2'] = themeFlags[1];
-                        mItem['테마3'] = themeFlags[2];
-                        mItem['테마4'] = themeFlags[3];
-                        mItem['테마5'] = themeFlags[4];
-                    }
-                    if (isReviewWorkingField(item, '카테고리')) mItem['견적서'] = item.카테고리 ?? '';
-                    newMaster[code] = mItem;
-                });
-                const commonStorage = window.ONEAPP?.STORAGE;
-                if (!commonStorage?.commitMasterStateOrThrow)
-                    throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-                const commitResult = await commonStorage.commitMasterStateOrThrow(newMaster, {
-                    expectedRevision: exportMasterRevision
-                });
-                exportMasterRevision = commitResult.revision;
-                setMasterProducts(newMaster);
-                try { localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); }
-                catch (triggerError) { console.warn('Export Center master sync notification failed after a verified commit', triggerError); }
-                const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows, newMaster);
-                window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                showToast(`✅ 마스터 반영 완료 · 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
+                const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows);
+                window.XLSX.writeFile(wb, `통합업로드용_검토출력_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                showToast(`✅ 출력 완료 · 상품 마스터 무쓰기 · 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건`);
             }
             catch (e) {
                 console.error('[Export Excel Error]', e);
@@ -1113,35 +1148,7 @@ const ExportApp = () => {
                 setIsProcessing(false);
             }
         }, 300);
-    }, [reviewRows, masterProducts, analysis, showToast, buildIntegratedUploadWorkbook]);
-    // ============================================================
-    // [E-OUTPUT-02B] 이번 작업값만 엑셀 출력
-    // 역할: 마스터DB에는 저장하지 않고 현재 출력센터 화면값만으로 쇼핑몰/ERP 엑셀을 생성한다.
-    // 사용처: 오늘 구매가/임시 단가를 판매업로드에만 쓰고 마스터 기준가는 유지해야 하는 경우.
-    // ============================================================
-    const handleExportExcelWithoutMaster = useCallback(() => {
-        if (reviewRows.length === 0)
-            return showToast('⚠️ 출력할 데이터가 없습니다.');
-        const confirmMsg = '마스터DB에는 반영하지 않고 현재 출력센터 화면값으로만 엑셀을 출력합니다.\n\n다음 작업에는 이 변경값이 남지 않습니다.\n계속 진행할까요?';
-        if (!window.confirm(confirmMsg))
-            return;
-        setIsProcessing(true);
-        showToast('⏳ 마스터 미반영 엑셀 조립 중...');
-        setTimeout(() => {
-            try {
-                const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows, masterProducts);
-                window.XLSX.writeFile(wb, `통합업로드용_작업값만_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                showToast(`✅ 마스터 미반영 출력 완료 · 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건`);
-            }
-            catch (e) {
-                console.error('[Export Excel Only Error]', e);
-                showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
-            }
-            finally {
-                setIsProcessing(false);
-            }
-        }, 300);
-    }, [reviewRows, masterProducts, showToast, buildIntegratedUploadWorkbook]);
+    }, [reviewRows, analysis, productSnapshotState, showToast, buildIntegratedUploadWorkbook]);
     // ============================================================
     // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
     // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
@@ -1165,7 +1172,7 @@ const ExportApp = () => {
                     grouped[title].push({ name: fullName, price: getAppliedPrice(item), prevPrice: parseNum(item.기준출고가) });
                 });
                 const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
-                await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
+                await writeExportTempValue('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
                 showToast('✅ 이미지 데이터 생성 완료. 이미지 뷰어 탭을 확인하세요.');
             }
             catch (e) {
@@ -1200,6 +1207,30 @@ const ExportApp = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isProcessing, handleExportExcel, handleImageExport]);
+    const productSnapshotNotice = (() => {
+        const state = productSnapshotState;
+        if (state.status === 'STALE') return {
+            cls: 'border-amber-300 bg-amber-50 text-amber-900',
+            icon: 'fa-triangle-exclamation',
+            text: `상품 Snapshot 버전 차이 · 작업 기준 ${state.expectedRevision || '기록 없음'} / 현재 ${state.actualRevision || '확인 불가'} · 현재 초안은 유지되며 출력만 가능합니다.`
+        };
+        if (state.status === 'ERROR' || state.status === 'NOT_AVAILABLE') return {
+            cls: 'border-rose-300 bg-rose-50 text-rose-900',
+            icon: 'fa-circle-exclamation',
+            text: `상품 Snapshot을 읽지 못했습니다 (${state.errorCode || state.status}). 작업 초안은 유지되며 초안 기준 출력만 가능합니다.`
+        };
+        if (state.status === 'EMPTY') return {
+            cls: 'border-amber-300 bg-amber-50 text-amber-900',
+            icon: 'fa-box-open',
+            text: '상품 Snapshot이 비어 있습니다. 작업 초안은 유지되며 초안 기준 출력만 가능합니다.'
+        };
+        if (state.status === 'READY') return {
+            cls: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+            icon: 'fa-shield-check',
+            text: `상품 Snapshot 읽기 완료 · 현재 ${state.actualRevision || '해시 기준'}${state.legacy ? ' · 기존 초안은 내용 기준으로 비교' : ''} · 이 화면은 상품 원본을 변경하지 않습니다.`
+        };
+        return { cls: 'border-slate-200 bg-slate-50 text-slate-600', icon: 'fa-spinner fa-spin', text: '상품 Snapshot 상태를 확인하는 중입니다.' };
+    })();
     return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-100 fade-in" },
         toast && (React.createElement("div", { className: "fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all" },
             React.createElement("i", { className: "fas fa-check-circle text-emerald-400" }),
@@ -1217,7 +1248,10 @@ const ExportApp = () => {
                 React.createElement("div", { className: "px-4 py-3 text-[11px] leading-relaxed text-slate-400" },
                     "\uC791\uC5C5 \uB300\uC0C1\uC740 \uBA54\uC778\uC5D0\uC11C \uC804\uB2EC\uB41C ",
                     React.createElement("b", { className: "text-slate-200" }, "merch_export_draft"),
-                    " \uAE30\uC900\uC785\uB2C8\uB2E4. \uB9C8\uC2A4\uD130 \uC804\uCCB4\uB294 \uC791\uC5C5 \uB300\uC0C1\uC73C\uB85C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")),
+                    " \uAE30\uC900\uC785\uB2C8\uB2E4. \uB9C8\uC2A4\uD130 \uC804\uCCB4\uB294 \uC791\uC5C5 \uB300\uC0C1\uC73C\uB85C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."),
+                React.createElement("div", { className: "mx-3 px-4 py-3 rounded-xl border border-emerald-900/40 bg-emerald-950/30 text-[11px] leading-relaxed text-emerald-300 font-bold" },
+                    React.createElement("i", { className: "fas fa-file-export mr-2" }),
+                    "F9는 검토한 Excel만 출력하며 상품 마스터·변경이력·revision을 수정하지 않습니다.")),
             React.createElement("div", { className: "p-6 border-t border-slate-800 shrink-0" },
                 React.createElement("button", { onClick: navigateToMerchOps, className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
                     React.createElement("i", { className: "fas fa-arrow-left mr-2" }),
@@ -1234,6 +1268,9 @@ const ExportApp = () => {
                         "\uAC74 / \uC804\uCCB4 ",
                         reviewRows.length.toLocaleString(),
                         "\uAC74 \u00B7 \uD544\uD130 \uD6C4 \uD14C\uB9C8 \uC77C\uAD04\uC9C0\uC815 \uAC00\uB2A5")),
+                React.createElement("div", { className: `mb-4 px-4 py-3 rounded-xl border text-[12px] font-black ${productSnapshotNotice.cls}` },
+                    React.createElement("i", { className: `fas ${productSnapshotNotice.icon} mr-2` }),
+                    productSnapshotNotice.text),
                 React.createElement("div", { className: "grid grid-cols-5 gap-2 mb-4" }, issueCards.map(card => (React.createElement("button", { key: card.key, onClick: () => handleCardClick(card.key), className: `border p-3 rounded-xl flex flex-col items-center shadow-sm transition-all hover:shadow-md ${card.cls} ${activeIssue === card.key ? 'ring-2 ring-slate-700 scale-[1.02]' : ''}` },
                     React.createElement("span", { className: "text-[11px] font-black mb-1 flex items-center" },
                         React.createElement("i", { className: `fas ${card.icon} mr-1` }),
@@ -1339,11 +1376,8 @@ const ExportApp = () => {
                         }))))),
             React.createElement("div", { className: "bg-white p-6 border-t border-slate-200 shrink-0 flex gap-4 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]" },
                 React.createElement("button", { onClick: handleExportExcel, disabled: isProcessing || reviewRows.length === 0, className: "flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
-                    React.createElement("i", { className: "fas fa-save mr-2 text-lg" }),
-                    " \uB9C8\uC2A4\uD130 \uBC18\uC601 \uD6C4 \uC5D1\uC140 \uCD9C\uB825 (F9)"),
-                React.createElement("button", { onClick: handleExportExcelWithoutMaster, disabled: isProcessing || reviewRows.length === 0, title: "\uB9C8\uC2A4\uD130\uC5D0 \uC800\uC7A5\uD558\uC9C0 \uC54A\uACE0 \uD604\uC7AC \uC791\uC5C5\uAC12\uB9CC \uC5D1\uC140\uB85C \uCD9C\uB825\uD569\uB2C8\uB2E4.", className: "px-7 py-4 bg-sky-600 text-white rounded-xl font-black text-[15px] hover:bg-sky-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
                     React.createElement("i", { className: "fas fa-file-export mr-2 text-lg" }),
-                    " \uC774\uBC88 \uC791\uC5C5\uAC12\uB9CC \uCD9C\uB825"),
+                    " 검토 후 Excel 출력 · 마스터 무쓰기 (F9)"),
                 React.createElement("button", { onClick: handleImageExport, disabled: isProcessing || reviewRows.length === 0, className: "px-8 py-4 bg-amber-500 text-white rounded-xl font-black text-[15px] hover:bg-amber-600 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
                     React.createElement("i", { className: "fas fa-image mr-2 text-lg" }),
                     " \uC774\uBBF8\uC9C0 (F10)")))));

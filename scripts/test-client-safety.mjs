@@ -126,9 +126,11 @@ const inlineScripts = [...settings.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]
   .filter((script) => script.trim() !== "");
 assert.ok(inlineScripts.length > 0, "settings.html must contain an inline application script");
 inlineScripts.forEach((script, index) => new vm.Script(script, { filename: `settings-inline-${index + 1}.js` }));
-assert.match(settings, /MASTER_IMPORT_MAX_BYTES/);
-assert.match(settings, /analyzeMasterExcelUpload/);
-assert.match(settings, /applyMasterExcelUpload/);
+assert.match(settings, /SETTINGS_IMPORT_MAX_BYTES/);
+assert.match(settings, /Number\(file\.size \|\| 0\) > SETTINGS_IMPORT_MAX_BYTES/);
+assert.doesNotMatch(settings, /analyzeMasterExcelUpload/);
+assert.match(settings, /OWNER_ROUTED: 상품 원본 작업은 상품관리에서 실행하세요/);
+assert.doesNotMatch(settings, /\.applyMasterExcelUpload\s*\(/);
 assert.doesNotMatch(settings, /analyzePromotionThemeSettings/);
 assert.doesNotMatch(settings, /applyPromotionThemeSettings/);
 
