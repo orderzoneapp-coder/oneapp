@@ -7,25 +7,23 @@ const html = await readFile('smartinput/index.html', 'utf8');
 const css = await readFile('smartinput/smartinput.css', 'utf8');
 
 assert.match(html, /<header class="app-bar">/, '0a SmartInput app bar must be restored');
-assert.match(html, /<div class="workspace workspace--single">/, 'all vouchers must use one full-width workspace');
-assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must be raised into the app header');
-assert.match(html, /class="parser-card"[^>]*id="sourceInputPanel"/, 'source intake must remain inside the one-column work flow');
-assert.match(html, /id="sourcePanelToggleButton"/, 'source intake must be collapsible');
-assert.match(html, /class="workbench"/, 'the work table must remain');
-assert.doesNotMatch(html, /class="related-panel"/, 'the old fixed right rail must be removed');
-assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"[\s\S]*id="linkedEstimateList"/, 'estimate and linked-estimate lists must replace the full work area');
+assert.match(html, /<div class="workspace">/, 'the restored workspace must remain');
+assert.match(html, /class="parser-card"/, 'the full-height parser surface must remain');
+assert.match(html, /id="photoResizer"/, 'the parser/work-table resizer must remain');
+assert.match(html, /class="workbench"/, 'the restored work table must remain');
+assert.match(html, /class="related-panel"/, 'the right-side connected-app guide must remain');
 assert.match(html, /id="inputRows"/, 'the restored editable grid body must remain');
 assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || []).length, 4,
   'all four voucher modes must remain');
 assert.doesNotMatch(html, /<kbd|Alt\+[1234]/i, 'Alt+1~4 affordances must stay excluded');
 
-assert.match(css, /\.workspace\.workspace--single[\s\S]*display:\s*block;/,
-  'desktop must use one full-width content column');
-assert.match(css, /\.workspace--single \.document-fields\s*\{[\s\S]*border-bottom:\s*1px solid var\(--border\)/,
-  'search and edit controls must be integrated with the grid card');
-assert.match(css, /\.estimate-library-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3/,
-  'the estimate library must use the full work area on desktop');
-assert.match(css, /\.header-fields\.is-estimate[\s\S]*transactionType[\s\S]*display:\s*none !important/,
-  'estimate mode must hide warehouse and transaction fields');
+assert.match(css, /\.workspace\s*\{[^}]*grid-template-columns:\s*minmax\(330px,[^}]*8px minmax\(0, 1fr\) 230px;/s,
+  'desktop must preserve parser, resizer, work table, and right panel columns');
+assert.match(css, /\.photo-resizer\s*\{[^}]*cursor:\s*col-resize;/s,
+  'the parser width control must remain interactive');
+assert.match(css, /@media \(min-width:\s*1481px\)[\s\S]*?\.workspace\s*\{[^}]*height:\s*100%;[^}]*align-items:\s*stretch;/,
+  'desktop workspace must consume the available app height');
+assert.match(css, /\.parser-card, \.workspace\.has-photo-source \.parser-card\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/s,
+  'the parser primary surface must use the remaining height');
 
-console.log('SmartInput single-workspace app-header contracts PASS');
+console.log('SmartInput restored app-bar and workspace contracts PASS');
