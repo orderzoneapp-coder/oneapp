@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.10
+- Architecture document version: 2.1.11
 - Last reviewed: 2026-08-30
-- Current-source baseline: `dcd962a64c6a7fa80d60d4f0578ebdc4a5de2ef4`
+- Current-source baseline: `387125101724c7a7e4eef87fa0d2bf8d81f645b1`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -54,7 +54,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `app-manifest.json`의 `product-master` 공식 소유자는 `master-lookup`이다. 물리 Repository는 기존 `MerchOpsDB/master_products`와 `merchMaster_v870`·`merchMaster_revision_v870`을 그대로 사용하며 데이터 이동이나 재초기화는 없다.
 - `Master.html`은 manifest의 `master-lookup` 공식 경로이자 기존 운영 상품 저장계약을 사용하는 유일한 공식 상품관리 앱이다. 기존 주소·앱 ID·공통 표시 명칭 `상품관리`를 유지하며, 빈 DB 최초 Excel 등록과 상품 단건 등록·수정을 공용 revision·history 계약으로 수행한다.
 - `reference-data/product-master-read-adapter.js`는 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` 읽기 전용 경계를 제공한다. 조회는 record Store를 우선하고 기존 snapshot·revision으로 fallback하며 DB가 없을 때 생성하지 않는다.
-- 현행 상품 직접 writer는 `Master.html`, `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js` 경로에 남아 있다. 이는 후속 앱별 전환을 위한 동결 allowlist이며 새 cross-app 직접 writer를 허용하지 않는다. DataOps writer는 기존 문서상 후속 후보지만 이 기준 SHA의 `DataOps.html`에서는 직접 writer가 검출되지 않았다.
+- 현행 상품 직접 writer는 `Master.html`, `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js` 경로에 남아 있다. 이는 후속 앱별 전환을 위한 동결 allowlist이며 새 cross-app 직접 writer를 허용하지 않는다. DataOps F6는 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다. DataOps가 공유 Repository나 master 키에 직접 쓰는 경로는 없다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput은 이 Snapshot의 읽기 전용 소비자로 전환됐고 ORDER Q 소비자 전환은 아직 수행하지 않는다.
@@ -254,7 +254,7 @@ Important contracts include:
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
 | Product master | `merchMaster_v870`, `MerchOpsDB` / `master_products` | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer, ORDER Q 수기입력(읽기 전용 검색) |
-| Product read Snapshot | `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` | `master-lookup`이 제공하는 신규 공식 읽기 경계. 소비자 전환은 별도 작업 |
+| Product read Snapshot | `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` | `master-lookup`이 제공하는 공식 읽기 경계. DataOps F6와 ORDER Q 수기입력이 소비하며 READY·EMPTY·ERROR를 구분 |
 | Product change-request inbox | `MerchOpsDB` / `store.oneappProductReferenceChangeRequests_v1` | `master-lookup`만 수신·조회. 기존 master·revision Store와 분리된 additive KV |
 | Customer change-request inbox | `oneapp-customermaster-v1` / `appMeta.referenceChangeRequestsV1` | `customer-master`만 수신·조회. 기존 customer Store·레코드와 분리된 additive KV |
 | Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
@@ -268,7 +268,7 @@ Important contracts include:
 | Parser catalog warehouse map | `parserCatalogWarehouseMap_v1` (`{ [catalogName]: warehouseCodeString }`) | SmartParser, settings, core-engine `config_only` backup and restore |
 | Mapping configuration | `merchMappings_v870` | MerchOps, settings, cloud configuration |
 | Master links | `merchMasterLinks_v870` | MerchOps, settings, cloud configuration |
-| Shared cloud URL | `oneapp_cloud_sync_url_v1` | MerchOps, DataOps, settings, history viewer, core engine |
+| Shared cloud URL | `oneapp_cloud_sync_url_v1` | Settings가 편집을 소유하고 MerchOps, DataOps, history viewer, core engine이 소비. DataOps는 읽기·연결확인만 수행 |
 | Legacy cloud URL | `merchCloudUrl_v870` | Compatibility fallback only |
 | Active table target | `merchActiveTableTarget_v1` | MerchOps and settings |
 | Active table view | `merchActiveTableViewId_v1` | MerchOps and settings |
