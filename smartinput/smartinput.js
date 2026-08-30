@@ -5,12 +5,7 @@ import {
   extractOrderProductLines,
   createOrder,
   syncAfterLocalMutation,
-  createLiveCustomer,
-  ensureCustomerMasterReady,
-  listCustomers,
   isSelectableMasterProduct,
-  loadProductCatalog,
-  searchProductCatalog,
   loadWarehouseCatalog,
   matchWarehouseInput,
   warehouseDisplayName,
@@ -58,15 +53,26 @@ import {
   saveAliasMapping,
   saveEstimate,
   saveLinkGroup,
+  saveReferenceCache,
   saveSettings,
   saveSourceImage,
   saveTemporaryCustomer
-} from './smartinput-data-store.js?v=0.3.1';
+} from './smartinput-data-store.js?v=0.3.2';
 import {
-  REFERENCE_STATUS,
-  evaluateReferenceReadiness,
-  preserveReferenceRows
-} from './reference-readiness.js?v=0.1.0';
+  REFERENCE_CACHE_SCHEMA,
+  REFERENCE_DOMAIN_STATUS,
+  buildRegistrationChangeRequest,
+  classifyProductMatch,
+  createProductMatchIndex,
+  diffReferenceSnapshots,
+  loadReferenceDomain,
+  normalizeCachedReference,
+  ownerAppHref,
+  referenceSourceLabel,
+  sameReferenceRevision,
+  searchProductMatchIndex,
+  submitRegistrationChangeRequest
+} from './reference-data-controller.js?v=0.1.1';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -108,10 +114,15 @@ const state = {
   draft: loadDraft(),
   customers: [],
   products: [],
+  productMatchIndex: createProductMatchIndex([]),
   catalogStatus: 'LOADING',
   customerStatus: 'LOADING',
-  referenceStatus: REFERENCE_STATUS.LOADING,
+  referenceStatus: REFERENCE_DOMAIN_STATUS.LOADING,
   referenceMessage: '상품·거래처 기준정보를 불러오고 있습니다.',
+  references: {
+    product: { status: REFERENCE_DOMAIN_STATUS.LOADING, active: null, pending: null, error: null },
+    customer: { status: REFERENCE_DOMAIN_STATUS.LOADING, active: null, pending: null, error: null }
+  },
   catalogSummary: { commonCount: 0, orderQCount: 0, errors: [] },
   warehouseCatalog: { warehouses: [], aliases: [] },
   settings: contract.normalizeSettings(),
@@ -223,7 +234,7 @@ function modeUi() {
 
 function setAppStatus(message, tone = 'normal') {
   $('appStatus').dataset.tone = tone;
-  $('appStatus').querySelector('span:last-child').textContent = message;
+  $('appStatusMessage').textContent = message;
 }
 
 function toast(message, tone = 'normal') {
@@ -280,13 +291,124 @@ function scheduleSave() {
 }
 
 function referencesReady() {
-  return state.referenceStatus === REFERENCE_STATUS.READY;
+  return state.referenceStatus === REFERENCE_DOMAIN_STATUS.READY;
 }
 
 function referenceStatusMessage() {
-  return state.referenceMessage || (state.referenceStatus === REFERENCE_STATUS.LOADING
+  return state.referenceMessage || (state.referenceStatus === REFERENCE_DOMAIN_STATUS.LOADING
     ? '상품·거래처 기준정보를 불러오고 있습니다.'
     : '일부 기준정보를 사용할 수 없습니다. 수동 입력과 초안 저장은 계속할 수 있습니다.');
+}
+
+function referenceDomainLabel(domain) {
+  return domain === 'product' ? '상품' : '거래처';
+}
+
+function activeWorkspaceHasContent() {
+  return Object.values(state.draft.modes || {}).some(hasMeaningfulDraftContent);
+}
+
+function referenceCacheEnvelope(domain) {
+  const reference = state.references[domain];
+  return {
+    cacheSchemaVersion: REFERENCE_CACHE_SCHEMA,
+    applied: reference.active,
+    pending: reference.pending,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function persistReferenceState(domain) {
+  return saveReferenceCache(domain, referenceCacheEnvelope(domain)).catch(() => {
+    setAppStatus(`${referenceDomainLabel(domain)} 기준정보 캐시를 저장하지 못했습니다. 현재 작업은 유지됩니다.`, 'warn');
+  });
+}
+
+function applyReferenceSnapshot(domain, snapshot, { clearPending = true } = {}) {
+  if (!snapshot || ![REFERENCE_DOMAIN_STATUS.READY, REFERENCE_DOMAIN_STATUS.EMPTY].includes(snapshot.status)) return false;
+  const reference = state.references[domain];
+  reference.active = snapshot;
+  if (clearPending) reference.pending = null;
+  reference.error = null;
+  reference.status = snapshot.status;
+  if (domain === 'product') {
+    state.products = snapshot.rows;
+    state.productMatchIndex = createProductMatchIndex(state.products);
+    state.catalogSummary = {
+      products: state.products,
+      commonCount: state.products.length,
+      orderQCount: 0,
+      source: snapshot.source,
+      errors: []
+    };
+  } else {
+    state.customers = normalizedCustomerCandidates(snapshot.rows);
+  }
+  return true;
+}
+
+function restoreCachedReferences(referenceCache = {}) {
+  ['product', 'customer'].forEach(domain => {
+    const cachedState = referenceCache?.[domain] || null;
+    const storedApplied = normalizeCachedReference(cachedState?.applied || cachedState, domain);
+    const storedPending = normalizeCachedReference(cachedState?.pending, domain);
+    const applied = storedApplied ? { ...storedApplied, source: `CACHE:${String(storedApplied.source || '').replace(/^CACHE:/, '')}`, loadedFromCache: true } : null;
+    const pending = storedPending ? { ...storedPending, source: `CACHE:${String(storedPending.source || '').replace(/^CACHE:/, '')}`, loadedFromCache: true } : null;
+    if (applied) applyReferenceSnapshot(domain, applied, { clearPending: false });
+    if (pending && !sameReferenceRevision(applied, pending)) {
+      state.references[domain].pending = pending;
+      state.references[domain].status = REFERENCE_DOMAIN_STATUS.STALE;
+    }
+  });
+}
+
+function refreshReferenceAggregate() {
+  const domains = ['product', 'customer'];
+  const unavailable = domains.filter(domain => state.references[domain].status === REFERENCE_DOMAIN_STATUS.ERROR && !state.references[domain].active);
+  const pending = domains.filter(domain => state.references[domain].pending);
+  const degraded = domains.filter(domain => state.references[domain].error && state.references[domain].active);
+  const waiting = domains.filter(domain => state.references[domain].status === REFERENCE_DOMAIN_STATUS.LOADING && !state.references[domain].active);
+  if (unavailable.length) state.referenceStatus = REFERENCE_DOMAIN_STATUS.ERROR;
+  else if (pending.length || degraded.length) state.referenceStatus = REFERENCE_DOMAIN_STATUS.STALE;
+  else if (waiting.length) state.referenceStatus = REFERENCE_DOMAIN_STATUS.LOADING;
+  else state.referenceStatus = REFERENCE_DOMAIN_STATUS.READY;
+  state.catalogStatus = state.references.product.status;
+  state.customerStatus = state.references.customer.status;
+  const productCount = state.references.product.active?.count;
+  const customerCount = state.references.customer.active?.count;
+  if (unavailable.length) {
+    state.referenceMessage = `${unavailable.map(referenceDomainLabel).join('·')} 기준정보 로드 실패 · 수동 입력과 초안 저장은 계속할 수 있습니다.`;
+  } else if (pending.length) {
+    state.referenceMessage = `${pending.map(referenceDomainLabel).join('·')} 새 revision 보류 · 기본은 다음 작업부터 적용`;
+  } else if (degraded.length) {
+    state.referenceMessage = `${degraded.map(referenceDomainLabel).join('·')} 최신 확인 실패 · 저장된 Snapshot 사용 중`;
+  } else if (waiting.length) {
+    state.referenceMessage = `${waiting.map(referenceDomainLabel).join('·')} 기준정보를 불러오고 있습니다.`;
+  } else {
+    state.referenceMessage = `상품 ${Number(productCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${Number(customerCount || 0).toLocaleString('ko-KR')}건`;
+  }
+}
+
+function referenceTimeText(value) {
+  if (!value) return '확인 전';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function renderReferenceDomain(domain) {
+  const reference = state.references[domain];
+  const active = reference.active;
+  const statusElement = $(`${domain}ReferenceStatus`);
+  if (!statusElement) return;
+  statusElement.textContent = reference.status;
+  statusElement.dataset.status = reference.status;
+  $(`${domain}ReferenceSource`).textContent = active ? referenceSourceLabel(active) : '사용 가능 Snapshot 없음';
+  $(`${domain}ReferenceCount`).textContent = active?.count == null ? '—' : `${Number(active.count).toLocaleString('ko-KR')}건`;
+  $(`${domain}ReferenceRevision`).textContent = active?.revision === '' || active?.revision == null ? '—' : String(active.revision);
+  $(`${domain}ReferenceUpdated`).textContent = referenceTimeText(active?.checkedAt || active?.snapshotCreatedAt);
+  const reload = $(`${domain}ReferenceReload`);
+  reload.disabled = state.busy || Boolean(reference.loading);
+  reload.textContent = reference.loading ? '불러오는 중…' : '다시 불러오기';
 }
 
 function renderReferenceControls() {
@@ -297,23 +419,64 @@ function renderReferenceControls() {
   $('estimateExcelButton').disabled = state.busy;
   $('catalogSaveButton').disabled = state.busy;
   $('catalogComposeButton').disabled = state.busy || !state.noticeEstimateIds.length;
+  refreshReferenceAggregate();
+  renderReferenceDomain('product');
+  renderReferenceDomain('customer');
+  const overview = $('referenceOverviewSummary');
+  if (overview) overview.textContent = state.referenceMessage;
+  const pendingApply = $('referencePendingApply');
+  if (pendingApply) {
+    const count = ['product', 'customer'].filter(domain => state.references[domain].pending).length;
+    pendingApply.hidden = count === 0;
+    pendingApply.textContent = count ? `현재 작업에 적용 (${count})` : '현재 작업에 적용';
+  }
+  const customerRegister = $('customerRegisterLink');
+  if (customerRegister) customerRegister.hidden = Boolean(modeDraft().header.customerId);
 }
 
-function applyReferenceLoad({ customers = [], customerError = null, productResult = null, productError = null } = {}) {
-  const readiness = evaluateReferenceReadiness({ customers, customerError, productResult, productError });
-  state.customers = preserveReferenceRows(state.customers, normalizedCustomerCandidates(customers), readiness.customerReady);
-  state.products = preserveReferenceRows(state.products, productResult?.products, readiness.productReady);
-  if (readiness.productReady) state.catalogSummary = productResult;
-  state.customerStatus = readiness.customerReady ? 'READY' : REFERENCE_STATUS.ERROR;
-  state.catalogStatus = readiness.productReady ? 'READY' : REFERENCE_STATUS.ERROR;
-  state.referenceStatus = readiness.status;
-  state.referenceMessage = readiness.ready
-    ? `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`
-    : `${[
-        readiness.customerReady ? '' : '거래처 조회',
-        readiness.productReady ? '' : '상품 조회'
-      ].filter(Boolean).join('·')}를 사용할 수 없습니다. 수동 입력과 초안 저장은 계속할 수 있습니다.`;
-  return readiness;
+function ingestLatestReference(domain, latest, { allowCurrent = false } = {}) {
+  const reference = state.references[domain];
+  reference.loading = false;
+  if (!latest || latest.status === REFERENCE_DOMAIN_STATUS.ERROR) {
+    reference.error = latest?.error || { code: `${domain.toUpperCase()}_REFERENCE_LOAD_FAILED`, message: '로드 실패' };
+    reference.status = reference.active ? REFERENCE_DOMAIN_STATUS.STALE : REFERENCE_DOMAIN_STATUS.ERROR;
+    renderReferenceControls();
+    return false;
+  }
+  if (reference.active && sameReferenceRevision(reference.active, latest)) {
+    applyReferenceSnapshot(domain, latest);
+    void persistReferenceState(domain);
+    renderReferenceControls();
+    return true;
+  }
+  if (reference.active && activeWorkspaceHasContent() && !allowCurrent) {
+    reference.pending = latest;
+    reference.error = null;
+    reference.status = REFERENCE_DOMAIN_STATUS.STALE;
+    void persistReferenceState(domain);
+    renderReferenceControls();
+    return true;
+  }
+  applyReferenceSnapshot(domain, latest);
+  void persistReferenceState(domain);
+  renderReferenceControls();
+  return true;
+}
+
+async function reloadReferenceDomain(domain, { quiet = false } = {}) {
+  const reference = state.references[domain];
+  if (reference.loading) return;
+  reference.loading = true;
+  if (!reference.active) reference.status = REFERENCE_DOMAIN_STATUS.LOADING;
+  renderReferenceControls();
+  const latest = await loadReferenceDomain(domain);
+  ingestLatestReference(domain, latest);
+  if (!quiet) {
+    const suffix = latest.status === REFERENCE_DOMAIN_STATUS.ERROR
+      ? '로드 실패 · 현재 작업은 유지됩니다.'
+      : `${latest.count.toLocaleString('ko-KR')}건 확인`;
+    toast(`${referenceDomainLabel(domain)} 기준정보 ${suffix}`, latest.status === REFERENCE_DOMAIN_STATUS.ERROR ? 'error' : 'success');
+  }
 }
 
 function appendDeliveryHistory(record) {
@@ -878,11 +1041,14 @@ function showPhotoRegion(region) {
     : '이 행은 신뢰할 수 있는 사진 좌표가 없어 원본 전체를 표시합니다.';
 }
 
-function rowStatusText(status) {
+function rowStatusText(status, row = null) {
   if (status === 'EMPTY') return '입력 대기';
   if (status === 'ANALYZING') return '분석 중';
   if (status === 'MATCHED') return '일치';
-  if (status === 'SIMILAR') return '유사';
+  if (status === 'SIMILAR') return '확인 필요';
+  if (row?.referenceResolution === 'MISSING') return '미등록 상품';
+  if (row?.referenceResolution === 'REFERENCE_ERROR') return '기준정보 오류';
+  if (row?.referenceResolution === 'STALE_SELECTION') return '갱신 확인';
   return '불일치';
 }
 
@@ -1183,36 +1349,10 @@ function currentSourceType() {
     || 'GENERAL_TEXT';
 }
 
-async function refreshCustomers({ syncIfEmpty = true } = {}) {
-  try {
-    if (syncIfEmpty) await withTimeout(ensureCustomerMasterReady(), 5000, '거래처 기준정보를 불러오지 못했습니다.');
-    const customers = normalizedCustomerCandidates(await withTimeout(
-      listCustomers({ includeInactive: false }),
-      5000,
-      '거래처 기준정보를 불러오지 못했습니다.'
-    ));
-    const readiness = applyReferenceLoad({
-      customers,
-      productResult: { ...state.catalogSummary, products: state.products }
-    });
-    renderReferenceControls();
-    if (!readiness.customerReady) {
-      const error = new Error(readiness.message);
-      error.referenceApplied = true;
-      throw error;
-    }
-    return state.customers;
-  } catch (error) {
-    if (!error.referenceApplied) {
-      applyReferenceLoad({
-        customers: [],
-        customerError: error,
-        productResult: { ...state.catalogSummary, products: state.products }
-      });
-    }
-    renderReferenceControls();
-    throw error;
-  }
+async function refreshCustomers() {
+  await reloadReferenceDomain('customer');
+  if (!state.references.customer.active) throw new Error('거래처 기준정보를 불러오지 못했습니다.');
+  return state.customers;
 }
 
 function customerSearchText(customer) {
@@ -1252,14 +1392,38 @@ async function registerCustomerProfile({ temporary = false } = {}) {
         return;
       }
       try {
-        const customer = await createLiveCustomer({
+        const customerFields = {
           customerName: customerNameValue,
+          customerCode: '',
           businessNumber: String(form.get('businessNumber') || '').trim(),
           representativeName: String(form.get('representativeName') || '').trim(),
           address: String(form.get('address') || '').trim(),
-          contactPhone: String(form.get('contactPhone') || '').trim(),
-          memo: temporary ? `임시 배송처 · ${String(form.get('warehouseName') || '').trim()}` : '세무 거래처'
-        }, { source: temporary ? 'SMART_INPUT_TEMPORARY_DELIVERY' : 'SMART_INPUT_TAX_CUSTOMER' });
+          phone: String(form.get('contactPhone') || '').trim()
+        };
+        if (!temporary) {
+          window.open(ownerAppHref('customer'), '_blank', 'noopener');
+          const request = buildRegistrationChangeRequest('customer', customerFields, {
+            mode: state.draft.activeMode,
+            documentId: modeDraft().documentId
+          });
+          const result = await submitRegistrationChangeRequest('customer', request);
+          message.textContent = result.accepted
+            ? '거래처관리 변경요청함에 접수했습니다. 등록을 마친 뒤 거래처 기준정보만 다시 불러오세요.'
+            : '거래처관리 화면을 열었습니다. 현재 입력은 유지되며 직접 등록 후 다시 불러올 수 있습니다.';
+          return;
+        }
+        const timestamp = new Date().toISOString();
+        const customer = {
+          customerId: createRecordId('SITEMP'),
+          customerName: customerNameValue,
+          customerCode: '',
+          address: customerFields.address,
+          contactPhone: customerFields.phone,
+          status: 'ACTIVE',
+          qualityStatus: 'TEMPORARY',
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
         if (temporary) {
           const metadata = {
             customerId: customer.customerId,
@@ -1268,8 +1432,8 @@ async function registerCustomerProfile({ temporary = false } = {}) {
             contact: String(form.get('contactPhone') || '').trim(),
             linkGroupId: '',
             status: 'TEMPORARY',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: timestamp,
+            updatedAt: timestamp
           };
           await saveTemporaryCustomer(metadata);
           state.temporaryCustomers.push(metadata);
@@ -1308,10 +1472,6 @@ async function persistLinkGroup(group) {
 }
 
 async function chooseCustomer() {
-  if (!state.customers.length) {
-    setAppStatus('거래처 조회를 사용할 수 없습니다. 직접 입력과 초안 저장은 계속할 수 있습니다.', 'warn');
-    return toast('거래처 조회를 사용할 수 없습니다. 직접 입력은 계속할 수 있습니다.', 'error');
-  }
   try {
     const customer = await new Promise(resolve => {
       const dialog = document.createElement('dialog');
@@ -1335,7 +1495,7 @@ async function chooseCustomer() {
       const selected = new Set();
       let selectedTaxCustomerId = '';
       let linkMode = false;
-      let customerLoading = !state.customers.length;
+      let customerLoading = Boolean(state.references.customer.loading || state.references.customer.status === REFERENCE_DOMAIN_STATUS.LOADING);
       let visibleCustomers = [];
       const finish = value => {
         resolve(value || null);
@@ -1353,6 +1513,11 @@ async function chooseCustomer() {
           selected.add(onlyCustomer.customerId);
           if (!temporaryMeta(onlyCustomer.customerId)) selectedTaxCustomerId = onlyCustomer.customerId;
         }
+        const emptyState = query
+          ? '검색 결과 0건'
+          : (state.references.customer.status === REFERENCE_DOMAIN_STATUS.ERROR
+            ? '거래처 기준정보 로드 실패'
+            : (state.references.customer.active?.status === REFERENCE_DOMAIN_STATUS.EMPTY ? '등록 거래처 0건' : '표시할 거래처가 없습니다.'));
         results.innerHTML = visibleCustomers.map(customerItem => {
           const group = groupForCustomer(customerItem.customerId);
           const deliveryCustomerIds = group?.deliveryCustomerIds?.length ? group.deliveryCustomerIds : (group?.memberCustomerIds || []);
@@ -1365,7 +1530,13 @@ async function chooseCustomer() {
             <div class="smart-customer-select"><strong>${esc(customerName(customerItem))}</strong><span>${esc(customerIdentityLabel(customerItem))}</span><small>${esc(customerItem.address || temporaryMeta(customerItem.customerId)?.warehouseName || '')}</small></div>
             <div class="smart-customer-badges">${isTemporary ? '<span class="is-temp">임시 배송처</span>' : ''}${hasRelationship ? `<span>관계 ${group.memberCustomerIds.length}</span>` : ''}${isDelivery ? '<span class="is-delivery">배송처</span>' : ''}${isTax ? '<span class="is-tax">세무거래처</span>' : ''}${linkMode ? `<label class="smart-tax-role ${isTemporary ? 'is-disabled' : ''}"><input type="radio" name="taxCustomerRole" value="${esc(customerItem.customerId)}" ${selectedTaxCustomerId === customerItem.customerId ? 'checked' : ''} ${isTemporary ? 'disabled' : ''}><span>세무</span></label>` : ''}</div>
           </article>`;
-        }).join('') || '<div class="smart-dialog__empty">일치하는 거래처가 없습니다.</div>';
+        }).join('') || `<div class="smart-dialog__empty"><strong>${esc(emptyState)}</strong><a class="owner-register-link" data-customer-owner-register href="${ownerAppHref('customer')}" target="_blank" rel="noopener">거래처관리에서 등록</a></div>`;
+        results.querySelector('[data-customer-owner-register]')?.addEventListener('click', () => {
+          const name = input.value.trim() || $('customerInput').value.trim();
+          void queueOwnerRegistration('customer', { customerName: name }, {
+            idempotencyKey: `${modeDraft().documentId}:CUSTOMER_CREATE:${normalizedKey(name) || 'EMPTY'}`
+          });
+        });
         results.querySelectorAll('.smart-customer-row').forEach(row => {
           const customerId = row.dataset.customerId;
           row.querySelector('input[type="checkbox"]')?.addEventListener('change', event => {
@@ -1395,7 +1566,7 @@ async function chooseCustomer() {
           ? `배송처 ${selected.size}곳 · 세무거래처 ${selectedTaxCustomerId ? '1곳 지정' : '미지정'}`
           : (customerLoading && !visibleCustomers.length
             ? '거래처 목록을 불러오는 중입니다. 창은 그대로 두고 잠시 기다려 주세요.'
-            : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`);
+            : (!visibleCustomers.length ? emptyState : `${visibleCustomers.length}개 거래처 · 한 곳만 체크할 수 있습니다.`));
       };
       const setLinkMode = value => {
         linkMode = value;
@@ -1533,7 +1704,7 @@ async function chooseCustomer() {
       dialog.showModal();
       input.focus();
       render();
-      void refreshCustomers({ syncIfEmpty: true })
+      void refreshCustomers()
         .then(() => {
           customerLoading = false;
           render();
@@ -2215,6 +2386,7 @@ function startNewCatalog() {
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   resetPhotoView();
+  activatePendingReferences({ explicit: false, render: false });
   saveDraftNow();
   renderMode();
   window.requestAnimationFrame(() => inputRows.querySelector('[data-product-search]')?.focus());
@@ -2232,7 +2404,7 @@ async function rematchRowsForCustomer(customer) {
       contract.ROW_FIELDS.forEach(field => {
         if (previous.editedFields?.[field]) next[field] = previous[field];
       });
-      return next;
+      return enrichRowFromUnifiedCatalog(next);
     });
     current.rows = contract.markDuplicatePossibilities(current.rows);
     renderRows();
@@ -2373,7 +2545,7 @@ function renderRows({ restoreFocus = true } = {}) {
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
-      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="search" enterkeyhint="search" value="${esc(row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
+      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="search" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemCode"><input data-field="itemCode" type="search" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="search" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
@@ -2386,7 +2558,7 @@ function renderRows({ restoreFocus = true } = {}) {
       <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${esc(row.noticePrice ?? 0)}" aria-label="공지단가"></td>
       ${productCells}
       ${customCells}
-      <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}</div></td>
+      <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
       <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
@@ -2566,7 +2738,7 @@ function materializeDefaultRow(tr) {
   tr.dataset.status = row.matchStatus;
   delete tr.dataset.defaultRow;
   const status = tr.querySelector('.row-status span');
-  if (status) status.textContent = rowStatusText(row.matchStatus);
+  if (status) status.textContent = rowStatusText(row.matchStatus, row);
   const remove = tr.querySelector('[data-remove-row]');
   if (remove) {
     remove.dataset.removeRow = row.rowId;
@@ -3554,10 +3726,8 @@ function toggleVoice() {
 }
 
 function exactProduct(query) {
-  const key = normalizedKey(query);
-  if (!key) return null;
-  return state.products.find(product => isSelectableMasterProduct(product) && [product.itemCode, product.itemName, product.secondaryName, product.searchInfo]
-    .some(value => normalizedKey(value) === key)) || null;
+  const result = classifyProductMatch(state.productMatchIndex, query);
+  return result.autoConfirm ? result.product : null;
 }
 
 function commonMasterProducts() {
@@ -3617,27 +3787,115 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   row.matchStatus = hasMasterProductIdentity(row) ? 'MATCHED' : 'UNRESOLVED';
   row.reviewStatus = row.matchStatus === 'MATCHED' ? 'CONFIRMED' : 'PENDING';
   row.productIdentityStatus = row.matchStatus === 'MATCHED' ? 'MASTER_LINKED' : 'UNRESOLVED';
-  row.matchSource = row.matchStatus === 'MATCHED' ? 'SMART_INPUT_COMMON_MASTER' : '';
+  row.matchSource = row.matchStatus === 'MATCHED' ? 'SMART_INPUT_PRODUCT_SNAPSHOT_V1' : '';
   row.candidateProducts = [];
+  row.referenceResolution = row.matchStatus === 'MATCHED' ? 'MATCHED' : 'MISSING';
+  row.unregisteredProductQuery = '';
   return row.matchStatus === 'MATCHED';
 }
 
+function referenceQueryForRow(row) {
+  if (row?.editedFields?.itemCode) return row.itemCode;
+  if (row?.editedFields?.itemName) return row.itemName;
+  return row?.externalItemCode
+    || row?.productText
+    || row?.rawExpression
+    || row?.unregisteredProductQuery
+    || row?.itemCode
+    || row?.itemName
+    || row?.rawText
+    || '';
+}
+
+function reconcileProductRowsAfterRevision() {
+  Object.values(state.draft.modes || {}).forEach(current => {
+    current.rows = (current.rows || []).map(row => {
+      const identity = state.products.find(product => (
+        row.masterProductId && product.masterProductId === row.masterProductId
+      ) || (row.itemCode && normalizedKey(product.itemCode) === normalizedKey(row.itemCode)));
+      if (identity) {
+        applyProduct(row, identity, { forceIdentityFields: false });
+        return row;
+      }
+      const query = row.itemCode || row.itemName || row.unregisteredProductQuery || row.rawText;
+      if (!query) return row;
+      const match = classifyProductMatch(state.productMatchIndex, query, { limit: 5 });
+      if (match.autoConfirm) {
+        applyProduct(row, match.product, { forceIdentityFields: false });
+        return row;
+      }
+      row.productId = '';
+      row.masterProductId = '';
+      row.matchSource = '';
+      row.candidateProducts = match.candidates;
+      row.matchStatus = match.candidates.length ? 'SIMILAR' : 'UNRESOLVED';
+      row.reviewStatus = 'PENDING';
+      row.productIdentityStatus = match.candidates.length ? 'UNRESOLVED' : 'STALE_SELECTION';
+      row.referenceResolution = match.candidates.length ? 'FUZZY_CONFIRMATION_REQUIRED' : 'STALE_SELECTION';
+      return row;
+    });
+    current.rows = contract.markDuplicatePossibilities(current.rows);
+  });
+}
+
+function activatePendingReferences({ explicit = true, render = true } = {}) {
+  const domains = ['product', 'customer'].filter(domain => state.references[domain].pending);
+  if (!domains.length) return false;
+  const diffs = domains.map(domain => diffReferenceSnapshots(
+    domain,
+    state.references[domain].active,
+    state.references[domain].pending
+  ));
+  if (explicit) {
+    const detail = diffs.map(diff => `${referenceDomainLabel(diff.domain)} ${diff.fromRevision || '없음'} → ${diff.toRevision || '없음'} · +${diff.added} / -${diff.removed} / 변경 ${diff.changed}`).join('\n');
+    if (!window.confirm(`보류 중인 기준정보를 현재 작업에 적용하시겠습니까?\n${detail}\n관리자가 편집한 필드와 현재 초안·행 선택은 유지됩니다.`)) return false;
+  }
+  domains.forEach(domain => {
+    const pending = state.references[domain].pending;
+    applyReferenceSnapshot(domain, pending);
+    if (domain === 'product' && explicit) reconcileProductRowsAfterRevision();
+    void persistReferenceState(domain);
+  });
+  refreshReferenceAggregate();
+  if (explicit) saveDraftNow();
+  if (render) renderMode();
+  if (explicit) toast('새 기준정보를 현재 작업에 적용했습니다. 관리자 편집값과 행 선택은 유지했습니다.', 'success');
+  return true;
+}
+
+async function queueOwnerRegistration(domain, prefill, context = {}) {
+  const request = buildRegistrationChangeRequest(domain, prefill, {
+    mode: state.draft.activeMode,
+    documentId: modeDraft().documentId,
+    ...context
+  });
+  const result = await submitRegistrationChangeRequest(domain, request);
+  toast(result.accepted
+    ? `${referenceDomainLabel(domain)} 등록 변경요청을 소유 앱에 접수했습니다.`
+    : `${referenceDomainLabel(domain)}관리 화면을 열었습니다. 변경요청 ${result.status || '실패'} · 등록 후 해당 기준정보만 다시 불러오세요.`, result.accepted ? 'success' : 'warn');
+  return result;
+}
+
 function enrichRowFromUnifiedCatalog(row) {
-  if (!row || row.matchStatus === 'MATCHED') return row;
-  const query = row.itemCode || row.itemName || row.rawText;
+  if (!row || (row.matchStatus === 'MATCHED' && row.matchSource === 'SMART_INPUT_PRODUCT_SNAPSHOT_V1')) return row;
+  const query = referenceQueryForRow(row);
   if (!query) return row;
-  const exact = exactProduct(query);
-  if (exact) {
-    applyProduct(row, exact);
-    row.matchSource = 'SMART_INPUT_COMMON_MASTER';
+  row.productId = '';
+  row.masterProductId = '';
+  row.matchSource = '';
+  const match = classifyProductMatch(state.productMatchIndex, query, { limit: 5 });
+  if (match.autoConfirm) {
+    applyProduct(row, match.product);
     return row;
   }
-  const candidates = searchProductCatalog(query, commonMasterProducts(), 5);
-  if (candidates.length) {
-    row.candidateProducts = candidates;
+  if (match.candidates.length) {
+    row.candidateProducts = match.candidates;
     row.matchStatus = 'SIMILAR';
     row.reviewStatus = 'PENDING';
     row.productIdentityStatus = 'UNRESOLVED';
+    row.referenceResolution = 'FUZZY_CONFIRMATION_REQUIRED';
+  } else {
+    row.referenceResolution = state.references.product.active ? 'MISSING' : 'REFERENCE_ERROR';
   }
   return row;
 }
@@ -3654,21 +3912,22 @@ function tryMatchRow(row, changedField = '', { focusTarget = null } = {}) {
   row.matchSource = '';
   row.reviewStatus = 'PENDING';
   row.productIdentityStatus = 'UNRESOLVED';
-  const exact = exactProduct(query);
+  const match = classifyProductMatch(state.productMatchIndex, query, { limit: 5 });
   let openCandidates = false;
-  let matched = false;
-  if (exact) {
-    matched = applyProduct(row, exact, { forceIdentityFields: true });
+  if (match.autoConfirm) {
+    applyProduct(row, match.product, { forceIdentityFields: false });
   } else if (query) {
-    row.candidateProducts = searchProductCatalog(query, commonMasterProducts(), 5);
-    if (row.candidateProducts.length === 1) matched = applyProduct(row, row.candidateProducts[0], { forceIdentityFields: true });
-    else {
-      row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
-      openCandidates = row.candidateProducts.length > 1;
-    }
+    row.candidateProducts = match.candidates;
+    row.matchStatus = row.candidateProducts.length ? 'SIMILAR' : 'UNRESOLVED';
+    row.referenceResolution = row.candidateProducts.length
+      ? 'FUZZY_CONFIRMATION_REQUIRED'
+      : (state.references.product.active ? 'MISSING' : 'REFERENCE_ERROR');
+    row.unregisteredProductQuery = row.candidateProducts.length ? '' : query;
+    openCandidates = row.candidateProducts.length > 0;
   } else {
     row.candidateProducts = [];
     row.matchStatus = 'UNRESOLVED';
+    row.referenceResolution = '';
   }
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   if (openCandidates) modeUi().activeCellId = '';
@@ -3683,18 +3942,25 @@ function trySearchProductRow(row, query = '', { focusTarget = null } = {}) {
   const searchText = String(query || '').trim();
   if (!row || !searchText) return;
   invalidateGridPasteUndo();
-  const exact = exactProduct(searchText);
-  const candidates = exact ? [exact] : searchProductCatalog(searchText, commonMasterProducts(), 12);
-  if (candidates.length === 1) {
-    applyProduct(row, candidates[0], { forceIdentityFields: true });
+  const match = classifyProductMatch(state.productMatchIndex, searchText, { limit: 12 });
+  if (match.autoConfirm) {
+    applyProduct(row, match.product, { forceIdentityFields: false });
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
     renderRows({ restoreFocus: false });
     saveDraftNow();
     if (focusTarget) focusGridTarget(focusTarget);
     return;
   }
-  if (!candidates.length) {
-    toast('일치하는 상품을 찾지 못했습니다. 상품코드·품명·검색어를 확인하세요.', 'error');
+  if (!match.candidates.length) {
+    row.candidateProducts = [];
+    row.matchStatus = 'UNRESOLVED';
+    row.reviewStatus = 'PENDING';
+    row.productIdentityStatus = 'UNRESOLVED';
+    row.referenceResolution = state.references.product.active ? 'MISSING' : 'REFERENCE_ERROR';
+    row.unregisteredProductQuery = searchText;
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+    toast(state.references.product.active ? '미등록 상품입니다. 현재 행과 입력값은 유지됩니다.' : '상품 기준정보 로드 실패입니다. 현재 행과 입력값은 유지됩니다.', 'error');
     gridInput(row.rowId, 'productSearch')?.focus();
     return;
   }
@@ -3703,28 +3969,28 @@ function trySearchProductRow(row, query = '', { focusTarget = null } = {}) {
 
 function matchGridPasteRow(row) {
   if (!row) return row;
-  const exact = exactProduct(row.itemCode) || exactProduct(row.itemName);
-  if (exact) {
-    applyProduct(row, exact, { forceIdentityFields: true });
+  const query = row.itemCode || row.itemName;
+  const match = classifyProductMatch(state.productMatchIndex, query, { limit: 5 });
+  if (match.autoConfirm) {
+    applyProduct(row, match.product, { forceIdentityFields: false });
     return row;
   }
-  const query = row.itemCode || row.itemName;
   if (!query) {
     row.candidateProducts = [];
     row.matchStatus = 'UNRESOLVED';
     row.reviewStatus = 'PENDING';
     row.productIdentityStatus = 'UNRESOLVED';
+    row.referenceResolution = '';
     return row;
   }
-  const candidates = searchProductCatalog(query, commonMasterProducts(), 5);
-  if (candidates.length === 1) {
-    applyProduct(row, candidates[0], { forceIdentityFields: true });
-    return row;
-  }
-  row.candidateProducts = candidates;
-  row.matchStatus = candidates.length ? 'SIMILAR' : 'UNRESOLVED';
+  row.candidateProducts = match.candidates;
+  row.matchStatus = match.candidates.length ? 'SIMILAR' : 'UNRESOLVED';
   row.reviewStatus = 'PENDING';
   row.productIdentityStatus = 'UNRESOLVED';
+  row.referenceResolution = match.candidates.length
+    ? 'FUZZY_CONFIRMATION_REQUIRED'
+    : (state.references.product.active ? 'MISSING' : 'REFERENCE_ERROR');
+  row.unregisteredProductQuery = match.candidates.length ? '' : query;
   return row;
 }
 
@@ -3800,10 +4066,10 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     message.textContent = `${foundProducts.length}개 후보 · ${selectedIndex + 1}번째 항목 선택 · ↑↓ 이동 · Enter 확정`;
   };
   const render = () => {
-    foundProducts = searchProductCatalog(search.value, commonMasterProducts(), 12);
+    foundProducts = searchProductMatchIndex(state.productMatchIndex, search.value, 12);
     selectedIndex = 0;
     results.innerHTML = '';
-    message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 첫 번째 항목이 선택되었습니다. ↑↓로 이동하고 Enter로 확정합니다.` : '일치하는 상품 후보가 없습니다.';
+    message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 자동 확정되지 않습니다. 확인 후 선택하세요.` : '일치하는 상품 후보가 없습니다. 현재 행은 유지됩니다.';
     foundProducts.forEach((product, index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -4390,6 +4656,7 @@ async function saveOrderGroups(current, groups, submittedAt) {
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
+  activatePendingReferences({ explicit: false, render: false });
   saveDraftNow();
   renderMode();
   setAppStatus(`주문 ${succeeded.length}건 저장 완료`);
@@ -4559,6 +4826,7 @@ async function completeOrderLegacy() {
     state.pendingOcrReview = null;
     state.pendingSourceName = '';
     state.pendingStructuredImport = null;
+    activatePendingReferences({ explicit: false, render: false });
     saveDraftNow();
     renderMode();
     setAppStatus(online ? `주문 ${result.order.orderNo} 저장·중앙 반영 완료` : `주문 ${result.order.orderNo} 로컬 저장 완료 · 중앙 반영 대기`, online ? 'normal' : 'warn');
@@ -4590,6 +4858,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
+  activatePendingReferences({ explicit: false, render: false });
   saveDraftNow();
   renderMode();
   sourceTextInput.focus();
@@ -4604,61 +4873,59 @@ function saveAndStartNextVoucher() {
   resetCurrentMode(false, '전표를 저장하고 다음 입력을 시작합니다.');
 }
 
-async function loadCustomerReferences() {
-  await withTimeout(ensureCustomerMasterReady(), 5000, '거래처 기준정보를 불러오지 못했습니다.');
-  return withTimeout(listCustomers({ includeInactive: false }), 5000, '거래처 기준정보를 불러오지 못했습니다.');
-}
-
 async function hydrateReferences() {
   state.catalogStatus = 'LOADING';
   state.customerStatus = 'LOADING';
-  state.referenceStatus = REFERENCE_STATUS.LOADING;
+  state.referenceStatus = REFERENCE_DOMAIN_STATUS.LOADING;
   state.referenceMessage = '상품·거래처·배송 설정을 불러오고 있습니다.';
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
+  const smartDataResult = await Promise.allSettled([
+    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
+  ]);
+  if (smartDataResult[0].status === 'fulfilled') {
+    const data = smartDataResult[0].value;
+    state.settings = contract.normalizeSettings(data.settings || {});
+    state.linkGroups = data.linkGroups || [];
+    state.temporaryCustomers = data.temporaryCustomers || [];
+    state.aliasMappings = data.aliasMappings || [];
+    state.estimates = normalizeEstimateOrder(data.estimates || []);
+    state.sourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
+    Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
+    restoreCachedReferences(data.referenceCache || {});
+    state.customers = normalizedCustomerCandidates(state.customers);
+    state.smartDataReady = true;
+    renderMode();
+  }
   const results = await Promise.allSettled([
-    loadCustomerReferences(),
-    withTimeout(loadProductCatalog(), 7000, '상품 기준자료 로딩 시간 초과'),
+    withTimeout(loadReferenceDomain('product'), 7000, '상품 기준자료 로딩 시간 초과'),
+    withTimeout(loadReferenceDomain('customer'), 7000, '거래처 기준자료 로딩 시간 초과'),
     withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
-    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
     withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과'),
     withTimeout(loadSaleStage4Capability(), 5000, '판매 저장 계약 확인 시간 초과')
   ]);
-  const loadedCustomers = results[0].status === 'fulfilled' ? results[0].value : [];
-  const productResult = results[1].status === 'fulfilled' ? results[1].value : null;
-  const readiness = applyReferenceLoad({
-    customers: loadedCustomers,
-    customerError: results[0].status === 'rejected' ? results[0].reason : null,
-    productResult,
-    productError: results[1].status === 'rejected' ? results[1].reason : null
+  ingestLatestReference('product', results[0].status === 'fulfilled' ? results[0].value : {
+    status: REFERENCE_DOMAIN_STATUS.ERROR,
+    error: { code: 'PRODUCT_REFERENCE_TIMEOUT', message: results[0].reason?.message || '상품 기준자료 로드 실패' }
+  });
+  ingestLatestReference('customer', results[1].status === 'fulfilled' ? results[1].value : {
+    status: REFERENCE_DOMAIN_STATUS.ERROR,
+    error: { code: 'CUSTOMER_REFERENCE_TIMEOUT', message: results[1].reason?.message || '거래처 기준자료 로드 실패' }
   });
   if (results[2].status === 'fulfilled') {
     state.warehouseCatalog = results[2].value;
     renderWarehouseOptions();
   }
-  if (results[3].status === 'fulfilled') {
-    state.settings = contract.normalizeSettings(results[3].value.settings || {});
-    state.linkGroups = results[3].value.linkGroups || [];
-    state.temporaryCustomers = results[3].value.temporaryCustomers || [];
-    state.aliasMappings = results[3].value.aliasMappings || [];
-    state.estimates = normalizeEstimateOrder(results[3].value.estimates || []);
-    state.sourceImageRecords = new Map((results[3].value.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
-    Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
-    state.customers = normalizedCustomerCandidates(state.customers);
-    state.smartDataReady = true;
-  }
-  state.purchaseCapability = results[4].status === 'fulfilled'
+  state.purchaseCapability = results[3].status === 'fulfilled'
+    ? results[3].value
+    : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: results[3].reason?.message || 'ping failed' };
+  state.saleCapability = results[4].status === 'fulfilled'
     ? results[4].value
-    : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
-  state.saleCapability = results[5].status === 'fulfilled'
-    ? results[5].value
-    : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: results[5].reason?.message || 'ping failed' };
-  if (readiness.ready) {
-    state.referenceMessage = `상품 준비 · 공통 ${Number(state.catalogSummary.commonCount || 0).toLocaleString('ko-KR')}건 · ORDER Q ${Number(state.catalogSummary.orderQCount || 0).toLocaleString('ko-KR')}건 · 거래처 ${state.customers.length.toLocaleString('ko-KR')}건`;
-  }
+    : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
+  refreshReferenceAggregate();
   renderMode();
-  setAppStatus(state.referenceMessage, readiness.ready ? '' : 'warn');
-  if (readiness.ready && [results[2], results[3]].some(result => result.status === 'rejected')) {
+  setAppStatus(state.referenceMessage, referencesReady() ? '' : 'warn');
+  if (referencesReady() && [results[2], smartDataResult[0]].some(result => result.status === 'rejected')) {
     setAppStatus(`${state.referenceMessage} · 배송 또는 설정 자료 일부를 불러오지 못했습니다.`, 'warn');
   }
 }
@@ -4677,6 +4944,30 @@ methodButtons.forEach(button => button.addEventListener('click', () => {
       : '공백과 줄바꿈을 유지해 입력합니다.';
   }
 }));
+
+$('productReferenceReload').addEventListener('click', () => { void reloadReferenceDomain('product'); });
+$('customerReferenceReload').addEventListener('click', () => { void reloadReferenceDomain('customer'); });
+$('referencePendingApply').addEventListener('click', () => { activatePendingReferences({ explicit: true }); });
+const referenceOverview = $('referenceOverview');
+const referenceOverviewSummary = referenceOverview.querySelector('summary');
+referenceOverviewSummary.addEventListener('keydown', event => {
+  if (!['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  referenceOverview.open = !referenceOverview.open;
+});
+referenceOverviewSummary.addEventListener('keyup', event => {
+  if (['Enter', ' '].includes(event.key)) event.preventDefault();
+});
+referenceOverview.addEventListener('toggle', () => {
+  referenceOverviewSummary.setAttribute('aria-expanded', String(referenceOverview.open));
+  referenceOverviewSummary.setAttribute('aria-label', referenceOverview.open ? '기준정보 상태 닫기' : '기준정보 상태 열기');
+});
+$('customerRegisterLink').addEventListener('click', () => {
+  const customerNameValue = $('customerInput').value.trim() || modeDraft().header.customerName;
+  void queueOwnerRegistration('customer', { customerName: customerNameValue }, {
+    idempotencyKey: `${modeDraft().documentId}:CUSTOMER_CREATE:${normalizedKey(customerNameValue) || 'EMPTY'}`
+  });
+});
 
 sourceTextInput.addEventListener('input', syncSourceText);
 sourceTextInput.addEventListener('compositionstart', () => { state.sourceComposing = true; });
@@ -5032,6 +5323,24 @@ inputRows.addEventListener('change', event => {
   if (row) tryMatchRow(row, input.dataset.field);
 });
 inputRows.addEventListener('click', event => {
+  const registerProduct = event.target.closest('[data-product-register]');
+  if (registerProduct) {
+    const row = modeDraft().rows.find(item => item.rowId === registerProduct.dataset.productRegister);
+    if (row) {
+      void queueOwnerRegistration('product', {
+        itemCode: row.itemCode,
+        itemName: row.itemName || row.unregisteredProductQuery || row.rawText,
+        specification: row.specification,
+        unit: row.unit
+      }, {
+        rowId: row.rowId,
+        idempotencyKey: `${modeDraft().documentId}:${row.rowId}:PRODUCT_CREATE`
+      }).then(result => {
+        registerProduct.dataset.requestStatus = result.status || 'ERROR';
+        registerProduct.title = result.accepted ? '등록 변경요청 접수 완료' : `변경요청 ${result.status || '실패'} · 현재 작업은 유지됩니다.`;
+      });
+    }
+  }
   const tr = event.target.closest('[data-row-id]');
   const editableInput = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
   if (tr && !editableInput && modeDraft().activeMethod === 'photo') {

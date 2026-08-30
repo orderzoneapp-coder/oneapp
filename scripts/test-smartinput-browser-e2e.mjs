@@ -182,6 +182,51 @@ try {
   await evaluate(client, `document.querySelector('#inputRows [data-product-search]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
   await expr(client, `document.querySelector('#inputRows [data-field="itemCode"]')?.value==='MASTER-1'`, 'public master product selection');
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="specification"]').value`), '10kg');
+  assert.equal(await evaluate(client, `document.querySelector('#productReferenceStatus').textContent`), 'READY', 'product Snapshot must expose READY independently');
+  assert.equal(await evaluate(client, `document.querySelector('#productReferenceCount').textContent`), '1건');
+  assert.match(await evaluate(client, `document.querySelector('#productReferenceSource').textContent`), /상품관리 Snapshot Adapter/);
+  await click(client, '#customerSearchButton');
+  await expr(client, `document.querySelector('.smart-customer-dialog .smart-dialog__empty')?.textContent.includes('등록 거래처 0건')`, 'confirmed empty customer state');
+  await input(client, '.smart-customer-dialog input[type="search"]', '조회없는거래처');
+  await expr(client, `document.querySelector('.smart-customer-dialog .smart-dialog__empty')?.textContent.includes('검색 결과 0건')`, 'zero customer search result');
+  assert.equal(await evaluate(client, `document.querySelector('#customerReferenceStatus').textContent`), 'EMPTY', 'customer EMPTY must remain distinct from ERROR');
+  await click(client, '.smart-customer-dialog [data-close]');
+
+  await input(client, '#inputRows [data-field="specification"]', '관리자 규격');
+  await click(client, '#inputRows [data-select-row]');
+  await evaluate(client, `window.__referenceRowMutations=0;window.__referenceRowObserver=new MutationObserver(records=>window.__referenceRowMutations+=records.length);window.__referenceRowObserver.observe(document.querySelector('#inputRows'),{childList:true,subtree:true});localStorage.setItem('merchMaster_v870',JSON.stringify([{productId:'P-MASTER-1',itemCode:'MASTER-1',itemName:'마스터 청사과',specification:'20kg',finalUnit:'BOX',outPrice:3300,status:'ACTIVE'}]));localStorage.setItem('merchMaster_revision_v870','2');true`);
+  await click(client, '#productReferenceReload');
+  await expr(client, `document.querySelector('#productReferenceStatus').textContent==='STALE'&&!document.querySelector('#referencePendingApply').hidden`, 'new product revision pending');
+  assert.equal(await evaluate(client, `window.__referenceRowMutations`), 0, 'scoped product reload must not rerender the work table');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="itemName"]').value`), '마스터 사과', 'pending revision must not change the current work');
+  await evaluate(client, `window.__referenceConfirm='';window.confirm=message=>{window.__referenceConfirm=message;return true};true`);
+  await click(client, '#referencePendingApply');
+  await expr(client, `document.querySelector('#productReferenceStatus').textContent==='READY'&&document.querySelector('#inputRows [data-field="itemName"]').value==='마스터 청사과'`, 'explicit current-work reference apply');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="specification"]').value`), '관리자 규격', 'explicit reference apply must preserve admin-edited fields');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-select-row]').checked`), true, 'explicit reference apply must preserve row selection');
+  assert.match(await evaluate(client, `window.__referenceConfirm`), /변경 1/);
+
+  await evaluate(client, `localStorage.setItem('merchMaster_v870',JSON.stringify([{productId:'P-MASTER-1',itemCode:'MASTER-1',itemName:'마스터 최신 사과',secondaryName:'최신사과',approvedAliases:['새별칭'],specification:'30kg',finalUnit:'BOX',outPrice:3400,status:'ACTIVE'}]));localStorage.setItem('merchMaster_revision_v870','3');true`);
+  await click(client, '#productReferenceReload');
+  await expr(client, `document.querySelector('#productReferenceStatus').textContent==='STALE'&&!document.querySelector('#referencePendingApply').hidden`, 'next-work product revision pending');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="itemName"]').value`), '마스터 청사과', 'next-work default must preserve current values');
+  await click(client, '#resetDraftButton');
+  await expr(client, `document.querySelector('#productReferenceRevision').textContent==='3'&&document.querySelector('#inputRows tr[data-default-row="true"]')`, 'pending revision promoted for next work');
+  await input(client, '#inputRows tr[data-default-row="true"] [data-product-search]', '등록되지않은상품XYZ');
+  await evaluate(client, `document.querySelector('#inputRows [data-product-search]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await expr(client, `document.querySelector('#inputRows .row-owner-register')?.textContent==='상품관리에서 등록'`, 'missing product owner path');
+  const missingBefore = await evaluate(client, `({rows:document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length,query:document.querySelector('#inputRows [data-product-search]').value,master:localStorage.getItem('merchMaster_v870'),href:document.querySelector('#inputRows .row-owner-register').getAttribute('href')})`);
+  assert.equal(missingBefore.query, '등록되지않은상품XYZ');
+  assert.equal(missingBefore.href, '../Master.html');
+  await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('MerchOpsDB',2);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('store'))db.createObjectStore('store');if(!db.objectStoreNames.contains('master_products'))db.createObjectStore('master_products',{keyPath:'코드'});};request.onerror=()=>reject(request.error);request.onsuccess=()=>{request.result.close();resolve(true);};})`);
+  await evaluate(client, `(() => {const link=document.querySelector('#inputRows .row-owner-register');link.addEventListener('click',event=>event.preventDefault(),{capture:true,once:true});link.click();return true;})()`);
+  const requestStatus = await expr(client, `document.querySelector('#inputRows .row-owner-register')?.dataset.requestStatus`, 'product registration request result');
+  assert.equal(requestStatus, 'PENDING', `product change request status: ${requestStatus}`);
+  await expr(client, `(async()=>{const module=await import('/reference-data/product-change-request-adapter.js');const result=await module.productMasterChangeRequestAdapter.listChangeRequests();return result.requests.some(entry=>entry.request?.operation==='CREATE'&&entry.request?.source?.appId==='smart-input')})()`, 'product registration change request');
+  await evaluate(client, `window.open(document.querySelector('#inputRows .row-owner-register').href,'_blank','noopener');true`);
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length`), missingBefore.rows, 'owner-app round trip must preserve the current row');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-product-search]').value`), missingBefore.query, 'owner-app round trip must preserve the missing input');
+  assert.equal(await evaluate(client, `localStorage.getItem('merchMaster_v870')`), missingBefore.master, 'SmartInput must not directly write the product master');
 
   const orderResult = await evaluate(client, `(async()=>{const adapter=await import('/smartinput/legacy-integration-adapter.js');const saved=await adapter.createOrder({orderDate:'2026-08-29',deliveryExpectedDate:'2026-08-30',customerId:'E2E-CUSTOMER',customerName:'격리 검증 거래처',warehouseCode:'88',warehouseName:'격리 검증 창고',sourceType:'SMART_INPUT_E2E',sourceId:'ISOLATED_PROFILE',sourceMessageKey:'SMARTINPUT-E2E-ONE',items:[{itemCode:'MASTER-1',itemName:'마스터 사과',rawText:'마스터 사과 1BOX',rawQuantity:1,rawUnit:'BOX',finalQuantity:1,finalUnit:'BOX',price:3200,matchStatus:'MATCHED'}]});const intake=await import('/orderq/order-intake-engine.js');const operations=await import('/orderq/order-operations-repository.js');const orders=await intake.listOrders();const snapshot=await operations.getOperationsSnapshot();const warehouses=await adapter.loadWarehouseCatalog();return {orderId:saved.order.orderId,listed:orders.some(order=>order.orderId===saved.order.orderId),operational:snapshot.bundles.some(bundle=>bundle.order.orderId===saved.order.orderId),warehouse:warehouses.warehouses.some(row=>row.warehouseCode==='88')};})()`);
   assert.equal(orderResult.listed, true, 'current ORDER Q listOrders must read the SmartInput-created order');
@@ -235,11 +280,21 @@ try {
   await wait(200);
   const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
+  await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  const mobileReference = await expr(client, `(() => {const overview=document.querySelector('#referenceOverview');const panel=document.querySelector('.reference-overview__panel').getBoundingClientRect();const globalHeader=document.querySelector('.nexus-ui-header').getBoundingClientRect();return overview.open&&overview.querySelector('summary').getAttribute('aria-expanded')==='true'&&panel.top>=globalHeader.bottom&&panel.right<=innerWidth&&panel.bottom<=innerHeight;})()`, 'mobile reference keyboard panel');
+  assert.equal(mobileReference, true, 'mobile reference panel must open by keyboard below the common header');
+  const mobileReferenceShot = await capture(client, 'smartinput-reference-mobile.png');
+  await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  assert.equal(await evaluate(client, `!document.querySelector('#referenceOverview').open&&document.activeElement===document.querySelector('#referenceOverview > summary')`), true, 'Enter must close the reference panel without losing focus');
   const mobileShot = await capture(client, 'smartinput-0a-mobile.png');
 
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height } }, null, 2));
+  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height } }, null, 2));
   console.log('SmartInput 0a browser E2E PASS');
 } finally {
   client?.close();

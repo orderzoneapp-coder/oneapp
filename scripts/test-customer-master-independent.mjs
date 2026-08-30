@@ -103,7 +103,7 @@ assert.deepEqual(app.sharedContracts, ['customer-master', 'customer-reference-ch
 const contract = manifest.sharedDataContracts.find((entry) => entry.id === 'customer-master');
 assert.equal(contract.owner, 'customer-master');
 assert.equal(contract.localDatabase, 'oneapp-customermaster-v1');
-assert.deepEqual(contract.consumers, [], 'consumer apps must be connected in separate verified work');
+assert.deepEqual(contract.consumers, ['smart-input'], 'SmartInput is the separately verified read-only Snapshot consumer');
 assert.match(await read('customer-master/read-adapter.js'), /getCustomerSnapshotResult/);
 assert.match(await read('customer-master/read-adapter.js'), /status:\s*selected\.length\s*>\s*0\s*\?\s*'READY'\s*:\s*'EMPTY'/);
 

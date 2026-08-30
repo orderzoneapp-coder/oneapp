@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.9
+- Architecture document version: 2.1.10
 - Last reviewed: 2026-08-30
-- Current-source baseline: `6a69056090a43356807a3adae8ce5728a5edb3e6`
+- Current-source baseline: `dcd962a64c6a7fa80d60d4f0578ebdc4a5de2ef4`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -57,7 +57,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - 현행 상품 직접 writer는 `Master.html`, `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js` 경로에 남아 있다. 이는 후속 앱별 전환을 위한 동결 allowlist이며 새 cross-app 직접 writer를 허용하지 않는다. DataOps writer는 기존 문서상 후속 후보지만 이 기준 SHA의 `DataOps.html`에서는 직접 writer가 검출되지 않았다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
-- `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput과 ORDER Q는 아직 이 계약의 필수 소비자로 전환하지 않는다.
+- `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput은 이 Snapshot의 읽기 전용 소비자로 전환됐고 ORDER Q 소비자 전환은 아직 수행하지 않는다.
 - 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
@@ -165,7 +165,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 `ItemMaster.html`은 manifest와 공통 메뉴에 등록하지 않는 정적 호환 페이지다. `master-lookup`과 `Master.html`, `item-manager`와 `Item_manager.html` 등록은 그대로 유지한다.
 
-`customer-master`의 쓰기는 앱 소유 Repository에 한정한다. 다른 앱은 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`가 발행하는 `ONEAPP_CUSTOMER_SNAPSHOT_V1` Snapshot만 소비하며, 소비자 연결 전까지 거래처관리 장애가 SmartInput·ORDER Q의 기존 업무를 차단하지 않는다. 변경요청은 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`로만 접수하며 `appMeta.referenceChangeRequestsV1`에 additive 보존하고 자동 적용하지 않는다.
+`customer-master`의 쓰기는 앱 소유 Repository에 한정한다. 다른 앱은 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`가 발행하는 `ONEAPP_CUSTOMER_SNAPSHOT_V1` Snapshot만 소비한다. SmartInput은 로컬 캐시와 실패 격리로 거래처관리 장애 중에도 기존 업무를 계속하고, ORDER Q는 소비자 전환 전의 기존 업무를 유지한다. 변경요청은 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`로만 접수하며 `appMeta.referenceChangeRequestsV1`에 additive 보존하고 자동 적용하지 않는다.
 
 ### 4.3 Master·ItemMaster·Item Manager 확정 기준
 
@@ -429,7 +429,7 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - 변경요청 schema와 validator는 `reference-data/change-request-contract.js`의 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`이다. domain-owner, base revision, 중복 field, 민감정보, ISO-8601과 필수값을 검증한다.
 - 상품 수신 경계는 `ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER`, 거래처 수신 경계는 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`다. 같은 idempotency key·같은 payload는 `DUPLICATE`, 다른 payload는 `CONFLICT`, 신규는 `PENDING`이며 owner 원본에 자동 적용하지 않는다.
 - Inbox migration은 기존 DB version과 Store 목록을 바꾸지 않는다. 상품은 `MerchOpsDB/store.oneappProductReferenceChangeRequests_v1`, 거래처는 `oneapp-customermaster-v1/appMeta.referenceChangeRequestsV1` 한 key만 추가한다. rollback은 이 key를 삭제하지 않으며 구버전은 알 수 없는 key를 무시한다.
-- 소비자 일괄 전환, SmartInput UI 연결, ORDER Q 전환, 기존 레거시 writer 제거와 Server Transport 추가는 이 계약 도입에 포함하지 않는다.
+- PR #440의 계약 도입에는 소비자 일괄 전환, SmartInput UI 연결, ORDER Q 전환, 기존 레거시 writer 제거와 Server Transport 추가가 포함되지 않았다. 후속 `NEXUS-SI-REFDATA-UX-20260830-01`은 SmartInput UI 연결만 수행하며 나머지 제외 범위를 유지한다.
 
 ### 5.7 활성 작업본 보호와 독립 배포
 
@@ -700,7 +700,7 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 
 ### 9.3 `app-manifest.json` 단계적 확장
 
-`app-manifest.json` v1.3.0의 기존 운영 계약은 유지한다. SmartInput과 거래처관리 파일럿은 실제 엔트리와 독립 실행 경계를 구현해 아래 선택 필드와 각자의 로컬 계약을 등록하며, 다른 앱도 실제 구축·검증 시 같은 방식으로 단계적으로 등록할 수 있다.
+`app-manifest.json` v1.3.1의 기존 운영 계약은 유지한다. SmartInput과 거래처관리 파일럿은 실제 엔트리와 독립 실행 경계를 구현해 아래 선택 필드와 각자의 로컬 계약을 등록하며, 다른 앱도 실제 구축·검증 시 같은 방식으로 단계적으로 등록할 수 있다.
 
 | 필드 | 의미 | 등록 시점 |
 |---|---|---|
@@ -713,7 +713,7 @@ ORDER Q is registered as a Pilot on the existing `orderops/list.html` compatibil
 - 기존 `sharedContracts`, status와 productionWrites 의미를 임의로 바꾸지 않는다.
 - 새 필드를 manifest 필수값으로 전환할 때는 schemaVersion, validator, 모든 기존 앱과 문서를 함께 갱신한다.
 - 목표 owner를 먼저 기록하거나 미구축 앱을 운영 의존성으로 등록하지 않는다.
-- 거래처관리는 자체 엔트리·Repository·Read Adapter와 로컬 이전·복원 경계를 갖춘 파일럿으로 등록한다. SmartInput·ORDER Q 소비자 연결, Cloud 동기화와 인증 통제는 이 파일럿 구축에 포함하지 않는다.
+- 거래처관리는 자체 엔트리·Repository·Read Adapter와 로컬 이전·복원 경계를 갖춘 파일럿으로 등록한다. SmartInput 소비자 연결은 별도 후속 작업으로 완료됐으며 ORDER Q 소비자 연결, Cloud 동기화와 인증 통제는 아직 포함하지 않는다.
 - `ItemMaster.html`은 manifest 미등록 정적 호환 주소로 유지하며 운영 앱이나 `product-master` owner로 등록하지 않는다. 기존 `master-lookup`·`Master.html`과 `item-manager`·`Item_manager.html` 항목은 변경하지 않는다.
 - 공식 상품관리 주소 전환과 `Master.html` 삭제 계획은 폐기됐다. 이후 owner 변경을 검토하더라도 별도 사용자 확정, writer 전환, migration과 rollback 검증이 필요하다.
 
@@ -871,7 +871,7 @@ Their business meaning must not be unified merely because the key number is the 
    - `Item_manager.html`은 기존 `item-manager` 공식 경로와 카탈로그 소싱·행사테마·BOM 등 현재 구현을 유지한다.
 4. **CustomerMaster 구축**
    - 독립 앱 엔트리, 소유 Repository, customer Snapshot Read Adapter와 v17 읽기 전용 이전 경계를 파일럿으로 구현한다.
-   - SmartInput·ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.
+   - SmartInput은 로컬 캐시 우선·장애 격리형 소비자로 연결하고, ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.
 5. **SmartInput 구축**
    - 전표 작성 작업본과 기존 로컬 저장 계약은 자체 Repository가 소유한다.
    - 상품·거래처는 Snapshot으로 복사하고 열린 전표를 최신 master로 자동 덮어쓰지 않는다.
@@ -882,4 +882,4 @@ Their business meaning must not be unified merely because the key number is the 
 7. **상태 승격**
    - 단독 실행, 장애 격리, 데이터 무결성, 운영 배포와 독립 롤백이 확인된 앱만 계획에서 파일럿, 파일럿에서 운영으로 승격한다.
 
-SmartInput 파일럿 등록은 5단계의 기본 복구 범위만 수행한다. 상품·거래처·ORDER Q 원장 소유권 이전과 다른 단계의 상태 승격은 수행하지 않는다.
+SmartInput 파일럿은 5단계 기본 복구와 상품·거래처 Snapshot 소비자 연결을 수행했다. 상품·거래처·ORDER Q 원장 소유권 이전과 다른 단계의 상태 승격은 수행하지 않는다.

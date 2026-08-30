@@ -143,6 +143,10 @@ export async function loadSmartInputData() {
   ]);
   return {
     settings: settingsRows.find(row => row.key === 'app')?.value || null,
+    referenceCache: {
+      product: settingsRows.find(row => row.key === 'reference:product')?.value || null,
+      customer: settingsRows.find(row => row.key === 'reference:customer')?.value || null
+    },
     linkGroups,
     temporaryCustomers,
     aliasMappings,
@@ -159,6 +163,15 @@ export async function loadSmartInputData() {
 
 export function saveSettings(value) {
   return put(DATA_STORES.SETTINGS, { key: 'app', value, updatedAt: new Date().toISOString() }, 'key');
+}
+
+export function saveReferenceCache(domain, value) {
+  if (!['product', 'customer'].includes(domain)) return Promise.reject(new Error('REFERENCE_DOMAIN_INVALID'));
+  return put(DATA_STORES.SETTINGS, {
+    key: `reference:${domain}`,
+    value,
+    updatedAt: new Date().toISOString()
+  }, 'key');
 }
 
 export function saveLinkGroup(group) {
