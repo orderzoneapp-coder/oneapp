@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [homeHtml, homeRuntime, commonRuntime, adminHtml, adminRuntime, gateway] = await Promise.all([
+const [homeHtml, homeRuntime, sessionBridge, commonRuntime, adminHtml, adminRuntime, gateway] = await Promise.all([
   readFile('nexus/index.html', 'utf8'),
   readFile('nexus/nexus.js', 'utf8'),
+  readFile('nexus/session-bridge.js', 'utf8'),
   readFile('nexus/common/nexus-ui.js', 'utf8'),
   readFile('nexus/admin/index.html', 'utf8'),
   readFile('nexus/admin/admin.js', 'utf8'),
@@ -26,6 +27,9 @@ assert.match(homeRuntime, /iterations[^\n]+310000|310000/, 'PBKDF2 iteration str
 assert.match(homeRuntime, /visibleAppsConfigured/, 'home must consume the server visibility contract');
 assert.match(homeRuntime, /schemaVersion:\s*VISIBILITY_SCHEMA/, 'home must emit a schema-versioned projection');
 assert.doesNotMatch(homeRuntime, /localStorage/, 'home must not persist auth or visibility in localStorage');
+assert.match(homeRuntime, /scope:\s*SESSION_BRIDGE_SCOPE/, 'home must restrict the session bridge to /nexus/');
+assert.match(sessionBridge, /url\.pathname\.startsWith\(NEXUS_PATH_PREFIX\)/, 'bridge messages must reject clients outside /nexus/');
+assert.doesNotMatch(sessionBridge, /addEventListener\(['"]fetch|\bcaches\b|localStorage|indexedDB|document\.cookie/, 'bridge must not persist tokens or control fetch');
 
 assert.match(adminHtml, /일반 사용자 추가/, 'minimal user creation UI is required');
 assert.match(adminHtml, /최근 감사기록/, 'minimal audit UI is required');

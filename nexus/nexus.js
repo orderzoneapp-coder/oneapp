@@ -6,6 +6,18 @@
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const REQUEST_TIMEOUT_MS = 20000;
+  const SESSION_BRIDGE_URL = '/nexus/session-bridge.js?v=1.0.0';
+  const SESSION_BRIDGE_SCOPE = '/nexus/';
+  const SESSION_BRIDGE_WAIT_MS = 700;
+  const SESSION_BRIDGE_MESSAGE = Object.freeze({
+    PUBLISH: 'NEXUS_SESSION_PUBLISH',
+    REQUEST: 'NEXUS_SESSION_REQUEST',
+    NEEDED: 'NEXUS_SESSION_NEEDED',
+    RESPONSE: 'NEXUS_SESSION_RESPONSE',
+    UPDATED: 'NEXUS_SESSION_UPDATED',
+    CLEAR: 'NEXUS_SESSION_CLEAR',
+    CLEARED: 'NEXUS_SESSION_CLEARED',
+  });
   const APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', detail: '상품 기준정보 조회·관리', path: '/Master.html' }),
     Object.freeze({ id: 'customer-master', label: '거래처관리', detail: '거래처 기준정보 조회·관리', path: '/customer-master/' }),
@@ -55,6 +67,12 @@
   const adminLink = document.getElementById('adminLink');
   const appGrid = document.getElementById('appGrid');
 
+  let sessionBridgeReadyPromise = null;
+  let sessionBridgeRegistration = null;
+  let sessionBridgeListenerInstalled = false;
+  let sessionBridgeRequestSequence = 0;
+  const pendingSessionRequests = new Map();
+
   const cleanText = (value) => String(value ?? '').trim();
 
   const bytesToBase64Url = (bytes) => {
@@ -77,6 +95,14 @@
     loginMessage.classList.toggle('is-progress', progress);
   };
 
+  const normalizeSessionBundle = (bundle) => {
+    const token = cleanText(bundle?.token);
+    const session = bundle?.session;
+    const expiresAt = Date.parse(session?.expiresAt || '');
+    if (!token || !session?.user || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+    return { token, session };
+  };
+
   const clearCachedSession = () => {
     try {
       sessionStorage.removeItem(STORAGE_KEY);
@@ -92,9 +118,8 @@
 
   const readCachedSession = () => {
     try {
-      const cached = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
-      const expiresAt = Date.parse(cached?.session?.expiresAt || '');
-      if (!cleanText(cached?.token) || !cached?.session?.user || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      const cached = normalizeSessionBundle(JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null'));
+      if (!cached) {
         clearCachedSession();
         return null;
       }
@@ -103,6 +128,114 @@
       clearCachedSession();
       return null;
     }
+  };
+
+  const sessionBridgeTarget = () => navigator.serviceWorker?.controller
+    || sessionBridgeRegistration?.active
+    || sessionBridgeRegistration?.waiting
+    || sessionBridgeRegistration?.installing
+    || null;
+
+  const postToSessionBridge = (message) => {
+    const target = sessionBridgeTarget();
+    if (!target) return false;
+    try {
+      target.postMessage(message);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleSessionBridgeMessage = (event) => {
+    const message = event.data || {};
+    if (message.type === SESSION_BRIDGE_MESSAGE.NEEDED) {
+      const cached = readCachedSession();
+      if (cached) postToSessionBridge({
+        type: SESSION_BRIDGE_MESSAGE.RESPONSE,
+        requestId: message.requestId,
+        bundle: cached,
+      });
+      return;
+    }
+
+    if (message.type === SESSION_BRIDGE_MESSAGE.RESPONSE) {
+      const pending = pendingSessionRequests.get(message.requestId);
+      if (!pending) return;
+      clearTimeout(pending.timeout);
+      pendingSessionRequests.delete(message.requestId);
+      pending.resolve(normalizeSessionBundle(message.bundle));
+      return;
+    }
+
+    if (message.type === SESSION_BRIDGE_MESSAGE.UPDATED) {
+      const shared = normalizeSessionBundle(message.bundle);
+      if (!shared) return;
+      saveCachedSession(shared.token, shared.session);
+      showHome(shared.session);
+      return;
+    }
+
+    if (message.type === SESSION_BRIDGE_MESSAGE.CLEARED) {
+      const cached = readCachedSession();
+      if (!cached || cached.token !== cleanText(message.token)) return;
+      clearCachedSession();
+      showLogin('다른 NEXUS 창에서 로그아웃되었습니다.');
+    }
+  };
+
+  const ensureSessionBridge = () => {
+    if (sessionBridgeReadyPromise) return sessionBridgeReadyPromise;
+    sessionBridgeReadyPromise = (async () => {
+      if (!('serviceWorker' in navigator) || !window.isSecureContext) return false;
+      if (!sessionBridgeListenerInstalled) {
+        navigator.serviceWorker.addEventListener('message', handleSessionBridgeMessage);
+        sessionBridgeListenerInstalled = true;
+      }
+      try {
+        sessionBridgeRegistration = await navigator.serviceWorker.register(SESSION_BRIDGE_URL, {
+          scope: SESSION_BRIDGE_SCOPE,
+          updateViaCache: 'none',
+        });
+        const ready = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((resolve) => setTimeout(() => resolve(null), SESSION_BRIDGE_WAIT_MS)),
+        ]);
+        if (ready) sessionBridgeRegistration = ready;
+        return Boolean(sessionBridgeTarget());
+      } catch {
+        return false;
+      }
+    })();
+    return sessionBridgeReadyPromise;
+  };
+
+  const publishSession = async (bundle) => {
+    const normalized = normalizeSessionBundle(bundle);
+    if (!normalized || !(await ensureSessionBridge())) return false;
+    return postToSessionBridge({ type: SESSION_BRIDGE_MESSAGE.PUBLISH, bundle: normalized });
+  };
+
+  const requestSharedSession = async () => {
+    if (!(await ensureSessionBridge())) return null;
+    const requestId = `${Date.now()}-${++sessionBridgeRequestSequence}-${Math.random().toString(36).slice(2)}`;
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingSessionRequests.delete(requestId);
+        resolve(null);
+      }, SESSION_BRIDGE_WAIT_MS);
+      pendingSessionRequests.set(requestId, { resolve, timeout });
+      if (!postToSessionBridge({ type: SESSION_BRIDGE_MESSAGE.REQUEST, requestId })) {
+        clearTimeout(timeout);
+        pendingSessionRequests.delete(requestId);
+        resolve(null);
+      }
+    });
+  };
+
+  const clearSharedSession = async (token) => {
+    if (!cleanText(token) || !(await ensureSessionBridge())) return false;
+    return postToSessionBridge({ type: SESSION_BRIDGE_MESSAGE.CLEAR, token: cleanText(token) });
   };
 
   const callAuth = async (action, body = {}) => {
@@ -238,11 +371,13 @@
       const session = sessionFromResponse(result);
       if (!session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
       saveCachedSession(cached.token, session);
+      void publishSession({ token: cached.token, session });
       showHome(session);
       sessionNotice.textContent = '';
     } catch (error) {
       if (SESSION_ERRORS.has(cleanText(error?.message))) {
         clearCachedSession();
+        void clearSharedSession(cached.token);
         showLogin('로그인 시간이 만료되었습니다. 다시 로그인하세요.');
         return;
       }
@@ -264,6 +399,7 @@
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
     saveCachedSession(token, session);
+    void publishSession({ token, session });
     return { token, session };
   };
 
@@ -282,6 +418,7 @@
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
     saveCachedSession(token, session);
+    void publishSession({ token, session });
     return { token, session };
   };
 
@@ -333,6 +470,7 @@
   logoutButton.addEventListener('click', () => {
     const cached = readCachedSession();
     clearCachedSession();
+    if (cached?.token) void clearSharedSession(cached.token);
     showLogin('로그아웃되었습니다.');
     document.getElementById('loginId').focus();
     if (cached?.token) {
@@ -340,14 +478,23 @@
     }
   });
 
-  renderApps();
-  const cached = readCachedSession();
-  if (cached) {
-    showHome(cached.session);
-    setTimeout(() => {
-      refreshSession(cached);
-    }, 0);
-  } else {
+  const bootstrap = async () => {
+    renderApps();
+    const cached = readCachedSession();
+    if (cached) {
+      showHome(cached.session);
+      void publishSession(cached);
+      setTimeout(() => { refreshSession(cached); }, 0);
+      return;
+    }
+
     showLogin();
-  }
+    const shared = await requestSharedSession();
+    if (!shared) return;
+    saveCachedSession(shared.token, shared.session);
+    showHome(shared.session);
+    setTimeout(() => { refreshSession(shared); }, 0);
+  };
+
+  void bootstrap();
 })();

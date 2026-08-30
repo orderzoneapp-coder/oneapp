@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 const html = await readFile('nexus/index.html', 'utf8');
 const css = await readFile('nexus/nexus.css', 'utf8');
 const runtime = await readFile('nexus/nexus.js', 'utf8');
+const sessionBridge = await readFile('nexus/session-bridge.js', 'utf8');
 const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
@@ -30,8 +31,12 @@ for (const action of [
 assert.match(runtime, /script\.google\.com\/macros\/s\//, 'the deployed login service must be configured');
 assert.match(runtime, /name: 'PBKDF2'/, 'the password verifier must use PBKDF2');
 assert.match(runtime, /hash: 'SHA-256'/, 'the password verifier must use SHA-256');
-assert.match(runtime, /sessionStorage\.setItem/, 'the session must be limited to the current browser tab');
+assert.match(runtime, /sessionStorage\.setItem/, 'each NEXUS tab must retain its own in-memory-lifetime session cache');
 assert.doesNotMatch(runtime, /localStorage/, 'the session token must not persist in localStorage');
+assert.match(runtime, /navigator\.serviceWorker\.register\(SESSION_BRIDGE_URL/, 'NEXUS home must register the scoped session bridge');
+assert.match(runtime, /NEXUS_SESSION_REQUEST/, 'a new NEXUS tab must request an active peer session');
+assert.match(runtime, /NEXUS_SESSION_CLEARED/, 'logout and expiry must propagate to peer NEXUS tabs');
+assert.doesNotMatch(sessionBridge, /addEventListener\(['"]fetch|\bcaches\b|localStorage|indexedDB|document\.cookie/, 'the bridge must stay memory-only and must not intercept page traffic');
 assert.match(runtime, /showHome\(cached\.session\);[\s\S]*setTimeout\(\(\) => \{[\s\S]*refreshSession\(cached\);/, 'a cached home must render before background session verification');
 assert.match(runtime, /role === 'OWNER_MASTER' \? 'MASTER' : '위임 사용자'/, 'roles must be presented as MASTER or delegated user without enforcing app permission');
 assert.doesNotMatch(runtime, /canUseApp|hasPermission|appContexts|nexus_proxy|window\.fetch\s*=/, 'basic login must not add app gating or a gateway runtime');
