@@ -661,22 +661,22 @@ for (const name of [
   "MerchOps.html",
   "SmartParser.html",
   "settings.html",
-  "export_center.html",
   "Master.html",
   "Item_manager.html",
 ]) {
   assert.match(files[name], /<script src="coreEngine\.js"><\/script>/, `${name} must load the shared storage engine`);
 }
+assert.doesNotMatch(files["export_center.html"], /<script src="coreEngine\.js"><\/script>/, "Export Center must remain output-only and must not load master writers");
 assert.match(files["SmartParser.html"], /ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1/);
 assert.match(files["SmartParser.html"], /submitProductChangeRequest/);
-assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: settingsMasterRevision/);
-assert.match(files["settings.html"], /commitMasterStateOrThrow\(nextMaster, \{\s*expectedRevision: masterState\.revision/);
-assert.match(files["export_center.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: exportMasterRevision/);
+assert.match(files["settings.html"], /OWNER_ROUTED: 상품 원본 작업은 상품관리에서 실행하세요/);
+assert.match(files["settings.html"], /navigateToOwner\('Master\.html'\)/);
+assert.doesNotMatch(files["settings.html"], /commitMasterStateOrThrow\(newMaster/);
+assert.doesNotMatch(files["settings.html"], /commitMasterStateOrThrow\(nextMaster/);
+assert.doesNotMatch(files["export_center.html"], /commitMasterStateOrThrow\s*\(/);
+assert.match(files["export_center.html"], /db\.transaction\('store', 'readonly'\)/);
+assert.match(files["export_center.html"], /key !== 'ONEAPP_IMAGE_DATA_TEMP'/);
 assert.match(files["smartparser/stop-management-command-adapter.js"], /expectedRevision: command\.expectedRevision/);
-assert.match(
-  files["settings.html"],
-  /var activation = await activateMasterProduct\(rec\.code\);[\s\S]*?catch \(error\)[\s\S]*?완료 상태로 변경하지 않았습니다/,
-);
 assert.doesNotMatch(files["SmartParser.html"], /db\.transaction\(\['master_products', 'store'\], 'readwrite'\)/);
 assert.doesNotMatch(files["settings.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["settings.html"], /setIDB\('merchMaster_v870'/);

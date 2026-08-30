@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.15
-- Last reviewed: 2026-08-30
-- Current-source baseline: `7037a60` (NEXUS cross-window Session implementation base; final merge SHA is recorded with the release evidence)
+- Architecture document version: 2.1.16
+- Last reviewed: 2026-08-31
+- Current-source baseline: `e6edac9` (DEC-021 implementation base; final merge SHA is recorded with the release evidence)
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -58,7 +58,8 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - SmartParser의 사용자가 별도 품절/정지 화면에서 명시한 `STOP`·`RESUME`·`UPDATE_METADATA`만 `smartparser/stop-management-command-adapter.js`를 통해 expected Snapshot/revision과 operation ID를 검증한 뒤 판매여부·정지목록·쇼핑몰 상태 대기열·실제 history·mirror·notification을 한 성공 단위로 반영한다. 분석의 0원·품절은 issue와 정지 권고일 뿐 command를 자동 실행하지 않는다.
 - `reference-data/product-master-command-adapter.js`는 `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1` / `MERCHOPS_REVIEWED_WORK_APPLY_V1` 경계를 제공한다. MerchOps는 작업 시작 Snapshot ID·revision·hash와 필드별 before/after/history를 보낸 F7 reviewed patch로만 기존 상품을 변경하며, 행 삭제·신규 상품·임의 필드·일반 판매여부 변경은 거부한다. 충돌, history 실패, 연결상태 변경, 후검산 실패는 전체 변경을 rollback한다.
 - MerchOps의 bundled/external core 호환 API는 Adapter 로드 직후 owner boundary로 다시 고정한다. cloud URL seed·쓰기, full backup/restore, config 복원, master cloud import·Excel apply·backup restore 및 공개 master commit alias는 `OWNER_ROUTED`로 fail-closed하며 시작 시 Settings 키를 만들거나 덮어쓰지 않는다.
-- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`과 `SmartParser.html`을 제거했다. SmartParser 전용 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 판매상태 예외 경계다. 남은 호환 writer는 `Master.html`, `settings.html`, `export_center.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js`며 새 cross-app 직접 writer를 허용하지 않는다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
+- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`을 제거했다. SmartParser 전용 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 판매상태 예외 경계다. 남은 호환 writer는 `Master.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js`며 새 cross-app 직접 writer를 허용하지 않는다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
+- DEC-021에 따라 History Viewer는 `ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1`의 불변 Snapshot만 읽고 Cloud 결과를 메모리에서만 병합한다. Settings는 `ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1` allowlist와 검증·pre-image·rollback·후검산 경계로 설정만 복구하며 상품·이력·정지 상태 변경은 owner 화면으로 보낸다. Export Center는 기존 `merch_export_draft`를 유지하고 Product Snapshot을 읽기 전용 참조하며 F9와 화면 버튼 모두 output-only로 실행한다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput은 이 Snapshot의 읽기 전용 소비자로 전환됐고 ORDER Q 소비자 전환은 아직 수행하지 않는다.
@@ -132,6 +133,9 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 미등록 상품 PENDING 변경요청 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
 | SmartParser | 운영 | 외부 문서 로컬 분석·매칭, 불변 분석결과, 상품 owner PENDING 요청, 공급사 제외와 명시적 stop command | 상품 원본은 Snapshot으로만 읽고 분석 제안과 즉시 stop command를 분리 |
+| History Viewer | 운영 | 변경이력 Snapshot 조회·검색·가격 추세·현재 화면 JSON/CSV 출력 | local/Cloud 원본을 변경하지 않는 읽기 전용 감사 화면 |
+| Settings | 운영 | 설정 allowlist 편집, JSON/Cloud 원자 복구, 상품·SmartParser owner routing | 설정만 쓰고 외부 소유 데이터는 불투명 복구 예외 외에 변경하지 않음 |
+| Export Center | 운영 | MerchOps F9 초안 검토, Excel·이미지 출력, Product Snapshot 상태 표시 | master/history/revision 무쓰기 output-only 화면 |
 
 ### 4.1 상태와 소유권 전환
 
@@ -147,7 +151,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 ### 4.2 현재 manifest 등록 목록
 
-아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.0의 현재 등록 상태다.
+아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.5의 현재 등록 상태다.
 
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
@@ -156,12 +160,12 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `merchops` | `MerchOps.html` | 운영 | Product Snapshot 기반 가공·가격·프로모션, F7 reviewed patch, F8 무쓰기, F9 호환 payload |
 | `dataops` | `DataOps.html` | 운영 | 매입·매출·재고·원가·성과 분석 |
 | `smart-parser` | `SmartParser.html` | 운영 | 외부 문서 해석·불변 분석결과, Product Snapshot 매칭, PENDING 상품요청, 공급자 제외와 전용 stop-management command |
-| `export-center` | `export_center.html` | 운영 | 검토 결과 확인, Excel 출력과 승인된 현행 master 반영 |
-| `settings` | `settings.html` | 운영 | 매핑·가격정책·열·보기·Cloud URL 설정 |
+| `export-center` | `export_center.html` | 운영 | MerchOps F9 초안 검토, Product Snapshot 상태 확인, master 무쓰기 Excel·이미지 출력 |
+| `settings` | `settings.html` | 운영 | 매핑·가격정책·열·보기·Cloud URL과 검증된 설정 백업·복원, 외부 소유 작업 owner routing |
 | `master-lookup` | `Master.html` | 파일럿 | 상품 조회와 관리자 검토형 추가·수정 |
 | `customer-master` | `customer-master/index.html` | 파일럿 | 거래처 조회·등록·수정·정보 보완·Excel 업서트·매핑·Snapshot·v17 읽기 전용 이전 |
 | `item-manager` | `Item_manager.html` | 파일럿 | 상품 기초정보 조회·등록·수정 |
-| `history-viewer` | `history_viewer.html` | 운영 | 상품 변경이력·가격 추이 조회 |
+| `history-viewer` | `history_viewer.html` | 운영 | 불변 상품 변경이력 Snapshot·가격 추이 조회와 현재 화면 JSON/CSV 출력 |
 | `core-engine` | `coreEngine.js` | 운영 공유 라이브러리 | 현행 저장·가격·이력·출력·Cloud·master 유틸리티 |
 | `orderops` | `orderops/list.html` | 파일럿 | 출고·재고·구매계획과 검토형 출력 |
 | `orderq-vnext` | `orderq/index.html` | 파일럿 | 주문 입력·수집·이행근거와 revision 동기화 |
@@ -257,27 +261,29 @@ Important contracts include:
 
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
-| Product master Snapshot | `merchMaster_v870`, `MerchOpsDB` / `master_products`; `ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1` | `master-lookup` 소유. MerchOps·SmartParser·DataOps·ORDER Q 등은 읽기 Snapshot으로 소비 |
+| Product master Snapshot | `merchMaster_v870`, `MerchOpsDB` / `master_products`; `ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1` | `master-lookup` 소유. MerchOps·SmartParser·DataOps·ORDER Q·History Viewer·Export Center 등은 읽기 Snapshot으로 소비 |
 | Product master reviewed command | `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1`, `MERCHOPS_REVIEWED_WORK_APPLY_V1` | MerchOps F7 일반/행사비교 완료행만 expected Snapshot·field patch·history·rollback 계약으로 사용 |
 | Product read Snapshot | `ONEAPP_PRODUCT_MASTER_READ_ADAPTER` / `ONEAPP_PRODUCT_SNAPSHOT_V1` | `master-lookup`이 제공하는 공식 읽기 경계. DataOps F6와 ORDER Q 수기입력이 소비하며 READY·EMPTY·ERROR를 구분 |
 | Product change-request inbox | `MerchOpsDB` / `store.oneappProductReferenceChangeRequests_v1` | `master-lookup`만 수신·조회. SmartInput·MerchOps·SmartParser가 idempotent `PENDING` 요청을 접수하며 기존 master·revision Store와 분리된 additive KV |
 | SmartParser analysis result | `smartparser/analysis-result-contract.js`; `ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1` | `smart-parser` 소유의 순수·불변 로컬 결과. 원본 전체 master·문서·비밀값을 포함하거나 Repository를 쓰지 않음 |
 | Customer change-request inbox | `oneapp-customermaster-v1` / `appMeta.referenceChangeRequestsV1` | `customer-master`만 수신·조회. 기존 customer Store·레코드와 분리된 additive KV |
-| Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps, export center, settings; MerchOps는 새 revision 대기를 표시하고 열린 작업표를 자동 덮어쓰지 않음 |
-| Change history | `merchHistory_v870` | MerchOps·DataOps·history viewer·cloud backup과 실제 SmartParser stop command. SmartParser 분석/PENDING 접수는 기록하지 않음 |
-| Parser dictionary | `parserDict_v870` | SmartParser, MerchOps, settings, cloud configuration |
+| Master change notification | `merchMaster_sync_trigger` | SmartParser, DataOps와 MerchOps. MerchOps는 새 revision 대기를 표시하고 열린 작업표를 자동 덮어쓰지 않음 |
+| Change history Snapshot | `merchHistory_v870`; `ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1` / `ONEAPP_CHANGE_HISTORY_SNAPSHOT_V1` | `master-lookup` 소유. History Viewer와 MerchOps는 불변 Snapshot을 소비하고 실제 append는 승인된 owner command 성공 단위에서만 수행 |
+| Parser dictionary | `parserDict_v870` | SmartParser 쓰기 소유, MerchOps 읽기 소비. Settings는 schema 검증된 불투명 백업·복구 예외로만 보존 |
 | Parser supplier exclusions | `smartParserExcludeDict_v3012`, compatibility backup `smartParserExcludeDict_backup_v3015` | SmartParser owns writes, search, restore, scoped deletion, and automatic exclusion on the next parse; these keys are preserved without migration |
 | Stopped-product management | `ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1`; IndexedDB `MerchOpsDB` keys `merchStoppedProducts_v2`, `pending_shop_status`; local mirrors `merchStoppedProducts_v2`, `pendingShopStatus` | SmartParser의 명시적 STOP/RESUME/UPDATE_METADATA는 전용 Adapter 한 경계에서 원자 처리. MerchOps는 보호 목적으로 읽고 DataOps의 기존 post-close resume-only 경계는 유지 |
 | Stopped-product notification | `merchStopManager_sync_trigger` | SmartParser publishes verified stop-management changes; compatible readers refresh their stopped-state view without rewriting the shared list |
 | DataOps post-close sale-resume recovery | `dataops_inventory_master_resume_v1` | DataOps only; records pending or failed sale-resume codes with the already-finalized inventory snapshot revision so retry never repeats inventory closing |
 | Margin and pricing rules | `merchMarginRules_v878` | Settings 쓰기 소유; MerchOps는 `ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1`로 읽기만 수행 |
-| Parser catalog warehouse map | `parserCatalogWarehouseMap_v1` (`{ [catalogName]: warehouseCodeString }`) | SmartParser, settings, core-engine `config_only` backup and restore |
+| Parser catalog warehouse map | `parserCatalogWarehouseMap_v1` (`{ [catalogName]: warehouseCodeString }`) | SmartParser 쓰기 소유. Settings는 UI로 의미를 변경하지 않고 schema 검증된 불투명 `config_only` 백업·복구 예외로만 보존 |
 | Mapping configuration | `merchMappings_v870` | Settings 쓰기 소유; MerchOps read-only |
 | Master links | `merchMasterLinks_v870` | Settings 쓰기 소유; MerchOps read-only |
 | Shared cloud URL | `oneapp_cloud_sync_url_v1` | Settings가 편집·백업·복원을 소유. MerchOps는 읽기·owner routing만 수행 |
 | Legacy cloud URL | `merchCloudUrl_v870` | Compatibility fallback only |
 | Settings table-view configuration | `merchActiveTableTarget_v1`, `merchActiveTableViewId_v1`, `merchTableViewPresets_v1` | Settings 쓰기 소유; MerchOps read-only |
 | MerchOps current-work view | `merchops_work_view_state_v1` / `MERCHOPS_WORK_VIEW_STATE_V1` | MerchOps만 현재 작업 선택을 additive 저장. Settings 양식을 대체하지 않음 |
+| Settings config recovery | `ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1` / `ONEAPP_SETTINGS_CONFIG_BUNDLE_V1` | Settings 소유 allowlist만 쓰며 전체 검증, pre-image, rollback, 후검산과 Cloud unknown-field round-trip 보존을 강제 |
+| MerchOps export draft | `MerchOpsDB/store.merch_export_draft`; optional `merch_export_draft_meta` | MerchOps가 기존 draft shape를 소유하고 Export Center가 읽기·검토·출력만 수행. sidecar는 draft hash와 Product Snapshot version만 담음 |
 | Shipping local recovery | IndexedDB `ONEAPPShippingManagementDB` / `workspaces`; `oneapp.shipping.recovery.pointer.v1` and `oneapp.shipping.recovery.meta.v1` | OrderOps only; IndexedDB stores the analysis workspace and inputs, while localStorage stores only the recovery pointer and metadata |
 | Shipping table widths | `oneapp.shipping.table-widths.v1` | OrderOps local UI preference only; tab-specific widths are excluded from workspace, IndexedDB recovery, cloud plans, and purchase uploads |
 | OrderOps Excel aliases | `oneapp.orderops.excel-mappings.v1` | OrderOps local parser preference only; administrator filename, sheet, and column aliases are excluded from workspace recovery and cloud plans |
@@ -371,7 +377,7 @@ As of this review, `settings.html`, `SmartParser.html`, `MerchOps.html`, `Master
 
 The `merchMarginRules_v878` normalize/select/calculate path is owned by `ONEAPP.PRICING`. SmartParser supplies the catalog warehouse only as calculation context and the final product `단위`; neither SmartParser nor MerchOps infers that unit from product name or specification. Exact non-wildcard warehouse-and-unit matches use the first saved rule, and every other case uses the single `*/*` default rule. Partial wildcard rules are not selected.
 
-`parserCatalogWarehouseMap_v1` trims catalog names and warehouse-code strings without numeric conversion, so values such as `01` retain their leading zero and blank values remain valid. SmartParser and settings read and write this same key directly and synchronize it on browser storage and focus events. The key is carried inside the existing cloud `settingsKeys`; the `code.gs` action and payload schema are unchanged.
+`parserCatalogWarehouseMap_v1` trims catalog names and warehouse-code strings without numeric conversion, so values such as `01` retain their leading zero and blank values remain valid. SmartParser alone edits this value. Settings carries it as an opaque, schema-validated recovery item inside the existing cloud `settingsKeys`; the `code.gs` action and payload schema are unchanged.
 
 The legacy `parserListMarginRules_v1` value is retained for data compatibility but is not read, normalized, migrated, deleted, or rewritten by SmartParser, settings, MerchOps, or the shared pricing engine.
 
@@ -387,20 +393,15 @@ A shared-engine consolidation must not be performed as incidental refactoring du
 
 ### 5.5 클라이언트 안전과 장애 격리 기준
 
-The master Excel workflow in `settings.html` uses the shared core engine and applies these controls before production data changes:
+Settings no longer exposes master Excel apply, master backup restore, tag deletion, sale activation, or stop/status editing. Those actions route to `Master.html` or `SmartParser.html`. `ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1` applies the remaining configuration safety boundary:
 
-- Accept only `xlsx`, `xls`, or `csv` files up to 25 MB and 100,000 data rows.
-- Block the entire apply action when a row has no product code.
-- Block the entire apply action when a product code is duplicated.
-- Block apply when no actual change exists.
-- Keep existing products that are absent from the workbook.
-- Treat workbook absence as a warning, not a delete instruction.
-- Replace the IndexedDB master store in one transaction.
-- Verify corresponding `localStorage` writes.
-- If a post-write history or notification step fails, restore the previous master and history.
-- Keep validation and storage errors visible until the operator fixes the file, retries, or clears the analysis.
-
-Equivalent safety controls must be preserved when another application writes the same master or history contracts.
+- accept only Settings-owned allowlist keys plus the two explicit SmartParser opaque recovery keys;
+- validate the entire JSON or Cloud payload before the first write;
+- capture every target key pre-image and restore it if any write or post-read verification fails;
+- re-read every applied value after write and every restored pre-image after rollback;
+- exclude product master, history, pending, stop and product-status live data;
+- read the existing Cloud `AppConfig` before upload and preserve all unknown external fields, otherwise stop with an actionable error;
+- avoid seeding absent keys from computed defaults on page mount.
 
 추가 장애 격리 기준은 다음과 같다.
 
@@ -502,6 +503,17 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 5. An explicit migration review is required before compatibility data is removed.
 6. Backup success must not be assumed from request completion alone.
 7. Restored data must be re-read and checked for expected counts and structure.
+8. Settings backup/restore excludes product master, history, pending, stop and product-status live data. `parserDict_v870` and `parserCatalogWarehouseMap_v1` remain opaque SmartParser recovery exceptions only.
+9. Cloud upload first reads the current config and round-trips unknown external fields. If the current pre-image cannot be represented safely, upload stops without writing.
+
+### 6.5 History·Settings·Export owner boundaries
+
+1. History Viewer obtains local history only through `ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1`. Missing key, valid empty data, parse/read failure and ready data remain `NOT_AVAILABLE`, `EMPTY`, `ERROR`, `READY` respectively.
+2. Cloud history stays in a separate memory Snapshot. De-duplication, filtering, JSON and CSV export never write `merchHistory_v870`; export uses the exact current sorted and filtered view.
+3. Settings owns only the manifest allowlist. Product master/backup/tag actions route to `Master.html`; parser dictionary/catalog map editing and stop/resume route to `SmartParser.html`.
+4. Export Center reads `merch_export_draft` before Product Snapshot so Snapshot failure cannot discard the draft. READY, EMPTY, ERROR and STALE are displayed as distinct actionable states.
+5. MerchOps preserves the existing draft array shape and stores optional `ONEAPP_MERCH_EXPORT_DRAFT_META_V1` in a sidecar key. Exact revision comparison uses matching draft fingerprint metadata; legacy drafts use baseline-content comparison.
+6. Export Center F9 and the visible Excel button call the same output-only handler. Excel/image output may write only the user file or the existing temporary image payload, never product master, history, revision or sync triggers.
 
 ### 6.6 MerchOps reviewed work and new-product request
 
@@ -510,9 +522,9 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 3. F7 normal work and F7 promotion comparison build field-level patches against the immutable base Snapshot and call `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1`.
 4. `판매여부` is accepted only when the patch history proves the explicit `입고가없음` F7 action; general file/manual sale changes remain outside this command.
 5. Missing products are submitted to `ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER` as `PENDING`; no request auto-applies master data and the local work row remains available.
-6. Category/catalog creation stages the `견적서` work field for later F7. Rename and delete route to Settings.
+6. Category/catalog creation stages the `견적서` work field for later F7. Product category/tag rename and delete route to the `Master.html` owner screen.
 
-### 6.5 Master add/update review
+### 6.7 Master add/update review
 
 1. Master accepts a validated Excel workbook for initial registration only when the official master is empty; when an existing master is present it uses the administrator-reviewed add/update comparison workflow.
 2. The operator reviews:
@@ -820,12 +832,18 @@ Roadmap work is delivered as separate pull requests and verified after each merg
 - F7 applies reviewed work through `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1` for normal work and completed promotion-comparison rows; no other MerchOps workflow changes product master data.
 - F7 does not consume shared stop-management `pendingAction` records. `판매여부` is limited to the explicit `입고가없음` action recorded in patch history.
 - F8 creates the Excel output from the current work without changing the master.
-- F9 sends the unchanged existing payload shape to Export Center for a separate review-and-output flow.
+- F9 sends the unchanged existing payload shape to Export Center for a separate review-and-output flow. Optional Product Snapshot version metadata is stored in a fingerprint-bound sidecar key and does not change the existing draft rows.
 - Missing products create additive `PENDING` owner requests and remain in the worktable; they are never auto-applied.
 - Settings-owned cloud URL, margin rules, mappings, links, table views, and SmartParser-owned dictionary/stop state are read-only. Cloud backup/restore, master upload/cleanup, and rename/delete actions route to their owner screens.
 - Legacy globals and the bundled core fallback enforce the same boundary: mutating calls return `OWNER_ROUTED`, while URL/config/Snapshot reads and non-mutating backup builders remain compatible.
 - SmartParser information changes are submitted separately as Product owner `PENDING` requests and are not queued into MerchOps F7.
 - Supplier exclusion and stopped/sold-out product management are SmartParser-owned workflows; MerchOps keeps read-only stopped-state protection for its worktable.
+
+#### Export Center
+
+- Product Snapshot is an immutable reference only. EMPTY, ERROR and revision mismatch keep the draft visible and never become a product write.
+- The visible Excel button and F9 call one output-only handler. There is no master commit, history append, revision update or master synchronization trigger.
+- Existing workbook sheets, columns, working-value precedence, numeric zero, boolean false, explicit blank, image temporary payload and MerchOps return routing remain compatible.
 
 #### SmartParser
 

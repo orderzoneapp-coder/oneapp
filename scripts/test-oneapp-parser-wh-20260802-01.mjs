@@ -12,6 +12,7 @@ const coreSource = read('coreEngine.js');
 const smartSource = read('SmartParser.html');
 const merchSource = read('MerchOps.html');
 const settingsSource = read('settings.html');
+const settingsOwnerSource = read('reference-data/settings-config-owner-adapter.js');
 const dataOpsSource = read('DataOps.html');
 
 for (const [label, html] of [['SmartParser', smartSource], ['MerchOps', merchSource], ['settings', settingsSource], ['DataOps', dataOpsSource]]) {
@@ -80,7 +81,9 @@ assert.match(merchSource, /F8\uC740 \uB9C8\uC2A4\uD130\u00B7\uD788\uC2A4\uD1A0\u
 assert.match(merchSource, /F9 \uCD9C\uB825\uAC80\uC99D/);
 assert.match(merchSource, /product-master-command-adapter\.js/);
 
-assert.match(settingsSource, /parserCatalogWarehouseMap_v1/);
+assert.match(settingsOwnerSource, /parserCatalogWarehouseMap_v1/);
+assert.match(settingsSource, /navigateToOwner\('SmartParser\.html'\)/);
+assert.doesNotMatch(settingsSource, /writeParserCatalogWarehouseMap/);
 assert.match(settingsSource, /addEventListener\('storage'/);
 assert.match(dataOpsSource, /masterAddUpdate\.js/);
 assert.doesNotMatch(dataOpsSource, /SmartParserStopManagement/);

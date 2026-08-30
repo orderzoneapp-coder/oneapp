@@ -134,7 +134,7 @@ assert.equal(customerRequestContract.resources.inboxKey, 'referenceChangeRequest
 const allowedWriterFiles = new Set(productContract.legacyWriterAllowlist);
 assert.deepEqual([...allowedWriterFiles].sort(), [
   'Item_manager.html', 'Master.html', 'coreEngine.js',
-  'export_center.html', 'masterAddUpdate.js', 'settings.html',
+  'masterAddUpdate.js',
 ].sort());
 assert.equal(productContract.stopCommandException.asset, 'smartparser/stop-management-command-adapter.js');
 assert.equal(productContract.readAdapterVersion, 'ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1');
@@ -174,6 +174,16 @@ for (const path of detectedWriters) {
       businessSource,
       /commitMasterStateOrThrow|replaceMasterState\s*=|master_products[^\n]{0,160}readwrite/,
       'MerchOps business workflows must not retain a direct product writer',
+    );
+    continue;
+  }
+  if (path === 'settings.html') {
+    const settingsSource = await readFile(join(root, path), 'utf8');
+    assert.match(settingsSource, /OWNER_ROUTED: 상품 원본 작업은 상품관리에서 실행하세요/);
+    assert.doesNotMatch(
+      settingsSource.slice(settingsSource.indexOf('const getSettingsOwnerAdapter')),
+      /\.commitMasterStateOrThrow\s*\(|\.replaceMasterState\s*\(|master_products[^\n]{0,160}readwrite/,
+      'Settings business workflows must not retain a direct product writer',
     );
     continue;
   }

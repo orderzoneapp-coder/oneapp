@@ -30,43 +30,22 @@
     <div id="root"></div>
 
     <script>
-// 🚨 coreEngine.js 안전장치 및 getIDB/setIDB 폴리필 확보
-if (typeof window.getAllIDB !== 'function') {
-    window.initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 2); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains('store'))
-        db.createObjectStore('store'); if (!db.objectStoreNames.contains('master_products'))
-        db.createObjectStore('master_products', { keyPath: '코드' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-    window.getAllIDB = async (storeName) => { try {
-        const db = await window.initIDB();
-        return new Promise((resolve, reject) => { if (!db.objectStoreNames.contains(storeName))
-            return resolve([]); const tx = db.transaction(storeName, 'readonly'); const req = tx.objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); });
-    }
-    catch (e) {
-        return [];
-    } };
-    window.getIDB = async (key) => { try {
-        const db = await window.initIDB();
-        return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); });
-    }
-    catch (e) {
-        return null;
-    } };
-    window.setIDB = async (key, val) => { try {
-        if (['merchMaster_v870', 'merchMaster_revision_v870'].includes(key)) throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
-        const db = await window.initIDB();
-        return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
-    }
-    catch (e) {
-        console.warn('IDB put failed');
-    } };
-    window.bulkPutIDB = async (storeName, items) => { try {
-        if (storeName === 'master_products') throw new Error('master_products는 공통 원자 저장 경로만 사용할 수 있습니다.');
-        const db = await window.initIDB();
-        return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); items.forEach(item => store.put(item)); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
-    }
-    catch (e) {
-        console.warn('IDB put failed');
-    } };
-}
+// Settings는 설정 Repository만 쓴다. coreEngine의 레거시 상품 writer는 이 화면에서 fail-closed한다.
+const settingsOwnerRouted = () => {
+    const error = new Error('OWNER_ROUTED: 상품 원본 작업은 상품관리에서 실행하세요.');
+    error.code = 'OWNER_ROUTED';
+    return Promise.reject(error);
+};
+['commitMasterState', 'commitMasterStateOrThrow'].forEach(name => {
+    if (window.ONEAPP?.STORAGE) window.ONEAPP.STORAGE[name] = settingsOwnerRouted;
+});
+['applyMasterExcelUpload', 'restoreMasterBackup'].forEach(name => {
+    if (window.ONEAPP?.MASTER) window.ONEAPP.MASTER[name] = settingsOwnerRouted;
+    if (Object.prototype.hasOwnProperty.call(window, name)) window[name] = settingsOwnerRouted;
+});
+const getSettingsOwnerAdapter = async () => (
+    await import('./reference-data/settings-config-owner-adapter.js')
+).settingsConfigOwnerAdapter;
 if (!window.MASTER_HEADERS) {
     window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "판매가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
 }
@@ -402,6 +381,19 @@ const getDefaultMasterLinks = () => ({
     }
 });
 const getDefaultUploadColumnMeta = () => ({ catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, info: {} });
+const useOwnedSettingEffect = (key, value, serialize = JSON.stringify) => {
+    const mounted = useRef(false);
+    useEffect(() => {
+        if (!mounted.current) {
+            mounted.current = true;
+            return;
+        }
+        localStorage.setItem(key, serialize(value));
+        localStorage.setItem('config_sync_trigger', Date.now().toString());
+    }, [key, value, serialize]);
+};
+const stringifySettingValue = (value) => JSON.stringify(value);
+const stringifyTableViewPresets = (value) => JSON.stringify(sanitizeTableViewPresets(value));
 const useMerchConfig = () => {
     const [cloudUrl, setCloudUrl] = useState(() => {
         const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function' ? window.getOneAppCloudSyncUrl() : '';
@@ -414,78 +406,33 @@ const useMerchConfig = () => {
     const [uploadColumnMeta, setUploadColumnMeta] = useState(() => mergeConfigDefaults(safeJSONParse('merchUploadColumnMeta_v870', {}), getDefaultUploadColumnMeta()));
     const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
     const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
-    const [catalogWarehouseMap, setCatalogWarehouseMapState] = useState(() => window.readParserCatalogWarehouseMap ? window.readParserCatalogWarehouseMap() : {});
     const [marginRules, setMarginRules] = useState(() => window.sanitizeMerchMarginRules(
         safeJSONParse('merchMarginRules_v878', window.getDefaultMerchMarginRules())
     ));
-    const saveCatalogWarehouseMap = useCallback((nextValue) => {
-        const rawNext = typeof nextValue === 'function' ? nextValue(catalogWarehouseMap) : nextValue;
-        const saved = window.writeParserCatalogWarehouseMap
-            ? window.writeParserCatalogWarehouseMap(rawNext || {})
-            : (rawNext || {});
-        setCatalogWarehouseMapState(saved);
-        try { localStorage.setItem('config_sync_trigger', Date.now().toString()); } catch (e) { }
-        return saved;
-    }, [catalogWarehouseMap]);
+    const cloudMounted = useRef(false);
     useEffect(() => {
-        const reloadCatalogWarehouseMap = () => {
-            if (window.readParserCatalogWarehouseMap)
-                setCatalogWarehouseMapState(window.readParserCatalogWarehouseMap());
-        };
-        const handleStorage = event => {
-            if (event.key === window.PARSER_CATALOG_WAREHOUSE_MAP_KEY) reloadCatalogWarehouseMap();
-        };
-        window.addEventListener('storage', handleStorage);
-        window.addEventListener('focus', reloadCatalogWarehouseMap);
-        return () => {
-            window.removeEventListener('storage', handleStorage);
-            window.removeEventListener('focus', reloadCatalogWarehouseMap);
-        };
-    }, []);
-    useEffect(() => {
+        if (!cloudMounted.current) {
+            cloudMounted.current = true;
+            return;
+        }
         if (cloudUrl) {
             if (typeof window.setOneAppCloudSyncUrl === 'function') window.setOneAppCloudSyncUrl(cloudUrl);
             else {
                 localStorage.setItem('oneapp_cloud_sync_url_v1', cloudUrl);
                 localStorage.setItem('merchCloudUrl_v870', cloudUrl);
             }
+            localStorage.setItem('config_sync_trigger', Date.now().toString());
         }
-        localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
-        localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-        localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
-        localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
-        localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-        localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
-        localStorage.setItem('merchTableShortcuts_v870', JSON.stringify(tableShortcuts));
-        localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitizeTableViewPresets(tableViewPresets)));
-        localStorage.setItem('config_sync_trigger', Date.now().toString());
-    }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts, tableViewPresets]);
-    return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, catalogWarehouseMap, saveCatalogWarehouseMap, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
-};
-let settingsMasterRevision = undefined;
-const useMerchData = () => {
-    const [masterProducts, setMasterProducts] = useState({});
-    const [historyLogs, setHistoryLogs] = useState([]);
-    useEffect(() => {
-        if (window.ONEAPP?.STORAGE?.readMasterSnapshotState) {
-            window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
-                settingsMasterRevision = state.revision;
-                const items = state.items;
-                if (items && items.length > 0) {
-                    const dict = {};
-                    items.forEach(i => dict[i.코드] = i);
-                    setMasterProducts(dict);
-                }
-            }).catch(err => console.warn('IDB Data Error:', err));
-        }
-        try {
-            const logs = JSON.parse(localStorage.getItem('merchHistory_v870'));
-            if (logs)
-                setHistoryLogs(logs);
-        }
-        catch (e) { }
-    }, []);
-    return { masterProducts, setMasterProducts, historyLogs, setHistoryLogs };
+    }, [cloudUrl]);
+    useOwnedSettingEffect('merchVisMaster_v870', visibleMasterCols, stringifySettingValue);
+    useOwnedSettingEffect('merchVisUpload_v870', visibleUploadCols, stringifySettingValue);
+    useOwnedSettingEffect('merchMappings_v870', mappings, stringifySettingValue);
+    useOwnedSettingEffect('merchMasterLinks_v870', masterLinks, stringifySettingValue);
+    useOwnedSettingEffect('merchMarginRules_v878', marginRules, stringifySettingValue);
+    useOwnedSettingEffect('merchUploadColumnMeta_v870', uploadColumnMeta, stringifySettingValue);
+    useOwnedSettingEffect('merchTableShortcuts_v870', tableShortcuts, stringifySettingValue);
+    useOwnedSettingEffect('merchTableViewPresets_v1', tableViewPresets, stringifyTableViewPresets);
+    return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
 };
 
 const navigateToMerchOps = () => {
@@ -506,11 +453,16 @@ const navigateToMerchOps = () => {
         window.location.href = 'MerchOps.html';
     }
 };
+const navigateToOwner = (path) => {
+    try { window.location.href = new URL(path, window.location.href).href; }
+    catch (e) { window.location.href = path; }
+};
+const navigateToMaster = () => navigateToOwner('Master.html');
+const navigateToSmartParser = () => navigateToOwner('SmartParser.html');
 
 const App = () => {
     var _a;
     const config = useMerchConfig();
-    const data = useMerchData();
     const [activeTab, setActiveTab] = useState('display');
     // MerchOps 작업대에서 마지막으로 적용한 테이블보기 대상을 환경설정 진입 시 그대로 이어받는다.
     // 예: 재고파일을 불러온 뒤 환경설정에 들어오면 견적이 아니라 재고 테이블 설정이 열려야 한다.
@@ -527,10 +479,6 @@ const App = () => {
     const [toast, setToast] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [processMsg, setProcessMsg] = useState('');
-    const [masterUploadAnalysis, setMasterUploadAnalysis] = useState(null);
-    const [masterUploadFileName, setMasterUploadFileName] = useState('');
-    const [masterUploadError, setMasterUploadError] = useState('');
-    const [masterBackups, setMasterBackups] = useState([]);
     const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
     const getActionableError = (error, context) => {
         if (error?.name === 'OneAppClientError' && error?.message) return error.message;
@@ -553,323 +501,74 @@ const App = () => {
             window.removeEventListener('focus', syncActiveTableTargetFromMerchOps);
         };
     }, []);
-    const availableCatalogs = useMemo(() => {
-        const counts = {};
-        Object.values(data.masterProducts).forEach(m => {
-            const tags = String(m['카탈로그'] || '').split(',').map(s => s.trim()).filter(Boolean);
-            tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
-        });
-        return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-    }, [data.masterProducts]);
-    const parserCatalogOptions = useMemo(() => Array.from(new Set([
-        ...availableCatalogs.map(item => String(item.name || '').trim()),
-        ...Object.keys(config.catalogWarehouseMap || {}).map(name => String(name || '').trim())
-    ].filter(Boolean))).sort((left, right) => left.localeCompare(right)), [availableCatalogs, config.catalogWarehouseMap]);
-    const availableCategories = useMemo(() => {
-        const counts = {};
-        Object.values(data.masterProducts).forEach(m => {
-            const merged = new Set();
-            ['견적서', '카테고리'].forEach(field => {
-                String(m[field] || '').split(',').map(s => s.trim()).filter(Boolean).forEach(t => merged.add(t));
-            });
-            merged.forEach(t => counts[t] = (counts[t] || 0) + 1);
-        });
-        return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-    }, [data.masterProducts]);
-
-    const loadMasterBackups = async () => {
-        try {
-            const list = typeof window.getMasterBackups === 'function'
-                ? await window.getMasterBackups()
-                : (window.ONEAPP?.MASTER?.getMasterBackups ? await window.ONEAPP.MASTER.getMasterBackups() : []);
-            setMasterBackups(Array.isArray(list) ? list : []);
-        }
-        catch (e) { setMasterBackups([]); }
-    };
-    useEffect(() => { loadMasterBackups(); }, []);
-    const MASTER_IMPORT_MAX_BYTES = 25 * 1024 * 1024;
-    const MASTER_IMPORT_MAX_ROWS = 100000;
-    const parseMasterExcelFile = (file) => new Promise((resolve, reject) => {
-        if (!file) return reject(new Error('선택한 파일이 없습니다.'));
-        if (!/\.(xlsx|xls|csv)$/i.test(String(file.name || ''))) {
-            return reject(new Error('지원하지 않는 파일 형식입니다. xlsx, xls, csv 파일만 선택하세요.'));
-        }
-        if ((Number(file.size) || 0) > MASTER_IMPORT_MAX_BYTES) {
-            return reject(new Error(`파일이 25MB를 초과합니다. 엑셀을 분할하거나 불필요한 시트를 제거한 뒤 다시 시도하세요.`));
-        }
-        if (!window.XLSX) return reject(new Error('엑셀 파서가 로드되지 않았습니다.'));
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
-                if (!Array.isArray(wb.SheetNames) || wb.SheetNames.length === 0) {
-                    throw new Error('엑셀에 읽을 수 있는 시트가 없습니다.');
-                }
-                const firstSheetName = wb.SheetNames[0];
-                const ws = wb.Sheets[firstSheetName];
-                if (!ws) throw new Error('첫 번째 시트를 읽을 수 없습니다.');
-                const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-                if (!Array.isArray(rows) || rows.length === 0) {
-                    throw new Error('첫 번째 시트에 데이터 행이 없습니다. 헤더가 첫 행에 있는지 확인하세요.');
-                }
-                if (rows.length > MASTER_IMPORT_MAX_ROWS) {
-                    throw new Error(`데이터가 ${MASTER_IMPORT_MAX_ROWS.toLocaleString()}행을 초과합니다. 파일을 분할한 뒤 다시 시도하세요.`);
-                }
-                const sourceHeaders = Object.keys(rows[0] || {}).map(header => String(header || '').trim()).filter(Boolean);
-                if (sourceHeaders.length === 0) throw new Error('첫 번째 시트의 헤더를 찾지 못했습니다.');
-                resolve({ rows, sourceHeaders, sheetName: firstSheetName });
-            }
-            catch (err) { reject(err); }
-        };
-        reader.onerror = () => reject(reader.error || new Error('파일 읽기 실패'));
-        reader.onabort = () => reject(new Error('파일 읽기가 중단되었습니다. 파일을 다시 선택하세요.'));
-        reader.readAsArrayBuffer(file);
-    });
-    const handlePromotionThemeSettings = async (file) => {
-        if (!file) return;
-        setMasterUploadError('');
-        setMasterUploadAnalysis(null);
-        setIsProcessing(true);
-        setProcessMsg('마스터 엑셀 분석 중...');
-        try {
-            const parsed = await parseMasterExcelFile(file);
-            const analyzer = window.ONEAPP?.MASTER?.analyzeMasterExcelUpload || window.analyzeMasterExcelUpload;
-            if (typeof analyzer !== 'function') throw new Error('coreEngine의 마스터 업로드 엔진을 찾을 수 없습니다.');
-            const analysis = analyzer({ excelRows: parsed.rows, currentMaster: data.masterProducts, sourceHeaders: parsed.sourceHeaders });
-            const validator = window.ONEAPP?.MASTER?.validateMasterExcelAnalysis || window.validateMasterExcelAnalysis;
-            const validation = analysis.validation || (typeof validator === 'function' ? validator(analysis) : { ok: false, blockingErrors: ['마스터 업로드 검증 엔진을 찾을 수 없습니다.'] });
-            setMasterUploadFileName(file.name || '마스터 엑셀');
-            setMasterUploadAnalysis({ ...analysis, validation, sheetName: parsed.sheetName });
-            if (!validation.ok) {
-                setMasterUploadError(validation.message || `마스터 적용이 차단되었습니다. ${(validation.blockingErrors || []).join(' ')}`);
-                showToast(`⚠️ 분석 완료 · 오류를 수정해야 적용할 수 있습니다.`);
-            } else {
-                showToast(`✅ 마스터 엑셀 검증 완료: ${analysis.summary.totalRows.toLocaleString()}행`);
-            }
-        }
-        catch (err) {
-            console.error(err);
-            const message = getActionableError(err, '마스터 엑셀 분석');
-            setMasterUploadError(message);
-            showToast('❌ 마스터 엑셀 분석 실패 · 아래 상세내용을 확인하세요.');
-        }
-        finally {
-            setIsProcessing(false);
-            setProcessMsg('');
-        }
-    };
-    const handleApplyPromotionThemeSettings = async () => {
-        if (!masterUploadAnalysis) return showToast('⚠️ 먼저 마스터 엑셀을 분석하세요.');
-        const validator = window.ONEAPP?.MASTER?.validateMasterExcelAnalysis || window.validateMasterExcelAnalysis;
-        const validation = masterUploadAnalysis.validation || (typeof validator === 'function' ? validator(masterUploadAnalysis) : { ok: false, blockingErrors: ['마스터 업로드 검증 엔진을 찾을 수 없습니다.'] });
-        if (!validation.ok) {
-            const message = validation.message || `마스터 적용이 차단되었습니다. ${(validation.blockingErrors || []).join(' ')}`;
-            setMasterUploadError(message);
-            return showToast('❌ 검증 오류를 수정한 뒤 다시 분석하세요.');
-        }
-        const s = masterUploadAnalysis.summary || {};
-        const confirmMsg = `마스터DB를 엑셀 기준으로 수정합니다.\n\n수정: ${(s.updateCount || 0).toLocaleString()}건\n신규: ${(s.createCount || 0).toLocaleString()}건\n중복: ${(s.duplicateCodeCount || 0).toLocaleString()}건\n코드없음: ${(s.noCodeCount || 0).toLocaleString()}건\n\n적용 전 자동 백업 후 진행합니다.`;
-        if (!window.confirm(confirmMsg)) return;
-        setMasterUploadError('');
-        setIsProcessing(true);
-        setProcessMsg('마스터DB 백업 및 적용 중...');
-        try {
-            const applier = window.ONEAPP?.MASTER?.applyMasterExcelUpload || window.applyMasterExcelUpload;
-            if (typeof applier !== 'function') throw new Error('coreEngine의 마스터 적용 엔진을 찾을 수 없습니다.');
-            const result = await applier({
-                analysis: masterUploadAnalysis,
-                currentMaster: data.masterProducts,
-                expectedRevision: settingsMasterRevision,
-                label: masterUploadFileName || '마스터엑셀업로드'
-            });
-            settingsMasterRevision = result.revision;
-            data.setMasterProducts(result.masterMap || {});
-            await loadMasterBackups();
-            showToast(`✅ 마스터 적용 완료: 수정 ${result.updateCount.toLocaleString()}건 / 신규 ${result.createCount.toLocaleString()}건`);
-        }
-        catch (err) {
-            console.error(err);
-            const message = getActionableError(err, '마스터 적용');
-            setMasterUploadError(message);
-            showToast('❌ 마스터 적용 실패 · 아래 상세내용을 확인하세요.');
-        }
-        finally {
-            setIsProcessing(false);
-            setProcessMsg('');
-        }
-    };
-    const handleRestoreMasterBackup = async (backupId) => {
-        if (!backupId) return;
-        if (!window.confirm('선택한 백업으로 마스터DB를 복구하시겠습니까?')) return;
-        setIsProcessing(true);
-        setProcessMsg('마스터 백업 복구 중...');
-        try {
-            const restorer = window.ONEAPP?.MASTER?.restoreMasterBackup || window.restoreMasterBackup;
-            if (typeof restorer !== 'function') throw new Error('coreEngine의 백업 복구 엔진을 찾을 수 없습니다.');
-            const backup = await restorer(backupId);
-            settingsMasterRevision = backup.revision;
-            data.setMasterProducts(backup.data || {});
-            setMasterUploadError('');
-            showToast(`✅ 백업 복구 완료: ${(backup.count || 0).toLocaleString()}건`);
-        }
-        catch (err) {
-            console.error(err);
-            const message = getActionableError(err, '마스터 백업 복구');
-            setMasterUploadError(message);
-            showToast('❌ 백업 복구 실패 · 아래 상세내용을 확인하세요.');
-        }
-        finally {
-            setIsProcessing(false);
-            setProcessMsg('');
-        }
-    };
-
     // v1.6.24: 정보 양식 자동 실행순서에 판매정지 적용·테마초기화 적용 버튼을 추가하고, 필터단계와 값 적용단계를 한 순서로 저장한다.
     // v1.6.25: 마스터 기본 노출을 입고가·판매가·시중가로 변경하고, 판매가를 양식 선택항목에 추가한다.
     // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.7.0_ParserWarehousePricing]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
-    const CONFIG_SYNC_KEYS = [
-        'parserDict_v870',
-        'merchMarginRules_v878',
-        'merchMappings_v870',
-        'merchMasterLinks_v870',
-        'merchVisUpload_v870',
-        'merchVisMaster_v870',
-        'merchUploadColumnMeta_v870',
-        'merchTableShortcuts_v870',
-        'merchTableViewPresets_v1',
-        'merchProductStatusRecords_v1',
-        'merchActiveTableTarget_v1',
-        'merchActiveTableViewId_v1',
-        'parserCatalogWarehouseMap_v1',
-        'oneapp_cloud_sync_url_v1',
-        'merchCloudUrl_v870'
-    ];
-    const readLocalJSON = (key, fallback) => {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw || raw === 'undefined' || raw === 'null') return fallback;
-            return JSON.parse(raw);
-        } catch (e) { return fallback; }
+    const parseSettingsRaw = (raw, fallback) => {
+        if (raw === undefined || raw === null) return fallback;
+        try { return JSON.parse(raw); }
+        catch (e) { return fallback; }
     };
-    const readLocalRawMap = () => {
-        const out = {};
-        CONFIG_SYNC_KEYS.forEach(key => {
-            try {
-                const value = localStorage.getItem(key);
-                if (value !== null && value !== undefined) out[key] = value;
-            } catch (e) {}
-        });
-        return out;
-    };
-    const getPendingShopStatusForSync = () => {
-        return readLocalJSON('pendingShopStatus', readLocalJSON('pendingShopStatus_v1', [])) || [];
-    };
-    const buildSettingsAppConfig = () => ({
-        mappings: config.mappings,
-        masterLinks: config.masterLinks,
-        visibleUploadCols: config.visibleUploadCols,
-        visibleMasterCols: config.visibleMasterCols,
-        uploadColumnMeta: config.uploadColumnMeta,
-        tableShortcuts: config.tableShortcuts,
-        tableViewPresets: sanitizeTableViewPresets(config.tableViewPresets),
-        activeTableTarget: localStorage.getItem('merchActiveTableTarget_v1') || activeUploadRole || DEFAULT_TABLE_VIEW_TARGET,
-        activeTableViewId: localStorage.getItem('merchActiveTableViewId_v1') || activeTableViewId || ''
-    });
-    const buildSettingsCloudPayload = () => {
-        const dict = readLocalJSON('parserDict_v870', {});
-        const appConfig = buildSettingsAppConfig();
-        const settingsKeys = readLocalRawMap();
-        settingsKeys['merchTableViewPresets_v1'] = JSON.stringify(appConfig.tableViewPresets || getDefaultTableViewPresets());
-        settingsKeys['merchProductStatusRecords_v1'] = localStorage.getItem('merchProductStatusRecords_v1') || '[]';
-        settingsKeys['merchVisUpload_v870'] = JSON.stringify(config.visibleUploadCols || {});
-        settingsKeys['merchVisMaster_v870'] = JSON.stringify(config.visibleMasterCols || {});
-        settingsKeys['merchMappings_v870'] = JSON.stringify(config.mappings || {});
-        settingsKeys['merchMasterLinks_v870'] = JSON.stringify(config.masterLinks || {});
-        settingsKeys['merchUploadColumnMeta_v870'] = JSON.stringify(config.uploadColumnMeta || {});
-        settingsKeys['merchTableShortcuts_v870'] = JSON.stringify(config.tableShortcuts || []);
-        settingsKeys['merchMarginRules_v878'] = JSON.stringify(config.marginRules || []);
-        settingsKeys['parserCatalogWarehouseMap_v1'] = JSON.stringify(config.catalogWarehouseMap || {});
-        return {
-            action: 'config',
-            data: {
-                schemaVersion: 'Settings_v1.7.0_ParserWarehousePricing',
-                updatedAt: new Date().toISOString(),
-                dict,
-                rules: config.marginRules,
-                appConfig,
-                settingsKeys,
-                pendingShopStatus: getPendingShopStatusForSync()
-            }
+    const buildSettingsCloudData = async () => {
+        const adapter = await getSettingsOwnerAdapter();
+        const bundle = adapter.capture(localStorage);
+        const settingsKeys = { ...bundle.settingsKeys };
+        const appConfig = {};
+        const copyJson = (key, field) => {
+            if (Object.prototype.hasOwnProperty.call(settingsKeys, key)) appConfig[field] = JSON.parse(settingsKeys[key]);
         };
+        copyJson('merchMappings_v870', 'mappings');
+        copyJson('merchMasterLinks_v870', 'masterLinks');
+        copyJson('merchVisUpload_v870', 'visibleUploadCols');
+        copyJson('merchVisMaster_v870', 'visibleMasterCols');
+        copyJson('merchUploadColumnMeta_v870', 'uploadColumnMeta');
+        copyJson('merchTableShortcuts_v870', 'tableShortcuts');
+        copyJson('merchTableViewPresets_v1', 'tableViewPresets');
+        if (settingsKeys.merchActiveTableTarget_v1 !== undefined) appConfig.activeTableTarget = settingsKeys.merchActiveTableTarget_v1;
+        if (settingsKeys.merchActiveTableViewId_v1 !== undefined) appConfig.activeTableViewId = settingsKeys.merchActiveTableViewId_v1;
+        const data = {
+            schemaVersion: bundle.schemaVersion,
+            updatedAt: bundle.updatedAt,
+            appConfig,
+            settingsKeys
+        };
+        if (settingsKeys.parserDict_v870 !== undefined) data.dict = JSON.parse(settingsKeys.parserDict_v870);
+        if (settingsKeys.merchMarginRules_v878 !== undefined) data.rules = JSON.parse(settingsKeys.merchMarginRules_v878);
+        return data;
     };
 
-    const applySettingsCloudData = (cloudData = {}) => {
-        const appConfig = cloudData.appConfig || {};
-        const settingsKeys = cloudData.settingsKeys || appConfig.settingsKeys || {};
-
-        Object.entries(settingsKeys || {}).forEach(([key, value]) => {
-            try { if (value !== undefined && value !== null) localStorage.setItem(key, String(value)); } catch (e) {}
-        });
-        if (window.readParserCatalogWarehouseMap && config.saveCatalogWarehouseMap) {
-            config.saveCatalogWarehouseMap(window.readParserCatalogWarehouseMap());
+    const applySettingsCloudData = async (cloudData = {}, source = 'cloud') => {
+        const adapter = await getSettingsOwnerAdapter();
+        const result = adapter.restore(cloudData, { storage: localStorage, source });
+        const values = result.values || {};
+        if (values.merchMappings_v870 !== undefined) config.setMappings(parseSettingsRaw(values.merchMappings_v870, {}));
+        if (values.merchMasterLinks_v870 !== undefined) config.setMasterLinks(parseSettingsRaw(values.merchMasterLinks_v870, {}));
+        if (values.merchVisUpload_v870 !== undefined) config.setVisibleUploadCols(parseSettingsRaw(values.merchVisUpload_v870, {}));
+        if (values.merchVisMaster_v870 !== undefined) config.setVisibleMasterCols(parseSettingsRaw(values.merchVisMaster_v870, {}));
+        if (values.merchUploadColumnMeta_v870 !== undefined) config.setUploadColumnMeta(parseSettingsRaw(values.merchUploadColumnMeta_v870, {}));
+        if (values.merchTableShortcuts_v870 !== undefined) config.setTableShortcuts(parseSettingsRaw(values.merchTableShortcuts_v870, []));
+        if (values.merchTableViewPresets_v1 !== undefined) config.setTableViewPresets(sanitizeTableViewPresets(parseSettingsRaw(values.merchTableViewPresets_v1, {})));
+        if (values.merchMarginRules_v878 !== undefined) config.setMarginRules(parseSettingsRaw(values.merchMarginRules_v878, []));
+        if (values.oneapp_cloud_sync_url_v1 !== undefined) config.setCloudUrl(values.oneapp_cloud_sync_url_v1);
+        if (values.merchActiveTableTarget_v1 !== undefined && TABLE_VIEW_TARGET_IDS.includes(values.merchActiveTableTarget_v1)) {
+            setActiveUploadRole(values.merchActiveTableTarget_v1);
         }
-
-        const dict = cloudData.dict || readLocalJSON('parserDict_v870', {});
-        if (dict && Object.keys(dict).length > 0) {
-            localStorage.setItem('parserDict_v870', JSON.stringify(dict));
-        }
-
-        const rules = Array.isArray(cloudData.rules) && cloudData.rules.length > 0
-            ? cloudData.rules
-            : readLocalJSON('merchMarginRules_v878', []);
-        if (Array.isArray(rules) && rules.length > 0) {
-            config.setMarginRules(rules);
-            localStorage.setItem('merchMarginRules_v878', JSON.stringify(rules));
-        }
-
-        const nextMappings = appConfig.mappings || readLocalJSON('merchMappings_v870', null);
-        const nextMasterLinks = appConfig.masterLinks || readLocalJSON('merchMasterLinks_v870', null);
-        const nextVisibleUploadCols = appConfig.visibleUploadCols || readLocalJSON('merchVisUpload_v870', null);
-        const nextVisibleMasterCols = appConfig.visibleMasterCols || readLocalJSON('merchVisMaster_v870', null);
-        const nextUploadColumnMeta = appConfig.uploadColumnMeta || readLocalJSON('merchUploadColumnMeta_v870', null);
-        const nextTableShortcuts = appConfig.tableShortcuts || readLocalJSON('merchTableShortcuts_v870', null);
-        const nextTableViewPresets = appConfig.tableViewPresets || readLocalJSON('merchTableViewPresets_v1', null);
-
-        if (nextMappings) config.setMappings(nextMappings);
-        if (nextMasterLinks) config.setMasterLinks(nextMasterLinks);
-        if (nextVisibleUploadCols) config.setVisibleUploadCols(nextVisibleUploadCols);
-        if (nextVisibleMasterCols) config.setVisibleMasterCols(nextVisibleMasterCols);
-        if (nextUploadColumnMeta) config.setUploadColumnMeta(nextUploadColumnMeta);
-        if (Array.isArray(nextTableShortcuts)) config.setTableShortcuts(nextTableShortcuts);
-        if (nextTableViewPresets) {
-            const sanitized = sanitizeTableViewPresets(nextTableViewPresets);
-            config.setTableViewPresets(sanitized);
-            localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized));
-        }
-
-        const restoredTarget = appConfig.activeTableTarget || localStorage.getItem('merchActiveTableTarget_v1') || activeUploadRole || DEFAULT_TABLE_VIEW_TARGET;
-        const restoredViewId = appConfig.activeTableViewId || localStorage.getItem('merchActiveTableViewId_v1') || '';
-        if (TABLE_VIEW_TARGET_IDS.includes(restoredTarget)) {
-            setActiveUploadRole(restoredTarget);
-            setActiveTableViewId(restoredViewId);
-            localStorage.setItem('merchActiveTableTarget_v1', restoredTarget);
-            if (restoredViewId) localStorage.setItem('merchActiveTableViewId_v1', restoredViewId);
-        }
-
-        if (Array.isArray(cloudData.pendingShopStatus)) {
-            localStorage.setItem('pendingShopStatus', JSON.stringify(cloudData.pendingShopStatus));
-        }
-
-        localStorage.setItem('config_sync_trigger', Date.now().toString());
-        localStorage.setItem('table_view_presets_sync_trigger', Date.now().toString());
-    };
-
-    const handleExportSettingsJSON = () => {
+        if (values.merchActiveTableViewId_v1 !== undefined) setActiveTableViewId(values.merchActiveTableViewId_v1);
         try {
-            const payload = buildSettingsCloudPayload().data;
+            localStorage.setItem('config_sync_trigger', Date.now().toString());
+            localStorage.setItem('table_view_presets_sync_trigger', Date.now().toString());
+        } catch (notificationError) {
+            console.warn('[Settings Restore] owner values were verified but change notification could not be published', notificationError);
+        }
+        return result;
+    };
+
+    const handleExportSettingsJSON = async () => {
+        try {
+            const payload = await buildSettingsCloudData();
             const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -882,22 +581,22 @@ const App = () => {
             showToast('✅ 환경설정 JSON을 내보냈습니다.');
         } catch (e) {
             console.error(e);
-            showToast('❌ 환경설정 내보내기 실패');
+            showToast(`❌ 환경설정 내보내기 실패: ${e?.code || e?.message || '알 수 없는 오류'}`);
         }
     };
 
     const handleImportSettingsJSON = (file) => {
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
             try {
                 const parsed = JSON.parse(String(reader.result || '{}'));
                 const data = parsed.data || parsed;
-                applySettingsCloudData(data);
+                await applySettingsCloudData(data, 'json');
                 showToast('✅ 환경설정 JSON을 가져왔습니다.');
             } catch (e) {
                 console.error(e);
-                showToast('❌ 환경설정 JSON 가져오기 실패');
+                showToast(`❌ 환경설정 JSON 가져오기 실패: ${e?.code || e?.message || '검증 오류'}`);
             }
         };
         reader.onerror = () => showToast('❌ 파일을 읽지 못했습니다.');
@@ -938,13 +637,23 @@ const App = () => {
             const targetUrl = resolveSettingsCloudUrl();
             if (type === 'upload') {
                 showToast('☁️ 환경설정 백업 중...');
-                setProcessMsg('환경설정값을 클라우드에 분할 저장 중...');
-                const configPayload = buildSettingsCloudPayload();
-                const payloadChars = JSON.stringify(configPayload.data || {}).length;
-                if (window.ONEAPP?.CLOUD?.pushConfigBackup) {
-                    await window.ONEAPP.CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload.data });
+                setProcessMsg('기존 Cloud 설정을 보존 검증한 뒤 백업 중...');
+                let currentResult;
+                if (window.ONEAPP?.CLOUD?.pullConfigBackup) {
+                    currentResult = await window.ONEAPP.CLOUD.pullConfigBackup({ url: targetUrl });
                 } else {
-                    const res = await fetch(targetUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                    const currentResponse = await fetch(appendSettingsCloudAction(targetUrl, 'config_only'), { method: 'GET' });
+                    currentResult = await parseSettingsCloudResponse(currentResponse, '기존 환경설정 확인');
+                }
+                if (!currentResult?.data) throw new Error('기존 Cloud 설정을 안전하게 보존할 수 없어 백업을 중단했습니다.');
+                const adapter = await getSettingsOwnerAdapter();
+                const ownedData = await buildSettingsCloudData();
+                const mergedData = adapter.mergeCloudRoundTrip(currentResult.data, ownedData);
+                const payloadChars = JSON.stringify(mergedData).length;
+                if (window.ONEAPP?.CLOUD?.pushConfigBackup) {
+                    await window.ONEAPP.CLOUD.pushConfigBackup({ url: targetUrl, data: mergedData });
+                } else {
+                    const res = await fetch(targetUrl, { method: 'POST', body: JSON.stringify({ action: 'config', data: mergedData }) });
                     await parseSettingsCloudResponse(res, '환경설정 백업');
                 }
                 showToast(`✅ 환경설정 백업 완료 (${payloadChars.toLocaleString()}자)`);
@@ -960,7 +669,7 @@ const App = () => {
                     result = await parseSettingsCloudResponse(res, '환경설정 복원');
                 }
                 if (!result?.data) throw new Error('환경설정 복원 데이터가 없습니다.');
-                applySettingsCloudData(result.data);
+                await applySettingsCloudData(result.data, 'cloud');
                 showToast('✅ 환경설정 복원 완료');
             }
         }
@@ -974,56 +683,6 @@ const App = () => {
         }
     };
 
-    const handleDeleteTag = async (type, tagName) => {
-        if (!tagName)
-            return;
-        const fields = type === 'catalog' ? ['카탈로그'] : ['견적서', '카테고리'];
-        const label = type === 'catalog' ? '파서리스트' : '사용자 리스트';
-        if (!window.confirm(`[${tagName}] ${label} 태그를 모든 상품에서 삭제하시겠습니까?`))
-            return;
-        let newMaster = { ...data.masterProducts };
-        let count = 0;
-        for (let code in newMaster) {
-            const srcItem = newMaster[code] || {};
-            let changed = false;
-            const nextItem = { ...srcItem };
-            fields.forEach(fieldKey => {
-                if (!nextItem[fieldKey])
-                    return;
-                const tags = String(nextItem[fieldKey]).split(',').map(s => s.trim()).filter(Boolean);
-                if (tags.includes(tagName)) {
-                    nextItem[fieldKey] = tags.filter(t => t !== tagName).join(', ');
-                    changed = true;
-                }
-            });
-            if (changed) {
-                newMaster[code] = nextItem;
-                count++;
-            }
-        }
-        if (count > 0) {
-            try {
-                const commonStorage = window.ONEAPP?.STORAGE;
-                if (!commonStorage?.commitMasterStateOrThrow)
-                    throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-                const result = await commonStorage.commitMasterStateOrThrow(newMaster, {
-                    expectedRevision: settingsMasterRevision
-                });
-                settingsMasterRevision = result.revision;
-                data.setMasterProducts(newMaster);
-                try { localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); }
-                catch (triggerError) { console.warn('Settings master sync notification failed after a verified commit', triggerError); }
-                showToast(`✅ ${count}개 상품에서 [${tagName}] 태그를 삭제했습니다.`);
-            }
-            catch (error) {
-                console.error('Settings master tag delete failed', error);
-                showToast(`❌ 태그 삭제 저장 실패: ${error?.message || '알 수 없는 오류'}`);
-            }
-        }
-        else {
-            showToast(`⚠️ 삭제할 [${tagName}] 태그가 없습니다.`);
-        }
-    };
     const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
     const isComparePriceField = useCallback((type, header) => {
         var _a, _b, _c;
@@ -1440,70 +1099,17 @@ const App = () => {
         ? window.findDuplicateMerchMarginRuleConditions(config.marginRules || [])
         : [], [config.marginRules]);
 
-    const masterUploadSummary = (masterUploadAnalysis && masterUploadAnalysis.summary) || {};
-    const masterUploadValidation = masterUploadAnalysis
-        ? (masterUploadAnalysis.validation || { ok: false, blockingErrors: ['검증 결과가 없습니다. 엑셀을 다시 분석하세요.'], warnings: [] })
-        : null;
-    const masterUploadFieldCounts = masterUploadAnalysis ? Object.entries(masterUploadSummary.fieldCounts || {}) : [];
-    const masterUploadPreviewRows = masterUploadAnalysis ? [
-        ...((masterUploadAnalysis.changeRows || []).flatMap(row => (row.changes || []).map(ch => ({ type: '수정', code: row.code, name: row.name, field: ch.field, oldVal: ch.oldVal, newVal: ch.newVal })))),
-        ...((masterUploadAnalysis.createRows || []).map(row => ({ type: '신규', code: row.code, name: row.name, field: '신규상품', oldVal: '', newVal: '추가' })))
-    ].slice(0, 80) : [];
-    const masterDbPanel = React.createElement("div", { className: "max-w-6xl space-y-6" },
-        React.createElement("div", { className: "flex justify-between items-center" },
-            React.createElement("div", null,
-                React.createElement("h2", { className: "text-2xl font-black text-slate-800" }, "마스터DB 관리"),
-                React.createElement("p", { className: "text-[13px] text-slate-500 mt-1 font-bold" }, "품목코드 기준으로 마스터 엑셀을 비교하고 엑셀에 있는 컬럼만 수정 업로드합니다.")),
-            React.createElement("div", { className: "text-right text-[12px] text-slate-500 font-bold" }, "현재 마스터 ", Object.keys(data.masterProducts || {}).length.toLocaleString(), "건")),
-        React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
-            React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
-                React.createElement("label", { className: "cursor-pointer inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" },
-                    React.createElement("i", { className: "fas fa-file-excel" }), "마스터 엑셀 선택",
-                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => { const file = e.target.files && e.target.files[0]; e.target.value = ''; handlePromotionThemeSettings(file); } })),
-                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyPromotionThemeSettings, disabled: !masterUploadValidation?.ok, title: masterUploadValidation?.ok ? "검증된 변경을 마스터에 적용" : "오류를 수정한 뒤 엑셀을 다시 분석하세요.", className: `inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[13px] font-black shadow-md ${masterUploadValidation?.ok ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}` }, React.createElement("i", { className: "fas fa-check-circle" }), masterUploadValidation?.ok ? "마스터 적용" : "오류 수정 후 적용"),
-                masterUploadAnalysis && React.createElement("button", { onClick: () => { setMasterUploadAnalysis(null); setMasterUploadFileName(''); setMasterUploadError(''); }, className: "inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl text-[13px] font-bold border" }, React.createElement("i", { className: "fas fa-times" }), "초기화")),
-            React.createElement("div", { className: "mt-4 text-[12px] text-slate-500 leading-relaxed" }, "정책: xlsx·xls·csv / 최대 25MB·100,000행 / 품목코드 없음·중복코드가 있으면 전체 적용 차단 / 엑셀에 있는 컬럼만 수정 / 없는 기존 상품은 유지 / 적용 전 자동 백업")),
-        masterUploadError && React.createElement("div", { className: "bg-rose-50 border border-rose-200 rounded-2xl p-5 text-rose-800 shadow-sm" },
-            React.createElement("div", { className: "flex items-start gap-3" },
-                React.createElement("i", { className: "fas fa-exclamation-triangle mt-0.5 text-rose-500" }),
-                React.createElement("div", null,
-                    React.createElement("div", { className: "font-black text-[14px]" }, "확인이 필요한 문제"),
-                    React.createElement("div", { className: "mt-1 text-[12px] font-bold leading-relaxed whitespace-pre-wrap" }, masterUploadError)))),
-        masterUploadValidation?.warnings?.length > 0 && React.createElement("div", { className: "bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-800 text-[12px] font-bold" }, masterUploadValidation.warnings.join(' ')),
-        masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-4 gap-4" },
-            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "엑셀 행수"), React.createElement("div", { className: "text-2xl font-black text-slate-800" }, (masterUploadSummary.totalRows || 0).toLocaleString())),
-            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "수정"), React.createElement("div", { className: "text-2xl font-black text-indigo-700" }, (masterUploadSummary.updateCount || 0).toLocaleString())),
-            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "신규"), React.createElement("div", { className: "text-2xl font-black text-emerald-700" }, (masterUploadSummary.createCount || 0).toLocaleString())),
-            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "오류/중복"), React.createElement("div", { className: "text-2xl font-black text-rose-700" }, ((masterUploadSummary.noCodeCount || 0) + (masterUploadSummary.duplicateCodeCount || 0)).toLocaleString()))),
-        masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-2 gap-6" },
-            React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
-                React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "변경 컬럼 요약"),
-                masterUploadFieldCounts.length === 0 ? React.createElement("div", { className: "text-slate-400 text-sm" }, "변경된 컬럼이 없습니다.") : React.createElement("div", { className: "flex flex-wrap gap-2" }, masterUploadFieldCounts.map(([field, count]) => React.createElement("span", { key: field, className: "px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-black border border-indigo-100" }, field, " ", Number(count).toLocaleString(), "건")))),
-            React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
-                React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "검토 요약"),
-                React.createElement("div", { className: "grid grid-cols-3 gap-3 text-center" },
-                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "품목코드 없음"), React.createElement("div", { className: "text-xl font-black text-rose-600" }, (masterUploadSummary.noCodeCount || 0).toLocaleString())),
-                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "중복코드"), React.createElement("div", { className: "text-xl font-black text-rose-600" }, (masterUploadSummary.duplicateCodeCount || 0).toLocaleString())),
-                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "엑셀누락 기존"), React.createElement("div", { className: "text-xl font-black text-slate-600" }, (masterUploadSummary.missingInExcelCount || 0).toLocaleString()))))),
-        masterUploadAnalysis && React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" },
-            React.createElement("div", { className: "p-4 border-b bg-slate-50 flex justify-between items-center" }, React.createElement("h3", { className: "text-[15px] font-black text-slate-800" }, "변경 상세 미리보기"), React.createElement("span", { className: "text-[12px] text-slate-500 font-bold" }, "최대 80개")),
-            React.createElement("table", { className: "w-full text-left text-[12px]" },
-                React.createElement("thead", { className: "bg-slate-100 text-slate-600 font-black" }, React.createElement("tr", null, React.createElement("th", { className: "p-3" }, "구분"), React.createElement("th", { className: "p-3" }, "품목코드"), React.createElement("th", { className: "p-3" }, "품목명"), React.createElement("th", { className: "p-3" }, "항목"), React.createElement("th", { className: "p-3" }, "기존값"), React.createElement("th", { className: "p-3" }, "엑셀값"))),
-                React.createElement("tbody", { className: "divide-y divide-slate-100" }, masterUploadPreviewRows.map((row, idx) => React.createElement("tr", { key: idx, className: "hover:bg-slate-50" }, React.createElement("td", { className: "p-3 font-black" }, row.type), React.createElement("td", { className: "p-3 font-mono text-indigo-600 font-bold" }, row.code), React.createElement("td", { className: "p-3 font-bold" }, row.name), React.createElement("td", { className: "p-3" }, row.field), React.createElement("td", { className: "p-3 text-slate-500" }, String(row.oldVal ?? '')), React.createElement("td", { className: "p-3 text-emerald-700 font-bold" }, String(row.newVal ?? ''))))))),
-        React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
-            React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "백업/복구"),
-            masterBackups.length === 0 ? React.createElement("div", { className: "text-slate-400 text-sm" }, "저장된 백업이 없습니다. 마스터 적용 시 자동 백업됩니다.") : React.createElement("div", { className: "space-y-2" }, masterBackups.map(backup => React.createElement("div", { key: backup.id, className: "flex justify-between items-center bg-slate-50 border rounded-xl px-4 py-3" }, React.createElement("div", null, React.createElement("div", { className: "font-black text-slate-700 text-[13px]" }, backup.label || '마스터 백업'), React.createElement("div", { className: "text-[11px] text-slate-400 font-bold" }, backup.createdAt, " / ", (backup.count || 0).toLocaleString(), "건")), React.createElement("button", { onClick: () => handleRestoreMasterBackup(backup.id), className: "px-3 py-2 rounded-lg bg-slate-800 text-white text-[12px] font-black hover:bg-slate-700" }, "복구"))))));
-    const catalogWarehousePanel = React.createElement("div", { className: "bg-white rounded-2xl border border-indigo-200 shadow-sm overflow-hidden" },
-        React.createElement("div", { className: "px-6 py-5 bg-indigo-50 border-b border-indigo-100" },
-            React.createElement("h3", { className: "text-[16px] font-black text-indigo-900" }, "SmartParser 카탈로그별 창고"),
-            React.createElement("p", { className: "text-[12px] text-indigo-700 mt-1 font-bold" }, "마스터 카탈로그 태그와 저장된 창고맵을 합쳐 표시합니다. 창고코드는 문자열 그대로 저장하므로 01의 앞자리 0이 유지됩니다.")),
-        React.createElement("div", { className: "divide-y divide-slate-100" }, parserCatalogOptions.length === 0
-            ? React.createElement("div", { className: "px-6 py-8 text-center text-[13px] font-bold text-slate-400" }, "카탈로그가 없습니다.")
-            : parserCatalogOptions.map(catalogName => React.createElement("div", { key: catalogName, className: "grid grid-cols-[1fr_220px] gap-4 items-center px-6 py-3 hover:bg-slate-50" },
-                React.createElement("div", null,
-                    React.createElement("div", { className: "font-black text-slate-800" }, catalogName),
-                    React.createElement("div", { className: "text-[11px] font-bold text-slate-400" }, `마스터 ${availableCatalogs.find(item => item.name === catalogName)?.count || 0}건`)),
-                React.createElement("input", { type: "text", value: String((config.catalogWarehouseMap || {})[catalogName] ?? ''), onChange: event => config.saveCatalogWarehouseMap(prev => ({ ...(prev || {}), [catalogName]: event.target.value })), placeholder: "창고코드 (공란 허용)", className: "w-full border border-slate-300 rounded-lg px-3 py-2 text-[13px] font-black text-indigo-700 outline-none focus:border-indigo-500" })))));
+    const ownerRoutingPanel = React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
+        React.createElement("div", { className: "mb-4" },
+            React.createElement("h3", { className: "text-[16px] font-black text-slate-800" }, "데이터 소유 앱에서 관리"),
+            React.createElement("p", { className: "text-[12px] text-slate-500 mt-1 font-bold" }, "환경설정은 설정값과 검증된 복구만 담당합니다. 상품과 SmartParser 운영 상태는 아래 소유 앱에서 변경하세요.")),
+        React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+            React.createElement("button", { onClick: navigateToMaster, className: "text-left rounded-xl border border-cyan-200 bg-cyan-50 p-5 hover:bg-cyan-100 transition-colors" },
+                React.createElement("div", { className: "font-black text-cyan-900" }, React.createElement("i", { className: "fas fa-database mr-2" }), "상품관리 열기"),
+                React.createElement("div", { className: "text-[12px] text-cyan-700 mt-2 font-bold leading-relaxed" }, "마스터 Excel 적용·복구, 상품 수정, 카탈로그·태그 관리는 상품관리에서 실행합니다.")),
+            React.createElement("button", { onClick: navigateToSmartParser, className: "text-left rounded-xl border border-amber-200 bg-amber-50 p-5 hover:bg-amber-100 transition-colors" },
+                React.createElement("div", { className: "font-black text-amber-900" }, React.createElement("i", { className: "fas fa-wand-magic-sparkles mr-2" }), "SmartParser 열기"),
+                React.createElement("div", { className: "text-[12px] text-amber-700 mt-2 font-bold leading-relaxed" }, "파서 사전·카탈로그 창고·공급자 제외·판매 정지/재개는 SmartParser에서 실행합니다."))));
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
     const selectableMasterHeaders = useMemo(() => { var _a; return Array.from(new Set([...(window.MASTER_HEADERS || []), ...(((_a = config.visibleMasterCols) === null || _a === void 0 ? void 0 : _a[activeUploadRole]) || [])])); }, [config.visibleMasterCols, activeUploadRole]);
     return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-50 relative fade-in" },
@@ -1529,12 +1135,12 @@ const App = () => {
                 React.createElement("button", { onClick: () => setActiveTab('marginRule'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'marginRule' ? 'bg-rose-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
                     React.createElement("i", { className: "fas fa-calculator w-6 text-center mr-1" }),
                     " 3. \uB2E8\uAC00 \uACC4\uC0B0 \uBC0F \uB8F0"),
-                React.createElement("button", { onClick: () => setActiveTab('tagManager'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'tagManager' ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
-                    React.createElement("i", { className: "fas fa-tags w-6 text-center mr-1" }),
-                    " 4. \uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC"),
-                React.createElement("button", { onClick: () => setActiveTab('masterDb'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'masterDb' ? 'bg-cyan-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                React.createElement("button", { onClick: navigateToMaster, className: "px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all hover:bg-slate-800 hover:text-white" },
                     React.createElement("i", { className: "fas fa-database w-6 text-center mr-1" }),
-                    " 5. \uB9C8\uC2A4\uD130DB \uAD00\uB9AC")),
+                    " 상품관리는 소유 앱에서"),
+                React.createElement("button", { onClick: navigateToSmartParser, className: "px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all hover:bg-slate-800 hover:text-white" },
+                    React.createElement("i", { className: "fas fa-wand-magic-sparkles w-6 text-center mr-1" }),
+                    " 파서·정지 관리는 소유 앱에서")),
             React.createElement("div", { className: "mt-auto p-6 border-t border-slate-800" },
                 React.createElement("button", { onClick: navigateToMerchOps, className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
                     React.createElement("i", { className: "fas fa-home mr-2" }),
@@ -1743,306 +1349,13 @@ const App = () => {
                                 React.createElement("td", { className: "p-3 text-center" }, !isDefault && React.createElement("button", { onClick: () => deleteMarginRule(rule.id), className: "w-8 h-8 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" },
                                     React.createElement("i", { className: "fas fa-trash-alt" })))));
                         })))),
-                catalogWarehousePanel)),
-            activeTab === 'masterDb' && masterDbPanel,
-            activeTab === 'tagManager' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
-                React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-6" }, "\uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC"),
-                React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm" },
-                    React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
-                        React.createElement("i", { className: "fas fa-folder-open text-indigo-500 mr-2" }),
-                        "파서리스트 목록"),
-                    React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCatalogs.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCatalogs.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
-                        React.createElement("div", { className: "truncate" },
-                            React.createElement("span", { className: "font-bold" }, tag.name),
-                            React.createElement("span", { className: "text-[11px] text-indigo-500 block" },
-                                tag.count,
-                                "\uAC74")),
-                        React.createElement("button", { onClick: () => handleDeleteTag('catalog', tag.name), className: "text-slate-400 hover:text-rose-500" },
-                            React.createElement("i", { className: "fas fa-trash-alt" }))))))),
-                React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm mt-6" },
-                    React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
-                        React.createElement("i", { className: "fas fa-file-invoice text-blue-500 mr-2" }),
-                        "사용자 리스트 / 견적서 목록"),
-                    React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCategories.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCategories.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
-                        React.createElement("div", { className: "truncate" },
-                            React.createElement("span", { className: "font-bold" }, tag.name),
-                            React.createElement("span", { className: "text-[11px] text-blue-500 block" },
-                                tag.count,
-                                "\uAC74")),
-                        React.createElement("button", { onClick: () => handleDeleteTag('category', tag.name), className: "text-slate-400 hover:text-rose-500" },
-                            React.createElement("i", { className: "fas fa-trash-alt" }))))))))))));
+                ownerRoutingPanel)))));
 };
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App, null));
 
 </script>
 
-<script>
-(function(){
-    if (window.ONEAPP_STATUS_MAINTENANCE_LITE_LOADED) return;
-    window.ONEAPP_STATUS_MAINTENANCE_LITE_LOADED = true;
-    var KEY = 'merchProductStatusRecords_v1';
-    var styleId = 'oneapp-status-maintenance-lite-style';
-    function nowISO(){ return new Date().toISOString(); }
-    function safeParse(raw, fallback){
-        try { return raw ? JSON.parse(raw) : fallback; } catch(e) { return fallback; }
-    }
-    function esc(v){
-        return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){
-            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
-        });
-    }
-    function pick(obj, names){
-        obj = obj || {};
-        for (var i=0; i<names.length; i++) {
-            var value = obj[names[i]];
-            if (value !== undefined && value !== null && String(value).trim() !== '') return value;
-        }
-        return '';
-    }
-    function normalizeRecords(input){
-        var arr = Array.isArray(input) ? input : [];
-        return arr.map(function(r, idx){
-            r = r || {};
-            var state = pick(r, ['state','status','상태']) || '업데이트 제외';
-            var code = pick(r, ['code','상품코드','품목코드','코드']);
-            var name = pick(r, ['name','상품명','품명']);
-            var vendor = pick(r, ['vendor','supplier','공급사','구매처','거래처']);
-            var ownProduct = pick(r, ['ownProduct','relatedOwnProduct','자사상품','연결자사상품','대표상품']);
-            var reason = pick(r, ['reason','사유','처리사유']);
-            var memo = pick(r, ['memo','메모','비고']);
-            var createdAt = pick(r, ['createdAt','processedAt','처리일','created']) || nowISO();
-            var id = pick(r, ['id','recordId']) || [code || 'NOCD', state, createdAt, idx].join('_');
-            return Object.assign({}, r, {
-                id: String(id),
-                state: String(state),
-                code: String(code || ''),
-                name: String(name || ''),
-                vendor: String(vendor || ''),
-                ownProduct: String(ownProduct || ''),
-                reason: String(reason || ''),
-                memo: String(memo || ''),
-                createdAt: String(createdAt || ''),
-                updatedAt: String(pick(r, ['updatedAt','수정일']) || createdAt || ''),
-                active: r.active === false ? false : true
-            });
-        });
-    }
-    function readRecords(){ return normalizeRecords(safeParse(localStorage.getItem(KEY), [])); }
-    function writeRecords(records){
-        localStorage.setItem(KEY, JSON.stringify(normalizeRecords(records).slice(0, 5000)));
-        localStorage.setItem('product_status_records_sync_trigger', String(Date.now()));
-        localStorage.setItem('config_sync_trigger', String(Date.now()));
-    }
-    async function activateMasterProduct(code){
-        if (!code) return { ok: true, changed: false };
-        var touched = false;
-        try {
-            if (window.ONEAPP && window.ONEAPP.STORAGE && typeof window.ONEAPP.STORAGE.readMasterState === 'function') {
-                var masterState = await window.ONEAPP.STORAGE.readMasterState();
-                var rows = masterState.items;
-                if (Array.isArray(rows) && rows.length) {
-                    var matched = false;
-                    var next = rows.map(function(item){
-                        if (item && String(item['코드']) === String(code)) {
-                            matched = true;
-                            return Object.assign({}, item, {'판매여부': 1, '상태': item['상태'] || '판매'});
-                        }
-                        return item;
-                    });
-                    if (matched) {
-                        var nextMaster = {};
-                        next.forEach(function(item){ if (item && item['코드']) nextMaster[String(item['코드'])] = item; });
-                        if (!window.ONEAPP || !window.ONEAPP.STORAGE || typeof window.ONEAPP.STORAGE.commitMasterStateOrThrow !== 'function')
-                            throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-                        var commitResult = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(nextMaster, {
-                            expectedRevision: masterState.revision
-                        });
-                        settingsMasterRevision = commitResult.revision;
-                        touched = true;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('[StatusMaintenance] IDB 판매활성 반영 실패', e);
-            throw e;
-        }
-        if (touched) {
-            try { localStorage.setItem('merchMaster_sync_trigger', String(Date.now())); }
-            catch (triggerError) { console.warn('Status maintenance sync notification failed after a verified commit', triggerError); }
-        }
-        return { ok: true, changed: touched };
-    }
-    function addStyle(){
-        if (document.getElementById(styleId)) return;
-        var style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = [
-            '.oneapp-status-lite-btn{position:fixed;right:18px;bottom:18px;z-index:9998;background:#0f172a;color:#fff;border:0;border-radius:999px;padding:10px 14px;font-size:12px;font-weight:900;box-shadow:0 12px 30px rgba(15,23,42,.25);}',
-            '.oneapp-status-lite-panel{position:fixed;right:18px;bottom:70px;width:min(980px,calc(100vw - 36px));max-height:min(720px,calc(100vh - 100px));z-index:9999;background:#fff;border:1px solid #cbd5e1;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden;display:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
-            '.oneapp-status-lite-panel.open{display:block;}',
-            '.oneapp-status-lite-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;}',
-            '.oneapp-status-lite-title{font-size:15px;font-weight:950;color:#0f172a;}',
-            '.oneapp-status-lite-sub{font-size:11px;color:#64748b;margin-top:2px;}',
-            '.oneapp-status-lite-close{width:30px;height:30px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#475569;font-weight:900;}',
-            '.oneapp-status-lite-controls{display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#fff;}',
-            '.oneapp-status-lite-controls input{flex:1;border:1px solid #cbd5e1;border-radius:10px;padding:9px 11px;font-size:12px;outline:none;}',
-            '.oneapp-status-lite-controls select{border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;font-size:12px;background:#fff;font-weight:800;color:#334155;}',
-            '.oneapp-status-lite-body{overflow:auto;max-height:560px;}',
-            '.oneapp-status-lite-table{width:100%;border-collapse:collapse;font-size:12px;}',
-            '.oneapp-status-lite-table th{position:sticky;top:0;background:#f1f5f9;color:#475569;text-align:left;padding:10px;border-bottom:1px solid #cbd5e1;font-size:11px;white-space:nowrap;}',
-            '.oneapp-status-lite-table td{padding:10px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:top;}',
-            '.oneapp-status-lite-empty{padding:36px;text-align:center;color:#94a3b8;font-weight:800;}',
-            '.oneapp-status-lite-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:900;background:#e2e8f0;color:#334155;white-space:nowrap;}',
-            '.oneapp-status-lite-badge.stop{background:#fee2e2;color:#b91c1c;}',
-            '.oneapp-status-lite-badge.exclude{background:#fef3c7;color:#92400e;}',
-            '.oneapp-status-lite-badge.done{background:#dcfce7;color:#166534;}',
-            '.oneapp-status-lite-actions{display:flex;gap:5px;flex-wrap:wrap;}',
-            '.oneapp-status-lite-actions button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:5px 7px;font-size:11px;font-weight:900;color:#334155;}',
-            '.oneapp-status-lite-actions button:hover{background:#f8fafc;}',
-            '.oneapp-status-lite-muted{font-size:11px;color:#94a3b8;line-height:1.35;}',
-            '.oneapp-status-lite-main{font-weight:900;color:#0f172a;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
-            '.oneapp-status-lite-small{font-size:11px;color:#64748b;margin-top:2px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
-        ].join('');
-        document.head.appendChild(style);
-    }
-    function ensureUI(){
-        addStyle();
-        if (document.getElementById('oneapp-status-lite-panel')) return;
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'oneapp-status-lite-open';
-        btn.className = 'oneapp-status-lite-btn';
-        btn.textContent = '제외/정지 관리';
-        var panel = document.createElement('div');
-        panel.id = 'oneapp-status-lite-panel';
-        panel.className = 'oneapp-status-lite-panel';
-        panel.innerHTML = '' +
-            '<div class="oneapp-status-lite-head">' +
-                '<div><div class="oneapp-status-lite-title">제외/정지 상품 관리</div><div class="oneapp-status-lite-sub">이전에 제외·정지 처리한 상품을 검색하고 해제/판매활성/메모수정합니다.</div></div>' +
-                '<button type="button" class="oneapp-status-lite-close" id="oneapp-status-lite-close">×</button>' +
-            '</div>' +
-            '<div class="oneapp-status-lite-controls">' +
-                '<input id="oneapp-status-lite-search" placeholder="상품명, 코드, 공급사, 자사상품, 사유 검색" />' +
-                '<select id="oneapp-status-lite-filter">' +
-                    '<option value="active">처리중</option>' +
-                    '<option value="all">전체</option>' +
-                    '<option value="exclude">업데이트 제외</option>' +
-                    '<option value="stop">판매정지</option>' +
-                    '<option value="done">처리완료</option>' +
-                '</select>' +
-            '</div>' +
-            '<div class="oneapp-status-lite-body" id="oneapp-status-lite-body"></div>';
-        document.body.appendChild(btn);
-        document.body.appendChild(panel);
-        btn.addEventListener('click', function(){ panel.classList.toggle('open'); render(); });
-        panel.querySelector('#oneapp-status-lite-close').addEventListener('click', function(){ panel.classList.remove('open'); });
-        panel.querySelector('#oneapp-status-lite-search').addEventListener('input', render);
-        panel.querySelector('#oneapp-status-lite-filter').addEventListener('change', render);
-        panel.addEventListener('click', async function(e){
-            var actionBtn = e.target.closest('[data-status-action]');
-            if (!actionBtn) return;
-            var action = actionBtn.getAttribute('data-status-action');
-            var id = actionBtn.getAttribute('data-id');
-            var records = readRecords();
-            var rec = records.find(function(item){ return String(item.id) === String(id); });
-            if (!rec) return;
-            if (action === 'memo') {
-                var memo = prompt('메모/사유를 입력하세요.', rec.memo || rec.reason || '');
-                if (memo === null) return;
-                rec.memo = memo;
-                rec.updatedAt = nowISO();
-                writeRecords(records);
-                render();
-                return;
-            }
-            if (action === 'release') {
-                if (!confirm('이 상품의 제외/정지 상태를 해제 처리할까요?')) return;
-                rec.active = false;
-                rec.state = '해제';
-                rec.resolvedAt = nowISO();
-                rec.updatedAt = rec.resolvedAt;
-                rec.memo = rec.memo || '관리화면에서 해제 처리';
-                writeRecords(records);
-                render();
-                return;
-            }
-            if (action === 'activate') {
-                if (!confirm('판매활성 처리할까요? 마스터 상품이 있으면 판매여부=1로 반영을 시도합니다.')) return;
-                try {
-                    var activation = await activateMasterProduct(rec.code);
-                    rec.active = false;
-                    rec.state = '판매활성';
-                    rec.resolvedAt = nowISO();
-                    rec.updatedAt = rec.resolvedAt;
-                    rec.memo = rec.memo || '관리화면에서 판매활성 처리';
-                    writeRecords(records);
-                    render();
-                    alert(activation.changed ? '판매활성 처리 및 마스터 반영을 완료했습니다.' : '판매활성 처리했습니다. 단, 로컬 마스터 상품은 찾지 못했습니다.');
-                } catch (error) {
-                    console.error('[StatusMaintenance] 판매활성 저장 실패', error);
-                    alert('마스터 저장에 실패해 판매활성 완료 상태로 변경하지 않았습니다.');
-                }
-            }
-        });
-        render();
-    }
-    function matchesFilter(rec, mode){
-        if (mode === 'all') return true;
-        if (mode === 'active') return rec.active !== false;
-        if (mode === 'done') return rec.active === false;
-        if (mode === 'exclude') return String(rec.state || '').indexOf('제외') >= 0;
-        if (mode === 'stop') return String(rec.state || '').indexOf('정지') >= 0;
-        return true;
-    }
-    function stateBadge(rec){
-        var state = rec.state || '처리중';
-        var cls = 'oneapp-status-lite-badge';
-        if (String(state).indexOf('정지') >= 0) cls += ' stop';
-        else if (String(state).indexOf('제외') >= 0) cls += ' exclude';
-        else if (rec.active === false) cls += ' done';
-        return '<span class="' + cls + '">' + esc(state) + '</span>';
-    }
-    function render(){
-        var body = document.getElementById('oneapp-status-lite-body');
-        if (!body) return;
-        var qEl = document.getElementById('oneapp-status-lite-search');
-        var fEl = document.getElementById('oneapp-status-lite-filter');
-        var q = String((qEl && qEl.value) || '').trim().toLowerCase();
-        var mode = (fEl && fEl.value) || 'active';
-        var records = readRecords().filter(function(rec){
-            if (!matchesFilter(rec, mode)) return false;
-            if (!q) return true;
-            var hay = [rec.state, rec.code, rec.name, rec.vendor, rec.ownProduct, rec.reason, rec.memo].join(' ').toLowerCase();
-            return hay.indexOf(q) >= 0;
-        }).sort(function(a,b){ return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')); });
-        if (!records.length) {
-            body.innerHTML = '<div class="oneapp-status-lite-empty">제외/정지 관리 기록이 없습니다.</div>';
-            return;
-        }
-        body.innerHTML = '<table class="oneapp-status-lite-table"><thead><tr>' +
-            '<th>상태</th><th>상품</th><th>공급사</th><th>연결 자사상품</th><th>사유/메모</th><th>처리일</th><th>관리</th>' +
-            '</tr></thead><tbody>' + records.map(function(rec){
-                var date = (rec.updatedAt || rec.createdAt || '').slice(0, 10);
-                return '<tr>' +
-                    '<td>' + stateBadge(rec) + '</td>' +
-                    '<td><div class="oneapp-status-lite-main">' + esc(rec.name || '-') + '</div><div class="oneapp-status-lite-small">' + esc(rec.code || '-') + '</div></td>' +
-                    '<td>' + esc(rec.vendor || '-') + '</td>' +
-                    '<td>' + esc(rec.ownProduct || '-') + '</td>' +
-                    '<td><div>' + esc(rec.reason || '-') + '</div><div class="oneapp-status-lite-muted">' + esc(rec.memo || '') + '</div></td>' +
-                    '<td>' + esc(date || '-') + '</td>' +
-                    '<td><div class="oneapp-status-lite-actions">' +
-                        '<button type="button" data-status-action="release" data-id="' + esc(rec.id) + '">해제</button>' +
-                        '<button type="button" data-status-action="activate" data-id="' + esc(rec.id) + '">판매활성</button>' +
-                        '<button type="button" data-status-action="memo" data-id="' + esc(rec.id) + '">메모</button>' +
-                    '</div></td>' +
-                '</tr>';
-            }).join('') + '</tbody></table>';
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureUI);
-    else ensureUI();
-})();
-</script>
 
 </body>
 </html>

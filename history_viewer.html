@@ -68,11 +68,16 @@
     </main>
   </div>
 
-<script>
+<script type="module">
+import {
+  buildChangeHistorySnapshot,
+  getChangeHistorySnapshotResult,
+  mergeChangeHistorySnapshots
+} from './reference-data/change-history-read-adapter.js';
+import { getProductSnapshotResult } from './reference-data/product-master-read-adapter.js';
+
 (function(){
   'use strict';
-  const HISTORY_KEY='merchHistory_v870';
-  const MASTER_KEYS=['merchMaster_v870'];
   const CLOUD_KEYS=['oneapp_cloud_sync_url_v1','merchCloudUrl_v870'];
   const $=id=>document.getElementById(id);
   const safeStr=v=>v===undefined||v===null?'':String(v);
@@ -87,9 +92,7 @@
   };
   const priceFieldRe=/(가격|단가|입고가|출고가|행사가|시중가|price|판매가격|시중가격)/i;
   let rawLogs=[]; let normalized=[]; let filteredRows=[]; let selectedCode=''; let selectedName='';
-  function readLocalJSON(key, fallback){try{const raw=localStorage.getItem(key); if(!raw||raw==='undefined'||raw==='null') return fallback; return JSON.parse(raw)||fallback;}catch(e){return fallback;}}
-  function readHistory(){const parsed=readLocalJSON(HISTORY_KEY, []); if(Array.isArray(parsed)) return parsed; if(parsed&&Array.isArray(parsed.logs)) return parsed.logs; if(parsed&&typeof parsed==='object') return Object.values(parsed).flat().filter(Boolean); return [];}
-  function readMasterMap(){for(const key of MASTER_KEYS){const parsed=readLocalJSON(key, null); if(parsed&&typeof parsed==='object') return parsed;} return {};}
+  let localSnapshot=null; let remoteSnapshot=null; let masterMap={};
   function getCloudUrl(){for(const key of CLOUD_KEYS){try{const val=String(localStorage.getItem(key)||'').trim(); if(val) return val;}catch(e){}} return '';}
   function calcDiffRate(oldVal,newVal){const oldNum=parseNum(oldVal); const newNum=parseNum(newVal); if(!oldNum) return ''; return Math.round(((newNum-oldNum)/oldNum)*1000)/10;}
   function norm(log,idx){
@@ -123,7 +126,7 @@
     $('emptyBox').classList.toggle('hidden', rows.length>0); document.querySelectorAll('.btnSelect').forEach(btn=>btn.onclick=()=>{selectedCode=btn.dataset.code||''; selectedName=btn.dataset.name||''; render(rows); renderAnalysis();});
   }
   function latestByField(code, field){return normalized.filter(x=>x.code===code&&(!field||x.field===field||x.path===field)).sort((a,b)=>(parseDate(b.timestamp)?.getTime()||0)-(parseDate(a.timestamp)?.getTime()||0));}
-  function getMasterValue(code, field){const m=readMasterMap()[code]||{}; return m[field]??'';}
+  function getMasterValue(code, field){const m=masterMap[code]||{}; return m[field]??'';}
   function periodStats(rows, days){const now=new Date(); const start=new Date(now.getTime()-days*86400000); const data=rows.filter(x=>{const d=parseDate(x.timestamp); return d&&d>=start&&String(x.newVal??'').match(/[0-9]/);}).map(x=>({t:parseDate(x.timestamp).getTime(),v:parseNum(x.newVal)})).sort((a,b)=>a.t-b.t); if(!data.length)return null; const vals=data.map(d=>d.v); const sum=vals.reduce((a,b)=>a+b,0); const first=data[0].v; const last=data[data.length-1].v; return{count:data.length,min:Math.min(...vals),max:Math.max(...vals),avg:Math.round(sum/vals.length),first,last,diff:last-first,rate:first?Math.round(((last-first)/first)*1000)/10:null};}
   function getPrevDayValue(rows){const today=new Date(); today.setHours(0,0,0,0); const older=rows.filter(x=>{const d=parseDate(x.timestamp); return d&&d<today;}).sort((a,b)=>parseDate(b.timestamp).getTime()-parseDate(a.timestamp).getTime()); return older[0]?.newVal??'';}
   function card(title,value,sub='',tone='slate'){const color={slate:'text-slate-800',rose:'text-rose-600',blue:'text-blue-600',emerald:'text-emerald-600',indigo:'text-indigo-700'}[tone]||'text-slate-800'; return `<div class="metric-card"><div class="text-xs font-black text-slate-400">${escapeHtml(title)}</div><div class="text-xl font-black ${color} mt-1 truncate">${escapeHtml(value)}</div><div class="text-[11px] font-bold text-slate-400 mt-1 truncate">${escapeHtml(sub)}</div></div>`;}
@@ -138,13 +141,47 @@
     const trendLines=[]; if(stats7)trendLines.push(`최근 7일: ${trendLabel(stats7)} · 평균 ${fmtNum(stats7.avg)} · ${stats7.count}건`); if(stats30)trendLines.push(`최근 30일: ${trendLabel(stats30)} · 평균 ${fmtNum(stats30.avg)} · ${stats30.count}건`); if(prevDay!=='')trendLines.push(`전일 기준 ${fmtNum(prevDay)} 대비 현재 마스터 ${fmtNum(currentMaster)}${diffToPrev!==''?` (${diffToPrev>0?'+':''}${fmtNum(diffToPrev)})`:''}`); if(!trendLines.length)trendLines.push('분석 가능한 숫자형 히스토리가 부족합니다.'); $('trendSummary').innerHTML=trendLines.map(x=>`<div>${escapeHtml(x)}</div>`).join('');
     $('recentList').innerHTML=allRows.slice(0,8).map(x=>`<div class="rounded-xl border border-slate-100 p-3 hover:bg-slate-50"><div class="flex items-center justify-between gap-2"><span class="chip bg-slate-100 text-slate-600">${escapeHtml(x.field||x.path||'-')}</span><span class="text-[11px] font-bold text-slate-400">${escapeHtml(formatTime(x.timestamp))}</span></div><div class="mt-2 text-sm font-black text-slate-800 truncate">${escapeHtml(safeStr(x.oldVal))} → ${escapeHtml(safeStr(x.newVal))}</div><div class="text-xs font-bold ${parseNum(x.diff)>0?'text-rose-600':parseNum(x.diff)<0?'text-blue-600':'text-slate-400'}">차이 ${escapeHtml(fmtNum(x.diff))} ${escapeHtml(fmtPct(x.diffRate))}</div></div>`).join('')||'<div class="text-sm font-bold text-slate-400">최근 변경이 없습니다.</div>';
   }
-  function refresh(){rawLogs=readHistory(); normalized=rawLogs.map(norm); fillFilters(); $('statTotal').textContent=normalized.length.toLocaleString('ko-KR'); $('statPrice').textContent=normalized.filter(x=>priceFieldRe.test([x.action,x.path,x.field].join(' '))).length.toLocaleString('ko-KR'); $('statToday').textContent=normalized.filter(x=>isToday(x.timestamp)).length.toLocaleString('ko-KR'); $('statSource').textContent=([...new Set(normalized.map(x=>x.sourceRole||x.source).filter(Boolean))].slice(0,3).join(', ')||'-'); $('statusLine').textContent=`로컬 히스토리 ${normalized.length.toLocaleString('ko-KR')}건 로드됨`; apply();}
-  function mergeCloudLogs(logs=[]){const current=readHistory(); const map=new Map(); [...logs,...current].filter(Boolean).forEach((log,idx)=>{const key=log.id||`${log.timestampISO||log.timestamp||''}_${log.code||''}_${log.field||log.path||idx}`; if(!map.has(key))map.set(key,log);}); const merged=[...map.values()].sort((a,b)=>(parseDate(b.timestampISO||b.timestamp)?.getTime()||0)-(parseDate(a.timestampISO||a.timestamp)?.getTime()||0)); localStorage.setItem(HISTORY_KEY,JSON.stringify(merged.slice(0,20000))); return merged;}
-  async function loadCloudHistory(){const url=getCloudUrl(); if(!url){$('statusLine').textContent='클라우드 URL이 없습니다. ControlTower에서 주소를 먼저 설정하세요.';return;} const field=$('analysisField').value||''; const params=new URLSearchParams({action:'history_query',limit:'5000',days:'365'}); if(selectedCode)params.set('code',selectedCode); if(field)params.set('field',field); const requestUrl=url+(url.includes('?')?'&':'?')+params.toString(); $('statusLine').textContent='클라우드 히스토리 조회 중...'; try{const res=await fetch(requestUrl,{method:'GET'}); if(!res.ok)throw new Error('Network Error'); const json=await res.json(); if(!json||json.status!=='success')throw new Error(json?.message||'history_query 실패'); const logs=json.data?.history||json.data?.logs||json.history||[]; mergeCloudLogs(logs); $('statusLine').textContent=`클라우드 히스토리 ${logs.length.toLocaleString('ko-KR')}건 병합 완료`; refresh();}catch(e){console.error(e); $('statusLine').textContent='클라우드 조회 실패: '+e.message;}}
+  async function renderSnapshotView(message=''){
+    const snapshots=[remoteSnapshot,localSnapshot].filter(Boolean);
+    const viewSnapshot=snapshots.length>1
+      ? await mergeChangeHistorySnapshots(snapshots,{source:'MEMORY_LOCAL_CLOUD_VIEW'})
+      : (snapshots[0]||null);
+    rawLogs=viewSnapshot?.data?.history||[];
+    normalized=rawLogs.map(norm);
+    fillFilters();
+    $('statTotal').textContent=normalized.length.toLocaleString('ko-KR');
+    $('statPrice').textContent=normalized.filter(x=>priceFieldRe.test([x.action,x.path,x.field].join(' '))).length.toLocaleString('ko-KR');
+    $('statToday').textContent=normalized.filter(x=>isToday(x.timestamp)).length.toLocaleString('ko-KR');
+    $('statSource').textContent=viewSnapshot?.source||'-';
+    apply();
+    if(message) $('statusLine').textContent=message;
+  }
+  async function refresh(){
+    $('statusLine').textContent='읽기 전용 Snapshot을 불러오는 중...';
+    const [historyResult,productResult]=await Promise.all([
+      getChangeHistorySnapshotResult(),
+      getProductSnapshotResult()
+    ]);
+    localSnapshot=historyResult.snapshot||null;
+    masterMap={};
+    (productResult.snapshot?.data?.products||[]).forEach(item=>{const code=safeStr(item?.코드||item?.품목코드).trim();if(code)masterMap[code]=item;});
+    const historyMessage=historyResult.status==='READY'
+      ? `로컬 변경이력 Snapshot ${historyResult.snapshot.count.toLocaleString('ko-KR')}건 · 읽기 전용`
+      : historyResult.status==='EMPTY'
+        ? '로컬 변경이력 Snapshot이 비어 있습니다.'
+        : historyResult.status==='NOT_AVAILABLE'
+          ? '로컬 변경이력 저장소가 아직 없습니다. 클라우드 조회는 별도로 사용할 수 있습니다.'
+          : `로컬 변경이력 오류: ${historyResult.error?.code||'CHANGE_HISTORY_READ_FAILED'}`;
+    const productMessage=productResult.status==='ERROR'
+      ? ` · 상품 Snapshot 오류: ${productResult.error?.code||'PRODUCT_SNAPSHOT_READ_FAILED'}`
+      : productResult.status==='EMPTY' ? ' · 상품 Snapshot 비어 있음' : '';
+    await renderSnapshotView(historyMessage+productMessage);
+  }
+  async function loadCloudHistory(){const url=getCloudUrl(); if(!url){$('statusLine').textContent='클라우드 URL이 없습니다. Settings에서 주소를 먼저 설정하세요.';return;} const field=$('analysisField').value||''; const params=new URLSearchParams({action:'history_query',limit:'5000',days:'365'}); if(selectedCode)params.set('code',selectedCode); if(field)params.set('field',field); const requestUrl=url+(url.includes('?')?'&':'?')+params.toString(); $('statusLine').textContent='클라우드 변경이력 조회 중...'; try{const res=await fetch(requestUrl,{method:'GET'}); if(!res.ok)throw new Error(`HTTP_${res.status}`); const json=await res.json(); if(!json||json.status!=='success')throw new Error(json?.message||'HISTORY_QUERY_FAILED'); const logs=json.data?.history||json.data?.logs||json.history; if(!Array.isArray(logs))throw new Error('CLOUD_HISTORY_SCHEMA_INVALID'); remoteSnapshot=await buildChangeHistorySnapshot(logs,{source:'CLOUD_QUERY'}); await renderSnapshotView(`클라우드 ${logs.length.toLocaleString('ko-KR')}건을 메모리 화면에 병합했습니다. 로컬 변경이력은 수정하지 않았습니다.`);}catch(e){console.error(e); $('statusLine').textContent='클라우드 조회 실패: '+e.message;}}
   function download(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
   function toCsv(rows){const cols=['timestamp','sourceRole','source','action','code','name','spec','field','path','oldVal','newVal','diff','diffRate']; return [cols.join(','),...rows.map(r=>cols.map(c=>'"'+safeStr(r[c]).replace(/"/g,'""')+'"').join(','))].join('\n');}
   function navigateBack(){try{const ref=document.referrer||''; if(ref&&/MerchOps(?:\.html)?/i.test(ref)&&history.length>1){history.back();return;}}catch(e){} try{location.href=(location.origin&&location.origin.includes('oneapp.orderz.co.kr'))?location.origin+'/MerchOps.html':'MerchOps.html';}catch(e){location.href='MerchOps.html';}}
-  $('btnReload').onclick=refresh; $('btnCloud').onclick=loadCloudHistory; $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(rawLogs,null,2),'application/json'); $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(filteredRows.length?filteredRows:normalized),'text/csv;charset=utf-8'); $('btnBack').onclick=navigateBack; $('btnClearSelection').onclick=()=>{selectedCode=''; selectedName=''; apply();};
+  $('btnReload').onclick=refresh; $('btnCloud').onclick=loadCloudHistory; $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(filteredRows.map(row=>row.raw),null,2),'application/json'); $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(filteredRows),'text/csv;charset=utf-8'); $('btnBack').onclick=navigateBack; $('btnClearSelection').onclick=()=>{selectedCode=''; selectedName=''; apply();};
   ['searchInput','sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('input',apply)); ['sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('change',apply)); refresh();
 })();
 </script>
