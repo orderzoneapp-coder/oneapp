@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.14
+- Architecture document version: 2.1.15
 - Last reviewed: 2026-08-30
-- Current-source baseline: `c5de7cd0dbf368febc5412f4d5ec89551e201293` (NEXUS-SP-ANALYSIS-20260830-01 implementation base; final merge SHA is recorded with the release evidence)
+- Current-source baseline: `7037a60` (NEXUS cross-window Session implementation base; final merge SHA is recorded with the release evidence)
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -202,7 +202,7 @@ Production files must not be reorganized into folders without first updating and
 
 현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 투영 부재·오류는 전체 탭 표시로 복구하고 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
 
-`nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 전·후 모두 하단에 `원앱 | NEXUS 사내 업무 시스템`을 고정 표시하며, 이 문구는 서버 조회·Session Token·사용자 정보·revision을 사용하지 않는다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시한다. 서버가 제공한 `visibleAppsConfigured`와 검증된 12개 `visibleAppIds`를 식별정보 없이 `NEXUS_UI_VISIBILITY_V1`으로 같은 탭에 투영해 홈 카드와 공통헤더 탭에만 적용하며, 직접 URL과 앱 실행권한에는 사용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
+`nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 전·후 모두 하단에 `원앱 | NEXUS 사내 업무 시스템`을 고정 표시하며, 이 문구는 서버 조회·Session Token·사용자 정보·revision을 사용하지 않는다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시한다. 서버가 제공한 `visibleAppsConfigured`와 검증된 12개 `visibleAppIds`를 식별정보 없이 `NEXUS_UI_VISIBILITY_V1`으로 같은 탭에 투영해 홈 카드와 공통헤더 탭에만 적용하며, 직접 URL과 앱 실행권한에는 사용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 같은 브라우저에서 이미 로그인된 NEXUS 홈 창이 살아 있으면 `/nexus/` 범위의 `session-bridge.js`가 메모리에 있는 동일 Session을 새 NEXUS 창에 전달한다. Bridge는 페이지 요청을 가로채거나 Token을 Cookie·`localStorage`·IndexedDB에 저장하지 않고, `/nexus/` 밖의 클라이언트 요청을 거부한다. 로그아웃·만료는 같은 Session을 사용하는 모든 NEXUS 창에 전파하며, 로그인된 NEXUS 창이 하나도 없고 Bridge 메모리도 종료된 경우에는 다시 로그인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
 
 회사정보는 이 일반 원칙의 승인된 독립 경계다. `nexus/company-transport.js`는 회사관리 화면에서만 배포된 Gateway를 호출하며 홈·전역 `fetch`·공통헤더·업무 앱 부팅을 바꾸지 않는다. 홈은 회사정보 Snapshot을 저장하거나 읽지 않는다. 관리 쓰기는 변경된 필드만 보내고 `expectedRevision` 충돌 시 최신 서버 원본을 다시 읽는다. 사업자등록증 원본과 대표자 생년월일은 이 경계에서 수집·저장·로그하지 않는다.
 
