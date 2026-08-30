@@ -117,6 +117,9 @@ jobs:
       - name: Test DataOps substitution preview read-only behavior
         run: node scripts/test-dataops-substitution-preview-readonly.mjs
 
+      - name: Test complete DataOps contract suite
+        run: node scripts/test-dataops-all.mjs
+
       - name: Test DataOps stock print readability
         run: node scripts/test-dataops-stock-print-readable.mjs
 

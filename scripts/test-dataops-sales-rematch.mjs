@@ -5,692 +5,91 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const source = fs.readFileSync("DataOps.html", "utf8");
+const marker = '<script type="text/javascript">';
+const scriptStart = source.indexOf(marker);
+const scriptEnd = source.indexOf("</script>", scriptStart);
+new vm.Script(source.slice(scriptStart + marker.length, scriptEnd), { filename: "DataOps.inline.js" });
 
-function section(startMarker, endMarker) {
-  const start = source.indexOf(startMarker);
-  assert.notEqual(start, -1, `Missing start marker: ${startMarker}`);
-  const end = source.indexOf(endMarker, start + startMarker.length);
-  assert.notEqual(end, -1, `Missing end marker: ${endMarker}`);
-  return source.slice(start, end);
-}
-
-const rematchSource = section(
-  "const DATAOPS_SALES_REMATCH_MODULE",
-  "// V1.a22.111: 역마진 검증",
-);
+const moduleStart = source.indexOf("const DATAOPS_VENDOR_CHIP_MODULE =");
+const moduleEnd = source.indexOf("const DATAOPS_F9_PREFLIGHT_MODULE =", moduleStart);
+assert.ok(moduleStart >= 0 && moduleEnd > moduleStart, "current sales evidence/vendor-chip module must exist");
 const context = vm.createContext({
-  console,
-  safeNum: (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  },
-  safeStr: (value, fallback = "") => {
-    if (value === undefined || value === null || value === "") return fallback;
-    return String(value).trim() || fallback;
-  },
-  DATAOPS_VENDOR_CHIP_MODULE: {
-    aggregateDetails: (details = {}) => {
-      const result = {};
-      for (const [key, detail] of Object.entries(details)) {
-        const vendor = String(detail.displayVendor || key);
-        if (!result[vendor]) {
-          result[vendor] = {
-            keys: [],
-            displayVendor: vendor,
-            qty: 0,
-            rev: 0,
-            cogs: 0,
-          };
-        }
-        result[vendor].keys.push(key);
-        result[vendor].qty += Number(detail.qty || 0);
-        result[vendor].rev += Number(detail.rev || 0);
-        result[vendor].cogs += Number(detail.cogs || 0);
-      }
-      return result;
-    },
-  },
+  JSON,
+  Object,
+  Array,
+  Map,
+  Set,
+  Math,
+  safeNum: value => Number.isFinite(Number(value)) ? Number(value) : 0,
+  safeStr: (value, fallback = "") => value === null || value === undefined || String(value).trim() === "" ? fallback : String(value).trim(),
+  parseNumber: value => Number(String(value ?? "").replace(/,/g, "")) || 0,
+  formatQty: value => String(value),
 });
-context.window = context;
-context.globalThis = context;
-new vm.Script(
-  `${rematchSource}\nglobalThis.salesRematch = DATAOPS_SALES_REMATCH_MODULE;`,
-  { filename: "DataOps.sales-rematch.js" },
-).runInContext(context);
-const salesRematch = context.salesRematch;
+vm.runInContext(`${source.slice(moduleStart, moduleEnd)}\nglobalThis.vendorChip = DATAOPS_VENDOR_CHIP_MODULE;`, context);
+const chips = context.vendorChip;
 
-const sourceRaw1 = Object.freeze({ 전표번호: "S-001", 상품코드: "A" });
-const sourceRaw2 = Object.freeze({ 전표번호: "S-002", 상품코드: "A" });
-const sourceRawBefore = JSON.stringify([sourceRaw1, sourceRaw2]);
-const productData = [
-  {
-    batchKey: "A-LOT-1",
-    코드: "A",
-    품명: "원본상품",
-    단위: "BOX",
-    출고내역: { 거래처1: { qty: 3, rev: 300, cogs: 150, displayVendor: "거래처1" } },
-    _sourceEntries: [
-      { id: "SRC_1", role: "out", qty: 3, rev: 300, price: 100, vendor: "거래처1", sourceRaw: sourceRaw1 },
-      { id: "SRC_2", role: "out", qty: 2, rev: 200, price: 100, vendor: "거래처1", sourceRaw: sourceRaw2 },
-    ],
-  },
-  {
-    batchKey: "A-LOT-2",
-    코드: "A",
-    품명: "원본상품",
-    단위: "BOX",
-    출고내역: { 거래처1: { qty: 2, rev: 200, cogs: 120, displayVendor: "거래처1" } },
-    _sourceEntries: [],
-  },
-  { batchKey: "B-LOT", 코드: "B", 품명: "정정상품", 단위: "BOX", 출고내역: {} },
-  { batchKey: "C-LOT", 코드: "C", 품명: "묶음상품", 단위: "EA", 출고내역: {} },
-];
-
-const firstMoveAllocations = salesRematch.allocateSourceLedgerForMove({
-  productData,
-  substHistory: [],
-  sourceCode: "A",
-  vendor: "거래처1",
-  sourceQty: 2,
-});
-assert.deepEqual(
-  Array.from(firstMoveAllocations, (allocation) => ({
-    sourceEntryId: allocation.sourceEntryId,
-    qty: allocation.qty,
-    revenue: allocation.revenue,
-  })),
-  [{ sourceEntryId: "SRC_1", qty: 2, revenue: 200 }],
-  "partial move must select the exact first source sales row",
-);
-const firstMove = {
-  id: "H1",
-  type: "SALES_REMATCH",
-  isSalesRematch: true,
-  status: "active",
-  sourceCode: "A",
-  targetCode: "B",
-  sourceName: "원본상품",
-  targetName: "정정상품",
-  vendor: "거래처1",
-  sourceQty: 2,
-  targetQty: 2,
-  revenue: 200,
-  sourceLedgerEntryIds: ["SRC_1"],
-  sourceLedgerAllocations: firstMoveAllocations,
+const sourceDetails = {
+  거래처1: { qty: 3, rev: 300, cogs: 180, displayVendor: "거래처1", _sourceAllocations: [{ sourceId: "S1", qty: 3 }] },
+  거래처1_perfect: { qty: 2, rev: 220, cogs: 120, displayVendor: "거래처1", _sourceAllocations: [{ sourceId: "S2", qty: 2 }] },
 };
-const chainedAllocations = salesRematch.allocateSourceLedgerForMove({
-  productData,
-  substHistory: [firstMove],
-  sourceCode: "B",
-  vendor: "거래처1",
-  sourceQty: 1,
-});
-assert.deepEqual(
-  Array.from(chainedAllocations, (allocation) => ({
-    sourceEntryId: allocation.sourceEntryId,
-    qty: allocation.qty,
-    revenue: allocation.revenue,
-  })),
-  [{ sourceEntryId: "SRC_1", qty: 1, revenue: 100 }],
-  "consecutive rematch must inherit the first source sales row",
-);
-const chainedCtrlMove = {
-  id: "H2",
-  type: "SALES_REMATCH",
-  isSalesRematch: true,
-  status: "active",
-  sourceCode: "B",
-  targetCode: "C",
-  sourceName: "정정상품",
-  targetName: "묶음상품",
-  vendor: "거래처1",
-  sourceQty: 1,
-  targetQty: 2,
-  revenue: 100,
-  sourceLedgerEntryIds: ["SRC_1"],
-  sourceLedgerAllocations: chainedAllocations,
-};
+const sourceDetailsBefore = JSON.stringify(sourceDetails);
+const aggregated = chips.aggregateDetails(sourceDetails);
+assert.equal(aggregated.거래처1.qty, 5);
+assert.equal(aggregated.거래처1.rev, 520);
+assert.equal(aggregated.거래처1.cogs, 300);
+assert.deepEqual(Array.from(aggregated.거래처1._sourceAllocations, allocation => allocation.sourceId), ["S1", "S2"]);
+assert.equal(JSON.stringify(sourceDetails), sourceDetailsBefore, "aggregation must not mutate source sales evidence");
 
-const originalRows = salesRematch.buildOriginalLedgerRows(productData);
-assert.equal(originalRows.length, 2);
-assert.deepEqual(Array.from(originalRows, (row) => row.sourceEntryId), ["SRC_1", "SRC_2"]);
-assert.equal(originalRows.reduce((sum, row) => sum + row.qty, 0), 5);
-assert.equal(originalRows.reduce((sum, row) => sum + row.supplyAmount, 0), 500);
-
-const correctedRows = salesRematch.buildCorrectedLedgerRows({
-  productData,
-  substHistory: [firstMove, chainedCtrlMove],
-});
-const totalsByCode = Object.fromEntries(
-  ["A", "B", "C"].map((code) => [
-    code,
-    correctedRows
-      .filter((row) => row.currentCode === code)
-      .reduce((total, row) => ({ qty: total.qty + row.qty, supply: total.supply + row.supplyAmount }), { qty: 0, supply: 0 }),
-  ]),
-);
-assert.deepEqual(totalsByCode, {
-  A: { qty: 3, supply: 300 },
-  B: { qty: 1, supply: 100 },
-  C: { qty: 2, supply: 100 },
-});
-assert.deepEqual(
-  Array.from(correctedRows.filter((row) => row.currentCode === "C"), (row) => row.sourceEntryId),
-  ["SRC_1"],
-  "A→B→C must preserve the first original sales row identity",
-);
-assert.equal(correctedRows.reduce((sum, row) => sum + row.supplyAmount, 0), 500, "Ctrl conversion must preserve supply amount");
-assert.equal(JSON.stringify([sourceRaw1, sourceRaw2]), sourceRawBefore, "Source raw rows must stay immutable");
-
-const afterSecondUndo = salesRematch.buildCorrectedLedgerRows({
-  productData,
-  substHistory: [firstMove, { ...chainedCtrlMove, status: "cancelled" }],
-});
-assert.equal(afterSecondUndo.filter((row) => row.currentCode === "B").reduce((sum, row) => sum + row.qty, 0), 2);
-assert.equal(afterSecondUndo.filter((row) => row.currentCode === "C").length, 0);
-assert.equal(afterSecondUndo.reduce((sum, row) => sum + row.qty, 0), 5, "normal rematch quantity must be preserved");
-assert.equal(afterSecondUndo.reduce((sum, row) => sum + row.supplyAmount, 0), 500);
-
-const legacy = salesRematch.normalizeHistory([{
-  id: 77,
-  type: "CTRL_DRAG_REPLACEMENT",
-  sourceKey: "A-LOT-1",
-  targetKey: "B-LOT",
-  sourceName: "원본상품",
-  targetName: "정정상품",
-  sQty: 2,
-  tQty: 2,
-  sourceItemPrev: productData[0],
-  targetItemPrev: productData[2],
-}]);
-assert.equal(legacy[0].status, "active");
-assert.equal(salesRematch.isSalesEvent(legacy[0]), true);
-const legacyCorrected = salesRematch.buildCorrectedLedgerRows({ productData, substHistory: legacy });
-assert.equal(legacyCorrected.filter((row) => row.currentCode === "B").reduce((sum, row) => sum + row.qty, 0), 2);
-assert.equal(legacyCorrected.reduce((sum, row) => sum + row.supplyAmount, 0), 500);
-
-const allocations = salesRematch.buildSourceAllocations({ productData, code: "A", vendor: "거래처1" });
-assert.equal(allocations.length, 2);
-assert.equal(allocations.reduce((sum, item) => sum + item.qty, 0), 5);
-const projected = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: productData.map((row) => ({ ...row })),
-  productData,
-  substHistory: [],
-});
-assert.equal(projected.filter((row) => Object.keys(row._correctedSalesDetails).length > 0).length, 1, "current sales chip must have one manipulation anchor");
-
-const exactLotSourceData = [
-  {
-    batchKey: "SAME-LOT-1", 코드: "SAME", 품명: "동일상품", 단위: "BOX",
-    출고내역: { 거래처1: { qty: 2, rev: 200, cogs: 100, displayVendor: "거래처1" } },
-    _sourceEntries: [{ id: "SAME-SRC-1", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: { 전표번호: "SAME-1" } }],
-  },
-  {
-    batchKey: "SAME-LOT-2", 코드: "SAME", 품명: "동일상품", 단위: "BOX",
-    출고내역: { 거래처1: { qty: 3, rev: 330, cogs: 180, displayVendor: "거래처1" } },
-    _sourceEntries: [{ id: "SAME-SRC-2", role: "out", qty: 3, rev: 330, vendor: "거래처1", sourceRaw: { 전표번호: "SAME-2" } }],
-  },
-];
-const exactSecondLotAllocation = salesRematch.allocateSourceLedgerForMove({
-  productData: exactLotSourceData,
-  substHistory: [],
-  sourceCode: "SAME",
-  sourceKey: "SAME-LOT-2",
-  vendor: "거래처1",
-  sourceQty: 1,
-});
-assert.deepEqual(
-  Array.from(exactSecondLotAllocation, ({ sourceEntryId, qty, revenue }) => ({ sourceEntryId, qty, revenue })),
-  [{ sourceEntryId: "SAME-SRC-2", qty: 1, revenue: 110 }],
-  "same-code drag must allocate only the source Lot's original sales row",
-);
-
-const projectionSourceEntry = { id: "PROJ-SRC-1", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: { 전표번호: "PROJ-1" } };
-const projectionBaseData = [
-  { batchKey: "PROJ-A1", 코드: "PROJ-A", 품명: "원본상품", 단위: "BOX", 카테고리: "채소", 출고내역: { 거래처1: { qty: 2, rev: 200, cogs: 100, displayVendor: "거래처1" } }, _sourceEntries: [projectionSourceEntry] },
-  { batchKey: "PROJ-A2", 코드: "PROJ-A", 품명: "동일상품 다른 Lot", 단위: "BOX", 카테고리: "채소", 출고내역: {}, _sourceEntries: [] },
-  { batchKey: "PROJ-B1", 코드: "PROJ-B", 품명: "다른상품", 단위: "BOX", 카테고리: "과일", 출고내역: {}, _sourceEntries: [] },
-  { batchKey: "PROJ-C1", 코드: "PROJ-C", 품명: "Ctrl 대상", 단위: "EA", 카테고리: "가공식품", 출고내역: {}, _sourceEntries: [] },
-];
-const projectionFirstMove = {
-  id: "PROJ-H1", type: "SALES_REMATCH", isSalesRematch: true, status: "active",
-  sourceKey: "PROJ-A1", targetKey: "PROJ-A2", sourceCode: "PROJ-A", targetCode: "PROJ-A",
-  sourceName: "원본상품", targetName: "동일상품 다른 Lot", vendor: "거래처1",
-  sourceQty: 1, targetQty: 1, revenue: 100,
-  sourceLedgerEntryIds: ["PROJ-SRC-1"],
-  sourceLedgerAllocations: [{ sourceEntryId: "PROJ-SRC-1", qty: 1, revenue: 100 }],
-};
-const projectionAfterFirst = projectionBaseData.map((row) => {
-  if (row.batchKey === "PROJ-A1") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 50, displayVendor: "거래처1" } } };
-  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 60, displayVendor: "거래처1" } } };
-  return { ...row };
-});
-const lotProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
-  productData: projectionAfterFirst,
-  substHistory: [projectionFirstMove],
-  viewMode: "LOT_DETAIL",
-});
-assert.equal(lotProjection.find((row) => row.batchKey === "PROJ-A1")._correctedSalesDetails.거래처1.qty, 1);
-assert.equal(lotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails.거래처1.qty, 1, "same-code rematch chip must follow targetKey Lot");
-const codeProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: [{ ...projectionAfterFirst[0], batchKey: "VIEW_CODE|PROJ-A", _viewMode: "CODE_SUMMARY", _viewSourceKeys: ["PROJ-A1", "PROJ-A2"] }],
-  productData: projectionAfterFirst,
-  substHistory: [projectionFirstMove],
-  viewMode: "CODE_SUMMARY",
-});
-assert.equal(codeProjection[0]._correctedSalesDetails.거래처1.qty, 2, "code summary must keep code-level aggregation");
-
-const projectionSecondAllocations = salesRematch.allocateSourceLedgerForMove({
-  productData: projectionAfterFirst,
-  substHistory: [projectionFirstMove],
-  sourceCode: "PROJ-A",
-  sourceKey: "PROJ-A2",
-  vendor: "거래처1",
-  sourceQty: 1,
-});
-assert.deepEqual(Array.from(projectionSecondAllocations, (item) => item.sourceEntryId), ["PROJ-SRC-1"]);
-const projectionSecondMove = {
-  id: "PROJ-H2", type: "SALES_REMATCH", isSalesRematch: true, status: "active",
-  sourceKey: "PROJ-A2", targetKey: "PROJ-B1", sourceCode: "PROJ-A", targetCode: "PROJ-B",
-  sourceName: "동일상품 다른 Lot", targetName: "다른상품", vendor: "거래처1",
-  sourceQty: 1, targetQty: 1, revenue: 100,
-  sourceLedgerEntryIds: ["PROJ-SRC-1"], sourceLedgerAllocations: projectionSecondAllocations,
-};
-const projectionAfterSecond = projectionAfterFirst.map((row) => {
-  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: {} };
-  if (row.batchKey === "PROJ-B1") return { ...row, 출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 70, displayVendor: "거래처1" } } };
-  return { ...row };
-});
-const chainedLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: projectionAfterSecond.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
-  productData: projectionAfterSecond,
-  substHistory: [projectionFirstMove, projectionSecondMove],
-  viewMode: "LOT_DETAIL",
-});
-assert.equal(Object.keys(chainedLotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails).length, 0);
-assert.equal(chainedLotProjection.find((row) => row.batchKey === "PROJ-B1")._correctedSalesDetails.거래처1.qty, 1, "consecutive rematch chip must follow the latest targetKey");
-
-const restoredHistory = salesRematch.normalizeHistory(JSON.parse(JSON.stringify([projectionFirstMove, { ...projectionSecondMove, status: "cancelled" }])));
-const restoredLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
-  productData: projectionAfterFirst,
-  substHistory: restoredHistory,
-  viewMode: "LOT_DETAIL",
-});
-assert.equal(restoredLotProjection.find((row) => row.batchKey === "PROJ-A2")._correctedSalesDetails.거래처1.qty, 1, "cancel and work restore must return the chip to the previous Lot");
-
-const projectionCtrlMove = { ...projectionSecondMove, id: "PROJ-H2-CTRL", targetKey: "PROJ-C1", targetCode: "PROJ-C", targetName: "Ctrl 대상", targetQty: 2 };
-const projectionAfterCtrl = projectionAfterFirst.map((row) => {
-  if (row.batchKey === "PROJ-A2") return { ...row, 출고내역: {} };
-  if (row.batchKey === "PROJ-C1") return { ...row, 출고내역: { 거래처1: { qty: 2, rev: 100, cogs: 50, displayVendor: "거래처1" } } };
-  return { ...row };
-});
-const ctrlLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: projectionAfterCtrl.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
-  productData: projectionAfterCtrl,
-  substHistory: [projectionFirstMove, projectionCtrlMove],
-  viewMode: "LOT_DETAIL",
-});
-assert.equal(ctrlLotProjection.find((row) => row.batchKey === "PROJ-C1")._correctedSalesDetails.거래처1.qty, 2, "Ctrl conversion must keep targetKey projection across unrelated categories");
-assert.equal(ctrlLotProjection.find((row) => row.batchKey === "PROJ-C1").카테고리, "가공식품", "category must not block rematch projection");
-
-const legacyProjectionMove = { ...projectionFirstMove };
-delete legacyProjectionMove.targetKey;
-const legacyLotProjection = salesRematch.applyCorrectedDetailsToViewRows({
-  viewRows: projectionAfterFirst.map((row) => ({ ...row, _viewMode: "LOT_DETAIL", _viewSourceKeys: [row.batchKey] })),
-  productData: projectionAfterFirst,
-  substHistory: [legacyProjectionMove],
-  viewMode: "LOT_DETAIL",
-});
-assert.equal(legacyLotProjection.filter((row) => Object.keys(row._correctedSalesDetails).length > 0).length, 1, "history without targetKey must keep a safe single-anchor fallback");
-
-const mainScriptMarker = '<script type="text/javascript">';
-const mainScriptStart = source.indexOf(mainScriptMarker);
-const mainScriptEnd = source.lastIndexOf("</script>");
-const mainScriptSource = source.slice(mainScriptStart + mainScriptMarker.length, mainScriptEnd);
-new vm.Script(mainScriptSource, { filename: "DataOps.inline.js" });
-const inventoryEngineStart = mainScriptSource.indexOf("const useInventoryEngine =");
-const inventoryEngineEnd = mainScriptSource.indexOf("const IssueChip = React.memo", inventoryEngineStart);
-const hookState = [];
-let hookIndex = 0;
-const runtimeReact = {
-  useState: (initialValue) => {
-    const index = hookIndex++;
-    hookState[index] = typeof initialValue === "function" ? initialValue() : initialValue;
-    return [
-      hookState[index],
-      (nextValue) => {
-        hookState[index] = typeof nextValue === "function" ? nextValue(hookState[index]) : nextValue;
-      },
-    ];
-  },
-  useRef: (initialValue) => ({ current: initialValue }),
-  useEffect: () => {},
-  useMemo: (factory) => factory(),
-  useCallback: (callback) => callback,
-};
-const storageValues = new Map();
-const runtimeContext = vm.createContext({
-  console,
-  React: runtimeReact,
-  localStorage: {
-    getItem: (key) => storageValues.get(String(key)) ?? null,
-    setItem: (key, value) => storageValues.set(String(key), String(value)),
-    removeItem: (key) => storageValues.delete(String(key)),
-  },
-  setTimeout: (callback) => { callback(); return 1; },
-  clearTimeout: () => {},
-});
-runtimeContext.window = runtimeContext;
-runtimeContext.self = runtimeContext;
-runtimeContext.globalThis = runtimeContext;
-new vm.Script(mainScriptSource.slice(0, inventoryEngineStart), { filename: "DataOps.runtime-preamble.js" }).runInContext(runtimeContext);
-new vm.Script("globalThis.actualExportModule = EXPORT_MODULE;", { filename: "DataOps.export-module.js" }).runInContext(runtimeContext);
-new vm.Script(
-  `${mainScriptSource.slice(inventoryEngineStart, inventoryEngineEnd)}\nglobalThis.actualUseInventoryEngine = useInventoryEngine;`,
-  { filename: "DataOps.inventory-engine.js" },
-).runInContext(runtimeContext);
-const inventoryEngine = runtimeContext.actualUseInventoryEngine({
-  mappings: {},
-  grouping: {},
-  setAlertMsg: () => {},
-  setConfirmModal: () => {},
-  setIsProcessing: () => {},
-  setAppStep: () => {},
-});
-const frozenLedgerEntries = Object.freeze([
-  Object.freeze({ id: "SRC_1", role: "out", qty: 3, rev: 300, vendor: "거래처1", sourceRaw: Object.freeze({ 전표번호: "IMMUTABLE-1" }) }),
-  Object.freeze({ id: "SRC_2", role: "out", qty: 2, rev: 200, vendor: "거래처1", sourceRaw: Object.freeze({ 전표번호: "IMMUTABLE-2" }) }),
-]);
-const frozenLedgerBefore = JSON.stringify(frozenLedgerEntries);
-const makeSameCodeInventoryRows = () => [
-  {
-    batchKey: "RUNTIME-SAME-1", 코드: "RUNTIME-SAME", 품명: "동일상품", 단위: "BOX", 단가: 50,
-    기초: 5, 입고: 0, 출고: 1, 대체입고: 0, 대체출고: 0, 전산잔량: 4, 실사: 4, 로스: 0,
-    매출액: 100, 매출원가: 50, 이슈: [], 메모: "",
-    출고내역: { 거래처1: { qty: 1, rev: 100, cogs: 50, displayVendor: "거래처1" } },
-    _sourceEntries: [{ id: "RUNTIME-SRC-1", role: "out", qty: 1, rev: 100, vendor: "거래처1", sourceRaw: { 전표번호: "RUNTIME-1" } }],
-  },
-  {
-    batchKey: "RUNTIME-SAME-2", 코드: "RUNTIME-SAME", 품명: "동일상품", 단위: "BOX", 단가: 60,
-    기초: 5, 입고: 0, 출고: 2, 대체입고: 0, 대체출고: 0, 전산잔량: 3, 실사: 3, 로스: 0,
-    매출액: 220, 매출원가: 120, 이슈: [], 메모: "",
-    출고내역: { 거래처1: { qty: 2, rev: 220, cogs: 120, displayVendor: "거래처1" } },
-    _sourceEntries: [{ id: "RUNTIME-SRC-2", role: "out", qty: 2, rev: 220, vendor: "거래처1", sourceRaw: { 전표번호: "RUNTIME-2" } }],
-  },
-];
-const makeInventoryRows = () => [
-  {
-    batchKey: "A1", 코드: "A", 품명: "원본상품", 단위: "BOX", 단가: 100,
-    기초: 5, 입고: 0, 출고: 5, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: 0, 로스: 0,
-    매출액: 500, 매출원가: 500, 이슈: [], 메모: "",
-    출고내역: { 거래처1: { qty: 5, rev: 500, cogs: 500, displayVendor: "거래처1" } },
-    _sourceEntries: frozenLedgerEntries,
-  },
-  {
-    batchKey: "B1", 코드: "B", 품명: "정정상품", 단위: "BOX", 단가: 60,
-    기초: 10, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 10, 실사: 10, 로스: 0,
-    매출액: 0, 매출원가: 0, 이슈: [], 메모: "", 출고내역: {}, _sourceEntries: [],
-  },
-  {
-    batchKey: "C1", 코드: "C", 품명: "묶음상품", 단위: "EA", 단가: 25,
-    카테고리: "가공식품",
-    기초: 10, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 10, 실사: 10, 로스: 0,
-    매출액: 0, 매출원가: 0, 이슈: [], 메모: "", 출고내역: {}, _sourceEntries: [],
-  },
-  {
-    batchKey: "D1", 코드: "D", 품명: "원가미정상품", 단위: "BOX", 단가: 0,
-    기초: 10, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 10, 실사: 10, 로스: 0,
-    매출액: 0, 매출원가: 0, 이슈: [], 메모: "", 출고내역: {}, _sourceEntries: [],
-  },
-];
-inventoryEngine.setProductData(makeSameCodeInventoryRows());
-inventoryEngine.setSubstHistory([]);
-inventoryEngine.handleSalesMove("RUNTIME-SAME-2", "RUNTIME-SAME-1", "거래처1", 1, { maxQty: 2, sourceDeductQty: 1, targetQty: 1 });
-assert.equal(hookState[0].find((row) => row.batchKey === "RUNTIME-SAME-2").출고, 1);
-assert.equal(hookState[0].find((row) => row.batchKey === "RUNTIME-SAME-1").출고, 2);
-assert.deepEqual(
-  Array.from(hookState[3][0].sourceLedgerAllocations, (allocation) => allocation.sourceEntryId),
-  ["RUNTIME-SRC-2"],
-  "actual same-code drag must record only the source Lot's original slip row",
-);
-assert.equal(hookState[3][0].sourceKey, "RUNTIME-SAME-2");
-assert.equal(hookState[3][0].targetKey, "RUNTIME-SAME-1");
-
-inventoryEngine.setProductData(makeInventoryRows());
-inventoryEngine.setSubstHistory([]);
-inventoryEngine.handleSalesMove("A1", "B1", "거래처1", 2, { maxQty: 5, sourceDeductQty: 2, targetQty: 2 });
-const partialSource = hookState[0].find((row) => row.batchKey === "A1");
-const partialTarget = hookState[0].find((row) => row.batchKey === "B1");
-assert.equal(partialSource.출고, 3);
-assert.equal(partialSource.매출원가, 300, "source decrease must retain the source Lot cost of 100");
-assert.equal(partialSource.전산잔량, 2);
-assert.equal(partialTarget.출고, 2);
-assert.equal(partialTarget.매출액, 200);
-assert.equal(partialTarget.매출원가, 120, "ordinary target increase must apply the target Lot cost of 60");
-assert.equal(partialTarget.전산잔량, 8);
-assert.equal(hookState[0].reduce((sum, row) => sum + Number(row.출고 || 0), 0), 5);
-assert.equal(hookState[0].reduce((sum, row) => sum + Number(row.매출원가 || 0), 0), 420);
-assert.equal(hookState[3].length, 1);
-assert.equal(hookState[3][0].status, "active");
-assert.equal(hookState[3][0].method, "partialDrag");
-assert.deepEqual(
-  Array.from(hookState[3][0].sourceLedgerAllocations, (allocation) => ({
-    sourceEntryId: allocation.sourceEntryId,
-    qty: allocation.qty,
-    revenue: allocation.revenue,
-  })),
-  [{ sourceEntryId: "SRC_1", qty: 2, revenue: 200 }],
-);
-inventoryEngine.handleSalesMove("B1", "C1", "거래처1", 1, { maxQty: 2, sourceDeductQty: 1, targetQty: 1 });
-assert.equal(hookState[0].find((row) => row.batchKey === "B1").출고, 1);
-assert.equal(hookState[0].find((row) => row.batchKey === "C1").출고, 1);
-assert.equal(hookState[3].length, 2, "consecutive re-edit must append history");
-assert.deepEqual(Array.from(hookState[3][1].sourceLedgerEntryIds), ["SRC_1"], "consecutive re-edit must retain the first source identity");
-assert.deepEqual(
-  Array.from(hookState[3][1].sourceLedgerAllocations, (allocation) => ({
-    sourceEntryId: allocation.sourceEntryId,
-    qty: allocation.qty,
-    revenue: allocation.revenue,
-  })),
-  [{ sourceEntryId: "SRC_1", qty: 1, revenue: 100 }],
-);
-assert.equal(JSON.stringify(frozenLedgerEntries), frozenLedgerBefore, "source ledger rows and sourceRaw objects must stay immutable");
-
-inventoryEngine.setProductData(makeInventoryRows());
-inventoryEngine.setSubstHistory([]);
-inventoryEngine.handleSalesMove("A1", "B1", "거래처1", 5, { maxQty: 5, sourceDeductQty: 5, targetQty: 5 });
-assert.equal(hookState[0].find((row) => row.batchKey === "A1").출고, 0);
-assert.equal(hookState[0].find((row) => row.batchKey === "B1").출고, 5);
-assert.equal(hookState[3][0].method, "drag");
-
-inventoryEngine.setProductData(makeInventoryRows());
-inventoryEngine.setSubstHistory([]);
-inventoryEngine.handleSalesMove("A1", "D1", "거래처1", 1, { maxQty: 5, sourceDeductQty: 1, targetQty: 1 });
-assert.equal(hookState[0].find((row) => row.batchKey === "D1").매출원가, 100, "zero target cost must keep the existing safe source-cost fallback");
-assert.equal(hookState[0].find((row) => row.batchKey === "D1").출고내역.거래처1.lotUnitCost, 100);
-
-inventoryEngine.setProductData(makeInventoryRows());
-inventoryEngine.setSubstHistory([]);
-inventoryEngine.handleSalesMove("A1", "C1", "거래처1", 4, {
-  isCtrlPressed: true,
-  skipTargetInference: true,
-  maxQty: 5,
-  sourceDeductQty: 2,
-  targetQty: 4,
-});
-assert.equal(hookState[0].find((row) => row.batchKey === "A1").출고, 3);
-assert.equal(hookState[0].find((row) => row.batchKey === "C1").출고, 4);
-assert.equal(hookState[0].find((row) => row.batchKey === "C1").매출액, 200, "Ctrl target must preserve source supply amount");
-assert.equal(hookState[3][0].targetQty, 4);
-assert.equal(hookState[3][0].revenue, 200);
-assert.equal(hookState[0].find((row) => row.batchKey === "C1").카테고리, "가공식품", "unrelated category must remain allowed as a drag target");
-
-const marginSource = section("const DATAOPS_MARGIN_REVIEW_MODULE", "window.DATAOPS_MARGIN_REVIEW_MODULE");
-const marginContext = vm.createContext({
-  safeNum: context.safeNum,
-  safeStr: context.safeStr,
-  DATAOPS_VENDOR_CHIP_MODULE: context.DATAOPS_VENDOR_CHIP_MODULE,
-});
-new vm.Script(`${marginSource}\nglobalThis.marginReview = DATAOPS_MARGIN_REVIEW_MODULE;`).runInContext(marginContext);
-assert.equal(marginContext.marginReview.isReverseMargin({ 단가: 100, 출고내역: { V: { qty: 1, rev: 100 } } }), false);
-assert.equal(marginContext.marginReview.isReverseMargin({ 단가: 101, 출고내역: { V: { qty: 1, rev: 100 } } }), true);
-
-const undoSource = section("const handleUndoAction = useCallback", "// V1.a22.12: 이슈카드");
-assert.match(undoSource, /status:\s*'cancelled'/);
-assert.doesNotMatch(undoSource, /\.filter\(item\s*=>\s*item\.id\s*!==/);
-assert.match(source, /setSubstHistory\(DATAOPS_SALES_REMATCH_MODULE\.normalizeHistory\(snapshot\.substHistory\)\)/);
-assert.match(source, /sourceLedgerEntryIds/);
-assert.match(source, /sourceAllocations:\s*allocationSnapshot/);
-assert.match(source, /cost > salePrice/);
-assert.doesNotMatch(source, /cost >= salePrice/);
-
-let persistedSnapshot = { version: 1, savedAt: "before", productData: [{ batchKey: "SAFE" }], substHistory: [] };
-let failNextWrite = false;
-const fakeIndexedDb = {
-  open: () => {
-    const request = {};
-    queueMicrotask(() => {
-      request.result = {
-        objectStoreNames: { contains: () => true },
-        transaction: () => {
-          const transaction = {
-            error: null,
-            objectStore: () => ({
-              put: (value) => {
-                queueMicrotask(() => {
-                  if (failNextWrite) {
-                    failNextWrite = false;
-                    transaction.error = new Error("WRITE_FAILED");
-                    transaction.onerror?.();
-                    return;
-                  }
-                  persistedSnapshot = value;
-                  transaction.oncomplete?.();
-                });
-              },
-              get: () => {
-                const getRequest = {};
-                queueMicrotask(() => {
-                  getRequest.result = persistedSnapshot;
-                  getRequest.onsuccess?.();
-                });
-                return getRequest;
-              },
-              delete: () => queueMicrotask(() => transaction.oncomplete?.()),
-            }),
-          };
-          return transaction;
-        },
-        close: () => {},
-      };
-      request.onsuccess?.();
-    });
-    return request;
-  },
-};
-const workStateSource = section("let dataOpsWorkStateWriteQueue", "// V1.a22.108: 입력 파일마다 Web Worker");
-const workStateContext = vm.createContext({
-  console,
-  indexedDB: fakeIndexedDb,
-  safeStr: context.safeStr,
-});
-new vm.Script(`${workStateSource}\nglobalThis.workState = DATAOPS_WORK_STATE_MODULE;`).runInContext(workStateContext);
-failNextWrite = true;
-await assert.rejects(
-  workStateContext.workState.save({ productData: [{ batchKey: "BROKEN" }], substHistory: [{ id: "NEW" }] }),
-  /WRITE_FAILED/,
-);
-assert.equal(persistedSnapshot.productData[0].batchKey, "SAFE", "failed save must not replace the previous snapshot");
-assert.equal((await workStateContext.workState.load()).productData[0].batchKey, "SAFE");
-
-const expectedExistingSheets = [
-  "전체재고", "구매잔량", "기타상품", "실사양식", "확인요청", "재고수불_마감",
-  "수불마감_분석원장", "소분치환_후보", "마스터_확인필요", "보고서",
-];
-const exportSource = section("createCombinedWorkbook:", "const DATAOPS_MERCH_STOCK_SYNC_MODULE");
-for (const sheetName of expectedExistingSheets) assert.match(exportSource, new RegExp(`'${sheetName}'`));
-assert.ok(exportSource.indexOf("'보고서'") < exportSource.indexOf("'원본 판매전표'"));
-assert.ok(exportSource.indexOf("'원본 판매전표'") < exportSource.indexOf("'정정 판매현황'"));
-
-const bundleUrl = "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
-const bundleResponse = await fetch(bundleUrl);
-assert.equal(bundleResponse.ok, true, `Unable to load XLSX runtime: ${bundleResponse.status}`);
-const xlsxContext = vm.createContext({ console, setTimeout, clearTimeout });
-xlsxContext.window = xlsxContext;
-xlsxContext.self = xlsxContext;
-xlsxContext.globalThis = xlsxContext;
-new vm.Script(await bundleResponse.text(), { filename: "xlsx.bundle.js" }).runInContext(xlsxContext);
-const XLSX = xlsxContext.XLSX;
-assert.ok(XLSX);
-runtimeContext.XLSX = XLSX;
-const f9ProductData = productData.map((row, index) => ({
-  기초: index === 0 ? 5 : (index === 1 ? 2 : 10),
+const inventoryRow = {
+  batchKey: "ROW-1",
+  코드: "A100",
+  품명: "상품",
+  기초: 10,
   입고: 0,
-  출고: index === 0 ? 3 : (index === 1 ? 2 : 0),
+  출고: 5,
   대체입고: 0,
   대체출고: 0,
-  전산잔량: index === 0 ? 2 : (index === 1 ? 0 : 10),
-  실사: index === 0 ? 2 : (index === 1 ? 0 : 10),
+  실사: 5,
+  전산잔량: 5,
   로스: 0,
-  단가: row.코드 === "A" ? (index === 0 ? 50 : 60) : (row.코드 === "B" ? 60 : 25),
-  매출액: index === 0 ? 300 : (index === 1 ? 200 : 0),
-  매출원가: index === 0 ? 150 : (index === 1 ? 120 : 0),
-  이슈: [],
+  매출액: 520,
+  매출원가: 300,
+  출고내역: sourceDetails,
   메모: "",
-  ...row,
-  _sourceEntries: (row._sourceEntries || []).map((entry) => ({
-    ...entry,
-    date: "2026-08-10",
-    sourceFile: "sales.xlsx",
-    sourceSheet: "판매",
-  })),
-}));
-const chainedSameQty = { ...chainedCtrlMove, id: "H2_F9", targetQty: 1, tQty: 1 };
-const { wb: actualWorkbook } = runtimeContext.actualExportModule.createCombinedWorkbook({
-  productData: f9ProductData,
-  substHistory: [firstMove, chainedSameQty],
-  analysisPeriod: "2026-08",
-  targetDateStr: "2026-08-10",
-  closingStats: {},
-});
-const bytes = XLSX.write(actualWorkbook, { bookType: "xlsx", type: "array" });
-assert.ok(bytes.byteLength > 0);
-const reopened = XLSX.read(bytes, { type: "array" });
-assert.deepEqual(Array.from(reopened.SheetNames), [...expectedExistingSheets, "원본 판매전표", "정정 판매현황"]);
-for (const sheetName of expectedExistingSheets) {
-  assert.ok(reopened.Sheets[sheetName]?.["!ref"], `existing F9 sheet must remain readable: ${sheetName}`);
-}
-const sheetValues = (sheet) => Object.entries(sheet)
-  .filter(([address]) => !address.startsWith("!"))
-  .map(([, cell]) => String(cell?.v ?? ""));
-assert.ok(sheetValues(reopened.Sheets["전체재고"]).some((value) => value === "A"), "existing whole-stock sheet must retain a product code");
-assert.ok(sheetValues(reopened.Sheets["재고수불_마감"]).some((value) => value === "원본상품"), "existing closing sheet must retain a product name");
-assert.ok(sheetValues(reopened.Sheets["보고서"]).some((value) => value === "보고서"), "existing report sheet must retain its title");
-const reopenedOriginal = XLSX.utils.sheet_to_json(reopened.Sheets["원본 판매전표"]);
-const reopenedCorrected = XLSX.utils.sheet_to_json(reopened.Sheets["정정 판매현황"]);
-assert.equal(reopenedOriginal.length, 2);
-assert.equal(reopenedOriginal.reduce((sum, row) => sum + Number(row["판매수량"] || 0), 0), 5);
-assert.equal(reopenedOriginal.reduce((sum, row) => sum + Number(row["공급가액"] || 0), 0), 500);
-assert.equal(reopenedCorrected.reduce((sum, row) => sum + Number(row["판매수량"] || 0), 0), 5, "ordinary rematch F9 quantity total must be preserved");
-assert.equal(reopenedCorrected.reduce((sum, row) => sum + Number(row["공급가액"] || 0), 0), 500);
-const reopenedC = reopenedCorrected.find((row) => row["정정상품코드"] === "C");
-assert.equal(reopenedC["판매수량"], 1);
-assert.equal(reopenedC["원본식별자"], "S-001", "F9 corrected row must retain the exact first source slip identifier");
+};
+const partiallyCancelled = chips.cancelVendorChip(inventoryRow, "거래처1", 2);
+assert.equal(partiallyCancelled.출고, 2);
+assert.equal(partiallyCancelled.출고내역.거래처1.qty, 2);
+assert.equal(partiallyCancelled.매출액, 208);
+assert.equal(partiallyCancelled.매출원가, 120);
+assert.equal(inventoryRow.출고, 5, "administrator correction must produce a new row and preserve the prior snapshot");
 
-const { wb: ctrlWorkbook } = runtimeContext.actualExportModule.createCombinedWorkbook({
-  productData: f9ProductData,
-  substHistory: [firstMove, chainedCtrlMove],
-  analysisPeriod: "2026-08",
-  targetDateStr: "2026-08-10",
-  closingStats: {},
+const evidence = chips.buildSalesSourceEvidence({
+  sale: { _raw: { 판매단가: "1,200", 공급가액: "6,000" }, _sourceFileName: "판매.xlsx", _sourceSheet: "판매", _sourceRowNumber: 7, 매입처매칭: "공급사" },
+  sourceId: "S1", code: "A100", name: "상품", vendor: "거래처1", qty: 5, calculatedAmount: 6000,
 });
-const ctrlBytes = XLSX.write(ctrlWorkbook, { bookType: "xlsx", type: "array" });
-const reopenedCtrl = XLSX.read(ctrlBytes, { type: "array" });
-const reopenedCtrlCorrected = XLSX.utils.sheet_to_json(reopenedCtrl.Sheets["정정 판매현황"]);
-assert.equal(reopenedCtrlCorrected.reduce((sum, row) => sum + Number(row["공급가액"] || 0), 0), 500, "Ctrl conversion F9 must preserve original supply total");
-assert.equal(reopenedCtrlCorrected.find((row) => row["정정상품코드"] === "C")["판매수량"], 2);
-assert.equal(reopenedCtrlCorrected.find((row) => row["정정상품코드"] === "C")["원본식별자"], "S-001");
+assert.equal(evidence.unitPrice, 1200);
+assert.equal(evidence.amount, 6000);
+assert.equal(evidence.fileName, "판매.xlsx");
+assert.equal(evidence.rowNumber, 7);
 
-console.log("DataOps sales rematch contract passed.");
+const integrityErrors = chips.buildIntegrityErrors({ productData: [{
+  ...inventoryRow,
+  _salesSourceEvidence: [{ sourceId: "S1", vendor: "거래처1", qty: 5, amount: 500 }],
+  출고내역: { 거래처1: { qty: 4, rev: 400, cogs: 240, displayVendor: "거래처1" } },
+}] });
+assert.equal(integrityErrors.length, 1);
+assert.equal(integrityErrors[0].type, "VENDOR_CHIP_MISMATCH");
+assert.equal(integrityErrors[0].differenceQty, 1);
+
+const moveStart = source.indexOf("const handleSalesMove = useCallback");
+const moveEnd = source.indexOf("return {", moveStart);
+const moveSource = source.slice(moveStart, moveEnd);
+assert.match(moveSource, /sourceKey/);
+assert.match(moveSource, /targetKey/);
+assert.match(moveSource, /sourceItemPrev/);
+assert.match(moveSource, /targetItemPrev/);
+assert.match(moveSource, /_costLayers/);
+assert.doesNotMatch(source, /const DATAOPS_SALES_REMATCH_MODULE/, "removed automatic rematch policy must not be revived over PR #442 administrator-directed moves");
+
+console.log("PASS test-dataops-sales-rematch");

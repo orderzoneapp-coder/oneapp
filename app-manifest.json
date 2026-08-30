@@ -157,6 +157,7 @@
         "mapping-config",
         "cloud-url",
         "stop-management",
+        "dataops-inventory-snapshot",
         "dataops-inventory-master-resume"
       ]
     },
@@ -724,7 +725,8 @@
       "owner": "master-lookup",
       "consumers": [
         "orderq/input.html",
-        "smart-input"
+        "smart-input",
+        "DataOps.html"
       ],
       "schemaVersion": "ONEAPP_PRODUCT_SNAPSHOT_V1",
       "readAdapter": "ONEAPP_PRODUCT_MASTER_READ_ADAPTER",
@@ -739,9 +741,6 @@
         "Item_manager.html",
         "coreEngine.js",
         "masterAddUpdate.js"
-      ],
-      "documentedButNotDetectedWriterCandidates": [
-        "DataOps.html"
       ],
       "resources": {
         "adapterAsset": "reference-data/product-master-read-adapter.js",

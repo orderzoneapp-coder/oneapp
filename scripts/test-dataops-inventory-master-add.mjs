@@ -6,6 +6,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const dataOpsSource = fs.readFileSync("DataOps.html", "utf8");
+const boundarySource = fs.readFileSync("dataops/inventory-master-boundary.js", "utf8");
 const masterSource = fs.readFileSync("masterAddUpdate.js", "utf8");
 const manifest = JSON.parse(fs.readFileSync("app-manifest.json", "utf8"));
 const architecture = fs.readFileSync("APP_ARCHITECTURE.md", "utf8");
@@ -17,13 +18,6 @@ function sliceBetween(source, startMarker, endMarker, label) {
   assert.notEqual(end, -1, `Missing ${label} end marker`);
   return source.slice(start, end);
 }
-
-const moduleSource = sliceBetween(
-  dataOpsSource,
-  "const DATAOPS_INVENTORY_MASTER_ADD_MODULE =",
-  "window.DATAOPS_INVENTORY_MASTER_ADD_MODULE = DATAOPS_INVENTORY_MASTER_ADD_MODULE;",
-  "DataOps inventory master add module",
-);
 
 class MemoryLocalStorage {
   constructor(initial = {}) {
@@ -67,7 +61,7 @@ const dataOpsContext = vm.createContext({
     },
   },
 });
-vm.runInContext(`${moduleSource}\nglobalThis.inventoryMasterAddApi = DATAOPS_INVENTORY_MASTER_ADD_MODULE;`, dataOpsContext, {
+vm.runInContext(`${boundarySource}\nglobalThis.inventoryMasterAddApi = DATAOPS_INVENTORY_MASTER_ADD_MODULE;`, dataOpsContext, {
   filename: "DataOps.inventory-master-add.js",
 });
 const dataOpsApi = dataOpsContext.inventoryMasterAddApi;
@@ -372,14 +366,19 @@ assert.match(dataOpsSource, /onClick: handleOpenInventoryMasterAdd/);
 assert.match(dataOpsSource, /data-inventory-master-add-draft/);
 assert.match(dataOpsSource, /commitSingleProductRegistration/);
 assert.match(dataOpsSource, /commitSalesStatusChanges/);
-assert.match(dataOpsSource, /dataops_inventory_master_resume_v1/);
+assert.match(boundarySource, /dataops_inventory_master_resume_v1/);
+assert.doesNotMatch(dataOpsSource, /indexedDB\.open\(['"]MerchOpsDB/);
+assert.doesNotMatch(dataOpsSource, /localStorage\.setItem\(['"](?:merchMaster_v870|merchHistory_v870|merchStoppedProducts_v2|pendingShopStatus)/);
+assert.doesNotMatch(dataOpsSource, /commitMasterStateOrThrow\(/, "DataOps must call only the existing masterAddUpdate command boundary");
+assert.match(dataOpsSource, /masterApi\.commitSingleProductRegistration\(/);
+assert.match(dataOpsSource, /masterApi\.commitSalesStatusChanges\(/);
 assert.match(dataOpsSource, /\.filter\(row => !row\._inventoryMasterAdded \|\| STOCK_ENGINE_MODULE\.getActualQty\(row\) > 0\)/);
-const openHandler = sliceBetween(dataOpsSource, "const handleOpenInventoryMasterAdd =", "const closeInventoryMasterAdd =", "DataOps F6 open handler");
+const openHandler = sliceBetween(dataOpsSource, "const handleOpenInventoryMasterAdd =", "const handleInventoryMasterSearch =", "DataOps F6 open handler");
 assert.doesNotMatch(openHandler, /setFilters|setSearchInputVal|scrollTo/, "opening F6 must preserve filters, search, and scroll position");
 assert.match(dataOpsSource, /scrollIntoView\(\{ behavior: 'auto', block: 'nearest' \}\)/);
 
 const f9 = sliceBetween(dataOpsSource, "const handleCombinedExport = useCallback", "const handlePrintOutput = useCallback", "DataOps F9 handler");
-const snapshotCommitAt = f9.indexOf("DATAOPS_PROMO_SNAPSHOT_MODULE.commit");
+const snapshotCommitAt = f9.indexOf("DATAOPS_MERCH_STOCK_SYNC_MODULE.commit");
 const pendingRetryAt = f9.indexOf("state: 'pending'");
 const resumeAt = f9.indexOf("executeInventoryMasterSalesResume");
 assert.ok(snapshotCommitAt >= 0 && pendingRetryAt > snapshotCommitAt && resumeAt > pendingRetryAt, "F9 must finalize stock, persist retry identity, then resume sales");
@@ -389,7 +388,11 @@ const dataOpsApp = manifest.applications.find(app => app.id === "dataops");
 assert.ok(dataOpsApp.productionWrites);
 assert.ok(dataOpsApp.runtimeDependencies.includes("core-engine"));
 assert.ok(dataOpsApp.sharedContracts.includes("stop-management"));
+assert.ok(dataOpsApp.sharedContracts.includes("dataops-inventory-snapshot"));
 assert.ok(dataOpsApp.sharedContracts.includes("dataops-inventory-master-resume"));
+const productContract = manifest.sharedDataContracts.find(contract => contract.id === "product-master");
+assert.ok(productContract.consumers.includes("DataOps.html"));
+assert.ok(!productContract.legacyWriterAllowlist.includes("DataOps.html"));
 const retryContract = manifest.sharedDataContracts.find(contract => contract.id === "dataops-inventory-master-resume");
 assert.deepEqual(retryContract.resources.localStorage, ["dataops_inventory_master_resume_v1"]);
 const stopContract = manifest.sharedDataContracts.find(contract => contract.id === "stop-management");

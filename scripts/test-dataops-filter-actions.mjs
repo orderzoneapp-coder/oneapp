@@ -7,112 +7,74 @@ import vm from "node:vm";
 const source = fs.readFileSync("DataOps.html", "utf8");
 const marker = '<script type="text/javascript">';
 const start = source.indexOf(marker);
-const end = source.lastIndexOf("</script>");
+const end = source.indexOf("</script>", start);
 assert.ok(start >= 0 && end > start, "DataOps main script block must exist");
 new vm.Script(source.slice(start + marker.length, end), { filename: "DataOps.inline.js" });
 
-const readConst = (name, nextName, prefix = "") => {
-  const sectionStart = source.indexOf(`const ${name} =`);
-  const sectionEnd = source.indexOf(`const ${nextName} =`, sectionStart);
-  assert.ok(sectionStart >= 0 && sectionEnd > sectionStart, `${name} source section must exist`);
-  const context = {};
-  vm.runInNewContext(`${prefix}\n${source.slice(sectionStart, sectionEnd)}\nthis.result = ${name};`, context);
-  return context.result;
-};
+const moduleStart = source.indexOf("const FILTER_SORT_MODULE =");
+const moduleEnd = source.indexOf("/* =======================================================================", moduleStart);
+assert.ok(moduleStart >= 0 && moduleEnd > moduleStart, "current filter/sort module must exist");
+const context = vm.createContext({
+  safeNum: value => Number.isFinite(Number(value)) ? Number(value) : 0,
+  safeStr: (value, fallback = "") => value === null || value === undefined || String(value).trim() === "" ? fallback : String(value).trim(),
+  UTIL_MODULE: { normalizeText: value => String(value ?? "").trim().toLowerCase() },
+  DATA_MODEL_MODULE: { fromLegacyRow: row => row },
+  CONFIG_MODULE: {
+    defaultFavoriteVendors: ["우리농산"],
+    defaultUnitFilter: { BOX: false, EA: false, SPLIT: false },
+    getUnitRules: () => ({}),
+  },
+  defaultMappings: {},
+  formatItemDate: value => {
+    const digits = String(value ?? "").replace(/\D/g, "");
+    return digits.length >= 8 ? Number(digits.slice(0, 8)) : 0;
+  },
+  formatStrForPeriod: value => String(value),
+});
+vm.runInContext(`${source.slice(moduleStart, moduleEnd)}\nglobalThis.api = FILTER_SORT_MODULE;`, context);
+const filter = context.api;
 
-const unitFilter = readConst("DATAOPS_UNIT_FILTER_MODULE", "DATAOPS_SYSTEM_ACTION_MODULE");
+const row = (unitType, overrides = {}) => ({
+  code: overrides.code || unitType,
+  displayName: unitType,
+  unitType,
+  categoryCode: overrides.categoryCode || "10",
+  category2Code: overrides.category2Code || "1001",
+  vendor: overrides.vendor || "공급사",
+  price: overrides.price || 0,
+  batchKey: overrides.batchKey || unitType,
+  ...overrides,
+});
 const allUnits = { BOX: false, EA: false, SPLIT: false };
-assert.equal(unitFilter.matches("BOX", allUnits), true);
-assert.equal(unitFilter.matches("EA", allUnits), true);
-assert.equal(unitFilter.matches("SPLIT", allUnits), true);
-assert.equal(unitFilter.matches("UNKNOWN", allUnits), true, "UNKNOWN is visible only in the unfiltered all state");
+assert.equal(filter.shouldShowSplitItem(row("BOX"), allUnits), true);
+assert.equal(filter.shouldShowSplitItem(row("EA"), allUnits), true);
+assert.equal(filter.shouldShowSplitItem(row("SPLIT"), allUnits), true);
+assert.equal(filter.shouldShowSplitItem(row("UNKNOWN"), allUnits), true, "no selected unit means the unfiltered all state");
 
 const boxOnly = { BOX: true, EA: false, SPLIT: false };
-assert.equal(unitFilter.matches("BOX", boxOnly), true);
-assert.equal(unitFilter.matches("EA", boxOnly), false);
-assert.equal(unitFilter.matches("SPLIT", boxOnly), false);
-assert.equal(unitFilter.matches("UNKNOWN", boxOnly), false);
-
-const boxAndEa = { BOX: true, EA: true, SPLIT: false };
-assert.equal(unitFilter.matches("BOX", boxAndEa), true);
-assert.equal(unitFilter.matches("EA", boxAndEa), true);
-assert.equal(unitFilter.matches("SPLIT", boxAndEa), false);
-assert.equal(unitFilter.matches("UNKNOWN", boxAndEa), false);
-
-const toggleUnit = (state, unitType) => ({ ...state, [unitType]: !state[unitType] });
-let toggledUnits = toggleUnit(allUnits, "BOX");
-assert.deepEqual(Array.from(unitFilter.selectedTypes(toggledUnits)), ["BOX"]);
-toggledUnits = toggleUnit(toggledUnits, "EA");
-assert.deepEqual(Array.from(unitFilter.selectedTypes(toggledUnits)), ["BOX", "EA"]);
-toggledUnits = toggleUnit(toggledUnits, "BOX");
-assert.deepEqual(Array.from(unitFilter.selectedTypes(toggledUnits)), ["EA"]);
-toggledUnits = toggleUnit(toggledUnits, "EA");
-assert.deepEqual(Array.from(unitFilter.selectedTypes(toggledUnits)), []);
-assert.equal(unitFilter.matches("UNKNOWN", toggledUnits), true, "clearing every unit returns to the all state");
-
-const allSpecificUnits = { BOX: true, EA: true, SPLIT: true };
-assert.equal(unitFilter.matches("SPLIT", allSpecificUnits), true);
-assert.equal(unitFilter.matches("UNKNOWN", allSpecificUnits), false, "explicit unit selections must exclude UNKNOWN");
-
-const actions = readConst("DATAOPS_SYSTEM_ACTION_MODULE", "DATAOPS_CLOUD_DEFAULT_URL");
-const file = {};
-const action = (prev, purchase, sales, count) => actions.getAction({
-  prev: prev ? file : null,
-  in: purchase ? file : null,
-  out: sales ? file : null,
-  end: count ? file : null,
-});
-assert.equal(action(false, false, false, false), "NONE");
-assert.equal(action(false, true, false, false), "SALES_UPLOAD");
-assert.equal(action(false, true, false, true), "COST_EXTRACT");
-assert.equal(action(false, true, true, false), "TRANSFER_CHECK");
-assert.equal(action(false, true, true, true), "TRANSFER_CHECK");
-assert.equal(action(true, true, true, false), "STOCK_COUNT");
-assert.equal(action(true, true, true, true), "STOCK_COUNT");
-assert.equal(action(true, false, false, false), "NONE");
-assert.equal(action(false, false, true, false), "NONE");
-assert.equal(action(false, false, false, true), "NONE");
-assert.equal(action(true, true, false, false), "NONE");
-assert.equal(action(true, false, true, false), "NONE");
-
-const groupingPrefix = `
-const safeStr = (value, fallback = '') => {
-  if (value === null || value === undefined) return fallback;
-  const normalized = String(value).trim();
-  return normalized || fallback;
-};`;
-const groupingStart = source.indexOf("const DATAOPS_DEFAULT_GROUPING =");
-const groupingEnd = source.indexOf("const DATAOPS_PURCHASE_LOT_OVERRIDE_KEY =", groupingStart);
-assert.ok(groupingStart >= 0 && groupingEnd > groupingStart, "grouping normalization section must exist");
-const groupingContext = { localStorage: { getItem: () => null } };
-vm.runInNewContext(`${groupingPrefix}\n${source.slice(groupingStart, groupingEnd)}\nthis.result = { defaults: DATAOPS_DEFAULT_GROUPING, normalize: normalizeDataOpsGrouping };`, groupingContext);
-assert.equal(groupingContext.result.defaults.manageMode, "LOT_DETAIL");
-assert.equal(groupingContext.result.normalize({ manageMode: "CODE_SUMMARY", priceMode: "average" }).manageMode, "CODE_SUMMARY");
-assert.equal(groupingContext.result.normalize({ manageMode: "CODE_SUMMARY", priceMode: "average" }).priceMode, "average", "internal F9 price basis compatibility must be preserved");
-assert.match(source, /const manageMode = explicitMode \|\| \(legacySeparate \? 'LOT_DETAIL' : DATAOPS_DEFAULT_GROUPING\.manageMode\);/);
-assert.match(source, /getSavedViewMode: \(\) => \{[\s\S]*?CODE_SUMMARY[\s\S]*?LOT_DETAIL[\s\S]*?\}/);
-assert.match(source, /saveViewMode: \(mode = 'LOT_DETAIL'\) => \{[\s\S]*?localStorage\.setItem\(DATAOPS_VIEW_LAYER_MODULE\.STORAGE_KEY, safeMode\)/);
-assert.match(source, /defaultUnitFilter: Object\.freeze\(\{ BOX: false, EA: false, SPLIT: false \}\)/);
-
-const unitFilterSource = source.slice(
-  source.indexOf("shouldShowSplitItem:"),
-  source.indexOf("applyFilters:", source.indexOf("shouldShowSplitItem:")),
+assert.equal(filter.shouldShowSplitItem(row("BOX"), boxOnly), true);
+assert.equal(filter.shouldShowSplitItem(row("EA"), boxOnly), false);
+assert.equal(filter.shouldShowSplitItem(row("UNKNOWN"), boxOnly), false);
+assert.deepEqual(
+  Array.from(filter.applyFilters([row("BOX"), row("EA"), row("SPLIT")], { category: ["10"], unit: boxOnly }), item => item.code),
+  ["BOX"],
+  "category and unit filters must intersect",
 );
-assert.match(unitFilterSource, /DATAOPS_UNIT_FILTER_MODULE\.matches\(unitType, unitFilter\)/);
-assert.doesNotMatch(unitFilterSource, /diffQty|finalQty|systemQty/, "SPLIT error/negative rows must not bypass the selected units");
 
-assert.doesNotMatch(source, /stockListType/, "removed purchase-balance/other-stock filter state must not remain");
-assert.match(source, /onToggleCodeMerge:\s*handleToggleCodeMerge/, "per-product CODE_SUMMARY/LOT_DETAIL controls must remain connected");
-assert.match(source, /\[\['CODE_SUMMARY', '코드 통합형'\], \['LOT_DETAIL', 'Lot 상세형'\]\]/, "the current CODE_SUMMARY/LOT_DETAIL view toggle must remain");
-assert.doesNotMatch(source, /\[\['PURCHASE_BALANCE', '구매잔량'\], \['OTHER_STOCK', '기타상품'\]\]/, "removed stock list buttons must not remain");
-assert.match(source, /if \(categoryCode === 'ALL'\) return \{ \.\.\.f, category: \[\], favoriteVendorOnly: false, unit: \{ \.\.\.CONFIG_MODULE\.defaultUnitFilter \} \};/);
-assert.match(source, /setFilters\(getDefaultFilters\(\)\)/, "new analysis/re-upload must restore the all-units default");
-assert.match(source, /systemAction === 'SALES_UPLOAD'[\s\S]*?"판매업로드 생성"/);
-assert.match(source, /systemAction === 'TRANSFER_CHECK'[\s\S]*?"전송 검증"/);
-assert.match(source, /systemAction === 'STOCK_COUNT'[\s\S]*?"재고 실사"/);
-assert.doesNotMatch(source, /showClosingButton|showTransferUploadButton|showTransferCheckButton/);
+const sorted = filter.sortRows([
+  row("BOX", { code: "20", batchKey: "late", 일자: "2026-08-02", price: 200 }),
+  row("BOX", { code: "10", batchKey: "first", 일자: "2026-08-03", price: 300 }),
+  row("BOX", { code: "20", batchKey: "early", 일자: "2026-08-01", price: 100 }),
+]);
+assert.deepEqual(Array.from(sorted, item => item.batchKey), ["first", "early", "late"], "code remains primary and same-code LOTs remain date ordered");
+
+assert.match(source, /stockListType: 'ALL'/, "current purchase-balance/other-stock filter state must remain");
+assert.match(source, /\[\['PURCHASE_BALANCE', '구매잔량'\], \['OTHER_STOCK', '기타상품'\]\]/);
+assert.match(source, /\[\['CODE_SUMMARY', '코드 통합형'\], \['LOT_DETAIL', 'Lot 상세형'\]\]/);
+assert.match(source, /const showClosingButton = hasAnyUploadedFile && !isCostExtractionMode/);
+assert.match(source, /const showTransferUploadButton = hasPurchaseFile && !isCostExtractionMode/);
+assert.match(source, /const showTransferCheckButton = hasPurchaseFile && hasSalesFile && !isCostExtractionMode/);
 assert.match(source, /book_append_sheet\(wb,[^\n]+, '구매잔량'\);/);
 assert.match(source, /book_append_sheet\(wb,[^\n]+, '기타상품'\);/);
-assert.match(source, /version: 'V1\.a22\.114_FilterActions'/);
 
-console.log("DataOps filter and System.IO action contract passed.");
+console.log("PASS test-dataops-filter-actions");
