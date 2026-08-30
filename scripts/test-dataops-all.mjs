@@ -13,8 +13,8 @@ const testFiles = readdirSync(scriptsDirectory, { withFileTypes: true })
   .map(entry => entry.name)
   .sort((left, right) => left.localeCompare(right, "en"));
 
-if (testFiles.length !== 23) {
-  console.error(`Expected exactly 23 DataOps contract tests, found ${testFiles.length}.`);
+if (testFiles.length !== 24) {
+  console.error(`Expected exactly 24 DataOps contract tests, found ${testFiles.length}.`);
   process.exit(1);
 }
 
@@ -35,9 +35,9 @@ for (const testFile of testFiles) {
 }
 
 if (failures.length > 0) {
-  console.error(`\nDataOps suite failed: ${23 - failures.length}/23 passed.`);
+  console.error(`\nDataOps suite failed: ${24 - failures.length}/24 passed.`);
   failures.forEach(failure => console.error(`- ${failure.testFile} (${failure.status})`));
   process.exit(1);
 }
 
-console.log("\nPASS DataOps complete contract suite: 23/23");
+console.log("\nPASS DataOps complete contract suite: 24/24");

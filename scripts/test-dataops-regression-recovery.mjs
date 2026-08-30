@@ -73,11 +73,11 @@ const workContext = vm.createContext({
   safeStr: (value, fallback = "") => value === null || value === undefined || String(value).trim() === "" ? fallback : String(value).trim(),
 });
 vm.runInContext(`${source.slice(workStart, workEnd)}\nglobalThis.workState = DATAOPS_WORK_STATE_MODULE;`, workContext);
-await workContext.workState.save({ productData: [{ batchKey: "CURRENT" }], analysisPeriod: "2026-08", targetDateStr: "2026-08-30" });
-assert.equal((await workContext.workState.load()).productData[0].batchKey, "CURRENT");
+await workContext.workState.save("autosave", { productData: [{ batchKey: "CURRENT" }], analysisPeriod: "2026-08", targetDateStr: "2026-08-30" });
+assert.equal((await workContext.workState.load("autosave")).productData[0].batchKey, "CURRENT");
 failNextWrite = true;
-await assert.rejects(workContext.workState.save({ productData: [{ batchKey: "BROKEN" }] }), /WRITE_FAILED/);
-assert.equal((await workContext.workState.load()).productData[0].batchKey, "CURRENT", "failed save must preserve the last verified work snapshot");
+await assert.rejects(workContext.workState.save("autosave", { productData: [{ batchKey: "BROKEN" }] }), /WRITE_FAILED/);
+assert.equal((await workContext.workState.load("autosave")).productData[0].batchKey, "CURRENT", "failed save must preserve the last verified work snapshot");
 
 class MemoryStorage {
   constructor() { this.values = new Map(); }

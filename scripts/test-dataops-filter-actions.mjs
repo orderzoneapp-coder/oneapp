@@ -56,10 +56,23 @@ assert.equal(filter.shouldShowSplitItem(row("BOX"), boxOnly), true);
 assert.equal(filter.shouldShowSplitItem(row("EA"), boxOnly), false);
 assert.equal(filter.shouldShowSplitItem(row("UNKNOWN"), boxOnly), false);
 assert.deepEqual(
-  Array.from(filter.applyFilters([row("BOX"), row("EA"), row("SPLIT")], { category: ["10"], unit: boxOnly }), item => item.code),
+  Array.from(filter.applyFilters([row("BOX"), row("EA"), row("SPLIT"), row("UNKNOWN")], { category: ["10"], unit: boxOnly }), item => item.code),
   ["BOX"],
   "category and unit filters must intersect",
 );
+assert.deepEqual(
+  Array.from(filter.applyFilters([row("BOX"), row("EA"), row("SPLIT"), row("UNKNOWN")], { category: [], unit: allUnits }), item => item.code),
+  ["BOX", "EA", "SPLIT", "UNKNOWN"],
+  "new analysis, recovery and reset all-state must expose unknown-unit rows",
+);
+
+assert.match(source, /defaultUnitFilter:\s*Object\.freeze\(\{ BOX: false, EA: false, SPLIT: false \}\)/);
+assert.match(source, /const \[filters, setFilters\][\s\S]*unit:\s*\{ \.\.\.CONFIG_MODULE\.defaultUnitFilter \}/);
+assert.match(source, /const resetTableFilters[\s\S]*setFilters\(getDefaultFilters\(\)\)/);
+const issueJumpStart = source.indexOf("const handleIssueJump = useCallback");
+const issueJumpEnd = source.indexOf("const handleAcknowledgeAll = useCallback", issueJumpStart);
+assert.ok(issueJumpStart >= 0 && issueJumpEnd > issueJumpStart);
+assert.match(source.slice(issueJumpStart, issueJumpEnd), /unit:\s*\{ \.\.\.CONFIG_MODULE\.defaultUnitFilter \}/);
 
 const sorted = filter.sortRows([
   row("BOX", { code: "20", batchKey: "late", 일자: "2026-08-02", price: 200 }),
