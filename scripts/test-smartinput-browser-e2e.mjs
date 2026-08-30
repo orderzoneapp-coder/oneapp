@@ -148,7 +148,7 @@ try {
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'three-panel workspace must preserve parser and larger workbench');
   assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'parser resizer and right individual-estimate panel must be visible');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton'))};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();const voucher=document.querySelector('.app-voucher-switcher').getBoundingClientRect();const header=document.querySelector('.header-fields');const headerBounds=header.getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),voucherHeaderGap:headerBounds.left-voucher.right,headerDivider:getComputedStyle(header).borderLeftWidth,headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:document.querySelector('.reference-overview__coachmark')?.textContent.trim(),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton,#uploadTemplateButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions>#completeButton')),shareText:document.querySelector('#estimateNoticeButton')?.textContent.trim(),excelText:document.querySelector('#estimateExcelButton')?.textContent.trim(),outputsInFooter:Boolean(document.querySelector('.voucher-footer-actions>#estimateOutputActions')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton'))};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
   assert.equal(visualZones.nativeSearchCells, 0, 'Excel cells must not expose native search × controls');
   assert.equal(visualZones.customerRegisterCoachmark, false, 'obsolete customer registration coachmark must not be exposed');
@@ -157,12 +157,15 @@ try {
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
   assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
   assert.ok(visualZones.brandLeftGap <= 1, 'SmartInput logo must occupy the far-left edge of the app header');
+  assert.ok(visualZones.voucherHeaderGap >= 16, 'voucher buttons and delivery-date fields must have a clear desktop gap');
+  assert.equal(visualZones.headerDivider, '1px', 'voucher buttons and delivery-date fields must use an explicit desktop divider');
   assert.equal(visualZones.headerHasReferenceCounts, false, 'product and customer counts must not remain as an app-header annotation');
   assert.match(visualZones.coachmark, /상품·거래처 기준정보/, 'reference counts must move into the reference coachmark panel');
   assert.equal(visualZones.referenceBeforeSettings, true, 'reference status must sit immediately before settings');
-  assert.equal(visualZones.legacyButtons, 0, 'manual draft-list and duplicate save controls must be removed');
+  assert.equal(visualZones.legacyButtons, 0, 'manual draft-list, duplicate save, and top upload-template controls must be removed');
   assert.equal(visualZones.completeText, '저장');
   assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
+  assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: 'Excel 다운로드', footer: true }, 'voucher output actions must remain in the table footer for every mode');
   assert.equal(visualZones.sequence, 'No.');
   assert.equal(visualZones.resetInTopBar, true, 'voucher reset must be in the top unified work bar');
   const lightShot = await capture(client, 'smartinput-0a-1920-light.png');
@@ -177,6 +180,17 @@ try {
   await click(client, '#relatedCollapseButton');
   assert.equal(await evaluate(client, `document.querySelector('.related-panel').classList.contains('is-open')`), true, 'right panel must expand and collapse');
 
+  await input(client, '#sourceTextInput', '주문서 전환 보존');
+  await click(client, '[data-mode="purchase"]');
+  assert.deepEqual(await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="purchase"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value})`), { active: 'purchase', selected: 'true', date: '구매일자', source: '' }, 'purchase voucher button must switch the active draft and header');
+  await input(client, '#sourceTextInput', '구매 전환 보존');
+  await click(client, '[data-mode="order"]');
+  assert.deepEqual(await evaluate(client, `({active:document.querySelector('.mode-tab.is-active')?.dataset.mode,selected:document.querySelector('[data-mode="order"]').getAttribute('aria-selected'),date:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),source:document.querySelector('#sourceTextInput').value})`), { active: 'order', selected: 'true', date: '배송일자', source: '주문서 전환 보존' }, 'order voucher button must restore its own preserved draft');
+  await click(client, '[data-mode="purchase"]');
+  assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), '구매 전환 보존', 'purchase draft must survive repeated voucher switching');
+  await click(client, '[data-mode="order"]');
+  await input(client, '#sourceTextInput', '');
+
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개');
   await click(client, '#analyzeButton');
   await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2`, 'pure text parsing rows');
@@ -185,6 +199,17 @@ try {
   assert.equal(await evaluate(client, `document.querySelector('#inputRows tr[data-default-row="true"] [data-supply-amount]').value`), '', 'empty calculated values must not be displayed');
   await expr(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.order.rows.length===2`, 'blank parsed rows excluded from persistence');
   assert.match(await evaluate(client, `document.querySelector('#sourceTextInput').value`), /사과 2박스/, 'source text must remain visible during analysis');
+
+  await evaluate(client, `Object.defineProperty(navigator,'share',{configurable:true,value:async payload=>{window.__voucherSharePayload=payload;}});true`);
+  await click(client, '#estimateNoticeButton');
+  await expr(client, `Boolean(window.__voucherSharePayload)`, 'order Kakao share payload');
+  assert.match(await evaluate(client, `window.__voucherSharePayload.text`), /\[주문서\][\s\S]*사과[\s\S]*배[\s\S]*합계/, 'Kakao share must include current non-empty voucher rows and totals');
+  await evaluate(client, `window.XLSX={utils:{book_new:()=>({sheets:{}}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>{book.sheets[name]=sheet;window.__voucherExportMatrix=sheet;}},writeFile:(book,name)=>{window.__voucherExportName=name;}};true`);
+  await click(client, '#estimateExcelButton');
+  await expr(client, `Boolean(window.__voucherExportName)`, 'order Excel output');
+  assert.match(await evaluate(client, `window.__voucherExportName`), /스마트입력_주문서_/);
+  assert.equal(await evaluate(client, `window.__voucherExportMatrix.length`), 7, 'Excel output must include two working rows and exclude the trailing manual blank row');
+  await evaluate(client, `delete window.XLSX;true`);
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
   await evaluate(client, `(() => {const target=document.querySelector(${JSON.stringify(firstQuantity)});const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify('수량\t단위\t단가\n7\tEA\t1500')}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
@@ -363,11 +388,13 @@ try {
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
-  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
+  const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));const headerFields=document.querySelector('.header-fields');return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,headerFields:q('.header-fields'),headerDivider:getComputedStyle(headerFields).borderTopWidth,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
   assert.ok(mobile.app.height <= 230 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact');
   assert.ok(Math.abs(mobile.appInner.x - mobile.brand.x) <= 1, 'mobile SmartInput logo must remain at the app-header far left');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
+  assert.ok(mobile.headerFields.y >= Math.max(...mobile.tabs.map(tab => tab.bottom)) + 7, 'mobile header fields must be spaced below the voucher buttons');
+  assert.equal(mobile.headerDivider, '1px', 'mobile header fields must retain a horizontal group divider');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

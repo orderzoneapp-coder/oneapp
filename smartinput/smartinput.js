@@ -29,7 +29,6 @@ import {
 } from './purchase-stage3.js?v=0.1.0';
 import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js?v=0.1.0';
 import {
-  buildMinimumUploadMatrix,
   buildOrderGroupPayload,
   decorateStructuredRows,
   filterVoucherRows,
@@ -44,7 +43,7 @@ import {
   buildEstimateF8Data,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.1.4';
+} from './estimate-output.js?v=0.1.5';
 import {
   createRecordId,
   loadSmartInputData,
@@ -107,7 +106,8 @@ const ensureTesseract = () => loadOptionalScript(
 );
 
 const $ = id => document.getElementById(id);
-const tabs = [...document.querySelectorAll('[data-mode]')];
+const modeTabs = document.querySelector('.mode-tabs');
+const tabs = [...modeTabs.querySelectorAll('.mode-tab[data-mode]')];
 const methodButtons = [...document.querySelectorAll('[data-method]')];
 const sourceTextInput = $('sourceTextInput');
 const inputRows = $('inputRows');
@@ -3055,7 +3055,9 @@ function renderMode() {
   $('customerHint').textContent = estimateMode
     ? '견적서는 거래처 없이 저장하고 여러 업체에 공통 발송할 수 있습니다.'
     : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
-  $('estimateOutputActions').hidden = selected.id !== 'estimate';
+  $('estimateOutputActions').hidden = false;
+  $('estimateNoticeButton').textContent = '카톡 공유';
+  $('estimateExcelButton').textContent = selected.id === 'estimate' ? '견적 Excel' : 'Excel 다운로드';
   const linkedEstimate = estimateMode && ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(modeDraft().estimateKind);
   $('customerInput').disabled = linkedEstimate;
   $('addRowButton').disabled = false;
@@ -3088,20 +3090,33 @@ function renderMode() {
 }
 
 function setMode(mode) {
-  if (!contract.MODES[mode] || mode === state.draft.activeMode) return;
-  syncSourceText();
+  if (!contract.MODES[mode] || mode === state.draft.activeMode) return false;
+  const previousMode = state.draft.activeMode;
+  clearTimeout(state.autoAnalyzeTimer);
+  if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
+  modeDraft().sourceText = sourceTextInput.value;
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
-  restoreSourceImageForMode(mode);
-  state.selectedRowIds.clear();
-  state.activeActivity = '';
-  state.pendingImageEvidence = null;
-  state.pendingOcrReview = null;
-  state.pendingSourceName = '';
-  state.pendingStructuredImport = null;
-  state.gridSearch = '';
-  saveDraftNow();
-  renderMode();
+  try {
+    restoreSourceImageForMode(mode);
+    state.selectedRowIds.clear();
+    state.activeActivity = '';
+    state.pendingImageEvidence = null;
+    state.pendingOcrReview = null;
+    state.pendingSourceName = '';
+    state.pendingStructuredImport = null;
+    state.gridSearch = '';
+    saveDraftNow();
+    renderMode();
+    return true;
+  } catch (error) {
+    state.draft.activeMode = previousMode;
+    restoreSourceImageForMode(previousMode);
+    renderMode();
+    setAppStatus('전표 화면을 변경하지 못했습니다. 현재 입력은 유지됩니다.', 'error');
+    toast(error.message || '전표 화면을 변경하지 못했습니다.', 'error');
+    return false;
+  }
 }
 
 function syncSourceText() {
@@ -4567,18 +4582,6 @@ function downloadBlob(blob, fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function downloadMinimumUploadTemplate() {
-  const mode = state.draft.activeMode;
-  if (mode === 'estimate') return toast('견적서는 현재 견적 Excel 기능을 이용하세요.', 'error');
-  try { await ensureXlsx(); }
-  catch (error) { return toast(error.message, 'error'); }
-  const workbook = window.XLSX.utils.book_new();
-  const sheet = window.XLSX.utils.aoa_to_sheet(buildMinimumUploadMatrix(mode));
-  window.XLSX.utils.book_append_sheet(workbook, sheet, contract.MODES[mode].label);
-  window.XLSX.writeFile(workbook, `스마트입력_${contract.MODES[mode].label}_최소업로드양식.xlsx`);
-  toast(`${contract.MODES[mode].label} 최소 업로드 양식을 생성했습니다.`, 'success');
-}
-
 async function copyNoticeCanvas(canvas, fileName) {
   const blob = await canvasBlob(canvas);
   if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -4701,6 +4704,122 @@ async function exportEstimateExcel() {
   window.XLSX.writeFile(workbook, `통합업로드용_${selectionLabel}견적F8_${dateStamp}.xlsx`);
   setAppStatus(`견적 Excel 생성 완료 · ${selectedRecords.length || 1}개 견적 · ${output.rows.length}품목 · 확인 ${output.errorData.length - 1}건`);
   toast(selectedRecords.length ? '선택한 견적서의 상품을 합쳐 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
+}
+
+function voucherOutputRows(current = modeDraft()) {
+  return (current.rows || []).filter(rowHasMeaningfulInput);
+}
+
+function voucherOutputDate(mode, header = {}) {
+  return ['purchase', 'sale'].includes(mode)
+    ? (header.voucherDate || header.deliveryDate || '')
+    : (header.deliveryDate || '');
+}
+
+function voucherOutputFieldValue(row, field) {
+  if (field.id === 'supplyAmount') {
+    return hasEnteredValue(row.quantity) && hasEnteredValue(row.unitPrice)
+      ? Number(row.quantity) * Number(row.unitPrice)
+      : '';
+  }
+  return field.custom ? (row.customValues?.[field.id] ?? '') : (row[field.id] ?? '');
+}
+
+function buildVoucherOutputMatrix(mode = state.draft.activeMode, current = modeDraft()) {
+  const selectedFields = new Set(voucherColumnsForMode(mode));
+  const fieldById = new Map(layoutDefinitions('voucher').map(field => [field.id, field]));
+  const fields = [...selectedFields].map(fieldId => fieldById.get(fieldId)).filter(Boolean);
+  const header = current.header || {};
+  const rows = voucherOutputRows(current);
+  const dateLabel = mode === 'purchase' ? '구매일자' : (mode === 'sale' ? '판매일자' : '배송일자');
+  return [
+    [`${contract.MODES[mode].label} 출력`],
+    [dateLabel, voucherOutputDate(mode, header), '거래처', header.customerName || header.customerCode || '', '창고', header.warehouseName || header.warehouseCode || ''],
+    ['거래유형', header.transactionType || ''],
+    [],
+    ['No.', ...fields.map(field => field.label)],
+    ...rows.map((row, index) => [index + 1, ...fields.map(field => voucherOutputFieldValue(row, field))])
+  ];
+}
+
+function buildVoucherShareText(mode = state.draft.activeMode, current = modeDraft()) {
+  const rows = voucherOutputRows(current);
+  const header = current.header || {};
+  const dateLabel = mode === 'purchase' ? '구매일자' : (mode === 'sale' ? '판매일자' : '배송일자');
+  const summary = contract.summarizeRows(rows);
+  const lines = [
+    `[${contract.MODES[mode].label}]`,
+    `${dateLabel}: ${voucherOutputDate(mode, header) || '-'}`,
+    `거래처: ${header.customerName || header.customerCode || '-'}`
+  ];
+  if (header.warehouseName || header.warehouseCode) lines.push(`창고: ${header.warehouseName || header.warehouseCode}`);
+  lines.push('');
+  rows.forEach((row, index) => {
+    const identity = [row.itemCode, row.itemName, row.specification].filter(hasEnteredValue).join(' · ');
+    const quantity = [row.quantity, row.unit].filter(hasEnteredValue).join('');
+    const unitPrice = contract.numberOrNull(row.unitPrice);
+    const rowQuantity = contract.numberOrNull(row.quantity);
+    const price = unitPrice !== null ? `단가 ${unitPrice.toLocaleString('ko-KR')}원` : '';
+    const amount = rowQuantity !== null && unitPrice !== null
+      ? `공급 ${Number(rowQuantity * unitPrice).toLocaleString('ko-KR')}원`
+      : '';
+    lines.push(`${index + 1}. ${[identity, quantity, price, amount, row.memo].filter(hasEnteredValue).join(' | ')}`);
+  });
+  lines.push('', `합계: 수량 ${summary.quantity.toLocaleString('ko-KR')} · ${summary.amount.toLocaleString('ko-KR')}원`);
+  return lines.join('\n');
+}
+
+async function copyVoucherText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.append(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  textarea.remove();
+  if (!copied) throw new Error('클립보드 복사를 지원하지 않습니다.');
+}
+
+async function shareCurrentVoucher() {
+  if (state.draft.activeMode === 'estimate') return openEstimateNoticePreview();
+  const rows = voucherOutputRows();
+  if (!rows.length) return toast('공유할 전표 품목이 없습니다.', 'error');
+  const title = `${contract.MODES[state.draft.activeMode].label} 공유`;
+  const text = buildVoucherShareText();
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+      return toast('전표 공유 화면을 열었습니다.', 'success');
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+    }
+  }
+  try {
+    await copyVoucherText(text);
+    toast('전표 내용을 복사했습니다. 카톡에 붙여넣으세요.', 'success');
+  } catch (error) {
+    toast(error.message || '전표 내용을 공유하지 못했습니다.', 'error');
+  }
+}
+
+async function exportCurrentVoucherExcel() {
+  if (state.draft.activeMode === 'estimate') return exportEstimateExcel();
+  const rows = voucherOutputRows();
+  if (!rows.length) return toast('Excel로 출력할 전표 품목이 없습니다.', 'error');
+  try { await ensureXlsx(); }
+  catch (error) { return toast(error.message, 'error'); }
+  const mode = state.draft.activeMode;
+  const workbook = window.XLSX.utils.book_new();
+  const sheet = window.XLSX.utils.aoa_to_sheet(buildVoucherOutputMatrix(mode));
+  window.XLSX.utils.book_append_sheet(workbook, sheet, contract.MODES[mode].label);
+  const dateStamp = voucherOutputDate(mode, modeDraft().header) || new Date().toLocaleDateString('sv-SE');
+  window.XLSX.writeFile(workbook, `스마트입력_${contract.MODES[mode].label}_${dateStamp}.xlsx`);
+  toast(`${contract.MODES[mode].label} Excel을 생성했습니다.`, 'success');
 }
 
 function validateEstimateDocument() {
@@ -5374,7 +5493,12 @@ async function hydrateReferences() {
   }
 }
 
-tabs.forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+modeTabs.addEventListener('click', event => {
+  const tab = event.target.closest('.mode-tab[data-mode]');
+  if (!tab || !modeTabs.contains(tab)) return;
+  event.preventDefault();
+  setMode(tab.dataset.mode);
+});
 methodButtons.forEach(button => button.addEventListener('click', () => {
   const method = updateMethod(button.dataset.method);
   if (method.id === 'direct') addDirectRow();
@@ -5507,7 +5631,6 @@ $('gridSearchInput').addEventListener('input', event => {
   state.gridSearch = event.target.value;
   renderRows({ restoreFocus: false });
 });
-$('uploadTemplateButton').addEventListener('click', downloadMinimumUploadTemplate);
 $('addRowButton').addEventListener('click', () => {
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
   addDirectRow();
@@ -5555,8 +5678,8 @@ $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
-$('estimateNoticeButton').addEventListener('click', openEstimateNoticePreview);
-$('estimateExcelButton').addEventListener('click', exportEstimateExcel);
+$('estimateNoticeButton').addEventListener('click', shareCurrentVoucher);
+$('estimateExcelButton').addEventListener('click', exportCurrentVoucherExcel);
 $('catalogPickerButton').addEventListener('click', toggleCatalogPicker);
 $('catalogPickerMenu').addEventListener('toggle', event => {
   $('catalogPickerButton').setAttribute('aria-expanded', String(event.newState === 'open'));
