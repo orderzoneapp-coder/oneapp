@@ -31,12 +31,17 @@ assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeBut
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>Excel 다운로드<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
+assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for live work inspection');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.match(appSource, /flushLinkedRowsToSources/);
 assert.match(appSource, /flushLinkedIndividualToLibrary/, 'linked individual edits must write back for bidirectional synchronization');
 assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before same-value propagation');
 assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate cards must support direct touch reordering as well as desktop drag');
+assert.match(appSource, /data-estimate-select[\s\S]*data-open-estimate/, 'individual estimate cards must separate multi-select checkboxes from direct card opening');
+assert.match(html, /id="linkedEstimateGroupButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must expose linked creation and selected deletion actions');
+assert.match(appSource, /records\.length === 1[\s\S]*loadCatalogRecord\(records\[0\]\)/, 'a single selected estimate must open its stored record for in-place editing');
+assert.doesNotMatch(appSource, /if \(current\.estimateKind !== 'LINKED_GROUP'\) current\.catalogRecordId = ''/, 'saving an individual estimate must retain its identity for subsequent in-place updates');
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//, 'SmartInput core must not statically import another app');
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,

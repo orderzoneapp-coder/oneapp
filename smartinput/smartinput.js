@@ -549,6 +549,7 @@ function renderReferenceControls() {
   $('estimateNoticeButton').disabled = state.busy;
   $('estimateExcelButton').disabled = state.busy;
   $('linkedEstimateGroupButton').disabled = state.busy || state.noticeEstimateIds.length < 2;
+  $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
   updateAutosaveButton();
   refreshReferenceAggregate();
   renderReferenceDomain('product');
@@ -1413,6 +1414,7 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
   applyCustomerRelationship(header);
   updateDeliveryPolicy();
   renderCatalogControls();
+  renderVoucherContext();
   scheduleSave();
   if (learnAlias && header.rawOrdererName) {
     void confirmCustomerAlias(header.rawOrdererName, customer, currentSourceType())
@@ -2390,6 +2392,125 @@ function queueLinkedRowsWriteThrough() {
   }, 220);
 }
 
+const VOUCHER_CONTEXT_COPY = Object.freeze({
+  order: Object.freeze({ eyebrow: 'LIVE ORDER', title: '주문서 점검', customer: '거래처', date: '배송일자', warehouse: '출하창고', target: 'ORDER Q 주문서 원장' }),
+  purchase: Object.freeze({ eyebrow: 'LIVE PURCHASE', title: '구매전표 점검', customer: '구매처', date: '구매일자', warehouse: '입고창고', target: '공식 구매전표 원장' }),
+  sale: Object.freeze({ eyebrow: 'LIVE SALE', title: '판매전표 점검', customer: '판매처', date: '판매일자', warehouse: '출하창고', target: '공식 판매전표 원장' })
+});
+
+function voucherContextDate(mode, header) {
+  const value = mode === 'order' ? header.deliveryDate : (header.voucherDate || header.deliveryDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) {
+    return { ready: false, detail: `${VOUCHER_CONTEXT_COPY[mode].date}를 입력하세요.` };
+  }
+  if (mode !== 'order') return { ready: true, detail: value };
+  const decision = contract.validateDeliveryDate({
+    deliveryDate: value,
+    orderDate: header.orderDate,
+    customerId: header.customerId,
+    settings: state.settings
+  });
+  return { ready: decision.valid, detail: decision.valid ? value : decision.message };
+}
+
+function voucherConnectionState(mode, delivery = {}) {
+  const failed = ['FAILED', 'PARTIAL'].includes(delivery.status);
+  if (failed) return { ready: false, error: true, detail: delivery.status === 'PARTIAL' ? '일부 저장 실패 · 남은 전표 유지' : '저장 실패 · 현재 작업 유지' };
+  if (mode === 'purchase' && !state.purchaseCapability.ready) return { ready: false, detail: '구매 원장 연결 확인 중 · 자동저장은 유지' };
+  if (mode === 'sale' && !state.saleCapability.ready) return { ready: false, detail: '판매 원장 연결 확인 중 · 자동저장은 유지' };
+  return { ready: true, detail: VOUCHER_CONTEXT_COPY[mode].target };
+}
+
+function voucherContextItem({ target, label, detail, ready, error = false }) {
+  const stateLabel = ready ? '완료' : (error ? '오류' : '필요');
+  const tone = ready ? 'is-ready' : (error ? 'is-error' : 'is-warning');
+  return `<button class="voucher-context-item ${tone}" type="button" data-voucher-focus="${esc(target)}" aria-label="${esc(label)}: ${esc(detail)}">
+    <span class="voucher-context-item__dot" aria-hidden="true"></span>
+    <span class="voucher-context-item__copy"><strong>${esc(label)}</strong><small>${esc(detail)}</small></span>
+    <em class="voucher-context-item__state">${stateLabel}</em><span class="voucher-context-item__arrow" aria-hidden="true">›</span>
+  </button>`;
+}
+
+function renderVoucherContext(precomputedSummary = null) {
+  if (state.draft.activeMode === 'estimate') return;
+  const mode = state.draft.activeMode;
+  const copy = VOUCHER_CONTEXT_COPY[mode];
+  if (!copy) return;
+  const current = modeDraft();
+  const header = current.header || {};
+  const rows = (current.rows || []).filter(rowHasMeaningfulInput);
+  const summary = precomputedSummary || contract.summarizeRows(rows);
+  const date = voucherContextDate(mode, header);
+  const customerReady = Boolean(header.customerId && header.customerName);
+  const customerDetail = customerReady
+    ? [header.customerCode, header.customerName].filter(Boolean).join(' · ')
+    : (header.customerName ? `${header.customerName} · 등록 ${copy.customer} 선택 필요` : `${copy.customer}를 선택하세요.`);
+  const warehouseReady = Boolean((header.warehouseId || header.warehouseCode) && header.warehouseName);
+  const warehouseDetail = warehouseReady
+    ? [header.warehouseCode, header.warehouseName].filter(Boolean).join(' · ')
+    : (header.warehouseName ? `${header.warehouseName} · 기준정보 선택 필요` : `${copy.warehouse}를 선택하세요.`);
+  const rowsReady = rows.length > 0;
+  const unresolved = summary.unresolved;
+  const needsReview = summary.similar + unresolved + summary.duplicate;
+  const reviewReady = rowsReady && needsReview === 0;
+  const reviewDetail = rowsReady
+    ? `일치 ${summary.matched} · 확인 ${summary.similar} · 미등록 ${unresolved} · 중복 ${summary.duplicate}`
+    : '상품 입력 후 자동 점검합니다.';
+  const connection = voucherConnectionState(mode, current.delivery || {});
+  const checks = [
+    { target: 'customer', label: copy.customer, detail: customerDetail, ready: customerReady },
+    { target: 'date', label: copy.date, detail: date.detail, ready: date.ready },
+    { target: 'warehouse', label: copy.warehouse, detail: warehouseDetail, ready: warehouseReady },
+    { target: 'rows', label: '입력 상품', detail: rowsReady ? `${rows.length.toLocaleString('ko-KR')}개 품목 · 수량 ${summary.quantity.toLocaleString('ko-KR')}` : '상품을 1개 이상 입력하세요.', ready: rowsReady },
+    { target: 'review', label: '상품 검토', detail: reviewDetail, ready: reviewReady, error: unresolved > 0 },
+    { target: 'save', label: '저장소 연결', detail: connection.detail, ready: connection.ready, error: connection.error }
+  ];
+  const completed = checks.filter(check => check.ready).length;
+  const ready = completed === checks.length;
+  const progress = Math.round((completed / checks.length) * 100);
+  $('voucherContextEyebrow').textContent = copy.eyebrow;
+  $('voucherContextTitle').textContent = copy.title;
+  $('voucherContextSummary').textContent = rows.length
+    ? `${header.transactionType || '기타'} · ${rows.length.toLocaleString('ko-KR')}개 품목`
+    : '입력과 동시에 저장 준비 상태를 확인합니다.';
+  const progressElement = document.querySelector('.voucher-context-progress');
+  progressElement.classList.toggle('is-ready', ready);
+  $('voucherReadyState').textContent = ready ? '저장 가능' : `${completed}/${checks.length} 완료`;
+  $('voucherReadyProgress').style.width = `${progress}%`;
+  $('voucherContextList').innerHTML = checks.map(voucherContextItem).join('');
+  $('voucherContextAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
+  $('voucherContextDelivery').textContent = $('deliveryState').textContent || '전달 전';
+}
+
+function relatedPanelButtonLabel(open = false) {
+  const label = state.draft.activeMode === 'estimate'
+    ? '견적서 목록'
+    : `${contract.MODES[state.draft.activeMode].label} 점검`;
+  return `${label} ${open ? '닫기' : '열기'}`;
+}
+
+function focusVoucherContextTarget(target) {
+  if (target === 'customer') return $('customerInput').focus();
+  if (target === 'date') return $('deliveryDateInput').focus();
+  if (target === 'warehouse') return $('warehouseInput').focus();
+  if (target === 'save') return $('completeButton').focus();
+  const rows = modeDraft().rows.filter(rowHasMeaningfulInput);
+  const row = target === 'review'
+    ? rows.find(item => item.matchStatus !== 'MATCHED' || item.duplicatePossible)
+    : rows[0];
+  const rowId = row?.rowId || DEFAULT_INPUT_ROW_ID;
+  state.gridSearch = '';
+  $('gridSearchInput').value = '';
+  renderRows({ restoreFocus: false });
+  window.requestAnimationFrame(() => {
+    const input = gridInput(rowId, 'productSearch');
+    if (!input) return;
+    modeUi().activeCellId = `${rowId}|productSearch`;
+    input.focus({ preventScroll: true });
+    revealGridInput(input);
+  });
+}
+
 function renderEstimateWorkspace() {
   const estimateMode = state.draft.activeMode === 'estimate';
   const libraryVisible = estimateMode && state.estimateWorkspaceView === 'library';
@@ -2399,18 +2520,24 @@ function renderEstimateWorkspace() {
   workspace.classList.toggle('is-estimate-library-open', libraryVisible);
   library.classList.toggle('is-fullscreen', libraryVisible);
   library.hidden = false;
+  library.setAttribute('aria-label', estimateMode ? '견적서 목록' : `${contract.MODES[state.draft.activeMode].label} 작업 점검`);
+  $('voucherContextView').hidden = estimateMode;
+  $('estimateLibraryHeading').hidden = !estimateMode;
+  $('catalogComposeArea').hidden = !estimateMode;
   $('estimateEditorView').hidden = false;
   $('estimateLibraryButton').classList.toggle('is-active', libraryVisible);
   $('estimateEditorButton').hidden = !libraryVisible;
   const linkedList = state.estimateLibraryKind === 'linked';
-  $('catalogPickerList').hidden = estimateMode && linkedList;
+  $('catalogPickerList').hidden = !estimateMode || linkedList;
   $('linkedEstimateList').hidden = !estimateMode || !linkedList;
   $('estimateLibrarySwitchButton').hidden = !estimateMode;
-  $('estimateLibrarySwitchButton').textContent = linkedList ? '견적서 목록 보기' : '연동견적서 보기';
+  $('estimateLibrarySwitchButton').classList.toggle('is-linked', linkedList);
+  $('estimateLibrarySwitchButton').setAttribute('aria-label', linkedList ? '견적서 목록으로 전환' : '연동견적서 목록으로 전환');
+  $('estimateLibrarySwitchButton').setAttribute('aria-pressed', String(linkedList));
   $('estimateLibraryTitle').textContent = linkedList ? '연동견적서 목록' : '견적서 목록';
   $('estimateLibrarySummary').textContent = linkedList
     ? '연결된 원본 견적서를 유지하며 수정값을 양방향으로 반영합니다.'
-    : '견적서 카드를 터치해 여러 개를 선택하고 중복 상품을 합쳐 볼 수 있습니다.';
+    : '카드는 눌러 바로 열고, 앞 체크박스로 여러 개를 선택해 연동견적서를 만듭니다.';
   parserCard.hidden = false;
 }
 
@@ -2430,9 +2557,9 @@ function renderCatalogControls() {
   const selectedCount = state.noticeEstimateIds.length;
   $('catalogPickerList').innerHTML = records.length ? records.map(record => `
     <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''} ${state.noticeEstimateIds.includes(record.estimateId) ? 'is-selected' : ''}" draggable="true" data-estimate-kind="INDIVIDUAL" data-estimate-id="${esc(record.estimateId)}">
-      <button class="catalog-picker__load" type="button" data-select-estimate title="${esc(estimateTitle(record))} · 터치 선택 · 길게 눌러 순서 이동"><strong>${esc(estimateTitle(record))}${individualEstimateLinkCount(record.estimateId) ? `<em class="linked-estimate-badge">연동 ${individualEstimateLinkCount(record.estimateId)}</em>` : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
-      <span class="estimate-card__selection">${state.noticeEstimateIds.includes(record.estimateId) ? '선택됨' : '터치'}</span>
-      <div class="estimate-card__actions"><button class="catalog-picker__edit" type="button" data-open-estimate>열기</button><button class="catalog-picker__edit" type="button" data-edit-estimate>관리</button></div>
+      <label class="estimate-card__check"><input type="checkbox" data-estimate-select value="${esc(record.estimateId)}" ${state.noticeEstimateIds.includes(record.estimateId) ? 'checked' : ''}><span class="sr-only">${esc(estimateTitle(record))} 연동 선택</span></label>
+      <button class="catalog-picker__load" type="button" data-open-estimate title="${esc(estimateTitle(record))} · 터치 불러오기 · 길게 눌러 순서 이동"><strong>${esc(estimateTitle(record))}${individualEstimateLinkCount(record.estimateId) ? `<em class="linked-estimate-badge">연동 ${individualEstimateLinkCount(record.estimateId)}</em>` : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+      <div class="estimate-card__actions"><button class="catalog-picker__edit" type="button" data-edit-estimate>관리</button></div>
     </div>`).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
   $('linkedEstimateList').innerHTML = linkedRecords.length ? linkedRecords.map(record => `
     <div class="catalog-picker__row estimate-card ${record.estimateId === current.catalogRecordId ? 'is-current' : ''}" draggable="true" data-estimate-kind="LINKED_GROUP" data-linked-estimate-id="${esc(record.estimateId)}">
@@ -2440,9 +2567,11 @@ function renderCatalogControls() {
       <span class="linked-estimate-badge">연동 ${record.linkedEstimateSources?.length || 0}</span>
       <div class="estimate-card__actions"><button class="catalog-picker__edit" type="button" data-open-linked-estimate>열기</button><button class="catalog-picker__edit" type="button" data-edit-linked-estimate>관리</button></div>
     </div>`).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
-  $('linkedEstimateGroupButton').disabled = selectedCount < 2;
-  $('viewSelectedEstimatesButton').disabled = selectedCount < 1;
+  $('linkedEstimateGroupButton').disabled = state.busy || selectedCount < 2;
+  $('viewSelectedEstimatesButton').disabled = state.busy || selectedCount < 1;
   $('viewSelectedEstimatesButton').textContent = selectedCount ? `선택 견적서 보기 (${selectedCount})` : '선택 견적서 보기';
+  $('selectedEstimateDeleteButton').disabled = state.busy || selectedCount < 1;
+  $('selectedEstimateDeleteButton').textContent = selectedCount ? `선택 삭제 (${selectedCount})` : '선택 삭제';
   renderEstimateWorkspace();
 }
 
@@ -2474,6 +2603,10 @@ function createLinkedEstimateDraft() {
 
 function previewSelectedEstimates() {
   const records = selectedEstimateRecords();
+  if (records.length === 1) {
+    loadCatalogRecord(records[0]);
+    return;
+  }
   const activeEstimate = modeDraft();
   const retainedManualRows = ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(activeEstimate.estimateKind)
     ? manualLinkedRows(activeEstimate.rows)
@@ -2502,6 +2635,36 @@ function previewSelectedEstimates() {
   toast(`${records.length}개 견적서 · 중복 제거 ${fallback.rows.length}개 상품을 표시합니다.`, 'success');
 }
 
+async function deleteSelectedEstimates() {
+  const records = selectedEstimateRecords();
+  if (!records.length) return toast('삭제할 견적서를 체크하세요.', 'error');
+  const selectedIds = new Set(records.map(record => record.estimateId));
+  const linkedUsage = linkedEstimateRecords().filter(group => (group.linkedEstimateSources || []).some(source => selectedIds.has(source.estimateId)));
+  if (linkedUsage.length) {
+    return toast(`선택한 견적서는 ${linkedUsage.length}개 연동견적서에서 사용 중입니다. 연동 구성을 먼저 변경하세요.`, 'error');
+  }
+  if (!window.confirm(`체크한 개별 견적서 ${records.length}개를 삭제하시겠습니까?`)) return;
+  const results = await Promise.allSettled(records.map(record => deleteEstimate(record.estimateId)));
+  const deletedIds = new Set(records.filter((_, index) => results[index].status === 'fulfilled').map(record => record.estimateId));
+  const failedIds = records.filter(record => !deletedIds.has(record.estimateId)).map(record => record.estimateId);
+  if (deletedIds.size) {
+    try {
+      await persistEstimateLibrary(state.estimates.filter(record => !deletedIds.has(record.estimateId)));
+    } catch (error) {
+      toast(error.message || '삭제 후 견적서 목록을 갱신하지 못했습니다.', 'error');
+      return;
+    }
+    state.noticeEstimateIds = failedIds;
+    if (deletedIds.has(modeDraft().catalogRecordId)) startNewCatalog();
+    else renderCatalogControls();
+  }
+  if (failedIds.length) {
+    toast(`${deletedIds.size}개 삭제 · ${failedIds.length}개 실패. 실패한 견적서는 선택 상태로 유지됩니다.`, 'error');
+    return;
+  }
+  toast(`개별 견적서 ${deletedIds.size}개를 삭제했습니다.`, 'success');
+}
+
 async function persistEstimateLibrary(records = state.estimates) {
   state.estimates = records.map((record, index) => ({ ...record, sortOrder: index + 1 }));
   await Promise.all(state.estimates.map(record => saveEstimate(record)));
@@ -2513,7 +2676,7 @@ function estimateCardId(card) {
 
 function beginEstimateCardDrag(event) {
   const card = event.target.closest('.estimate-card');
-  if (!card || event.target.closest('input, [data-open-estimate], [data-open-linked-estimate], [data-edit-estimate], [data-edit-linked-estimate]')) return event.preventDefault();
+  if (!card || event.target.closest('input, [data-edit-estimate], [data-edit-linked-estimate]')) return event.preventDefault();
   const payload = { estimateId: estimateCardId(card), kind: card.dataset.estimateKind };
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('application/json', JSON.stringify(payload));
@@ -2771,6 +2934,7 @@ function loadCatalogRecord(record) {
   state.draft.modes.estimate = catalogDraft;
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
+  state.noticeEstimateIds = [];
   clearTimeout(state.autoAnalyzeTimer);
   state.analysisRequestId += 1;
   state.pendingImageEvidence = null;
@@ -2851,6 +3015,7 @@ function applyWarehouseMatch() {
   header.warehouseId = match?.warehouseId || '';
   header.warehouseCode = match?.warehouseCode || '';
   header.warehouseName = match ? warehouseDisplayName(match) : value.trim();
+  renderVoucherContext();
   scheduleSave();
 }
 
@@ -3043,6 +3208,7 @@ function updateSummaries() {
   $('totalQuantity').textContent = summary.quantity.toLocaleString('ko-KR');
   $('totalAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
   renderActivityTrail();
+  renderVoucherContext(summary);
 }
 
 function renderDelivery() {
@@ -3067,7 +3233,13 @@ function renderDelivery() {
   $('completeButton').disabled = state.busy || modeDraft().estimateKind === 'COMPOSITION_PREVIEW';
   $('completeButton').hidden = false;
   $('completeButton').textContent = '저장';
+  $('newEstimateButton').disabled = state.busy;
+  $('viewSelectedEstimatesButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
+  $('linkedEstimateGroupButton').disabled = state.busy || state.noticeEstimateIds.length < 2;
+  $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
+  $('estimateLibrarySwitchButton').disabled = state.busy;
   updateAutosaveButton();
+  renderVoucherContext();
 }
 
 function renderMode() {
@@ -3117,7 +3289,7 @@ function renderMode() {
   const relatedOpen = Boolean(state.draft.ui.relatedOpen);
   $('estimateLibraryView').classList.toggle('is-open', relatedOpen);
   $('relatedCollapseButton').setAttribute('aria-expanded', String(relatedOpen));
-  $('relatedCollapseButton').textContent = relatedOpen ? '견적서 목록 닫기' : '견적서 목록 열기';
+  $('relatedCollapseButton').textContent = relatedPanelButtonLabel(relatedOpen);
   if (estimateMode) {
     document.querySelector('[data-header-field="warehouse"]').hidden = true;
     document.querySelector('[data-header-field="transactionType"]').hidden = true;
@@ -4987,7 +5159,6 @@ async function saveEstimateDocument(catalogName) {
       ? state.estimates.map(item => item.estimateId === estimateId ? record : item)
       : [...state.estimates, record]);
     clearCustomerAfterSave(current.header);
-    if (current.estimateKind !== 'LINKED_GROUP') current.catalogRecordId = '';
     saveDraftNow();
     hydrateHeader();
     renderCatalogControls();
@@ -5717,6 +5888,7 @@ $('customerInput').addEventListener('input', event => {
     applyCustomerRelationship(header);
     updateDeliveryPolicy();
     renderCatalogControls();
+    renderVoucherContext();
     $('customerHint').textContent = '등록 거래처를 선택해야 주문서 원장에 저장할 수 있습니다.';
     scheduleSave();
   }
@@ -5737,11 +5909,12 @@ $('deliveryDateInput').addEventListener('input', event => {
   }
   modeDraft().header.manualDeliveryOverride = true;
   updateDeliveryPolicy();
+  renderVoucherContext();
   scheduleSave();
 });
 $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
-$('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; scheduleSave(); });
+$('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; renderVoucherContext(); scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
 $('estimateNoticeButton').addEventListener('click', shareCurrentVoucher);
@@ -5764,6 +5937,7 @@ $('estimateEditorButton').addEventListener('click', () => {
 });
 $('newEstimateButton').addEventListener('click', startNewCatalog);
 $('viewSelectedEstimatesButton').addEventListener('click', previewSelectedEstimates);
+$('selectedEstimateDeleteButton').addEventListener('click', () => { void deleteSelectedEstimates(); });
 $('estimateLibrarySwitchButton').addEventListener('click', () => {
   state.estimateLibraryKind = state.estimateLibraryKind === 'linked' ? 'individual' : 'linked';
   renderCatalogControls();
@@ -5774,18 +5948,23 @@ $('catalogPickerList').addEventListener('click', event => {
   if (!row) return;
   const record = state.estimates.find(item => item.estimateId === row.dataset.estimateId);
   if (!record) return;
+  const selection = event.target.closest('[data-estimate-select]');
+  if (selection) {
+    const estimateId = row.dataset.estimateId;
+    state.estimateSelectionQueue = state.estimateSelectionQueue.then(() => {
+      const selected = new Set(state.noticeEstimateIds);
+      if (selection.checked) selected.add(estimateId);
+      else selected.delete(estimateId);
+      state.noticeEstimateIds = individualEstimateRecords().filter(item => selected.has(item.estimateId)).map(item => item.estimateId);
+      renderCatalogControls();
+    }).catch(error => {
+      toast(error.message || '견적서를 선택하지 못했습니다.', 'error');
+    });
+    return;
+  }
+  if (event.target.closest('.estimate-card__check')) return;
   if (event.target.closest('[data-edit-estimate]')) return openEstimateManageDialog(record);
-  if (event.target.closest('[data-open-estimate]')) return loadCatalogRecord(record);
-  const estimateId = row.dataset.estimateId;
-  state.estimateSelectionQueue = state.estimateSelectionQueue.then(() => {
-    const selected = new Set(state.noticeEstimateIds);
-    if (selected.has(estimateId)) selected.delete(estimateId);
-    else selected.add(estimateId);
-    state.noticeEstimateIds = individualEstimateRecords().filter(item => selected.has(item.estimateId)).map(item => item.estimateId);
-    renderCatalogControls();
-  }).catch(error => {
-    toast(error.message || '견적서를 선택하지 못했습니다.', 'error');
-  });
+  loadCatalogRecord(record);
 });
 $('linkedEstimateGroupButton').addEventListener('click', createLinkedEstimateDraft);
 $('linkedEstimateList').addEventListener('click', async event => {
@@ -5820,12 +5999,16 @@ $('linkedEstimateList').addEventListener('click', async event => {
   });
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
+$('voucherContextList').addEventListener('click', event => {
+  const item = event.target.closest('[data-voucher-focus]');
+  if (item) focusVoucherContextTarget(item.dataset.voucherFocus);
+});
 $('relatedCollapseButton').addEventListener('click', event => {
   const panel = $('estimateLibraryView');
   const open = panel.classList.toggle('is-open');
   state.draft.ui.relatedOpen = open;
   event.currentTarget.setAttribute('aria-expanded', String(open));
-  event.currentTarget.textContent = open ? '견적서 목록 닫기' : '견적서 목록 열기';
+  event.currentTarget.textContent = relatedPanelButtonLabel(open);
   scheduleSave();
 });
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));

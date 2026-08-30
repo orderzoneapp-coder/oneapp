@@ -14,8 +14,12 @@ assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser mus
 assert.match(html, /class="workbench"/, 'the work table must remain');
 assert.match(html, /class="related-panel estimate-library-view"[^>]*id="estimateLibraryView"/, 'the right estimate library must remain a workspace sibling');
 assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"[\s\S]*id="linkedEstimateList"/, 'individual and linked estimate lists must remain available');
+assert.match(html, /id="voucherContextView"[\s\S]*id="voucherReadyState"[\s\S]*id="voucherContextList"/, 'non-estimate voucher modes must expose a live right-side inspection panel');
+assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.match(html, /id="estimateLibraryButton"[^>]*>견적서 목록 전체보기</, 'the full library must require an explicit action');
 assert.match(html, /id="estimateEditorButton"[^>]*>편집기로 돌아가기</, 'the expanded library must expose an explicit preserved-editor return path');
+assert.match(html, /id="estimateLibrarySwitchButton"[\s\S]*견적서목록[\s\S]*↔[\s\S]*연동견적서/, 'individual and linked estimate lists must use one pill switch');
+assert.match(html, /id="linkedEstimateGroupButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'checked estimate cards must expose linked creation and deletion actions');
 assert.match(html, /id="inputRows"/, 'the restored editable grid body must remain');
 assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || []).length, 4,
   'all four voucher modes must remain');
@@ -27,6 +31,8 @@ assert.match(css, /\.grid-card > \.work-action-bar\s*\{[\s\S]*border-bottom:\s*1
   'search and edit controls must be integrated with the grid card');
 assert.match(css, /\.workspace\.is-estimate-library-open[\s\S]*> \.estimate-library-view/,
   'the estimate library may replace the workspace only after explicit view activation');
+assert.match(css, /\.voucher-context-item\s*\{[\s\S]*grid-template-columns:/,
+  'the dynamic voucher inspection items must retain a compact actionable layout');
 assert.match(css, /@media \(min-width:\s*821px\) and \(max-width:\s*1480px\)[\s\S]*grid-template-columns:[^;]*8px minmax\(0, 1fr\)/,
   'intermediate desktop widths must preserve side-by-side parser and table columns');
 assert.match(css, /\.header-fields\.is-estimate[\s\S]*transactionType[\s\S]*display:\s*none !important/,

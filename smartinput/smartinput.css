@@ -196,8 +196,9 @@ input, select, textarea { color: var(--text); background: var(--surface); }
 .estimate-card.is-dragging { opacity: .42; }
 .estimate-card.is-drop-target { box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-soft); }
 .estimate-card.is-selected { background: var(--accent-soft); box-shadow: inset 4px 0 0 var(--accent); }
-.estimate-card__selection { color: var(--text-faint); text-align: center; font-size: 9px; font-weight: 900; }
-.estimate-card.is-selected .estimate-card__selection { color: var(--accent-strong); }
+.estimate-card[data-estimate-kind="INDIVIDUAL"] { grid-template-columns: 30px minmax(0, 1fr) 48px; }
+.estimate-card__check { width: 30px; height: 36px; display: grid; place-items: center; border-right: 1px solid var(--border); cursor: pointer; }
+.estimate-card__check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .catalog-picker__row:first-child { border-top: 0; }
 .catalog-picker__row.is-current { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .catalog-picker__load { min-width: 0; padding: 4px 0; display: grid; gap: 2px; overflow: hidden; border: 0; color: var(--text); background: transparent; text-align: left; font-size: 12px; font-weight: 800; }
@@ -758,7 +759,8 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
 .header-fields.is-estimate [data-header-field="transactionType"] { display: none !important; }
 
 .estimate-editor-view { min-width: 0; display: grid; gap: 10px; }
-.estimate-editor-view[hidden], .estimate-library-view[hidden], .estimate-library-grid[hidden], .estimate-workspace-tabs[hidden] { display: none !important; }
+.estimate-editor-view[hidden], .estimate-library-view[hidden], .estimate-library-grid[hidden], .estimate-workspace-tabs[hidden],
+.voucher-context-view[hidden], .estimate-library-heading[hidden], .estimate-library-actions[hidden] { display: none !important; }
 
 .estimate-workspace-tabs {
   min-height: 48px;
@@ -933,6 +935,12 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
 .related-panel .estimate-library-heading h2 { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .related-panel .estimate-library-heading p { display: none; }
 .estimate-library-heading__actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.estimate-library-kind-switch { min-height: 30px; padding: 3px; display: inline-grid; grid-template-columns: auto 18px auto; align-items: center; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--text-soft); background: var(--surface); font-size: 10px; font-weight: 900; }
+.estimate-library-kind-switch span { min-height: 22px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 999px; white-space: nowrap; }
+.estimate-library-kind-switch i { color: var(--text-faint); font-style: normal; }
+.estimate-library-kind-switch span[data-kind="individual"] { color: #fff; background: var(--accent); }
+.estimate-library-kind-switch.is-linked span[data-kind="individual"] { color: var(--text-soft); background: transparent; }
+.estimate-library-kind-switch.is-linked span[data-kind="linked"] { color: #fff; background: var(--accent); }
 .related-panel .estimate-library-grid {
   min-height: 0;
   padding: 0;
@@ -948,8 +956,10 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
   border-top: 1px solid var(--border);
   border-radius: 0;
 }
+.related-panel .estimate-library-grid .estimate-card[data-estimate-kind="INDIVIDUAL"] { grid-template-columns: 28px minmax(0, 1fr) 44px; }
 .related-panel .estimate-library-grid .catalog-picker__row:first-child { border-top: 0; }
 .related-panel .estimate-card__actions { grid-column: 1 / -1; justify-content: flex-end; }
+.related-panel .estimate-card[data-estimate-kind="INDIVIDUAL"] .estimate-card__actions { grid-column: auto; }
 .related-panel .estimate-library-actions {
   min-height: 0;
   padding: 8px;
@@ -958,8 +968,39 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
   gap: 5px;
 }
 .related-panel .estimate-library-actions #newEstimateButton { margin: 0; }
-.related-panel .estimate-library-actions #linkedEstimateGroupButton { grid-column: 1 / -1; }
+.related-panel .estimate-library-actions #linkedEstimateGroupButton,
+.related-panel .estimate-library-actions #selectedEstimateDeleteButton { grid-column: auto; }
 .related-collapse { display: none; }
+
+.voucher-context-view { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+.voucher-context-heading { min-height: 92px; padding: 13px 12px 11px; border-bottom: 1px solid var(--border); background: var(--surface-muted); }
+.voucher-context-heading small { color: var(--accent); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+.voucher-context-heading h2 { margin: 2px 0 4px; color: var(--navy); font-size: 17px; line-height: 1.25; }
+.voucher-context-heading p { margin: 0; color: var(--text-soft); font-size: 10px; line-height: 1.45; }
+.voucher-context-progress { padding: 11px 12px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; border-bottom: 1px solid var(--border); }
+.voucher-context-progress > span { color: var(--text-soft); font-size: 10px; font-weight: 800; }
+.voucher-context-progress > strong { color: var(--warning); font-size: 11px; }
+.voucher-context-progress.is-ready > strong { color: var(--success); }
+.voucher-context-progress__track { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 999px; background: var(--surface-strong); }
+.voucher-context-progress__track > span { width: 0; height: 100%; display: block; border-radius: inherit; background: var(--warning); transition: width .18s ease; }
+.voucher-context-progress.is-ready .voucher-context-progress__track > span { background: var(--success); }
+.voucher-context-list { min-height: 0; flex: 1 1 auto; overflow: auto; }
+.voucher-context-item { width: 100%; min-height: 64px; padding: 9px 10px; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto 8px; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid var(--border); color: var(--text); background: transparent; text-align: left; }
+.voucher-context-item:hover, .voucher-context-item:focus-visible { background: var(--surface-muted); }
+.voucher-context-item__dot { width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 50%; color: var(--warning); background: var(--surface); }
+.voucher-context-item.is-ready .voucher-context-item__dot { color: var(--success); background: var(--success); }
+.voucher-context-item.is-error .voucher-context-item__dot { color: var(--danger); background: var(--danger); }
+.voucher-context-item__copy { min-width: 0; display: grid; gap: 2px; }
+.voucher-context-item__copy strong { overflow: hidden; color: var(--navy); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.voucher-context-item__copy small { overflow: hidden; color: var(--text-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.voucher-context-item__state { padding: 2px 5px; border-radius: 999px; color: var(--warning); background: var(--warning-soft); font-size: 9px; font-style: normal; font-weight: 900; white-space: nowrap; }
+.voucher-context-item.is-ready .voucher-context-item__state { color: var(--success); background: var(--success-soft); }
+.voucher-context-item.is-error .voucher-context-item__state { color: var(--danger); background: var(--danger-soft); }
+.voucher-context-item__arrow { color: var(--text-faint); font-size: 15px; font-weight: 700; }
+.voucher-context-footer { min-height: 74px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; border-top: 1px solid var(--border); background: var(--surface-muted); }
+.voucher-context-footer > span { color: var(--text-soft); font-size: 10px; font-weight: 800; }
+.voucher-context-footer > strong { color: var(--navy); font-size: 15px; }
+.voucher-context-footer > small { grid-column: 1 / -1; overflow: hidden; color: var(--text-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
 .workspace.is-estimate-library-open,
 .workspace.is-estimate-library-open.has-photo-source { display: block; height: auto; }
@@ -999,6 +1040,7 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
   border: 1px solid var(--border);
   border-radius: 10px;
 }
+.workspace.is-estimate-library-open .estimate-library-grid .estimate-card[data-estimate-kind="INDIVIDUAL"] { grid-template-columns: 30px minmax(0, 1fr) 54px; }
 .workspace.is-estimate-library-open .estimate-card__actions { grid-column: auto; }
 .workspace.is-estimate-library-open .estimate-library-actions {
   min-height: 62px;
