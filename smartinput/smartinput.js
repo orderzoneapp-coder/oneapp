@@ -715,7 +715,7 @@ function applyColumnWidths() {
 }
 
 function updateTableWidth(visibleColumns) {
-  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 72);
+  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 38);
   document.querySelector('#tableScroll table')?.style.setProperty('--table-render-width', `${total}px`);
 }
 
@@ -2559,7 +2559,6 @@ function renderRows({ restoreFocus = true } = {}) {
       ${productCells}
       ${customCells}
       <td data-column="status"><div class="row-status"><span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
-      <td><button type="button" class="row-remove" data-remove-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 삭제" ${isDefault ? 'disabled tabindex="-1"' : ''}>×</button></td>
     </tr>`;
   }).join('');
   syncRowSelectionControls();
@@ -2739,12 +2738,6 @@ function materializeDefaultRow(tr) {
   delete tr.dataset.defaultRow;
   const status = tr.querySelector('.row-status span');
   if (status) status.textContent = rowStatusText(row.matchStatus, row);
-  const remove = tr.querySelector('[data-remove-row]');
-  if (remove) {
-    remove.dataset.removeRow = row.rowId;
-    remove.disabled = false;
-    remove.removeAttribute('tabindex');
-  }
   const selector = tr.querySelector('[data-select-row]');
   if (selector) {
     selector.dataset.selectRow = row.rowId;
@@ -5347,16 +5340,6 @@ inputRows.addEventListener('click', event => {
     const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
     state.draft.ui.selectedRowId = tr.dataset.rowId;
     showPhotoRegion(row?.sourceRegion || null);
-  }
-  const remove = event.target.closest('[data-remove-row]');
-  if (remove) {
-    invalidateGridPasteUndo();
-    state.selectedRowIds.delete(remove.dataset.removeRow);
-    modeDraft().rows = modeDraft().rows.filter(row => row.rowId !== remove.dataset.removeRow);
-    modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
-    renderRows();
-    saveDraftNow();
-    return;
   }
   const detach = event.target.closest('[data-detach-orderq]');
   if (detach) {
