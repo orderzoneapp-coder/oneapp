@@ -43,7 +43,10 @@ assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
-assert.match(html, /id="estimateCreateButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must expose shared creation and selected deletion actions');
+assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성</, 'the estimate library must expose only selected deletion and linked creation actions');
+assert.match(html, /id="saveEstimateAsButton"[^>]*>새 양식 저장</, 'a loaded estimate must use Save As instead of in-place rename');
+assert.doesNotMatch(html + appSource, /estimateRenameButton|merchOpsEstimateButton|openSelectedEstimateRenameDialog|openEstimateCreateChoiceDialog/,
+  'rename, MerchOps, and redundant estimate-kind choice controls must stay removed');
 assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
   'normal card selection must immediately switch to exactly one stored estimate');
 assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');

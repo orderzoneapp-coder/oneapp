@@ -556,9 +556,9 @@ function renderReferenceControls() {
   $('customerSearchButton').disabled = state.busy || modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP';
   $('estimateNoticeButton').disabled = state.busy;
   $('estimateExcelButton').disabled = state.busy;
-  $('estimateCreateButton').disabled = state.busy || estimateCreationActive();
-  $('estimateRenameButton').disabled = state.busy || state.noticeEstimateIds.length !== 1;
-  $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
+  const creation = estimateCreation();
+  $('estimateCreateButton').disabled = state.busy || Boolean(creation && creation.selectedIds.length < 2);
+  $('selectedEstimateDeleteButton').disabled = state.busy || (!creation && state.noticeEstimateIds.length < 1);
   updateAutosaveButton();
   refreshReferenceAggregate();
   renderReferenceDomain('product');
@@ -2555,19 +2555,14 @@ function renderCatalogControls() {
     : (selectedCount
       ? `${selectedCount.toLocaleString('ko-KR')}개 열림${lastSave ? ` · 저장 완료 · 연결 ${lastSave.linkCount}개${lastSave.affectedCount ? ` · 반영 ${lastSave.affectedCount}건` : ''}` : (impactCount ? ` · 저장하면 연결된 ${impactCount}개 견적서에 반영` : '')}`
       : '견적서를 선택하세요.');
-  $('estimateRenameButton').hidden = Boolean(creation);
-  $('estimateRenameButton').disabled = state.busy || selectedCount !== 1;
-  $('estimateCreateButton').hidden = Boolean(creation);
-  $('estimateCreateButton').disabled = state.busy;
-  $('selectedEstimateDeleteButton').hidden = Boolean(creation);
-  $('selectedEstimateDeleteButton').disabled = state.busy || selectedCount < 1;
-  $('selectedEstimateDeleteButton').textContent = selectedCount ? `선택 삭제 (${selectedCount})` : '선택 삭제';
-  $('estimateCreationCancelButton').hidden = !creation;
-  $('estimateCreationSaveButton').hidden = !creation;
-  $('estimateCreationSaveButton').disabled = state.busy || selectedCount < 1 || (creation?.kind === 'LINKED_GROUP' && selectedCount < 2);
-  $('estimateCreationSaveButton').textContent = selectedCount ? `선택 ${selectedCount}개 저장` : '선택 저장';
-  $('merchOpsEstimateButton').hidden = Boolean(creation);
-  $('merchOpsEstimateButton').disabled = state.busy || !modeDraft().catalogRecordId;
+  const deleteButton = $('selectedEstimateDeleteButton');
+  deleteButton.disabled = state.busy || (!creation && selectedCount < 1);
+  deleteButton.textContent = creation ? '선택 취소' : (selectedCount ? `선택 삭제 (${selectedCount})` : '선택 삭제');
+  deleteButton.classList.toggle('button--danger', !creation);
+  deleteButton.classList.toggle('button--quiet', Boolean(creation));
+  const createButton = $('estimateCreateButton');
+  createButton.disabled = state.busy || Boolean(creation && selectedCount < 2);
+  createButton.textContent = creation ? `연동견적서 저장${selectedCount ? ` (${selectedCount})` : ''}` : '연동견적서 생성';
   const outputPrefix = creation && selectedCount ? `선택 ${selectedCount}개 ` : '';
   $('estimateNoticeButton').textContent = `${outputPrefix}카톡 공유`;
   $('estimateExcelButton').textContent = `${outputPrefix}Excel`;
@@ -2629,30 +2624,6 @@ function cancelEstimateCreation({ silent = false } = {}) {
   renderMode();
   if (!silent) toast('견적서 생성 선택을 취소했습니다.', 'success');
   return true;
-}
-
-function openEstimateCreateChoiceDialog() {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'smart-dialog estimate-create-dialog';
-  dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Create</small><h2>견적서 생성 방식</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="estimate-create-options">
-      <button type="button" data-create-kind="INDIVIDUAL"><strong>개별 견적서</strong><span>선택한 내용을 독립된 새 견적서로 복사합니다.</span></button>
-      <button type="button" data-create-kind="LINKED_GROUP"><strong>연동 견적서</strong><span>원본 두 개 이상을 묶고 명시 저장 시 양방향으로 반영합니다.</span></button>
-    </div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button></footer>
-  </div>`;
-  document.body.append(dialog);
-  const finish = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
-  dialog.querySelectorAll('[data-create-kind]').forEach(button => button.addEventListener('click', () => {
-    const kind = button.dataset.createKind;
-    finish();
-    startEstimateCreation(kind);
-  }));
-  dialog.showModal();
-  dialog.querySelector('[data-create-kind]')?.focus();
 }
 
 async function deleteSelectedEstimates() {
@@ -2819,53 +2790,6 @@ function cancelEstimateTouchDrag() {
   drag.card.classList.remove('is-dragging');
   document.querySelectorAll('.estimate-card.is-drop-target').forEach(card => card.classList.remove('is-drop-target'));
   state.estimateDragSuppressed = false;
-}
-
-function openSelectedEstimateRenameDialog() {
-  const [record] = selectedEstimateRecords();
-  if (!record) return;
-  const dialog = document.createElement('dialog');
-  dialog.className = 'smart-dialog estimate-rename-dialog';
-  dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Rename</small><h2>견적서명 변경</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">선택한 견적서의 이름만 변경합니다. 내용과 연동 관계는 그대로 유지됩니다.</div>
-    <div class="estimate-dialog-form">
-      <label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(estimateTitle(record))}"></label>
-    </div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save-estimate>변경</button></footer>
-  </div>`;
-  document.body.append(dialog);
-  const finish = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
-  dialog.querySelector('[data-save-estimate]').addEventListener('click', async () => {
-    const catalogName = dialog.querySelector('[data-estimate-name]').value.trim();
-    if (!catalogName) {
-      dialog.querySelector('[data-estimate-name]').focus();
-      return toast('견적서명을 입력하세요.', 'error');
-    }
-    const duplicate = state.estimates.find(item => item.estimateId !== record.estimateId && estimateTitle(item) === catalogName);
-    if (duplicate) return toast('같은 이름의 견적서가 있습니다. 다른 이름을 입력하세요.', 'error');
-    const timestamp = new Date().toISOString();
-    const next = state.estimates.map(item => {
-      if (item.estimateId === record.estimateId) return { ...item, catalogName, updatedAt: timestamp };
-      if (item.estimateKind !== 'LINKED_GROUP') return item;
-      const linkedEstimateSources = (item.linkedEstimateSources || []).map(source => source.estimateId === record.estimateId ? { ...source, catalogName } : source);
-      return { ...item, linkedEstimateSources };
-    });
-    try {
-      await persistEstimateLibrary(next);
-      finish();
-      renderCatalogControls();
-      renderEstimateHeaderFields();
-      toast('견적서명을 변경했습니다.', 'success');
-    } catch (error) {
-      toast(error.message || '견적서명을 변경하지 못했습니다.', 'error');
-    }
-  });
-  dialog.showModal();
-  dialog.querySelector('[data-estimate-name]').focus();
-  dialog.querySelector('[data-estimate-name]').select();
 }
 
 function restoreSourceImageForMode(mode) {
@@ -3277,9 +3201,11 @@ function renderDelivery() {
   $('completeButton').disabled = state.busy || creationBlocked;
   $('completeButton').hidden = false;
   $('completeButton').textContent = '저장';
-  $('estimateRenameButton').disabled = state.busy || state.noticeEstimateIds.length !== 1;
-  $('estimateCreateButton').disabled = state.busy || estimateCreationActive();
-  $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
+  const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
+  $('saveEstimateAsButton').hidden = !loadedEstimate || Boolean(creation);
+  $('saveEstimateAsButton').disabled = state.busy || !loadedEstimate || Boolean(creation);
+  $('estimateCreateButton').disabled = state.busy || Boolean(creation && creationCount < 2);
+  $('selectedEstimateDeleteButton').disabled = state.busy || (!creation && state.noticeEstimateIds.length < 1);
   $('estimateLibrarySwitchButton').disabled = state.busy || estimateCreationActive();
   updateAutosaveButton();
   renderVoucherContext();
@@ -4709,41 +4635,30 @@ function matchGridPasteRow(row) {
 
 function openProductDialog(row, { query = '', focusTarget = null, returnField = '' } = {}) {
   const dialog = document.createElement('dialog');
-  dialog.className = 'customer-picker-dialog';
-  const shell = document.createElement('div');
-  shell.className = 'customer-picker-shell';
-  const header = document.createElement('header');
-  const heading = document.createElement('div');
-  const small = document.createElement('small');
-  small.textContent = 'Product Master';
-  const title = document.createElement('h2');
-  title.textContent = '상품 후보 선택';
-  heading.append(small, title);
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.setAttribute('aria-label', '닫기');
-  close.textContent = '×';
-  header.append(heading, close);
-  const label = document.createElement('label');
-  label.className = 'customer-picker-search';
-  label.append('상품명 또는 코드');
-  const search = document.createElement('input');
-  search.type = 'search';
-  search.value = query || row.itemCode || row.itemName || '';
-  label.append(search);
-  const message = document.createElement('div');
-  message.className = 'customer-picker-message';
-  const results = document.createElement('div');
-  results.className = 'customer-picker-results';
-  shell.append(header, label, message, results);
-  dialog.append(shell);
+  dialog.className = 'smart-dialog product-picker-dialog';
+  dialog.setAttribute('aria-labelledby', 'productPickerTitle');
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Product Master</small><h2 id="productPickerTitle">상품 후보 선택</h2></div><button type="button" data-close aria-label="상품 후보창 닫기">×</button></header>
+    <label class="smart-dialog__search product-picker-search"><span>상품명 또는 품목코드</span><input type="text" data-product-search autocomplete="off" placeholder="상품명·코드·규격으로 검색" role="combobox" aria-autocomplete="list" aria-controls="productCandidateResults" aria-expanded="true"></label>
+    <div class="smart-dialog__message product-picker-message" data-product-message role="status" aria-live="polite"></div>
+    <div class="product-picker-results" id="productCandidateResults" data-product-results role="listbox" aria-label="상품 후보"></div>
+    <footer><small>↑↓ 이동 · Enter 선택 · Esc 닫기</small><button type="button" class="button button--quiet" data-close>취소</button></footer>
+  </div>`;
   document.body.append(dialog);
+  const search = dialog.querySelector('[data-product-search]');
+  const message = dialog.querySelector('[data-product-message]');
+  const results = dialog.querySelector('[data-product-results]');
+  search.value = query || row.itemCode || row.itemName || '';
 
+  let closed = false;
   const finish = product => {
+    if (closed) return;
+    closed = true;
     const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
     if (product) {
       const before = { ...liveRow, customValues: { ...(liveRow.customValues || {}) } };
       if (!applyProduct(liveRow, product, { forceIdentityFields: true })) {
+        closed = false;
         message.textContent = '공통 상품 마스터에 등록된 정상 상품만 선택할 수 있습니다.';
         return;
       }
@@ -4759,6 +4674,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
       if (isLinkedRow(liveRow)) scheduleSave();
       else saveDraftNow();
     }
+    search.setAttribute('aria-expanded', 'false');
     dialog.close();
     dialog.remove();
     window.requestAnimationFrame(() => {
@@ -4775,7 +4691,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
       return;
     }
     selectedIndex = Math.max(0, Math.min(nextIndex, foundProducts.length - 1));
-    const buttons = [...results.querySelectorAll('.customer-picker-result')];
+    const buttons = [...results.querySelectorAll('.product-picker-result')];
     buttons.forEach((button, index) => {
       const selected = index === selectedIndex;
       button.classList.toggle('is-selected', selected);
@@ -4792,11 +4708,15 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     selectedIndex = 0;
     results.innerHTML = '';
     message.textContent = foundProducts.length ? `${foundProducts.length}개 후보 · 자동 확정되지 않습니다. 확인 후 선택하세요.` : '일치하는 상품 후보가 없습니다. 현재 행은 유지됩니다.';
+    if (!foundProducts.length) {
+      results.innerHTML = '<div class="product-picker-empty">검색 결과가 없습니다.<br>검색어를 바꾸거나 Esc로 닫으면 현재 입력값이 유지됩니다.</div>';
+    }
     foundProducts.forEach((product, index) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.id = `product-candidate-${index}`;
-      button.className = `customer-picker-result${index === 0 ? ' is-selected' : ''}`;
+      button.className = `product-picker-result${index === 0 ? ' is-selected' : ''}`;
+      button.setAttribute('role', 'option');
       button.setAttribute('aria-selected', String(index === 0));
       const strong = document.createElement('strong');
       strong.textContent = product.itemName || '상품명 없음';
@@ -4832,7 +4752,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
       if (foundProducts[selectedIndex]) finish(foundProducts[selectedIndex]);
     }
   });
-  close.addEventListener('click', () => finish(null));
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => finish(null)));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
   dialog.showModal();
   search.focus();
@@ -5199,7 +5119,7 @@ function synchronizeLinkedEstimateRecords(targetRecord, currentDraft, timestamp)
   return [...changed.values()];
 }
 
-function openEstimateSaveDialog() {
+function openEstimateSaveDialog({ saveAs = false } = {}) {
   if (!validateEstimateDocument()) return;
   const current = modeDraft();
   const creation = estimateCreation();
@@ -5208,14 +5128,22 @@ function openEstimateSaveDialog() {
     saveDraftNow();
   }
   const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
-  const defaultName = loadedRecord ? estimateTitle(loadedRecord) : (estimateCreation()?.kind === 'LINKED_GROUP' || current.estimateKind === 'LINKED_GROUP' ? '새 연동견적서' : (current.header.customerName || '새 견적서'));
+  if (saveAs && !loadedRecord) return toast('먼저 저장된 견적서를 선택하세요.', 'warn');
+  const loadedName = loadedRecord ? estimateTitle(loadedRecord) : '';
+  const defaultName = saveAs
+    ? `${loadedName} 복사본`
+    : (estimateCreation()?.kind === 'LINKED_GROUP' || current.estimateKind === 'LINKED_GROUP' ? '새 연동견적서' : (current.header.customerName || '새 견적서'));
+  const dialogTitle = saveAs ? '새 양식 저장' : '견적서 저장';
+  const dialogMessage = saveAs
+    ? '현재 견적서 내용으로 새 양식을 만듭니다. 기존 견적서는 이름과 내용이 그대로 유지됩니다.'
+    : '새 견적서명을 입력하면 견적서 목록에 저장됩니다.';
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-save-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Save</small><h2>견적서 저장</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">현재 이름을 유지하면 같은 견적서를 수정하고, 다른 이름으로 저장하면 새 견적서를 목록 최하단에 생성합니다.</div>
+    <header><div><small>${saveAs ? 'Save As' : 'Estimate Save'}</small><h2>${dialogTitle}</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message">${dialogMessage}</div>
     <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}"></label></div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>저장</button></footer>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '새 양식 저장' : '저장'}</button></footer>
   </div>`;
   document.body.append(dialog);
   const finish = () => {
@@ -5235,6 +5163,11 @@ function openEstimateSaveDialog() {
     if (!catalogName) {
       dialog.querySelector('[data-estimate-name]').focus();
       return toast('견적서명을 입력하세요.', 'error');
+    }
+    if (saveAs && catalogName === loadedName) {
+      dialog.querySelector('[data-estimate-name]').focus();
+      dialog.querySelector('[data-estimate-name]').select();
+      return toast('기존 견적서와 다른 새 양식명을 입력하세요.', 'warn');
     }
     dialog.querySelector('[data-confirm-save]').disabled = true;
     const saved = await saveEstimateDocument(catalogName);
@@ -6098,14 +6031,18 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; renderVoucherContext(); scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
+$('saveEstimateAsButton').addEventListener('click', () => openEstimateSaveDialog({ saveAs: true }));
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
 $('estimateNoticeButton').addEventListener('click', shareCurrentVoucher);
 $('estimateExcelButton').addEventListener('click', exportCurrentVoucherExcel);
-$('selectedEstimateDeleteButton').addEventListener('click', () => { void deleteSelectedEstimates(); });
-$('estimateRenameButton').addEventListener('click', openSelectedEstimateRenameDialog);
-$('estimateCreateButton').addEventListener('click', openEstimateCreateChoiceDialog);
-$('estimateCreationCancelButton').addEventListener('click', () => cancelEstimateCreation());
-$('estimateCreationSaveButton').addEventListener('click', completeOrder);
+$('selectedEstimateDeleteButton').addEventListener('click', () => {
+  if (estimateCreationActive()) cancelEstimateCreation();
+  else void deleteSelectedEstimates();
+});
+$('estimateCreateButton').addEventListener('click', () => {
+  if (estimateCreationActive()) void completeOrder();
+  else startEstimateCreation('LINKED_GROUP');
+});
 $('estimateLibrarySwitchButton').addEventListener('click', () => {
   if (estimateCreationActive()) return;
   rememberActiveEstimateWork();
@@ -6196,11 +6133,6 @@ relatedPanelResizer.addEventListener('keydown', event => {
   const step = event.shiftKey ? 40 : 12;
   applyRelatedPanelWidth(Number(state.draft.ui.relatedPaneWidth || 260) + (event.key === 'ArrowLeft' ? step : -step));
   scheduleSave();
-});
-$('merchOpsEstimateButton').addEventListener('click', () => {
-  const current = modeDraft();
-  if (estimateCreationActive() || !current.catalogRecordId) return toast('먼저 견적서를 저장하세요.', 'warn');
-  window.location.href = `../MerchOps.html?source=smartinput-estimate&estimateId=${encodeURIComponent(current.catalogRecordId)}`;
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
