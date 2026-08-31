@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.16
+- Architecture document version: 2.1.17
 - Last reviewed: 2026-08-31
-- Current-source baseline: `e6edac9` (DEC-021 implementation base; final merge SHA is recorded with the release evidence)
+- Current-source baseline: `c8d5630` (SmartInput mapping implementation base; final merge SHA is recorded with the release evidence)
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -128,7 +128,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
-| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v4의 최신 자동저장 1건·기존 호환 키를 로컬 우선으로 운영. 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
+| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v4의 최신 자동저장 1건·기존 호환 키와 `settings.inputTemplates` 입력 양식을 로컬 우선으로 운영. Excel 원본과 위치 기반 매핑을 전표 저장 검증과 분리하고 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본·입력 양식 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 미등록 상품 PENDING 변경요청 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
@@ -151,7 +151,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 ### 4.2 현재 manifest 등록 목록
 
-아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.5의 현재 등록 상태다.
+아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.6의 현재 등록 상태다.
 
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
@@ -918,6 +918,8 @@ Their business meaning must not be unified merely because the key number is the 
    - SmartInput은 로컬 캐시 우선·장애 격리형 소비자로 연결하고, ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.
 5. **SmartInput 구축**
    - 전표 작성 작업본과 최신 자동저장 1건 갱신·복구 및 기존 호환 키는 자체 Repository가 소유한다.
+   - Excel 원본은 행·열·공란·순서를 보존하고, 필드명 문자열·개수·순서가 완전히 같은 입력 양식만 위치 기반으로 적용한다. 신규 구조의 매핑·비매핑 확정과 기존 양식 수정은 전표 저장 검증과 독립된 로컬 매핑 프로세스다.
+   - 입력 양식은 기존 DB v4 `settings` Store의 `inputTemplates` KV에 저장하며 다른 앱 Repository, 신규 서버·인증 또는 전표 writer 계약을 추가하지 않는다.
    - 상품·거래처는 Snapshot으로 복사하고 열린 전표를 최신 master로 자동 덮어쓰지 않는다.
    - ORDER Q 전달 실패가 작성·로컬 저장을 손상시키지 않도록 격리한다.
 6. **NEXUS 공통 UI 유지**

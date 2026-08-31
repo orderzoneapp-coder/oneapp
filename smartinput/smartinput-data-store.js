@@ -1,6 +1,7 @@
 const DB_NAME = 'oneapp-smartinput';
 const DB_VERSION = 4;
 const FALLBACK_KEY = 'oneapp.smartinput.relationships.v1';
+const INPUT_TEMPLATES_KEY = 'inputTemplates';
 
 export const DATA_STORES = Object.freeze({
   SETTINGS: 'settings',
@@ -156,6 +157,9 @@ export async function loadSmartInputData() {
   ]);
   return {
     settings: settingsRows.find(row => row.key === 'app')?.value || null,
+    inputTemplates: Array.isArray(settingsRows.find(row => row.key === INPUT_TEMPLATES_KEY)?.value)
+      ? settingsRows.find(row => row.key === INPUT_TEMPLATES_KEY).value
+      : [],
     referenceCache: {
       product: settingsRows.find(row => row.key === 'reference:product')?.value || null,
       customer: settingsRows.find(row => row.key === 'reference:customer')?.value || null
@@ -176,6 +180,20 @@ export async function loadSmartInputData() {
 
 export function saveSettings(value) {
   return put(DATA_STORES.SETTINGS, { key: 'app', value, updatedAt: new Date().toISOString() }, 'key');
+}
+
+export async function loadInputTemplates() {
+  const record = await get(DATA_STORES.SETTINGS, INPUT_TEMPLATES_KEY);
+  return Array.isArray(record?.value) ? record.value : [];
+}
+
+export function saveInputTemplates(value = []) {
+  const templates = Array.isArray(value) ? JSON.parse(JSON.stringify(value)) : [];
+  return put(DATA_STORES.SETTINGS, {
+    key: INPUT_TEMPLATES_KEY,
+    value: templates,
+    updatedAt: new Date().toISOString()
+  }, 'key').then(() => templates);
 }
 
 export function saveReferenceCache(domain, value) {

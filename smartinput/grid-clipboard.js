@@ -59,7 +59,8 @@ export function buildGridPastePlan(rawText = '', {
   visibleFieldIds = [],
   startFieldId = '',
   numberParser,
-  requireHeaders = false
+  requireHeaders = false,
+  exactHeaders = []
 } = {}) {
   const matrix = parseClipboardMatrix(rawText);
   const editableDefinitions = fieldDefinitions.filter(field => field?.editable !== false);
@@ -67,15 +68,25 @@ export function buildGridPastePlan(rawText = '', {
   const fieldIndex = buildStructuredFieldIndex(editableDefinitions);
   const usedFields = new Set();
   const headerErrors = [];
+  const hasExactHeaderContract = exactHeaders.length > 0;
   const headerMappings = (matrix[0] || []).map((rawHeader, columnIndex) => {
     const sourceHeader = cellText(rawHeader).trim();
-    const field = fieldIndex.get(normalizeStructuredFieldName(sourceHeader));
+    const expectedHeader = exactHeaders[columnIndex];
+    const exactFieldId = visibleFieldIds[columnIndex];
+    const field = hasExactHeaderContract
+      ? (sourceHeader === expectedHeader ? fieldById.get(exactFieldId) : null)
+      : fieldIndex.get(normalizeStructuredFieldName(sourceHeader));
     if (!sourceHeader) {
       headerErrors.push({ columnIndex, header: '', reason: 'EMPTY_HEADER' });
       return null;
     }
     if (!field) {
-      headerErrors.push({ columnIndex, header: sourceHeader, reason: 'UNKNOWN_HEADER' });
+      headerErrors.push({
+        columnIndex,
+        header: sourceHeader,
+        expectedHeader: hasExactHeaderContract ? expectedHeader : undefined,
+        reason: hasExactHeaderContract ? 'HEADER_MISMATCH' : 'UNKNOWN_HEADER'
+      });
       return null;
     }
     if (usedFields.has(field.id)) {
@@ -85,6 +96,16 @@ export function buildGridPastePlan(rawText = '', {
     usedFields.add(field.id);
     return { columnIndex, fieldId: field.id, sourceHeader };
   }).filter(Boolean);
+
+  if (hasExactHeaderContract && matrix[0]?.length !== exactHeaders.length) {
+    headerErrors.push({
+      columnIndex: Math.min(matrix[0]?.length || 0, exactHeaders.length),
+      header: '',
+      reason: 'HEADER_COUNT_MISMATCH',
+      expectedColumnCount: exactHeaders.length,
+      actualColumnCount: matrix[0]?.length || 0
+    });
+  }
 
   if (requireHeaders || (headerMappings.length >= 2 && !headerErrors.length)) {
     const invalidCells = [];

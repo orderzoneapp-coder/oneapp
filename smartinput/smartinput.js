@@ -18,8 +18,22 @@ import {
   SMARTINPUT_SALE_ACTOR_ID
 } from './legacy-integration-adapter.js?v=0.1.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
-import { parseStructuredSheet } from './structured-sheet-parser.js?v=0.1.1';
-import { buildGridPastePlan } from './grid-clipboard.js?v=0.1.0';
+import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
+import {
+  DECISION as MAPPING_DECISION,
+  SESSION_STATUS as MAPPING_SESSION_STATUS,
+  addManualRow,
+  createMappingSession,
+  createTemplateRecord,
+  deleteWorkingRows,
+  detectHeaderRow,
+  mappingSummary,
+  projectMappedRows,
+  reassignHeaderRow,
+  setColumnDecision,
+  updateWorkingCell,
+  validateTemplateDraft
+} from './input-template-mapper.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -58,7 +72,9 @@ import {
   saveSourceImage,
   saveTemporaryCustomer,
   loadLatestAutosave,
-  saveLatestAutosave
+  saveLatestAutosave,
+  loadInputTemplates,
+  saveInputTemplates
 } from './smartinput-data-store.js?v=0.5.0';
 import {
   REFERENCE_CACHE_SCHEMA,
@@ -134,6 +150,12 @@ const state = {
   temporaryCustomers: [],
   aliasMappings: [],
   estimates: [],
+  inputTemplates: [],
+  inputTemplatesStatus: 'LOADING',
+  inputTemplatesError: null,
+  pendingGridPasteText: '',
+  mappingPasteUndo: null,
+  mappingProjectionTimer: null,
   noticeEstimateIds: [],
   smartDataReady: false,
   pendingImageEvidence: null,
@@ -742,6 +764,211 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
   ];
 }
 
+const MAPPING_DEFAULT_ROW_ID = '__SMARTINPUT_MAPPING_DEFAULT_ROW__';
+
+function inputMappingSession(current = modeDraft()) {
+  return current?.inputMapping?.schemaVersion === 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V1'
+    ? current.inputMapping
+    : null;
+}
+
+function inputMappingTargets() {
+  const headerProjection = {
+    customer: 'rowCustomerName',
+    deliveryDate: 'rowDeliveryDate',
+    warehouse: 'rowWarehouseCode',
+    transactionType: 'rowTransactionType'
+  };
+  const headerTargets = layoutDefinitions('header').map(field => ({
+    id: field.id,
+    label: field.label,
+    scope: 'header',
+    valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+    projectionFieldId: headerProjection[field.id] || field.id,
+    custom: Boolean(field.custom)
+  }));
+  const voucherTargets = layoutDefinitions('voucher').map(field => ({
+    id: field.id,
+    label: field.label,
+    scope: 'voucher',
+    group: field.group || 'ADDITIONAL',
+    valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+    projectionFieldId: field.id,
+    custom: Boolean(field.custom)
+  }));
+  const unique = new Map();
+  [...headerTargets, ...voucherTargets].forEach(target => {
+    if (!unique.has(target.id)) unique.set(target.id, target);
+  });
+  return [...unique.values()];
+}
+
+function mappingTargetById(fieldId) {
+  return inputMappingTargets().find(target => target.id === fieldId) || null;
+}
+
+function inputMappingTemplateReady(session = inputMappingSession()) {
+  return Boolean(session?.templateId && session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED);
+}
+
+function mappingStateText(mapping) {
+  if (mapping?.state === MAPPING_DECISION.MAPPED) return mappingTargetById(mapping.targetFieldId)?.label || '연결 대상 없음';
+  if (mapping?.state === MAPPING_DECISION.RECOMMENDED) return `${mappingTargetById(mapping.targetFieldId)?.label || '확인 필요'} · 추천`;
+  if (mapping?.state === MAPPING_DECISION.UNMAPPED) return '비매핑 · 전표 제외';
+  return '매핑을 지정하세요';
+}
+
+function mappingSessionWithBatch(session) {
+  if (session.batchId) return session;
+  return {
+    ...session,
+    batchId: `SIBATCH-MAPPING-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  };
+}
+
+function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) {
+  const current = modeDraft();
+  const session = inputMappingSession(current);
+  if (!session) return;
+  const priorRows = preserveProductEdits ? new Map((current.rows || []).map(row => [row.rowId, row])) : new Map();
+  let projectedSources = projectMappedRows(session, inputMappingTargets());
+  if (state.draft.activeMode === 'purchase' && session.purchaseMetaRows) {
+    projectedSources = joinPurchaseMeta({
+      visibleSheetName: session.sheetName,
+      visibleRows: projectedSources.map(row => ({ ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: session.fileFingerprint })),
+      metaRows: session.purchaseMetaRows
+    });
+  } else if (state.draft.activeMode === 'purchase') {
+    projectedSources = projectedSources.map(row => ({
+      ...row,
+      sourceType: 'DIRECT',
+      contractKind: 'PURCHASE_STAGE3_V1',
+      originSystem: 'SMARTINPUT_FILE',
+      originTransactionId: session.fileFingerprint,
+      sourceFingerprint: session.fileFingerprint,
+      sourceDocumentKey: row.sourceDocumentKey || stableDirectDocumentKey({
+        originSystem: 'SMARTINPUT_FILE',
+        originTransactionId: session.fileFingerprint,
+        externalDocumentNo: row.rowVoucherNo,
+        sourceVoucherIndex: row.sourceVoucherIndex
+      }),
+      metaStatus: 'DIRECT_NO_META'
+    }));
+  } else if (state.draft.activeMode === 'sale' && session.salesMetaRows) {
+    projectedSources = joinSalesMeta({
+      visibleSheetName: session.sheetName,
+      visibleRows: projectedSources.map(row => ({ ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: session.fileFingerprint })),
+      metaRows: session.salesMetaRows
+    });
+  } else if (state.draft.activeMode === 'sale') {
+    projectedSources = projectedSources.map(row => ({
+      ...row,
+      sourceType: 'DIRECT',
+      contractKind: 'SALE_STAGE4_V1',
+      originSystem: 'SMARTINPUT_FILE',
+      originTransactionId: session.fileFingerprint,
+      sourceFingerprint: session.fileFingerprint,
+      actualToBaseFactor: 1,
+      actualToRecognizedFactor: 0,
+      actualUnit: row.unit || '',
+      baseUnit: row.unit || '',
+      recognizedUnit: row.unit || '',
+      conversionSource: 'DIRECT_SAME_UNIT',
+      conversionRuleId: 'DIRECT_1_TO_1',
+      conversionRuleVersion: 'DIRECT_1_TO_1_V1',
+      metaStatus: 'DIRECT_NO_META'
+    }));
+  }
+  const projected = projectedSources.map((source, index) => {
+    const previous = priorRows.get(source.rowId);
+    let row = contract.normalizeRow({
+      ...source,
+      batchId: session.batchId,
+      sourceBatchId: session.batchId,
+      sourceSheetName: session.sheetName,
+      sourceFingerprint: session.fileFingerprint,
+      sourceDocumentKey: `${session.fileFingerprint || session.fileName}:${session.sheetName || 'SHEET'}`,
+      sourceType: 'STRUCTURED_FILE',
+      sourceLineKey: `${session.batchId}:sheet:${source.sourceLineNo || index + 1}`,
+      matchStatus: 'UNRESOLVED'
+    }, session.batchId);
+    if (previous) {
+      ['productId', 'masterProductId', 'candidateProducts', 'referenceResolution', 'productMasterRevision', 'matchStatus']
+        .forEach(field => { if (previous[field] !== undefined) row[field] = cloneGridValue(previous[field]); });
+    }
+    if (!row.productId || !row.masterProductId) row = matchGridPasteRow(row);
+    return row;
+  });
+  current.rows = contract.markDuplicatePossibilities(projected);
+  const mappingBatch = contract.createBatch({
+    batchId: session.batchId,
+    sequence: 1,
+    method: 'excel',
+    sourceType: 'STRUCTURED_FILE',
+    sourceName: `${session.fileName}${session.sheetName ? ` · ${session.sheetName}` : ''}`,
+    sourceRole: 'MAPPING_SOURCE',
+    sourceSheetName: session.sheetName,
+    rawText: current.sourceText,
+    contentHash: session.fileFingerprint
+  });
+  current.batches = [...(current.batches || []).filter(batch => batch.sourceRole !== 'MAPPING_SOURCE'), mappingBatch];
+  current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+}
+
+function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
+  const current = modeDraft();
+  const existing = inputMappingSession(current);
+  if (!existing) return null;
+  let restored = createMappingSession({
+    matrix: existing.sourceMatrix,
+    headerRowIndex: existing.headerRowIndex,
+    templates: state.inputTemplates,
+    targetDefinitions: inputMappingTargets(),
+    fileName: existing.fileName,
+    sheetName: existing.sheetName,
+    fileFingerprint: existing.fileFingerprint,
+    editJournal: existing.editJournal,
+    manualRows: existing.manualRows,
+    hiddenColumns: existing.hiddenColumns
+  });
+  if (!applyLatestTemplate && existing.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE
+    && existing.signature === restored.signature && Array.isArray(existing.mappings)) {
+    restored = { ...restored, status: existing.status, mappings: existing.mappings.map(mapping => ({ ...mapping })), issues: [...(existing.issues || [])] };
+  }
+  restored.batchId = existing.batchId || mappingSessionWithBatch(restored).batchId;
+  restored.purchaseMetaRows = existing.purchaseMetaRows || null;
+  restored.salesMetaRows = existing.salesMetaRows || null;
+  restored.deletedSourceRows = [...(existing.deletedSourceRows || [])];
+  if (restored.deletedSourceRows.length) {
+    restored.workingRows = restored.workingRows.filter(row => row.manual || !restored.deletedSourceRows.includes(row.sourceRowIndex));
+  }
+  current.inputMapping = restored;
+  projectInputMappingToVoucherRows();
+  return restored;
+}
+
+async function reloadInputTemplates({ applyCurrent = false, announce = true } = {}) {
+  state.inputTemplatesStatus = 'LOADING';
+  state.inputTemplatesError = null;
+  renderInputMappingStatus();
+  try {
+    const templates = await loadInputTemplates();
+    state.inputTemplates = Array.isArray(templates) ? templates : [];
+    state.inputTemplatesStatus = state.inputTemplates.length ? 'READY' : 'EMPTY';
+    if (applyCurrent) restoreInputMappingSession({ applyLatestTemplate: true });
+    renderMode();
+    saveDraftNow();
+    if (announce) toast(applyCurrent ? '입력 양식을 다시 불러와 현재 원본에 적용했습니다.' : '입력 양식 목록을 다시 불러왔습니다.', 'success');
+    return state.inputTemplates;
+  } catch (error) {
+    state.inputTemplatesStatus = 'ERROR';
+    state.inputTemplatesError = error;
+    renderInputMappingStatus();
+    if (announce) toast(error.message || '입력 양식을 불러오지 못했습니다.', 'error');
+    return null;
+  }
+}
+
 function estimateNoticePriceDefinitions(fieldIds = contract.ESTIMATE_NOTICE_PRICE_FIELD_IDS) {
   const fieldById = new Map(contract.PRODUCT_FIELD_DEFINITIONS.map(field => [field.id, field]));
   return (fieldIds || []).map(fieldId => fieldById.get(fieldId)).filter(Boolean);
@@ -1128,24 +1355,52 @@ function renderPhotoTransform() {
   renderPhotoRegion();
 }
 
+function renderSourceSheet() {
+  const session = inputMappingSession();
+  const view = $('sourceSheetView');
+  if (!session) {
+    view.hidden = true;
+    return;
+  }
+  const matrix = session.sourceMatrix || [];
+  const width = Math.max(session.headers.length, ...matrix.map(row => row.length), 0);
+  $('sourceSheetTitle').textContent = session.fileName || 'Excel 원본';
+  $('sourceSheetMeta').textContent = `${session.sheetName || '시트'} · ${matrix.length.toLocaleString('ko-KR')}행 · ${width.toLocaleString('ko-KR')}열`;
+  $('sourceHeaderRowStatus').textContent = `필드명 ${session.headerRowIndex + 1}행`;
+  $('sourceSheetRows').innerHTML = matrix.map((row, rowIndex) => (
+    `<tr class="${rowIndex === session.headerRowIndex ? 'is-header-row' : ''}" data-source-row-index="${rowIndex}">
+      <th scope="row"><button type="button" data-use-header-row="${rowIndex}" aria-label="${rowIndex + 1}행을 필드명으로 사용">${rowIndex + 1}</button></th>
+      ${Array.from({ length: width }, (_, columnIndex) => `<td title="${esc(row[columnIndex] ?? '')}">${esc(row[columnIndex] ?? '')}</td>`).join('')}
+    </tr>`
+  )).join('');
+  window.requestAnimationFrame(() => {
+    const selected = $('sourceSheetRows').querySelector('.is-header-row');
+    selected?.scrollIntoView({ block: 'nearest' });
+  });
+}
+
 function renderSourceSurface() {
   const evidence = currentSourceImage();
   const photoMode = modeDraft().activeMethod === 'photo';
+  const sheetMode = modeDraft().activeMethod === 'excel' && Boolean(inputMappingSession());
   const showPhoto = photoMode && Boolean(evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
   const photoViewer = $('photoViewer');
-  const photoStateChanged = workspace.classList.contains('has-photo-source') !== photoMode;
-  workspace.classList.toggle('has-photo-source', photoMode);
+  const expandedSource = photoMode || sheetMode;
+  const photoStateChanged = workspace.classList.contains('has-photo-source') !== expandedSource;
+  workspace.classList.toggle('has-photo-source', expandedSource);
   const savedWidth = Number(state.draft.ui.parserPaneWidth || state.draft.ui.photoPaneWidth || 0);
   if (savedWidth > 0) workspace.style.setProperty('--parser-pane-width', `${savedWidth}px`);
-  $('sourceEditor').hidden = photoMode;
+  $('sourceEditor').hidden = expandedSource;
+  $('sourceSheetView').hidden = !sheetMode;
   photoViewer.hidden = !photoMode;
   photoViewer.classList.toggle('has-image', showPhoto);
   $('photoViewerToolbar').hidden = !showPhoto;
   $('photoEmptyState').hidden = showPhoto;
   $('photoStage').hidden = !showPhoto;
   $('photoViewerMeta').hidden = !showPhoto;
-  $('analyzeButton').hidden = photoMode && !showPhoto;
+  $('analyzeButton').hidden = sheetMode || (photoMode && !showPhoto);
+  if (sheetMode) renderSourceSheet();
   if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
   if (!showPhoto) {
     $('photoOcrPanel').hidden = true;
@@ -1970,6 +2225,287 @@ function openLayoutFieldDialog(scope, customFields, onAdd) {
   syncCategory();
 }
 
+function openFieldMappingDialog(columnIndex) {
+  const session = inputMappingSession();
+  const mapping = session?.mappings?.[columnIndex];
+  if (!session || !mapping) return;
+  const editable = session.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE;
+  const targets = inputMappingTargets();
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog field-mapping-dialog';
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Input Field Mapping</small><h2>필드명 매핑</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="field-mapping-current"><strong>${esc(mapping.sourceHeader || `(빈 필드명 · ${columnIndex + 1}열)`)}</strong><span>${columnIndex + 1}열</span><small>${esc(mappingStateText(mapping))}</small></div>
+    ${editable ? '<label class="smart-dialog__search">환경설정 필드 검색<input type="search" data-mapping-search autocomplete="off" placeholder="상단·하단 필드명"></label><div class="field-mapping-results" data-mapping-results></div>' : `<div class="smart-dialog__empty"><strong>${esc(session.templateName || '기존 입력 양식')}</strong><br>기존 양식의 연결은 환경설정의 입력 양식 관리에서만 수정합니다.</div>`}
+    <footer><button type="button" class="button button--quiet" data-hide-column>현재 열 숨기기</button>${editable ? '<button type="button" class="button button--danger" data-unmap>비매핑으로 확정</button>' : '<button type="button" class="button button--primary" data-manage-template>입력 양식 관리</button>'}</footer>
+  </div>`;
+  document.body.append(dialog);
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  dialog.querySelector('[data-hide-column]').addEventListener('click', () => {
+    const current = inputMappingSession();
+    current.hiddenColumns = [...new Set([...(current.hiddenColumns || []), columnIndex])];
+    current.updatedAt = new Date().toISOString();
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+    finish();
+  });
+  if (!editable) {
+    dialog.querySelector('[data-manage-template]').addEventListener('click', () => {
+      finish();
+      openInputTemplateManager();
+    });
+    dialog.showModal();
+    return;
+  }
+  const search = dialog.querySelector('[data-mapping-search]');
+  const results = dialog.querySelector('[data-mapping-results]');
+  const renderTargets = () => {
+    const term = search.value.trim().toLowerCase();
+    const used = new Map(session.mappings
+      .filter(item => item.columnIndex !== columnIndex && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state) && item.targetFieldId)
+      .map(item => [item.targetFieldId, item.columnIndex]));
+    const filtered = targets.filter(target => !term || `${target.label} ${target.id}`.toLowerCase().includes(term));
+    results.innerHTML = filtered.map(target => {
+      const usedAt = used.get(target.id);
+      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(target.label)}</strong><small>${target.scope === 'header' ? '상단 정보' : '작업테이블'} · ${esc(target.id)}</small></span>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
+    }).join('') || '<div class="smart-dialog__empty">검색 결과가 없습니다.</div>';
+  };
+  search.addEventListener('input', renderTargets);
+  results.addEventListener('click', event => {
+    const button = event.target.closest('[data-mapping-target]');
+    if (!button || button.disabled) return;
+    try {
+      modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingTargets());
+      projectInputMappingToVoucherRows();
+      renderRows({ restoreFocus: false });
+      saveDraftNow();
+      finish();
+    } catch (error) {
+      toast(error.message === 'MAPPING_TARGET_DUPLICATED' ? '하나의 설정 필드에는 파일 열 하나만 연결할 수 있습니다.' : '필드를 연결하지 못했습니다.', 'error');
+    }
+  });
+  dialog.querySelector('[data-unmap]').addEventListener('click', () => {
+    modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingTargets());
+    projectInputMappingToVoucherRows();
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+    finish();
+  });
+  renderTargets();
+  dialog.showModal();
+  search.focus();
+}
+
+function openInputTemplateSaveDialog() {
+  const session = inputMappingSession();
+  if (!session || session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE) return;
+  if (!['READY', 'EMPTY'].includes(state.inputTemplatesStatus)) {
+    toast('기존 양식 목록을 확인할 수 없어 신규 양식을 저장하지 않습니다. 양식을 다시 불러오세요.', 'error');
+    return;
+  }
+  const validation = validateTemplateDraft(session, inputMappingTargets());
+  if (!validation.valid) {
+    const undecided = validation.issues.filter(issue => issue.code === 'UNDECIDED_COLUMN').map(issue => issue.columnIndex + 1);
+    toast(undecided.length ? `매핑 또는 비매핑을 결정하지 않은 열이 있습니다: ${undecided.slice(0, 6).join(', ')}열` : '중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
+    return;
+  }
+  if (state.inputTemplates.some(template => template.signature === session.signature)) {
+    toast('같은 구조의 공식 입력 양식이 이미 있습니다. 양식관리에서 수정하세요.', 'error');
+    return;
+  }
+  const summary = mappingSummary(session);
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog smart-dialog--compact';
+  dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
+    <header><div><small>New Input Template</small><h2>입력 양식 저장</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <label class="smart-dialog__search">양식명<input name="templateName" maxlength="80" autocomplete="off" placeholder="파일 구조를 구분할 이름" autofocus></label>
+    <p class="smart-dialog__message">${session.headers.length}열 · 매핑 ${summary.mapped + summary.recommended} · 비매핑 ${summary.unmapped}. 추천 매핑을 포함한 현재 결정을 공식 양식으로 저장합니다.</p>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>양식 저장</button></footer>
+  </form>`;
+  document.body.append(dialog);
+  const form = dialog.querySelector('form');
+  const message = dialog.querySelector('.smart-dialog__message');
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  const submit = async () => {
+    const name = form.elements.templateName.value.trim();
+    if (!name) {
+      message.textContent = '양식명을 입력하세요.';
+      form.elements.templateName.focus();
+      return;
+    }
+    if (state.inputTemplates.some(template => String(template.templateName || '').trim() === name)) {
+      message.textContent = '같은 이름의 입력 양식이 있습니다. 다른 이름을 사용하세요.';
+      form.elements.templateName.focus();
+      form.elements.templateName.select();
+      return;
+    }
+    const button = dialog.querySelector('[data-save]');
+    button.disabled = true;
+    try {
+      const record = createTemplateRecord(inputMappingSession(), name, inputMappingTargets());
+      const nextTemplates = [...state.inputTemplates, record];
+      await saveInputTemplates(nextTemplates);
+      state.inputTemplates = nextTemplates;
+      state.inputTemplatesStatus = 'READY';
+      const existing = inputMappingSession();
+      const applied = mappingSessionWithBatch(createMappingSession({
+        matrix: existing.sourceMatrix,
+        headerRowIndex: existing.headerRowIndex,
+        templates: nextTemplates,
+        targetDefinitions: inputMappingTargets(),
+        fileName: existing.fileName,
+        sheetName: existing.sheetName,
+        fileFingerprint: existing.fileFingerprint,
+        editJournal: existing.editJournal,
+        manualRows: existing.manualRows,
+        hiddenColumns: existing.hiddenColumns
+      }));
+      applied.batchId = existing.batchId;
+      applied.purchaseMetaRows = existing.purchaseMetaRows || null;
+      applied.salesMetaRows = existing.salesMetaRows || null;
+      applied.deletedSourceRows = [...(existing.deletedSourceRows || [])];
+      if (applied.deletedSourceRows.length) applied.workingRows = applied.workingRows.filter(row => row.manual || !applied.deletedSourceRows.includes(row.sourceRowIndex));
+      modeDraft().inputMapping = applied;
+      projectInputMappingToVoucherRows();
+      saveDraftNow();
+      renderMode();
+      finish();
+      toast(`${record.templateName} 입력 양식을 저장하고 현재 파일에 적용했습니다.`, 'success');
+    } catch (error) {
+      button.disabled = false;
+      message.textContent = error.message || '입력 양식을 저장하지 못했습니다.';
+    }
+  };
+  dialog.querySelector('[data-save]').addEventListener('click', () => { void submit(); });
+  form.addEventListener('submit', event => { event.preventDefault(); void submit(); });
+  dialog.showModal();
+  form.elements.templateName.focus();
+}
+
+function openInputTemplateEditor(template) {
+  if (!template) return;
+  const targets = inputMappingTargets();
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog field-mapping-dialog';
+  const options = (selected = '') => [
+    `<option value="" ${selected === '' ? 'selected' : ''}>연결 대상 없음</option>`,
+    `<option value="__UNMAPPED__" ${selected === '__UNMAPPED__' ? 'selected' : ''}>비매핑 · 전표 제외</option>`,
+    ...targets.map(target => `<option value="${esc(target.id)}" ${selected === target.id ? 'selected' : ''}>${esc(target.label)} · ${target.scope === 'header' ? '상단' : '작업테이블'}</option>`)
+  ].join('');
+  dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
+    <header><div><small>Input Template Management</small><h2>입력 양식 수정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <label class="smart-dialog__search">양식명<input name="templateName" maxlength="80" value="${esc(template.templateName)}"></label>
+    <div class="template-manager-list">${template.headers.map((header, columnIndex) => {
+      const mapping = template.mappings.find(item => Number(item.columnIndex) === columnIndex);
+      const selected = mapping?.state === MAPPING_DECISION.UNMAPPED ? '__UNMAPPED__' : (mapping?.targetFieldId || '');
+      const missing = selected && selected !== '__UNMAPPED__' && !targets.some(target => target.id === selected);
+      return `<label class="template-manager-row"><div><strong>${columnIndex + 1}열 · ${esc(header || '(빈 필드명)')}</strong><small>${missing ? `삭제된 연결 대상: ${esc(selected)}` : '열 위치는 변경할 수 없습니다.'}</small></div><select data-template-column="${columnIndex}">${missing ? `<option value="${esc(selected)}" selected>연결 대상 없음 · ${esc(selected)}</option>` : ''}${options(selected)}</select></label>`;
+    }).join('')}</div>
+    <p class="smart-dialog__message">기존 양식의 변경은 다음 파일부터 적용됩니다. 현재 파일은 양식 다시 불러오기를 실행하기 전까지 유지됩니다.</p>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>변경 저장</button></footer>
+  </form>`;
+  document.body.append(dialog);
+  const form = dialog.querySelector('form');
+  const message = dialog.querySelector('.smart-dialog__message');
+  const finish = () => { dialog.close(); dialog.remove(); };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  const submit = async () => {
+    const name = form.elements.templateName.value.trim();
+    if (!name) {
+      message.textContent = '양식명을 입력하세요.';
+      return;
+    }
+    if (state.inputTemplates.some(record => record.templateId !== template.templateId && String(record.templateName || '').trim() === name)) {
+      message.textContent = '같은 이름의 입력 양식이 있습니다. 다른 이름을 사용하세요.';
+      return;
+    }
+    const mappings = [...form.querySelectorAll('[data-template-column]')].map(select => ({
+      columnIndex: Number(select.dataset.templateColumn),
+      sourceHeader: template.headers[Number(select.dataset.templateColumn)] || '',
+      state: select.value === '__UNMAPPED__' ? MAPPING_DECISION.UNMAPPED : (select.value ? MAPPING_DECISION.MAPPED : MAPPING_DECISION.UNDECIDED),
+      targetFieldId: select.value && select.value !== '__UNMAPPED__' ? select.value : ''
+    }));
+    try {
+      const updated = createTemplateRecord({ signature: template.signature, headers: template.headers, mappings }, name, targets, template);
+      const next = state.inputTemplates.map(record => record.templateId === template.templateId ? updated : record);
+      await saveInputTemplates(next);
+      state.inputTemplates = next;
+      state.inputTemplatesStatus = next.length ? 'READY' : 'EMPTY';
+      finish();
+      toast('입력 양식을 변경했습니다. 다음 파일부터 적용됩니다.', 'success');
+    } catch (error) {
+      message.textContent = error.message === 'TEMPLATE_MAPPING_INCOMPLETE'
+        ? '모든 열을 매핑 또는 비매핑으로 결정하고 중복 연결을 제거하세요.'
+        : (error.message || '입력 양식을 변경하지 못했습니다.');
+    }
+  };
+  dialog.querySelector('[data-save]').addEventListener('click', () => { void submit(); });
+  form.addEventListener('submit', event => { event.preventDefault(); void submit(); });
+  dialog.showModal();
+}
+
+function openInputTemplateManager() {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'smart-dialog field-mapping-dialog';
+  dialog.innerHTML = `<div class="smart-dialog__shell">
+    <header><div><small>Input Template Management</small><h2>입력 양식 관리</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="template-manager-list" data-template-list></div>
+    <p class="smart-dialog__message" data-template-message></p>
+    <footer><button type="button" class="button button--quiet" data-reload>목록 다시 불러오기</button><button type="button" class="button button--primary" data-close>닫기</button></footer>
+  </div>`;
+  document.body.append(dialog);
+  const list = dialog.querySelector('[data-template-list]');
+  const message = dialog.querySelector('[data-template-message]');
+  const finish = () => { dialog.close(); dialog.remove(); };
+  const render = () => {
+    if (state.inputTemplatesStatus === 'LOADING') {
+      list.innerHTML = '<div class="smart-dialog__empty">입력 양식을 불러오는 중입니다.</div>';
+      return;
+    }
+    if (state.inputTemplatesStatus === 'ERROR') {
+      list.innerHTML = '<div class="smart-dialog__empty">입력 양식을 불러오지 못했습니다.</div>';
+      message.textContent = state.inputTemplatesError?.message || '조회 오류';
+      return;
+    }
+    list.innerHTML = state.inputTemplates.length ? state.inputTemplates.map(template => `<article class="template-manager-row" data-template-id="${esc(template.templateId)}"><div><strong>${esc(template.templateName)}</strong><small>${template.fieldCount || template.headers?.length || 0}열 · revision ${Number(template.revision || 1)} · ${esc(template.updatedAt || '')}</small></div><span><button type="button" class="button button--quiet button--small" data-edit-template>수정</button><button type="button" class="button button--danger button--small" data-delete-template>삭제</button></span></article>`).join('') : '<div class="smart-dialog__empty">저장된 입력 양식이 없습니다.</div>';
+    message.textContent = state.inputTemplates.length ? '기존 양식의 변경은 다음 파일부터 적용됩니다.' : '신규 파일의 매핑을 확인하고 입력 양식으로 저장하세요.';
+  };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  dialog.querySelector('[data-reload]').addEventListener('click', async () => {
+    await reloadInputTemplates({ announce: false });
+    render();
+  });
+  list.addEventListener('click', event => {
+    const row = event.target.closest('[data-template-id]');
+    const template = state.inputTemplates.find(record => record.templateId === row?.dataset.templateId);
+    if (!template) return;
+    if (event.target.closest('[data-edit-template]')) {
+      finish();
+      openInputTemplateEditor(template);
+      return;
+    }
+    if (event.target.closest('[data-delete-template]')) {
+      const confirmed = window.confirm(`${template.templateName} 입력 양식을 삭제하시겠습니까? 현재 작업과 과거 전표는 변경되지 않습니다.`);
+      if (!confirmed) return;
+      const next = state.inputTemplates.filter(record => record.templateId !== template.templateId);
+      saveInputTemplates(next).then(() => {
+        state.inputTemplates = next;
+        state.inputTemplatesStatus = next.length ? 'READY' : 'EMPTY';
+        render();
+        toast('입력 양식을 삭제했습니다.', 'success');
+      }).catch(error => { message.textContent = error.message || '입력 양식을 삭제하지 못했습니다.'; });
+    }
+  });
+  render();
+  dialog.showModal();
+}
+
 async function openSettingsDialog() {
   const customerId = modeDraft().header.customerId;
   const hasCustomerOverride = customerId && Object.prototype.hasOwnProperty.call(state.settings.deliveryCustomerWeekdays, customerId);
@@ -2012,6 +2548,10 @@ async function openSettingsDialog() {
       <details class="settings-group">
         <summary><span><strong>전표별 표시 열</strong><small>전표마다 품목·수량·단가 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="voucher" aria-label="표시 열을 편집할 전표">${settingsModeButtons('voucher')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 표시 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
+      </details>
+      <details class="settings-group">
+        <summary><span><strong>입력 양식 관리</strong><small>Excel 필드명·열 순서·매핑 revision</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>기존 양식의 이름과 열별 연결은 여기에서만 수정합니다.</span><button type="button" class="button button--quiet button--small" data-open-input-template-manager>입력 양식 관리</button></div></div>
       </details>
     </div>
     <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
@@ -2098,6 +2638,11 @@ async function openSettingsDialog() {
       renderLayoutGroup(scope);
     });
   }));
+  dialog.querySelector('[data-open-input-template-manager]').addEventListener('click', () => {
+    dialog.close();
+    dialog.remove();
+    openInputTemplateManager();
+  });
   dialog.querySelector('.smart-settings-grid').addEventListener('click', event => {
     const remove = event.target.closest('[data-remove-custom-field]');
     if (!remove) return;
@@ -3150,6 +3695,10 @@ function captureGridPasteUndo() {
   const current = modeDraft();
   state.gridPasteUndo = {
     mode: state.draft.activeMode,
+    header: cloneGridValue(current.header),
+    sourceText: current.sourceText,
+    activeMethod: current.activeMethod,
+    inputMapping: current.inputMapping ? cloneGridValue(current.inputMapping) : null,
     rows: cloneGridValue(current.rows),
     batches: cloneGridValue(current.batches),
     selectedRowIds: [...state.selectedRowIds],
@@ -3164,10 +3713,15 @@ function undoGridPaste() {
   const current = modeDraft();
   current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
   current.batches = cloneGridValue(snapshot.batches);
+  if (snapshot.header) current.header = cloneGridValue(snapshot.header);
+  if (Object.prototype.hasOwnProperty.call(snapshot, 'sourceText')) current.sourceText = snapshot.sourceText;
+  if (snapshot.activeMethod) current.activeMethod = snapshot.activeMethod;
+  if (snapshot.inputMapping) current.inputMapping = cloneGridValue(snapshot.inputMapping);
+  else delete current.inputMapping;
   state.selectedRowIds = new Set(snapshot.selectedRowIds);
   modeUi().activeCellId = snapshot.activeCellId;
   state.gridPasteUndo = null;
-  renderRows();
+  renderMode();
   saveDraftNow();
   syncGridPasteUndoButton();
   toast('Excel 붙여넣기를 취소했습니다.', 'success');
@@ -3185,6 +3739,10 @@ function syncRowSelectionControls() {
 }
 
 async function deleteSelectedGridRows() {
+  if (inputMappingSession()) {
+    deleteSelectedMappingRows();
+    return;
+  }
   if (!state.selectedRowIds.size) return;
   invalidateGridPasteUndo();
   const linkedRows = modeDraft().rows.filter(row => state.selectedRowIds.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
@@ -3214,7 +3772,311 @@ async function deleteSelectedGridRows() {
   toast(linkedRows.length ? '선택한 연동 행을 원본 견적서에서도 삭제했습니다.' : '선택한 품목을 삭제했습니다.', 'success');
 }
 
+function visibleMappingRows(session = inputMappingSession()) {
+  if (!session) return [];
+  const terms = String(state.gridSearch || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [...(session.workingRows || [])];
+  return (session.workingRows || []).filter(row => {
+    const haystack = (row.cells || []).map(value => String(value ?? '').toLowerCase()).join('|');
+    return terms.every(term => haystack.includes(term));
+  });
+}
+
+function renderInputMappingStatus() {
+  const session = inputMappingSession();
+  const panel = $('inputMappingStatus');
+  const saveButton = $('inputTemplateSaveButton');
+  const reloadButton = $('inputTemplateReloadButton');
+  const pendingPasteButton = $('pendingPasteToSourceButton');
+  pendingPasteButton.hidden = !state.pendingGridPasteText;
+  if (!session) {
+    panel.hidden = true;
+    saveButton.hidden = true;
+    reloadButton.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  panel.dataset.status = session.status;
+  const summary = mappingSummary(session);
+  const title = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED
+    ? (session.templateName || '입력 양식 적용')
+    : (session.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE
+      ? '신규 양식 설정'
+      : (session.status === MAPPING_SESSION_STATUS.INVALID_TEMPLATE
+        ? '양식 연결 오류'
+        : (session.status === MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR ? '양식 조회 오류' : '양식 중복 오류')));
+  $('inputMappingStatusTitle').textContent = title;
+  $('inputMappingStatusSummary').textContent = state.inputTemplatesStatus === 'ERROR'
+    ? '양식 조회 오류'
+    : `매핑 ${summary.mapped} · 추천 ${summary.recommended} · 비매핑 ${summary.unmapped} · 미결정 ${summary.undecided}`;
+  saveButton.hidden = session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE;
+  reloadButton.hidden = ![MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT, MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR].includes(session.status);
+  reloadButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '최신 양식 확인' : '양식 다시 불러오기';
+}
+
+function mappingColumnTotals(session, visibleColumns) {
+  const totals = new Map();
+  visibleColumns.forEach(columnIndex => {
+    const mapping = session.mappings[columnIndex];
+    const target = mappingTargetById(mapping?.targetFieldId);
+    if (!target || target.valueType !== 'NUMBER' || ![MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping.state)) return;
+    const values = (session.workingRows || []).map(row => String(row.cells?.[columnIndex] ?? '').replace(/[,원₩\s]/g, '')).filter(value => value !== '');
+    if (!values.length || values.some(value => !Number.isFinite(Number(value)))) return;
+    totals.set(columnIndex, values.reduce((sum, value) => sum + Number(value), 0));
+  });
+  return totals;
+}
+
+function renderMappingRows() {
+  const session = inputMappingSession();
+  if (!session) return false;
+  $('voucherInputTable').hidden = true;
+  const table = $('mappingWorktable');
+  table.hidden = false;
+  const hidden = new Set(session.hiddenColumns || []);
+  const visibleColumns = session.headers.map((_, index) => index).filter(index => !hidden.has(index));
+  const tableWidth = 84 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
+  table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
+  $('mappingTableColumns').innerHTML = `<col style="width:46px"><col style="width:38px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
+  $('mappingTableHeaders').innerHTML = `<th class="sequence-column" scope="col">No.</th><th class="select-column"><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"></th>${visibleColumns.map(columnIndex => {
+    const mapping = session.mappings[columnIndex];
+    const sourceHeader = session.headers[columnIndex] || `(빈 필드명 · ${columnIndex + 1}열)`;
+    return `<th class="mapping-column-heading" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}"><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(sourceHeader)} 매핑 설정"><strong>${esc(sourceHeader)}</strong><small>${esc(mappingStateText(mapping))}</small></button></th>`;
+  }).join('')}`;
+  const rows = visibleMappingRows(session);
+  const renderedRows = [...rows, { rowId: MAPPING_DEFAULT_ROW_ID, cells: Array(session.headers.length).fill(''), manual: true, defaultRow: true }];
+  $('mappingInputRows').innerHTML = renderedRows.map((row, visibleIndex) => {
+    const isDefault = row.rowId === MAPPING_DEFAULT_ROW_ID;
+    const sequence = isDefault ? (session.workingRows || []).length + 1 : Math.max(1, (session.workingRows || []).findIndex(item => item.rowId === row.rowId) + 1);
+    return `<tr data-mapping-row-id="${esc(row.rowId)}" ${isDefault ? 'data-mapping-default-row="true" class="mapping-blank-row"' : ''}>
+      <td class="row-sequence-cell">${sequence}</td>
+      <td class="row-select-cell"><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+      ${visibleColumns.map(columnIndex => {
+        const mapping = session.mappings[columnIndex];
+        const unmapped = mapping?.state === MAPPING_DECISION.UNMAPPED;
+        return `<td class="${unmapped ? 'is-unmapped' : ''}" data-mapping-column="${columnIndex}"><input data-mapping-cell data-mapping-column="${columnIndex}" value="${esc(row.cells?.[columnIndex] ?? '')}" aria-label="${esc(session.headers[columnIndex] || `${columnIndex + 1}열`)}"></td>`;
+      }).join('')}
+    </tr>`;
+  }).join('');
+  const totals = mappingColumnTotals(session, visibleColumns);
+  $('mappingTableTotals').innerHTML = `<td></td><td></td>${visibleColumns.map((columnIndex, index) => `<td>${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
+  const summary = mappingSummary(session);
+  $('gridRowCount').textContent = `${(session.workingRows || []).length.toLocaleString('ko-KR')}행`;
+  $('gridSearchCount').hidden = !state.gridSearch;
+  $('gridSearchCount').textContent = `검색 ${rows.length.toLocaleString('ko-KR')}행`;
+  $('matchedCount').textContent = `매핑 ${summary.mapped + summary.recommended}`;
+  $('similarCount').textContent = `추천 ${summary.recommended}`;
+  $('failedCount').textContent = `미결정 ${summary.undecided}`;
+  $('duplicateCount').textContent = `비매핑 ${summary.unmapped}`;
+  $('gridSearchInput').placeholder = '원본 전체 열 검색';
+  $('detailColumnsButton').hidden = hidden.size === 0;
+  $('detailColumnsButton').textContent = `숨긴 열 ${hidden.size}개 표시`;
+  $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
+  $('selectAllRows').checked = false;
+  applyMappingHeaderLocks(session);
+  renderInputMappingStatus();
+  renderSourceSurface();
+  renderInlineValidation();
+  renderVoucherContext(contract.summarizeRows(modeDraft().rows));
+  return true;
+}
+
+function mappingHasHeaderValue(session, targetFieldId) {
+  const mapping = session?.mappings?.find(item => item.targetFieldId === targetFieldId
+    && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state));
+  return Boolean(mapping && (session.workingRows || []).some(row => hasEnteredValue(row.cells?.[mapping.columnIndex])));
+}
+
+function applyMappingHeaderLocks(session = null) {
+  const estimateMode = state.draft.activeMode === 'estimate';
+  const linkedEstimate = estimateMode && (modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP');
+  const controls = [
+    { id: 'customerInput', target: 'customer', baseDisabled: linkedEstimate },
+    { id: 'deliveryDateInput', target: 'deliveryDate', baseDisabled: false },
+    { id: 'warehouseInput', target: 'warehouse', baseDisabled: estimateMode },
+    { id: 'transactionTypeInput', target: 'transactionType', baseDisabled: estimateMode }
+  ];
+  controls.forEach(({ id, target, baseDisabled }) => {
+    const control = $(id);
+    const mappingLocked = Boolean(session) && mappingHasHeaderValue(session, target);
+    control.disabled = baseDisabled || mappingLocked;
+    control.dataset.mappingLocked = String(mappingLocked);
+    control.title = mappingLocked ? '파일에 값이 있어 상단에서 덮어쓸 수 없습니다. 작업테이블에서 수정하세요.' : '';
+  });
+  const customerLocked = Boolean(session) && mappingHasHeaderValue(session, 'customer');
+  $('customerSearchButton').disabled = state.busy || linkedEstimate || customerLocked;
+  $('customerSearchButton').title = customerLocked ? '파일의 거래처 값은 작업테이블에서 수정하세요.' : '';
+}
+
+function scheduleMappingProjection({ render = false } = {}) {
+  clearTimeout(state.mappingProjectionTimer);
+  state.mappingProjectionTimer = window.setTimeout(() => {
+    state.mappingProjectionTimer = null;
+    projectInputMappingToVoucherRows();
+    if (render) renderRows({ restoreFocus: false });
+    else {
+      updateSummaries();
+      renderDelivery();
+    }
+    scheduleSave();
+  }, 90);
+}
+
+function materializeMappingDefaultRow(input) {
+  const session = inputMappingSession();
+  const tr = input?.closest('[data-mapping-default-row="true"]');
+  if (!session || !tr || !hasEnteredValue(input.value)) return null;
+  const columnIndex = Number(input.dataset.mappingColumn);
+  const values = Array(session.headers.length).fill('');
+  values[columnIndex] = input.value;
+  const next = addManualRow(session, values);
+  modeDraft().inputMapping = next;
+  const row = next.manualRows.at(-1);
+  projectInputMappingToVoucherRows();
+  modeUi().activeCellId = `${row.rowId}|mapping:${columnIndex}`;
+  renderRows({ restoreFocus: false });
+  const nextInput = document.querySelector(`[data-mapping-row-id="${CSS.escape(row.rowId)}"] [data-mapping-column="${columnIndex}"] input`);
+  nextInput?.focus({ preventScroll: true });
+  nextInput?.setSelectionRange?.(nextInput.value.length, nextInput.value.length);
+  scheduleSave();
+  return row;
+}
+
+function mappingVisibleColumns(session = inputMappingSession()) {
+  const hidden = new Set(session?.hiddenColumns || []);
+  return (session?.headers || []).map((_, index) => index).filter(index => !hidden.has(index));
+}
+
+function mappingCell(rowId, columnIndex) {
+  return document.querySelector(`[data-mapping-row-id="${CSS.escape(rowId)}"] [data-mapping-cell][data-mapping-column="${columnIndex}"]`);
+}
+
+function moveMappingFocus(rowId, columnIndex, key, shiftKey = false) {
+  const session = inputMappingSession();
+  if (!session) return;
+  const rows = [...(session.workingRows || []).map(row => row.rowId), MAPPING_DEFAULT_ROW_ID];
+  const columns = mappingVisibleColumns(session);
+  const rowIndex = rows.indexOf(rowId);
+  const columnPosition = columns.indexOf(columnIndex);
+  if (rowIndex < 0 || columnPosition < 0) return;
+  let nextRow = rowIndex;
+  let nextColumn = columnPosition;
+  if (key === 'ArrowUp') nextRow -= 1;
+  else if (key === 'ArrowDown') nextRow += 1;
+  else if (key === 'ArrowLeft') nextColumn -= 1;
+  else if (key === 'ArrowRight') nextColumn += 1;
+  else if (key === 'Enter') {
+    nextColumn += 1;
+    if (nextColumn >= columns.length) { nextColumn = 0; nextRow += 1; }
+  } else if (key === 'Tab') {
+    nextColumn += shiftKey ? -1 : 1;
+    if (nextColumn >= columns.length) { nextColumn = 0; nextRow += 1; }
+    if (nextColumn < 0) { nextColumn = columns.length - 1; nextRow -= 1; }
+  }
+  if (nextRow < 0 || nextRow >= rows.length || nextColumn < 0 || nextColumn >= columns.length) return;
+  const target = mappingCell(rows[nextRow], columns[nextColumn]);
+  target?.focus({ preventScroll: true });
+  target?.select?.();
+}
+
+function mappingHeadersMatch(matrix, headers) {
+  const incoming = matrix?.[0] || [];
+  return incoming.length === headers.length && headers.every((header, index) => String(incoming[index] ?? '') === String(header ?? ''));
+}
+
+function applyMappingGridPaste(rawText, startRowId) {
+  const session = inputMappingSession();
+  if (!session) return false;
+  const matrix = parseClipboardMatrix(rawText);
+  if (!mappingHeadersMatch(matrix, session.headers)) {
+    state.pendingGridPasteText = rawText;
+    renderInputMappingStatus();
+    toast('현재 필드명·열 순서와 완전히 같지 않아 적용하지 않았습니다. 원본입력뷰에서 매핑할 수 있습니다.', 'error');
+    return false;
+  }
+  const sourceRows = matrix.slice(1);
+  if (!sourceRows.length) return toast('필드명 아래에 입력할 값이 없습니다.', 'error');
+  if (sourceRows.some(row => row.length !== session.headers.length)) {
+    state.pendingGridPasteText = rawText;
+    renderInputMappingStatus();
+    return toast('행별 열 수가 필드명과 달라 적용하지 않았습니다. 원본입력뷰에서 확인하세요.', 'error');
+  }
+  captureGridPasteUndo();
+  let next = inputMappingSession();
+  let startIndex = startRowId === MAPPING_DEFAULT_ROW_ID
+    ? next.workingRows.length
+    : next.workingRows.findIndex(row => row.rowId === startRowId);
+  if (startIndex < 0) startIndex = next.workingRows.length;
+  sourceRows.forEach((values, offset) => {
+    const row = next.workingRows[startIndex + offset];
+    if (!row) {
+      next = addManualRow(next, values);
+      return;
+    }
+    values.forEach((value, columnIndex) => {
+      next = updateWorkingCell(next, row.rowId, columnIndex, value);
+    });
+  });
+  modeDraft().inputMapping = next;
+  state.pendingGridPasteText = '';
+  projectInputMappingToVoucherRows();
+  renderRows({ restoreFocus: false });
+  saveDraftNow();
+  toast(`${sourceRows.length.toLocaleString('ko-KR')}행을 현재 양식 구조로 입력했습니다.`, 'success');
+  return true;
+}
+
+function usePendingPasteAsSource() {
+  const rawText = state.pendingGridPasteText;
+  if (!rawText) return;
+  const matrix = parseClipboardMatrix(rawText);
+  if (!matrix.length || !matrix.some(row => row.some(hasEnteredValue))) return;
+  captureGridPasteUndo();
+  const modeId = state.draft.activeMode;
+  const current = modeDraft();
+  const fresh = contract.createDraft({ activeMode: modeId }).modes[modeId];
+  current.header = cloneGridValue(fresh.header);
+  current.sourceText = rawText;
+  current.activeMethod = 'excel';
+  const detection = detectHeaderRow(matrix, inputMappingTargets());
+  current.inputMapping = mappingSessionWithBatch(createMappingSession({
+    matrix,
+    headerRowIndex: detection.rowIndex,
+    templates: ['READY', 'EMPTY'].includes(state.inputTemplatesStatus) ? state.inputTemplates : [],
+    targetDefinitions: inputMappingTargets(),
+    fileName: '클립보드 자료',
+    sheetName: '붙여넣기',
+    fileFingerprint: `clipboard-${Date.now().toString(36)}`
+  }));
+  if (!['READY', 'EMPTY'].includes(state.inputTemplatesStatus)) current.inputMapping.status = MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR;
+  state.pendingGridPasteText = '';
+  state.selectedRowIds.clear();
+  sourceTextInput.value = rawText;
+  projectInputMappingToVoucherRows({ preserveProductEdits: false });
+  saveDraftNow();
+  renderMode();
+  toast('붙여넣은 자료를 원본입력뷰로 전달했습니다. 필드명 행과 매핑을 확인하세요.', 'success');
+}
+
+function deleteSelectedMappingRows() {
+  const session = inputMappingSession();
+  if (!session || !state.selectedRowIds.size) return;
+  modeDraft().inputMapping = deleteWorkingRows(session, [...state.selectedRowIds]);
+  state.selectedRowIds.clear();
+  projectInputMappingToVoucherRows();
+  renderRows({ restoreFocus: false });
+  saveDraftNow();
+  toast('선택한 원본 작업행을 삭제했습니다. 원본입력뷰는 변경되지 않습니다.', 'success');
+}
+
 function renderRows({ restoreFocus = true } = {}) {
+  if (renderMappingRows()) return;
+  applyMappingHeaderLocks(null);
+  $('voucherInputTable').hidden = false;
+  $('mappingWorktable').hidden = true;
+  $('gridSearchInput').placeholder = '상품명·코드·규격·거래처 검색';
+  $('detailColumnsButton').hidden = state.draft.activeMethod !== 'photo';
+  renderInputMappingStatus();
   pruneEmptyWorkRows(modeDraft());
   const rows = modeDraft().rows;
   const visibleRows = filterVoucherRows(rows, state.gridSearch);
@@ -3348,7 +4210,9 @@ function renderDelivery() {
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
   const creation = estimateCreation();
   const creationCount = creation?.selectedIds.length || 0;
-  $('completeButton').disabled = state.busy || Boolean(creation);
+  const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
+  $('completeButton').disabled = state.busy || Boolean(creation) || mappingBlocksVoucher;
+  $('completeButton').title = mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '';
   $('completeButton').hidden = false;
   $('completeButton').textContent = '저장';
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
@@ -3395,7 +4259,7 @@ function renderMode() {
   hydrateHeader();
   renderEstimateHeaderFields();
   $('gridSearchInput').value = state.gridSearch;
-  if (removeParserArtifactRows(modeDraft())) scheduleSave();
+  if (!inputMappingSession() && removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   updateMethod(modeDraft().activeMethod, { persist: false });
@@ -3415,7 +4279,7 @@ function renderMode() {
       ? '주문서 입력을 시작할 수 있습니다.'
       : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 원본은 견적서 생성 전까지 변경되지 않습니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
-  if (sourceTextInput.value.trim()) scheduleAutoAnalysis(650);
+  if (sourceTextInput.value.trim() && !inputMappingSession()) scheduleAutoAnalysis(650);
 }
 
 function setMode(mode) {
@@ -3587,7 +4451,7 @@ function gridInput(rowId, field) {
 
 function revealGridInput(input) {
   const scroll = $('tableScroll');
-  const row = input?.closest('tr[data-row-id]');
+  const row = input?.closest('tr[data-row-id], tr[data-mapping-row-id]');
   if (!scroll || !row) return;
   const scrollBounds = scroll.getBoundingClientRect();
   const rowBounds = row.getBoundingClientRect();
@@ -3667,6 +4531,14 @@ function visibleGridPasteFields() {
   return visibleEditableGridFields().filter(fieldId => fieldId !== 'productSearch');
 }
 
+function displayedGridHeader(fieldId, fallbackLabel = '') {
+  const header = document.querySelector(`#voucherInputTable thead th[data-column="${CSS.escape(fieldId)}"]`);
+  if (!header) return String(fallbackLabel || '');
+  const readable = header.cloneNode(true);
+  readable.querySelectorAll('.column-resize-handle').forEach(handle => handle.remove());
+  return String(readable.textContent || '').trim();
+}
+
 function applyGridPaste(rawText, startRowId, startFieldId) {
   const current = modeDraft();
   const startRowIndex = startRowId === DEFAULT_INPUT_ROW_ID
@@ -3675,12 +4547,22 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
   if (startRowIndex < 0 || startFieldId === 'productSearch') return false;
   const definitions = gridPasteFieldDefinitions();
   const definitionById = new Map(definitions.map(field => [field.id, field]));
+  const visibleFields = visibleGridPasteFields();
+  const expectedHeaders = visibleFields.map(fieldId => displayedGridHeader(fieldId, definitionById.get(fieldId)?.label));
+  const incomingMatrix = parseClipboardMatrix(rawText);
+  if (!mappingHeadersMatch(incomingMatrix, expectedHeaders)) {
+    state.pendingGridPasteText = rawText;
+    renderInputMappingStatus();
+    toast('현재 작업테이블의 필드명·개수·순서와 완전히 같지 않아 적용하지 않았습니다. 원본입력뷰에서 매핑할 수 있습니다.', 'error');
+    return false;
+  }
   const plan = buildGridPastePlan(rawText, {
     fieldDefinitions: definitions,
-    visibleFieldIds: visibleGridPasteFields(),
+    visibleFieldIds: visibleFields,
     startFieldId,
     numberParser: contract.numberOrNull,
-    requireHeaders: true
+    requireHeaders: true,
+    exactHeaders: expectedHeaders
   });
   if (!plan.valid) {
     const fields = (plan.headerErrors || []).slice(0, 3).map(error => {
@@ -3705,6 +4587,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
   }
 
   captureGridPasteUndo();
+  state.pendingGridPasteText = '';
   state.applyingGridPaste = true;
   try {
     const batch = contract.createBatch({
@@ -3861,6 +4744,7 @@ function clearParserWorkspace() {
   current.batches = (current.batches || []).filter(batch => batch.sourceType === 'MANUAL');
   current.rows = contract.markDuplicatePossibilities((current.rows || []).filter(row => !parserBatchIds.has(row.batchId)));
   current.sourceText = '';
+  delete current.inputMapping;
   current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
   sourceTextInput.value = '';
   $('fileInput').value = '';
@@ -4180,17 +5064,16 @@ async function handleFile(file) {
     updateMethod('excel');
     setActiveActivity('Excel·파일 불러오는 중');
     setAppStatus(`${file.name} 파일을 읽고 있습니다.`);
-    let rawText = '';
-    if (/\.(xlsx|xls)$/i.test(file.name)) {
+    if (/\.(xlsx|xls|csv|tsv)$/i.test(file.name)) {
       await ensureXlsx();
       const fileBytes = new Uint8Array(await file.arrayBuffer());
       const fileHashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
       const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
       const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
-      let firstReadable = null;
-      let structured = null;
+      let selected = null;
       let purchaseMetaRows = null;
       let salesMetaRows = null;
+      const targets = inputMappingTargets();
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
@@ -4202,83 +5085,58 @@ async function handleFile(file) {
           if (state.draft.activeMode === 'sale') salesMetaRows = readSalesMeta(matrix);
           return;
         }
-        const parsed = parseStructuredSheet(matrix, {
-          fieldDefinitions: structuredFieldsForMode(state.draft.activeMode, contract.PRODUCT_FIELD_DEFINITIONS),
-          numberParser: contract.numberOrNull,
-          sheetName
-        });
-        const candidate = { ...parsed, sheetName };
-        if (!firstReadable) firstReadable = candidate;
-        if (!candidate.structured) return;
-        if (!structured || candidate.score > structured.score
-          || (candidate.score === structured.score && candidate.rows.length > structured.rows.length)) structured = candidate;
+        const detection = detectHeaderRow(matrix, targets);
+        const candidate = { matrix, sheetName, detection };
+        if (!selected || candidate.detection.score > selected.detection.score) selected = candidate;
       });
-      const selected = structured || firstReadable;
       if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
-      if (structured && state.draft.activeMode === 'purchase' && purchaseMetaRows) {
-        structured = {
-          ...structured,
-          rows: joinPurchaseMeta({
-            visibleSheetName: structured.sheetName,
-            visibleRows: structured.rows.map(row => ({
-              ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: fileDigest
-            })),
-            metaRows: purchaseMetaRows
-          }),
-          purchaseMetaStatus: 'VERIFIED'
+      captureGridPasteUndo();
+      const modeId = state.draft.activeMode;
+      const current = modeDraft();
+      const fresh = contract.createDraft({ activeMode: modeId }).modes[modeId];
+      current.header = cloneGridValue(fresh.header);
+      current.sourceText = selected.matrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
+      current.activeMethod = 'excel';
+      let mapping = mappingSessionWithBatch(createMappingSession({
+        matrix: selected.matrix,
+        headerRowIndex: selected.detection.rowIndex,
+        templates: state.inputTemplatesStatus === 'ERROR' ? [] : state.inputTemplates,
+        targetDefinitions: targets,
+        fileName: file.name,
+        sheetName: selected.sheetName,
+        fileFingerprint: fileDigest
+      }));
+      if (state.inputTemplatesStatus === 'ERROR' || state.inputTemplatesStatus === 'LOADING') {
+        mapping = {
+          ...mapping,
+          status: MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR,
+          issues: [{ code: state.inputTemplatesStatus === 'LOADING' ? 'TEMPLATE_LOOKUP_PENDING' : 'TEMPLATE_LOOKUP_FAILED' }]
         };
-      } else if (structured && state.draft.activeMode === 'purchase') {
-        structured = {
-          ...structured,
-          rows: structured.rows.map(row => ({
-            ...row,
-            sourceType: 'DIRECT',
-            contractKind: 'PURCHASE_STAGE3_V1',
-            originSystem: 'SMARTINPUT_FILE',
-            originTransactionId: fileDigest,
-            sourceFingerprint: fileDigest,
-            sourceDocumentKey: row.sourceDocumentKey || stableDirectDocumentKey({
-              originSystem: 'SMARTINPUT_FILE', originTransactionId: fileDigest,
-              externalDocumentNo: row.rowVoucherNo, sourceVoucherIndex: row.sourceVoucherIndex
-            }),
-            metaStatus: 'DIRECT_NO_META'
-          }))
-        };
-      } else if (structured && state.draft.activeMode === 'sale' && salesMetaRows) {
-        structured = {
-          ...structured,
-          rows: joinSalesMeta({ visibleSheetName: structured.sheetName,
-            visibleRows: structured.rows.map(row => ({ ...row, directOriginSystem: 'SMARTINPUT_FILE', directOriginTransactionId: fileDigest })),
-            metaRows: salesMetaRows }),
-          salesMetaStatus: 'VERIFIED'
-        };
-      } else if (structured && state.draft.activeMode === 'sale') {
-        structured = { ...structured, rows: structured.rows.map(row => ({ ...row,
-          sourceType:'DIRECT', contractKind:'SALE_STAGE4_V1', originSystem:'SMARTINPUT_FILE', originTransactionId:fileDigest,
-          sourceFingerprint:fileDigest, actualToBaseFactor:1, actualToRecognizedFactor:0,
-          actualUnit:row.unit || '', baseUnit:row.unit || '', recognizedUnit:row.unit || '',
-          conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1', metaStatus:'DIRECT_NO_META' })) };
       }
-      rawText = selected.rawText;
+      mapping.purchaseMetaRows = purchaseMetaRows;
+      mapping.salesMetaRows = salesMetaRows;
+      current.inputMapping = mapping;
       state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
-      state.pendingStructuredImport = structured
-        ? { ...structured, rawText, modeId: state.draft.activeMode, fileName: file.name }
-        : null;
+      state.pendingGridPasteText = '';
+      state.selectedRowIds.clear();
+      sourceTextInput.value = current.sourceText;
+      projectInputMappingToVoucherRows({ preserveProductEdits: false });
+      saveDraftNow();
+      renderMode();
+      const applied = mapping.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED;
+      setAppStatus(applied
+        ? `${mapping.templateName} 양식을 적용했습니다. 원본과 매핑 결과를 확인하세요.`
+        : `${file.name}의 ${mapping.headerRowIndex + 1}행을 필드명 후보로 표시했습니다. 신규 양식을 확인하세요.`, applied ? '' : 'warn');
+      toast(applied ? `${mapping.templateName} 양식을 완벽 일치로 적용했습니다.` : '기존 양식과 완벽 일치하지 않아 신규 양식 설정을 시작합니다.', applied ? 'success' : 'warn');
+      return;
     } else {
-      rawText = await file.text();
+      const rawText = await file.text();
       state.pendingSourceName = file.name;
       state.pendingStructuredImport = null;
-    }
-    sourceTextInput.value = rawText;
-    syncSourceText();
-    if (state.pendingStructuredImport) {
-      const imported = state.pendingStructuredImport;
-      const warning = imported.invalidCells.length ? ` · 숫자 확인 ${imported.invalidCells.length}셀` : '';
-      setAppStatus(`${file.name} · ${imported.sheetName} ${imported.headerRowNumber}행에서 필드 ${imported.mappings.length}개를 찾았습니다${warning}.`);
-      toast(`필드명을 찾아 상품 ${imported.rows.length}행을 자동 입력합니다.`, 'success');
-    } else {
-      setAppStatus(`${file.name}을 불러왔습니다. 자동 분석을 시작합니다.`);
-      toast('표 필드를 찾지 못해 기존 텍스트 방식으로 자동 분석합니다.', 'success');
+      sourceTextInput.value = rawText;
+      syncSourceText();
+      setAppStatus(`${file.name}을 불러왔습니다. 기존 텍스트 분석을 시작합니다.`);
+      toast('텍스트 파일을 원본입력뷰에 불러왔습니다.', 'success');
     }
   } catch (error) {
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
@@ -5449,6 +6307,11 @@ function clearCustomerAfterSave(header) {
 }
 
 async function completeOrder() {
+  if (inputMappingSession() && !inputMappingTemplateReady()) {
+    setAppStatus('입력 양식이 확정되지 않아 전표 저장을 중단했습니다. 현재 작업은 유지됩니다.', 'error');
+    toast('모든 열을 매핑 또는 비매핑으로 결정하고 입력 양식을 저장하세요.', 'error');
+    return;
+  }
   if (state.draft.activeMode === 'estimate') {
     const creation = estimateCreation();
     if (creation?.kind === 'LINKED_GROUP' && creation.selectedIds.length < 2) return toast('연동견적서는 원본 두 개 이상을 선택하세요.', 'warn');
@@ -5961,12 +6824,25 @@ async function hydrateReferences() {
     state.temporaryCustomers = data.temporaryCustomers || [];
     state.aliasMappings = data.aliasMappings || [];
     state.estimates = normalizeEstimateOrder(data.estimates || []);
+    state.inputTemplates = Array.isArray(data.inputTemplates) ? data.inputTemplates : [];
+    state.inputTemplatesStatus = state.inputTemplates.length ? 'READY' : 'EMPTY';
+    state.inputTemplatesError = null;
     state.sourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
+    Object.keys(state.draft.modes || {}).forEach(mode => {
+      const previousMode = state.draft.activeMode;
+      state.draft.activeMode = mode;
+      restoreInputMappingSession({ applyLatestTemplate: false });
+      state.draft.activeMode = previousMode;
+    });
     renderMode();
+  } else {
+    state.inputTemplates = [];
+    state.inputTemplatesStatus = 'ERROR';
+    state.inputTemplatesError = smartDataResult[0].reason || new Error('입력 양식 목록 로드 실패');
   }
   const results = await Promise.allSettled([
     withTimeout(loadReferenceDomain('product'), 7000, '상품 기준자료 로딩 시간 초과'),
@@ -6047,6 +6923,111 @@ sourceTextInput.addEventListener('scroll', () => {
   highlight.scrollTop = sourceTextInput.scrollTop;
   highlight.scrollLeft = sourceTextInput.scrollLeft;
 }, { passive: true });
+$('sourceSheetRows').addEventListener('click', event => {
+  const button = event.target.closest('[data-use-header-row]');
+  const existing = inputMappingSession();
+  if (!button || !existing) return;
+  const headerRowIndex = Number(button.dataset.useHeaderRow);
+  if (!Number.isInteger(headerRowIndex) || headerRowIndex === existing.headerRowIndex) return;
+  captureGridPasteUndo();
+  let reassigned = reassignHeaderRow(existing, headerRowIndex, state.inputTemplates, inputMappingTargets());
+  reassigned.batchId = existing.batchId;
+  reassigned.purchaseMetaRows = existing.purchaseMetaRows || null;
+  reassigned.salesMetaRows = existing.salesMetaRows || null;
+  modeDraft().inputMapping = reassigned;
+  state.selectedRowIds.clear();
+  projectInputMappingToVoucherRows({ preserveProductEdits: false });
+  renderMode();
+  saveDraftNow();
+  toast(`${headerRowIndex + 1}행을 필드명으로 사용합니다. 원본 행·열·값은 변경하지 않았습니다.`, 'success');
+});
+$('mappingTableHeaders').addEventListener('click', event => {
+  const button = event.target.closest('[data-open-field-mapping]');
+  if (button) openFieldMappingDialog(Number(button.dataset.openFieldMapping));
+});
+$('mappingTableHeaders').addEventListener('change', event => {
+  if (event.target.id !== 'mappingSelectAllRows') return;
+  const ids = visibleMappingRows().map(row => row.rowId);
+  state.selectedRowIds = event.target.checked ? new Set(ids) : new Set();
+  renderRows({ restoreFocus: false });
+});
+$('mappingInputRows').addEventListener('input', event => {
+  const input = event.target.closest('[data-mapping-cell]');
+  const tr = event.target.closest('[data-mapping-row-id]');
+  if (!input || !tr) return;
+  invalidateGridPasteUndo();
+  if (tr.dataset.mappingDefaultRow === 'true') {
+    if (!state.sourceComposing) materializeMappingDefaultRow(input);
+    return;
+  }
+  try {
+    modeDraft().inputMapping = updateWorkingCell(inputMappingSession(), tr.dataset.mappingRowId, Number(input.dataset.mappingColumn), input.value);
+    modeUi().activeCellId = `${tr.dataset.mappingRowId}|mapping:${input.dataset.mappingColumn}`;
+    scheduleMappingProjection();
+  } catch (error) {
+    toast(error.message || '셀 값을 반영하지 못했습니다.', 'error');
+  }
+});
+$('mappingInputRows').addEventListener('compositionstart', () => { state.sourceComposing = true; });
+$('mappingInputRows').addEventListener('compositionend', event => {
+  state.sourceComposing = false;
+  const input = event.target.closest('[data-mapping-cell]');
+  if (input) materializeMappingDefaultRow(input);
+});
+$('mappingInputRows').addEventListener('change', event => {
+  const selector = event.target.closest('[data-mapping-select-row]');
+  if (!selector || !selector.dataset.mappingSelectRow) return;
+  if (selector.checked) state.selectedRowIds.add(selector.dataset.mappingSelectRow);
+  else state.selectedRowIds.delete(selector.dataset.mappingSelectRow);
+  $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
+  const all = $('mappingSelectAllRows');
+  const count = visibleMappingRows().length;
+  if (all) {
+    all.checked = Boolean(count && state.selectedRowIds.size === count);
+    all.indeterminate = state.selectedRowIds.size > 0 && state.selectedRowIds.size < count;
+  }
+});
+$('mappingInputRows').addEventListener('keydown', event => {
+  const input = event.target.closest('[data-mapping-cell]');
+  const tr = event.target.closest('[data-mapping-row-id]');
+  if (!input || !tr || event.isComposing || !['Enter', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+  if (event.key === 'Tab') {
+    const visible = mappingVisibleColumns();
+    const atBoundary = event.shiftKey
+      ? tr.dataset.mappingRowId === (inputMappingSession()?.workingRows?.[0]?.rowId || MAPPING_DEFAULT_ROW_ID) && Number(input.dataset.mappingColumn) === visible[0]
+      : tr.dataset.mappingDefaultRow === 'true' && Number(input.dataset.mappingColumn) === visible.at(-1);
+    if (atBoundary) return;
+  }
+  event.preventDefault();
+  const rowId = tr.dataset.mappingRowId;
+  const columnIndex = Number(input.dataset.mappingColumn);
+  if (tr.dataset.mappingDefaultRow === 'true' && hasEnteredValue(input.value)) {
+    const row = materializeMappingDefaultRow(input);
+    if (row) moveMappingFocus(row.rowId, columnIndex, event.key, event.shiftKey);
+    return;
+  }
+  moveMappingFocus(rowId, columnIndex, event.key, event.shiftKey);
+});
+$('mappingInputRows').addEventListener('focusin', event => {
+  const input = event.target.closest('[data-mapping-cell]');
+  const tr = event.target.closest('[data-mapping-row-id]');
+  if (!input || !tr) return;
+  modeUi().activeCellId = `${tr.dataset.mappingRowId}|mapping:${input.dataset.mappingColumn}`;
+  input.select?.();
+  revealGridInput(input);
+});
+$('mappingInputRows').addEventListener('paste', event => {
+  const input = event.target.closest('[data-mapping-cell]');
+  const tr = event.target.closest('[data-mapping-row-id]');
+  const text = event.clipboardData?.getData('text/plain');
+  if (!input || !tr || !text) return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyMappingGridPaste(text, tr.dataset.mappingRowId);
+});
+$('inputTemplateSaveButton').addEventListener('click', openInputTemplateSaveDialog);
+$('inputTemplateReloadButton').addEventListener('click', () => { void reloadInputTemplates({ applyCurrent: true }); });
+$('pendingPasteToSourceButton').addEventListener('click', usePendingPasteAsSource);
 $('fileInput').addEventListener('change', event => handleFile(event.target.files?.[0]));
 $('photoInput').addEventListener('change', event => recognizeImage(event.target.files?.[0]));
 parserCard.addEventListener('dragover', event => {
@@ -6088,6 +7069,14 @@ $('photoOcrClose').addEventListener('click', () => {
 });
 $('photoEmptySelectButton').addEventListener('click', () => $('photoInput').click());
 $('detailColumnsButton').addEventListener('click', () => {
+  const mapping = inputMappingSession();
+  if (mapping) {
+    mapping.hiddenColumns = [];
+    mapping.updatedAt = new Date().toISOString();
+    renderRows({ restoreFocus: false });
+    scheduleSave();
+    return;
+  }
   state.photoView.detailColumns = !state.photoView.detailColumns;
   modeUi().detailColumns = state.photoView.detailColumns;
   scheduleSave();
@@ -6140,6 +7129,10 @@ $('gridSearchInput').addEventListener('input', event => {
   renderRows({ restoreFocus: false });
 });
 $('addRowButton').addEventListener('click', () => {
+  if (inputMappingSession()) {
+    mappingCell(MAPPING_DEFAULT_ROW_ID, mappingVisibleColumns()[0])?.focus();
+    return;
+  }
   if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
   addDirectRow();
 });

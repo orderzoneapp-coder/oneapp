@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.5",
+  "schemaVersion": "1.3.6",
   "updatedAt": "2026-08-31",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -459,6 +459,7 @@
         "four-mode voucher input and completion",
         "direct and text intake",
         "structured file and clipboard intake",
+        "exact-signature input-template mapping",
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog"
@@ -657,6 +658,8 @@
       ],
       "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
       "autosaveSchemaVersion": "ONEAPP_SMART_INPUT_AUTOSAVE_V1",
+      "inputTemplateSchemaVersion": "ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V1",
+      "mappingSessionSchemaVersion": "ONEAPP_SMARTINPUT_MAPPING_SESSION_V1",
       "localDatabase": "oneapp-smartinput",
       "databaseVersion": 4,
       "resources": {
@@ -674,6 +677,12 @@
           "estimates",
           "sourceImages",
           "autosave"
+        ],
+        "settingsKeys": [
+          "app",
+          "inputTemplates",
+          "reference:product",
+          "reference:customer"
         ]
       }
     },
