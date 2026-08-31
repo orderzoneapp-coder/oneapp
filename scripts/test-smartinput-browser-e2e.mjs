@@ -197,8 +197,10 @@ try {
   const afterResize = await expr(client, `Math.abs(document.querySelector('.parser-card').getBoundingClientRect().width-${beforeResize})>20&&document.querySelector('.parser-card').getBoundingClientRect().width`, 'parser resize');
   assert.ok(afterResize > beforeResize, 'desktop parser width control must remain interactive');
   const beforeRelatedResize = await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`);
+  assert.equal(await evaluate(client, `(() => {const parser=getComputedStyle(document.querySelector('#photoResizer span'));const related=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return parser.height===related.height&&related.backgroundColor===parser.backgroundColor;})()`), true, 'right resize handle must be as visible as the left parser handle');
   await evaluate(client, `(() => {const handle=document.querySelector('#relatedPanelResizer');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
   assert.ok(await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`) > beforeRelatedResize, 'desktop right panel width must be keyboard adjustable');
+  assert.match(await evaluate(client, `document.querySelector('#relatedPanelCloseButton').textContent.trim()`), /닫기/, 'right panel close control must be explicitly labeled');
   await click(client, '#relatedPanelCloseButton');
   await expr(client, `!document.querySelector('.related-panel').classList.contains('is-open')&&document.querySelector('#relatedPanelToggle').getAttribute('aria-expanded')==='false'`, 'right panel slide close');
   await click(client, '#relatedPanelToggle');
@@ -385,6 +387,8 @@ try {
   assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '저장');
   await click(client, '#completeButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'estimate save dialog');
+  await expr(client, `document.activeElement?.matches('[data-estimate-name]')`, 'estimate name direct-input focus');
+  await expr(client, `(() => {const input=document.querySelector('[data-estimate-name]');return input.selectionStart===0&&input.selectionEnd===input.value.length;})()`, 'default estimate name selection for immediate replacement');
   await input(client, '[data-estimate-name]', '격리 견적');
   await click(client, '[data-confirm-save]');
   await expr(client, `document.querySelector('#catalogPickerList [data-select-estimate-card]')?.textContent.includes('격리 견적')`, 'individual estimate persisted');
@@ -430,6 +434,7 @@ try {
   await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'linked creation preview with duplicate products removed');
   assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
   assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /연동견적서 생성 · 2개 선택 · 미리보기/, 'creation status must distinguish selected sources and preview');
+  assert.equal(await evaluate(client, `!/중복 제거|상품 미리보기/.test(document.querySelector('#toast').textContent)`), true, 'estimate selection must not create a redundant lower coachmark');
   await click(client, '#estimateCreateButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');
   await input(client, '[data-estimate-name]', '가을 행사 연동견적');
@@ -441,6 +446,7 @@ try {
   await click(client, '#catalogPickerList [data-select-estimate-card]');
   await click(client, '#selectedEstimateDeleteButton');
   await expr(client, `document.querySelector('#toast').textContent.includes('연동견적서에서 사용 중')`, 'linked source deletion blocked');
+  assert.equal(await evaluate(client, `(() => {const toast=document.querySelector('#toast').getBoundingClientRect();const actions=document.querySelector('#catalogComposeArea').getBoundingClientRect();return toast.bottom<=actions.top;})()`), true, 'required error notifications must stay above the lower action buttons');
   assert.equal(await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length`), 2, 'linked source protection must preserve all selected individual estimates');
   await click(client, '#estimateLibrarySwitchButton');
   await click(client, '#linkedEstimateList [data-select-estimate-card]');
@@ -481,6 +487,15 @@ try {
   await click(client, '#selectedEstimateDeleteButton');
   await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'single selected estimate deletion');
   assert.equal(await evaluate(client, `window.__estimateDeleteConfirmCalls`), 1, 'one selected card deletion must require confirmation');
+
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await client.send('Page.reload', { ignoreCache: true });
+  await expr(client, `document.readyState==='complete'&&Boolean(document.querySelector('#relatedPanelCloseButton'))`, 'intermediate layout reload');
+  await wait(300);
+  const intermediatePanel = await evaluate(client, `(() => {const workspace=document.querySelector('#smartInputWorkspace');const panel=document.querySelector('#estimateLibraryView').getBoundingClientRect();const appBar=document.querySelector('.app-bar').getBoundingClientRect();const global=document.querySelector('.nexus-ui-header').getBoundingClientRect();const close=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {panelTop:panel.top,appBarTop:appBar.top,appBarHeight:appBar.height,appBarBottom:appBar.bottom,globalBottom:global.bottom,customTop:workspace.style.getPropertyValue('--related-panel-top'),closeTop:close.top,legacyCollapse:getComputedStyle(document.querySelector('#relatedCollapseButton')).display};})()`);
+  console.log('SmartInput intermediate panel metrics', intermediatePanel);
+  assert.ok(intermediatePanel.panelTop >= intermediatePanel.appBarBottom - 1 && intermediatePanel.closeTop >= intermediatePanel.appBarBottom, 'intermediate right drawer and labeled close must begin below the app header');
+  assert.equal(intermediatePanel.legacyCollapse, 'none', 'intermediate right drawer must not expose the legacy lower close button');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);

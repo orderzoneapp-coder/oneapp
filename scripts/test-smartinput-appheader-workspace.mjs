@@ -48,9 +48,19 @@ assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-heigh
 assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
   'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');
 assert.doesNotMatch(html + css, /reference-overview__coachmark/, 'reference status must not use a coachmark surface');
+assert.match(css, /\.toast\s*\{[^}]*bottom:\s*74px/s, 'desktop notifications must clear the lower action bar');
+assert.match(css, /@media \(max-width:\s*820px\)[\s\S]*\.toast\s*\{[^}]*bottom:\s*72px/s, 'mobile notifications must clear the lower action bar');
 assert.match(html, /id="relatedPanelToggle"[\s\S]*id="relatedPanelResizer"[\s\S]*id="relatedPanelCloseButton"/,
   'the right activity panel must expose slide toggle, resize handle, and close control');
+assert.match(html, /id="relatedPanelCloseButton"[^>]*>[\s\S]*<strong>닫기<\/strong>/,
+  'the right-panel close control must use an explicit visible label');
+assert.match(css, /\.related-panel-resizer span\s*\{[^}]*height:\s*52px[^}]*background:\s*var\(--border-strong\)/s,
+  'the right-panel resize handle must remain visible like the parser resize handle');
 assert.match(css, /@media \(max-width:\s*820px\)[\s\S]*\.related-panel-resizer\s*\{\s*display:\s*none/,
   'mobile must keep slide open-close without desktop width resizing');
+assert.match(css, /@media \(min-width:\s*821px\) and \(max-width:\s*1480px\)[\s\S]*inset:\s*var\(--related-panel-top,[^;]+[\s\S]*\.related-collapse\s*\{\s*display:\s*none/s,
+  'intermediate desktop drawers must begin below the app header without a duplicate lower close control');
+assert.match(await readFile('smartinput/smartinput.js', 'utf8'), /ResizeObserver[\s\S]*appBarResizeObserver\.observe\(document\.querySelector\('\.app-bar'\)\)[\s\S]*appBarResizeObserver\.observe\(globalHeader\)/,
+  'the right drawer must follow responsive global and app-header height changes');
 
 console.log('SmartInput protected desktop workspace contracts PASS');
