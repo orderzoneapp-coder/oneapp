@@ -199,7 +199,9 @@ try {
   assert.ok(afterResize > beforeResize, 'desktop parser width control must remain interactive');
   const beforeRelatedResize = await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`);
   assert.equal(await evaluate(client, `(() => {const parser=getComputedStyle(document.querySelector('#photoResizer span'));const related=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return parser.height===related.height&&related.backgroundColor===parser.backgroundColor;})()`), true, 'right resize handle must be as visible as the left parser handle');
-  assert.deepEqual(await evaluate(client, `(() => {const close=document.querySelector('#relatedPanelCloseButton');return {text:close.textContent.trim(),label:close.getAttribute('aria-label'),opacity:getComputedStyle(document.querySelector('.related-panel-chrome')).opacity};})()`), { text: '×', label: '우측 패널 닫기', opacity: '0' }, 'desktop close must be an accessible hover-only X without a top labeled button');
+  const relatedCloseIdle = await evaluate(client, `(() => {const close=document.querySelector('#relatedPanelCloseButton');return {text:close.textContent.trim(),label:close.getAttribute('aria-label'),opacity:getComputedStyle(document.querySelector('.related-panel-chrome')).opacity,hoverNone:matchMedia('(hover: none)').matches};})()`);
+  assert.deepEqual({ text: relatedCloseIdle.text, label: relatedCloseIdle.label }, { text: '×', label: '우측 패널 닫기' }, 'desktop close must be an accessible X without a top labeled button');
+  assert.equal(relatedCloseIdle.opacity, relatedCloseIdle.hoverNone ? '1' : '0', 'the X must stay touch-visible and otherwise wait for pointer hover');
   const relatedHandlePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelResizer').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
   await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedHandlePoint });
   await wait(120);
