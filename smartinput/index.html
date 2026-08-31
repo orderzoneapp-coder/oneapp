@@ -10,7 +10,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.2.0">
-  <link rel="stylesheet" href="./smartinput.css?v=0.8.1">
+  <link rel="stylesheet" href="./smartinput.css?v=0.8.2">
 </head>
 <body>
   <header class="app-bar">
@@ -170,8 +170,7 @@
           <footer class="voucher-footer-actions" aria-label="전표 작업">
             <div class="voucher-footer-actions__primary">
               <button class="button button--primary" id="completeButton" type="button">저장</button>
-              <button class="button button--quiet" id="saveEstimateAsButton" type="button" hidden>새 양식 저장</button>
-              <div class="delivery-card delivery-card--compact">
+              <div class="delivery-card delivery-card--compact" hidden>
                 <span>저장 대상</span>
                 <strong id="deliveryTarget">공통 주문서 원장</strong>
                 <p id="deliveryDescription">ORDER Q vNext 저장소에 먼저 기록합니다.</p>
@@ -179,8 +178,10 @@
               </div>
             </div>
             <div class="estimate-output-actions" id="estimateOutputActions">
+              <button class="button button--quiet" id="estimateCreateButton" type="button" hidden disabled>연동견적서 생성</button>
+              <button class="button button--quiet" id="saveEstimateAsButton" type="button" hidden>새 양식 저장</button>
               <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공유</button>
-              <button class="button button--quiet" id="estimateExcelButton" type="button">Excel 다운로드</button>
+              <button class="button button--quiet" id="estimateExcelButton" type="button">EXCEL</button>
             </div>
           </footer>
         </section>
@@ -191,7 +192,7 @@
       <aside class="related-panel estimate-library-view" id="estimateLibraryView" aria-label="견적서 목록">
         <button class="related-panel-resizer" id="relatedPanelResizer" type="button" aria-label="우측 패널 폭 조절" title="끌거나 방향키로 폭 조절"><span></span></button>
         <div class="related-panel-chrome">
-          <button class="related-panel-close" id="relatedPanelCloseButton" type="button" aria-label="우측 패널 닫기"><strong>닫기</strong><span aria-hidden="true">›</span></button>
+          <button class="related-panel-close" id="relatedPanelCloseButton" type="button" aria-label="우측 패널 닫기" title="우측 패널 닫기"><span aria-hidden="true">×</span></button>
         </div>
         <section class="voucher-context-view voucher-activity-view" id="voucherContextView" aria-label="전표 목록" hidden>
           <header class="voucher-context-heading voucher-activity-heading">
@@ -209,7 +210,11 @@
           </footer>
         </section>
         <header class="estimate-library-heading aside-heading" id="estimateLibraryHeading">
-          <button class="estimate-library-kind-switch" id="estimateLibrarySwitchButton" type="button" aria-label="연동견적서 목록으로 전환" hidden><span data-kind="individual">견적서목록</span><i aria-hidden="true">↔</i><span data-kind="linked">연동견적서</span></button>
+          <div class="estimate-library-toolbar" role="group" aria-label="견적서 목록과 다중 선택">
+            <button class="estimate-library-kind-button is-active" id="estimateLibraryIndividualButton" type="button" aria-pressed="true">견적서 목록</button>
+            <button class="estimate-library-kind-button" id="estimateLibraryLinkedButton" type="button" aria-pressed="false">연동견적서</button>
+            <button class="estimate-multi-select-button" id="estimateMultiSelectButton" type="button" aria-label="견적서 다중 선택" aria-pressed="false" title="다중 선택"><span aria-hidden="true">+</span></button>
+          </div>
           <p id="estimateLibrarySummary" class="sr-only">저장된 견적서 카드를 터치해 선택하고 바로 확인합니다.</p>
         </header>
         <div class="estimate-library-grid saved-voucher-list" id="catalogPickerList"></div>
@@ -217,7 +222,7 @@
         <footer class="estimate-library-actions" id="catalogComposeArea">
           <span class="sr-only" id="estimateSelectionSummary" role="status" aria-live="polite">0개 선택</span>
           <button class="button button--danger button--small" id="selectedEstimateDeleteButton" type="button" disabled>선택 삭제</button>
-          <button class="button button--primary button--small" id="estimateCreateButton" type="button">연동견적서 생성</button>
+          <button class="button button--quiet button--small" id="estimateRenameButton" type="button" disabled>이름 변경</button>
         </footer>
         <button class="related-collapse" id="relatedCollapseButton" type="button" aria-expanded="false" hidden>우측 패널 열기</button>
       </aside>
@@ -226,7 +231,7 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.5.1"></script>
-  <script type="module" src="./smartinput.js?v=0.8.1"></script>
+  <script type="module" src="./smartinput.js?v=0.8.2"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>

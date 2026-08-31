@@ -30,7 +30,7 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>Excel 다운로드<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 양식 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
@@ -43,13 +43,18 @@ assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
-assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성</, 'the estimate library must expose only selected deletion and linked creation actions');
+assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>이름 변경</, 'the estimate library must expose only selected deletion and rename actions');
 assert.match(html, /id="saveEstimateAsButton"[^>]*>새 양식 저장</, 'a loaded estimate must use Save As instead of in-place rename');
-assert.doesNotMatch(html + appSource, /estimateRenameButton|merchOpsEstimateButton|openSelectedEstimateRenameDialog|openEstimateCreateChoiceDialog/,
-  'rename, MerchOps, and redundant estimate-kind choice controls must stay removed');
+assert.match(appSource, /function openSelectedEstimateRenameDialog\([\s\S]*commitEstimateBundle\(\{ upserts: bundle \}\)/,
+  'single-record rename must preserve ids and atomically update linked display metadata');
+assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreateChoiceDialog/,
+  'MerchOps and redundant estimate-kind choice controls must stay removed');
 assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
   'normal card selection must immediately switch to exactly one stored estimate');
 assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
+assert.match(html, /id="estimateMultiSelectButton"[^>]*aria-label="견적서 다중 선택"[^>]*>[\s\S]*\+/, 'the explicit multi-select entry must be icon-only and accessible');
+assert.match(appSource, /const additive = event\.ctrlKey \|\| event\.metaKey;[\s\S]*beginEstimateMultiSelect\(\{ deferPreview: true \}\)/,
+  'Ctrl or Command click must enter the same additive multi-selection workflow');
 assert.doesNotMatch(appSource, /toast\(`\$\{records\.length\}개 견적서 · 중복 제거/, 'estimate selection must not create a redundant coachmark over the action area');
 assert.match(appSource, /data-estimate-name[^>]*placeholder="견적서명을 입력하세요"[^>]*autofocus/, 'estimate naming must be immediately ready for direct keyboard input');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*focusNameInput\(\);[\s\S]*setTimeout\(focusNameInput, 0\)/, 'estimate naming focus must be immediate and restored after native modal focus handling');
