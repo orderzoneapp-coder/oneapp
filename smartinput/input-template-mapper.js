@@ -156,6 +156,7 @@ function resolveTemplate(headers, templates = [], targetDefinitions = []) {
 
 function workingRows(sourceMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
   const width = headers.length;
+  const hasWorkingValue = value => cellText(value).trim() !== '';
   const sourceRows = sourceMatrix.slice(headerRowIndex + 1).map((sourceRow, offset) => {
     const sourceRowIndex = headerRowIndex + 1 + offset;
     const cells = Array.from({ length: width }, (_, columnIndex) => {
@@ -165,13 +166,13 @@ function workingRows(sourceMatrix, headerRowIndex, headers, editJournal = {}, ma
         : cellText(sourceRow[columnIndex]);
     });
     return { rowId: `source-${sourceRowIndex}`, sourceRowIndex, cells, manual: false };
-  });
+  }).filter(row => row.cells.some(hasWorkingValue));
   const manual = (manualRows || []).map((row, index) => ({
     rowId: cellText(row?.rowId) || `manual-${index + 1}`,
     sourceRowIndex: null,
     cells: Array.from({ length: width }, (_, columnIndex) => cellText(row?.cells?.[columnIndex])),
     manual: true
-  }));
+  })).filter(row => row.cells.some(hasWorkingValue));
   return [...sourceRows, ...manual];
 }
 
@@ -379,7 +380,7 @@ export function projectMappedRows(session, targetDefinitions = []) {
   const targets = targetIndex(targetDefinitions);
   const mappings = (session.mappings || []).filter(mapping => [DECISION.MAPPED, DECISION.RECOMMENDED].includes(mapping.state));
   return (session.workingRows || [])
-    .filter(row => (row.cells || []).some(value => value !== ''))
+    .filter(row => (row.cells || []).some(value => cellText(value).trim() !== ''))
     .map((row, rowIndex) => {
       const projected = {
         rowId: row.rowId,

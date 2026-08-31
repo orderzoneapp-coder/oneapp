@@ -227,9 +227,11 @@ input, select, textarea { color: var(--text); background: var(--surface); }
 .estimate-notice-filters select:focus { border-color: #5eead4; outline: 2px solid rgba(94,234,212,.32); }
 .estimate-notice-filters select option { color: #172033; background: #fff; }
 .estimate-notice-page footer { padding: 0; display: flex; justify-content: flex-end; gap: 7px; border: 0; }
-.parser-toolbar { min-height: 34px; padding: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.parser-toolbar .legend { justify-content: center; }
-.parser-voice-button { min-width: 68px; }
+.parser-toolbar { min-height: 34px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px; }
+.parser-toolbar .legend { grid-row: 2; grid-column: 1 / -1; justify-content: center; }
+.parser-file-button, .parser-voice-button, .parser-clear-button { min-width: 0; width: 100%; }
+.parser-voice-button { min-width: 0; }
+.parser-clear-button { grid-row: 1; grid-column: 3; }
 .parser-voice-button > span { color: var(--danger); font-size: 9px; }
 .parser-voice-button.is-active { color: #fff; border-color: var(--accent); background: var(--accent); }
 .parser-input-row { min-height: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: stretch; }

@@ -30,7 +30,7 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 양식 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
@@ -44,7 +44,7 @@ assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card ha
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
 assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>이름 변경</, 'the estimate library must expose only selected deletion and rename actions');
-assert.match(html, /id="saveEstimateAsButton"[^>]*>새 양식 저장</, 'a loaded estimate must use Save As instead of in-place rename');
+assert.match(html, /id="saveEstimateAsButton"[^>]*>새 견적서 저장</, 'a loaded estimate must use Save As instead of in-place rename');
 assert.match(appSource, /function openSelectedEstimateRenameDialog\([\s\S]*commitEstimateBundle\(\{ upserts: bundle \}\)/,
   'single-record rename must preserve ids and atomically update linked display metadata');
 assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreateChoiceDialog/,

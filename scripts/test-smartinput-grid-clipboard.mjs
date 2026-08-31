@@ -80,6 +80,29 @@ assert.deepEqual(Object.fromEntries(providedEstimate.rows[0].cells.map(cell => [
   memo: '오전 출고'
 });
 
+const reorderedEstimate = buildGridPastePlan(
+  '품목코드\t품목명\tA판매\tB판매\t메모\t단가\t입고B\t행사가\r\n104526112\t케일_2kg\t21,500\t19,500\t\t18,500\t16,500.00\t',
+  {
+    fieldDefinitions: fields,
+    visibleFieldIds: ['itemCode', 'itemName', 'unitPrice', 'purchasePriceB', 'wholesaleA', 'wholesaleB', 'memo', 'promoPrice'],
+    startFieldId: 'itemCode',
+    numberParser: contract.numberOrNull,
+    requireHeaders: true
+  }
+);
+assert.equal(reorderedEstimate.valid, true, 'display-order changes must still map by the restored field-name and alias contract');
+assert.deepEqual(reorderedEstimate.fieldIds, ['itemCode', 'itemName', 'wholesaleA', 'wholesaleB', 'memo', 'unitPrice', 'purchasePriceB', 'promoPrice']);
+assert.deepEqual(Object.fromEntries(reorderedEstimate.rows[0].cells.map(cell => [cell.fieldId, cell.value])), {
+  itemCode: '104526112',
+  itemName: '케일_2kg',
+  wholesaleA: 21500,
+  wholesaleB: 19500,
+  memo: '',
+  unitPrice: 18500,
+  purchasePriceB: 16500,
+  promoPrice: null
+});
+
 const invalid = buildGridPastePlan('품목코드\t품목명\t단가\r\n001\t취나물\t확인', {
   fieldDefinitions: fields,
   visibleFieldIds: visible,
@@ -134,12 +157,15 @@ const html = fs.readFileSync('smartinput/index.html', 'utf8');
 const app = fs.readFileSync('smartinput/smartinput.js', 'utf8');
 for (const label of ['품목코드', '품목명', '규격', '수량', '단위', '단가', '메모']) assert.match(html, new RegExp(label));
 assert.match(html, /id="inputRows"/);
+assert.match(html, /id="sourceFileButton"[^>]*data-method="excel"[^>]*>[^<]*<span[^>]*>＋<\/span> Excel 파일<\/button>/,
+  'the source input view must expose the existing file input through a visible Excel file button');
 assert.match(app, /function applyGridPaste\(rawText, startRowId, startFieldId\)/);
-assert.match(app, /const expectedHeaders = visibleFields\.map/,
-  'direct worktable paste must compare exact displayed header strings, count and order before applying');
-assert.match(app, /mappingHeadersMatch\(incomingMatrix, expectedHeaders\)/);
-assert.match(app, /state\.pendingGridPasteText = rawText/,
-  'a mismatched paste must remain available for explicit transfer to the source input view');
+assert.doesNotMatch(app, /mappingHeadersMatch\(incomingMatrix, expectedHeaders\)/,
+  'direct worktable paste must not reject a valid field-name mapping only because the display order differs');
+assert.match(app, /return useClipboardTableAsSource\(rawText, \{ sourceName: '작업테이블 붙여넣기' \}\)/,
+  'unknown or invalid worktable headers must preserve the raw matrix in the source mapping workflow');
+assert.match(app, /parserCard\.contains\(event\.target\) && clipboardTableMatrix\(pastedText\)/,
+  'a structured clipboard text representation must take priority over a simultaneous image representation');
 assert.match(app, /inputRows\.addEventListener\('paste'/);
 assert.match(app, /contract\.markProductEdit\(row, cell\.fieldId, cell\.value\)/,
   'grid paste must use the same restored work-row edit contract as direct cell edits');

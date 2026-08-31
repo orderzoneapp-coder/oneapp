@@ -84,6 +84,7 @@
     <div class="workspace" id="smartInputWorkspace">
       <section class="parser-card" id="sourceInputPanel" aria-label="원본입력뷰">
         <div class="parser-toolbar" role="toolbar" aria-label="원본입력뷰 작업">
+          <button class="button button--quiet button--small parser-file-button" id="sourceFileButton" type="button" data-method="excel"><span aria-hidden="true">＋</span> Excel 파일</button>
           <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
           <div class="legend" aria-label="매칭 상태 범례"><span class="legend--matched">일치</span><span class="legend--similar">유사</span><span class="legend--failed">불일치</span></div>
           <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
@@ -199,7 +200,7 @@
             </div>
             <div class="estimate-output-actions" id="estimateOutputActions">
               <button class="button button--quiet" id="estimateCreateButton" type="button" hidden disabled>연동견적서 생성</button>
-              <button class="button button--quiet" id="saveEstimateAsButton" type="button" hidden>새 양식 저장</button>
+              <button class="button button--quiet" id="saveEstimateAsButton" type="button" hidden>새 견적서 저장</button>
               <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공유</button>
               <button class="button button--quiet" id="estimateExcelButton" type="button">EXCEL</button>
             </div>
