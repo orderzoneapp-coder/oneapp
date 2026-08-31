@@ -133,6 +133,23 @@ assert.equal(numericRows[0].quantity, null);
 assert.equal(numericRows[1].quantity, 0);
 assert.equal(numericRows[2].quantity, -2.5);
 
+const sourceWithBlankRows = [
+  ['품목코드', '품목명', '메모'],
+  ['001', '취나물', ''],
+  ['', '', ''],
+  [' ', '\u00a0', '\t'],
+  ['002', '시금치', '확인']
+];
+const blankRowSession = createMappingSession({ matrix: sourceWithBlankRows, targetDefinitions: targets });
+const blankRowTemplate = createTemplateRecord(blankRowSession, '공백 행 제외 검증', targets);
+const blankRowApplied = createMappingSession({ matrix: sourceWithBlankRows, templates: [blankRowTemplate], targetDefinitions: targets });
+assert.deepEqual(blankRowApplied.sourceMatrix, sourceWithBlankRows,
+  'source input must preserve completely blank rows without rewriting the original matrix');
+assert.equal(blankRowApplied.workingRows.length, 2,
+  'completely blank and whitespace-only source rows must not create working-table rows');
+assert.equal(projectMappedRows(blankRowApplied, targets).length, 2,
+  'completely blank source rows must never enter the voucher payload');
+
 const largeTargets = Array.from({ length: 20 }, (_, index) => ({
   id: `field-${index}`,
   label: `필드 ${index}`,

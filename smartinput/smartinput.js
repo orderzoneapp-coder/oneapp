@@ -3994,7 +3994,7 @@ function applyMappingGridPaste(rawText, startRowId) {
     toast('현재 필드명·열 순서와 완전히 같지 않아 적용하지 않았습니다. 원본입력뷰에서 매핑할 수 있습니다.', 'error');
     return false;
   }
-  const sourceRows = matrix.slice(1);
+  const sourceRows = matrix.slice(1).filter(row => row.some(hasEnteredValue));
   if (!sourceRows.length) return toast('필드명 아래에 입력할 값이 없습니다.', 'error');
   if (sourceRows.some(row => row.length !== session.headers.length)) {
     state.pendingGridPasteText = rawText;
@@ -4026,11 +4026,17 @@ function applyMappingGridPaste(rawText, startRowId) {
   return true;
 }
 
-function usePendingPasteAsSource() {
-  const rawText = state.pendingGridPasteText;
-  if (!rawText) return;
+function clipboardTableMatrix(rawText) {
   const matrix = parseClipboardMatrix(rawText);
-  if (!matrix.length || !matrix.some(row => row.some(hasEnteredValue))) return;
+  if (matrix.length < 2 || Math.max(...matrix.map(row => row.length), 0) < 2) return null;
+  return matrix;
+}
+
+function useClipboardTableAsSource(rawText, { sourceName = '클립보드 자료', announce = true } = {}) {
+  if (!rawText) return false;
+  const matrix = clipboardTableMatrix(rawText);
+  if (!matrix || !matrix.some(row => row.some(hasEnteredValue))) return false;
+  cancelPhotoAnalysisForNewInput();
   captureGridPasteUndo();
   const modeId = state.draft.activeMode;
   const current = modeDraft();
@@ -4044,7 +4050,7 @@ function usePendingPasteAsSource() {
     headerRowIndex: detection.rowIndex,
     templates: ['READY', 'EMPTY'].includes(state.inputTemplatesStatus) ? state.inputTemplates : [],
     targetDefinitions: inputMappingTargets(),
-    fileName: '클립보드 자료',
+    fileName: sourceName,
     sheetName: '붙여넣기',
     fileFingerprint: `clipboard-${Date.now().toString(36)}`
   }));
@@ -4055,7 +4061,17 @@ function usePendingPasteAsSource() {
   projectInputMappingToVoucherRows({ preserveProductEdits: false });
   saveDraftNow();
   renderMode();
-  toast('붙여넣은 자료를 원본입력뷰로 전달했습니다. 필드명 행과 매핑을 확인하세요.', 'success');
+  if (announce) {
+    const applied = inputMappingTemplateReady(current.inputMapping);
+    toast(applied
+      ? `${current.inputMapping.templateName} 양식을 적용했습니다.`
+      : '붙여넣은 표를 원본입력뷰에 표시했습니다. 필드명 행과 신규 매핑을 확인하세요.', applied ? 'success' : 'warn');
+  }
+  return true;
+}
+
+function usePendingPasteAsSource() {
+  useClipboardTableAsSource(state.pendingGridPasteText);
 }
 
 function deleteSelectedMappingRows() {
@@ -4531,14 +4547,6 @@ function visibleGridPasteFields() {
   return visibleEditableGridFields().filter(fieldId => fieldId !== 'productSearch');
 }
 
-function displayedGridHeader(fieldId, fallbackLabel = '') {
-  const header = document.querySelector(`#voucherInputTable thead th[data-column="${CSS.escape(fieldId)}"]`);
-  if (!header) return String(fallbackLabel || '');
-  const readable = header.cloneNode(true);
-  readable.querySelectorAll('.column-resize-handle').forEach(handle => handle.remove());
-  return String(readable.textContent || '').trim();
-}
-
 function applyGridPaste(rawText, startRowId, startFieldId) {
   const current = modeDraft();
   const startRowIndex = startRowId === DEFAULT_INPUT_ROW_ID
@@ -4548,44 +4556,28 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
   const definitions = gridPasteFieldDefinitions();
   const definitionById = new Map(definitions.map(field => [field.id, field]));
   const visibleFields = visibleGridPasteFields();
-  const expectedHeaders = visibleFields.map(fieldId => displayedGridHeader(fieldId, definitionById.get(fieldId)?.label));
-  const incomingMatrix = parseClipboardMatrix(rawText);
-  if (!mappingHeadersMatch(incomingMatrix, expectedHeaders)) {
-    state.pendingGridPasteText = rawText;
-    renderInputMappingStatus();
-    toast('현재 작업테이블의 필드명·개수·순서와 완전히 같지 않아 적용하지 않았습니다. 원본입력뷰에서 매핑할 수 있습니다.', 'error');
-    return false;
-  }
   const plan = buildGridPastePlan(rawText, {
     fieldDefinitions: definitions,
     visibleFieldIds: visibleFields,
     startFieldId,
     numberParser: contract.numberOrNull,
-    requireHeaders: true,
-    exactHeaders: expectedHeaders
+    requireHeaders: true
   });
   if (!plan.valid) {
-    const fields = (plan.headerErrors || []).slice(0, 3).map(error => {
-      if (error.reason === 'EMPTY_HEADER') return `${error.columnIndex + 1}열(빈 필드명)`;
-      if (error.reason === 'DUPLICATE_FIELD') return `${error.columnIndex + 1}열(${error.header} 중복)`;
-      return `${error.columnIndex + 1}열(${error.header || '알 수 없음'})`;
-    }).join(', ');
-    const rows = (plan.rowErrors || []).slice(0, 3).map(error => `${error.rowNumber}행(${error.actualColumnCount}/${error.expectedColumnCount}열)`).join(', ');
-    toast(rows
-      ? `행별 열 수가 필드명과 일치하지 않아 붙여넣기를 중단했습니다. ${rows}`
-      : `필드명이 일치하지 않아 붙여넣기를 중단했습니다.${fields ? ` ${fields}` : ''}`, 'error');
-    return false;
+    return useClipboardTableAsSource(rawText, { sourceName: '작업테이블 붙여넣기' });
   }
   if (plan.invalidCells.length) {
     const cells = plan.invalidCells.slice(0, 3).map(cell => `${cell.rowNumber}행 ${cell.fieldId}`).join(', ');
     toast(`숫자 필드 값을 확인하세요. 붙여넣기를 중단했습니다. ${cells}`, 'error');
     return false;
   }
-  if (!plan.rows.length || plan.rows.every(row => !row.cells.length)) {
+  const pasteRows = plan.rows.filter(row => row.cells.some(cell => hasEnteredValue(cell.value)));
+  if (!pasteRows.length) {
     toast('필드명 아래에 입력할 값이 없습니다.', 'error');
     return false;
   }
 
+  cancelPhotoAnalysisForNewInput();
   captureGridPasteUndo();
   state.pendingGridPasteText = '';
   state.applyingGridPaste = true;
@@ -4599,7 +4591,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
       rawText
     });
     current.batches.push(batch);
-    const requiredRowCount = startRowIndex + plan.rows.length;
+    const requiredRowCount = startRowIndex + pasteRows.length;
     const additionalRowCount = Math.max(0, requiredRowCount - current.rows.length);
     if (additionalRowCount) {
       current.rows = contract.applyParserResults(current.rows, batch, Array.from({ length: additionalRowCount }, (_, index) => ({
@@ -4613,7 +4605,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
 
     const identityRows = new Set();
     let pastedCellCount = 0;
-    plan.rows.forEach((pasteRow, rowOffset) => {
+    pasteRows.forEach((pasteRow, rowOffset) => {
       const rowIndex = startRowIndex + rowOffset;
       let row = contract.normalizeRow({
         ...current.rows[rowIndex],
@@ -4650,7 +4642,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
     state.draft.ui.selectedRowId = firstRow?.rowId || '';
     renderRows();
     saveDraftNow();
-    const message = `${plan.rows.length.toLocaleString('ko-KR')}행 · ${pastedCellCount.toLocaleString('ko-KR')}셀을 입력했습니다.`;
+    const message = `${pasteRows.length.toLocaleString('ko-KR')}행 · ${pastedCellCount.toLocaleString('ko-KR')}셀을 입력했습니다.`;
     if (plan.invalidCells.length || plan.ignoredColumnCount) {
       const details = [
         plan.invalidCells.length ? `숫자 확인 ${plan.invalidCells.length}셀` : '',
@@ -5163,6 +5155,17 @@ function appendParserText(text, method = 'text') {
   syncSourceText();
 }
 
+function cancelPhotoAnalysisForNewInput() {
+  state.photoCaptureSequence += 1;
+  if (modeDraft().activeMethod !== 'photo') return;
+  state.pendingImageEvidence = null;
+  state.pendingOcrReview = null;
+  state.busy = false;
+  $('analyzeButton').disabled = false;
+  $('parserProgress').hidden = true;
+  setActiveActivity('');
+}
+
 async function acceptParserDrop(event) {
   event.preventDefault();
   const file = [...(event.dataTransfer?.files || [])][0];
@@ -5173,6 +5176,7 @@ async function acceptParserDrop(event) {
     return;
   }
   const droppedText = event.dataTransfer?.getData('text/plain') || '';
+  if (useClipboardTableAsSource(droppedText, { sourceName: '드래그한 표 자료' })) return;
   appendParserText(droppedText);
 }
 
@@ -5263,6 +5267,7 @@ async function recognizeImage(file) {
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
       onProgress: progress => {
+        if (captureSequence !== state.photoCaptureSequence) return;
         const percent = Math.round(Number(progress.progress || 0) * 100);
         if (progress.status === 'preprocessing') {
           $('parserProgress').querySelector('strong').textContent = `${progress.variant || '사진'} 전처리 중`;
@@ -5273,6 +5278,7 @@ async function recognizeImage(file) {
         }
       }
     });
+    if (captureSequence !== state.photoCaptureSequence || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
     const text = String(analysis.rawText || '').replace(/\r/g, '');
     if (!text.trim()) throw new Error('사진에서 문자를 찾지 못했습니다.');
     state.pendingOcrReview = { ...analysis, rawText: text };
@@ -5305,6 +5311,7 @@ async function recognizeImage(file) {
       toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
     }
   } catch (error) {
+    if (captureSequence !== state.photoCaptureSequence) return;
     state.pendingOcrReview = null;
     if (state.sourceImages[state.draft.activeMode]) {
       state.sourceImages[state.draft.activeMode].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
@@ -5314,14 +5321,16 @@ async function recognizeImage(file) {
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
-    state.busy = false;
-    setActiveActivity('');
-    $('photoInput').value = '';
-    renderReferenceControls();
-    $('parserProgress').hidden = true;
-    $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
-    if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
-    if (shouldAnalyze) scheduleAutoAnalysis(80);
+    if (captureSequence === state.photoCaptureSequence) {
+      state.busy = false;
+      setActiveActivity('');
+      $('photoInput').value = '';
+      renderReferenceControls();
+      $('parserProgress').hidden = true;
+      $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
+      if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
+      if (shouldAnalyze) scheduleAutoAnalysis(80);
+    }
   }
 }
 
@@ -6045,6 +6054,7 @@ async function exportCurrentVoucherExcel() {
 
 function validateEstimateDocument() {
   const current = modeDraft();
+  pruneEmptyWorkRows(current);
   if (!current.rows.length) {
     toast('견적 품목을 1개 이상 입력하세요.', 'error');
     return false;
@@ -6143,9 +6153,9 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
   const defaultName = saveAs
     ? `${loadedName} 복사본`
     : (estimateCreation()?.kind === 'LINKED_GROUP' || current.estimateKind === 'LINKED_GROUP' ? '새 연동견적서' : (current.header.customerName || '새 견적서'));
-  const dialogTitle = saveAs ? '새 양식 저장' : '견적서 저장';
+  const dialogTitle = saveAs ? '새 견적서 저장' : '견적서 저장';
   const dialogMessage = saveAs
-    ? '현재 견적서 내용으로 새 양식을 만듭니다. 기존 견적서는 이름과 내용이 그대로 유지됩니다.'
+    ? '현재 내용으로 새 견적서를 만듭니다. 기존 견적서는 이름과 내용이 그대로 유지됩니다.'
     : '새 견적서명을 입력하면 견적서 목록에 저장됩니다.';
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-save-dialog';
@@ -6153,7 +6163,7 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
     <header><div><small>${saveAs ? 'Save As' : 'Estimate Save'}</small><h2>${dialogTitle}</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-dialog__message">${dialogMessage}</div>
     <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}" placeholder="견적서명을 입력하세요" autocomplete="off" enterkeyhint="done" autofocus></label></div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '새 양식 저장' : '저장'}</button></footer>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '새 견적서 저장' : '저장'}</button></footer>
   </div>`;
   document.body.append(dialog);
   const finish = () => {
@@ -6312,12 +6322,17 @@ async function completeOrder() {
     toast('모든 열을 매핑 또는 비매핑으로 결정하고 입력 양식을 저장하세요.', 'error');
     return;
   }
+  const current = modeDraft();
+  if (pruneEmptyWorkRows(current)) {
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+  }
   if (state.draft.activeMode === 'estimate') {
     const creation = estimateCreation();
     if (creation?.kind === 'LINKED_GROUP' && creation.selectedIds.length < 2) return toast('연동견적서는 원본 두 개 이상을 선택하세요.', 'warn');
     if (creation && !creation.selectedIds.length) return toast('생성할 견적서를 선택하세요.', 'warn');
     if (!validateEstimateDocument()) return;
-    const loadedRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
+    const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
     const assignedName = String(loadedRecord?.catalogName || '').trim();
     return assignedName ? saveEstimateDocument(assignedName) : openEstimateSaveDialog();
   }
@@ -7516,6 +7531,12 @@ inputRows.addEventListener('paste', event => {
 });
 
 document.addEventListener('paste', event => {
+  const pastedText = event.clipboardData?.getData('text/plain') || '';
+  if (parserCard.contains(event.target) && clipboardTableMatrix(pastedText)) {
+    event.preventDefault();
+    useClipboardTableAsSource(pastedText);
+    return;
+  }
   const image = [...(event.clipboardData?.items || [])]
     .filter(item => item.kind === 'file' && String(item.type || '').startsWith('image/'))
     .map(item => item.getAsFile())
@@ -7525,7 +7546,6 @@ document.addEventListener('paste', event => {
     recognizeImage(image);
     return;
   }
-  const pastedText = event.clipboardData?.getData('text/plain') || '';
   if (event.target === sourceTextInput && pastedText) {
     updateMethod('paste');
     window.setTimeout(syncSourceText, 0);

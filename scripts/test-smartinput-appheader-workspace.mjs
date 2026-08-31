@@ -45,7 +45,7 @@ assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
 assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
   'the right-panel footer must stay at or below 44px with two horizontal actions');
-assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 양식 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/,
+assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/,
   'the table footer must keep Save left and approved estimate/output actions right in order');
 assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
   'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');

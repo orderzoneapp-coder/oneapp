@@ -127,6 +127,10 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
   await loaded;
   await expr(client, `Boolean(document.querySelector('#inputRows tr'))`, 'SmartInput shell');
+  await evaluate(client, `(() => {window.__sourceFilePickerOpened=false;document.querySelector('#fileInput').click=()=>{window.__sourceFilePickerOpened=true;};return true;})()`);
+  await click(client, '#sourceFileButton');
+  assert.equal(await evaluate(client, `window.__sourceFilePickerOpened`), true, 'the visible Excel file button must open the existing safe file input');
+  await wait(500);
   await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'itemCode',label:'품목코드',scope:'voucher',valueType:'TEXT'},{id:'itemName',label:'품목명',scope:'voucher',valueType:'TEXT'},{id:'quantity',label:'수량',scope:'voucher',valueType:'NUMBER'},{id:'memo',label:'메모',scope:'voucher',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
@@ -193,6 +197,18 @@ try {
   assert.ok(mobile.sourceWidth <= 390 && mobile.tableWidth <= 390 && mobile.sourceVisible && mobile.mappingVisible && mobile.panelClosed,
     'mobile must keep source and mapping table in the stacked workflow after the right panel is closed');
   const mobileShot = await capture(client, 'smartinput-input-template-mapping-mobile.png');
+
+  await evaluate(client, String.raw`(() => {window.__clipboardImagePathUsed=false;const target=document.querySelector('#sourceTextInput');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t품목명\t수량\t원본 메모\n009\t근대\t3\t표 우선\n\t\t\t\n011\t상추\t0\t':'',items:[{kind:'file',type:'image/png',getAsFile:()=>{window.__clipboardImagePathUsed=true;return new File(['image'], 'excel-range.png',{type:'image/png'});}}]}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
+  await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='TEMPLATE_APPLIED'`, 'saved official template auto application from clipboard');
+  assert.equal(await evaluate(client, `window.__clipboardImagePathUsed`), false, 'tabular clipboard text must take priority over the simultaneous Excel image representation');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-1"] [data-mapping-column="1"] input')?.value`), '근대');
+  assert.deepEqual(await evaluate(client, `({sourceRows:document.querySelectorAll('#sourceSheetRows tr').length,workingRows:document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length,secondValue:document.querySelector('[data-mapping-row-id="source-3"] [data-mapping-column="1"] input')?.value})`),
+    { sourceRows: 4, workingRows: 2, secondValue: '상추' },
+    'raw source rows must remain intact while completely blank rows do not become working or saved rows');
+
+  await evaluate(client, String.raw`(() => {const target=document.querySelector('#sourceTextInput');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t신규 원본열\n010\t보존값':'',items:[]}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
+  await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='NEW_TEMPLATE'`, 'unregistered clipboard structure source mapping fallback');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-1"] [data-mapping-column="1"] input')?.value`), '보존값', 'unknown columns must remain intact in the new source mapping table');
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
   console.log(JSON.stringify({ screenshots: [desktopShot, darkShot, mobileShot], persistedTemplateId: persistedTemplate.templateId }, null, 2));
