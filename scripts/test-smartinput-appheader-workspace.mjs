@@ -18,7 +18,8 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibrarySwitchButton"[\s\S]*견적서목록[\s\S]*↔[\s\S]*연동견적서/, 'individual and linked estimate lists must use one pill switch');
-assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="estimateRenameButton"[\s\S]*id="estimateCreateButton"[\s\S]*id="selectedEstimateDeleteButton"/, 'the estimate library must use one selection summary and shared actions');
+assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성</, 'the estimate library footer must expose only deletion and linked-estimate creation');
+assert.doesNotMatch(html, /estimateRenameButton|merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
 assert.match(html, /id="gridSearchInput"[\s\S]*id="gridRowCount"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/, 'search, review counts, and row actions must share one toolbar row');
 assert.doesNotMatch(html, /class="grid-toolbar"|class="grid-review-tools"/, 'the former second status row must be removed');
@@ -42,6 +43,11 @@ assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{
   'all voucher modes must keep search, counts, and editing controls on one stable toolbar row');
 assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
+assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
+  'the right-panel footer must stay at or below 44px with two horizontal actions');
+assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
+  'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');
+assert.doesNotMatch(html + css, /reference-overview__coachmark/, 'reference status must not use a coachmark surface');
 assert.match(html, /id="relatedPanelToggle"[\s\S]*id="relatedPanelResizer"[\s\S]*id="relatedPanelCloseButton"/,
   'the right activity panel must expose slide toggle, resize handle, and close control');
 assert.match(css, /@media \(max-width:\s*820px\)[\s\S]*\.related-panel-resizer\s*\{\s*display:\s*none/,
