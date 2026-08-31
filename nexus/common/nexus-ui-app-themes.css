@@ -91,6 +91,7 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 /* Neutral surfaces: the dominant layer for dense operational screens. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-white,
+  .bg-white\/50,
   .bg-white\/60,
   .bg-white\/70,
   .bg-white\/80,
@@ -105,6 +106,7 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-slate-50,
+  .bg-slate-50\/30,
   .bg-slate-50\/40,
   .bg-slate-50\/50,
   .bg-slate-50\/60,
@@ -123,6 +125,7 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-slate-200,
   .bg-slate-200\/50,
   .bg-slate-300,
+  .bg-slate-300\/50,
   .bg-gray-200,
   .bg-zinc-200,
   .bg-neutral-200
@@ -207,13 +210,17 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 /* Quiet semantic surfaces: color remains only where it carries meaning. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-blue-50,
+  .bg-blue-50\/30,
   .bg-blue-50\/50,
   .bg-blue-50\/60,
   .bg-blue-100,
   .bg-sky-50,
   .bg-sky-100,
   .bg-indigo-50,
+  .bg-indigo-50\/10,
+  .bg-indigo-50\/30,
   .bg-indigo-50\/40,
+  .bg-indigo-50\/50,
   .bg-indigo-50\/60,
   .bg-indigo-50\/70,
   .bg-indigo-100
@@ -234,7 +241,11 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-emerald-50,
+  .bg-emerald-50\/10,
+  .bg-emerald-50\/20,
   .bg-emerald-50\/30,
+  .bg-emerald-50\/40,
+  .bg-emerald-50\/50,
   .bg-emerald-50\/60,
   .bg-emerald-50\/70,
   .bg-emerald-100,
@@ -254,6 +265,8 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-amber-50,
+  .bg-amber-50\/10,
+  .bg-amber-50\/50,
   .bg-amber-50\/60,
   .bg-amber-50\/70,
   .bg-amber-50\/80,
@@ -282,6 +295,7 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-rose-50,
   .bg-rose-50\/30,
+  .bg-rose-50\/40,
   .bg-rose-50\/50,
   .bg-rose-50\/60,
   .bg-rose-50\/70,
@@ -289,12 +303,17 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .bg-rose-200,
   .bg-red-50,
   .bg-red-100,
+  .bg-pink-50,
+  .bg-pink-100,
   .bg-rose-500,
   .bg-rose-600,
   .bg-rose-700,
   .bg-red-500,
   .bg-red-600,
   .bg-red-700,
+  .bg-pink-500,
+  .bg-pink-600,
+  .bg-pink-700,
   .\!bg-rose-100
 ) {
   border-color: var(--nexus-ui-danger-border) !important;
@@ -421,6 +440,11 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .text-red-700,
   .text-red-800,
   .text-red-900,
+  .text-pink-500,
+  .text-pink-600,
+  .text-pink-700,
+  .text-pink-800,
+  .text-pink-900,
   .\!text-rose-800
 ) {
   color: var(--nexus-ui-danger) !important;
@@ -517,7 +541,10 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
   .border-rose-300,
   .border-red-100,
   .border-red-200,
-  .border-red-300
+  .border-red-300,
+  .border-pink-100,
+  .border-pink-200,
+  .border-pink-300
 ) {
   border-color: var(--nexus-ui-danger-border) !important;
 }
@@ -536,6 +563,34 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
 /* Keep the worktable hierarchy above later utility-class remaps. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(input, select, textarea):not([type="file"]) {
   background-color: var(--nexus-ui-input-bg) !important;
+}
+
+/* Tailwind state variants are separate class tokens and need dark equivalents. */
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .disabled\:bg-slate-50:disabled,
+  .disabled\:bg-slate-100:disabled
+) {
+  background-color: var(--nexus-ui-panel-subtle) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .disabled\:bg-slate-200:disabled,
+  .disabled\:bg-slate-300:disabled,
+  .disabled\:bg-slate-400:disabled,
+  .disabled\:bg-slate-600:disabled
+) {
+  background-color: var(--nexus-ui-selection-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body :is(
+  .disabled\:text-slate-400:disabled,
+  .disabled\:text-slate-500:disabled
+) {
+  color: var(--nexus-ui-muted) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body .disabled\:border-slate-200:disabled {
+  border-color: var(--nexus-ui-border) !important;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body th:is(
@@ -680,9 +735,61 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .table-wrap 
   background-color: var(--nexus-ui-selection-bg) !important;
 }
 
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .brand-mark,
+  .brand-product
+) {
+  color: var(--nexus-ui-cyan) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .system-name,
+  .header-save-button
+) {
+  color: #f4f7fb !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .storage-status-divider,
+  .primary-button:disabled
+) {
+  color: var(--nexus-ui-muted) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .execution-button.analysis-run:disabled {
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body td.box-unit-cell {
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .header-link:not(.header-save-button):not(.header-smart-input):not(.header-output-button):not(.order-input-link) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
+  .header-smart-input,
+  .header-output-button
+) {
+  border-color: var(--nexus-ui-cyan-border) !important;
+  background-color: var(--nexus-ui-cyan-bg) !important;
+  color: var(--nexus-ui-cyan) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .order-input-link {
+  border-color: var(--nexus-ui-info-border) !important;
+  background-color: var(--nexus-ui-info-bg) !important;
+  color: var(--nexus-ui-info) !important;
+}
+
 /* ORDER Q vNext shares the same quiet worktable hierarchy. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] {
   --white: var(--nexus-ui-panel-bg);
+  --bg: var(--nexus-ui-page-bg);
+  --panel: var(--nexus-ui-panel-bg);
   --slate-50: var(--nexus-ui-table-row-bg);
   --slate-100: var(--nexus-ui-panel-subtle);
   --slate-200: var(--nexus-ui-border);
@@ -696,6 +803,14 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] {
   --line: var(--nexus-ui-border);
   --ink: var(--nexus-ui-text);
   --muted: var(--nexus-ui-muted);
+  --teal: var(--nexus-ui-cyan);
+  --blue: var(--nexus-ui-info);
+  --amber-bg: var(--nexus-ui-warning-bg);
+  --amber: var(--nexus-ui-warning);
+  --red-bg: var(--nexus-ui-danger-bg);
+  --red: var(--nexus-ui-danger);
+  --green-bg: var(--nexus-ui-success-bg);
+  --green: var(--nexus-ui-success);
   --teal-100: var(--nexus-ui-cyan-bg);
   --teal-600: var(--nexus-ui-cyan);
   --teal-700: var(--nexus-ui-cyan);
@@ -737,6 +852,88 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
   border-color: var(--nexus-ui-selection-border) !important;
   background-color: var(--nexus-ui-selection-bg) !important;
   color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
+  .external-order-section,
+  .document-detail-row > td,
+  .parser-summary,
+  .result-list,
+  .raw-message,
+  .operation-settings,
+  .compact-title,
+  .source-cards,
+  .collector-tabs,
+  .cloud-grid,
+  .operations-alerts,
+  .voucher-query-card > header
+) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-subtle) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
+  .parser-summary > div,
+  .parse-card,
+  .source-card,
+  .kpi,
+  .collector-tabs button
+) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body :is(
+  .field label,
+  .document-filters label,
+  .inline-edit-grid label,
+  .external-order-section summary,
+  .date-picker-button,
+  .detail-section h3,
+  .change-history b
+) {
+  color: var(--nexus-ui-muted) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .operations-alerts span:not(.warn):not(.danger) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .collector-tabs button.active {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background-color: var(--nexus-ui-selection-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .drop-zone {
+  border-color: var(--nexus-ui-cyan-border) !important;
+  background-color: var(--nexus-ui-cyan-bg) !important;
+  color: var(--nexus-ui-cyan) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .drop-zone span {
+  color: var(--nexus-ui-cyan) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .drop-zone .drop-action {
+  border-color: #0f5f59 !important;
+  background-color: #0f5f59 !important;
+  color: #fff !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .text-collector {
+  border-color: var(--nexus-ui-warning-border) !important;
+  background-color: var(--nexus-ui-warning-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] body .source-card .type {
+  background-color: var(--nexus-ui-info-bg) !important;
+  color: var(--nexus-ui-info) !important;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-track {

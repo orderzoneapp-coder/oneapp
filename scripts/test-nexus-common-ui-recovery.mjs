@@ -33,14 +33,15 @@ const pages = [
   ['orderq/parser.html', 'orderq-vnext', '../nexus/common/', '주문분석 - NEXUS'],
   ['orderq/collector.html', 'orderq-vnext', '../nexus/common/', '기초자료 수집 - NEXUS'],
   ['orderq/cloud.html', 'orderq-vnext', '../nexus/common/', '클라우드 동기화 - NEXUS'],
+  ['orderq/voucher-query.html', 'orderq-vnext', '../nexus/common/', '전표 조회 - NEXUS'],
   ['smartinput/index.html', 'smart-input', '../nexus/common/', '스마트입력 - NEXUS'],
 ];
 
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.3.0`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.2.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.3.2`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.2`;
   const runtime = `${base}nexus-ui.js?v=1.4.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
@@ -71,6 +72,7 @@ const initSource = await readFile('nexus/common/nexus-ui-theme-init.js', 'utf8')
 const uiSource = await readFile('nexus/common/nexus-ui.js', 'utf8');
 const uiCss = await readFile('nexus/common/nexus-ui.css', 'utf8');
 const appThemeCss = await readFile('nexus/common/nexus-ui-app-themes.css', 'utf8');
+const smartInputCss = await readFile('smartinput/smartinput.css', 'utf8');
 const combinedRuntime = `${initSource}\n${uiSource}`;
 
 for (const forbidden of [
@@ -125,6 +127,7 @@ assert.match(uiCss, /--nexus-ui-table-header-bg:\s*#292f37/, 'dark table header 
 assert.match(uiCss, /--nexus-ui-table-row-bg:\s*#1d2228/, 'dark table rows must use the muted hierarchy');
 assert.match(uiCss, /--nexus-ui-table-row-hover-bg:\s*#282e36/, 'dark table hover must remain neutral');
 assert.match(uiCss, /--nexus-ui-selection-bg:\s*#303842/, 'selected tools must use a neutral surface');
+assert.match(uiCss, /--nexus-ui-muted:\s*#9aa2ac/, 'dark muted text must remain readable on selected surfaces');
 assert.match(uiCss, /--nexus-ui-info:\s*#b3c4d4/, 'dark information state must be low chroma');
 assert.match(uiCss, /--nexus-ui-success:\s*#b3c8ba/, 'dark success state must be low chroma');
 assert.match(uiCss, /--nexus-ui-warning:\s*#c4b8a8/, 'dark warning state must be low chroma');
@@ -139,6 +142,11 @@ assert.match(uiCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nexus-ui-nav__link\s
 assert.doesNotMatch(uiCss, /\.nexus-ui-nav__link::after/, 'selected tabs must not use an underline');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is required');
 assert.match(appThemeCss, /\.bg-slate-50\\\/50/, 'dark empty-table backgrounds must be mapped');
+assert.match(appThemeCss, /\.bg-indigo-50\\\/50/, 'transparent information surfaces must be mapped');
+assert.match(appThemeCss, /\.disabled\\:bg-slate-200:disabled/, 'disabled Tailwind surfaces must be mapped');
+assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*[\s\S]*?td\.box-unit-cell/, 'ORDER Q BOX rows must override forced light-mode ink');
+assert.match(appThemeCss, /\.header-link:not\(\.header-save-button\)[\s\S]*?background-color:\s*var\(--nexus-ui-panel-bg\)/, 'ORDER Q header tools must retain dark surfaces');
+assert.match(appThemeCss, /\.execution-button\.analysis-run:disabled[\s\S]*?color:\s*var\(--nexus-ui-text\)/, 'disabled ORDER Q execution text must remain readable');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body :is\(input, select, textarea\)/, 'dark inputs must outrank utility backgrounds');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body th/, 'dark table headers must retain a separate hierarchy');
 assert.match(appThemeCss, /\.bg-blue-600[\s\S]*?background-color:\s*var\(--nexus-ui-selection-bg\)/, 'solid blue tools must be neutralized');
@@ -146,7 +154,13 @@ assert.match(appThemeCss, /\.bg-emerald-600[\s\S]*?background-color:\s*var\(--ne
 assert.match(appThemeCss, /data-nexus-ui-app="history-viewer"/, 'history worktable hard-coded surfaces must be covered');
 assert.match(appThemeCss, /data-nexus-ui-app="orderops"/, 'ORDER Q local palette must be bridged');
 assert.match(appThemeCss, /data-nexus-ui-app="orderq-vnext"/, 'ORDER Q vNext local palette must be bridged');
+assert.match(appThemeCss, /--panel:\s*var\(--nexus-ui-panel-bg\)/, 'ORDER Q vNext panels must consume the common dark palette');
+assert.match(appThemeCss, /\.parser-summary[\s\S]*?\.source-cards[\s\S]*?background-color:\s*var\(--nexus-ui-panel-subtle\)/, 'ORDER Q vNext custom work surfaces must be dark-aware');
+assert.match(appThemeCss, /\.operations-alerts span:not\(\.warn\):not\(\.danger\)[\s\S]*?background-color:\s*var\(--nexus-ui-panel-bg\)/, 'ORDER Q alerts must not retain white chips');
+assert.match(appThemeCss, /\.drop-zone \.drop-action[\s\S]*?color:\s*#fff/, 'ORDER Q upload action must use contrast-safe ink');
 assert.match(appThemeCss, /@media print[\s\S]*?--nexus-ui-page-bg:\s*#ffffff/, 'direct print must restore a bright background');
+assert.match(smartInputCss, /--accent-fill:\s*#16746d/, 'SmartInput solid accent controls need a contrast-safe fill');
+assert.match(smartInputCss, /--text-faint:\s*#7b8fa4/, 'SmartInput faint dark text needs readable contrast');
 
 for (const [label, foreground, background] of [
   ['dark tab', '8f9aaa', '1a2330'],
@@ -154,13 +168,16 @@ for (const [label, foreground, background] of [
   ['light tab', '667085', 'f1f4f7'],
   ['light active tab', '24364d', 'dfe7f0'],
   ['dark body text', 'd6d9de', '15181d'],
-  ['dark muted text', '9299a3', '15181d'],
+  ['dark muted text', '9aa2ac', '15181d'],
+  ['dark muted selected text', '9aa2ac', '303842'],
   ['dark info state', 'b3c4d4', '2a323a'],
   ['dark success state', 'b3c8ba', '2b342f'],
   ['dark warning state', 'c4b8a8', '342f2a'],
   ['dark danger state', 'c7b1b4', '352d2f'],
   ['dark accent state', 'bbbdd0', '302f39'],
   ['dark cyan state', 'b2c6c8', '293435'],
+  ['SmartInput solid accent', 'ffffff', '16746d'],
+  ['SmartInput faint text', '7b8fa4', '152334'],
 ]) {
   assert.ok(contrastRatio(foreground, background) >= 4.5, `${label}: WCAG contrast must be at least 4.5:1`);
 }
