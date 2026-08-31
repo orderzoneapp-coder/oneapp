@@ -50,6 +50,9 @@ assert.doesNotMatch(html + appSource, /estimateRenameButton|merchOpsEstimateButt
 assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
   'normal card selection must immediately switch to exactly one stored estimate');
 assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
+assert.doesNotMatch(appSource, /toast\(`\$\{records\.length\}개 견적서 · 중복 제거/, 'estimate selection must not create a redundant coachmark over the action area');
+assert.match(appSource, /data-estimate-name[^>]*placeholder="견적서명을 입력하세요"[^>]*autofocus/, 'estimate naming must be immediately ready for direct keyboard input');
+assert.match(appSource, /dialog\.showModal\(\);[\s\S]*focusNameInput\(\);[\s\S]*setTimeout\(focusNameInput, 0\)/, 'estimate naming focus must be immediate and restored after native modal focus handling');
 assert.doesNotMatch(appSource, /if \(current\.estimateKind !== 'LINKED_GROUP'\) current\.catalogRecordId = ''/, 'saving an individual estimate must retain its identity for subsequent in-place updates');
 assert.match(appSource, /from '\.\.\/orderq\/voucher-activity-read-adapter\.js/, 'SmartInput may consume the owner-issued read-only voucher activity adapter');
 assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\/(?!voucher-activity-read-adapter)/,

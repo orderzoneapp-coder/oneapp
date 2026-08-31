@@ -2477,6 +2477,8 @@ function applyRelatedPanelState() {
   const open = Boolean(state.draft.ui.relatedOpen);
   const workspace = $('smartInputWorkspace');
   const panel = $('estimateLibraryView');
+  const appBarBottom = Math.max(0, Math.round(document.querySelector('.app-bar')?.getBoundingClientRect().bottom || 0));
+  workspace.style.setProperty('--related-panel-top', `${appBarBottom}px`);
   applyRelatedPanelWidth();
   workspace.classList.toggle('related-panel-open', open);
   panel.classList.toggle('is-open', open);
@@ -2596,7 +2598,6 @@ function previewEstimateCreation() {
   creation.status = records.length ? 'COMPOSITION_PREVIEW' : 'MULTI_SELECT';
   saveDraftNow();
   renderMode();
-  if (records.length) toast(`${records.length}개 견적서 · 중복 제거 ${fallback.rows.length}개 상품 미리보기`, 'success');
 }
 
 function startEstimateCreation(kind) {
@@ -5142,7 +5143,7 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>${saveAs ? 'Save As' : 'Estimate Save'}</small><h2>${dialogTitle}</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-dialog__message">${dialogMessage}</div>
-    <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}"></label></div>
+    <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}" placeholder="견적서명을 입력하세요" autocomplete="off" enterkeyhint="done" autofocus></label></div>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '새 양식 저장' : '저장'}</button></footer>
   </div>`;
   document.body.append(dialog);
@@ -5181,8 +5182,14 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
     void submit();
   });
   dialog.showModal();
-  dialog.querySelector('[data-estimate-name]').focus();
-  dialog.querySelector('[data-estimate-name]').select();
+  const nameInput = dialog.querySelector('[data-estimate-name]');
+  const focusNameInput = () => {
+    nameInput.focus({ preventScroll: true });
+    if (nameInput.value) nameInput.select();
+    else nameInput.setSelectionRange(0, 0);
+  };
+  focusNameInput();
+  window.setTimeout(focusNameInput, 0);
 }
 
 async function saveEstimateDocument(catalogName) {
@@ -6366,7 +6373,17 @@ document.addEventListener('paste', event => {
 
 window.addEventListener('resize', () => {
   window.requestAnimationFrame(renderPhotoTransform);
+  window.requestAnimationFrame(() => window.requestAnimationFrame(applyRelatedPanelState));
+  window.setTimeout(applyRelatedPanelState, 120);
 }, { passive: true });
+const appBarResizeObserver = 'ResizeObserver' in window
+  ? new ResizeObserver(() => window.requestAnimationFrame(applyRelatedPanelState))
+  : null;
+if (appBarResizeObserver) {
+  appBarResizeObserver.observe(document.querySelector('.app-bar'));
+  const globalHeader = document.querySelector('.nexus-ui-header');
+  if (globalHeader) appBarResizeObserver.observe(globalHeader);
+}
 
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;
