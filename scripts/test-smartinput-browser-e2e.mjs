@@ -202,14 +202,16 @@ try {
   const relatedCloseIdle = await evaluate(client, `(() => {const close=document.querySelector('#relatedPanelCloseButton');return {text:close.textContent.trim(),label:close.getAttribute('aria-label'),opacity:getComputedStyle(document.querySelector('.related-panel-chrome')).opacity,hoverNone:matchMedia('(hover: none)').matches};})()`);
   assert.deepEqual({ text: relatedCloseIdle.text, label: relatedCloseIdle.label }, { text: '×', label: '우측 패널 닫기' }, 'desktop close must be an accessible X without a top labeled button');
   assert.equal(relatedCloseIdle.opacity, relatedCloseIdle.hoverNone ? '1' : '0', 'the X must stay touch-visible and otherwise wait for pointer hover');
-  const relatedHandlePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelResizer').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
-  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedHandlePoint });
-  await wait(120);
-  assert.equal(await evaluate(client, `(() => {const close=getComputedStyle(document.querySelector('#relatedPanelCloseButton'));const handle=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return getComputedStyle(document.querySelector('.related-panel-chrome')).opacity==='1'&&close.color==='rgb(255, 255, 255)'&&handle.height==='76px';})()`), true, 'resizer hover must reveal and highlight both the handle and X');
-  const relatedClosePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
-  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedClosePoint });
-  await wait(120);
-  assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer span')).height`), '76px', 'X hover must also highlight the left resize handle');
+  if (!relatedCloseIdle.hoverNone) {
+    const relatedHandlePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelResizer').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedHandlePoint });
+    await wait(120);
+    assert.equal(await evaluate(client, `(() => {const close=getComputedStyle(document.querySelector('#relatedPanelCloseButton'));const handle=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return getComputedStyle(document.querySelector('.related-panel-chrome')).opacity==='1'&&close.color==='rgb(255, 255, 255)'&&handle.height==='76px';})()`), true, 'resizer hover must reveal and highlight both the handle and X');
+    const relatedClosePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedClosePoint });
+    await wait(120);
+    assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer span')).height`), '76px', 'X hover must also highlight the left resize handle');
+  }
   await evaluate(client, `(() => {const handle=document.querySelector('#relatedPanelResizer');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
   assert.ok(await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`) > beforeRelatedResize, 'desktop right panel width must be keyboard adjustable');
   await click(client, '#relatedPanelCloseButton');
