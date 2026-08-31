@@ -130,6 +130,7 @@ try {
   await evaluate(client, `(() => {window.__sourceFilePickerOpened=false;document.querySelector('#fileInput').click=()=>{window.__sourceFilePickerOpened=true;};return true;})()`);
   await click(client, '#sourceFileButton');
   assert.equal(await evaluate(client, `window.__sourceFilePickerOpened`), true, 'the visible Excel file button must open the existing safe file input');
+  await wait(500);
   await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'itemCode',label:'품목코드',scope:'voucher',valueType:'TEXT'},{id:'itemName',label:'품목명',scope:'voucher',valueType:'TEXT'},{id:'quantity',label:'수량',scope:'voucher',valueType:'NUMBER'},{id:'memo',label:'메모',scope:'voucher',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
