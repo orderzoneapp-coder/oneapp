@@ -73,6 +73,7 @@
   const adminLink = document.getElementById('adminLink');
   const appGrid = document.getElementById('appGrid');
   const homeThemeToggle = document.getElementById('homeThemeToggle');
+  const homeThemeButtons = document.querySelectorAll('[data-home-theme-set]');
 
   let sessionBridgeReadyPromise = null;
   let sessionBridgeRegistration = null;
@@ -91,12 +92,15 @@
     homeThemeToggle.setAttribute('aria-checked', String(dark));
     homeThemeToggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
     homeThemeToggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
+    homeThemeButtons.forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.homeThemeSet === (dark ? 'dark' : 'light')));
+    });
   };
 
-  const applyTheme = (value) => {
+  const applyTheme = (value, source = 'nexus-home') => {
     const next = normalizeTheme(value);
     const applied = themeController?.apply
-      ? themeController.apply(next, { persist: true, emit: true, source: 'nexus-home' })
+      ? themeController.apply(next, { persist: true, emit: true, source })
       : next;
     if (!themeController?.apply) {
       root.dataset.nexusUiTheme = applied;
@@ -501,7 +505,10 @@
   });
 
   homeThemeToggle.addEventListener('click', () => {
-    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', 'nexus-home-switch');
+  });
+  homeThemeButtons.forEach((button) => {
+    button.addEventListener('click', () => applyTheme(button.dataset.homeThemeSet, 'nexus-home-icon'));
   });
   window.addEventListener(THEME_CHANGE_EVENT, (event) => {
     updateThemeControl(event.detail?.theme);

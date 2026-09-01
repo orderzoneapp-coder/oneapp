@@ -10,10 +10,10 @@ const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
-assert.match(html, /nexus\.css\?v=1\.3\.0/, 'NEXUS home must load the ivory/dark CSS revision');
-assert.match(html, /nexus\.js\?v=1\.3\.1/, 'NEXUS home must load the theme-toggle runtime revision');
-assert.match(html, /class="nexus-home-theme__icon"[^>]*>☼</, 'home must use the common-header light icon');
-assert.match(html, /class="nexus-home-theme__icon"[^>]*>☾</, 'home must use the common-header dark icon');
+assert.match(html, /nexus\.css\?v=1\.3\.1/, 'NEXUS home must load the touch-enabled theme CSS revision');
+assert.match(html, /nexus\.js\?v=1\.3\.2/, 'NEXUS home must load the touch-enabled theme runtime revision');
+assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="light"[^>]+aria-label="일반모드 적용"[^>]*>☼<\/button>/, 'home light icon must be an accessible direct-action button');
+assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="dark"[^>]+aria-label="다크모드 적용"[^>]*>☾<\/button>/, 'home dark icon must be an accessible direct-action button');
 assert.match(html, /id="homeThemeToggle"[^>]+role="switch"/, 'home must expose an accessible screen-mode switch');
 assert.match(html, /id="loginId"[^>]+autocomplete="username"/, 'login id must support password managers');
 assert.match(html, /id="password"[^>]+autocomplete="current-password"/, 'password must use current-password autocomplete');
@@ -55,13 +55,15 @@ assert.match(runtime, /role === 'OWNER_MASTER' \? 'MASTER' : '위임 사용자'/
 assert.doesNotMatch(runtime, /canUseApp|hasPermission|appContexts|nexus_proxy|window\.fetch\s*=/, 'basic login must not add app gating or a gateway runtime');
 assert.match(runtime, /oneapp\.nexus\.ui\.visibility\.v1/, 'home must publish the non-sensitive UI visibility projection');
 assert.match(runtime, /window\.ONEAPP_NEXUS_UI_THEME/, 'home must consume the shared theme controller');
-assert.match(runtime, /themeController\.apply\(next, \{ persist: true, emit: true, source: 'nexus-home' \}\)/, 'home theme choice must persist through the shared controller');
+assert.match(runtime, /themeController\.apply\(next, \{ persist: true, emit: true, source \}\)/, 'home theme choice must persist through the shared controller');
+assert.match(runtime, /homeThemeButtons\.forEach[\s\S]*button\.addEventListener\('click'/, 'home theme icons must respond to click and touch activation');
 assert.match(runtime, /NEXUS_UI_VISIBILITY_V1/, 'home visibility projection must be schema-versioned');
 assert.match(runtime, /renderApps\(visibility\.visibleAppIds\)/, 'home cards must follow the UI visibility projection');
 assert.doesNotMatch(runtime, /company-transport|callCompanyGateway|company\.profile_read|refreshCompany|COMPANY_SNAPSHOT|revision/i, 'home startup must not call or depend on the company service');
 assert.match(commonUi, /logoFrame\.href = asset\('nexus\/'\)/, 'work-app logo must return to the NEXUS home');
 assert.doesNotMatch(commonUi, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app header must not expose user information or auth tokens');
 assert.match(css, /min-height:\s*44px/, 'home controls must retain touch-sized interaction');
+assert.match(css, /\.nexus-home-theme__icon\s*\{[^}]*width:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s, 'home theme icons must expose a 44px touch target');
 assert.match(css, /body\.nexus-home-page \.nexus-login-card\s*\{[^}]*border:\s*0;/s, 'home login surface must not draw a decorative border');
 assert.match(css, /body\.nexus-home-page \.nexus-login-card input\s*\{[^}]*border:\s*0;/s, 'home inputs must use surface depth instead of a resting border');
 assert.match(css, /body\.nexus-home-page \.nexus-app-card\s*\{[^}]*border:\s*0;/s, 'home app cards must use quiet surfaces instead of repeated borders');
@@ -92,7 +94,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.4\.0/, `${file}: updated visibility runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.4\.1/, `${file}: updated common header runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 
