@@ -431,15 +431,60 @@ noscript {
 
 /* NEXUS home concept: quiet surfaces, text-first hierarchy, essential lines only. */
 body.nexus-home-page {
+  --nexus-bg: #f3efe6;
+  --nexus-panel: #faf7f0;
+  --nexus-panel-soft: #efe9de;
+  --nexus-border: transparent;
+  --nexus-border-strong: transparent;
+  --nexus-text: #292b2f;
+  --nexus-muted: #666b70;
+  --nexus-accent: #2f746d;
+  --nexus-accent-hover: #286760;
+  --nexus-danger: #974e56;
+  --nexus-divider: rgb(100 88 70 / 22%);
+  --nexus-footer-text: #777169;
+  --nexus-soft-hover: rgb(69 58 44 / 7%);
+  --nexus-eyebrow-text: #2e716a;
+  --nexus-card-bg: rgb(255 253 248 / 76%);
+  --nexus-card-hover: #fffdf8;
+  --nexus-input-bg: #fffdf8;
+  --nexus-input-hover: #fbf6ed;
+  --nexus-label-text: #55595e;
+  --nexus-link-text: #2e6874;
+  --nexus-link-hover: #234f59;
+  --nexus-primary-text: #ffffff;
+  --nexus-arrow: #8b857b;
+  --nexus-arrow-hover: #5c6765;
+  --nexus-surface-shadow: 0 22px 60px rgb(64 52 35 / 12%);
+  background:
+    radial-gradient(circle at 18% 8%, rgb(206 191 165 / 26%), transparent 36rem),
+    linear-gradient(145deg, #f5f1e8 0%, #f2eee5 62%, #f6f1e7 100%);
+}
+
+html[data-nexus-ui-theme="dark"] body.nexus-home-page {
   --nexus-bg: #0f141a;
   --nexus-panel: #181e25;
   --nexus-panel-soft: #202730;
-  --nexus-border: transparent;
-  --nexus-border-strong: transparent;
   --nexus-text: #e7eaee;
   --nexus-muted: #9da5af;
   --nexus-accent: #4aa99c;
   --nexus-accent-hover: #58b4a7;
+  --nexus-danger: #f0a6ae;
+  --nexus-divider: rgb(77 97 123 / 45%);
+  --nexus-footer-text: #7f8994;
+  --nexus-soft-hover: rgb(255 255 255 / 5%);
+  --nexus-eyebrow-text: #82bdb5;
+  --nexus-card-bg: rgb(255 255 255 / 3.2%);
+  --nexus-card-hover: rgb(255 255 255 / 6%);
+  --nexus-input-bg: rgb(5 9 13 / 36%);
+  --nexus-input-hover: rgb(5 9 13 / 50%);
+  --nexus-label-text: #bdc4cd;
+  --nexus-link-text: #9dc6e5;
+  --nexus-link-hover: #d5eafb;
+  --nexus-primary-text: #071713;
+  --nexus-arrow: #77818c;
+  --nexus-arrow-hover: #aeb7c1;
+  --nexus-surface-shadow: 0 24px 70px rgb(0 0 0 / 17%);
   background:
     radial-gradient(circle at 18% 8%, rgb(48 70 82 / 18%), transparent 36rem),
     linear-gradient(145deg, #10161d 0%, #0f151c 62%, #121922 100%);
@@ -447,7 +492,7 @@ body.nexus-home-page {
 
 body.nexus-home-page .nexus-topbar,
 body.nexus-home-page .nexus-footer {
-  border-color: transparent;
+  border-color: var(--nexus-divider);
 }
 
 body.nexus-home-page .nexus-topbar {
@@ -455,7 +500,13 @@ body.nexus-home-page .nexus-topbar {
 }
 
 body.nexus-home-page .nexus-footer {
-  color: #7f8994;
+  color: var(--nexus-footer-text);
+}
+
+body.nexus-home-page .nexus-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 body.nexus-home-page .nexus-session-actions {
@@ -482,7 +533,7 @@ body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button) {
 
 body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button):hover {
   border-color: transparent;
-  background: rgb(255 255 255 / 5%);
+  background: var(--nexus-soft-hover);
   color: var(--nexus-text);
 }
 
@@ -496,34 +547,46 @@ body.nexus-home-page :is(.nexus-login-copy, .nexus-home-heading) h1 {
 }
 
 body.nexus-home-page .nexus-eyebrow {
-  color: #82bdb5;
+  color: var(--nexus-eyebrow-text);
 }
 
 body.nexus-home-page .nexus-login-card {
   border: 0;
-  background: rgb(24 30 37 / 90%);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 17%);
+  background: var(--nexus-card-bg);
+  box-shadow: var(--nexus-surface-shadow);
 }
 
 body.nexus-home-page .nexus-login-card label {
-  color: #bdc4cd;
+  color: var(--nexus-label-text);
   font-weight: 650;
+}
+
+body.nexus-home-page .nexus-text-button {
+  color: var(--nexus-link-text);
+}
+
+body.nexus-home-page .nexus-text-button:hover {
+  color: var(--nexus-link-hover);
+}
+
+body.nexus-home-page .nexus-message.is-progress {
+  color: var(--nexus-link-text);
 }
 
 body.nexus-home-page .nexus-login-card input {
   border: 0;
-  background: rgb(5 9 13 / 36%);
+  background: var(--nexus-input-bg);
   color: var(--nexus-text);
   box-shadow: none;
 }
 
 body.nexus-home-page .nexus-login-card input:hover {
   border-color: transparent;
-  background: rgb(5 9 13 / 50%);
+  background: var(--nexus-input-hover);
 }
 
 body.nexus-home-page .nexus-primary-button {
-  color: #071713;
+  color: var(--nexus-primary-text);
   box-shadow: none;
 }
 
@@ -549,24 +612,24 @@ body.nexus-home-page .nexus-app-card {
   padding: 20px;
   border: 0;
   border-radius: 12px;
-  background: rgb(255 255 255 / 3.2%);
+  background: var(--nexus-card-bg);
   transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 body.nexus-home-page .nexus-app-card::after {
-  color: #77818c;
+  color: var(--nexus-arrow);
   opacity: .42;
   transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
 body.nexus-home-page .nexus-app-card:hover {
   border-color: transparent;
-  background: rgb(255 255 255 / 6%);
+  background: var(--nexus-card-hover);
   transform: translateY(-1px);
 }
 
 body.nexus-home-page .nexus-app-card:hover::after {
-  color: #aeb7c1;
+  color: var(--nexus-arrow-hover);
   opacity: .8;
   transform: translateX(2px);
 }
@@ -583,6 +646,91 @@ body.nexus-home-page .nexus-app-card span {
   line-height: 1.5;
 }
 
+body.nexus-home-page .nexus-home-logo-image--dark,
+html[data-nexus-ui-theme="dark"] body.nexus-home-page .nexus-home-logo-image--light {
+  display: none;
+}
+
+html[data-nexus-ui-theme="dark"] body.nexus-home-page .nexus-home-logo-image--dark {
+  display: block;
+}
+
+body.nexus-home-page .nexus-home-theme {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  color: var(--nexus-muted);
+}
+
+body.nexus-home-page .nexus-home-theme__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+body.nexus-home-page .nexus-home-theme__switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 42px;
+  align-items: center;
+  width: 42px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #dfe7f0;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+body.nexus-home-page .nexus-home-theme__switch::after {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 24%);
+  content: "";
+  transition: transform 150ms ease;
+}
+
+html[data-nexus-ui-theme="dark"] body.nexus-home-page .nexus-home-theme__switch,
+body.nexus-home-page .nexus-home-theme__switch[aria-checked="true"] {
+  background: #3776a8;
+}
+
+html[data-nexus-ui-theme="dark"] body.nexus-home-page .nexus-home-theme__switch::after,
+body.nexus-home-page .nexus-home-theme__switch[aria-checked="true"]::after {
+  transform: translateX(14px);
+}
+
+body.nexus-home-page .nexus-home-theme__switch:hover {
+  background: #d4dde7;
+}
+
+html[data-nexus-ui-theme="dark"] body.nexus-home-page .nexus-home-theme__switch:hover,
+body.nexus-home-page .nexus-home-theme__switch[aria-checked="true"]:hover {
+  background: #416f96;
+}
+
+body.nexus-home-page .nexus-home-theme__switch:focus-visible {
+  outline: 2px solid #6489b2;
+  outline-offset: 2px;
+}
+
 @media (max-width: 900px) {
   body.nexus-home-page .nexus-app-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -595,20 +743,31 @@ body.nexus-home-page .nexus-app-card span {
   }
 
   body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) {
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: 6px;
     padding: 10px 0 8px;
   }
 
-  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) .nexus-home-logo {
-    align-self: flex-start;
+  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) .nexus-topbar-actions {
+    display: contents;
+  }
+
+  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) .nexus-home-theme {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   body.nexus-home-page .nexus-session-actions {
     width: 100%;
     justify-content: flex-end;
     gap: 4px;
+  }
+
+  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) .nexus-session-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button) {

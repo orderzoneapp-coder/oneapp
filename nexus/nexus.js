@@ -5,6 +5,9 @@
   const STORAGE_KEY = 'oneapp.nexus.home.session.v1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
+  const THEME_CHANGE_EVENT = 'nexus-ui:theme-change';
+  const root = document.documentElement;
+  const themeController = window.ONEAPP_NEXUS_UI_THEME;
   const REQUEST_TIMEOUT_MS = 20000;
   const SESSION_BRIDGE_URL = '/nexus/session-bridge.js?v=1.0.0';
   const SESSION_BRIDGE_SCOPE = '/nexus/';
@@ -69,6 +72,7 @@
   const userAccountType = document.getElementById('userAccountType');
   const adminLink = document.getElementById('adminLink');
   const appGrid = document.getElementById('appGrid');
+  const homeThemeToggle = document.getElementById('homeThemeToggle');
 
   let sessionBridgeReadyPromise = null;
   let sessionBridgeRegistration = null;
@@ -77,6 +81,30 @@
   const pendingSessionRequests = new Map();
 
   const cleanText = (value) => String(value ?? '').trim();
+
+  const normalizeTheme = (value) => value === 'dark' ? 'dark' : 'light';
+
+  const currentTheme = () => normalizeTheme(root.dataset.nexusUiTheme);
+
+  const updateThemeControl = (theme) => {
+    const dark = normalizeTheme(theme) === 'dark';
+    homeThemeToggle.setAttribute('aria-checked', String(dark));
+    homeThemeToggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
+    homeThemeToggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
+  };
+
+  const applyTheme = (value) => {
+    const next = normalizeTheme(value);
+    const applied = themeController?.apply
+      ? themeController.apply(next, { persist: true, emit: true, source: 'nexus-home' })
+      : next;
+    if (!themeController?.apply) {
+      root.dataset.nexusUiTheme = applied;
+      root.dataset.nexusTheme = applied;
+      root.style.colorScheme = applied;
+    }
+    updateThemeControl(applied);
+  };
 
   const bytesToBase64Url = (bytes) => {
     let binary = '';
@@ -471,6 +499,14 @@
       loginButton.disabled = false;
     }
   });
+
+  homeThemeToggle.addEventListener('click', () => {
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+  });
+  window.addEventListener(THEME_CHANGE_EVENT, (event) => {
+    updateThemeControl(event.detail?.theme);
+  });
+  updateThemeControl(currentTheme());
 
   showActivationButton.addEventListener('click', () => showActivation(true));
   showLoginButton.addEventListener('click', () => showActivation(false));
