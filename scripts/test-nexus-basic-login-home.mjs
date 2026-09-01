@@ -34,6 +34,12 @@ assert.match(runtime, /hash: 'SHA-256'/, 'the password verifier must use SHA-256
 assert.match(runtime, /sessionStorage\.setItem/, 'each NEXUS tab must retain its own in-memory-lifetime session cache');
 assert.doesNotMatch(runtime, /localStorage/, 'the session token must not persist in localStorage');
 assert.match(runtime, /navigator\.serviceWorker\.register\(SESSION_BRIDGE_URL/, 'NEXUS home must register the scoped session bridge');
+assert.match(runtime, /SESSION_BRIDGE_READY_WAIT_MS\s*=\s*3000/, 'bridge activation must tolerate a delayed first install');
+assert.match(runtime, /SESSION_BRIDGE_RESPONSE_WAIT_MS\s*=\s*3000/, 'an active background NEXUS window must have time to answer');
+assert.match(runtime, /if \(!ready\) sessionBridgeReadyPromise = null;/, 'a failed first bridge preparation must remain retryable');
+assert.match(runtime, /SESSION_BRIDGE_MAX_REQUESTS\s*=\s*2/, 'a new NEXUS window must make one bounded retry');
+assert.match(runtime, /isSessionBridgeWorker\(active\)/, 'the active scoped registration must be preferred over an unrelated controller');
+assert.match(runtime, /addEventListener\('message', handleSessionBridgeMessage\)[\s\S]*if \(sessionBridgeTarget\(\)\) return Promise\.resolve\(true\);/, 'an already-active worker must not bypass the page message listener');
 assert.match(runtime, /NEXUS_SESSION_REQUEST/, 'a new NEXUS tab must request an active peer session');
 assert.match(runtime, /NEXUS_SESSION_CLEARED/, 'logout and expiry must propagate to peer NEXUS tabs');
 assert.doesNotMatch(sessionBridge, /addEventListener\(['"]fetch|\bcaches\b|localStorage|indexedDB|document\.cookie/, 'the bridge must stay memory-only and must not intercept page traffic');

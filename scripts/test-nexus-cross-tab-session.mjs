@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
 const source = await readFile('nexus/session-bridge.js', 'utf8');
+assert.match(source, /REQUEST_TTL_MS\s*=\s*5000/, 'the worker must retain a pending request longer than the page response window');
 const handlers = new Map();
 const messages = new Map();
 let claimed = false;

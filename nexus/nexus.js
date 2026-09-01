@@ -8,7 +8,10 @@
   const REQUEST_TIMEOUT_MS = 20000;
   const SESSION_BRIDGE_URL = '/nexus/session-bridge.js?v=1.0.0';
   const SESSION_BRIDGE_SCOPE = '/nexus/';
-  const SESSION_BRIDGE_WAIT_MS = 700;
+  const SESSION_BRIDGE_READY_WAIT_MS = 3000;
+  const SESSION_BRIDGE_RESPONSE_WAIT_MS = 3000;
+  const SESSION_BRIDGE_RETRY_DELAY_MS = 150;
+  const SESSION_BRIDGE_MAX_REQUESTS = 2;
   const SESSION_BRIDGE_MESSAGE = Object.freeze({
     PUBLISH: 'NEXUS_SESSION_PUBLISH',
     REQUEST: 'NEXUS_SESSION_REQUEST',
@@ -130,11 +133,22 @@
     }
   };
 
-  const sessionBridgeTarget = () => navigator.serviceWorker?.controller
-    || sessionBridgeRegistration?.active
-    || sessionBridgeRegistration?.waiting
-    || sessionBridgeRegistration?.installing
-    || null;
+  const isSessionBridgeWorker = (worker) => {
+    const scriptUrl = cleanText(worker?.scriptURL);
+    if (!scriptUrl) return false;
+    try {
+      return new URL(scriptUrl, location.href).pathname === '/nexus/session-bridge.js';
+    } catch {
+      return false;
+    }
+  };
+
+  const sessionBridgeTarget = () => {
+    const active = sessionBridgeRegistration?.active;
+    if (isSessionBridgeWorker(active)) return active;
+    const controller = navigator.serviceWorker?.controller;
+    return isSessionBridgeWorker(controller) ? controller : null;
+  };
 
   const postToSessionBridge = (message) => {
     const target = sessionBridgeTarget();
@@ -185,13 +199,14 @@
   };
 
   const ensureSessionBridge = () => {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return Promise.resolve(false);
+    if (!sessionBridgeListenerInstalled) {
+      navigator.serviceWorker.addEventListener('message', handleSessionBridgeMessage);
+      sessionBridgeListenerInstalled = true;
+    }
+    if (sessionBridgeTarget()) return Promise.resolve(true);
     if (sessionBridgeReadyPromise) return sessionBridgeReadyPromise;
     sessionBridgeReadyPromise = (async () => {
-      if (!('serviceWorker' in navigator) || !window.isSecureContext) return false;
-      if (!sessionBridgeListenerInstalled) {
-        navigator.serviceWorker.addEventListener('message', handleSessionBridgeMessage);
-        sessionBridgeListenerInstalled = true;
-      }
       try {
         sessionBridgeRegistration = await navigator.serviceWorker.register(SESSION_BRIDGE_URL, {
           scope: SESSION_BRIDGE_SCOPE,
@@ -199,14 +214,20 @@
         });
         const ready = await Promise.race([
           navigator.serviceWorker.ready,
-          new Promise((resolve) => setTimeout(() => resolve(null), SESSION_BRIDGE_WAIT_MS)),
+          new Promise((resolve) => setTimeout(() => resolve(null), SESSION_BRIDGE_READY_WAIT_MS)),
         ]);
         if (ready) sessionBridgeRegistration = ready;
         return Boolean(sessionBridgeTarget());
       } catch {
         return false;
       }
-    })();
+    })().then((ready) => {
+      if (!ready) sessionBridgeReadyPromise = null;
+      return ready;
+    }, () => {
+      sessionBridgeReadyPromise = null;
+      return false;
+    });
     return sessionBridgeReadyPromise;
   };
 
@@ -216,14 +237,14 @@
     return postToSessionBridge({ type: SESSION_BRIDGE_MESSAGE.PUBLISH, bundle: normalized });
   };
 
-  const requestSharedSession = async () => {
+  const requestSharedSessionOnce = async () => {
     if (!(await ensureSessionBridge())) return null;
     const requestId = `${Date.now()}-${++sessionBridgeRequestSequence}-${Math.random().toString(36).slice(2)}`;
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         pendingSessionRequests.delete(requestId);
         resolve(null);
-      }, SESSION_BRIDGE_WAIT_MS);
+      }, SESSION_BRIDGE_RESPONSE_WAIT_MS);
       pendingSessionRequests.set(requestId, { resolve, timeout });
       if (!postToSessionBridge({ type: SESSION_BRIDGE_MESSAGE.REQUEST, requestId })) {
         clearTimeout(timeout);
@@ -231,6 +252,17 @@
         resolve(null);
       }
     });
+  };
+
+  const requestSharedSession = async () => {
+    for (let attempt = 0; attempt < SESSION_BRIDGE_MAX_REQUESTS; attempt += 1) {
+      const shared = await requestSharedSessionOnce();
+      if (shared) return shared;
+      if (attempt + 1 < SESSION_BRIDGE_MAX_REQUESTS) {
+        await new Promise((resolve) => setTimeout(resolve, SESSION_BRIDGE_RETRY_DELAY_MS));
+      }
+    }
+    return null;
   };
 
   const clearSharedSession = async (token) => {
