@@ -154,10 +154,10 @@ SmartInput의 전표별 필드·선택 노출·기준정보 사본·Excel 매핑
 - 프로젝트 기준정보 owner 앱 구축, 잔량·부분이행, FIFO 원가, 이익표시, 자동 VAT·환율·단위 변환, 전자결재·세금계산서·회계전표 전송은 포함하지 않았다.
 - 실제 ERP Excel 양식별 예외는 구조를 하드코딩하지 않고 Pilot 결과에 따라 별도 고도화한다.
 
-## Git·배포 상태
+## Git·배포 추적
 
-- commit: 완료 후 기록
-- PR: 완료 후 기록
-- CI: 완료 후 기록
-- merge: 완료 후 기록
-- GitHub Pages 배포·운영 확인: 완료 후 기록
+- 최초 구현 commit: `d34ad588ecef1288386804c2f853eda085dbced7`
+- PR: `#469` (`codex/nexus-smartinput-core-mvp-v2` → `main`)
+- CI: PR의 `ONEAPP repository validation` 성공을 병합 게이트로 사용한다.
+- merge: PR `#469`의 검증 성공 후 squash merge한다.
+- GitHub Pages: `main` 반영 후 운영 URL에서 `smartinput.js?v=0.9.0`과 FieldDefinition V2 자산을 직접 확인한다.
