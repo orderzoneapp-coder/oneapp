@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.8.0";
+  const WORKBOOK_VERSION = "4.8.1";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -1172,11 +1172,20 @@
     return sheet;
   }
 
+  function isPurchaseUploadReady(workspace) {
+    return Boolean(
+      workspace &&
+      workspace.schemaVersion === "shipping-workspace/v2" &&
+      workspace.basisDateStatus === "valid" &&
+      /^\d{8}$/.test(String(workspace.uploadDate || "")),
+    );
+  }
+
   function requirePurchaseUploadReady(workspace) {
     if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
-    if (workspace.basisDateStatus !== "valid" || !/^\d{8}$/.test(String(workspace.uploadDate || ""))) {
+    if (!isPurchaseUploadReady(workspace)) {
       const dates = Array.isArray(workspace.basisDates) ? workspace.basisDates.join(", ") : "";
       throw new Error(
         dates
@@ -1312,7 +1321,6 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
 
-    requirePurchaseUploadReady(workspace);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
       Title: "ORDER Q 통합 출력",
@@ -1339,16 +1347,18 @@
       buildWarehouseInventorySheet(workspace, XLSX),
       "창고별재고",
     );
-    XLSX.utils.book_append_sheet(
-      workbook,
-      buildPurchaseUploadSheet(workspace, XLSX),
-      "구매업로드",
-    );
-    XLSX.utils.book_append_sheet(
-      workbook,
-      buildSalesUploadSheet(workspace, XLSX),
-      "판매업로드",
-    );
+    if (isPurchaseUploadReady(workspace)) {
+      XLSX.utils.book_append_sheet(
+        workbook,
+        buildPurchaseUploadSheet(workspace, XLSX),
+        "구매업로드",
+      );
+      XLSX.utils.book_append_sheet(
+        workbook,
+        buildSalesUploadSheet(workspace, XLSX),
+        "판매업로드",
+      );
+    }
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
     );
@@ -1382,6 +1392,7 @@
     PURCHASE_UPLOAD_HEADERS,
     SALES_UPLOAD_SCHEMA_VERSION,
     SALES_UPLOAD_HEADERS,
+    isPurchaseUploadReady,
     getOutputFileName,
     getPurchaseUploadRows,
     getSalesUploadRows,

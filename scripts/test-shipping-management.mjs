@@ -289,6 +289,13 @@ assert.doesNotMatch(orderOpsHtml, /background:\s*#fff200/,
   "quantity and purchase states must not use the former noisy saturated yellow fill");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
+assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
+  "integrated output must remain available when only ERP upload dates need confirmation");
+assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
+  "ERP upload date validation must not block OrderQ-owned output sheets");
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260902-output-fix") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260902-output-fix"),
+  "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
 for (const firstViewContract of [
@@ -687,7 +694,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   sourceFingerprint: "a".repeat(64),
 });
 assert.equal(engine.ENGINE_VERSION, "3.18.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.8.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.8.1");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
 assert.deepEqual(edgeShortageContext, {
@@ -1439,6 +1446,17 @@ assert.throws(
   () => workbookTools.buildPurchaseUploadWorkbook(conflictingWorkspace, XLSX),
   /기준일/,
   "conflicting basis dates must block purchase upload",
+);
+const conflictingIntegratedWorkbook = workbookTools.buildWorkbook(conflictingWorkspace, XLSX);
+assert.deepEqual(
+  Array.from(conflictingIntegratedWorkbook.SheetNames),
+  ["전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고"],
+  "a purchase-upload date conflict must not block the other app-owned outputs",
+);
+assert.equal(
+  workbookTools.isPurchaseUploadReady(conflictingWorkspace),
+  false,
+  "purchase readiness must remain explicit when the integrated workbook falls back",
 );
 assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].t, "s");
 assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].v, "000100");
