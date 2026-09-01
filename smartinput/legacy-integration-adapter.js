@@ -302,6 +302,16 @@ export async function syncAfterLocalMutation(orderId) {
   return module.syncAfterLocalMutation(orderId);
 }
 
+export async function syncOfficialAfterLocalMutation(companyId) {
+  const module = await load('../orderq/official-voucher-sync.js?v=0.1.0');
+  return module.syncOfficialAfterLocalMutation(companyId);
+}
+
+export async function syncOfficialVouchers(companyId) {
+  const module = await load('../orderq/official-voucher-sync.js?v=0.1.0');
+  return module.syncOfficialVouchers(companyId);
+}
+
 export const SMARTINPUT_PURCHASE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 

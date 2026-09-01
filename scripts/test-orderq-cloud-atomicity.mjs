@@ -325,4 +325,177 @@ assert.ok(pulled.data.changes.some((change) =>
   change.entityType === "IMPORT_BATCH" && change.payload.importBatchId === "BATCH-001",
 ));
 
+function officialCommandPayload({ companyId = "COMPANY-A", documentId = "PD-OFFICIAL-1", commandId = "POST_PURCHASE:OFFICIAL-1", memo = "" } = {}) {
+  return {
+    schemaVersion: "ONEAPP_ORDERQ_OFFICIAL_COMMAND_PAYLOAD_V1",
+    companyId,
+    voucherMode: "purchase",
+    documentId,
+    command: {
+      companyId,
+      commandId,
+      idempotencyKey: commandId,
+      commandType: "POST_PURCHASE",
+      expectedRevision: 1,
+      purchaseDocumentId: documentId,
+      occurredAt: "2026-09-01T09:00:00.000Z",
+      actor: "TEST",
+      document: { companyId, purchaseDocumentId: documentId, memo },
+      lines: [{ purchaseLineId: `${documentId}:L1`, quantity: 1 }],
+    },
+    projectionDigest: "projection-digest",
+  };
+}
+
+function pushOfficial(change, companyId = "COMPANY-A") {
+  return post({
+    action: "orderq_official_sync_push",
+    token: TOKEN,
+    schemaVersion: "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
+    companyId,
+    deviceId: "TEST-PC-A",
+    changes: [change],
+  });
+}
+
+const officialPayload = officialCommandPayload();
+const officialCreated = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-1",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: officialPayload.command.commandId,
+  revision: 2,
+  payload: officialPayload,
+});
+assert.equal(officialCreated.status, "success");
+assert.equal(officialCreated.data.results[0].status, "applied");
+assert.equal(officialCreated.data.results[0].serverRevision, 2);
+
+const officialQueueRetry = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-1",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: officialPayload.command.commandId,
+  revision: 2,
+  payload: officialPayload,
+});
+assert.equal(officialQueueRetry.data.results[0].status, "duplicate");
+
+const officialEntityRetry = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-1-REINSTALLED",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: officialPayload.command.commandId,
+  revision: 2,
+  payload: officialPayload,
+});
+assert.equal(officialEntityRetry.data.results[0].status, "duplicate");
+
+const competingPayload = officialCommandPayload({ commandId: "POST_PURCHASE:OFFICIAL-COMPETING" });
+const officialConflict = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-CONFLICT",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: competingPayload.command.commandId,
+  revision: 2,
+  payload: competingPayload,
+});
+assert.equal(officialConflict.data.results[0].status, "conflict");
+assert.equal(officialConflict.data.results[0].serverRevision, 2);
+assert.equal(officialConflict.data.results[0].serverPayload.command.commandId, officialPayload.command.commandId);
+
+const longPayload = officialCommandPayload({ documentId: "PD-OFFICIAL-LONG", commandId: "POST_PURCHASE:OFFICIAL-LONG", memo: "가".repeat(85000) });
+const longCreated = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-LONG",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: longPayload.command.commandId,
+  revision: 2,
+  payload: longPayload,
+});
+assert.equal(longCreated.data.results[0].status, "applied");
+
+const resolutionPayload = {
+  companyId: "COMPANY-A",
+  resolutionId: "RESOLUTION-1",
+  unresolvedProductId: "UNRESOLVED-1",
+  productId: "PRODUCT-1",
+  occurredAt: "2026-09-01T10:00:00.000Z",
+  productResolution: { companyId: "COMPANY-A", unresolvedProductId: "UNRESOLVED-1", productId: "PRODUCT-1", status: "MATCHED" },
+  resolvedEffects: [],
+  inventoryMovements: [],
+  resolutionDigest: "resolution-digest",
+};
+const resolutionCreated = pushOfficial({
+  queueId: "QUEUE-RESOLUTION-1",
+  entityType: "PENDING_INVENTORY_RESOLUTION",
+  entityId: resolutionPayload.resolutionId,
+  revision: 1,
+  payload: resolutionPayload,
+});
+assert.equal(resolutionCreated.data.results[0].status, "applied");
+
+const competingResolution = { ...resolutionPayload, resolutionId: "RESOLUTION-2", productId: "PRODUCT-2",
+  productResolution: { ...resolutionPayload.productResolution, productId: "PRODUCT-2" } };
+const resolutionConflict = pushOfficial({
+  queueId: "QUEUE-RESOLUTION-2",
+  entityType: "PENDING_INVENTORY_RESOLUTION",
+  entityId: competingResolution.resolutionId,
+  revision: 1,
+  payload: competingResolution,
+});
+assert.equal(resolutionConflict.data.results[0].status, "conflict");
+assert.equal(resolutionConflict.data.results[0].serverPayload.productId, "PRODUCT-1");
+
+const companyAPull = post({
+  action: "orderq_official_sync_pull",
+  token: TOKEN,
+  schemaVersion: "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
+  companyId: "COMPANY-A",
+  deviceId: "TEST-PC-B",
+  afterSequence: 0,
+  limit: 50,
+});
+assert.equal(companyAPull.status, "success");
+assert.equal(companyAPull.data.changes.length, 3);
+assert.equal(companyAPull.data.changes[1].payload.command.document.memo.length, 85000);
+
+const companyBPull = post({
+  action: "orderq_official_sync_pull",
+  token: TOKEN,
+  schemaVersion: "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
+  companyId: "COMPANY-B",
+  deviceId: "TEST-PC-B",
+  afterSequence: 0,
+  limit: 50,
+});
+assert.equal(companyBPull.status, "success");
+assert.equal(companyBPull.data.changes.length, 0, "company-scoped pull must not expose another company");
+
+const crossCompanyQueueRetry = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-1",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: officialPayload.command.commandId,
+  revision: 2,
+  payload: officialCommandPayload({ companyId: "COMPANY-B" }),
+}, "COMPANY-B");
+assert.equal(crossCompanyQueueRetry.data.results[0].status, "error", "a queue id cannot be reused across companies");
+assert.equal(crossCompanyQueueRetry.data.results[0].message, "ORDERQ_OFFICIAL_QUEUE_COMPANY_MISMATCH");
+
+const companyBSameEntity = pushOfficial({
+  queueId: "QUEUE-OFFICIAL-B-1",
+  entityType: "OFFICIAL_VOUCHER_COMMAND",
+  entityId: officialPayload.command.commandId,
+  revision: 2,
+  payload: officialCommandPayload({ companyId: "COMPANY-B" }),
+}, "COMPANY-B");
+assert.equal(companyBSameEntity.data.results[0].status, "applied", "the same raw entity id must remain independent by company");
+
+const companyBAfterOwnWrite = post({
+  action: "orderq_official_sync_pull",
+  token: TOKEN,
+  schemaVersion: "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
+  companyId: "COMPANY-B",
+  deviceId: "TEST-PC-B",
+  afterSequence: 0,
+  limit: 50,
+});
+assert.equal(companyBAfterOwnWrite.data.changes.length, 1);
+assert.equal(companyBAfterOwnWrite.data.changes[0].payload.companyId, "COMPANY-B");
+
 console.log("ORDER Q Apps Script token/atomicity/recovery tests passed.");

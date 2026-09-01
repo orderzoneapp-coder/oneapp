@@ -7,10 +7,13 @@
  */
 
 const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
+const ORDERQ_OFFICIAL_SYNC_SCHEMA = 'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1';
 const ORDERQ_SYNC_MAX_PUSH = 100;
 const ORDERQ_SYNC_MAX_PULL = 500;
+const ORDERQ_OFFICIAL_PAYLOAD_CHUNK_SIZE = 40000;
+const ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT = 100;
 const ORDERQ_SHEET_SCHEMA_PROPERTY = 'ONEAPP_ORDERQ_SHEET_SCHEMA_VERSION';
-const ORDERQ_SHEET_SCHEMA_VERSION = '3';
+const ORDERQ_SHEET_SCHEMA_VERSION = '4';
 
 const ORDERQ_SHEETS = Object.freeze({
   ORDER: 'ORDER',
@@ -39,7 +42,11 @@ const ORDERQ_SHEETS = Object.freeze({
   PARSER_EVIDENCE: 'PARSER_EVIDENCE',
   COLLECTOR_SETTING: 'COLLECTOR_SETTING',
   ORDER_TXN_LOG: 'ORDER_TXN_LOG',
-  SYNC_META: 'SYNC_META'
+  SYNC_META: 'SYNC_META',
+  OFFICIAL_COMMAND: 'OFFICIAL_VOUCHER_COMMAND',
+  OFFICIAL_RESOLUTION: 'OFFICIAL_PRODUCT_RESOLUTION',
+  OFFICIAL_HEAD: 'OFFICIAL_SYNC_HEAD',
+  OFFICIAL_META: 'OFFICIAL_SYNC_META'
 });
 
 const ORDERQ_HEADERS = Object.freeze({
@@ -69,7 +76,13 @@ const ORDERQ_HEADERS = Object.freeze({
   PARSER_EVIDENCE: ['parserEvidenceId', 'customerId', 'productCode', 'updatedAt', 'payloadJson'],
   COLLECTOR_SETTING: ['key', 'cutoffTime', 'holidayCount', 'updatedAt', 'payloadJson'],
   ORDER_TXN_LOG: ['txnId', 'orderId', 'status', 'previous1', 'previous2', 'previous3', 'previous4', 'next1', 'next2', 'next3', 'next4', 'error', 'createdAt', 'updatedAt'],
-  SYNC_META: ['sequence', 'queueId', 'deviceId', 'entityType', 'entityId', 'operation', 'revision', 'baseRevision', 'appliedAt']
+  SYNC_META: ['sequence', 'queueId', 'deviceId', 'entityType', 'entityId', 'operation', 'revision', 'baseRevision', 'appliedAt'],
+  OFFICIAL_COMMAND: ['storageKey', 'companyId', 'voucherMode', 'documentId', 'revision', 'commandType', 'occurredAt', 'payloadDigest', 'payloadChunkCount']
+    .concat(Array.from({ length: ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT }, (_, index) => `payload${index + 1}`)),
+  OFFICIAL_RESOLUTION: ['storageKey', 'companyId', 'unresolvedProductId', 'productId', 'occurredAt', 'payloadDigest', 'payloadChunkCount']
+    .concat(Array.from({ length: ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT }, (_, index) => `payload${index + 1}`)),
+  OFFICIAL_HEAD: ['headKey', 'companyId', 'headType', 'subjectId', 'revision', 'entityType', 'entityId', 'payloadDigest', 'updatedAt', 'payloadJson'],
+  OFFICIAL_META: ['sequence', 'queueId', 'companyId', 'deviceId', 'entityType', 'entityId', 'revision', 'appliedAt']
 });
 
 function orderQEnsureSheet(ss, key) {
@@ -578,4 +591,255 @@ function orderQOrderHead(ss, payload) {
     revision: Number(bundle && bundle.order && bundle.order.revision || 0),
     payload: bundle
   };
+}
+
+function orderQOfficialSpec(entityType) {
+  const type = String(entityType || '');
+  if (type === 'OFFICIAL_VOUCHER_COMMAND') {
+    return { key: 'OFFICIAL_COMMAND', digestIndex: 7, countIndex: 8, payloadStart: 9 };
+  }
+  if (type === 'PENDING_INVENTORY_RESOLUTION') {
+    return { key: 'OFFICIAL_RESOLUTION', digestIndex: 5, countIndex: 6, payloadStart: 7 };
+  }
+  return null;
+}
+
+function orderQOfficialDescriptor(entityType, payload) {
+  const type = String(entityType || '');
+  if (!payload || typeof payload !== 'object') throw new Error('ORDERQ_OFFICIAL_PAYLOAD_INVALID');
+  if (type === 'OFFICIAL_VOUCHER_COMMAND') {
+    if (String(payload.schemaVersion || '') !== 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_PAYLOAD_V1'
+      || !String(payload.projectionDigest || '')) throw new Error('ORDERQ_OFFICIAL_COMMAND_PAYLOAD_INVALID');
+    const command = payload.command;
+    if (!command || typeof command !== 'object') throw new Error('ORDERQ_OFFICIAL_COMMAND_REQUIRED');
+    const companyId = String(payload.companyId || command.companyId || '');
+    const commandType = String(command.commandType || '');
+    const voucherMode = String(payload.voucherMode || (/PURCHASE$/.test(commandType) ? 'purchase' : /SALE$/.test(commandType) ? 'sale' : '')).toLowerCase();
+    const documentId = String(payload.documentId || command.purchaseDocumentId || command.salesDocumentId || command.aggregateId || '');
+    const entityId = String(command.commandId || '');
+    const expectedRevision = Number(command.expectedRevision || 0);
+    if (!companyId || !entityId || !documentId || !['purchase', 'sale'].includes(voucherMode)) throw new Error('ORDERQ_OFFICIAL_COMMAND_IDENTITY_INVALID');
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 1) throw new Error('ORDERQ_OFFICIAL_REVISION_REQUIRED');
+    return {
+      entityId, storageKey: `${companyId}|${entityId}`, companyId, voucherMode, documentId, commandType,
+      revision: expectedRevision + 1,
+      expectedRevision,
+      occurredAt: String(command.occurredAt || ''),
+      headKey: `${companyId}|VOUCHER|${voucherMode}|${documentId}`,
+      headType: 'VOUCHER',
+      subjectId: `${voucherMode}|${documentId}`,
+      firstWrite: /^POST_/.test(commandType)
+    };
+  }
+  if (type === 'PENDING_INVENTORY_RESOLUTION') {
+    if (!String(payload.resolutionDigest || '')) throw new Error('ORDERQ_OFFICIAL_RESOLUTION_PAYLOAD_INVALID');
+    const companyId = String(payload.companyId || payload.productResolution && payload.productResolution.companyId || '');
+    const entityId = String(payload.resolutionId || '');
+    const unresolvedProductId = String(payload.unresolvedProductId || payload.productResolution && payload.productResolution.unresolvedProductId || '');
+    const productId = String(payload.productId || payload.productResolution && payload.productResolution.productId || '');
+    if (!companyId || !entityId || !unresolvedProductId || !productId) throw new Error('ORDERQ_OFFICIAL_RESOLUTION_IDENTITY_INVALID');
+    const resolution = payload.productResolution || {};
+    if (String(resolution.companyId || '') !== companyId
+      || String(resolution.unresolvedProductId || '') !== unresolvedProductId
+      || String(resolution.productId || '') !== productId) throw new Error('ORDERQ_OFFICIAL_RESOLUTION_IDENTITY_INVALID');
+    return {
+      entityId, storageKey: `${companyId}|${entityId}`, companyId, unresolvedProductId, productId,
+      revision: 1,
+      occurredAt: String(payload.occurredAt || ''),
+      headKey: `${companyId}|PRODUCT_RESOLUTION|${unresolvedProductId}`,
+      headType: 'PRODUCT_RESOLUTION',
+      subjectId: unresolvedProductId,
+      firstWrite: true
+    };
+  }
+  throw new Error(`ORDERQ_OFFICIAL_ENTITY_UNSUPPORTED:${type}`);
+}
+
+function orderQOfficialChunks(payload) {
+  const json = JSON.stringify(payload);
+  const chunks = [];
+  for (let index = 0; index < json.length; index += ORDERQ_OFFICIAL_PAYLOAD_CHUNK_SIZE) {
+    chunks.push(json.slice(index, index + ORDERQ_OFFICIAL_PAYLOAD_CHUNK_SIZE));
+  }
+  if (!chunks.length) chunks.push('{}');
+  if (chunks.length > ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT) throw new Error('ORDERQ_OFFICIAL_PAYLOAD_TOO_LARGE');
+  return { json, digest: sha256Hex(json), chunks };
+}
+
+function orderQOfficialRow(entityType, descriptor, packed) {
+  const padding = Array(ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT - packed.chunks.length).fill('');
+  if (String(entityType || '') === 'OFFICIAL_VOUCHER_COMMAND') {
+    return [descriptor.storageKey, descriptor.companyId, descriptor.voucherMode, descriptor.documentId,
+      descriptor.revision, descriptor.commandType, descriptor.occurredAt, packed.digest, packed.chunks.length]
+      .concat(packed.chunks, padding);
+  }
+  return [descriptor.storageKey, descriptor.companyId, descriptor.unresolvedProductId, descriptor.productId,
+    descriptor.occurredAt, packed.digest, packed.chunks.length].concat(packed.chunks, padding);
+}
+
+function orderQOfficialReadStored(ss, entityType, companyId, entityId) {
+  const spec = orderQOfficialSpec(entityType);
+  if (!spec) return null;
+  const sheet = orderQEnsureSheet(ss, spec.key);
+  const row = orderQFindDataRow(sheet, `${String(companyId || '')}|${String(entityId || '')}`);
+  if (!row) return null;
+  const values = sheet.getRange(row, 1, 1, ORDERQ_HEADERS[spec.key].length).getValues()[0];
+  const count = Number(values[spec.countIndex] || 0);
+  if (!Number.isInteger(count) || count < 1 || count > ORDERQ_OFFICIAL_PAYLOAD_CHUNK_LIMIT) throw new Error('ORDERQ_OFFICIAL_CHUNK_COUNT_INVALID');
+  const json = values.slice(spec.payloadStart, spec.payloadStart + count).map(value => String(value || '')).join('');
+  const digest = String(values[spec.digestIndex] || '');
+  if (!json || sha256Hex(json) !== digest) throw new Error('ORDERQ_OFFICIAL_PAYLOAD_DIGEST_INVALID');
+  try { return { payload: JSON.parse(json), digest, row }; }
+  catch (error) { throw new Error('ORDERQ_OFFICIAL_PAYLOAD_JSON_INVALID'); }
+}
+
+function orderQOfficialMetaByQueueId(ss, queueId) {
+  const sheet = orderQEnsureSheet(ss, 'OFFICIAL_META');
+  if (!queueId || sheet.getLastRow() < 2) return null;
+  const found = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).createTextFinder(String(queueId)).matchEntireCell(true).findNext();
+  if (!found) return null;
+  const values = sheet.getRange(found.getRow(), 1, 1, ORDERQ_HEADERS.OFFICIAL_META.length).getValues()[0];
+  return { sequence: Number(values[0] || 0), queueId: String(values[1] || ''), companyId: String(values[2] || ''),
+    deviceId: String(values[3] || ''), entityType: String(values[4] || ''), entityId: String(values[5] || ''),
+    revision: Number(values[6] || 0), appliedAt: String(values[7] || '') };
+}
+
+function orderQOfficialMetaByEntity(ss, companyId, entityType, entityId) {
+  const sheet = orderQEnsureSheet(ss, 'OFFICIAL_META');
+  if (sheet.getLastRow() < 2) return null;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, ORDERQ_HEADERS.OFFICIAL_META.length).getValues();
+  const match = rows.find(row => String(row[2] || '') === String(companyId)
+    && String(row[4] || '') === String(entityType) && String(row[5] || '') === String(entityId));
+  return match ? { sequence: Number(match[0] || 0), queueId: String(match[1] || ''), companyId: String(match[2] || ''),
+    deviceId: String(match[3] || ''), entityType: String(match[4] || ''), entityId: String(match[5] || ''),
+    revision: Number(match[6] || 0), appliedAt: String(match[7] || '') } : null;
+}
+
+function orderQOfficialAppendMeta(ss, change, deviceId, companyId, revision) {
+  const sheet = orderQEnsureSheet(ss, 'OFFICIAL_META');
+  const sequence = sheet.getLastRow() < 2 ? 1 : Number(sheet.getRange(sheet.getLastRow(), 1).getValue() || 0) + 1;
+  const appliedAt = new Date().toISOString();
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, ORDERQ_HEADERS.OFFICIAL_META.length).setValues([[
+    sequence, String(change.queueId || ''), String(companyId || ''), String(deviceId || ''),
+    String(change.entityType || ''), String(change.entityId || ''), Number(revision || 0), appliedAt
+  ]]);
+  return { sequence, appliedAt };
+}
+
+function orderQOfficialReadHead(ss, headKey) {
+  return orderQReadPayloadById(orderQEnsureSheet(ss, 'OFFICIAL_HEAD'), headKey);
+}
+
+function orderQOfficialWriteHead(ss, descriptor, entityType, digest) {
+  const payload = { headKey: descriptor.headKey, companyId: descriptor.companyId, headType: descriptor.headType,
+    subjectId: descriptor.subjectId, revision: descriptor.revision, entityType: String(entityType || ''),
+    entityId: descriptor.entityId, payloadDigest: digest, updatedAt: new Date().toISOString() };
+  orderQWriteRow(orderQEnsureSheet(ss, 'OFFICIAL_HEAD'), descriptor.headKey, [payload.headKey, payload.companyId,
+    payload.headType, payload.subjectId, payload.revision, payload.entityType, payload.entityId,
+    payload.payloadDigest, payload.updatedAt, JSON.stringify(payload)]);
+  return payload;
+}
+
+function orderQOfficialRepairHeadMeta(ss, head) {
+  if (!head || !head.entityId) return null;
+  const existing = orderQOfficialMetaByEntity(ss, head.companyId, head.entityType, head.entityId);
+  if (existing) return existing;
+  const stored = orderQOfficialReadStored(ss, head.entityType, head.companyId, head.entityId);
+  if (!stored || stored.digest !== String(head.payloadDigest || '')) throw new Error('ORDERQ_OFFICIAL_HEAD_PAYLOAD_MISSING');
+  return orderQOfficialAppendMeta(ss, {
+    queueId: `SERVER-RECOVERY:${head.entityId}`,
+    entityType: head.entityType,
+    entityId: head.entityId
+  }, 'SERVER_RECOVERY', head.companyId, head.revision);
+}
+
+function orderQOfficialApply(ss, change, requestCompanyId, deviceId) {
+  const entityType = String(change.entityType || '');
+  if (!orderQOfficialSpec(entityType)) throw new Error(`ORDERQ_OFFICIAL_ENTITY_UNSUPPORTED:${entityType}`);
+  const descriptor = orderQOfficialDescriptor(entityType, change.payload);
+  if (descriptor.companyId !== String(requestCompanyId || '')) throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+  if (descriptor.entityId !== String(change.entityId || '')) throw new Error('ORDERQ_OFFICIAL_ENTITY_ID_MISMATCH');
+  if (descriptor.revision !== Number(change.revision || 0)) throw new Error('ORDERQ_OFFICIAL_REVISION_MISMATCH');
+  const packed = orderQOfficialChunks(change.payload);
+  const head = orderQOfficialReadHead(ss, descriptor.headKey);
+  orderQOfficialRepairHeadMeta(ss, head);
+
+  const stored = orderQOfficialReadStored(ss, entityType, descriptor.companyId, descriptor.entityId);
+  if (stored) {
+    if (stored.digest !== packed.digest) throw new Error('ORDERQ_OFFICIAL_ENTITY_IMMUTABLE');
+    const meta = orderQOfficialMetaByEntity(ss, descriptor.companyId, entityType, descriptor.entityId)
+      || orderQOfficialAppendMeta(ss, change, deviceId, descriptor.companyId, descriptor.revision);
+    return { status: 'duplicate', sequence: meta.sequence, serverRevision: descriptor.revision };
+  }
+
+  if (head) {
+    const revisionConflict = descriptor.headType === 'VOUCHER'
+      ? Number(head.revision || 0) !== descriptor.expectedRevision
+      : String(head.entityId || '') !== descriptor.entityId;
+    if (revisionConflict) {
+      const current = orderQOfficialReadStored(ss, head.entityType, head.companyId, head.entityId);
+      return { status: 'conflict', serverRevision: Number(head.revision || 0), serverPayload: current && current.payload || null };
+    }
+  } else if (descriptor.headType === 'VOUCHER' && (!descriptor.firstWrite || descriptor.expectedRevision !== 1)) {
+    return { status: 'conflict', serverRevision: 0, serverPayload: null };
+  }
+
+  const sheet = orderQEnsureSheet(ss, orderQOfficialSpec(entityType).key);
+  orderQWriteRow(sheet, descriptor.entityId, orderQOfficialRow(entityType, descriptor, packed));
+  orderQOfficialWriteHead(ss, descriptor, entityType, packed.digest);
+  const meta = orderQOfficialAppendMeta(ss, change, deviceId, descriptor.companyId, descriptor.revision);
+  return { status: 'applied', sequence: meta.sequence, serverRevision: descriptor.revision };
+}
+
+function orderQOfficialSyncPush(ss, payload) {
+  orderQEnsureAllSheets(ss);
+  if (String(payload.schemaVersion || '') !== ORDERQ_OFFICIAL_SYNC_SCHEMA) throw new Error('ORDERQ_OFFICIAL_SYNC_SCHEMA_INVALID');
+  const companyId = String(payload.companyId || '');
+  const deviceId = String(payload.deviceId || '');
+  if (!companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_REQUIRED');
+  if (!deviceId) throw new Error('ORDERQ_DEVICE_ID_REQUIRED');
+  const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  if (changes.length > ORDERQ_SYNC_MAX_PUSH) throw new Error('ORDERQ_OFFICIAL_PUSH_LIMIT_EXCEEDED');
+  const results = changes.map(change => {
+    const queueId = String(change && change.queueId || '');
+    if (!queueId) return { queueId: '', status: 'error', message: 'ORDERQ_QUEUE_ID_REQUIRED' };
+    const duplicate = orderQOfficialMetaByQueueId(ss, queueId);
+    if (duplicate) return duplicate.companyId === companyId
+      ? { queueId, status: 'duplicate', sequence: duplicate.sequence, serverRevision: duplicate.revision }
+      : { queueId, status: 'error', message: 'ORDERQ_OFFICIAL_QUEUE_COMPANY_MISMATCH' };
+    try {
+      const applied = orderQOfficialApply(ss, change, companyId, deviceId);
+      return { queueId, ...applied };
+    } catch (error) {
+      return { queueId, status: 'error', message: String(error && error.message ? error.message : error) };
+    }
+  });
+  const meta = orderQEnsureSheet(ss, 'OFFICIAL_META');
+  const cursor = meta.getLastRow() < 2 ? 0 : Number(meta.getRange(meta.getLastRow(), 1).getValue() || 0);
+  return { schemaVersion: ORDERQ_OFFICIAL_SYNC_SCHEMA, companyId, results, cursor };
+}
+
+function orderQOfficialSyncPull(ss, payload) {
+  orderQEnsureAllSheets(ss);
+  if (String(payload.schemaVersion || '') !== ORDERQ_OFFICIAL_SYNC_SCHEMA) throw new Error('ORDERQ_OFFICIAL_SYNC_SCHEMA_INVALID');
+  const companyId = String(payload.companyId || '');
+  if (!companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_REQUIRED');
+  const after = Math.max(0, Number(payload.afterSequence || 0));
+  const limit = Math.min(ORDERQ_SYNC_MAX_PULL, Math.max(1, Number(payload.limit || 200)));
+  const sheet = orderQEnsureSheet(ss, 'OFFICIAL_META');
+  if (sheet.getLastRow() < 2) return { schemaVersion: ORDERQ_OFFICIAL_SYNC_SCHEMA, companyId, changes: [], nextCursor: after, hasMore: false };
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, ORDERQ_HEADERS.OFFICIAL_META.length).getValues()
+    .filter(row => Number(row[0] || 0) > after && String(row[2] || '') === companyId);
+  const selected = rows.slice(0, limit);
+  const changes = selected.map(row => {
+    const entityType = String(row[4] || '');
+    const entityId = String(row[5] || '');
+    const stored = orderQOfficialReadStored(ss, entityType, companyId, entityId);
+    if (!stored) throw new Error(`ORDERQ_OFFICIAL_META_PAYLOAD_MISSING:${entityId}`);
+    return { sequence: Number(row[0] || 0), queueId: String(row[1] || ''), companyId: String(row[2] || ''),
+      deviceId: String(row[3] || ''), entityType, entityId, revision: Number(row[6] || 0),
+      appliedAt: String(row[7] || ''), payload: stored.payload };
+  });
+  const nextCursor = selected.length ? Number(selected[selected.length - 1][0] || after) : after;
+  return { schemaVersion: ORDERQ_OFFICIAL_SYNC_SCHEMA, companyId, changes, nextCursor, hasMore: rows.length > selected.length };
 }

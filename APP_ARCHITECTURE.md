@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.18
+- Architecture document version: 2.1.19
 - Last reviewed: 2026-09-01
-- Current-source baseline: `59f510667c882258ad0bb53d3641be6b15814f2f` (SmartInput Core MVP work base; final merge SHA is recorded with the release evidence)
+- Current-source baseline: `ef6f60bc8e7599eaf56356573553abb0e2bf415d` (SmartInput official synchronization work base; final merge SHA is recorded with the release evidence)
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -151,7 +151,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 
 ### 4.2 현재 manifest 등록 목록
 
-아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.7의 현재 등록 상태다.
+아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.8의 현재 등록 상태다.
 
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
@@ -446,7 +446,8 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - 기준정보 전체 새로고침은 상품·거래처·창고·담당자·프로젝트·필드 정의를 하나의 불변 generation으로 staging하고 전부 검증된 뒤에만 활성 포인터를 교체한다. 부분 실패는 기존 활성 세대와 현재 검색어·입력 작업본을 유지한다.
 - Excel V2는 셀 표시값, 원시값, 수식, 숫자 형식과 위치를 보존한다. 사용자가 수정하거나 선택행 단가 적용을 실행하기 전에는 표시값을 계산값으로 덮어쓰지 않는다. 헤더 개수·문자열·순서가 하나라도 다르면 신규 양식으로 보고 모든 열을 다시 검수한다.
 - 관련 전표는 견적·주문·구매·판매 사이의 수량·단가 의미를 대상 전표 fieldId로 변환해 작업본에 복사하고 원본 voucher/line/revision 증거를 보존한다. 거래처·창고가 다르면 확인 전 자동 결합하지 않으며 원본 전표 Store는 쓰지 않는다.
-- ORDER Q 롤백 기준 DB는 v7로 additive 승격한다. 공식 구매·판매 명령은 하나의 transaction에서 전표 revision, 재고 이동 또는 대기 효과, 채무·채권과 로컬 후속전송 기록을 멱등 저장한다. 현재 Apps Script `ONEAPP_ORDERQ_SYNC_V1`은 신규 공식 명령 entity를 지원하지 않으므로 후속전송 상태는 `WAITING_SERVER_CONTRACT`로 격리하고 기존 Cloud Sync에 제출하지 않는다. SmartInput의 직접입력·작업본 편집·Pilot 공식 저장은 `LOCAL_OPERATION`이며 서버 공식원장 전송은 MVP 이후 별도 계약이다.
+- ORDER Q 롤백 기준 DB는 v7을 유지한다. 공식 구매·판매 명령은 하나의 transaction에서 전표 revision, 재고 이동 또는 대기 효과, 채무·채권과 로컬 후속전송 기록을 멱등 저장한다. 직접입력·작업본 편집·공식 저장은 서버를 기다리지 않는 `LOCAL_OPERATION`이다.
+- 공식 명령과 미매칭 상품 해결은 기존 주문 cursor와 분리된 `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1`로만 백그라운드 전송한다. 서버는 `companyId`별 전표 head와 Pull cursor를 분리하고 command ID 불변성, 전표 expected Revision, 미매칭 상품 최초 매칭을 검사한다. 충돌은 로컬본과 서버본을 보존하며 자동 병합하지 않는다. 기존 `WAITING_SERVER_CONTRACT` 행은 새 계약이 배포된 뒤 그대로 재사용하고, 서버 미배포·오류 시 상태를 유지한다.
 - 미매칭 상품은 회사·코드 또는 품명·규격·단위에서 안정적인 시스템 ID를 얻고 채권·채무에는 반영되지만 재고는 대기한다. 창고별 확정 실사 checkpoint 이전 효과는 이후 상품 매칭 시 연결 이력만 남기고 재고를 소급 변경하지 않는다.
 
 ### 5.7 활성 작업본 보호와 독립 배포

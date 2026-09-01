@@ -12,8 +12,8 @@ import {
   replaceFulfillmentLink,
   unlinkFulfillmentLink
 } from './history-collector/history-repository.js?v=0.7.1';
-import { syncNow } from './orderq-sync-engine.js?v=0.7.1';
-import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.7.1';
+import { syncNow } from './orderq-sync-engine.js?v=0.8.0';
+import { getCloudUrl, getCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
 
 const prepared = [];
 const $ = selector => document.querySelector(selector);

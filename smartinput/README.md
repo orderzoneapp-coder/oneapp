@@ -77,7 +77,8 @@ NEXUS 공통헤더의 고정 스마트입력 진입점에서 주문서·구매·
 - `sourceBatchId + sourceDocumentKey/sourceVoucherIndex/manualSplitKey + 업무 헤더`로 원본 전표를 분리하며, 같은 거래처·날짜만으로 서로 다른 원본을 합치지 않는다.
 - 입력표 검색은 표시 행만 필터하고 저장 대상·선택·원본 순서를 바꾸지 않는다.
 - 원본·표시·재고 기준 수량과 단위를 보존하고, 환산 근거가 없는 행은 공식 저장 대상에서 차단한다.
-- 주문은 그룹별 `sourceDocumentKey`를 ORDER Q `createOrder()`의 멱등키로 사용한다. 구매·판매는 그룹별 공식 전표, Revision, 채무·채권과 재고효과 또는 미매칭 재고대기를 한 로컬 transaction에 저장한다. 서버 공식원장 전송은 현재 Pilot 범위가 아니다.
+- 주문은 그룹별 `sourceDocumentKey`를 ORDER Q `createOrder()`의 멱등키로 사용한다. 구매·판매는 그룹별 공식 전표, Revision, 채무·채권과 재고효과 또는 미매칭 재고대기를 한 로컬 transaction에 먼저 저장한다.
+- 로컬 저장 완료 후 `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1` Push/Pull을 백그라운드에서 실행한다. 서버가 없거나 구버전이면 입력 완료를 취소하지 않고 `WAITING_SERVER_CONTRACT`를 유지한다. 서버는 회사별 전표 Revision과 상품 최초 매칭을 검사하며 충돌 시 로컬본을 자동 덮어쓰지 않는다.
 
 ## 관련 전표와 일괄 편집
 

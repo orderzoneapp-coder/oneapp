@@ -1,7 +1,7 @@
 # ORDER Q vNext Architecture
 
-Version: 0.7.1
-Reviewed: 2026-08-14
+Version: 0.8.0
+Reviewed: 2026-09-01
 
 ## 1. Scope
 
@@ -9,9 +9,9 @@ ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.7.1 keeps `input → document history → operations` as separate work surfaces and makes document history the primary order-document lookup and inline editing surface. The document list derives representative product and total quantity without storing duplicate summary fields. Expanded documents edit customer, warehouse, assignee, delivery date, workflow states, memo, products, quantities, and prices with the existing optimistic-revision boundary. Item additions, removals, and field changes are appended to the existing `ORDER_EVENT` detail payload. A fully cancelled document remains immutable except for assignee and administrator state, including `CHECKED → UNCHECKED`.
+vNext 0.8.0 keeps the 0.7.1 `input → document history → operations` work surfaces and adds a separate official-voucher background synchronization boundary. The document list derives representative product and total quantity without storing duplicate summary fields. Expanded documents edit customer, warehouse, assignee, delivery date, workflow states, memo, products, quantities, and prices with the existing optimistic-revision boundary. Item additions, removals, and field changes are appended to the existing `ORDER_EVENT` detail payload. A fully cancelled document remains immutable except for assignee and administrator state, including `CHECKED → UNCHECKED`.
 
-`/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v6 remains unchanged: `deliveryExpectedDate` is an optional order JSON field, and item-change entries use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow. Existing orders need no migration and all browser modules share the 0.7.1 release query. The cloud sheet schema and action names remain unchanged because order and event payloads already use JSON contracts.
+`/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v7 retains the existing order stores and adds official command, voucher revision, inventory effect, AR/AP, checkpoint, unresolved-product and queue records without deleting prior data. `deliveryExpectedDate` remains optional and item-change entries continue to use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow.
 
 Manual entry remains code-first and keyboard-driven. A newly created direct-entry document starts with administrator status `CHECKED`, while ORDER IN, Excel, shopping-mall, and external collection continue to start as `UNCHECKED`. Product search runs only from the item-code cell; Enter follows customer → warehouse → item code → quantity → price → memo and creates a new row after the last memo. Product columns remain directly editable but are skipped by that primary entry path. `supplyAmount` and optional `vatAmount` remain editable. Price basis, saved column widths, date arrows, and warehouse master behavior remain unchanged from v0.5.1.
 
@@ -23,7 +23,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 
 ## 2. Ownership and source of truth
 
-- Current phase: IndexedDB `oneapp-orderq-pre-m1-v6` is the isolated local working database. The previous M1~M10 database remains preserved and is not opened by this rollback build.
+- Current phase: IndexedDB `oneapp-orderq-pre-m1-v6` v7 is the isolated local working database. The previous M1~M10 database remains preserved and is not opened by this rollback build.
 - SmartParser immutable input: `rawInputs`; message decisions and confirmed values: `parseResults`.
 - Duplicate boundary: unique `sourceMessageKey` indexes on `parseResults` and `orders`.
 - Google Sheet cloud is a central synchronization and recovery layer, not an ERP ledger.
@@ -47,6 +47,15 @@ POST actions:
 - `orderq_sync_push`
 - `orderq_sync_pull`
 - `orderq_order_head`
+
+Official voucher synchronization uses a separate compatibility boundary so older clients never advance past an official record they cannot apply:
+
+- Schema: `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1`
+- Actions: `orderq_official_sync_push`, `orderq_official_sync_pull`
+- Sheets: `OFFICIAL_VOUCHER_COMMAND`, `OFFICIAL_PRODUCT_RESOLUTION`, `OFFICIAL_SYNC_HEAD`, `OFFICIAL_SYNC_META`
+- Partition and cursor: `companyId`
+
+Official command payloads are immutable and chunked across cells to preserve long vouchers. The server accepts the first command for a voucher Revision, rejects a competing command as a conflict, and records the first product resolution for an unresolved system ID. Pull applies each command to voucher, inventory or pending inventory, payable/receivable and voucher revision in one local IndexedDB transaction. An apply failure stops that company's official cursor before the failed record and preserves a conflict row.
 
 The client uses the existing shared cloud URL contract `oneapp_cloud_sync_url_v1` with legacy fallback `merchCloudUrl_v870`.
 
@@ -126,4 +135,4 @@ Historical order-to-sales matching uses the previous business day first, then sa
 
 GitHub Pages deploys `/orderq/` from repository `main` automatically.
 
-The Google Apps Script backend is a separate deployment boundary. A repository merge of `code.gs` / `orderq-cloud.gs` does not by itself prove that the live Apps Script Web App contains those versions. Phase 2 production acceptance therefore requires the bound Apps Script project to deploy both files and a two-device operational test.
+The Google Apps Script backend is a separate deployment boundary. A repository merge of `code.gs` / `orderq-cloud.gs` does not by itself prove that the live Apps Script Web App contains those versions. Official synchronization production acceptance requires the bound Apps Script project to deploy both files and a two-device, same-company conflict test plus a cross-company isolation test. Until that deployment succeeds, local finalize remains authoritative and `WAITING_SERVER_CONTRACT` rows remain retryable.

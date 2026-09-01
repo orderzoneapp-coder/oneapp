@@ -5,6 +5,8 @@ import {
   extractOrderProductLines,
   createOrder,
   syncAfterLocalMutation,
+  syncOfficialAfterLocalMutation,
+  syncOfficialVouchers,
   isSelectableMasterProduct,
   loadWarehouseCatalog,
   matchWarehouseInput,
@@ -16,7 +18,7 @@ import {
   loadSaleStage4Capability,
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './legacy-integration-adapter.js?v=0.2.0';
+} from './legacy-integration-adapter.js?v=0.3.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
@@ -6610,6 +6612,21 @@ async function completeOrder() {
   return completeOrderLegacy();
 }
 
+function scheduleOfficialVoucherSync(afterLocalMutation = false) {
+  window.setTimeout(async () => {
+    try {
+      const result = afterLocalMutation
+        ? await syncOfficialAfterLocalMutation(state.companyId)
+        : await syncOfficialVouchers(state.companyId);
+      const conflicts = Number(result?.push?.conflicts || 0)
+        + (result?.pulls || []).reduce((sum, row) => sum + Number(row?.conflicts || 0), 0);
+      if (conflicts) setAppStatus(`공식 전표 동기화에서 확인할 충돌 ${conflicts}건이 있습니다. 로컬 전표는 유지됩니다.`, 'warn');
+    } catch (error) {
+      console.warn('SmartInput official voucher background sync failed; local work is preserved.', error);
+    }
+  }, 0);
+}
+
 async function completeSaleOfficial() {
   const current = modeDraft();
   if (!state.saleCapability.ready) {
@@ -6650,7 +6667,7 @@ async function completeSaleOfficial() {
               conversionRuleId:sourceType === 'ORDER_Q' ? row.conversionRuleId : 'DIRECT_1_TO_1',
               conversionRuleVersion:sourceType === 'ORDER_Q' ? row.conversionRuleVersion : 'DIRECT_1_TO_1_V1' };
           }) };
-        const result = await postSaleGroup(hydratedGroup, { actor: SMARTINPUT_SALE_ACTOR_ID, originSystem: producer,
+        const result = await postSaleGroup(hydratedGroup, { companyId: state.companyId, actor: SMARTINPUT_SALE_ACTOR_ID, originSystem: producer,
           manualSessionId: producerTransactionId, occurredAt: new Date().toISOString() });
         const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
         const commandId = result.commandId || '';
@@ -6677,6 +6694,7 @@ async function completeSaleOfficial() {
     state.voucherActivity.status = 'IDLE';
     saveDraftNow(); renderMode(); setAppStatus(`공식 판매전표 ${succeeded.length}건 저장 완료`);
     toast(`판매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
+    scheduleOfficialVoucherSync(true);
   } finally { state.busy = false; renderDelivery(); }
 }
 
@@ -6699,7 +6717,7 @@ async function completePurchaseOfficial() {
       try {
         validatePurchaseGroup(group, masters);
         const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
-        const result = await postPurchaseGroup(group, { actor: SMARTINPUT_PURCHASE_ACTOR_ID, originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
+        const result = await postPurchaseGroup(group, { companyId: state.companyId, actor: SMARTINPUT_PURCHASE_ACTOR_ID, originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
         const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
         const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';
         current.purchaseSubmissions = (current.purchaseSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
@@ -6730,6 +6748,7 @@ async function completePurchaseOfficial() {
     renderMode();
     setAppStatus(`공식 구매전표 ${succeeded.length}건 저장 완료`);
     toast(`구매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
+    scheduleOfficialVoucherSync(true);
   } finally {
     state.busy = false;
     renderDelivery();
@@ -7177,6 +7196,7 @@ async function hydrateReferences() {
   if (referencesReady() && [results[2], smartDataResult[0]].some(result => result.status === 'rejected')) {
     setAppStatus('기준정보 준비됨 · 배송 또는 설정 자료 일부를 불러오지 못했습니다.', 'warn');
   }
+  scheduleOfficialVoucherSync(false);
 }
 
 async function persistFieldRegistryLayout(settings) {
