@@ -1,4 +1,4 @@
-import { requestToPromise, transactionDone, STORE } from './orderq-db.js?v=0.7.2';
+import { requestToPromise, transactionDone, STORE } from './orderq-db.js?v=0.8.0';
 
 export const ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER = 'ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1';
 export const ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT = 'ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1';
@@ -56,7 +56,7 @@ function openExistingDatabase() {
   });
 }
 
-export async function readVoucherActivity({ mode, date }) {
+export async function readVoucherActivity({ mode, date, companyId = '' }) {
   const config = MODE_CONFIG[mode];
   if (!config) throw new Error('VOUCHER_ACTIVITY_MODE_INVALID');
   if (!validDate(date)) throw new Error('VOUCHER_ACTIVITY_DATE_INVALID');
@@ -72,7 +72,8 @@ export async function readVoucherActivity({ mode, date }) {
     const lineStore = transaction.objectStore(config.lineStore);
     if (!documentStore.indexNames.contains(config.dateIndex) || !lineStore.indexNames.contains(config.lineIndex)) throw new Error('VOUCHER_ACTIVITY_INDEX_UNAVAILABLE');
     const documents = await requestToPromise(documentStore.index(config.dateIndex).getAll(globalThis.IDBKeyRange.only(date)));
-    const datedDocuments = documents.filter(document => document[config.dateField] === date);
+    const datedDocuments = documents.filter(document => document[config.dateField] === date
+      && (!companyId || String(document.companyId || 'ONEAPP') === String(companyId)));
     const linesByDocument = new Map(await Promise.all(datedDocuments.map(async document => {
       const id = document[config.idField];
       return [id, await requestToPromise(lineStore.index(config.lineIndex).getAll(id))];
@@ -84,20 +85,32 @@ export async function readVoucherActivity({ mode, date }) {
       const savedAt = document.updatedAt || document.createdAt || document.postedAt || document.occurredAt || '';
       return {
         id,
+        companyId: document.companyId || 'ONEAPP',
+        voucherMode: mode,
         voucherNo: document.orderNo || document.externalDocumentNo || document.voucherNo || id,
         date: document[config.dateField] || date,
         savedAt,
         customerName: customerName(mode, document) || '거래처 미지정',
+        customerId: document.supplierCustomerId || document.salesCustomerId || document.customerId || document.deliveryCustomerId || '',
+        customerCode: document.supplierCustomerCode || document.salesCustomerCode || document.customerCode || document.deliveryCustomerCode || '',
+        warehouseId: document.warehouseId || '',
+        warehouseCode: document.warehouseCode || '',
+        warehouseName: document.warehouseName || '',
         itemCount: lines.length || number(document.lineCount || document.itemCount),
         totalAmount: amount(mode, document, lines),
         status: status(mode, document),
-        items: lines.map(line => ({
+        items: lines.map((line, lineIndex) => ({
+          lineId: line.lineId || line.orderItemId || line.purchaseLineId || line.salesLineId || `${id}:${lineIndex + 1}`,
+          productId: line.productId || '',
+          masterProductId: line.masterProductId || line.productId || '',
           code: line.productCode || line.itemCode || '',
           name: line.productName || line.itemName || line.rawExpression || '',
           specification: line.specification || '',
           quantity: line.actualQuantity ?? line.finalQuantity ?? line.quantity ?? line.rawQuantity ?? '',
+          quantityDisplay: String(line.sourceQuantityDisplay ?? line.actualQuantity ?? line.finalQuantity ?? line.quantity ?? line.rawQuantity ?? ''),
           unit: line.actualUnit || line.finalUnit || line.unit || line.rawUnit || '',
           unitPrice: line.unitPrice ?? line.price ?? '',
+          unitPriceDisplay: String(line.sourceUnitPrice ?? line.unitPrice ?? line.price ?? ''),
           amount: line.totalAmount ?? line.supplyAmount ?? ''
         })),
         detailHref: `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&focus=${encodeURIComponent(id)}`

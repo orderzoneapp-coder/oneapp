@@ -89,7 +89,7 @@ const itemChanges = orderItemChanges(
 assert.deepEqual(itemChanges.map(change => change.itemField), ['finalQuantity', 'price', 'added']);
 assert.equal(orderItemChanges([{ orderItemId: 'OI-1', itemName: '사과' }], [])[0].itemField, 'removed');
 
-assert.match(db, /const DB_VERSION = 6/);
+assert.match(db, /export const DB_VERSION = 7/);
 for (const index of ['byOrderNo', 'byExternalOrderNo', 'byOrderStatus', 'byAdminStatus', 'byOpsStatus', 'byAssigneeId', 'byInputChannel']) {
   assert.match(db, new RegExp(`['"]${index}['"]`), `${index} DB index is required`);
 }

@@ -131,7 +131,7 @@ try {
   await click(client, '#sourceFileButton');
   assert.equal(await evaluate(client, `window.__sourceFilePickerOpened`), true, 'the visible Excel file button must open the existing safe file input');
   await wait(500);
-  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'itemCode',label:'품목코드',scope:'voucher',valueType:'TEXT'},{id:'itemName',label:'품목명',scope:'voucher',valueType:'TEXT'},{id:'quantity',label:'수량',scope:'voucher',valueType:'NUMBER'},{id:'memo',label:'메모',scope:'voucher',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
@@ -145,16 +145,33 @@ try {
   assert.equal(initial.saveDisabled, true);
   assert.match(initial.saveTitle, /입력 양식/);
 
+  for (const [column, fieldId] of [[0, 'voucher.order.line.productCode'], [1, 'voucher.order.line.productName'], [2, 'voucher.order.line.quantity']]) {
+    await click(client, `[data-open-field-mapping="${column}"]`);
+    await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="${fieldId}"]'))`, `review mapping column ${column + 1}`);
+    await click(client, `.field-mapping-dialog [data-mapping-target="${fieldId}"]`);
+  }
+
   await click(client, '[data-open-field-mapping="3"]');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-unmap]'))`, 'field mapping modal');
   await click(client, '.field-mapping-dialog [data-unmap]');
   await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='UNMAPPED'`, 'explicit unmapped decision');
+  const reviewedMappings = await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.mappings.map(({state,targetFieldId,reviewed})=>({state,targetFieldId,reviewed}))`);
+  assert.deepEqual(reviewedMappings.map(mapping => [mapping.state, mapping.reviewed]), [
+    ['MAPPED', true], ['MAPPED', true], ['MAPPED', true], ['UNMAPPED', true]
+  ], 'every source column must be explicitly reviewed before template save');
+  assert.equal(await evaluate(client, `document.querySelector('#inputMappingStatus').dataset.status`), 'NEW_TEMPLATE');
+  assert.doesNotMatch(await evaluate(client, `document.querySelector('#inputMappingStatusSummary').textContent`), /조회 오류/);
+  await expr(client, `['READY','EMPTY'].includes(document.querySelector('#inputMappingStatus').dataset.templateStoreStatus)`, 'input-template store readiness');
   await click(client, '#inputTemplateSaveButton');
-  await expr(client, `Boolean(document.querySelector('dialog[open] input[name="templateName"]'))`, 'input-template save dialog');
+  await wait(250);
+  assert.equal(await evaluate(client, `document.querySelector('#toast').hidden?document.querySelector('#toast').textContent:''`), '', 'template save must not be blocked after every column was reviewed');
+  const saveDialogDiagnostic = await evaluate(client, `({open:Boolean(document.querySelector('dialog[open] input[name="templateName"]')),dialogs:[...document.querySelectorAll('dialog')].map(dialog=>({open:dialog.open,text:dialog.textContent.slice(0,80)})),buttonHidden:document.querySelector('#inputTemplateSaveButton').hidden,buttonDisabled:document.querySelector('#inputTemplateSaveButton').disabled})`);
+  assert.deepEqual(exceptions, [], `runtime exceptions before template save: ${exceptions.join('\n')}`);
+  assert.equal(saveDialogDiagnostic.open, true, `input-template save dialog diagnostic: ${JSON.stringify(saveDialogDiagnostic)}`);
   await input(client, 'dialog[open] input[name="templateName"]', '행사발주 공식 양식');
   await click(client, 'dialog[open] [data-save]');
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='TEMPLATE_APPLIED'&&!document.querySelector('#completeButton').disabled`, 'saved template application');
-  const persistedTemplate = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',4);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('settings','readonly');const get=tx.objectStore('settings').get('inputTemplates');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.value?.[0]||null);db.close();};};})`);
+  const persistedTemplate = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('inputTemplatesV2','readonly');const get=tx.objectStore('inputTemplatesV2').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.[0]||null);db.close();};};})`);
   assert.equal(persistedTemplate.templateName, '행사발주 공식 양식');
   assert.deepEqual(persistedTemplate.headers, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(persistedTemplate.mappings.map(mapping => mapping.state), ['MAPPED', 'MAPPED', 'MAPPED', 'UNMAPPED']);

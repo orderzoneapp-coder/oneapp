@@ -1,6 +1,7 @@
-// M1~M10 DB(v17)을 보존하면서 롤백 기준(v6)을 독립 실행한다.
-const DB_NAME = 'oneapp-orderq-pre-m1-v6';
-const DB_VERSION = 6;
+// M1~M10 DB(v17)을 보존하면서 롤백 기준 DB에 SmartInput 공식 전표
+// additive 계약만 올린다. 기존 Store와 레코드는 삭제하거나 재작성하지 않는다.
+export const DB_NAME = 'oneapp-orderq-pre-m1-v6';
+export const DB_VERSION = 7;
 
 export const STORE = Object.freeze({
   CUSTOMERS: 'customers',
@@ -24,6 +25,14 @@ export const STORE = Object.freeze({
   PURCHASE_LINES: 'purchaseLines',
   LEDGER_DOCUMENTS: 'ledgerDocuments',
   LEDGER_LINES: 'ledgerLines',
+  OFFICIAL_COMMANDS: 'officialCommands',
+  VOUCHER_REVISIONS: 'voucherRevisions',
+  INVENTORY_MOVEMENTS: 'inventoryMovements',
+  PAYABLE_ENTRIES: 'payableEntries',
+  RECEIVABLE_ENTRIES: 'receivableEntries',
+  PENDING_INVENTORY_EFFECTS: 'pendingInventoryEffects',
+  INVENTORY_CHECKPOINTS: 'inventoryCheckpoints',
+  UNRESOLVED_PRODUCTS: 'unresolvedProducts',
   INVENTORY_SNAPSHOTS: 'inventorySnapshots',
   INVENTORY_LINES: 'inventoryLines',
   HISTORICAL_ORDER_GROUPS: 'historicalOrderGroups',
@@ -141,22 +150,32 @@ function upgrade(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byCustomerDate', ['normalizedCustomerName', 'salesDate']);
   ensureIndex(store, 'byWarehouseId', 'warehouseId');
   ensureIndex(store, 'byAssigneeId', 'assigneeId');
+  ensureIndex(store, 'byCompanySource', ['companyId', 'sourceDocumentKey']);
+  ensureIndex(store, 'byCompanyDate', ['companyId', 'salesDate']);
+  ensureIndex(store, 'byCommandId', 'commandId');
 
   store = ensureStore(STORE.SALES_LINES, { keyPath: 'salesLineId' });
   ensureIndex(store, 'byDocumentId', 'salesDocumentId');
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byProductCode', 'productCode');
+  ensureIndex(store, 'byCompanyDocument', ['companyId', 'salesDocumentId']);
+  ensureIndex(store, 'byCommandId', 'commandId');
 
   store = ensureStore(STORE.PURCHASE_DOCUMENTS, { keyPath: 'purchaseDocumentId' });
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byPurchaseDate', 'purchaseDate');
   ensureIndex(store, 'bySupplierDate', ['normalizedSupplierName', 'purchaseDate']);
   ensureIndex(store, 'byWarehouseId', 'warehouseId');
+  ensureIndex(store, 'byCompanySource', ['companyId', 'sourceDocumentKey']);
+  ensureIndex(store, 'byCompanyDate', ['companyId', 'purchaseDate']);
+  ensureIndex(store, 'byCommandId', 'commandId');
 
   store = ensureStore(STORE.PURCHASE_LINES, { keyPath: 'purchaseLineId' });
   ensureIndex(store, 'byDocumentId', 'purchaseDocumentId');
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byProductCode', 'productCode');
+  ensureIndex(store, 'byCompanyDocument', ['companyId', 'purchaseDocumentId']);
+  ensureIndex(store, 'byCommandId', 'commandId');
 
   store = ensureStore(STORE.LEDGER_DOCUMENTS, { keyPath: 'ledgerDocumentId' });
   ensureIndex(store, 'byBatchId', 'importBatchId');
@@ -167,6 +186,49 @@ function upgrade(db, transaction, oldVersion = 0) {
   ensureIndex(store, 'byDocumentId', 'ledgerDocumentId');
   ensureIndex(store, 'byBatchId', 'importBatchId');
   ensureIndex(store, 'byProductCode', 'productCode');
+
+  store = ensureStore(STORE.OFFICIAL_COMMANDS, { keyPath: 'commandId' });
+  ensureIndex(store, 'byIdempotencyKey', 'idempotencyKey', { unique: true });
+  ensureIndex(store, 'byCompanyStatus', ['companyId', 'status']);
+  ensureIndex(store, 'byDocument', ['voucherMode', 'documentId']);
+  ensureIndex(store, 'byRequestedAt', 'requestedAt');
+
+  store = ensureStore(STORE.VOUCHER_REVISIONS, { keyPath: 'voucherRevisionId' });
+  ensureIndex(store, 'byDocumentRevision', ['voucherMode', 'documentId', 'revision'], { unique: true });
+  ensureIndex(store, 'byCommandId', 'commandId', { unique: true });
+  ensureIndex(store, 'byCompanyOccurredAt', ['companyId', 'occurredAt']);
+
+  store = ensureStore(STORE.INVENTORY_MOVEMENTS, { keyPath: 'movementId' });
+  ensureIndex(store, 'byCompanyWarehouseProduct', ['companyId', 'warehouseId', 'productId']);
+  ensureIndex(store, 'byDocument', ['voucherMode', 'sourceDocumentId']);
+  ensureIndex(store, 'byCommandId', 'commandId');
+  ensureIndex(store, 'byOccurredAt', 'occurredAt');
+
+  store = ensureStore(STORE.PAYABLE_ENTRIES, { keyPath: 'entryId' });
+  ensureIndex(store, 'byCompanyPartner', ['companyId', 'partnerId']);
+  ensureIndex(store, 'byDocument', 'purchaseDocumentId');
+  ensureIndex(store, 'byCommandId', 'commandId');
+
+  store = ensureStore(STORE.RECEIVABLE_ENTRIES, { keyPath: 'entryId' });
+  ensureIndex(store, 'byCompanyPartner', ['companyId', 'partnerId']);
+  ensureIndex(store, 'byDocument', 'salesDocumentId');
+  ensureIndex(store, 'byCommandId', 'commandId');
+
+  store = ensureStore(STORE.PENDING_INVENTORY_EFFECTS, { keyPath: 'pendingEffectId' });
+  ensureIndex(store, 'byUnresolvedStatus', ['unresolvedProductId', 'status']);
+  ensureIndex(store, 'byCompanyWarehouseStatus', ['companyId', 'warehouseId', 'status']);
+  ensureIndex(store, 'byDocument', ['voucherMode', 'sourceDocumentId']);
+  ensureIndex(store, 'byCommandId', 'commandId');
+
+  store = ensureStore(STORE.INVENTORY_CHECKPOINTS, { keyPath: 'checkpointId' });
+  ensureIndex(store, 'byCompanyWarehouseEffectiveAt', ['companyId', 'warehouseId', 'effectiveAt']);
+  ensureIndex(store, 'bySessionId', 'sessionId', { unique: true });
+  ensureIndex(store, 'byStatus', 'status');
+
+  store = ensureStore(STORE.UNRESOLVED_PRODUCTS, { keyPath: 'unresolvedProductId' });
+  ensureIndex(store, 'byCompanyKey', ['companyId', 'unresolvedKey'], { unique: true });
+  ensureIndex(store, 'byCompanyStatus', ['companyId', 'status']);
+  ensureIndex(store, 'byProductId', 'productId');
 
   store = ensureStore(STORE.INVENTORY_SNAPSHOTS, { keyPath: 'inventorySnapshotId' });
   ensureIndex(store, 'byBatchId', 'importBatchId');
@@ -280,6 +342,12 @@ export function openOrderQDb() {
     request.onblocked = () => reject(new Error('ORDER Q DB 업그레이드가 다른 탭에 의해 차단되었습니다. 다른 ORDER Q 탭을 닫고 다시 시도하세요.'));
   });
   return dbPromise;
+}
+
+export async function closeOrderQDb() {
+  const db = await dbPromise;
+  db?.close();
+  dbPromise = null;
 }
 
 export function requestToPromise(request) {

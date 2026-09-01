@@ -293,7 +293,7 @@ export async function analyzeSingleOrderDocument(input = {}) {
 }
 
 export async function createOrder(payload) {
-  const module = await load('../orderq/order-intake-engine.js');
+  const module = await load('../orderq/order-intake-engine.js?v=0.8.0');
   return module.createOrder(payload);
 }
 

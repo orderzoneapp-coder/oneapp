@@ -12,8 +12,28 @@ const MODE_CONFIG = Object.freeze({
     warehouseAliases: ['창고', '창고코드', '출하창고', '출하창고코드'],
     voucherNoLabel: '주문번호',
     voucherNoAliases: ['전표번호', '주문번호', '외부전표번호'],
-    unitPriceLabel: '단가',
-    unitPriceAliases: ['단가', '주문단가', '판매단가']
+    quantityLabel: '주문수량',
+    quantityAliases: ['주문수량', '수량'],
+    unitPriceLabel: '주문단가',
+    unitPriceAliases: ['주문단가', '단가']
+  }),
+  estimate: Object.freeze({
+    customerLabel: '거래처명',
+    customerAliases: ['거래처', '거래처명', '고객명'],
+    customerCodeLabel: '거래처코드',
+    customerCodeAliases: ['거래처코드', '고객코드'],
+    voucherDateLabel: '견적일자',
+    voucherDateAliases: ['견적일자', '전표일자', '일자'],
+    deliveryDateLabel: '유효기간',
+    deliveryDateAliases: ['유효기간'],
+    warehouseLabel: '창고코드',
+    warehouseAliases: ['창고', '창고코드'],
+    voucherNoLabel: '견적번호',
+    voucherNoAliases: ['전표번호', '견적번호', '외부전표번호'],
+    quantityLabel: '견적수량',
+    quantityAliases: ['견적수량', '수량'],
+    unitPriceLabel: '견적단가',
+    unitPriceAliases: ['견적단가', '단가']
   }),
   purchase: Object.freeze({
     customerLabel: '구매처명',
@@ -28,8 +48,10 @@ const MODE_CONFIG = Object.freeze({
     warehouseAliases: ['창고', '창고코드', '입고창고', '입고창고코드'],
     voucherNoLabel: '구매전표번호',
     voucherNoAliases: ['전표번호', '구매전표번호', '외부전표번호'],
-    unitPriceLabel: '입고가',
-    unitPriceAliases: ['입고가', '구매가', '단가']
+    quantityLabel: '구매수량',
+    quantityAliases: ['구매수량', '수량'],
+    unitPriceLabel: '구매단가',
+    unitPriceAliases: ['구매단가', '입고가', '구매가', '단가']
   }),
   sale: Object.freeze({
     customerLabel: '판매처명',
@@ -44,8 +66,10 @@ const MODE_CONFIG = Object.freeze({
     warehouseAliases: ['창고', '창고코드', '출하창고', '출하창고코드'],
     voucherNoLabel: '판매전표번호',
     voucherNoAliases: ['전표번호', '판매전표번호', '외부전표번호'],
-    unitPriceLabel: '판매가',
-    unitPriceAliases: ['판매가', '판매단가', '단가']
+    quantityLabel: '판매수량',
+    quantityAliases: ['판매수량', '수량'],
+    unitPriceLabel: '판매단가',
+    unitPriceAliases: ['판매단가', '판매가', '단가']
   })
 });
 
@@ -120,7 +144,7 @@ export function structuredFieldsForMode(mode, productFieldDefinitions = []) {
   const config = modeConfig(mode);
   const overrides = [
     ...stage1RowFieldDefinitions(mode),
-    field('quantity', '수량', ['수량'], 'NUMBER'),
+    field('quantity', config.quantityLabel, config.quantityAliases, 'NUMBER'),
     field('unit', '단위', ['단위', '상품구성']),
     field('unitPrice', config.unitPriceLabel, config.unitPriceAliases, 'NUMBER')
   ];

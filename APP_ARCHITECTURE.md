@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.17
-- Last reviewed: 2026-08-31
-- Current-source baseline: `c8d5630` (SmartInput mapping implementation base; final merge SHA is recorded with the release evidence)
+- Architecture document version: 2.1.18
+- Last reviewed: 2026-09-01
+- Current-source baseline: `59f510667c882258ad0bb53d3641be6b15814f2f` (SmartInput Core MVP work base; final merge SHA is recorded with the release evidence)
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -128,7 +128,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
-| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v4의 최신 자동저장 1건·기존 호환 키와 `settings.inputTemplates` 입력 양식을 로컬 우선으로 운영. Excel 원본과 위치 기반 매핑을 전표 저장 검증과 분리하고 기준정보·외부 입력·서버 확정은 기능별 Adapter로 격리 | 전표 작성 작업본·입력 양식 소유, 상품·거래처 Snapshot 소비, ORDER Q writer·서버 finalize 호출 |
+| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. Excel 원본과 위치 기반 매핑을 전표 저장 검증과 분리하고 기준정보·관련 전표·원장 효과는 기능별 Adapter로 격리 | 전표 작성 작업본·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot 소비, ORDER Q 공식 전표 명령 호출 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 관련 독립 로컬/클라우드 계약을 운영 전 검증 중 | 확정된 주문 자료와 중앙 확정 경계 소유 |
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 미등록 상품 PENDING 변경요청 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
@@ -290,7 +290,7 @@ Important contracts include:
 | OrderOps purchase-name history | `oneapp.orderops.purchase-history.v1` | OrderOps local input convenience only; up to 30 recent nonblank purchase-place names are excluded from workspace recovery and cloud plans |
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
 | ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
-| Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput reads only the selected voucher date for its sliding activity panel; `EMPTY` and `ERROR` remain distinct and neither path can modify the current worktable. |
+| Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput owns estimate records and exposes them through its estimate Read Adapter. Related-voucher import copies a read-only source snapshot into the target draft; `EMPTY` and `ERROR` remain distinct and no path modifies the source voucher. |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
 
@@ -438,6 +438,16 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - 상품 수신 경계는 `ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER`, 거래처 수신 경계는 `ONEAPP_CUSTOMER_MASTER_CHANGE_REQUEST_ADAPTER`다. 같은 idempotency key·같은 payload는 `DUPLICATE`, 다른 payload는 `CONFLICT`, 신규는 `PENDING`이며 owner 원본에 자동 적용하지 않는다.
 - Inbox migration은 기존 DB version과 Store 목록을 바꾸지 않는다. 상품은 `MerchOpsDB/store.oneappProductReferenceChangeRequests_v1`, 거래처는 `oneapp-customermaster-v1/appMeta.referenceChangeRequestsV1` 한 key만 추가한다. rollback은 이 key를 삭제하지 않으며 구버전은 알 수 없는 key를 무시한다.
 - PR #440의 계약 도입에는 소비자 일괄 전환, SmartInput UI 연결, ORDER Q 전환, 기존 레거시 writer 제거와 Server Transport 추가가 포함되지 않았다. 후속 `NEXUS-SI-REFDATA-UX-20260830-01`은 SmartInput UI 연결만 수행하며 나머지 제외 범위를 유지한다.
+
+#### 5.6.2 SmartInput Core MVP 계약
+
+- SmartInput DB v5는 기존 Store를 유지하고 `fieldDefinitionsV2`, `companyVoucherFieldsV1`, `referenceGenerationsV1`, `referenceEntitiesV1`, `inputTemplatesV2`, `mappingSessionsV2`, `draftVouchersV2`를 additive로 추가한다. v1 양식은 보존하지만 회사·대상 전표·정확한 헤더 위치 서명을 갖춘 v2 양식만 자동 적용한다.
+- 전표 수량과 거래단가는 `voucher.{estimate|order|purchase|sale}.line.{quantity|unitPrice}`로 분리한다. 화면과 Excel 매핑 후보는 회사·전표별 사용 설정 하나를 함께 사용하며 전체 등록부와 `REVIEW_REQUIRED` 필드는 기본 화면에 노출하지 않는다.
+- 기준정보 전체 새로고침은 상품·거래처·창고·담당자·프로젝트·필드 정의를 하나의 불변 generation으로 staging하고 전부 검증된 뒤에만 활성 포인터를 교체한다. 부분 실패는 기존 활성 세대와 현재 검색어·입력 작업본을 유지한다.
+- Excel V2는 셀 표시값, 원시값, 수식, 숫자 형식과 위치를 보존한다. 사용자가 수정하거나 선택행 단가 적용을 실행하기 전에는 표시값을 계산값으로 덮어쓰지 않는다. 헤더 개수·문자열·순서가 하나라도 다르면 신규 양식으로 보고 모든 열을 다시 검수한다.
+- 관련 전표는 견적·주문·구매·판매 사이의 수량·단가 의미를 대상 전표 fieldId로 변환해 작업본에 복사하고 원본 voucher/line/revision 증거를 보존한다. 거래처·창고가 다르면 확인 전 자동 결합하지 않으며 원본 전표 Store는 쓰지 않는다.
+- ORDER Q 롤백 기준 DB는 v7로 additive 승격한다. 공식 구매·판매 명령은 하나의 transaction에서 전표 revision, 재고 이동 또는 대기 효과, 채무·채권과 로컬 후속전송 기록을 멱등 저장한다. 현재 Apps Script `ONEAPP_ORDERQ_SYNC_V1`은 신규 공식 명령 entity를 지원하지 않으므로 후속전송 상태는 `WAITING_SERVER_CONTRACT`로 격리하고 기존 Cloud Sync에 제출하지 않는다. SmartInput의 직접입력·작업본 편집·Pilot 공식 저장은 `LOCAL_OPERATION`이며 서버 공식원장 전송은 MVP 이후 별도 계약이다.
+- 미매칭 상품은 회사·코드 또는 품명·규격·단위에서 안정적인 시스템 ID를 얻고 채권·채무에는 반영되지만 재고는 대기한다. 창고별 확정 실사 checkpoint 이전 효과는 이후 상품 매칭 시 연결 이력만 남기고 재고를 소급 변경하지 않는다.
 
 ### 5.7 활성 작업본 보호와 독립 배포
 

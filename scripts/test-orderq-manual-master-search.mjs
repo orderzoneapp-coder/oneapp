@@ -129,8 +129,8 @@ assert.match(input, /searchProductCatalog/);
 assert.match(input, /row\.dataset\.productId \? MATCH_STATUS\.MATCHED : MATCH_STATUS\.MATCH_FAILED/);
 assert.match(input, /productId:\s*row\.dataset\.productId \|\| null/);
 assert.match(input, /vNext 0\.7\.1/);
-assert.match(input, /orderq-db\.js\?v=0\.7\.1|order-intake-engine\.js\?v=0\.7\.1/,
-  'IndexedDB v6 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
+assert.match(input, /orderq-db\.js\?v=0\.8\.0|order-intake-engine\.js\?v=0\.8\.0/,
+  'IndexedDB v7 화면은 이전 캐시 모듈과 섞이지 않도록 릴리스 쿼리를 사용해야 한다.');
 for (const contract of [
   "const MANUAL_DEFAULTS_KEY = 'oneapp.orderq.manual-defaults.v1'",
   "customerNameInput.addEventListener('keydown'",
@@ -242,7 +242,7 @@ assert.match(intake, /warehouseSnapshot\(payload, warehouse\)/,
   '주문에는 창고 ID·코드·명칭 스냅샷과 기존 문자열을 함께 보존해야 한다.');
 
 const dbSource = await readFile(new URL('../orderq/orderq-db.js', import.meta.url), 'utf8');
-assert.match(dbSource, /const DB_VERSION = 6/);
+assert.match(dbSource, /export const DB_VERSION = 7/);
 assert.match(dbSource, /WAREHOUSES: 'warehouses'/);
 assert.match(dbSource, /WAREHOUSE_ALIASES: 'warehouseAliases'/);
 const warehouseSource = await readFile(new URL('../orderq/warehouse-master.js', import.meta.url), 'utf8');
