@@ -3255,6 +3255,7 @@ function setRelatedPanelOpen(open, { mode = state.relatedDialogMode, trigger = n
   applyRelatedPanelState();
   if (open) {
     if (state.relatedDialogMode === 'related-voucher') void loadVoucherActivity();
+    $('relatedPanelCloseButton').focus({ preventScroll: true });
     window.requestAnimationFrame(() => $('relatedPanelCloseButton').focus({ preventScroll: true }));
   } else if (wasOpen && state.relatedDialogTrigger instanceof HTMLElement) {
     state.relatedDialogTrigger.focus({ preventScroll: true });
