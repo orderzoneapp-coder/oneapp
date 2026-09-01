@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.7",
+  "schemaVersion": "1.3.8",
   "updatedAt": "2026-09-01",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -467,7 +467,8 @@
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog",
-        "revisioned purchase and sale official commands"
+        "revisioned purchase and sale official commands",
+        "company-partitioned background official-voucher synchronization"
       ],
       "ownedContracts": [
         "smartinput-local-work",
@@ -481,6 +482,7 @@
         "customer-reference-change-request",
         "voucher-activity-snapshot",
         "orderq-official-voucher-core",
+        "orderq-official-sync",
         "orderq-vnext-sync"
       ],
       "dependencyMode": {
@@ -489,7 +491,7 @@
         "referenceRevisionCheck": "BACKGROUND_SYNC",
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "LOCAL_OPERATION",
-        "officialVoucherRemoteSync": "NOT_IN_MVP; WAITING_SERVER_CONTRACT records are not submitted to ONEAPP_ORDERQ_SYNC_V1"
+        "officialVoucherRemoteSync": "BACKGROUND_SYNC through ONEAPP_ORDERQ_OFFICIAL_SYNC_V1; unsupported or unavailable server keeps WAITING_SERVER_CONTRACT without blocking local finalize"
       },
       "offlinePolicy": "Render the application and preserve the latest local work state and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
       "sharedContracts": [
@@ -502,6 +504,7 @@
         "smartinput-reference-generation",
         "smartinput-related-voucher-import",
         "orderq-official-voucher-core",
+        "orderq-official-sync",
         "orderq-vnext-sync"
       ]
     },
@@ -525,7 +528,7 @@
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, token-protected ORDER Q vNext incremental records, and the revisioned NEXUS company profile boundary.",
+      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, token-protected ORDER Q vNext incremental records and company-partitioned official voucher commands, and the revisioned NEXUS company profile boundary.",
       "apiActions": {
         "post": [
           "initSync",
@@ -540,6 +543,8 @@
           "orderq_sync_push",
           "orderq_sync_pull",
           "orderq_order_head",
+          "orderq_official_sync_push",
+          "orderq_official_sync_pull",
           "nexus_gateway_company_profile_get",
           "nexus_gateway_company_profile_write",
           "nexus_gateway_company_accounting_period_get",
@@ -564,7 +569,8 @@
         "cloud-url",
         "dataops-inventory-snapshot",
         "shipping-purchase-plan",
-        "company-profile"
+        "company-profile",
+        "orderq-official-sync"
       ]
     }
   ],
@@ -799,6 +805,36 @@
           "inventoryCheckpoints",
           "unresolvedProducts"
         ]
+      }
+    },
+    {
+      "id": "orderq-official-sync",
+      "owner": "orderq-vnext",
+      "consumers": [
+        "smart-input",
+        "orderq/cloud.html"
+      ],
+      "schemaVersion": "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
+      "writerPolicy": "Local purchase and sale finalize remains LOCAL_OPERATION. Background sync stores immutable command payloads by company, applies command-id idempotency and voucher-revision optimistic locking, and never overwrites a conflicting local voucher or active SmartInput draft.",
+      "deploymentStatus": "SOURCE_READY_APPS_SCRIPT_DEPLOYMENT_REQUIRED",
+      "resources": {
+        "cloudActions": [
+          "orderq_official_sync_push",
+          "orderq_official_sync_pull"
+        ],
+        "cloudSheets": [
+          "OFFICIAL_VOUCHER_COMMAND",
+          "OFFICIAL_PRODUCT_RESOLUTION",
+          "OFFICIAL_SYNC_HEAD",
+          "OFFICIAL_SYNC_META"
+        ],
+        "localQueueStatuses": [
+          "WAITING_SERVER_CONTRACT",
+          "ACKED",
+          "CONFLICT"
+        ],
+        "partitionKey": "companyId",
+        "cursorScope": "companyId"
       }
     },
     {

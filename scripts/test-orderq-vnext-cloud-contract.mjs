@@ -4,11 +4,12 @@ import vm from 'node:vm';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-const [codeGs, cloudGs, adapter, syncEngine, intake, indexHtml, inputHtml, cloudHtml] = await Promise.all([
+const [codeGs, cloudGs, adapter, syncEngine, officialSync, intake, indexHtml, inputHtml, cloudHtml] = await Promise.all([
   read('code.gs'),
   read('orderq-cloud.gs'),
   read('orderq/orderq-cloud-adapter.js'),
   read('orderq/orderq-sync-engine.js'),
+  read('orderq/official-voucher-sync.js'),
   read('orderq/order-intake-engine.js'),
   read('orderq/index.html'),
   read('orderq/input.html'),
@@ -19,7 +20,7 @@ const [codeGs, cloudGs, adapter, syncEngine, intake, indexHtml, inputHtml, cloud
 new vm.Script(codeGs, { filename: 'code.gs' });
 new vm.Script(cloudGs, { filename: 'orderq-cloud.gs' });
 
-for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head']) {
+for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head', 'orderq_official_sync_push', 'orderq_official_sync_pull']) {
   assert.match(codeGs, new RegExp(`action === ['\"]${action}['\"]`), `code.gs must route ${action}`);
 }
 assert.match(codeGs, /orderQSyncPush\(ss, payload\)/);
@@ -29,7 +30,8 @@ assert.match(codeGs, /orderQOrderHead\(ss, payload\)/);
 assert.match(cloudGs, /ONEAPP_ORDERQ_SYNC_V1/);
 for (const sheet of [
   'ORDER', 'ORDER_ITEM', 'ORDER_EVENT', 'CUSTOMER_MASTER', 'CUSTOMER_ALIAS_MAPPING',
-  'PRODUCT_MAPPING', 'UNIT_MAPPING', 'MAPPING_EVENT', 'SYNC_META'
+  'PRODUCT_MAPPING', 'UNIT_MAPPING', 'MAPPING_EVENT', 'SYNC_META', 'OFFICIAL_VOUCHER_COMMAND',
+  'OFFICIAL_PRODUCT_RESOLUTION', 'OFFICIAL_SYNC_HEAD', 'OFFICIAL_SYNC_META'
 ]) {
   assert.ok(cloudGs.includes(`'${sheet}'`), `purpose sheet missing: ${sheet}`);
 }
@@ -40,7 +42,7 @@ assert.match(cloudGs, /sequence[\s\S]*queueId[\s\S]*baseRevision/, 'SYNC_META co
 
 assert.match(adapter, /oneapp_cloud_sync_url_v1/, 'shared cloud URL key must remain the primary URL source');
 assert.match(adapter, /merchCloudUrl_v870/, 'legacy cloud URL fallback must remain compatible');
-for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head']) {
+for (const action of ['orderq_sync_push', 'orderq_sync_pull', 'orderq_order_head', 'orderq_official_sync_push', 'orderq_official_sync_pull']) {
   assert.ok(adapter.includes(`'${action}'`), `client adapter missing ${action}`);
 }
 assert.match(adapter, /Content-Type': 'text\/plain;charset=utf-8'/, 'Apps Script POST should avoid unnecessary CORS preflight');
@@ -57,11 +59,15 @@ assert.match(syncEngine, /serverRevision > localRevision/, 'cloud newer revision
 assert.match(syncEngine, /const push = await pushPending\(\);/, 'post-save sync must push related Customer\/Alias\/Event queues too');
 assert.match(syncEngine, /status:\s*'DISCARDED'/, 'accepting remote latest must explicitly discard conflicting local queue records');
 assert.match(syncEngine, /if \(!getCloudUrl\(\)\) return \{ online: false/, 'local-first operation must remain possible without cloud URL');
+assert.match(officialSync, /officialCloudCursorV1:\$\{text\(companyId\)\}/, 'official pull cursor must be company-scoped');
+assert.match(officialSync, /WAITING_SERVER_CONTRACT/, 'existing waiting official rows must remain retryable');
+assert.match(officialSync, /applyRemoteOfficialVoucherCommandPayload/, 'remote official commands must use the atomic local repository boundary');
 
 assert.match(indexHtml, /클라우드 동기화/);
 assert.match(indexHtml, /syncNow/);
 assert.match(cloudHtml, /CUSTOMER_ALIAS_MAPPING/);
 assert.match(cloudHtml, /최신본 적용/);
+assert.match(cloudHtml, /officialConflictRows/, 'official conflicts must be shown separately from editable order conflicts');
 assert.match(inputHtml, /syncBeforeOrderMutation/);
 assert.match(inputHtml, /현재 입력내용은 유지됩니다/);
 assert.match(inputHtml, /최신본을 적용한 후 주문서를 다시 열어 입력·저장/);

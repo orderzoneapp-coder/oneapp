@@ -10,8 +10,8 @@ import {
   getDeviceId,
   syncNow,
   syncAfterLocalMutation
-} from './orderq-sync-engine.js?v=0.7.1';
-import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.7.1';
+} from './orderq-sync-engine.js?v=0.8.0';
+import { getCloudUrl } from './orderq-cloud-adapter.js?v=0.8.0';
 import { loadWarehouseCatalog, matchWarehouseInput, warehouseDisplayName } from './warehouse-master.js?v=0.7.1';
 
 const EVENT_LABELS = Object.freeze({

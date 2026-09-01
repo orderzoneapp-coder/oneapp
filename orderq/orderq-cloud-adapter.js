@@ -1,4 +1,5 @@
 export const ORDERQ_SYNC_SCHEMA = 'ONEAPP_ORDERQ_SYNC_V1';
+export const ORDERQ_OFFICIAL_SYNC_SCHEMA = 'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1';
 export const CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
 export const LEGACY_CLOUD_URL_KEY = 'merchCloudUrl_v870';
 export const CLOUD_ACCESS_TOKEN_KEY = 'oneapp_orderq_access_token_v1';
@@ -91,5 +92,23 @@ export function getCloudOrderHead(orderId) {
   return post('orderq_order_head', {
     schemaVersion: ORDERQ_SYNC_SCHEMA,
     orderId
+  });
+}
+
+export function pushOfficialCloudChanges(companyId, deviceId, changes) {
+  return post('orderq_official_sync_push', {
+    schemaVersion: ORDERQ_OFFICIAL_SYNC_SCHEMA,
+    companyId: String(companyId || ''),
+    deviceId,
+    changes
+  });
+}
+
+export function pullOfficialCloudChanges(companyId, afterSequence = 0, limit = 200) {
+  return post('orderq_official_sync_pull', {
+    schemaVersion: ORDERQ_OFFICIAL_SYNC_SCHEMA,
+    companyId: String(companyId || ''),
+    afterSequence,
+    limit
   });
 }

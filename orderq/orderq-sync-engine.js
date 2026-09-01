@@ -13,7 +13,8 @@ import {
   pushCloudChanges,
   pullCloudChanges,
   getCloudOrderHead
-} from './orderq-cloud-adapter.js?v=0.7.1';
+} from './orderq-cloud-adapter.js?v=0.8.0';
+import { syncOfficialVouchers } from './official-voucher-sync.js?v=0.1.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const META_CURSOR = 'cloudCursor';
@@ -351,11 +352,12 @@ export async function pullRemote() {
 }
 
 export async function syncNow() {
-  if (!getCloudUrl()) return { online: false, push: null, pull: null };
+  if (!getCloudUrl()) return { online: false, push: null, pull: null, official: null };
   await bootstrapPhase1References();
   const push = await pushPending();
   const pull = await pullRemote();
-  return { online: true, push, pull };
+  const official = await syncOfficialVouchers();
+  return { online: true, push, pull, official };
 }
 
 export async function syncBeforeOrderMutation(orderId, expectedRevision) {
@@ -408,12 +410,15 @@ export async function acceptRemoteOrder(orderId) {
 
 export async function getSyncState() {
   const rows = await all(STORE.SYNC_QUEUE);
+  const officialTypes = new Set(['OFFICIAL_VOUCHER_COMMAND', 'PENDING_INVENTORY_RESOLUTION']);
   return {
     cloudUrl: getCloudUrl(),
     deviceId: getDeviceId(),
     cursor: Number(await metaGet(META_CURSOR) || 0),
-    pending: rows.filter(row => row.status === 'PENDING').length,
-    conflicts: rows.filter(row => row.status === 'CONFLICT'),
+    pending: rows.filter(row => row.status === 'PENDING' || row.status === 'WAITING_SERVER_CONTRACT').length,
+    conflicts: rows.filter(row => row.status === 'CONFLICT' && row.entityType === 'ORDER'),
+    officialConflicts: rows.filter(row => row.status === 'CONFLICT' && officialTypes.has(row.entityType)),
+    officialWaiting: rows.filter(row => row.status === 'WAITING_SERVER_CONTRACT' && officialTypes.has(row.entityType)).length,
     acked: rows.filter(row => row.status === 'ACKED').length
   };
 }

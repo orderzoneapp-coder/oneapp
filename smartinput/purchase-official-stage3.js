@@ -4,15 +4,16 @@ import {
   loadOfficialPurchaseAggregate,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from '../orderq/official-voucher-repository.js?v=0.20.0';
+} from '../orderq/official-voucher-repository.js?v=0.21.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1',
   normalizedOriginVersion: 'PURCHASE_V2',
   commandContract: 'VOUCHER_CORE_V1',
+  officialSyncContract: 'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',
   metaSchema: 'ORDERQ_PURCHASE_META_V2',
-  cutoverMode: 'LOCAL_PILOT',
+  cutoverMode: 'LOCAL_FIRST_BACKGROUND_SYNC',
   localRepositoryReady: 'YES'
 });
 // Filled only by the immutable Apps Script deployment release commit. Empty
@@ -39,7 +40,7 @@ export function evaluatePurchaseStage3Capability(ping = PURCHASE_STAGE3_CAPABILI
   const mismatch = Object.entries(PURCHASE_STAGE3_CAPABILITY).find(([key, expected]) => text(ping[key]) !== expected);
   return mismatch
     ? { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: mismatch[0] }
-    : { ready: true, code: '', authority: 'LOCAL_PILOT' };
+    : { ready: true, code: '', authority: 'LOCAL_FIRST' };
 }
 
 export async function loadPurchaseStage3Capability() {

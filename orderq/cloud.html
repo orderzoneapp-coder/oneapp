@@ -18,7 +18,7 @@
       <div class="brand">
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
-        <span class="badge">vNext 0.7.1</span>
+        <span class="badge">vNext 0.8.0</span>
         <span>클라우드 동기화</span>
       </div>
       <div class="top-actions">
@@ -70,6 +70,8 @@
             <span>SALES · PURCHASE · LEDGER · INVENTORY · HISTORICAL_ORDER</span>
             <span>FULFILLMENT_LINK / FULFILLMENT_BALANCE / PARSER_EVIDENCE / COLLECTOR_SETTING</span>
             <span>ORDER_TXN_LOG / SYNC_META</span>
+            <span>OFFICIAL_VOUCHER_COMMAND / OFFICIAL_PRODUCT_RESOLUTION</span>
+            <span>OFFICIAL_SYNC_HEAD / OFFICIAL_SYNC_META</span>
           </div>
         </div>
         <div class="cloud-card">
@@ -101,18 +103,30 @@
           <tbody id="conflictRows"></tbody>
         </table>
       </div>
+
+      <div class="toolbar">
+        <strong>공식 전표 충돌</strong>
+        <span class="status">구매·판매 로컬 전표는 유지되며 자동 덮어쓰지 않습니다.</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>유형</th><th>명령/해결 ID</th><th>내 Revision</th><th>클라우드 Revision</th><th>상태</th></tr></thead>
+          <tbody id="officialConflictRows"></tbody>
+        </table>
+      </div>
     </main>
   </div>
 
   <script type="module">
-    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.7.1';
-    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.7.1';
+    import { getCloudUrl, setCloudUrl, getCloudAccessToken, setCloudAccessToken } from './orderq-cloud-adapter.js?v=0.8.0';
+    import { getSyncState, syncNow, acceptRemoteOrder } from './orderq-sync-engine.js?v=0.8.0';
 
     const cloudUrl = document.getElementById('cloudUrl');
     const cloudToken = document.getElementById('cloudToken');
     const message = document.getElementById('message');
     const syncBtn = document.getElementById('syncBtn');
     const conflictRows = document.getElementById('conflictRows');
+    const officialConflictRows = document.getElementById('officialConflictRows');
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
@@ -127,19 +141,23 @@
       cloudToken.value = getCloudAccessToken();
       document.getElementById('deviceId').textContent = state.deviceId;
       document.getElementById('cursor').textContent = String(state.cursor);
-      document.getElementById('stateText').textContent = `대기 ${state.pending}건 · 완료 ${state.acked}건 · 충돌 ${state.conflicts.length}건`;
+      const totalConflicts = state.conflicts.length + state.officialConflicts.length;
+      document.getElementById('stateText').textContent = `대기 ${state.pending}건 · 완료 ${state.acked}건 · 충돌 ${totalConflicts}건`;
       if (!state.conflicts.length) {
         conflictRows.innerHTML = '<tr><td colspan="5" class="empty">현재 충돌 주문이 없습니다.</td></tr>';
-        return;
+      } else {
+        conflictRows.innerHTML = state.conflicts.map(row => `
+          <tr>
+            <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(row.entityId)}">${esc(row.entityId)}</a></td>
+            <td class="center">r${esc(row.revision || 0)}</td>
+            <td class="center">r${esc(row.serverRevision || 0)}</td>
+            <td>${esc(row.conflictAt ? new Date(row.conflictAt).toLocaleString('ko-KR', { hour12:false }) : '')}</td>
+            <td class="center"><button class="btn" data-remote="${esc(row.entityId)}">최신본 적용</button></td>
+          </tr>`).join('');
       }
-      conflictRows.innerHTML = state.conflicts.map(row => `
-        <tr>
-          <td><a class="order-link" href="./input.html?orderId=${encodeURIComponent(row.entityId)}">${esc(row.entityId)}</a></td>
-          <td class="center">r${esc(row.revision || 0)}</td>
-          <td class="center">r${esc(row.serverRevision || 0)}</td>
-          <td>${esc(row.conflictAt ? new Date(row.conflictAt).toLocaleString('ko-KR', { hour12:false }) : '')}</td>
-          <td class="center"><button class="btn" data-remote="${esc(row.entityId)}">최신본 적용</button></td>
-        </tr>`).join('');
+      officialConflictRows.innerHTML = state.officialConflicts.length
+        ? state.officialConflicts.map(row => `<tr><td>${row.entityType === 'OFFICIAL_VOUCHER_COMMAND' ? '구매·판매 전표' : '미매칭 상품'}</td><td>${esc(row.entityId)}</td><td class="center">r${esc(row.revision || 0)}</td><td class="center">r${esc(row.serverRevision || 0)}</td><td>${esc(row.lastError || '관리자 확인 필요')}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="empty">현재 공식 전표 충돌이 없습니다.</td></tr>';
     }
 
     document.getElementById('saveUrlBtn').addEventListener('click', async () => {
@@ -157,7 +175,8 @@
       try {
         const result = await syncNow();
         await render();
-        const conflicts = result?.push?.conflicts || result?.pull?.conflicts || 0;
+        const conflicts = Number(result?.push?.conflicts || 0) + Number(result?.pull?.conflicts || 0)
+          + Number(result?.official?.push?.conflicts || 0) + (result?.official?.pulls || []).reduce((sum, row) => sum + Number(row?.conflicts || 0), 0);
         show(conflicts ? `동기화 완료 · 충돌 ${conflicts}건을 확인하세요.` : '동기화가 완료되었습니다.', conflicts ? 'warn' : 'info');
       } catch (error) {
         show(`동기화 실패: ${error.message || error}`, 'error');

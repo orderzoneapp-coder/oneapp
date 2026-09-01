@@ -4,13 +4,14 @@ import {
   loadOfficialSaleAggregate,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from '../orderq/official-voucher-repository.js?v=0.20.0';
+} from '../orderq/official-voucher-repository.js?v=0.21.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',
-  commandContract: 'VOUCHER_CORE_V1', salesMetaSchema: 'ORDERQ_SALES_META_V1', dbSchemaVersion: '7',
-  cutoverMode: 'LOCAL_PILOT', localRepositoryReady: 'YES'
+  commandContract: 'VOUCHER_CORE_V1', officialSyncContract: 'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',
+  salesMetaSchema: 'ORDERQ_SALES_META_V1', dbSchemaVersion: '7',
+  cutoverMode: 'LOCAL_FIRST_BACKGROUND_SYNC', localRepositoryReady: 'YES'
 });
 // Cloud-first immutable deployment evidence required before production sale writes.
 export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({
@@ -32,7 +33,7 @@ export function evaluateSaleStage4Capability(ping = SALE_STAGE4_CAPABILITY) {
   const mismatch = Object.entries(SALE_STAGE4_CAPABILITY).find(([key, expectedValue]) => text(ping[key]) !== expectedValue);
   return mismatch
     ? { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: mismatch[0] }
-    : { ready: true, code: '', authority: 'LOCAL_PILOT' };
+    : { ready: true, code: '', authority: 'LOCAL_FIRST' };
 }
 
 export async function loadSaleStage4Capability() {

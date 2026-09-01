@@ -208,6 +208,7 @@ function commandReceipt(plan, result, status = 'COMMITTED') {
 }
 
 function queueRow(plan) {
+  const documentId = plan.document[plan.kind === 'PURCHASE' ? 'purchaseDocumentId' : 'salesDocumentId'];
   return {
     queueId: newId('SQ'),
     entityType: 'OFFICIAL_VOUCHER_COMMAND',
@@ -215,13 +216,12 @@ function queueRow(plan) {
     operation: 'UPSERT',
     revision: plan.document.revision,
     payload: {
+      schemaVersion: 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_PAYLOAD_V1',
+      companyId: plan.command.companyId,
+      voucherMode: plan.kind.toLowerCase(),
+      documentId,
       command: plan.command,
-      document: plan.document,
-      lines: plan.lines,
-      inventoryMovements: plan.inventoryMovements,
-      pendingInventoryEffects: plan.pendingInventoryEffects,
-      ledgerEntries: plan.ledgerEntries,
-      voucherRevision: plan.voucherRevision
+      projectionDigest: canonicalSha256(plan.voucherRevision)
     },
     status: 'WAITING_SERVER_CONTRACT',
     attemptCount: 0,
@@ -321,6 +321,152 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
 
 export const applyOfficialVoucherCommand = runCentralOfficialVoucherCommand;
 
+function remoteDraftDocument(command, contract) {
+  const document = clone(command.document || {});
+  const id = documentIdOf(contract, { ...command, document });
+  return {
+    ...document,
+    [contract.documentId]: id,
+    companyId: command.companyId,
+    status: 'DRAFT',
+    businessStatus: 'DRAFT',
+    revision: Number(command.expectedRevision || 0),
+    documentContract: 'VOUCHER_CORE_V1',
+    createdAt: text(document.createdAt) || text(command.occurredAt),
+    createdBy: text(document.createdBy) || text(command.actor),
+    updatedAt: text(command.occurredAt),
+    updatedBy: text(command.actor)
+  };
+}
+
+function officialResult(plan, authority) {
+  return {
+    authority,
+    document: plan.document,
+    lines: plan.lines,
+    inventoryMovements: plan.inventoryMovements,
+    pendingInventoryEffects: plan.pendingInventoryEffects,
+    ledgerEntries: plan.ledgerEntries,
+    voucherRevision: plan.voucherRevision,
+    duplicate: false
+  };
+}
+
+export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
+  if (text(payload.schemaVersion) !== 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_PAYLOAD_V1') {
+    throw new Error('ORDERQ_OFFICIAL_REMOTE_SCHEMA_INVALID');
+  }
+  const command = clone(payload.command);
+  const contract = inferKind(command || {});
+  const id = documentIdOf(contract, command || {});
+  if (text(payload.companyId) !== text(command.companyId) || text(payload.documentId) !== id
+    || text(payload.voucherMode) !== contract.mode) throw new Error('ORDERQ_OFFICIAL_REMOTE_IDENTITY_INVALID');
+  const commandId = text(command.commandId);
+  const db = await openOrderQDb();
+  const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
+    STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
+    STORE.PENDING_INVENTORY_EFFECTS, STORE.UNRESOLVED_PRODUCTS];
+  const tx = db.transaction(storeNames, 'readwrite');
+  const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
+  const existingCommand = await requestToPromise(commandStore.get(commandId));
+  if (existingCommand?.status === 'COMMITTED') {
+    const digest = canonicalSha256(existingCommand.result?.voucherRevision || {});
+    if (digest !== text(payload.projectionDigest)) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_REMOTE_COMMAND_IMMUTABLE');
+    }
+    await transactionDone(tx);
+    return { ...clone(existingCommand.result), duplicate: true };
+  }
+
+  let document = await requestToPromise(tx.objectStore(contract.documentStore).get(id));
+  let lines = document ? await rowsByIndex(tx.objectStore(contract.lineStore), 'byDocumentId', id) : [];
+  const action = text(command.commandType).replace(/_(PURCHASE|SALE)$/, '');
+  if (!document) {
+    if (action !== 'POST' || Number(command.expectedRevision || 0) !== 1) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_REMOTE_SEQUENCE_GAP');
+    }
+    document = remoteDraftDocument(command, contract);
+    lines = clone(command.lines || []);
+  }
+  const plan = planOfficialVoucherCommand({ command, document, lines });
+  if (canonicalSha256(plan.voucherRevision) !== text(payload.projectionDigest)) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw new Error('ORDERQ_OFFICIAL_REMOTE_PROJECTION_DIGEST_INVALID');
+  }
+
+  const unresolvedIds = [...new Set(plan.pendingInventoryEffects.map(row => text(row.unresolvedProductId)).filter(Boolean))];
+  const unresolvedStore = tx.objectStore(STORE.UNRESOLVED_PRODUCTS);
+  const unresolvedRows = await Promise.all(unresolvedIds.map(unresolvedProductId => requestToPromise(unresolvedStore.get(unresolvedProductId))));
+  const conflict = unresolvedRows.find(row => row && (text(row.companyId) !== text(command.companyId)
+    || (row.status === 'MATCHED' && text(row.productId))));
+  if (conflict) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw new Error('ORDERQ_OFFICIAL_REMOTE_PRODUCT_STATE_CONFLICT');
+  }
+
+  tx.objectStore(contract.documentStore).put(plan.document);
+  [...plan.lines, ...plan.removedLines].forEach(line => tx.objectStore(contract.lineStore).put({ ...line, companyId: plan.command.companyId }));
+  plan.inventoryMovements.forEach(row => tx.objectStore(STORE.INVENTORY_MOVEMENTS).put(row));
+  plan.pendingInventoryEffects.forEach(row => tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS).put(row));
+  plan.pendingInventoryEffects.forEach(row => {
+    if (unresolvedRows.some(existing => existing?.unresolvedProductId === row.unresolvedProductId)) return;
+    unresolvedStore.put({ unresolvedProductId: row.unresolvedProductId, unresolvedKey: row.unresolvedProductId,
+      companyId: row.companyId, productId: '', status: 'UNRESOLVED', sourceDocumentId: row.sourceDocumentId,
+      createdAt: row.createdAt, updatedAt: row.createdAt });
+  });
+  plan.ledgerEntries.forEach(row => tx.objectStore(contract.partnerEntryStore).put(row));
+  tx.objectStore(STORE.VOUCHER_REVISIONS).put(plan.voucherRevision);
+  const result = officialResult(plan, 'CLOUD_REPLICA');
+  commandStore.put(commandReceipt(plan, result));
+  await transactionDone(tx);
+  return result;
+}
+
+export async function applyRemotePendingInventoryResolutionPayload(payload = {}) {
+  const resolutionDigest = text(payload.resolutionDigest);
+  const plan = clone(payload);
+  delete plan.resolutionDigest;
+  if (!resolutionDigest || canonicalSha256(plan) !== resolutionDigest) throw new Error('ORDERQ_REMOTE_RESOLUTION_DIGEST_INVALID');
+  const companyId = text(plan.companyId);
+  const unresolvedProductId = text(plan.unresolvedProductId);
+  const productId = text(plan.productId);
+  if (!companyId || !unresolvedProductId || !productId
+    || text(plan.productResolution?.companyId) !== companyId
+    || text(plan.productResolution?.unresolvedProductId) !== unresolvedProductId
+    || text(plan.productResolution?.productId) !== productId) {
+    throw new Error('ORDERQ_REMOTE_RESOLUTION_IDENTITY_INVALID');
+  }
+  const db = await openOrderQDb();
+  const tx = db.transaction([STORE.UNRESOLVED_PRODUCTS, STORE.PENDING_INVENTORY_EFFECTS, STORE.INVENTORY_MOVEMENTS], 'readwrite');
+  const unresolvedStore = tx.objectStore(STORE.UNRESOLVED_PRODUCTS);
+  const unresolved = await requestToPromise(unresolvedStore.get(unresolvedProductId));
+  if (!unresolved || text(unresolved.companyId) !== companyId) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw new Error('ORDERQ_REMOTE_RESOLUTION_SEQUENCE_GAP');
+  }
+  if (unresolved.status === 'MATCHED') {
+    if (text(unresolved.productId) !== productId) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_REMOTE_RESOLUTION_CONFLICT');
+    }
+    await transactionDone(tx);
+    return { ...plan, duplicate: true };
+  }
+  unresolvedStore.put({ ...unresolved, ...plan.productResolution, updatedAt: plan.occurredAt });
+  (plan.resolvedEffects || []).forEach(row => tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS).put(row));
+  (plan.inventoryMovements || []).forEach(row => tx.objectStore(STORE.INVENTORY_MOVEMENTS).put(row));
+  await transactionDone(tx);
+  return { ...plan, duplicate: false };
+}
+
 export async function recordInventoryCheckpoint(source = {}) {
   const checkpoint = createInventoryCheckpoint(source);
   const db = await openOrderQDb();
@@ -356,7 +502,7 @@ export async function resolveUnresolvedProductInventory(source = {}) {
     entityId: plan.resolutionId,
     operation: 'UPSERT',
     revision: 1,
-    payload: plan,
+    payload: { ...plan, resolutionDigest: canonicalSha256(plan) },
     status: 'WAITING_SERVER_CONTRACT',
     attemptCount: 0,
     createdAt: nowIso(),

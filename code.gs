@@ -787,6 +787,20 @@ function doPost(e) {
       }));
     }
 
+    if (action === 'orderq_official_sync_push') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: orderQOfficialSyncPush(ss, payload)
+      }));
+    }
+
+    if (action === 'orderq_official_sync_pull') {
+      requireOrderQAccess(payload);
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: orderQOfficialSyncPull(ss, payload)
+      }));
+    }
+
     if (action === 'orderq_order_head') {
       requireOrderQAccess(payload);
       return withScriptLock(() => jsonResponse({
