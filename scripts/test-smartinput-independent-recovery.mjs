@@ -98,8 +98,8 @@ for (const removed of ['input-template-core.js', 'source-staging.js', 'workflow-
   assert.equal(fs.existsSync(path.join(root, 'smartinput', removed)), false, `${removed} must stay removed`);
 }
 
-assert.match(storeSource, /const DB_NAME = 'oneapp-smartinput'/);
-assert.match(storeSource, /const DB_VERSION = 4/);
+assert.match(storeSource, /SMARTINPUT_DB_NAME = 'oneapp-smartinput'/);
+assert.match(storeSource, /SMARTINPUT_DB_VERSION = 5/);
 for (const store of ['settings', 'customerLinkGroups', 'temporaryCustomers', 'customerAliasMappings', 'estimates', 'sourceImages', 'autosave']) {
   assert.match(storeSource, new RegExp(`['"]${store}['"]`));
 }
@@ -166,8 +166,8 @@ assert.equal(parserChainRows[0].attributeText, '좋은 거');
 assert.equal(parserChainRows[1].contextReference, '2번');
 assert.match(parserChainRows[0].sourceMessageKey, /^SMK-/);
 assert.equal(parserChainRows[0].sourceMessageKey, parserChainRows[1].sourceMessageKey);
-assert.equal((await adapter.loadPurchaseStage3Capability()).ready, false, 'missing official purchase contract must be scoped unavailable');
-assert.equal((await adapter.loadSaleStage4Capability()).ready, false, 'missing official sale contract must be scoped unavailable');
+assert.equal((await adapter.loadPurchaseStage3Capability()).ready, true, 'local official purchase contract must be available');
+assert.equal((await adapter.loadSaleStage4Capability()).ready, true, 'local official sale contract must be available');
 await assert.rejects(adapter.createLiveCustomer({}), error => error.code === 'CUSTOMER_CREATE_UNAVAILABLE');
 
 const smartInput = manifest.applications.find(app => app.id === 'smart-input');
@@ -175,8 +175,9 @@ assert.equal(smartInput.path, 'smartinput/index.html');
 assert.equal(smartInput.status, 'pilot');
 assert.equal(smartInput.owner, 'voucher-input');
 const localWork = manifest.sharedDataContracts.find(contract => contract.id === 'smartinput-local-work');
-assert.equal(localWork.databaseVersion, 4);
+assert.equal(localWork.databaseVersion, 5);
 assert.ok(localWork.resources.indexedDbStores.includes('autosave'));
+assert.ok(localWork.resources.indexedDbStores.includes('fieldDefinitionsV2'));
 const voucherActivity = manifest.sharedDataContracts.find(contract => contract.id === 'voucher-activity-snapshot');
 assert.equal(voucherActivity.owner, 'orderq-vnext');
 assert.ok(voucherActivity.consumers.includes('smart-input'));

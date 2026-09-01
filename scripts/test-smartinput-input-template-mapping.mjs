@@ -15,6 +15,7 @@ import {
   reassignHeaderRow,
   setColumnDecision,
   templateSignature,
+  templateSignatureV2,
   updateWorkingCell,
   validateTemplateDraft
 } from '../smartinput/input-template-mapper.js';
@@ -27,6 +28,12 @@ const targets = [
   { id: 'boxQuantity', label: '박스수량', scope: 'voucher', valueType: 'NUMBER' },
   { id: 'memo', label: '메모', scope: 'voucher', valueType: 'TEXT' }
 ];
+
+function confirmRecommendations(session, definitions = targets) {
+  return session.mappings.reduce((current, mapping) => mapping.state === DECISION.RECOMMENDED
+    ? setColumnDecision(current, mapping.columnIndex, DECISION.MAPPED, mapping.targetFieldId, definitions)
+    : current, session);
+}
 
 const raw = [
   ['행사 견적 자료', '', '', ''],
@@ -42,14 +49,27 @@ assert.deepEqual(fresh.sourceMatrix, raw, 'the immutable source matrix must pres
 assert.deepEqual(fresh.headers, raw[1]);
 assert.equal(fresh.mappings.every(mapping => mapping.state === DECISION.RECOMMENDED), true,
   'unique exact source/setting labels may be recommendations before explicit template save');
+assert.equal(validateTemplateDraft(fresh, targets).valid, false,
+  'a changed or new workbook must require explicit review of every recommended column');
+fresh = confirmRecommendations(fresh);
 assert.equal(validateTemplateDraft(fresh, targets).valid, true);
 
 const official = createTemplateRecord(fresh, '거래명세 기본', targets);
-assert.equal(official.signature, templateSignature(raw[1]));
+assert.equal(official.headerSignature, templateSignature(raw[1]));
+assert.equal(official.signature, templateSignatureV2('', '', raw[1]));
 assert.equal(official.mappings.every(mapping => [DECISION.MAPPED, DECISION.UNMAPPED].includes(mapping.state)), true);
 const applied = createMappingSession({ matrix: raw, headerRowIndex: 1, templates: [official], targetDefinitions: targets });
 assert.equal(applied.status, SESSION_STATUS.TEMPLATE_APPLIED);
 assert.equal(applied.templateId, official.templateId);
+
+let companyOrder = createMappingSession({ matrix: raw, headerRowIndex: 1, companyId: 'C1', voucherMode: 'order', targetDefinitions: targets });
+companyOrder = confirmRecommendations(companyOrder);
+const companyOrderTemplate = createTemplateRecord(companyOrder, 'C1 주문 양식', targets);
+assert.equal(createMappingSession({ matrix: raw, headerRowIndex: 1, companyId: 'C1', voucherMode: 'order', templates: [companyOrderTemplate], targetDefinitions: targets }).status, SESSION_STATUS.TEMPLATE_APPLIED);
+assert.equal(createMappingSession({ matrix: raw, headerRowIndex: 1, companyId: 'C1', voucherMode: 'sale', templates: [companyOrderTemplate], targetDefinitions: targets }).status, SESSION_STATUS.NEW_TEMPLATE,
+  'the same headers in another voucher type must not reuse a template');
+assert.equal(createMappingSession({ matrix: raw, headerRowIndex: 1, companyId: 'C2', voucherMode: 'order', templates: [companyOrderTemplate], targetDefinitions: targets }).status, SESSION_STATUS.NEW_TEMPLATE,
+  'templates must be isolated by company');
 
 for (const changed of [
   ['품목코드 ', '품목명', '수량', '메모'],
@@ -64,11 +84,14 @@ for (const changed of [
 
 const duplicateHeaders = ['품목명', '수량', '수량'];
 const duplicateTemplate = {
-  schemaVersion: 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V1',
+  schemaVersion: 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2',
   templateId: 'SITPL-DUPLICATE',
+  companyId: '',
+  voucherMode: '',
   templateName: '수량 2열 공식 양식',
   revision: 3,
-  signature: templateSignature(duplicateHeaders),
+  signature: templateSignatureV2('', '', duplicateHeaders),
+  headerSignature: templateSignature(duplicateHeaders),
   headers: duplicateHeaders,
   mappings: [
     { columnIndex: 0, sourceHeader: '품목명', state: DECISION.MAPPED, targetFieldId: 'itemName' },
@@ -125,13 +148,31 @@ assert.equal(projected[0].quantity, 2.25);
 assert.equal(projected.at(-1).quantity, 4);
 
 const blankNumeric = createMappingSession({ matrix: [['품목명', '수량'], ['공란수량', ''], ['영수량', '0'], ['음수량', '-2.5']], targetDefinitions: targets });
-const blankTemplate = createTemplateRecord(blankNumeric, '빈값 숫자 검증', targets);
+const blankTemplate = createTemplateRecord(confirmRecommendations(blankNumeric), '빈값 숫자 검증', targets);
 const blankApplied = createMappingSession({ matrix: blankNumeric.sourceMatrix, templates: [blankTemplate], targetDefinitions: targets });
 const numericRows = projectMappedRows(blankApplied, targets);
 assert.equal(blankApplied.workingRows[0].cells[1], '', 'blank source cells must remain blank in the working table');
 assert.equal(numericRows[0].quantity, null);
 assert.equal(numericRows[1].quantity, 0);
 assert.equal(numericRows[2].quantity, -2.5);
+
+const evidenceMatrix = [
+  [{ address: 'A1', displayValue: '품목코드', rawValue: '품목코드', cellType: 's' }, { address: 'B1', displayValue: '수량', rawValue: '수량', cellType: 's' }],
+  [{ address: 'A2', displayValue: '00125', rawValue: 125, numberFormat: '00000', cellType: 'n' }, { address: 'B2', displayValue: '1,200', rawValue: 1200, numberFormat: '#,##0', cellType: 'n', formula: '600*2' }]
+];
+let evidenceSession = createMappingSession({
+  matrix: [['품목코드', '수량'], ['00125', '1,200']],
+  sourceCellMatrix: evidenceMatrix,
+  targetDefinitions: targets
+});
+evidenceSession = confirmRecommendations(evidenceSession);
+const evidenceProjection = projectMappedRows(evidenceSession, targets)[0];
+assert.equal(evidenceProjection.itemCode, '00125');
+assert.equal(evidenceProjection.quantity, 1200);
+assert.equal(evidenceProjection.fieldValues.itemCode.currentDisplayValue, '00125');
+assert.equal(evidenceProjection.fieldValues.itemCode.evidence.rawValue, 125);
+assert.equal(evidenceProjection.fieldValues.quantity.currentDisplayValue, '1,200');
+assert.equal(evidenceProjection.fieldValues.quantity.evidence.formula, '600*2');
 
 const sourceWithBlankRows = [
   ['품목코드', '품목명', '메모'],
@@ -141,7 +182,7 @@ const sourceWithBlankRows = [
   ['002', '시금치', '확인']
 ];
 const blankRowSession = createMappingSession({ matrix: sourceWithBlankRows, targetDefinitions: targets });
-const blankRowTemplate = createTemplateRecord(blankRowSession, '공백 행 제외 검증', targets);
+const blankRowTemplate = createTemplateRecord(confirmRecommendations(blankRowSession), '공백 행 제외 검증', targets);
 const blankRowApplied = createMappingSession({ matrix: sourceWithBlankRows, templates: [blankRowTemplate], targetDefinitions: targets });
 assert.deepEqual(blankRowApplied.sourceMatrix, sourceWithBlankRows,
   'source input must preserve completely blank rows without rewriting the original matrix');
@@ -164,7 +205,7 @@ const largeMatrix = [
 ];
 const performanceStartedAt = performance.now();
 const largeNew = createMappingSession({ matrix: largeMatrix, targetDefinitions: largeTargets });
-const largeTemplate = createTemplateRecord(largeNew, '대량 Snapshot 공식 양식', largeTargets);
+const largeTemplate = createTemplateRecord(confirmRecommendations(largeNew, largeTargets), '대량 Snapshot 공식 양식', largeTargets);
 const largeApplied = createMappingSession({ matrix: largeMatrix, templates: [largeTemplate], targetDefinitions: largeTargets });
 const largeProjection = projectMappedRows(largeApplied, largeTargets);
 const performanceElapsedMs = performance.now() - performanceStartedAt;

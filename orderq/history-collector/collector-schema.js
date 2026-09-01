@@ -1,4 +1,4 @@
-import { normalizeText } from '../orderq-db.js?v=0.7.1';
+import { normalizeText } from '../orderq-db.js?v=0.8.0';
 import { normalizeWarehouseCode } from '../warehouse-master.js?v=0.7.1';
 
 export const COLLECTOR_SOURCE = Object.freeze({

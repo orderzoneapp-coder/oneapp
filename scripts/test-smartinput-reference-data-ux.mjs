@@ -130,7 +130,10 @@ const [smartInputSource, dataStoreSource, controllerSource, html] = await Promis
 assert.doesNotMatch(smartInputSource, /orderq\/product-master-search|loadProductCatalog|searchProductCatalog/, 'SmartInput must not treat ORDER Q history as the product master');
 assert.match(controllerSource, /transaction\(stores, 'readonly'\)/);
 assert.doesNotMatch(controllerSource, /transaction\([^\n]+['"]readwrite['"]/, 'direct fallback may only read owner stores');
-assert.match(dataStoreSource, /const DB_VERSION\s*=\s*4/, 'SmartInput DB v4 must add only the latest-work autosave store');
+assert.match(dataStoreSource, /SMARTINPUT_DB_VERSION\s*=\s*5/, 'SmartInput DB v5 must preserve old stores and add field/reference/mapping stores');
+for (const store of ['fieldDefinitionsV2', 'companyVoucherFieldsV1', 'referenceGenerationsV1', 'referenceEntitiesV1', 'inputTemplatesV2', 'mappingSessionsV2', 'draftVouchersV2']) {
+  assert.match(dataStoreSource, new RegExp(store));
+}
 assert.match(dataStoreSource, /AUTOSAVE:\s*['"]autosave['"]/);
 assert.match(dataStoreSource, /reference:product/);
 assert.match(dataStoreSource, /reference:customer/);
@@ -142,12 +145,10 @@ assert.match(smartInputSource, /FUZZY_CONFIRMATION_REQUIRED/);
 assert.match(smartInputSource, /referenceResolution = state\.references\.product\.active \? 'MISSING' : 'REFERENCE_ERROR'/);
 const scopedReload = smartInputSource.slice(smartInputSource.indexOf('async function reloadReferenceDomain'), smartInputSource.indexOf('function appendDeliveryHistory'));
 assert.doesNotMatch(scopedReload, /renderMode\(/, 'scoped reload must not trigger a full workspace render');
-assert.match(html, /id="productReferenceReload"/);
-assert.match(html, /id="customerReferenceReload"/);
+assert.match(html, /id="allReferenceReload"/);
 assert.match(html, /id="referencePendingApply"/);
 assert.doesNotMatch(html, /거래처관리에서 등록/, 'obsolete fluorescent customer registration coachmark must stay removed');
 assert.doesNotMatch(html, /ItemMaster\.html/, 'deprecated compatibility page must not be presented as the product owner');
-assert.equal((smartInputSource.match(/productReferenceReload'\)\.addEventListener/g) || []).length, 1, 'product scoped reload event must bind once');
-assert.equal((smartInputSource.match(/customerReferenceReload'\)\.addEventListener/g) || []).length, 1, 'customer scoped reload event must bind once');
+assert.equal((smartInputSource.match(/allReferenceReload'\)\.addEventListener/g) || []).length, 1, 'full reference reload event must bind once');
 
 console.log(`SmartInput reference-data UX contract PASS · large snapshot ${performanceElapsed.toFixed(1)}ms`);

@@ -1,18 +1,16 @@
-import { pingCentralAuthority } from '../orderq/orderq-cloud-adapter.js?v=0.10.0';
 import {
   buildFrozenSaleIntent,
   findOfficialSaleBySource,
   loadOfficialSaleAggregate,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from '../orderq/official-voucher-repository.js?v=0.19.0';
-import { canonicalSha256 } from '../orderq/official-voucher-core.js?v=0.19.0';
-import { pullCentralOfficialState } from '../orderq/central-command-gateway.js?v=0.18.0';
+} from '../orderq/official-voucher-repository.js?v=0.20.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',
-  commandContract: 'VOUCHER_CORE_V1', salesMetaSchema: 'ORDERQ_SALES_META_V1', dbSchemaVersion: '14',
-  cutoverMode: 'VNEXT_PRIMARY'
+  commandContract: 'VOUCHER_CORE_V1', salesMetaSchema: 'ORDERQ_SALES_META_V1', dbSchemaVersion: '7',
+  cutoverMode: 'LOCAL_PILOT', localRepositoryReady: 'YES'
 });
 // Cloud-first immutable deployment evidence required before production sale writes.
 export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({
@@ -30,23 +28,15 @@ function finite(value, code) {
 function won(value) { return Math.sign(value) * Math.floor(Math.abs(value) + 0.5); }
 function revision(value) { return Number(value?.revision ?? value?.masterRevision ?? value?.raw?.revision ?? 0); }
 
-export function evaluateSaleStage4Capability(ping = {}, expected = SALE_STAGE4_EXPECTED_DEPLOYMENT) {
+export function evaluateSaleStage4Capability(ping = SALE_STAGE4_CAPABILITY) {
   const mismatch = Object.entries(SALE_STAGE4_CAPABILITY).find(([key, expectedValue]) => text(ping[key]) !== expectedValue);
-  const saleDeploymentFields = [
-    ['deploymentId', 'saleDeploymentId'],
-    ['deploymentVersion', 'saleDeploymentVersion'],
-    ['gitCommit', 'saleGitCommit']
-  ];
-  const deploymentReady = saleDeploymentFields.every(([expectedKey, pingKey]) =>
-    text(expected[expectedKey]) && text(ping[pingKey]) === text(expected[expectedKey]));
-  return mismatch || !deploymentReady
-    ? { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: mismatch?.[0] || 'deploymentEvidence' }
-    : { ready: true, code: '', deploymentId: text(ping.saleDeploymentId), deploymentVersion: text(ping.saleDeploymentVersion), gitCommit: text(ping.saleGitCommit) };
+  return mismatch
+    ? { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: mismatch[0] }
+    : { ready: true, code: '', authority: 'LOCAL_PILOT' };
 }
 
 export async function loadSaleStage4Capability() {
-  try { return evaluateSaleStage4Capability(await pingCentralAuthority()); }
-  catch (error) { return { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: text(error?.message || error) }; }
+  return evaluateSaleStage4Capability();
 }
 
 export function validateSaleGroup(group = {}, masters = {}) {
@@ -64,11 +54,17 @@ export function validateSaleGroup(group = {}, masters = {}) {
   const orders = new Map((masters.orders || []).map(row => [text(row.orderId), row]));
   const orderItems = new Map((masters.orderItems || []).map(row => [text(row.orderItemId), row]));
   for (const row of group.rows || []) {
-    const product = products.get(text(row.productId));
+    const productId = text(row.productId);
+    const unresolvedProductId = text(row.unresolvedProductId);
+    const product = products.get(productId);
     const warehouse = warehouses.get(text(row.warehouseId || group.warehouseId));
-    if (!product || product.active === false || text(product.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') throw new Error('ORDERQ_SALE_PRODUCT_MASTER_INVALID');
+    if (!productId && !unresolvedProductId && !text(row.productCode || row.itemCode || row.productName || row.itemName || row.unregisteredProductQuery)) {
+      throw new Error('ORDERQ_OFFICIAL_PRODUCT_IDENTITY_REQUIRED');
+    }
+    if (productId && unresolvedProductId) throw new Error('ORDERQ_OFFICIAL_PRODUCT_IDENTITY_CONFLICT');
+    if (productId && (!product || product.active === false || text(product.status || 'ACTIVE').toUpperCase() !== 'ACTIVE')) throw new Error('ORDERQ_SALE_PRODUCT_MASTER_INVALID');
     if (!warehouse || warehouse.active === false || text(warehouse.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') throw new Error('ORDERQ_SALE_WAREHOUSE_MASTER_INVALID');
-    if (!(Number(row.productMasterRevision) >= revision(product)) || !(Number(row.warehouseMasterRevision) >= revision(warehouse))) throw new Error('ORDERQ_SALE_SOURCE_REVISION_STALE');
+    if ((product && !(Number(row.productMasterRevision) >= revision(product))) || !(Number(row.warehouseMasterRevision) >= revision(warehouse))) throw new Error('ORDERQ_SALE_SOURCE_REVISION_STALE');
     const actual = finite(row.actualQuantity ?? row.quantity, 'ORDERQ_SALE_QUANTITY_REQUIRED');
     finite(row.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
     const baseFactor = finite(row.actualToBaseFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
@@ -113,6 +109,8 @@ export function deriveSaleDraftIdentity(group = {}, context = {}) {
 export function buildSalePostDraft(group = {}, context = {}) {
   const identity = deriveSaleDraftIdentity(group, context);
   const occurredAt = text(context.occurredAt || new Date().toISOString());
+  const companyId = text(context.companyId || group.companyId);
+  if (!companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_REQUIRED');
   const lines = (group.rows || []).map((row, index) => {
     const actualQuantity = finite(row.actualQuantity ?? row.quantity, 'ORDERQ_SALE_QUANTITY_REQUIRED');
     const unitPrice = finite(row.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
@@ -131,16 +129,24 @@ export function buildSalePostDraft(group = {}, context = {}) {
     const sourceLineKey = text(row.sourceLineKey) || `${identity.sourceDocumentKey}:LINE:${canonicalSha256({ sourceRowKey: text(row.sourceRowKey || index + 1),
       sourceOccurrence: Number(row.sourceOccurrence || 1), productId: text(row.productId || row.productCode), warehouseId: text(row.warehouseId || group.warehouseId),
       sourceOrderId: text(row.sourceOrderId), sourceOrderItemId: text(row.sourceOrderItemId), sourceDispatchId: text(row.sourceDispatchId), sourceDispatchLineId: text(row.sourceDispatchLineId) })}`;
-    const supplyAmount = won(actualQuantity * unitPrice);
-    return { ...row, sourceLineKey, lineIdentityId: text(row.lineIdentityId) || `LI-${canonicalSha256([identity.salesDocumentId, sourceLineKey]).slice(0, 32)}`,
+    const calculatedSupplyAmount = won(actualQuantity * unitPrice);
+    const supplyAmount = row.supplyAmount ?? row.supplyAmountWon ?? calculatedSupplyAmount;
+    const vatAmount = row.vatAmount ?? row.vatAmountWon ?? null;
+    const totalAmount = row.totalAmount ?? row.totalAmountWon ?? row.amountWon ?? supplyAmount;
+    const productId = text(row.productId);
+    const unresolvedProductId = text(row.unresolvedProductId)
+      || (!productId ? unresolvedProductStableId(companyId, row) : '');
+    return { ...row, salesLineId: text(row.salesLineId) || `SL-${canonicalSha256([identity.salesDocumentId, sourceLineKey]).slice(0, 32)}`,
+      sourceLineKey, lineIdentityId: text(row.lineIdentityId) || `LI-${canonicalSha256([identity.salesDocumentId, sourceLineKey]).slice(0, 32)}`,
       lineSequence: index + 1, actualQuantity, actualUnit, actualToBaseFactor,
       baseQuantity: actualQuantity * actualToBaseFactor, baseUnit: text(row.baseUnit || row.unit).toUpperCase(),
       actualToRecognizedFactor, recognizedOrderQuantity: orderLinkMode === 'DIRECT' ? 0 : actualQuantity * actualToRecognizedFactor,
-      recognizedUnit: text(row.recognizedUnit || row.unit).toUpperCase(), unitPrice, supplyAmount, totalAmount: supplyAmount,
+      recognizedUnit: text(row.recognizedUnit || row.unit).toUpperCase(), unitPrice,
+      productId, unresolvedProductId, supplyAmount, vatAmount, totalAmount,
       taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', orderLinkMode, conversionSource, conversionRuleId, conversionRuleVersion };
   });
   const commandId = `POST_SALE:${canonicalSha256({ salesDocumentId: identity.salesDocumentId, sourceDocumentKey: identity.sourceDocumentKey, lines: lines.map(row => row.sourceLineKey) })}`;
-  const document = { ...identity, salesCustomerId: text(group.salesCustomerId), salesCustomerName: text(group.salesCustomerName),
+  const document = { companyId, ...identity, salesCustomerId: text(group.salesCustomerId), salesCustomerName: text(group.salesCustomerName),
     salesCustomerRevision: finite(group.salesCustomerRevision ?? group.rows?.[0]?.salesCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), deliveryCustomerId: text(group.deliveryCustomerId),
     deliveryCustomerRevision: finite(group.deliveryCustomerRevision ?? group.rows?.[0]?.deliveryCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), billingCustomerId: text(group.billingCustomerId),
     billingCustomerRevision: finite(group.billingCustomerRevision ?? group.rows?.[0]?.billingCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), saleDate: text(group.voucherDate || group.saleDate),
@@ -154,9 +160,8 @@ export function buildSalePostDraft(group = {}, context = {}) {
 
 export async function postSaleGroup(group, context = {}) {
   if (context.masters) validateSaleGroup(group, context.masters);
-  await pullCentralOfficialState();
   const identity = deriveSaleDraftIdentity(group, context);
-  const existing = await findOfficialSaleBySource(identity);
+  const existing = await findOfficialSaleBySource({ ...identity, companyId: text(context.companyId || group.companyId) });
   let aggregate = existing ? await loadOfficialSaleAggregate(existing.salesDocumentId) : null;
   const storedEnvelope = aggregate?.document?.commandEnvelope || null;
   const draft = buildSalePostDraft(group, storedEnvelope ? { ...context, occurredAt: storedEnvelope.occurredAt, actor: storedEnvelope.actorId } : context);

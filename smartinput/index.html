@@ -64,14 +64,13 @@
             <article class="reference-domain" data-reference-domain="product">
               <div><strong>상품</strong><span id="productReferenceStatus" data-status="LOADING">LOADING</span></div>
               <dl><div><dt>출처</dt><dd id="productReferenceSource">확인 중</dd></div><div><dt>건수</dt><dd id="productReferenceCount">—</dd></div><div><dt>revision</dt><dd id="productReferenceRevision">—</dd></div><div><dt>갱신</dt><dd id="productReferenceUpdated">확인 전</dd></div></dl>
-              <button type="button" id="productReferenceReload">다시 불러오기</button>
             </article>
             <article class="reference-domain" data-reference-domain="customer">
               <div><strong>거래처</strong><span id="customerReferenceStatus" data-status="LOADING">LOADING</span></div>
               <dl><div><dt>출처</dt><dd id="customerReferenceSource">확인 중</dd></div><div><dt>건수</dt><dd id="customerReferenceCount">—</dd></div><div><dt>revision</dt><dd id="customerReferenceRevision">—</dd></div><div><dt>갱신</dt><dd id="customerReferenceUpdated">확인 전</dd></div></dl>
-              <button type="button" id="customerReferenceReload">다시 불러오기</button>
             </article>
             <button class="reference-overview__apply" type="button" id="referencePendingApply" hidden>현재 작업에 적용</button>
+            <button class="reference-overview__apply" type="button" id="allReferenceReload">전체 기준정보 새로고침</button>
           </div>
         </details>
         <button class="button button--quiet" id="settingsButton" type="button">환경설정</button>
@@ -163,6 +162,8 @@
             <button class="button button--quiet button--small" id="pendingPasteToSourceButton" type="button" hidden>원본입력뷰에서 확인</button>
             <div class="grid-stats" aria-label="입력표 상태"><strong id="gridRowCount">0행</strong><span id="gridSearchCount" hidden>검색 0행</span><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
             <button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button>
+            <label class="bulk-price-control"><span>선택 단가</span><input id="bulkUnitPriceInput" type="text" inputmode="decimal" placeholder="0" aria-label="선택행에 적용할 단가"></label>
+            <button class="button button--quiet button--small" id="applyBulkUnitPriceButton" type="button" disabled>단가 적용</button>
             <button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button>
             <button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button>
             <button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button>
@@ -218,6 +219,13 @@
         <section class="voucher-context-view voucher-activity-view" id="voucherContextView" aria-label="전표 목록" hidden>
           <header class="voucher-context-heading voucher-activity-heading">
             <div><small id="voucherContextEyebrow">VOUCHER ACTIVITY</small><h2 id="voucherContextTitle">오늘 주문서</h2></div>
+            <label class="sr-only" for="voucherActivitySourceMode">불러올 전표 종류</label>
+            <select id="voucherActivitySourceMode" aria-label="불러올 전표 종류">
+              <option value="estimate">견적서</option>
+              <option value="order">주문서</option>
+              <option value="purchase">구매전표</option>
+              <option value="sale">판매전표</option>
+            </select>
             <button class="button button--quiet button--small" id="voucherActivityOpenAll" type="button">전체 조회</button>
             <p id="voucherContextSummary" role="status">전표 목록을 불러오는 중입니다.</p>
           </header>
@@ -251,8 +259,8 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-  <script src="./smartinput-contract.js?v=0.5.1"></script>
-  <script type="module" src="./smartinput.js?v=0.8.3"></script>
+  <script src="./smartinput-contract.js?v=0.6.0"></script>
+  <script type="module" src="./smartinput.js?v=0.9.0"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>

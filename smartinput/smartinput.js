@@ -16,7 +16,7 @@ import {
   loadSaleStage4Capability,
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './legacy-integration-adapter.js?v=0.1.0';
+} from './legacy-integration-adapter.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
@@ -33,7 +33,7 @@ import {
   setColumnDecision,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.1.0';
+} from './input-template-mapper.js?v=0.2.0';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -49,7 +49,7 @@ import {
   groupVoucherRows,
   structuredFieldsForMode,
   summarizeVoucherGroups
-} from './multivoucher-stage1.js?v=0.1.0';
+} from './multivoucher-stage1.js?v=0.2.0';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -74,8 +74,9 @@ import {
   loadLatestAutosave,
   saveLatestAutosave,
   loadInputTemplates,
-  saveInputTemplates
-} from './smartinput-data-store.js?v=0.5.0';
+  saveInputTemplates,
+  saveMappingSessionV2
+} from './smartinput-data-store.js?v=0.6.0';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -91,7 +92,23 @@ import {
   searchProductMatchIndex,
   submitRegistrationChangeRequest
 } from './reference-data-controller.js?v=0.1.1';
-import { readVoucherActivity } from '../orderq/voucher-activity-read-adapter.js?v=0.1.0';
+import { readVoucherActivity } from '../orderq/voucher-activity-read-adapter.js?v=0.2.0';
+import { coreFieldByProjection } from './field-definition-contract.js?v=0.1.0';
+import {
+  ensureFieldCatalogSeed,
+  loadVoucherFieldRegistry,
+  resolveSmartInputActor,
+  resolveSmartInputCompanyId,
+  updateVoucherFieldSettings
+} from './field-registry.js?v=0.1.0';
+import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.0';
+import { readWorksheetSource } from './xlsx-source-reader.js?v=0.1.0';
+import {
+  applyRelatedVoucherImportPlan,
+  createRelatedVoucherImportPlan,
+  relatedImportConflicts
+} from './related-voucher-import.js?v=0.1.0';
+import { applyBulkUnitPrice } from './grid-bulk-edit.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -153,6 +170,11 @@ const state = {
   inputTemplates: [],
   inputTemplatesStatus: 'LOADING',
   inputTemplatesError: null,
+  companyId: resolveSmartInputCompanyId(),
+  actorId: resolveSmartInputActor(),
+  fieldRegistries: {},
+  fieldRegistryStatus: 'LOADING',
+  fieldRegistryError: null,
   pendingGridPasteText: '',
   mappingPasteUndo: null,
   mappingProjectionTimer: null,
@@ -193,7 +215,7 @@ const state = {
   estimateDragSuppressed: false,
   estimateTouchDrag: null,
   estimateSelectionQueue: Promise.resolve(),
-  voucherActivity: { requestId: 0, status: 'IDLE', mode: '', date: '', rows: [], error: null, checkedAt: '' },
+  voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
   purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' },
   saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
@@ -570,8 +592,10 @@ function renderReferenceDomain(domain) {
   $(`${domain}ReferenceRevision`).textContent = active?.revision === '' || active?.revision == null ? '—' : String(active.revision);
   $(`${domain}ReferenceUpdated`).textContent = referenceTimeText(active?.checkedAt || active?.snapshotCreatedAt);
   const reload = $(`${domain}ReferenceReload`);
-  reload.disabled = state.busy || Boolean(reference.loading);
-  reload.textContent = reference.loading ? '불러오는 중…' : '다시 불러오기';
+  if (reload) {
+    reload.disabled = state.busy || Boolean(reference.loading);
+    reload.textContent = reference.loading ? '불러오는 중…' : '다시 불러오기';
+  }
 }
 
 function renderReferenceControls() {
@@ -594,6 +618,11 @@ function renderReferenceControls() {
     const count = ['product', 'customer'].filter(domain => state.references[domain].pending).length;
     pendingApply.hidden = count === 0;
     pendingApply.textContent = count ? `현재 작업에 적용 (${count})` : '현재 작업에 적용';
+  }
+  const allReload = $('allReferenceReload');
+  if (allReload) {
+    allReload.disabled = state.busy;
+    allReload.textContent = state.activeActivity === '기준정보 전체 새로고침' ? '전체 새로고침 중…' : '전체 기준정보 새로고침';
   }
 }
 
@@ -754,7 +783,11 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
     ? new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]))
     : new Map();
   return [
-    ...builtIn.map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field),
+    ...builtIn.map(field => modeFields.has(field.id) ? {
+      ...field,
+      label: modeFields.get(field.id).label,
+      inputAliases: [...new Set([...(field.inputAliases || []), ...(modeFields.get(field.id).inputAliases || [])])]
+    } : field),
     ...customFields.filter(field => field.scope === scope).map(field => ({
       ...field,
       group: scope === 'voucher' ? 'ADDITIONAL' : field.group,
@@ -764,10 +797,40 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
   ];
 }
 
+function availableRegistryFields(scope, mode = state.draft.activeMode) {
+  const registry = state.fieldRegistries[mode];
+  if (!registry) return [];
+  const targetScope = scope === 'header' ? 'HEADER' : 'LINE';
+  const existingIds = new Set([
+    ...(scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS).map(field => field.id),
+    ...(state.settings.customFields || []).filter(field => field.scope === scope).map(field => field.id)
+  ]);
+  return registry.catalog
+    .filter(field => field.status === 'ACTIVE'
+      && field.voucherModes.includes(mode)
+      && (field.scope === targetScope || (scope === 'voucher' && field.scope === 'REFERENCE'))
+      && (field.writable || field.scope === 'REFERENCE')
+      && !existingIds.has(field.fieldId))
+    .map(field => ({
+      id: field.fieldId,
+      label: field.displayLabel,
+      optionLabel: field.advancedLabel,
+      advancedLabel: field.advancedLabel,
+      scope,
+      category: scope === 'header' ? 'CUSTOMER' : 'PRODUCT',
+      sourceField: field.fieldId,
+      valueType: field.valueType === 'DECIMAL' ? 'NUMBER' : 'TEXT',
+      editable: field.writable,
+      ownerDomain: field.ownerDomain,
+      relationshipPath: field.relationshipPath,
+      registryField: true
+    }));
+}
+
 const MAPPING_DEFAULT_ROW_ID = '__SMARTINPUT_MAPPING_DEFAULT_ROW__';
 
 function inputMappingSession(current = modeDraft()) {
-  return current?.inputMapping?.schemaVersion === 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V1'
+  return current?.inputMapping?.schemaVersion === 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2'
     ? current.inputMapping
     : null;
 }
@@ -779,23 +842,35 @@ function inputMappingTargets() {
     warehouse: 'rowWarehouseCode',
     transactionType: 'rowTransactionType'
   };
-  const headerTargets = layoutDefinitions('header').map(field => ({
+  const enabledHeaderIds = new Set(headerFieldsForMode());
+  const enabledVoucherIds = new Set(voucherColumnsForMode());
+  const headerTargets = layoutDefinitions('header').filter(field => enabledHeaderIds.has(field.id)).map(field => ({
     id: field.id,
     label: field.label,
     scope: 'header',
     valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
     projectionFieldId: headerProjection[field.id] || field.id,
-    custom: Boolean(field.custom)
+    custom: Boolean(field.custom),
+    aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
-  const voucherTargets = layoutDefinitions('voucher').map(field => ({
-    id: field.id,
-    label: field.label,
-    scope: 'voucher',
-    group: field.group || 'ADDITIONAL',
-    valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
-    projectionFieldId: field.id,
-    custom: Boolean(field.custom)
-  }));
+  const voucherTargets = layoutDefinitions('voucher').filter(field => enabledVoucherIds.has(field.id)).map(field => {
+    const canonical = coreFieldByProjection(state.draft.activeMode, field.id);
+    return {
+      id: canonical?.fieldId || field.id,
+      label: canonical?.displayLabel || field.label,
+      scope: 'voucher',
+      group: field.group || 'ADDITIONAL',
+      valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+      projectionFieldId: canonical?.projectionFieldId || field.id,
+      custom: Boolean(field.custom),
+      aliases: [...new Set([
+        ...(field.inputAliases || []),
+        ...(field.masterAliases || []),
+        ...(canonical?.aliases || []),
+        field.label
+      ])]
+    };
+  });
   const unique = new Map();
   [...headerTargets, ...voucherTargets].forEach(target => {
     if (!unique.has(target.id)) unique.set(target.id, target);
@@ -805,6 +880,33 @@ function inputMappingTargets() {
 
 function mappingTargetById(fieldId) {
   return inputMappingTargets().find(target => target.id === fieldId) || null;
+}
+
+function mappingTargetByProjection(projectionFieldId) {
+  return inputMappingTargets().find(target => (target.projectionFieldId || target.id) === projectionFieldId) || null;
+}
+
+function rowFieldDisplayValue(row, projectionFieldId, fallback = '') {
+  const target = mappingTargetByProjection(projectionFieldId);
+  const tracked = target ? row?.fieldValues?.[target.id] : null;
+  return tracked && !tracked.edited ? tracked.currentDisplayValue : fallback;
+}
+
+function markMappedFieldEdited(row, projectionFieldId, displayValue) {
+  const target = mappingTargetByProjection(projectionFieldId);
+  if (!target || !row?.fieldValues?.[target.id]) return row;
+  return {
+    ...row,
+    fieldValues: {
+      ...row.fieldValues,
+      [target.id]: {
+        ...row.fieldValues[target.id],
+        currentDisplayValue: String(displayValue ?? ''),
+        parsedValue: row[projectionFieldId] ?? null,
+        edited: true
+      }
+    }
+  };
 }
 
 function inputMappingTemplateReady(session = inputMappingSession()) {
@@ -929,7 +1031,10 @@ function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
     fileFingerprint: existing.fileFingerprint,
     editJournal: existing.editJournal,
     manualRows: existing.manualRows,
-    hiddenColumns: existing.hiddenColumns
+    hiddenColumns: existing.hiddenColumns,
+    sourceCellMatrix: existing.sourceCellMatrix,
+    companyId: state.companyId,
+    voucherMode: state.draft.activeMode
   });
   if (!applyLatestTemplate && existing.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE
     && existing.signature === restored.signature && Array.isArray(existing.mappings)) {
@@ -952,7 +1057,7 @@ async function reloadInputTemplates({ applyCurrent = false, announce = true } = 
   state.inputTemplatesError = null;
   renderInputMappingStatus();
   try {
-    const templates = await loadInputTemplates();
+    const templates = await loadInputTemplates(state.companyId, state.draft.activeMode);
     state.inputTemplates = Array.isArray(templates) ? templates : [];
     state.inputTemplatesStatus = state.inputTemplates.length ? 'READY' : 'EMPTY';
     if (applyCurrent) restoreInputMappingSession({ applyLatestTemplate: true });
@@ -2153,6 +2258,7 @@ function openLayoutFieldDialog(scope, customFields, onAdd) {
   const fieldDialog = document.createElement('dialog');
   fieldDialog.className = 'smart-dialog smart-field-dialog';
   const definitions = isHeader ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
+  const registeredDefinitions = availableRegistryFields(scope);
   const categoryDefinitions = isHeader
     ? {
         CUSTOMER: definitions.filter(field => ['customer', 'taxCustomer'].includes(field.id)),
@@ -2162,39 +2268,51 @@ function openLayoutFieldDialog(scope, customFields, onAdd) {
         group.id,
         definitions.filter(field => field.group === group.id)
       ]));
+  categoryDefinitions.REGISTERED = registeredDefinitions;
   const productCategoryOptions = contract.PRODUCT_FIELD_GROUPS
     .map(group => `<option value="${esc(group.id)}">${esc(group.label)}</option>`).join('');
   fieldDialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>Form Field Library</small><h2>${isHeader ? '상단 정보열' : '전표 열'} 항목 추가</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-form">
-      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : productCategoryOptions}<option value="CUSTOM">${isHeader ? '사용자지정' : '부가정보 · 사용자지정'}</option></select></label>
-      <label data-library-field><span>추가할 항목</span><select name="libraryField"></select></label>
+      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : productCategoryOptions}<option value="REGISTERED">전체 등록 필드 (${registeredDefinitions.length.toLocaleString('ko-KR')})</option><option value="CUSTOM">${isHeader ? '사용자지정' : '부가정보 · 사용자지정'}</option></select></label>
+      <label data-library-field><span>추가할 항목</span><input type="search" name="librarySearch" placeholder="항목명 검색" autocomplete="off"><select name="libraryField" size="8"></select></label>
       <label data-custom-type hidden><span>사용자지정 형식</span><select name="customType"><option value="TEXT">문자형 · 최대 10개</option><option value="NUMBER">숫자형 · 최대 10개</option></select></label>
       <label data-custom-label hidden><span>사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
     </div>
-    <p class="smart-dialog__message">기존 정보 항목을 다시 표시하거나 새 사용자지정 항목을 만들 수 있습니다.</p>
+    <p class="smart-dialog__message">현재 전표에 적용 가능한 필드만 표시합니다. 전체 등록 필드는 경로로 구분합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-add>항목 추가</button></footer>
   </form>`;
   document.body.append(fieldDialog);
   const form = fieldDialog.querySelector('form');
   const finish = () => { fieldDialog.close(); fieldDialog.remove(); };
+  const renderLibraryOptions = () => {
+    const term = String(form.elements.librarySearch?.value || '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '');
+    form.elements.libraryField.innerHTML = (categoryDefinitions[form.elements.category.value] || [])
+      .filter(field => !term || `${field.optionLabel || field.label} ${field.id}`.normalize('NFKC').toLowerCase().replace(/\s+/g, '').includes(term))
+      .slice(0, 500)
+      .map(field => `<option value="${esc(field.id)}">${esc(field.optionLabel || field.label)}</option>`).join('');
+  };
   const syncCategory = () => {
     const custom = form.elements.category.value === 'CUSTOM';
     fieldDialog.querySelector('[data-library-field]').hidden = custom;
     fieldDialog.querySelector('[data-custom-type]').hidden = !custom;
     fieldDialog.querySelector('[data-custom-label]').hidden = !custom;
-    if (!custom) {
-      form.elements.libraryField.innerHTML = (categoryDefinitions[form.elements.category.value] || [])
-        .map(field => `<option value="${esc(field.id)}">${esc(field.label)}</option>`).join('');
-    }
+    if (!custom) renderLibraryOptions();
     if (custom) form.elements.customLabel.focus();
   };
   form.elements.category.addEventListener('change', syncCategory);
+  form.elements.librarySearch.addEventListener('input', renderLibraryOptions);
   fieldDialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   fieldDialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
   fieldDialog.querySelector('[data-add]').addEventListener('click', () => {
     if (form.elements.category.value !== 'CUSTOM') {
-      onAdd({ id: form.elements.libraryField.value, builtIn: true });
+      const selectedId = form.elements.libraryField.value;
+      const selected = (categoryDefinitions[form.elements.category.value] || []).find(field => field.id === selectedId);
+      if (!selected) {
+        fieldDialog.querySelector('.smart-dialog__message').textContent = '추가할 항목을 선택하세요.';
+        return;
+      }
+      onAdd(selected.registryField ? { ...selected, builtIn: false } : { id: selectedId, builtIn: true });
       finish();
       return;
     }
@@ -2210,8 +2328,16 @@ function openLayoutFieldDialog(scope, customFields, onAdd) {
       fieldDialog.querySelector('.smart-dialog__message').textContent = `${valueType === 'NUMBER' ? '숫자형' : '문자형'} 사용자지정 항목은 최대 10개까지 만들 수 있습니다.`;
       return;
     }
+    const slotPrefix = valueType === 'NUMBER' ? 'custom.number.' : 'custom.text.';
+    const usedIds = new Set(customFields.map(field => field.id));
+    const slotId = Array.from({ length: 10 }, (_, index) => `${slotPrefix}${String(index + 1).padStart(2, '0')}`)
+      .find(id => !usedIds.has(id));
+    if (!slotId) {
+      fieldDialog.querySelector('.smart-dialog__message').textContent = `${valueType === 'NUMBER' ? '숫자형' : '문자형'} 사용자지정 슬롯을 모두 사용 중입니다.`;
+      return;
+    }
     onAdd({
-      id: `custom-${valueType.toLowerCase()}-${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffff).toString(36)}`,
+      id: slotId,
       label,
       scope,
       category: 'CUSTOM',
@@ -2348,7 +2474,7 @@ function openInputTemplateSaveDialog() {
     try {
       const record = createTemplateRecord(inputMappingSession(), name, inputMappingTargets());
       const nextTemplates = [...state.inputTemplates, record];
-      await saveInputTemplates(nextTemplates);
+      await saveInputTemplates(nextTemplates, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = nextTemplates;
       state.inputTemplatesStatus = 'READY';
       const existing = inputMappingSession();
@@ -2362,7 +2488,10 @@ function openInputTemplateSaveDialog() {
         fileFingerprint: existing.fileFingerprint,
         editJournal: existing.editJournal,
         manualRows: existing.manualRows,
-        hiddenColumns: existing.hiddenColumns
+        hiddenColumns: existing.hiddenColumns,
+        sourceCellMatrix: existing.sourceCellMatrix,
+        companyId: state.companyId,
+        voucherMode: state.draft.activeMode
       }));
       applied.batchId = existing.batchId;
       applied.purchaseMetaRows = existing.purchaseMetaRows || null;
@@ -2428,12 +2557,13 @@ function openInputTemplateEditor(template) {
       columnIndex: Number(select.dataset.templateColumn),
       sourceHeader: template.headers[Number(select.dataset.templateColumn)] || '',
       state: select.value === '__UNMAPPED__' ? MAPPING_DECISION.UNMAPPED : (select.value ? MAPPING_DECISION.MAPPED : MAPPING_DECISION.UNDECIDED),
-      targetFieldId: select.value && select.value !== '__UNMAPPED__' ? select.value : ''
+      targetFieldId: select.value && select.value !== '__UNMAPPED__' ? select.value : '',
+      reviewed: true
     }));
     try {
-      const updated = createTemplateRecord({ signature: template.signature, headers: template.headers, mappings }, name, targets, template);
+      const updated = createTemplateRecord({ companyId: state.companyId, voucherMode: state.draft.activeMode, signature: template.signature, headers: template.headers, mappings }, name, targets, template);
       const next = state.inputTemplates.map(record => record.templateId === template.templateId ? updated : record);
-      await saveInputTemplates(next);
+      await saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = next;
       state.inputTemplatesStatus = next.length ? 'READY' : 'EMPTY';
       finish();
@@ -2494,7 +2624,7 @@ function openInputTemplateManager() {
       const confirmed = window.confirm(`${template.templateName} 입력 양식을 삭제하시겠습니까? 현재 작업과 과거 전표는 변경되지 않습니다.`);
       if (!confirmed) return;
       const next = state.inputTemplates.filter(record => record.templateId !== template.templateId);
-      saveInputTemplates(next).then(() => {
+      saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode }).then(() => {
         state.inputTemplates = next;
         state.inputTemplatesStatus = next.length ? 'READY' : 'EMPTY';
         render();
@@ -2722,6 +2852,7 @@ async function openSettingsDialog() {
     }
     try {
       await saveSettings(next);
+      await persistFieldRegistryLayout(next);
       state.settings = next;
       updateDeliveryPolicy();
       renderRows({ restoreFocus: false });
@@ -2950,6 +3081,7 @@ function materializeLinkedEstimateRows(records = selectedEstimateRecords('indivi
 }
 
 const VOUCHER_ACTIVITY_COPY = Object.freeze({
+  estimate: Object.freeze({ label: '견적서' }),
   order: Object.freeze({ label: '주문서' }),
   purchase: Object.freeze({ label: '구매전표' }),
   sale: Object.freeze({ label: '판매전표' })
@@ -2977,21 +3109,74 @@ function voucherActivityTime(value) {
 }
 
 function voucherActivityCard(row) {
-  return `<a class="voucher-context-item voucher-activity-item" href="${esc(row.detailHref)}" target="_blank" rel="noopener" aria-label="${esc(row.customerName)} 전표 상세 열기">
+  const content = `
     <time>${esc(voucherActivityTime(row.savedAt))}</time>
     <span class="voucher-context-item__copy"><strong>${esc(row.customerName)}</strong><small>${Number(row.itemCount || 0).toLocaleString('ko-KR')}품목 · ${Number(row.totalAmount || 0).toLocaleString('ko-KR')}원</small></span>
-    <em class="voucher-context-item__state">${esc(row.status || '저장')}</em><span class="voucher-context-item__arrow" aria-hidden="true">›</span>
-  </a>`;
+    <em class="voucher-context-item__state">${esc(row.status || '저장')}</em><span class="voucher-context-item__arrow" aria-hidden="true">›</span>`;
+  const source = row.detailHref
+    ? `<a href="${esc(row.detailHref)}" target="_blank" rel="noopener" aria-label="${esc(row.customerName)} 전표 상세 열기">${content}</a>`
+    : `<div class="voucher-activity-item__content">${content}</div>`;
+  return `<article class="voucher-context-item voucher-activity-item" data-voucher-activity-id="${esc(row.id)}">${source}
+    <button type="button" class="button button--quiet button--small" data-import-related-voucher="${esc(row.id)}">불러오기</button></article>`;
+}
+
+function readEstimateVoucherActivity(date) {
+  const rows = individualEstimateRecords().map(record => {
+    const draft = record.draft || {};
+    const header = draft.header || {};
+    const items = estimateRecordRows(record);
+    const summary = contract.summarizeRows(items);
+    return {
+      id: record.estimateId,
+      companyId: state.companyId,
+      voucherMode: 'estimate',
+      voucherNo: estimateTitle(record),
+      date: String(record.updatedAt || record.createdAt || '').slice(0, 10),
+      savedAt: record.updatedAt || record.createdAt || '',
+      customerId: header.customerId || '',
+      customerCode: header.customerCode || '',
+      customerName: header.customerName || '거래처 미지정',
+      warehouseId: header.warehouseId || '',
+      warehouseCode: header.warehouseCode || '',
+      warehouseName: header.warehouseName || '',
+      itemCount: items.length,
+      totalAmount: summary.amount,
+      status: '저장',
+      items: items.map((line, index) => ({
+        lineId: line.rowId || `${record.estimateId}:${index + 1}`,
+        productId: line.productId || line.masterProductId || '',
+        masterProductId: line.masterProductId || line.productId || '',
+        code: line.itemCode || '',
+        name: line.itemName || '',
+        specification: line.specification || '',
+        quantity: line.quantity ?? '',
+        quantityDisplay: String(line.fieldValues?.['voucher.estimate.line.quantity']?.currentDisplayValue ?? line.quantity ?? ''),
+        unit: line.unit || '',
+        unitPrice: line.unitPrice ?? '',
+        unitPriceDisplay: String(line.fieldValues?.['voucher.estimate.line.unitPrice']?.currentDisplayValue ?? line.sourceUnitPrice ?? line.unitPrice ?? ''),
+        memo: line.memo || ''
+      })),
+      detailHref: ''
+    };
+  }).sort((left, right) => String(right.savedAt).localeCompare(String(left.savedAt)));
+  return {
+    schema: 'ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1',
+    adapter: 'ONEAPP_SMARTINPUT_ESTIMATE_READ_ADAPTER_V1',
+    status: rows.length ? 'READY' : 'EMPTY',
+    mode: 'estimate', date, count: rows.length, rows,
+    checkedAt: new Date().toISOString(), source: 'SmartInput 견적서 Read Adapter'
+  };
 }
 
 function renderVoucherActivitySnapshot() {
-  if (state.draft.activeMode === 'estimate') return;
   const activity = state.voucherActivity;
-  const mode = state.draft.activeMode;
-  const date = voucherActivityDate(mode);
+  const mode = activity.sourceMode || state.draft.activeMode;
+  const date = voucherActivityDate(state.draft.activeMode);
+  $('voucherActivitySourceMode').value = mode;
   $('voucherContextEyebrow').textContent = 'VOUCHER ACTIVITY';
-  $('voucherContextTitle').textContent = voucherActivityTitle(mode, date);
+  $('voucherContextTitle').textContent = mode === 'estimate' ? '저장 견적서' : voucherActivityTitle(mode, date);
   $('voucherActivityOpenAll').dataset.href = `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`;
+  $('voucherActivityOpenAll').hidden = mode === 'estimate';
   if (activity.status === 'LOADING') {
     $('voucherContextSummary').textContent = `${date} 전표를 불러오는 중입니다.`;
     $('voucherContextList').innerHTML = '<div class="voucher-activity-state"><strong>불러오는 중</strong><span>현재 입력 작업은 계속할 수 있습니다.</span></div>';
@@ -3016,23 +3201,23 @@ function renderVoucherActivitySnapshot() {
 }
 
 async function loadVoucherActivity({ force = false } = {}) {
-  if (state.draft.activeMode === 'estimate') return;
-  const mode = state.draft.activeMode;
-  const date = voucherActivityDate(mode);
+  const mode = state.voucherActivity.sourceMode || state.draft.activeMode;
+  const date = voucherActivityDate(state.draft.activeMode);
   if (!force && state.voucherActivity.mode === mode && state.voucherActivity.date === date && ['LOADING', 'READY', 'EMPTY', 'ERROR'].includes(state.voucherActivity.status)) {
     return renderVoucherActivitySnapshot();
   }
   const requestId = ++state.voucherActivity.requestId;
-  state.voucherActivity = { ...state.voucherActivity, requestId, status: 'LOADING', mode, date, rows: [], error: null };
+  state.voucherActivity = { ...state.voucherActivity, requestId, status: 'LOADING', mode, sourceMode: mode, date, rows: [], error: null };
   renderVoucherActivitySnapshot();
-  const snapshot = await readVoucherActivity({ mode, date });
-  if (requestId !== state.voucherActivity.requestId || mode !== state.draft.activeMode || date !== voucherActivityDate(mode)) return;
+  const snapshot = mode === 'estimate'
+    ? readEstimateVoucherActivity(date)
+    : await readVoucherActivity({ mode, date, companyId: state.companyId });
+  if (requestId !== state.voucherActivity.requestId || mode !== state.voucherActivity.sourceMode || date !== voucherActivityDate(state.draft.activeMode)) return;
   state.voucherActivity = { ...state.voucherActivity, ...snapshot, requestId };
   renderVoucherActivitySnapshot();
 }
 
 function renderVoucherContext() {
-  if (state.draft.activeMode === 'estimate') return;
   renderVoucherActivitySnapshot();
   void loadVoucherActivity();
 }
@@ -3080,7 +3265,7 @@ function renderEstimateWorkspace() {
   const library = $('estimateLibraryView');
   library.hidden = false;
   library.setAttribute('aria-label', estimateMode ? '견적서 목록' : `${contract.MODES[state.draft.activeMode].label} 목록`);
-  $('voucherContextView').hidden = estimateMode;
+  $('voucherContextView').hidden = false;
   $('estimateLibraryHeading').hidden = !estimateMode;
   $('catalogComposeArea').hidden = !estimateMode;
   $('estimateEditorView').hidden = false;
@@ -3736,6 +3921,26 @@ function syncRowSelectionControls() {
   selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
   selectAll.disabled = !rowIds.length;
   $('deleteSelectedRows').disabled = !selectedCount;
+  $('bulkUnitPriceInput').disabled = Boolean(inputMappingSession());
+  $('applyBulkUnitPriceButton').disabled = !selectedCount || Boolean(inputMappingSession());
+}
+
+function applySelectedRowsUnitPrice() {
+  if (inputMappingSession()) return toast('입력 양식을 저장한 뒤 전표 행에서 단가를 적용하세요.', 'error');
+  if (!state.selectedRowIds.size) return toast('단가를 적용할 행을 선택하세요.', 'error');
+  try {
+    invalidateGridPasteUndo();
+    const result = applyBulkUnitPrice(modeDraft().rows, [...state.selectedRowIds], $('bulkUnitPriceInput').value, {
+      targetFieldId: mappingTargetByProjection('unitPrice')?.id || '',
+      actor: resolveSmartInputActor()
+    });
+    modeDraft().rows = result.rows.map(row => contract.normalizeRow(row));
+    renderRows({ restoreFocus: false });
+    saveDraftNow();
+    toast(`선택한 ${result.affectedCount.toLocaleString('ko-KR')}행에 단가를 적용했습니다.`, 'success');
+  } catch (error) {
+    toast(error.message === 'SMARTINPUT_BULK_PRICE_REQUIRED' ? '적용할 단가를 입력하세요.' : '단가는 숫자로 입력하세요.', 'error');
+  }
 }
 
 async function deleteSelectedGridRows() {
@@ -3797,6 +4002,7 @@ function renderInputMappingStatus() {
   }
   panel.hidden = false;
   panel.dataset.status = session.status;
+  panel.dataset.templateStoreStatus = state.inputTemplatesStatus;
   const summary = mappingSummary(session);
   const title = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED
     ? (session.templateName || '입력 양식 적용')
@@ -3872,6 +4078,8 @@ function renderMappingRows() {
   $('detailColumnsButton').hidden = hidden.size === 0;
   $('detailColumnsButton').textContent = `숨긴 열 ${hidden.size}개 표시`;
   $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
+  $('bulkUnitPriceInput').disabled = true;
+  $('applyBulkUnitPriceButton').disabled = true;
   $('selectAllRows').checked = false;
   applyMappingHeaderLocks(session);
   renderInputMappingStatus();
@@ -4052,7 +4260,9 @@ function useClipboardTableAsSource(rawText, { sourceName = '클립보드 자료'
     targetDefinitions: inputMappingTargets(),
     fileName: sourceName,
     sheetName: '붙여넣기',
-    fileFingerprint: `clipboard-${Date.now().toString(36)}`
+    fileFingerprint: `clipboard-${Date.now().toString(36)}`,
+    companyId: state.companyId,
+    voucherMode: state.draft.activeMode
   }));
   if (!['READY', 'EMPTY'].includes(state.inputTemplatesStatus)) current.inputMapping.status = MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR;
   state.pendingGridPasteText = '';
@@ -4118,24 +4328,24 @@ function renderRows({ restoreFocus = true } = {}) {
       const excelNumber = field.valueType === 'NUMBER' && ['PRICE', 'COST'].includes(field.group);
       const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
       const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
-      return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(row[field.id] ?? '')}" aria-label="${esc(field.label)}"></td>`;
+      return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(rowFieldDisplayValue(row, field.id, row[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`;
     }).join('');
     const customCells = customFieldsFor('voucher').map(field => (
-      `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="${field.valueType === 'NUMBER' ? 'number' : 'text'}"${field.valueType === 'NUMBER' ? ' step="any"' : ''} value="${esc(row.customValues?.[field.id] || '')}" aria-label="${esc(field.label)}"></td>`
+      `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td class="row-sequence-cell">${sequence}</td>
       <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
       <td data-column="productSearch" class="product-search-cell"><input data-product-search type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
-      <td data-column="itemCode"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(row.itemCode)}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
-      <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(row.itemName)}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
-      <td data-column="specification"><input data-field="specification" value="${esc(row.specification)}" aria-label="규격"></td>
-      <td data-column="quantity"><input data-field="quantity" type="number" step="any" value="${esc(row.quantity ?? '')}" aria-label="수량"></td>
-      <td data-column="unit"><input data-field="unit" value="${esc(row.unit)}" aria-label="단위"></td>
-      <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(row.sourceUnitPrice ?? row.unitPrice ?? '')}" aria-label="단가"></td>
+      <td data-column="itemCode"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemCode', row.itemCode))}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemName', row.itemName))}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="specification"><input data-field="specification" value="${esc(rowFieldDisplayValue(row, 'specification', row.specification))}" aria-label="규격"></td>
+      <td data-column="quantity"><input data-field="quantity" type="text" inputmode="decimal" value="${esc(rowFieldDisplayValue(row, 'quantity', row.quantity ?? ''))}" aria-label="수량"></td>
+      <td data-column="unit"><input data-field="unit" value="${esc(rowFieldDisplayValue(row, 'unit', row.unit))}" aria-label="단위"></td>
+      <td data-column="unitPrice" class="price-cell${row.unitPriceReviewStatus === 'PENDING' ? ' is-price-review-pending' : ''}"><input data-field="unitPrice" type="text" inputmode="decimal" value="${esc(rowFieldDisplayValue(row, 'unitPrice', row.sourceUnitPrice ?? row.unitPrice ?? ''))}" aria-label="단가"></td>
       <td data-column="supplyAmount"><input data-supply-amount value="${amount === null ? '' : amount.toLocaleString('ko-KR')}" aria-label="공급가액" readonly tabindex="-1"></td>
-      <td data-column="memo"><input data-field="memo" value="${esc(row.memo)}" aria-label="메모"></td>
-      <td data-column="description"><input data-field="description" value="${esc(row.description)}" aria-label="적요(직원)"></td>
+      <td data-column="memo"><input data-field="memo" value="${esc(rowFieldDisplayValue(row, 'memo', row.memo))}" aria-label="메모"></td>
+      <td data-column="description"><input data-field="description" value="${esc(rowFieldDisplayValue(row, 'description', row.description))}" aria-label="적요(직원)"></td>
       <td data-column="noticePrice"><input data-field="noticePrice" type="text" inputmode="decimal" value="${row.noticePrice === 0 && !row.editedFields?.noticePrice ? '' : esc(row.noticePrice ?? '')}" aria-label="공지단가"></td>
       ${productCells}
       ${customCells}
@@ -4319,6 +4529,9 @@ function setMode(mode) {
   modeDraft().sourceText = sourceTextInput.value;
   state.gridPasteUndo = null;
   state.draft.activeMode = mode;
+  state.voucherActivity = { ...state.voucherActivity, status: 'IDLE', mode: '', sourceMode: mode === 'estimate' ? 'order' : mode, date: '', rows: [], error: null };
+  state.inputTemplates = [];
+  state.inputTemplatesStatus = 'LOADING';
   try {
     restoreSourceImageForMode(mode);
     state.selectedRowIds.clear();
@@ -4340,6 +4553,7 @@ function setMode(mode) {
     }
     saveDraftNow();
     renderMode();
+    void reloadInputTemplates({ applyCurrent: true, announce: false });
     return true;
   } catch (error) {
     state.draft.activeMode = previousMode;
@@ -5068,7 +5282,8 @@ async function handleFile(file) {
       const targets = inputMappingTargets();
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
-        const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
+        const worksheetSource = readWorksheetSource(window.XLSX, workbook.Sheets[sheetName]);
+        const matrix = worksheetSource.displayMatrix;
         if (isPurchaseMetaSheet(sheetName, matrix)) {
           if (state.draft.activeMode === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
           return;
@@ -5078,7 +5293,7 @@ async function handleFile(file) {
           return;
         }
         const detection = detectHeaderRow(matrix, targets);
-        const candidate = { matrix, sheetName, detection };
+        const candidate = { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName, detection };
         if (!selected || candidate.detection.score > selected.detection.score) selected = candidate;
       });
       if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
@@ -5096,7 +5311,10 @@ async function handleFile(file) {
         targetDefinitions: targets,
         fileName: file.name,
         sheetName: selected.sheetName,
-        fileFingerprint: fileDigest
+        fileFingerprint: fileDigest,
+        sourceCellMatrix: selected.sourceCellMatrix,
+        companyId: state.companyId,
+        voucherMode: state.draft.activeMode
       }));
       if (state.inputTemplatesStatus === 'ERROR' || state.inputTemplatesStatus === 'LOADING') {
         mapping = {
@@ -5108,6 +5326,7 @@ async function handleFile(file) {
       mapping.purchaseMetaRows = purchaseMetaRows;
       mapping.salesMetaRows = salesMetaRows;
       current.inputMapping = mapping;
+      void saveMappingSessionV2(mapping).catch(() => {});
       state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
       state.pendingGridPasteText = '';
       state.selectedRowIds.clear();
@@ -6316,6 +6535,56 @@ function clearCustomerAfterSave(header) {
   header.customerMappingSource = '';
 }
 
+function importRelatedVoucher(voucherId) {
+  const source = state.voucherActivity.rows.find(row => row.id === voucherId);
+  if (!source) return toast('불러올 전표를 찾지 못했습니다.', 'error');
+  const current = modeDraft();
+  try {
+    const plan = createRelatedVoucherImportPlan({
+      companyId: state.companyId,
+      targetVoucherMode: state.draft.activeMode,
+      sourceVoucherMode: state.voucherActivity.sourceMode || state.voucherActivity.mode,
+      sourceVoucher: source
+    });
+    const conflicts = relatedImportConflicts(plan, current.header);
+    if (conflicts.length && !window.confirm(
+      `현재 입력과 불러올 전표의 ${conflicts.map(item => item.kind === 'CUSTOMER' ? '거래처' : '창고').join('·')}가 다릅니다.\n`
+      + '자동으로 합치지 않고 원본 행 구분을 유지한 채 불러오시겠습니까?'
+    )) return;
+    const before = current.rows.length;
+    const applied = applyRelatedVoucherImportPlan(plan, current, { acceptConflicts: conflicts.length > 0 });
+    current.header = contract.normalizeHeader(applied.header, current.header);
+    current.rows = contract.markDuplicatePossibilities(applied.rows.map(row => {
+      let normalized = contract.normalizeRow(row);
+      if (!normalized.productId || !normalized.masterProductId) normalized = matchGridPasteRow(normalized);
+      return normalized;
+    }));
+    current.relatedImportHistory = applied.relatedImportHistory;
+    current.activeMethod = 'relatedVoucher';
+    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+    saveDraftNow();
+    renderMode();
+    const imported = current.rows.length - before;
+    toast(imported ? `${source.voucherNo || source.id}에서 ${imported}개 품목을 불러왔습니다.` : '이미 불러온 전표입니다.', imported ? 'success' : 'warn');
+  } catch (error) {
+    toast(error.message || '관련 전표를 불러오지 못했습니다.', 'error');
+  }
+}
+
+function confirmGroupedVoucherCreation(mode, groups = []) {
+  if (groups.length <= 1) return true;
+  const label = contract.MODES[mode]?.label || mode;
+  const customerCount = new Set(groups.map(group => group.supplierCustomerId || group.supplierCustomerCode || group.supplierCustomerName
+    || group.salesCustomerId || group.salesCustomerCode || group.salesCustomerName
+    || group.deliveryCustomerId || group.deliveryCustomerCode || group.deliveryCustomerName).filter(Boolean)).size;
+  const warehouseCount = new Set(groups.map(group => group.warehouseId || group.warehouseCode).filter(Boolean)).size;
+  return window.confirm(
+    `${label} 자료가 ${groups.length}개의 전표로 나뉩니다.\n`
+    + `거래처 ${customerCount || '미확인'}곳 · 창고 ${warehouseCount || '미확인'}곳\n\n`
+    + '거래처·창고·일자·원본 전표가 다른 행은 자동으로 합치지 않습니다. 이 구분대로 저장하시겠습니까?'
+  );
+}
+
 async function completeOrder() {
   if (inputMappingSession() && !inputMappingTemplateReady()) {
     setAppStatus('입력 양식이 확정되지 않아 전표 저장을 중단했습니다. 현재 작업은 유지됩니다.', 'error');
@@ -6350,6 +6619,7 @@ async function completeSaleOfficial() {
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('sale', current.rows, current.header);
+  if (!confirmGroupedVoucherCreation('sale', groups)) return;
   const results = [];
   state.busy = true;
   renderDelivery();
@@ -6419,6 +6689,7 @@ async function completePurchaseOfficial() {
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('purchase', current.rows, current.header);
+  if (!confirmGroupedVoucherCreation('purchase', groups)) return;
   const masters = { customers: state.customers, products: state.products, warehouses: state.warehouseCatalog.warehouses || [] };
   const results = [];
   state.busy = true;
@@ -6639,6 +6910,7 @@ async function completeOrderLegacy() {
       setAppStatus('다중 전표 정보를 확인하세요.', 'error');
       return toast(`${errors[0]}을(를) 확인하세요.`, 'error');
     }
+    if (!confirmGroupedVoucherCreation('order', groups)) return;
     if (!current.header.taxCustomerId && !current.header.customerName && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
     state.busy = true;
     renderDelivery();
@@ -6830,7 +7102,8 @@ async function hydrateReferences() {
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
-    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과')
+    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
+    withTimeout(loadInputTemplates(state.companyId, state.draft.activeMode), 5000, '입력 양식 로딩 시간 초과')
   ]);
   if (smartDataResult[0].status === 'fulfilled') {
     const data = smartDataResult[0].value;
@@ -6839,25 +7112,39 @@ async function hydrateReferences() {
     state.temporaryCustomers = data.temporaryCustomers || [];
     state.aliasMappings = data.aliasMappings || [];
     state.estimates = normalizeEstimateOrder(data.estimates || []);
-    state.inputTemplates = Array.isArray(data.inputTemplates) ? data.inputTemplates : [];
-    state.inputTemplatesStatus = state.inputTemplates.length ? 'READY' : 'EMPTY';
-    state.inputTemplatesError = null;
+    state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
+      ? smartDataResult[1].value
+      : [];
+    state.inputTemplatesStatus = smartDataResult[1].status === 'rejected'
+      ? 'ERROR'
+      : (state.inputTemplates.length ? 'READY' : 'EMPTY');
+    state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
     state.sourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
-    Object.keys(state.draft.modes || {}).forEach(mode => {
-      const previousMode = state.draft.activeMode;
-      state.draft.activeMode = mode;
-      restoreInputMappingSession({ applyLatestTemplate: false });
-      state.draft.activeMode = previousMode;
-    });
+    restoreInputMappingSession({ applyLatestTemplate: false });
     renderMode();
   } else {
     state.inputTemplates = [];
     state.inputTemplatesStatus = 'ERROR';
     state.inputTemplatesError = smartDataResult[0].reason || new Error('입력 양식 목록 로드 실패');
+  }
+  try {
+    await ensureFieldCatalogSeed();
+    const registries = await Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+      companyId: state.companyId,
+      voucherMode,
+      actor: state.actorId
+    })));
+    state.fieldRegistries = Object.fromEntries(registries.map(registry => [registry.voucherMode, registry]));
+    state.fieldRegistryStatus = 'READY';
+    state.fieldRegistryError = null;
+  } catch (error) {
+    state.fieldRegistryStatus = 'ERROR';
+    state.fieldRegistryError = error;
+    setAppStatus('전표 필드 등록부를 불러오지 못했습니다. 기본 필드로 계속 입력할 수 있습니다.', 'warn');
   }
   const results = await Promise.allSettled([
     withTimeout(loadReferenceDomain('product'), 7000, '상품 기준자료 로딩 시간 초과'),
@@ -6892,6 +7179,99 @@ async function hydrateReferences() {
   }
 }
 
+async function persistFieldRegistryLayout(settings) {
+  await Promise.all(Object.keys(contract.MODES).map(async voucherMode => {
+    const registry = state.fieldRegistries[voucherMode];
+    if (!registry) return;
+    const selected = new Set([
+      ...(settings.headerFieldsByMode?.[voucherMode] || []),
+      ...(settings.voucherColumnsByMode?.[voucherMode] || [])
+    ]);
+    const definitions = [...registry.coreDefinitions, ...registry.customDefinitions, ...registry.catalog];
+    const settingById = new Map(registry.settings.map(row => [row.fieldId, { ...row }]));
+    definitions.forEach((definition, index) => {
+      const current = settingById.get(definition.fieldId) || {
+        schemaVersion: 'ONEAPP_COMPANY_VOUCHER_FIELD_SETTING_V1',
+        companyId: state.companyId,
+        voucherMode,
+        fieldId: definition.fieldId,
+        required: definition.systemRequired,
+        uiZone: definition.scope === 'HEADER' ? 'HEADER_FORM' : 'LINE_GRID',
+        uiOrder: (index + 1) * 10,
+        width: 120,
+        userLabel: definition.displayLabel,
+        settingRevision: 0
+      };
+      const selectedByProjection = selected.has(definition.fieldId) || selected.has(definition.projectionFieldId);
+      current.enabled = definition.systemRequired || selectedByProjection;
+      settingById.set(definition.fieldId, current);
+    });
+    registry.settings = await updateVoucherFieldSettings({
+      companyId: state.companyId,
+      voucherMode,
+      settings: [...settingById.values()],
+      actor: state.actorId,
+      definitions: registry.catalog
+    });
+  }));
+}
+
+async function refreshAllReferencesFromToolbar() {
+  if (state.busy) return;
+  const focused = document.activeElement;
+  const focusId = focused?.id || '';
+  const selectionStart = typeof focused?.selectionStart === 'number' ? focused.selectionStart : null;
+  const selectionEnd = typeof focused?.selectionEnd === 'number' ? focused.selectionEnd : null;
+  const retainedGridSearch = $('gridSearchInput').value;
+  state.busy = true;
+  setActiveActivity('기준정보 전체 새로고침');
+  renderReferenceControls();
+  setAppStatus('상품·거래처·창고·담당자·프로젝트·필드명을 한 번에 새로고침하고 있습니다.');
+  try {
+    const result = await refreshAllReferenceData({ companyId: state.companyId });
+    const rowsByDomain = Object.fromEntries(['product', 'customer', 'warehouse', 'employee', 'project', 'fieldDefinition']
+      .map(domain => [domain, result.entities.filter(row => row.domain === domain).map(row => row.value)]));
+    ['product', 'customer'].forEach(domain => {
+      const metadata = result.generation.domains[domain];
+      ingestLatestReference(domain, {
+        cacheSchemaVersion: REFERENCE_CACHE_SCHEMA,
+        domain,
+        status: metadata.status,
+        source: 'MANUAL_FULL_REFRESH',
+        fallback: false,
+        revision: metadata.ownerRevision,
+        snapshotId: result.generation.generationId,
+        contentHash: metadata.contentHash,
+        count: metadata.count,
+        checkedAt: result.generation.activatedAt,
+        snapshotCreatedAt: result.generation.completedAt,
+        rows: rowsByDomain[domain]
+      }, { allowCurrent: true });
+    });
+    state.warehouseCatalog = { warehouses: rowsByDomain.warehouse, aliases: [], revision: result.generation.domains.warehouse.ownerRevision };
+    renderWarehouseOptions();
+    $('gridSearchInput').value = retainedGridSearch;
+    state.gridSearch = retainedGridSearch;
+    renderRows({ restoreFocus: false });
+    if (focusId) {
+      const target = $(focusId);
+      target?.focus();
+      if (target && selectionStart !== null && typeof target.setSelectionRange === 'function') {
+        target.setSelectionRange(selectionStart, selectionEnd ?? selectionStart);
+      }
+    }
+    setAppStatus(`기준정보 전체 새로고침 완료 · ${result.generation.generationId}`, 'normal');
+    toast('전체 기준정보를 갱신하고 현재 검색어로 다시 검색했습니다.', 'success');
+  } catch (error) {
+    setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
+    toast(error.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
+  } finally {
+    state.busy = false;
+    setActiveActivity('');
+    renderReferenceControls();
+  }
+}
+
 modeTabs.addEventListener('click', event => {
   const tab = event.target.closest('.mode-tab[data-mode]');
   if (!tab || !modeTabs.contains(tab)) return;
@@ -6912,8 +7292,7 @@ methodButtons.forEach(button => button.addEventListener('click', () => {
   }
 }));
 
-$('productReferenceReload').addEventListener('click', () => { void reloadReferenceDomain('product'); });
-$('customerReferenceReload').addEventListener('click', () => { void reloadReferenceDomain('customer'); });
+$('allReferenceReload').addEventListener('click', () => { void refreshAllReferencesFromToolbar(); });
 $('referencePendingApply').addEventListener('click', () => { activatePendingReferences({ explicit: true }); });
 const referenceOverview = $('referenceOverview');
 const referenceOverviewSummary = referenceOverview.querySelector('summary');
@@ -7286,6 +7665,15 @@ $('linkedEstimateList').addEventListener('click', handleEstimateCardSelection);
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('voucherActivityReload').addEventListener('click', () => { void loadVoucherActivity({ force: true }); });
+$('voucherActivitySourceMode').addEventListener('change', event => {
+  state.voucherActivity.sourceMode = event.target.value;
+  state.voucherActivity.status = 'IDLE';
+  void loadVoucherActivity({ force: true });
+});
+$('voucherContextList').addEventListener('click', event => {
+  const button = event.target.closest('[data-import-related-voucher]');
+  if (button) importRelatedVoucher(button.dataset.importRelatedVoucher);
+});
 $('voucherActivityOpenAll').addEventListener('click', event => {
   const href = event.currentTarget.dataset.href;
   if (href) window.location.href = href;
@@ -7355,6 +7743,14 @@ inputRows.addEventListener('input', event => {
     if (!row) return;
     row.customValues ||= {};
     row.customValues[customInput.dataset.customRowField] = customInput.value;
+    if (row.fieldValues?.[customInput.dataset.customRowField]) {
+      row.fieldValues[customInput.dataset.customRowField] = {
+        ...row.fieldValues[customInput.dataset.customRowField],
+        currentDisplayValue: customInput.value,
+        parsedValue: customInput.value,
+        edited: true
+      };
+    }
     if (isLinkedRow(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
     scheduleSave();
     return;
@@ -7376,7 +7772,8 @@ inputRows.addEventListener('input', event => {
     previousRow.linkedConflictResolvedFields = [...new Set([...(previousRow.linkedConflictResolvedFields || []), field])];
     previousRow.linkedPriceConflict = previousRow.linkedFieldConflicts.includes('unitPrice');
   }
-  const row = contract.markProductEdit(modeDraft().rows[index], field, input.value);
+  let row = contract.markProductEdit(modeDraft().rows[index], field, input.value);
+  row = markMappedFieldEdited(row, field, input.value);
   if (field === 'itemCode' || field === 'itemName') {
     tr.dataset.status = 'SIMILAR';
     const status = tr.querySelector('.row-status span');
@@ -7512,6 +7909,7 @@ $('selectAllRows').addEventListener('change', event => {
   renderRows({ restoreFocus: false });
 });
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
+$('applyBulkUnitPriceButton').addEventListener('click', applySelectedRowsUnitPrice);
 
 inputRows.addEventListener('paste', event => {
   const searchInput = event.target.closest('[data-product-search]');

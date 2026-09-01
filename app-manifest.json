@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.6",
-  "updatedAt": "2026-08-31",
+  "schemaVersion": "1.3.7",
+  "updatedAt": "2026-09-01",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -459,13 +459,20 @@
         "four-mode voucher input and completion",
         "direct and text intake",
         "structured file and clipboard intake",
-        "exact-signature input-template mapping",
+        "company-and-voucher exact-signature input-template mapping",
+        "per-voucher field registry and minimal visible field settings",
+        "six-domain atomic manual reference refresh",
+        "four-direction related-voucher import",
+        "selected-row bulk unit-price editing",
         "editable local work table",
         "latest-work autosave recovery",
-        "local estimate catalog"
+        "local estimate catalog",
+        "revisioned purchase and sale official commands"
       ],
       "ownedContracts": [
-        "smartinput-local-work"
+        "smartinput-local-work",
+        "smartinput-reference-generation",
+        "smartinput-related-voucher-import"
       ],
       "consumedContracts": [
         "product-master",
@@ -473,6 +480,7 @@
         "product-reference-change-request",
         "customer-reference-change-request",
         "voucher-activity-snapshot",
+        "orderq-official-voucher-core",
         "orderq-vnext-sync"
       ],
       "dependencyMode": {
@@ -480,7 +488,8 @@
         "cachedReferenceSnapshot": "LOCAL_OPERATION",
         "referenceRevisionCheck": "BACKGROUND_SYNC",
         "orderSaveThenSync": "BACKGROUND_SYNC",
-        "purchaseAndSaleFinalize": "SERVER_FINALIZE"
+        "purchaseAndSaleFinalize": "LOCAL_OPERATION",
+        "officialVoucherRemoteSync": "NOT_IN_MVP; WAITING_SERVER_CONTRACT records are not submitted to ONEAPP_ORDERQ_SYNC_V1"
       },
       "offlinePolicy": "Render the application and preserve the latest local work state and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
       "sharedContracts": [
@@ -490,6 +499,9 @@
         "product-reference-change-request",
         "customer-reference-change-request",
         "voucher-activity-snapshot",
+        "smartinput-reference-generation",
+        "smartinput-related-voucher-import",
+        "orderq-official-voucher-core",
         "orderq-vnext-sync"
       ]
     },
@@ -658,10 +670,12 @@
       ],
       "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
       "autosaveSchemaVersion": "ONEAPP_SMART_INPUT_AUTOSAVE_V1",
-      "inputTemplateSchemaVersion": "ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V1",
-      "mappingSessionSchemaVersion": "ONEAPP_SMARTINPUT_MAPPING_SESSION_V1",
+      "inputTemplateSchemaVersion": "ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2",
+      "mappingSessionSchemaVersion": "ONEAPP_SMARTINPUT_MAPPING_SESSION_V2",
+      "fieldDefinitionSchemaVersion": "ONEAPP_SMARTINPUT_FIELD_DEFINITION_V2",
+      "fieldSettingSchemaVersion": "ONEAPP_COMPANY_VOUCHER_FIELD_SETTING_V1",
       "localDatabase": "oneapp-smartinput",
-      "databaseVersion": 4,
+      "databaseVersion": 5,
       "resources": {
         "localStorage": [
           "oneapp.smartinput.draft.v1",
@@ -676,13 +690,21 @@
           "customerAliasMappings",
           "estimates",
           "sourceImages",
-          "autosave"
+          "autosave",
+          "fieldDefinitionsV2",
+          "companyVoucherFieldsV1",
+          "referenceGenerationsV1",
+          "referenceEntitiesV1",
+          "inputTemplatesV2",
+          "mappingSessionsV2",
+          "draftVouchersV2"
         ],
         "settingsKeys": [
           "app",
           "inputTemplates",
           "reference:product",
-          "reference:customer"
+          "reference:customer",
+          "fieldCatalogSeed:v2"
         ]
       }
     },
@@ -709,6 +731,73 @@
           "orderItems",
           "purchaseLines",
           "salesLines"
+        ]
+      }
+    },
+    {
+      "id": "smartinput-reference-generation",
+      "owner": "smart-input",
+      "consumers": [
+        "smart-input"
+      ],
+      "schemaVersion": "ONEAPP_SMARTINPUT_REFERENCE_GENERATION_V1",
+      "writerPolicy": "Only the explicit full-refresh action stages all six owner snapshots and atomically activates a validated immutable generation. Partial failure keeps the previous active generation.",
+      "resources": {
+        "localDatabase": "oneapp-smartinput",
+        "databaseVersion": 5,
+        "generationStore": "referenceGenerationsV1",
+        "entityStore": "referenceEntitiesV1",
+        "domains": [
+          "customer",
+          "product",
+          "warehouse",
+          "employee",
+          "project",
+          "fieldDefinition"
+        ]
+      }
+    },
+    {
+      "id": "smartinput-related-voucher-import",
+      "owner": "smart-input",
+      "consumers": [
+        "smart-input"
+      ],
+      "schemaVersion": "ONEAPP_RELATED_VOUCHER_IMPORT_PLAN_V1",
+      "writerPolicy": "The import plan copies an immutable source voucher snapshot into the selected target draft and never updates the source voucher or source line.",
+      "resources": {
+        "supportedVoucherModes": [
+          "estimate",
+          "order",
+          "purchase",
+          "sale"
+        ],
+        "sourceAdapters": [
+          "ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1",
+          "ONEAPP_SMARTINPUT_ESTIMATE_READ_ADAPTER_V1"
+        ]
+      }
+    },
+    {
+      "id": "orderq-official-voucher-core",
+      "owner": "orderq-vnext",
+      "consumers": [
+        "smart-input"
+      ],
+      "schemaVersion": "VOUCHER_CORE_V1",
+      "writerPolicy": "Purchase and sale commands use company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB transaction for voucher, inventory/pending inventory, AR/AP, revision, and sync-queue effects.",
+      "resources": {
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "databaseVersion": 7,
+        "indexedDbStores": [
+          "officialCommands",
+          "voucherRevisions",
+          "inventoryMovements",
+          "payableEntries",
+          "receivableEntries",
+          "pendingInventoryEffects",
+          "inventoryCheckpoints",
+          "unresolvedProducts"
         ]
       }
     },

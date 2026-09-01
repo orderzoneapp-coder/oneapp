@@ -5,7 +5,7 @@ import {
   transactionDone,
   newId,
   nowIso
-} from './orderq-db.js?v=0.7.1';
+} from './orderq-db.js?v=0.8.0';
 import { normalizedOrderView, inheritedAssigneeSnapshot } from './order-document-model.js?v=0.7.1';
 import {
   TRANSFER_EVENT_TYPE,

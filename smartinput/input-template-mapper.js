@@ -21,6 +21,22 @@ function cloneMatrix(matrix = []) {
   ));
 }
 
+function cloneSourceCellMatrix(matrix = []) {
+  return (Array.isArray(matrix) ? matrix : []).map((row, rowIndex) => (
+    (Array.isArray(row) ? row : []).map((cell, columnIndex) => ({
+      address: cellText(cell?.address),
+      rowIndex: Number.isInteger(cell?.rowIndex) ? cell.rowIndex : rowIndex,
+      columnIndex: Number.isInteger(cell?.columnIndex) ? cell.columnIndex : columnIndex,
+      displayValue: cellText(cell?.displayValue),
+      rawValue: cell?.rawValue ?? null,
+      formula: cellText(cell?.formula),
+      numberFormat: cellText(cell?.numberFormat),
+      cellType: cellText(cell?.cellType),
+      blank: Boolean(cell?.blank)
+    }))
+  ));
+}
+
 function columnCount(matrix, headerRowIndex) {
   return Math.max(
     matrix[headerRowIndex]?.length || 0,
@@ -39,6 +55,14 @@ export function headersAt(matrix = [], headerRowIndex = 0) {
 
 export function templateSignature(headers = []) {
   return JSON.stringify((Array.isArray(headers) ? headers : []).map(cellText));
+}
+
+export function templateSignatureV2(companyId, voucherMode, headers = []) {
+  return JSON.stringify({
+    companyId: cellText(companyId).trim(),
+    voucherMode: cellText(voucherMode).trim().toLowerCase(),
+    headers: (Array.isArray(headers) ? headers : []).map(cellText)
+  });
 }
 
 export function detectHeaderRow(matrix = [], targetDefinitions = [], { maxScanRows = 80 } = {}) {
@@ -66,6 +90,10 @@ function mappingValidation(mappings = [], targetDefinitions = []) {
   const used = new Map();
   const issues = [];
   mappings.forEach((mapping, columnIndex) => {
+    if (mapping?.reviewed !== true) {
+      issues.push({ code: 'REVIEW_REQUIRED', columnIndex });
+      return;
+    }
     const state = mapping?.state;
     if (![DECISION.MAPPED, DECISION.UNMAPPED].includes(state)) {
       issues.push({ code: 'UNDECIDED_COLUMN', columnIndex });
@@ -93,19 +121,20 @@ function mappingValidation(mappings = [], targetDefinitions = []) {
 export function recommendMappings(headers = [], targetDefinitions = []) {
   const sourceCounts = new Map();
   headers.forEach(header => sourceCounts.set(cellText(header), (sourceCounts.get(cellText(header)) || 0) + 1));
-  const targetCounts = new Map();
-  targetDefinitions.forEach(target => {
-    const label = cellText(target?.label);
-    if (label) targetCounts.set(label, (targetCounts.get(label) || 0) + 1);
+  const targetsByAlias = new Map();
+  targetDefinitions.filter(target => target?.id).forEach(target => {
+    [...new Set([target.label, ...(target.aliases || [])].map(cellText).filter(Boolean))].forEach(alias => {
+      targetsByAlias.set(alias, [...(targetsByAlias.get(alias) || []), target]);
+    });
   });
-  const targetByLabel = new Map(targetDefinitions.filter(target => target?.id).map(target => [cellText(target.label), target]));
   return headers.map((header, columnIndex) => {
     const sourceHeader = cellText(header);
-    const target = targetByLabel.get(sourceHeader);
-    const unique = sourceHeader !== '' && sourceCounts.get(sourceHeader) === 1 && targetCounts.get(sourceHeader) === 1;
+    const candidates = targetsByAlias.get(sourceHeader) || [];
+    const target = candidates[0];
+    const unique = sourceHeader !== '' && sourceCounts.get(sourceHeader) === 1 && candidates.length === 1;
     return unique && target
       ? { columnIndex, sourceHeader, state: DECISION.RECOMMENDED, targetFieldId: target.id }
-      : { columnIndex, sourceHeader, state: DECISION.UNDECIDED, targetFieldId: '' };
+      : { columnIndex, sourceHeader, state: DECISION.UNDECIDED, targetFieldId: '', reviewed: false };
   });
 }
 
@@ -113,20 +142,23 @@ function normalizeStoredMappings(template, headers) {
   const mappings = Array.isArray(template?.mappings) ? template.mappings : [];
   return headers.map((sourceHeader, columnIndex) => {
     const stored = mappings.find(mapping => Number(mapping.columnIndex) === columnIndex);
-    if (!stored) return { columnIndex, sourceHeader, state: DECISION.UNDECIDED, targetFieldId: '' };
+    if (!stored) return { columnIndex, sourceHeader, state: DECISION.UNDECIDED, targetFieldId: '', reviewed: false };
     return {
       columnIndex,
       sourceHeader,
       state: stored.state === DECISION.UNMAPPED ? DECISION.UNMAPPED : DECISION.MAPPED,
-      targetFieldId: stored.state === DECISION.UNMAPPED ? '' : cellText(stored.targetFieldId)
+      targetFieldId: stored.state === DECISION.UNMAPPED ? '' : cellText(stored.targetFieldId),
+      reviewed: true
     };
   });
 }
 
-function resolveTemplate(headers, templates = [], targetDefinitions = []) {
-  const signature = templateSignature(headers);
-  const matches = (templates || []).filter(template => template?.signature === signature
-    || templateSignature(template?.headers || []) === signature);
+function resolveTemplate(companyId, voucherMode, headers, templates = [], targetDefinitions = []) {
+  const signature = templateSignatureV2(companyId, voucherMode, headers);
+  const matches = (templates || []).filter(template => template?.schemaVersion === 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2'
+    && cellText(template.companyId) === cellText(companyId)
+    && cellText(template.voucherMode).toLowerCase() === cellText(voucherMode).toLowerCase()
+    && template.signature === signature);
   if (matches.length > 1) {
     return {
       status: SESSION_STATUS.TEMPLATE_CONFLICT,
@@ -154,7 +186,7 @@ function resolveTemplate(headers, templates = [], targetDefinitions = []) {
   };
 }
 
-function workingRows(sourceMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
+function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
   const width = headers.length;
   const hasWorkingValue = value => cellText(value).trim() !== '';
   const sourceRows = sourceMatrix.slice(headerRowIndex + 1).map((sourceRow, offset) => {
@@ -165,12 +197,22 @@ function workingRows(sourceMatrix, headerRowIndex, headers, editJournal = {}, ma
         ? cellText(editJournal[key])
         : cellText(sourceRow[columnIndex]);
     });
-    return { rowId: `source-${sourceRowIndex}`, sourceRowIndex, cells, manual: false };
+    return {
+      rowId: `source-${sourceRowIndex}`,
+      sourceRowIndex,
+      cells,
+      sourceCells: Array.from({ length: width }, (_, columnIndex) => ({
+        ...(sourceCellMatrix?.[sourceRowIndex]?.[columnIndex] || {}),
+        displayValue: cellText(sourceMatrix?.[sourceRowIndex]?.[columnIndex])
+      })),
+      manual: false
+    };
   }).filter(row => row.cells.some(hasWorkingValue));
   const manual = (manualRows || []).map((row, index) => ({
     rowId: cellText(row?.rowId) || `manual-${index + 1}`,
     sourceRowIndex: null,
     cells: Array.from({ length: width }, (_, columnIndex) => cellText(row?.cells?.[columnIndex])),
+    sourceCells: [],
     manual: true
   })).filter(row => row.cells.some(hasWorkingValue));
   return [...sourceRows, ...manual];
@@ -180,6 +222,7 @@ function activeWorkingRows(session, editJournal = session?.editJournal, manualRo
   const deletedSourceRows = new Set(session?.deletedSourceRows || []);
   return workingRows(
     session?.sourceMatrix || [],
+    session?.sourceCellMatrix || [],
     session?.headerRowIndex || 0,
     session?.headers || [],
     editJournal || {},
@@ -197,23 +240,32 @@ export function createMappingSession({
   fileFingerprint = '',
   editJournal = {},
   manualRows = [],
-  hiddenColumns = []
+  hiddenColumns = [],
+  companyId = '',
+  voucherMode = '',
+  sourceCellMatrix = []
 } = {}) {
   const sourceMatrix = cloneMatrix(matrix);
+  const cellMatrix = cloneSourceCellMatrix(sourceCellMatrix);
   const safeIndex = sourceMatrix.length
     ? Math.max(0, Math.min(sourceMatrix.length - 1, Number(headerRowIndex) || 0))
     : 0;
   const headers = headersAt(sourceMatrix, safeIndex);
-  const resolved = resolveTemplate(headers, templates, targetDefinitions);
+  const resolved = resolveTemplate(companyId, voucherMode, headers, templates, targetDefinitions);
   return {
-    schemaVersion: 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V1',
+    schemaVersion: 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2',
+    sessionId: `SIMAP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    companyId: cellText(companyId),
+    voucherMode: cellText(voucherMode).toLowerCase(),
     fileName: cellText(fileName),
     sheetName: cellText(sheetName),
     fileFingerprint: cellText(fileFingerprint),
     sourceMatrix,
+    sourceCellMatrix: cellMatrix,
     headerRowIndex: safeIndex,
     headers,
-    signature: templateSignature(headers),
+    headerSignature: templateSignature(headers),
+    signature: templateSignatureV2(companyId, voucherMode, headers),
     status: resolved.status,
     templateId: cellText(resolved.template?.templateId),
     templateName: cellText(resolved.template?.templateName),
@@ -223,7 +275,7 @@ export function createMappingSession({
     editJournal: { ...(editJournal || {}) },
     manualRows: (manualRows || []).map(row => ({ ...row, cells: [...(row.cells || [])] })),
     hiddenColumns: [...new Set((hiddenColumns || []).map(Number).filter(Number.isInteger))],
-    workingRows: workingRows(sourceMatrix, safeIndex, headers, editJournal, manualRows),
+    workingRows: workingRows(sourceMatrix, cellMatrix, safeIndex, headers, editJournal, manualRows),
     updatedAt: new Date().toISOString()
   };
 }
@@ -231,6 +283,9 @@ export function createMappingSession({
 export function reassignHeaderRow(session, headerRowIndex, templates = [], targetDefinitions = []) {
   const reassigned = createMappingSession({
     matrix: session?.sourceMatrix || [],
+    sourceCellMatrix: session?.sourceCellMatrix || [],
+    companyId: session?.companyId,
+    voucherMode: session?.voucherMode,
     headerRowIndex,
     templates,
     targetDefinitions,
@@ -262,9 +317,9 @@ export function setColumnDecision(session, columnIndex, decision, targetFieldId 
       error.otherColumnIndex = duplicate.columnIndex;
       throw error;
     }
-    mappings[columnIndex] = { ...mappings[columnIndex], state: DECISION.MAPPED, targetFieldId };
+    mappings[columnIndex] = { ...mappings[columnIndex], state: DECISION.MAPPED, targetFieldId, reviewed: true };
   } else {
-    mappings[columnIndex] = { ...mappings[columnIndex], state: DECISION.UNMAPPED, targetFieldId: '' };
+    mappings[columnIndex] = { ...mappings[columnIndex], state: DECISION.UNMAPPED, targetFieldId: '', reviewed: true };
   }
   return { ...session, mappings, issues: [], updatedAt: new Date().toISOString() };
 }
@@ -316,7 +371,7 @@ export function deleteWorkingRows(session, rowIds = []) {
     .filter(row => selected.has(row.rowId) && !row.manual)
     .map(row => row.sourceRowIndex)]);
   const manualRows = (session.manualRows || []).filter(row => !selected.has(row.rowId));
-  const rows = workingRows(session.sourceMatrix, session.headerRowIndex, session.headers, session.editJournal, manualRows)
+  const rows = workingRows(session.sourceMatrix, session.sourceCellMatrix || [], session.headerRowIndex, session.headers, session.editJournal, manualRows)
     .filter(row => row.manual || !deletedSourceRows.has(row.sourceRowIndex));
   return {
     ...session,
@@ -328,10 +383,7 @@ export function deleteWorkingRows(session, rowIds = []) {
 }
 
 function decidedMappings(session, targetDefinitions) {
-  const mappings = (session?.mappings || []).map(mapping => ({
-    ...mapping,
-    state: mapping.state === DECISION.RECOMMENDED ? DECISION.MAPPED : mapping.state
-  }));
+  const mappings = (session?.mappings || []).map(mapping => ({ ...mapping }));
   return { mappings, validation: mappingValidation(mappings, targetDefinitions) };
 }
 
@@ -350,18 +402,22 @@ export function createTemplateRecord(session, templateName, targetDefinitions = 
   }
   const now = new Date().toISOString();
   return {
-    schemaVersion: 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V1',
+    schemaVersion: 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2',
     templateId: cellText(previous?.templateId) || `SITPL-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    companyId: cellText(session?.companyId),
+    voucherMode: cellText(session?.voucherMode).toLowerCase(),
     templateName: name,
     revision: Math.max(1, Number(previous?.revision || 0) + 1),
-    signature: session.signature,
+    signature: templateSignatureV2(session?.companyId, session?.voucherMode, session?.headers),
+    headerSignature: templateSignature(session?.headers),
     headers: [...session.headers],
     fieldCount: session.headers.length,
     mappings: mappings.map(mapping => ({
       columnIndex: mapping.columnIndex,
       sourceHeader: mapping.sourceHeader,
       state: mapping.state,
-      targetFieldId: mapping.state === DECISION.MAPPED ? mapping.targetFieldId : ''
+      targetFieldId: mapping.state === DECISION.MAPPED ? mapping.targetFieldId : '',
+      reviewed: true
     })),
     createdAt: previous?.createdAt || now,
     updatedAt: now
@@ -388,12 +444,23 @@ export function projectMappedRows(session, targetDefinitions = []) {
         sourceRowNo: row.sourceRowIndex === null ? rowIndex + 1 : row.sourceRowIndex + 1,
         rawText: (row.cells || []).join('\t'),
         inputOwnership: row.manual ? 'USER' : 'SOURCE',
-        customValues: {}
+        customValues: {},
+        fieldValues: {}
       };
       mappings.forEach(mapping => {
         const target = targets.get(mapping.targetFieldId);
         if (!target) return;
-        const value = targetValue(target, row.cells?.[mapping.columnIndex]);
+        const currentDisplayValue = cellText(row.cells?.[mapping.columnIndex]);
+        const value = targetValue(target, currentDisplayValue);
+        const evidence = row.manual ? null : (row.sourceCells?.[mapping.columnIndex] || null);
+        projected.fieldValues[target.id] = {
+          fieldId: target.id,
+          sourceDisplayValue: cellText(evidence?.displayValue),
+          currentDisplayValue,
+          parsedValue: value,
+          edited: row.manual || Object.prototype.hasOwnProperty.call(session.editJournal || {}, `${row.sourceRowIndex}:${mapping.columnIndex}`),
+          evidence: evidence ? { ...evidence } : null
+        };
         if (target.custom) projected.customValues[target.id] = value;
         else projected[target.projectionFieldId || target.id] = value;
       });

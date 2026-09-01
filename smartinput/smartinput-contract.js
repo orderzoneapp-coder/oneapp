@@ -271,7 +271,12 @@
         scope,
         category,
         sourceField: text(field?.sourceField),
-        valueType
+        valueType,
+        registryField: field?.registryField === true,
+        editable: field?.editable !== false,
+        advancedLabel: text(field?.advancedLabel),
+        ownerDomain: text(field?.ownerDomain),
+        relationshipPath: Array.isArray(field?.relationshipPath) ? field.relationshipPath.map(text) : []
       };
     }).filter(Boolean).filter((field, index, rows) => rows.findIndex(other => other.id === field.id) === index);
     const deliveryCustomerWeekdays = {};
@@ -693,6 +698,16 @@
       noticePrice: numberOrNull(input.noticePrice) ?? 0,
       unitPriceReviewStatus: input.unitPriceReviewStatus === 'PENDING' ? 'PENDING' : 'CONFIRMED',
       customValues: input.customValues && typeof input.customValues === 'object' ? { ...input.customValues } : {},
+      fieldValues: input.fieldValues && typeof input.fieldValues === 'object'
+        ? Object.fromEntries(Object.entries(input.fieldValues).map(([fieldId, value]) => [fieldId, {
+          fieldId,
+          sourceDisplayValue: String(value?.sourceDisplayValue ?? ''),
+          currentDisplayValue: String(value?.currentDisplayValue ?? ''),
+          parsedValue: value?.parsedValue ?? null,
+          edited: Boolean(value?.edited),
+          evidence: value?.evidence && typeof value.evidence === 'object' ? { ...value.evidence } : null
+        }]))
+        : {},
       matchStatus: ['MATCHED', 'SIMILAR', 'UNRESOLVED'].includes(matchStatus) ? matchStatus : 'UNRESOLVED',
       candidateProducts,
       editedFields: input.editedFields && typeof input.editedFields === 'object' ? { ...input.editedFields } : {},
@@ -935,6 +950,7 @@
     nextDeliveryDate,
     deliveryWeekdayLabel,
     createDraft,
+    normalizeHeader,
     normalizeModeDraft,
     normalizeDraft,
     normalizeRow,

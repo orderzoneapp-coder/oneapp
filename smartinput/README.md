@@ -59,25 +59,31 @@ NEXUS 공통헤더의 고정 스마트입력 진입점에서 주문서·구매·
 - 하나의 설정 필드 ID에는 원본 열 하나만 연결한다. 삭제된 설정 필드를 참조하는 기존 양식은 `INVALID_TEMPLATE`이며 전표 저장을 차단하고, 양식관리에서 복구한 뒤 현재 원본에 다시 불러온다.
 - 비매핑 열과 값도 작업테이블에서 조회·편집할 수 있고 보기용으로 숨길 수 있다. 비매핑 값은 전표 projection에서만 제외한다. 빈 셀·숫자 `0`·음수·소수는 작업테이블에서 그대로 보존한다.
 - 매핑 프로세스는 주문·구매·판매·견적서에 공통이다. 전표별 필수값, 저장 payload와 writer 검증은 매핑이 끝난 뒤 기존 전표 계층이 독립적으로 수행한다.
-- 입력 양식은 `oneapp-smartinput` DB v4의 기존 `settings` Store 내 `inputTemplates` KV에 `ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V1`로 저장한다. 새 Store, 서버, 인증, 타 앱 writer 또는 새 localStorage 공개 키를 만들지 않는다.
+- 기존 입력 양식은 `oneapp-smartinput` DB v5의 기존 `settings` Store 내 `inputTemplates` KV에 보존한다. 신규 회사·전표별 양식은 `inputTemplatesV2`, 필드 등록부와 사용 설정은 additive v5 Store에 저장한다.
 
 ## 기준정보 Snapshot UX
 
-- 상품은 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER`, 거래처는 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`를 먼저 사용한다. 검증 가능한 owner 저장소 직접 읽기는 읽기 전용 fallback이며 상태 패널에 `fallback` 출처를 명시한다.
-- 앱 진입 시 SmartInput DB v3의 기존 `settings` Store에 보관한 마지막 적용 Snapshot을 먼저 표시하고, 최신 revision은 백그라운드에서 확인한다. DB version·Store 목록과 기존 localStorage 공개 키는 바꾸지 않는다.
-- 상품·거래처 상태는 각각 `READY / EMPTY / ERROR / STALE`, 출처, 건수, revision, 갱신시각을 표시한다. `EMPTY`는 확인된 0건이고 `ERROR`는 실패이며, 검색 결과 0건과도 구분한다. 다시 불러오기는 해당 도메인만 갱신해 작업표를 다시 렌더링하지 않는다.
+- 상품은 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER`, 거래처는 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`를 사용하며 SmartInput이 owner 원본을 직접 수정하지 않는다.
+- 앱 진입 시 SmartInput DB v5의 마지막 활성 기준정보 generation을 먼저 표시한다. 관리자가 `전체 새로고침`을 실행하면 상품·거래처·창고·담당자·프로젝트·필드 정의를 모두 staging하고 검증 완료 후 활성 포인터를 한 번 교체한다.
+- 각 Domain은 `READY / EMPTY / ERROR`와 출처, 건수, revision, 갱신시각을 구분한다. 부분 실패는 정상 0건으로 바꾸지 않고 기존 활성 generation, 현재 검색어와 입력 작업본을 유지한다. 성공하면 유지된 검색어로 자동 재검색한다.
 - 활성 작업 중 새 revision은 `STALE`로 보류하며 기본적으로 다음 작업부터 적용한다. 현재 작업 적용은 added/removed/changed diff 확인 뒤에만 수행하고 초안·원문·행 선택·관리자 `editedFields`를 보존한다.
 - 자동확정은 품목코드 정확 일치 또는 품명·secondaryName·승인 별칭 정확 일치 후보가 정확히 1개일 때뿐이다. 유사검색은 1개여도 확인 대상이고, 복수 후보는 선택 UI를 사용한다. 후보 없음은 입력과 행을 유지한 `미등록 상품`이다.
 - 미등록 상품·거래처는 공식 소유 앱을 새 탭으로 열고 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1` CREATE 요청을 owner inbox에 접수할 수 있다. SmartInput은 `MerchOpsDB/master_products`나 CustomerMaster 원본 Store를 직접 쓰지 않으며 요청 실패·취소도 현재 작업을 변경하지 않는다.
 
 ## 다중 전표 업로드 기반
 
-- 주문서·구매·판매 모드는 약속된 Excel 헤더 별칭으로 여러 전표를 불러올 수 있다. 화면에는 별도의 빈 업로드 양식 다운로드 버튼을 두지 않는다.
+- 주문서·견적서·구매·판매 모드는 회사·전표별 V2 입력 양식으로 여러 전표를 불러올 수 있다. 화면에는 별도의 빈 업로드 양식 다운로드 버튼을 두지 않는다.
 - 행의 거래처·전표일자·배송/입출고일자·창고·외부전표번호가 상단 공통값보다 우선한다.
 - `sourceBatchId + sourceDocumentKey/sourceVoucherIndex/manualSplitKey + 업무 헤더`로 원본 전표를 분리하며, 같은 거래처·날짜만으로 서로 다른 원본을 합치지 않는다.
 - 입력표 검색은 표시 행만 필터하고 저장 대상·선택·원본 순서를 바꾸지 않는다.
 - 원본·표시·재고 기준 수량과 단위를 보존하고, 환산 근거가 없는 행은 공식 저장 대상에서 차단한다.
-- 주문은 그룹별 `sourceDocumentKey`를 ORDER Q `createOrder()`의 멱등키로 사용한다. 구매·판매는 그룹 초안만 복구하며 공식 저장은 후속 단계 전까지 비활성 상태를 유지한다.
+- 주문은 그룹별 `sourceDocumentKey`를 ORDER Q `createOrder()`의 멱등키로 사용한다. 구매·판매는 그룹별 공식 전표, Revision, 채무·채권과 재고효과 또는 미매칭 재고대기를 한 로컬 transaction에 저장한다. 서버 공식원장 전송은 현재 Pilot 범위가 아니다.
+
+## 관련 전표와 일괄 편집
+
+- 견적·주문·구매·판매를 원본 또는 대상으로 선택할 수 있다. 원본 수량과 단가는 대상 전표의 전용 fieldId로 복사하고 원본 voucher/line 증거를 유지한다.
+- 거래처나 창고가 현재 작업과 다르면 확인 전 자동으로 합치지 않는다. 대상 작업본에서 행 추가·선택삭제·개별수정·선택행 단가 적용을 해도 원본 전표는 바뀌지 않는다.
+- 미매칭 상품은 회사별 안정적인 시스템 ID로 공식 구매·판매와 채권·채무에 사용할 수 있지만 상품 매칭 전에는 재고수불부에 반영하지 않는다.
 
 ## 공통 주문서 원장 판정
 
