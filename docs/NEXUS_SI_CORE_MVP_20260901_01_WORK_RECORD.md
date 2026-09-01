@@ -161,3 +161,14 @@ SmartInput의 전표별 필드·선택 노출·기준정보 사본·Excel 매핑
 - CI: PR의 `ONEAPP repository validation` 성공을 병합 게이트로 사용한다.
 - merge: PR `#469`의 검증 성공 후 squash merge한다.
 - GitHub Pages: `main` 반영 후 운영 URL에서 `smartinput.js?v=0.9.0`과 FieldDefinition V2 자산을 직접 확인한다.
+
+## 2026-09-02 · 입력 집중 UI 정정
+
+- 적용 규범: 저장소 `AGENTS.md` v2.3.4, `roles/DEVELOPER.md`, `docs/APP_ARCHITECTURE.md`의 공통 UI 계약을 따른다.
+- 기준선: `origin/main` `4574e7c0f0784def0763ccf61089d532066013cd`.
+- 현재 문제: SmartInput 입력 화면에 상시 우측 패널, 영문 `VOUCHER ACTIVITY`, 개별/연동 견적서 이중 목록과 다중 선택 관리 UI가 노출되어 입력 영역을 줄이고 사용자에게 합의하지 않은 관리 개념을 요구한다.
+- 목표 상태: 좌측 원본 입력과 중앙 작업표를 기본 화면으로 유지한다. `견적서 목록`과 `관련 전표 불러오기`는 사용자가 명시적으로 누른 경우에만 하나의 팝업에서 각각 표시한다.
+- 보존 범위: SmartInput DB v5, ORDER Q DB v7, 전표별 필드 등록부, Excel V2, 다중 전표, 관련 전표 변환 Core, 공식 구매·판매 원장 반영, 기존 견적 데이터와 관련 전표 읽기 Adapter를 그대로 보존한다.
+- 제거 범위: 상시 우측 레일, 폭 조절 손잡이, `VOUCHER ACTIVITY` 문구, 화면에 노출되는 연동견적서/다중 선택/연동견적서 생성 관리 UI만 제거한다. 저장 데이터와 내부 호환 로직은 삭제하지 않는다.
+- 데이터 정책: IndexedDB Store 이름·버전·레코드를 변경하거나 삭제하지 않는다. 기존 견적은 동일 브라우저·동일 origin의 기존 `estimates` Store에서 계속 읽는다.
+- 완료 기준: 데스크톱·모바일 및 일반·다크 화면에서 기본 입력 면적이 우측 패널 없이 유지되고, 두 명시적 버튼이 같은 팝업을 열며, 팝업 밖/닫기/Escape로 안전하게 닫힌다. 기존 SmartInput Core 회귀 테스트와 관련 전표 불러오기 테스트가 통과한다.

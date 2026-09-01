@@ -19,7 +19,7 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.2/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.2/);
-assert.match(html, /smartinput\.css\?v=0\.8\.4/);
+assert.match(html, /smartinput\.css\?v=0\.8\.5/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.4\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -31,10 +31,12 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/);
-assert.match(html, /id="linkedEstimateList"/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>EXCEL<\/button>/);
 assert.match(html, /id="catalogPickerList"/);
-assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
+assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must retain date-scoped related-voucher lookup');
+assert.match(html, /id="estimateListButton"[\s\S]*id="relatedPanelToggle"/, 'estimate list and related-voucher lookup must be explicit toolbar actions');
+assert.doesNotMatch(html, /VOUCHER ACTIVITY|id="relatedPanelResizer"|id="linkedEstimateList"|id="estimateMultiSelectButton"|id="estimateCreateButton"/,
+  'the permanent activity rail and complex linked-estimate management must not be exposed');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
   'autosave must never write through to linked estimate originals');
@@ -52,10 +54,9 @@ assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreate
   'MerchOps and redundant estimate-kind choice controls must stay removed');
 assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
   'normal card selection must immediately switch to exactly one stored estimate');
-assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
-assert.match(html, /id="estimateMultiSelectButton"[^>]*aria-label="견적서 다중 선택"[^>]*>[\s\S]*\+/, 'the explicit multi-select entry must be icon-only and accessible');
-assert.match(appSource, /const additive = event\.ctrlKey \|\| event\.metaKey;[\s\S]*beginEstimateMultiSelect\(\{ deferPreview: true \}\)/,
-  'Ctrl or Command click must enter the same additive multi-selection workflow');
+assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'legacy linked-estimate records must remain readable for data compatibility');
+assert.doesNotMatch(appSource, /const additive = event\.ctrlKey \|\| event\.metaKey;/,
+  'normal estimate-list selection must no longer enter a hidden multi-selection workflow');
 assert.doesNotMatch(appSource, /toast\(`\$\{records\.length\}개 견적서 · 중복 제거/, 'estimate selection must not create a redundant coachmark over the action area');
 assert.match(appSource, /data-estimate-name[^>]*placeholder="견적서명을 입력하세요"[^>]*autofocus/, 'estimate naming must be immediately ready for direct keyboard input');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*focusNameInput\(\);[\s\S]*setTimeout\(focusNameInput, 0\)/, 'estimate naming focus must be immediate and restored after native modal focus handling');
@@ -87,12 +88,12 @@ assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
 assert.match(appSource, /renderMode\(\);[\s\S]*?hydrateReferences\(\);/, 'local shell must render before optional references');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 
-for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList', 'linkedEstimateList']) {
+for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList']) {
   assert.match(html, new RegExp(marker), `${marker} must remain in the protected SmartInput workspace`);
 }
 assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must live in the app header');
 assert.doesNotMatch(html, /workspace workspace--single|id="sourcePanelToggleButton"/, 'the desktop parser must not be collapsed into the grid work flow');
-assert.doesNotMatch(html, /estimateEditorButton|estimateLibraryButton|견적서 목록 전체보기/, 'the right list must coexist with the editor without a replacement view');
+assert.doesNotMatch(html, /estimateEditorButton|estimateLibraryButton|견적서 목록 전체보기/, 'the on-demand list must coexist with the editor without a replacement view');
 assert.doesNotMatch(html + appSource, /추가 예정|양식 생성 모드|source-staging|input-template-core|workflow-core/i);
 for (const removed of ['input-template-core.js', 'source-staging.js', 'workflow-core.js', 'integration-adapter.js']) {
   assert.equal(fs.existsSync(path.join(root, 'smartinput', removed)), false, `${removed} must stay removed`);
