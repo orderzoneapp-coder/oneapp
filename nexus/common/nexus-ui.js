@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.4.1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -53,6 +53,23 @@
     toggle.setAttribute('aria-checked', String(dark));
     toggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
     toggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
+    header.querySelectorAll('[data-nexus-ui-theme-set]').forEach((button) => {
+      const active = button.dataset.nexusUiThemeSet === (dark ? 'dark' : 'light');
+      button.setAttribute('aria-pressed', String(active));
+    });
+  };
+
+  const applyTheme = (header, value, source) => {
+    const nextTheme = value === 'dark' ? 'dark' : 'light';
+    const applied = controller?.apply
+      ? controller.apply(nextTheme, { persist: true, emit: true, source })
+      : nextTheme;
+    if (!controller?.apply) {
+      root.dataset.nexusUiTheme = applied;
+      root.dataset.nexusTheme = applied;
+      root.style.colorScheme = applied;
+    }
+    updateThemeControl(header, applied);
   };
 
   const revealCurrentApp = (header) => {
@@ -113,26 +130,26 @@
     const themeGroup = element('div', 'nexus-ui-theme');
     themeGroup.setAttribute('role', 'group');
     themeGroup.setAttribute('aria-label', '화면 모드');
-    const lightIcon = element('span', 'nexus-ui-theme__icon', '☼');
-    lightIcon.setAttribute('aria-hidden', 'true');
+    const lightIcon = element('button', 'nexus-ui-theme__icon', '☼');
+    lightIcon.type = 'button';
+    lightIcon.dataset.nexusUiThemeSet = 'light';
+    lightIcon.setAttribute('aria-label', '일반모드 적용');
+    lightIcon.title = '일반모드 적용';
     const toggle = element('button', 'nexus-ui-theme__switch');
     toggle.type = 'button';
     toggle.dataset.nexusUiThemeToggle = '';
     toggle.setAttribute('role', 'switch');
-    const darkIcon = element('span', 'nexus-ui-theme__icon', '☾');
-    darkIcon.setAttribute('aria-hidden', 'true');
+    const darkIcon = element('button', 'nexus-ui-theme__icon', '☾');
+    darkIcon.type = 'button';
+    darkIcon.dataset.nexusUiThemeSet = 'dark';
+    darkIcon.setAttribute('aria-label', '다크모드 적용');
+    darkIcon.title = '다크모드 적용';
     toggle.addEventListener('click', () => {
       const nextTheme = root.dataset.nexusUiTheme === 'dark' ? 'light' : 'dark';
-      const applied = controller?.apply
-        ? controller.apply(nextTheme, { persist: true, emit: true, source: 'header' })
-        : nextTheme;
-      if (!controller?.apply) {
-        root.dataset.nexusUiTheme = applied;
-        root.dataset.nexusTheme = applied;
-        root.style.colorScheme = applied;
-      }
-      updateThemeControl(header, applied);
+      applyTheme(header, nextTheme, 'header-switch');
     });
+    lightIcon.addEventListener('click', () => applyTheme(header, 'light', 'header-icon'));
+    darkIcon.addEventListener('click', () => applyTheme(header, 'dark', 'header-icon'));
     themeGroup.append(lightIcon, toggle, darkIcon);
 
     header.append(brand, nav, themeGroup);

@@ -40,9 +40,9 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.3.2`;
+  const uiCss = `${base}nexus-ui.css?v=1.3.3`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.2`;
-  const runtime = `${base}nexus-ui.js?v=1.4.0`;
+  const runtime = `${base}nexus-ui.js?v=1.4.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -94,6 +94,13 @@ assert.equal((initSource.match(/localStorage\.setItem/g) || []).length, 1, 'only
 assert.match(uiSource, /dataset\.nexusUiTheme === 'dark' \? 'light' : 'dark'/, 'the header switch must only toggle light/dark');
 assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle must expose switch semantics');
 assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
+assert.match(uiSource, /element\('button', 'nexus-ui-theme__icon', '☼'\)/, 'the light icon must be an interactive button');
+assert.match(uiSource, /element\('button', 'nexus-ui-theme__icon', '☾'\)/, 'the dark icon must be an interactive button');
+assert.match(uiSource, /dataset\.nexusUiThemeSet = 'light'/, 'the light icon must directly apply light mode');
+assert.match(uiSource, /dataset\.nexusUiThemeSet = 'dark'/, 'the dark icon must directly apply dark mode');
+assert.match(uiSource, /setAttribute\('aria-pressed'/, 'theme icon buttons must expose their selected state');
+assert.match(uiSource, /lightIcon\.addEventListener\('click'/, 'the light icon must respond to click and touch activation');
+assert.match(uiSource, /darkIcon\.addEventListener\('click'/, 'the dark icon must respond to click and touch activation');
 assert.doesNotMatch(uiSource, /['"]system['"]/, 'system theme is forbidden');
 assert.match(uiSource, /aria-current/, 'the current app must be exposed accessibly');
 assert.match(uiSource, /revealCurrentApp/, 'the current app must be actively revealed in an overflowing global header');
@@ -117,6 +124,7 @@ assert.match(
 assert.doesNotMatch(uiSource, /label:\s*'(?:MerchOps|DataOps|Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'common header tab labels must not fall back to English product names');
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
+assert.match(uiCss, /\.nexus-ui-theme__icon\s*\{[^}]*width:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s, 'theme icons must expose a 44px touch target');
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
 assert.match(uiCss, /\.nexus-ui-header\s*\{[^}]*width:\s*100%/s, 'the global header must span the full viewport width');

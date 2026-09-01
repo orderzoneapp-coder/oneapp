@@ -252,7 +252,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 2px;
   height: 44px;
   margin-left: 10px;
   justify-self: end;
@@ -261,14 +261,38 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
 
 .nexus-ui-theme__icon {
   display: inline-flex;
+  flex: 0 0 44px;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  appearance: none;
   color: inherit;
   font-size: 16px;
   line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 150ms ease, color 150ms ease;
   user-select: none;
+}
+
+.nexus-ui-theme__icon[aria-pressed="true"] {
+  color: var(--nexus-ui-tab-active-text);
+}
+
+.nexus-ui-theme__icon:hover {
+  background: var(--nexus-ui-tab-hover-bg);
+  color: var(--nexus-ui-tab-active-text);
+}
+
+.nexus-ui-theme__icon:focus-visible {
+  outline: 2px solid var(--nexus-ui-focus);
+  outline-offset: -4px;
 }
 
 .nexus-ui-theme__switch {
@@ -381,7 +405,7 @@ html[data-nexus-ui-theme="dark"] .nexus-ui-logo--dark {
 
   .nexus-ui-theme {
     grid-area: theme;
-    min-width: 96px;
+    min-width: 136px;
     height: 60px;
     margin-left: 8px;
   }
