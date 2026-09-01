@@ -9,7 +9,12 @@ const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
-assert.match(html, /nexus\.css\?v=1\.2\.2/, 'NEXUS home must load the quiet-surface CSS revision');
+assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
+assert.match(html, /nexus\.css\?v=1\.3\.0/, 'NEXUS home must load the ivory/dark CSS revision');
+assert.match(html, /nexus\.js\?v=1\.3\.1/, 'NEXUS home must load the theme-toggle runtime revision');
+assert.match(html, /class="nexus-home-theme__icon"[^>]*>☼</, 'home must use the common-header light icon');
+assert.match(html, /class="nexus-home-theme__icon"[^>]*>☾</, 'home must use the common-header dark icon');
+assert.match(html, /id="homeThemeToggle"[^>]+role="switch"/, 'home must expose an accessible screen-mode switch');
 assert.match(html, /id="loginId"[^>]+autocomplete="username"/, 'login id must support password managers');
 assert.match(html, /id="password"[^>]+autocomplete="current-password"/, 'password must use current-password autocomplete');
 assert.match(html, /id="homePanel"[^>]+hidden/, 'the app home must be hidden before login');
@@ -49,6 +54,8 @@ assert.match(runtime, /showHome\(cached\.session\);[\s\S]*setTimeout\(\(\) => \{
 assert.match(runtime, /role === 'OWNER_MASTER' \? 'MASTER' : '위임 사용자'/, 'roles must be presented as MASTER or delegated user without enforcing app permission');
 assert.doesNotMatch(runtime, /canUseApp|hasPermission|appContexts|nexus_proxy|window\.fetch\s*=/, 'basic login must not add app gating or a gateway runtime');
 assert.match(runtime, /oneapp\.nexus\.ui\.visibility\.v1/, 'home must publish the non-sensitive UI visibility projection');
+assert.match(runtime, /window\.ONEAPP_NEXUS_UI_THEME/, 'home must consume the shared theme controller');
+assert.match(runtime, /themeController\.apply\(next, \{ persist: true, emit: true, source: 'nexus-home' \}\)/, 'home theme choice must persist through the shared controller');
 assert.match(runtime, /NEXUS_UI_VISIBILITY_V1/, 'home visibility projection must be schema-versioned');
 assert.match(runtime, /renderApps\(visibility\.visibleAppIds\)/, 'home cards must follow the UI visibility projection');
 assert.doesNotMatch(runtime, /company-transport|callCompanyGateway|company\.profile_read|refreshCompany|COMPANY_SNAPSHOT|revision/i, 'home startup must not call or depend on the company service');
@@ -59,6 +66,10 @@ assert.match(css, /body\.nexus-home-page \.nexus-login-card\s*\{[^}]*border:\s*0
 assert.match(css, /body\.nexus-home-page \.nexus-login-card input\s*\{[^}]*border:\s*0;/s, 'home inputs must use surface depth instead of a resting border');
 assert.match(css, /body\.nexus-home-page \.nexus-app-card\s*\{[^}]*border:\s*0;/s, 'home app cards must use quiet surfaces instead of repeated borders');
 assert.match(css, /body\.nexus-home-page \.nexus-app-card:focus-visible|\.nexus-app-card:focus-visible/, 'keyboard focus must remain visible after resting borders are removed');
+assert.match(css, /--nexus-bg:\s*#f3efe6/, 'home light mode must use the approved ivory page tone');
+assert.match(css, /--nexus-panel:\s*#faf7f0/, 'home light panels must use a warm paper surface');
+assert.match(css, /data-nexus-ui-theme="dark"[^}]*--nexus-bg:\s*#0f141a/s, 'home dark mode must retain the quiet graphite surface');
+assert.match(css, /border-color:\s*var\(--nexus-divider\)/, 'home structural header and footer dividers must remain visible');
 
 const appPages = [
   'MerchOps.html',
