@@ -428,3 +428,217 @@ noscript {
     transition: none !important;
   }
 }
+
+/* NEXUS home concept: quiet surfaces, text-first hierarchy, essential lines only. */
+body.nexus-home-page {
+  --nexus-bg: #0f141a;
+  --nexus-panel: #181e25;
+  --nexus-panel-soft: #202730;
+  --nexus-border: transparent;
+  --nexus-border-strong: transparent;
+  --nexus-text: #e7eaee;
+  --nexus-muted: #9da5af;
+  --nexus-accent: #4aa99c;
+  --nexus-accent-hover: #58b4a7;
+  background:
+    radial-gradient(circle at 18% 8%, rgb(48 70 82 / 18%), transparent 36rem),
+    linear-gradient(145deg, #10161d 0%, #0f151c 62%, #121922 100%);
+}
+
+body.nexus-home-page .nexus-topbar,
+body.nexus-home-page .nexus-footer {
+  border-color: transparent;
+}
+
+body.nexus-home-page .nexus-topbar {
+  min-height: 74px;
+}
+
+body.nexus-home-page .nexus-footer {
+  color: #7f8994;
+}
+
+body.nexus-home-page .nexus-session-actions {
+  gap: 10px;
+}
+
+body.nexus-home-page .nexus-user {
+  gap: 8px;
+}
+
+body.nexus-home-page .nexus-user span {
+  padding-inline: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--nexus-muted);
+  font-weight: 600;
+}
+
+body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button) {
+  border: 0;
+  background: transparent;
+  color: var(--nexus-muted);
+}
+
+body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button):hover {
+  border-color: transparent;
+  background: rgb(255 255 255 / 5%);
+  color: var(--nexus-text);
+}
+
+body.nexus-home-page .nexus-login-panel {
+  gap: clamp(64px, 11vw, 152px);
+}
+
+body.nexus-home-page :is(.nexus-login-copy, .nexus-home-heading) h1 {
+  color: var(--nexus-text);
+  font-weight: 750;
+}
+
+body.nexus-home-page .nexus-eyebrow {
+  color: #82bdb5;
+}
+
+body.nexus-home-page .nexus-login-card {
+  border: 0;
+  background: rgb(24 30 37 / 90%);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 17%);
+}
+
+body.nexus-home-page .nexus-login-card label {
+  color: #bdc4cd;
+  font-weight: 650;
+}
+
+body.nexus-home-page .nexus-login-card input {
+  border: 0;
+  background: rgb(5 9 13 / 36%);
+  color: var(--nexus-text);
+  box-shadow: none;
+}
+
+body.nexus-home-page .nexus-login-card input:hover {
+  border-color: transparent;
+  background: rgb(5 9 13 / 50%);
+}
+
+body.nexus-home-page .nexus-primary-button {
+  color: #071713;
+  box-shadow: none;
+}
+
+body.nexus-home-page .nexus-home-panel {
+  padding-top: 64px;
+}
+
+body.nexus-home-page .nexus-home-heading {
+  margin-bottom: 30px;
+}
+
+body.nexus-home-page .nexus-home-heading h1 {
+  font-size: clamp(32px, 4vw, 46px);
+}
+
+body.nexus-home-page .nexus-app-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.nexus-home-page .nexus-app-card {
+  min-height: 132px;
+  padding: 20px;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 3.2%);
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+body.nexus-home-page .nexus-app-card::after {
+  color: #77818c;
+  opacity: .42;
+  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
+}
+
+body.nexus-home-page .nexus-app-card:hover {
+  border-color: transparent;
+  background: rgb(255 255 255 / 6%);
+  transform: translateY(-1px);
+}
+
+body.nexus-home-page .nexus-app-card:hover::after {
+  color: #aeb7c1;
+  opacity: .8;
+  transform: translateX(2px);
+}
+
+body.nexus-home-page .nexus-app-card strong {
+  color: var(--nexus-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+body.nexus-home-page .nexus-app-card span {
+  color: var(--nexus-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  body.nexus-home-page .nexus-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  body.nexus-home-page .nexus-topbar {
+    min-height: 66px;
+  }
+
+  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 10px 0 8px;
+  }
+
+  body.nexus-home-page .nexus-topbar:has(.nexus-session-actions:not([hidden])) .nexus-home-logo {
+    align-self: flex-start;
+  }
+
+  body.nexus-home-page .nexus-session-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  body.nexus-home-page :is(.nexus-quiet-link, .nexus-quiet-button) {
+    min-height: 40px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  body.nexus-home-page .nexus-user {
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  body.nexus-home-page .nexus-user strong {
+    font-size: 13px;
+  }
+
+  body.nexus-home-page .nexus-user span {
+    font-size: 10px;
+  }
+
+  body.nexus-home-page .nexus-home-panel {
+    padding-top: 36px;
+  }
+
+  body.nexus-home-page .nexus-app-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.nexus-home-page .nexus-app-card {
+    min-height: 104px;
+  }
+}
