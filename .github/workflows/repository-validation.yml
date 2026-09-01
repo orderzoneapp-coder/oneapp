@@ -60,7 +60,9 @@ jobs:
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
       - name: Test NEXUS basic login and home contracts
-        run: node scripts/test-nexus-basic-login-home.mjs
+        run: |
+          node scripts/test-nexus-basic-login-home.mjs
+          node scripts/test-nexus-cross-tab-session.mjs
 
       - name: Test NEXUS minimal user-control contracts
         run: |

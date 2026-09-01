@@ -10,7 +10,7 @@ const MESSAGE = Object.freeze({
   CLEARED: 'NEXUS_SESSION_CLEARED',
 });
 const NEXUS_PATH_PREFIX = '/nexus/';
-const REQUEST_TTL_MS = 2000;
+const REQUEST_TTL_MS = 5000;
 
 let currentBundle = null;
 const pendingRequests = new Map();
