@@ -8,6 +8,8 @@ const sessionBridge = await readFile('nexus/session-bridge.js', 'utf8');
 const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
+assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
+assert.match(html, /nexus\.css\?v=1\.2\.2/, 'NEXUS home must load the quiet-surface CSS revision');
 assert.match(html, /id="loginId"[^>]+autocomplete="username"/, 'login id must support password managers');
 assert.match(html, /id="password"[^>]+autocomplete="current-password"/, 'password must use current-password autocomplete');
 assert.match(html, /id="homePanel"[^>]+hidden/, 'the app home must be hidden before login');
@@ -53,6 +55,10 @@ assert.doesNotMatch(runtime, /company-transport|callCompanyGateway|company\.prof
 assert.match(commonUi, /logoFrame\.href = asset\('nexus\/'\)/, 'work-app logo must return to the NEXUS home');
 assert.doesNotMatch(commonUi, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app header must not expose user information or auth tokens');
 assert.match(css, /min-height:\s*44px/, 'home controls must retain touch-sized interaction');
+assert.match(css, /body\.nexus-home-page \.nexus-login-card\s*\{[^}]*border:\s*0;/s, 'home login surface must not draw a decorative border');
+assert.match(css, /body\.nexus-home-page \.nexus-login-card input\s*\{[^}]*border:\s*0;/s, 'home inputs must use surface depth instead of a resting border');
+assert.match(css, /body\.nexus-home-page \.nexus-app-card\s*\{[^}]*border:\s*0;/s, 'home app cards must use quiet surfaces instead of repeated borders');
+assert.match(css, /body\.nexus-home-page \.nexus-app-card:focus-visible|\.nexus-app-card:focus-visible/, 'keyboard focus must remain visible after resting borders are removed');
 
 const appPages = [
   'MerchOps.html',
