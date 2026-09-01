@@ -10,7 +10,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.2">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.2">
-  <link rel="stylesheet" href="./smartinput.css?v=0.8.5">
+  <link rel="stylesheet" href="./smartinput.css?v=0.8.6">
 </head>
 <body>
   <header class="app-bar">
@@ -167,8 +167,6 @@
             <button class="button button--quiet button--small" id="undoGridPasteButton" type="button" disabled>붙여넣기 취소</button>
             <button class="button button--quiet button--small" id="addRowButton" type="button">빈 행 추가</button>
             <button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button>
-            <button class="button button--quiet button--small" id="estimateListButton" type="button" aria-controls="estimateLibraryView" aria-haspopup="dialog" hidden>견적서 목록</button>
-            <button class="button button--quiet button--small" id="relatedPanelToggle" type="button" aria-controls="estimateLibraryView" aria-haspopup="dialog" aria-expanded="false">관련 전표 불러오기</button>
             <button class="button button--quiet button--small reset-draft-button" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
             <small class="grid-inline-validation" id="gridValidation" role="status"></small>
           </div>
@@ -179,10 +177,10 @@
           <h2 class="sr-only">입력표</h2>
           <div class="table-scroll" id="tableScroll" tabindex="0">
             <table id="voucherInputTable">
-              <colgroup><col class="col-sequence"><col class="col-select"><col class="col-product-search" data-column="productSearch"><col class="col-code" data-column="itemCode"><col class="col-name" data-column="itemName"><col class="col-spec" data-column="specification"><col class="col-qty" data-column="quantity"><col class="col-unit" data-column="unit"><col class="col-price" data-column="unitPrice"><col class="col-supply" data-column="supplyAmount"><col class="col-memo" data-column="memo"><col class="col-description" data-column="description"><col class="col-notice" data-column="noticePrice"><col class="col-status" data-column="status"></colgroup>
-              <thead><tr><th class="sequence-column" scope="col">No.</th><th class="select-column"><input id="selectAllRows" type="checkbox" aria-label="전체 행 선택"></th><th class="product-search-heading" data-column="productSearch" title="기준정보에서 상품을 찾아 행에 적용합니다.">상품 검색</th><th data-column="itemCode">품목코드</th><th data-column="itemName">품목명</th><th data-column="specification">규격</th><th data-column="quantity">수량</th><th data-column="unit">단위</th><th data-column="unitPrice">단가</th><th data-column="supplyAmount">공급가액</th><th data-column="memo">메모</th><th data-column="description">적요(직원)</th><th data-column="noticePrice">공지단가</th><th data-column="status">상태</th></tr></thead>
+              <colgroup><col class="col-sequence-select"><col class="col-product-search" data-column="productSearch"><col class="col-code" data-column="itemCode"><col class="col-name" data-column="itemName"><col class="col-spec" data-column="specification"><col class="col-qty" data-column="quantity"><col class="col-unit" data-column="unit"><col class="col-price" data-column="unitPrice"><col class="col-supply" data-column="supplyAmount"><col class="col-memo" data-column="memo"><col class="col-description" data-column="description"><col class="col-notice" data-column="noticePrice"><col class="col-status" data-column="status"></colgroup>
+              <thead><tr><th class="sequence-column sequence-select-column" scope="col"><span>No.</span><input id="selectAllRows" type="checkbox" aria-label="전체 행 선택"></th><th class="product-search-heading" data-column="productSearch" title="기준정보에서 상품을 찾아 행에 적용합니다.">상품 검색</th><th data-column="itemCode">품목코드</th><th data-column="itemName">품목명</th><th data-column="specification">규격</th><th data-column="quantity">수량</th><th data-column="unit">단위</th><th data-column="unitPrice">단가</th><th data-column="supplyAmount">공급가액</th><th data-column="memo">메모</th><th data-column="description">적요(직원)</th><th data-column="noticePrice">공지단가</th><th data-column="status">상태</th></tr></thead>
               <tbody id="inputRows"></tbody>
-              <tfoot><tr><td></td><td></td><td data-column="productSearch"></td><td data-column="itemCode"></td><td data-column="itemName">합계</td><td data-column="specification"></td><td data-column="quantity" id="totalQuantity">0</td><td data-column="unit"></td><td data-column="unitPrice"></td><td data-column="supplyAmount" id="totalAmount">0원</td><td data-column="memo"></td><td data-column="description"></td><td data-column="noticePrice"></td><td data-column="status"></td></tr></tfoot>
+              <tfoot><tr><td></td><td data-column="productSearch"></td><td data-column="itemCode"></td><td data-column="itemName">합계</td><td data-column="specification"></td><td data-column="quantity" id="totalQuantity">0</td><td data-column="unit"></td><td data-column="unitPrice"></td><td data-column="supplyAmount" id="totalAmount">0원</td><td data-column="memo"></td><td data-column="description"></td><td data-column="noticePrice"></td><td data-column="status"></td></tr></tfoot>
             </table>
             <table class="mapping-worktable" id="mappingWorktable" hidden>
               <colgroup id="mappingTableColumns"></colgroup>
@@ -202,6 +200,7 @@
               </div>
             </div>
             <div class="estimate-output-actions" id="estimateOutputActions">
+              <button class="button button--quiet" id="estimateCreateButton" type="button" hidden disabled>연동견적서 생성</button>
               <button class="button button--quiet" id="saveEstimateAsButton" type="button" hidden>새 견적서 저장</button>
               <button class="button button--quiet" id="estimateNoticeButton" type="button">카톡 공유</button>
               <button class="button button--quiet" id="estimateExcelButton" type="button">EXCEL</button>
@@ -211,15 +210,15 @@
         </div>
       </section>
 
-      <div class="related-dialog-backdrop" id="relatedDialogBackdrop" hidden></div>
-      <aside class="related-panel estimate-library-view" id="estimateLibraryView" role="dialog" aria-modal="true" aria-labelledby="relatedDialogTitle" aria-hidden="true">
-        <header class="related-dialog-heading">
-          <div><small>스마트입력</small><h2 id="relatedDialogTitle">관련 전표 불러오기</h2></div>
-          <button class="related-panel-close" id="relatedPanelCloseButton" type="button" aria-label="팝업 닫기" title="팝업 닫기"><span aria-hidden="true">×</span></button>
-        </header>
+      <button class="related-panel-toggle" id="relatedPanelToggle" type="button" aria-controls="estimateLibraryView" aria-expanded="false"><span aria-hidden="true">‹</span><strong id="relatedPanelToggleLabel">우측 패널</strong></button>
+      <aside class="related-panel estimate-library-view" id="estimateLibraryView" aria-label="견적서 목록">
+        <button class="related-panel-resizer" id="relatedPanelResizer" type="button" aria-label="우측 패널 폭 조절" title="끌거나 방향키로 폭 조절"><span></span></button>
+        <div class="related-panel-chrome">
+          <button class="related-panel-close" id="relatedPanelCloseButton" type="button" aria-label="우측 패널 닫기" title="우측 패널 닫기"><span aria-hidden="true">×</span></button>
+        </div>
         <section class="voucher-context-view voucher-activity-view" id="voucherContextView" aria-label="전표 목록" hidden>
           <header class="voucher-context-heading voucher-activity-heading">
-            <div><small id="voucherContextEyebrow">불러올 전표</small><h2 id="voucherContextTitle">주문서</h2></div>
+            <div><small id="voucherContextEyebrow">VOUCHER ACTIVITY</small><h2 id="voucherContextTitle">오늘 주문서</h2></div>
             <label class="sr-only" for="voucherActivitySourceMode">불러올 전표 종류</label>
             <select id="voucherActivitySourceMode" aria-label="불러올 전표 종류">
               <option value="estimate">견적서</option>
@@ -240,21 +239,28 @@
           </footer>
         </section>
         <header class="estimate-library-heading aside-heading" id="estimateLibraryHeading">
-          <p id="estimateLibrarySummary">저장된 견적서를 선택하면 입력표에서 확인하고 수정할 수 있습니다.</p>
+          <div class="estimate-library-toolbar" role="group" aria-label="견적서 목록과 다중 선택">
+            <button class="estimate-library-kind-button is-active" id="estimateLibraryIndividualButton" type="button" aria-pressed="true">견적서 목록</button>
+            <button class="estimate-library-kind-button" id="estimateLibraryLinkedButton" type="button" aria-pressed="false">연동견적서</button>
+            <button class="estimate-multi-select-button" id="estimateMultiSelectButton" type="button" aria-label="견적서 다중 선택" aria-pressed="false" title="다중 선택"><span aria-hidden="true">+</span></button>
+          </div>
+          <p id="estimateLibrarySummary" class="sr-only">저장된 견적서 카드를 터치해 선택하고 바로 확인합니다.</p>
         </header>
         <div class="estimate-library-grid saved-voucher-list" id="catalogPickerList"></div>
+        <div class="estimate-library-grid saved-voucher-list" id="linkedEstimateList" hidden></div>
         <footer class="estimate-library-actions" id="catalogComposeArea">
           <span class="sr-only" id="estimateSelectionSummary" role="status" aria-live="polite">0개 선택</span>
           <button class="button button--danger button--small" id="selectedEstimateDeleteButton" type="button" disabled>선택 삭제</button>
           <button class="button button--quiet button--small" id="estimateRenameButton" type="button" disabled>이름 변경</button>
         </footer>
+        <button class="related-collapse" id="relatedCollapseButton" type="button" aria-expanded="false" hidden>우측 패널 열기</button>
       </aside>
     </div>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="./smartinput-contract.js?v=0.6.0"></script>
-  <script type="module" src="./smartinput.js?v=0.11.0"></script>
+  <script type="module" src="./smartinput.js?v=0.11.1"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.0"></script>
 </body>
 </html>

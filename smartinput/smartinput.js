@@ -217,22 +217,15 @@ const state = {
   estimateDragSuppressed: false,
   estimateTouchDrag: null,
   estimateSelectionQueue: Promise.resolve(),
-  relatedDialogMode: 'related-voucher',
-  relatedDialogOpen: false,
-  relatedDialogTrigger: null,
   voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
   purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' },
   saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
 };
-if (state.draft.ui.relatedPanelLayoutVersion !== 2) {
-  const unfinishedEstimateComposition = state.draft.ui.estimateCreation;
-  if (unfinishedEstimateComposition?.returnDraft) {
-    state.draft.modes.estimate = contract.normalizeModeDraft('estimate', unfinishedEstimateComposition.returnDraft);
-  }
-  delete state.draft.ui.estimateCreation;
-  state.draft.ui.relatedPanelLayoutVersion = 2;
+if (state.draft.ui.relatedPanelLayoutVersion !== 1) {
+  state.draft.ui.relatedPanelLayoutVersion = 1;
+  state.draft.ui.relatedOpen = true;
+  state.draft.ui.relatedPaneWidth = 260;
 }
-state.draft.ui.relatedOpen = false;
 
 const ACTIVITY_LABELS = {
   direct: '직접입력',
@@ -612,6 +605,8 @@ function renderReferenceControls() {
   $('customerSearchButton').disabled = state.busy || modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP';
   $('estimateNoticeButton').disabled = state.busy;
   $('estimateExcelButton').disabled = state.busy;
+  const creation = estimateCreation();
+  $('estimateCreateButton').disabled = state.busy || !creation || creation.selectedIds.length < 2;
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
   $('estimateRenameButton').disabled = state.busy || state.noticeEstimateIds.length !== 1;
   updateAutosaveButton();
@@ -1195,7 +1190,7 @@ function applyColumnWidths() {
 }
 
 function updateTableWidth(visibleColumns) {
-  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 84);
+  const total = visibleColumns.reduce((sum, fieldId) => sum + columnWidth(fieldId), 58);
   document.querySelector('#tableScroll table')?.style.setProperty('--table-render-width', `${total}px`);
 }
 
@@ -3180,7 +3175,7 @@ function renderVoucherActivitySnapshot() {
   const mode = activity.sourceMode || state.draft.activeMode;
   const date = voucherActivityDate(state.draft.activeMode);
   $('voucherActivitySourceMode').value = mode;
-  $('voucherContextEyebrow').textContent = '불러올 전표';
+  $('voucherContextEyebrow').textContent = 'VOUCHER ACTIVITY';
   $('voucherContextTitle').textContent = mode === 'estimate' ? '저장 견적서' : voucherActivityTitle(mode, date);
   $('voucherActivityOpenAll').dataset.href = `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`;
   $('voucherActivityOpenAll').hidden = mode === 'estimate';
@@ -3193,18 +3188,18 @@ function renderVoucherActivitySnapshot() {
   if (activity.status === 'ERROR') {
     $('voucherContextSummary').textContent = '전표 조회에 실패했습니다. 0건으로 처리하지 않았습니다.';
     $('voucherContextList').innerHTML = `<div class="voucher-activity-state is-error"><strong>목록을 불러오지 못했습니다.</strong><span>${esc(activity.error?.message || '다시 불러오기를 실행하세요.')}</span></div>`;
-    $('voucherContextDelivery').textContent = '불러오기 실패 · 현재 입력은 유지됩니다.';
+    $('voucherContextDelivery').textContent = 'ERROR · 로컬 입력은 사용 가능';
     return;
   }
   if (activity.status === 'EMPTY') {
     $('voucherContextSummary').textContent = `${date} 전표 0건`;
     $('voucherContextList').innerHTML = '<div class="voucher-activity-state"><strong>저장된 전표가 없습니다.</strong><span>조회는 정상 완료되었습니다.</span></div>';
-    $('voucherContextDelivery').textContent = '조회 완료 · 0건';
+    $('voucherContextDelivery').textContent = 'EMPTY · 조회 정상';
     return;
   }
   $('voucherContextSummary').textContent = `${date} · ${activity.rows.length.toLocaleString('ko-KR')}건`;
   $('voucherContextList').innerHTML = activity.rows.map(voucherActivityCard).join('');
-  $('voucherContextDelivery').textContent = `조회 완료 · ${activity.rows.length.toLocaleString('ko-KR')}건`;
+  $('voucherContextDelivery').textContent = `READY · ${activity.source || '공식 Read Adapter'}`;
 }
 
 async function loadVoucherActivity({ force = false } = {}) {
@@ -3226,66 +3221,88 @@ async function loadVoucherActivity({ force = false } = {}) {
 
 function renderVoucherContext() {
   renderVoucherActivitySnapshot();
-  if (state.relatedDialogOpen && state.relatedDialogMode === 'related-voucher') void loadVoucherActivity();
+  void loadVoucherActivity();
+}
+
+function relatedPanelButtonLabel(open = false) {
+  const label = state.draft.activeMode === 'estimate'
+    ? '견적서 목록'
+    : `${VOUCHER_ACTIVITY_COPY[state.draft.activeMode]?.label || '전표'} 목록`;
+  return `${label} ${open ? '닫기' : '열기'}`;
+}
+
+function applyRelatedPanelWidth(requestedWidth = state.draft.ui.relatedPaneWidth || 260) {
+  const maximum = Math.max(260, Math.min(440, Math.round(window.innerWidth * .36)));
+  const width = Math.round(Math.max(230, Math.min(maximum, Number(requestedWidth) || 260)));
+  state.draft.ui.relatedPaneWidth = width;
+  $('smartInputWorkspace').style.setProperty('--related-pane-width', `${width}px`);
+  return width;
 }
 
 function applyRelatedPanelState() {
-  const open = state.relatedDialogOpen;
+  const open = Boolean(state.draft.ui.relatedOpen);
+  const workspace = $('smartInputWorkspace');
   const panel = $('estimateLibraryView');
+  const appBarBottom = Math.max(0, Math.round(document.querySelector('.app-bar')?.getBoundingClientRect().bottom || 0));
+  workspace.style.setProperty('--related-panel-top', `${appBarBottom}px`);
+  applyRelatedPanelWidth();
+  workspace.classList.toggle('related-panel-open', open);
   panel.classList.toggle('is-open', open);
   panel.setAttribute('aria-hidden', String(!open));
-  $('relatedDialogBackdrop').hidden = !open;
-  document.body.classList.toggle('related-dialog-open', open);
-  $('relatedPanelToggle').setAttribute('aria-expanded', String(open && state.relatedDialogMode === 'related-voucher'));
-  $('estimateListButton').setAttribute('aria-expanded', String(open && state.relatedDialogMode === 'estimate-list'));
+  $('relatedPanelToggle').setAttribute('aria-expanded', String(open));
+  $('relatedPanelToggle').title = relatedPanelButtonLabel(open);
+  $('relatedPanelToggleLabel').textContent = state.draft.activeMode === 'estimate' ? '견적서 목록' : '전표 목록';
+  $('relatedCollapseButton').setAttribute('aria-expanded', String(open));
+  $('relatedCollapseButton').textContent = relatedPanelButtonLabel(open);
 }
 
-function setRelatedPanelOpen(open, { mode = state.relatedDialogMode, trigger = null } = {}) {
-  const wasOpen = state.relatedDialogOpen;
-  if (open) {
-    state.relatedDialogMode = mode === 'estimate-list' && state.draft.activeMode === 'estimate' ? 'estimate-list' : 'related-voucher';
-    state.relatedDialogTrigger = trigger || document.activeElement;
-    if (state.relatedDialogMode === 'related-voucher' && !state.voucherActivity.sourceMode) {
-      state.voucherActivity.sourceMode = ({ order: 'estimate', purchase: 'order', sale: 'purchase', estimate: 'order' })[state.draft.activeMode] || 'order';
-      state.voucherActivity.status = 'IDLE';
-    }
-  }
-  state.relatedDialogOpen = Boolean(open);
-  renderEstimateWorkspace();
+function setRelatedPanelOpen(open) {
+  state.draft.ui.relatedOpen = Boolean(open);
   applyRelatedPanelState();
-  if (open) {
-    if (state.relatedDialogMode === 'related-voucher') void loadVoucherActivity();
-    $('relatedPanelCloseButton').focus({ preventScroll: true });
-    window.requestAnimationFrame(() => $('relatedPanelCloseButton').focus({ preventScroll: true }));
-  } else if (wasOpen && state.relatedDialogTrigger instanceof HTMLElement) {
-    state.relatedDialogTrigger.focus({ preventScroll: true });
-    state.relatedDialogTrigger = null;
-  }
+  scheduleSave();
 }
 
 function renderEstimateWorkspace() {
   const estimateMode = state.draft.activeMode === 'estimate';
-  if (!estimateMode && state.relatedDialogMode === 'estimate-list') state.relatedDialogMode = 'related-voucher';
-  const estimateListMode = estimateMode && state.relatedDialogMode === 'estimate-list';
   const library = $('estimateLibraryView');
   library.hidden = false;
-  library.setAttribute('aria-label', estimateListMode ? '견적서 목록' : '관련 전표 불러오기');
-  $('relatedDialogTitle').textContent = estimateListMode ? '견적서 목록' : '관련 전표 불러오기';
-  $('voucherContextView').hidden = estimateListMode;
-  $('estimateLibraryHeading').hidden = !estimateListMode;
-  $('catalogComposeArea').hidden = !estimateListMode;
+  library.setAttribute('aria-label', estimateMode ? '견적서 목록' : `${contract.MODES[state.draft.activeMode].label} 목록`);
+  $('voucherContextView').hidden = estimateMode;
+  $('estimateLibraryHeading').hidden = !estimateMode;
+  $('catalogComposeArea').hidden = !estimateMode;
   $('estimateEditorView').hidden = false;
-  $('catalogPickerList').hidden = !estimateListMode;
-  $('estimateLibrarySummary').textContent = '저장된 견적서를 선택하면 입력표에서 확인하고 수정할 수 있습니다.';
-  $('estimateListButton').hidden = !estimateMode;
+  const linkedList = state.estimateLibraryKind === 'linked';
+  $('catalogPickerList').hidden = !estimateMode || linkedList;
+  $('linkedEstimateList').hidden = !estimateMode || !linkedList;
+  const multiSelect = estimateMultiSelectActive();
+  const individualButton = $('estimateLibraryIndividualButton');
+  const linkedButton = $('estimateLibraryLinkedButton');
+  const multiSelectButton = $('estimateMultiSelectButton');
+  individualButton.classList.toggle('is-active', !linkedList);
+  linkedButton.classList.toggle('is-active', linkedList);
+  individualButton.setAttribute('aria-pressed', String(!linkedList));
+  linkedButton.setAttribute('aria-pressed', String(linkedList));
+  individualButton.disabled = state.busy || multiSelect;
+  linkedButton.disabled = state.busy || multiSelect;
+  multiSelectButton.disabled = state.busy;
+  multiSelectButton.classList.toggle('is-active', multiSelect);
+  multiSelectButton.setAttribute('aria-pressed', String(multiSelect));
+  multiSelectButton.setAttribute('aria-label', multiSelect ? '견적서 다중 선택 종료' : '견적서 다중 선택');
+  multiSelectButton.title = multiSelect ? '다중 선택 종료' : '다중 선택';
+  $('estimateLibrarySummary').textContent = linkedList
+    ? '연결된 원본을 유지하는 연동견적서입니다. 카드는 열기, 이동 핸들은 순서 변경입니다.'
+    : (multiSelect ? '카드를 하나씩 터치하거나 Ctrl+클릭해 여러 견적서를 선택합니다.' : '카드를 터치하면 해당 견적서 하나를 바로 엽니다.');
   parserCard.hidden = false;
 }
 
 function estimateCardMarkup(record) {
   const selected = state.noticeEstimateIds.includes(record.estimateId);
+  const selectionOrder = estimateMultiSelectActive() ? state.noticeEstimateIds.indexOf(record.estimateId) : -1;
   const linked = record.estimateKind === 'LINKED_GROUP';
+  const linkedCount = linked ? (record.linkedEstimateSources?.length || 0) : individualEstimateLinkCount(record.estimateId);
+  const linkedBadge = linkedCount ? `<em class="linked-estimate-badge">연동 ${linkedCount}</em>` : '';
   return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="${linked ? 'LINKED_GROUP' : 'INDIVIDUAL'}" data-estimate-id="${esc(record.estimateId)}">
-    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(estimateTitle(record))} · 견적서 열기"><strong>${esc(estimateTitle(record))}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(estimateTitle(record))} · ${estimateMultiSelectActive() ? (selected ? '다중 선택 해제' : '다중 선택') : '견적서 열기'}">${selectionOrder >= 0 ? `<b class="estimate-card__selection-order" aria-label="${selectionOrder + 1}번째 선택">${selectionOrder + 1}</b>` : ''}<strong>${esc(estimateTitle(record))}${linkedBadge}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
     <button class="estimate-card__drag-handle" type="button" draggable="true" data-estimate-drag-handle aria-label="${esc(estimateTitle(record))} 순서 이동" title="끌어서 순서 이동"><span aria-hidden="true">⠿</span></button>
   </article>`;
 }
@@ -3294,22 +3311,38 @@ function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   if (!visible) {
     $('catalogPickerList').innerHTML = '<div class="smart-dialog__empty">견적서 모드에서 개별 견적서를 관리합니다.</div>';
+    $('linkedEstimateList').innerHTML = '';
     return;
   }
   state.estimates = normalizeEstimateOrder();
-  state.estimateLibraryKind = 'individual';
+  syncEstimateCreationSelection();
+  const creation = estimateCreation();
+  if (creation && !state.estimateMultiSelectKind) state.estimateMultiSelectKind = 'individual';
   const records = individualEstimateRecords();
-  const availableIds = new Set(records.map(record => record.estimateId));
+  const linkedRecords = linkedEstimateRecords();
+  const availableIds = new Set((creation ? records : estimateRecordsForKind()).map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
   const selectedCount = state.noticeEstimateIds.length;
   $('catalogPickerList').innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다. 입력표를 작성하고 저장하면 자동 생성됩니다.</div>';
-  $('estimateSelectionSummary').textContent = selectedCount ? '견적서 1개 선택' : '견적서를 선택하세요.';
+  $('linkedEstimateList').innerHTML = linkedRecords.length ? linkedRecords.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
+  const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
+  const impactCount = estimateSaveImpact(currentRecord);
+  const lastSave = state.lastEstimateSave?.estimateId === currentRecord?.estimateId ? state.lastEstimateSave : null;
+  $('estimateSelectionSummary').textContent = creation
+    ? `다중 선택 · ${selectedCount.toLocaleString('ko-KR')}개 선택${modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? ` · 미리보기 ${modeDraft().rows.filter(rowHasMeaningfulInput).length}품목` : ''}`
+    : (selectedCount
+      ? `${selectedCount.toLocaleString('ko-KR')}개 열림${lastSave ? ` · 저장 완료 · 연결 ${lastSave.linkCount}개${lastSave.affectedCount ? ` · 반영 ${lastSave.affectedCount}건` : ''}` : (impactCount ? ` · 저장하면 연결된 ${impactCount}개 견적서에 반영` : '')}`
+      : '견적서를 선택하세요.');
   const deleteButton = $('selectedEstimateDeleteButton');
   deleteButton.disabled = state.busy || selectedCount < 1;
   deleteButton.textContent = '선택 삭제';
   deleteButton.classList.add('button--danger');
   deleteButton.classList.remove('button--quiet');
   $('estimateRenameButton').disabled = state.busy || selectedCount !== 1;
+  const createButton = $('estimateCreateButton');
+  createButton.disabled = state.busy || !creation || selectedCount < 2;
+  createButton.textContent = '연동견적서 생성';
+  createButton.title = creation ? `${selectedCount}개 선택` : '먼저 + 버튼이나 Ctrl+클릭으로 견적서를 다중 선택하세요.';
   $('estimateNoticeButton').textContent = '카톡 공유';
   $('estimateExcelButton').textContent = 'EXCEL';
   renderEstimateWorkspace();
@@ -4010,10 +4043,10 @@ function renderMappingRows() {
   table.hidden = false;
   const hidden = new Set(session.hiddenColumns || []);
   const visibleColumns = session.headers.map((_, index) => index).filter(index => !hidden.has(index));
-  const tableWidth = 84 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
+  const tableWidth = 58 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
   table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
-  $('mappingTableColumns').innerHTML = `<col style="width:46px"><col style="width:38px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
-  $('mappingTableHeaders').innerHTML = `<th class="sequence-column" scope="col">No.</th><th class="select-column"><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"></th>${visibleColumns.map(columnIndex => {
+  $('mappingTableColumns').innerHTML = `<col style="width:58px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
+  $('mappingTableHeaders').innerHTML = `<th class="sequence-column sequence-select-column" scope="col"><span>No.</span><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"></th>${visibleColumns.map(columnIndex => {
     const mapping = session.mappings[columnIndex];
     const sourceHeader = session.headers[columnIndex] || `(빈 필드명 · ${columnIndex + 1}열)`;
     return `<th class="mapping-column-heading" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}"><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(sourceHeader)} 매핑 설정"><strong>${esc(sourceHeader)}</strong><small>${esc(mappingStateText(mapping))}</small></button></th>`;
@@ -4024,8 +4057,7 @@ function renderMappingRows() {
     const isDefault = row.rowId === MAPPING_DEFAULT_ROW_ID;
     const sequence = isDefault ? (session.workingRows || []).length + 1 : Math.max(1, (session.workingRows || []).findIndex(item => item.rowId === row.rowId) + 1);
     return `<tr data-mapping-row-id="${esc(row.rowId)}" ${isDefault ? 'data-mapping-default-row="true" class="mapping-blank-row"' : ''}>
-      <td class="row-sequence-cell">${sequence}</td>
-      <td class="row-select-cell"><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+      <td class="row-sequence-cell row-sequence-select-cell"><span class="row-sequence-number">${sequence}</span><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
       ${visibleColumns.map(columnIndex => {
         const mapping = session.mappings[columnIndex];
         const unmapped = mapping?.state === MAPPING_DECISION.UNMAPPED;
@@ -4034,7 +4066,7 @@ function renderMappingRows() {
     </tr>`;
   }).join('');
   const totals = mappingColumnTotals(session, visibleColumns);
-  $('mappingTableTotals').innerHTML = `<td></td><td></td>${visibleColumns.map((columnIndex, index) => `<td>${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
+  $('mappingTableTotals').innerHTML = `<td></td>${visibleColumns.map((columnIndex, index) => `<td>${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
   const summary = mappingSummary(session);
   $('gridRowCount').textContent = `${(session.workingRows || []).length.toLocaleString('ko-KR')}행`;
   $('gridSearchCount').hidden = !state.gridSearch;
@@ -4303,8 +4335,7 @@ function renderRows({ restoreFocus = true } = {}) {
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td class="row-sequence-cell">${sequence}</td>
-      <td class="row-select-cell"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+      <td class="row-sequence-cell row-sequence-select-cell"><span class="row-sequence-number">${sequence}</span><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
       <td data-column="productSearch" class="product-search-cell"><input data-product-search type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemCode"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemCode', row.itemCode))}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemName', row.itemName))}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
@@ -4404,6 +4435,7 @@ function renderDelivery() {
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
   const creation = estimateCreation();
+  const creationCount = creation?.selectedIds.length || 0;
   const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
   $('completeButton').disabled = state.busy || Boolean(creation) || mappingBlocksVoucher;
   $('completeButton').title = mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '';
@@ -4412,8 +4444,8 @@ function renderDelivery() {
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
   $('saveEstimateAsButton').hidden = !isEstimate;
   $('saveEstimateAsButton').disabled = state.busy || !loadedEstimate || Boolean(creation);
-  $('estimateNoticeButton').disabled = state.busy;
-  $('estimateExcelButton').disabled = state.busy;
+  $('estimateCreateButton').hidden = !isEstimate;
+  $('estimateCreateButton').disabled = state.busy || !creation || creationCount < 2;
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
   $('estimateRenameButton').disabled = state.busy || state.noticeEstimateIds.length !== 1;
   updateAutosaveButton();
@@ -4471,7 +4503,7 @@ function renderMode() {
   } else {
     setAppStatus(selected.id === 'order'
       ? '주문서 입력을 시작할 수 있습니다.'
-      : (selected.id === 'estimate' ? '견적서를 작성하거나 저장된 견적서를 불러올 수 있습니다.' : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
+      : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 원본은 견적서 생성 전까지 변경되지 않습니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
   if (sourceTextInput.value.trim() && !inputMappingSession()) scheduleAutoAnalysis(650);
 }
@@ -4567,7 +4599,7 @@ function createTrailingDefaultRow(sourceRow) {
   trailing.dataset.defaultRow = 'true';
   trailing.dataset.status = state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY';
   trailing.className = '';
-  const sequence = trailing.querySelector('.row-sequence-cell');
+  const sequence = trailing.querySelector('.row-sequence-number');
   if (sequence) sequence.textContent = String(modeDraft().rows.length + 1);
   const selector = trailing.querySelector('[data-select-row]');
   if (selector) {
@@ -6532,7 +6564,6 @@ function importRelatedVoucher(voucherId) {
     current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
     saveDraftNow();
     renderMode();
-    setRelatedPanelOpen(false);
     const imported = current.rows.length - before;
     toast(imported ? `${source.voucherNo || source.id}에서 ${imported}개 품목을 불러왔습니다.` : '이미 불러온 전표입니다.', imported ? 'success' : 'warn');
   } catch (error) {
@@ -7574,6 +7605,26 @@ $('selectedEstimateDeleteButton').addEventListener('click', () => {
   void deleteSelectedEstimates();
 });
 $('estimateRenameButton').addEventListener('click', openSelectedEstimateRenameDialog);
+$('estimateCreateButton').addEventListener('click', () => {
+  if (estimateCreationActive()) void completeOrder();
+});
+$('estimateMultiSelectButton').addEventListener('click', () => {
+  if (estimateMultiSelectActive()) cancelEstimateMultiSelect();
+  else beginEstimateMultiSelect();
+});
+function selectEstimateLibraryKind(kind) {
+  if (!['individual', 'linked'].includes(kind) || estimateMultiSelectActive() || state.estimateLibraryKind === kind) return;
+  rememberActiveEstimateWork();
+  const returnDraft = state.estimateSelectionReturnDraft;
+  state.noticeEstimateIds = [];
+  state.estimateSelectionReturnDraft = null;
+  if (returnDraft) state.draft.modes.estimate = contract.normalizeModeDraft('estimate', returnDraft);
+  state.estimateLibraryKind = kind;
+  saveDraftNow();
+  renderMode();
+}
+$('estimateLibraryIndividualButton').addEventListener('click', () => selectEstimateLibraryKind('individual'));
+$('estimateLibraryLinkedButton').addEventListener('click', () => selectEstimateLibraryKind('linked'));
 
 function handleEstimateCardSelection(event) {
   if (state.estimateDragSuppressed) return;
@@ -7582,19 +7633,41 @@ function handleEstimateCardSelection(event) {
   if (!card) return;
   const record = state.estimates.find(item => item.estimateId === card.dataset.estimateId);
   if (!record) return;
+  const additive = event.ctrlKey || event.metaKey;
+  if (additive) event.preventDefault();
   state.estimateSelectionQueue = state.estimateSelectionQueue.then(() => {
+      if (additive && !estimateMultiSelectActive()) beginEstimateMultiSelect({ deferPreview: true });
+      const creation = estimateCreation();
+      if (creation) {
+        const selected = new Set(creation.selectedIds);
+        if (selected.has(record.estimateId)) selected.delete(record.estimateId);
+        else selected.add(record.estimateId);
+        creation.selectedIds = individualEstimateRecords().filter(item => selected.has(item.estimateId)).map(item => item.estimateId);
+        state.noticeEstimateIds = [...creation.selectedIds];
+        previewEstimateCreation();
+        return;
+      }
+      if (state.estimateMultiSelectKind === state.estimateLibraryKind) {
+        const selected = new Set(state.noticeEstimateIds);
+        if (selected.has(record.estimateId)) selected.delete(record.estimateId);
+        else selected.add(record.estimateId);
+        state.noticeEstimateIds = estimateRecordsForKind().filter(item => selected.has(item.estimateId)).map(item => item.estimateId);
+        renderCatalogControls();
+        renderDelivery();
+        return;
+      }
       rememberActiveEstimateWork();
       state.lastEstimateSave = null;
       state.noticeEstimateIds = [record.estimateId];
       loadCatalogRecord(record, { preserveSelection: true });
-      setRelatedPanelOpen(false);
     }).catch(error => {
       toast(error.message || '견적서를 선택하지 못했습니다.', 'error');
     });
 }
 
 $('catalogPickerList').addEventListener('click', handleEstimateCardSelection);
-[$('catalogPickerList')].forEach(list => {
+$('linkedEstimateList').addEventListener('click', handleEstimateCardSelection);
+[...[$('catalogPickerList'), $('linkedEstimateList')]].forEach(list => {
   list.addEventListener('dragstart', beginEstimateCardDrag);
   list.addEventListener('dragover', moveEstimateCardDrag);
   list.addEventListener('drop', event => { finishEstimateCardDrop(event).catch(error => toast(error.message || '견적서 순서를 변경하지 못했습니다.', 'error')); });
@@ -7623,37 +7696,37 @@ $('voucherActivityOpenAll').addEventListener('click', event => {
   const href = event.currentTarget.dataset.href;
   if (href) window.location.href = href;
 });
-$('estimateListButton').addEventListener('click', event => {
-  const sameDialog = state.relatedDialogOpen && state.relatedDialogMode === 'estimate-list';
-  setRelatedPanelOpen(!sameDialog, { mode: 'estimate-list', trigger: event.currentTarget });
+$('relatedCollapseButton').addEventListener('click', event => {
+  setRelatedPanelOpen(!state.draft.ui.relatedOpen);
 });
-$('relatedPanelToggle').addEventListener('click', event => {
-  const sameDialog = state.relatedDialogOpen && state.relatedDialogMode === 'related-voucher';
-  setRelatedPanelOpen(!sameDialog, { mode: 'related-voucher', trigger: event.currentTarget });
-});
+$('relatedPanelToggle').addEventListener('click', () => setRelatedPanelOpen(!state.draft.ui.relatedOpen));
 $('relatedPanelCloseButton').addEventListener('click', () => setRelatedPanelOpen(false));
-$('relatedDialogBackdrop').addEventListener('click', () => setRelatedPanelOpen(false));
+const relatedPanelResizer = $('relatedPanelResizer');
+relatedPanelResizer.addEventListener('pointerdown', event => {
+  if (window.innerWidth <= 820) return;
+  event.preventDefault();
+  relatedPanelResizer.setPointerCapture(event.pointerId);
+  document.body.classList.add('related-panel-resizing');
+});
+relatedPanelResizer.addEventListener('pointermove', event => {
+  if (!relatedPanelResizer.hasPointerCapture(event.pointerId)) return;
+  applyRelatedPanelWidth(window.innerWidth - event.clientX);
+});
+const finishRelatedPanelResize = event => {
+  if (relatedPanelResizer.hasPointerCapture(event.pointerId)) relatedPanelResizer.releasePointerCapture(event.pointerId);
+  document.body.classList.remove('related-panel-resizing');
+  scheduleSave();
+};
+relatedPanelResizer.addEventListener('pointerup', finishRelatedPanelResize);
+relatedPanelResizer.addEventListener('pointercancel', finishRelatedPanelResize);
+relatedPanelResizer.addEventListener('keydown', event => {
+  if (window.innerWidth <= 820 || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  event.preventDefault();
+  const step = event.shiftKey ? 40 : 12;
+  applyRelatedPanelWidth(Number(state.draft.ui.relatedPaneWidth || 260) + (event.key === 'ArrowLeft' ? step : -step));
+  scheduleSave();
+});
 document.addEventListener('keydown', event => {
-  if (event.key === 'Tab' && state.relatedDialogOpen) {
-    const focusable = [...$('estimateLibraryView').querySelectorAll('button:not([disabled]), select:not([disabled]), input:not([disabled]), a[href]')]
-      .filter(element => element.offsetParent !== null);
-    if (focusable.length) {
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-  }
-  if (event.key === 'Escape' && state.relatedDialogOpen && !document.querySelector('dialog[open]')) {
-    event.preventDefault();
-    setRelatedPanelOpen(false);
-    return;
-  }
   if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
   event.preventDefault();
   cancelEstimateCreation();
@@ -7900,7 +7973,17 @@ document.addEventListener('paste', event => {
 
 window.addEventListener('resize', () => {
   window.requestAnimationFrame(renderPhotoTransform);
+  window.requestAnimationFrame(() => window.requestAnimationFrame(applyRelatedPanelState));
+  window.setTimeout(applyRelatedPanelState, 120);
 }, { passive: true });
+const appBarResizeObserver = 'ResizeObserver' in window
+  ? new ResizeObserver(() => window.requestAnimationFrame(applyRelatedPanelState))
+  : null;
+if (appBarResizeObserver) {
+  appBarResizeObserver.observe(document.querySelector('.app-bar'));
+  const globalHeader = document.querySelector('.nexus-ui-header');
+  if (globalHeader) appBarResizeObserver.observe(globalHeader);
+}
 
 $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollTop = event.currentTarget.scrollTop;
