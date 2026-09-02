@@ -159,6 +159,17 @@ html[data-nexus-ui-theme="light"][data-nexus-ui-app="smart-input"] {
   --shadow: 0 12px 34px rgb(79 67 48 / 8%);
 }
 
+/* Preserve the lookup/entry distinction inside the shared ivory/graphite table palette. */
+html[data-nexus-ui-app="smart-input"] body tbody td.product-search-cell,
+html[data-nexus-ui-app="smart-input"] body tbody tr:hover > td.product-search-cell {
+  background-color: var(--nexus-ui-cyan-bg) !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body tbody td.product-search-cell input {
+  background-color: transparent !important;
+  color: var(--nexus-ui-cyan) !important;
+}
+
 html[data-nexus-ui-theme="light"][data-nexus-ui-app="orderq-vnext"] {
   --white: var(--nexus-ui-panel-bg);
   --bg: var(--nexus-ui-page-bg);
