@@ -1,7 +1,7 @@
 # ORDER Q vNext Architecture
 
-Version: 0.8.0
-Reviewed: 2026-09-01
+Version: 0.8.1
+Reviewed: 2026-09-02
 Official voucher contract review: `NEXUS-SI-V2-00` / 2026-09-02
 
 ## 1. Scope
