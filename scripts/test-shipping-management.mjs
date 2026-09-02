@@ -139,6 +139,11 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.manager-colors.v1',
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
+  'manager-color-option',
+  'manager-color-row',
+  'manager-color-badge',
+  'function orderInformationManagers',
+  'renderOrderInformationBadges(displayValue, sourceRow)',
   'id="resultFilterResetButton"',
   'id="columnSortMenu"',
   'id="purchaseAutocomplete"',
@@ -281,8 +286,16 @@ assert.match(orderOpsHtml, /function setActiveFilterPanel\(panelName = ""\)/,
   "warehouse and manager filters must open from their toolbar buttons");
 assert.match(orderOpsHtml, /@page\s*\{\s*size:\s*A4 portrait;/,
   "public OrderOps screen print must use A4 portrait");
+assert.match(orderOpsHtml, /body\.printing-table\s*\{[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
+  "public OrderOps screen print must remove the shared header offset before printing");
+assert.match(orderOpsHtml, /body\.printing-table \.print-area\s*\{[^}]*position:\s*static\s*!important;[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
+  "public OrderOps print area must start at the printable page origin without reserved space");
 assert.doesNotMatch(orderOpsHtml, /sourceRow\.managerColors/,
   "public OrderOps must not retain automatic manager hash colors");
+assert.match(orderOpsHtml, /if \(sourceRow\.rowType === "reference"\) return "";/,
+  "public reference rows must not be mistaken for manager-colored rows");
+assert.match(orderOpsHtml, /tr\.reference-row td\s*\{[^}]*background:\s*var\(--slate-100\)\s*!important;/,
+  "public reference rows must retain a theme-aware neutral background");
 assert.match(orderOpsHtml, /purchase-input\[data-negative-balance="true"\][^{]*\{[^}]*background:\s*#fef9c3;/,
   "verified shortages must use a pale yellow purchase editor inside its border");
 assert.doesNotMatch(orderOpsHtml, /background:\s*#fff200/,
@@ -1898,6 +1911,11 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.manager-colors.v1',
   'oneapp.orderops.column-order.v1',
   'data-manager-filter',
+  'manager-color-option',
+  'manager-color-row',
+  'manager-color-badge',
+  'function orderInformationManagers',
+  'renderOrderInformationBadges(displayValue, sourceRow)',
   'id="resultFilterResetButton"',
   'id="columnSortMenu"',
   'id="purchaseAutocomplete"',
@@ -2061,7 +2079,7 @@ for (const ledgerContract of ['label: "수불현황"', 'label: "창고별재고"
 }
 for (const ledgerPurchasingContract of [
   'column.role === "unitPrice"', 'column.role === "orderInformation"',
-  'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationBadges(displayValue)',
+  'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationBadges(displayValue, sourceRow)',
   '["inventory", "ledger"].includes(state.activePreview)',
   'getShortageCategoryContext(workspace)', 'column.role === "rowState"',
   'block: "center"', 'class="inventory-total-frame"', '재고부족 모아보기',
@@ -2174,6 +2192,14 @@ assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/
   "canonical screen print text must be twenty percent larger than v1.35");
 assert.match(combinedCss, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
   "canonical order-status print text must be twenty percent larger than v1.35");
+assert.match(combinedCss, /body\.printing-table\s*\{[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
+  "canonical OrderOps screen print must remove the shared header offset before printing");
+assert.match(combinedCss, /body\.printing-table \.print-area\s*\{[^}]*position:\s*static\s*!important;[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
+  "canonical OrderOps print area must start at the printable page origin without reserved space");
+assert.match(html, /if \(sourceRow\.rowType === "reference"\) return "";/,
+  "canonical reference rows must not be mistaken for manager-colored rows");
+assert.match(combinedCss, /tr\.reference-row td\s*\{[^}]*background:\s*var\(--slate-100\)\s*!important;/,
+  "canonical reference rows must retain a theme-aware neutral background");
 
 const layeredSortHelperStart = html.indexOf("function compareProductCodes");
 const layeredSortHelperEnd = html.indexOf("function filteredSortedPreviewPairs", layeredSortHelperStart);

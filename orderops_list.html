@@ -1029,6 +1029,32 @@
       white-space: nowrap;
     }
     tbody tr:nth-child(even) td { background: var(--slate-50); }
+    tr.manager-color-row td:first-child { box-shadow: inset 3px 0 0 var(--manager-color); }
+    td.manager-value { overflow: visible; }
+    .manager-name {
+      display: inline-flex;
+      max-width: 100%;
+      min-height: 22px;
+      align-items: center;
+      padding: 1px 7px;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--manager-color) 55%, #cbd5e1);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--manager-color) 42%, #fff);
+      color: #25303c;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .manager-color-option label::before {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 9px;
+      border: 1px solid color-mix(in srgb, var(--manager-color) 72%, #64748b);
+      border-radius: 999px;
+      background: var(--manager-color);
+      content: "";
+    }
     td.number { text-align: right; font-variant-numeric: tabular-nums; }
     td.status { font-weight: 900; }
     td.status[data-tone="good"] { color: var(--green-700); }
@@ -1039,7 +1065,7 @@
     td.inventory-negative { color: #b91c1c !important; font-weight: 900; }
     td.unit-alert-cell { color: #b91c1c !important; font-weight: 400; }
     td.box-unit-cell { color: #0f172a !important; font-weight: 900; }
-    tr.reference-row td { color: var(--slate-600); font-style: italic; }
+    tr.reference-row td { color: var(--slate-600); background: var(--slate-100) !important; font-style: italic; }
     tr.shortage-main-row td:first-child { border-left: 3px solid #fda4af; }
     tr.shortage-candidate-row td { color: #475569; background: #f1f5f9 !important; }
     tr.shortage-candidate-row td:first-child { border-left: 3px solid #cbd5e1; }
@@ -1117,6 +1143,13 @@
       display: inline-block; max-width: 100%; padding: 2px 6px;
       overflow: hidden; border: 1px solid #a7d7cf; border-radius: 999px;
       color: #0f5f58; background: #edf9f7; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .order-information-badge.manager-color-badge {
+      padding-left: 8px;
+      border-color: color-mix(in srgb, var(--manager-color) 58%, #b8c5c3);
+      background: color-mix(in srgb, var(--manager-color) 40%, #fffdf8);
+      box-shadow: inset 3px 0 0 var(--manager-color);
+      color: #243331;
     }
     .order-information-quantity,
     .order-information-price { font-size: 10px; }
@@ -1413,11 +1446,18 @@
     .print-area { display: none; }
     @page { size: A4 portrait; margin: 8mm; }
     @media print {
-      body.printing-table { min-height: 0; background: #fff; }
+      body.printing-table {
+        min-height: 0;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff;
+      }
       body.printing-table > * { display: none !important; }
       body.printing-table .print-area {
         display: block !important;
-        padding: 0;
+        position: static !important;
+        margin: 0 !important;
+        padding: 0 !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -3985,8 +4025,11 @@
         }).join("");
         elements.managerColorOptions.innerHTML = managerNames(allocationsPreview).map((manager) => {
           const checked = state.managerFilters.has(manager);
+          const managerColor = managerColorFor(manager);
+          const colorAssigned = managerColor !== COLOR_CANCEL_COLOR;
           return `
-            <div class="warehouse-color-option">
+            <div class="warehouse-color-option ${colorAssigned ? "manager-color-option" : ""}"
+              ${colorAssigned ? `style="--manager-color:${managerColor}"` : ""}>
               <label>
                 <input type="checkbox" data-manager-filter="${escapeHtml(manager)}" ${checked ? "checked" : ""}>
                 <span>${escapeHtml(manager)}</span>
@@ -4625,13 +4668,28 @@
         return values.join("\n");
       }
 
-      function renderOrderInformationBadges(value) {
+      function orderInformationManagers(sourceRow) {
+        const productCode = engine.normalizeProductCode(sourceRow?.productCode);
+        if (!productCode) return [];
+        return (Array.isArray(state.workspace?.orders) ? state.workspace.orders : [])
+          .filter((row) => engine.normalizeProductCode(row?.productCode) === productCode)
+          .map((row) => String(row?.manager || "").trim());
+      }
+
+      function renderOrderInformationBadges(value, sourceRow) {
         const entries = String(value ?? "").split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
         if (entries.length === 0) return "";
-        return `<span class="order-information-badges">${entries.map((entry) => {
+        const managers = orderInformationManagers(sourceRow);
+        return `<span class="order-information-badges">${entries.map((entry, index) => {
+          const manager = managers[index] || "";
+          const managerColor = managerColorFor(manager);
+          const colorAssigned = isSafeManagerName(manager) && managerColor !== COLOR_CANCEL_COLOR;
+          const badgeClass = `order-information-badge${colorAssigned ? " manager-color-badge" : ""}`;
+          const badgeStyle = colorAssigned ? ` style="--manager-color:${managerColor}"` : "";
+          const badgeTitle = `${entry}${manager ? ` · 담당 ${manager}` : ""}`;
           const match = entry.match(/^(.*)(\([^()]*\))([+-]?[\d,]+(?:\.\d+)?)$/);
-          if (!match) return `<span class="order-information-badge" title="${escapeHtml(entry)}">${escapeHtml(entry)}</span>`;
-          return `<span class="order-information-badge" title="${escapeHtml(entry)}"><span class="order-information-partner">${escapeHtml(match[1])}</span><span class="order-information-quantity">${escapeHtml(match[2])}</span><span class="order-information-price">${escapeHtml(match[3])}</span></span>`;
+          if (!match) return `<span class="${badgeClass}"${badgeStyle} title="${escapeHtml(badgeTitle)}">${escapeHtml(entry)}</span>`;
+          return `<span class="${badgeClass}"${badgeStyle} title="${escapeHtml(badgeTitle)}"><span class="order-information-partner">${escapeHtml(match[1])}</span><span class="order-information-quantity">${escapeHtml(match[2])}</span><span class="order-information-price">${escapeHtml(match[3])}</span></span>`;
         }).join("")}</span>`;
       }
 
@@ -4911,10 +4969,10 @@
       function previewRowFill(previewId, sourceRow) {
         if (!sourceRow || previewId === "validation" || previewId === "inventory") return "";
         if (state.shortageFocus) return "";
-        if (sourceRow.rowType === "reference") return "#f1f5f9";
+        if (sourceRow.rowType === "reference") return "";
         const manager = String(sourceRow.manager || "").trim();
-        const color = state.managerColorSettings.colors[manager];
-        return isSafeManagerName(manager) && isSafeHexColor(color) ? color : "";
+        const color = managerColorFor(manager);
+        return isSafeManagerName(manager) && color !== COLOR_CANCEL_COLOR ? color : "";
       }
 
       function previewSearchCorpus(sourceRow, displayRow) {
@@ -5347,11 +5405,13 @@
           ? pairs.map(({ row, sourceRow }, pairIndex) => {
               const focusCandidate = state.shortageFocus && sourceRow?.shortageFocusRole === "candidate";
               const referenceRow = sourceRow?.rowType === "reference" || focusCandidate;
-              const rowFill = previewRowFill(previewId, sourceRow);
+              const managerColor = previewRowFill(previewId, sourceRow);
               const shortageCategory = state.shortageFocus && ["allocations", "ledger", "inventory"].includes(previewId)
                 ? String(sourceRow?.shortageCategory || "") : "";
               const shortageCategoryStyle = shortageCategory
                 ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
+              const managerColorStyle = managerColor ? `--manager-color:${managerColor}` : "";
+              const rowStyle = [shortageCategoryStyle, managerColorStyle].filter(Boolean).join(";");
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
@@ -5359,10 +5419,11 @@
                 shortageCategory ? "shortage-category-row" : "",
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
+                managerColor ? "manager-color-row" : "",
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
-                  style="${shortageCategoryStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
+                  style="${rowStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
@@ -5423,6 +5484,7 @@
                       warningUnitContext ? "unit-alert-cell" : "",
                       boxUnitContext ? "box-unit-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
+                      column.role === "manager" && managerColor ? "manager-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
@@ -5460,11 +5522,11 @@
                             : column.role === "rowState"
                               ? ""
                             : column.role === "orderInformation"
-                              ? renderOrderInformationBadges(displayValue)
+                              ? renderOrderInformationBadges(displayValue, sourceRow)
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
-                              : `<span class="${noticeText ? "notice-text" : ""}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    return `<td class="${classes}" style="${rowFill ? `background:#${rowFill.replace(/^#/, "")}` : ""}"
+                              : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
+                    return `<td class="${classes}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;

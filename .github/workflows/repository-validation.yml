@@ -158,6 +158,9 @@ jobs:
       - name: Test OrderOps allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs
 
+      - name: Test OrderOps manager colors, dark table contrast, and print origin
+        run: node scripts/test-orderops-theme-browser-e2e.mjs
+
       - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs
 
