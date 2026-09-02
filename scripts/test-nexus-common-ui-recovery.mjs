@@ -41,7 +41,7 @@ for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.4`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.4`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.5`;
   const runtime = `${base}nexus-ui.js?v=1.4.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
@@ -167,6 +167,10 @@ assert.match(appThemeCss, /\.disabled\\:bg-slate-200:disabled/, 'disabled Tailwi
 assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*[\s\S]*?td\.box-unit-cell/, 'ORDER Q BOX rows must override forced light-mode ink');
 assert.match(appThemeCss, /\.header-link:not\(\.header-save-button\)[\s\S]*?background-color:\s*var\(--nexus-ui-panel-bg\)/, 'ORDER Q header tools must retain dark surfaces');
 assert.match(appThemeCss, /\.execution-button\.analysis-run:disabled[\s\S]*?color:\s*var\(--nexus-ui-text\)/, 'disabled ORDER Q execution text must remain readable');
+assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*--slate-700:\s*#e0e4e8/s, 'ORDER Q dark table text must use the higher-contrast hierarchy');
+assert.match(appThemeCss, /tr\.no-order-row td\s*\{[^}]*color:\s*#aeb7c1/s, 'ORDER Q inactive rows must remain readable in dark mode');
+assert.match(appThemeCss, /td\.unit-alert-cell[\s\S]*?color:\s*var\(--nexus-ui-danger\)/, 'ORDER Q dark warning units must use the readable danger token');
+assert.match(appThemeCss, /\.order-information-badge\.manager-color-badge[\s\S]*?var\(--manager-color\)/, 'ORDER Q manager-colored information badges must survive the dark table palette');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body :is\(input, select, textarea\)/, 'dark inputs must outrank utility backgrounds');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body th/, 'dark table headers must retain a separate hierarchy');
 assert.match(appThemeCss, /\.bg-blue-600[\s\S]*?background-color:\s*var\(--nexus-ui-selection-bg\)/, 'solid blue tools must be neutralized');

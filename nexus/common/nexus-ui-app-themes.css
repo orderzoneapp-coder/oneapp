@@ -852,12 +852,12 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
   --slate-100: var(--nexus-ui-panel-subtle);
   --slate-200: var(--nexus-ui-border);
   --slate-300: var(--nexus-ui-border-strong);
-  --slate-400: #7f8b99;
-  --slate-500: var(--nexus-ui-muted);
-  --slate-600: #bcc5cf;
-  --slate-700: #d2d8df;
-  --slate-800: #dce2e8;
-  --slate-900: var(--nexus-ui-text);
+  --slate-400: #9da7b2;
+  --slate-500: #aeb7c1;
+  --slate-600: #c3cad2;
+  --slate-700: #e0e4e8;
+  --slate-800: #e8ebee;
+  --slate-900: #f1f3f5;
   --teal-100: var(--nexus-ui-cyan-bg);
   --teal-600: var(--nexus-ui-cyan);
   --teal-700: var(--nexus-ui-cyan);
@@ -867,6 +867,74 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
   --red-100: var(--nexus-ui-danger-bg);
   --green-700: var(--nexus-ui-success);
   --green-100: var(--nexus-ui-success-bg);
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel table thead th {
+  color: #edf1f5 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel :is(
+  .purchase-input,
+  .order-edit-input,
+  .inventory-input,
+  .inventory-total-frame
+) {
+  color: #edf1f5 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tr.no-order-row td {
+  color: #aeb7c1 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tr.no-order-row td.primary-readable-cell {
+  color: #cbd2d9 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel :is(
+  td.quantity-zero,
+  td.quantity-zero .inventory-input,
+  td.quantity-zero .order-edit-input
+) {
+  color: #aeb7c1 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel :is(
+  td.inventory-negative,
+  td.quantity-negative,
+  td.quantity-negative .inventory-input,
+  td.quantity-negative .order-edit-input,
+  td.unit-alert-cell,
+  td.unit-alert-cell .inventory-input,
+  td.unit-alert-cell .order-edit-input,
+  td.unit-alert-cell .inventory-total-frame
+) {
+  color: var(--nexus-ui-danger) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel .order-information-badge {
+  border-color: var(--nexus-ui-cyan-border) !important;
+  background-color: var(--nexus-ui-cyan-bg) !important;
+  color: #dce9e8 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel .order-information-badge.manager-color-badge {
+  border-color: color-mix(in srgb, var(--manager-color) 48%, var(--nexus-ui-border-strong)) !important;
+  background-color: color-mix(in srgb, var(--manager-color) 18%, var(--nexus-ui-table-row-bg)) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--manager-color) 76%, #d7dde3);
+  color: #edf1f4 !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel .order-information-badge :is(
+  .order-information-quantity,
+  .order-information-price
+) {
+  color: #bcc6cf;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel .manager-name {
+  border-color: color-mix(in srgb, var(--manager-color) 48%, var(--nexus-ui-border-strong));
+  background-color: color-mix(in srgb, var(--manager-color) 18%, var(--nexus-ui-table-row-bg));
+  color: #edf1f4;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body :is(
