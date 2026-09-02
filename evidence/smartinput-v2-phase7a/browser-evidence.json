@@ -1,0 +1,1900 @@
+{
+  "taskId": "NEXUS-SI-V2-07A",
+  "status": "PASS",
+  "db": {
+    "name": "oneapp-orderq-pre-m1-v6",
+    "version": 7,
+    "stores": [
+      "collectorSettings",
+      "customerAliases",
+      "customers",
+      "fulfillmentBalances",
+      "fulfillmentLinks",
+      "historicalOrderGroups",
+      "historicalOrderLines",
+      "importBatches",
+      "inventoryCheckpoints",
+      "inventoryLines",
+      "inventoryMovements",
+      "inventorySnapshots",
+      "ledgerDocuments",
+      "ledgerLines",
+      "mappingEvents",
+      "meta",
+      "officialCommands",
+      "orderEvents",
+      "orderItems",
+      "orders",
+      "parseResults",
+      "parserEvidence",
+      "payableEntries",
+      "pendingInventoryEffects",
+      "productMappings",
+      "products",
+      "purchaseDocuments",
+      "purchaseLines",
+      "rawInputs",
+      "receivableEntries",
+      "salesDocuments",
+      "salesLines",
+      "sourceRecords",
+      "syncQueue",
+      "unitMappings",
+      "unresolvedProducts",
+      "voucherRevisions",
+      "warehouseAliases",
+      "warehouses"
+    ]
+  },
+  "correction": {
+    "revision": 3,
+    "action": "CORRECT",
+    "movementRoles": [
+      "REVISION_REVERSAL",
+      "REVISION_AFTER_EFFECT"
+    ],
+    "movementQuantities": [
+      -5,
+      -3
+    ],
+    "originalRevisionUnchanged": true,
+    "ledgerEntries": 0,
+    "queueStatus": "WAITING_SERVER_CONTRACT",
+    "queueType": "OFFICIAL_VOUCHER_REVISION_COMMAND",
+    "counts": {
+      "purchaseDocuments": 1,
+      "purchaseLines": 1,
+      "salesDocuments": 0,
+      "salesLines": 0,
+      "officialCommands": 2,
+      "voucherRevisions": 2,
+      "inventoryMovements": 3,
+      "payableEntries": 0,
+      "receivableEntries": 0,
+      "pendingInventoryEffects": 0,
+      "unresolvedProducts": 0,
+      "syncQueue": 2
+    }
+  },
+  "retry": {
+    "duplicate": true,
+    "countsUnchanged": true
+  },
+  "replacementContract": {
+    "errors": {
+      "blankQuantity": "Error:ORDERQ_OFFICIAL_QUANTITY_REQUIRED",
+      "blankUnitPrice": "Error:ORDERQ_OFFICIAL_UNIT_PRICE_REQUIRED",
+      "blankProduct": "Error:ORDERQ_OFFICIAL_V2_PRODUCT_EXACT_MATCH_INVALID",
+      "snapshotMismatch": "Error:ORDERQ_OFFICIAL_REVISION_REPLACEMENT_LINE_SNAPSHOT_MISMATCH",
+      "documentTotalMismatch": "Error:ORDERQ_OFFICIAL_REVISION_REPLACEMENT_DOCUMENT_AMOUNT_MISMATCH"
+    },
+    "writesZero": true,
+    "zeroAccepted": true,
+    "negativeSnapshotPreserved": true
+  },
+  "saleCancel": {
+    "status": "CANCELLED",
+    "lineStatus": "CANCELLED",
+    "effectStatus": "ZERO_EFFECT",
+    "signedQuantity": 0,
+    "alreadyCancelled": "Error:ORDERQ_OFFICIAL_REVISION_ALREADY_CANCELLED"
+  },
+  "mixedStocktake": {
+    "conflicts": 2,
+    "statuses": [
+      "ABSORBED_BY_CHECKPOINT",
+      "APPLIED_AS_LATE_ADJUSTMENT"
+    ],
+    "applied": [
+      false,
+      true
+    ],
+    "middleCancel": {
+      "cancelled": true,
+      "duplicate": false,
+      "officialWrites": 0
+    },
+    "middleCancelWritesZero": true
+  },
+  "transitions": {
+    "unresolvedToMatched": {
+      "movements": 1,
+      "superseded": 1,
+      "pendingCreated": 0
+    },
+    "matchedToUnresolved": {
+      "movements": 1,
+      "pendingCreated": 1,
+      "reinspectedRevision": 3,
+      "reinspectedStatus": "UNRESOLVED_PRODUCT"
+    },
+    "rematchedCorrection": {
+      "beforeStatus": "MATCHED",
+      "movements": [
+        -7,
+        3
+      ]
+    },
+    "chainedRevision": {
+      "revision": 4,
+      "secondMovementCount": 0,
+      "revisionCount": 3,
+      "firstRevisionUnchanged": true
+    }
+  },
+  "referenceIntegrity": {
+    "fabricatedProductError": "Error:ORDERQ_OFFICIAL_REVISION_PRODUCT_SNAPSHOT_STALE",
+    "fabricatedProductWritesZero": true,
+    "falseUnresolvedProductError": "Error:ORDERQ_OFFICIAL_REVISION_PRODUCT_REFERENCE_MISMATCH",
+    "arbitraryUnresolvedIdError": "Error:ORDERQ_OFFICIAL_REVISION_UNRESOLVED_PRODUCT_ID_INVALID",
+    "falseUnresolvedProductWritesZero": true,
+    "unchangedIdentityRevision": 3,
+    "deletedMasterProviderCalls": 0,
+    "matchedPartnerUnsupported": "Error:ORDERQ_OFFICIAL_REVISION_ARAP_NEW_MATCHED_PARTNER_UNSUPPORTED",
+    "matchedPartnerWritesZero": true,
+    "falseUnresolvedPartnerError": "Error:ORDERQ_OFFICIAL_REVISION_CUSTOMER_SNAPSHOT_STALE",
+    "falseUnresolvedPartnerWritesZero": true,
+    "actualOwnerFalseUnresolvedError": "Error:ORDERQ_OFFICIAL_REVISION_CUSTOMER_REFERENCE_MISMATCH",
+    "actualOwnerFalseUnresolvedWritesZero": true
+  },
+  "headProjectionIntegrity": {
+    "contradictoryStatusError": "Error:ORDERQ_OFFICIAL_REVISION_ALREADY_CANCELLED",
+    "contradictoryStatusWritesZero": true,
+    "initialSnapshotTamperError": "Error:ORDERQ_OFFICIAL_REVISION_HEAD_BUSINESS_SNAPSHOT_MISMATCH",
+    "initialSnapshotTamperWritesZero": true,
+    "fullSnapshotTamperError": "Error:ORDERQ_OFFICIAL_REVISION_HEAD_FULL_SNAPSHOT_MISMATCH",
+    "fullSnapshotTamperWritesZero": true
+  },
+  "sourceEffectIntegrity": {
+    "error": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LINEAGE_INVALID",
+    "identityError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LINEAGE_INVALID",
+    "writesZero": true,
+    "attacks": {
+      "businessOccurredAt": {
+        "error": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_INVALID",
+        "writesZero": true
+      },
+      "hiddenReversal": {
+        "error": "Error:ORDERQ_OFFICIAL_REVISION_REVERSAL_LINEAGE_INVALID",
+        "writesZero": true
+      },
+      "extraActive": {
+        "error": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_QUANTITY_MISMATCH",
+        "writesZero": true
+      },
+      "revisionMembership": {
+        "error": "Error:ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_INVALID",
+        "writesZero": true
+      }
+    }
+  },
+  "pendingLinkIntegrity": {
+    "missing": {
+      "error": "Error:ORDERQ_OFFICIAL_REVISION_PENDING_REVIEW_LINK_INVALID",
+      "writesZero": true
+    },
+    "duplicate": {
+      "error": "Error:ORDERQ_OFFICIAL_REVISION_PENDING_REVIEW_LINK_INVALID",
+      "writesZero": true
+    },
+    "tampered": {
+      "error": "Error:ORDERQ_OFFICIAL_REVISION_PENDING_REVIEW_LINK_MISMATCH",
+      "writesZero": true
+    }
+  },
+  "activeSetCoverage": {
+    "removedMovementReversal": {
+      "normalRevision": 3,
+      "inspectError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_COVERAGE_MISMATCH",
+      "executeError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_COVERAGE_MISMATCH",
+      "writesZero": true
+    },
+    "removedPending": {
+      "normalRevision": 3,
+      "inspectError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_COVERAGE_MISMATCH",
+      "executeError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_COVERAGE_MISMATCH",
+      "writesZero": true
+    },
+    "extraMovement": {
+      "inspectError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_COVERAGE_MISMATCH",
+      "executeError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_COVERAGE_MISMATCH",
+      "writesZero": true
+    },
+    "extraPending": {
+      "inspectError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_COVERAGE_MISMATCH",
+      "executeError": "Error:ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_COVERAGE_MISMATCH",
+      "writesZero": true
+    },
+    "abbreviatedMembership": {
+      "inspectError": "Error:ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_INVALID",
+      "executeError": "Error:ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_INVALID",
+      "writesZero": true
+    }
+  },
+  "unresolvedLifecycle": {
+    "multiAfterOneStatus": "UNRESOLVED_PRODUCT",
+    "multiAfterOneActiveLinks": 1,
+    "multiVisibleAfterOne": true,
+    "multiAfterAllStatus": "NO_ACTIVE_REVIEW",
+    "multiVisibleAfterAll": false,
+    "soleStatus": "NO_ACTIVE_REVIEW",
+    "soleVisible": false,
+    "matchedReuseError": "Error:ORDERQ_OFFICIAL_REVISION_MATCHED_UNRESOLVED_ID_REUSE",
+    "matchedReuseWritesZero": true,
+    "matchedIdentityStatusAfterReuse": "MATCHED",
+    "matchedIdentityProductAfterReuse": "V2-STAGE7A-A-P2"
+  },
+  "rejects": {
+    "staleError": "Error:ORDERQ_OFFICIAL_REVISION_TARGET_STALE",
+    "crossCompany": "Error:ORDERQ_OFFICIAL_REVISION_DOCUMENT_NOT_FOUND",
+    "arApUnsupported": "Error:ORDERQ_OFFICIAL_REVISION_ARAP_EFFECT_UNSUPPORTED",
+    "payloadConflict": "Error:ORDERQ_OFFICIAL_REVISION_COMMAND_PAYLOAD_CONFLICT",
+    "payloadConflictHeadRevision": 2,
+    "payloadConflictRevisionCount": 1
+  },
+  "rollback": {
+    "error": "Error:IndexedDB transaction failed",
+    "beforeInitial": {
+      "purchaseDocuments": 30,
+      "purchaseLines": 32,
+      "salesDocuments": 2,
+      "salesLines": 3,
+      "officialCommands": 47,
+      "voucherRevisions": 47,
+      "inventoryMovements": 44,
+      "payableEntries": 1,
+      "receivableEntries": 0,
+      "pendingInventoryEffects": 11,
+      "unresolvedProducts": 9,
+      "syncQueue": 46
+    },
+    "baselineWithBlocker": {
+      "purchaseDocuments": 30,
+      "purchaseLines": 32,
+      "salesDocuments": 2,
+      "salesLines": 3,
+      "officialCommands": 47,
+      "voucherRevisions": 47,
+      "inventoryMovements": 44,
+      "payableEntries": 1,
+      "receivableEntries": 0,
+      "pendingInventoryEffects": 11,
+      "unresolvedProducts": 9,
+      "syncQueue": 47
+    },
+    "after": {
+      "purchaseDocuments": 30,
+      "purchaseLines": 32,
+      "salesDocuments": 2,
+      "salesLines": 3,
+      "officialCommands": 47,
+      "voucherRevisions": 47,
+      "inventoryMovements": 44,
+      "payableEntries": 1,
+      "receivableEntries": 0,
+      "pendingInventoryEffects": 11,
+      "unresolvedProducts": 9,
+      "syncQueue": 47
+    },
+    "headRevision": 2,
+    "revisionCount": 1,
+    "commandCommitted": false,
+    "injectedPoints": [
+      {
+        "label": "DOCUMENT_PROJECTION",
+        "store": "purchaseDocuments",
+        "method": "put",
+        "injected": true,
+        "error": "AbortError:INJECTED_DOCUMENT_PROJECTION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "LINE_PROJECTION",
+        "store": "purchaseLines",
+        "method": "put",
+        "injected": true,
+        "error": "AbortError:INJECTED_LINE_PROJECTION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "INVENTORY_MOVEMENT",
+        "store": "inventoryMovements",
+        "method": "add",
+        "injected": true,
+        "error": "AbortError:INJECTED_INVENTORY_MOVEMENT",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "PENDING_SUPERSESSION",
+        "store": "pendingInventoryEffects",
+        "method": "put",
+        "injected": true,
+        "error": "AbortError:INJECTED_PENDING_SUPERSESSION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "UNRESOLVED_PROJECTION",
+        "store": "unresolvedProducts",
+        "method": "put",
+        "injected": true,
+        "error": "AbortError:INJECTED_UNRESOLVED_PROJECTION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "PENDING_CREATION",
+        "store": "pendingInventoryEffects",
+        "method": "add",
+        "injected": true,
+        "error": "AbortError:INJECTED_PENDING_CREATION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "IMMUTABLE_REVISION",
+        "store": "voucherRevisions",
+        "method": "add",
+        "injected": true,
+        "error": "AbortError:INJECTED_IMMUTABLE_REVISION",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "COMMAND_RECEIPT",
+        "store": "officialCommands",
+        "method": "add",
+        "injected": true,
+        "error": "AbortError:INJECTED_COMMAND_RECEIPT",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      },
+      {
+        "label": "SYNC_QUEUE",
+        "store": "syncQueue",
+        "method": "add",
+        "injected": true,
+        "error": "AbortError:INJECTED_SYNC_QUEUE",
+        "countsUnchanged": true,
+        "headUnchanged": true,
+        "revisionCountUnchanged": true,
+        "commandCommitted": false
+      }
+    ]
+  },
+  "transactions": [
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "receivableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "receivableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "receivableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "salesDocuments",
+        "salesLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "receivableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "pendingInventoryEffects",
+        "inventoryMovements",
+        "unresolvedProducts",
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseLines"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "unresolvedProducts"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "unresolvedProducts"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "unresolvedProducts"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "pendingInventoryEffects"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "inventoryMovements"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "pendingInventoryEffects"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "voucherRevisions"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "officialCommands"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue",
+        "inventoryCheckpoints"
+      ],
+      "mode": "readwrite"
+    },
+    {
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "inventoryCheckpoints",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "mode": "readwrite"
+    }
+  ],
+  "isolation": {
+    "externalMutatingRequests": 0,
+    "localMutatingRequests": 0,
+    "browserExceptions": 0
+  }
+}

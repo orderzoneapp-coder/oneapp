@@ -6,11 +6,13 @@ import {
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
   inspectOfficialStocktakeConflicts,
+  inspectOfficialVoucherRevisionTarget,
   applyRemotePendingInventoryResolutionPayload,
   runOfficialInventoryRematchCommand,
+  runOfficialVoucherRevisionCommand,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from './official-voucher-repository.js?v=0.26.0';
+} from './official-voucher-repository.js?v=0.27.0';
 import {
   assertInventoryRematchCommandV2,
   buildInventoryRematchCommandV2
@@ -25,6 +27,11 @@ import {
   assertOfficialStocktakeProjectionV2,
   OfficialStocktakeInspectionUnavailableError
 } from './stocktake-conflict-v2.js?v=0.2.0';
+import {
+  assertOfficialVoucherRevisionCommandV2,
+  buildOfficialVoucherRevisionCommandV2,
+  previewOfficialVoucherRevisionV2
+} from './official-voucher-revision-core.js?v=0.1.0';
 
 // The public Gateway surface remains V1. Identity V2 is an additive,
 // feature-gated command contract rather than a breaking Gateway API change.
@@ -35,6 +42,12 @@ export const OFFICIAL_VOUCHER_V2_FEATURE_GATES = Object.freeze({
   SALE: false
 });
 export const OFFICIAL_INVENTORY_REMATCH_FEATURE_GATE = false;
+export const OFFICIAL_VOUCHER_REVISION_FEATURE_GATES = Object.freeze({
+  CORRECT_PURCHASE: false,
+  CANCEL_PURCHASE: false,
+  CORRECT_SALE: false,
+  CANCEL_SALE: false
+});
 
 const repositoryPort = Object.freeze({
   buildFrozenPurchaseIntent,
@@ -44,8 +57,10 @@ const repositoryPort = Object.freeze({
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
   inspectOfficialStocktakeConflicts,
+  inspectOfficialVoucherRevisionTarget,
   applyRemotePendingInventoryResolutionPayload,
   runOfficialInventoryRematchCommand,
+  runOfficialVoucherRevisionCommand,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
 });
@@ -66,6 +81,33 @@ function normalizeFeatureGates(value = {}) {
     PURCHASE: value.PURCHASE === true || value.purchase === true,
     SALE: value.SALE === true || value.sale === true
   });
+}
+
+function normalizeRevisionFeatureGates(value = {}) {
+  return Object.freeze({
+    CORRECT_PURCHASE: value.CORRECT_PURCHASE === true || value.correctPurchase === true,
+    CANCEL_PURCHASE: value.CANCEL_PURCHASE === true || value.cancelPurchase === true,
+    CORRECT_SALE: value.CORRECT_SALE === true || value.correctSale === true,
+    CANCEL_SALE: value.CANCEL_SALE === true || value.cancelSale === true
+  });
+}
+
+function validateRevisionBoundary(source, featureGates) {
+  const checked = assertOfficialVoucherRevisionCommandV2(source);
+  const gate = `${checked.action}_${checked.contract.kind}`;
+  if (!featureGates[gate]) throw new Error(`ORDERQ_OFFICIAL_REVISION_${gate}_FEATURE_DISABLED`);
+  return checked;
+}
+
+function assertRevisionResult(result, checked) {
+  if (text(result?.voucherRevision?.commandId) !== checked.command.commandId
+    || text(result?.document?.companyId) !== checked.command.companyId
+    || Number(result?.document?.revision) !== checked.command.expectedRevision + 1
+    || text(result?.voucherRevision?.action) !== checked.action
+    || (result?.ledgerEntries || []).length !== 0) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_RESULT_INVALID');
+  }
+  return result;
 }
 
 function validateInventoryRematchBoundary(source, inventoryRematchEnabled) {
@@ -115,9 +157,12 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
   const featureGates = normalizeFeatureGates(requestedFeatureGates);
   const inventoryRematchEnabled = requestedFeatureGates.INVENTORY_REMATCH === true
     || requestedFeatureGates.inventoryRematch === true;
+  const revisionFeatureGates = normalizeRevisionFeatureGates(
+    options.revisionFeatureGates || OFFICIAL_VOUCHER_REVISION_FEATURE_GATES);
   return Object.freeze({
     version: OFFICIAL_COMMAND_GATEWAY_VERSION,
     featureGates,
+    revisionFeatureGates,
     freezePurchaseIntent: source => repository.buildFrozenPurchaseIntent(source),
     freezeSaleIntent: source => repository.buildFrozenSaleIntent(source),
     findPurchaseBySource: identity => repository.findOfficialPurchaseBySource(identity),
@@ -172,6 +217,29 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
       }
       return Promise.resolve(repository.runOfficialInventoryRematchCommand(checked.command))
         .then(result => assertInventoryRematchResult(result, checked));
+    },
+    inspectRevisionTarget(identity) {
+      if (typeof repository.inspectOfficialVoucherRevisionTarget !== 'function') {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_REPOSITORY_UNAVAILABLE');
+      }
+      return repository.inspectOfficialVoucherRevisionTarget(identity);
+    },
+    previewRevision(source) {
+      return previewOfficialVoucherRevisionV2(source);
+    },
+    buildRevisionCommand(source) {
+      return buildOfficialVoucherRevisionCommandV2(source);
+    },
+    executeRevision(source) {
+      if (source?.cancelled === true) {
+        return Promise.resolve(Object.freeze({ cancelled: true, duplicate: false, officialWrites: 0 }));
+      }
+      const checked = validateRevisionBoundary(source, revisionFeatureGates);
+      if (typeof repository.runOfficialVoucherRevisionCommand !== 'function') {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_REPOSITORY_UNAVAILABLE');
+      }
+      return Promise.resolve(repository.runOfficialVoucherRevisionCommand(checked.command))
+        .then(result => assertRevisionResult(result, checked));
     },
     applyRemoteInventoryResolutionPayload(payload) {
       if (typeof repository.applyRemotePendingInventoryResolutionPayload !== 'function') {

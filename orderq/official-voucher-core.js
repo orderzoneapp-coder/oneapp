@@ -45,7 +45,7 @@ function requiredText(value, code) {
 }
 
 function finite(value, code) {
-  if (value === '' || value === null || value === undefined) throw new Error(code);
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) throw new Error(code);
   const number = Number(String(value).replace(/,/g, ''));
   if (!Number.isFinite(number)) throw new Error(code);
   return Object.is(number, -0) ? 0 : number;
@@ -260,9 +260,13 @@ function inventoryEffect(kind, command, document, previous, next, ordinal) {
     ...(identityV2 ? {
       productCode: text(reference.productSnapshot?.productCode || reference.productCode),
       inventoryEffectFactor: 1,
+      effectRole: 'SOURCE_VOUCHER_EFFECT',
       effectStatus: signedQuantity === 0 ? 'ZERO_EFFECT' : 'APPLIED_NORMAL',
       officialInventoryApplied: true,
-      effectiveAt: text(document.businessDate || document.purchaseDate || document.saleDate || document.voucherDate)
+      effectiveAt: text(document.businessDate || document.purchaseDate || document.saleDate || document.voucherDate),
+      businessDate: text(document.businessDate || document.purchaseDate || document.saleDate || document.voucherDate),
+      businessOccurredAt: text(reference.businessOccurredAt || document.businessOccurredAt || document.businessEffectiveAt),
+      originalSignedQuantity: signedQuantity
     } : {}),
     commandId: command.commandId,
     occurredAt: command.occurredAt,
@@ -289,6 +293,7 @@ function pendingInventoryEffect(kind, command, document, previous, next, ordinal
     sourceDocumentRevision: document.revision,
     voucherMode: kind.toLowerCase(),
     effectiveAt: text(document.businessDate || document.purchaseDate || document.saleDate || document.salesDate || document.voucherDate),
+    businessOccurredAt: text(reference.businessOccurredAt || document.businessOccurredAt || document.businessEffectiveAt),
     signedQuantity,
     status: 'PENDING_PRODUCT_MATCH',
     ...(identityV2 ? {

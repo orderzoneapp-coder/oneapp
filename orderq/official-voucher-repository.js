@@ -16,6 +16,8 @@ import {
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
+  assertOfficialPartnerResolutionV2,
+  assertOfficialProductResolutionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
 } from './official-voucher-v2-contract.js?v=0.5.0';
@@ -29,7 +31,15 @@ import {
   getProductSnapshot,
   PRODUCT_SNAPSHOT_SCHEMA_VERSION
 } from '../reference-data/product-master-read-adapter.js?v=1.0.0';
+import { getCustomerSnapshot } from '../customer-master/read-adapter.js?v=1.0.0';
 import { sha256Hex } from '../reference-data/change-request-contract.js?v=1.0.0';
+import {
+  assertOfficialRevisionTargetV2,
+  assertOfficialVoucherRevisionCommandV2,
+  OFFICIAL_REVISION_TARGET_SCHEMA_V2,
+  planOfficialVoucherRevisionCommandV2,
+  withOfficialRevisionTargetDigestV2
+} from './official-voucher-revision-core.js?v=0.1.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -59,6 +69,9 @@ function kindContract(kind) {
       lineStore: STORE.PURCHASE_LINES,
       documentId: 'purchaseDocumentId',
       lineId: 'purchaseLineId',
+      documentEntity: 'PURCHASE_DOCUMENT',
+      lineEntity: 'PURCHASE_LINE',
+      revisionEntity: 'PURCHASE_REVISION',
       partnerEntryStore: STORE.PAYABLE_ENTRIES
     }
     : {
@@ -68,6 +81,9 @@ function kindContract(kind) {
       lineStore: STORE.SALES_LINES,
       documentId: 'salesDocumentId',
       lineId: 'salesLineId',
+      documentEntity: 'SALE_DOCUMENT',
+      lineEntity: 'SALE_LINE',
+      revisionEntity: 'SALE_REVISION',
       partnerEntryStore: STORE.RECEIVABLE_ENTRIES
     };
 }
@@ -323,6 +339,682 @@ async function loadAggregate(kind, id) {
 export const loadOfficialPurchaseAggregate = id => loadAggregate('PURCHASE', id);
 export const loadOfficialSaleAggregate = id => loadAggregate('SALE', id);
 
+function revisionLineSnapshot(revision = {}) {
+  return Array.isArray(revision.afterSnapshot?.lines) ? revision.afterSnapshot.lines : [];
+}
+
+function revisionDocumentSnapshot(revision = {}) {
+  return revision.afterSnapshot?.document || revision.afterSnapshot || null;
+}
+
+function confirmedStatus(value) {
+  return text(value).toUpperCase() === 'CONFIRMED';
+}
+
+function partnerIdFor(contract, document) {
+  return contract.kind === 'PURCHASE' ? text(document.supplierCustomerId)
+    : text(document.billingCustomerId || document.salesCustomerId);
+}
+
+function initialRevisionDocumentProjection(contract, document) {
+  return {
+    companyId: text(document.companyId),
+    voucherMode: contract.mode,
+    documentId: text(document[contract.documentId]),
+    revision: Number(document.revision),
+    status: text(document.status).toUpperCase(),
+    partnerId: partnerIdFor(contract, document),
+    warehouseId: text(document.warehouseId),
+    supplyAmount: Number(document.supplyAmount),
+    vatAmount: document.vatAmount ?? null,
+    totalAmount: Number(document.totalAmount),
+    schemaVersion: text(document.schemaVersion),
+    identityVersion: text(document.identityVersion),
+    entityType: contract.revisionEntity,
+    voucherGroupKey: text(document.voucherGroupKey),
+    officialPartnerResolution: clone(document.officialPartnerResolution)
+  };
+}
+
+function initialRevisionLineProjection(contract, line) {
+  return {
+    lineId: text(line[contract.lineId]),
+    lineIdentityId: text(line.lineIdentityId),
+    productId: text(line.productId),
+    unresolvedProductId: text(line.unresolvedProductId),
+    warehouseId: text(line.warehouseId),
+    quantity: Number(line.actualQuantity),
+    baseQuantity: Number(line.baseQuantity),
+    unitPrice: Number(line.unitPrice),
+    supplyAmount: Number(line.supplyAmount),
+    vatAmount: line.vatAmount ?? null,
+    totalAmount: Number(line.totalAmount),
+    schemaVersion: text(line.schemaVersion),
+    identityVersion: text(line.identityVersion),
+    entityType: text(line.entityType),
+    companyId: text(line.companyId),
+    voucherGroupKey: text(line.voucherGroupKey),
+    productCode: text(line.productCode),
+    productName: text(line.productName),
+    specification: text(line.specification),
+    unit: text(line.unit || line.actualUnit),
+    originalProductCode: text(line.originalProductCode),
+    originalProductName: text(line.originalProductName),
+    productSnapshot: clone(line.productSnapshot)
+  };
+}
+
+function assertCurrentRevisionProjection(contract, document, lines, revision) {
+  if (!revision || canonicalSha256(revision.beforeSnapshot) !== text(revision.beforeDigest)
+    || canonicalSha256(revision.afterSnapshot) !== text(revision.afterDigest)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_HASH_INVALID');
+  }
+  if (!confirmedStatus(document.status) || !confirmedStatus(document.businessStatus)
+    || !confirmedStatus(revision.status)
+    || text(document.commandId) !== text(revision.commandId)
+    || text(document.lastVoucherRevisionId) !== text(revision.voucherRevisionId)
+    || text(document.companyId) !== text(revision.companyId)
+    || text(document[contract.documentId]) !== text(revision.documentId)
+    || Number(document.revision) !== Number(revision.revision)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_LINK_INVALID');
+  }
+  const snapshotDocument = revisionDocumentSnapshot(revision);
+  const snapshotLines = revisionLineSnapshot(revision);
+  if (!snapshotDocument || snapshotLines.length !== lines.length) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_PROJECTION_INVALID');
+  }
+  const fullSnapshot = text(revision.afterSnapshot?.schemaVersion) === OFFICIAL_REVISION_TARGET_SCHEMA_V2
+    && revision.afterSnapshot?.document;
+  if (fullSnapshot) {
+    const currentLines = [...lines].sort((left, right) => text(left[contract.lineId]).localeCompare(text(right[contract.lineId])));
+    const storedLines = [...snapshotLines].sort((left, right) => text(left[contract.lineId]).localeCompare(text(right[contract.lineId])));
+    if (canonicalSha256(document) !== canonicalSha256(snapshotDocument)
+      || canonicalSha256(currentLines) !== canonicalSha256(storedLines)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_FULL_SNAPSHOT_MISMATCH');
+    }
+    return;
+  }
+  const snapshotDocumentProjection = { ...clone(snapshotDocument) };
+  delete snapshotDocumentProjection.lines;
+  if (canonicalSha256(initialRevisionDocumentProjection(contract, document))
+    !== canonicalSha256(snapshotDocumentProjection)
+    || text(revision.businessDate) !== text(document.businessDate)
+    || text(document[contract.kind === 'PURCHASE' ? 'purchaseDate' : 'saleDate']) !== text(document.businessDate)
+    || text(revision.voucherGroupKey) !== text(document.voucherGroupKey)
+    || text(revision.entityType) !== contract.revisionEntity) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_BUSINESS_SNAPSHOT_MISMATCH');
+  }
+  assertOfficialPartnerResolutionV2(document, document.companyId);
+  const lineById = new Map(lines.map(line => [text(line[contract.lineId]), line]));
+  snapshotLines.forEach(snapshot => {
+    const current = lineById.get(text(snapshot.lineId || snapshot[contract.lineId]));
+    if (!current || text(current.companyId) !== text(document.companyId)
+      || Number(current.revision) !== Number(document.revision)
+      || text(current.lineStatus).toUpperCase() !== 'ACTIVE'
+      || text(current.status).toUpperCase() !== 'CONFIRMED'
+      || text(current.commandId) !== text(revision.commandId)
+      || text(current.entityType) !== contract.lineEntity
+      || text(current[contract.documentId]) !== text(document[contract.documentId])
+      || canonicalSha256(initialRevisionLineProjection(contract, current)) !== canonicalSha256(snapshot)
+      || (text(current.businessDate) && text(current.businessDate) !== text(document.businessDate))
+      || (text(current.businessOccurredAt) && !text(current.businessOccurredAt).startsWith(`${text(document.businessDate)}T`))) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_LINE_MISMATCH');
+    }
+    const resolution = assertOfficialProductResolutionV2(current, document.companyId);
+    if (canonicalSha256(resolution) !== canonicalSha256(current.productSnapshot?.matchEvidence?.officialProductResolution)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_PRODUCT_RESOLUTION_MISMATCH');
+    }
+  });
+}
+
+function movementIsCurrent(row, reversedIds) {
+  return !reversedIds.has(text(row.movementId));
+}
+
+function lineSignedQuantity(contract, line) {
+  const quantity = Number(line.actualQuantity ?? line.quantity);
+  if (!Number.isFinite(quantity) || Number(line.baseQuantity) !== quantity || Number(line.inventoryEffectFactor) !== 1) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_SOURCE_FACTOR_INVALID');
+  }
+  const signed = (contract.kind === 'PURCHASE' ? 1 : -1) * quantity;
+  return Object.is(signed, -0) ? 0 : signed;
+}
+
+function movementBusinessDate(row) {
+  return text(row.businessDate || row.effectiveAt);
+}
+
+function movementDatesMatch(row, expectedBusinessDate) {
+  const businessDate = text(row.businessDate);
+  const effectiveAt = text(row.effectiveAt);
+  return Boolean(businessDate || effectiveAt)
+    && (!businessDate || businessDate === expectedBusinessDate)
+    && (!effectiveAt || effectiveAt === expectedBusinessDate);
+}
+
+function sourceRevisionForMovement(contract, document, revisions, row) {
+  const revision = revisions.find(item => text(item.companyId) === text(document.companyId)
+    && text(item.voucherMode).toLowerCase() === contract.mode
+    && text(item.documentId) === text(document[contract.documentId])
+    && Number(item.revision) === Number(row.sourceDocumentRevision));
+  if (!revision || canonicalSha256(revision.beforeSnapshot) !== text(revision.beforeDigest)
+    || canonicalSha256(revision.afterSnapshot) !== text(revision.afterDigest)) return null;
+  return revision;
+}
+
+function effectMember(revision, row) {
+  const members = (revision?.effects || []).filter(effect => text(effect.id) === text(row.movementId));
+  if (members.length !== 1) throw new Error('ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_INVALID');
+  const effect = members[0];
+  const rematch = text(revision?.voucherMode).toLowerCase() === 'inventory-rematch';
+  const revisionAfter = revision?.afterSnapshot?.schemaVersion === OFFICIAL_REVISION_TARGET_SCHEMA_V2;
+  const initialV2 = revision?.afterSnapshot?.schemaVersion === 'ONEAPP_ORDERQ_OFFICIAL_VOUCHER_V2';
+  const required = rematch
+    ? ['type', 'pendingEffectId', 'status', 'stocktakeEffectStatus', 'officialInventoryApplied',
+      'signedQuantity', 'originalSignedQuantity']
+    : revisionAfter
+      ? ['type', 'status', 'reversalStatus', 'stocktakeEffectStatus', 'officialInventoryApplied', 'effectRole',
+        'signedQuantity', 'originalSignedQuantity']
+      : initialV2
+        ? ['type', 'status', 'stocktakeEffectStatus', 'officialInventoryApplied', 'effectRole']
+        : ['type'];
+  if (required.some(key => !Object.prototype.hasOwnProperty.call(effect, key))
+    || (rematch
+      ? !['INVENTORY', 'INVENTORY_CHECKPOINT_ABSORPTION'].includes(text(effect.type))
+        || !text(effect.pendingEffectId)
+      : text(effect.type) !== 'INVENTORY')
+    || (required.includes('status') && !text(effect.status))
+    || (required.includes('effectRole') && !text(effect.effectRole))
+    || (required.includes('officialInventoryApplied') && typeof effect.officialInventoryApplied !== 'boolean')
+    || (required.includes('signedQuantity') && !Number.isFinite(Number(effect.signedQuantity)))
+    || (required.includes('originalSignedQuantity') && !Number.isFinite(Number(effect.originalSignedQuantity)))) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_INVALID');
+  }
+  const comparisons = [
+    ['status', 'effectStatus'], ['reversalStatus', 'reversalStatus'],
+    ['stocktakeEffectStatus', 'stocktakeEffectStatus'],
+    ['officialInventoryApplied', 'officialInventoryApplied'], ['effectRole', 'effectRole'],
+    ['pendingEffectId', 'pendingEffectId'], ['signedQuantity', 'signedQuantity'],
+    ['originalSignedQuantity', 'originalSignedQuantity']
+  ];
+  comparisons.forEach(([effectKey, rowKey]) => {
+    if (!Object.prototype.hasOwnProperty.call(effect, effectKey)) return;
+    const numeric = ['signedQuantity', 'originalSignedQuantity'].includes(effectKey);
+    const boolean = effectKey === 'officialInventoryApplied';
+    const equal = numeric ? Number(effect[effectKey]) === Number(row[rowKey])
+      : boolean ? effect[effectKey] === row[rowKey] : text(effect[effectKey]) === text(row[rowKey]);
+    if (!equal) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_EFFECT_MEMBERSHIP_MISMATCH');
+    }
+  });
+  return effect;
+}
+
+function assertMovementLineage(contract, document, movements, revisions) {
+  const byId = new Map(movements.map(row => [text(row.movementId), row]));
+  const reversalCounts = new Map();
+  movements.forEach(row => {
+    if (!Number.isInteger(Number(row.sourceDocumentRevision))
+      || Number(row.sourceDocumentRevision) > Number(document.revision)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LINEAGE_INVALID');
+    }
+    let revision;
+    if (text(row.pendingEffectId)) {
+      revision = revisions.find(item => text(item.companyId) === text(document.companyId)
+        && text(item.voucherMode).toLowerCase() === 'inventory-rematch'
+        && text(item.commandId) === text(row.commandId));
+    } else {
+      revision = sourceRevisionForMovement(contract, document, revisions, row);
+      if (revision && text(revision.commandId) !== text(row.commandId)) revision = null;
+    }
+    if (!revision) throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LINEAGE_INVALID');
+    effectMember(revision, row);
+    const reversalOf = text(row.reversalOfMovementId);
+    if ((text(row.effectRole) === 'REVISION_REVERSAL') !== Boolean(reversalOf)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_REVERSAL_LINEAGE_INVALID');
+    }
+    if (!reversalOf) return;
+    reversalCounts.set(reversalOf, (reversalCounts.get(reversalOf) || 0) + 1);
+    const source = byId.get(reversalOf);
+    if (!source || text(source.effectRole) === 'REVISION_REVERSAL'
+      || text(source.companyId) !== text(row.companyId)
+      || text(source.voucherMode).toLowerCase() !== text(row.voucherMode).toLowerCase()
+      || text(source.sourceDocumentId) !== text(row.sourceDocumentId)
+      || text(source.sourceLineId) !== text(row.sourceLineId)
+      || text(source.productId) !== text(row.productId)
+      || text(source.productCode) !== text(row.productCode)
+      || text(source.warehouseId) !== text(row.warehouseId)
+      || movementBusinessDate(source) !== movementBusinessDate(row)
+      || text(source.businessOccurredAt) !== text(row.businessOccurredAt)
+      || Number(row.sourceDocumentRevision) <= Number(source.sourceDocumentRevision)
+      || Number(row.reversesOriginalSignedQuantity) !== Number(source.originalSignedQuantity ?? source.signedQuantity)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_REVERSAL_LINEAGE_INVALID');
+    }
+  });
+  if ([...reversalCounts.values()].some(count => count !== 1)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_REVERSAL_LINEAGE_INVALID');
+  }
+}
+
+function activeMovementRows(movements, lineId) {
+  const reversedIds = new Set(movements.map(row => text(row.reversalOfMovementId)).filter(Boolean));
+  return movements.filter(row => text(row.sourceLineId) === text(lineId)
+    && text(row.effectRole) !== 'REVISION_REVERSAL' && movementIsCurrent(row, reversedIds));
+}
+
+function sameEffectIds(left, right) {
+  const ids = rows => rows.map(row => text(row.movementId)).sort();
+  return canonicalSha256(ids(left)) === canonicalSha256(ids(right));
+}
+
+function assertDocumentActiveSetCoverage(movements, pendingEffects, effectiveLineStates) {
+  const reversedIds = new Set(movements.map(row => text(row.reversalOfMovementId)).filter(Boolean));
+  const actualMovementIds = movements.filter(row => text(row.effectRole) !== 'REVISION_REVERSAL'
+    && movementIsCurrent(row, reversedIds)).map(row => text(row.movementId)).sort();
+  const expectedMovementIds = effectiveLineStates.flatMap(state =>
+    (state.activeInventoryEffects || []).map(row => text(row.movementId))).sort();
+  if (actualMovementIds.some(id => !id) || expectedMovementIds.some(id => !id)
+    || canonicalSha256(actualMovementIds) !== canonicalSha256(expectedMovementIds)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_COVERAGE_MISMATCH');
+  }
+  const actualPendingIds = pendingEffects.filter(row => text(row.status) === 'PENDING_PRODUCT_MATCH')
+    .map(row => text(row.pendingEffectId)).sort();
+  const expectedPendingIds = effectiveLineStates.flatMap(state => state.activePendingEffect
+    ? [text(state.activePendingEffect.pendingEffectId)] : []).sort();
+  if (actualPendingIds.some(id => !id) || expectedPendingIds.some(id => !id)
+    || canonicalSha256(actualPendingIds) !== canonicalSha256(expectedPendingIds)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_COVERAGE_MISMATCH');
+  }
+}
+
+function assertAppliedEffectState(row, expectedSignedQuantity, { revisionAfter = false } = {}) {
+  const applied = row.officialInventoryApplied === true;
+  const signed = Number(row.signedQuantity);
+  const original = row.originalSignedQuantity === undefined ? signed : Number(row.originalSignedQuantity);
+  const stocktake = text(row.stocktakeEffectStatus);
+  if (![signed, original].every(Number.isFinite) || original !== expectedSignedQuantity) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_QUANTITY_MISMATCH');
+  }
+  if (!stocktake) {
+    if (!applied || signed !== expectedSignedQuantity
+      || text(row.effectStatus) !== (expectedSignedQuantity === 0 ? 'ZERO_EFFECT' : 'APPLIED_NORMAL')) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_STATUS_INVALID');
+    }
+    return;
+  }
+  if (stocktake === 'ABSORBED_BY_CHECKPOINT') {
+    if (applied || signed !== 0 || text(row.effectRole) === 'LATE_ADJUSTMENT'
+      || (expectedSignedQuantity === 0 ? text(row.effectStatus) !== 'ZERO_EFFECT'
+        : revisionAfter ? text(row.effectStatus) !== 'APPLIED_NORMAL'
+          : text(row.effectStatus) !== 'ABSORBED_BY_CHECKPOINT')) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_ABSORPTION_INVALID');
+    }
+    return;
+  }
+  if (stocktake === 'APPLIED_AS_LATE_ADJUSTMENT') {
+    const source = text(row.effectRole) === 'SOURCE_VOUCHER_EFFECT';
+    const expectedStatus = expectedSignedQuantity === 0 ? 'ZERO_EFFECT'
+      : revisionAfter ? 'APPLIED_NORMAL' : 'APPLIED_AS_LATE_ADJUSTMENT';
+    if ((source ? (applied || signed !== 0) : (!applied || signed !== expectedSignedQuantity))
+      || text(row.effectStatus) !== expectedStatus) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LATE_INVALID');
+    }
+    return;
+  }
+  throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_STOCKTAKE_STATUS_INVALID');
+}
+
+function assertRematchMovement(contract, document, line, row, signedQuantity, pendingEffects, unresolvedRows) {
+  const pending = pendingEffects.find(item => text(item.pendingEffectId) === text(row.pendingEffectId));
+  const unresolved = unresolvedRows.find(item => text(item.unresolvedProductId) === text(pending?.unresolvedProductId));
+  if (!pending || !unresolved || text(pending.companyId) !== text(document.companyId)
+    || !/^RESOLVED/.test(text(pending.status))
+    || text(pending.sourceDocumentId) !== text(document[contract.documentId])
+    || text(pending.sourceLineId) !== text(line[contract.lineId])
+    || Number(pending.sourceDocumentRevision) !== Number(row.sourceDocumentRevision)
+    || text(pending.voucherRevisionId) !== text(row.sourceVoucherRevisionId)
+    || text(pending.warehouseId) !== text(row.warehouseId)
+    || text(pending.effectiveAt) !== movementBusinessDate(row)
+    || Number(pending.signedQuantity) !== signedQuantity
+    || text(pending.productId) !== text(row.productId)
+    || text(pending.productCode) !== text(row.productCode)
+    || text(pending.resolutionCommandId) !== text(row.commandId)
+    || text(pending.resolutionId) !== text(row.resolutionId)
+    || text(unresolved.companyId) !== text(document.companyId)
+    || text(unresolved.status) !== 'MATCHED'
+    || text(unresolved.productId) !== text(row.productId)
+    || text(unresolved.resolutionCommandId) !== text(row.commandId)
+    || text(unresolved.resolutionId) !== text(row.resolutionId)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_REMATCH_EFFECT_INVALID');
+  }
+  const type = text(row.movementType);
+  const stocktake = text(row.stocktakeEffectStatus);
+  const expectedType = stocktake === 'ABSORBED_BY_CHECKPOINT' ? 'STOCKTAKE_CHECKPOINT_ABSORPTION'
+    : stocktake === 'APPLIED_AS_LATE_ADJUSTMENT' ? 'STOCKTAKE_LATE_ADJUSTMENT'
+      : 'PENDING_PRODUCT_MATCH_RESOLVED';
+  if (type !== expectedType || text(row.effectRole)
+    || Number(row.inventoryEffectFactor) !== 1) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_REMATCH_EFFECT_TYPE_INVALID');
+  }
+  assertAppliedEffectState(row, signedQuantity);
+}
+
+function assertPendingReviewLink(pending, unresolved) {
+  const links = (unresolved?.reviewLinks || []).filter(link =>
+    text(link.pendingEffectId) === text(pending?.pendingEffectId));
+  if (!pending || !unresolved || links.length !== 1) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_PENDING_REVIEW_LINK_INVALID');
+  }
+  const link = links[0];
+  const expected = {
+    companyId: text(pending.companyId), voucherMode: text(pending.voucherMode).toLowerCase(),
+    sourceDocumentId: text(pending.sourceDocumentId), sourceLineId: text(pending.sourceLineId),
+    sourceDocumentRevision: Number(pending.sourceDocumentRevision),
+    voucherRevisionId: text(pending.voucherRevisionId), commandId: text(pending.commandId),
+    warehouseId: text(pending.warehouseId), businessDate: text(pending.effectiveAt),
+    businessOccurredAt: text(pending.businessOccurredAt), quantity: Number(pending.quantity),
+    signedQuantity: Number(pending.signedQuantity), unitPrice: Number(pending.unitPrice),
+    totalAmount: Number(pending.totalAmount), productSnapshot: pending.productSnapshot,
+    productResolution: pending.productResolution
+  };
+  const actual = {
+    companyId: text(link.companyId), voucherMode: text(link.voucherMode).toLowerCase(),
+    sourceDocumentId: text(link.sourceDocumentId), sourceLineId: text(link.sourceLineId),
+    sourceDocumentRevision: Number(link.sourceDocumentRevision),
+    voucherRevisionId: text(link.voucherRevisionId), commandId: text(link.commandId),
+    warehouseId: text(link.warehouseId), businessDate: text(link.businessDate),
+    businessOccurredAt: text(link.businessOccurredAt), quantity: Number(link.quantity),
+    signedQuantity: Number(link.signedQuantity), unitPrice: Number(link.unitPrice),
+    totalAmount: Number(link.totalAmount), productSnapshot: link.productSnapshot,
+    productResolution: link.productResolution
+  };
+  if (canonicalSha256(actual) !== canonicalSha256(expected)
+    || text(unresolved.unresolvedProductId) !== text(pending.unresolvedProductId)
+    || text(unresolved.companyId) !== text(pending.companyId)
+    || text(unresolved.status) !== 'UNRESOLVED_PRODUCT'
+    || text(unresolved.inventoryEffectStatus) !== 'UNRESOLVED_PRODUCT'
+    || unresolved.officialInventoryApplied !== false
+    || text(link.inventoryEffectStatus) !== 'UNRESOLVED_PRODUCT'
+    || link.officialInventoryApplied !== false) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_PENDING_REVIEW_LINK_MISMATCH');
+  }
+  return link;
+}
+
+function assertActivePending(contract, document, line, pending, revision, unresolvedRows) {
+  const unresolved = unresolvedRows.find(row => text(row.unresolvedProductId) === text(pending?.unresolvedProductId));
+  assertPendingReviewLink(pending, unresolved);
+  const expectedDate = text(line.businessDate || document.businessDate || document.purchaseDate || document.saleDate);
+  const expectedOccurredAt = text(line.businessOccurredAt || document.businessOccurredAt || document.businessEffectiveAt);
+  if (text(pending.status) !== 'PENDING_PRODUCT_MATCH'
+    || text(pending.inventoryEffectStatus) !== 'UNRESOLVED_PRODUCT'
+    || pending.officialInventoryApplied !== false
+    || text(pending.companyId) !== text(document.companyId)
+    || text(pending.voucherMode).toLowerCase() !== contract.mode
+    || text(pending.sourceDocumentId) !== text(document[contract.documentId])
+    || text(pending.sourceLineId) !== text(line[contract.lineId])
+    || Number(pending.sourceDocumentRevision) !== Number(document.revision)
+    || text(pending.voucherRevisionId) !== text(revision.voucherRevisionId)
+    || text(pending.commandId) !== text(revision.commandId)
+    || text(pending.warehouseId) !== text(line.warehouseId)
+    || text(pending.effectiveAt) !== expectedDate
+    || text(pending.businessOccurredAt) !== expectedOccurredAt
+    || Number(pending.quantity) !== Number(line.actualQuantity ?? line.quantity)
+    || Number(pending.signedQuantity) !== lineSignedQuantity(contract, line)
+    || Number(pending.unitPrice) !== Number(line.unitPrice)
+    || Number(pending.totalAmount) !== Number(line.totalAmount)
+    || canonicalSha256(pending.productSnapshot) !== canonicalSha256(line.productSnapshot)
+    || canonicalSha256(pending.productResolution) !== canonicalSha256(line.officialProductResolution)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_INVALID');
+  }
+}
+
+function assertCurrentMovementGroup(contract, document, line, movements, signedQuantity,
+  { revisions = [], pendingEffects = [], unresolvedRows = [], state = null } = {}) {
+  if (!movements.length) throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_REQUIRED');
+  const expectedProductId = text(state?.productId || line.productId);
+  const expectedProductCode = text(state?.productCode || line.productSnapshot?.productCode || line.productCode);
+  const expectedWarehouseId = text(state?.warehouseId || line.warehouseId);
+  const expectedBusinessDate = text(state?.businessDate || line.businessDate || document.businessDate
+    || document.purchaseDate || document.saleDate);
+  const expectedBusinessOccurredAt = text(state?.businessOccurredAt || line.businessOccurredAt
+    || document.businessOccurredAt || document.businessEffectiveAt);
+  const invalid = movements.find(row => text(row.companyId) !== text(document.companyId)
+    || text(row.voucherMode).toLowerCase() !== contract.mode
+    || text(row.sourceDocumentId) !== text(document[contract.documentId])
+    || text(row.sourceLineId) !== text(line[contract.lineId])
+    || text(row.productId) !== expectedProductId
+    || text(row.productCode) !== expectedProductCode
+    || text(row.warehouseId) !== expectedWarehouseId
+    || !movementDatesMatch(row, expectedBusinessDate)
+    || text(row.businessOccurredAt) !== expectedBusinessOccurredAt
+    || Number(row.inventoryEffectFactor ?? 1) !== 1
+    || !Number.isInteger(Number(row.sourceDocumentRevision))
+    || Number(row.sourceDocumentRevision) > Number(document.revision)
+    || text(row.reversalStatus) || text(row.reversalOfMovementId));
+  if (invalid) throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_INVALID');
+  const rematchRows = movements.filter(row => text(row.pendingEffectId));
+  if (rematchRows.length) {
+    if (rematchRows.length !== movements.length || rematchRows.length !== 1) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_REMATCH_EFFECT_INVALID');
+    }
+    assertRematchMovement(contract, document, line, rematchRows[0], signedQuantity, pendingEffects, unresolvedRows);
+  } else {
+    movements.forEach(row => {
+      const sourceRevision = sourceRevisionForMovement(contract, document, revisions, row);
+      const role = text(row.effectRole);
+      const revisionAfter = role === 'REVISION_AFTER_EFFECT';
+      const sourceVoucher = !role || role === 'SOURCE_VOUCHER_EFFECT' || role === 'LATE_ADJUSTMENT';
+      if (!sourceRevision || text(sourceRevision.commandId) !== text(row.commandId)
+        || (text(row.sourceVoucherRevisionId) && text(row.sourceVoucherRevisionId) !== text(sourceRevision.voucherRevisionId))
+        || (revisionAfter && text(row.movementType) !== 'OFFICIAL_REVISION_APPLICATION')
+        || (sourceVoucher && ![`${contract.kind}_POST`, 'STOCKTAKE_LATE_ADJUSTMENT'].includes(text(row.movementType)))
+        || (!revisionAfter && !sourceVoucher)) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LINEAGE_INVALID');
+      }
+      if (role === 'LATE_ADJUSTMENT') {
+        const source = movements.find(item => text(item.movementId) === text(row.sourceMovementId)
+          && text(item.effectRole) === 'SOURCE_VOUCHER_EFFECT');
+        if (!source) throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_LATE_SOURCE_INVALID');
+      }
+      assertAppliedEffectState(row, signedQuantity, { revisionAfter });
+    });
+  }
+  const applied = movements.filter(row => row.officialInventoryApplied === true)
+    .reduce((sum, row) => sum + Number(row.signedQuantity), 0);
+  if (!Number.isFinite(applied) || (applied !== signedQuantity && applied !== 0)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_QUANTITY_MISMATCH');
+  }
+}
+
+function normalizeStoredEffectiveStates(contract, document, lines, revision, movements, pendingEffects,
+  revisions, unresolvedRows) {
+  const stored = revision.afterSnapshot?.schemaVersion === OFFICIAL_REVISION_TARGET_SCHEMA_V2
+    ? revision.afterSnapshot.effectiveLineStates : null;
+  if (!Array.isArray(stored) || stored.length !== lines.length) return null;
+  const movementById = new Map(movements.map(row => [text(row.movementId), row]));
+  const pendingById = new Map(pendingEffects.map(row => [text(row.pendingEffectId), row]));
+  const lineById = new Map(lines.map(line => [text(line[contract.lineId]), line]));
+  return stored.map(source => {
+    const state = clone(source);
+    const line = lineById.get(text(state.lineId));
+    if (!line) throw new Error('ORDERQ_OFFICIAL_REVISION_EFFECT_LINE_MISMATCH');
+    if (state.status === 'MATCHED') {
+      const activeInventoryEffects = (state.activeInventoryEffects || []).map(effect => {
+        const current = movementById.get(text(effect.movementId));
+        if (!current || canonicalSha256(current) !== canonicalSha256(effect)) {
+          throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_STALE');
+        }
+        return current;
+      });
+      const actualActive = activeMovementRows(movements, line[contract.lineId]);
+      if (!sameEffectIds(activeInventoryEffects, actualActive)) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_SET_MISMATCH');
+      }
+      assertCurrentMovementGroup(contract, document, line, activeInventoryEffects, lineSignedQuantity(contract, line),
+        { revisions, pendingEffects, unresolvedRows, state });
+      return { ...state, activeInventoryEffects: clone(activeInventoryEffects) };
+    }
+    const pending = pendingById.get(text(state.activePendingEffect?.pendingEffectId));
+    if (!pending || canonicalSha256(pending) !== canonicalSha256(state.activePendingEffect)
+      || text(pending.status) !== 'PENDING_PRODUCT_MATCH') {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_STALE');
+    }
+    if (activeMovementRows(movements, line[contract.lineId]).length) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_SET_MISMATCH');
+    }
+    assertActivePending(contract, document, line, pending, revision, unresolvedRows);
+    return { ...state, activePendingEffect: clone(pending) };
+  });
+}
+
+function deriveEffectiveStates(contract, document, lines, movements, pendingEffects, revisions, unresolvedRows) {
+  const reversedIds = new Set(movements.map(row => text(row.reversalOfMovementId)).filter(Boolean));
+  return lines.map(line => {
+    const lineId = text(line[contract.lineId]);
+    const signedQuantity = lineSignedQuantity(contract, line);
+    const businessDate = text(line.businessDate || document.businessDate || document.purchaseDate || document.saleDate);
+    const businessOccurredAt = text(line.businessOccurredAt || document.businessOccurredAt || document.businessEffectiveAt);
+    const direct = activeMovementRows(movements, lineId);
+    if (text(line.productId)) {
+      assertCurrentMovementGroup(contract, document, line, direct, signedQuantity,
+        { revisions, pendingEffects, unresolvedRows });
+      return {
+        lineId, status: 'MATCHED', productId: text(line.productId),
+        productCode: text(line.productSnapshot?.productCode || line.productCode),
+        warehouseId: text(line.warehouseId), businessDate, businessOccurredAt, signedQuantity,
+        activeInventoryEffects: clone(direct)
+      };
+    }
+    const linkedPending = pendingEffects.filter(row => text(row.sourceLineId) === lineId
+      && Number(row.sourceDocumentRevision) === Number(document.revision));
+    const active = linkedPending.filter(row => text(row.status) === 'PENDING_PRODUCT_MATCH');
+    if (active.length === 1) {
+      const pending = active[0];
+      if (text(pending.companyId) !== text(document.companyId)
+        || text(pending.sourceDocumentId) !== text(document[contract.documentId])
+        || Number(pending.signedQuantity) !== signedQuantity
+        || text(pending.warehouseId) !== text(line.warehouseId)
+        || text(pending.effectiveAt) !== businessDate) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_PENDING_INVALID');
+      }
+      const revision = revisions.find(row => text(row.companyId) === text(document.companyId)
+        && text(row.voucherMode).toLowerCase() === contract.mode
+        && text(row.documentId) === text(document[contract.documentId])
+        && Number(row.revision) === Number(document.revision));
+      assertActivePending(contract, document, line, pending, revision, unresolvedRows);
+      if (direct.length) throw new Error('ORDERQ_OFFICIAL_REVISION_ACTIVE_EFFECT_SET_MISMATCH');
+      return { lineId, status: 'UNRESOLVED_PRODUCT', unresolvedProductId: text(line.unresolvedProductId),
+        productCode: text(line.productSnapshot?.originalProductCode || line.originalProductCode || line.productCode),
+        warehouseId: text(line.warehouseId), businessDate, businessOccurredAt, signedQuantity,
+        activePendingEffect: clone(pending) };
+    }
+    const resolved = linkedPending.filter(row => text(row.productId)
+      && /^RESOLVED/.test(text(row.status))).flatMap(pending => movements.filter(row =>
+      text(row.pendingEffectId) === text(pending.pendingEffectId) && movementIsCurrent(row, reversedIds)));
+    if (!resolved.length) throw new Error('ORDERQ_OFFICIAL_REVISION_UNRESOLVED_STATE_INVALID');
+    assertCurrentMovementGroup(contract, document, line, resolved, signedQuantity,
+      { revisions, pendingEffects, unresolvedRows, state: { productId: resolved[0]?.productId,
+        productCode: resolved[0]?.productCode, warehouseId: resolved[0]?.warehouseId,
+        businessDate: movementBusinessDate(resolved[0]) } });
+    const identity = resolved[0];
+    if (resolved.some(row => text(row.productId) !== text(identity.productId)
+      || text(row.warehouseId) !== text(identity.warehouseId))) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_REMATCH_EFFECT_INVALID');
+    }
+    return { lineId, status: 'MATCHED', productId: text(identity.productId), productCode: text(identity.productCode),
+      warehouseId: text(identity.warehouseId), businessDate, businessOccurredAt, signedQuantity,
+      rematchedFromUnresolvedProductId: text(line.unresolvedProductId), activeInventoryEffects: clone(resolved) };
+  });
+}
+
+function unresolvedEvidenceForStates(companyId, states, unresolvedRows) {
+  const byId = new Map(unresolvedRows.map(row => [text(row.unresolvedProductId), row]));
+  return states.map(state => {
+    const unresolvedProductId = text(state.activePendingEffect?.unresolvedProductId
+      || state.rematchedFromUnresolvedProductId);
+    if (!unresolvedProductId) return null;
+    const unresolved = byId.get(unresolvedProductId);
+    if (!unresolved || text(unresolved.companyId) !== companyId) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_UNRESOLVED_RECORD_STALE');
+    }
+    if (state.status === 'UNRESOLVED_PRODUCT' && text(unresolved.status) === 'MATCHED') {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_UNRESOLVED_RECORD_STALE');
+    }
+    if (state.status === 'MATCHED' && (text(unresolved.status) !== 'MATCHED'
+      || text(unresolved.productId) !== text(state.productId))) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_REMATCH_RECORD_STALE');
+    }
+    return clone(unresolved);
+  }).filter(Boolean).sort((left, right) => text(left.unresolvedProductId).localeCompare(text(right.unresolvedProductId)));
+}
+
+async function readOfficialRevisionTargetFromTransaction(tx, identity = {}, contract = inferKind(identity)) {
+  const companyId = text(identity.companyId);
+  const documentId = documentIdOf(contract, identity);
+  if (!companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_REQUIRED');
+  const document = await requestToPromise(tx.objectStore(contract.documentStore).get(documentId));
+  if (!document || text(document.companyId) !== companyId) throw new Error('ORDERQ_OFFICIAL_REVISION_DOCUMENT_NOT_FOUND');
+  if (!confirmedStatus(document.status) || !confirmedStatus(document.businessStatus)) {
+    throw new Error([document.status, document.businessStatus].some(value => text(value).toUpperCase() === 'CANCELLED')
+      ? 'ORDERQ_OFFICIAL_REVISION_ALREADY_CANCELLED' : 'ORDERQ_OFFICIAL_REVISION_DOCUMENT_NOT_CONFIRMED');
+  }
+  const [allLines, revisions, movements, pendingEffects, partnerEntries, unresolvedRows, checkpoints, commandReceipt] = await Promise.all([
+    rowsByIndex(tx.objectStore(contract.lineStore), 'byDocumentId', documentId),
+    requestToPromise(tx.objectStore(STORE.VOUCHER_REVISIONS).getAll()),
+    rowsByIndex(tx.objectStore(STORE.INVENTORY_MOVEMENTS), 'byDocument', [contract.mode, documentId]),
+    rowsByIndex(tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS), 'byDocument', [contract.mode, documentId]),
+    rowsByIndex(tx.objectStore(contract.partnerEntryStore), 'byDocument', documentId),
+    requestToPromise(tx.objectStore(STORE.UNRESOLVED_PRODUCTS).getAll()),
+    requestToPromise(tx.objectStore(STORE.INVENTORY_CHECKPOINTS).getAll()),
+    requestToPromise(tx.objectStore(STORE.OFFICIAL_COMMANDS).get(text(document.commandId)))
+  ]);
+  const lines = allLines.filter(line => Number(line.revision) === Number(document.revision)
+    && text(line.lineStatus).toUpperCase() === 'ACTIVE' && text(line.status).toUpperCase() === 'CONFIRMED');
+  const revision = revisions.find(row => text(row.companyId) === companyId
+    && text(row.voucherMode).toLowerCase() === contract.mode && text(row.documentId) === documentId
+    && Number(row.revision) === Number(document.revision));
+  if (!lines.length || !revision || text(document.lastVoucherRevisionId) !== text(revision.voucherRevisionId)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_HEAD_INVALID');
+  }
+  if (!commandReceipt || text(commandReceipt.status) !== 'COMMITTED'
+    || text(commandReceipt.companyId) !== companyId
+    || text(commandReceipt.voucherMode).toLowerCase() !== contract.mode
+    || text(commandReceipt.documentId) !== documentId) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_COMMAND_RECEIPT_INVALID');
+  }
+  assertCurrentRevisionProjection(contract, document, lines, revision);
+  assertMovementLineage(contract, document, movements, revisions);
+  const storedStates = normalizeStoredEffectiveStates(contract, document, lines, revision, movements, pendingEffects,
+    revisions, unresolvedRows);
+  const effectiveLineStates = storedStates || deriveEffectiveStates(contract, document, lines, movements, pendingEffects,
+    revisions, unresolvedRows);
+  assertDocumentActiveSetCoverage(movements, pendingEffects, effectiveLineStates);
+  const unresolvedProductEvidence = unresolvedEvidenceForStates(companyId, effectiveLineStates, unresolvedRows);
+  const target = withOfficialRevisionTargetDigestV2({
+    schemaVersion: OFFICIAL_REVISION_TARGET_SCHEMA_V2,
+    companyId, kind: contract.kind, voucherMode: contract.mode, documentId,
+    currentRevision: Number(document.revision), currentRevisionId: revision.voucherRevisionId,
+    currentDocument: clone(document), currentLines: clone(lines), currentVoucherRevision: clone(revision),
+    effectiveLineStates, unresolvedProductEvidence, partnerEntryIds: partnerEntries.map(row => text(row.entryId)),
+    currentCommandReceiptDigest: canonicalSha256(commandReceipt)
+  });
+  assertOfficialRevisionTargetV2(target);
+  return deepFreeze({ target, inventoryCheckpoints: clone(checkpoints.filter(row => text(row.companyId) === companyId)) });
+}
+
+export async function inspectOfficialVoucherRevisionTarget(identity = {}) {
+  const contract = inferKind(identity);
+  const db = await openOrderQDb();
+  const stores = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
+    STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
+    STORE.PENDING_INVENTORY_EFFECTS, STORE.INVENTORY_CHECKPOINTS, STORE.UNRESOLVED_PRODUCTS];
+  const tx = db.transaction(stores, 'readonly');
+  const result = await readOfficialRevisionTargetFromTransaction(tx, identity, contract);
+  await transactionDone(tx);
+  return result;
+}
+
 function commandReceipt(plan, result, status = 'COMMITTED') {
   return {
     commandId: plan.command.commandId,
@@ -365,6 +1057,7 @@ function queueRow(plan) {
 function mergeUnresolvedReviewRecord(existing, effect) {
   const reviewLink = {
     pendingEffectId: effect.pendingEffectId,
+    companyId: effect.companyId,
     voucherMode: effect.voucherMode,
     sourceDocumentId: effect.sourceDocumentId,
     sourceLineId: effect.sourceLineId,
@@ -373,13 +1066,15 @@ function mergeUnresolvedReviewRecord(existing, effect) {
     commandId: effect.commandId,
     warehouseId: effect.warehouseId,
     businessDate: effect.effectiveAt,
+    businessOccurredAt: text(effect.businessOccurredAt),
     quantity: effect.quantity,
     signedQuantity: effect.signedQuantity,
     unitPrice: effect.unitPrice,
     totalAmount: effect.totalAmount,
     inventoryEffectStatus: 'UNRESOLVED_PRODUCT',
     officialInventoryApplied: false,
-    productSnapshot: clone(effect.productSnapshot)
+    productSnapshot: clone(effect.productSnapshot),
+    productResolution: clone(effect.productResolution)
   };
   const priorLinks = Array.isArray(existing?.reviewLinks) ? clone(existing.reviewLinks) : [];
   const reviewLinks = [
@@ -597,6 +1292,300 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
 }
 
 export const applyOfficialVoucherCommand = runCentralOfficialVoucherCommand;
+
+function revisionCommandReceipt(plan, result) {
+  return {
+    commandId: plan.command.commandId,
+    idempotencyKey: plan.command.idempotencyKey,
+    companyId: plan.command.companyId,
+    voucherMode: plan.command.voucherMode,
+    documentId: plan.command.documentId,
+    commandType: `${plan.action}_${plan.kind}`,
+    action: plan.action,
+    status: 'COMMITTED',
+    payloadDigest: plan.command.commandPayloadDigest,
+    requestedAt: plan.command.occurredAt,
+    committedAt: nowIso(),
+    result
+  };
+}
+
+function revisionQueueRow(plan) {
+  return {
+    queueId: voucherStableId('SQR', plan.command.commandId),
+    entityType: 'OFFICIAL_VOUCHER_REVISION_COMMAND',
+    entityId: plan.command.commandId,
+    operation: plan.action,
+    revision: plan.document.revision,
+    payload: {
+      schemaVersion: 'ONEAPP_ORDERQ_OFFICIAL_REVISION_QUEUE_V2',
+      companyId: plan.command.companyId,
+      voucherMode: plan.command.voucherMode,
+      documentId: plan.command.documentId,
+      command: plan.command,
+      projectionDigest: canonicalSha256(plan.voucherRevision)
+    },
+    status: 'WAITING_SERVER_CONTRACT',
+    attemptCount: 0,
+    createdAt: nowIso(),
+    lastError: ''
+  };
+}
+
+async function committedRevisionCommand(command) {
+  const db = await openOrderQDb();
+  const tx = db.transaction(STORE.OFFICIAL_COMMANDS, 'readonly');
+  const receipt = await requestToPromise(tx.objectStore(STORE.OFFICIAL_COMMANDS).get(command.commandId));
+  await transactionDone(tx);
+  if (!receipt) return null;
+  if (text(receipt.status) !== 'COMMITTED'
+    || text(receipt.payloadDigest) !== text(command.commandPayloadDigest)
+    || text(receipt.companyId) !== text(command.companyId)
+    || text(receipt.voucherMode).toLowerCase() !== text(command.voucherMode).toLowerCase()
+    || text(receipt.documentId) !== text(command.documentId)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_COMMAND_PAYLOAD_CONFLICT');
+  }
+  return { ...clone(receipt.result), duplicate: true };
+}
+
+async function updateUnresolvedForPendingSupersession(tx, row, command, action) {
+  const pendingStore = tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS);
+  const unresolvedStore = tx.objectStore(STORE.UNRESOLVED_PRODUCTS);
+  const pending = await requestToPromise(pendingStore.get(row.sourceEffectId));
+  if (!pending || text(pending.companyId) !== text(command.companyId)
+    || text(pending.unresolvedProductId) !== text(row.unresolvedProductId)
+    || text(pending.status) !== 'PENDING_PRODUCT_MATCH') {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_PENDING_EFFECT_STALE');
+  }
+  const status = action === 'CANCEL' ? 'CANCELLED_BY_REVISION' : 'SUPERSEDED_BY_REVISION';
+  pendingStore.put({ ...pending, status, inventoryEffectStatus: status,
+    supersededByCommandId: command.commandId, supersededAt: command.occurredAt, supersededBy: command.actor });
+  const unresolved = await requestToPromise(unresolvedStore.get(pending.unresolvedProductId));
+  if (!unresolved || text(unresolved.companyId) !== text(command.companyId)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_UNRESOLVED_RECORD_STALE');
+  }
+  assertPendingReviewLink(pending, unresolved);
+  const reviewLinks = (unresolved.reviewLinks || []).map(link => text(link.pendingEffectId) === text(pending.pendingEffectId)
+    ? { ...clone(link), inventoryEffectStatus: status, status,
+      supersededByCommandId: command.commandId, supersededAt: command.occurredAt }
+    : clone(link));
+  const matchedIdentity = text(unresolved.status) === 'MATCHED' && text(unresolved.productId);
+  const activeLinks = reviewLinks.filter(link => ['PENDING_PRODUCT_MATCH', 'UNRESOLVED_PRODUCT']
+    .includes(text(link.status || link.inventoryEffectStatus).toUpperCase()));
+  unresolvedStore.put({
+    ...unresolved,
+    reviewLinks,
+    ...(matchedIdentity ? {} : activeLinks.length ? {
+      status: 'UNRESOLVED_PRODUCT', inventoryEffectStatus: 'UNRESOLVED_PRODUCT', officialInventoryApplied: false
+    } : {
+      status: 'NO_ACTIVE_REVIEW', inventoryEffectStatus: status, officialInventoryApplied: false,
+      reviewClosedAt: command.occurredAt, reviewClosedByCommandId: command.commandId
+    }),
+    updatedAt: command.occurredAt
+  });
+}
+
+function revisionSnapshotEvidence(snapshot = {}) {
+  return {
+    schemaVersion: text(snapshot.schemaVersion),
+    snapshotId: text(snapshot.snapshotId),
+    revision: snapshot.revision === null || snapshot.revision === undefined ? null : snapshot.revision,
+    snapshotVersion: snapshot.snapshotVersion === null || snapshot.snapshotVersion === undefined ? null : snapshot.snapshotVersion,
+    contentHash: text(snapshot.contentHash)
+  };
+}
+
+function revisionCustomerCodeKey(value) {
+  return text(value).normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, ' ');
+}
+
+function revisionCustomerActive(row = {}) {
+  return row.active !== false
+    && !['INACTIVE', 'DELETED'].includes(text(row.status || 'ACTIVE').toUpperCase())
+    && text(row.qualityStatus).toUpperCase() !== 'SUPERSEDED';
+}
+
+async function validateCurrentRevisionReferenceSnapshots(command, options = {}) {
+  const requirements = command.referenceRequirements || { products: [], partner: null };
+  const evidence = command.referenceEvidence || {};
+  const ownerProductRequirements = (requirements.products || []).filter(expected => text(expected.inputProductCode));
+  if (ownerProductRequirements.length) {
+    const snapshot = await (options.productSnapshotProvider || getProductSnapshot)();
+    if (!snapshot || text(snapshot.status) !== 'READY'
+      || text(snapshot.schemaVersion) !== PRODUCT_SNAPSHOT_SCHEMA_VERSION
+      || !Array.isArray(snapshot.data?.products)
+      || await sha256Hex(snapshot.data) !== text(snapshot.contentHash)
+      || canonicalSha256(revisionSnapshotEvidence(snapshot)) !== canonicalSha256(evidence.productSnapshot)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_PRODUCT_SNAPSHOT_STALE');
+    }
+    ownerProductRequirements.forEach(expected => {
+      const matches = snapshot.data.products.filter(row => rematchProductActive(row)
+        && text(row.companyId) === command.companyId
+        && rematchProductCode(row) === text(expected.inputProductCode));
+      const current = matches.length === 1 ? matches[0] : null;
+      const currentId = rematchProductId(current || {});
+      const actualStatus = matches.length > 1 || (current && !currentId) ? 'UNRESOLVED_PRODUCT'
+        : current ? 'MATCHED' : 'UNRESOLVED_PRODUCT';
+      const actualReason = matches.length > 1 ? 'PRODUCT_CODE_AMBIGUOUS'
+        : current && !currentId ? 'MATCHED_PRODUCT_TECHNICAL_ID_MISSING'
+          : current ? 'EXACT_COMPANY_PRODUCT_CODE' : 'PRODUCT_CODE_UNMATCHED';
+      if (text(expected.status) !== actualStatus || text(expected.reason) !== actualReason
+        || (actualStatus === 'MATCHED' && (currentId !== text(expected.productId)
+          || rematchProductCode(current) !== text(expected.productCode)
+          || rematchProductName(current) !== text(expected.productName)
+          || rematchProductSpecification(current) !== text(expected.specification)
+          || rematchProductUnit(current) !== text(expected.unit)
+          || Number(current.revision || current.masterRevision || current.raw?.revision || 0)
+            !== Number(expected.productMasterRevision || 0)))) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_PRODUCT_REFERENCE_MISMATCH');
+      }
+    });
+  }
+  if (requirements.partner) {
+    const snapshot = await (options.customerSnapshotProvider || (() => getCustomerSnapshot({ includeInactive: true })))();
+    if (!snapshot || !['READY', 'EMPTY'].includes(text(snapshot.status))
+      || text(snapshot.schemaVersion) !== 'ONEAPP_CUSTOMER_SNAPSHOT_V1'
+      || !Array.isArray(snapshot.data?.customers)
+      || await sha256Hex(snapshot.data) !== text(snapshot.contentHash)
+      || canonicalSha256(revisionSnapshotEvidence(snapshot)) !== canonicalSha256(evidence.customerSnapshot)) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_CUSTOMER_SNAPSHOT_STALE');
+    }
+    const expected = requirements.partner;
+    const inputKey = revisionCustomerCodeKey(expected.inputCustomerCode);
+    const matches = inputKey ? snapshot.data.customers.filter(row => revisionCustomerActive(row)
+      && text(row.companyId) === command.companyId
+      && revisionCustomerCodeKey(row.customerCode || row.erpCustomerCode) === inputKey) : [];
+    const current = matches.length === 1 ? matches[0] : null;
+    if (expected.status === 'MATCHED') {
+      if (!current || text(current.customerId) !== text(expected.matchedCustomerId)
+        || text(current.customerCode || current.erpCustomerCode) !== text(expected.matchedCustomerCode)
+        || text(current.customerName || current.name) !== text(expected.matchedCustomerName)
+        || Number(current.revision || 0) !== Number(expected.customerMasterRevision || 0)) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_CUSTOMER_REFERENCE_MISMATCH');
+      }
+    } else if (expected.status === 'UNRESOLVED_CUSTOMER') {
+      const reason = matches.length > 1 ? 'CUSTOMER_CODE_AMBIGUOUS'
+        : current && !text(current.customerId) ? 'MATCHED_CUSTOMER_ID_MISSING'
+          : current ? 'EXACT_COMPANY_CUSTOMER_CODE' : 'CUSTOMER_CODE_UNMATCHED';
+      if (!inputKey || reason !== text(expected.reason) || current && text(current.customerId)) {
+        throw new Error('ORDERQ_OFFICIAL_REVISION_CUSTOMER_REFERENCE_MISMATCH');
+      }
+    } else if (expected.status !== 'CUSTOMER_NOT_PROVIDED' || inputKey || matches.length) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_CUSTOMER_REFERENCE_MISMATCH');
+    }
+  }
+}
+
+async function insertRevisionPendingEffect(tx, row, voucherRevisionId) {
+  const pending = { ...clone(row), voucherRevisionId };
+  const unresolvedStore = tx.objectStore(STORE.UNRESOLVED_PRODUCTS);
+  const existing = await requestToPromise(unresolvedStore.get(pending.unresolvedProductId));
+  if (existing && text(existing.companyId) !== text(pending.companyId)) {
+    throw new Error('ORDERQ_OFFICIAL_UNRESOLVED_PRODUCT_COMPANY_MISMATCH');
+  }
+  if (existing && text(existing.status) === 'MATCHED' && text(existing.productId)) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_MATCHED_UNRESOLVED_ID_REUSE');
+  }
+  tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS).add(pending);
+  unresolvedStore.put(mergeUnresolvedReviewRecord(existing, pending));
+}
+
+export async function runOfficialVoucherRevisionCommand(source = {}, options = {}) {
+  if (source?.cancelled === true) return deepFreeze({ cancelled: true, duplicate: false, officialWrites: 0 });
+  const checked = assertOfficialVoucherRevisionCommandV2(source);
+  const duplicate = await committedRevisionCommand(checked.command);
+  if (duplicate) return duplicate;
+
+  await validateCurrentRevisionReferenceSnapshots(checked.command, options);
+  if (checked.command.referenceRequirements?.partner?.status === 'MATCHED') {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_ARAP_NEW_MATCHED_PARTNER_UNSUPPORTED');
+  }
+
+  const readonlyPreflight = await inspectOfficialVoucherRevisionTarget({
+    kind: checked.contract.kind,
+    companyId: checked.command.companyId,
+    [checked.contract.documentId]: checked.command.documentId
+  });
+  if (readonlyPreflight.target.targetDigest !== checked.command.targetDigest) {
+    throw new Error('ORDERQ_OFFICIAL_REVISION_TARGET_STALE');
+  }
+  await validateCurrentRevisionReferenceSnapshots(checked.command, options);
+
+  const db = await openOrderQDb();
+  const contract = kindContract(checked.contract.kind);
+  const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
+    STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
+    STORE.PENDING_INVENTORY_EFFECTS, STORE.INVENTORY_CHECKPOINTS, STORE.UNRESOLVED_PRODUCTS, STORE.SYNC_QUEUE];
+  const tx = db.transaction(storeNames, 'readwrite');
+  const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
+  const existing = await requestToPromise(commandStore.get(checked.command.commandId));
+  if (existing) {
+    if (text(existing.status) !== 'COMMITTED'
+      || text(existing.payloadDigest) !== checked.payloadDigest
+      || text(existing.companyId) !== checked.command.companyId
+      || text(existing.voucherMode).toLowerCase() !== checked.command.voucherMode
+      || text(existing.documentId) !== checked.command.documentId) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_REVISION_COMMAND_PAYLOAD_CONFLICT');
+    }
+    await transactionDone(tx);
+    return { ...clone(existing.result), duplicate: true };
+  }
+
+  let current;
+  let plan;
+  try {
+    current = await readOfficialRevisionTargetFromTransaction(tx, checked.command, contract);
+    if (current.target.targetDigest !== checked.command.targetDigest) {
+      throw new Error('ORDERQ_OFFICIAL_REVISION_TARGET_STALE');
+    }
+    if (current.target.partnerEntryIds.length) throw new Error('ORDERQ_OFFICIAL_REVISION_ARAP_EFFECT_UNSUPPORTED');
+    plan = planOfficialVoucherRevisionCommandV2({
+      command: checked.command,
+      target: current.target,
+      inventoryCheckpoints: current.inventoryCheckpoints
+    });
+  } catch (error) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
+
+  try {
+    const documentStore = tx.objectStore(contract.documentStore);
+    const lineStore = tx.objectStore(contract.lineStore);
+    documentStore.put(plan.document);
+    [...plan.lines, ...plan.removedLines].forEach(line => lineStore.put(line));
+    plan.inventoryMovements.forEach(row => tx.objectStore(STORE.INVENTORY_MOVEMENTS).add(row));
+    for (const row of plan.pendingSupersessions) {
+      await updateUnresolvedForPendingSupersession(tx, row, checked.command, plan.action);
+    }
+    for (const row of plan.pendingCreations) {
+      await insertRevisionPendingEffect(tx, row, plan.voucherRevision.voucherRevisionId);
+    }
+    tx.objectStore(STORE.VOUCHER_REVISIONS).add(plan.voucherRevision);
+    const result = {
+      authority: 'LOCAL_PILOT',
+      document: plan.document,
+      lines: plan.lines,
+      inventoryMovements: plan.inventoryMovements,
+      pendingInventoryEffects: plan.pendingCreations,
+      supersededPendingEffectIds: plan.pendingSupersessions.map(row => row.sourceEffectId),
+      ledgerEntries: [],
+      voucherRevision: plan.voucherRevision,
+      duplicate: false
+    };
+    commandStore.add(revisionCommandReceipt(plan, result));
+    tx.objectStore(STORE.SYNC_QUEUE).add(revisionQueueRow(plan));
+    await transactionDone(tx);
+    return result;
+  } catch (error) {
+    try { tx.abort(); } catch {}
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
+}
 
 function rematchProductId(row = {}) {
   return text(row.productId || row.masterProductId);
