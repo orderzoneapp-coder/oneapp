@@ -41,7 +41,7 @@ for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.4`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.7`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.8`;
   const runtime = `${base}nexus-ui.js?v=1.4.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
@@ -176,8 +176,12 @@ assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app="orde
 assert.match(appThemeCss, /tr\.manager-color-row\[style\*="--manager-color"\]\s*>\s*td[\s\S]*?var\(--orderops-manager-row-weight\)[\s\S]*?!important/s, 'ORDER Q manager row tint must outrank every complete-row cell background');
 assert.doesNotMatch(appThemeCss, /tr\.manager-color-row\s*>\s*td:not\(/, 'ORDER Q manager row tint must not skip semantic or focused cells');
 assert.match(appThemeCss, /tr\.manager-color-row\s*>\s*td \*[\s\S]*?color:\s*var\(--orderops-manager-row-text\)\s*!important/s, 'ORDER Q manager text color must cover descendants across the complete row');
+assert.match(appThemeCss, /tr\.manager-color-row\s*>\s*td :is\([\s\S]*?\.purchase-input[\s\S]*?\.inventory-total-frame[\s\S]*?background-color:\s*transparent\s*!important/s, 'ORDER Q manager-row editors must reveal the assigned complete-row surface');
+assert.match(appThemeCss, /tr\.manager-color-row\[style\*="--manager-color"\]\s*>\s*td:focus-within[\s\S]*?var\(--orderops-manager-row-weight\)/s, 'ORDER Q focused manager cells must retain their assigned row surface');
 assert.match(appThemeCss, /tr\.unit-alert-row\.unit-alert-row\s*>\s*td \*[\s\S]*?color:\s*var\(--orderops-unit-row-text\)\s*!important/s, 'ORDER Q EA and 소분 text color must cover the complete row');
-assert.match(appThemeCss, /@media print[\s\S]*?\.print-area tbody tr\.manager-color-row[\s\S]*?background-color:\s*color-mix\(in srgb, var\(--manager-color\) 48%, #ffffff\)\s*!important/s, 'ORDER Q print must preserve complete manager row colors');
+assert.match(appThemeCss, /@media print[\s\S]*?\.print-area tbody tr\.manager-color-row[\s\S]*?print-color-adjust:\s*exact\s*!important[\s\S]*?background-color:\s*var\(--manager-print-color, var\(--manager-color\)\)\s*!important/s, 'ORDER Q print must use its dedicated complete-row manager color token');
+assert.match(appThemeCss, /@media print[\s\S]*?tr\.manager-color-row\s*>\s*td \*\s*\{\s*color:\s*#172033\s*!important/s, 'ORDER Q print manager text must not inherit dark-screen ink');
+assert.match(appThemeCss, /@media print[\s\S]*?tr\.unit-alert-row\s*>\s*td \*\s*\{\s*color:\s*#b91c1c\s*!important/s, 'ORDER Q print warning text must use paper-safe red ink');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body :is\(input, select, textarea\)/, 'dark inputs must outrank utility backgrounds');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app\] body th/, 'dark table headers must retain a separate hierarchy');
 assert.match(appThemeCss, /\.bg-blue-600[\s\S]*?background-color:\s*var\(--nexus-ui-selection-bg\)/, 'solid blue tools must be neutralized');
