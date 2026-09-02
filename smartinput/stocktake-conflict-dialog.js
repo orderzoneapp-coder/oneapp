@@ -1,4 +1,7 @@
-import { OFFICIAL_STOCKTAKE_DECISION } from '../orderq/stocktake-conflict-v2.js?v=0.1.0';
+import {
+  OFFICIAL_STOCKTAKE_DECISION,
+  officialStocktakeConflictKeyV2
+} from '../orderq/stocktake-conflict-v2.js?v=0.2.0';
 
 const text = value => String(value ?? '').trim();
 
@@ -40,7 +43,7 @@ function conflictLabel(conflict = {}) {
 }
 
 export function showStocktakeConflictDialog(conflicts = []) {
-  if (!Array.isArray(conflicts) || !conflicts.length) return Promise.resolve(null);
+  if (!Array.isArray(conflicts) || !conflicts.length) return Promise.resolve([]);
   const saved = preservedUiState();
   return new Promise(resolve => {
     const dialog = document.createElement('dialog');
@@ -59,7 +62,10 @@ export function showStocktakeConflictDialog(conflicts = []) {
       </footer>
     </div>`;
     const rows = dialog.querySelector('.stocktake-conflict-dialog__rows');
-    conflicts.forEach(conflict => {
+    let conflictIndex = 0;
+    const selections = [];
+    const renderConflict = () => {
+      const conflict = conflicts[conflictIndex];
       const label = conflictLabel(conflict);
       const row = document.createElement('div');
       row.className = 'stocktake-conflict-dialog__row';
@@ -71,8 +77,9 @@ export function showStocktakeConflictDialog(conflicts = []) {
       const quantity = document.createElement('em');
       quantity.textContent = `수량 ${label.quantity}`;
       row.append(product, details, quantity);
-      rows.append(row);
-    });
+      rows.replaceChildren(row);
+    };
+    renderConflict();
     document.body.append(dialog);
     let settled = false;
     const finish = decisionType => {
@@ -88,9 +95,20 @@ export function showStocktakeConflictDialog(conflicts = []) {
     dialog.querySelectorAll('[data-stocktake-cancel]').forEach(button => button.addEventListener('click', () => finish(null)));
     dialog.querySelectorAll('[data-stocktake-decision]').forEach(button => button.addEventListener('click', () => {
       const decisionType = text(button.dataset.stocktakeDecision);
-      finish(decisionType === OFFICIAL_STOCKTAKE_DECISION.INCLUDED
-        ? OFFICIAL_STOCKTAKE_DECISION.INCLUDED
-        : OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED);
+      selections.push({
+        conflictKey: officialStocktakeConflictKeyV2(conflicts[conflictIndex]),
+        decisionType: decisionType === OFFICIAL_STOCKTAKE_DECISION.INCLUDED
+          ? OFFICIAL_STOCKTAKE_DECISION.INCLUDED
+          : OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED,
+        judgedAt: new Date().toISOString()
+      });
+      conflictIndex += 1;
+      if (conflictIndex >= conflicts.length) {
+        finish(selections);
+        return;
+      }
+      renderConflict();
+      dialog.querySelector('[data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]')?.focus({ preventScroll: true });
     }));
     dialog.addEventListener('cancel', event => {
       event.preventDefault();

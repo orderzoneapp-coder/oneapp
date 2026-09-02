@@ -6,11 +6,11 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
   OFFICIAL_VOUCHER_V2_ENTITY
-} from './official-voucher-v2-contract.js?v=0.4.0';
+} from './official-voucher-v2-contract.js?v=0.5.0';
 import {
   applyOfficialStocktakeDecisionsV2,
   assertOfficialStocktakeProjectionV2
-} from './stocktake-conflict-v2.js?v=0.1.0';
+} from './stocktake-conflict-v2.js?v=0.2.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');

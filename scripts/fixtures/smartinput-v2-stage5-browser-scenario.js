@@ -1,7 +1,10 @@
 import * as repository from '../../orderq/official-voucher-repository.js?v=stage5-browser';
 import { createOfficialCommandGateway } from '../../orderq/official-command-gateway.js?v=stage5-browser';
 import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../../orderq/official-voucher-v2-contract.js?v=stage5-browser';
-import { OFFICIAL_STOCKTAKE_DECISION } from '../../orderq/stocktake-conflict-v2.js?v=stage5-browser';
+import {
+  OFFICIAL_STOCKTAKE_DECISION,
+  officialStocktakeConflictKeyV2
+} from '../../orderq/stocktake-conflict-v2.js?v=stage5-browser';
 import { openOrderQDb, transactionDone } from '../../orderq/orderq-db.js?v=stage5-browser';
 import { createPurchaseFinalizeService } from '../../smartinput/purchase-finalize-service.js?v=stage5-browser';
 import { createSaleFinalizeService } from '../../smartinput/sale-finalize-service.js?v=stage5-browser';
@@ -14,7 +17,8 @@ const actor = 'STAGE5-BROWSER';
 const text = value => String(value ?? '').trim();
 const errorText = error => `${error?.name || 'Error'}:${error?.message || String(error)}`;
 const products = [
-  { companyId, productId: 'V2-STAGE5-P-0007', itemCode: '0007', itemName: '실사 충돌 상품', status: 'ACTIVE', revision: 4 }
+  { companyId, productId: 'V2-STAGE5-P-0007', itemCode: '0007', itemName: '실사 충돌 상품', status: 'ACTIVE', revision: 4 },
+  { companyId, productId: 'V2-STAGE5-P-0008', itemCode: '0008', itemName: '혼합결정 상품', status: 'ACTIVE', revision: 2 }
 ];
 const customers = [
   { companyId, customerId: 'V2-STAGE5-C-0003', customerCode: '0003', customerName: '실사 거래처', status: 'ACTIVE', revision: 5 }
@@ -23,12 +27,13 @@ const warehouses = [
   { warehouseId: 'V2-STAGE5-WH', warehouseCode: 'S5', warehouseName: '단계5창고', status: 'ACTIVE', revision: 1 }
 ];
 
-function row(rowId, quantity = 10) {
+function row(rowId, quantity = 10, productCode = '0007') {
+  const product = products.find(item => item.itemCode === productCode);
   return {
     rowId,
     sourceLineKey: rowId,
-    itemCode: '0007',
-    itemName: '실사 충돌 상품',
+    itemCode: product.itemCode,
+    itemName: product.itemName,
     unit: 'BOX',
     warehouseId: 'V2-STAGE5-WH',
     warehouseCode: 'S5',
@@ -64,7 +69,24 @@ function group(kind, suffix, quantity = 10) {
   };
 }
 
-function request(kind, sourceGroup, decisionType = '') {
+function mixedGroup(kind, suffix) {
+  const source = group(kind, suffix);
+  source.rows = [
+    row(`${kind}-${suffix}-INCLUDED`, 6, '0007'),
+    row(`${kind}-${suffix}-NOT-INCLUDED`, 4, '0008')
+  ];
+  return source;
+}
+
+function selections(conflicts, decisionTypes) {
+  return conflicts.map((conflict, index) => ({
+    conflictKey: officialStocktakeConflictKeyV2(conflict),
+    decisionType: Array.isArray(decisionTypes) ? decisionTypes[index] : decisionTypes[conflict.productCode],
+    judgedAt: `2026-09-02T10:01:0${index}.000Z`
+  }));
+}
+
+function request(kind, sourceGroup, stocktakeDecisions) {
   return {
     groups: [sourceGroup],
     companyId,
@@ -77,9 +99,7 @@ function request(kind, sourceGroup, decisionType = '') {
     customerReferenceSnapshotId: 'V2-STAGE5-CUSTOMER-SNAPSHOT',
     actor,
     manualSessionId: `STAGE5-${kind}`,
-    ...(decisionType ? {
-      stocktakeDecision: { decisionType, judgedAt: '2026-09-02T10:01:00.000Z' }
-    } : {})
+    ...(Array.isArray(stocktakeDecisions) ? { stocktakeDecisions } : {})
   };
 }
 
@@ -116,7 +136,10 @@ async function seedCheckpoint(checkpointId, effectiveAt = '2026-09-01') {
     sessionId: `SESSION-${checkpointId}`,
     effectiveAt,
     coversAllProducts: false,
-    counts: [{ productCode: '0007', productId: 'V2-STAGE5-P-0007', quantity: 100 }],
+    counts: [
+      { productCode: '0007', productId: 'V2-STAGE5-P-0007', quantity: 100 },
+      { productCode: '0008', productId: 'V2-STAGE5-P-0008', quantity: 50 }
+    ],
     actor: 'STOCKTAKE-BROWSER',
     confirmedAt: '2026-09-01T18:00:00.000Z'
   });
@@ -162,18 +185,20 @@ export async function runSmartInputV2Stage5BrowserScenario() {
   const countsBeforeDecision = await officialCounts();
   const submitCountBeforeDecision = previewHarness.submitCount();
 
-  const included = await previewHarness.service.finalize(request(
-    'PURCHASE', group('PURCHASE', 'PREVIEW'), OFFICIAL_STOCKTAKE_DECISION.INCLUDED
-  ));
+  const included = await previewHarness.service.finalize(request('PURCHASE', group('PURCHASE', 'PREVIEW'), selections(
+    preview[0].error.conflicts, [OFFICIAL_STOCKTAKE_DECISION.INCLUDED]
+  )));
   if (!included[0]?.ok) throw included[0]?.error;
   const includedDraft = previewHarness.drafts[0];
   const includedAggregate = await repository.loadOfficialPurchaseAggregate(includedDraft.purchaseDocumentId);
   const includedDuplicate = await gateway.execute(includedDraft.commandSource);
 
   const saleHarness = serviceFor('SALE', gateway);
-  const notIncluded = await saleHarness.service.finalize(request(
-    'SALE', group('SALE', 'LATE', 4), OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED
-  ));
+  const lateGroup = group('SALE', 'LATE', 4);
+  const latePreview = await saleHarness.service.finalize(request('SALE', lateGroup));
+  const notIncluded = await saleHarness.service.finalize(request('SALE', lateGroup, selections(
+    latePreview[0].error.conflicts, [OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED]
+  )));
   if (!notIncluded[0]?.ok) throw notIncluded[0]?.error;
   const saleDraft = saleHarness.drafts[0];
   const saleAggregate = await repository.loadOfficialSaleAggregate(saleDraft.salesDocumentId);
@@ -184,9 +209,11 @@ export async function runSmartInputV2Stage5BrowserScenario() {
       if (count === 2) await seedCheckpoint('V2-STAGE5-CP-SEP02', '2026-09-02');
     }
   });
-  const stale = await staleHarness.service.finalize(request(
-    'PURCHASE', group('PURCHASE', 'STALE'), OFFICIAL_STOCKTAKE_DECISION.INCLUDED
-  ));
+  const staleGroup = group('PURCHASE', 'STALE');
+  const stalePreview = await staleHarness.service.finalize(request('PURCHASE', staleGroup));
+  const stale = await staleHarness.service.finalize(request('PURCHASE', staleGroup, selections(
+    stalePreview[0].error.conflicts, [OFFICIAL_STOCKTAKE_DECISION.INCLUDED]
+  )));
   const staleDraft = buildPurchasePostDraft(resolveOfficialVoucherReferencesV2({
       kind: 'PURCHASE', companyId, group: group('PURCHASE', 'STALE'), products, customers,
       productReferenceSnapshotId: 'V2-STAGE5-PRODUCT-SNAPSHOT', customerReferenceSnapshotId: 'V2-STAGE5-CUSTOMER-SNAPSHOT'
@@ -214,9 +241,11 @@ export async function runSmartInputV2Stage5BrowserScenario() {
       await transactionDone(tx);
     }
   });
-  const rollback = await rollbackHarness.service.finalize(request(
-    'PURCHASE', group('PURCHASE', 'ROLLBACK'), OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED
-  ));
+  const rollbackGroup = group('PURCHASE', 'ROLLBACK');
+  const rollbackPreview = await rollbackHarness.service.finalize(request('PURCHASE', rollbackGroup));
+  const rollback = await rollbackHarness.service.finalize(request('PURCHASE', rollbackGroup, selections(
+    rollbackPreview[0].error.conflicts, [OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED]
+  )));
   const rollbackDraft = rollbackHarness.drafts[0];
   const rollbackAggregate = await repository.loadOfficialPurchaseAggregate(rollbackDraft.purchaseDocumentId);
   const rollbackQueue = (await all('syncQueue')).filter(row => text(row.entityId) === text(rollbackDraft.commandSource.commandId));
@@ -247,6 +276,40 @@ export async function runSmartInputV2Stage5BrowserScenario() {
     originSystem: 'SMARTINPUT_STAGE5_BROWSER', manualSessionId: 'ISOLATION', occurredAt: '2026-09-02T10:00:00.000Z'
   });
   const otherCompanyConflicts = await gateway.inspectStocktakeConflicts({ kind: 'PURCHASE', ...isolationDraft });
+
+  const mixed = {};
+  for (const kind of ['PURCHASE', 'SALE']) {
+    const harness = serviceFor(kind, gateway);
+    const source = mixedGroup(kind, `MIXED-${kind}`);
+    const mixedPreview = await harness.service.finalize(request(kind, source));
+    const decided = await harness.service.finalize(request(kind, source, selections(
+      mixedPreview[0].error.conflicts,
+      {
+        '0007': OFFICIAL_STOCKTAKE_DECISION.INCLUDED,
+        '0008': OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED
+      }
+    )));
+    if (!decided[0]?.ok) throw decided[0]?.error;
+    const draft = harness.drafts[0];
+    const aggregate = kind === 'PURCHASE'
+      ? await repository.loadOfficialPurchaseAggregate(draft.purchaseDocumentId)
+      : await repository.loadOfficialSaleAggregate(draft.salesDocumentId);
+    mixed[kind.toLowerCase()] = {
+      decisions: aggregate.revisions[0].stocktakeDecisions.map(decision => ({
+        productCode: decision.target.productCode,
+        decisionType: decision.decisionType
+      })).sort((left, right) => left.productCode.localeCompare(right.productCode)),
+      movementCount: aggregate.inventoryMovements.length,
+      adjustmentCount: aggregate.inventoryMovements.filter(effect => effect.effectRole === 'LATE_ADJUSTMENT').length,
+      appliedQuantity: aggregate.inventoryMovements.reduce((sum, effect) => sum + Number(effect.signedQuantity), 0),
+      submitCount: harness.submitCount()
+    };
+  }
+
+  const cancelHarness = serviceFor('PURCHASE', gateway);
+  const cancelCountsBefore = await officialCounts();
+  const cancelPreview = await cancelHarness.service.finalize(request('PURCHASE', mixedGroup('PURCHASE', 'MID-CANCEL')));
+  const cancelCountsAfter = await officialCounts();
 
   return {
     featureGates: gateway.featureGates,
@@ -299,6 +362,12 @@ export async function runSmartInputV2Stage5BrowserScenario() {
       queue: rollbackQueue.length
     },
     companyIsolation: otherCompanyConflicts.conflicts.length === 0,
+    mixed,
+    midCancel: {
+      conflictCount: cancelPreview[0]?.error?.conflicts?.length || 0,
+      submitCount: cancelHarness.submitCount(),
+      countsUnchanged: JSON.stringify(cancelCountsBefore) === JSON.stringify(cancelCountsAfter)
+    },
     ids: {
       includedDocument: documentId('PURCHASE', includedDraft),
       saleDocument: documentId('SALE', saleDraft)

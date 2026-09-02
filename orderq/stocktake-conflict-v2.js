@@ -32,6 +32,14 @@ export class OfficialStocktakeConflictRequiredError extends Error {
   }
 }
 
+export class OfficialStocktakeInspectionUnavailableError extends Error {
+  constructor() {
+    super('ORDERQ_OFFICIAL_V2_STOCKTAKE_INSPECTION_UNAVAILABLE');
+    this.name = 'OfficialStocktakeInspectionUnavailableError';
+    this.code = 'ORDERQ_OFFICIAL_V2_STOCKTAKE_INSPECTION_UNAVAILABLE';
+  }
+}
+
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
   Object.values(value).forEach(deepFreeze);
@@ -72,6 +80,16 @@ function trustedBusinessInstant(value, businessDate) {
   if (isoDate(normalized, 'ORDERQ_OFFICIAL_V2_BUSINESS_TIMESTAMP_INVALID') !== businessDate) return null;
   const instant = Date.parse(normalized);
   return Number.isFinite(instant) ? instant : null;
+}
+
+function strictZonedIsoTimestamp(value, code) {
+  const normalized = snapshotText(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(normalized)
+    || !Number.isFinite(Date.parse(normalized))) {
+    throw new Error(code);
+  }
+  isoDate(normalized, code);
+  return normalized;
 }
 
 function commandOf(source = {}) {
@@ -268,13 +286,35 @@ function decisionId(conflict, decisionType) {
   }).slice(0, 32)}`;
 }
 
-export function createOfficialStocktakeDecisionsV2({ conflicts = [], decisionType, actor, judgedAt } = {}) {
-  const normalizedDecision = text(decisionType).toUpperCase();
-  if (!ALLOWED_DECISIONS.has(normalizedDecision)) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_INVALID');
+export function officialStocktakeConflictKeyV2(conflict = {}) {
+  return `STC-${canonicalSha256({
+    schemaVersion: SCHEMA_VERSION,
+    companyId: requiredText(conflict.companyId, 'ORDERQ_OFFICIAL_COMPANY_REQUIRED'),
+    voucherMode: requiredText(conflict.voucherMode, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_VOUCHER_MODE_REQUIRED').toLowerCase(),
+    documentId: requiredText(conflict.documentId, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DOCUMENT_REQUIRED'),
+    sourceLineId: requiredText(conflict.sourceLineId, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_LINE_REQUIRED'),
+    checkpointId: requiredText(conflict.checkpointId, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_CHECKPOINT_ID_REQUIRED')
+  }).slice(0, 32)}`;
+}
+
+export function createOfficialStocktakeDecisionsV2({ conflicts = [], selections = [], actor } = {}) {
   const normalizedActor = requiredText(actor, 'ORDERQ_OFFICIAL_ACTOR_REQUIRED');
-  const normalizedJudgedAt = requiredText(judgedAt, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_JUDGED_AT_REQUIRED');
-  if (!Number.isFinite(Date.parse(normalizedJudgedAt))) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_JUDGED_AT_INVALID');
+  if (!Array.isArray(selections) || selections.length !== conflicts.length) {
+    throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_TARGET_COUNT_MISMATCH');
+  }
+  const selectionByConflict = new Map();
+  selections.forEach(selection => {
+    const conflictKey = requiredText(selection.conflictKey, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_TARGET_REQUIRED');
+    if (selectionByConflict.has(conflictKey)) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_DUPLICATE');
+    const decisionType = text(selection.decisionType).toUpperCase();
+    if (!ALLOWED_DECISIONS.has(decisionType)) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_INVALID');
+    const judgedAt = strictZonedIsoTimestamp(selection.judgedAt, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_JUDGED_AT_INVALID');
+    selectionByConflict.set(conflictKey, { decisionType, judgedAt });
+  });
   return deepFreeze(conflicts.map(conflict => {
+    const selection = selectionByConflict.get(officialStocktakeConflictKeyV2(conflict));
+    if (!selection) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_TARGET_MISMATCH');
+    const normalizedDecision = selection.decisionType;
     const effectStatus = normalizedDecision === OFFICIAL_STOCKTAKE_DECISION.INCLUDED
       ? OFFICIAL_STOCKTAKE_EFFECT_STATUS.ABSORBED
       : OFFICIAL_STOCKTAKE_EFFECT_STATUS.LATE_ADJUSTMENT;
@@ -307,7 +347,7 @@ export function createOfficialStocktakeDecisionsV2({ conflicts = [], decisionTyp
         confirmedAt: conflict.checkpointConfirmedAt
       },
       businessDate: conflict.businessDate,
-      judgedAt: normalizedJudgedAt,
+      judgedAt: selection.judgedAt,
       actor: normalizedActor
     };
   }));
@@ -382,7 +422,7 @@ export function assertOfficialStocktakeDecisionEnvelopeV2(source = {}, inventory
       throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_SCOPE_MISMATCH');
     }
     if (text(decision.actor) !== text(command.actor || command.actorId)) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_ACTOR_MISMATCH');
-    if (!Number.isFinite(Date.parse(snapshotText(decision.judgedAt)))) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_JUDGED_AT_INVALID');
+    strictZonedIsoTimestamp(decision.judgedAt, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_JUDGED_AT_INVALID');
     finite(decision.effect?.signedQuantity, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_QUANTITY_INVALID');
     if (snapshotText(decision.businessDate) !== commandBusinessDate) throw new Error('ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_DATE_MISMATCH');
     const sourceLineId = requiredText(decision.target?.sourceLineId, 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_LINE_REQUIRED');

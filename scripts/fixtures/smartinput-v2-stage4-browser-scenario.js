@@ -134,6 +134,7 @@ export async function runSmartInputV2Stage4BrowserScenario() {
   let purchaseDraft;
   const purchaseFinalize = createPurchaseFinalizeService({
     now: () => context().occurredAt,
+    inspectGroup: async () => ({ conflicts: [] }),
     submitGroup: async (resolved, buildContext) => {
       purchaseDraft = buildPurchasePostDraft(resolved, buildContext);
       await gateway.saveDraft({ kind: 'PURCHASE', ...purchaseDraft }, buildContext.actor);
@@ -176,6 +177,7 @@ export async function runSmartInputV2Stage4BrowserScenario() {
   const saleDrafts = [];
   const saleFinalize = createSaleFinalizeService({
     now: () => context().occurredAt,
+    inspectGroup: async () => ({ conflicts: [] }),
     submitGroup: async (resolved, buildContext) => {
       const saleDraft = buildSalePostDraft(resolved, buildContext);
       saleDrafts.push(saleDraft);
@@ -209,6 +211,7 @@ export async function runSmartInputV2Stage4BrowserScenario() {
   let rollbackDraft;
   const rollbackFinalize = createPurchaseFinalizeService({
     now: () => context().occurredAt,
+    inspectGroup: async () => ({ conflicts: [] }),
     submitGroup: async (resolved, buildContext) => {
       rollbackDraft = buildPurchasePostDraft(resolved, buildContext);
       await gateway.saveDraft({ kind: 'PURCHASE', ...rollbackDraft }, buildContext.actor);

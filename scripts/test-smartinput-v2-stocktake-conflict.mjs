@@ -15,6 +15,7 @@ const { buildPurchasePostDraft } = await import('../smartinput/purchase-official
 const { buildSalePostDraft } = await import('../smartinput/sale-official-stage4.js');
 const { createPurchaseFinalizeService } = await import('../smartinput/purchase-finalize-service.js');
 const { createSaleFinalizeService } = await import('../smartinput/sale-finalize-service.js');
+const { createOfficialCommandGateway } = await import('../orderq/official-command-gateway.js');
 const { planOfficialVoucherCommand } = await import('../orderq/official-voucher-core.js');
 const {
   assertOfficialCommandV2,
@@ -25,7 +26,8 @@ const {
   assertOfficialStocktakeProjectionV2,
   createOfficialStocktakeDecisionsV2,
   evaluateStocktakeCheckpointConflictV2,
-  inspectOfficialStocktakeConflictsV2
+  inspectOfficialStocktakeConflictsV2,
+  officialStocktakeConflictKeyV2
 } = await import('../orderq/stocktake-conflict-v2.js');
 
 const companyId = 'COMPANY-A';
@@ -119,15 +121,18 @@ function checkpoint(checkpointId, effectiveAt, overrides = {}) {
   };
 }
 
+function selection(conflict, decisionType, judgedAt = '2026-09-02T10:01:00.000Z') {
+  return { conflictKey: officialStocktakeConflictKeyV2(conflict), decisionType, judgedAt };
+}
+
 function planWith(kind, suffix, decisionType, quantity = 10, checkpointRows = [checkpoint('CP-SEP-01', '2026-09-01')]) {
   const initial = draft(kind, `${suffix}-INITIAL`, quantity);
   const assessment = inspectOfficialStocktakeConflictsV2({ command: initial.commandSource, inventoryCheckpoints: checkpointRows });
   assert.equal(assessment.conflicts.length, 1);
   const decisions = createOfficialStocktakeDecisionsV2({
     conflicts: assessment.conflicts,
-    decisionType,
-    actor: context.actor,
-    judgedAt: '2026-09-02T10:01:00.000Z'
+    selections: assessment.conflicts.map(conflict => selection(conflict, decisionType)),
+    actor: context.actor
   });
   const decided = draft(kind, `${suffix}-INITIAL`, quantity, {}, { stocktakeDecisions: decisions });
   const document = { ...decided.commandSource.document, status: 'DRAFT', businessStatus: 'DRAFT', revision: 1 };
@@ -215,6 +220,23 @@ assert.deepEqual(multiConflicts.map(conflict => [conflict.productCode, conflict.
   ['0007', 'CP-MULTI-0007', 10],
   ['0008', 'CP-MULTI-0008', -2]
 ], 'every matched line must resolve its own latest product checkpoint and signed quantity');
+const mixedDecisions = createOfficialStocktakeDecisionsV2({
+  conflicts: multiConflicts,
+  selections: multiConflicts.map(conflict => selection(conflict, conflict.productCode === '0007'
+    ? OFFICIAL_STOCKTAKE_DECISION.INCLUDED
+    : OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED)),
+  actor: context.actor
+});
+assert.deepEqual(mixedDecisions.map(decision => [decision.target.productCode, decision.decisionType]).sort(), [
+  ['0007', OFFICIAL_STOCKTAKE_DECISION.INCLUDED],
+  ['0008', OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED]
+], 'one voucher must preserve a separate decision for every conflicting row');
+assert.throws(() => createOfficialStocktakeDecisionsV2({
+  conflicts: multiConflicts,
+  selections: [selection(multiConflicts[0], OFFICIAL_STOCKTAKE_DECISION.INCLUDED)],
+  actor: context.actor
+}), /STOCKTAKE_DECISION_TARGET_COUNT_MISMATCH/,
+'an incomplete row-selection set must fail before command creation');
 
 assert.throws(() => planOfficialVoucherCommand({
   command: purchaseBefore.commandSource,
@@ -265,16 +287,33 @@ assert.throws(() => assertOfficialCommandV2(changedDecisionWithSameCommandId), /
 const tampered = structuredClone(includedIdentity.decided.commandSource);
 tampered.stocktakeDecisions[0].decisionType = OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED;
 assert.throws(() => assertOfficialCommandV2(tampered), /STOCKTAKE_DECISION_EFFECT_INVALID|COMMAND_PAYLOAD_CONFLICT/);
+const dateOnlyAudit = structuredClone(includedIdentity.decided.commandSource);
+dateOnlyAudit.stocktakeDecisions[0].judgedAt = '2026-09-02';
+assert.throws(() => assertOfficialCommandV2(dateOnlyAudit), /STOCKTAKE_JUDGED_AT_INVALID/,
+  'Gateway and Repository command validation must reject date-only judgment audit values');
 const forgedProjection = structuredClone(includedIdentity.plan);
 forgedProjection.inventoryMovements[0].signedQuantity = 10;
 assert.throws(() => assertOfficialStocktakeProjectionV2(forgedProjection, includedIdentity.decided.commandSource),
   /STOCKTAKE_SOURCE_PROJECTION_MISMATCH/);
 assert.throws(() => createOfficialStocktakeDecisionsV2({
   conflicts: includedIdentity.assessment.conflicts,
-  decisionType: 'CANCEL',
-  actor: context.actor,
-  judgedAt: '2026-09-02T10:01:00.000Z'
+  selections: includedIdentity.assessment.conflicts.map(conflict => selection(conflict, 'CANCEL')),
+  actor: context.actor
 }), /STOCKTAKE_DECISION_INVALID/, 'cancel is a UI-only zero-write outcome, never a persisted command decision');
+assert.throws(() => createOfficialStocktakeDecisionsV2({
+  conflicts: includedIdentity.assessment.conflicts,
+  selections: includedIdentity.assessment.conflicts.map(conflict => selection(
+    conflict, OFFICIAL_STOCKTAKE_DECISION.INCLUDED, '2026-09-02'
+  )),
+  actor: context.actor
+}), /STOCKTAKE_JUDGED_AT_INVALID/, 'date-only audit values must fail closed');
+assert.doesNotThrow(() => createOfficialStocktakeDecisionsV2({
+  conflicts: includedIdentity.assessment.conflicts,
+  selections: includedIdentity.assessment.conflicts.map(conflict => selection(
+    conflict, OFFICIAL_STOCKTAKE_DECISION.INCLUDED, '2026-09-02T19:01:00+09:00'
+  )),
+  actor: context.actor
+}), 'a complete ISO timestamp with an explicit offset must be accepted');
 
 const zero = planWith('PURCHASE', 'ZERO', OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED, 0);
 assert.equal(zero.plan.inventoryMovements.length, 2, 'zero conflict still keeps one source effect and one approved linked adjustment');
@@ -289,9 +328,6 @@ const unresolved = draft('PURCHASE', 'UNRESOLVED', 5, {
 assert.equal(inspectOfficialStocktakeConflictsV2({ command: unresolved.commandSource, inventoryCheckpoints: [newCheckpoint] }).conflicts.length, 0,
   'unmatched rows defer the same pure decision rule until a later rematch');
 
-const finalizeConflict = {
-  ...inspectOfficialStocktakeConflictsV2({ command: purchaseBefore.commandSource, inventoryCheckpoints: [newCheckpoint] }).conflicts[0]
-};
 for (const createService of [createPurchaseFinalizeService, createSaleFinalizeService]) {
   const submitted = [];
   const inspected = [];
@@ -300,7 +336,13 @@ for (const createService of [createPurchaseFinalizeService, createSaleFinalizeSe
     now: () => '2026-09-02T10:00:00.000Z',
     inspectGroup: async (group, serviceContext) => {
       inspected.push({ group, serviceContext });
-      return { conflicts: [finalizeConflict] };
+      const inspectedDraft = createService === createPurchaseFinalizeService
+        ? buildPurchasePostDraft(group, serviceContext)
+        : buildSalePostDraft(group, serviceContext);
+      return inspectOfficialStocktakeConflictsV2({
+        command: inspectedDraft.commandSource,
+        inventoryCheckpoints: [newCheckpoint]
+      });
     },
     submitGroup: async (group, serviceContext) => {
       submitted.push({ group, serviceContext });
@@ -322,18 +364,42 @@ for (const createService of [createPurchaseFinalizeService, createSaleFinalizeSe
   const preview = await service.finalize(request);
   assert.equal(preview.every(row => !row.ok && row.error.code === 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_REQUIRED'), true);
   assert.equal(submitted.length, 0, 'all group inspections must finish before any official submit');
+  const conflicts = preview[0].error.conflicts;
+  assert.equal(conflicts.length, 2);
   const confirmed = await service.finalize({
     ...request,
-    stocktakeDecision: {
-      decisionType: OFFICIAL_STOCKTAKE_DECISION.INCLUDED,
-      judgedAt: '2026-09-02T10:01:00.000Z'
-    }
+    stocktakeDecisions: conflicts.map((conflict, index) => selection(conflict,
+      index === 0 ? OFFICIAL_STOCKTAKE_DECISION.INCLUDED : OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED))
   });
   assert.equal(confirmed.every(row => row.ok), true);
   assert.equal(submitted.length, 2);
   assert.ok(submitted.every(row => row.serviceContext.stocktakeDecisions.length === 1));
+  assert.deepEqual(submitted.map(row => row.serviceContext.stocktakeDecisions[0].decisionType).sort(), [
+    OFFICIAL_STOCKTAKE_DECISION.INCLUDED,
+    OFFICIAL_STOCKTAKE_DECISION.NOT_INCLUDED
+  ].sort(), 'multiple groups must retain independent row decisions before the first submit');
   assert.ok(inspected.length >= 6, 'preview and decision recheck must inspect every group');
+
+  let missingInspectorSubmits = 0;
+  const missingInspector = createService({
+    validateGroup: () => true,
+    submitGroup: async () => { missingInspectorSubmits += 1; }
+  });
+  const blocked = await missingInspector.finalize(request);
+  assert.equal(blocked.every(row => row.error?.code === 'ORDERQ_OFFICIAL_V2_STOCKTAKE_INSPECTION_UNAVAILABLE'), true);
+  assert.equal(missingInspectorSubmits, 0, 'a V2 custom submit port without an inspector must fail before submit');
 }
+
+let missingGatewayDraftWrites = 0;
+const missingInspectionGateway = createOfficialCommandGateway({
+  saveOfficialVoucherDraft: async () => { missingGatewayDraftWrites += 1; },
+  runCentralOfficialVoucherCommand: async () => ({})
+}, { featureGates: { PURCHASE: true, SALE: true } });
+assert.throws(() => missingInspectionGateway.inspectStocktakeConflicts({ kind: 'PURCHASE', ...purchaseBefore }),
+  /STOCKTAKE_INSPECTION_UNAVAILABLE/);
+assert.throws(() => missingInspectionGateway.saveDraft({ kind: 'PURCHASE', ...purchaseBefore }, context.actor),
+  /STOCKTAKE_INSPECTION_UNAVAILABLE/);
+assert.equal(missingGatewayDraftWrites, 0, 'Gateway V2 saveDraft must not call an incomplete Repository port');
 
 const dialogSource = readFileSync(new URL('../smartinput/stocktake-conflict-dialog.js', import.meta.url), 'utf8');
 for (const phrase of [
@@ -353,6 +419,9 @@ console.log(JSON.stringify({
   sameDayUnknown: 'DECISION_REQUIRED',
   included: 'ABSORBED_BY_CHECKPOINT',
   notIncluded: 'APPLIED_AS_LATE_ADJUSTMENT exactly once',
+  mixedDecisions: 'PER_CONFLICT_ROW',
+  missingInspectionPort: 'FAIL_CLOSED',
+  judgedAt: 'Z_OR_EXPLICIT_OFFSET',
   cancelBeforeSubmit: true,
   purchaseSale: 'PASS',
   zeroNegative: 'PASS',

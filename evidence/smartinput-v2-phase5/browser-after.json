@@ -1,6 +1,6 @@
 {
   "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
-  "recordedAt": "2026-09-02T14:33:05.826Z",
+  "recordedAt": "2026-09-02T15:03:04.369Z",
   "isolation": {
     "browserProfile": "mkdtemp isolated profile, removed after run",
     "productionIndexedDbWrites": 0,
@@ -12,7 +12,7 @@
         "action": "orderq_official_sync_pull",
         "companyId": "ONEAPP",
         "changeCount": 0,
-        "blockedAt": "2026-09-02T14:32:53.742Z"
+        "blockedAt": "2026-09-02T15:02:50.052Z"
       },
       {
         "method": "POST",
@@ -20,7 +20,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 1,
-        "blockedAt": "2026-09-02T14:32:54.700Z"
+        "blockedAt": "2026-09-02T15:02:50.743Z"
       },
       {
         "method": "POST",
@@ -28,7 +28,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T14:32:55.336Z"
+        "blockedAt": "2026-09-02T15:02:52.397Z"
       },
       {
         "method": "POST",
@@ -36,7 +36,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T14:33:05.591Z"
+        "blockedAt": "2026-09-02T15:03:02.281Z"
       }
     ],
     "localFixtureServerWrites": 0,
@@ -245,17 +245,17 @@
     "directInput": {
       "clicks": 1,
       "clickDefinition": "Analyze button after keyboard entry",
-      "responseMs": 148.99
+      "responseMs": 186.11
     },
     "excelTablePaste": {
       "clicks": 0,
       "clickDefinition": "Ctrl+V/paste event into the grid",
-      "responseMs": 73.82
+      "responseMs": 67.05
     },
     "autosave": {
       "clicks": 0,
       "clickDefinition": "automatic after keyboard entry",
-      "responseMs": 231.72
+      "responseMs": 200.45
     },
     "autosaveRestore": {
       "clicks": 1,
@@ -267,8 +267,8 @@
         "mode": "purchase",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 1136.82,
-        "saveFeedbackMs": 108.08,
+        "modeAndEntryReadyMs": 686.34,
+        "saveFeedbackMs": 94.18,
         "currentResult": "SAVED",
         "feedback": "공식 구매전표 1건 저장 완료",
         "dateDeleteEvidence": {
@@ -305,8 +305,8 @@
         "mode": "sale",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 244.86,
-        "saveFeedbackMs": 105.76,
+        "modeAndEntryReadyMs": 207.34,
+        "saveFeedbackMs": 95.15,
         "currentResult": "SAVED",
         "feedback": "공식 판매전표 1건 저장 완료",
         "dom": {
@@ -665,6 +665,45 @@
         "queue": 0
       },
       "companyIsolation": true,
+      "mixed": {
+        "purchase": {
+          "decisions": [
+            {
+              "productCode": "0007",
+              "decisionType": "INCLUDED_IN_CHECKPOINT"
+            },
+            {
+              "productCode": "0008",
+              "decisionType": "NOT_INCLUDED_IN_CHECKPOINT"
+            }
+          ],
+          "movementCount": 3,
+          "adjustmentCount": 1,
+          "appliedQuantity": 4,
+          "submitCount": 1
+        },
+        "sale": {
+          "decisions": [
+            {
+              "productCode": "0007",
+              "decisionType": "INCLUDED_IN_CHECKPOINT"
+            },
+            {
+              "productCode": "0008",
+              "decisionType": "NOT_INCLUDED_IN_CHECKPOINT"
+            }
+          ],
+          "movementCount": 3,
+          "adjustmentCount": 1,
+          "appliedQuantity": -4,
+          "submitCount": 1
+        }
+      },
+      "midCancel": {
+        "conflictCount": 2,
+        "submitCount": 0,
+        "countsUnchanged": true
+      },
       "ids": {
         "includedDocument": "PD-0f21788b86c8393efab3e7ade2b9fa41",
         "saleDocument": "SD-b61c180ebc4610779eecc86bb1ae878c"
@@ -748,6 +787,18 @@
       },
       "focusRestored": true
     },
+    "sequentialMixed": [
+      {
+        "conflictKey": "STC-ed6b57ed0bc22a8563fc6b9088d40c74",
+        "decisionType": "INCLUDED_IN_CHECKPOINT",
+        "judgedAt": "2026-09-02T15:02:46.954Z"
+      },
+      {
+        "conflictKey": "STC-3730067acd4fa6ce3cd269f792cf3a8f",
+        "decisionType": "NOT_INCLUDED_IN_CHECKPOINT",
+        "judgedAt": "2026-09-02T15:02:46.959Z"
+      }
+    ],
     "themes": [
       "light",
       "dark"

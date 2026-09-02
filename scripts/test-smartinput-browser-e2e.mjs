@@ -588,6 +588,23 @@ try {
     revisions: 0, inventory: 0, ledger: 0, commands: 0, queue: 0
   }, 'forced Stage 5 transaction failure must rollback revision, adjustment, ledger, command, and queue together');
   assert.equal(officialV2Stage5Result.companyIsolation, true);
+  for (const [kind, appliedQuantity] of [['purchase', 4], ['sale', -4]]) {
+    assert.deepEqual(officialV2Stage5Result.mixed[kind], {
+      decisions: [
+        { productCode: '0007', decisionType: 'INCLUDED_IN_CHECKPOINT' },
+        { productCode: '0008', decisionType: 'NOT_INCLUDED_IN_CHECKPOINT' }
+      ],
+      movementCount: 3,
+      adjustmentCount: 1,
+      appliedQuantity,
+      submitCount: 1
+    }, `${kind} two-row voucher must preserve independent included/not-included decisions`);
+  }
+  assert.deepEqual(officialV2Stage5Result.midCancel, {
+    conflictCount: 2,
+    submitCount: 0,
+    countsUnchanged: true
+  }, 'cancelling after an intermediate row choice must leave every official store unchanged');
   if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
     await click(client, '[data-nexus-ui-theme-toggle]');
     await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'light theme for stocktake popup');
@@ -606,8 +623,11 @@ try {
       app:{x:app.x,y:app.y,width:app.width,height:app.height}};
   })()`);
   await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=1');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
-    companyId:'V2-STAGE5-COMPANY',documentId:'PD-UI',sourceLineId:'PL-UI',checkpointId:'CP-UI',
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-UI',sourceLineId:'PL-UI-1',checkpointId:'CP-UI',
     productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
+  },{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-UI',sourceLineId:'PL-UI-2',checkpointId:'CP-UI',
+    productCode:'0008',productName:'혼합결정 상품',warehouseName:'단계5창고',quantity:4
   }]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
   await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'light stocktake popup');
   const stocktakePopupContract = await evaluate(client, `(() => {const dialog=document.querySelector('dialog.stocktake-conflict-dialog');return {
@@ -626,6 +646,9 @@ try {
   assert.equal(stocktakePopupContract.focused, '실사수량에 포함됨');
   const stocktakeLightShot = await capture(client, 'smartinput-stocktake-conflict-light.png');
   baselineScreenshots.push(stocktakeLightShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `window.__stage5DialogResult==='PENDING'&&document.querySelector('dialog.stocktake-conflict-dialog[open]')?.textContent.includes('0008 / 혼합결정 상품')`,
+    'stocktake popup must advance one row without persisting the first selection');
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await expr(client, `window.__stage5DialogResult===null&&!document.querySelector('dialog.stocktake-conflict-dialog')`, 'stocktake popup ESC cancel');
@@ -641,7 +664,7 @@ try {
 
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark stocktake popup theme');
-  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-DARK',sourceLineId:'PL-DARK',checkpointId:'CP-DARK',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
   await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'dark stocktake popup');
   const stocktakeDarkShot = await capture(client, 'smartinput-stocktake-conflict-dark.png');
   baselineScreenshots.push(stocktakeDarkShot);
@@ -651,13 +674,24 @@ try {
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'restore light theme after stocktake popup');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-1',checkpointId:'CP-MOBILE',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
+  },{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-2',checkpointId:'CP-MOBILE',productCode:'0008',productName:'혼합결정 상품',warehouseName:'단계5창고',quantity:4
+  }]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
   await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'mobile stocktake popup');
   assert.equal(await evaluate(client, `[...document.querySelectorAll('dialog.stocktake-conflict-dialog footer .button')].every(button=>button.getBoundingClientRect().height>=44&&button.getBoundingClientRect().right<=innerWidth)`), true);
   const stocktakeMobileShot = await capture(client, 'smartinput-stocktake-conflict-mobile.png');
   baselineScreenshots.push(stocktakeMobileShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `window.__stage5DialogResult==='PENDING'&&document.querySelector('dialog.stocktake-conflict-dialog[open]')?.textContent.includes('0008 / 혼합결정 상품')`,
+    'mobile stocktake popup second row');
   await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="NOT_INCLUDED_IN_CHECKPOINT"]');
-  await expr(client, `window.__stage5DialogResult==='NOT_INCLUDED_IN_CHECKPOINT'`, 'mobile stocktake popup decision');
+  await expr(client, `Array.isArray(window.__stage5DialogResult)&&window.__stage5DialogResult.length===2`, 'mobile stocktake mixed decisions');
+  const stocktakeSequentialMixed = await evaluate(client, `window.__stage5DialogResult`);
+  assert.deepEqual(stocktakeSequentialMixed.map(row => row.decisionType), ['INCLUDED_IN_CHECKPOINT', 'NOT_INCLUDED_IN_CHECKPOINT']);
+  assert.equal(new Set(stocktakeSequentialMixed.map(row => row.conflictKey)).size, 2);
+  assert.equal(stocktakeSequentialMixed.every(row => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(row.judgedAt)), true);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
   await evaluate(client, `window.dispatchEvent(new Event('resize'));true`);
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
@@ -1028,6 +1062,7 @@ try {
       contract: stocktakePopupContract,
       cancelStateBefore: stocktakeUiBefore,
       cancelStateAfter: stocktakeUiAfter,
+      sequentialMixed: stocktakeSequentialMixed,
       themes: ['light', 'dark'],
       mobileViewport: { width: 390, height: 844 },
       normalFlowPopupCount: 0

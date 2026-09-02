@@ -6,19 +6,19 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.8.0';
-import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.23.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.24.0';
 import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.2.0';
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.4.0';
+} from './official-voucher-v2-contract.js?v=0.5.0';
 import {
   assertOfficialStocktakeDecisionEnvelopeV2,
   assertOfficialStocktakeProjectionV2,
   inspectOfficialStocktakeConflictsV2
-} from './stocktake-conflict-v2.js?v=0.1.0';
+} from './stocktake-conflict-v2.js?v=0.2.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));

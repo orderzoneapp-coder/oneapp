@@ -14,9 +14,9 @@ import {
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.3.0';
-import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.4.0';
-import { SaleFinalizeService } from './sale-finalize-service.js?v=0.4.0';
-import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.1.0';
+import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.5.0';
+import { SaleFinalizeService } from './sale-finalize-service.js?v=0.5.0';
+import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
@@ -6639,14 +6639,11 @@ async function finalizeWithStocktakeDecision(service, request) {
   let results = await service.finalize(request);
   const conflicts = stocktakeConflictsFromFinalizeResults(results);
   if (!conflicts.length) return { cancelled: false, results };
-  const decisionType = await showStocktakeConflictDialog(conflicts);
-  if (!decisionType) return { cancelled: true, results: [] };
+  const stocktakeDecisions = await showStocktakeConflictDialog(conflicts);
+  if (!stocktakeDecisions) return { cancelled: true, results: [] };
   results = await service.finalize({
     ...request,
-    stocktakeDecision: {
-      decisionType,
-      judgedAt: new Date().toISOString()
-    }
+    stocktakeDecisions
   });
   return { cancelled: false, results };
 }

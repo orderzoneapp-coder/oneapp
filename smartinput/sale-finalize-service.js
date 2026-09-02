@@ -2,13 +2,15 @@ import {
   inspectSaleGroupStocktake,
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './sale-official-stage4.js?v=0.9.0';
-import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.4.0';
+} from './sale-official-stage4.js?v=1.0.0';
+import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
 import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 import {
   createOfficialStocktakeDecisionsV2,
-  OfficialStocktakeConflictRequiredError
-} from '../orderq/stocktake-conflict-v2.js?v=0.1.0';
+  OfficialStocktakeConflictRequiredError,
+  OfficialStocktakeInspectionUnavailableError,
+  officialStocktakeConflictKeyV2
+} from '../orderq/stocktake-conflict-v2.js?v=0.2.0';
 
 export const SALE_FINALIZE_SERVICE_CONTRACT = Object.freeze({
   version: 'ONEAPP_SMARTINPUT_SALE_FINALIZE_SERVICE_V1',
@@ -23,9 +25,7 @@ const value = input => String(input);
 
 export function createSaleFinalizeService(ports = {}) {
   const submitGroup = ports.submitGroup || postSaleGroup;
-  const inspectGroup = ports.inspectGroup || (ports.submitGroup
-    ? (async () => ({ conflicts: [] }))
-    : inspectSaleGroupStocktake);
+  const inspectGroup = ports.inspectGroup || (ports.submitGroup ? null : inspectSaleGroupStocktake);
   const now = ports.now || (() => new Date().toISOString());
   return Object.freeze({
     contract: SALE_FINALIZE_SERVICE_CONTRACT,
@@ -95,6 +95,11 @@ export function createSaleFinalizeService(ports = {}) {
 
       const v2Prepared = prepared.filter(row => row.identityV2);
       if (v2Prepared.length) {
+        if (typeof inspectGroup !== 'function') {
+          const error = new OfficialStocktakeInspectionUnavailableError();
+          prepared.forEach(row => outcomes.set(row.group, { ok: false, group: row.group, error }));
+          return groups.map(group => outcomes.get(group));
+        }
         const assessments = [];
         try {
           for (const row of v2Prepared) {
@@ -105,21 +110,24 @@ export function createSaleFinalizeService(ports = {}) {
           return groups.map(group => outcomes.get(group));
         }
         const conflicts = assessments.flatMap(row => row.assessment.conflicts || []);
-        if (conflicts.length && !request.stocktakeDecision) {
+        if (conflicts.length && !Array.isArray(request.stocktakeDecisions)) {
           const error = new OfficialStocktakeConflictRequiredError(conflicts);
           prepared.forEach(row => outcomes.set(row.group, { ok: false, group: row.group, error }));
           return groups.map(group => outcomes.get(group));
         }
-        if (conflicts.length) {
-          const judgedAt = request.stocktakeDecision.judgedAt || now();
+        if (conflicts.length || request.stocktakeDecisions !== undefined) {
           try {
+            const decisions = createOfficialStocktakeDecisionsV2({
+              conflicts,
+              selections: request.stocktakeDecisions,
+              actor: v2Prepared[0].context.actor
+            });
+            const decisionByConflict = new Map(conflicts.map((conflict, index) => [
+              officialStocktakeConflictKeyV2(conflict), decisions[index]
+            ]));
             for (const { row, assessment } of assessments) {
-              row.context.stocktakeDecisions = createOfficialStocktakeDecisionsV2({
-                conflicts: assessment.conflicts || [],
-                decisionType: request.stocktakeDecision.decisionType,
-                actor: row.context.actor,
-                judgedAt
-              });
+              row.context.stocktakeDecisions = (assessment.conflicts || [])
+                .map(conflict => decisionByConflict.get(officialStocktakeConflictKeyV2(conflict)));
             }
             for (const row of v2Prepared) await inspectGroup(row.submitSource, row.context);
           } catch (error) {

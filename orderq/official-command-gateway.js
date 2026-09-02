@@ -8,14 +8,17 @@ import {
   inspectOfficialStocktakeConflicts,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from './official-voucher-repository.js?v=0.24.0';
+} from './official-voucher-repository.js?v=0.25.0';
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.4.0';
-import { assertOfficialStocktakeProjectionV2 } from './stocktake-conflict-v2.js?v=0.1.0';
+} from './official-voucher-v2-contract.js?v=0.5.0';
+import {
+  assertOfficialStocktakeProjectionV2,
+  OfficialStocktakeInspectionUnavailableError
+} from './stocktake-conflict-v2.js?v=0.2.0';
 
 // The public Gateway surface remains V1. Identity V2 is an additive,
 // feature-gated command contract rather than a breaking Gateway API change.
@@ -88,13 +91,16 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
       const checked = validateV2Boundary(source, featureGates);
       if (!checked) return Promise.resolve({ conflicts: [], identityVersion: '' });
       if (typeof repository.inspectOfficialStocktakeConflicts !== 'function') {
-        return Promise.resolve({ conflicts: [], identityVersion: checked.command.identityVersion });
+        throw new OfficialStocktakeInspectionUnavailableError();
       }
       return repository.inspectOfficialStocktakeConflicts(source);
     },
     saveDraft(source, actor) {
       const checked = validateV2Boundary(source, featureGates);
-      if (checked && typeof repository.inspectOfficialStocktakeConflicts === 'function') {
+      if (checked) {
+        if (typeof repository.inspectOfficialStocktakeConflicts !== 'function') {
+          throw new OfficialStocktakeInspectionUnavailableError();
+        }
         return Promise.resolve(repository.inspectOfficialStocktakeConflicts(source))
           .then(() => repository.saveOfficialVoucherDraft(source, actor));
       }

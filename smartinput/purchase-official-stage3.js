@@ -5,8 +5,8 @@ import {
   freezePurchaseCommandIntent,
   inspectOfficialStocktakeConflicts,
   loadPurchaseCommandAggregate
-} from '../orderq/official-command-adapter.js?v=0.4.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.23.0';
+} from '../orderq/official-command-adapter.js?v=0.5.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.24.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -14,7 +14,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.4.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1',

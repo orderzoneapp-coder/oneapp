@@ -1,5 +1,5 @@
 import './canonical-hash.js?v=0.2.0';
-import { assertOfficialStocktakeDecisionEnvelopeV2 } from './stocktake-conflict-v2.js?v=0.1.0';
+import { assertOfficialStocktakeDecisionEnvelopeV2 } from './stocktake-conflict-v2.js?v=0.2.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');

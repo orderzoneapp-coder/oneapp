@@ -1,7 +1,7 @@
 import {
   OFFICIAL_COMMAND_GATEWAY_VERSION,
   OfficialCommandGateway
-} from './official-command-gateway.js?v=0.4.0';
+} from './official-command-gateway.js?v=0.5.0';
 
 export const OFFICIAL_COMMAND_ADAPTER_VERSION = 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_ADAPTER_V1';
 
