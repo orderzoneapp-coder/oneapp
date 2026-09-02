@@ -6,7 +6,7 @@
 - 포함은 `ABSORBED_BY_CHECKPOINT`와 현재고 중복 0, 미포함은 `APPLIED_AS_LATE_ADJUSTMENT` 연결조정 정확히 1회, 취소는 공식자료 0건
 - 결정 대상/effect/checkpoint/businessDate/actor/판단시각을 command payload와 Revision에 보존
 - 승인 팝업의 행별 순차 선택으로 같은 전표·복수 그룹의 혼합 포함/미포함 결정을 지원하고, 중간 취소는 수집 선택 폐기·공식자료 0건
-- 모든 그룹 선검사와 Gateway/Repository checkpoint 재검사, V2 inspection port 필수, payload/멱등성/Revision/transaction fail-closed
+- 모든 그룹 선검사와 Gateway/Repository checkpoint 재검사, V2 Gateway inspect·Draft·execute 및 custom Finalize inspection port 필수, payload/멱등성/Revision/transaction fail-closed
 - 판단 `judgedAt`은 `Z` 또는 명시 offset을 가진 완전한 ISO timestamp만 허용
 - 기존 승인 문구의 동적 dialog만 추가하고 입력·선택·스크롤·작업본 및 기존 DOM/버튼/열/탭/단축키/정상 클릭 수 보존
 

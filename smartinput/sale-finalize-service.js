@@ -2,7 +2,7 @@ import {
   inspectSaleGroupStocktake,
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './sale-official-stage4.js?v=1.0.0';
+} from './sale-official-stage4.js?v=1.1.0';
 import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
 import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 import {

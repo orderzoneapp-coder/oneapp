@@ -3,7 +3,7 @@ import {
   inspectPurchaseGroupStocktake,
   postPurchaseGroup,
   SMARTINPUT_PURCHASE_ACTOR_ID
-} from './purchase-official-stage3.js?v=0.8.0';
+} from './purchase-official-stage3.js?v=0.9.0';
 import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2

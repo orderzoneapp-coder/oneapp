@@ -5,7 +5,7 @@ import {
   freezePurchaseCommandIntent,
   inspectOfficialStocktakeConflicts,
   loadPurchaseCommandAggregate
-} from '../orderq/official-command-adapter.js?v=0.5.0';
+} from '../orderq/official-command-adapter.js?v=0.6.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.24.0';
 import {
   createOfficialDocumentIdentityV2,

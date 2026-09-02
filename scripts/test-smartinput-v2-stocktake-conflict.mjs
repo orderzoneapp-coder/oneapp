@@ -391,15 +391,25 @@ for (const createService of [createPurchaseFinalizeService, createSaleFinalizeSe
 }
 
 let missingGatewayDraftWrites = 0;
+let missingGatewayCommandRuns = 0;
 const missingInspectionGateway = createOfficialCommandGateway({
   saveOfficialVoucherDraft: async () => { missingGatewayDraftWrites += 1; },
-  runCentralOfficialVoucherCommand: async () => ({})
+  runCentralOfficialVoucherCommand: async () => {
+    missingGatewayCommandRuns += 1;
+    return { legacy: true };
+  }
 }, { featureGates: { PURCHASE: true, SALE: true } });
 assert.throws(() => missingInspectionGateway.inspectStocktakeConflicts({ kind: 'PURCHASE', ...purchaseBefore }),
   /STOCKTAKE_INSPECTION_UNAVAILABLE/);
 assert.throws(() => missingInspectionGateway.saveDraft({ kind: 'PURCHASE', ...purchaseBefore }, context.actor),
   /STOCKTAKE_INSPECTION_UNAVAILABLE/);
+assert.throws(() => missingInspectionGateway.execute(purchaseBefore.commandSource),
+  /STOCKTAKE_INSPECTION_UNAVAILABLE/);
 assert.equal(missingGatewayDraftWrites, 0, 'Gateway V2 saveDraft must not call an incomplete Repository port');
+assert.equal(missingGatewayCommandRuns, 0, 'Gateway V2 execute must not call an incomplete Repository port');
+assert.deepEqual(await missingInspectionGateway.execute({ commandType: 'POST_PURCHASE' }), { legacy: true },
+  'Gateway V1 execute must preserve the existing Repository call');
+assert.equal(missingGatewayCommandRuns, 1, 'only the V1 compatibility execute may reach the incomplete Repository port');
 
 const dialogSource = readFileSync(new URL('../smartinput/stocktake-conflict-dialog.js', import.meta.url), 'utf8');
 for (const phrase of [
@@ -420,7 +430,7 @@ console.log(JSON.stringify({
   included: 'ABSORBED_BY_CHECKPOINT',
   notIncluded: 'APPLIED_AS_LATE_ADJUSTMENT exactly once',
   mixedDecisions: 'PER_CONFLICT_ROW',
-  missingInspectionPort: 'FAIL_CLOSED',
+  missingInspectionPort: 'INSPECT_SAVE_EXECUTE_FAIL_CLOSED',
   judgedAt: 'Z_OR_EXPLICIT_OFFSET',
   cancelBeforeSubmit: true,
   purchaseSale: 'PASS',

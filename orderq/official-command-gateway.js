@@ -108,7 +108,12 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
     },
     execute(command) {
       const checked = validateV2Boundary(command, featureGates);
-      if (checked && commandKind(command) !== checked.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
+      if (checked) {
+        if (commandKind(command) !== checked.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
+        if (typeof repository.inspectOfficialStocktakeConflicts !== 'function') {
+          throw new OfficialStocktakeInspectionUnavailableError();
+        }
+      }
       const projected = repository.runCentralOfficialVoucherCommand(command);
       if (!checked) return projected;
       return Promise.resolve(projected).then(result => {

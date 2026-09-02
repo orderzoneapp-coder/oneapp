@@ -1,6 +1,6 @@
 {
   "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
-  "recordedAt": "2026-09-02T15:03:04.369Z",
+  "recordedAt": "2026-09-02T15:23:38.750Z",
   "isolation": {
     "browserProfile": "mkdtemp isolated profile, removed after run",
     "productionIndexedDbWrites": 0,
@@ -12,7 +12,7 @@
         "action": "orderq_official_sync_pull",
         "companyId": "ONEAPP",
         "changeCount": 0,
-        "blockedAt": "2026-09-02T15:02:50.052Z"
+        "blockedAt": "2026-09-02T15:23:24.566Z"
       },
       {
         "method": "POST",
@@ -20,7 +20,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 1,
-        "blockedAt": "2026-09-02T15:02:50.743Z"
+        "blockedAt": "2026-09-02T15:23:25.743Z"
       },
       {
         "method": "POST",
@@ -28,7 +28,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T15:02:52.397Z"
+        "blockedAt": "2026-09-02T15:23:26.348Z"
       },
       {
         "method": "POST",
@@ -36,7 +36,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T15:03:02.281Z"
+        "blockedAt": "2026-09-02T15:23:36.642Z"
       }
     ],
     "localFixtureServerWrites": 0,
@@ -245,17 +245,17 @@
     "directInput": {
       "clicks": 1,
       "clickDefinition": "Analyze button after keyboard entry",
-      "responseMs": 186.11
+      "responseMs": 167.94
     },
     "excelTablePaste": {
       "clicks": 0,
       "clickDefinition": "Ctrl+V/paste event into the grid",
-      "responseMs": 67.05
+      "responseMs": 53.69
     },
     "autosave": {
       "clicks": 0,
       "clickDefinition": "automatic after keyboard entry",
-      "responseMs": 200.45
+      "responseMs": 207.62
     },
     "autosaveRestore": {
       "clicks": 1,
@@ -267,8 +267,8 @@
         "mode": "purchase",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 686.34,
-        "saveFeedbackMs": 94.18,
+        "modeAndEntryReadyMs": 1288.3,
+        "saveFeedbackMs": 97.19,
         "currentResult": "SAVED",
         "feedback": "공식 구매전표 1건 저장 완료",
         "dateDeleteEvidence": {
@@ -305,8 +305,8 @@
         "mode": "sale",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 207.34,
-        "saveFeedbackMs": 95.15,
+        "modeAndEntryReadyMs": 215.5,
+        "saveFeedbackMs": 96.48,
         "currentResult": "SAVED",
         "feedback": "공식 판매전표 1건 저장 완료",
         "dom": {
@@ -791,12 +791,12 @@
       {
         "conflictKey": "STC-ed6b57ed0bc22a8563fc6b9088d40c74",
         "decisionType": "INCLUDED_IN_CHECKPOINT",
-        "judgedAt": "2026-09-02T15:02:46.954Z"
+        "judgedAt": "2026-09-02T15:23:21.912Z"
       },
       {
         "conflictKey": "STC-3730067acd4fa6ce3cd269f792cf3a8f",
         "decisionType": "NOT_INCLUDED_IN_CHECKPOINT",
-        "judgedAt": "2026-09-02T15:02:46.959Z"
+        "judgedAt": "2026-09-02T15:23:21.918Z"
       }
     ],
     "themes": [

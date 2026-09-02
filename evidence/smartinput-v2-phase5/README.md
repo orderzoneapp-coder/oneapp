@@ -21,7 +21,7 @@
 - 미포함 결정은 원 이동을 비적용 연결기록으로 보존하고 결정적 ID의 `APPLIED_AS_LATE_ADJUSTMENT` 이동을 정확히 한 건 추가한다. 원 `businessDate`와 checkpoint 수량은 변경하지 않는다.
 - 수량 0은 `ZERO_EFFECT`를 유지하면서 별도 `stocktakeEffectStatus`로 결정을 보존한다. 음수와 구매 `+`, 판매 `-`, factor 1, 미매칭 공식재고 미반영, 불변 Snapshot, 선택적 거래처/AP·AR, `effectiveAt`/`occurredAt` 계약을 유지한다.
 - 결정 종류, 대상 행·상품·창고·수량, checkpoint, 판단시각, actor, `businessDate`를 command payload와 Revision에 넣는다. `judgedAt`은 `Z` 또는 명시 offset을 가진 완전한 ISO timestamp만 허용한다. 결정 변경은 payload digest와 commandId를 바꾸며, 동일 commandId의 변경 payload는 거부된다.
-- Gateway는 독립 기본-OFF 구매/판매 gate와 command/projection을 검사한다. V2 inspection port가 없으면 preview와 `saveDraft` 모두 명시 오류로 차단하고, custom submit을 쓰는 Finalize Service도 inspector가 없으면 submit 0건으로 종료한다. Repository는 preview와 별개로 같은 쓰기 transaction 안에서 checkpoint를 다시 읽고 회사·결정값·대상·projection·멱등성·expected Revision을 재검사한다. preview 뒤 최신 checkpoint가 바뀌면 쓰기 전에 fail-closed한다.
+- Gateway는 독립 기본-OFF 구매/판매 gate와 command/projection을 검사한다. V2 inspection port가 없으면 preview·`saveDraft`·`execute` 모두 명시 오류로 차단하고, custom submit을 쓰는 Finalize Service도 inspector가 없으면 submit 0건으로 종료한다. V1 `execute`는 기존 Repository 호출을 유지한다. Repository는 preview와 별개로 같은 쓰기 transaction 안에서 checkpoint를 다시 읽고 회사·결정값·대상·projection·멱등성·expected Revision을 재검사한다. preview 뒤 최신 checkpoint가 바뀌면 쓰기 전에 fail-closed한다.
 - 향후 미매칭 재매칭이 사용할 수 있는 순수 `evaluateStocktakeCheckpointConflictV2()`만 제공한다. 현행 재매칭 배치·영구 검수 UI·자동선택 동작은 이 단계에서 확장하지 않았다.
 
 ## 취소·UI 보존

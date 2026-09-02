@@ -355,6 +355,7 @@ const repository = {
   findOfficialSaleBySource: async () => null,
   loadOfficialPurchaseAggregate: async () => null,
   loadOfficialSaleAggregate: async () => null,
+  inspectOfficialStocktakeConflicts: async () => ({ conflicts: [] }),
   saveOfficialVoucherDraft: async value => { calls.push(`SAVE:${value.kind}`); return value; },
   runCentralOfficialVoucherCommand: async value => {
     calls.push(`EXECUTE:${value.commandType}`);
