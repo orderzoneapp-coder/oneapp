@@ -10,10 +10,8 @@ import {
   pullOfficialCloudChanges,
   pushOfficialCloudChanges
 } from './orderq-cloud-adapter.js?v=0.8.0';
-import {
-  applyRemoteOfficialVoucherCommandPayload,
-  applyRemotePendingInventoryResolutionPayload
-} from './official-voucher-repository.js?v=0.25.0';
+import { applyRemoteOfficialVoucherCommandPayload } from './official-voucher-repository.js?v=0.26.0';
+import { OfficialCommandGateway } from './official-command-gateway.js?v=0.7.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const OFFICIAL_ENTITY_TYPES = new Set(['OFFICIAL_VOUCHER_COMMAND', 'PENDING_INVENTORY_RESOLUTION']);
@@ -142,7 +140,9 @@ async function rememberRemoteConflict(companyId, change, error) {
 
 async function applyRemoteChange(change) {
   if (change.entityType === 'OFFICIAL_VOUCHER_COMMAND') return applyRemoteOfficialVoucherCommandPayload(change.payload);
-  if (change.entityType === 'PENDING_INVENTORY_RESOLUTION') return applyRemotePendingInventoryResolutionPayload(change.payload);
+  if (change.entityType === 'PENDING_INVENTORY_RESOLUTION') {
+    return OfficialCommandGateway.applyRemoteInventoryResolutionPayload(change.payload);
+  }
   throw new Error(`ORDERQ_OFFICIAL_REMOTE_ENTITY_UNSUPPORTED:${change.entityType}`);
 }
 

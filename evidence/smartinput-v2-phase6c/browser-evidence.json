@@ -1,0 +1,224 @@
+{
+  "taskId": "NEXUS-SI-V2-06C",
+  "status": "PASS",
+  "schemaVersion": "ONEAPP_STAGE6C_BROWSER_EVIDENCE_V1",
+  "db": {
+    "name": "oneapp-orderq-pre-m1-v6",
+    "version": 7,
+    "newStores": 0
+  },
+  "primary": {
+    "selectedProductId": "PRODUCT-CODE",
+    "candidateSameNameCount": 2,
+    "automaticConfirmation": false,
+    "movements": [
+      {
+        "pendingEffectId": "PE-UP-MIXED-1",
+        "voucherMode": "purchase",
+        "businessDate": "2026-09-03",
+        "signedQuantity": 5,
+        "originalSignedQuantity": 5,
+        "status": "APPLIED_NORMAL",
+        "stocktakeEffectStatus": ""
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-4",
+        "voucherMode": "sale",
+        "businessDate": "2026-09-04",
+        "signedQuantity": 2,
+        "originalSignedQuantity": 2,
+        "status": "APPLIED_NORMAL",
+        "stocktakeEffectStatus": ""
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-3",
+        "voucherMode": "purchase",
+        "businessDate": "2026-09-02",
+        "signedQuantity": 0,
+        "originalSignedQuantity": 0,
+        "status": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "ABSORBED_BY_CHECKPOINT"
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-2",
+        "voucherMode": "sale",
+        "businessDate": "2026-09-01",
+        "signedQuantity": -3,
+        "originalSignedQuantity": -3,
+        "status": "APPLIED_AS_LATE_ADJUSTMENT",
+        "stocktakeEffectStatus": "APPLIED_AS_LATE_ADJUSTMENT"
+      }
+    ],
+    "resolvedEffects": [
+      {
+        "pendingEffectId": "PE-UP-MIXED-1",
+        "status": "APPLIED_NORMAL",
+        "stocktakeEffectStatus": "",
+        "officialInventoryApplied": true
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-2",
+        "status": "APPLIED_AS_LATE_ADJUSTMENT",
+        "stocktakeEffectStatus": "APPLIED_AS_LATE_ADJUSTMENT",
+        "officialInventoryApplied": true
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-3",
+        "status": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "ABSORBED_BY_CHECKPOINT",
+        "officialInventoryApplied": false
+      },
+      {
+        "pendingEffectId": "PE-UP-MIXED-4",
+        "status": "APPLIED_NORMAL",
+        "stocktakeEffectStatus": "",
+        "officialInventoryApplied": true
+      }
+    ],
+    "auditRevisions": 1,
+    "receipts": 1,
+    "queues": 1,
+    "readwriteTransactions": [
+      {
+        "mode": "readwrite",
+        "stores": [
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
+          "officialCommands",
+          "voucherRevisions",
+          "inventoryMovements",
+          "pendingInventoryEffects",
+          "inventoryCheckpoints",
+          "unresolvedProducts",
+          "syncQueue"
+        ]
+      }
+    ],
+    "queueState": [
+      {
+        "entityType": "OFFICIAL_INVENTORY_REMATCH_COMMAND",
+        "status": "WAITING_SERVER_CONTRACT"
+      }
+    ],
+    "originalLinesAndSnapshotsUnchanged": true,
+    "documentsUnchanged": true
+  },
+  "nameOnly": {
+    "productId": "PRODUCT-NAME",
+    "movements": 1
+  },
+  "zero": {
+    "movements": [
+      {
+        "businessDate": "2026-09-01",
+        "effectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "APPLIED_AS_LATE_ADJUSTMENT",
+        "signedQuantity": 0,
+        "originalSignedQuantity": 0,
+        "officialInventoryApplied": true
+      },
+      {
+        "businessDate": "2026-09-02",
+        "effectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "ABSORBED_BY_CHECKPOINT",
+        "signedQuantity": 0,
+        "originalSignedQuantity": 0,
+        "officialInventoryApplied": false
+      },
+      {
+        "businessDate": "2026-09-04",
+        "effectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "",
+        "signedQuantity": 0,
+        "originalSignedQuantity": 0,
+        "officialInventoryApplied": true
+      }
+    ],
+    "resolvedEffects": [
+      {
+        "inventoryEffectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": ""
+      },
+      {
+        "inventoryEffectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "ABSORBED_BY_CHECKPOINT"
+      },
+      {
+        "inventoryEffectStatus": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "APPLIED_AS_LATE_ADJUSTMENT"
+      }
+    ],
+    "auditEffects": [
+      {
+        "status": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "APPLIED_AS_LATE_ADJUSTMENT"
+      },
+      {
+        "status": "ZERO_EFFECT",
+        "stocktakeEffectStatus": "ABSORBED_BY_CHECKPOINT"
+      },
+      {
+        "status": "ZERO_EFFECT",
+        "stocktakeEffectStatus": ""
+      }
+    ]
+  },
+  "retry": {
+    "duplicate": true,
+    "countsUnchanged": true,
+    "afterSnapshotChange": true
+  },
+  "rejects": {
+    "payloadConflict": "ORDERQ_REMATCH_V2_COMMAND_ID_INVALID",
+    "idempotencyCollision": "ORDERQ_REMATCH_V2_COMMAND_PAYLOAD_CONFLICT",
+    "staleRevision": "ORDERQ_REMATCH_V2_DOCUMENT_LINK_INVALID",
+    "staleProductSnapshot": "ORDERQ_REMATCH_V2_PRODUCT_SNAPSHOT_STALE",
+    "brokenLink": "ORDERQ_REMATCH_V2_REVIEW_LINK_INVALID",
+    "crossCompanyLink": "ORDERQ_REMATCH_V2_DOCUMENT_LINK_INVALID",
+    "damagedOriginalSnapshot": "ORDERQ_REMATCH_V2_LINE_LINK_INVALID",
+    "partialLinks": "ORDERQ_REMATCH_V2_LINE_LINK_INVALID",
+    "crossCompanyAccess": "ORDERQ_REMATCH_V2_UNRESOLVED_STATE_INVALID",
+    "incompleteDecision": "ORDERQ_REMATCH_V2_STOCKTAKE_DECISIONS_INCOMPLETE",
+    "rawBypass": "ORDERQ_REMATCH_OWNER_GATEWAY_REQUIRED",
+    "wrongSign": "ORDERQ_REMATCH_V2_SOURCE_SIGN_INVALID",
+    "wrongQuantity": "ORDERQ_REMATCH_V2_SOURCE_QUANTITY_INVALID",
+    "wrongWarehouse": "ORDERQ_REMATCH_V2_SOURCE_WAREHOUSE_INVALID",
+    "laterDate": "ORDERQ_REMATCH_V2_SOURCE_BUSINESS_DATE_MISMATCH",
+    "fabricatedSameDayBusinessOccurredAt": "ORDERQ_REMATCH_V2_SOURCE_BUSINESS_TIMESTAMP_MISMATCH",
+    "inactiveLine": "ORDERQ_REMATCH_V2_LINE_LINK_INVALID",
+    "cancelledLine": "ORDERQ_REMATCH_V2_LINE_LINK_INVALID",
+    "documentCommandMismatch": "ORDERQ_REMATCH_V2_SOURCE_COMMAND_LINK_INVALID",
+    "lineCommandMismatch": "ORDERQ_REMATCH_V2_SOURCE_COMMAND_LINK_INVALID",
+    "revisionCommandMismatch": "ORDERQ_REMATCH_V2_REVISION_LINK_INVALID",
+    "pendingCommandMismatch": "ORDERQ_REMATCH_V2_REVISION_LINK_INVALID",
+    "invalidBusinessDate": "ORDERQ_REMATCH_V2_SOURCE_BUSINESS_DATE_INVALID",
+    "invalidTimestamps": {
+      "occurredAt": "ORDERQ_REMATCH_V2_OCCURRED_AT_INVALID",
+      "judgedAt": "ORDERQ_REMATCH_V2_JUDGED_AT_INVALID",
+      "selectedAt": "ORDERQ_REMATCH_V2_SELECTED_AT_INVALID"
+    }
+  },
+  "sourceIntegrityReadwriteTransactions": 0,
+  "cancel": {
+    "cancelled": true,
+    "duplicate": false,
+    "officialWrites": 0
+  },
+  "rejectedAndCancelWritesZero": true,
+  "rollback": {
+    "error": "IndexedDB transaction failed",
+    "unresolved": true,
+    "pending": true,
+    "movements": true,
+    "revisions": true,
+    "receipts": true,
+    "queue": true
+  },
+  "isolation": {
+    "externalMutatingRequests": 0,
+    "localMutatingRequests": 0,
+    "browserExceptions": 0
+  }
+}
