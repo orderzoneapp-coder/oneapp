@@ -12,8 +12,12 @@ export const OFFICIAL_PARTNER_RESOLUTION_STATUS = Object.freeze({
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const snapshotText = value => String(value ?? '').trim();
 
-export function normalizeOfficialReferenceCode(value) {
-  return snapshotText(value).normalize('NFKC').toLowerCase().replace(/\s+/g, ' ');
+export function officialProductCodeKey(value) {
+  return snapshotText(value);
+}
+
+export function normalizedCustomerCodeKey(value) {
+  return snapshotText(value).normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, ' ');
 }
 
 function firstOwnValue(source, keys) {
@@ -24,8 +28,8 @@ function firstOwnValue(source, keys) {
 }
 
 function currentCompanyRow(row, companyId) {
-  const rowCompanyId = normalizeOfficialReferenceCode(row?.companyId);
-  return !rowCompanyId || rowCompanyId === normalizeOfficialReferenceCode(companyId);
+  const rowCompanyId = snapshotText(row?.companyId);
+  return !rowCompanyId || rowCompanyId === snapshotText(companyId);
 }
 
 function activeProduct(row) {
@@ -52,12 +56,12 @@ function customerCode(row = {}) {
   return snapshotText(row.customerCode || row.erpCustomerCode);
 }
 
-function scopedExactMatches(rows, companyId, inputCode, codeOf, active) {
-  const normalized = normalizeOfficialReferenceCode(inputCode);
-  if (!normalized) return [];
+function scopedExactMatches(rows, companyId, inputCode, codeOf, codeKey, active) {
+  const inputKey = codeKey(inputCode);
+  if (!inputKey) return [];
   return (rows || []).filter(row => currentCompanyRow(row, companyId)
     && active(row)
-    && normalizeOfficialReferenceCode(codeOf(row)) === normalized);
+    && codeKey(codeOf(row)) === inputKey);
 }
 
 function inputProductCode(row = {}) {
@@ -68,7 +72,14 @@ function inputProductCode(row = {}) {
 
 function productResolution(companyId, row, products, referenceSnapshotId) {
   const inputCode = inputProductCode(row);
-  const matches = scopedExactMatches(products, companyId, inputCode, productCode, activeProduct);
+  const matches = scopedExactMatches(
+    products,
+    companyId,
+    inputCode,
+    productCode,
+    officialProductCodeKey,
+    activeProduct
+  );
   const matched = matches.length === 1 ? matches[0] : null;
   const matchedId = productId(matched);
   if (matched && matchedId) {
@@ -143,7 +154,14 @@ function partnerInput(kind, group = {}) {
 
 function resolvePartner(kind, companyId, group, customers, referenceSnapshotId) {
   const input = partnerInput(kind, group);
-  const matches = scopedExactMatches(customers, companyId, input.code, customerCode, activeCustomer);
+  const matches = scopedExactMatches(
+    customers,
+    companyId,
+    input.code,
+    customerCode,
+    normalizedCustomerCodeKey,
+    activeCustomer
+  );
   const matched = matches.length === 1 ? matches[0] : null;
   const matchedCustomerId = snapshotText(matched?.customerId);
   if (matched && matchedCustomerId) {

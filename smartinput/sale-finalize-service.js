@@ -1,9 +1,9 @@
 import {
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './sale-official-stage4.js?v=0.7.0';
-import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.2.0';
-import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.1.0';
+} from './sale-official-stage4.js?v=0.8.0';
+import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 
 export const SALE_FINALIZE_SERVICE_CONTRACT = Object.freeze({
   version: 'ONEAPP_SMARTINPUT_SALE_FINALIZE_SERVICE_V1',

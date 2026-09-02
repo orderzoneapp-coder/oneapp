@@ -6,7 +6,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
   OFFICIAL_VOUCHER_V2_ENTITY
-} from './official-voucher-v2-contract.js?v=0.2.0';
+} from './official-voucher-v2-contract.js?v=0.3.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
@@ -68,7 +68,11 @@ function normalizedIdentityPart(value) {
 
 export function unresolvedProductStableId(companyId, source = {}) {
   const company = requiredText(companyId, 'ORDERQ_OFFICIAL_COMPANY_REQUIRED');
-  const code = normalizedIdentityPart(source.productCode || source.itemCode);
+  const v2Resolution = source.officialProductResolution
+    || source.productSnapshot?.matchEvidence?.officialProductResolution;
+  const code = v2Resolution
+    ? text(v2Resolution.inputProductCode ?? source.originalProductCode ?? source.productCode ?? source.itemCode)
+    : normalizedIdentityPart(source.productCode || source.itemCode);
   const name = normalizedIdentityPart(source.productName || source.itemName || source.unregisteredProductQuery);
   const specification = normalizedIdentityPart(source.specification);
   const unit = normalizedIdentityPart(source.unit || source.actualUnit || source.baseUnit);
@@ -319,6 +323,9 @@ function ledgerEntry(kind, command, document, partner, totalAmount, entryType, o
     currency: document.currency || OFFICIAL_CURRENCY,
     reversalOf,
     commandId: command.commandId,
+    ...(isOfficialVoucherIdentityV2(command) ? {
+      effectiveAt: text(document.businessDate)
+    } : {}),
     occurredAt: command.occurredAt,
     actor: command.actor
   };
@@ -473,6 +480,8 @@ export function planOfficialVoucherCommand(input = {}) {
     partnerResolutionStatus: text(partnerResolution?.status),
     partnerId: createPartnerEffect ? newPartner : '',
     finalAmount: nextDocument.totalAmount,
+    effectiveAt: text(nextDocument.businessDate),
+    occurredAt: command.occurredAt,
     entryIds: ledgerEntries.map(row => row.entryId)
   } : null;
 

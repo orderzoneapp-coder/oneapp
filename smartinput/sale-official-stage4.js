@@ -3,8 +3,8 @@ import {
   commitSaleCommand,
   findSaleCommandContext,
   freezeSaleCommandIntent
-} from '../orderq/official-command-adapter.js?v=0.2.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.21.0';
+} from '../orderq/official-command-adapter.js?v=0.3.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.22.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -12,7 +12,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.2.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',

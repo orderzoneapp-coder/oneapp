@@ -6,13 +6,14 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.8.0';
-import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.21.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.22.0';
 import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.1.0';
 import {
   assertOfficialCommandV2,
+  assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.2.0';
+} from './official-voucher-v2-contract.js?v=0.3.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -364,6 +365,15 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
       try { await transactionDone(tx); } catch {}
       throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_SCOPE_CONFLICT');
     }
+    if (checkedV2) {
+      try {
+        assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+      } catch (error) {
+        tx.abort();
+        try { await transactionDone(tx); } catch {}
+        throw error;
+      }
+    }
     await transactionDone(tx);
     return { ...clone(existingCommand.result), duplicate: true };
   }
@@ -432,6 +442,13 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
       tx.abort();
       try { await transactionDone(tx); } catch {}
       throw new Error('ORDERQ_OFFICIAL_V2_LINE_SCOPE_MISMATCH');
+    }
+    try {
+      assertOfficialLedgerProjectionV2(plan, checkedV2);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
     }
   }
   const documentStore = tx.objectStore(contract.documentStore);
@@ -513,6 +530,8 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     throw new Error('ORDERQ_OFFICIAL_REMOTE_SCHEMA_INVALID');
   }
   const command = clone(payload.command);
+  assertSupportedIdentityVersion(command);
+  const checkedV2 = isOfficialVoucherIdentityV2(command) ? assertOfficialCommandV2(command) : null;
   const contract = inferKind(command || {});
   const id = documentIdOf(contract, command || {});
   if (text(payload.companyId) !== text(command.companyId) || text(payload.documentId) !== id
@@ -532,6 +551,15 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
       try { await transactionDone(tx); } catch {}
       throw new Error('ORDERQ_OFFICIAL_REMOTE_COMMAND_IMMUTABLE');
     }
+    if (checkedV2) {
+      try {
+        assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+      } catch (error) {
+        tx.abort();
+        try { await transactionDone(tx); } catch {}
+        throw error;
+      }
+    }
     await transactionDone(tx);
     return { ...clone(existingCommand.result), duplicate: true };
   }
@@ -549,6 +577,15 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     lines = clone(command.lines || []);
   }
   const plan = planOfficialVoucherCommand({ command, document, lines });
+  if (checkedV2) {
+    try {
+      assertOfficialLedgerProjectionV2(plan, checkedV2);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
+    }
+  }
   if (canonicalSha256(plan.voucherRevision) !== text(payload.projectionDigest)) {
     tx.abort();
     try { await transactionDone(tx); } catch {}

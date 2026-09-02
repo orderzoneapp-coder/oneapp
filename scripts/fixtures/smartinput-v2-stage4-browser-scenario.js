@@ -46,7 +46,7 @@ function purchaseGroup(suffix, overrides = {}) {
     supplierCustomerId: 'STALE-CUSTOMER-ID',
     supplierCustomerCode: '0003',
     supplierCustomerName: '확정 당시 거래처명',
-    voucherDate: '2026-09-02',
+    voucherDate: '2026-08-05',
     warehouseId: 'V2-STAGE4-WH',
     warehouseCode: 'S4',
     sourceDocumentKey: `V2-STAGE4-PURCHASE-${suffix}`,
@@ -71,7 +71,7 @@ function saleGroup(suffix, overrides = {}) {
     billingCustomerId: '',
     billingCustomerCode: '',
     billingCustomerName: '',
-    voucherDate: '2026-09-02',
+    voucherDate: '2026-08-05',
     warehouseId: 'V2-STAGE4-WH',
     warehouseCode: 'S4',
     sourceDocumentKey: `V2-STAGE4-SALE-${suffix}`,
@@ -115,6 +115,20 @@ async function rowsFromStore(storeName) {
   return rows;
 }
 
+async function replaceOfficialCommand(commandId, transform) {
+  const db = await openOrderQDb();
+  const tx = db.transaction('officialCommands', 'readwrite');
+  const store = tx.objectStore('officialCommands');
+  const request = store.get(commandId);
+  const existing = await new Promise((resolve, rejectRequest) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => rejectRequest(request.error);
+  });
+  store.put(transform(structuredClone(existing)));
+  await transactionDone(tx);
+  return existing;
+}
+
 export async function runSmartInputV2Stage4BrowserScenario() {
   const gateway = createOfficialCommandGateway(repository, { featureGates: { PURCHASE: true, SALE: true } });
   let purchaseDraft;
@@ -147,21 +161,36 @@ export async function runSmartInputV2Stage4BrowserScenario() {
   if (!purchaseResult[0]?.ok) throw purchaseResult[0]?.error;
   const postedPurchase = purchaseResult[0].result;
   const duplicatePurchase = await gateway.execute(purchaseDraft.commandSource);
+  const originalPurchaseReceipt = await replaceOfficialCommand(purchaseDraft.commandSource.commandId, receipt => {
+    receipt.result.ledgerEntries[0].effectiveAt = '2026-09-02';
+    return receipt;
+  });
+  const repositoryLedgerDateGuardError = await reject(
+    () => repository.runCentralOfficialVoucherCommand(purchaseDraft.commandSource)
+  );
+  await replaceOfficialCommand(purchaseDraft.commandSource.commandId, () => originalPurchaseReceipt);
   const purchaseAggregate = await repository.loadOfficialPurchaseAggregate(purchaseDraft.purchaseDocumentId);
   const purchaseQueue = (await rowsFromStore('syncQueue'))
     .filter(entry => text(entry.entityId) === text(purchaseDraft.commandSource.commandId));
 
-  let saleDraft;
+  const saleDrafts = [];
   const saleFinalize = createSaleFinalizeService({
     now: () => context().occurredAt,
     submitGroup: async (resolved, buildContext) => {
-      saleDraft = buildSalePostDraft(resolved, buildContext);
+      const saleDraft = buildSalePostDraft(resolved, buildContext);
+      saleDrafts.push(saleDraft);
       await gateway.saveDraft({ kind: 'SALE', ...saleDraft }, buildContext.actor);
       return gateway.execute(saleDraft.commandSource);
     }
   });
   const saleResult = await saleFinalize.finalize({
-    groups: [saleGroup('UNMATCHED-CUSTOMER')],
+    groups: [
+      saleGroup('MATCHED-CUSTOMER', {
+        salesCustomerCode: '0003',
+        salesCustomerName: '확정 당시 거래처명'
+      }),
+      saleGroup('UNMATCHED-CUSTOMER')
+    ],
     companyId: 'V2-STAGE4-COMPANY',
     identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
     products,
@@ -172,9 +201,10 @@ export async function runSmartInputV2Stage4BrowserScenario() {
     actor: 'STAGE4-BROWSER',
     manualSessionId: 'STAGE4-BROWSER'
   });
-  if (!saleResult[0]?.ok) throw saleResult[0]?.error;
-  const postedSale = saleResult[0].result;
-  const saleAggregate = await repository.loadOfficialSaleAggregate(saleDraft.salesDocumentId);
+  const failedSale = saleResult.find(row => !row?.ok);
+  if (failedSale) throw failedSale.error;
+  const matchedSaleAggregate = await repository.loadOfficialSaleAggregate(saleDrafts[0].salesDocumentId);
+  const saleAggregate = await repository.loadOfficialSaleAggregate(saleDrafts[1].salesDocumentId);
 
   let rollbackDraft;
   const rollbackFinalize = createPurchaseFinalizeService({
@@ -241,9 +271,16 @@ export async function runSmartInputV2Stage4BrowserScenario() {
         revisionLinked: record.reviewLinks?.every(link => link.voucherRevisionId === postedPurchase.voucherRevision.voucherRevisionId),
         applied: record.officialInventoryApplied
       })),
-      payable: postedPurchase.ledgerEntries.map(entry => ({ partnerId: entry.partnerId, amount: entry.totalAmount })),
-      ledgerDecision: postedPurchase.voucherRevision.partnerEffectDecision,
+      payable: purchaseAggregate.ledgerEntries.map(entry => ({
+        partnerId: entry.partnerId,
+        amount: entry.totalAmount,
+        effectiveAt: entry.effectiveAt,
+        occurredAt: entry.occurredAt
+      })),
+      documentBusinessDate: purchaseAggregate.document.businessDate,
+      ledgerDecision: purchaseAggregate.revisions.at(-1)?.partnerEffectDecision,
       duplicate: duplicatePurchase.duplicate,
+      repositoryLedgerDateGuardError,
       aggregateCounts: {
         lines: purchaseAggregate.lines.length,
         inventory: purchaseAggregate.inventoryMovements.length,
@@ -258,10 +295,19 @@ export async function runSmartInputV2Stage4BrowserScenario() {
       leadingZeroProductId: purchaseAggregate.lines.find(line => line.productCode === '0007')?.productId
     },
     sale: {
-      inventory: postedSale.inventoryMovements[0]?.signedQuantity,
-      receivables: postedSale.ledgerEntries.length,
-      ledgerDecision: postedSale.voucherRevision.partnerEffectDecision,
-      partnerId: saleAggregate.document.billingCustomerId || saleAggregate.document.salesCustomerId
+      inventory: saleAggregate.inventoryMovements[0]?.signedQuantity,
+      receivables: saleAggregate.ledgerEntries.length,
+      ledgerDecision: saleAggregate.revisions.at(-1)?.partnerEffectDecision,
+      partnerId: saleAggregate.document.billingCustomerId || saleAggregate.document.salesCustomerId,
+      matchedInventory: matchedSaleAggregate.inventoryMovements[0]?.signedQuantity,
+      matchedReceivable: matchedSaleAggregate.ledgerEntries.map(entry => ({
+        partnerId: entry.partnerId,
+        amount: entry.totalAmount,
+        effectiveAt: entry.effectiveAt,
+        occurredAt: entry.occurredAt
+      })),
+      matchedLedgerDecision: matchedSaleAggregate.revisions.at(-1)?.partnerEffectDecision,
+      matchedDocumentBusinessDate: matchedSaleAggregate.document.businessDate
     },
     rollback: {
       error: rollbackResult[0]?.ok ? '' : errorText(rollbackResult[0]?.error),

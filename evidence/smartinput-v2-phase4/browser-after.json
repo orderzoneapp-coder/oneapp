@@ -1,6 +1,6 @@
 {
   "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
-  "recordedAt": "2026-09-02T13:07:33.975Z",
+  "recordedAt": "2026-09-02T13:35:17.137Z",
   "isolation": {
     "browserProfile": "mkdtemp isolated profile, removed after run",
     "productionIndexedDbWrites": 0,
@@ -12,7 +12,7 @@
         "action": "orderq_official_sync_pull",
         "companyId": "ONEAPP",
         "changeCount": 0,
-        "blockedAt": "2026-09-02T13:07:19.886Z"
+        "blockedAt": "2026-09-02T13:34:54.339Z"
       },
       {
         "method": "POST",
@@ -20,7 +20,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 1,
-        "blockedAt": "2026-09-02T13:07:20.878Z"
+        "blockedAt": "2026-09-02T13:34:58.619Z"
       },
       {
         "method": "POST",
@@ -28,7 +28,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T13:07:22.783Z"
+        "blockedAt": "2026-09-02T13:34:59.872Z"
       },
       {
         "method": "POST",
@@ -36,7 +36,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T13:07:32.758Z"
+        "blockedAt": "2026-09-02T13:35:17.006Z"
       }
     ],
     "localFixtureServerWrites": 0,
@@ -245,17 +245,17 @@
     "directInput": {
       "clicks": 1,
       "clickDefinition": "Analyze button after keyboard entry",
-      "responseMs": 105.56
+      "responseMs": 314.17
     },
     "excelTablePaste": {
       "clicks": 0,
       "clickDefinition": "Ctrl+V/paste event into the grid",
-      "responseMs": 78.47
+      "responseMs": 130.55
     },
     "autosave": {
       "clicks": 0,
       "clickDefinition": "automatic after keyboard entry",
-      "responseMs": 233.51
+      "responseMs": 220
     },
     "autosaveRestore": {
       "clicks": 1,
@@ -267,8 +267,8 @@
         "mode": "purchase",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 1012.92,
-        "saveFeedbackMs": 133.86,
+        "modeAndEntryReadyMs": 2644.15,
+        "saveFeedbackMs": 310.43,
         "currentResult": "SAVED",
         "feedback": "공식 구매전표 1건 저장 완료",
         "dateDeleteEvidence": {
@@ -305,8 +305,8 @@
         "mode": "sale",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 468.97,
-        "saveFeedbackMs": 98.79,
+        "modeAndEntryReadyMs": 570.58,
+        "saveFeedbackMs": 186.94,
         "currentResult": "SAVED",
         "feedback": "공식 판매전표 1건 저장 완료",
         "dom": {
@@ -509,20 +509,26 @@
         "payable": [
           {
             "partnerId": "V2-STAGE4-C-0003",
-            "amount": 2661
+            "amount": 2661,
+            "effectiveAt": "2026-08-05",
+            "occurredAt": "2026-09-02T10:00:00.000Z"
           }
         ],
+        "documentBusinessDate": "2026-08-05",
         "ledgerDecision": {
           "status": "CREATED",
           "reason": "EXACT_COMPANY_CUSTOMER_CODE",
           "partnerResolutionStatus": "MATCHED",
           "partnerId": "V2-STAGE4-C-0003",
           "finalAmount": 2661,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
           "entryIds": [
-            "PE-c97bc95a4cec6b1c0dce35e373716586"
+            "PE-a08e0e7421539a412b7a2446246d36b3"
           ]
         },
         "duplicate": true,
+        "repositoryLedgerDateGuardError": "Error:ORDERQ_OFFICIAL_V2_LEDGER_PROJECTION_MISMATCH",
         "aggregateCounts": {
           "lines": 5,
           "inventory": 2,
@@ -545,9 +551,33 @@
           "partnerResolutionStatus": "UNRESOLVED_CUSTOMER",
           "partnerId": "",
           "finalAmount": 400,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
           "entryIds": []
         },
-        "partnerId": ""
+        "partnerId": "",
+        "matchedInventory": -4,
+        "matchedReceivable": [
+          {
+            "partnerId": "V2-STAGE4-C-0003",
+            "amount": 400,
+            "effectiveAt": "2026-08-05",
+            "occurredAt": "2026-09-02T10:00:00.000Z"
+          }
+        ],
+        "matchedLedgerDecision": {
+          "status": "CREATED",
+          "reason": "EXACT_COMPANY_CUSTOMER_CODE",
+          "partnerResolutionStatus": "MATCHED",
+          "partnerId": "V2-STAGE4-C-0003",
+          "finalAmount": 400,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
+          "entryIds": [
+            "RE-5ccccb6236a652c24ed0583ff307ffd2"
+          ]
+        },
+        "matchedDocumentBusinessDate": "2026-08-05"
       },
       "rollback": {
         "error": "Error:IndexedDB transaction failed",

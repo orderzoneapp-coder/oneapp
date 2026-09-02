@@ -20,7 +20,11 @@ const gateway = await import('../orderq/official-command-gateway.js');
 const { resolveOfficialVoucherReferencesV2 } = resolverModule;
 const { buildPurchasePostDraft } = purchaseModule;
 const { buildSalePostDraft } = saleModule;
-const { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2, assertOfficialCommandV2 } = contract;
+const {
+  OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+  assertOfficialCommandV2,
+  assertOfficialLedgerProjectionV2
+} = contract;
 
 const companyId = 'COMPANY-A';
 const context = {
@@ -65,7 +69,7 @@ function group(kind, suffix, overrides = {}) {
   return {
     companyId,
     voucherGroupKey: `${kind}|STAGE4|${suffix}`,
-    voucherDate: '2026-09-02',
+    voucherDate: '2026-08-05',
     warehouseId: 'WAREHOUSE-A',
     warehouseCode: 'WH-A',
     sourceDocumentKey: `${kind}|STAGE4|${suffix}`,
@@ -121,11 +125,17 @@ assert.equal(purchasePositive.plan.inventoryMovements[0].effectStatus, 'APPLIED_
 assert.equal(purchasePositive.plan.inventoryMovements[0].inventoryEffectFactor, 1);
 assert.equal(purchasePositive.plan.lines[0].baseQuantity, 10, 'V2 must ignore a legacy factor of 12');
 assert.equal(purchasePositive.plan.ledgerEntries[0].partnerId, 'CUSTOMER-0003-A');
+assert.equal(purchasePositive.plan.ledgerEntries[0].effectiveAt, '2026-08-05');
+assert.equal(purchasePositive.plan.ledgerEntries[0].occurredAt, context.occurredAt);
+assert.doesNotThrow(() => assertOfficialLedgerProjectionV2(purchasePositive.plan, purchasePositive.draft.commandSource));
 
 const salePositive = draftAndPlan('SALE', 'POSITIVE');
 assert.equal(salePositive.plan.inventoryMovements[0].signedQuantity, -10);
 assert.equal(salePositive.plan.inventoryMovements[0].effectStatus, 'APPLIED_NORMAL');
 assert.equal(salePositive.plan.ledgerEntries[0].partnerId, 'CUSTOMER-0003-A');
+assert.equal(salePositive.plan.ledgerEntries[0].effectiveAt, '2026-08-05');
+assert.equal(salePositive.plan.ledgerEntries[0].occurredAt, context.occurredAt);
+assert.doesNotThrow(() => assertOfficialLedgerProjectionV2(salePositive.plan, salePositive.draft.commandSource));
 
 for (const kind of ['PURCHASE', 'SALE']) {
   const negative = draftAndPlan(kind, 'NEGATIVE', { rows: [row(`${kind}-NEGATIVE`, { quantity: -10 })] });
@@ -171,6 +181,36 @@ assert.equal(leadingZero.rows[0].officialProductResolution.matchedProductId, 'PR
 assert.equal(leadingZero.rows[0].officialProductResolution.inputProductCode, '0007');
 assert.notEqual(leadingZero.rows[0].officialProductResolution.matchedProductId, 'PRODUCT-7-A');
 
+for (const [label, inputCode, masterCode] of [
+  ['CASE', 'ABC', 'abc'],
+  ['WIDTH', '０００７', '0007'],
+  ['INNER-SPACE', 'A  B', 'A B']
+]) {
+  const separated = draftAndPlan('PURCHASE', `PRODUCT-CODE-${label}`, {
+    rows: [row(`PRODUCT-CODE-${label}`, { itemCode: inputCode })]
+  }, [{ companyId, productId: `PRODUCT-${label}`, itemCode: masterCode, status: 'ACTIVE' }]);
+  assert.equal(separated.resolved.rows[0].officialProductResolution.status, 'UNRESOLVED_PRODUCT');
+  assert.equal(separated.resolved.rows[0].officialProductResolution.reason, 'PRODUCT_CODE_UNMATCHED');
+  assert.equal(separated.resolved.rows[0].officialProductResolution.inputProductCode, inputCode,
+    'product matching must preserve and compare the owner product-code string after outer trim only');
+  const counterpart = draftAndPlan('PURCHASE', `PRODUCT-CODE-${label}-COUNTERPART`, {
+    rows: [row(`PRODUCT-CODE-${label}-COUNTERPART`, { itemCode: masterCode })]
+  }, []);
+  assert.notEqual(separated.plan.lines[0].unresolvedProductId, counterpart.plan.lines[0].unresolvedProductId,
+    'distinct owner product-code strings must not collapse to one unresolved identity');
+}
+const outerTrimMatch = resolve('PURCHASE', group('PURCHASE', 'PRODUCT-CODE-OUTER-TRIM', {
+  rows: [row('PRODUCT-CODE-OUTER-TRIM', { itemCode: '  ABC  ' })]
+}), [{ companyId, productId: 'PRODUCT-ABC', itemCode: 'ABC', status: 'ACTIVE' }]);
+assert.equal(outerTrimMatch.rows[0].productId, 'PRODUCT-ABC');
+
+const normalizedCustomerMatch = resolve('PURCHASE', group('PURCHASE', 'CUSTOMER-NORMALIZED', {
+  supplierCustomerCode: ' ＡＣＭＥ　 ０１ ',
+  supplierCustomerName: '고객 정규화'
+}), products, [{ companyId, customerId: 'CUSTOMER-ACME', customerCode: 'acme 01', status: 'ACTIVE' }]);
+assert.equal(normalizedCustomerMatch.supplierCustomerId, 'CUSTOMER-ACME',
+  'customer matching must retain the customer-master normalizedCustomerCode rule');
+
 const otherCompany = resolve('PURCHASE', {
   ...group('PURCHASE', 'OTHER-COMPANY'),
   companyId: 'COMPANY-B',
@@ -196,7 +236,7 @@ for (const kind of ['PURCHASE', 'SALE']) {
   assert.deepEqual(noCustomer.plan.voucherRevision.partnerEffectDecision, {
     status: 'NOT_CREATED', reason: 'CUSTOMER_CODE_NOT_PROVIDED',
     partnerResolutionStatus: 'CUSTOMER_NOT_PROVIDED', partnerId: '',
-    finalAmount: 12500, entryIds: []
+    finalAmount: 12500, effectiveAt: '2026-08-05', occurredAt: context.occurredAt, entryIds: []
   });
 
   const unmatchedCustomer = draftAndPlan(kind, 'UNMATCHED-CUSTOMER', {
@@ -211,9 +251,38 @@ for (const kind of ['PURCHASE', 'SALE']) {
 const forgedFactor = structuredClone(purchasePositive.draft.commandSource);
 forgedFactor.lines[0].inventoryEffectFactor = 12;
 assert.throws(() => assertOfficialCommandV2(forgedFactor), /INVENTORY_FACTOR_INVALID/);
+const forgedProductCaseMatch = structuredClone(purchasePositive.draft.commandSource);
+forgedProductCaseMatch.lines[0].productSnapshot.productCode = 'ABC';
+forgedProductCaseMatch.lines[0].productSnapshot.originalProductCode = 'ABC';
+forgedProductCaseMatch.lines[0].officialProductResolution.inputProductCode = 'ABC';
+forgedProductCaseMatch.lines[0].officialProductResolution.matchedProductCode = 'abc';
+forgedProductCaseMatch.lines[0].productSnapshot.matchEvidence.officialProductResolution =
+  structuredClone(forgedProductCaseMatch.lines[0].officialProductResolution);
+assert.throws(() => assertOfficialCommandV2(forgedProductCaseMatch), /PRODUCT_EXACT_MATCH_INVALID/,
+  'owner validation must reject a forged case-normalized product match even if both evidence copies agree');
 const forgedPartner = structuredClone(purchasePositive.draft.commandSource);
 forgedPartner.document.supplierCustomerId = 'STALE-CUSTOMER-ID';
 assert.throws(() => assertOfficialCommandV2(forgedPartner), /PARTNER_EXACT_MATCH_INVALID|COMMAND_PAYLOAD_CONFLICT/);
+const forgedLedgerDate = structuredClone(purchasePositive.plan);
+forgedLedgerDate.ledgerEntries[0].effectiveAt = '2026-09-02';
+assert.throws(
+  () => assertOfficialLedgerProjectionV2(forgedLedgerDate, purchasePositive.draft.commandSource),
+  /LEDGER_PROJECTION_MISMATCH/
+);
+const forgedDecisionDate = structuredClone(purchasePositive.plan);
+forgedDecisionDate.voucherRevision.partnerEffectDecision.effectiveAt = '2026-09-02';
+assert.throws(
+  () => assertOfficialLedgerProjectionV2(forgedDecisionDate, purchasePositive.draft.commandSource),
+  /LEDGER_DECISION_MISMATCH/
+);
+const forgedProjectionGateway = gateway.createOfficialCommandGateway({
+  runCentralOfficialVoucherCommand: async () => forgedLedgerDate
+}, { featureGates: { PURCHASE: true, SALE: true } });
+await assert.rejects(
+  () => forgedProjectionGateway.execute(purchasePositive.draft.commandSource),
+  /LEDGER_PROJECTION_MISMATCH/,
+  'Gateway must reject a repository projection whose V2 ledger date differs from the voucher business date'
+);
 
 assert.deepEqual(gateway.OFFICIAL_VOUCHER_V2_FEATURE_GATES, { PURCHASE: false, SALE: false });
 const resolverSource = readFileSync(new URL('../smartinput/official-voucher-reference-resolver.js', import.meta.url), 'utf8');
@@ -222,6 +291,8 @@ assert.doesNotMatch(resolverSource, /indexedDB|\.put\s*\(|\.add\s*\(|saveProduct
 const repositorySource = readFileSync(new URL('../orderq/official-voucher-repository.js', import.meta.url), 'utf8');
 assert.match(repositorySource, /STORE\.VOUCHER_REVISIONS, STORE\.INVENTORY_MOVEMENTS, contract\.partnerEntryStore,[\s\S]*STORE\.PENDING_INVENTORY_EFFECTS, STORE\.UNRESOLVED_PRODUCTS, STORE\.SYNC_QUEUE/,
   'ORDER Q must keep official projections and the sync queue in one write transaction');
+assert.match(repositorySource, /assertOfficialLedgerProjectionV2\(plan, checkedV2\)/,
+  'Repository must revalidate the V2 ledger effective date before writing the projection transaction');
 assert.deepEqual(blockedMutations, [], 'pure Stage 4 verification must emit no external mutation');
 
 console.log(JSON.stringify({
@@ -229,7 +300,15 @@ console.log(JSON.stringify({
   gates: { purchase: 'independent/default-off', sale: 'independent/default-off' },
   inventory: { purchase: '+quantity', sale: '-quantity', zero: 'ZERO_EFFECT', factor: 1 },
   unmatched: { state: 'UNRESOLVED_PRODUCT', officialInventoryMovements: 0, reviewLink: 'document+line+revision' },
-  ledger: { exactCodeOnly: true, noCustomerReasonPreserved: true, finalAmountPreserved: true },
+  matching: { productCodeKey: 'outer-trim/exact-string', customerCodeKey: 'normalizedCustomerCode' },
+  ledger: {
+    exactCodeOnly: true,
+    noCustomerReasonPreserved: true,
+    finalAmountPreserved: true,
+    effectiveAt: '2026-08-05',
+    occurredAt: context.occurredAt,
+    gatewayAndRepositoryValidated: true
+  },
   safety: { ownerWrites: 0, externalMutations: 0 }
 }, null, 2));
 console.log('SmartInput V2 Stage 4 inventory, unresolved-product, and basic ledger contracts PASS');

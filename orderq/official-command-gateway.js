@@ -7,12 +7,13 @@ import {
   loadOfficialSaleAggregate,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from './official-voucher-repository.js?v=0.22.0';
+} from './official-voucher-repository.js?v=0.23.0';
 import {
   assertOfficialCommandV2,
+  assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.2.0';
+} from './official-voucher-v2-contract.js?v=0.3.0';
 
 // The public Gateway surface remains V1. Identity V2 is an additive,
 // feature-gated command contract rather than a breaking Gateway API change.
@@ -87,7 +88,12 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
     execute(command) {
       const checked = validateV2Boundary(command, featureGates);
       if (checked && commandKind(command) !== checked.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
-      return repository.runCentralOfficialVoucherCommand(command);
+      const projected = repository.runCentralOfficialVoucherCommand(command);
+      if (!checked) return projected;
+      return Promise.resolve(projected).then(result => {
+        assertOfficialLedgerProjectionV2(result, checked);
+        return result;
+      });
     }
   });
 }

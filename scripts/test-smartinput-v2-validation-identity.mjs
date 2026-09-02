@@ -243,7 +243,7 @@ assert.notEqual(saleA.salesDocumentId, saleGroupB.salesDocumentId);
 assert.throws(() => deriveSaleDraftIdentity(saleGroup({ voucherGroupKey: '' }), v2Context()), /SALE_GROUP_KEY_REQUIRED/);
 
 const purchaseDraft = buildPurchasePostDraft(purchaseGroup({
-  rows: [baseRow({ originalProductCode: '０００７', originalProductName: '원본 사과', totalAmount: -25 })]
+  rows: [baseRow({ originalProductCode: '0007', originalProductName: '원본 사과', totalAmount: -25 })]
 }), v2Context());
 const saleSource = saleGroup();
 const saleDraft = buildSalePostDraft(saleSource, v2Context());
@@ -257,7 +257,7 @@ for (const draft of [purchaseDraft, saleDraft]) {
   assert.equal(command.document.companyId, 'COMPANY-A');
   assert.ok(command.lines.every(line => line.companyId === 'COMPANY-A'));
 }
-assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductCode, '０００７');
+assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductCode, '0007');
 assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductName, '원본 사과');
 assert.equal(purchaseDraft.lines[0].productSnapshot.amount, -25);
 
@@ -356,7 +356,11 @@ const repository = {
   loadOfficialPurchaseAggregate: async () => null,
   loadOfficialSaleAggregate: async () => null,
   saveOfficialVoucherDraft: async value => { calls.push(`SAVE:${value.kind}`); return value; },
-  runCentralOfficialVoucherCommand: async value => { calls.push(`EXECUTE:${value.commandType}`); return value; }
+  runCentralOfficialVoucherCommand: async value => {
+    calls.push(`EXECUTE:${value.commandType}`);
+    const document = { ...value.document, status: 'DRAFT', businessStatus: 'DRAFT', revision: 1 };
+    return core.planOfficialVoucherCommand({ command: value, document, lines: value.lines });
+  }
 };
 const saleOnlyGateway = createOfficialCommandGateway(repository, { featureGates: { PURCHASE: false, SALE: true } });
 assert.throws(() => saleOnlyGateway.execute(purchaseDraft.commandSource), /PURCHASE_FEATURE_DISABLED/);

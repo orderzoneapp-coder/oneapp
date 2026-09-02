@@ -23,7 +23,8 @@ const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringi
 // Confirmed display/source Snapshot values must retain their original glyphs.
 const text = value => String(value ?? '').normalize('NFKC').trim();
 const snapshotText = value => String(value ?? '').trim();
-const referenceCode = value => text(value).toLowerCase().replace(/\s+/g, ' ');
+const productCodeKey = value => snapshotText(value);
+const customerCodeKey = value => snapshotText(value).normalize('NFKC').toLocaleLowerCase('ko').replace(/\s+/g, ' ');
 
 export class OfficialVoucherV2PreflightError extends Error {
   constructor(issues = []) {
@@ -438,10 +439,10 @@ export function assertOfficialProductResolutionV2(line = {}, companyId = '') {
   if (!resolution || typeof resolution !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_REQUIRED');
   if (text(resolution.companyId) !== text(companyId)) throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_COMPANY_MISMATCH');
   const status = text(resolution.status).toUpperCase();
-  const inputCode = referenceCode(resolution.inputProductCode);
-  const matchedCode = referenceCode(resolution.matchedProductCode);
-  const snapshotCode = referenceCode(line.productSnapshot?.productCode);
-  const originalCode = referenceCode(line.productSnapshot?.originalProductCode);
+  const inputCode = productCodeKey(resolution.inputProductCode);
+  const matchedCode = productCodeKey(resolution.matchedProductCode);
+  const snapshotCode = productCodeKey(line.productSnapshot?.productCode);
+  const originalCode = productCodeKey(line.productSnapshot?.originalProductCode);
   if (Number(line.inventoryEffectFactor) !== 1
     || Number(line.baseQuantity) !== Number(line.actualQuantity ?? line.quantity)) {
     throw new Error('ORDERQ_OFFICIAL_V2_INVENTORY_FACTOR_INVALID');
@@ -485,8 +486,8 @@ export function assertOfficialPartnerResolutionV2(document = {}, companyId = '')
   if (!resolution || typeof resolution !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_RESOLUTION_REQUIRED');
   if (text(resolution.companyId) !== text(companyId)) throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_RESOLUTION_COMPANY_MISMATCH');
   const status = text(resolution.status).toUpperCase();
-  const inputCode = referenceCode(resolution.inputCustomerCode);
-  const matchedCode = referenceCode(resolution.matchedCustomerCode);
+  const inputCode = customerCodeKey(resolution.inputCustomerCode);
+  const matchedCode = customerCodeKey(resolution.matchedCustomerCode);
   const purchaseDocument = text(document.entityType) === OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_DOCUMENT;
   const partnerRole = text(resolution.partnerRole).toUpperCase();
   const validRole = purchaseDocument ? partnerRole === 'SUPPLIER' : ['SALES', 'BILLING'].includes(partnerRole);
@@ -494,7 +495,7 @@ export function assertOfficialPartnerResolutionV2(document = {}, companyId = '')
   const partnerId = text(purchaseDocument
     ? document.supplierCustomerId
     : document.billingCustomerId || document.salesCustomerId);
-  const documentCode = referenceCode(purchaseDocument
+  const documentCode = customerCodeKey(purchaseDocument
     ? document.supplierCustomerCode
     : partnerRole === 'BILLING' ? document.billingCustomerCode : document.salesCustomerCode);
   if (documentCode !== inputCode) throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_CODE_MISMATCH');
@@ -594,4 +595,54 @@ export function assertOfficialCommandV2(source = {}) {
   });
   if (expectedCommandId !== command.commandId) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_ID_INVALID');
   return deepFreeze({ command, kind: fields.kind, companyId, documentId, voucherGroupKey, payloadDigest, preflight });
+}
+
+export function assertOfficialLedgerProjectionV2(projection = {}, checkedSource = {}) {
+  const checked = checkedSource?.command && checkedSource?.preflight
+    ? checkedSource
+    : assertOfficialCommandV2(checkedSource);
+  const document = projection?.document;
+  const voucherRevision = projection?.voucherRevision;
+  const ledgerEntries = Array.isArray(projection?.ledgerEntries) ? projection.ledgerEntries : [];
+  if (!document || typeof document !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_DOCUMENT_REQUIRED');
+  if (!voucherRevision || typeof voucherRevision !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_REVISION_REQUIRED');
+
+  const businessDate = snapshotText(checked.preflight.businessDate);
+  if (!businessDate || snapshotText(document.businessDate) !== businessDate) {
+    throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_DOCUMENT_DATE_MISMATCH');
+  }
+  const partnerResolution = checked.command.document.officialPartnerResolution;
+  const matched = text(partnerResolution?.status).toUpperCase() === 'MATCHED';
+  if (ledgerEntries.length !== (matched ? 1 : 0)) {
+    throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_EFFECT_COUNT_INVALID');
+  }
+
+  const documentIdField = checked.kind === 'PURCHASE' ? 'purchaseDocumentId' : 'salesDocumentId';
+  const expectedPartnerId = matched ? text(partnerResolution.matchedCustomerId) : '';
+  const occurredAt = snapshotText(checked.command.occurredAt);
+  const invalidEntry = ledgerEntries.find(entry => text(entry.companyId) !== checked.companyId
+    || text(entry.documentId) !== checked.documentId
+    || text(entry[documentIdField]) !== checked.documentId
+    || text(entry.voucherMode).toUpperCase() !== checked.kind
+    || text(entry.partnerId) !== expectedPartnerId
+    || snapshotText(entry.effectiveAt) !== businessDate
+    || snapshotText(entry.occurredAt) !== occurredAt
+    || Number(entry.totalAmount) !== Number(document.totalAmount));
+  if (invalidEntry) throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_PROJECTION_MISMATCH');
+
+  const decision = voucherRevision.partnerEffectDecision;
+  if (!decision || typeof decision !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_DECISION_REQUIRED');
+  const expectedStatus = matched ? 'CREATED' : 'NOT_CREATED';
+  const projectedEntryIds = ledgerEntries.map(entry => text(entry.entryId));
+  if (text(decision.status).toUpperCase() !== expectedStatus
+    || text(decision.reason) !== text(partnerResolution.reason)
+    || text(decision.partnerResolutionStatus).toUpperCase() !== text(partnerResolution.status).toUpperCase()
+    || text(decision.partnerId) !== expectedPartnerId
+    || Number(decision.finalAmount) !== Number(document.totalAmount)
+    || snapshotText(decision.effectiveAt) !== businessDate
+    || snapshotText(decision.occurredAt) !== occurredAt
+    || canonicalSha256(decision.entryIds || []) !== canonicalSha256(projectedEntryIds)) {
+    throw new Error('ORDERQ_OFFICIAL_V2_LEDGER_DECISION_MISMATCH');
+  }
+  return deepFreeze(clone({ ledgerEntries, partnerEffectDecision: decision }));
 }

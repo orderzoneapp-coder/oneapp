@@ -519,10 +519,18 @@ try {
   'unresolved review records must preserve document, line, and Revision links');
   assert.deepEqual(officialV2Stage4Result.purchase.unresolvedReviewRecords.map(record => record.linkCount).sort(), [1, 2],
     'one unresolved product must retain every source line without duplicate links');
-  assert.deepEqual(officialV2Stage4Result.purchase.payable, [{ partnerId: 'V2-STAGE4-C-0003', amount: 2661 }]);
+  assert.deepEqual(officialV2Stage4Result.purchase.payable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 2661,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.purchase.documentBusinessDate, '2026-08-05');
   assert.equal(officialV2Stage4Result.purchase.ledgerDecision.status, 'CREATED');
   assert.equal(officialV2Stage4Result.purchase.ledgerDecision.reason, 'EXACT_COMPANY_CUSTOMER_CODE');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
   assert.equal(officialV2Stage4Result.purchase.duplicate, true);
+  assert.match(officialV2Stage4Result.purchase.repositoryLedgerDateGuardError, /LEDGER_PROJECTION_MISMATCH/,
+    'Repository retry must reject a stored V2 ledger projection whose effective date was tampered');
   assert.deepEqual(officialV2Stage4Result.purchase.aggregateCounts, {
     lines: 5, inventory: 2, pending: 3, unresolved: 2, ledger: 1, revisions: 1, commands: 1, queue: 1
   }, 'one transaction and one idempotent retry must leave exactly one official projection set and queue row');
@@ -532,7 +540,18 @@ try {
   assert.equal(officialV2Stage4Result.sale.receivables, 0);
   assert.equal(officialV2Stage4Result.sale.ledgerDecision.status, 'NOT_CREATED');
   assert.equal(officialV2Stage4Result.sale.ledgerDecision.reason, 'CUSTOMER_CODE_UNMATCHED');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
   assert.equal(officialV2Stage4Result.sale.partnerId, '');
+  assert.equal(officialV2Stage4Result.sale.matchedInventory, -4);
+  assert.deepEqual(officialV2Stage4Result.sale.matchedReceivable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 400,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.status, 'CREATED');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.sale.matchedDocumentBusinessDate, '2026-08-05');
   assert.match(officialV2Stage4Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
   assert.deepEqual({ ...officialV2Stage4Result.rollback, error: undefined }, {
     error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT', 'DRAFT'],

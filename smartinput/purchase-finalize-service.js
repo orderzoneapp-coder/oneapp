@@ -2,12 +2,12 @@ import { validatePurchaseGroup } from './legacy-integration-adapter.js?v=0.3.0';
 import {
   postPurchaseGroup,
   SMARTINPUT_PURCHASE_ACTOR_ID
-} from './purchase-official-stage3.js?v=0.5.0';
+} from './purchase-official-stage3.js?v=0.6.0';
 import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.2.0';
-import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.1.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 
 export const PURCHASE_FINALIZE_SERVICE_CONTRACT = Object.freeze({
   version: 'ONEAPP_SMARTINPUT_PURCHASE_FINALIZE_SERVICE_V1',
