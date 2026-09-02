@@ -1,6 +1,6 @@
 {
   "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
-  "recordedAt": "2026-09-02T12:04:28.027Z",
+  "recordedAt": "2026-09-02T12:29:40.992Z",
   "isolation": {
     "browserProfile": "mkdtemp isolated profile, removed after run",
     "productionIndexedDbWrites": 0,
@@ -12,7 +12,7 @@
         "action": "orderq_official_sync_pull",
         "companyId": "ONEAPP",
         "changeCount": 0,
-        "blockedAt": "2026-09-02T12:04:13.989Z"
+        "blockedAt": "2026-09-02T12:29:27.228Z"
       },
       {
         "method": "POST",
@@ -20,7 +20,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 1,
-        "blockedAt": "2026-09-02T12:04:15.565Z"
+        "blockedAt": "2026-09-02T12:29:28.964Z"
       },
       {
         "method": "POST",
@@ -28,7 +28,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T12:04:16.678Z"
+        "blockedAt": "2026-09-02T12:29:29.780Z"
       },
       {
         "method": "POST",
@@ -36,7 +36,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T12:04:26.898Z"
+        "blockedAt": "2026-09-02T12:29:39.779Z"
       }
     ],
     "localFixtureServerWrites": 0,
@@ -245,17 +245,17 @@
     "directInput": {
       "clicks": 1,
       "clickDefinition": "Analyze button after keyboard entry",
-      "responseMs": 140.64
+      "responseMs": 116.6
     },
     "excelTablePaste": {
       "clicks": 0,
       "clickDefinition": "Ctrl+V/paste event into the grid",
-      "responseMs": 53.92
+      "responseMs": 64.3
     },
     "autosave": {
       "clicks": 0,
       "clickDefinition": "automatic after keyboard entry",
-      "responseMs": 225.56
+      "responseMs": 224.22
     },
     "autosaveRestore": {
       "clicks": 1,
@@ -267,10 +267,18 @@
         "mode": "purchase",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 687.57,
-        "saveFeedbackMs": 214.02,
+        "modeAndEntryReadyMs": 1049.53,
+        "saveFeedbackMs": 103.01,
         "currentResult": "SAVED",
         "feedback": "공식 구매전표 1건 저장 완료",
+        "dateDeleteEvidence": {
+          "deletedFrom": "2026-09-17",
+          "displayed": "2026-09-01",
+          "compatibilityDraft": "2026-09-01",
+          "monthAnchor": "2026-09",
+          "autosaveDraft": "2026-09-01",
+          "savedRequest": "2026-09-01"
+        },
         "dom": {
           "mode": "purchase",
           "customerLabel": "구매처",
@@ -297,8 +305,8 @@
         "mode": "sale",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 480.49,
-        "saveFeedbackMs": 132.33,
+        "modeAndEntryReadyMs": 290.03,
+        "saveFeedbackMs": 116.7,
         "currentResult": "SAVED",
         "feedback": "공식 판매전표 1건 저장 완료",
         "dom": {
@@ -387,8 +395,10 @@
         "duplicate": true,
         "commands": 1,
         "revisions": 1,
-        "frozenName": "확정 상품 P-SUCCESS",
-        "frozenCode": "CODE-P-SUCCESS"
+        "frozenName": "㈜金 확정상품",
+        "frozenCode": "０００７",
+        "frozenOriginalName": "㈜金 원본상품",
+        "frozenOriginalCode": "０A①"
       },
       "sale": {
         "inventory": -2,
@@ -400,6 +410,9 @@
         "expectedRevisionError": "Error:ORDERQ_OFFICIAL_REVISION_CONFLICT:1",
         "saleExpectedRevisionError": "Error:ORDERQ_OFFICIAL_REVISION_CONFLICT:1",
         "payloadConflictError": "OfficialVoucherV2PreflightError:ORDERQ_OFFICIAL_V2_AMOUNT_DERIVATION_MISMATCH:1행: 계산 금액이 수량×단가와 일치하지 않습니다.",
+        "gatewayCommandPayloadConflictError": "Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT",
+        "repositoryCommandPayloadConflictError": "Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT",
+        "nonSnapshotCommandIdUnchanged": true,
         "salePayloadConflictError": "OfficialVoucherV2PreflightError:ORDERQ_OFFICIAL_V2_AMOUNT_DERIVATION_MISMATCH:1행: 계산 금액이 수량×단가와 일치하지 않습니다.",
         "repositoryCompanyError": "Error:ORDERQ_OFFICIAL_COMPANY_MISMATCH",
         "gatewayIdentityError": "Error:ORDERQ_OFFICIAL_V2_IDENTITY_VERSION_INVALID",

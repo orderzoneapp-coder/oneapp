@@ -14,7 +14,7 @@
 - 기술 필드만 있는 완전 빈 행은 제외하고 값이 하나라도 있는 행은 활성 행으로 검사.
 - day 공란은 1일로 확정, 전체 날짜 공란·유효하지 않은 날짜 차단.
 - 명시한 최종금액 `0`·음수는 원값과 출처를 보존하고 미명시 금액만 확정 시 수량×단가로 계산.
-- 확정 Snapshot에 상품코드·상품명·규격·단위·수량·단가·금액·원본 코드/이름·매칭 근거가 포함되며, 원본 입력을 변경한 뒤 core revision snapshot이 바뀌지 않는다.
+- 확정 Snapshot에 상품코드·상품명·규격·단위·수량·단가·금액·원본 코드/이름·매칭 근거가 포함된다. 표시/원문 값은 매칭·ID용 NFKC 정규화와 분리되어 양끝 공백만 제거하며, 전각·호환문자와 선행 0이 core revision snapshot에서 바뀌지 않는다.
 
 ## ID·Gateway·Repository
 
@@ -24,6 +24,7 @@
 - 명령 형식, identity version, 회사/그룹, `commandId=idempotencyKey`, payload digest, expected Revision을 Gateway와 Repository/Core가 반복 검사한다.
 - 격리 IndexedDB의 동일 명령 2회 실행 결과는 두 번째가 `duplicate=true`; 판매 다중그룹 문서 ID가 분리됨을 실제 transaction 시나리오에서 확인했다.
 - 판매 명령의 잘못된 expected Revision과 변경 payload를 각각 차단했다.
+- 공통 명령 계약에서 Snapshot을 바꾸지 않고 `reason`만 변경한 같은 commandId 요청을 Gateway와 Repository가 각각 정확히 `ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT`로 거부함을 별도 확인했다.
 - 판매 store의 강제 unique-index transaction 실패 뒤 문서/행은 기존 Draft이고 revision/inventory/receivable/pending/command 신규 효과는 모두 0건이다.
 
 ## 증거 위치

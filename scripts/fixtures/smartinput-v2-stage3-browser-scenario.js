@@ -98,7 +98,12 @@ export async function runSmartInputV2Stage3BrowserScenario() {
     featureGates: { PURCHASE: true, SALE: true }
   });
 
-  const purchaseSource = purchaseGroup('SUCCESS');
+  const purchaseSource = purchaseGroup('SUCCESS', { rows: [row('P-SUCCESS', {
+    itemCode: '０００７',
+    itemName: '㈜金 확정상품',
+    originalProductCode: '０A①',
+    originalProductName: '㈜金 원본상품'
+  })] });
   const purchaseDraft = buildPurchasePostDraft(purchaseSource, context('V2-COMPANY'));
   await gateway.saveDraft({ kind: 'PURCHASE', ...purchaseDraft }, 'STAGE3-BROWSER');
 
@@ -118,6 +123,10 @@ export async function runSmartInputV2Stage3BrowserScenario() {
   const changedPayload = clone(purchaseDraft.commandSource);
   changedPayload.lines[0].unitPrice = 9999;
   const payloadConflictError = await rejection(() => gateway.execute(changedPayload));
+  const changedNonSnapshotPayload = clone(purchaseDraft.commandSource);
+  changedNonSnapshotPayload.reason = 'PURCHASE_POST_CHANGED_WITH_SAME_COMMAND_ID';
+  const gatewayCommandPayloadConflictError = await rejection(() => gateway.execute(changedNonSnapshotPayload));
+  const repositoryCommandPayloadConflictError = await rejection(() => repository.runCentralOfficialVoucherCommand(changedNonSnapshotPayload));
 
   const wrongCompany = clone(purchaseDraft.commandSource);
   wrongCompany.document.companyId = 'OTHER-COMPANY';
@@ -187,7 +196,9 @@ export async function runSmartInputV2Stage3BrowserScenario() {
       commands: purchaseAggregate.commands.length,
       revisions: purchaseAggregate.revisions.length,
       frozenName: purchaseAggregate.lines[0]?.productSnapshot?.productName,
-      frozenCode: purchaseAggregate.lines[0]?.productSnapshot?.productCode
+      frozenCode: purchaseAggregate.lines[0]?.productSnapshot?.productCode,
+      frozenOriginalName: purchaseAggregate.lines[0]?.productSnapshot?.originalProductName,
+      frozenOriginalCode: purchaseAggregate.lines[0]?.productSnapshot?.originalProductCode
     },
     sale: {
       inventory: postedSale.inventoryMovements[0]?.signedQuantity,
@@ -199,6 +210,9 @@ export async function runSmartInputV2Stage3BrowserScenario() {
       expectedRevisionError,
       saleExpectedRevisionError,
       payloadConflictError,
+      gatewayCommandPayloadConflictError,
+      repositoryCommandPayloadConflictError,
+      nonSnapshotCommandIdUnchanged: changedNonSnapshotPayload.commandId === purchaseDraft.commandSource.commandId,
       salePayloadConflictError,
       repositoryCompanyError,
       gatewayIdentityError,

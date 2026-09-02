@@ -16,6 +16,7 @@ const contract = await import('../orderq/official-voucher-v2-contract.js');
 const core = await import('../orderq/official-voucher-core.js');
 const purchaseModule = await import('../smartinput/purchase-official-stage3.js');
 const saleModule = await import('../smartinput/sale-official-stage4.js');
+const purchaseFinalizeModule = await import('../smartinput/purchase-finalize-service.js');
 const gatewayModule = await import('../orderq/official-command-gateway.js');
 
 const {
@@ -30,6 +31,7 @@ const {
 } = contract;
 const { buildPurchasePostDraft, derivePurchaseDraftIdentity } = purchaseModule;
 const { buildSalePostDraft, deriveSaleDraftIdentity } = saleModule;
+const { createPurchaseFinalizeService } = purchaseFinalizeModule;
 const { createOfficialCommandGateway } = gatewayModule;
 
 const fixedAt = '2026-09-02T09:00:00.000Z';
@@ -145,6 +147,40 @@ for (const kind of ['PURCHASE', 'SALE']) {
   assert.equal(Object.isFrozen(calculated.rows[0].productSnapshot.matchEvidence), true);
 }
 
+const glyphSnapshotSource = baseRow({
+  itemCode: ' ０００７ ',
+  itemName: ' ㈜金사과 ',
+  specification: ' １０㎏ ',
+  unit: ' ＢＯＸ ',
+  originalProductCode: ' ０A① ',
+  originalProductName: ' ㈜金 원본 '
+});
+for (const kind of ['PURCHASE', 'SALE']) {
+  const checked = preflightOfficialVoucherV2({
+    kind,
+    companyId: 'COMPANY-A',
+    voucherGroupKey: `${kind}|GLYPH`,
+    voucherDate: '2026-09-02',
+    warehouseId: 'WAREHOUSE-A',
+    rows: [glyphSnapshotSource]
+  });
+  assert.deepEqual({
+    productCode: checked.rows[0].productSnapshot.productCode,
+    productName: checked.rows[0].productSnapshot.productName,
+    specification: checked.rows[0].productSnapshot.specification,
+    unit: checked.rows[0].productSnapshot.unit,
+    originalProductCode: checked.rows[0].productSnapshot.originalProductCode,
+    originalProductName: checked.rows[0].productSnapshot.originalProductName
+  }, {
+    productCode: '０００７',
+    productName: '㈜金사과',
+    specification: '１０㎏',
+    unit: 'ＢＯＸ',
+    originalProductCode: '０A①',
+    originalProductName: '㈜金 원본'
+  });
+}
+
 const dayDefaultedPurchase = buildPurchasePostDraft(purchaseGroup({ voucherDate: '2026-09-' }), v2Context());
 assert.equal(dayDefaultedPurchase.document?.purchaseDate || dayDefaultedPurchase.purchaseDate, '2026-09-01');
 assert.equal(dayDefaultedPurchase.businessDateDayDefaulted, true);
@@ -178,6 +214,18 @@ for (const draft of [purchaseDraft, saleDraft]) {
 assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductCode, '원본-0007');
 assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductName, '원본 사과');
 assert.equal(purchaseDraft.lines[0].productSnapshot.amount, -25);
+
+const glyphPurchaseDraft = buildPurchasePostDraft(purchaseGroup({ rows: [glyphSnapshotSource] }), v2Context());
+const glyphPurchaseDocument = { ...glyphPurchaseDraft.commandSource.document, status: 'DRAFT', businessStatus: 'DRAFT', revision: 1 };
+const glyphPurchasePlan = core.planOfficialVoucherCommand({
+  command: glyphPurchaseDraft.commandSource,
+  document: glyphPurchaseDocument,
+  lines: glyphPurchaseDraft.lines
+});
+assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.productCode, '０００７');
+assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.productName, '㈜金사과');
+assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.originalProductCode, '０A①');
+assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.originalProductName, '㈜金 원본');
 
 const purchaseDraftB = buildPurchasePostDraft(purchaseGroup({ companyId: 'COMPANY-B' }), v2Context('COMPANY-B'));
 assert.notEqual(purchaseDraft.purchaseDocumentId, purchaseDraftB.purchaseDocumentId);
@@ -241,6 +289,13 @@ assert.throws(() => assertOfficialCommandV2(tamperedPayload), /LINE_SNAPSHOT_MIS
 const tamperedSalePayload = structuredClone(saleDraft.commandSource);
 tamperedSalePayload.lines[0].unitPrice = 9999;
 assert.throws(() => assertOfficialCommandV2(tamperedSalePayload), /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT/);
+const changedNonSnapshotPayload = structuredClone(purchaseDraft.commandSource);
+changedNonSnapshotPayload.reason = 'PURCHASE_POST_CHANGED_WITH_SAME_COMMAND_ID';
+assert.equal(changedNonSnapshotPayload.commandId, purchaseDraft.commandSource.commandId);
+assert.throws(
+  () => assertOfficialCommandV2(changedNonSnapshotPayload),
+  error => error?.message === 'ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT'
+);
 const idempotencyMismatch = { ...purchaseDraft.commandSource, idempotencyKey: 'DIFFERENT' };
 assert.throws(() => assertOfficialCommandV2(idempotencyMismatch), /COMMAND_IDEMPOTENCY_MISMATCH/);
 const invalidCommandFormat = { ...purchaseDraft.commandSource, commandType: 'CORRECT_PURCHASE' };
@@ -272,6 +327,73 @@ assert.throws(
   () => purchaseOnlyGateway.execute({ ...purchaseDraft.commandSource, identityVersion: 'UNSUPPORTED_IDENTITY' }),
   /IDENTITY_VERSION_INVALID/
 );
+assert.throws(
+  () => purchaseOnlyGateway.execute(changedNonSnapshotPayload),
+  error => error?.message === 'ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT'
+);
+
+const legacyFinalizeCalls = [];
+const v2FinalizeSubmissions = [];
+const v2FinalizeService = createPurchaseFinalizeService({
+  validateGroup: () => {
+    legacyFinalizeCalls.push('LEGACY');
+    throw new Error('LEGACY_VALIDATOR_MUST_NOT_RUN_FOR_V2');
+  },
+  submitGroup: async (group, context) => {
+    v2FinalizeSubmissions.push({ group, context });
+    return { accepted: true };
+  },
+  now: () => fixedAt
+});
+const v2FinalizeGroups = [
+  purchaseGroup({
+    voucherGroupKey: 'PURCHASE|FINALIZE|CODE-ONLY',
+    supplierCustomerId: '', supplierCustomerCode: '', supplierCustomerName: '',
+    rows: [baseRow({ itemName: '', productId: '', unit: '', quantity: 0, unitPrice: -10 })]
+  }),
+  purchaseGroup({
+    voucherGroupKey: 'PURCHASE|FINALIZE|NAME-ONLY',
+    supplierCustomerId: '', supplierCustomerCode: '', supplierCustomerName: '',
+    rows: [baseRow({ itemCode: '', productId: '', unit: '', quantity: -2, unitPrice: 0 })]
+  })
+];
+const v2FinalizeResults = await v2FinalizeService.finalize({
+  groups: v2FinalizeGroups,
+  companyId: 'COMPANY-A',
+  identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+  masters: { customers: [], products: [], warehouses: [] }
+});
+assert.deepEqual(v2FinalizeResults.map(result => result.ok), [true, true]);
+assert.deepEqual(legacyFinalizeCalls, []);
+assert.equal(v2FinalizeSubmissions[0].group.rows[0].productSnapshot.productCode, '0007');
+assert.equal(v2FinalizeSubmissions[0].group.rows[0].productSnapshot.productName, '');
+assert.equal(v2FinalizeSubmissions[0].group.rows[0].productSnapshot.quantity, 0);
+assert.equal(v2FinalizeSubmissions[0].group.rows[0].productSnapshot.unitPrice, -10);
+assert.equal(v2FinalizeSubmissions[0].group.rows[0].productSnapshot.unit, '');
+assert.equal(v2FinalizeSubmissions[1].group.rows[0].productSnapshot.productCode, '');
+assert.equal(v2FinalizeSubmissions[1].group.rows[0].productSnapshot.productName, '확정 사과');
+assert.equal(v2FinalizeSubmissions[1].group.rows[0].productSnapshot.quantity, -2);
+assert.equal(v2FinalizeSubmissions[1].group.rows[0].productSnapshot.unitPrice, 0);
+assert.equal(v2FinalizeSubmissions[1].group.rows[0].productSnapshot.unit, '');
+
+const v2FinalizeMissingDate = await v2FinalizeService.finalize({
+  groups: [purchaseGroup({ voucherDate: '' })],
+  companyId: 'COMPANY-A',
+  identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
+});
+assert.equal(v2FinalizeMissingDate[0].ok, false);
+assert.match(v2FinalizeMissingDate[0].error.message, /ORDERQ_OFFICIAL_V2_DATE_REQUIRED/);
+assert.equal(v2FinalizeSubmissions.length, 2);
+
+let v1LegacyCalled = 0;
+const v1FinalizeService = createPurchaseFinalizeService({
+  validateGroup: () => { v1LegacyCalled += 1; throw new Error('V1_LEGACY_SENTINEL'); },
+  submitGroup: async () => assert.fail('V1 submit must not run after legacy validation failure')
+});
+const v1FinalizeResult = await v1FinalizeService.finalize({ groups: [purchaseGroup()], companyId: 'COMPANY-A' });
+assert.equal(v1LegacyCalled, 1);
+assert.equal(v1FinalizeResult[0].ok, false);
+assert.equal(v1FinalizeResult[0].error.message, 'V1_LEGACY_SENTINEL');
 
 assert.deepEqual(blockedPosts, [], 'pure Stage 3 tests must make no external mutation request');
 
@@ -280,6 +402,7 @@ console.log(JSON.stringify({
   gates: { purchase: 'independent/default-off', sale: 'independent/default-off' },
   purchase: { validation: 'PASS', snapshot: 'PASS', companyScopedId: 'PASS', revisionId: 'PASS' },
   sale: { validation: 'PASS', snapshot: 'PASS', companyScopedId: 'PASS', voucherGroupScopedId: 'PASS' },
-  common: { retryIdentity: 'PASS', payloadConflict: 'PASS', expectedRevision: 'PASS', externalMutations: 0 }
+  common: { retryIdentity: 'PASS', payloadConflict: 'PASS', nonSnapshotPayloadConflict: 'PASS', expectedRevision: 'PASS', externalMutations: 0 },
+  finalize: { purchaseV1LegacyUnchanged: 'PASS', purchaseV2PreflightFirst: 'PASS' }
 }, null, 2));
 console.log('SmartInput V2 Stage 3 validation, Snapshot, and identity contract PASS');

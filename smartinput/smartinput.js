@@ -7550,11 +7550,23 @@ $('customerInput').addEventListener('keydown', event => {
     chooseCustomer();
   }
 });
+function officialVoucherDateInputValue(header, value) {
+  const entered = String(value || '').trim();
+  const monthOf = candidate => String(candidate || '').trim().match(/^(\d{4}-(?:0[1-9]|1[0-2]))(?:-\d{2})?$/)?.[1] || '';
+  const monthAnchor = monthOf(entered) || monthOf(header.voucherDateMonthAnchor) || monthOf(header.voucherDate);
+  if (!entered && monthAnchor) return `${monthAnchor}-01`;
+  return entered;
+}
+
 $('deliveryDateInput').addEventListener('input', event => {
   const header = modeDraft().header;
   if (state.draft.activeMode === 'purchase' || state.draft.activeMode === 'sale') {
-    header.voucherDate = event.target.value;
-    header.deliveryDate = event.target.value;
+    const dateValue = officialVoucherDateInputValue(header, event.target.value);
+    const monthAnchor = dateValue.match(/^(\d{4}-\d{2})-\d{2}$/)?.[1] || '';
+    if (monthAnchor) header.voucherDateMonthAnchor = monthAnchor;
+    event.target.value = dateValue;
+    header.voucherDate = dateValue;
+    header.deliveryDate = dateValue;
   } else if (state.draft.activeMode === 'order') {
     header.orderDate = event.target.value;
     header.voucherDate = event.target.value;

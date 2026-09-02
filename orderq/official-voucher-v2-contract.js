@@ -19,7 +19,10 @@ export const OFFICIAL_VOUCHER_V2_ENTITY = Object.freeze({
 
 const canonicalSha256 = sharedCanonicalHash.canonicalSha256;
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+// Identity, matching, and contract metadata use compatibility normalization.
+// Confirmed display/source Snapshot values must retain their original glyphs.
 const text = value => String(value ?? '').normalize('NFKC').trim();
+const snapshotText = value => String(value ?? '').trim();
 
 export class OfficialVoucherV2PreflightError extends Error {
   constructor(issues = []) {
@@ -170,12 +173,12 @@ function matchEvidence(row = {}) {
 }
 
 function rowSnapshot(row, index, kind) {
-  const productCode = text(firstNonblankValue(row, ['productCode', 'itemCode']).value);
-  const productName = text(firstNonblankValue(row, ['productName', 'itemName', 'unregisteredProductQuery']).value);
+  const productCode = snapshotText(firstNonblankValue(row, ['productCode', 'itemCode']).value);
+  const productName = snapshotText(firstNonblankValue(row, ['productName', 'itemName', 'unregisteredProductQuery']).value);
   const originalCodeEntry = firstNonblankValue(row, ['originalProductCode', 'sourceProductCode', 'rawProductCode']);
   const originalNameEntry = firstNonblankValue(row, ['originalProductName', 'sourceProductName', 'rawProductName']);
-  const originalProductCode = text(originalCodeEntry.key ? originalCodeEntry.value : productCode);
-  const originalProductName = text(originalNameEntry.key ? originalNameEntry.value : productName);
+  const originalProductCode = snapshotText(originalCodeEntry.key ? originalCodeEntry.value : productCode);
+  const originalProductName = snapshotText(originalNameEntry.key ? originalNameEntry.value : productName);
   const quantitySource = rawQuantityOf(row);
   const unitPriceSource = rawUnitPriceOf(row);
   const issues = [];
@@ -230,8 +233,8 @@ function rowSnapshot(row, index, kind) {
     entityType: kind === 'PURCHASE' ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_LINE : OFFICIAL_VOUCHER_V2_ENTITY.SALE_LINE,
     productCode,
     productName,
-    specification: text(row.specification),
-    unit: text(firstNonblankValue(row, ['unit', 'actualUnit']).value),
+    specification: snapshotText(row.specification),
+    unit: snapshotText(firstNonblankValue(row, ['unit', 'actualUnit']).value),
     quantity,
     unitPrice,
     amount,

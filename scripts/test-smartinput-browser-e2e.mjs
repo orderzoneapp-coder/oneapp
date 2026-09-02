@@ -474,7 +474,8 @@ try {
   assert.deepEqual(officialV2Stage3Result.purchase, {
     date: '2026-09-01', dayDefaulted: true, inventory: 2, ledger: 1,
     duplicate: true, commands: 1, revisions: 1,
-    frozenName: '확정 상품 P-SUCCESS', frozenCode: 'CODE-P-SUCCESS'
+    frozenName: '㈜金 확정상품', frozenCode: '０００７',
+    frozenOriginalName: '㈜金 원본상품', frozenOriginalCode: '０A①'
   }, 'purchase V2 must preserve its confirmed Snapshot and apply one effect across identical retries');
   assert.deepEqual(officialV2Stage3Result.sale, {
     inventory: -2, ledger: 1, duplicate: true, differentGroupDocumentId: true
@@ -483,6 +484,9 @@ try {
   assert.match(officialV2Stage3Result.safety.saleExpectedRevisionError, /REVISION_CONFLICT/);
   assert.match(officialV2Stage3Result.safety.payloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
   assert.match(officialV2Stage3Result.safety.salePayloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.equal(officialV2Stage3Result.safety.gatewayCommandPayloadConflictError, 'Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');
+  assert.equal(officialV2Stage3Result.safety.repositoryCommandPayloadConflictError, 'Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');
+  assert.equal(officialV2Stage3Result.safety.nonSnapshotCommandIdUnchanged, true);
   assert.match(officialV2Stage3Result.safety.repositoryCompanyError, /COMPANY_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
   assert.match(officialV2Stage3Result.safety.gatewayIdentityError, /IDENTITY_VERSION_INVALID/);
   assert.match(officialV2Stage3Result.safety.repositoryIdentityError, /IDENTITY_VERSION_INVALID/);
@@ -536,6 +540,7 @@ try {
   await evaluate(client, `Promise.all([...document.querySelectorAll('.brand__logo')].map(image=>image.decode?.().catch(()=>{})||Promise.resolve())).then(()=>true)`);
   for (const mode of ['purchase', 'sale']) {
     const modeFlowStartedAt = performance.now();
+    let dateDeleteEvidence = null;
     await click(client, `[data-mode="${mode}"]`);
     await click(client, '#addRowButton');
     await click(client, '#customerSearchButton');
@@ -543,7 +548,16 @@ try {
     await click(client, '.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]');
     await click(client, '.smart-customer-dialog [data-customer-use]');
     await expr(client, `document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'&&!document.querySelector('.smart-customer-dialog')`, `${mode} customer selected`);
-    await input(client, '#deliveryDateInput', '2026-09-02');
+    if (mode === 'purchase') {
+      await input(client, '#deliveryDateInput', '2026-09-17');
+      const displayedAfterDelete = await input(client, '#deliveryDateInput', '');
+      assert.equal(displayedAfterDelete, '2026-09-01', 'clearing the native date input must restore the preserved month at day 1');
+      await expr(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.purchase.header.voucherDate==='2026-09-01'`, 'date deletion persisted to compatibility draft');
+      await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?date-delete-e2e=1');const record=await store.loadLatestAutosave();return record?.draft?.modes?.purchase?.header?.voucherDate==='2026-09-01';})()`, 'date deletion persisted to autosave draft');
+      dateDeleteEvidence = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?date-delete-read-e2e=1');const record=await store.loadLatestAutosave();const local=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.purchase.header;return {deletedFrom:'2026-09-17',displayed:document.querySelector('#deliveryDateInput').value,compatibilityDraft:local.voucherDate,monthAnchor:local.voucherDateMonthAnchor,autosaveDraft:record.draft.modes.purchase.header.voucherDate};})()`);
+    } else {
+      await input(client, '#deliveryDateInput', '2026-09-02');
+    }
     await input(client, '#warehouseInput', '격리 검증 창고');
     await input(client, '#inputRows [data-product-search]', '마스터 최신 사과');
     await evaluate(client, `document.querySelector('#inputRows [data-product-search]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
@@ -577,6 +591,17 @@ try {
     const saveFeedbackMs = Number((performance.now() - saveStartedAt).toFixed(2));
     const feedback = await evaluate(client, `document.querySelector('#appStatus').textContent.trim()`);
     assert.match(feedback, mode === 'purchase' ? /공식 구매전표 1건 저장 완료/ : /공식 판매전표 1건 저장 완료/);
+    if (mode === 'purchase') {
+      dateDeleteEvidence.savedRequest = await evaluate(client, `(async()=>{const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));const pointer=draft.modes.purchase.purchaseSubmissions.at(-1);const repo=await import('/orderq/official-voucher-repository.js?date-delete-read-e2e=1');const aggregate=await repo.loadOfficialPurchaseAggregate(pointer.purchaseDocumentId);return aggregate.document.purchaseDate;})()`);
+      assert.deepEqual(dateDeleteEvidence, {
+        deletedFrom: '2026-09-17',
+        displayed: '2026-09-01',
+        compatibilityDraft: '2026-09-01',
+        monthAnchor: '2026-09',
+        autosaveDraft: '2026-09-01',
+        savedRequest: '2026-09-01'
+      }, 'native date deletion must agree across display, both draft stores, and the official save request');
+    }
     officialSaveEntryEvidence.push({
       mode,
       clickCount: 6,
@@ -585,6 +610,7 @@ try {
       saveFeedbackMs,
       currentResult: 'SAVED',
       feedback,
+      ...(dateDeleteEvidence ? { dateDeleteEvidence } : {}),
       dom: modeDom
     });
   }
