@@ -10,7 +10,7 @@ const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
-assert.match(html, /nexus\.css\?v=1\.3\.1/, 'NEXUS home must load the touch-enabled theme CSS revision');
+assert.match(html, /nexus\.css\?v=1\.3\.2/, 'NEXUS home must load the fixed-header ivory theme CSS revision');
 assert.match(html, /nexus\.js\?v=1\.3\.2/, 'NEXUS home must load the touch-enabled theme runtime revision');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="light"[^>]+aria-label="일반모드 적용"[^>]*>☼<\/button>/, 'home light icon must be an accessible direct-action button');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="dark"[^>]+aria-label="다크모드 적용"[^>]*>☾<\/button>/, 'home dark icon must be an accessible direct-action button');
@@ -71,7 +71,11 @@ assert.match(css, /body\.nexus-home-page \.nexus-app-card:focus-visible|\.nexus-
 assert.match(css, /--nexus-bg:\s*#f3efe6/, 'home light mode must use the approved ivory page tone');
 assert.match(css, /--nexus-panel:\s*#faf7f0/, 'home light panels must use a warm paper surface');
 assert.match(css, /data-nexus-ui-theme="dark"[^}]*--nexus-bg:\s*#0f141a/s, 'home dark mode must retain the quiet graphite surface');
-assert.match(css, /border-color:\s*var\(--nexus-divider\)/, 'home structural header and footer dividers must remain visible');
+assert.match(css, /--nexus-header-bg:\s*#0b1021/, 'home header must stay dark in both screen modes');
+assert.match(css, /\.nexus-topbar\s*\{[^}]*background:\s*var\(--nexus-header-bg\)/s, 'home header must use the fixed dark surface');
+assert.match(css, /\.nexus-home-logo-image--light\s*\{[^}]*display:\s*none/s, 'home must hide the light-background logo on the fixed dark header');
+assert.match(css, /\.nexus-home-logo-image--dark\s*\{[^}]*display:\s*block/s, 'home must keep the dark-header logo visible');
+assert.match(css, /\.nexus-footer\s*\{[^}]*border-color:\s*var\(--nexus-divider\)/s, 'home footer divider must remain visible');
 
 const appPages = [
   'MerchOps.html',
