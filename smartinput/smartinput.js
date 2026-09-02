@@ -12,13 +12,11 @@ import {
   matchWarehouseInput,
   warehouseDisplayName,
   loadPurchaseStage3Capability,
-  postPurchaseGroup,
-  SMARTINPUT_PURCHASE_ACTOR_ID,
-  validatePurchaseGroup,
-  loadSaleStage4Capability,
-  postSaleGroup,
-  SMARTINPUT_SALE_ACTOR_ID
+  loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.3.0';
+import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.6.0';
+import { SaleFinalizeService } from './sale-finalize-service.js?v=0.6.0';
+import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
@@ -6625,6 +6623,31 @@ function scheduleOfficialVoucherSync(afterLocalMutation = false) {
   }, 0);
 }
 
+function stocktakeConflictsFromFinalizeResults(results = []) {
+  const unique = new Map();
+  results.forEach(row => {
+    if (row.ok || row.error?.code !== 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_REQUIRED') return;
+    (row.error.conflicts || []).forEach(conflict => {
+      const key = [conflict.companyId, conflict.documentId, conflict.sourceLineId, conflict.checkpointId].join('|');
+      if (!unique.has(key)) unique.set(key, conflict);
+    });
+  });
+  return [...unique.values()];
+}
+
+async function finalizeWithStocktakeDecision(service, request) {
+  let results = await service.finalize(request);
+  const conflicts = stocktakeConflictsFromFinalizeResults(results);
+  if (!conflicts.length) return { cancelled: false, results };
+  const stocktakeDecisions = await showStocktakeConflictDialog(conflicts);
+  if (!stocktakeDecisions) return { cancelled: true, results: [] };
+  results = await service.finalize({
+    ...request,
+    stocktakeDecisions
+  });
+  return { cancelled: false, results };
+}
+
 async function completeSaleOfficial() {
   const current = modeDraft();
   if (!state.saleCapability.ready) {
@@ -6635,47 +6658,30 @@ async function completeSaleOfficial() {
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('sale', current.rows, current.header);
   if (!confirmGroupedVoucherCreation('sale', groups)) return;
-  const results = [];
   state.busy = true;
   renderDelivery();
   try {
-    for (const group of groups) {
-      try {
-        const producer = String(group.originSystem || group.rows?.[0]?.originSystem
-          || (current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : current.activeMethod === 'excel' ? 'SMARTINPUT_FILE' : 'SMARTINPUT_MANUAL')).toUpperCase();
-        const producerTransactionId = String(group.originTransactionId || group.rows?.[0]?.originTransactionId
-          || current.batches?.at(-1)?.contentHash || current.documentId);
-        const customerRevision = customerId => Number(state.customers.find(row => String(row.customerId) === String(customerId))?.revision || 0);
-        const hydratedGroup = { ...group,
-          salesCustomerRevision: Number(group.salesCustomerRevision || group.rows?.[0]?.salesCustomerRevision || customerRevision(group.salesCustomerId)),
-          deliveryCustomerRevision: Number(group.deliveryCustomerRevision || group.rows?.[0]?.deliveryCustomerRevision || customerRevision(group.deliveryCustomerId)),
-          billingCustomerRevision: Number(group.billingCustomerRevision || group.rows?.[0]?.billingCustomerRevision || customerRevision(group.billingCustomerId)),
-          rows: group.rows.map(row => {
-            const product = state.products.find(item => String(item.productId || item.itemCode) === String(row.productId || row.itemCode));
-            const warehouse = (state.warehouseCatalog.warehouses || []).find(item => String(item.warehouseId || item.warehouseCode) === String(row.warehouseId || group.warehouseId || row.rowWarehouseCode));
-            const sourceType = String(row.sourceType || group.sourceType || 'DIRECT').toUpperCase();
-            return { ...row, sourceType, orderLinkMode: sourceType === 'ORDER_Q' ? 'ORDER_Q' : 'DIRECT',
-              productId: row.productId || product?.productId || '', productMasterRevision: Number(row.productMasterRevision || product?.revision || 0),
-              warehouseId: row.warehouseId || group.warehouseId || warehouse?.warehouseId || '', warehouseMasterRevision: Number(row.warehouseMasterRevision || warehouse?.revision || 0),
-              actualToBaseFactor: sourceType === 'ORDER_Q' ? Number(row.actualToBaseFactor) : 1,
-              actualToRecognizedFactor: sourceType === 'ORDER_Q' ? Number(row.actualToRecognizedFactor) : 0,
-              actualUnit:row.actualUnit || row.unit || '', baseUnit:sourceType === 'ORDER_Q' ? row.baseUnit : (row.actualUnit || row.unit || ''),
-              recognizedUnit:row.recognizedUnit || row.unit || '',
-              conversionSource:sourceType === 'ORDER_Q' ? row.conversionSource : 'DIRECT_SAME_UNIT',
-              conversionRuleId:sourceType === 'ORDER_Q' ? row.conversionRuleId : 'DIRECT_1_TO_1',
-              conversionRuleVersion:sourceType === 'ORDER_Q' ? row.conversionRuleVersion : 'DIRECT_1_TO_1_V1' };
-          }) };
-        const result = await postSaleGroup(hydratedGroup, { companyId: state.companyId, actor: SMARTINPUT_SALE_ACTOR_ID, originSystem: producer,
-          manualSessionId: producerTransactionId, occurredAt: new Date().toISOString() });
-        const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
-        const commandId = result.commandId || '';
-        current.saleSubmissions = (current.saleSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
-        current.saleSubmissions.push({ salesDocumentId: documentId, commandId,
-          state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED',
-          receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
-        results.push({ ok: true, group, result });
-      } catch (error) { results.push({ ok: false, group, error }); }
-    }
+    // SaleFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
+    const finalized = await finalizeWithStocktakeDecision(SaleFinalizeService, {
+      groups,
+      companyId: state.companyId,
+      activeMethod: current.activeMethod,
+      manualSessionId: current.documentId,
+      lastBatchContentHash: current.batches?.at(-1)?.contentHash,
+      customers: state.customers,
+      products: state.products,
+      warehouses: state.warehouseCatalog.warehouses || []
+    });
+    if (finalized.cancelled) return;
+    const results = finalized.results;
+    results.filter(row => row.ok).forEach(({ group, result }) => {
+      const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
+      const commandId = result.commandId || '';
+      current.saleSubmissions = (current.saleSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
+      current.saleSubmissions.push({ salesDocumentId: documentId, commandId,
+        state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED',
+        receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
+    });
     const failed = results.filter(row => !row.ok); const succeeded = results.filter(row => row.ok);
     if (failed.length) {
       const failedKeys = new Set(failed.map(row => row.group.voucherGroupKey));
@@ -6707,24 +6713,25 @@ async function completePurchaseOfficial() {
   const groups = groupVoucherRows('purchase', current.rows, current.header);
   if (!confirmGroupedVoucherCreation('purchase', groups)) return;
   const masters = { customers: state.customers, products: state.products, warehouses: state.warehouseCatalog.warehouses || [] };
-  const results = [];
   state.busy = true;
   renderDelivery();
   try {
-    for (const group of groups) {
-      try {
-        validatePurchaseGroup(group, masters);
-        const producer = current.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
-        const result = await postPurchaseGroup(group, { companyId: state.companyId, actor: SMARTINPUT_PURCHASE_ACTOR_ID, originSystem: producer, manualSessionId: current.documentId, occurredAt: new Date().toISOString() });
-        const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
-        const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';
-        current.purchaseSubmissions = (current.purchaseSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
-        current.purchaseSubmissions.push({ purchaseDocumentId: documentId, commandId, state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED', receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
-        results.push({ ok: true, group, result });
-      } catch (error) {
-        results.push({ ok: false, group, error });
-      }
-    }
+    // PurchaseFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
+    const finalized = await finalizeWithStocktakeDecision(PurchaseFinalizeService, {
+      groups,
+      masters,
+      companyId: state.companyId,
+      activeMethod: current.activeMethod,
+      manualSessionId: current.documentId
+    });
+    if (finalized.cancelled) return;
+    const results = finalized.results;
+    results.filter(row => row.ok).forEach(({ group, result }) => {
+      const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
+      const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';
+      current.purchaseSubmissions = (current.purchaseSubmissions || []).filter(pointer => pointer.voucherGroupKey !== group.voucherGroupKey);
+      current.purchaseSubmissions.push({ purchaseDocumentId: documentId, commandId, state: result.projectionPending ? 'PROJECTION_PENDING' : 'LOCAL_PROJECTED', receiptKey: commandId ? `centralProjection:${commandId}` : '', voucherGroupKey: group.voucherGroupKey, lastErrorCode: '' });
+    });
     const failed = results.filter(row => !row.ok);
     const succeeded = results.filter(row => row.ok);
     if (failed.length) {
@@ -7575,11 +7582,23 @@ $('customerInput').addEventListener('keydown', event => {
     chooseCustomer();
   }
 });
+function officialVoucherDateInputValue(header, value) {
+  const entered = String(value || '').trim();
+  const monthOf = candidate => String(candidate || '').trim().match(/^(\d{4}-(?:0[1-9]|1[0-2]))(?:-\d{2})?$/)?.[1] || '';
+  const monthAnchor = monthOf(entered) || monthOf(header.voucherDateMonthAnchor) || monthOf(header.voucherDate);
+  if (!entered && monthAnchor) return `${monthAnchor}-01`;
+  return entered;
+}
+
 $('deliveryDateInput').addEventListener('input', event => {
   const header = modeDraft().header;
   if (state.draft.activeMode === 'purchase' || state.draft.activeMode === 'sale') {
-    header.voucherDate = event.target.value;
-    header.deliveryDate = event.target.value;
+    const dateValue = officialVoucherDateInputValue(header, event.target.value);
+    const monthAnchor = dateValue.match(/^(\d{4}-\d{2})-\d{2}$/)?.[1] || '';
+    if (monthAnchor) header.voucherDateMonthAnchor = monthAnchor;
+    event.target.value = dateValue;
+    header.voucherDate = dateValue;
+    header.deliveryDate = dateValue;
   } else if (state.draft.activeMode === 'order') {
     header.orderDate = event.target.value;
     header.voucherDate = event.target.value;

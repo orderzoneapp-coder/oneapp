@@ -1,4 +1,4 @@
-import { canonicalSha256, voucherStableId } from './official-voucher-core.js?v=0.20.0';
+import { canonicalSha256, voucherStableId } from './official-voucher-core.js?v=0.23.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -36,10 +36,16 @@ export function createInventoryCheckpoint(source = {}) {
   const sessionId = required(source.sessionId, 'ORDERQ_CHECKPOINT_SESSION_REQUIRED');
   const effectiveAt = required(source.effectiveAt, 'ORDERQ_CHECKPOINT_EFFECTIVE_AT_REQUIRED');
   effectiveTime(effectiveAt);
-  const counts = (Array.isArray(source.counts) ? source.counts : []).map(line => ({
-    productId: required(line.productId, 'ORDERQ_CHECKPOINT_PRODUCT_REQUIRED'),
-    quantity: Number(line.quantity)
-  }));
+  const counts = (Array.isArray(source.counts) ? source.counts : []).map(line => {
+    const productId = text(line.productId);
+    const productCode = String(line.productCode ?? line.itemCode ?? '').trim();
+    if (!productId && !productCode) throw new Error('ORDERQ_CHECKPOINT_PRODUCT_REQUIRED');
+    return {
+      productId,
+      ...(productCode ? { productCode } : {}),
+      quantity: Number(line.quantity)
+    };
+  });
   if (counts.some(line => !Number.isFinite(line.quantity))) throw new Error('ORDERQ_CHECKPOINT_QUANTITY_INVALID');
   return {
     checkpointId: text(source.checkpointId) || voucherStableId('ICP', companyId, warehouseId, sessionId),

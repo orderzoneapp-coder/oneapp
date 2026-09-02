@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.8",
-  "updatedAt": "2026-09-01",
+  "updatedAt": "2026-09-03",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -425,7 +425,7 @@
       "path": "orderq/index.html",
       "kind": "web-entry-group",
       "status": "pilot",
-      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and revisioned cloud synchronization without changing the existing OrderOps compatibility route.",
+      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and the owner boundary for official purchase/sale commands, documents, revisions, inventory or pending effects, base AR/AP effects, the read-only unresolved-product review model and impact preview, and the official local sync queue without changing the existing OrderOps compatibility route.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "entries": [
@@ -439,11 +439,17 @@
       "services": [
         "cloud-sync"
       ],
+      "ownedContracts": [
+        "orderq-official-voucher-core",
+        "orderq-official-sync",
+        "orderq-unresolved-review-read-model"
+      ],
       "sharedContracts": [
         "cloud-url",
         "orderq-vnext-sync",
         "voucher-activity-snapshot",
-        "product-master"
+        "product-master",
+        "orderq-unresolved-review-read-model"
       ]
     },
     {
@@ -452,7 +458,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create order, purchase, sale, and estimate vouchers with one automatically updated local recovery state while consuming owner-issued product and customer Snapshots, deferring new revisions for active work, and isolating external input, synchronization, and server-finalize failures.",
+      "purpose": "Create order, purchase, sale, and estimate work through one automatically updated local recovery state while consuming owner-issued product and customer Snapshots and requesting official purchase/sale changes through the ORDER Q owner command boundary, without direct writes to ORDER Q raw stores.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -467,7 +473,7 @@
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog",
-        "revisioned purchase and sale official commands",
+        "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
         "company-partitioned background official-voucher synchronization"
       ],
       "ownedContracts": [
@@ -791,11 +797,31 @@
         "smart-input"
       ],
       "schemaVersion": "VOUCHER_CORE_V1",
-      "writerPolicy": "Purchase and sale commands use company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB transaction for voucher, inventory/pending inventory, AR/AP, revision, and sync-queue effects.",
+      "writerPolicy": "ORDER Q owns the official command gateway and repository. SmartInput is a command-adapter consumer and must not write ORDER Q raw stores. The current repository uses company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB finalize transaction for document and lines, command receipt, voucher revision, matched inventory movement or unresolved pending effect, the currently validated partner's base payable/receivable entry, unresolved-product identity, and the official syncQueue row. V2 retains that atomic unit while creating base AR/AP only for an exact company-scoped Customer Snapshot match and omitting AR/AP, without blocking the voucher or inventory path, when the customer is absent or unmatched.",
+      "ownerBoundary": "ORDER Q OfficialCommandGateway and OfficialVoucherRepository",
+      "consumerBoundary": "SmartInput purchase and sale UI handlers call their separate Finalize Services. The existing purchase/sale builders then call the ORDER Q official command Adapter, which delegates through OfficialCommandGateway to OfficialVoucherRepository. SmartInput production modules have no direct repository import. Cloud replay and later rematch/correction/cancellation owner-boundary migration remain follow-up work.",
+      "userProductIdentity": "companyId + ERP productCode string; preserve leading zeroes and do not expose a new NXP identifier",
+      "compatibilityProductIdentity": "productId remains a non-visible Product Snapshot technical key for the current inventory, checkpoint, rematch, and sync stores",
+      "migrationPolicy": "No V1 official-voucher, Draft, or test-data migration. Continue additively inside SmartInput DB v5 and ORDER Q DB v7 without deleting or initializing existing stores or records.",
+      "excludedScope": [
+        "AR/AP closing or balance adjustment",
+        "tax invoice issuance or receipt",
+        "offsetting or separate account adjustment",
+        "Cloud Push/Pull activation",
+        "official production activation"
+      ],
       "resources": {
+        "commandAdapterAsset": "orderq/official-command-adapter.js",
+        "gatewayAsset": "orderq/official-command-gateway.js",
+        "commandCoreAsset": "orderq/official-voucher-core.js",
+        "repositoryAsset": "orderq/official-voucher-repository.js",
         "localDatabase": "oneapp-orderq-pre-m1-v6",
         "databaseVersion": 7,
         "indexedDbStores": [
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
           "officialCommands",
           "voucherRevisions",
           "inventoryMovements",
@@ -803,9 +829,41 @@
           "receivableEntries",
           "pendingInventoryEffects",
           "inventoryCheckpoints",
-          "unresolvedProducts"
+          "unresolvedProducts",
+          "syncQueue"
         ]
       }
+    },
+    {
+      "id": "orderq-unresolved-review-read-model",
+      "owner": "orderq-vnext",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1",
+      "readAdapter": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1",
+      "impactPreviewSchemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1",
+      "readerPolicy": "Company scope is mandatory. Only the ORDER Q owner Repository opens the existing official stores and composes unresolved records, pending effects, confirmed documents, lines, Revisions, and stocktake checkpoints. Same-effect review evidence is deduplicated only after shared link fields are reconciled; conflicts remain REVIEW_REQUIRED. A cross-company point-get target contributes only a mismatch issue and none of its payload. EMPTY and ERROR remain distinct; an owner read failure is never represented as zero rows.",
+      "candidatePolicy": "The current Product Snapshot is reference-only. An outer-trimmed exact source-string code may be marked as an exact candidate only when unique under the Product owner company rule. Leading-zero, case, character-width, and internal-space variants remain distinct. Name candidates are reference-only and never auto-confirmed.",
+      "writePolicy": "Read model and rematch impact preview only. No rematch command, inventory write, Product or Customer write, UI execution, schema migration, or Store creation is permitted.",
+      "resources": {
+        "contractAsset": "orderq/unresolved-review-read-model.js",
+        "adapterAsset": "orderq/unresolved-review-read-adapter.js",
+        "repositoryAsset": "orderq/unresolved-review-repository.js",
+        "checkpointClassifierAsset": "orderq/stocktake-conflict-v2.js",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "databaseVersion": 7,
+        "transactionMode": "readonly",
+        "indexedDbStores": [
+          "unresolvedProducts",
+          "pendingInventoryEffects",
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
+          "voucherRevisions",
+          "inventoryCheckpoints"
+        ]
+      },
+      "rollback": "Remove the three Phase 6A read-only assets and this manifest registration. Existing ORDER Q DB v7 data and every product UI asset remain untouched."
     },
     {
       "id": "orderq-official-sync",
@@ -817,6 +875,7 @@
       "schemaVersion": "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
       "writerPolicy": "Local purchase and sale finalize remains LOCAL_OPERATION. Background sync stores immutable command payloads by company, applies command-id idempotency and voucher-revision optimistic locking, and never overwrites a conflicting local voucher or active SmartInput draft.",
       "deploymentStatus": "SOURCE_READY_APPS_SCRIPT_DEPLOYMENT_REQUIRED",
+      "activationPolicy": "Excluded from the SmartInput official-voucher and inventory V2 implementation scope until separate server deployment, company-isolation, multi-device, and production-activation validation is approved.",
       "resources": {
         "cloudActions": [
           "orderq_official_sync_push",

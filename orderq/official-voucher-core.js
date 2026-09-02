@@ -1,4 +1,16 @@
 import './canonical-hash.js?v=0.2.0';
+import {
+  assertOfficialCommandV2,
+  isOfficialVoucherIdentityV2,
+  officialVoucherRevisionIdV2,
+  OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+  OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+  OFFICIAL_VOUCHER_V2_ENTITY
+} from './official-voucher-v2-contract.js?v=0.5.0';
+import {
+  applyOfficialStocktakeDecisionsV2,
+  assertOfficialStocktakeProjectionV2
+} from './stocktake-conflict-v2.js?v=0.2.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
@@ -60,7 +72,11 @@ function normalizedIdentityPart(value) {
 
 export function unresolvedProductStableId(companyId, source = {}) {
   const company = requiredText(companyId, 'ORDERQ_OFFICIAL_COMPANY_REQUIRED');
-  const code = normalizedIdentityPart(source.productCode || source.itemCode);
+  const v2Resolution = source.officialProductResolution
+    || source.productSnapshot?.matchEvidence?.officialProductResolution;
+  const code = v2Resolution
+    ? text(v2Resolution.inputProductCode ?? source.originalProductCode ?? source.productCode ?? source.itemCode)
+    : normalizedIdentityPart(source.productCode || source.itemCode);
   const name = normalizedIdentityPart(source.productName || source.itemName || source.unregisteredProductQuery);
   const specification = normalizedIdentityPart(source.specification);
   const unit = normalizedIdentityPart(source.unit || source.actualUnit || source.baseUnit);
@@ -130,13 +146,17 @@ function lineId(kind, source = {}) {
 }
 
 function partnerId(kind, source = {}) {
-  return requiredText(kind === 'PURCHASE'
+  return text(kind === 'PURCHASE'
     ? source.supplierCustomerId
-    : source.billingCustomerId || source.salesCustomerId,
-  `ORDERQ_OFFICIAL_${kind}_PARTNER_REQUIRED`);
+    : source.billingCustomerId || source.salesCustomerId);
+}
+
+function requiredPartnerId(kind, source = {}) {
+  return requiredText(partnerId(kind, source), `ORDERQ_OFFICIAL_${kind}_PARTNER_REQUIRED`);
 }
 
 function normalizeCommand(source = {}) {
+  if (isOfficialVoucherIdentityV2(source)) assertOfficialCommandV2(source);
   const commandType = text(source.commandType).toUpperCase();
   if (!COMMANDS.has(commandType)) throw new Error(`ORDERQ_OFFICIAL_COMMAND_TYPE_INVALID:${commandType}`);
   const expectedRevision = Number(source.expectedRevision);
@@ -173,9 +193,20 @@ function productIdentity(source = {}) {
 }
 
 function normalizeLine(kind, source, document, revision) {
+  const identityV2 = isOfficialVoucherIdentityV2(document);
+  if (identityV2
+    && text(source.companyId) && text(source.companyId) !== text(document.companyId)) {
+    throw new Error('ORDERQ_OFFICIAL_LINE_COMPANY_MISMATCH');
+  }
+  if (identityV2
+    && text(source.voucherGroupKey) !== text(document.voucherGroupKey)) {
+    throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+  }
   const id = lineId(kind, source);
   const amounts = resolveOfficialLineAmounts(source);
-  const baseQuantity = optionalFinite(source.baseQuantity, 'ORDERQ_OFFICIAL_BASE_QUANTITY_INVALID') ?? amounts.quantity;
+  const baseQuantity = identityV2
+    ? amounts.quantity
+    : optionalFinite(source.baseQuantity, 'ORDERQ_OFFICIAL_BASE_QUANTITY_INVALID') ?? amounts.quantity;
   const identity = productIdentity(source);
   const common = {
     ...clone(source),
@@ -184,6 +215,10 @@ function normalizeLine(kind, source, document, revision) {
     warehouseId: requiredText(source.warehouseId || document.warehouseId, 'ORDERQ_OFFICIAL_WAREHOUSE_REQUIRED'),
     baseQuantity,
     actualQuantity: amounts.quantity,
+    ...(identityV2 ? {
+      inventoryEffectFactor: 1,
+      productIdentityStatus: identity.productId ? 'MATCHED' : 'UNRESOLVED_PRODUCT'
+    } : {}),
     lineIdentityId: text(source.lineIdentityId) || voucherStableId('LI', documentId(kind, document), id),
     sourceLineKey: text(source.sourceLineKey) || id,
     status: OFFICIAL_VOUCHER_STATUS.CONFIRMED,
@@ -204,11 +239,13 @@ function lineInventoryQuantity(kind, line) {
 }
 
 function inventoryEffect(kind, command, document, previous, next, ordinal) {
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   const beforeQuantity = previous?.productId ? lineInventoryQuantity(kind, previous) : 0;
   const afterQuantity = next?.productId ? lineInventoryQuantity(kind, next) : 0;
-  const signedQuantity = afterQuantity - beforeQuantity;
-  if (signedQuantity === 0) return null;
+  const quantityDifference = afterQuantity - beforeQuantity;
+  const signedQuantity = Object.is(quantityDifference, -0) ? 0 : quantityDifference;
   const reference = next || previous;
+  if (!reference?.productId || (!identityV2 && signedQuantity === 0)) return null;
   return {
     movementId: voucherStableId('IM', command.commandId, reference.lineIdentityId || lineId(kind, reference), ordinal),
     companyId: command.companyId,
@@ -220,6 +257,13 @@ function inventoryEffect(kind, command, document, previous, next, ordinal) {
     voucherMode: kind.toLowerCase(),
     movementType: `${kind}_${commandAction(command.commandType)}`,
     signedQuantity,
+    ...(identityV2 ? {
+      productCode: text(reference.productSnapshot?.productCode || reference.productCode),
+      inventoryEffectFactor: 1,
+      effectStatus: signedQuantity === 0 ? 'ZERO_EFFECT' : 'APPLIED_NORMAL',
+      officialInventoryApplied: true,
+      effectiveAt: text(document.businessDate || document.purchaseDate || document.saleDate || document.voucherDate)
+    } : {}),
     commandId: command.commandId,
     occurredAt: command.occurredAt,
     actor: command.actor
@@ -227,12 +271,14 @@ function inventoryEffect(kind, command, document, previous, next, ordinal) {
 }
 
 function pendingInventoryEffect(kind, command, document, previous, next, ordinal) {
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   const reference = next || previous;
   if (!reference?.unresolvedProductId) return null;
   const before = previous?.unresolvedProductId ? lineInventoryQuantity(kind, previous) : 0;
   const after = next?.unresolvedProductId ? lineInventoryQuantity(kind, next) : 0;
-  const signedQuantity = after - before;
-  if (signedQuantity === 0) return null;
+  const quantityDifference = after - before;
+  const signedQuantity = Object.is(quantityDifference, -0) ? 0 : quantityDifference;
+  if (!identityV2 && signedQuantity === 0) return null;
   return {
     pendingEffectId: voucherStableId('PIE', command.commandId, reference.lineIdentityId || lineId(kind, reference), ordinal),
     companyId: command.companyId,
@@ -242,9 +288,25 @@ function pendingInventoryEffect(kind, command, document, previous, next, ordinal
     sourceLineId: lineId(kind, reference),
     sourceDocumentRevision: document.revision,
     voucherMode: kind.toLowerCase(),
-    effectiveAt: text(document.purchaseDate || document.salesDate || document.voucherDate),
+    effectiveAt: text(document.businessDate || document.purchaseDate || document.saleDate || document.salesDate || document.voucherDate),
     signedQuantity,
     status: 'PENDING_PRODUCT_MATCH',
+    ...(identityV2 ? {
+      inventoryEffectStatus: 'UNRESOLVED_PRODUCT',
+      officialInventoryApplied: false,
+      productCode: text(reference.productSnapshot?.productCode || reference.productCode),
+      productName: text(reference.productSnapshot?.productName || reference.productName),
+      originalProductCode: text(reference.productSnapshot?.originalProductCode ?? reference.originalProductCode),
+      originalProductName: text(reference.productSnapshot?.originalProductName ?? reference.originalProductName),
+      specification: text(reference.productSnapshot?.specification || reference.specification),
+      unit: text(reference.productSnapshot?.unit || reference.unit || reference.actualUnit),
+      quantity: Number(reference.actualQuantity ?? reference.quantity),
+      unitPrice: Number(reference.unitPrice),
+      totalAmount: Number(reference.totalAmount),
+      productSnapshot: clone(reference.productSnapshot),
+      productResolution: clone(reference.officialProductResolution),
+      voucherRevisionId: officialVoucherRevisionIdV2(kind, command.companyId, documentId(kind, document), document.revision)
+    } : {}),
     commandId: command.commandId,
     createdAt: command.occurredAt
   };
@@ -265,23 +327,36 @@ function ledgerEntry(kind, command, document, partner, totalAmount, entryType, o
     currency: document.currency || OFFICIAL_CURRENCY,
     reversalOf,
     commandId: command.commandId,
+    ...(isOfficialVoucherIdentityV2(command) ? {
+      effectiveAt: text(document.businessDate)
+    } : {}),
     occurredAt: command.occurredAt,
     actor: command.actor
   };
 }
 
-function businessSnapshot(kind, document, lines) {
+function businessSnapshot(kind, document, lines, command) {
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   return {
     companyId: document.companyId,
     voucherMode: kind.toLowerCase(),
     documentId: documentId(kind, document),
     revision: document.revision,
     status: document.status,
-    partnerId: partnerId(kind, document),
+    partnerId: identityV2 ? partnerId(kind, document) : requiredPartnerId(kind, document),
     warehouseId: document.warehouseId,
     supplyAmount: document.supplyAmount,
     vatAmount: document.vatAmount,
     totalAmount: document.totalAmount,
+    ...(identityV2 ? {
+      schemaVersion: OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+      identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+      entityType: kind === 'PURCHASE'
+        ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_REVISION
+        : OFFICIAL_VOUCHER_V2_ENTITY.SALE_REVISION,
+      voucherGroupKey: text(document.voucherGroupKey),
+      officialPartnerResolution: clone(document.officialPartnerResolution)
+    } : {}),
     lines: lines.map(line => ({
       lineId: lineId(kind, line),
       lineIdentityId: line.lineIdentityId,
@@ -293,7 +368,21 @@ function businessSnapshot(kind, document, lines) {
       unitPrice: line.unitPrice,
       supplyAmount: line.supplyAmount,
       vatAmount: line.vatAmount,
-      totalAmount: line.totalAmount
+      totalAmount: line.totalAmount,
+      ...(identityV2 ? {
+        schemaVersion: line.schemaVersion,
+        identityVersion: line.identityVersion,
+        entityType: line.entityType,
+        companyId: line.companyId,
+        voucherGroupKey: line.voucherGroupKey,
+        productCode: line.productCode,
+        productName: line.productName,
+        specification: line.specification,
+        unit: line.unit || line.actualUnit,
+        originalProductCode: line.originalProductCode,
+        originalProductName: line.originalProductName,
+        productSnapshot: clone(line.productSnapshot)
+      } : {})
     }))
   };
 }
@@ -302,11 +391,18 @@ export function planOfficialVoucherCommand(input = {}) {
   const command = normalizeCommand(input.command || input);
   const kind = commandKind(command.commandType);
   const action = commandAction(command.commandType);
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   const previousDocument = clone(input.document);
   const previousLines = clone(Array.isArray(input.lines) ? input.lines : []);
   if (!previousDocument) throw new Error('ORDERQ_OFFICIAL_DOCUMENT_REQUIRED');
   if (text(previousDocument.companyId) && text(previousDocument.companyId) !== command.companyId) {
     throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+  }
+  if (isOfficialVoucherIdentityV2(command)) {
+    if (text(previousDocument.companyId) !== command.companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+    if (text(previousDocument.voucherGroupKey) !== text(command.voucherGroupKey)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+    }
   }
   if (Number(previousDocument.revision || 0) !== command.expectedRevision) {
     throw new Error(`ORDERQ_OFFICIAL_REVISION_CONFLICT:${previousDocument.revision || 0}`);
@@ -331,7 +427,7 @@ export function planOfficialVoucherCommand(input = {}) {
     updatedBy: command.actor
   };
   documentId(kind, nextDocument);
-  partnerId(kind, nextDocument);
+  if (!isOfficialVoucherIdentityV2(command)) requiredPartnerId(kind, nextDocument);
   requiredText(nextDocument.warehouseId, 'ORDERQ_OFFICIAL_WAREHOUSE_REQUIRED');
 
   const requestedLines = action === 'REVERSE' ? [] : clone(Array.isArray(command.lines) ? command.lines : previousLines);
@@ -362,29 +458,51 @@ export function planOfficialVoucherCommand(input = {}) {
     if (pending) pendingInventoryEffects.push(pending);
   });
 
+  const stocktakeProjection = identityV2 ? applyOfficialStocktakeDecisionsV2({
+    command,
+    inventoryMovements,
+    inventoryCheckpoints: Array.isArray(input.inventoryCheckpoints) ? input.inventoryCheckpoints : []
+  }) : { inventoryMovements, stocktakeDecisions: [] };
+  inventoryMovements.splice(0, inventoryMovements.length, ...stocktakeProjection.inventoryMovements);
+
   const previousTotal = Number(previousDocument.totalAmount || 0);
-  const oldPartner = partnerId(kind, previousDocument);
+  const oldPartner = identityV2 ? partnerId(kind, previousDocument) : requiredPartnerId(kind, previousDocument);
   const newPartner = partnerId(kind, nextDocument);
   const ledgerEntries = [];
-  if (action === 'POST') {
+  const partnerResolution = identityV2 ? clone(nextDocument.officialPartnerResolution) : null;
+  const createPartnerEffect = !identityV2 || text(partnerResolution?.status).toUpperCase() === 'MATCHED';
+  if (action === 'POST' && createPartnerEffect) {
     ledgerEntries.push(ledgerEntry(kind, command, nextDocument, newPartner, nextDocument.totalAmount, `${kind}_POST`, 1));
-  } else if (action === 'REVERSE') {
+  } else if (action === 'REVERSE' && createPartnerEffect) {
     ledgerEntries.push(ledgerEntry(kind, command, nextDocument, oldPartner, -previousTotal, `${kind}_REVERSAL`, 1,
       text(previousDocument.lastLedgerEntryId)));
-  } else if (oldPartner !== newPartner) {
+  } else if (action === 'CORRECT' && createPartnerEffect && oldPartner !== newPartner) {
     ledgerEntries.push(ledgerEntry(kind, command, nextDocument, oldPartner, -previousTotal, `${kind}_PARTNER_RELEASE`, 1,
       text(previousDocument.lastLedgerEntryId)));
     ledgerEntries.push(ledgerEntry(kind, command, nextDocument, newPartner, nextDocument.totalAmount, `${kind}_PARTNER_ASSIGN`, 2));
-  } else {
+  } else if (action === 'CORRECT' && createPartnerEffect) {
     ledgerEntries.push(ledgerEntry(kind, command, nextDocument, newPartner, nextDocument.totalAmount - previousTotal,
       `${kind}_CORRECTION`, 1));
   }
   nextDocument.lastLedgerEntryId = ledgerEntries.at(-1)?.entryId || '';
+  const partnerEffectDecision = identityV2 ? {
+    status: createPartnerEffect ? 'CREATED' : 'NOT_CREATED',
+    reason: text(partnerResolution?.reason),
+    partnerResolutionStatus: text(partnerResolution?.status),
+    partnerId: createPartnerEffect ? newPartner : '',
+    finalAmount: nextDocument.totalAmount,
+    effectiveAt: text(nextDocument.businessDate),
+    occurredAt: command.occurredAt,
+    entryIds: ledgerEntries.map(row => row.entryId)
+  } : null;
 
-  const beforeSnapshot = businessSnapshot(kind, previousDocument, previousLines);
-  const afterSnapshot = businessSnapshot(kind, nextDocument, nextLines);
+  const beforeSnapshot = businessSnapshot(kind, previousDocument, previousLines, command);
+  const afterSnapshot = businessSnapshot(kind, nextDocument, nextLines, command);
+  const revisionId = isOfficialVoucherIdentityV2(command)
+    ? officialVoucherRevisionIdV2(kind, command.companyId, documentId(kind, nextDocument), revision)
+    : `${documentId(kind, nextDocument)}:R${revision}`;
   const voucherRevision = {
-    voucherRevisionId: `${documentId(kind, nextDocument)}:R${revision}`,
+    voucherRevisionId: revisionId,
     companyId: command.companyId,
     voucherMode: kind.toLowerCase(),
     documentId: documentId(kind, nextDocument),
@@ -398,16 +516,42 @@ export function planOfficialVoucherCommand(input = {}) {
     beforeDigest: canonicalSha256(beforeSnapshot),
     afterDigest: canonicalSha256(afterSnapshot),
     effects: [
-      ...inventoryMovements.map(row => ({ type: 'INVENTORY', id: row.movementId })),
-      ...pendingInventoryEffects.map(row => ({ type: 'PENDING_INVENTORY', id: row.pendingEffectId })),
+      ...inventoryMovements.map(row => ({
+        type: 'INVENTORY',
+        id: row.movementId,
+        ...(identityV2 ? {
+          status: row.effectStatus,
+          officialInventoryApplied: row.officialInventoryApplied,
+          effectRole: row.effectRole || 'SOURCE_VOUCHER_EFFECT',
+          stocktakeEffectStatus: row.stocktakeEffectStatus || '',
+          stocktakeDecisionId: row.stocktakeDecisionId || '',
+          checkpointId: row.checkpointId || ''
+        } : {})
+      })),
+      ...pendingInventoryEffects.map(row => ({
+        type: identityV2 ? 'UNRESOLVED_PRODUCT_REVIEW' : 'PENDING_INVENTORY',
+        id: row.pendingEffectId,
+        ...(identityV2 ? { status: 'UNRESOLVED_PRODUCT', officialInventoryApplied: false } : {})
+      })),
       ...ledgerEntries.map(row => ({ type: kind === 'PURCHASE' ? 'PAYABLE' : 'RECEIVABLE', id: row.entryId }))
     ],
     reason: command.reason,
     actor: command.actor,
-    occurredAt: command.occurredAt
+    occurredAt: command.occurredAt,
+    ...(isOfficialVoucherIdentityV2(command) ? {
+      schemaVersion: OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+      identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+      entityType: kind === 'PURCHASE'
+        ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_REVISION
+        : OFFICIAL_VOUCHER_V2_ENTITY.SALE_REVISION,
+      voucherGroupKey: text(command.voucherGroupKey),
+      businessDate: text(nextDocument.businessDate),
+      partnerEffectDecision,
+      stocktakeDecisions: clone(stocktakeProjection.stocktakeDecisions)
+    } : {})
   };
   nextDocument.lastVoucherRevisionId = voucherRevision.voucherRevisionId;
-  return {
+  const result = {
     command,
     kind,
     document: nextDocument,
@@ -426,4 +570,6 @@ export function planOfficialVoucherCommand(input = {}) {
     ledgerEntries,
     voucherRevision
   };
+  if (identityV2) assertOfficialStocktakeProjectionV2(result, command);
+  return result;
 }

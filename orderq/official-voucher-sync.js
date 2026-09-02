@@ -13,7 +13,7 @@ import {
 import {
   applyRemoteOfficialVoucherCommandPayload,
   applyRemotePendingInventoryResolutionPayload
-} from './official-voucher-repository.js?v=0.21.0';
+} from './official-voucher-repository.js?v=0.25.0';
 
 const DEVICE_KEY = 'oneapp.orderq.device-id.v1';
 const OFFICIAL_ENTITY_TYPES = new Set(['OFFICIAL_VOUCHER_COMMAND', 'PENDING_INVENTORY_RESOLUTION']);

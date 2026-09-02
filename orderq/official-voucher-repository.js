@@ -6,11 +6,30 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.8.0';
-import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.20.0';
-import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.1.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.24.0';
+import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.2.0';
+import {
+  assertOfficialCommandV2,
+  assertOfficialLedgerProjectionV2,
+  isOfficialVoucherIdentityV2,
+  OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
+} from './official-voucher-v2-contract.js?v=0.5.0';
+import {
+  assertOfficialStocktakeDecisionEnvelopeV2,
+  assertOfficialStocktakeProjectionV2,
+  inspectOfficialStocktakeConflictsV2
+} from './stocktake-conflict-v2.js?v=0.2.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+
+function assertSupportedIdentityVersion(source = {}) {
+  const command = source.intent || source.commandEnvelope || source.commandSource || source;
+  const identityVersion = text(command?.identityVersion);
+  if (identityVersion && identityVersion !== OFFICIAL_VOUCHER_IDENTITY_VERSION_V2) {
+    throw new Error('ORDERQ_OFFICIAL_V2_IDENTITY_VERSION_INVALID');
+  }
+}
 
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -73,10 +92,17 @@ export function buildFrozenSaleIntent(source = {}) {
 function draftDocument(source, contract, actor) {
   const commandEnvelope = clone(source.commandEnvelope || source.commandSource);
   if (!commandEnvelope) throw new Error('ORDERQ_OFFICIAL_COMMAND_REQUIRED');
+  if (isOfficialVoucherIdentityV2(commandEnvelope)) assertOfficialCommandV2(commandEnvelope);
   const document = clone(source.document || commandEnvelope.document || {});
   const documentId = documentIdOf(contract, { ...source, document });
   const companyId = text(source.companyId || document.companyId || commandEnvelope.companyId);
   if (!companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_REQUIRED');
+  if (isOfficialVoucherIdentityV2(commandEnvelope)) {
+    if (text(document.companyId) !== companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+    if (text(document.voucherGroupKey) !== text(commandEnvelope.voucherGroupKey)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+    }
+  }
   const timestamp = nowIso();
   return {
     ...document,
@@ -99,6 +125,14 @@ function draftLines(source, contract, document) {
   const rows = clone(source.lines || source.commandEnvelope?.lines || source.commandSource?.lines || []);
   if (!Array.isArray(rows) || !rows.length) throw new Error('ORDERQ_OFFICIAL_LINES_REQUIRED');
   return rows.map((row, index) => {
+    if (isOfficialVoucherIdentityV2(document)
+      && text(row.companyId) && text(row.companyId) !== text(document.companyId)) {
+      throw new Error('ORDERQ_OFFICIAL_LINE_COMPANY_MISMATCH');
+    }
+    if (isOfficialVoucherIdentityV2(document)
+      && text(row.voucherGroupKey) !== text(document.voucherGroupKey)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+    }
     const lineId = text(row[contract.lineId]) || `${document[contract.documentId]}:L${index + 1}`;
     return {
       ...row,
@@ -118,17 +152,37 @@ function draftLines(source, contract, document) {
 }
 
 export async function saveOfficialVoucherDraft(source = {}, actor = '') {
+  assertSupportedIdentityVersion(source);
   const contract = inferKind(source);
+  const commandEnvelope = source.commandEnvelope || source.commandSource;
+  const checkedV2 = isOfficialVoucherIdentityV2(commandEnvelope) ? assertOfficialCommandV2(commandEnvelope) : null;
+  if (checkedV2 && checkedV2.kind !== contract.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
   const document = draftDocument(source, contract, actor);
   const lines = draftLines(source, contract, document);
   const db = await openOrderQDb();
-  const tx = db.transaction([contract.documentStore, contract.lineStore], 'readwrite');
+  const draftStores = [contract.documentStore, contract.lineStore];
+  if (checkedV2) draftStores.push(STORE.INVENTORY_CHECKPOINTS);
+  const tx = db.transaction(draftStores, 'readwrite');
   const documentStore = tx.objectStore(contract.documentStore);
-  const existing = await requestToPromise(documentStore.get(document[contract.documentId]));
+  const [existing, checkpoints] = await Promise.all([
+    requestToPromise(documentStore.get(document[contract.documentId])),
+    checkedV2
+      ? checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), commandEnvelope)
+      : Promise.resolve([])
+  ]);
   if (existing) {
     tx.abort();
     try { await transactionDone(tx); } catch {}
     throw new Error(`ORDERQ_OFFICIAL_DRAFT_EXISTS:${document[contract.documentId]}`);
+  }
+  if (checkedV2) {
+    try {
+      assertOfficialStocktakeDecisionEnvelopeV2(commandEnvelope, checkpoints);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
+    }
   }
   documentStore.add(document);
   const lineStore = tx.objectStore(contract.lineStore);
@@ -152,7 +206,7 @@ async function findBySource(kind, identity = {}) {
   }
   await transactionDone(tx);
   const fields = ['companyId', 'contractKind', 'sourceDocumentKey', 'originSystem', 'originTransactionId',
-    'purchasePlanId', 'externalDocumentNo', 'sourceVoucherIndex'];
+    'purchasePlanId', 'externalDocumentNo', 'sourceVoucherIndex', 'identityVersion', 'voucherGroupKey'];
   return candidates.find(row => fields.every(field => {
     const wanted = identity[field];
     return wanted === undefined || wanted === null || text(wanted) === '' || text(row[field]) === text(wanted);
@@ -166,27 +220,93 @@ async function rowsByIndex(store, indexName, query) {
   return requestToPromise(store.index(indexName).getAll(query));
 }
 
+async function checkpointRowsForCommand(store, command = {}) {
+  const companyId = text(command.companyId || command.document?.companyId);
+  const warehouseIds = [...new Set((command.lines || [])
+    .map(row => text(row.warehouseId || command.document?.warehouseId))
+    .filter(Boolean))];
+  const keyRange = globalThis.IDBKeyRange;
+  if (!companyId || !warehouseIds.length || !keyRange
+    || !store.indexNames.contains('byCompanyWarehouseEffectiveAt')) {
+    return requestToPromise(store.getAll());
+  }
+  const index = store.index('byCompanyWarehouseEffectiveAt');
+  const batches = await Promise.all(warehouseIds.map(warehouseId => requestToPromise(index.getAll(
+    keyRange.bound([companyId, warehouseId, ''], [companyId, warehouseId, '\uffff'])
+  ))));
+  return batches.flat();
+}
+
+export async function inspectOfficialStocktakeConflicts(source = {}) {
+  assertSupportedIdentityVersion(source);
+  const command = clone(source.intent || source.commandEnvelope || source.commandSource || source);
+  const checked = isOfficialVoucherIdentityV2(command) ? assertOfficialCommandV2(command) : null;
+  if (!checked) return deepFreeze({ conflicts: [], identityVersion: '' });
+  const contract = inferKind(command);
+  if (checked.kind !== contract.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
+  const id = documentIdOf(contract, command);
+  const db = await openOrderQDb();
+  const tx = db.transaction([contract.documentStore, STORE.INVENTORY_CHECKPOINTS], 'readonly');
+  const [existingDocument, checkpoints] = await Promise.all([
+    requestToPromise(tx.objectStore(contract.documentStore).get(id)),
+    checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), command)
+  ]);
+  await transactionDone(tx);
+  if (existingDocument) {
+    if (text(existingDocument.companyId) !== checked.companyId
+      || text(existingDocument.voucherGroupKey) !== checked.voucherGroupKey) {
+      throw new Error('ORDERQ_OFFICIAL_V2_DOCUMENT_SCOPE_CONFLICT');
+    }
+    return deepFreeze({
+      schemaVersion: command.schemaVersion,
+      identityVersion: command.identityVersion,
+      companyId: checked.companyId,
+      voucherMode: checked.kind.toLowerCase(),
+      documentId: checked.documentId,
+      conflicts: [],
+      existingDocument: true
+    });
+  }
+  const assessment = inspectOfficialStocktakeConflictsV2({ command, inventoryCheckpoints: checkpoints });
+  if (Array.isArray(command.stocktakeDecisions) && command.stocktakeDecisions.length) {
+    assertOfficialStocktakeDecisionEnvelopeV2(command, checkpoints);
+  }
+  return assessment;
+}
+
 async function loadAggregate(kind, id) {
   const contract = kindContract(kind);
   const db = await openOrderQDb();
   const stores = [contract.documentStore, contract.lineStore, STORE.VOUCHER_REVISIONS,
-    STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore, STORE.PENDING_INVENTORY_EFFECTS, STORE.OFFICIAL_COMMANDS];
+    STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore, STORE.PENDING_INVENTORY_EFFECTS,
+    STORE.UNRESOLVED_PRODUCTS, STORE.OFFICIAL_COMMANDS];
   const tx = db.transaction(stores, 'readonly');
   const document = await requestToPromise(tx.objectStore(contract.documentStore).get(id));
   if (!document) {
     await transactionDone(tx);
     return null;
   }
-  const [lines, revisions, inventoryMovements, ledgerEntries, pendingInventoryEffects, commands] = await Promise.all([
+  const [lines, revisions, inventoryMovements, ledgerEntries, pendingInventoryEffects, unresolvedProducts, commands] = await Promise.all([
     rowsByIndex(tx.objectStore(contract.lineStore), 'byDocumentId', id),
     rowsByIndex(tx.objectStore(STORE.VOUCHER_REVISIONS), 'byDocumentRevision', IDBKeyRange.bound([contract.mode, id, 0], [contract.mode, id, Number.MAX_SAFE_INTEGER])),
     rowsByIndex(tx.objectStore(STORE.INVENTORY_MOVEMENTS), 'byDocument', [contract.mode, id]),
     rowsByIndex(tx.objectStore(contract.partnerEntryStore), 'byDocument', id),
     rowsByIndex(tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS), 'byDocument', [contract.mode, id]),
+    requestToPromise(tx.objectStore(STORE.UNRESOLVED_PRODUCTS).getAll()),
     rowsByIndex(tx.objectStore(STORE.OFFICIAL_COMMANDS), 'byDocument', [contract.mode, id])
   ]);
   await transactionDone(tx);
-  return { document, lines, revisions, inventoryMovements, ledgerEntries, pendingInventoryEffects, commands };
+  return {
+    document,
+    lines,
+    revisions,
+    inventoryMovements,
+    ledgerEntries,
+    pendingInventoryEffects,
+    unresolvedProducts: unresolvedProducts.filter(row => text(row.sourceDocumentId) === id
+      || row.reviewLinks?.some(link => text(link.sourceDocumentId) === id)),
+    commands
+  };
 }
 
 export const loadOfficialPurchaseAggregate = id => loadAggregate('PURCHASE', id);
@@ -203,7 +323,8 @@ function commandReceipt(plan, result, status = 'COMMITTED') {
     status,
     requestedAt: plan.command.occurredAt,
     committedAt: status === 'COMMITTED' ? nowIso() : '',
-    result
+    result,
+    ...(isOfficialVoucherIdentityV2(plan.command) ? { payloadDigest: text(plan.command.commandPayloadDigest) } : {})
   };
 }
 
@@ -230,6 +351,56 @@ function queueRow(plan) {
   };
 }
 
+function mergeUnresolvedReviewRecord(existing, effect) {
+  const reviewLink = {
+    pendingEffectId: effect.pendingEffectId,
+    voucherMode: effect.voucherMode,
+    sourceDocumentId: effect.sourceDocumentId,
+    sourceLineId: effect.sourceLineId,
+    sourceDocumentRevision: effect.sourceDocumentRevision,
+    voucherRevisionId: effect.voucherRevisionId,
+    commandId: effect.commandId,
+    warehouseId: effect.warehouseId,
+    businessDate: effect.effectiveAt,
+    quantity: effect.quantity,
+    signedQuantity: effect.signedQuantity,
+    unitPrice: effect.unitPrice,
+    totalAmount: effect.totalAmount,
+    inventoryEffectStatus: 'UNRESOLVED_PRODUCT',
+    officialInventoryApplied: false,
+    productSnapshot: clone(effect.productSnapshot)
+  };
+  const priorLinks = Array.isArray(existing?.reviewLinks) ? clone(existing.reviewLinks) : [];
+  const reviewLinks = [
+    ...priorLinks.filter(row => text(row.pendingEffectId) !== text(reviewLink.pendingEffectId)),
+    reviewLink
+  ];
+  return {
+    ...clone(existing || {}),
+    unresolvedProductId: effect.unresolvedProductId,
+    unresolvedKey: effect.unresolvedProductId,
+    companyId: effect.companyId,
+    productId: '',
+    status: 'UNRESOLVED_PRODUCT',
+    inventoryEffectStatus: 'UNRESOLVED_PRODUCT',
+    officialInventoryApplied: false,
+    productCode: effect.productCode,
+    productName: effect.productName,
+    originalProductCode: effect.originalProductCode,
+    originalProductName: effect.originalProductName,
+    specification: effect.specification,
+    unit: effect.unit,
+    productResolution: clone(effect.productResolution),
+    sourceDocumentId: effect.sourceDocumentId,
+    sourceLineId: effect.sourceLineId,
+    sourceDocumentRevision: effect.sourceDocumentRevision,
+    voucherRevisionId: effect.voucherRevisionId,
+    reviewLinks,
+    createdAt: text(existing?.createdAt) || effect.createdAt,
+    updatedAt: effect.createdAt
+  };
+}
+
 function resolveKnownProductIdentity(line = {}, resolutions = new Map()) {
   const unresolvedProductId = text(line.unresolvedProductId);
   const resolution = unresolvedProductId ? resolutions.get(unresolvedProductId) : null;
@@ -243,23 +414,64 @@ function resolveKnownProductIdentity(line = {}, resolutions = new Map()) {
 }
 
 export async function runCentralOfficialVoucherCommand(source = {}) {
+  assertSupportedIdentityVersion(source);
   const commandSource = clone(source.intent || source);
+  const checkedV2 = isOfficialVoucherIdentityV2(commandSource) ? assertOfficialCommandV2(commandSource) : null;
   const contract = inferKind(commandSource);
   const id = documentIdOf(contract, commandSource);
   const db = await openOrderQDb();
   const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
     STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
     STORE.PENDING_INVENTORY_EFFECTS, STORE.UNRESOLVED_PRODUCTS, STORE.SYNC_QUEUE];
+  if (checkedV2) storeNames.push(STORE.INVENTORY_CHECKPOINTS);
   const tx = db.transaction(storeNames, 'readwrite');
   const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
   const commandId = text(commandSource.commandId);
   const existingCommand = await requestToPromise(commandStore.get(commandId));
   if (existingCommand?.status === 'COMMITTED') {
+    if (checkedV2 && text(existingCommand.payloadDigest) !== checkedV2.payloadDigest) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');
+    }
+    if (checkedV2 && (text(existingCommand.companyId) !== checkedV2.companyId
+      || text(existingCommand.documentId) !== checkedV2.documentId
+      || text(existingCommand.voucherMode) !== checkedV2.kind.toLowerCase())) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_SCOPE_CONFLICT');
+    }
+    if (checkedV2) {
+      try {
+        assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+        assertOfficialStocktakeProjectionV2(existingCommand.result, checkedV2.command);
+      } catch (error) {
+        tx.abort();
+        try { await transactionDone(tx); } catch {}
+        throw error;
+      }
+    }
     await transactionDone(tx);
     return { ...clone(existingCommand.result), duplicate: true };
   }
   const document = await requestToPromise(tx.objectStore(contract.documentStore).get(id));
   const lines = await rowsByIndex(tx.objectStore(contract.lineStore), 'byDocumentId', id);
+  if (checkedV2) {
+    if (!document || text(document.companyId) !== checkedV2.companyId
+      || text(document.voucherGroupKey) !== checkedV2.voucherGroupKey) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_DOCUMENT_SCOPE_CONFLICT');
+    }
+    const wrongLine = lines.find(row => text(row.companyId) !== checkedV2.companyId
+      || text(row.voucherGroupKey) !== checkedV2.voucherGroupKey
+      || text(row[contract.documentId]) !== checkedV2.documentId);
+    if (wrongLine) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_LINE_SCOPE_MISMATCH');
+    }
+  }
   const unresolvedIds = [...new Set([
     ...(Array.isArray(commandSource.lines) ? commandSource.lines : []),
     ...lines
@@ -273,15 +485,65 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
     throw new Error('ORDERQ_OFFICIAL_UNRESOLVED_PRODUCT_COMPANY_MISMATCH');
   }
   const existingUnresolved = new Map(unresolvedRows.filter(Boolean).map(row => [row.unresolvedProductId, row]));
+  const resolvedStateConflict = checkedV2 && unresolvedRows.find(row => row?.status === 'MATCHED' && text(row.productId));
+  if (resolvedStateConflict) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw new Error('ORDERQ_OFFICIAL_PRODUCT_STATE_CONFLICT');
+  }
   const resolutions = new Map(unresolvedRows
     .filter(row => row?.status === 'MATCHED' && text(row.productId))
     .map(row => [row.unresolvedProductId, row]));
-  const resolvedCommand = {
+  // Product rematch is a later V2 gate. A confirmed V2 intent must keep the
+  // exact product identity and Snapshot that passed preflight at confirmation.
+  const resolvedCommand = checkedV2 ? commandSource : {
     ...commandSource,
     lines: (Array.isArray(commandSource.lines) ? commandSource.lines : []).map(row => resolveKnownProductIdentity(row, resolutions))
   };
-  const resolvedLines = lines.map(row => resolveKnownProductIdentity(row, resolutions));
-  const plan = planOfficialVoucherCommand({ command: resolvedCommand, document, lines: resolvedLines });
+  const resolvedLines = checkedV2 ? lines : lines.map(row => resolveKnownProductIdentity(row, resolutions));
+  const checkpoints = checkedV2
+    ? await checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), resolvedCommand)
+    : [];
+  let plan;
+  try {
+    plan = planOfficialVoucherCommand({
+      command: resolvedCommand,
+      document,
+      lines: resolvedLines,
+      inventoryCheckpoints: checkpoints
+    });
+  } catch (error) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
+  if (checkedV2) {
+    if (text(plan.command.companyId) !== checkedV2.companyId
+      || text(plan.document.companyId) !== checkedV2.companyId
+      || text(plan.document.voucherGroupKey) !== checkedV2.voucherGroupKey
+      || text(plan.voucherRevision.companyId) !== checkedV2.companyId
+      || text(plan.voucherRevision.voucherGroupKey) !== checkedV2.voucherGroupKey) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_PROJECTION_SCOPE_MISMATCH');
+    }
+    const projectedScopeMismatch = plan.lines.some(row => text(row.companyId) !== checkedV2.companyId
+      || text(row.voucherGroupKey) !== checkedV2.voucherGroupKey
+      || text(row[contract.documentId]) !== checkedV2.documentId);
+    if (projectedScopeMismatch) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw new Error('ORDERQ_OFFICIAL_V2_LINE_SCOPE_MISMATCH');
+    }
+    try {
+      assertOfficialLedgerProjectionV2(plan, checkedV2);
+      assertOfficialStocktakeProjectionV2(plan, checkedV2.command);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
+    }
+  }
   const documentStore = tx.objectStore(contract.documentStore);
   const lineStore = tx.objectStore(contract.lineStore);
   documentStore.put(plan.document);
@@ -289,17 +551,21 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
   plan.inventoryMovements.forEach(row => tx.objectStore(STORE.INVENTORY_MOVEMENTS).put(row));
   plan.pendingInventoryEffects.forEach(row => tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS).put(row));
   plan.pendingInventoryEffects.forEach(row => {
-    if (existingUnresolved.has(row.unresolvedProductId)) return;
-    tx.objectStore(STORE.UNRESOLVED_PRODUCTS).put({
-      unresolvedProductId: row.unresolvedProductId,
-      unresolvedKey: row.unresolvedProductId,
-      companyId: row.companyId,
-      productId: '',
-      status: 'UNRESOLVED',
-      sourceDocumentId: row.sourceDocumentId,
-      createdAt: row.createdAt,
-      updatedAt: row.createdAt
-    });
+    const existing = existingUnresolved.get(row.unresolvedProductId);
+    const record = isOfficialVoucherIdentityV2(plan.command)
+      ? mergeUnresolvedReviewRecord(existing, row)
+      : existing || {
+        unresolvedProductId: row.unresolvedProductId,
+        unresolvedKey: row.unresolvedProductId,
+        companyId: row.companyId,
+        productId: '',
+        status: 'UNRESOLVED',
+        sourceDocumentId: row.sourceDocumentId,
+        createdAt: row.createdAt,
+        updatedAt: row.createdAt
+      };
+    unresolvedStore.put(record);
+    existingUnresolved.set(row.unresolvedProductId, record);
   });
   plan.ledgerEntries.forEach(row => tx.objectStore(contract.partnerEntryStore).put(row));
   tx.objectStore(STORE.VOUCHER_REVISIONS).put(plan.voucherRevision);
@@ -357,6 +623,8 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     throw new Error('ORDERQ_OFFICIAL_REMOTE_SCHEMA_INVALID');
   }
   const command = clone(payload.command);
+  assertSupportedIdentityVersion(command);
+  const checkedV2 = isOfficialVoucherIdentityV2(command) ? assertOfficialCommandV2(command) : null;
   const contract = inferKind(command || {});
   const id = documentIdOf(contract, command || {});
   if (text(payload.companyId) !== text(command.companyId) || text(payload.documentId) !== id
@@ -366,6 +634,7 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
   const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
     STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
     STORE.PENDING_INVENTORY_EFFECTS, STORE.UNRESOLVED_PRODUCTS];
+  if (checkedV2) storeNames.push(STORE.INVENTORY_CHECKPOINTS);
   const tx = db.transaction(storeNames, 'readwrite');
   const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
   const existingCommand = await requestToPromise(commandStore.get(commandId));
@@ -375,6 +644,16 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
       tx.abort();
       try { await transactionDone(tx); } catch {}
       throw new Error('ORDERQ_OFFICIAL_REMOTE_COMMAND_IMMUTABLE');
+    }
+    if (checkedV2) {
+      try {
+        assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+        assertOfficialStocktakeProjectionV2(existingCommand.result, checkedV2.command);
+      } catch (error) {
+        tx.abort();
+        try { await transactionDone(tx); } catch {}
+        throw error;
+      }
     }
     await transactionDone(tx);
     return { ...clone(existingCommand.result), duplicate: true };
@@ -392,7 +671,27 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     document = remoteDraftDocument(command, contract);
     lines = clone(command.lines || []);
   }
-  const plan = planOfficialVoucherCommand({ command, document, lines });
+  const checkpoints = checkedV2
+    ? await checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), command)
+    : [];
+  let plan;
+  try {
+    plan = planOfficialVoucherCommand({ command, document, lines, inventoryCheckpoints: checkpoints });
+  } catch (error) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
+  if (checkedV2) {
+    try {
+      assertOfficialLedgerProjectionV2(plan, checkedV2);
+      assertOfficialStocktakeProjectionV2(plan, checkedV2.command);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
+    }
+  }
   if (canonicalSha256(plan.voucherRevision) !== text(payload.projectionDigest)) {
     tx.abort();
     try { await transactionDone(tx); } catch {}
@@ -414,11 +713,16 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
   [...plan.lines, ...plan.removedLines].forEach(line => tx.objectStore(contract.lineStore).put({ ...line, companyId: plan.command.companyId }));
   plan.inventoryMovements.forEach(row => tx.objectStore(STORE.INVENTORY_MOVEMENTS).put(row));
   plan.pendingInventoryEffects.forEach(row => tx.objectStore(STORE.PENDING_INVENTORY_EFFECTS).put(row));
+  const unresolvedById = new Map(unresolvedRows.filter(Boolean).map(row => [row.unresolvedProductId, row]));
   plan.pendingInventoryEffects.forEach(row => {
-    if (unresolvedRows.some(existing => existing?.unresolvedProductId === row.unresolvedProductId)) return;
-    unresolvedStore.put({ unresolvedProductId: row.unresolvedProductId, unresolvedKey: row.unresolvedProductId,
-      companyId: row.companyId, productId: '', status: 'UNRESOLVED', sourceDocumentId: row.sourceDocumentId,
-      createdAt: row.createdAt, updatedAt: row.createdAt });
+    const existing = unresolvedById.get(row.unresolvedProductId);
+    const record = isOfficialVoucherIdentityV2(plan.command)
+      ? mergeUnresolvedReviewRecord(existing, row)
+      : existing || { unresolvedProductId: row.unresolvedProductId, unresolvedKey: row.unresolvedProductId,
+        companyId: row.companyId, productId: '', status: 'UNRESOLVED', sourceDocumentId: row.sourceDocumentId,
+        createdAt: row.createdAt, updatedAt: row.createdAt };
+    unresolvedStore.put(record);
+    unresolvedById.set(row.unresolvedProductId, record);
   });
   plan.ledgerEntries.forEach(row => tx.objectStore(contract.partnerEntryStore).put(row));
   tx.objectStore(STORE.VOUCHER_REVISIONS).put(plan.voucherRevision);

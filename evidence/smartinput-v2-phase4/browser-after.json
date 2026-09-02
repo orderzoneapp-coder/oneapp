@@ -1,0 +1,606 @@
+{
+  "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
+  "recordedAt": "2026-09-02T13:35:17.137Z",
+  "isolation": {
+    "browserProfile": "mkdtemp isolated profile, removed after run",
+    "productionIndexedDbWrites": 0,
+    "actualExternalMutatingRequests": 0,
+    "guardedExternalMutationAttempts": [
+      {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
+        "action": "orderq_official_sync_pull",
+        "companyId": "ONEAPP",
+        "changeCount": 0,
+        "blockedAt": "2026-09-02T13:34:54.339Z"
+      },
+      {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
+        "action": "orderq_official_sync_push",
+        "companyId": "ONEAPP",
+        "changeCount": 1,
+        "blockedAt": "2026-09-02T13:34:58.619Z"
+      },
+      {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
+        "action": "orderq_official_sync_push",
+        "companyId": "ONEAPP",
+        "changeCount": 2,
+        "blockedAt": "2026-09-02T13:34:59.872Z"
+      },
+      {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec",
+        "action": "orderq_official_sync_push",
+        "companyId": "ONEAPP",
+        "changeCount": 2,
+        "blockedAt": "2026-09-02T13:35:17.006Z"
+      }
+    ],
+    "localFixtureServerWrites": 0,
+    "simulatedCloudCalls": [
+      "orderq_official_sync_push",
+      "orderq_official_sync_pull"
+    ],
+    "note": "Cloud sync is exercised only through a temporary window.fetch stub; no network request is emitted."
+  },
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+    "platform": "Win32",
+    "language": "ko-KR",
+    "measurementViewport": {
+      "width": 1920,
+      "height": 1080,
+      "devicePixelRatio": 1
+    },
+    "finalCapturedViewport": {
+      "width": 390,
+      "height": 844,
+      "devicePixelRatio": 1
+    },
+    "indexedDbDatabases": [
+      {
+        "name": "MerchOpsDB",
+        "version": 2
+      },
+      {
+        "name": "oneapp-customermaster-v1",
+        "version": 1
+      },
+      {
+        "name": "oneapp-orderq-pre-m1-v6",
+        "version": 7
+      },
+      {
+        "name": "oneapp-smartinput",
+        "version": 5
+      }
+    ]
+  },
+  "dom": {
+    "title": "스마트입력 - NEXUS",
+    "modeTabs": [
+      {
+        "mode": "order",
+        "label": "주문서"
+      },
+      {
+        "mode": "purchase",
+        "label": "구매"
+      },
+      {
+        "mode": "sale",
+        "label": "판매"
+      },
+      {
+        "mode": "estimate",
+        "label": "견적서"
+      }
+    ],
+    "sourceMethods": [
+      {
+        "method": "excel",
+        "label": "Excel 파일"
+      },
+      {
+        "method": "voice",
+        "label": "음성"
+      }
+    ],
+    "actionButtons": [
+      {
+        "id": "restoreAutosaveButton",
+        "label": "자동저장 복구"
+      },
+      {
+        "id": "analyzeButton",
+        "label": "다시 분석원문은 그대로 유지"
+      },
+      {
+        "id": "addRowButton",
+        "label": "빈 행 추가"
+      },
+      {
+        "id": "resetDraftButton",
+        "label": "전표 초기화"
+      },
+      {
+        "id": "completeButton",
+        "label": "저장"
+      },
+      {
+        "id": "estimateNoticeButton",
+        "label": "카톡 공유"
+      },
+      {
+        "id": "estimateExcelButton",
+        "label": "EXCEL"
+      }
+    ],
+    "tableColumns": [
+      {
+        "id": "sequence",
+        "label": "No."
+      },
+      {
+        "id": "productSearch",
+        "label": "상품 검색"
+      },
+      {
+        "id": "itemCode",
+        "label": "품목코드"
+      },
+      {
+        "id": "itemName",
+        "label": "품목명"
+      },
+      {
+        "id": "specification",
+        "label": "규격"
+      },
+      {
+        "id": "quantity",
+        "label": "수량"
+      },
+      {
+        "id": "unit",
+        "label": "단위"
+      },
+      {
+        "id": "unitPrice",
+        "label": "단가"
+      },
+      {
+        "id": "supplyAmount",
+        "label": "공급가액"
+      },
+      {
+        "id": "memo",
+        "label": "메모"
+      },
+      {
+        "id": "description",
+        "label": "적요(직원)"
+      },
+      {
+        "id": "noticePrice",
+        "label": "공지단가"
+      },
+      {
+        "id": "status",
+        "label": "상태"
+      }
+    ],
+    "regions": {
+      "appBar": {
+        "x": 0,
+        "y": 64,
+        "width": 1920,
+        "height": 57
+      },
+      "parser": {
+        "x": 16,
+        "y": 135,
+        "width": 499,
+        "height": 926
+      },
+      "workbench": {
+        "x": 547,
+        "y": 135,
+        "width": 1085,
+        "height": 926
+      },
+      "grid": {
+        "x": 547,
+        "y": 135,
+        "width": 1085,
+        "height": 926
+      },
+      "related": {
+        "x": 1644,
+        "y": 135,
+        "width": 260,
+        "height": 926
+      }
+    },
+    "footerOrder": [
+      "completeButton",
+      "estimateCreateButton",
+      "saveEstimateAsButton",
+      "estimateNoticeButton",
+      "estimateExcelButton"
+    ]
+  },
+  "keyboardContractsExercised": [
+    "grid ArrowRight navigation",
+    "column-resize ArrowRight",
+    "parser-pane ArrowRight",
+    "related-pane ArrowLeft",
+    "reference panel Enter",
+    "product selection Enter"
+  ],
+  "flows": {
+    "directInput": {
+      "clicks": 1,
+      "clickDefinition": "Analyze button after keyboard entry",
+      "responseMs": 314.17
+    },
+    "excelTablePaste": {
+      "clicks": 0,
+      "clickDefinition": "Ctrl+V/paste event into the grid",
+      "responseMs": 130.55
+    },
+    "autosave": {
+      "clicks": 0,
+      "clickDefinition": "automatic after keyboard entry",
+      "responseMs": 220
+    },
+    "autosaveRestore": {
+      "clicks": 1,
+      "clickDefinition": "Restore autosave button",
+      "verified": true
+    },
+    "currentOfficialSaveEntry": [
+      {
+        "mode": "purchase",
+        "clickCount": 6,
+        "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
+        "modeAndEntryReadyMs": 2644.15,
+        "saveFeedbackMs": 310.43,
+        "currentResult": "SAVED",
+        "feedback": "공식 구매전표 1건 저장 완료",
+        "dateDeleteEvidence": {
+          "deletedFrom": "2026-09-17",
+          "displayed": "2026-09-01",
+          "compatibilityDraft": "2026-09-01",
+          "monthAnchor": "2026-09",
+          "autosaveDraft": "2026-09-01",
+          "savedRequest": "2026-09-01"
+        },
+        "dom": {
+          "mode": "purchase",
+          "customerLabel": "구매처",
+          "dateLabel": "구매일자",
+          "warehouseLabel": "입고창고",
+          "saveLabel": "저장",
+          "rowCount": 1,
+          "rowValues": [
+            "MASTER-1",
+            "마스터 최신 사과",
+            "2",
+            "BOX",
+            "1500"
+          ],
+          "amount": "3,000",
+          "layout": {
+            "parser": 583,
+            "workbench": 989,
+            "related": 272
+          }
+        }
+      },
+      {
+        "mode": "sale",
+        "clickCount": 6,
+        "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
+        "modeAndEntryReadyMs": 570.58,
+        "saveFeedbackMs": 186.94,
+        "currentResult": "SAVED",
+        "feedback": "공식 판매전표 1건 저장 완료",
+        "dom": {
+          "mode": "sale",
+          "customerLabel": "판매처",
+          "dateLabel": "판매일자",
+          "warehouseLabel": "출하창고",
+          "saveLabel": "저장",
+          "rowCount": 1,
+          "rowValues": [
+            "MASTER-1",
+            "마스터 최신 사과",
+            "2",
+            "BOX",
+            "1500"
+          ],
+          "amount": "3,000",
+          "layout": {
+            "parser": 583,
+            "workbench": 989,
+            "related": 272
+          }
+        }
+      }
+    ]
+  },
+  "officialTransaction": {
+    "successBaseline": {
+      "postedPending": 1,
+      "postedInventory": 0,
+      "payable": 1,
+      "duplicate": true,
+      "resolvedWithoutMovement": true,
+      "afterMatchInventory": 3,
+      "afterMatchPending": 0,
+      "afterMatchProduct": "PRODUCT-E2E"
+    },
+    "injectedFailure": {
+      "errorName": "Error",
+      "errorMessage": "IndexedDB transaction failed",
+      "transactionCount": 1,
+      "stores": [
+        "purchaseDocuments",
+        "purchaseLines",
+        "officialCommands",
+        "voucherRevisions",
+        "inventoryMovements",
+        "payableEntries",
+        "pendingInventoryEffects",
+        "unresolvedProducts",
+        "syncQueue"
+      ],
+      "documentStatus": "DRAFT",
+      "documentRevision": 1,
+      "lineStatuses": [
+        "DRAFT"
+      ],
+      "revisions": 0,
+      "inventory": 0,
+      "ledger": 0,
+      "pending": 0,
+      "commands": 0,
+      "queue": 0,
+      "unresolvedForDocument": 0
+    },
+    "gatewayInjectedFailure": {
+      "error": "Error:IndexedDB transaction failed",
+      "status": "DRAFT",
+      "revision": 1,
+      "revisions": 0,
+      "inventory": 0,
+      "ledger": 0,
+      "pending": 0,
+      "commands": 0
+    },
+    "stage3V2": {
+      "featureGates": {
+        "PURCHASE": true,
+        "SALE": true
+      },
+      "purchase": {
+        "date": "2026-09-01",
+        "dayDefaulted": true,
+        "inventory": 2,
+        "ledger": 1,
+        "duplicate": true,
+        "commands": 1,
+        "revisions": 1,
+        "frozenName": "㈜金 확정상품",
+        "frozenCode": "０００７",
+        "frozenOriginalName": "㈜金 원본상품",
+        "frozenOriginalCode": "０００７"
+      },
+      "sale": {
+        "inventory": -2,
+        "ledger": 1,
+        "duplicate": true,
+        "differentGroupDocumentId": true
+      },
+      "safety": {
+        "expectedRevisionError": "Error:ORDERQ_OFFICIAL_REVISION_CONFLICT:1",
+        "saleExpectedRevisionError": "Error:ORDERQ_OFFICIAL_REVISION_CONFLICT:1",
+        "payloadConflictError": "OfficialVoucherV2PreflightError:ORDERQ_OFFICIAL_V2_AMOUNT_DERIVATION_MISMATCH:1행: 계산 금액이 수량×단가와 일치하지 않습니다.",
+        "gatewayCommandPayloadConflictError": "Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT",
+        "repositoryCommandPayloadConflictError": "Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT",
+        "nonSnapshotCommandIdUnchanged": true,
+        "salePayloadConflictError": "OfficialVoucherV2PreflightError:ORDERQ_OFFICIAL_V2_AMOUNT_DERIVATION_MISMATCH:1행: 계산 금액이 수량×단가와 일치하지 않습니다.",
+        "repositoryCompanyError": "Error:ORDERQ_OFFICIAL_COMPANY_MISMATCH",
+        "gatewayIdentityError": "Error:ORDERQ_OFFICIAL_V2_IDENTITY_VERSION_INVALID",
+        "repositoryIdentityError": "Error:ORDERQ_OFFICIAL_V2_IDENTITY_VERSION_INVALID"
+      },
+      "rollback": {
+        "error": "Error:IndexedDB transaction failed",
+        "status": "DRAFT",
+        "revision": 1,
+        "lineStatuses": [
+          "DRAFT"
+        ],
+        "revisions": 0,
+        "inventory": 0,
+        "ledger": 0,
+        "pending": 0,
+        "commands": 0
+      },
+      "saleRollback": {
+        "error": "Error:IndexedDB transaction failed",
+        "status": "DRAFT",
+        "revision": 1,
+        "lineStatuses": [
+          "DRAFT"
+        ],
+        "revisions": 0,
+        "inventory": 0,
+        "ledger": 0,
+        "pending": 0,
+        "commands": 0
+      }
+    },
+    "stage4V2": {
+      "featureGates": {
+        "PURCHASE": true,
+        "SALE": true
+      },
+      "purchase": {
+        "matchedEffects": [
+          {
+            "quantity": 10,
+            "status": "APPLIED_NORMAL"
+          },
+          {
+            "quantity": 0,
+            "status": "ZERO_EFFECT"
+          }
+        ],
+        "unresolvedOfficialInventory": 0,
+        "pending": [
+          {
+            "code": "0099",
+            "name": "미등록 상품",
+            "status": "UNRESOLVED_PRODUCT",
+            "applied": false,
+            "documentLinked": true,
+            "revisionLinked": true
+          },
+          {
+            "code": "0099",
+            "name": "미등록 상품 별칭",
+            "status": "UNRESOLVED_PRODUCT",
+            "applied": false,
+            "documentLinked": true,
+            "revisionLinked": true
+          },
+          {
+            "code": "",
+            "name": "같은 이름",
+            "status": "UNRESOLVED_PRODUCT",
+            "applied": false,
+            "documentLinked": true,
+            "revisionLinked": true
+          }
+        ],
+        "unresolvedReviewRecords": [
+          {
+            "status": "UNRESOLVED_PRODUCT",
+            "linkCount": 2,
+            "documentLinked": true,
+            "lineLinked": true,
+            "revisionLinked": true,
+            "applied": false
+          },
+          {
+            "status": "UNRESOLVED_PRODUCT",
+            "linkCount": 1,
+            "documentLinked": true,
+            "lineLinked": true,
+            "revisionLinked": true,
+            "applied": false
+          }
+        ],
+        "payable": [
+          {
+            "partnerId": "V2-STAGE4-C-0003",
+            "amount": 2661,
+            "effectiveAt": "2026-08-05",
+            "occurredAt": "2026-09-02T10:00:00.000Z"
+          }
+        ],
+        "documentBusinessDate": "2026-08-05",
+        "ledgerDecision": {
+          "status": "CREATED",
+          "reason": "EXACT_COMPANY_CUSTOMER_CODE",
+          "partnerResolutionStatus": "MATCHED",
+          "partnerId": "V2-STAGE4-C-0003",
+          "finalAmount": 2661,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
+          "entryIds": [
+            "PE-a08e0e7421539a412b7a2446246d36b3"
+          ]
+        },
+        "duplicate": true,
+        "repositoryLedgerDateGuardError": "Error:ORDERQ_OFFICIAL_V2_LEDGER_PROJECTION_MISMATCH",
+        "aggregateCounts": {
+          "lines": 5,
+          "inventory": 2,
+          "pending": 3,
+          "unresolved": 2,
+          "ledger": 1,
+          "revisions": 1,
+          "commands": 1,
+          "queue": 1
+        },
+        "factorOne": true,
+        "leadingZeroProductId": "V2-STAGE4-P-0007"
+      },
+      "sale": {
+        "inventory": -4,
+        "receivables": 0,
+        "ledgerDecision": {
+          "status": "NOT_CREATED",
+          "reason": "CUSTOMER_CODE_UNMATCHED",
+          "partnerResolutionStatus": "UNRESOLVED_CUSTOMER",
+          "partnerId": "",
+          "finalAmount": 400,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
+          "entryIds": []
+        },
+        "partnerId": "",
+        "matchedInventory": -4,
+        "matchedReceivable": [
+          {
+            "partnerId": "V2-STAGE4-C-0003",
+            "amount": 400,
+            "effectiveAt": "2026-08-05",
+            "occurredAt": "2026-09-02T10:00:00.000Z"
+          }
+        ],
+        "matchedLedgerDecision": {
+          "status": "CREATED",
+          "reason": "EXACT_COMPANY_CUSTOMER_CODE",
+          "partnerResolutionStatus": "MATCHED",
+          "partnerId": "V2-STAGE4-C-0003",
+          "finalAmount": 400,
+          "effectiveAt": "2026-08-05",
+          "occurredAt": "2026-09-02T10:00:00.000Z",
+          "entryIds": [
+            "RE-5ccccb6236a652c24ed0583ff307ffd2"
+          ]
+        },
+        "matchedDocumentBusinessDate": "2026-08-05"
+      },
+      "rollback": {
+        "error": "Error:IndexedDB transaction failed",
+        "status": "DRAFT",
+        "revision": 1,
+        "lineStatuses": [
+          "DRAFT",
+          "DRAFT"
+        ],
+        "revisions": 0,
+        "inventory": 0,
+        "pending": 0,
+        "unresolved": 0,
+        "ledger": 0,
+        "commands": 0,
+        "queue": 0
+      }
+    },
+    "expectedFinalizeTransactionCount": 1,
+    "partialFinalizeWritesAfterFailure": 0
+  },
+  "screenshots": [
+    "smartinput-v2-baseline-purchase.png",
+    "smartinput-v2-baseline-sale.png"
+  ]
+}

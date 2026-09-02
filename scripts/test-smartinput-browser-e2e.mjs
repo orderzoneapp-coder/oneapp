@@ -5,7 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,10 +15,16 @@ for (const logo of ['logo-light.png', 'logo-dark.png']) {
 }
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-0a-e2e-'));
 const screenshotDir = resolve(process.env.SMARTINPUT_SCREENSHOT_DIR || join(tmpdir(), 'oneapp-smartinput-0a-screenshots'));
+const baselineEvidenceFile = process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE
+  ? resolve(process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE)
+  : '';
 mkdirSync(screenshotDir, { recursive: true });
+if (baselineEvidenceFile) mkdirSync(dirname(baselineEvidenceFile), { recursive: true });
 const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const localServerRequests = [];
 const server = createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
+  localServerRequests.push({ method: request.method, pathname });
   const relative = pathname === '/' ? 'smartinput/index.html' : `${pathname.replace(/^\/+/, '')}${pathname.endsWith('/') ? 'index.html' : ''}`;
   const target = normalize(resolve(root, relative));
   if (target !== root && !target.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
@@ -107,6 +113,10 @@ const capture = async (client, name) => {
 
 let browser;
 let client;
+const networkRequests = [];
+const flowTimings = {};
+const officialSaveEntryEvidence = [];
+const baselineScreenshots = [];
 try {
   const address = await listen();
   const executable = browserExecutable();
@@ -123,11 +133,42 @@ try {
   client = new CdpClient(targets[0].webSocketDebuggerUrl);
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable'), client.send('Network.enable')]);
+  await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    const nativeFetch = globalThis.fetch?.bind(globalThis);
+    if (!nativeFetch) return;
+    globalThis.fetch = (resource, options = {}) => {
+      const url = String(typeof resource === 'string' ? resource : resource?.url || '');
+      const method = String(options.method || resource?.method || 'GET').toUpperCase();
+      let external = false;
+      try { external = new URL(url, location.href).origin !== ${JSON.stringify(`http://127.0.0.1:${address.port}`)}; } catch { external = true; }
+      if (external && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        let payload = {};
+        try { payload = JSON.parse(options.body || '{}'); } catch {}
+        const record = {
+          method, url, action: String(payload.action || ''), companyId: String(payload.companyId || ''),
+          changeCount: Array.isArray(payload.changes) ? payload.changes.length : 0,
+          blockedAt: new Date().toISOString()
+        };
+        try {
+          const key = 'oneapp.smartinput.e2e.blockedExternalMutations';
+          const history = JSON.parse(localStorage.getItem(key) || '[]');
+          localStorage.setItem(key, JSON.stringify([...history, record]));
+        } catch {}
+        return Promise.resolve({ ok: false, status: 599, json: async () => ({ status: 'error', code: 'E2E_EXTERNAL_MUTATION_BLOCKED' }) });
+      }
+      return nativeFetch(resource, options);
+    };
+  })();` });
   client.on('Page.javascriptDialogOpening', () => { void client.send('Page.handleJavaScriptDialog', { accept: true }); });
   const exceptions = [];
   const consoleErrors = [];
   client.on('Runtime.exceptionThrown', event => exceptions.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'exception'));
   client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') consoleErrors.push(event.args?.map(arg => arg.value || arg.description || '').join(' ')); });
+  client.on('Network.requestWillBeSent', event => networkRequests.push({
+    method: event.request?.method || '',
+    url: event.request?.url || '',
+    type: event.type || ''
+  }));
 
   let loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/fixture.html` });
@@ -185,6 +226,29 @@ try {
   assert.equal(visualZones.deliveryCardVisible, false, 'the footer left side must expose only the Save action');
   assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: 'EXCEL', footer: true }, 'voucher output actions must remain in the table footer for every mode');
   assert.equal(visualZones.sequence, 'No.');
+  const domBaseline = await evaluate(client, `(() => {const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(value.x),y:Math.round(value.y),width:Math.round(value.width),height:Math.round(value.height)};};return {
+    title:document.title,
+    modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>({mode:button.dataset.mode,label:button.textContent.trim()})),
+    sourceMethods:[...document.querySelectorAll('.parser-toolbar [data-method]')].map(button=>({method:button.dataset.method,label:button.textContent.replace(/^[＋●]\s*/, '').trim()})),
+    actionButtons:['restoreAutosaveButton','analyzeButton','addRowButton','resetDraftButton','completeButton','estimateNoticeButton','estimateExcelButton'].map(id=>({id,label:document.getElementById(id).textContent.replace(/✦|↻/g,'').replace(/\s+/g,' ').trim()})),
+    tableColumns:[...document.querySelectorAll('#voucherInputTable thead th')].map(cell=>({id:cell.dataset.column||'sequence',label:cell.textContent.trim()})),
+    regions:{appBar:rect('.app-bar'),parser:rect('.parser-card'),workbench:rect('.workbench'),grid:rect('.grid-card'),related:rect('.related-panel')},
+    footerOrder:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id)
+  };})()`);
+  assert.deepEqual(domBaseline.modeTabs, [
+    { mode: 'order', label: '주문서' },
+    { mode: 'purchase', label: '구매' },
+    { mode: 'sale', label: '판매' },
+    { mode: 'estimate', label: '견적서' }
+  ]);
+  assert.deepEqual(domBaseline.sourceMethods, [
+    { method: 'excel', label: 'Excel 파일' },
+    { method: 'voice', label: '음성' }
+  ]);
+  assert.deepEqual(domBaseline.tableColumns.map(column => column.label), [
+    'No.', '상품 검색', '품목코드', '품목명', '규격', '수량', '단위', '단가', '공급가액', '메모', '적요(직원)', '공지단가', '상태'
+  ]);
+  assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton']);
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
   assert.deepEqual({ fixedColumns: mergedSelectionColumn.fixedColumns, headerHasSelectAll: mergedSelectionColumn.headerHasSelectAll, rowNumber: mergedSelectionColumn.rowNumber, sameCell: mergedSelectionColumn.sameCell }, { fixedColumns: 1, headerHasSelectAll: true, rowNumber: '1', sameCell: true }, 'No. and selection must share one fixed column');
   assert.ok(mergedSelectionColumn.checkboxWidth >= 20, 'row selection checkbox must be enlarged');
@@ -210,11 +274,11 @@ try {
   if (!relatedCloseIdle.hoverNone) {
     const relatedHandlePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelResizer').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
     await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedHandlePoint });
-    await wait(120);
+    await wait(250);
     assert.equal(await evaluate(client, `(() => {const close=getComputedStyle(document.querySelector('#relatedPanelCloseButton'));const handle=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return getComputedStyle(document.querySelector('.related-panel-chrome')).opacity==='1'&&close.color==='rgb(255, 255, 255)'&&handle.height==='76px';})()`), true, 'resizer hover must reveal and highlight both the handle and X');
     const relatedClosePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
     await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedClosePoint });
-    await wait(120);
+    await wait(250);
     assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer span')).height`), '76px', 'X hover must also highlight the left resize handle');
   }
   await evaluate(client, `(() => {const handle=document.querySelector('#relatedPanelResizer');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
@@ -239,9 +303,11 @@ try {
   await click(client, '[data-mode="order"]');
   await input(client, '#sourceTextInput', '');
 
+  const directInputStartedAt = performance.now();
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개');
   await click(client, '#analyzeButton');
   await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2`, 'pure text parsing rows');
+  flowTimings.directInputAnalyzeMs = Number((performance.now() - directInputStartedAt).toFixed(2));
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value))`), [2, 3]);
   assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'parsed information must always retain one trailing manual row');
   assert.equal(await evaluate(client, `document.querySelector('#inputRows tr[data-default-row="true"] [data-supply-amount]').value`), '', 'empty calculated values must not be displayed');
@@ -262,8 +328,10 @@ try {
   await evaluate(client, `delete window.XLSX;true`);
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
+  const gridPasteStartedAt = performance.now();
   await evaluate(client, `(() => {const target=document.querySelector(${JSON.stringify(firstQuantity)});const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify('단가\t수량\t단위\n1500\t7\tEA\n\t\t\n1600\t9\tBOX')}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
   await expr(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value==='7'`, 'reordered field-name grid paste');
+  flowTimings.excelTablePasteMs = Number((performance.now() - gridPasteStartedAt).toFixed(2));
   assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');return {unit:row.querySelector('[data-field="unit"]').value,unitPrice:row.querySelector('[data-field="unitPrice"]').value,pending:!document.querySelector('#pendingPasteToSourceButton').hidden};})()`),
     { unit: 'EA', unitPrice: '1500', pending: false }, 'reordered fields must map by name without opening the source fallback');
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value))`), [7, 9],
@@ -290,6 +358,10 @@ try {
   assert.equal(autosave[0].key, 'current');
   assert.equal(autosave[0].schemaVersion, 'ONEAPP_SMART_INPUT_AUTOSAVE_V1');
   assert.match(autosave[0].sourceText, /사과 2박스/);
+  const autosaveStartedAt = performance.now();
+  await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개\n자동저장 성능 기준선');
+  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').get('current');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.draft?.modes?.order?.sourceText?.includes('자동저장 성능 기준선'));db.close();};};})`, 'autosave response baseline');
+  flowTimings.autosavePersistMs = Number((performance.now() - autosaveStartedAt).toFixed(2));
   await evaluate(client, `(() => {window.confirm=()=>true;document.querySelector('#sourceTextInput').value='화면에서만 바뀐 값';return true;})()`);
   await click(client, '#restoreAutosaveButton');
   await expr(client, `document.querySelector('#sourceTextInput').value.includes('사과 2박스')`, 'explicit latest autosave restore');
@@ -322,12 +394,15 @@ try {
   await expr(client, `document.querySelector('.smart-customer-dialog .smart-dialog__empty')?.textContent.includes('검색 결과 0건')`, 'zero customer search result');
   assert.equal(await evaluate(client, `document.querySelector('#customerReferenceStatus').textContent`), 'EMPTY', 'customer EMPTY must remain distinct from ERROR');
   await click(client, '.smart-customer-dialog [data-close]');
+  await evaluate(client, `(async()=>{const dbModule=await import('/customer-master/db.js?smartinput-e2e-fixture=1');const db=await dbModule.openDb();const tx=db.transaction(['customers','appMeta'],'readwrite');tx.objectStore('customers').put({customerId:'E2E-CUSTOMER',customerCode:'E2E-CUSTOMER',customerName:'격리 검증 거래처',normalizedCustomerCode:'e2e-customer',normalizedName:'격리 검증 거래처',searchText:'격리 검증 거래처 E2E-CUSTOMER',status:'ACTIVE',qualityStatus:'VERIFIED',revision:1,createdAt:'2026-09-02T08:00:00.000Z',updatedAt:'2026-09-02T08:00:00.000Z'});tx.objectStore('appMeta').put({key:'headRevision',value:1,updatedAt:'2026-09-02T08:00:00.000Z'});await dbModule.transactionDone(tx);return true;})()`);
 
   await input(client, '#inputRows [data-field="specification"]', '관리자 규격');
   await click(client, '#inputRows [data-select-row]');
   await evaluate(client, `window.__referenceRowMutations=0;window.__referenceRowObserver=new MutationObserver(records=>window.__referenceRowMutations+=records.length);window.__referenceRowObserver.observe(document.querySelector('#inputRows'),{childList:true,subtree:true});localStorage.setItem('merchMaster_v870',JSON.stringify([{productId:'P-MASTER-1',itemCode:'MASTER-1',itemName:'마스터 청사과',specification:'20kg',finalUnit:'BOX',outPrice:3300,status:'ACTIVE'}]));localStorage.setItem('merchMaster_revision_v870','2');true`);
   await click(client, '#allReferenceReload');
   await expr(client, `document.querySelector('#productReferenceStatus').textContent==='READY'&&document.querySelector('#productReferenceRevision').textContent==='2'`, 'new full-reference generation active');
+  assert.equal(await evaluate(client, `document.querySelector('#customerReferenceStatus').textContent`), 'READY', 'isolated customer fixture must be available for current official save flows');
+  assert.equal(await evaluate(client, `document.querySelector('#customerReferenceCount').textContent`), '1건');
   assert.equal(await evaluate(client, `document.querySelector('#referencePendingApply').hidden`), true, 'manual full refresh must activate one complete generation without a second apply step');
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="itemName"]').value`), '마스터 사과', 'snapshot refresh must not rewrite current row values');
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="specification"]').value`), '관리자 규격', 'snapshot refresh must preserve admin-edited fields');
@@ -363,6 +438,374 @@ try {
   assert.deepEqual(officialResult, { postedPending: 1, postedInventory: 0, payable: 1, duplicate: true,
     resolvedWithoutMovement: true, afterMatchInventory: 3, afterMatchPending: 0, afterMatchProduct: 'PRODUCT-E2E' },
   'official repository must atomically preserve AR/AP, defer unmatched inventory, respect stocktake, and reuse later product matching');
+  const officialRollbackResult = await evaluate(client, `(async()=>{const repo=await import('/orderq/official-voucher-repository.js?rollback-e2e=1');const dbModule=await import('/orderq/orderq-db.js?rollback-e2e=1');const purchaseDocumentId='PD-E2E-ROLLBACK';const purchaseLineId='PL-E2E-ROLLBACK';const commandId='POST_PURCHASE:E2E:ROLLBACK';const document={companyId:'ONEAPP',purchaseDocumentId,supplierCustomerId:'E2E-CUSTOMER',warehouseId:'WH-E2E',purchaseDate:'2026-09-02',status:'DRAFT',businessStatus:'DRAFT',revision:1};const lines=[{purchaseLineId,purchaseDocumentId,lineIdentityId:'LI-E2E-ROLLBACK',productId:'PRODUCT-E2E',warehouseId:'WH-E2E',actualQuantity:5,baseQuantity:5,unitPrice:1000,supplyAmount:5000,totalAmount:5000}];const commandEnvelope={...document,document,lines,commandType:'POST_PURCHASE',commandId,idempotencyKey:commandId,expectedRevision:1,actor:'E2E',occurredAt:'2026-09-02T09:00:00.000Z'};await repo.saveOfficialVoucherDraft({kind:'PURCHASE',companyId:'ONEAPP',purchaseDocumentId,document,lines,commandEnvelope,commandSource:commandEnvelope},'E2E');const db=await dbModule.openOrderQDb();const blockerTx=db.transaction('officialCommands','readwrite');blockerTx.objectStore('officialCommands').add({commandId:'ROLLBACK-BLOCKER',idempotencyKey:commandId,companyId:'ONEAPP',voucherMode:'purchase',documentId:'ROLLBACK-BLOCKER-DOCUMENT',commandType:'POST_PURCHASE',status:'TEST_BLOCKER',requestedAt:'2026-09-02T08:00:00.000Z'});await dbModule.transactionDone(blockerTx);const originalTransaction=IDBDatabase.prototype.transaction;const observed=[];IDBDatabase.prototype.transaction=function(storeNames,mode,...rest){if(mode==='readwrite'){observed.push(Array.isArray(storeNames)?[...storeNames]:[storeNames]);}return originalTransaction.call(this,storeNames,mode,...rest);};let errorName='';let errorMessage='';try{await repo.runCentralOfficialVoucherCommand({...commandEnvelope,intent:commandEnvelope});}catch(error){errorName=error?.name||'';errorMessage=error?.message||String(error);}finally{IDBDatabase.prototype.transaction=originalTransaction;}const aggregate=await repo.loadOfficialPurchaseAggregate(purchaseDocumentId);const verifyDb=await dbModule.openOrderQDb();const verifyTx=verifyDb.transaction(['syncQueue','unresolvedProducts'],'readonly');const queue=await dbModule.requestToPromise(verifyTx.objectStore('syncQueue').index('byEntity').getAll(['OFFICIAL_VOUCHER_COMMAND',commandId]));const unresolved=await dbModule.requestToPromise(verifyTx.objectStore('unresolvedProducts').getAll());await dbModule.transactionDone(verifyTx);return {errorName,errorMessage,transactionCount:observed.length,stores:observed[0]||[],documentStatus:aggregate.document.status,documentRevision:aggregate.document.revision,lineStatuses:aggregate.lines.map(row=>row.status),revisions:aggregate.revisions.length,inventory:aggregate.inventoryMovements.length,ledger:aggregate.ledgerEntries.length,pending:aggregate.pendingInventoryEffects.length,commands:aggregate.commands.length,queue:queue.length,unresolvedForDocument:unresolved.filter(row=>row.sourceDocumentId===purchaseDocumentId).length};})()`);
+  assert.match(`${officialRollbackResult.errorName}:${officialRollbackResult.errorMessage}`, /ConstraintError|AbortError|IndexedDB transaction failed/,
+    'injected unique-index failure must abort the official commit');
+  assert.equal(officialRollbackResult.transactionCount, 1, 'official finalize must use one readwrite transaction');
+  assert.deepEqual(new Set(officialRollbackResult.stores), new Set([
+    'purchaseDocuments', 'purchaseLines', 'officialCommands', 'voucherRevisions', 'inventoryMovements',
+    'payableEntries', 'pendingInventoryEffects', 'unresolvedProducts', 'syncQueue'
+  ]));
+  assert.deepEqual({
+    status: officialRollbackResult.documentStatus,
+    revision: officialRollbackResult.documentRevision,
+    lines: officialRollbackResult.lineStatuses,
+    revisions: officialRollbackResult.revisions,
+    inventory: officialRollbackResult.inventory,
+    ledger: officialRollbackResult.ledger,
+    pending: officialRollbackResult.pending,
+    commands: officialRollbackResult.commands,
+    queue: officialRollbackResult.queue,
+    unresolved: officialRollbackResult.unresolvedForDocument
+  }, {
+    status: 'DRAFT', revision: 1, lines: ['DRAFT'], revisions: 0, inventory: 0,
+    ledger: 0, pending: 0, commands: 0, queue: 0, unresolved: 0
+  }, 'an injected finalize failure must leave the pre-existing draft intact and commit zero partial effects');
+  const officialGatewayRollbackResult = await evaluate(client, `(async()=>{const repo=await import('/orderq/official-voucher-repository.js?gateway-rollback-read=1');const gateway=await import('/orderq/official-command-gateway.js?gateway-rollback-e2e=1');const id='PD-E2E-ROLLBACK';const before=await repo.loadOfficialPurchaseAggregate(id);let error='';try{const envelope=before.document.commandEnvelope;await gateway.OfficialCommandGateway.execute({...envelope,intent:envelope});}catch(cause){error=(cause?.name||'')+':'+(cause?.message||String(cause));}const after=await repo.loadOfficialPurchaseAggregate(id);return {error,status:after.document.status,revision:after.document.revision,revisions:after.revisions.length,inventory:after.inventoryMovements.length,ledger:after.ledgerEntries.length,pending:after.pendingInventoryEffects.length,commands:after.commands.length};})()`);
+  const { error: officialGatewayRollbackError, ...officialGatewayRollbackState } = officialGatewayRollbackResult;
+  assert.match(officialGatewayRollbackError, /ConstraintError|AbortError|IndexedDB transaction failed/,
+    'the owner Gateway must propagate the same injected repository transaction failure');
+  assert.deepEqual(officialGatewayRollbackState, {
+    status: 'DRAFT', revision: 1, revisions: 0, inventory: 0,
+    ledger: 0, pending: 0, commands: 0
+  }, 'Gateway-routed failure must preserve the same zero-partial-write rollback result');
+  const officialV2Stage3Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage3-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage3BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage3Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.deepEqual(officialV2Stage3Result.purchase, {
+    date: '2026-09-01', dayDefaulted: true, inventory: 2, ledger: 1,
+    duplicate: true, commands: 1, revisions: 1,
+    frozenName: '㈜金 확정상품', frozenCode: '０００７',
+    frozenOriginalName: '㈜金 원본상품', frozenOriginalCode: '０００７'
+  }, 'purchase V2 must preserve its confirmed Snapshot and apply one effect across identical retries');
+  assert.deepEqual(officialV2Stage3Result.sale, {
+    inventory: -2, ledger: 1, duplicate: true, differentGroupDocumentId: true
+  }, 'sale V2 must isolate voucher groups and apply one effect across identical retries');
+  assert.match(officialV2Stage3Result.safety.expectedRevisionError, /REVISION_CONFLICT/);
+  assert.match(officialV2Stage3Result.safety.saleExpectedRevisionError, /REVISION_CONFLICT/);
+  assert.match(officialV2Stage3Result.safety.payloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.match(officialV2Stage3Result.safety.salePayloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.equal(officialV2Stage3Result.safety.gatewayCommandPayloadConflictError, 'Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');
+  assert.equal(officialV2Stage3Result.safety.repositoryCommandPayloadConflictError, 'Error:ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');
+  assert.equal(officialV2Stage3Result.safety.nonSnapshotCommandIdUnchanged, true);
+  assert.match(officialV2Stage3Result.safety.repositoryCompanyError, /COMPANY_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.match(officialV2Stage3Result.safety.gatewayIdentityError, /IDENTITY_VERSION_INVALID/);
+  assert.match(officialV2Stage3Result.safety.repositoryIdentityError, /IDENTITY_VERSION_INVALID/);
+  assert.match(officialV2Stage3Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage3Result.rollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT'],
+    revisions: 0, inventory: 0, ledger: 0, pending: 0, commands: 0
+  }, 'V2 injected failure must rollback the document, line, revision, inventory, ledger, and command atomically');
+  assert.match(officialV2Stage3Result.saleRollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage3Result.saleRollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT'],
+    revisions: 0, inventory: 0, ledger: 0, pending: 0, commands: 0
+  }, 'sale V2 injected failure must rollback the document, line, revision, inventory, ledger, and command atomically');
+  const officialV2Stage4Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage4-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage4BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage4Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.deepEqual(officialV2Stage4Result.purchase.matchedEffects, [
+    { quantity: 10, status: 'APPLIED_NORMAL' },
+    { quantity: 0, status: 'ZERO_EFFECT' }
+  ], 'V2 must persist purchase +quantity and a separate ZERO_EFFECT without applying the legacy factor');
+  assert.equal(officialV2Stage4Result.purchase.unresolvedOfficialInventory, 0,
+    'unmatched products must create no official inventory movement, including a zero quantity');
+  assert.deepEqual(officialV2Stage4Result.purchase.pending, [
+    { code: '0099', name: '미등록 상품', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true },
+    { code: '0099', name: '미등록 상품 별칭', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true },
+    { code: '', name: '같은 이름', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true }
+  ], 'code-unmatched and name-only rows must remain reviewable without name auto-matching');
+  assert.equal(officialV2Stage4Result.purchase.unresolvedReviewRecords.length, 2);
+  assert.equal(officialV2Stage4Result.purchase.unresolvedReviewRecords.every(record => record.status === 'UNRESOLVED_PRODUCT'
+    && record.documentLinked && record.lineLinked && record.revisionLinked && record.applied === false), true,
+  'unresolved review records must preserve document, line, and Revision links');
+  assert.deepEqual(officialV2Stage4Result.purchase.unresolvedReviewRecords.map(record => record.linkCount).sort(), [1, 2],
+    'one unresolved product must retain every source line without duplicate links');
+  assert.deepEqual(officialV2Stage4Result.purchase.payable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 2661,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.purchase.documentBusinessDate, '2026-08-05');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.status, 'CREATED');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.reason, 'EXACT_COMPANY_CUSTOMER_CODE');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.purchase.duplicate, true);
+  assert.match(officialV2Stage4Result.purchase.repositoryLedgerDateGuardError, /LEDGER_PROJECTION_MISMATCH/,
+    'Repository retry must reject a stored V2 ledger projection whose effective date was tampered');
+  assert.deepEqual(officialV2Stage4Result.purchase.aggregateCounts, {
+    lines: 5, inventory: 2, pending: 3, unresolved: 2, ledger: 1, revisions: 1, commands: 1, queue: 1
+  }, 'one transaction and one idempotent retry must leave exactly one official projection set and queue row');
+  assert.equal(officialV2Stage4Result.purchase.factorOne, true);
+  assert.equal(officialV2Stage4Result.purchase.leadingZeroProductId, 'V2-STAGE4-P-0007');
+  assert.equal(officialV2Stage4Result.sale.inventory, -4);
+  assert.equal(officialV2Stage4Result.sale.receivables, 0);
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.status, 'NOT_CREATED');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.reason, 'CUSTOMER_CODE_UNMATCHED');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.sale.partnerId, '');
+  assert.equal(officialV2Stage4Result.sale.matchedInventory, -4);
+  assert.deepEqual(officialV2Stage4Result.sale.matchedReceivable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 400,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.status, 'CREATED');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.sale.matchedDocumentBusinessDate, '2026-08-05');
+  assert.match(officialV2Stage4Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage4Result.rollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT', 'DRAFT'],
+    revisions: 0, inventory: 0, pending: 0, unresolved: 0, ledger: 0, commands: 0, queue: 0
+  }, 'forced V2 Stage 4 failure must leave zero confirmed partial effects, review records, commands, or queue rows');
+  const officialV2Phase6AReadResult = await evaluate(client, `(async()=>{
+    const adapterModule=await import('/orderq/unresolved-review-read-adapter.js?phase6a-e2e=1');
+    const dbModule=await import('/orderq/orderq-db.js?phase6a-e2e=1');
+    const selectedProduct={companyId:'V2-STAGE4-COMPANY',productId:'V2-STAGE4-P-0099-NOW',itemCode:'0099',itemName:'현재 등록된 상품',status:'ACTIVE',revision:1};
+    const productResult={status:'READY',snapshot:{status:'READY',snapshotId:'PHASE6A-E2E-PRODUCTS',revision:1,data:{products:[selectedProduct]}},error:null};
+    const adapter=adapterModule.createUnresolvedReviewReadAdapter({readProductSnapshot:async()=>productResult});
+    const db=await dbModule.openOrderQDb();
+    const relevantStores=['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','salesDocuments','salesLines','voucherRevisions','inventoryCheckpoints'];
+    const adversarialTx=db.transaction(['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','voucherRevisions'],'readwrite');
+    adversarialTx.objectStore('unresolvedProducts').put({
+      unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',status:'UNRESOLVED_PRODUCT',
+      originalProductCode:'',originalProductName:'',reviewLinks:[{
+        pendingEffectId:'E-PHASE6A-CROSS-COMPANY',voucherMode:'purchase',sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',
+        sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',
+        warehouseId:'PHASE6A-WH-SAFE',businessDate:'2026-09-03',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false
+      }]
+    });
+    adversarialTx.objectStore('pendingInventoryEffects').put({
+      pendingEffectId:'E-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',
+      status:'PENDING_PRODUCT_MATCH',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false,voucherMode:'purchase',
+      sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',warehouseId:'PHASE6A-WH-SAFE',effectiveAt:'2026-09-03'
+    });
+    adversarialTx.objectStore('purchaseDocuments').put({
+      purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',status:'CONFIRMED',revision:1,
+      warehouseId:'PHASE6A-LEAK-DOCUMENT-WAREHOUSE',businessDate:'2099-12-31',businessOccurredAt:'PHASE6A-LEAK-DOCUMENT-TIME'
+    });
+    adversarialTx.objectStore('purchaseLines').put({
+      purchaseLineId:'PL-PHASE6A-CROSS-COMPANY',purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      originalProductCode:'PHASE6A-LEAK-CODE',originalProductName:'PHASE6A-LEAK-NAME',specification:'PHASE6A-LEAK-SPEC',
+      unit:'PHASE6A-LEAK-UNIT',actualQuantity:987654321,businessOccurredAt:'PHASE6A-LEAK-LINE-TIME',
+      productSnapshot:{productName:'PHASE6A-LEAK-SNAPSHOT'}
+    });
+    adversarialTx.objectStore('voucherRevisions').put({
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',documentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      status:'CONFIRMED',revision:1,afterSnapshot:{memo:'PHASE6A-LEAK-REVISION'}
+    });
+    await dbModule.transactionDone(adversarialTx);
+    const count=async()=>{const tx=db.transaction(relevantStores,'readonly');const pairs=await Promise.all(relevantStores.map(async name=>[name,(await dbModule.requestToPromise(tx.objectStore(name).getAll())).length]));await dbModule.transactionDone(tx);return Object.fromEntries(pairs);};
+    const before=await count();
+    const objectStoreMethods=['put','add','delete','clear'];
+    const originals=Object.fromEntries(objectStoreMethods.map(name=>[name,IDBObjectStore.prototype[name]]));
+    const transactionOriginal=IDBDatabase.prototype.transaction;
+    const observed={writes:[],transactionModes:[]};
+    objectStoreMethods.forEach(name=>{IDBObjectStore.prototype[name]=function(...args){observed.writes.push({store:this.name,operation:name});return originals[name].apply(this,args);};});
+    IDBDatabase.prototype.transaction=function(storeNames,mode,...args){observed.transactionModes.push(mode||'readonly');return transactionOriginal.call(this,storeNames,mode,...args);};
+    let review;
+    let preview;
+    let empty;
+    try{
+      review=await adapter.getReviewResult({companyId:'V2-STAGE4-COMPANY',limit:20,generatedAt:'2026-09-03T09:00:00.000Z'});
+      const target=review.items.find(item=>item.originalProductCode==='0099');
+      preview=await adapter.previewRematchImpactResult({companyId:'V2-STAGE4-COMPANY',unresolvedProductId:target.unresolvedProductId,selectedProductId:selectedProduct.productId,generatedAt:'2026-09-03T09:00:00.000Z'});
+      empty=await adapter.getReviewResult({companyId:'PHASE6A-NO-DATA',limit:20,generatedAt:'2026-09-03T09:00:00.000Z'});
+    }finally{
+      objectStoreMethods.forEach(name=>{IDBObjectStore.prototype[name]=originals[name];});
+      IDBDatabase.prototype.transaction=transactionOriginal;
+    }
+    const after=await count();
+    const crossCompanyItem=review.items.find(item=>item.unresolvedProductId==='UP-PHASE6A-CROSS-COMPANY');
+    db.close();
+    return {
+      databaseVersion:dbModule.DB_VERSION,
+      reviewStatus:review.status,
+      reviewCount:review.count,
+      linkCounts:review.items.map(item=>item.aggregate.linkCount).sort((a,b)=>a-b),
+      officialQuantityNull:review.items.every(item=>item.officialInventory.officialQuantity===null&&item.links.every(link=>link.officialInventory.officialQuantity===null)),
+      traceComplete:review.items.every(item=>item.links.every(link=>link.sourceVoucher.documentId&&link.sourceVoucher.lineId&&link.sourceVoucher.revisionId&&link.sourceVoucher.detailHref)),
+      noAutoConfirmation:review.items.every(item=>item.candidates.every(candidate=>candidate.automaticConfirmation===false)),
+      crossCompanyPayloadHidden:crossCompanyItem
+        && !JSON.stringify(crossCompanyItem).includes('PHASE6A-LEAK-'),
+      crossCompanyReviewStatus:crossCompanyItem?.integrity?.status,
+      crossCompanyIssues:crossCompanyItem?.links[0]?.integrity?.issues?.map(issue=>issue.code)||[],
+      previewStatus:preview.status,
+      previewEffects:preview.summary.affectedEffectCount,
+      previewWrites:preview.officialWritePlan,
+      emptyStatus:empty.status,
+      emptyCount:empty.count,
+      observed,
+      countsUnchanged:JSON.stringify(before)===JSON.stringify(after)
+    };
+  })()`);
+  assert.equal(officialV2Phase6AReadResult.databaseVersion, 7, 'Phase 6A read must reuse the existing ORDER Q schema');
+  assert.deepEqual({
+    status: officialV2Phase6AReadResult.reviewStatus,
+    count: officialV2Phase6AReadResult.reviewCount,
+    links: officialV2Phase6AReadResult.linkCounts,
+    officialQuantityNull: officialV2Phase6AReadResult.officialQuantityNull,
+    traceComplete: officialV2Phase6AReadResult.traceComplete,
+    noAutoConfirmation: officialV2Phase6AReadResult.noAutoConfirmation
+  }, {
+    status: 'READY', count: 3, links: [1, 1, 2], officialQuantityNull: true,
+    traceComplete: true, noAutoConfirmation: true
+  }, 'ORDER Q owner read adapter must expose every Stage 4 unresolved link without direct consumer Store access');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyPayloadHidden, true,
+    'cross-company point-get payload must not reach the owner Adapter output');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyReviewStatus, 'REVIEW_REQUIRED');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_DOCUMENT_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_LINE_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('VOUCHER_REVISION_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.previewStatus, 'APPLY_READY');
+  assert.equal(officialV2Phase6AReadResult.previewEffects, 2);
+  assert.deepEqual(officialV2Phase6AReadResult.previewWrites, {
+    commands: 0, inventoryWrites: 0, referenceDataWrites: 0,
+    note: '적용 전 영향 미리보기이며 실제 재매칭·재고·기준정보 쓰기를 수행하지 않음'
+  });
+  assert.deepEqual({ status: officialV2Phase6AReadResult.emptyStatus, count: officialV2Phase6AReadResult.emptyCount },
+    { status: 'EMPTY', count: 0 }, 'empty owner data must remain distinct from a read error');
+  assert.deepEqual(officialV2Phase6AReadResult.observed.writes, [], 'Phase 6A browser read and preview must perform zero IndexedDB writes');
+  assert.equal(officialV2Phase6AReadResult.observed.transactionModes.every(mode => mode === 'readonly'), true,
+    'Phase 6A browser operations must open readonly transactions only');
+  assert.equal(officialV2Phase6AReadResult.countsUnchanged, true, 'Phase 6A browser operations must leave official Store counts unchanged');
+  const officialV2Stage5Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage5-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage5BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage5Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.match(officialV2Stage5Result.preview.error, /STOCKTAKE_DECISION_REQUIRED/);
+  assert.deepEqual(officialV2Stage5Result.preview.conflicts, [{
+    productCode: '0007', productName: '실사 충돌 상품', warehouse: '단계5창고', quantity: 10,
+    checkpointId: 'V2-STAGE5-CP-SEP01'
+  }]);
+  assert.equal(officialV2Stage5Result.preview.submitCount, 0,
+    'checkpoint review must finish before the first official draft or command submit');
+  assert.equal(Object.values(officialV2Stage5Result.preview.countsBeforeDecision).every(count => count === 0), true,
+    'preview and cancel boundary must leave zero official documents, lines, revisions, effects, ledgers, commands, and queue rows');
+  assert.deepEqual(officialV2Stage5Result.included, {
+    status: 'ABSORBED_BY_CHECKPOINT', appliedQuantity: 0, applied: false,
+    checkpointId: 'V2-STAGE5-CP-SEP01', decisions: 1, duplicate: true,
+    movements: 1, commands: 1, revisions: 1
+  }, 'included stocktake quantity must preserve the voucher while applying zero duplicate stock');
+  assert.deepEqual(officialV2Stage5Result.notIncluded, {
+    sourceStatus: 'APPLIED_AS_LATE_ADJUSTMENT',
+    adjustmentStatus: 'APPLIED_AS_LATE_ADJUSTMENT', adjustmentCount: 1,
+    appliedQuantity: -4, checkpointLinked: true, duplicate: true, commands: 1, revisions: 1
+  }, 'not-included sale quantity must create exactly one linked late adjustment and stay idempotent');
+  assert.match(officialV2Stage5Result.staleCheckpoint.error, /STOCKTAKE_DECISION_TARGET_MISMATCH/);
+  assert.deepEqual({ ...officialV2Stage5Result.staleCheckpoint, error: undefined }, {
+    error: undefined, submitCount: 0, officialDocument: false
+  }, 'a newer checkpoint between preview and commit must fail closed before the first write');
+  assert.match(officialV2Stage5Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage5Result.rollback, error: undefined }, {
+    error: undefined, documentStatus: 'DRAFT', documentRevision: 1,
+    revisions: 0, inventory: 0, ledger: 0, commands: 0, queue: 0
+  }, 'forced Stage 5 transaction failure must rollback revision, adjustment, ledger, command, and queue together');
+  assert.equal(officialV2Stage5Result.companyIsolation, true);
+  for (const [kind, appliedQuantity] of [['purchase', 4], ['sale', -4]]) {
+    assert.deepEqual(officialV2Stage5Result.mixed[kind], {
+      decisions: [
+        { productCode: '0007', decisionType: 'INCLUDED_IN_CHECKPOINT' },
+        { productCode: '0008', decisionType: 'NOT_INCLUDED_IN_CHECKPOINT' }
+      ],
+      movementCount: 3,
+      adjustmentCount: 1,
+      appliedQuantity,
+      submitCount: 1
+    }, `${kind} two-row voucher must preserve independent included/not-included decisions`);
+  }
+  assert.deepEqual(officialV2Stage5Result.midCancel, {
+    conflictCount: 2,
+    submitCount: 0,
+    countsUnchanged: true
+  }, 'cancelling after an intermediate row choice must leave every official store unchanged');
+  if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
+    await click(client, '[data-nexus-ui-theme-toggle]');
+    await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'light theme for stocktake popup');
+  }
+  const stocktakeUiBefore = await evaluate(client, `(() => {
+    const input=document.querySelector('#inputRows input:not([type="checkbox"])');
+    if(!input)throw new Error('stocktake state fixture input missing');
+    input.dataset.stage5Focus='true';input.focus({preventScroll:true});
+    if(typeof input.setSelectionRange==='function')input.setSelectionRange(0,Math.min(1,input.value.length));
+    const scroll=document.querySelector('#tableScroll');if(scroll){scroll.scrollTop=17;scroll.scrollLeft=23;}
+    const app=document.querySelector('.app-shell').getBoundingClientRect();
+    return {value:input.value,start:input.selectionStart,end:input.selectionEnd,scrollTop:scroll?.scrollTop||0,scrollLeft:scroll?.scrollLeft||0,
+      selected:[...document.querySelectorAll('#inputRows [data-select-row]')].map(box=>box.checked),
+      modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>button.textContent.trim()),
+      footer:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id),
+      app:{x:app.x,y:app.y,width:app.width,height:app.height}};
+  })()`);
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=1');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-UI',sourceLineId:'PL-UI-1',checkpointId:'CP-UI',
+    productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
+  },{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-UI',sourceLineId:'PL-UI-2',checkpointId:'CP-UI',
+    productCode:'0008',productName:'혼합결정 상품',warehouseName:'단계5창고',quantity:4
+  }]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'light stocktake popup');
+  const stocktakePopupContract = await evaluate(client, `(() => {const dialog=document.querySelector('dialog.stocktake-conflict-dialog');return {
+    message:dialog.querySelector('#stocktakeConflictMessage').textContent.trim(),
+    question:dialog.querySelector('.stocktake-conflict-dialog__question').textContent.trim(),
+    row:dialog.querySelector('.stocktake-conflict-dialog__row').textContent.replace(/\s+/g,' ').trim(),
+    buttons:[...dialog.querySelectorAll('footer button')].map(button=>button.textContent.trim()),
+    labelledBy:dialog.getAttribute('aria-labelledby'),describedBy:dialog.getAttribute('aria-describedby'),
+    focused:document.activeElement?.textContent.trim()};})()`);
+  assert.deepEqual(stocktakePopupContract.buttons, ['실사수량에 포함됨', '실사수량에 포함되지 않음', '확정 취소']);
+  assert.equal(stocktakePopupContract.message, '이 전표는 최근 재고실사 이전의 거래입니다.');
+  assert.equal(stocktakePopupContract.question, '이 수량이 실사 결과에 이미 포함되어 있습니까?');
+  assert.match(stocktakePopupContract.row, /0007 \/ 실사 충돌 상품.*단계5창고.*수량 10/);
+  assert.deepEqual({ labelledBy: stocktakePopupContract.labelledBy, describedBy: stocktakePopupContract.describedBy },
+    { labelledBy: 'stocktakeConflictTitle', describedBy: 'stocktakeConflictMessage' });
+  assert.equal(stocktakePopupContract.focused, '실사수량에 포함됨');
+  const stocktakeLightShot = await capture(client, 'smartinput-stocktake-conflict-light.png');
+  baselineScreenshots.push(stocktakeLightShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `window.__stage5DialogResult==='PENDING'&&document.querySelector('dialog.stocktake-conflict-dialog[open]')?.textContent.includes('0008 / 혼합결정 상품')`,
+    'stocktake popup must advance one row without persisting the first selection');
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await expr(client, `window.__stage5DialogResult===null&&!document.querySelector('dialog.stocktake-conflict-dialog')`, 'stocktake popup ESC cancel');
+  const stocktakeUiAfter = await evaluate(client, `(() => {const input=document.querySelector('[data-stage5-focus="true"]');const scroll=document.querySelector('#tableScroll');const app=document.querySelector('.app-shell').getBoundingClientRect();return {
+    value:input.value,start:input.selectionStart,end:input.selectionEnd,scrollTop:scroll?.scrollTop||0,scrollLeft:scroll?.scrollLeft||0,
+    selected:[...document.querySelectorAll('#inputRows [data-select-row]')].map(box=>box.checked),
+    modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>button.textContent.trim()),
+    footer:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id),
+    app:{x:app.x,y:app.y,width:app.width,height:app.height},focusRestored:document.activeElement===input};})()`);
+  assert.deepEqual({ ...stocktakeUiAfter, focusRestored: undefined }, { ...stocktakeUiBefore, focusRestored: undefined },
+    'ESC/cancel must preserve input, selection, scroll, selected rows, existing buttons, and layout');
+  assert.equal(stocktakeUiAfter.focusRestored, true);
+
+  await click(client, '[data-nexus-ui-theme-toggle]');
+  await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark stocktake popup theme');
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-DARK',sourceLineId:'PL-DARK',checkpointId:'CP-DARK',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'dark stocktake popup');
+  const stocktakeDarkShot = await capture(client, 'smartinput-stocktake-conflict-dark.png');
+  baselineScreenshots.push(stocktakeDarkShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-cancel]');
+  await evaluate(client, `window.__stage5DialogPromise`);
+  await click(client, '[data-nexus-ui-theme-toggle]');
+  await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'restore light theme after stocktake popup');
+
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-1',checkpointId:'CP-MOBILE',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
+  },{
+    companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-2',checkpointId:'CP-MOBILE',productCode:'0008',productName:'혼합결정 상품',warehouseName:'단계5창고',quantity:4
+  }]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'mobile stocktake popup');
+  assert.equal(await evaluate(client, `[...document.querySelectorAll('dialog.stocktake-conflict-dialog footer .button')].every(button=>button.getBoundingClientRect().height>=44&&button.getBoundingClientRect().right<=innerWidth)`), true);
+  const stocktakeMobileShot = await capture(client, 'smartinput-stocktake-conflict-mobile.png');
+  baselineScreenshots.push(stocktakeMobileShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `window.__stage5DialogResult==='PENDING'&&document.querySelector('dialog.stocktake-conflict-dialog[open]')?.textContent.includes('0008 / 혼합결정 상품')`,
+    'mobile stocktake popup second row');
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="NOT_INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `Array.isArray(window.__stage5DialogResult)&&window.__stage5DialogResult.length===2`, 'mobile stocktake mixed decisions');
+  const stocktakeSequentialMixed = await evaluate(client, `window.__stage5DialogResult`);
+  assert.deepEqual(stocktakeSequentialMixed.map(row => row.decisionType), ['INCLUDED_IN_CHECKPOINT', 'NOT_INCLUDED_IN_CHECKPOINT']);
+  assert.equal(new Set(stocktakeSequentialMixed.map(row => row.conflictKey)).size, 2);
+  assert.equal(stocktakeSequentialMixed.every(row => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(row.judgedAt)), true);
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `window.dispatchEvent(new Event('resize'));true`);
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
   assert.equal(officialSyncResult.online, true);
   assert.equal(officialSyncResult.applied >= 3, true, 'legacy waiting official rows must become uploadable without rewriting the local voucher');
@@ -395,17 +838,87 @@ try {
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).futureRoot`), 'KEEP-UNKNOWN', 'unknown draft fields must survive reload');
   const photoShot = await capture(client, 'smartinput-0a-photo-reload.png');
 
+  if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
+    await click(client, '[data-nexus-ui-theme-toggle]');
+    await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'light theme for purchase and sale baselines');
+    await wait(200);
+  }
+  await evaluate(client, `Promise.all([...document.querySelectorAll('.brand__logo')].map(image=>image.decode?.().catch(()=>{})||Promise.resolve())).then(()=>true)`);
   for (const mode of ['purchase', 'sale']) {
+    const modeFlowStartedAt = performance.now();
+    let dateDeleteEvidence = null;
     await click(client, `[data-mode="${mode}"]`);
     await click(client, '#addRowButton');
-    await input(client, '#inputRows [data-field="itemName"]', `${mode} 초안 상품`);
+    await click(client, '#customerSearchButton');
+    await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]'))`, `${mode} customer fixture in chooser`);
+    await click(client, '.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]');
+    await click(client, '.smart-customer-dialog [data-customer-use]');
+    await expr(client, `document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'&&!document.querySelector('.smart-customer-dialog')`, `${mode} customer selected`);
+    if (mode === 'purchase') {
+      await input(client, '#deliveryDateInput', '2026-09-17');
+      const displayedAfterDelete = await input(client, '#deliveryDateInput', '');
+      assert.equal(displayedAfterDelete, '2026-09-01', 'clearing the native date input must restore the preserved month at day 1');
+      await expr(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.purchase.header.voucherDate==='2026-09-01'`, 'date deletion persisted to compatibility draft');
+      await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?date-delete-e2e=1');const record=await store.loadLatestAutosave();return record?.draft?.modes?.purchase?.header?.voucherDate==='2026-09-01';})()`, 'date deletion persisted to autosave draft');
+      dateDeleteEvidence = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?date-delete-read-e2e=1');const record=await store.loadLatestAutosave();const local=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.purchase.header;return {deletedFrom:'2026-09-17',displayed:document.querySelector('#deliveryDateInput').value,compatibilityDraft:local.voucherDate,monthAnchor:local.voucherDateMonthAnchor,autosaveDraft:record.draft.modes.purchase.header.voucherDate};})()`);
+    } else {
+      await input(client, '#deliveryDateInput', '2026-09-02');
+    }
+    await input(client, '#warehouseInput', '격리 검증 창고');
+    await input(client, '#inputRows [data-product-search]', '마스터 최신 사과');
+    await evaluate(client, `document.querySelector('#inputRows [data-product-search]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+    await expr(client, `document.querySelector('#inputRows [data-field="itemCode"]')?.value==='MASTER-1'`, `${mode} exact product selected`);
+    await input(client, '#inputRows [data-field="quantity"]', '2');
+    await input(client, '#inputRows [data-field="unitPrice"]', '1500');
+    const modeDom = await evaluate(client, `(() => ({
+      mode:document.querySelector('.mode-tab.is-active')?.dataset.mode,
+      customerLabel:document.querySelector('#customerFieldLabel').childNodes[0]?.textContent.trim(),
+      dateLabel:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),
+      warehouseLabel:document.querySelector('[data-header-field="warehouse"]>span').textContent.replace(/필수/g,'').trim(),
+      saveLabel:document.querySelector('#completeButton').textContent.trim(),
+      rowCount:document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length,
+      rowValues:['itemCode','itemName','quantity','unit','unitPrice'].map(field=>document.querySelector('#inputRows [data-field="'+field+'"]')?.value||''),
+      amount:document.querySelector('#inputRows [data-supply-amount]')?.value||'',
+      layout:{parser:Math.round(document.querySelector('.parser-card').getBoundingClientRect().width),workbench:Math.round(document.querySelector('.workbench').getBoundingClientRect().width),related:Math.round(document.querySelector('.related-panel').getBoundingClientRect().width)}
+    }))()`);
+    assert.equal(modeDom.mode, mode);
+    assert.equal(modeDom.dateLabel, mode === 'purchase' ? '구매일자' : '판매일자');
+    assert.equal(modeDom.saveLabel, '저장');
+    assert.equal(modeDom.amount, '3,000');
+    const modeEntryReadyMs = Number((performance.now() - modeFlowStartedAt).toFixed(2));
+    await evaluate(client, `document.querySelector('#toast').hidden=true;true`);
+    const modeShot = await capture(client, `smartinput-v2-baseline-${mode}.png`);
+    baselineScreenshots.push(modeShot);
     const rowsBefore = await evaluate(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length`);
+    assert.equal(rowsBefore, 1);
+    const saveStartedAt = performance.now();
     await click(client, '#completeButton');
-    const expectedFeedback = mode === 'purchase' ? '구매처|구매 원장 연결' : '거래처|판매 원장 연결';
-    await expr(client, `!document.querySelector('#toast').hidden&&/${expectedFeedback}/.test(document.querySelector('#toast').textContent)`, `${mode} unavailable feedback`);
-    const feedback = await evaluate(client, `document.querySelector('#toast').textContent`);
-    assert.match(feedback, mode === 'purchase' ? /구매처를 확인|구매 원장 연결/ : /거래처|판매 원장 연결/);
-    assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length`), rowsBefore, `${mode} unavailable must preserve draft rows`);
+    await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===0&&document.querySelector('#appStatus').textContent.includes('저장 완료')`, `${mode} official save completion`);
+    const saveFeedbackMs = Number((performance.now() - saveStartedAt).toFixed(2));
+    const feedback = await evaluate(client, `document.querySelector('#appStatus').textContent.trim()`);
+    assert.match(feedback, mode === 'purchase' ? /공식 구매전표 1건 저장 완료/ : /공식 판매전표 1건 저장 완료/);
+    if (mode === 'purchase') {
+      dateDeleteEvidence.savedRequest = await evaluate(client, `(async()=>{const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));const pointer=draft.modes.purchase.purchaseSubmissions.at(-1);const repo=await import('/orderq/official-voucher-repository.js?date-delete-read-e2e=1');const aggregate=await repo.loadOfficialPurchaseAggregate(pointer.purchaseDocumentId);return aggregate.document.purchaseDate;})()`);
+      assert.deepEqual(dateDeleteEvidence, {
+        deletedFrom: '2026-09-17',
+        displayed: '2026-09-01',
+        compatibilityDraft: '2026-09-01',
+        monthAnchor: '2026-09',
+        autosaveDraft: '2026-09-01',
+        savedRequest: '2026-09-01'
+      }, 'native date deletion must agree across display, both draft stores, and the official save request');
+    }
+    officialSaveEntryEvidence.push({
+      mode,
+      clickCount: 6,
+      clickDefinition: 'mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard',
+      modeAndEntryReadyMs: modeEntryReadyMs,
+      saveFeedbackMs,
+      currentResult: 'SAVED',
+      feedback,
+      ...(dateDeleteEvidence ? { dateDeleteEvidence } : {}),
+      dom: modeDom
+    });
   }
 
   const headerBeforeEstimate = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};return {customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
@@ -558,7 +1071,8 @@ try {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await client.send('Page.reload', { ignoreCache: true });
   await expr(client, `document.readyState==='complete'&&Boolean(document.querySelector('#relatedPanelCloseButton'))`, 'intermediate layout reload');
-  await wait(300);
+  await evaluate(client, `window.dispatchEvent(new Event('resize'));true`);
+  await expr(client, `(() => {const panel=document.querySelector('#estimateLibraryView').getBoundingClientRect();const appBar=document.querySelector('.app-bar').getBoundingClientRect();return panel.top>=appBar.bottom-1;})()`, 'intermediate panel positioned below app header');
   const intermediatePanel = await evaluate(client, `(() => {const workspace=document.querySelector('#smartInputWorkspace');const panel=document.querySelector('#estimateLibraryView').getBoundingClientRect();const appBar=document.querySelector('.app-bar').getBoundingClientRect();const global=document.querySelector('.nexus-ui-header').getBoundingClientRect();const close=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {panelTop:panel.top,panelHeight:panel.height,appBarTop:appBar.top,appBarHeight:appBar.height,appBarBottom:appBar.bottom,globalBottom:global.bottom,customTop:workspace.style.getPropertyValue('--related-panel-top'),closeTop:close.top,closeHeight:close.height,closeText:document.querySelector('#relatedPanelCloseButton').textContent.trim(),legacyCollapse:getComputedStyle(document.querySelector('#relatedCollapseButton')).display};})()`);
   console.log('SmartInput intermediate panel metrics', intermediatePanel);
   assert.ok(intermediatePanel.panelTop >= intermediatePanel.appBarBottom - 1 && Math.abs((intermediatePanel.closeTop + intermediatePanel.closeHeight / 2) - (intermediatePanel.panelTop + intermediatePanel.panelHeight / 2)) <= 2, 'intermediate right drawer must begin below the app header and center its hover X on the right edge');
@@ -593,9 +1107,86 @@ try {
   assert.equal(await evaluate(client, `!document.querySelector('#referenceOverview').open&&document.activeElement===document.querySelector('#referenceOverview > summary')`), true, 'Enter must close the reference panel without losing focus');
   const mobileShot = await capture(client, 'smartinput-0a-mobile.png');
 
+  const localOrigin = `http://127.0.0.1:${address.port}`;
+  const externalMutatingRequests = networkRequests.filter(request =>
+    !request.url.startsWith(localOrigin)
+    && !['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())
+  );
+  const localMutatingRequests = localServerRequests.filter(request => !['GET', 'HEAD'].includes(String(request.method).toUpperCase()));
+  const guardedExternalMutationAttempts = await evaluate(client,
+    `JSON.parse(localStorage.getItem('oneapp.smartinput.e2e.blockedExternalMutations')||'[]')`);
+  assert.deepEqual(externalMutatingRequests, [], 'isolated browser baseline must make zero actual external mutating requests');
+  assert.deepEqual(localMutatingRequests, [], 'the read-only fixture server must receive zero writes');
+  const browserEnvironment = await evaluate(client, `(async()=>({
+    userAgent:navigator.userAgent,
+    platform:navigator.platform,
+    language:navigator.language,
+    viewport:{width:innerWidth,height:innerHeight,devicePixelRatio},
+    indexedDbDatabases:typeof indexedDB.databases==='function'?await indexedDB.databases():[]
+  }))()`);
+  const baselineEvidence = {
+    schemaVersion: 'NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1',
+    recordedAt: new Date().toISOString(),
+    isolation: {
+      browserProfile: 'mkdtemp isolated profile, removed after run',
+      productionIndexedDbWrites: 0,
+      actualExternalMutatingRequests: externalMutatingRequests.length,
+      guardedExternalMutationAttempts,
+      localFixtureServerWrites: localMutatingRequests.length,
+      simulatedCloudCalls: officialSyncResult.actions,
+      note: 'Cloud sync is exercised only through a temporary window.fetch stub; no network request is emitted.'
+    },
+    environment: {
+      userAgent: browserEnvironment.userAgent,
+      platform: browserEnvironment.platform,
+      language: browserEnvironment.language,
+      measurementViewport: { width: 1920, height: 1080, devicePixelRatio: 1 },
+      finalCapturedViewport: browserEnvironment.viewport,
+      indexedDbDatabases: browserEnvironment.indexedDbDatabases
+    },
+    dom: domBaseline,
+    keyboardContractsExercised: [
+      'grid ArrowRight navigation',
+      'column-resize ArrowRight',
+      'parser-pane ArrowRight',
+      'related-pane ArrowLeft',
+      'reference panel Enter',
+      'product selection Enter'
+    ],
+    flows: {
+      directInput: { clicks: 1, clickDefinition: 'Analyze button after keyboard entry', responseMs: flowTimings.directInputAnalyzeMs },
+      excelTablePaste: { clicks: 0, clickDefinition: 'Ctrl+V/paste event into the grid', responseMs: flowTimings.excelTablePasteMs },
+      autosave: { clicks: 0, clickDefinition: 'automatic after keyboard entry', responseMs: flowTimings.autosavePersistMs },
+      autosaveRestore: { clicks: 1, clickDefinition: 'Restore autosave button', verified: true },
+      currentOfficialSaveEntry: officialSaveEntryEvidence
+    },
+    officialTransaction: {
+      successBaseline: officialResult,
+      injectedFailure: officialRollbackResult,
+      gatewayInjectedFailure: officialGatewayRollbackResult,
+      stage3V2: officialV2Stage3Result,
+      stage4V2: officialV2Stage4Result,
+      phase6AReadModel: officialV2Phase6AReadResult,
+      stage5V2: officialV2Stage5Result,
+      expectedFinalizeTransactionCount: 1,
+      partialFinalizeWritesAfterFailure: 0
+    },
+    stocktakeConflictUi: {
+      contract: stocktakePopupContract,
+      cancelStateBefore: stocktakeUiBefore,
+      cancelStateAfter: stocktakeUiAfter,
+      sequentialMixed: stocktakeSequentialMixed,
+      themes: ['light', 'dark'],
+      mobileViewport: { width: 390, height: 844 },
+      normalFlowPopupCount: 0
+    },
+    screenshots: baselineScreenshots.map(file => basename(file))
+  };
+  if (baselineEvidenceFile) writeFileSync(baselineEvidenceFile, `${JSON.stringify(baselineEvidence, null, 2)}\n`);
+
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, estimateCardsShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height } }, null, 2));
+  console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, ...baselineScreenshots, estimateCardsShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height }, baselineEvidenceFile }, null, 2));
   console.log('SmartInput protected desktop workspace browser E2E PASS');
 } finally {
   client?.close();
