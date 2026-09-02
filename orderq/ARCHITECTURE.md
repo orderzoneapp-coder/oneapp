@@ -1,16 +1,16 @@
 # ORDER Q vNext Architecture
 
-Version: 0.8.7
+Version: 0.8.8
 Reviewed: 2026-09-03
-Official voucher boundary review: `NEXUS-SI-V2-06A` / 2026-09-03
+Official voucher boundary review: `NEXUS-SI-V2-06B` / 2026-09-03
 
 ## 1. Scope
 
-ORDER Q vNext is an independent pilot under `/orderq/`. Existing `orderops/` and root `orderops_list.html` remain unchanged.
+ORDER Q vNext is an independent pilot under `/orderq/`. The existing `orderops/list.html` compatibility screen consumes its read-only unresolved-review Adapter only inside the approved result-area state; root `orderops_list.html` remains unchanged.
 
 Phase 3 adds `/orderq/parser.html`. ORDER IN/SmartParser never writes ORDER / ORDER_ITEM directly: raw text and parse decisions are stored separately, then confirmed actions call the shared Order Intake Engine. Direct input, ORDER IN, Excel, shopping-mall, and external adapters share that same boundary.
 
-vNext 0.8.7 keeps the 0.7.1 `input → document history → operations` work surfaces and the separate official-voucher background synchronization boundary. It retains the ORDER Q-owned official command Adapter and Gateway used by SmartInput purchase/sale finalize, the default-off V2 stocktake checkpoint decision boundary, and now publishes a read-only unresolved-product review model plus pure rematch-impact preview from the owner Repository. The new read path requires company scope, opens only existing DB v7 stores with a `readonly` transaction, and does not add a Store, migration, write, command, or UI. The document list and existing optimistic-revision editing behavior remain unchanged.
+vNext 0.8.8 keeps the 0.7.1 `input → document history → operations` work surfaces and the separate official-voucher background synchronization boundary. It retains the ORDER Q-owned official command Adapter and Gateway used by SmartInput purchase/sale finalize, the default-off V2 stocktake checkpoint decision boundary, and publishes a read-only unresolved-product review model plus pure rematch-impact preview from the owner Repository. The read path requires company scope, opens only existing DB v7 stores with a `readonly` transaction, and does not add a Store, migration, write, or command. After UI Gate U1 A approval, `orderops/list.html` consumes that Adapter in its existing results table; the document list and existing optimistic-revision editing behavior remain unchanged.
 
 `/orderq/operations.html` still filters order documents before product aggregation and never duplicates document editing. IndexedDB v7 retains the existing order stores and adds official command, voucher revision, inventory effect, AR/AP, checkpoint, unresolved-product and queue records without deleting prior data. `deliveryExpectedDate` remains optional and item-change entries continue to use the existing event detail JSON. Legacy `status` remains the item-matching summary for compatibility while `orderStatus`, `adminStatus`, and derived operations status own the workflow.
 
@@ -61,7 +61,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Each link keeps the confirmation-time original product code, name, specification and unit; warehouse; `businessDate`; input and signed purchase/sale quantity; document kind, document ID, line ID, document Revision and Revision ID; and a trace URL. Official inventory is represented as `{ status: NOT_APPLIED, label: 미반영, officialQuantity: null }`; the unapplied signed quantity is a separate field and is never rendered as official stock zero.
 - Candidate generation consumes only the current Product owner Snapshot. The same company rule and outer-trim-only exact product-code key from Phase 4 apply, so leading zeroes, case, fullwidth/halfwidth characters and internal spaces remain distinct. One exact-code row may be labeled `EXACT_COMPANY_PRODUCT_CODE`; name rows remain `EXACT_PRODUCT_NAME_REFERENCE_ONLY`. Every candidate has `automaticConfirmation=false` and explicit `자동확정 아님` evidence.
 - Schema `ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1` is a pure, read-only projection. It returns affected documents, lines, signed/input totals, warehouses, dates and each latest relevant checkpoint, and reuses `evaluateStocktakeCheckpointConflictV2()`. Effects before the checkpoint and same-day effects without trusted order evidence are `DECISION_REQUIRED`; proven later effects are `APPLY_READY`; missing source evidence is `REVIEW_REQUIRED`. It creates no rematch command, inventory movement, reference-data change or UI action.
-- No application is registered as a product UI consumer in Phase 6A. UI Gate U1 must be approved before any HTML, CSS, existing product JavaScript, table column, filter, button, tab, panel, popup, layout or workflow change. Phase 6B/rematch execution, Cloud/Pilot activation, correction/cancel and DB migration remain excluded.
+- UI Gate U1 A was approved for Phase 6B, so `orderops` is the sole product UI consumer. It adds only a `미매칭` filter state to the existing `#resultsPanel`/`#previewTable`, exposes every Adapter page through bounded previous/next navigation, labels search/sort/column conditions as current-page scope, preserves the current page across list/detail transitions and the host view state on enter/exit, and calls impact preview only after explicit candidate selection. It adds no global tab, independent panel, popup, route, confirmation/apply action, write, Store or migration. Rollback removes the consumer module, result-state branch and manifest consumer registration while retaining all Phase 6A owner assets and DB v7 data. Rematch execution, Cloud/Pilot activation, correction/cancel and DB migration remain excluded.
 
 ## 3. Cloud contract
 

@@ -54,6 +54,8 @@ jobs:
           node scripts/test-smartinput-v2-validation-identity.mjs
           node scripts/test-smartinput-v2-inventory-unresolved-ledger.mjs
           node scripts/test-smartinput-v2-stocktake-conflict.mjs
+          node scripts/test-smartinput-v2-unresolved-review-read-model.mjs
+          node scripts/test-smartinput-v2-phase6a-ui-unchanged.mjs
 
       - name: Test SmartInput browser isolation and persistence
         run: node scripts/test-smartinput-browser-e2e.mjs
@@ -174,3 +176,25 @@ jobs:
         run: |
           node scripts/test-reference-data-contract.mjs
           node scripts/test-reference-data-browser-e2e.mjs
+
+  validate-unresolved-review-ui:
+    name: Validate Phase 6B approved-base UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out approved-base branch head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Test unresolved review UI contracts and browser flow
+        run: |
+          node scripts/test-smartinput-v2-unresolved-review-ui.mjs
+          node scripts/test-smartinput-v2-unresolved-review-ui-browser.mjs

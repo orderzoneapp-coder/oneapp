@@ -417,6 +417,9 @@
       "sharedContracts": [
         "cloud-url",
         "shipping-purchase-plan"
+      ],
+      "consumedContracts": [
+        "orderq-unresolved-review-read-model"
       ]
     },
     {
@@ -837,7 +840,9 @@
     {
       "id": "orderq-unresolved-review-read-model",
       "owner": "orderq-vnext",
-      "consumers": [],
+      "consumers": [
+        "orderops"
+      ],
       "schemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1",
       "readAdapter": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1",
       "impactPreviewSchemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1",
@@ -863,7 +868,7 @@
           "inventoryCheckpoints"
         ]
       },
-      "rollback": "Remove the three Phase 6A read-only assets and this manifest registration. Existing ORDER Q DB v7 data and every product UI asset remain untouched."
+      "rollback": "Phase 6B rollback removes orderops/unresolved-review-ui.js, the orderops/list.html result-state branch, and the orderops consumer registration. The Phase 6A owner read assets and existing ORDER Q DB v7 data remain untouched; a full Phase 6A rollback may then remove those owner assets and this contract registration separately."
     },
     {
       "id": "orderq-official-sync",

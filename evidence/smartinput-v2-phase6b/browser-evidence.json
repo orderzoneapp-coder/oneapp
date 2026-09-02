@@ -1,0 +1,438 @@
+{
+  "taskId": "NEXUS-SI-V2-06B",
+  "baselineSha": "b126b298a18671942a70d8ae2ae53d1b25234fcb",
+  "status": "PASS",
+  "domAndLayout": {
+    "baseline": {
+      "existingButtonIds": [
+        "analyzeButton",
+        "cloudListButton",
+        "cloudLoadButton",
+        "cloudSaveButton",
+        "columnVisibilityButton",
+        "columnWidthResetButton",
+        "columnWidthSaveButton",
+        "discardRecoveryButton",
+        "downloadButton",
+        "headerCloudLoadButton",
+        "headerCloudSaveButton",
+        "headerRestoreButton",
+        "headerSettingsButton",
+        "integratedFileButton",
+        "inventoryDrop",
+        "inventoryFileButton",
+        "ledgerDrop",
+        "localResetButton",
+        "managerFilterToggle",
+        "mappingResetButton",
+        "mappingSaveButton",
+        "ordersDrop",
+        "ordersFileButton",
+        "printButton",
+        "purchasesDrop",
+        "purchasesFileButton",
+        "recoveryMoreButton",
+        "refreshButton",
+        "replaceRecoveryButton",
+        "restoreButton",
+        "resultFilterResetButton",
+        "salesDrop",
+        "salesFileButton",
+        "settingsCloseButton",
+        "shortageFocusButton",
+        "viewPresetDefaultButton",
+        "viewPresetDeleteButton",
+        "viewPresetSaveButton",
+        "vividColorToggle",
+        "warehouseColorResetButton",
+        "warehouseFilterToggle"
+      ],
+      "sourceTabs": [
+        {
+          "id": "ordersDrop",
+          "label": "주문현황 화면 보기 F5"
+        },
+        {
+          "id": "ledgerDrop",
+          "label": "수불현황 화면 보기 F6"
+        },
+        {
+          "id": "inventoryDrop",
+          "label": "창고재고 화면 보기 F7"
+        },
+        {
+          "id": "purchasesDrop",
+          "label": "구매현황 화면 보기"
+        },
+        {
+          "id": "salesDrop",
+          "label": "판매현황 화면 보기"
+        }
+      ],
+      "shortcuts": [
+        {
+          "id": "analyzeButton",
+          "key": "Enter"
+        },
+        {
+          "id": "downloadButton",
+          "key": "F10"
+        },
+        {
+          "id": "headerCloudSaveButton",
+          "key": "F8"
+        },
+        {
+          "id": "inventoryDrop",
+          "key": "F7"
+        },
+        {
+          "id": "ledgerDrop",
+          "key": "F6"
+        },
+        {
+          "id": "ordersDrop",
+          "key": "F5"
+        },
+        {
+          "id": "printButton",
+          "key": "F9"
+        },
+        {
+          "id": "resultFilterResetButton",
+          "key": "F2"
+        },
+        {
+          "id": "smartInputButton",
+          "key": "F4"
+        }
+      ],
+      "regions": {
+        "sourceSelector": {
+          "x": 29,
+          "y": 186,
+          "width": 1138
+        },
+        "resultsPanel": {
+          "x": 16,
+          "y": 260,
+          "width": 1408
+        },
+        "previewTable": {
+          "x": 17,
+          "y": 306,
+          "width": 1406
+        }
+      },
+      "normalClickCount": 3
+    },
+    "current": {
+      "existingButtonIds": [
+        "analyzeButton",
+        "cloudListButton",
+        "cloudLoadButton",
+        "cloudSaveButton",
+        "columnVisibilityButton",
+        "columnWidthResetButton",
+        "columnWidthSaveButton",
+        "discardRecoveryButton",
+        "downloadButton",
+        "headerCloudLoadButton",
+        "headerCloudSaveButton",
+        "headerRestoreButton",
+        "headerSettingsButton",
+        "integratedFileButton",
+        "inventoryDrop",
+        "inventoryFileButton",
+        "ledgerDrop",
+        "localResetButton",
+        "managerFilterToggle",
+        "mappingResetButton",
+        "mappingSaveButton",
+        "ordersDrop",
+        "ordersFileButton",
+        "printButton",
+        "purchasesDrop",
+        "purchasesFileButton",
+        "recoveryMoreButton",
+        "refreshButton",
+        "replaceRecoveryButton",
+        "restoreButton",
+        "resultFilterResetButton",
+        "salesDrop",
+        "salesFileButton",
+        "settingsCloseButton",
+        "shortageFocusButton",
+        "viewPresetDefaultButton",
+        "viewPresetDeleteButton",
+        "viewPresetSaveButton",
+        "vividColorToggle",
+        "warehouseColorResetButton",
+        "warehouseFilterToggle"
+      ],
+      "sourceTabs": [
+        {
+          "id": "ordersDrop",
+          "label": "주문현황 화면 보기 F5"
+        },
+        {
+          "id": "ledgerDrop",
+          "label": "수불현황 화면 보기 F6"
+        },
+        {
+          "id": "inventoryDrop",
+          "label": "창고재고 화면 보기 F7"
+        },
+        {
+          "id": "purchasesDrop",
+          "label": "구매현황 화면 보기"
+        },
+        {
+          "id": "salesDrop",
+          "label": "판매현황 화면 보기"
+        }
+      ],
+      "shortcuts": [
+        {
+          "id": "analyzeButton",
+          "key": "Enter"
+        },
+        {
+          "id": "downloadButton",
+          "key": "F10"
+        },
+        {
+          "id": "headerCloudSaveButton",
+          "key": "F8"
+        },
+        {
+          "id": "inventoryDrop",
+          "key": "F7"
+        },
+        {
+          "id": "ledgerDrop",
+          "key": "F6"
+        },
+        {
+          "id": "ordersDrop",
+          "key": "F5"
+        },
+        {
+          "id": "printButton",
+          "key": "F9"
+        },
+        {
+          "id": "resultFilterResetButton",
+          "key": "F2"
+        },
+        {
+          "id": "smartInputButton",
+          "key": "F4"
+        }
+      ],
+      "regions": {
+        "sourceSelector": {
+          "x": 29,
+          "y": 186,
+          "width": 1138
+        },
+        "resultsPanel": {
+          "x": 16,
+          "y": 260,
+          "width": 1408
+        },
+        "previewTable": {
+          "x": 17,
+          "y": 306,
+          "width": 1406
+        }
+      },
+      "normalClickCount": 3
+    },
+    "unchangedExistingButtons": true,
+    "unchangedSourceTabs": true,
+    "unchangedShortcuts": true,
+    "unchangedNormalRegions": true
+  },
+  "clickContract": {
+    "normalFlowBefore": 3,
+    "normalFlowAfter": 3,
+    "unresolvedListEntry": 1,
+    "listToImpactPreview": 2
+  },
+  "review": {
+    "listEvidence": {
+      "rowCount": 3,
+      "codeOnly": "\n                  000710kgBOX1창고2026-09-0300— · 미반영01연결 정상원전표·후보 보기\n                ",
+      "nameOnly": "\n                  품명만 상품EAEA2전송2026-09-023-3— · 미반영-31연결 정상원전표·후보 보기\n                ",
+      "zero": "0",
+      "negative": "\n                  품명만 상품EAEA2전송2026-09-023-3— · 미반영-31연결 정상원전표·후보 보기\n                ",
+      "official": [
+        "— · 미반영",
+        "— · 미반영",
+        "— · 미반영"
+      ],
+      "impactCalls": 0,
+      "foreignVisible": false,
+      "roleTabs": [
+        "검증요약"
+      ]
+    },
+    "detailBeforeSelection": {
+      "sourceRows": 2,
+      "candidateRows": 2,
+      "checked": 0,
+      "automaticText": 3,
+      "impactCalls": 0,
+      "hasRevision": true,
+      "traceLinks": [
+        "../orderq/voucher-query.html?mode=purchase&date=2026-09-03&focus=PURCHASE-BOTH",
+        "../orderq/voucher-query.html?mode=sale&date=2026-09-01&focus=SALE-BOTH"
+      ],
+      "foreignVisible": false
+    },
+    "impactEvidence": {
+      "labels": [
+        "적용 가능APPLY_READY",
+        "실사 판단 필요DECISION_REQUIRED",
+        "원자료 확인 필요REVIEW_REQUIRED"
+      ],
+      "checkpoint": true,
+      "applyButtons": 0,
+      "companyIds": [
+        "COMPANY-A",
+        "COMPANY-A"
+      ],
+      "selected": true
+    },
+    "paginationEvidence": {
+      "totalItems": 201,
+      "totalPages": 2,
+      "pageOneBoundary": {
+        "status": "1/2페이지",
+        "previousDisabled": true,
+        "nextDisabled": false,
+        "scope": "검색·정렬·열조건은 현재 페이지 자료에만 적용됩니다.",
+        "lastRequest": {
+          "companyId": "COMPANY-A",
+          "page": 1,
+          "limit": 200
+        }
+      },
+      "pageTwoBoundary": {
+        "status": "2/2페이지",
+        "rowCount": 1,
+        "previousDisabled": false,
+        "nextDisabled": true,
+        "lastRequest": {
+          "companyId": "COMPANY-A",
+          "page": 2,
+          "limit": 200
+        }
+      },
+      "detailReturnPage": 2,
+      "stalePageEvidence": {
+        "stillError": true,
+        "staleRowVisible": false,
+        "lastRequest": {
+          "companyId": "COMPANY-A",
+          "page": 1,
+          "limit": 200
+        }
+      }
+    },
+    "errorDistinctFromEmpty": true,
+    "companyIsolation": true
+  },
+  "statePreservation": {
+    "before": {
+      "search": "정상상품",
+      "spec": true,
+      "scrollLeft": 80,
+      "activeCard": "true",
+      "focus": "tableSearchInput",
+      "output": {
+        "print": false,
+        "download": false,
+        "cloud": false,
+        "headerCloud": false
+      }
+    },
+    "after": {
+      "search": "정상상품",
+      "spec": true,
+      "scrollLeft": 80,
+      "activeCard": "true",
+      "focus": "tableSearchInput",
+      "output": {
+        "print": false,
+        "download": false,
+        "cloud": false,
+        "headerCloud": false
+      }
+    }
+  },
+  "isolation": {
+    "orderQDbOpens": 0,
+    "orderQReadwriteTransactions": 0,
+    "reviewCalls": 10,
+    "impactCalls": 1,
+    "warmBeforeEntry": {
+      "reviewCalls": 0,
+      "impactCalls": 0,
+      "orderQDbOpens": 0
+    },
+    "actualExternalMutatingRequests": 0,
+    "fixtureServerWrites": 0,
+    "productionOrderQIndexedDbWrites": 0
+  },
+  "display": {
+    "baselineMobileShell": {
+      "viewportWidth": 375,
+      "documentScrollWidth": 1171,
+      "resultsWidth": 357
+    },
+    "currentMobileShell": {
+      "viewportWidth": 375,
+      "documentScrollWidth": 375,
+      "resultsWidth": 357
+    },
+    "listMobile": {
+      "documentScrollWidth": 375,
+      "resultsWidth": 357,
+      "pageStatus": "1/1페이지",
+      "preview": {
+        "left": 10,
+        "right": 365,
+        "width": 355,
+        "clientWidth": 355,
+        "scrollWidth": 355,
+        "overflowX": "hidden",
+        "contain": "inline-size layout paint"
+      },
+      "innerTableScroller": {
+        "clientWidth": 353,
+        "scrollWidth": 980,
+        "horizontal": true
+      }
+    },
+    "mobile": {
+      "viewportWidth": 375,
+      "documentScrollWidth": 375,
+      "resultsWidth": 357,
+      "horizontalScroller": true,
+      "focusableCandidate": true
+    },
+    "noAddedDocumentOverflow": true,
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "screenshots": [
+      "orderops-unresolved-review-light.png",
+      "orderops-unresolved-review-dark.png",
+      "orderops-unresolved-review-mobile-390.png",
+      "orderops-unresolved-review-page-2.png"
+    ]
+  }
+}
