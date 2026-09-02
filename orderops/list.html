@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.4">
-  <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.7">
+  <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.8">
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.1"></script>
   <meta name="google" content="notranslate">
   <title>주문·출고 - NEXUS</title>
@@ -5238,6 +5238,16 @@
         return isSafeManagerName(manager) && color !== COLOR_CANCEL_COLOR ? color : "";
       }
 
+      function managerPrintColorFor(color) {
+        const normalized = String(color || "").trim().toLowerCase();
+        if (!isSafeHexColor(normalized)) return COLOR_CANCEL_COLOR;
+        if (PASTEL_COLOR_PALETTE.includes(normalized)) return normalized;
+        const printWeight = 0.48;
+        const channels = normalized.slice(1).match(/.{2}/g).map((channel) => Number.parseInt(channel, 16));
+        return `#${channels.map((channel) => Math.round(channel * printWeight + 255 * (1 - printWeight))
+          .toString(16).padStart(2, "0")).join("")}`;
+      }
+
       function previewSearchCorpus(sourceRow, displayRow) {
         const sourceValues = sourceRow && typeof sourceRow === "object"
           ? Object.values(sourceRow).filter((value) => ["string", "number"].includes(typeof value))
@@ -5677,7 +5687,9 @@
               const shortageCategoryStyle = shortageCategory
                 ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
               const managerColorStyle = managerColor ? `--manager-color:${managerColor}` : "";
-              const rowStyle = [shortageCategoryStyle, managerColorStyle].filter(Boolean).join(";");
+              const managerPrintColorStyle = options.printOutput === true && managerColor
+                ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
+              const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 previewId === "unresolved" && sourceRow?.integrity?.status !== "READY" ? "unresolved-review-required-row" : "",
@@ -6155,6 +6167,7 @@
         elements.printArea.innerHTML = renderTableMarkup(preview, pairs, {
           editable: false,
           resizable: false,
+          printOutput: true,
           previewId: state.activePreview,
           useVisibility: true,
           widthSource: "saved",

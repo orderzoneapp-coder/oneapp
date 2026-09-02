@@ -156,9 +156,11 @@ try {
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');
     host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value warning-value"><span class="manager-name">김담당</span></td><td class="information-value ordered-context-cell"><span class="order-information-badges"><span class="order-information-badge manager-color-badge" style="--manager-color:#dbeafe">우리식당(1)8,900</span><span class="order-information-badge manager-color-badge" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number ledger-negative-cell">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr><tr class="manager-color-row box-unit-row" style="--manager-color:#dcfce7"><td class="box-unit-cell">BOX 상품</td><td>이담당</td><td>박스 정보</td><td class="number">2,300</td></tr></tbody></table>';
+    document.querySelector('tbody tr.manager-color-row').insertAdjacentHTML('beforeend','<td><input class="inventory-input ledger-price-input" value="8700"></td><td><input class="order-edit-input" value="5"></td><td><input class="purchase-input" data-negative-balance="true" value="거창"></td><td><span class="inventory-total-frame">8</span></td>');
+    document.querySelector('.order-edit-input').focus();
     return true;
   })()`);
-  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(lightMetrics.theme, 'light');
   assert.notEqual(lightMetrics.primary.background, lightMetrics.inactive.background,
     'saved manager colors must restore a visible row surface in light mode');
@@ -168,13 +170,15 @@ try {
     'light manager color must cover every cell even when cells carry semantic state classes');
   assert.equal(new Set(lightMetrics.managerCells.map((cell) => cell.color)).size, 1,
     'light manager text color must cover the complete row');
+  assert.ok(lightMetrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),
+    'light manager-row editors and quantity frames must not cover the assigned row color');
   assert.equal(new Set(lightMetrics.unitCells.map((cell) => cell.color)).size, 1,
     'EA and 소분 warning text must cover the complete light row');
   assert.equal(new Set(lightMetrics.boxCells.map((cell) => cell.color)).size, 1,
     'BOX text color must cover the complete light row');
   await click(client, '[data-nexus-ui-theme-set="dark"]');
   await wait(120);
-  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(metrics.theme, 'dark');
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
   assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
@@ -190,6 +194,8 @@ try {
     'dark manager color must cover every cell even when cells carry semantic state classes');
   assert.equal(new Set(metrics.managerCells.map((cell) => cell.color)).size, 1,
     'dark manager text color must cover the complete row');
+  assert.ok(metrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),
+    'dark manager-row editors and quantity frames must not cover the assigned row color');
   assert.equal(new Set(metrics.unitCells.map((cell) => cell.color)).size, 1,
     'EA and 소분 warning text must cover the complete dark row');
   assert.equal(new Set(metrics.boxCells.map((cell) => cell.color)).size, 1,
@@ -200,7 +206,7 @@ try {
   await client.send('Emulation.setEmulatedMedia', { media: 'print' });
   const printMetrics = await evaluate(client, `(() => {
     const printArea=document.querySelector('#printArea');
-    printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr></tbody></table>';
+    printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe;--manager-print-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7;--manager-print-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr></tbody></table>';
     document.body.classList.add('printing-table');
     const bodyStyle=getComputedStyle(document.body);
     const printStyle=getComputedStyle(printArea);
@@ -225,10 +231,14 @@ try {
     'printed manager background must cover the complete row');
   assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.color)).size, 1,
     'printed manager text color must cover the complete row');
+  assert.equal(printMetrics.managerCells[0].color, 'rgb(23, 32, 51)',
+    'dark screen text tokens must not leak into the printed manager row');
   assert.equal(new Set(printMetrics.unitCells.map((cell) => cell.color)).size, 1,
     'printed EA and 소분 warning text must cover the complete row');
-  assert.notEqual(printMetrics.managerCells[0].background, 'rgb(255, 255, 255)',
-    'printed manager assignment must preserve its visible color');
+  assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',
+    'printed EA and 소분 rows must retain the paper-safe red text');
+  assert.equal(printMetrics.managerCells[0].background, 'rgb(219, 234, 254)',
+    'print-only manager token must preserve the selected pastel without screen-theme dilution');
   assert.deepEqual(runtimeErrors, [], `browser runtime errors: ${runtimeErrors.join(' | ')}`);
   console.log('OrderOps manager color recovery, theme contrast, and print origin browser E2E PASS');
 } finally {

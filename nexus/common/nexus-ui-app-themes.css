@@ -1089,6 +1089,30 @@ html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-ro
   ) !important;
 }
 
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row[style*="--manager-color"] > td:focus-within {
+  background-color: color-mix(
+    in srgb,
+    var(--manager-color) var(--orderops-manager-row-weight),
+    var(--nexus-ui-table-row-bg)
+  ) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td :is(
+  input,
+  select,
+  textarea,
+  .purchase-input,
+  .order-edit-input,
+  .inventory-input,
+  .inventory-total-frame
+) {
+  border-color: color-mix(in srgb, var(--orderops-manager-row-text) 16%, transparent) !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
 html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td,
 html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td * {
   color: var(--orderops-manager-row-text) !important;
@@ -1283,7 +1307,7 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-thu
  * the shared and bridged palettes to bright paper-safe values.
  */
 @media print {
-  html[data-nexus-ui-app="orderops"] {
+  html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] {
     --orderops-manager-row-text: #172033;
     --orderops-unit-row-text: #b91c1c;
     --orderops-box-row-text: #0f172a;
@@ -1295,22 +1319,24 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-thu
   }
 
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
-    background-color: color-mix(in srgb, var(--manager-color) 48%, #ffffff) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background-color: var(--manager-print-color, var(--manager-color)) !important;
   }
 
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row > td,
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row > td * {
-    color: var(--orderops-manager-row-text) !important;
+    color: #172033 !important;
   }
 
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.unit-alert-row > td,
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.unit-alert-row > td * {
-    color: var(--orderops-unit-row-text) !important;
+    color: #b91c1c !important;
   }
 
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.box-unit-row > td,
   html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.box-unit-row > td * {
-    color: var(--orderops-box-row-text) !important;
+    color: #0f172a !important;
   }
 
   html[data-nexus-ui-theme="dark"][data-nexus-ui-app] {

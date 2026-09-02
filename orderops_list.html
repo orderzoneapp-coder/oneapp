@@ -1450,6 +1450,18 @@
     .results-panel tbody tr.manager-color-row[style*="--manager-color"]:hover > td {
       background: color-mix(in srgb, var(--manager-color) 58%, #fffdf8) !important;
     }
+    .results-panel tbody tr.manager-color-row[style*="--manager-color"] > td:focus-within {
+      background: color-mix(in srgb, var(--manager-color) 48%, #fffdf8) !important;
+    }
+    .results-panel tbody tr.manager-color-row > td :is(
+      input, select, textarea, .purchase-input, .order-edit-input, .inventory-input, .inventory-total-frame
+    ) {
+      border-color: color-mix(in srgb, #172033 16%, transparent) !important;
+      background: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+      color: inherit !important;
+    }
     .results-panel tbody tr.manager-color-row > td *,
     .results-panel tbody tr.manager-color-row > td { color: #172033 !important; }
     .results-panel tbody tr.unit-alert-row > td *,
@@ -1476,8 +1488,10 @@
         print-color-adjust: exact;
       }
       body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
         color: #172033 !important;
-        background: color-mix(in srgb, var(--manager-color) 48%, #fff) !important;
+        background: var(--manager-print-color, var(--manager-color)) !important;
       }
       body.printing-table .print-area tbody tr.manager-color-row > td *,
       body.printing-table .print-area tbody tr.manager-color-row > td { color: #172033 !important; }
@@ -5028,6 +5042,16 @@
         return isSafeManagerName(manager) && color !== COLOR_CANCEL_COLOR ? color : "";
       }
 
+      function managerPrintColorFor(color) {
+        const normalized = String(color || "").trim().toLowerCase();
+        if (!isSafeHexColor(normalized)) return COLOR_CANCEL_COLOR;
+        if (PASTEL_COLOR_PALETTE.includes(normalized)) return normalized;
+        const printWeight = 0.48;
+        const channels = normalized.slice(1).match(/.{2}/g).map((channel) => Number.parseInt(channel, 16));
+        return `#${channels.map((channel) => Math.round(channel * printWeight + 255 * (1 - printWeight))
+          .toString(16).padStart(2, "0")).join("")}`;
+      }
+
       function previewSearchCorpus(sourceRow, displayRow) {
         const sourceValues = sourceRow && typeof sourceRow === "object"
           ? Object.values(sourceRow).filter((value) => ["string", "number"].includes(typeof value))
@@ -5464,7 +5488,9 @@
               const shortageCategoryStyle = shortageCategory
                 ? `--shortage-category-color:${shortageCategoryColor(shortageCategory)}` : "";
               const managerColorStyle = managerColor ? `--manager-color:${managerColor}` : "";
-              const rowStyle = [shortageCategoryStyle, managerColorStyle].filter(Boolean).join(";");
+              const managerPrintColorStyle = options.printOutput === true && managerColor
+                ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
+              const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
@@ -5703,6 +5729,7 @@
         elements.printArea.innerHTML = renderTableMarkup(preview, pairs, {
           editable: false,
           resizable: false,
+          printOutput: true,
           previewId: state.activePreview,
           useVisibility: true,
           widthSource: "saved",
