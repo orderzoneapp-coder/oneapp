@@ -841,7 +841,7 @@
       "schemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1",
       "readAdapter": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1",
       "impactPreviewSchemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1",
-      "readerPolicy": "Company scope is mandatory. Only the ORDER Q owner Repository opens the existing official stores and composes unresolved records, pending effects, confirmed documents, lines, Revisions, and stocktake checkpoints. EMPTY and ERROR remain distinct; an owner read failure is never represented as zero rows.",
+      "readerPolicy": "Company scope is mandatory. Only the ORDER Q owner Repository opens the existing official stores and composes unresolved records, pending effects, confirmed documents, lines, Revisions, and stocktake checkpoints. Same-effect review evidence is deduplicated only after shared link fields are reconciled; conflicts remain REVIEW_REQUIRED. A cross-company point-get target contributes only a mismatch issue and none of its payload. EMPTY and ERROR remain distinct; an owner read failure is never represented as zero rows.",
       "candidatePolicy": "The current Product Snapshot is reference-only. An outer-trimmed exact source-string code may be marked as an exact candidate only when unique under the Product owner company rule. Leading-zero, case, character-width, and internal-space variants remain distinct. Name candidates are reference-only and never auto-confirmed.",
       "writePolicy": "Read model and rematch impact preview only. No rematch command, inventory write, Product or Customer write, UI execution, schema migration, or Store creation is permitted.",
       "resources": {

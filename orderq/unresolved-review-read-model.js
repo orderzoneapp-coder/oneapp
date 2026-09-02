@@ -104,8 +104,9 @@ function lineIdOf(mode, row = {}) {
 }
 
 function documentBusinessDate(document = {}) {
-  return exactText(document.businessDate || document.purchaseDate || document.saleDate || document.salesDate
-    || document.voucherDate);
+  const source = document || {};
+  return exactText(source.businessDate || source.purchaseDate || source.saleDate || source.salesDate
+    || source.voucherDate);
 }
 
 function traceHref(mode, businessDate, documentId) {
@@ -127,6 +128,73 @@ function addIssue(issues, code, detail = '') {
   if (!issues.some(issue => issue.code === code && issue.detail === detail)) issues.push({ code, detail });
 }
 
+const hasOwn = (source, key) => Boolean(source) && Object.prototype.hasOwnProperty.call(source, key);
+
+function firstOwnEvidence(...pairs) {
+  for (const [source, key] of pairs) {
+    if (hasOwn(source, key)) return { present: true, value: source[key] };
+  }
+  return { present: false, value: undefined };
+}
+
+function comparableValue(value, type) {
+  if (type === 'number') return finiteOrNull(value);
+  if (type === 'boolean') return value === true ? 'true' : value === false ? 'false' : exactText(value).toLowerCase();
+  if (type === 'mode') return exactText(value).toLowerCase();
+  return exactText(value);
+}
+
+function linkEvidenceMismatchFields({ unresolvedRecord, reviewLink, pendingEffect }) {
+  if (!reviewLink || !pendingEffect) return [];
+  const reviewSnapshot = reviewLink.productSnapshot || {};
+  const pendingSnapshot = pendingEffect.productSnapshot || {};
+  const fields = [
+    ['companyId', 'text', firstOwnEvidence([reviewLink, 'companyId'], [unresolvedRecord, 'companyId']),
+      firstOwnEvidence([pendingEffect, 'companyId'])],
+    ['unresolvedProductId', 'text', firstOwnEvidence([reviewLink, 'unresolvedProductId'], [unresolvedRecord, 'unresolvedProductId']),
+      firstOwnEvidence([pendingEffect, 'unresolvedProductId'])],
+    ['voucherMode', 'mode', firstOwnEvidence([reviewLink, 'voucherMode']), firstOwnEvidence([pendingEffect, 'voucherMode'])],
+    ['sourceDocumentId', 'text', firstOwnEvidence([reviewLink, 'sourceDocumentId'], [reviewLink, 'documentId']),
+      firstOwnEvidence([pendingEffect, 'sourceDocumentId'], [pendingEffect, 'documentId'])],
+    ['sourceLineId', 'text', firstOwnEvidence([reviewLink, 'sourceLineId'], [reviewLink, 'lineId']),
+      firstOwnEvidence([pendingEffect, 'sourceLineId'], [pendingEffect, 'lineId'])],
+    ['sourceDocumentRevision', 'number', firstOwnEvidence([reviewLink, 'sourceDocumentRevision']),
+      firstOwnEvidence([pendingEffect, 'sourceDocumentRevision'])],
+    ['voucherRevisionId', 'text', firstOwnEvidence([reviewLink, 'voucherRevisionId']),
+      firstOwnEvidence([pendingEffect, 'voucherRevisionId'])],
+    ['commandId', 'text', firstOwnEvidence([reviewLink, 'commandId']), firstOwnEvidence([pendingEffect, 'commandId'])],
+    ['warehouseId', 'text', firstOwnEvidence([reviewLink, 'warehouseId']), firstOwnEvidence([pendingEffect, 'warehouseId'])],
+    ['businessDate', 'text', firstOwnEvidence([reviewLink, 'businessDate'], [reviewLink, 'effectiveAt']),
+      firstOwnEvidence([pendingEffect, 'effectiveAt'], [pendingEffect, 'businessDate'])],
+    ['businessOccurredAt', 'text', firstOwnEvidence([reviewLink, 'businessOccurredAt']),
+      firstOwnEvidence([pendingEffect, 'businessOccurredAt'])],
+    ['quantity', 'number', firstOwnEvidence([reviewLink, 'quantity']), firstOwnEvidence([pendingEffect, 'quantity'])],
+    ['signedQuantity', 'number', firstOwnEvidence([reviewLink, 'signedQuantity']),
+      firstOwnEvidence([pendingEffect, 'signedQuantity'])],
+    ['unitPrice', 'number', firstOwnEvidence([reviewLink, 'unitPrice']), firstOwnEvidence([pendingEffect, 'unitPrice'])],
+    ['totalAmount', 'number', firstOwnEvidence([reviewLink, 'totalAmount']), firstOwnEvidence([pendingEffect, 'totalAmount'])],
+    ['inventoryEffectStatus', 'text', firstOwnEvidence([reviewLink, 'inventoryEffectStatus']),
+      firstOwnEvidence([pendingEffect, 'inventoryEffectStatus'])],
+    ['officialInventoryApplied', 'boolean', firstOwnEvidence([reviewLink, 'officialInventoryApplied']),
+      firstOwnEvidence([pendingEffect, 'officialInventoryApplied'])],
+    ['originalProductCode', 'text', firstOwnEvidence([reviewLink, 'originalProductCode'], [reviewSnapshot, 'originalProductCode'],
+      [reviewLink, 'productCode'], [reviewSnapshot, 'productCode']),
+    firstOwnEvidence([pendingEffect, 'originalProductCode'], [pendingSnapshot, 'originalProductCode'],
+      [pendingEffect, 'productCode'], [pendingSnapshot, 'productCode'])],
+    ['originalProductName', 'text', firstOwnEvidence([reviewLink, 'originalProductName'], [reviewSnapshot, 'originalProductName'],
+      [reviewLink, 'productName'], [reviewSnapshot, 'productName']),
+    firstOwnEvidence([pendingEffect, 'originalProductName'], [pendingSnapshot, 'originalProductName'],
+      [pendingEffect, 'productName'], [pendingSnapshot, 'productName'])],
+    ['specification', 'text', firstOwnEvidence([reviewLink, 'specification'], [reviewSnapshot, 'specification']),
+      firstOwnEvidence([pendingEffect, 'specification'], [pendingSnapshot, 'specification'])],
+    ['unit', 'text', firstOwnEvidence([reviewLink, 'unit'], [reviewSnapshot, 'unit']),
+      firstOwnEvidence([pendingEffect, 'unit'], [pendingSnapshot, 'unit'])]
+  ];
+  return fields.filter(([, type, review, pending]) => review.present && pending.present
+    && comparableValue(review.value, type) !== comparableValue(pending.value, type))
+    .map(([field]) => field);
+}
+
 function linkedRecord({ companyId, unresolvedProductId, unresolvedRecord, pendingEffect, reviewLink, maps }) {
   const issues = [];
   if (!unresolvedRecord) addIssue(issues, 'UNRESOLVED_RECORD_MISSING');
@@ -138,7 +206,28 @@ function linkedRecord({ companyId, unresolvedProductId, unresolvedRecord, pendin
     addIssue(issues, 'PENDING_EFFECT_UNRESOLVED_ID_MISSING');
   }
 
-  const combined = { ...clone(reviewLink || {}), ...clone(pendingEffect || {}) };
+  const reviewLinkCompanyId = firstOwnEvidence([reviewLink, 'companyId']);
+  const reviewLinkUnresolvedId = firstOwnEvidence([reviewLink, 'unresolvedProductId']);
+  const reviewLinkCompanyMismatch = reviewLinkCompanyId.present && exactText(reviewLinkCompanyId.value) !== companyId;
+  const reviewLinkUnresolvedMismatch = reviewLinkUnresolvedId.present
+    && exactText(reviewLinkUnresolvedId.value) !== unresolvedProductId;
+  if (reviewLinkCompanyMismatch) addIssue(issues, 'REVIEW_LINK_COMPANY_MISMATCH');
+  if (reviewLinkUnresolvedMismatch) addIssue(issues, 'REVIEW_LINK_UNRESOLVED_ID_MISMATCH');
+  linkEvidenceMismatchFields({ unresolvedRecord, reviewLink, pendingEffect }).forEach(field => {
+    addIssue(issues, 'REVIEW_LINK_PENDING_EFFECT_FIELD_MISMATCH', field);
+  });
+
+  const safeReviewLink = reviewLinkCompanyMismatch || reviewLinkUnresolvedMismatch
+    ? {
+      pendingEffectId: reviewLink?.pendingEffectId,
+      voucherMode: reviewLink?.voucherMode,
+      sourceDocumentId: reviewLink?.sourceDocumentId,
+      sourceLineId: reviewLink?.sourceLineId,
+      sourceDocumentRevision: reviewLink?.sourceDocumentRevision,
+      voucherRevisionId: reviewLink?.voucherRevisionId
+    }
+    : reviewLink;
+  const combined = { ...clone(safeReviewLink || {}), ...clone(pendingEffect || {}) };
   const pendingEffectId = exactText(combined.pendingEffectId);
   if (!pendingEffectId) addIssue(issues, 'PENDING_EFFECT_ID_MISSING');
   if (pendingEffect && exactText(pendingEffect.companyId) !== companyId) addIssue(issues, 'PENDING_EFFECT_COMPANY_MISMATCH');
@@ -162,34 +251,51 @@ function linkedRecord({ companyId, unresolvedProductId, unresolvedRecord, pendin
   if (!sourceLineId) addIssue(issues, 'SOURCE_LINE_ID_MISSING');
   if (!voucherRevisionId) addIssue(issues, 'VOUCHER_REVISION_ID_MISSING');
 
-  const document = voucherMode === 'purchase'
+  const rawDocument = voucherMode === 'purchase'
     ? maps.purchaseDocuments.get(documentId)
     : maps.saleDocuments.get(documentId);
-  const line = voucherMode === 'purchase'
+  const rawLine = voucherMode === 'purchase'
     ? maps.purchaseLines.get(sourceLineId)
     : maps.saleLines.get(sourceLineId);
-  const revision = maps.revisions.get(voucherRevisionId);
+  const rawRevision = maps.revisions.get(voucherRevisionId);
 
-  if (documentId && !document) addIssue(issues, 'SOURCE_DOCUMENT_MISSING', documentId);
-  if (document && exactText(document.companyId) !== companyId) {
+  const documentCompanyMismatch = Boolean(rawDocument) && exactText(rawDocument.companyId) !== companyId;
+  const documentNotConfirmed = Boolean(rawDocument) && !documentCompanyMismatch
+    && exactText(rawDocument.status).toUpperCase() !== 'CONFIRMED';
+  if (documentId && !rawDocument) addIssue(issues, 'SOURCE_DOCUMENT_MISSING', documentId);
+  if (documentCompanyMismatch) {
     addIssue(issues, 'SOURCE_DOCUMENT_COMPANY_MISMATCH', documentId);
   }
-  if (document && exactText(document.status).toUpperCase() !== 'CONFIRMED') {
-    addIssue(issues, 'SOURCE_DOCUMENT_NOT_CONFIRMED', exactText(document.status));
+  if (documentNotConfirmed) {
+    addIssue(issues, 'SOURCE_DOCUMENT_NOT_CONFIRMED', exactText(rawDocument.status));
   }
-  if (sourceLineId && !line) addIssue(issues, 'SOURCE_LINE_MISSING', sourceLineId);
-  if (line && exactText(line.companyId) !== companyId) addIssue(issues, 'SOURCE_LINE_COMPANY_MISMATCH', sourceLineId);
-  if (line && documentIdOf(voucherMode, line) !== documentId) addIssue(issues, 'SOURCE_LINE_DOCUMENT_MISMATCH', sourceLineId);
-  if (voucherRevisionId && !revision) addIssue(issues, 'VOUCHER_REVISION_MISSING', voucherRevisionId);
-  if (revision && exactText(revision.companyId) !== companyId) {
+  const document = rawDocument && !documentCompanyMismatch && !documentNotConfirmed ? rawDocument : null;
+
+  const lineCompanyMismatch = Boolean(rawLine) && exactText(rawLine.companyId) !== companyId;
+  const lineDocumentMismatch = Boolean(rawLine) && !lineCompanyMismatch
+    && documentIdOf(voucherMode, rawLine) !== documentId;
+  if (sourceLineId && !rawLine) addIssue(issues, 'SOURCE_LINE_MISSING', sourceLineId);
+  if (lineCompanyMismatch) addIssue(issues, 'SOURCE_LINE_COMPANY_MISMATCH', sourceLineId);
+  if (lineDocumentMismatch) addIssue(issues, 'SOURCE_LINE_DOCUMENT_MISMATCH', sourceLineId);
+  const line = rawLine && !lineCompanyMismatch && !lineDocumentMismatch ? rawLine : null;
+
+  const revisionCompanyMismatch = Boolean(rawRevision) && exactText(rawRevision.companyId) !== companyId;
+  const revisionDocumentMismatch = Boolean(rawRevision) && !revisionCompanyMismatch
+    && exactText(rawRevision.documentId) !== documentId;
+  const revisionNotConfirmed = Boolean(rawRevision) && !revisionCompanyMismatch
+    && exactText(rawRevision.status).toUpperCase() !== 'CONFIRMED';
+  if (voucherRevisionId && !rawRevision) addIssue(issues, 'VOUCHER_REVISION_MISSING', voucherRevisionId);
+  if (revisionCompanyMismatch) {
     addIssue(issues, 'VOUCHER_REVISION_COMPANY_MISMATCH', voucherRevisionId);
   }
-  if (revision && exactText(revision.documentId) !== documentId) {
+  if (revisionDocumentMismatch) {
     addIssue(issues, 'VOUCHER_REVISION_DOCUMENT_MISMATCH', voucherRevisionId);
   }
-  if (revision && exactText(revision.status).toUpperCase() !== 'CONFIRMED') {
-    addIssue(issues, 'VOUCHER_REVISION_NOT_CONFIRMED', exactText(revision.status));
+  if (revisionNotConfirmed) {
+    addIssue(issues, 'VOUCHER_REVISION_NOT_CONFIRMED', exactText(rawRevision.status));
   }
+  const revision = rawRevision && !revisionCompanyMismatch && !revisionDocumentMismatch && !revisionNotConfirmed
+    ? rawRevision : null;
   const sourceDocumentRevision = finiteOrNull(combined.sourceDocumentRevision);
   if (sourceDocumentRevision === null) addIssue(issues, 'SOURCE_DOCUMENT_REVISION_MISSING');
   if (document && sourceDocumentRevision !== null

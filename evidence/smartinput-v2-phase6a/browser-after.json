@@ -1,6 +1,6 @@
 {
   "schemaVersion": "NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1",
-  "recordedAt": "2026-09-02T16:03:39.490Z",
+  "recordedAt": "2026-09-02T16:19:21.525Z",
   "isolation": {
     "browserProfile": "mkdtemp isolated profile, removed after run",
     "productionIndexedDbWrites": 0,
@@ -12,7 +12,7 @@
         "action": "orderq_official_sync_pull",
         "companyId": "ONEAPP",
         "changeCount": 0,
-        "blockedAt": "2026-09-02T16:03:25.585Z"
+        "blockedAt": "2026-09-02T16:19:14.034Z"
       },
       {
         "method": "POST",
@@ -20,7 +20,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 1,
-        "blockedAt": "2026-09-02T16:03:27.688Z"
+        "blockedAt": "2026-09-02T16:19:14.672Z"
       },
       {
         "method": "POST",
@@ -28,7 +28,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T16:03:28.307Z"
+        "blockedAt": "2026-09-02T16:19:15.300Z"
       },
       {
         "method": "POST",
@@ -36,7 +36,7 @@
         "action": "orderq_official_sync_push",
         "companyId": "ONEAPP",
         "changeCount": 2,
-        "blockedAt": "2026-09-02T16:03:38.247Z"
+        "blockedAt": "2026-09-02T16:19:21.309Z"
       }
     ],
     "localFixtureServerWrites": 0,
@@ -245,17 +245,17 @@
     "directInput": {
       "clicks": 1,
       "clickDefinition": "Analyze button after keyboard entry",
-      "responseMs": 207.28
+      "responseMs": 146.01
     },
     "excelTablePaste": {
       "clicks": 0,
       "clickDefinition": "Ctrl+V/paste event into the grid",
-      "responseMs": 62.56
+      "responseMs": 74.81
     },
     "autosave": {
       "clicks": 0,
       "clickDefinition": "automatic after keyboard entry",
-      "responseMs": 235.03
+      "responseMs": 213.17
     },
     "autosaveRestore": {
       "clicks": 1,
@@ -267,8 +267,8 @@
         "mode": "purchase",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 1120.79,
-        "saveFeedbackMs": 103.51,
+        "modeAndEntryReadyMs": 606,
+        "saveFeedbackMs": 100.48,
         "currentResult": "SAVED",
         "feedback": "공식 구매전표 1건 저장 완료",
         "dateDeleteEvidence": {
@@ -305,8 +305,8 @@
         "mode": "sale",
         "clickCount": 6,
         "clickDefinition": "mode tab + add row + customer chooser + customer checkbox + chooser apply + Save; field and product entry use keyboard",
-        "modeAndEntryReadyMs": 232.98,
-        "saveFeedbackMs": 102.39,
+        "modeAndEntryReadyMs": 198.77,
+        "saveFeedbackMs": 100.2,
         "currentResult": "SAVED",
         "feedback": "공식 판매전표 1건 저장 완료",
         "dom": {
@@ -599,14 +599,24 @@
     "phase6AReadModel": {
       "databaseVersion": 7,
       "reviewStatus": "READY",
-      "reviewCount": 2,
+      "reviewCount": 3,
       "linkCounts": [
+        1,
         1,
         2
       ],
       "officialQuantityNull": true,
       "traceComplete": true,
       "noAutoConfirmation": true,
+      "crossCompanyPayloadHidden": true,
+      "crossCompanyReviewStatus": "REVIEW_REQUIRED",
+      "crossCompanyIssues": [
+        "SOURCE_DOCUMENT_COMPANY_MISMATCH",
+        "SOURCE_LINE_COMPANY_MISMATCH",
+        "VOUCHER_REVISION_COMPANY_MISMATCH",
+        "INPUT_QUANTITY_INVALID",
+        "SIGNED_QUANTITY_INVALID"
+      ],
       "previewStatus": "APPLY_READY",
       "previewEffects": 2,
       "previewWrites": {
@@ -822,12 +832,12 @@
       {
         "conflictKey": "STC-ed6b57ed0bc22a8563fc6b9088d40c74",
         "decisionType": "INCLUDED_IN_CHECKPOINT",
-        "judgedAt": "2026-09-02T16:03:23.393Z"
+        "judgedAt": "2026-09-02T16:19:11.910Z"
       },
       {
         "conflictKey": "STC-3730067acd4fa6ce3cd269f792cf3a8f",
         "decisionType": "NOT_INCLUDED_IN_CHECKPOINT",
-        "judgedAt": "2026-09-02T16:03:23.397Z"
+        "judgedAt": "2026-09-02T16:19:11.920Z"
       }
     ],
     "themes": [

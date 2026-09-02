@@ -353,6 +353,169 @@ assert.ok(damagedIdItem, 'a pending effect with a missing unresolvedProductId mu
 assert.equal(damagedIdItem.integrity.status, UNRESOLVED_REVIEW_INTEGRITY.REVIEW_REQUIRED);
 assert.ok(damagedIdItem.integrity.issues.some(issue => issue.code === 'PENDING_EFFECT_UNRESOLVED_ID_MISSING'));
 
+const conflictingLinkSource = structuredClone(source);
+const conflictingRecord = conflictingLinkSource.unresolvedProducts
+  .find(item => item.unresolvedProductId === unresolvedProductId);
+const conflictingReviewLink = conflictingRecord.reviewLinks
+  .find(item => item.pendingEffectId === before.pendingEffectId);
+Object.assign(conflictingReviewLink, {
+  companyId: otherCompanyId,
+  unresolvedProductId: 'UP-CONFLICTING-SCOPE',
+  voucherMode: 'sale',
+  sourceDocumentId: 'SD-CONFLICTING-LINK',
+  sourceLineId: 'SL-CONFLICTING-LINK',
+  sourceDocumentRevision: 99,
+  voucherRevisionId: 'VR-CONFLICTING-LINK',
+  commandId: 'COMMAND-CONFLICTING-LINK',
+  warehouseId: 'WAREHOUSE-CONFLICTING-LINK',
+  businessDate: '2026-07-01',
+  businessOccurredAt: '2026-07-01T01:00:00.000Z',
+  quantity: 777,
+  signedQuantity: -777,
+  inventoryEffectStatus: 'CORRUPT',
+  officialInventoryApplied: true,
+  productSnapshot: {
+    originalProductCode: 'CONFLICTING-CODE',
+    originalProductName: 'CONFLICTING-NAME',
+    specification: 'CONFLICTING-SPEC',
+    unit: 'CONFLICTING-UNIT'
+  }
+});
+const conflictingLinkModel = buildUnresolvedReviewReadModel({
+  companyId,
+  source: conflictingLinkSource,
+  productSnapshot,
+  generatedAt,
+  query: { limit: 20, filters: { unresolvedProductId } }
+});
+const conflictingItem = conflictingLinkModel.items[0];
+const conflictingLink = conflictingItem.links.find(item => item.pendingEffectId === before.pendingEffectId);
+assert.equal(conflictingItem.aggregate.linkCount, 3,
+  'a conflicting duplicate pendingEffectId must stay one reconciled link');
+assert.equal(conflictingLink.integrity.status, UNRESOLVED_REVIEW_INTEGRITY.REVIEW_REQUIRED,
+  'conflicting review-link evidence must never remain READY');
+assert.equal(conflictingItem.integrity.status, UNRESOLVED_REVIEW_INTEGRITY.REVIEW_REQUIRED);
+const mismatchedFields = conflictingLink.integrity.issues
+  .filter(issue => issue.code === 'REVIEW_LINK_PENDING_EFFECT_FIELD_MISMATCH')
+  .map(issue => issue.detail);
+assert.deepEqual(mismatchedFields, [
+  'companyId', 'unresolvedProductId', 'voucherMode', 'sourceDocumentId', 'sourceLineId',
+  'sourceDocumentRevision', 'voucherRevisionId', 'commandId', 'warehouseId', 'businessDate',
+  'businessOccurredAt', 'quantity', 'signedQuantity', 'inventoryEffectStatus',
+  'officialInventoryApplied', 'originalProductCode', 'originalProductName', 'specification', 'unit'
+], 'every conflicting core field must remain explicit issue evidence');
+assert.equal(conflictingLink.integrity.issues.some(issue => issue.code === 'REVIEW_LINK_COMPANY_MISMATCH'), true);
+assert.equal(conflictingLink.integrity.issues.some(issue => issue.code === 'REVIEW_LINK_UNRESOLVED_ID_MISMATCH'), true);
+assert.equal(conflictingLink.originalProductCode, before.originalProductCode,
+  'pending owner evidence remains the displayed canonical value after reporting the conflict');
+assert.equal(conflictingLink.inputQuantity, before.quantity);
+assert.equal(conflictingLink.signedQuantity, before.signedQuantity);
+
+const externalPayloadSource = {
+  unresolvedProducts: [{
+    unresolvedProductId: 'UP-CROSS-COMPANY-TARGET',
+    companyId,
+    status: 'UNRESOLVED_PRODUCT',
+    originalProductCode: '',
+    originalProductName: '',
+    reviewLinks: [{
+      pendingEffectId: 'E-CROSS-COMPANY-TARGET',
+      voucherMode: 'purchase',
+      sourceDocumentId: 'PD-CROSS-COMPANY-TARGET',
+      sourceLineId: 'PL-CROSS-COMPANY-TARGET',
+      sourceDocumentRevision: 1,
+      voucherRevisionId: 'VR-CROSS-COMPANY-TARGET'
+    }]
+  }],
+  pendingInventoryEffects: [{
+    pendingEffectId: 'E-CROSS-COMPANY-TARGET',
+    companyId,
+    unresolvedProductId: 'UP-CROSS-COMPANY-TARGET',
+    status: 'PENDING_PRODUCT_MATCH',
+    inventoryEffectStatus: 'UNRESOLVED_PRODUCT',
+    officialInventoryApplied: false,
+    voucherMode: 'purchase',
+    sourceDocumentId: 'PD-CROSS-COMPANY-TARGET',
+    sourceLineId: 'PL-CROSS-COMPANY-TARGET',
+    sourceDocumentRevision: 1,
+    voucherRevisionId: 'VR-CROSS-COMPANY-TARGET'
+  }],
+  purchaseDocuments: [{
+    purchaseDocumentId: 'PD-CROSS-COMPANY-TARGET',
+    companyId: otherCompanyId,
+    status: 'LEAK-DOCUMENT-STATUS',
+    warehouseId: 'LEAK-WAREHOUSE',
+    businessDate: '2099-12-31',
+    businessOccurredAt: 'LEAK-DOCUMENT-TIME',
+    revision: 1
+  }],
+  purchaseLines: [{
+    purchaseLineId: 'PL-CROSS-COMPANY-TARGET',
+    purchaseDocumentId: 'PD-CROSS-COMPANY-TARGET',
+    companyId: otherCompanyId,
+    warehouseId: 'LEAK-LINE-WAREHOUSE',
+    originalProductCode: 'LEAK-PRODUCT-CODE',
+    originalProductName: 'LEAK-PRODUCT-NAME',
+    specification: 'LEAK-SPECIFICATION',
+    unit: 'LEAK-UNIT',
+    actualQuantity: 987654321,
+    businessOccurredAt: 'LEAK-LINE-TIME',
+    productSnapshot: { productName: 'LEAK-SNAPSHOT-NAME' }
+  }],
+  salesDocuments: [],
+  salesLines: [],
+  voucherRevisions: [{
+    voucherRevisionId: 'VR-CROSS-COMPANY-TARGET',
+    documentId: 'LEAK-REVISION-DOCUMENT',
+    companyId: otherCompanyId,
+    status: 'LEAK-REVISION-STATUS',
+    revision: 999,
+    afterSnapshot: { memo: 'LEAK-REVISION-PAYLOAD' }
+  }],
+  inventoryCheckpoints: []
+};
+const externalPayloadModel = buildUnresolvedReviewReadModel({
+  companyId,
+  source: externalPayloadSource,
+  productSnapshot: { status: 'EMPTY', data: { products: [] } },
+  generatedAt,
+  query: { limit: 20 }
+});
+const externalItem = externalPayloadModel.items[0];
+const externalLink = externalItem.links[0];
+assert.equal(externalLink.integrity.status, UNRESOLVED_REVIEW_INTEGRITY.REVIEW_REQUIRED);
+assert.equal(externalItem.integrity.status, UNRESOLVED_REVIEW_INTEGRITY.REVIEW_REQUIRED);
+assert.equal(externalLink.integrity.issues.some(issue => issue.code === 'SOURCE_DOCUMENT_COMPANY_MISMATCH'), true);
+assert.equal(externalLink.integrity.issues.some(issue => issue.code === 'SOURCE_LINE_COMPANY_MISMATCH'), true);
+assert.equal(externalLink.integrity.issues.some(issue => issue.code === 'VOUCHER_REVISION_COMPANY_MISMATCH'), true);
+assert.deepEqual({
+  code: externalLink.originalProductCode,
+  name: externalLink.originalProductName,
+  specification: externalLink.specification,
+  unit: externalLink.unit,
+  warehouseId: externalLink.warehouseId,
+  businessDate: externalLink.businessDate,
+  businessOccurredAt: externalLink.businessOccurredAt,
+  inputQuantity: externalLink.inputQuantity,
+  signedQuantity: externalLink.signedQuantity,
+  productSnapshot: externalLink.productSnapshot
+}, {
+  code: '', name: '', specification: '', unit: '', warehouseId: '', businessDate: '',
+  businessOccurredAt: '', inputQuantity: null, signedQuantity: null, productSnapshot: {}
+}, 'cross-company point-get targets must never supply fallback payload values');
+assert.equal(JSON.stringify(externalPayloadModel).includes('LEAK-'), false,
+  'no external-company document, line, revision, or product payload may reach the read model result');
+const externalPayloadAdapter = createUnresolvedReviewReadAdapter({
+  readOwnerSources: async () => structuredClone(externalPayloadSource),
+  readProductSnapshot: async () => ({
+    status: 'EMPTY', snapshot: { status: 'EMPTY', data: { products: [] } }, error: null
+  })
+});
+const externalPayloadAdapterResult = await externalPayloadAdapter.getReviewResult({ companyId, limit: 20, generatedAt });
+assert.equal(externalPayloadAdapterResult.status, 'READY');
+assert.equal(JSON.stringify(externalPayloadAdapterResult).includes('LEAK-'), false,
+  'Adapter output must not expose any external-company point-get payload');
+
 const filtered = buildUnresolvedReviewReadModel({
   companyId,
   source,

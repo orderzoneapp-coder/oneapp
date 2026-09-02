@@ -565,6 +565,36 @@ try {
     const adapter=adapterModule.createUnresolvedReviewReadAdapter({readProductSnapshot:async()=>productResult});
     const db=await dbModule.openOrderQDb();
     const relevantStores=['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','salesDocuments','salesLines','voucherRevisions','inventoryCheckpoints'];
+    const adversarialTx=db.transaction(['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','voucherRevisions'],'readwrite');
+    adversarialTx.objectStore('unresolvedProducts').put({
+      unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',status:'UNRESOLVED_PRODUCT',
+      originalProductCode:'',originalProductName:'',reviewLinks:[{
+        pendingEffectId:'E-PHASE6A-CROSS-COMPANY',voucherMode:'purchase',sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',
+        sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',
+        warehouseId:'PHASE6A-WH-SAFE',businessDate:'2026-09-03',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false
+      }]
+    });
+    adversarialTx.objectStore('pendingInventoryEffects').put({
+      pendingEffectId:'E-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',
+      status:'PENDING_PRODUCT_MATCH',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false,voucherMode:'purchase',
+      sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',warehouseId:'PHASE6A-WH-SAFE',effectiveAt:'2026-09-03'
+    });
+    adversarialTx.objectStore('purchaseDocuments').put({
+      purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',status:'CONFIRMED',revision:1,
+      warehouseId:'PHASE6A-LEAK-DOCUMENT-WAREHOUSE',businessDate:'2099-12-31',businessOccurredAt:'PHASE6A-LEAK-DOCUMENT-TIME'
+    });
+    adversarialTx.objectStore('purchaseLines').put({
+      purchaseLineId:'PL-PHASE6A-CROSS-COMPANY',purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      originalProductCode:'PHASE6A-LEAK-CODE',originalProductName:'PHASE6A-LEAK-NAME',specification:'PHASE6A-LEAK-SPEC',
+      unit:'PHASE6A-LEAK-UNIT',actualQuantity:987654321,businessOccurredAt:'PHASE6A-LEAK-LINE-TIME',
+      productSnapshot:{productName:'PHASE6A-LEAK-SNAPSHOT'}
+    });
+    adversarialTx.objectStore('voucherRevisions').put({
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',documentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      status:'CONFIRMED',revision:1,afterSnapshot:{memo:'PHASE6A-LEAK-REVISION'}
+    });
+    await dbModule.transactionDone(adversarialTx);
     const count=async()=>{const tx=db.transaction(relevantStores,'readonly');const pairs=await Promise.all(relevantStores.map(async name=>[name,(await dbModule.requestToPromise(tx.objectStore(name).getAll())).length]));await dbModule.transactionDone(tx);return Object.fromEntries(pairs);};
     const before=await count();
     const objectStoreMethods=['put','add','delete','clear'];
@@ -586,6 +616,7 @@ try {
       IDBDatabase.prototype.transaction=transactionOriginal;
     }
     const after=await count();
+    const crossCompanyItem=review.items.find(item=>item.unresolvedProductId==='UP-PHASE6A-CROSS-COMPANY');
     db.close();
     return {
       databaseVersion:dbModule.DB_VERSION,
@@ -595,6 +626,10 @@ try {
       officialQuantityNull:review.items.every(item=>item.officialInventory.officialQuantity===null&&item.links.every(link=>link.officialInventory.officialQuantity===null)),
       traceComplete:review.items.every(item=>item.links.every(link=>link.sourceVoucher.documentId&&link.sourceVoucher.lineId&&link.sourceVoucher.revisionId&&link.sourceVoucher.detailHref)),
       noAutoConfirmation:review.items.every(item=>item.candidates.every(candidate=>candidate.automaticConfirmation===false)),
+      crossCompanyPayloadHidden:crossCompanyItem
+        && !JSON.stringify(crossCompanyItem).includes('PHASE6A-LEAK-'),
+      crossCompanyReviewStatus:crossCompanyItem?.integrity?.status,
+      crossCompanyIssues:crossCompanyItem?.links[0]?.integrity?.issues?.map(issue=>issue.code)||[],
       previewStatus:preview.status,
       previewEffects:preview.summary.affectedEffectCount,
       previewWrites:preview.officialWritePlan,
@@ -613,9 +648,15 @@ try {
     traceComplete: officialV2Phase6AReadResult.traceComplete,
     noAutoConfirmation: officialV2Phase6AReadResult.noAutoConfirmation
   }, {
-    status: 'READY', count: 2, links: [1, 2], officialQuantityNull: true,
+    status: 'READY', count: 3, links: [1, 1, 2], officialQuantityNull: true,
     traceComplete: true, noAutoConfirmation: true
   }, 'ORDER Q owner read adapter must expose every Stage 4 unresolved link without direct consumer Store access');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyPayloadHidden, true,
+    'cross-company point-get payload must not reach the owner Adapter output');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyReviewStatus, 'REVIEW_REQUIRED');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_DOCUMENT_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_LINE_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('VOUCHER_REVISION_COMPANY_MISMATCH'), true);
   assert.equal(officialV2Phase6AReadResult.previewStatus, 'APPLY_READY');
   assert.equal(officialV2Phase6AReadResult.previewEffects, 2);
   assert.deepEqual(officialV2Phase6AReadResult.previewWrites, {
