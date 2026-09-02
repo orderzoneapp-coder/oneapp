@@ -1,10 +1,9 @@
 import {
-  buildFrozenSaleIntent,
-  findOfficialSaleBySource,
-  loadOfficialSaleAggregate,
-  runCentralOfficialVoucherCommand,
-  saveOfficialVoucherDraft
-} from '../orderq/official-voucher-repository.js?v=0.21.0';
+  beginSaleCommand,
+  commitSaleCommand,
+  findSaleCommandContext,
+  freezeSaleCommandIntent
+} from '../orderq/official-command-adapter.js?v=0.1.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
@@ -156,20 +155,20 @@ export function buildSalePostDraft(group = {}, context = {}) {
   const commandSource = { ...document, document, lines, commandType: 'POST_SALE', aggregateId: identity.salesDocumentId,
     expectedRevision: 1, commandId, idempotencyKey: commandId, actor: text(context.actor || SMARTINPUT_SALE_ACTOR_ID),
     actorId: text(context.actor || SMARTINPUT_SALE_ACTOR_ID), reason: 'SALE_POST', occurredAt };
-  return { ...document, ...buildFrozenSaleIntent(commandSource), lines, commandSource };
+  return { ...document, ...freezeSaleCommandIntent(commandSource), lines, commandSource };
 }
 
 export async function postSaleGroup(group, context = {}) {
   if (context.masters) validateSaleGroup(group, context.masters);
   const identity = deriveSaleDraftIdentity(group, context);
-  const existing = await findOfficialSaleBySource({ ...identity, companyId: text(context.companyId || group.companyId) });
-  let aggregate = existing ? await loadOfficialSaleAggregate(existing.salesDocumentId) : null;
+  const commandContext = await findSaleCommandContext({ ...identity, companyId: text(context.companyId || group.companyId) });
+  let aggregate = commandContext.aggregate;
   const storedEnvelope = aggregate?.document?.commandEnvelope || null;
   const draft = buildSalePostDraft(group, storedEnvelope ? { ...context, occurredAt: storedEnvelope.occurredAt, actor: storedEnvelope.actorId } : context);
   if (aggregate && storedEnvelope && text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) throw new Error('ORDERQ_SALE_DRAFT_IDENTITY_CONFLICT');
-  if (!aggregate) aggregate = await saveOfficialVoucherDraft({ kind: 'SALE', ...draft, salesDocumentId: draft.salesDocumentId }, context.actor || SMARTINPUT_SALE_ACTOR_ID);
+  if (!aggregate) aggregate = await beginSaleCommand(draft, context.actor || SMARTINPUT_SALE_ACTOR_ID);
   const envelope = aggregate.document?.commandEnvelope || draft.commandEnvelope;
-  const result = await runCentralOfficialVoucherCommand({ ...envelope, intent: envelope, actor: envelope.actorId,
+  const result = await commitSaleCommand({ ...envelope, intent: envelope, actor: envelope.actorId,
     salesDocumentId: draft.salesDocumentId, document: envelope.document, lines: envelope.lines, commandContract: 'VOUCHER_CORE_V1' });
   return { ...result, salesDocumentId: draft.salesDocumentId, commandId: envelope.commandId };
 }

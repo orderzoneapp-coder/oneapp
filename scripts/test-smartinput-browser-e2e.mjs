@@ -461,6 +461,14 @@ try {
     status: 'DRAFT', revision: 1, lines: ['DRAFT'], revisions: 0, inventory: 0,
     ledger: 0, pending: 0, commands: 0, queue: 0, unresolved: 0
   }, 'an injected finalize failure must leave the pre-existing draft intact and commit zero partial effects');
+  const officialGatewayRollbackResult = await evaluate(client, `(async()=>{const repo=await import('/orderq/official-voucher-repository.js?gateway-rollback-read=1');const gateway=await import('/orderq/official-command-gateway.js?gateway-rollback-e2e=1');const id='PD-E2E-ROLLBACK';const before=await repo.loadOfficialPurchaseAggregate(id);let error='';try{const envelope=before.document.commandEnvelope;await gateway.OfficialCommandGateway.execute({...envelope,intent:envelope});}catch(cause){error=(cause?.name||'')+':'+(cause?.message||String(cause));}const after=await repo.loadOfficialPurchaseAggregate(id);return {error,status:after.document.status,revision:after.document.revision,revisions:after.revisions.length,inventory:after.inventoryMovements.length,ledger:after.ledgerEntries.length,pending:after.pendingInventoryEffects.length,commands:after.commands.length};})()`);
+  const { error: officialGatewayRollbackError, ...officialGatewayRollbackState } = officialGatewayRollbackResult;
+  assert.match(officialGatewayRollbackError, /ConstraintError|AbortError|IndexedDB transaction failed/,
+    'the owner Gateway must propagate the same injected repository transaction failure');
+  assert.deepEqual(officialGatewayRollbackState, {
+    status: 'DRAFT', revision: 1, revisions: 0, inventory: 0,
+    ledger: 0, pending: 0, commands: 0
+  }, 'Gateway-routed failure must preserve the same zero-partial-write rollback result');
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
   assert.equal(officialSyncResult.online, true);
   assert.equal(officialSyncResult.applied >= 3, true, 'legacy waiting official rows must become uploadable without rewriting the local voucher');
@@ -796,6 +804,7 @@ try {
     officialTransaction: {
       successBaseline: officialResult,
       injectedFailure: officialRollbackResult,
+      gatewayInjectedFailure: officialGatewayRollbackResult,
       expectedFinalizeTransactionCount: 1,
       partialFinalizeWritesAfterFailure: 0
     },

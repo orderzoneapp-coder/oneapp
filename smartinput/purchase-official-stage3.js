@@ -1,10 +1,10 @@
 import {
-  buildFrozenPurchaseIntent,
-  findOfficialPurchaseBySource,
-  loadOfficialPurchaseAggregate,
-  runCentralOfficialVoucherCommand,
-  saveOfficialVoucherDraft
-} from '../orderq/official-voucher-repository.js?v=0.21.0';
+  beginPurchaseCommand,
+  commitPurchaseCommand,
+  findPurchaseCommandContext,
+  freezePurchaseCommandIntent,
+  loadPurchaseCommandAggregate
+} from '../orderq/official-command-adapter.js?v=0.1.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
@@ -172,7 +172,7 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
     actor: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), actorId: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), reason: 'PURCHASE_POST', occurredAt,
     commandContract: 'VOUCHER_CORE_V1', ...document, document, lines
   };
-  return { ...document, ...buildFrozenPurchaseIntent(commandSource), lines, commandSource };
+  return { ...document, ...freezePurchaseCommandIntent(commandSource), lines, commandSource };
 }
 
 export function resolvePersistedPurchaseRetry(group = {}, context = {}, aggregate = null) {
@@ -195,23 +195,24 @@ export async function postPurchaseGroup(group, context = {}) {
     purchasePlanId: source.purchasePlanId, externalDocumentNo: source.externalDocumentNo,
     sourceVoucherIndex: source.sourceVoucherIndex
   };
-  const existing = await findOfficialPurchaseBySource(identity);
+  const commandContext = await findPurchaseCommandContext(identity);
+  const existing = commandContext.document;
   if (existing && text(existing.purchaseDocumentId) !== text(source.purchaseDocumentId)) throw new Error(`ORDERQ_PURCHASE_ORIGIN_DUPLICATE:${source.sourceDocumentKey}`);
-  let aggregate = existing ? await loadOfficialPurchaseAggregate(existing.purchaseDocumentId) : null;
+  let aggregate = commandContext.aggregate;
   const retry = resolvePersistedPurchaseRetry(group, context, aggregate);
   const draft = retry.draft;
   if (!aggregate) {
-    try { aggregate = await saveOfficialVoucherDraft({ kind: 'PURCHASE', ...draft, purchaseDocumentId: draft.purchaseDocumentId }, context.actor || SMARTINPUT_PURCHASE_ACTOR_ID); }
+    try { aggregate = await beginPurchaseCommand(draft, context.actor || SMARTINPUT_PURCHASE_ACTOR_ID); }
     catch (error) {
       if (!text(error?.message).startsWith('ORDERQ_OFFICIAL_DRAFT_EXISTS:')) throw error;
-      aggregate = await loadOfficialPurchaseAggregate(draft.purchaseDocumentId);
+      aggregate = await loadPurchaseCommandAggregate(draft.purchaseDocumentId);
       if (!aggregate || text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) throw new Error('ORDERQ_PURCHASE_DRAFT_IDENTITY_CONFLICT');
     }
   }
   // Retrying a lost response must resend the byte-identical persisted command;
   // wall-clock time and current UI state can never replace this envelope.
   const envelope = aggregate.document?.commandEnvelope || retry.envelope;
-  const result = await runCentralOfficialVoucherCommand({
+  const result = await commitPurchaseCommand({
     ...envelope,
     intent: envelope,
     actor: envelope.actorId,
