@@ -4,8 +4,8 @@ import {
   findPurchaseCommandContext,
   freezePurchaseCommandIntent,
   loadPurchaseCommandAggregate
-} from '../orderq/official-command-adapter.js?v=0.1.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
+} from '../orderq/official-command-adapter.js?v=0.2.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.21.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -13,7 +13,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.1.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.2.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1',
@@ -164,7 +164,9 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
   const lines = sourceRows.map((row, index) => {
     const actualQuantity = finiteRequired(row.actualQuantity ?? row.quantity, 'ORDERQ_PURCHASE_QUANTITY_REQUIRED');
     const unitPrice = finiteRequired(row.unitPrice, 'ORDERQ_PURCHASE_UNIT_PRICE_REQUIRED');
-    const conversionFactor = finiteRequired(row.conversionFactor ?? 1, 'ORDERQ_PURCHASE_CONVERSION_REQUIRED');
+    const conversionFactor = identityV2
+      ? 1
+      : finiteRequired(row.conversionFactor ?? 1, 'ORDERQ_PURCHASE_CONVERSION_REQUIRED');
     const sourceRowKey = canonicalSha256({ sourceSheetName: text(row.sourceSheetName), sourceRowNo: Number(row.sourceRowNo || index + 1), sourceVoucherIndex });
     const sourceLineKey = sourceType === 'ORDER_Q' && text(row.sourceLineKey)
       ? text(row.sourceLineKey)
@@ -177,19 +179,24 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
     const supplyAmount = row.supplyAmount ?? row.supplyAmountWon ?? calculatedSupplyAmount;
     const vatAmount = row.vatAmount ?? row.vatAmountWon ?? null;
     const totalAmount = row.totalAmount ?? row.totalAmountWon ?? row.amountWon ?? supplyAmount;
-    const productId = text(row.productId);
+    const officialProductResolution = identityV2 ? row.officialProductResolution : null;
+    if (identityV2 && !officialProductResolution) throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_REQUIRED');
+    const productId = identityV2
+      ? (text(officialProductResolution.status) === 'MATCHED' ? text(officialProductResolution.matchedProductId) : '')
+      : text(row.productId);
     const unresolvedProductId = text(row.unresolvedProductId)
       || (!productId ? unresolvedProductStableId(companyId, row) : '');
     const productSnapshot = identityV2 ? {
       ...row.productSnapshot,
       matchEvidence: {
         ...row.productSnapshot.matchEvidence,
-        status: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED')).toUpperCase(),
+        status: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED_PRODUCT')).toUpperCase(),
         source: text(row.matchSource || row.referenceResolution),
         productId,
         unresolvedProductId,
         productMasterRevision: Number(row.productMasterRevision || 0),
-        referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId)
+        referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId),
+        officialProductResolution
       }
     } : null;
     const lineIdentity = identityV2 ? createOfficialLineIdentityV2({
@@ -210,9 +217,11 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
       ...(identityV2 ? {
         originalProductCode: productSnapshot.originalProductCode,
         originalProductName: productSnapshot.originalProductName,
-        matchStatus: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED')).toUpperCase(),
+        matchStatus: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED_PRODUCT')).toUpperCase(),
         matchSource: text(row.matchSource || row.referenceResolution),
         referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId),
+        officialProductResolution,
+        inventoryEffectFactor: 1,
         productSnapshot
       } : {}),
       specification: text(row.specification), warehouseId: text(row.warehouseId || group.warehouseId),
@@ -220,7 +229,9 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
       unit: identityV2 ? productSnapshot.unit : text(row.unit).toUpperCase(),
       suggestedQuantity: row.suggestedQuantity === null || row.suggestedQuantity === undefined ? null : Number(row.suggestedQuantity),
       suggestedBaseQuantity: row.suggestedBaseQuantity === null || row.suggestedBaseQuantity === undefined ? null : Number(row.suggestedBaseQuantity),
-      conversionFactor, baseQuantity: finiteRequired(row.baseQuantity ?? actualQuantity * conversionFactor, 'ORDERQ_PURCHASE_BASE_QUANTITY_REQUIRED'),
+      conversionFactor, baseQuantity: identityV2
+        ? actualQuantity
+        : finiteRequired(row.baseQuantity ?? actualQuantity * conversionFactor, 'ORDERQ_PURCHASE_BASE_QUANTITY_REQUIRED'),
       baseUnit: text(row.baseUnit || row.unit).toUpperCase(), unitPrice, supplyAmount, vatAmount,
       totalAmount: identityV2 ? productSnapshot.amount : totalAmount,
       taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', productMasterRevision: Number(row.productMasterRevision || 0),
@@ -231,7 +242,9 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
   const commandId = `POST_PURCHASE:${commandSeed}`;
   const document = {
     companyId, purchaseDocumentId, supplierCustomerId: text(group.supplierCustomerId), supplierCustomerCode: text(group.supplierCustomerCode),
-    supplierCustomerName: text(group.supplierCustomerName), purchaseDate: identityV2 ? preflight.businessDate : text(group.voucherDate),
+    supplierCustomerName: text(group.supplierCustomerName),
+    ...(identityV2 ? { supplierCustomerRevision: Number(group.supplierCustomerRevision || 0) } : {}),
+    purchaseDate: identityV2 ? preflight.businessDate : text(group.voucherDate),
     warehouseId: text(group.warehouseId), warehouseCode: text(group.warehouseCode), warehouseName: text(group.warehouseName || group.warehouseCode),
     taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', sourceType, contractKind: 'PURCHASE_STAGE3_V1', sourceDocumentKey,
     normalizedOriginVersion: 'PURCHASE_V2', originSystem, originTransactionId, externalDocumentNo,
@@ -244,7 +257,8 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
       entityType: identity.entityType,
       identitySeed: identity.identitySeed,
       businessDate: preflight.businessDate,
-      businessDateDayDefaulted: preflight.dayDefaulted
+      businessDateDayDefaulted: preflight.dayDefaulted,
+      officialPartnerResolution: group.officialPartnerResolution
     } : {})
   };
   const commandBase = {

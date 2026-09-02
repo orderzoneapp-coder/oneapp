@@ -14,8 +14,8 @@ import {
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.3.0';
-import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.1.0';
-import { SaleFinalizeService } from './sale-finalize-service.js?v=0.1.0';
+import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.2.0';
+import { SaleFinalizeService } from './sale-finalize-service.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {

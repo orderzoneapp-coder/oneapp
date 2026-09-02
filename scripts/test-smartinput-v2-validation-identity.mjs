@@ -47,27 +47,73 @@ function baseRow(overrides = {}) {
   };
 }
 
+function withProductResolution(row, companyId) {
+  if (row.officialProductResolution) return row;
+  const inputProductCode = String(Object.prototype.hasOwnProperty.call(row, 'originalProductCode')
+    ? row.originalProductCode
+    : row.itemCode || row.productCode || '').trim();
+  const matched = Boolean(inputProductCode && row.productId);
+  return {
+    ...row,
+    officialProductResolution: matched ? {
+      status: 'MATCHED', reason: 'EXACT_COMPANY_PRODUCT_CODE', companyId,
+      inputProductCode, matchedProductCode: String(row.itemCode || row.productCode || '').trim(),
+      matchedProductId: row.productId, productMasterRevision: Number(row.productMasterRevision || 0),
+      referenceSnapshotId: row.referenceSnapshotId || ''
+    } : {
+      status: 'UNRESOLVED_PRODUCT', reason: inputProductCode ? 'PRODUCT_CODE_UNMATCHED' : 'PRODUCT_CODE_NOT_PROVIDED',
+      companyId, inputProductCode, matchedProductCode: '', matchedProductId: '', productMasterRevision: 0,
+      referenceSnapshotId: row.referenceSnapshotId || ''
+    }
+  };
+}
+
+function withPartnerResolution(kind, group) {
+  if (group.officialPartnerResolution) return group;
+  const purchase = kind === 'PURCHASE';
+  const code = String(purchase ? group.supplierCustomerCode : group.billingCustomerCode || group.salesCustomerCode || '').trim();
+  const id = String(purchase ? group.supplierCustomerId : group.billingCustomerId || group.salesCustomerId || '').trim();
+  const matched = Boolean(code && id);
+  return {
+    ...group,
+    officialPartnerResolution: matched ? {
+      status: 'MATCHED', reason: 'EXACT_COMPANY_CUSTOMER_CODE', companyId: group.companyId,
+      partnerRole: purchase ? 'SUPPLIER' : (group.billingCustomerCode ? 'BILLING' : 'SALES'),
+      inputCustomerCode: code, matchedCustomerCode: code, matchedCustomerId: id
+    } : {
+      status: code ? 'UNRESOLVED_CUSTOMER' : 'CUSTOMER_NOT_PROVIDED',
+      reason: code ? 'CUSTOMER_CODE_UNMATCHED' : 'CUSTOMER_CODE_NOT_PROVIDED', companyId: group.companyId,
+      partnerRole: purchase ? 'SUPPLIER' : (group.billingCustomerCode ? 'BILLING' : 'SALES'),
+      inputCustomerCode: code, matchedCustomerCode: '', matchedCustomerId: ''
+    }
+  };
+}
+
 function purchaseGroup(overrides = {}) {
   const rows = overrides.rows || [baseRow()];
-  return {
+  const group = {
     companyId: 'COMPANY-A', voucherGroupKey: 'PURCHASE|SOURCE-A|GROUP-A',
     supplierCustomerId: 'CUSTOMER-A', supplierCustomerCode: 'C-A', supplierCustomerName: '구매처 A',
     voucherDate: '2026-09-02', warehouseId: 'WAREHOUSE-A', warehouseCode: 'WH-A',
-    sourceDocumentKey: 'SOURCE-A', sourceVoucherIndex: 1, rows, ...overrides, rows
+    sourceDocumentKey: 'SOURCE-A', sourceVoucherIndex: 1, rows, ...overrides
   };
+  group.rows = rows.map(row => withProductResolution(row, group.companyId));
+  return withPartnerResolution('PURCHASE', group);
 }
 
 function saleGroup(overrides = {}) {
   const rows = overrides.rows || [baseRow({ actualToBaseFactor: 1 })];
-  return {
+  const group = {
     companyId: 'COMPANY-A', voucherGroupKey: 'SALE|SOURCE-A|GROUP-A',
     originSystem: 'SMARTINPUT_FILE', originTransactionId: 'SALE-SOURCE-A', sourceDocumentKey: 'SOURCE-A',
-    salesCustomerId: 'CUSTOMER-A', salesCustomerName: '판매처 A', salesCustomerRevision: 1,
+    salesCustomerId: 'CUSTOMER-A', salesCustomerCode: 'C-A', salesCustomerName: '판매처 A', salesCustomerRevision: 1,
     deliveryCustomerId: 'CUSTOMER-A', deliveryCustomerName: '판매처 A', deliveryCustomerRevision: 1,
-    billingCustomerId: 'CUSTOMER-A', billingCustomerName: '판매처 A', billingCustomerRevision: 1,
+    billingCustomerId: 'CUSTOMER-A', billingCustomerCode: 'C-A', billingCustomerName: '판매처 A', billingCustomerRevision: 1,
     voucherDate: '2026-09-02', warehouseId: 'WAREHOUSE-A', warehouseCode: 'WH-A',
-    sourceVoucherIndex: 1, rows, ...overrides, rows
+    sourceVoucherIndex: 1, rows, ...overrides
   };
+  group.rows = rows.map(row => withProductResolution(row, group.companyId));
+  return withPartnerResolution('SALE', group);
 }
 
 function v2Context(companyId = 'COMPANY-A') {
@@ -152,7 +198,7 @@ const glyphSnapshotSource = baseRow({
   itemName: ' ㈜金사과 ',
   specification: ' １０㎏ ',
   unit: ' ＢＯＸ ',
-  originalProductCode: ' ０A① ',
+  originalProductCode: ' ０００７ ',
   originalProductName: ' ㈜金 원본 '
 });
 for (const kind of ['PURCHASE', 'SALE']) {
@@ -176,7 +222,7 @@ for (const kind of ['PURCHASE', 'SALE']) {
     productName: '㈜金사과',
     specification: '１０㎏',
     unit: 'ＢＯＸ',
-    originalProductCode: '０A①',
+    originalProductCode: '０００７',
     originalProductName: '㈜金 원본'
   });
 }
@@ -197,7 +243,7 @@ assert.notEqual(saleA.salesDocumentId, saleGroupB.salesDocumentId);
 assert.throws(() => deriveSaleDraftIdentity(saleGroup({ voucherGroupKey: '' }), v2Context()), /SALE_GROUP_KEY_REQUIRED/);
 
 const purchaseDraft = buildPurchasePostDraft(purchaseGroup({
-  rows: [baseRow({ originalProductCode: '원본-0007', originalProductName: '원본 사과', totalAmount: -25 })]
+  rows: [baseRow({ originalProductCode: '０００７', originalProductName: '원본 사과', totalAmount: -25 })]
 }), v2Context());
 const saleSource = saleGroup();
 const saleDraft = buildSalePostDraft(saleSource, v2Context());
@@ -211,7 +257,7 @@ for (const draft of [purchaseDraft, saleDraft]) {
   assert.equal(command.document.companyId, 'COMPANY-A');
   assert.ok(command.lines.every(line => line.companyId === 'COMPANY-A'));
 }
-assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductCode, '원본-0007');
+assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductCode, '０００７');
 assert.equal(purchaseDraft.lines[0].productSnapshot.originalProductName, '원본 사과');
 assert.equal(purchaseDraft.lines[0].productSnapshot.amount, -25);
 
@@ -224,7 +270,7 @@ const glyphPurchasePlan = core.planOfficialVoucherCommand({
 });
 assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.productCode, '０００７');
 assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.productName, '㈜金사과');
-assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.originalProductCode, '０A①');
+assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.originalProductCode, '０００７');
 assert.equal(glyphPurchasePlan.voucherRevision.afterSnapshot.lines[0].productSnapshot.originalProductName, '㈜金 원본');
 
 const purchaseDraftB = buildPurchasePostDraft(purchaseGroup({ companyId: 'COMPANY-B' }), v2Context('COMPANY-B'));

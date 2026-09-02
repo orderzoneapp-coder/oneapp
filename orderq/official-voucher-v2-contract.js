@@ -23,6 +23,7 @@ const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringi
 // Confirmed display/source Snapshot values must retain their original glyphs.
 const text = value => String(value ?? '').normalize('NFKC').trim();
 const snapshotText = value => String(value ?? '').trim();
+const referenceCode = value => text(value).toLowerCase().replace(/\s+/g, ' ');
 
 export class OfficialVoucherV2PreflightError extends Error {
   constructor(issues = []) {
@@ -168,15 +169,17 @@ function matchEvidence(row = {}) {
     productId: text(row.productId),
     unresolvedProductId: text(row.unresolvedProductId),
     productMasterRevision: Number(row.productMasterRevision || 0),
-    referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId)
+    referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId),
+    officialProductResolution: clone(row.officialProductResolution
+      || row.productSnapshot?.matchEvidence?.officialProductResolution)
   };
 }
 
 function rowSnapshot(row, index, kind) {
   const productCode = snapshotText(firstNonblankValue(row, ['productCode', 'itemCode']).value);
   const productName = snapshotText(firstNonblankValue(row, ['productName', 'itemName', 'unregisteredProductQuery']).value);
-  const originalCodeEntry = firstNonblankValue(row, ['originalProductCode', 'sourceProductCode', 'rawProductCode']);
-  const originalNameEntry = firstNonblankValue(row, ['originalProductName', 'sourceProductName', 'rawProductName']);
+  const originalCodeEntry = firstOwnValue(row, ['originalProductCode', 'sourceProductCode', 'rawProductCode']);
+  const originalNameEntry = firstOwnValue(row, ['originalProductName', 'sourceProductName', 'rawProductName']);
   const originalProductCode = snapshotText(originalCodeEntry.key ? originalCodeEntry.value : productCode);
   const originalProductName = snapshotText(originalNameEntry.key ? originalNameEntry.value : productName);
   const quantitySource = rawQuantityOf(row);
@@ -429,6 +432,94 @@ export function isOfficialVoucherIdentityV2(source = {}) {
     || text(command?.schemaVersion) === OFFICIAL_VOUCHER_SCHEMA_VERSION_V2;
 }
 
+export function assertOfficialProductResolutionV2(line = {}, companyId = '') {
+  const resolution = clone(line.officialProductResolution
+    || line.productSnapshot?.matchEvidence?.officialProductResolution);
+  if (!resolution || typeof resolution !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_REQUIRED');
+  if (text(resolution.companyId) !== text(companyId)) throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_COMPANY_MISMATCH');
+  const status = text(resolution.status).toUpperCase();
+  const inputCode = referenceCode(resolution.inputProductCode);
+  const matchedCode = referenceCode(resolution.matchedProductCode);
+  const snapshotCode = referenceCode(line.productSnapshot?.productCode);
+  const originalCode = referenceCode(line.productSnapshot?.originalProductCode);
+  if (Number(line.inventoryEffectFactor) !== 1
+    || Number(line.baseQuantity) !== Number(line.actualQuantity ?? line.quantity)) {
+    throw new Error('ORDERQ_OFFICIAL_V2_INVENTORY_FACTOR_INVALID');
+  }
+  if (status === 'MATCHED') {
+    if (text(resolution.reason) !== 'EXACT_COMPANY_PRODUCT_CODE'
+      || !inputCode || inputCode !== matchedCode
+      || !text(resolution.matchedProductId)
+      || text(line.productId) !== text(resolution.matchedProductId)
+      || text(line.unresolvedProductId)
+      || snapshotCode !== inputCode
+      || originalCode !== inputCode
+      || text(line.matchStatus || line.productIdentityStatus).toUpperCase() !== 'MATCHED'
+      || text(line.matchSource) !== 'EXACT_COMPANY_PRODUCT_CODE') {
+      throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_EXACT_MATCH_INVALID');
+    }
+  } else if (status === 'UNRESOLVED_PRODUCT') {
+    const allowedReasons = new Set([
+      'PRODUCT_CODE_NOT_PROVIDED',
+      'PRODUCT_CODE_UNMATCHED',
+      'PRODUCT_CODE_AMBIGUOUS',
+      'MATCHED_PRODUCT_TECHNICAL_ID_MISSING'
+    ]);
+    if (!allowedReasons.has(text(resolution.reason))
+      || text(line.productId)
+      || !text(line.unresolvedProductId)
+      || originalCode !== inputCode
+      || text(line.matchStatus || line.productIdentityStatus).toUpperCase() !== 'UNRESOLVED_PRODUCT'
+      || (text(resolution.reason) === 'PRODUCT_CODE_NOT_PROVIDED' && inputCode)
+      || (text(resolution.reason) !== 'PRODUCT_CODE_NOT_PROVIDED' && !inputCode)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_UNRESOLVED_INVALID');
+    }
+  } else {
+    throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_STATUS_INVALID');
+  }
+  return deepFreeze(resolution);
+}
+
+export function assertOfficialPartnerResolutionV2(document = {}, companyId = '') {
+  const resolution = clone(document.officialPartnerResolution);
+  if (!resolution || typeof resolution !== 'object') throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_RESOLUTION_REQUIRED');
+  if (text(resolution.companyId) !== text(companyId)) throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_RESOLUTION_COMPANY_MISMATCH');
+  const status = text(resolution.status).toUpperCase();
+  const inputCode = referenceCode(resolution.inputCustomerCode);
+  const matchedCode = referenceCode(resolution.matchedCustomerCode);
+  const purchaseDocument = text(document.entityType) === OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_DOCUMENT;
+  const partnerRole = text(resolution.partnerRole).toUpperCase();
+  const validRole = purchaseDocument ? partnerRole === 'SUPPLIER' : ['SALES', 'BILLING'].includes(partnerRole);
+  if (!validRole) throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_ROLE_INVALID');
+  const partnerId = text(purchaseDocument
+    ? document.supplierCustomerId
+    : document.billingCustomerId || document.salesCustomerId);
+  const documentCode = referenceCode(purchaseDocument
+    ? document.supplierCustomerCode
+    : partnerRole === 'BILLING' ? document.billingCustomerCode : document.salesCustomerCode);
+  if (documentCode !== inputCode) throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_CODE_MISMATCH');
+  if (status === 'MATCHED') {
+    if (text(resolution.reason) !== 'EXACT_COMPANY_CUSTOMER_CODE'
+      || !inputCode || inputCode !== matchedCode || !text(resolution.matchedCustomerId)
+      || partnerId !== text(resolution.matchedCustomerId)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_EXACT_MATCH_INVALID');
+    }
+  } else if (status === 'CUSTOMER_NOT_PROVIDED') {
+    if (text(resolution.reason) !== 'CUSTOMER_CODE_NOT_PROVIDED'
+      || inputCode || text(resolution.matchedCustomerId) || partnerId) {
+      throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_NOT_PROVIDED_INVALID');
+    }
+  } else if (status === 'UNRESOLVED_CUSTOMER') {
+    if (!['CUSTOMER_CODE_UNMATCHED', 'CUSTOMER_CODE_AMBIGUOUS', 'MATCHED_CUSTOMER_ID_MISSING'].includes(text(resolution.reason))
+      || !inputCode || text(resolution.matchedCustomerId) || partnerId) {
+      throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_UNRESOLVED_INVALID');
+    }
+  } else {
+    throw new Error('ORDERQ_OFFICIAL_V2_PARTNER_RESOLUTION_STATUS_INVALID');
+  }
+  return deepFreeze(resolution);
+}
+
 export function assertOfficialCommandV2(source = {}) {
   const command = clone(source.intent || source.commandEnvelope || source.commandSource || source);
   const fields = fieldsForStage3Command(command.commandType);
@@ -449,6 +540,7 @@ export function assertOfficialCommandV2(source = {}) {
     || text(document.identityVersion) !== OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
     || text(document.entityType) !== fields.documentEntity) throw new Error('ORDERQ_OFFICIAL_V2_DOCUMENT_IDENTITY_INVALID');
   if (text(document.companyId) !== companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+  assertOfficialPartnerResolutionV2(document, companyId);
   const voucherGroupKey = text(command.voucherGroupKey || document.voucherGroupKey);
   if (fields.kind === 'SALE' && !voucherGroupKey) throw new Error('ORDERQ_OFFICIAL_SALE_GROUP_KEY_REQUIRED');
   if (text(document.voucherGroupKey) !== voucherGroupKey) throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
@@ -470,6 +562,10 @@ export function assertOfficialCommandV2(source = {}) {
     if (text(line[fields.lineId]) !== expectedLineId) throw new Error('ORDERQ_OFFICIAL_V2_LINE_ID_INVALID');
     if (!line.productSnapshot || text(line.productSnapshot.schemaVersion) !== OFFICIAL_VOUCHER_SCHEMA_VERSION_V2) {
       throw new Error('ORDERQ_OFFICIAL_V2_LINE_SNAPSHOT_REQUIRED');
+    }
+    const resolution = assertOfficialProductResolutionV2(line, companyId);
+    if (canonicalSha256(resolution) !== canonicalSha256(line.productSnapshot.matchEvidence?.officialProductResolution)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_SNAPSHOT_MISMATCH');
     }
   });
 
