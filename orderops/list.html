@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.4">
-  <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.5">
+  <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.6">
     <script defer src="../nexus/common/nexus-ui.js?v=1.4.1"></script>
   <meta name="google" content="notranslate">
   <title>주문·출고 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260902-output-fix"></script>
-  <script src="../orderFulfillmentWorkbook.js?v=20260902-output-fix"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260903-manager-color-order-total"></script>
+  <script src="../orderFulfillmentWorkbook.js?v=20260903-manager-color-order-total"></script>
   <style>
     :root {
       color-scheme: light;
@@ -2289,6 +2289,9 @@
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
       const MANAGER_COLORS_SCHEMA = "orderops-manager-colors/v1";
+      const MANAGER_COLORS_BACKUP_KEY = "oneapp.orderops.manager-colors.backup.v1";
+      const MANAGER_COLORS_BACKUP_SCHEMA = "orderops-manager-colors-backup/v1";
+      const MANAGER_COLORS_STORAGE_REVISION = 2;
       const EXCEL_MAPPING_KEY = "oneapp.orderops.excel-mappings.v1";
       const EXCEL_MAPPING_SCHEMA = "orderops-excel-mappings/v1";
       const PURCHASE_HISTORY_KEY = "oneapp.orderops.purchase-history.v1";
@@ -4018,17 +4021,6 @@
         if (Object.keys(previewFilters).length > 0) state.columnFilters[previewId] = previewFilters;
         else delete state.columnFilters[previewId];
 
-        state.warehouseColorSettings = {
-          schemaVersion: WAREHOUSE_COLORS_SCHEMA,
-          colors: Object.assign(Object.create(null), preset.view.warehouseColors),
-        };
-        state.managerColorSettings = {
-          schemaVersion: MANAGER_COLORS_SCHEMA,
-          colors: Object.assign(Object.create(null), preset.view.managerColors),
-        };
-        saveWarehouseColorSettings();
-        saveManagerColorSettings();
-
         if (preset.view.layoutCaptured) {
           const widths = Object.create(null);
           Object.entries(preset.view.columnWidths).forEach(([columnKey, width]) => {
@@ -4169,26 +4161,63 @@
 
       function loadManagerColorSettings() {
         const fallback = { schemaVersion: MANAGER_COLORS_SCHEMA, colors: Object.create(null) };
+        const colors = Object.create(null);
         try {
-          const parsed = JSON.parse(localStorage.getItem(MANAGER_COLORS_KEY) || "null");
-          if (!isPlainRecord(parsed) || parsed.schemaVersion !== MANAGER_COLORS_SCHEMA || !isPlainRecord(parsed.colors)) {
-            return fallback;
+          const backup = JSON.parse(localStorage.getItem(MANAGER_COLORS_BACKUP_KEY) || "null");
+          if (isPlainRecord(backup) && backup.schemaVersion === MANAGER_COLORS_BACKUP_SCHEMA && isPlainRecord(backup.colors)) {
+            Object.assign(colors, normalizeStoredColorMap(backup.colors, isSafeManagerName));
           }
-          const colors = Object.create(null);
-          Object.entries(parsed.colors).forEach(([manager, color]) => {
-            if (isSafeManagerName(manager) && isSafeHexColor(color)) colors[manager] = color.toLowerCase();
-          });
-          return { schemaVersion: MANAGER_COLORS_SCHEMA, colors };
-        } catch (error) {
-          return fallback;
+        } catch (error) {}
+        try {
+          const primary = JSON.parse(localStorage.getItem(MANAGER_COLORS_KEY) || "null");
+          if (!isPlainRecord(primary) || primary.schemaVersion !== MANAGER_COLORS_SCHEMA || !isPlainRecord(primary.colors)) {
+            return Object.keys(colors).length > 0 ? { schemaVersion: MANAGER_COLORS_SCHEMA, colors } : fallback;
+          }
+          const primaryColors = normalizeStoredColorMap(primary.colors, isSafeManagerName);
+          if (primary.storageRevision === MANAGER_COLORS_STORAGE_REVISION) {
+            return {
+              schemaVersion: MANAGER_COLORS_SCHEMA,
+              storageRevision: MANAGER_COLORS_STORAGE_REVISION,
+              colors: primaryColors,
+            };
+          }
+          Object.assign(colors, primaryColors);
+        } catch (error) {}
+        return Object.keys(colors).length > 0 ? { schemaVersion: MANAGER_COLORS_SCHEMA, colors } : fallback;
+      }
+
+      function recoverManagerColorSettings(settings, presets) {
+        if (settings?.storageRevision === MANAGER_COLORS_STORAGE_REVISION) {
+          return {
+            schemaVersion: MANAGER_COLORS_SCHEMA,
+            storageRevision: MANAGER_COLORS_STORAGE_REVISION,
+            colors: normalizeStoredColorMap(settings.colors, isSafeManagerName),
+          };
         }
+        const colors = Object.create(null);
+        (Array.isArray(presets) ? presets : []).forEach((preset) => {
+          Object.assign(colors, normalizeStoredColorMap(preset?.view?.managerColors, isSafeManagerName));
+        });
+        Object.assign(colors, normalizeStoredColorMap(settings?.colors, isSafeManagerName));
+        return {
+          schemaVersion: MANAGER_COLORS_SCHEMA,
+          storageRevision: MANAGER_COLORS_STORAGE_REVISION,
+          colors,
+        };
       }
 
       function saveManagerColorSettings() {
         try {
-          localStorage.setItem(MANAGER_COLORS_KEY, JSON.stringify({
+          const record = {
             schemaVersion: MANAGER_COLORS_SCHEMA,
+            storageRevision: MANAGER_COLORS_STORAGE_REVISION,
             colors: { ...state.managerColorSettings.colors },
+          };
+          localStorage.setItem(MANAGER_COLORS_KEY, JSON.stringify(record));
+          localStorage.setItem(MANAGER_COLORS_BACKUP_KEY, JSON.stringify({
+            schemaVersion: MANAGER_COLORS_BACKUP_SCHEMA,
+            storageRevision: MANAGER_COLORS_STORAGE_REVISION,
+            colors: record.colors,
           }));
         } catch (error) {}
       }
@@ -6991,8 +7020,9 @@
       state.hiddenColumnSettings = loadHiddenColumnSettings();
       state.columnOrderSettings = loadColumnOrderSettings();
       state.warehouseColorSettings = loadWarehouseColorSettings();
-      state.managerColorSettings = loadManagerColorSettings();
       state.orderViewPresets = loadOrderViewPresets();
+      state.managerColorSettings = recoverManagerColorSettings(loadManagerColorSettings(), state.orderViewPresets);
+      saveManagerColorSettings();
       renderOrderViewPresetOptions();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);

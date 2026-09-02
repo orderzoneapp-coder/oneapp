@@ -184,8 +184,9 @@ for (const requiredInteractionContract of [
   'warehouseColors: normalizeStoredColorMap(value.view.warehouseColors, isSafeColumnKey)',
   'managerColors: normalizeStoredColorMap(value.view.managerColors, isSafeManagerName)',
   'function persistSelectedOrderViewPresetColors',
-  'colors: Object.assign(Object.create(null), preset.view.warehouseColors)',
-  'colors: Object.assign(Object.create(null), preset.view.managerColors)',
+  'oneapp.orderops.manager-colors.backup.v1',
+  'function recoverManagerColorSettings',
+  'Object.assign(colors, normalizeStoredColorMap(preset?.view?.managerColors, isSafeManagerName))',
   'persistSelectedOrderViewPresetColors();',
   'function applyOrderViewPreset',
   'function saveCurrentOrderViewPreset',
@@ -197,6 +198,12 @@ for (const requiredInteractionContract of [
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
     `public ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
 }
+const publicApplyViewPresetSource = orderOpsHtml.slice(
+  orderOpsHtml.indexOf("function applyOrderViewPreset"),
+  orderOpsHtml.indexOf("function applyDefaultOrderViewPreset"),
+);
+assert.doesNotMatch(publicApplyViewPresetSource, /state\.(?:warehouse|manager)ColorSettings\s*=/,
+  "public saved view presets must not overwrite persistent warehouse or manager colors");
 const publicApplyColumnFilterSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf("function applyColumnTextFilter"),
   orderOpsHtml.indexOf("function visibleColumnEntries"),
@@ -306,8 +313,8 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260902-output-fix") &&
-  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260902-output-fix"),
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260903-manager-color-order-total") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260903-manager-color-order-total"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
@@ -707,7 +714,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   sourceFingerprint: "a".repeat(64),
 });
 assert.equal(engine.ENGINE_VERSION, "3.18.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.8.1");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
+assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
 assert.deepEqual(edgeShortageContext, {
@@ -829,9 +837,14 @@ assert.equal(
   "inventory information must remain available regardless of the final balance sign",
 );
 assert.equal(sheetCellByHeader(signedWorkbook.Sheets["주문현황"], "주문수량", 3).v, -1);
+assert.deepEqual(
+  [2, 3, 4].map((rowNumber) => sheetCellByHeader(signedWorkbook.Sheets["주문현황"], "주문수량 합계", rowNumber).v),
+  [1, 1, 1],
+  "each order row must repeat its normalized product-code order quantity total",
+);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.c, 19);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["구매업로드"]["!ref"]).e.r, 0);
-assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.c, 21);
+assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.c, 18);
 assert.equal(XLSX.utils.decode_range(signedWorkbook.Sheets["판매업로드"]["!ref"]).e.r, 2,
   "sales upload must preserve negative order quantities and omit zero quantities");
 assert.equal(edgeWorkspace.basisDate, "2026-08-04");
@@ -1295,7 +1308,7 @@ assert.deepEqual(
   ),
   [
     "창고", "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
-    "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
+    "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
   ],
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
@@ -1376,7 +1389,7 @@ const salesUploadWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
 Object.assign(salesUploadWorkspace.allocations[0], {
   orderNumber: "2026-08-04-17",
   customer: "가거래처",
-  warehouse: "01",
+  warehouse: "99",
   unitPrice: 2500,
   supplyAmount: 10000,
   noteOriginal: "출고 전달",
@@ -1402,24 +1415,26 @@ assert.deepEqual(
   "sales upload rows must be grouped in ascending customer order while retaining source order inside each customer",
 );
 const salesUploadSheet = workbookTools.buildSalesUploadSheet(salesUploadWorkspace, XLSX);
+assert.equal(salesUploadSheet["!ref"], "A1:S4", "sales upload must end at 구매처 in column S");
 assert.deepEqual(
-  Array.from(XLSX.utils.sheet_to_json(salesUploadSheet, { header: 1, raw: true, range: "A1:V1" })[0]),
+  Array.from(XLSX.utils.sheet_to_json(salesUploadSheet, { header: 1, raw: true, range: "A1:S1" })[0]),
   Array.from(workbookTools.SALES_UPLOAD_HEADERS),
 );
 assert.deepEqual(Array.from(workbookTools.SALES_UPLOAD_HEADERS), [
   "일자", "순번", "거래처코드", "거래처명", "출하창고", "거래유형", "전잔액", "전달사항",
   "품목코드", "품목명", "규격", "수량", "단가", "외화금액", "공급가액", "적요",
-  "출고지시", "공지", "구매처", "날짜", "구매", "생산전표생성",
+  "출고지시", "공지", "구매처",
 ]);
 assert.deepEqual(
-  ["A2", "B2", "C2", "D2", "E2", "H2", "I2", "J2", "K2", "P2", "S2", "T2"]
+  ["A2", "B2", "C2", "D2", "E2", "H2", "I2", "J2", "K2", "P2", "S2"]
     .map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
   [
     ["s", "20260804"], ["s", ""], ["s", ""], ["s", "가거래처"], ["s", "01"],
     ["s", "출고 전달"], ["s", "000100"], ["s", "상품 000100"], ["s", "EA"],
-    ["s", "판매 적요"], ["s", "매입처A"], ["s", "20260804"],
+    ["s", "판매 적요"], ["s", "매입처A"],
   ],
 );
+assert.equal(salesUploadSheet.E2.s.numFmt, "@", "sales warehouse 01 must remain text in Excel");
 assert.deepEqual(
   ["B2", "B3", "B4"].map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
   [["s", ""], ["s", ""], ["s", ""]],
@@ -1431,8 +1446,8 @@ assert.deepEqual(
   "blank source unit price and amount must stay blank instead of becoming zero",
 );
 assert.deepEqual(
-  ["L2", "M2", "O2", "U2"].map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
-  [["n", 4], ["n", 2500], ["n", 10000], ["n", 2]],
+  ["L2", "M2", "O2"].map((address) => [salesUploadSheet[address].t, salesUploadSheet[address].v]),
+  [["n", 4], ["n", 2500], ["n", 10000]],
 );
 for (const address of ["E1", "I1", "J1", "L1", "M1", "O1", "P1", "E2", "I2", "J2", "L2", "M2", "O2", "P2"]) {
   assert.equal(salesUploadSheet[address].s.fill.fgColor.rgb, "FFFF00", `${address} must retain the source-template required fill`);
@@ -1474,6 +1489,11 @@ assert.equal(
 assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].t, "s");
 assert.equal(edgeWorkbook.Sheets["주문현황"]["B2"].v, "000100");
 assert.equal(sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "주문수량", 2).v, 4);
+assert.deepEqual(
+  [2, 3, 4, 5].map((rowNumber) => sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "주문수량 합계", rowNumber).v),
+  [10, 10, 10, 3],
+  "duplicate product rows must expose the same product-level order quantity total",
+);
 assert.ok(edgeWorkbook.Sheets["주문현황"]["!autofilter"], "filter metadata missing");
 assert.deepEqual(edgeWorkbook.Sheets["주문현황"]["!freeze"], { xSplit: 0, ySplit: 1 });
 
@@ -1567,8 +1587,8 @@ try {
   globalThis.URL = originalUrl;
 }
 const allocationSheet = formatWorkbook.Sheets["주문현황"];
-assert.equal(allocationSheet["!ref"], "A1:U7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:U7" });
+assert.equal(allocationSheet["!ref"], "A1:V7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:V7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
 assert.equal(allocationSheet["B2"].t, "s");
 assert.equal(allocationSheet["B2"].v, "PURCHASE");
@@ -1576,6 +1596,7 @@ assert.equal(sheetCellByHeader(allocationSheet, "1창고", 2).v, 0);
 assert.equal(sheetCellByHeader(allocationSheet, "4전송", 2).v, 0);
 assert.equal(sheetCellByHeader(allocationSheet, "7진영", 2).v, -4);
 assert.equal(sheetCellByHeader(allocationSheet, "주문수량", 2).v, 2);
+assert.equal(sheetCellByHeader(allocationSheet, "주문수량 합계", 2).v, 2);
 assert.equal(sheetCellByHeader(allocationSheet, "구매수량", 2).v, 2);
 assert.equal(sheetCellByHeader(allocationSheet, "거래처", 2).v, "거래처 1");
 assert.equal(sheetCellByHeader(allocationSheet, "그룹", 2).v, "기본그룹");
@@ -1585,7 +1606,7 @@ assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie win
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (let column = 0; column < 21; column += 1) {
+for (let column = 0; column < 22; column += 1) {
   const address = XLSX.utils.encode_cell({ r: 1, c: column });
   if (address === "I2") continue;
   assert.equal(
@@ -1597,10 +1618,10 @@ for (let column = 0; column < 21; column += 1) {
 assert.equal(allocationSheet["I2"].s.fill.fgColor.rgb, "FEE2E2", "negative warehouse cells must override manager fill");
 for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`A${row}`].s.font.color.rgb, "B91C1C", `EA/소분 row ${row} must use red text`);
-  assert.equal(allocationSheet[`U${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
+  assert.equal(allocationSheet[`V${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 21; column += 1) {
+  for (let column = 0; column < 22; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -1624,13 +1645,13 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:U7");
+assert.equal(allocationSheet["!printArea"], "A1:V7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
   (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$U$7" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$V$7" },
   { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'주문현황'!$1:$1" },
 ]);
 
@@ -1793,12 +1814,12 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:U181");
+assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:V181");
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToWidth, 1);
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$U$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$V$181",
   ),
 );
 
@@ -1955,8 +1976,9 @@ for (const requiredInteractionContract of [
   'warehouseColors: normalizeStoredColorMap(value.view.warehouseColors, isSafeColumnKey)',
   'managerColors: normalizeStoredColorMap(value.view.managerColors, isSafeManagerName)',
   'function persistSelectedOrderViewPresetColors',
-  'colors: Object.assign(Object.create(null), preset.view.warehouseColors)',
-  'colors: Object.assign(Object.create(null), preset.view.managerColors)',
+  'oneapp.orderops.manager-colors.backup.v1',
+  'function recoverManagerColorSettings',
+  'Object.assign(colors, normalizeStoredColorMap(preset?.view?.managerColors, isSafeManagerName))',
   'persistSelectedOrderViewPresetColors();',
   'function applyOrderViewPreset',
   'function saveCurrentOrderViewPreset',
@@ -1968,6 +1990,12 @@ for (const requiredInteractionContract of [
   assert.ok(html.includes(requiredInteractionContract),
     `canonical ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
 }
+const canonicalApplyViewPresetSource = html.slice(
+  html.indexOf("function applyOrderViewPreset"),
+  html.indexOf("function applyDefaultOrderViewPreset"),
+);
+assert.doesNotMatch(canonicalApplyViewPresetSource, /state\.(?:warehouse|manager)ColorSettings\s*=/,
+  "canonical saved view presets must not overwrite persistent warehouse or manager colors");
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
 const canonicalViewControls = html.slice(
@@ -2318,6 +2346,52 @@ assert.equal(Object.prototype.hasOwnProperty.call(presetContext.normalizedPreset
   "saved view presets must reject unsafe manager color keys");
 assert.equal(Object.prototype.hasOwnProperty.call(presetContext.normalizedPreset.view.columnFilters, "__proto__"), false,
   "saved view presets must reject unsafe filter keys");
+
+const managerColorHelperStart = html.indexOf("function loadManagerColorSettings");
+const managerColorHelperEnd = html.indexOf("function warehouseColumns", managerColorHelperStart);
+assert.ok(managerColorHelperStart >= 0 && managerColorHelperEnd > managerColorHelperStart,
+  "manager color recovery helpers must exist");
+const managerColorRecoveryContext = {};
+vm.runInNewContext(`
+  const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
+  const MANAGER_COLORS_SCHEMA = "orderops-manager-colors/v1";
+  const MANAGER_COLORS_BACKUP_KEY = "oneapp.orderops.manager-colors.backup.v1";
+  const MANAGER_COLORS_BACKUP_SCHEMA = "orderops-manager-colors-backup/v1";
+  const MANAGER_COLORS_STORAGE_REVISION = 2;
+  const state = { managerColorSettings: { schemaVersion: MANAGER_COLORS_SCHEMA, storageRevision: 2, colors: {} } };
+  const storage = Object.create(null);
+  const localStorage = {
+    getItem(key) { return Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null; },
+    setItem(key, value) { storage[key] = String(value); },
+  };
+  ${html.slice(presetHelperStart, presetHelperEnd)}
+  ${html.slice(managerColorHelperStart, managerColorHelperEnd)}
+  const legacyPreset = [{ view: { managerColors: { "담당A": "#aabbcc", "담당B": "#ddeeff" } } }];
+  storage[MANAGER_COLORS_KEY] = JSON.stringify({ schemaVersion: MANAGER_COLORS_SCHEMA, colors: {} });
+  this.recoveredLegacy = recoverManagerColorSettings(loadManagerColorSettings(), legacyPreset);
+  storage[MANAGER_COLORS_KEY] = JSON.stringify({
+    schemaVersion: MANAGER_COLORS_SCHEMA, storageRevision: 2, colors: {},
+  });
+  storage[MANAGER_COLORS_BACKUP_KEY] = JSON.stringify({
+    schemaVersion: MANAGER_COLORS_BACKUP_SCHEMA, storageRevision: 2, colors: { "담당A": "#aabbcc" },
+  });
+  this.authoritativeEmpty = recoverManagerColorSettings(loadManagerColorSettings(), legacyPreset);
+  state.managerColorSettings = this.authoritativeEmpty;
+  saveManagerColorSettings();
+  this.savedPrimary = JSON.parse(storage[MANAGER_COLORS_KEY]);
+  this.savedBackup = JSON.parse(storage[MANAGER_COLORS_BACKUP_KEY]);
+`, managerColorRecoveryContext);
+assert.deepEqual(Object.entries(managerColorRecoveryContext.recoveredLegacy.colors), [
+  ["담당A", "#aabbcc"], ["담당B", "#ddeeff"],
+], "legacy empty manager colors must recover from saved view snapshots");
+assert.equal(managerColorRecoveryContext.recoveredLegacy.storageRevision, 2,
+  "recovered manager colors must migrate to the authoritative storage revision");
+assert.deepEqual(Object.entries(managerColorRecoveryContext.authoritativeEmpty.colors), [],
+  "an intentional empty v2 manager color map must not resurrect stale backup or preset colors");
+assert.deepEqual(Object.entries(managerColorRecoveryContext.savedPrimary.colors), [],
+  "saving a white-cancelled manager palette must preserve an authoritative empty primary record");
+assert.deepEqual(Object.entries(managerColorRecoveryContext.savedBackup.colors), [],
+  "saving a white-cancelled manager palette must also clear its recovery backup");
 
 const administratorAliasMatrix = buildCanonicalOrderMatrix({
   replacements: {
@@ -2778,7 +2852,7 @@ try {
     [
       "창고", "상품코드", "품목명", "규격",
       ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
-      "주문수량", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
+      "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
     ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(

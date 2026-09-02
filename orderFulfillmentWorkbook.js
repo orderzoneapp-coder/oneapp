@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.8.1";
+  const WORKBOOK_VERSION = "4.9.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -26,11 +26,11 @@
     "지시사항", "출고가 (공지)", "판매", "no.",
   ]);
   const PURCHASE_UPLOAD_REQUIRED_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11]);
-  const SALES_UPLOAD_SCHEMA_VERSION = "shipping-sales-upload/v1";
+  const SALES_UPLOAD_SCHEMA_VERSION = "shipping-sales-upload/v2";
   const SALES_UPLOAD_HEADERS = Object.freeze([
     "일자", "순번", "거래처코드", "거래처명", "출하창고", "거래유형", "전잔액", "전달사항",
     "품목코드", "품목명", "규격", "수량", "단가", "외화금액", "공급가액", "적요",
-    "출고지시", "공지", "구매처", "날짜", "구매", "생산전표생성",
+    "출고지시", "공지", "구매처",
   ]);
   const SALES_UPLOAD_BOLD_HEADER_INDEXES = Object.freeze([0, 4, 5, 8, 9, 11, 12, 14, 15]);
   const SALES_UPLOAD_REQUIRED_COLUMN_INDEXES = Object.freeze([4, 8, 9, 11, 12, 14, 15]);
@@ -352,6 +352,14 @@
     }
     const inventoryView = engine.getAllocationInventoryView(workspace);
     const warehouseHeaders = inventoryView.columns.map((column) => column.header);
+    const orderQuantityTotals = new Map();
+    workspace.allocations.forEach((row) => {
+      const productCode = engine.normalizeProductCode(row.productCode);
+      const quantity = typeof row.quantity === "number" && Number.isFinite(row.quantity)
+        ? row.quantity
+        : 0;
+      orderQuantityTotals.set(productCode, (orderQuantityTotals.get(productCode) || 0) + quantity);
+    });
     const headers = [
       "창고",
       "상품코드",
@@ -359,6 +367,7 @@
       "규격",
       ...warehouseHeaders,
       "주문수량",
+      "주문수량 합계",
       "전재고",
       "서울잔량",
       "구매수량",
@@ -378,6 +387,7 @@
       row.specification,
       ...inventoryView.rows[index].warehouseValues,
       row.quantity,
+      orderQuantityTotals.get(engine.normalizeProductCode(row.productCode)) || 0,
       row.inventoryMatched ? row.wholeStockRaw : "",
       row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
       row.inventoryMatched ? row.purchaseNeed : "",
@@ -392,7 +402,7 @@
     ]);
     const warehouseStart = 4;
     const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
-    const purchaseColumn = orderQuantityColumn + 4;
+    const purchaseColumn = orderQuantityColumn + 5;
     const priceColumn = purchaseColumn + 3;
     const supplyAmountColumn = priceColumn + 1;
     const numericColumns = new Set([
@@ -401,6 +411,7 @@
       orderQuantityColumn + 1,
       orderQuantityColumn + 2,
       orderQuantityColumn + 3,
+      orderQuantityColumn + 4,
       priceColumn,
       supplyAmountColumn,
     ]);
@@ -1097,7 +1108,7 @@
       "",
       "",
       String(row.customer || ""),
-      String(row.warehouse || ""),
+      "01",
       "",
       "",
       String(row.noteOriginal ?? row.note ?? ""),
@@ -1112,13 +1123,10 @@
       "",
       "",
       String(row.purchase || ""),
-      String(row.basisDate || workspace.uploadDate || "").replace(/-/g, ""),
-      typeof row.purchaseNeed === "number" && Number.isFinite(row.purchaseNeed) ? row.purchaseNeed : "",
-      "",
     ]);
     const sheet = XLSX.utils.aoa_to_sheet([[...SALES_UPLOAD_HEADERS], ...rows]);
     const lastRow = Math.max(1, rows.length + 1);
-    sheet["!ref"] = `A1:V${lastRow}`;
+    sheet["!ref"] = `A1:S${lastRow}`;
     sheet["!cols"] = SALES_UPLOAD_HEADERS.map(() => ({ wch: 10.25 }));
     sheet["!rows"] = Array.from({ length: lastRow }, () => ({ hpt: 16.5 }));
 
@@ -1150,7 +1158,7 @@
     for (let row = 1; row < lastRow; row += 1) {
       for (let column = 0; column < SALES_UPLOAD_HEADERS.length; column += 1) {
         const cell = ensureCell(sheet, XLSX, row, column);
-        const numeric = column === 11 || column === 12 || column === 14 || column === 20;
+        const numeric = column === 11 || column === 12 || column === 14;
         if (numeric && cell.v !== "") {
           cell.t = "n";
           cell.v = Number(cell.v);

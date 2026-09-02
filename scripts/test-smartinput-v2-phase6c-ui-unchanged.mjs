@@ -7,12 +7,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BASE_SHA = '9c47d3c412235be593f11389353555d5a3d5b532';
+const PHASE_SHA = '6ab27bc46b23b882adcf746bd756405070336d13';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const normalizedText = value => String(value).replace(/\r\n/g, '\n').trimEnd();
-const productUiDiff = git('diff', '--name-only', BASE_SHA, '--', 'smartinput', 'orderops')
+const productUiDiff = git('diff', '--name-only', BASE_SHA, PHASE_SHA, '--', 'smartinput', 'orderops')
   .split(/\r?\n/).filter(Boolean);
-assert.deepEqual(productUiDiff, [], 'Phase 6C must have zero SmartInput and OrderOps product UI diff');
+assert.deepEqual(productUiDiff, [], 'The Phase 6C implementation commit must have zero SmartInput and OrderOps product UI diff');
 
 const orderqDb = readFileSync(resolve(root, 'orderq/orderq-db.js'), 'utf8');
 assert.equal(normalizedText(orderqDb), normalizedText(git('show', `${BASE_SHA}:orderq/orderq-db.js`)),
