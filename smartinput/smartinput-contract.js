@@ -490,6 +490,7 @@
         customerMappingSource: '',
         orderDate: date,
         voucherDate: date,
+        voucherDateMonthAnchor: date.slice(0, 7),
         deliveryDate: '',
         manualDeliveryOverride: false,
         deliveryPolicySnapshot: null,
@@ -533,6 +534,9 @@
 
   function normalizeHeader(value = {}, fallback = {}) {
     const recordedAt = text(value.recordedAt || fallback.recordedAt) || new Date().toISOString();
+    const voucherDate = text(value.voucherDate || fallback.voucherDate) || businessDate(recordedAt);
+    const voucherDateMonthAnchor = text(value.voucherDateMonthAnchor || fallback.voucherDateMonthAnchor)
+      || (/^\d{4}-\d{2}-\d{2}$/.test(voucherDate) ? voucherDate.slice(0, 7) : '');
     return {
       ...fallback,
       ...value,
@@ -549,7 +553,8 @@
       aliasMappingId: text(value.aliasMappingId || fallback.aliasMappingId),
       customerMappingSource: text(value.customerMappingSource || fallback.customerMappingSource),
       orderDate: businessDate(recordedAt),
-      voucherDate: text(value.voucherDate || fallback.voucherDate) || businessDate(recordedAt),
+      voucherDate,
+      voucherDateMonthAnchor,
       deliveryDate: text(value.deliveryDate || fallback.deliveryDate),
       manualDeliveryOverride: Boolean(value.manualDeliveryOverride ?? fallback.manualDeliveryOverride),
       deliveryPolicySnapshot: value.deliveryPolicySnapshot && typeof value.deliveryPolicySnapshot === 'object'
