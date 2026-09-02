@@ -177,9 +177,11 @@ const smartInputProductUiHashes = new Map([
   ['../smartinput/smartinput.js', 'a9fd8676f01e71c4eaa1b408ce04b5131baad3f4fd42991972c0f90a6a6170fe']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
-  const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n')
+    .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must remain content-identical to baseline b126b298`);
+    `${relativePath} must remain product-UI-identical to baseline b126b298 apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 

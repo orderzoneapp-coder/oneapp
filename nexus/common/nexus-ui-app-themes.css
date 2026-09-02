@@ -846,7 +846,14 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-load
 }
 
 /* ORDER Q local palette bridge and dense-table states. */
+html[data-nexus-ui-theme="light"][data-nexus-ui-app="orderops"] {
+  --orderops-manager-row-weight: 48%;
+  --orderops-manager-row-hover-weight: 58%;
+}
+
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
+  --orderops-manager-row-weight: 22%;
+  --orderops-manager-row-hover-weight: 28%;
   --white: var(--nexus-ui-panel-bg);
   --slate-50: var(--nexus-ui-table-row-bg);
   --slate-100: var(--nexus-ui-panel-subtle);
@@ -867,6 +874,44 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
   --red-100: var(--nexus-ui-danger-bg);
   --green-700: var(--nexus-ui-success);
   --green-100: var(--nexus-ui-success-bg);
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td:not(
+  .inventory-value,
+  .warning-value,
+  .ordered-context-cell,
+  .ledger-negative-cell,
+  .purchase-negative-cell
+):not(:focus-within) {
+  background-color: color-mix(
+    in srgb,
+    var(--manager-color) var(--orderops-manager-row-weight),
+    var(--nexus-ui-table-row-bg)
+  ) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row:hover > td:not(
+  .inventory-value,
+  .warning-value,
+  .ordered-context-cell,
+  .ledger-negative-cell,
+  .purchase-negative-cell
+):not(:focus-within) {
+  background-color: color-mix(
+    in srgb,
+    var(--manager-color) var(--orderops-manager-row-hover-weight),
+    var(--nexus-ui-table-row-bg)
+  ) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td:not(
+  .inventory-value,
+  .warning-value,
+  .ordered-context-cell,
+  .ledger-negative-cell,
+  .purchase-negative-cell
+):not(:focus-within) {
+  color: var(--slate-900) !important;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel table thead th {

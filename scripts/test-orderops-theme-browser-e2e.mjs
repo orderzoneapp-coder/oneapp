@@ -106,7 +106,10 @@ const evaluate = async (client, expression) => {
 };
 const click = (client, selector) => evaluate(client, `(() => { const node=document.querySelector(${JSON.stringify(selector)}); if(!node) throw new Error('Missing ${selector}'); node.click(); return true; })()`);
 const contrast = (foreground, background) => {
-  const channels = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const channels = (value) => {
+    const values = (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    return /^color\(srgb\s/i.test(value) ? values.map((channel) => channel * 255) : values;
+  };
   const luminance = (value) => {
     const [red, green, blue] = channels(value).map((channel) => {
       const normalized = channel / 255;
@@ -150,23 +153,32 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/orderops/list.html` });
   await loaded;
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))`), 'common header');
-  await click(client, '[data-nexus-ui-theme-set="dark"]');
-  await wait(120);
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');
     host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value"><span class="manager-name">김담당</span></td><td class="information-value"><span class="order-information-badges"><span class="order-information-badge manager-color-badge" style="--manager-color:#dbeafe">우리식당(1)8,900</span><span class="order-information-badge manager-color-badge" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr></tbody></table>';
     return true;
   })()`);
+  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child')}; })()`);
+  assert.equal(lightMetrics.theme, 'light');
+  assert.notEqual(lightMetrics.primary.background, lightMetrics.inactive.background,
+    'saved manager colors must restore a visible row surface in light mode');
+  assert.ok(contrast(lightMetrics.primary.color, lightMetrics.primary.background) >= 7,
+    'restored light manager rows must preserve strong text contrast');
+  await click(client, '[data-nexus-ui-theme-set="dark"]');
+  await wait(120);
   const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; return {theme:document.documentElement.dataset.nexusUiTheme,header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)')}; })()`);
   assert.equal(metrics.theme, 'dark');
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
-  assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7, 'dark primary table information must have strong text contrast');
+  assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
+    `dark primary table information must have strong text contrast: ${JSON.stringify(metrics.primary)} ratio=${contrast(metrics.primary.color, metrics.primary.background)}`);
   assert.ok(contrast(metrics.inactive.color, metrics.inactive.background) >= 4.5, 'inactive dark rows must remain readable');
   assert.ok(contrast(metrics.warning.color, metrics.warning.background) >= 4.5, 'dark warning units must remain readable');
   assert.ok(contrast(metrics.manager.color, metrics.manager.background) >= 4.5, 'dark manager labels must remain readable');
   assert.ok(contrast(metrics.badge1.color, metrics.badge1.background) >= 4.5, 'dark manager information badges must remain readable');
+  assert.notEqual(metrics.primary.background, metrics.inactive.background,
+    'saved manager colors must restore a visible row surface in dark mode');
   assert.notEqual(metrics.badge1.background, metrics.badge2.background, 'assigned manager colors must remain visually distinct');
-  assert.notEqual(metrics.primary.shadow, 'none', 'assigned manager rows must expose a color marker without repainting the table row');
+  assert.notEqual(metrics.primary.shadow, 'none', 'assigned manager rows must retain their color edge marker');
   await client.send('Emulation.setEmulatedMedia', { media: 'print' });
   const printMetrics = await evaluate(client, `(() => {
     const printArea=document.querySelector('#printArea');
@@ -190,7 +202,7 @@ try {
   assert.ok(Math.abs(printMetrics.printTop) <= 0.5 && Math.abs(printMetrics.tableTop) <= 0.5,
     `printed table must start at the printable origin, got print=${printMetrics.printTop}, table=${printMetrics.tableTop}`);
   assert.deepEqual(runtimeErrors, [], `browser runtime errors: ${runtimeErrors.join(' | ')}`);
-  console.log('OrderOps manager colors, dark table contrast, and print origin browser E2E PASS');
+  console.log('OrderOps manager color recovery, theme contrast, and print origin browser E2E PASS');
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) {
