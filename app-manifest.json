@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.8",
-  "updatedAt": "2026-09-01",
+  "updatedAt": "2026-09-02",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -425,7 +425,7 @@
       "path": "orderq/index.html",
       "kind": "web-entry-group",
       "status": "pilot",
-      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and revisioned cloud synchronization without changing the existing OrderOps compatibility route.",
+      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and the owner boundary for official purchase/sale commands, documents, revisions, inventory or pending effects, base AR/AP effects, and the official local sync queue without changing the existing OrderOps compatibility route.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "entries": [
@@ -438,6 +438,10 @@
       ],
       "services": [
         "cloud-sync"
+      ],
+      "ownedContracts": [
+        "orderq-official-voucher-core",
+        "orderq-official-sync"
       ],
       "sharedContracts": [
         "cloud-url",
@@ -452,7 +456,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create order, purchase, sale, and estimate vouchers with one automatically updated local recovery state while consuming owner-issued product and customer Snapshots, deferring new revisions for active work, and isolating external input, synchronization, and server-finalize failures.",
+      "purpose": "Create order, purchase, sale, and estimate work through one automatically updated local recovery state while consuming owner-issued product and customer Snapshots and requesting official purchase/sale changes through the ORDER Q owner command boundary, without direct writes to ORDER Q raw stores.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -467,7 +471,7 @@
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog",
-        "revisioned purchase and sale official commands",
+        "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
         "company-partitioned background official-voucher synchronization"
       ],
       "ownedContracts": [
@@ -791,11 +795,29 @@
         "smart-input"
       ],
       "schemaVersion": "VOUCHER_CORE_V1",
-      "writerPolicy": "Purchase and sale commands use company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB transaction for voucher, inventory/pending inventory, AR/AP, revision, and sync-queue effects.",
+      "writerPolicy": "ORDER Q owns the official command gateway and repository. SmartInput is a command-adapter consumer and must not write ORDER Q raw stores. The current repository uses company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB finalize transaction for document and lines, command receipt, voucher revision, matched inventory movement or unresolved pending effect, the currently validated partner's base payable/receivable entry, unresolved-product identity, and the official syncQueue row. V2 retains that atomic unit while creating base AR/AP only for an exact company-scoped Customer Snapshot match and omitting AR/AP, without blocking the voucher or inventory path, when the customer is absent or unmatched.",
+      "ownerBoundary": "ORDER Q OfficialCommandGateway and OfficialVoucherRepository",
+      "consumerBoundary": "SmartInput uses the owner command Adapter; the current compatibility path is legacy-integration-adapter.js through purchase-official-stage3.js or sale-official-stage4.js to runCentralOfficialVoucherCommand(). NEXUS-SI-V2-00 does not claim the target gateway refactor is implemented.",
+      "userProductIdentity": "companyId + ERP productCode string; preserve leading zeroes and do not expose a new NXP identifier",
+      "compatibilityProductIdentity": "productId remains a non-visible Product Snapshot technical key for the current inventory, checkpoint, rematch, and sync stores",
+      "migrationPolicy": "No V1 official-voucher, Draft, or test-data migration. Continue additively inside SmartInput DB v5 and ORDER Q DB v7 without deleting or initializing existing stores or records.",
+      "excludedScope": [
+        "AR/AP closing or balance adjustment",
+        "tax invoice issuance or receipt",
+        "offsetting or separate account adjustment",
+        "Cloud Push/Pull activation",
+        "official production activation"
+      ],
       "resources": {
+        "commandCoreAsset": "orderq/official-voucher-core.js",
+        "repositoryAsset": "orderq/official-voucher-repository.js",
         "localDatabase": "oneapp-orderq-pre-m1-v6",
         "databaseVersion": 7,
         "indexedDbStores": [
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
           "officialCommands",
           "voucherRevisions",
           "inventoryMovements",
@@ -803,7 +825,8 @@
           "receivableEntries",
           "pendingInventoryEffects",
           "inventoryCheckpoints",
-          "unresolvedProducts"
+          "unresolvedProducts",
+          "syncQueue"
         ]
       }
     },
@@ -817,6 +840,7 @@
       "schemaVersion": "ONEAPP_ORDERQ_OFFICIAL_SYNC_V1",
       "writerPolicy": "Local purchase and sale finalize remains LOCAL_OPERATION. Background sync stores immutable command payloads by company, applies command-id idempotency and voucher-revision optimistic locking, and never overwrites a conflicting local voucher or active SmartInput draft.",
       "deploymentStatus": "SOURCE_READY_APPS_SCRIPT_DEPLOYMENT_REQUIRED",
+      "activationPolicy": "Excluded from the SmartInput official-voucher and inventory V2 implementation scope until separate server deployment, company-isolation, multi-device, and production-activation validation is approved.",
       "resources": {
         "cloudActions": [
           "orderq_official_sync_push",
