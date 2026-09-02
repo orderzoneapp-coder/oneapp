@@ -557,6 +557,118 @@ try {
     error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT', 'DRAFT'],
     revisions: 0, inventory: 0, pending: 0, unresolved: 0, ledger: 0, commands: 0, queue: 0
   }, 'forced V2 Stage 4 failure must leave zero confirmed partial effects, review records, commands, or queue rows');
+  const officialV2Phase6AReadResult = await evaluate(client, `(async()=>{
+    const adapterModule=await import('/orderq/unresolved-review-read-adapter.js?phase6a-e2e=1');
+    const dbModule=await import('/orderq/orderq-db.js?phase6a-e2e=1');
+    const selectedProduct={companyId:'V2-STAGE4-COMPANY',productId:'V2-STAGE4-P-0099-NOW',itemCode:'0099',itemName:'현재 등록된 상품',status:'ACTIVE',revision:1};
+    const productResult={status:'READY',snapshot:{status:'READY',snapshotId:'PHASE6A-E2E-PRODUCTS',revision:1,data:{products:[selectedProduct]}},error:null};
+    const adapter=adapterModule.createUnresolvedReviewReadAdapter({readProductSnapshot:async()=>productResult});
+    const db=await dbModule.openOrderQDb();
+    const relevantStores=['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','salesDocuments','salesLines','voucherRevisions','inventoryCheckpoints'];
+    const adversarialTx=db.transaction(['unresolvedProducts','pendingInventoryEffects','purchaseDocuments','purchaseLines','voucherRevisions'],'readwrite');
+    adversarialTx.objectStore('unresolvedProducts').put({
+      unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',status:'UNRESOLVED_PRODUCT',
+      originalProductCode:'',originalProductName:'',reviewLinks:[{
+        pendingEffectId:'E-PHASE6A-CROSS-COMPANY',voucherMode:'purchase',sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',
+        sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',
+        warehouseId:'PHASE6A-WH-SAFE',businessDate:'2026-09-03',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false
+      }]
+    });
+    adversarialTx.objectStore('pendingInventoryEffects').put({
+      pendingEffectId:'E-PHASE6A-CROSS-COMPANY',companyId:'V2-STAGE4-COMPANY',unresolvedProductId:'UP-PHASE6A-CROSS-COMPANY',
+      status:'PENDING_PRODUCT_MATCH',inventoryEffectStatus:'UNRESOLVED_PRODUCT',officialInventoryApplied:false,voucherMode:'purchase',
+      sourceDocumentId:'PD-PHASE6A-CROSS-COMPANY',sourceLineId:'PL-PHASE6A-CROSS-COMPANY',sourceDocumentRevision:1,
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',warehouseId:'PHASE6A-WH-SAFE',effectiveAt:'2026-09-03'
+    });
+    adversarialTx.objectStore('purchaseDocuments').put({
+      purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',status:'CONFIRMED',revision:1,
+      warehouseId:'PHASE6A-LEAK-DOCUMENT-WAREHOUSE',businessDate:'2099-12-31',businessOccurredAt:'PHASE6A-LEAK-DOCUMENT-TIME'
+    });
+    adversarialTx.objectStore('purchaseLines').put({
+      purchaseLineId:'PL-PHASE6A-CROSS-COMPANY',purchaseDocumentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      originalProductCode:'PHASE6A-LEAK-CODE',originalProductName:'PHASE6A-LEAK-NAME',specification:'PHASE6A-LEAK-SPEC',
+      unit:'PHASE6A-LEAK-UNIT',actualQuantity:987654321,businessOccurredAt:'PHASE6A-LEAK-LINE-TIME',
+      productSnapshot:{productName:'PHASE6A-LEAK-SNAPSHOT'}
+    });
+    adversarialTx.objectStore('voucherRevisions').put({
+      voucherRevisionId:'VR-PHASE6A-CROSS-COMPANY',documentId:'PD-PHASE6A-CROSS-COMPANY',companyId:'OTHER-COMPANY',
+      status:'CONFIRMED',revision:1,afterSnapshot:{memo:'PHASE6A-LEAK-REVISION'}
+    });
+    await dbModule.transactionDone(adversarialTx);
+    const count=async()=>{const tx=db.transaction(relevantStores,'readonly');const pairs=await Promise.all(relevantStores.map(async name=>[name,(await dbModule.requestToPromise(tx.objectStore(name).getAll())).length]));await dbModule.transactionDone(tx);return Object.fromEntries(pairs);};
+    const before=await count();
+    const objectStoreMethods=['put','add','delete','clear'];
+    const originals=Object.fromEntries(objectStoreMethods.map(name=>[name,IDBObjectStore.prototype[name]]));
+    const transactionOriginal=IDBDatabase.prototype.transaction;
+    const observed={writes:[],transactionModes:[]};
+    objectStoreMethods.forEach(name=>{IDBObjectStore.prototype[name]=function(...args){observed.writes.push({store:this.name,operation:name});return originals[name].apply(this,args);};});
+    IDBDatabase.prototype.transaction=function(storeNames,mode,...args){observed.transactionModes.push(mode||'readonly');return transactionOriginal.call(this,storeNames,mode,...args);};
+    let review;
+    let preview;
+    let empty;
+    try{
+      review=await adapter.getReviewResult({companyId:'V2-STAGE4-COMPANY',limit:20,generatedAt:'2026-09-03T09:00:00.000Z'});
+      const target=review.items.find(item=>item.originalProductCode==='0099');
+      preview=await adapter.previewRematchImpactResult({companyId:'V2-STAGE4-COMPANY',unresolvedProductId:target.unresolvedProductId,selectedProductId:selectedProduct.productId,generatedAt:'2026-09-03T09:00:00.000Z'});
+      empty=await adapter.getReviewResult({companyId:'PHASE6A-NO-DATA',limit:20,generatedAt:'2026-09-03T09:00:00.000Z'});
+    }finally{
+      objectStoreMethods.forEach(name=>{IDBObjectStore.prototype[name]=originals[name];});
+      IDBDatabase.prototype.transaction=transactionOriginal;
+    }
+    const after=await count();
+    const crossCompanyItem=review.items.find(item=>item.unresolvedProductId==='UP-PHASE6A-CROSS-COMPANY');
+    db.close();
+    return {
+      databaseVersion:dbModule.DB_VERSION,
+      reviewStatus:review.status,
+      reviewCount:review.count,
+      linkCounts:review.items.map(item=>item.aggregate.linkCount).sort((a,b)=>a-b),
+      officialQuantityNull:review.items.every(item=>item.officialInventory.officialQuantity===null&&item.links.every(link=>link.officialInventory.officialQuantity===null)),
+      traceComplete:review.items.every(item=>item.links.every(link=>link.sourceVoucher.documentId&&link.sourceVoucher.lineId&&link.sourceVoucher.revisionId&&link.sourceVoucher.detailHref)),
+      noAutoConfirmation:review.items.every(item=>item.candidates.every(candidate=>candidate.automaticConfirmation===false)),
+      crossCompanyPayloadHidden:crossCompanyItem
+        && !JSON.stringify(crossCompanyItem).includes('PHASE6A-LEAK-'),
+      crossCompanyReviewStatus:crossCompanyItem?.integrity?.status,
+      crossCompanyIssues:crossCompanyItem?.links[0]?.integrity?.issues?.map(issue=>issue.code)||[],
+      previewStatus:preview.status,
+      previewEffects:preview.summary.affectedEffectCount,
+      previewWrites:preview.officialWritePlan,
+      emptyStatus:empty.status,
+      emptyCount:empty.count,
+      observed,
+      countsUnchanged:JSON.stringify(before)===JSON.stringify(after)
+    };
+  })()`);
+  assert.equal(officialV2Phase6AReadResult.databaseVersion, 7, 'Phase 6A read must reuse the existing ORDER Q schema');
+  assert.deepEqual({
+    status: officialV2Phase6AReadResult.reviewStatus,
+    count: officialV2Phase6AReadResult.reviewCount,
+    links: officialV2Phase6AReadResult.linkCounts,
+    officialQuantityNull: officialV2Phase6AReadResult.officialQuantityNull,
+    traceComplete: officialV2Phase6AReadResult.traceComplete,
+    noAutoConfirmation: officialV2Phase6AReadResult.noAutoConfirmation
+  }, {
+    status: 'READY', count: 3, links: [1, 1, 2], officialQuantityNull: true,
+    traceComplete: true, noAutoConfirmation: true
+  }, 'ORDER Q owner read adapter must expose every Stage 4 unresolved link without direct consumer Store access');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyPayloadHidden, true,
+    'cross-company point-get payload must not reach the owner Adapter output');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyReviewStatus, 'REVIEW_REQUIRED');
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_DOCUMENT_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('SOURCE_LINE_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.crossCompanyIssues.includes('VOUCHER_REVISION_COMPANY_MISMATCH'), true);
+  assert.equal(officialV2Phase6AReadResult.previewStatus, 'APPLY_READY');
+  assert.equal(officialV2Phase6AReadResult.previewEffects, 2);
+  assert.deepEqual(officialV2Phase6AReadResult.previewWrites, {
+    commands: 0, inventoryWrites: 0, referenceDataWrites: 0,
+    note: '적용 전 영향 미리보기이며 실제 재매칭·재고·기준정보 쓰기를 수행하지 않음'
+  });
+  assert.deepEqual({ status: officialV2Phase6AReadResult.emptyStatus, count: officialV2Phase6AReadResult.emptyCount },
+    { status: 'EMPTY', count: 0 }, 'empty owner data must remain distinct from a read error');
+  assert.deepEqual(officialV2Phase6AReadResult.observed.writes, [], 'Phase 6A browser read and preview must perform zero IndexedDB writes');
+  assert.equal(officialV2Phase6AReadResult.observed.transactionModes.every(mode => mode === 'readonly'), true,
+    'Phase 6A browser operations must open readonly transactions only');
+  assert.equal(officialV2Phase6AReadResult.countsUnchanged, true, 'Phase 6A browser operations must leave official Store counts unchanged');
   const officialV2Stage5Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage5-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage5BrowserScenario();})()`);
   assert.deepEqual(officialV2Stage5Result.featureGates, { PURCHASE: true, SALE: true });
   assert.match(officialV2Stage5Result.preview.error, /STOCKTAKE_DECISION_REQUIRED/);
@@ -1054,6 +1166,7 @@ try {
       gatewayInjectedFailure: officialGatewayRollbackResult,
       stage3V2: officialV2Stage3Result,
       stage4V2: officialV2Stage4Result,
+      phase6AReadModel: officialV2Phase6AReadResult,
       stage5V2: officialV2Stage5Result,
       expectedFinalizeTransactionCount: 1,
       partialFinalizeWritesAfterFailure: 0
