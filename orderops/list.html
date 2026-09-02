@@ -730,6 +730,143 @@
     .shortage-focus-button:hover:not(:disabled) { border-color: #fb7185; background: #ffe4e6; }
     .shortage-focus-button.active { border-color: #be123c; color: #fff; background: #be123c; }
     .shortage-focus-button:disabled { opacity: .45; cursor: default; }
+    .unresolved-review-toggle.active {
+      border-color: var(--teal-700);
+      color: var(--white);
+      background: var(--teal-700);
+    }
+    .unresolved-review-state,
+    .unresolved-impact-state {
+      display: grid;
+      justify-items: start;
+      gap: 7px;
+      min-height: 150px;
+      padding: 24px;
+      color: var(--slate-700);
+      background: var(--white);
+    }
+    .unresolved-review-state strong,
+    .unresolved-impact-state strong { color: var(--slate-900); font-size: 14px; }
+    .unresolved-review-state--error strong { color: var(--red-700); }
+    .table-wrap.unresolved-review-surface {
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: hidden;
+      contain: layout inline-size paint;
+    }
+    .unresolved-detail {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      box-sizing: border-box;
+      padding: 10px;
+      color: var(--slate-700);
+      background: var(--white);
+    }
+    .unresolved-detail-toolbar {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 4px 0 10px;
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .unresolved-detail-toolbar > div { display: grid; gap: 5px; min-width: 0; }
+    .unresolved-detail-toolbar > div > span { display: flex; flex-wrap: wrap; gap: 6px; }
+    .unresolved-detail-summary,
+    .unresolved-impact-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      padding: 9px 0;
+      font-size: 11px;
+    }
+    .unresolved-section-title { margin: 12px 0 6px; color: var(--slate-900); font-size: 13px; }
+    .unresolved-section-title span { color: var(--slate-500); font-size: 10px; font-weight: 800; }
+    .unresolved-table-scroll {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
+      contain: inline-size;
+      box-sizing: border-box;
+      border: 1px solid var(--slate-200);
+    }
+    .unresolved-detail-table { min-width: 980px; margin: 0; }
+    .unresolved-detail-table th,
+    .unresolved-detail-table td { vertical-align: top; }
+    .unresolved-id-wrap { white-space: normal; overflow-wrap: anywhere; }
+    .unresolved-inline-link { color: var(--teal-700); font-weight: 800; }
+    .unresolved-official-null { color: var(--slate-600); font-weight: 900; white-space: nowrap; }
+    .unresolved-integrity,
+    .unresolved-candidate-basis,
+    .unresolved-impact-label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--slate-300);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .unresolved-integrity--ready,
+    .unresolved-candidate-basis.is-exact,
+    .unresolved-impact-label[data-tone="good"] { border-color: var(--teal-600); color: var(--teal-700); }
+    .unresolved-integrity--review,
+    .unresolved-impact-label[data-tone="warn"] { color: var(--amber-700); }
+    .unresolved-impact-label[data-tone="bad"] { color: var(--red-700); }
+    .unresolved-integrity-notes { color: var(--slate-600); font-size: 10px; }
+    .unresolved-review-required-row td { background: color-mix(in srgb, var(--amber-700) 10%, var(--white)); }
+    .unresolved-review-action { min-height: 26px; }
+    .unresolved-candidate-choice { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .unresolved-impact {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
+      contain: inline-size;
+      box-sizing: border-box;
+      border: 1px solid var(--slate-200);
+    }
+    .unresolved-impact-heading { display: grid; gap: 4px; padding: 10px; border-bottom: 1px solid var(--slate-200); }
+    .unresolved-impact-heading small { color: var(--slate-500); }
+    .unresolved-impact-table { border-top: 1px solid var(--slate-200); }
+    .unresolved-readonly-note { margin: 0; padding: 9px 10px; color: var(--slate-600); font-size: 10px; font-weight: 800; }
+    .unresolved-pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-top: 1px solid var(--slate-200);
+      color: var(--slate-600);
+      background: var(--white);
+    }
+    .unresolved-pagination-copy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 10px; min-width: 0; }
+    .unresolved-pagination-copy strong { color: var(--slate-900); }
+    .unresolved-pagination-copy small { flex-basis: 100%; color: var(--slate-500); }
+    .unresolved-pagination-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+    @media (max-width: 390px) {
+      .view-controls { max-width: 100%; overflow-x: auto !important; overflow-y: hidden !important; }
+      .unresolved-detail { padding: 7px; }
+      .unresolved-detail-toolbar { align-items: stretch; flex-direction: column; }
+      .unresolved-review-state, .unresolved-impact-state { min-height: 120px; padding: 16px; }
+      .unresolved-review-surface .preview-unresolved,
+      .unresolved-detail-table {
+        width: 980px !important;
+        min-width: 980px !important;
+        table-layout: fixed;
+      }
+      .unresolved-review-surface .preview-unresolved col { width: auto !important; }
+      .unresolved-pagination { align-items: stretch; flex-direction: column; }
+      .unresolved-pagination-actions { width: 100%; }
+      .unresolved-pagination-actions button { flex: 1 1 0; }
+    }
     /* ORDER Q v1.48: unit emphasis and integrated workbook views */
     .header-output-button { border-color: #99f6e4; color: #0f766e; background: #f0fdfa; }
     .header-output-button:hover:not(:disabled) { background: #ccfbf1; }
@@ -1951,6 +2088,8 @@
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
         <button class="shortage-focus-button hidden" id="shortageFocusButton" type="button"
           aria-pressed="false" aria-label="재고부족 상품 모아보기">재고부족 0</button>
+        <button class="filter-toggle-button unresolved-review-toggle" id="unresolvedReviewToggle" type="button"
+          aria-pressed="false" aria-label="미매칭 검수 자료 보기">미매칭</button>
         <fieldset class="spec-filter" id="specFilterGroup">
           <legend>규격</legend>
           <label><input type="checkbox" value="BOX">BOX</label>
@@ -2171,7 +2310,7 @@
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
-      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger" });
+      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
         inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고"], columns: {} },
@@ -2247,6 +2386,19 @@
         purchaseAutocompleteIndex: 0,
         analysisEnterReady: false,
         analysisEnterLocked: false,
+        unresolvedReview: {
+          active: false,
+          loading: false,
+          result: null,
+          selectedId: "",
+          selectedProductId: "",
+          impact: { loading: false, result: null, error: false },
+          page: 1,
+          hostView: null,
+          pendingFocus: null,
+          requestId: 0,
+          ui: null,
+        },
       };
 
       const elements = {
@@ -2286,6 +2438,7 @@
         tableSearchInput: document.getElementById("tableSearchInput"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
         shortageFocusButton: document.getElementById("shortageFocusButton"),
+        unresolvedReviewToggle: document.getElementById("unresolvedReviewToggle"),
         specFilterGroup: document.getElementById("specFilterGroup"),
         warehouseColorBar: document.getElementById("warehouseColorBar"),
         warehouseFilterToggle: document.getElementById("warehouseFilterToggle"),
@@ -2363,6 +2516,47 @@
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
+      }
+
+      let unresolvedReviewUiPromise = null;
+
+      function focusedElementDescriptor(element = document.activeElement) {
+        if (!(element instanceof HTMLElement) || element === document.body) return null;
+        if (element.id) return { id: element.id };
+        const gridInput = element.closest?.("[data-grid-column]");
+        if (gridInput) {
+          return {
+            productCode: gridInput.closest("tr[data-product-code]")?.dataset.productCode || "",
+            gridColumn: gridInput.dataset.gridColumn || "",
+          };
+        }
+        return null;
+      }
+
+      function restoreFocusedElement(descriptor) {
+        let target = descriptor?.id ? document.getElementById(descriptor.id) : null;
+        if (!target && descriptor?.gridColumn) {
+          target = Array.from(elements.previewTable.querySelectorAll("[data-grid-column]"))
+            .find((candidate) => candidate.dataset.gridColumn === descriptor.gridColumn &&
+              candidate.closest("tr[data-product-code]")?.dataset.productCode === descriptor.productCode);
+        }
+        (target || elements.unresolvedReviewToggle)?.focus?.({ preventScroll: true });
+      }
+
+      async function loadUnresolvedReviewUi() {
+        if (!unresolvedReviewUiPromise) {
+          unresolvedReviewUiPromise = import("./unresolved-review-ui.js?v=0.1.0");
+        }
+        return unresolvedReviewUiPromise;
+      }
+
+      function unresolvedReviewAdapter(ui) {
+        const localTestHost = ["127.0.0.1", "localhost"].includes(location.hostname);
+        const testPort = localTestHost ? globalThis.ONEAPP_ORDEROPS_UNRESOLVED_REVIEW_TEST_PORT : null;
+        return testPort && typeof testPort.getReviewResult === "function" &&
+          typeof testPort.previewRematchImpactResult === "function"
+          ? testPort
+          : ui.unresolvedReviewReadAdapter;
       }
 
       function formatNumber(value) {
@@ -3422,6 +3616,7 @@
       }
 
       function resetResults() {
+        leaveUnresolvedReview({ render: false });
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
         state.workspace = null;
@@ -5048,7 +5243,7 @@
           const manager = String(pair.sourceRow?.manager || "").trim();
           if (!state.managerFilters.has(manager)) return false;
         }
-        if (previewId !== "validation" && previewId !== "notices" && state.specificationFilters.size > 0) {
+        if (!["validation", "notices", "unresolved"].includes(previewId) && state.specificationFilters.size > 0) {
           const specification = String(
             pair.sourceRow?.specification ?? pair.sourceRow?.spec ?? pair.row?.[2] ?? "",
           ).trim();
@@ -5250,6 +5445,9 @@
 
       function previewDefinitionById(previewId) {
         if (!state.workspace) return null;
+        if (previewId === "unresolved" && state.unresolvedReview.ui && state.unresolvedReview.result?.status === "READY") {
+          return state.unresolvedReview.ui.buildUnresolvedListPreview(state.unresolvedReview.result);
+        }
         const definitions = getPreviewDefinitions(state.workspace);
         return previewId === "notices" ? definitions.validation?.noticesPreview : definitions[previewId];
       }
@@ -5453,6 +5651,7 @@
               const rowStyle = [shortageCategoryStyle, managerColorStyle].filter(Boolean).join(";");
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
+                previewId === "unresolved" && sourceRow?.integrity?.status !== "READY" ? "unresolved-review-required-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
                 focusCandidate ? "shortage-candidate-row" : "",
                 shortageCategory ? "shortage-category-row" : "",
@@ -5531,7 +5730,17 @@
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const content = editablePurchase
+                    const unresolvedReviewAction = previewId === "unresolved" && column.role === "unresolvedReviewAction";
+                    const unresolvedOfficialInventory = previewId === "unresolved" && column.role === "unresolvedOfficialInventory";
+                    const unresolvedIntegrity = previewId === "unresolved" && column.role === "unresolvedIntegrity";
+                    const content = unresolvedReviewAction
+                      ? `<button class="table-tool-button unresolved-review-action" type="button"
+                          data-unresolved-detail="${escapeHtml(sourceRow?.unresolvedProductId || "")}">원전표·후보 보기</button>`
+                      : unresolvedOfficialInventory
+                        ? `<span class="unresolved-official-null">— · 미반영</span>`
+                      : unresolvedIntegrity
+                        ? `<span class="unresolved-integrity ${sourceRow?.integrity?.status === "READY" ? "unresolved-integrity--ready" : "unresolved-integrity--review"}">${escapeHtml(displayValue)}</span>`
+                      : editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
@@ -5599,7 +5808,235 @@
         }
       }
 
+      function captureUnresolvedHostView() {
+        return {
+          activePreview: state.activePreview,
+          searchQuery: state.searchQuery,
+          selectedOrderViewPresetId: state.selectedOrderViewPresetId,
+          activeFilterPanel: state.activeFilterPanel,
+          scrollTop: elements.previewTable.scrollTop,
+          scrollLeft: elements.previewTable.scrollLeft,
+          focus: state.unresolvedReview.pendingFocus || focusedElementDescriptor(),
+          outputDisabled: {
+            print: elements.printButton.disabled,
+            download: elements.downloadButton.disabled,
+            cloud: elements.cloudSaveButton.disabled,
+            headerCloud: elements.headerCloudSaveButton.disabled,
+          },
+        };
+      }
+
+      function setUnresolvedReviewControls(active) {
+        elements.unresolvedReviewToggle.classList.toggle("active", active);
+        elements.unresolvedReviewToggle.setAttribute("aria-pressed", String(active));
+        elements.unresolvedReviewToggle.textContent = active ? "미매칭 닫기" : "미매칭";
+        elements.previewTable.classList.toggle("unresolved-review-surface", active);
+        if (!active) return;
+        elements.shortageFocusButton.classList.add("hidden");
+        elements.specFilterGroup.disabled = true;
+        elements.warehouseFilterToggle.disabled = true;
+        elements.managerFilterToggle.disabled = true;
+        elements.columnVisibilityButton.disabled = true;
+        elements.columnWidthSaveButton.disabled = true;
+        elements.columnWidthResetButton.disabled = true;
+        elements.printButton.disabled = true;
+        elements.downloadButton.disabled = true;
+        elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
+      }
+
+      function renderUnresolvedReview() {
+        closePurchaseAutocomplete();
+        setUnresolvedReviewControls(true);
+        const definitions = getPreviewDefinitions(state.workspace);
+        const validationDefinition = definitions.validation;
+        elements.previewTabs.innerHTML = `
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-preview="validation">
+            ${escapeHtml(validationDefinition.label)}
+          </button>`;
+        renderSourceViewCards(definitions);
+        renderOrderViewPresetOptions();
+        elements.warehouseColorBar.classList.add("hidden");
+        elements.warehouseFilterPanel.classList.add("hidden");
+        elements.managerFilterPanel.classList.add("hidden");
+        elements.warehouseFilterToggle.classList.remove("active");
+        elements.managerFilterToggle.classList.remove("active");
+        elements.warehouseFilterToggle.setAttribute("aria-expanded", "false");
+        elements.managerFilterToggle.setAttribute("aria-expanded", "false");
+        elements.systemViewNote.textContent = "미매칭 검수 · 읽기 전용 · 공식재고 미반영";
+        elements.systemViewNote.classList.remove("hidden");
+
+        const review = state.unresolvedReview;
+        if (!review.ui) {
+          elements.previewCount.textContent = "조회 중";
+          elements.previewTable.innerHTML = '<div class="unresolved-review-state" role="status"><strong>미매칭 자료 조회 중</strong><span>ORDER Q의 읽기 전용 검수 자료를 확인하고 있습니다.</span></div>';
+          return;
+        }
+        if (review.loading) {
+          elements.previewCount.textContent = "조회 중";
+          elements.previewTable.innerHTML = review.ui.renderUnresolvedLoading(review.page);
+          return;
+        }
+        if (review.result?.status === "ERROR" || !review.result) {
+          elements.previewCount.textContent = "조회 실패";
+          elements.previewTable.innerHTML = review.ui.renderUnresolvedError(review.page);
+          return;
+        }
+        if (review.result.status === "EMPTY") {
+          elements.previewCount.textContent = "0행";
+          elements.previewTable.innerHTML = review.ui.renderUnresolvedEmpty();
+          return;
+        }
+        const item = review.result.items?.find((candidate) => candidate.unresolvedProductId === review.selectedId);
+        if (review.selectedId && item) {
+          elements.previewCount.textContent = "원전표·후보·영향";
+          elements.previewTable.innerHTML = review.ui.renderUnresolvedDetail({
+            item,
+            selectedProductId: review.selectedProductId,
+            impactState: review.impact,
+          });
+          return;
+        }
+        review.selectedId = "";
+        const preview = review.ui.buildUnresolvedListPreview(review.result);
+        const pairs = filteredSortedPreviewPairs("unresolved", preview);
+        const filterCount = Object.values(state.columnFilters.unresolved || {}).filter(columnFilterIsActive).length;
+        const page = review.ui.unresolvedPagePresentation(review.result);
+        elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(page.returnedItems)}행 · ${formatNumber(page.number)}/${formatNumber(page.totalPages)}페이지`;
+        elements.systemViewNote.textContent = ["미매칭 검수", "읽기 전용",
+          `${formatNumber(page.number)}/${formatNumber(page.totalPages)}페이지`,
+          `현재 페이지 ${formatNumber(page.returnedItems)}건 · 전체 ${formatNumber(page.totalItems)}건`,
+          "검색·정렬·열조건은 현재 페이지 범위",
+          filterCount ? `열조건 ${filterCount}` : ""]
+          .filter(Boolean).join(" · ");
+        elements.previewTable.innerHTML = `<div class="unresolved-table-scroll" data-unresolved-list-table>${renderTableMarkup(preview, pairs, {
+          editable: false,
+          resizable: false,
+          previewId: "unresolved",
+        })}</div>${review.ui.renderUnresolvedPagination(review.result, { visibleItems: pairs.length })}`;
+      }
+
+      async function requestUnresolvedReview(page = state.unresolvedReview.page || 1) {
+        const review = state.unresolvedReview;
+        const requestedPage = Number.isInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1;
+        const requestId = ++review.requestId;
+        review.page = requestedPage;
+        review.loading = true;
+        review.result = null;
+        review.selectedId = "";
+        review.selectedProductId = "";
+        review.impact = { loading: false, result: null, error: false };
+        renderUnresolvedReview();
+        try {
+          review.ui = await loadUnresolvedReviewUi();
+          if (!review.active || requestId !== review.requestId) return;
+          renderUnresolvedReview();
+          const companyId = review.ui.resolveOrderOpsCompanyId();
+          const result = await unresolvedReviewAdapter(review.ui).getReviewResult({ companyId, page: requestedPage, limit: 200 });
+          if (!review.active || requestId !== review.requestId) return;
+          review.result = result;
+          const returnedPage = review.ui.unresolvedPagePresentation(result).number;
+          if (returnedPage) review.page = returnedPage;
+        } catch {
+          if (!review.active || requestId !== review.requestId) return;
+          review.result = { status: "ERROR", items: [] };
+        } finally {
+          if (review.active && requestId === review.requestId) {
+            review.loading = false;
+            renderUnresolvedReview();
+          }
+        }
+      }
+
+      async function previewSelectedUnresolvedCandidate(selectedProductId) {
+        const review = state.unresolvedReview;
+        if (!review.active || review.result?.status !== "READY" || !review.ui) return;
+        const item = review.result.items?.find((candidate) => candidate.unresolvedProductId === review.selectedId);
+        const product = item?.candidates?.find((candidate) =>
+          candidate.productId === selectedProductId && candidate.selectable === true);
+        if (!item || !product) return;
+        const requestId = ++review.requestId;
+        review.selectedProductId = selectedProductId;
+        review.impact = { loading: true, result: null, error: false };
+        renderUnresolvedReview();
+        try {
+          const companyId = review.ui.resolveOrderOpsCompanyId();
+          const result = await unresolvedReviewAdapter(review.ui).previewRematchImpactResult({
+            companyId,
+            unresolvedProductId: item.unresolvedProductId,
+            selectedProductId,
+          });
+          if (!review.active || requestId !== review.requestId) return;
+          review.impact = result?.status === "ERROR"
+            ? { loading: false, result: null, error: true }
+            : { loading: false, result, error: false };
+        } catch {
+          if (!review.active || requestId !== review.requestId) return;
+          review.impact = { loading: false, result: null, error: true };
+        }
+        if (review.active && requestId === review.requestId) renderUnresolvedReview();
+      }
+
+      function enterUnresolvedReview() {
+        if (!state.workspace || state.unresolvedReview.active) return;
+        state.unresolvedReview.hostView = captureUnresolvedHostView();
+        state.unresolvedReview.pendingFocus = null;
+        closeColumnSortMenu();
+        setActiveFilterPanel("");
+        state.unresolvedReview.active = true;
+        state.activePreview = "unresolved";
+        state.searchQuery = "";
+        elements.tableSearchInput.value = "";
+        state.unresolvedReview.page = 1;
+        requestUnresolvedReview(1);
+      }
+
+      function leaveUnresolvedReview({ render = true, nextPreview = "" } = {}) {
+        const review = state.unresolvedReview;
+        if (!review.active) return;
+        const host = review.hostView || {};
+        review.active = false;
+        review.requestId += 1;
+        review.loading = false;
+        review.result = null;
+        review.selectedId = "";
+        review.selectedProductId = "";
+        review.impact = { loading: false, result: null, error: false };
+        review.page = 1;
+        review.hostView = null;
+        state.activePreview = nextPreview || host.activePreview || "validation";
+        state.searchQuery = host.searchQuery || "";
+        state.selectedOrderViewPresetId = host.selectedOrderViewPresetId || "";
+        state.activeFilterPanel = host.activeFilterPanel || "";
+        elements.tableSearchInput.value = state.searchQuery;
+        delete state.sortSettings.unresolved;
+        delete state.columnFilters.unresolved;
+        setUnresolvedReviewControls(false);
+        elements.warehouseFilterToggle.disabled = false;
+        elements.managerFilterToggle.disabled = false;
+        elements.columnVisibilityButton.disabled = false;
+        elements.columnWidthSaveButton.disabled = false;
+        elements.columnWidthResetButton.disabled = false;
+        elements.printButton.disabled = Boolean(host.outputDisabled?.print);
+        elements.downloadButton.disabled = Boolean(host.outputDisabled?.download);
+        elements.cloudSaveButton.disabled = Boolean(host.outputDisabled?.cloud);
+        elements.headerCloudSaveButton.disabled = Boolean(host.outputDisabled?.headerCloud);
+        if (!render || !state.workspace) return;
+        renderPreview();
+        setActiveFilterPanel(state.activeFilterPanel);
+        window.requestAnimationFrame(() => {
+          elements.previewTable.scrollTop = Number(host.scrollTop) || 0;
+          elements.previewTable.scrollLeft = Number(host.scrollLeft) || 0;
+          restoreFocusedElement(host.focus);
+        });
+      }
+
       function renderPreview() {
+        if (state.unresolvedReview.active) {
+          renderUnresolvedReview();
+          return;
+        }
+        setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[state.activePreview]) state.activePreview = "validation";
@@ -5767,6 +6204,19 @@
 
       function runResultFilterReset() {
         if (!state.workspace) return;
+        if (state.unresolvedReview.active) {
+          state.searchQuery = "";
+          elements.tableSearchInput.value = "";
+          state.unresolvedReview.selectedId = "";
+          state.unresolvedReview.selectedProductId = "";
+          state.unresolvedReview.impact = { loading: false, result: null, error: false };
+          delete state.sortSettings.unresolved;
+          delete state.columnFilters.unresolved;
+          closeColumnSortMenu();
+          renderUnresolvedReview();
+          showToast("미매칭 검색어·정렬·열 조건을 초기화했습니다. 기존 화면 상태는 보존됩니다.");
+          return;
+        }
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
@@ -6567,6 +7017,13 @@
         saveCurrentOrderViewPreset();
       });
       elements.resultFilterResetButton.addEventListener("click", runResultFilterReset);
+      elements.unresolvedReviewToggle.addEventListener("pointerdown", () => {
+        if (!state.unresolvedReview.active) state.unresolvedReview.pendingFocus = focusedElementDescriptor();
+      });
+      elements.unresolvedReviewToggle.addEventListener("click", () => {
+        if (state.unresolvedReview.active) leaveUnresolvedReview();
+        else enterUnresolvedReview();
+      });
       elements.shortageFocusButton.addEventListener("click", () => {
         if (!state.workspace || elements.shortageFocusButton.disabled) return;
         state.shortageFocus = !state.shortageFocus;
@@ -6578,7 +7035,7 @@
       });
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
-        markOrderViewPresetCustom();
+        if (!state.unresolvedReview.active) markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
@@ -6705,12 +7162,15 @@
       });
       function activatePreview(previewId) {
         if (!state.workspace) return false;
+        const leftUnresolvedReview = state.unresolvedReview.active;
+        if (leftUnresolvedReview) leaveUnresolvedReview({ render: false, nextPreview: previewId });
         const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[previewId]) return false;
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
+        if (leftUnresolvedReview) setActiveFilterPanel(state.activeFilterPanel);
         scheduleLocalSave();
         return true;
       }
@@ -6765,6 +7225,34 @@
         activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
+        const pageButton = event.target.closest("[data-unresolved-page]");
+        if (pageButton && state.unresolvedReview.active && !pageButton.disabled) {
+          const page = Number(pageButton.dataset.unresolvedPage);
+          if (Number.isInteger(page) && page > 0) requestUnresolvedReview(page);
+          return;
+        }
+        const detailButton = event.target.closest("[data-unresolved-detail]");
+        if (detailButton && state.unresolvedReview.active) {
+          const item = state.unresolvedReview.result?.items?.find((candidate) =>
+            candidate.unresolvedProductId === detailButton.dataset.unresolvedDetail);
+          if (!item) return;
+          state.unresolvedReview.selectedId = item.unresolvedProductId;
+          state.unresolvedReview.selectedProductId = "";
+          state.unresolvedReview.impact = { loading: false, result: null, error: false };
+          renderUnresolvedReview();
+          return;
+        }
+        if (event.target.closest("[data-unresolved-list]") && state.unresolvedReview.active) {
+          state.unresolvedReview.selectedId = "";
+          state.unresolvedReview.selectedProductId = "";
+          state.unresolvedReview.impact = { loading: false, result: null, error: false };
+          renderUnresolvedReview();
+          return;
+        }
+        if (event.target.closest("[data-unresolved-retry]") && state.unresolvedReview.active) {
+          requestUnresolvedReview();
+          return;
+        }
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
         if (trigger && state.workspace) {
           event.preventDefault();
@@ -6910,6 +7398,11 @@
         renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
+        const unresolvedCandidate = event.target.closest("[data-unresolved-candidate]");
+        if (unresolvedCandidate && state.unresolvedReview.active) {
+          previewSelectedUnresolvedCandidate(unresolvedCandidate.dataset.unresolvedCandidate);
+          return;
+        }
         const orderInput = event.target.closest(".order-edit-input[data-order-row][data-order-field]");
         if (orderInput) {
           commitOrderInput(orderInput);
