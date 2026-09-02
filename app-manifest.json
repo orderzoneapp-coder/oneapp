@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.8",
-  "updatedAt": "2026-09-02",
+  "updatedAt": "2026-09-03",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -425,7 +425,7 @@
       "path": "orderq/index.html",
       "kind": "web-entry-group",
       "status": "pilot",
-      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and the owner boundary for official purchase/sale commands, documents, revisions, inventory or pending effects, base AR/AP effects, and the official local sync queue without changing the existing OrderOps compatibility route.",
+      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and the owner boundary for official purchase/sale commands, documents, revisions, inventory or pending effects, base AR/AP effects, the read-only unresolved-product review model and impact preview, and the official local sync queue without changing the existing OrderOps compatibility route.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "entries": [
@@ -441,13 +441,15 @@
       ],
       "ownedContracts": [
         "orderq-official-voucher-core",
-        "orderq-official-sync"
+        "orderq-official-sync",
+        "orderq-unresolved-review-read-model"
       ],
       "sharedContracts": [
         "cloud-url",
         "orderq-vnext-sync",
         "voucher-activity-snapshot",
-        "product-master"
+        "product-master",
+        "orderq-unresolved-review-read-model"
       ]
     },
     {
@@ -831,6 +833,37 @@
           "syncQueue"
         ]
       }
+    },
+    {
+      "id": "orderq-unresolved-review-read-model",
+      "owner": "orderq-vnext",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1",
+      "readAdapter": "ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1",
+      "impactPreviewSchemaVersion": "ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1",
+      "readerPolicy": "Company scope is mandatory. Only the ORDER Q owner Repository opens the existing official stores and composes unresolved records, pending effects, confirmed documents, lines, Revisions, and stocktake checkpoints. EMPTY and ERROR remain distinct; an owner read failure is never represented as zero rows.",
+      "candidatePolicy": "The current Product Snapshot is reference-only. An outer-trimmed exact source-string code may be marked as an exact candidate only when unique under the Product owner company rule. Leading-zero, case, character-width, and internal-space variants remain distinct. Name candidates are reference-only and never auto-confirmed.",
+      "writePolicy": "Read model and rematch impact preview only. No rematch command, inventory write, Product or Customer write, UI execution, schema migration, or Store creation is permitted.",
+      "resources": {
+        "contractAsset": "orderq/unresolved-review-read-model.js",
+        "adapterAsset": "orderq/unresolved-review-read-adapter.js",
+        "repositoryAsset": "orderq/unresolved-review-repository.js",
+        "checkpointClassifierAsset": "orderq/stocktake-conflict-v2.js",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "databaseVersion": 7,
+        "transactionMode": "readonly",
+        "indexedDbStores": [
+          "unresolvedProducts",
+          "pendingInventoryEffects",
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
+          "voucherRevisions",
+          "inventoryCheckpoints"
+        ]
+      },
+      "rollback": "Remove the three Phase 6A read-only assets and this manifest registration. Existing ORDER Q DB v7 data and every product UI asset remain untouched."
     },
     {
       "id": "orderq-official-sync",
