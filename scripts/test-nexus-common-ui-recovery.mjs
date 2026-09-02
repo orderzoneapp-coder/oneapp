@@ -40,8 +40,8 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.3.3`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.2`;
+  const uiCss = `${base}nexus-ui.css?v=1.3.4`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.3`;
   const runtime = `${base}nexus-ui.js?v=1.4.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
@@ -131,6 +131,9 @@ assert.match(uiCss, /\.nexus-ui-header\s*\{[^}]*width:\s*100%/s, 'the global hea
 assert.match(uiCss, /grid-template-columns:\s*270px\s+minmax\(0,\s*1fr\)\s+270px/, 'desktop header must keep equal fixed side rails around the centered tabs');
 assert.match(uiCss, /\.nexus-ui-brand__current\s*\{[^}]*flex:\s*0\s+0\s+110px[^}]*width:\s*110px[^}]*max-width:\s*110px/s, 'current app/version slot must not move with text length');
 assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
+assert.match(uiCss, /:root\s*\{[^}]*--nexus-ui-page-bg:\s*#f3efe6/s, 'light body must use the approved ivory page tone');
+assert.match(uiCss, /:root\s*\{[^}]*--nexus-ui-panel-bg:\s*#faf7f0/s, 'light panels must use a warm paper surface');
+assert.match(uiCss, /:root\s*\{[^}]*--nexus-ui-input-bg:\s*#fffdf8/s, 'light inputs must use a paper-white surface');
 assert.match(uiCss, /--nexus-ui-table-header-bg:\s*#292f37/, 'dark table header must use the muted hierarchy');
 assert.match(uiCss, /--nexus-ui-table-row-bg:\s*#1d2228/, 'dark table rows must use the muted hierarchy');
 assert.match(uiCss, /--nexus-ui-table-row-hover-bg:\s*#282e36/, 'dark table hover must remain neutral');
@@ -140,14 +143,23 @@ assert.match(uiCss, /--nexus-ui-info:\s*#b3c4d4/, 'dark information state must b
 assert.match(uiCss, /--nexus-ui-success:\s*#b3c8ba/, 'dark success state must be low chroma');
 assert.match(uiCss, /--nexus-ui-warning:\s*#c4b8a8/, 'dark warning state must be low chroma');
 assert.match(uiCss, /--nexus-ui-danger:\s*#c7b1b4/, 'dark danger state must be low chroma');
-assert.match(uiCss, /--nexus-ui-header-bg:\s*#101722/, 'dark header palette must be preserved');
-assert.match(uiCss, /--nexus-ui-tab-group-bg:\s*#1a2330/, 'dark tab group palette must be preserved');
-assert.match(uiCss, /--nexus-ui-tab-active-bg:\s*#354153/, 'dark selected tab palette must be preserved');
+assert.equal((uiCss.match(/--nexus-ui-header-bg:\s*#0b1021/g) || []).length, 2, 'the header must stay dark in both screen modes');
+assert.equal((uiCss.match(/--nexus-ui-tab-group-bg:\s*transparent/g) || []).length, 2, 'the old transparent tab rail must stay fixed in both screen modes');
+assert.equal((uiCss.match(/--nexus-ui-tab-active-bg:\s*transparent/g) || []).length, 2, 'the old active tab must not use a large filled background');
 assert.match(uiCss, /\.nexus-ui-nav__track\s*\{[^}]*height:\s*44px[^}]*gap:\s*4px/s, 'tab group geometry is required');
 assert.match(uiCss, /\.nexus-ui-nav__track\s*\{[^}]*margin-inline:\s*auto/s, 'desktop tab group must remain centered independently of label length');
 assert.match(uiCss, /\.nexus-ui-nav__link\s*\{[^}]*width:\s*96px[^}]*min-width:\s*96px[^}]*height:\s*38px[^}]*font-size:\s*13px[^}]*font-weight:\s*600/s, 'desktop tabs must be fixed at 38x96px and 13px/600');
 assert.match(uiCss, /@media \(max-width:\s*760px\)[\s\S]*?\.nexus-ui-nav__link\s*\{[^}]*min-width:\s*96px[^}]*height:\s*44px/s, 'mobile tabs must be 44x96px');
-assert.doesNotMatch(uiCss, /\.nexus-ui-nav__link::after/, 'selected tabs must not use an underline');
+assert.match(uiCss, /\.nexus-ui-nav__link\.is-current::after\s*\{[^}]*height:\s*2px[^}]*background:\s*var\(--nexus-ui-teal\)/s, 'selected tabs must restore the old mint underline');
+assert.match(uiCss, /\.nexus-ui-logo--light\s*\{[^}]*display:\s*none/s, 'the light-background logo must stay hidden on the fixed dark header');
+assert.match(uiCss, /\.nexus-ui-logo--dark\s*\{[^}]*display:\s*block/s, 'the dark-header logo must stay visible in both screen modes');
+assert.match(appThemeCss, /data-nexus-ui-theme="light"/, 'body light-mode scope is required');
+assert.match(appThemeCss, /data-nexus-ui-theme="light"\]\[data-nexus-ui-app\] body\s*\{[^}]*background-color:\s*var\(--nexus-ui-page-bg\)/s, 'all work-app light bodies must consume the ivory page token');
+assert.match(appThemeCss, /data-nexus-ui-theme="light"\]\[data-nexus-ui-app\] body th/, 'light table headers must consume the warm hierarchy');
+assert.match(appThemeCss, /data-nexus-ui-app="smart-input"[^}]*--app-bg:\s*var\(--nexus-ui-page-bg\)/s, 'SmartInput must bridge its local light palette to the ivory theme');
+assert.match(appThemeCss, /data-nexus-ui-app="orderq-vnext"[^}]*--bg:\s*var\(--nexus-ui-page-bg\)/s, 'ORDER Q vNext must bridge its local light palette to the ivory theme');
+assert.match(appThemeCss, /data-nexus-ui-app="customer-master"[^}]*--cm-panel:\s*var\(--nexus-ui-panel-bg\)/s, 'Customer Master must bridge its local light palette to the ivory theme');
+assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*--white:\s*var\(--nexus-ui-panel-bg\)/s, 'OrderOps must bridge its local light palette to the ivory theme');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is required');
 assert.match(appThemeCss, /\.bg-slate-50\\\/50/, 'dark empty-table backgrounds must be mapped');
 assert.match(appThemeCss, /\.bg-indigo-50\\\/50/, 'transparent information surfaces must be mapped');
@@ -171,10 +183,10 @@ assert.match(smartInputCss, /--accent-fill:\s*#16746d/, 'SmartInput solid accent
 assert.match(smartInputCss, /--text-faint:\s*#7b8fa4/, 'SmartInput faint dark text needs readable contrast');
 
 for (const [label, foreground, background] of [
-  ['dark tab', '8f9aaa', '1a2330'],
-  ['dark active tab', 'f4f7fb', '354153'],
-  ['light tab', '667085', 'f1f4f7'],
-  ['light active tab', '24364d', 'dfe7f0'],
+  ['fixed dark tab', '939db5', '0b1021'],
+  ['fixed dark active tab', 'ffffff', '0b1021'],
+  ['light body text', '292b2f', 'f3efe6'],
+  ['light muted text', '66675f', 'f3efe6'],
   ['dark body text', 'd6d9de', '15181d'],
   ['dark muted text', '9aa2ac', '15181d'],
   ['dark muted selected text', '9aa2ac', '303842'],

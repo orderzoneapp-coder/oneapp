@@ -2,10 +2,205 @@
  * NEXUS shared work-area theme consumer.
  *
  * The common header remains the only Light/Dark controller. This stylesheet
- * consumes data-nexus-ui-theme and applies the rollback-era muted worktable
+ * consumes data-nexus-ui-theme and applies the shared ivory/graphite worktable
  * hierarchy to every application exposed by the common header. Selectable
  * tools stay neutral; low-chroma color is reserved for semantic states.
  */
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] {
+  background: var(--nexus-ui-page-bg);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body {
+  background-color: var(--nexus-ui-page-bg) !important;
+  color: var(--nexus-ui-text);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body ::selection {
+  background: var(--nexus-ui-selection-bg);
+  color: var(--nexus-ui-text);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :focus-visible {
+  outline-color: var(--nexus-ui-focus);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(input, select, textarea) {
+  border-color: var(--nexus-ui-border-strong) !important;
+  background-color: var(--nexus-ui-input-bg) !important;
+  color: var(--nexus-ui-text) !important;
+  caret-color: var(--nexus-ui-text);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(input, textarea)::placeholder {
+  color: var(--nexus-ui-muted) !important;
+  opacity: 1;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(input, select, textarea):disabled {
+  background-color: var(--nexus-ui-panel-subtle) !important;
+  color: var(--nexus-ui-muted) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body table {
+  border-color: var(--nexus-ui-border);
+  background-color: var(--nexus-ui-table-row-bg);
+  color: var(--nexus-ui-text);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(th, td) {
+  border-color: var(--nexus-ui-border);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body th {
+  background-color: var(--nexus-ui-table-header-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body tbody td {
+  background-color: var(--nexus-ui-table-row-bg) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body tbody tr:hover > td {
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(
+  .panel,
+  .card,
+  .metric-card,
+  .shell,
+  .page-shell,
+  .workspace,
+  .work-area,
+  .table-wrap,
+  .modal-content,
+  .settings-modal-content,
+  .dialog-panel,
+  .toolbar-popover,
+  .column-sort-menu,
+  .column-value-list,
+  .purchase-autocomplete,
+  .product-suggestions,
+  .company-panel
+) {
+  border-color: var(--nexus-ui-border) !important;
+  background-color: var(--nexus-ui-panel-bg) !important;
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(
+  .bg-white,
+  .bg-white\/50,
+  .bg-white\/60,
+  .bg-white\/70,
+  .bg-white\/80,
+  .bg-white\/90,
+  .bg-white\/95,
+  .bg-gray-50,
+  .bg-zinc-50,
+  .bg-neutral-50
+) {
+  background-color: var(--nexus-ui-panel-bg) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(
+  .bg-slate-50,
+  .bg-slate-50\/30,
+  .bg-slate-50\/40,
+  .bg-slate-50\/50,
+  .bg-slate-50\/60,
+  .bg-slate-50\/70,
+  .bg-slate-100,
+  .bg-slate-100\/60,
+  .bg-slate-100\/80,
+  .bg-gray-100,
+  .bg-zinc-100,
+  .bg-neutral-100
+) {
+  background-color: var(--nexus-ui-panel-subtle) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(
+  .bg-slate-200,
+  .bg-slate-200\/50,
+  .bg-slate-300,
+  .bg-slate-300\/50,
+  .bg-gray-200,
+  .bg-zinc-200,
+  .bg-neutral-200
+) {
+  background-color: var(--nexus-ui-selection-bg) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app] body :is(
+  .hover\:bg-white:hover,
+  .hover\:bg-white\/60:hover,
+  .hover\:bg-slate-50:hover,
+  .hover\:bg-slate-100:hover,
+  .hover\:bg-slate-200:hover,
+  .group:hover .group-hover\:bg-slate-50,
+  .group:hover .group-hover\:\!bg-slate-50
+) {
+  background-color: var(--nexus-ui-table-row-hover-bg) !important;
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app="smart-input"] {
+  --app-bg: var(--nexus-ui-page-bg);
+  --surface: var(--nexus-ui-panel-bg);
+  --surface-muted: var(--nexus-ui-panel-subtle);
+  --surface-strong: var(--nexus-ui-table-header-bg);
+  --border: var(--nexus-ui-border);
+  --border-strong: var(--nexus-ui-border-strong);
+  --text: var(--nexus-ui-text);
+  --text-soft: var(--nexus-ui-muted);
+  --text-faint: #77766f;
+  --focus: var(--nexus-ui-focus);
+  --shadow: 0 12px 34px rgb(79 67 48 / 8%);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app="orderq-vnext"] {
+  --white: var(--nexus-ui-panel-bg);
+  --bg: var(--nexus-ui-page-bg);
+  --panel: var(--nexus-ui-panel-bg);
+  --ink: var(--nexus-ui-text);
+  --muted: var(--nexus-ui-muted);
+  --line: var(--nexus-ui-border);
+  --slate-50: var(--nexus-ui-table-row-bg);
+  --slate-100: var(--nexus-ui-panel-subtle);
+  --slate-200: var(--nexus-ui-selection-bg);
+  --slate-300: var(--nexus-ui-border-strong);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app="customer-master"] {
+  --cm-page: var(--nexus-ui-page-bg);
+  --cm-panel: var(--nexus-ui-panel-bg);
+  --cm-subtle: var(--nexus-ui-panel-subtle);
+  --cm-border: var(--nexus-ui-border);
+  --cm-border-strong: var(--nexus-ui-border-strong);
+  --cm-text: var(--nexus-ui-text);
+  --cm-muted: var(--nexus-ui-muted);
+  --cm-accent-soft: var(--nexus-ui-selection-bg);
+  --cm-success: var(--nexus-ui-success);
+  --cm-success-soft: var(--nexus-ui-success-bg);
+  --cm-warning: var(--nexus-ui-warning);
+  --cm-warning-soft: var(--nexus-ui-warning-bg);
+  --cm-danger: var(--nexus-ui-danger);
+  --cm-danger-soft: var(--nexus-ui-danger-bg);
+}
+
+html[data-nexus-ui-theme="light"][data-nexus-ui-app="orderops"] {
+  --white: var(--nexus-ui-panel-bg);
+  --slate-50: var(--nexus-ui-table-row-bg);
+  --slate-100: var(--nexus-ui-panel-subtle);
+  --slate-200: var(--nexus-ui-border);
+  --slate-300: var(--nexus-ui-border-strong);
+  --slate-500: var(--nexus-ui-muted);
+  --slate-600: #5e605b;
+  --slate-700: #464945;
+  --slate-800: #353834;
+  --slate-900: var(--nexus-ui-text);
+}
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app] {
   background: var(--nexus-ui-page-bg);
