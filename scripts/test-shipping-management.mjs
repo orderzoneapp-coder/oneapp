@@ -141,6 +141,8 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'manager-color-option',
   'manager-color-row',
+  'unit-alert-row',
+  'box-unit-row',
   'manager-color-badge',
   'function orderInformationManagers',
   'renderOrderInformationBadges(displayValue, sourceRow)',
@@ -1934,6 +1936,8 @@ for (const requiredInteractionContract of [
   'data-manager-filter',
   'manager-color-option',
   'manager-color-row',
+  'unit-alert-row',
+  'box-unit-row',
   'manager-color-badge',
   'function orderInformationManagers',
   'renderOrderInformationBadges(displayValue, sourceRow)',
@@ -2183,18 +2187,20 @@ assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{
 assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
   "negative balance cells must retain only the pale fill without an internal vertical rule");
 assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
+  html.includes('exactWarningUnit(sourceRow) ? "unit-alert-row"') &&
   html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
   html.includes('["productName", "specification"].includes(column.role) || quantityColumn') &&
   html.includes('warningUnitContext ? "unit-alert-cell"'),
-  "EA and 소분 rows must use red text for product name, specification, order, stock, and balance quantities");
+  "EA and 소분 rows must mark the complete row while retaining detailed cell classes");
 assert.match(combinedCss, /td\.unit-alert-cell \.inventory-total-frame\s*\{[^}]*color:\s*#b91c1c\s*!important;/,
   "EA and 소분 quantity frames must keep red text even when quantity-zero styling is also present");
 assert.match(combinedCss, /td\.unit-alert-cell[\s\S]*?\.inventory-total-frame\s*\{[^}]*font-weight:\s*400\s*!important;/,
   "EA and 소분 emphasis must use normal font weight");
 assert.ok(html.includes('const boxUnitContext = exactBoxUnit(sourceRow) &&') &&
+  html.includes('exactBoxUnit(sourceRow) ? "box-unit-row"') &&
   html.includes('["productName", "specification"].includes(column.role)') &&
   html.includes('boxUnitContext ? "box-unit-cell"'),
-  "exact BOX product-name and specification cells must receive their own bold black emphasis class");
+  "exact BOX rows must mark the complete row while retaining bold product and specification cells");
 assert.match(combinedCss, /td\.box-unit-cell\s*\{[^}]*color:\s*#0f172a\s*!important;[^}]*font-weight:\s*900;/,
   "BOX product-name and specification text must be bold black");
 assert.ok(html.includes('const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn') &&

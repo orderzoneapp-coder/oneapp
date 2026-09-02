@@ -849,11 +849,17 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-load
 html[data-nexus-ui-theme="light"][data-nexus-ui-app="orderops"] {
   --orderops-manager-row-weight: 48%;
   --orderops-manager-row-hover-weight: 58%;
+  --orderops-manager-row-text: #172033;
+  --orderops-unit-row-text: #b91c1c;
+  --orderops-box-row-text: #0f172a;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
   --orderops-manager-row-weight: 22%;
   --orderops-manager-row-hover-weight: 28%;
+  --orderops-manager-row-text: #f1f3f5;
+  --orderops-unit-row-text: #f4c7cb;
+  --orderops-box-row-text: #f1f3f5;
   --white: var(--nexus-ui-panel-bg);
   --slate-50: var(--nexus-ui-table-row-bg);
   --slate-100: var(--nexus-ui-panel-subtle);
@@ -874,44 +880,6 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] {
   --red-100: var(--nexus-ui-danger-bg);
   --green-700: var(--nexus-ui-success);
   --green-100: var(--nexus-ui-success-bg);
-}
-
-html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td:not(
-  .inventory-value,
-  .warning-value,
-  .ordered-context-cell,
-  .ledger-negative-cell,
-  .purchase-negative-cell
-):not(:focus-within) {
-  background-color: color-mix(
-    in srgb,
-    var(--manager-color) var(--orderops-manager-row-weight),
-    var(--nexus-ui-table-row-bg)
-  ) !important;
-}
-
-html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row:hover > td:not(
-  .inventory-value,
-  .warning-value,
-  .ordered-context-cell,
-  .ledger-negative-cell,
-  .purchase-negative-cell
-):not(:focus-within) {
-  background-color: color-mix(
-    in srgb,
-    var(--manager-color) var(--orderops-manager-row-hover-weight),
-    var(--nexus-ui-table-row-bg)
-  ) !important;
-}
-
-html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td:not(
-  .inventory-value,
-  .warning-value,
-  .ordered-context-cell,
-  .ledger-negative-cell,
-  .purchase-negative-cell
-):not(:focus-within) {
-  color: var(--slate-900) !important;
 }
 
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel table thead th {
@@ -1104,6 +1072,53 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .order-input
   color: var(--nexus-ui-info) !important;
 }
 
+/* Assigned manager and unit text treatments cover the complete table row. */
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row[style*="--manager-color"] > td {
+  background-color: color-mix(
+    in srgb,
+    var(--manager-color) var(--orderops-manager-row-weight),
+    var(--nexus-ui-table-row-bg)
+  ) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row[style*="--manager-color"]:hover > td {
+  background-color: color-mix(
+    in srgb,
+    var(--manager-color) var(--orderops-manager-row-hover-weight),
+    var(--nexus-ui-table-row-bg)
+  ) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td,
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td * {
+  color: var(--orderops-manager-row-text) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.unit-alert-row.unit-alert-row > td,
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.unit-alert-row.unit-alert-row > td * {
+  color: var(--orderops-unit-row-text) !important;
+}
+
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.box-unit-row > td,
+html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.box-unit-row > td * {
+  color: var(--orderops-box-row-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td,
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row > td * {
+  color: var(--orderops-manager-row-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.unit-alert-row.unit-alert-row > td,
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.unit-alert-row.unit-alert-row > td * {
+  color: var(--orderops-unit-row-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.box-unit-row > td,
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel tbody tr.box-unit-row > td * {
+  color: var(--orderops-box-row-text) !important;
+}
+
 /* ORDER Q vNext shares the same quiet worktable hierarchy. */
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderq-vnext"] {
   --white: var(--nexus-ui-panel-bg);
@@ -1268,6 +1283,36 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app] body ::-webkit-scrollbar-thu
  * the shared and bridged palettes to bright paper-safe values.
  */
 @media print {
+  html[data-nexus-ui-app="orderops"] {
+    --orderops-manager-row-text: #172033;
+    --orderops-unit-row-text: #b91c1c;
+    --orderops-box-row-text: #0f172a;
+  }
+
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
+    background-color: color-mix(in srgb, var(--manager-color) 48%, #ffffff) !important;
+  }
+
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row > td,
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.manager-color-row > td * {
+    color: var(--orderops-manager-row-text) !important;
+  }
+
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.unit-alert-row > td,
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.unit-alert-row > td * {
+    color: var(--orderops-unit-row-text) !important;
+  }
+
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.box-unit-row > td,
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area tbody tr.box-unit-row > td * {
+    color: var(--orderops-box-row-text) !important;
+  }
+
   html[data-nexus-ui-theme="dark"][data-nexus-ui-app] {
     --nexus-ui-page-bg: #ffffff;
     --nexus-ui-panel-bg: #ffffff;
