@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.21
+- Architecture document version: 2.1.22
 - Last reviewed: 2026-09-02
-- Current-source baseline: `fcdb22f53eee11f5c0ac87ce87059657fe5c8ce9`
+- Current-source baseline: `c38d0ccdbf8d5fe16d14b9a325ade064bed35795`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -65,8 +65,9 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput은 이 Snapshot의 읽기 전용 소비자로 전환됐고 ORDER Q 소비자 전환은 아직 수행하지 않는다.
 - 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
-- ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다. SmartInput은 `legacy-integration-adapter.js`와 구매·판매별 공식 입력 모듈을 통해 이 ORDER Q 경계를 호출하며 ORDER Q 원시 Store를 직접 쓰지 않는다.
-- 위 현행 입력 모듈은 아직 거래처 ID를 필수로 검증하고 ORDER Q Repository를 직접 import하며, `inventory-rematch-core.js`는 checkpoint 이전 미매칭 효과를 사용자 선택 없이 비소급 처리한다. `NEXUS-SI-V2-00`은 이 격차를 코드 완료로 표시하지 않고 V2의 ORDER Q 소유 `OfficialCommandGateway`·command Adapter와 실사 충돌 사용자 결정 계약을 후속 구현 목표로 고정하는 문서 단계다.
+- ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다.
+- `NEXUS-SI-V2-02`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체한다. Gateway는 현행 Repository 결과와 회사·Revision·멱등성·transaction 최종 방어를 그대로 위임하며 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다. Cloud replay는 아직 Repository를 직접 호출하고, 미매칭 재해결·수정·취소의 제품 호출 전환은 후속 단계다.
+- 현행 구매 preflight는 거래처 ID를 필수로 검증하고 판매 handler는 기존 검증 우회를 유지하며, `inventory-rematch-core.js`는 checkpoint 이전 미매칭 효과를 사용자 선택 없이 비소급 처리한다. 단계 2는 쓰기 호출 경계만 분리하고 V2 필수검사·거래처 선택성·ID·환산·실사 결정을 구현 완료로 표시하지 않는다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
@@ -130,7 +131,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
-| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. 구매·판매별 공식 입력 모듈이 ORDER Q Repository 경계를 호출하며 공식 Store를 직접 열지 않음 | 전표 작성 작업본·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot과 ORDER Q 공식 command Adapter 소비 |
+| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. 구매·판매 UI는 업무별 Finalize Service만 호출하고 ORDER Q command Adapter를 거쳐 공식 Gateway를 소비하며 Repository나 공식 Store를 직접 열지 않음 | 전표 작성 작업본·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot과 ORDER Q 공식 command Adapter 소비 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 계약과 DB v7의 공식 문서·Revision·재고/미매칭·기본 채권채무·공식 sync queue Repository를 운영 전 검증 중 | 공식전표 `OfficialCommandGateway`·Repository와 공식 데이터의 단일 쓰기 소유자 |
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 미등록 상품 PENDING 변경요청 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
@@ -293,7 +294,7 @@ Important contracts include:
 | OrderOps order-view presets | `oneapp.orderops.order-view-presets.v1` | ORDER Q per-view local display preferences only; named search/filter/sort conditions, visible columns, column order, and saved widths may be captured, and one preset per view may be marked as the access-time default. Presets remain excluded from workspace recovery and cloud plans |
 | ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-vnext` v4 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
 | Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput owns estimate records and exposes them through its estimate Read Adapter. Related-voucher import copies a read-only source snapshot into the target draft; `EMPTY` and `ERROR` remain distinct and no path modifies the source voucher. |
-| ORDER Q official voucher command | `VOUCHER_CORE_V1`; `orderq/official-voucher-repository.js` | ORDER Q owns official purchase/sale documents, lines, commands, Revisions, inventory/pending effects, matched-customer base payable/receivable effects and the official local queue. SmartInput is the command Adapter consumer and may not write the raw Stores. |
+| ORDER Q official voucher command | `ONEAPP_ORDERQ_OFFICIAL_COMMAND_ADAPTER_V1`; `ONEAPP_ORDERQ_OFFICIAL_COMMAND_GATEWAY_V1`; `VOUCHER_CORE_V1` | SmartInput purchase/sale Finalize Services use the ORDER Q command Adapter, which delegates owner operations through the OfficialCommandGateway to `official-voucher-repository.js`. ORDER Q owns documents, lines, commands, Revisions, inventory/pending effects, matched-customer base payable/receivable effects and the official local queue. Cloud replay remains a recorded direct-Repository follow-up path. |
 | ORDER Q official voucher sync | `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1` | Company-partitioned background transport for immutable official commands and product resolutions. Local finalize remains authoritative; Cloud activation and deployment acceptance are separate work. |
 | ORDER Q vNext access token | `oneapp_orderq_access_token_v1` | Local cloud request credential only; excluded from IndexedDB records, imports, recovery payloads, and sync entities |
 | ORDER Q manual-entry defaults | `oneapp.orderq.manual-defaults.v1` | ORDER Q vNext only; restores the last shipment warehouse and transaction type for the next new manual order in the same browser |
@@ -451,7 +452,7 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - Excel V2는 셀 표시값, 원시값, 수식, 숫자 형식과 위치를 보존한다. 사용자가 수정하거나 선택행 단가 적용을 실행하기 전에는 표시값을 계산값으로 덮어쓰지 않는다. 헤더 개수·문자열·순서가 하나라도 다르면 신규 양식으로 보고 모든 열을 다시 검수한다.
 - 관련 전표는 견적·주문·구매·판매 사이의 수량·단가 의미를 대상 전표 fieldId로 변환해 작업본에 복사하고 원본 voucher/line/revision 증거를 보존한다. 거래처·창고가 다르면 확인 전 자동 결합하지 않으며 원본 전표 Store는 쓰지 않는다.
 - ORDER Q 롤백 기준 DB는 `oneapp-orderq-pre-m1-v6` v7을 유지한다. 기존 공식전표·Draft·테스트자료를 V2로 변환하거나 호환 읽기하는 V1 migration은 만들지 않고, 기존 Store·레코드를 삭제·초기화하지 않는 additive V2로 진행한다.
-- V2 소유권 계약에서 ORDER Q가 `OfficialCommandGateway`, `OfficialVoucherRepository`와 공식 구매·판매 문서·행, 명령, Revision, 재고/미매칭, 실사 checkpoint, 기본 채권·채무와 공식 local sync queue를 소유한다. SmartInput은 작업본과 입력을 소유하는 command Adapter 소비자이며 ORDER Q IndexedDB나 Repository를 직접 쓰지 않는다. 단계 0은 문서만 고정하고, 현행 `legacy-integration-adapter.js → purchase-official-stage3.js`/`sale-official-stage4.js → runCentralOfficialVoucherCommand()` 호출을 새 Gateway 구현 완료로 간주하지 않는다.
+- V2 소유권 계약에서 ORDER Q가 `OfficialCommandGateway`, `OfficialVoucherRepository`와 공식 구매·판매 문서·행, 명령, Revision, 재고/미매칭, 실사 checkpoint, 기본 채권·채무와 공식 local sync queue를 소유한다. SmartInput은 작업본과 입력을 소유하는 command Adapter 소비자이며 ORDER Q IndexedDB나 Repository를 직접 쓰지 않는다. 단계 2는 `SmartInput UI → PurchaseFinalizeService` 또는 `SaleFinalizeService → ORDER Q command Adapter → OfficialCommandGateway → OfficialVoucherRepository`의 최소 경계를 구현했으며, 기존 builder·validator·resolver·planner와 Repository transaction 의미는 유지한다. Cloud replay·미매칭 재해결·수정·취소 전환과 V2 업무판단은 완료 범위가 아니다.
 - 사용자가 입력·조회하는 상품 식별자는 ERP와 같은 회사 범위 문자열 `productCode`이며 선행 `0`을 보존한다. 기존 `productId`는 Product Snapshot으로 해석하는 비노출 호환 기술키로만 유지하고, 현행 재고·실사·재매칭·sync 저장키에서 제거하거나 새 사용자 코드로 표시하지 않는다.
 - 현행 공식 finalize는 하나의 IndexedDB transaction에서 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 검증된 거래처의 기본 채권·채무 효과와 공식 local `syncQueue`를 멱등 저장한다. 현재 Adapter는 거래처 ID를 필수로 정확 검증한 뒤 이 효과를 생성한다. V2는 거래처코드가 회사 Customer Snapshot에 정확매칭될 때만 판매채권·구매채무 기본효과를 유지하고, 미입력·미매칭이면 전표·재고 처리는 계속하되 채권·채무 효과를 만들지 않도록 같은 owner transaction에서 구현·검증해야 한다.
 - 공식 명령과 미매칭 상품 해결은 기존 주문 cursor와 분리된 `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1`로만 백그라운드 전송한다. 서버는 `companyId`별 전표 head와 Pull cursor를 분리하고 command ID 불변성, 전표 expected Revision, 미매칭 상품 최초 매칭을 검사한다. 충돌은 로컬본과 서버본을 보존하며 자동 병합하지 않는다. 기존 `WAITING_SERVER_CONTRACT` 행은 새 계약이 배포된 뒤 그대로 재사용하고, 서버 미배포·오류 시 상태를 유지한다. Cloud Push/Pull 활성화와 서버 배포는 V2 전표·재고 단계의 완료조건이 아니다.

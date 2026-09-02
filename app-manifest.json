@@ -797,7 +797,7 @@
       "schemaVersion": "VOUCHER_CORE_V1",
       "writerPolicy": "ORDER Q owns the official command gateway and repository. SmartInput is a command-adapter consumer and must not write ORDER Q raw stores. The current repository uses company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB finalize transaction for document and lines, command receipt, voucher revision, matched inventory movement or unresolved pending effect, the currently validated partner's base payable/receivable entry, unresolved-product identity, and the official syncQueue row. V2 retains that atomic unit while creating base AR/AP only for an exact company-scoped Customer Snapshot match and omitting AR/AP, without blocking the voucher or inventory path, when the customer is absent or unmatched.",
       "ownerBoundary": "ORDER Q OfficialCommandGateway and OfficialVoucherRepository",
-      "consumerBoundary": "SmartInput uses the owner command Adapter; the current compatibility path is legacy-integration-adapter.js through purchase-official-stage3.js or sale-official-stage4.js to runCentralOfficialVoucherCommand(). NEXUS-SI-V2-00 does not claim the target gateway refactor is implemented.",
+      "consumerBoundary": "SmartInput purchase and sale UI handlers call their separate Finalize Services. The existing purchase/sale builders then call the ORDER Q official command Adapter, which delegates through OfficialCommandGateway to OfficialVoucherRepository. SmartInput production modules have no direct repository import. Cloud replay and later rematch/correction/cancellation owner-boundary migration remain follow-up work.",
       "userProductIdentity": "companyId + ERP productCode string; preserve leading zeroes and do not expose a new NXP identifier",
       "compatibilityProductIdentity": "productId remains a non-visible Product Snapshot technical key for the current inventory, checkpoint, rematch, and sync stores",
       "migrationPolicy": "No V1 official-voucher, Draft, or test-data migration. Continue additively inside SmartInput DB v5 and ORDER Q DB v7 without deleting or initializing existing stores or records.",
@@ -809,6 +809,8 @@
         "official production activation"
       ],
       "resources": {
+        "commandAdapterAsset": "orderq/official-command-adapter.js",
+        "gatewayAsset": "orderq/official-command-gateway.js",
         "commandCoreAsset": "orderq/official-voucher-core.js",
         "repositoryAsset": "orderq/official-voucher-repository.js",
         "localDatabase": "oneapp-orderq-pre-m1-v6",
