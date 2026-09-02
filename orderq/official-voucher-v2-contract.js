@@ -1,4 +1,5 @@
 import './canonical-hash.js?v=0.2.0';
+import { assertOfficialStocktakeDecisionEnvelopeV2 } from './stocktake-conflict-v2.js?v=0.2.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
@@ -583,6 +584,8 @@ export function assertOfficialCommandV2(source = {}) {
     const actual = line.productSnapshot;
     if (!expected || canonicalSha256(expected) !== canonicalSha256(actual)) throw new Error('ORDERQ_OFFICIAL_V2_LINE_SNAPSHOT_MISMATCH');
   });
+
+  assertOfficialStocktakeDecisionEnvelopeV2(command);
 
   const payloadDigest = canonicalSha256(canonicalOfficialCommandPayloadV2(command));
   if (payloadDigest !== text(command.commandPayloadDigest)) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_PAYLOAD_CONFLICT');

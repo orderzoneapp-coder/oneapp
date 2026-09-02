@@ -53,6 +53,7 @@ jobs:
           node scripts/test-smartinput-official-write-boundary.mjs
           node scripts/test-smartinput-v2-validation-identity.mjs
           node scripts/test-smartinput-v2-inventory-unresolved-ledger.mjs
+          node scripts/test-smartinput-v2-stocktake-conflict.mjs
 
       - name: Test SmartInput browser isolation and persistence
         run: node scripts/test-smartinput-browser-e2e.mjs

@@ -355,6 +355,7 @@ const repository = {
   findOfficialSaleBySource: async () => null,
   loadOfficialPurchaseAggregate: async () => null,
   loadOfficialSaleAggregate: async () => null,
+  inspectOfficialStocktakeConflicts: async () => ({ conflicts: [] }),
   saveOfficialVoucherDraft: async value => { calls.push(`SAVE:${value.kind}`); return value; },
   runCentralOfficialVoucherCommand: async value => {
     calls.push(`EXECUTE:${value.commandType}`);
@@ -389,6 +390,7 @@ const v2FinalizeService = createPurchaseFinalizeService({
     legacyFinalizeCalls.push('LEGACY');
     throw new Error('LEGACY_VALIDATOR_MUST_NOT_RUN_FOR_V2');
   },
+  inspectGroup: async () => ({ conflicts: [] }),
   submitGroup: async (group, context) => {
     v2FinalizeSubmissions.push({ group, context });
     return { accepted: true };

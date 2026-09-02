@@ -3,9 +3,10 @@ import {
   commitPurchaseCommand,
   findPurchaseCommandContext,
   freezePurchaseCommandIntent,
+  inspectOfficialStocktakeConflicts,
   loadPurchaseCommandAggregate
-} from '../orderq/official-command-adapter.js?v=0.3.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.22.0';
+} from '../orderq/official-command-adapter.js?v=0.6.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.24.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -13,7 +14,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1',
@@ -37,6 +38,7 @@ export const PURCHASE_STAGE3_EXPECTED_DEPLOYMENT = Object.freeze({
 export const SMARTINPUT_PURCHASE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 
 function text(value) { return String(value ?? '').trim(); }
+function copy(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
 function finiteRequired(value, code) {
   if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) throw new Error(code);
   return Object.is(Number(value), -0) ? 0 : Number(value);
@@ -258,13 +260,17 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
       identitySeed: identity.identitySeed,
       businessDate: preflight.businessDate,
       businessDateDayDefaulted: preflight.dayDefaulted,
+      ...(text(group.businessOccurredAt) ? { businessOccurredAt: text(group.businessOccurredAt) } : {}),
       officialPartnerResolution: group.officialPartnerResolution
     } : {})
   };
   const commandBase = {
     commandType: 'POST_PURCHASE', aggregateId: purchaseDocumentId, expectedRevision: 1, commandId, idempotencyKey: commandId,
     actor: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), actorId: text(context.actor || SMARTINPUT_PURCHASE_ACTOR_ID), reason: 'PURCHASE_POST', occurredAt,
-    commandContract: 'VOUCHER_CORE_V1', ...document, document, lines
+    commandContract: 'VOUCHER_CORE_V1', ...document, document, lines,
+    ...(identityV2 && Array.isArray(context.stocktakeDecisions) && context.stocktakeDecisions.length
+      ? { stocktakeDecisions: copy(context.stocktakeDecisions) }
+      : {})
   };
   const commandSource = identityV2 ? withOfficialCommandIdentityV2(commandBase) : commandBase;
   return { ...document, ...freezePurchaseCommandIntent(commandSource), lines, commandSource };
@@ -273,13 +279,23 @@ export function buildPurchasePostDraft(group = {}, context = {}) {
 export function resolvePersistedPurchaseRetry(group = {}, context = {}, aggregate = null) {
   const storedEnvelope = aggregate?.document?.commandEnvelope || null;
   const draft = buildPurchasePostDraft(group, storedEnvelope
-    ? { ...context, actor: storedEnvelope.actorId, occurredAt: storedEnvelope.occurredAt }
+    ? {
+      ...context,
+      actor: storedEnvelope.actorId,
+      occurredAt: storedEnvelope.occurredAt,
+      stocktakeDecisions: storedEnvelope.stocktakeDecisions
+    }
     : context);
   if (aggregate && storedEnvelope
     && text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) {
     throw new Error('ORDERQ_PURCHASE_DRAFT_IDENTITY_CONFLICT');
   }
   return { draft, envelope: storedEnvelope || draft.commandEnvelope };
+}
+
+export async function inspectPurchaseGroupStocktake(group = {}, context = {}) {
+  const draft = buildPurchasePostDraft(group, context);
+  return inspectOfficialStocktakeConflicts({ kind: 'PURCHASE', ...draft });
 }
 
 export async function postPurchaseGroup(group, context = {}) {

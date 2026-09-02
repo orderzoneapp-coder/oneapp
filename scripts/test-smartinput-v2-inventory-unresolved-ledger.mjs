@@ -276,6 +276,7 @@ assert.throws(
   /LEDGER_DECISION_MISMATCH/
 );
 const forgedProjectionGateway = gateway.createOfficialCommandGateway({
+  inspectOfficialStocktakeConflicts: async () => ({ conflicts: [] }),
   runCentralOfficialVoucherCommand: async () => forgedLedgerDate
 }, { featureGates: { PURCHASE: true, SALE: true } });
 await assert.rejects(

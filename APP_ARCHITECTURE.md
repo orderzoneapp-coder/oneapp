@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.24
-- Last reviewed: 2026-09-02
-- Current-source baseline: `0492147cd3a9233e2b74d55fdbd7d8322305f5cc`
+- Architecture document version: 2.1.26
+- Last reviewed: 2026-09-03
+- Current-source baseline: `5595dfb265bb1efb4d5e925da749180b1d61e4dc`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -66,8 +66,9 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다.
-- `NEXUS-SI-V2-02~04`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체했다. V2 경로는 필수검사·Snapshot·회사/판매그룹 ID에 이어 회사+상품코드 및 회사+거래처코드 정확매칭, 입력수량 그대로의 재고효과, 미매칭 검수 레코드와 거래처 미입력·미매칭 원장 미생성 사유를 구현한다. 상품코드는 상품 owner와 동일하게 외곽 trim 뒤 원문 문자열을 key로 쓰고, 거래처코드는 customer master의 `normalizedCustomerCode` 규칙을 쓴다. V2 재고와 기본 채권·채무의 발생일은 전표 `businessDate`이고 명령 `occurredAt`과 분리된다. Gateway와 Repository는 회사·Revision·멱등성·발생일·transaction을 재검사하며 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다.
-- 구매·판매 V2 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud replay·Push/Pull 운영 활성화, checkpoint 충돌 선택, 미매칭 재해결 UI, 수정·취소와 Draft V2는 후속 단계다. 현행 `inventory-rematch-core.js`의 checkpoint 이전 자동 비소급은 아직 V2 완료 기준이 아니다.
+- `NEXUS-SI-V2-02~05`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체했다. V2 경로는 필수검사·Snapshot·회사/판매그룹 ID, 회사+상품코드 및 회사+거래처코드 정확매칭, 입력수량 그대로의 재고효과, 미매칭 검수 레코드와 거래처 미입력·미매칭 원장 미생성 사유에 이어 재고실사 checkpoint 충돌 결정을 구현한다. 상품코드는 상품 owner와 동일하게 외곽 trim 뒤 원문 문자열을 key로 쓰고, 거래처코드는 customer master의 `normalizedCustomerCode` 규칙을 쓴다. V2 재고와 기본 채권·채무의 발생일은 전표 `businessDate`이고 명령 `occurredAt`과 분리된다. Gateway와 Repository는 회사·Revision·멱등성·발생일·checkpoint 결정·transaction을 재검사하며, V2 inspection capability가 없으면 검사·Draft 저장·명령 실행을 모두 fail-closed한다. 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다.
+- 각 매칭 행은 회사+상품코드(기존 checkpoint의 숨은 `productId` 호환)+창고 범위에서 최신 확정 checkpoint를 판정한다. `businessDate`가 checkpoint 일자보다 뒤면 정상이고, 앞이면 결정이 필요하며, 같은 날은 양쪽의 신뢰 가능한 업무시각과 timezone으로 전표가 뒤임을 증명할 때만 정상이다. 팝업은 충돌 행을 순차 확인해 행마다 독립된 포함/미포함 선택과 timezone이 있는 완전한 ISO `judgedAt`을 수집한다. 모든 그룹의 모든 행 선택과 재검증이 끝난 뒤에만 첫 쓰기를 시작하며 중간 취소는 선택을 폐기한다. 포함 결정은 원 효과를 `ABSORBED_BY_CHECKPOINT`로 연결해 현재고에 중복 반영하지 않고, 미포함 결정은 `APPLIED_AS_LATE_ADJUSTMENT` 연결조정을 결정적 ID로 정확히 한 번 추가한다. 취소는 Finalize 쓰기 전 반환하며 작업본·선택·스크롤을 보존한다.
+- 구매·판매 V2 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud Push/Pull 운영 활성화, 미매칭 재해결 배치·영구 UI, 수정·취소 기능과 Draft V2는 후속 단계다. 단계 5는 재매칭이 재사용할 수 있는 순수 checkpoint 판정 계약만 제공하며 현행 `inventory-rematch-core.js`의 자동 처리 경로는 활성화하거나 확장하지 않는다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
@@ -452,7 +453,7 @@ Integration Adapter는 다른 앱으로 조회·명령·결과를 전달하는 �
 - Excel V2는 셀 표시값, 원시값, 수식, 숫자 형식과 위치를 보존한다. 사용자가 수정하거나 선택행 단가 적용을 실행하기 전에는 표시값을 계산값으로 덮어쓰지 않는다. 헤더 개수·문자열·순서가 하나라도 다르면 신규 양식으로 보고 모든 열을 다시 검수한다.
 - 관련 전표는 견적·주문·구매·판매 사이의 수량·단가 의미를 대상 전표 fieldId로 변환해 작업본에 복사하고 원본 voucher/line/revision 증거를 보존한다. 거래처·창고가 다르면 확인 전 자동 결합하지 않으며 원본 전표 Store는 쓰지 않는다.
 - ORDER Q 롤백 기준 DB는 `oneapp-orderq-pre-m1-v6` v7을 유지한다. 기존 공식전표·Draft·테스트자료를 V2로 변환하거나 호환 읽기하는 V1 migration은 만들지 않고, 기존 Store·레코드를 삭제·초기화하지 않는 additive V2로 진행한다.
-- V2 소유권 계약에서 ORDER Q가 `OfficialCommandGateway`, `OfficialVoucherRepository`와 공식 구매·판매 문서·행, 명령, Revision, 재고/미매칭, 실사 checkpoint, 기본 채권·채무와 공식 local sync queue를 소유한다. SmartInput은 작업본과 입력을 소유하는 command Adapter 소비자이며 ORDER Q IndexedDB나 Repository를 직접 쓰지 않는다. 단계 2~4는 `SmartInput UI → PurchaseFinalizeService` 또는 `SaleFinalizeService → ORDER Q command Adapter → OfficialCommandGateway → OfficialVoucherRepository` 경계와 V2 필수검사·불변 Snapshot·ID·정확매칭 재고/미매칭/기본 원장 판단을 구현했다. Cloud 운영 활성화·실사 충돌·미매칭 재해결 UI·수정·취소는 완료 범위가 아니다.
+- V2 소유권 계약에서 ORDER Q가 `OfficialCommandGateway`, `OfficialVoucherRepository`와 공식 구매·판매 문서·행, 명령, Revision, 재고/미매칭, 실사 checkpoint, 기본 채권·채무와 공식 local sync queue를 소유한다. SmartInput은 작업본과 입력을 소유하는 command Adapter 소비자이며 ORDER Q IndexedDB나 Repository를 직접 쓰지 않는다. 단계 2~5는 `SmartInput UI → PurchaseFinalizeService` 또는 `SaleFinalizeService → ORDER Q command Adapter → OfficialCommandGateway → OfficialVoucherRepository` 경계와 V2 필수검사·불변 Snapshot·ID·정확매칭 재고/미매칭/기본 원장 및 행별 실사 충돌 판단을 구현했다. Cloud 운영 활성화·미매칭 재해결 UI·수정·취소 기능은 완료 범위가 아니다.
 - 사용자가 입력·조회하는 상품 식별자는 ERP와 같은 회사 범위 문자열 `productCode`이며 선행 `0`을 보존한다. 기존 `productId`는 Product Snapshot으로 해석하는 비노출 호환 기술키로만 유지하고, 현행 재고·실사·재매칭·sync 저장키에서 제거하거나 새 사용자 코드로 표시하지 않는다.
 - 공식 finalize는 하나의 IndexedDB transaction에서 문서·행, 명령 영수증, Revision, 정확매칭 재고 이동 또는 미매칭 대기·검수 레코드, 정확매칭 거래처의 기본 채권·채무 효과와 공식 local `syncQueue`를 멱등 저장한다. V2는 회사 Customer Snapshot의 거래처코드가 정확매칭될 때만 판매채권·구매채무 기본효과를 만들고, 미입력·미매칭이면 전표·재고 처리는 계속하되 효과 미생성 사유를 Revision에 보존한다. V1의 기존 필수조건과 효과는 변경하지 않는다.
 - 공식 명령과 미매칭 상품 해결은 기존 주문 cursor와 분리된 `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1`로만 백그라운드 전송한다. 서버는 `companyId`별 전표 head와 Pull cursor를 분리하고 command ID 불변성, 전표 expected Revision, 미매칭 상품 최초 매칭을 검사한다. 충돌은 로컬본과 서버본을 보존하며 자동 병합하지 않는다. 기존 `WAITING_SERVER_CONTRACT` 행은 새 계약이 배포된 뒤 그대로 재사용하고, 서버 미배포·오류 시 상태를 유지한다. Cloud Push/Pull 활성화와 서버 배포는 V2 전표·재고 단계의 완료조건이 아니다.
