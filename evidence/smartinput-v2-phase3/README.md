@@ -95,4 +95,8 @@
 
 ### Git 제출
 
-- 구현 commit, Draft PR, 최종 CI 링크는 원격 제출 후 이 절에 추가한다. PM 승인 전 Ready 전환·병합·배포·Pilot 활성화는 금지 상태다.
+- 구현·검증 commit: `ae9f96183b87d46fc627b88ae4ddf44ed268c17f`
+- Draft PR: `https://github.com/orderzoneapp-coder/oneapp/pull/482`
+- PR base/head: `main@269e0c949f3b63ca78834eccf55d309e217d3e7f` → `codex/nexus-si-v2-03-validation-snapshot-id`
+- CI: `ONEAPP repository validation` run `33628033438`. 첫 시도는 기존 input-template browser 검사의 Chrome debugging port 기동 timeout으로 실패했고 변경 코드 실패는 없었다. 실패 job만 재실행한 두 번째 시도는 `1m4s`에 PASS했다: `https://github.com/orderzoneapp-coder/oneapp/actions/runs/33628033438/job/100240637248`.
+- PR은 Draft/Open/Mergeable 상태다. PM 승인 전 Ready 전환·병합·배포·Pilot 활성화는 금지 상태다.
