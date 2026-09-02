@@ -6,9 +6,15 @@ import {
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
   inspectOfficialStocktakeConflicts,
+  applyRemotePendingInventoryResolutionPayload,
+  runOfficialInventoryRematchCommand,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from './official-voucher-repository.js?v=0.25.0';
+} from './official-voucher-repository.js?v=0.26.0';
+import {
+  assertInventoryRematchCommandV2,
+  buildInventoryRematchCommandV2
+} from './inventory-rematch-core.js?v=0.3.0';
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
@@ -28,6 +34,7 @@ export const OFFICIAL_VOUCHER_V2_FEATURE_GATES = Object.freeze({
   PURCHASE: false,
   SALE: false
 });
+export const OFFICIAL_INVENTORY_REMATCH_FEATURE_GATE = false;
 
 const repositoryPort = Object.freeze({
   buildFrozenPurchaseIntent,
@@ -37,6 +44,8 @@ const repositoryPort = Object.freeze({
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
   inspectOfficialStocktakeConflicts,
+  applyRemotePendingInventoryResolutionPayload,
+  runOfficialInventoryRematchCommand,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
 });
@@ -59,6 +68,31 @@ function normalizeFeatureGates(value = {}) {
   });
 }
 
+function validateInventoryRematchBoundary(source, inventoryRematchEnabled) {
+  const checked = assertInventoryRematchCommandV2(source);
+  if (!inventoryRematchEnabled) throw new Error('ORDERQ_REMATCH_V2_FEATURE_DISABLED');
+  return checked;
+}
+
+function assertInventoryRematchResult(result, checked) {
+  if (text(result?.command?.commandId) !== checked.command.commandId
+    || text(result?.command?.commandPayloadDigest) !== checked.payloadDigest
+    || text(result?.productResolution?.companyId) !== checked.command.companyId
+    || text(result?.productResolution?.unresolvedProductId) !== checked.command.unresolvedProductId
+    || text(result?.productResolution?.productId) !== checked.command.selectedProduct.productId) {
+    throw new Error('ORDERQ_REMATCH_V2_RESULT_IDENTITY_INVALID');
+  }
+  const movements = Array.isArray(result?.inventoryMovements) ? result.inventoryMovements : [];
+  if (movements.length !== checked.command.expectedEffects.length
+    || movements.some(row => text(row.companyId) !== checked.command.companyId
+      || text(row.commandId) !== checked.command.commandId
+      || text(row.productId) !== checked.command.selectedProduct.productId
+      || text(row.effectStatus) === 'RESOLVED_WITHOUT_MOVEMENT_AFTER_STOCKTAKE')) {
+    throw new Error('ORDERQ_REMATCH_V2_RESULT_EFFECT_INVALID');
+  }
+  return result;
+}
+
 function validateV2Boundary(source, featureGates) {
   const command = source.intent || source.commandEnvelope || source.commandSource || source;
   const identityVersion = text(command?.identityVersion);
@@ -77,7 +111,10 @@ function validateV2Boundary(source, featureGates) {
 // are accepted only through independently enabled purchase/sale gates and are
 // validated before the Repository repeats the same integrity checks.
 export function createOfficialCommandGateway(repository = repositoryPort, options = {}) {
-  const featureGates = normalizeFeatureGates(options.featureGates || OFFICIAL_VOUCHER_V2_FEATURE_GATES);
+  const requestedFeatureGates = options.featureGates || OFFICIAL_VOUCHER_V2_FEATURE_GATES;
+  const featureGates = normalizeFeatureGates(requestedFeatureGates);
+  const inventoryRematchEnabled = requestedFeatureGates.INVENTORY_REMATCH === true
+    || requestedFeatureGates.inventoryRematch === true;
   return Object.freeze({
     version: OFFICIAL_COMMAND_GATEWAY_VERSION,
     featureGates,
@@ -121,6 +158,26 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
         assertOfficialStocktakeProjectionV2(result, checked.command);
         return result;
       });
+    },
+    buildInventoryRematchCommand(source) {
+      return buildInventoryRematchCommandV2(source);
+    },
+    executeInventoryRematch(source) {
+      if (source?.cancelled === true) {
+        return Promise.resolve(Object.freeze({ cancelled: true, duplicate: false, officialWrites: 0 }));
+      }
+      const checked = validateInventoryRematchBoundary(source, inventoryRematchEnabled);
+      if (typeof repository.runOfficialInventoryRematchCommand !== 'function') {
+        throw new Error('ORDERQ_REMATCH_V2_REPOSITORY_UNAVAILABLE');
+      }
+      return Promise.resolve(repository.runOfficialInventoryRematchCommand(checked.command))
+        .then(result => assertInventoryRematchResult(result, checked));
+    },
+    applyRemoteInventoryResolutionPayload(payload) {
+      if (typeof repository.applyRemotePendingInventoryResolutionPayload !== 'function') {
+        throw new Error('ORDERQ_REMATCH_REMOTE_REPOSITORY_UNAVAILABLE');
+      }
+      return repository.applyRemotePendingInventoryResolutionPayload(payload);
     }
   });
 }

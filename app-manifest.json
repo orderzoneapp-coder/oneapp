@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.8",
+  "schemaVersion": "1.3.9",
   "updatedAt": "2026-09-03",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -802,7 +802,7 @@
       "schemaVersion": "VOUCHER_CORE_V1",
       "writerPolicy": "ORDER Q owns the official command gateway and repository. SmartInput is a command-adapter consumer and must not write ORDER Q raw stores. The current repository uses company partitioning, optimistic revision, idempotent command IDs, and one local IndexedDB finalize transaction for document and lines, command receipt, voucher revision, matched inventory movement or unresolved pending effect, the currently validated partner's base payable/receivable entry, unresolved-product identity, and the official syncQueue row. V2 retains that atomic unit while creating base AR/AP only for an exact company-scoped Customer Snapshot match and omitting AR/AP, without blocking the voucher or inventory path, when the customer is absent or unmatched.",
       "ownerBoundary": "ORDER Q OfficialCommandGateway and OfficialVoucherRepository",
-      "consumerBoundary": "SmartInput purchase and sale UI handlers call their separate Finalize Services. The existing purchase/sale builders then call the ORDER Q official command Adapter, which delegates through OfficialCommandGateway to OfficialVoucherRepository. SmartInput production modules have no direct repository import. Cloud replay and later rematch/correction/cancellation owner-boundary migration remain follow-up work.",
+      "consumerBoundary": "SmartInput purchase and sale UI handlers call their separate Finalize Services. The existing purchase/sale builders then call the ORDER Q official command Adapter, which delegates through OfficialCommandGateway to OfficialVoucherRepository. SmartInput production modules have no direct repository import. Phase 6C rematch build/commit and legacy remote product-resolution replay also pass through the owner Gateway; correction and cancellation remain follow-up work.",
       "userProductIdentity": "companyId + ERP productCode string; preserve leading zeroes and do not expose a new NXP identifier",
       "compatibilityProductIdentity": "productId remains a non-visible Product Snapshot technical key for the current inventory, checkpoint, rematch, and sync stores",
       "migrationPolicy": "No V1 official-voucher, Draft, or test-data migration. Continue additively inside SmartInput DB v5 and ORDER Q DB v7 without deleting or initializing existing stores or records.",
@@ -869,6 +869,44 @@
         ]
       },
       "rollback": "Phase 6B rollback removes orderops/unresolved-review-ui.js, the orderops/list.html result-state branch, and the orderops consumer registration. The Phase 6A owner read assets and existing ORDER Q DB v7 data remain untouched; a full Phase 6A rollback may then remove those owner assets and this contract registration separately."
+    },
+    {
+      "id": "orderq-inventory-rematch-command",
+      "owner": "orderq-vnext",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_ORDERQ_INVENTORY_REMATCH_COMMAND_V2",
+      "identityVersion": "ONEAPP_ORDERQ_OFFICIAL_IDENTITY_V2",
+      "writerPolicy": "Only the ORDER Q OfficialCommandAdapter to OfficialCommandGateway to OfficialVoucherRepository path may commit a rematch. The former raw local Repository entry point fails closed. A command requires explicit non-automatic user selection, current company and Product Snapshot identity, complete expected document/line/Revision/pending-effect links, actor, occurredAt, judgedAt, commandId and idempotencyKey. Before opening a write transaction, a readonly source preflight recalculates warehouse, factor-1 actual quantity, purchase/sale sign, calendar-valid business date and only source-trusted business time from the confirmed document, active confirmed line and immutable Revision, and reconciles both pending and review evidence to the same original command. The Repository repeats that defense and the Phase 5 pure stocktake classifier inside one DB v7 transaction before updating resolution/effects and adding inventory or absorption effects, one audit Revision, one receipt and one local queue row. Confirmed document/line Snapshots are immutable.",
+      "candidatePolicy": "The selected Product Snapshot row must be active, unique by its hidden productId in the current company scope, and exactly equal on product code, name, specification and unit. Product name or similarity never auto-confirms; automaticConfirmation must be false.",
+      "stocktakePolicy": "Proven-after or no-checkpoint effects apply their preserved signed quantity. Before-checkpoint and same-day-unproven effects require a decision for every row. Zero quantity always keeps effectStatus ZERO_EFFECT; its independent stocktakeEffectStatus is blank for normal, ABSORBED_BY_CHECKPOINT for included, or APPLIED_AS_LATE_ADJUSTMENT for not included. Included has stock delta zero and officialInventoryApplied false; normal and not included remain true, with not included creating exactly one deterministic movement. Both statuses are retained in resolved pending effects and the audit Revision. The legacy RESOLVED_WITHOUT_MOVEMENT_AFTER_STOCKTAKE result is forbidden in this command.",
+      "activationPolicy": "Default OFF. Phase 6C adds no product UI consumer and does not enable Pilot, production, or Cloud Push/Pull. OFFICIAL_INVENTORY_REMATCH_COMMAND queue rows remain WAITING_SERVER_CONTRACT outside the Cloud entity allowlist.",
+      "migrationPolicy": "Reuse existing oneapp-orderq-pre-m1-v6 DB version 7 Stores and indexes. No Store, schema migration, data initialization, deletion, or rewrite of confirmed source Snapshots.",
+      "resources": {
+        "commandAdapterAsset": "orderq/official-command-adapter.js",
+        "gatewayAsset": "orderq/official-command-gateway.js",
+        "commandCoreAsset": "orderq/inventory-rematch-core.js",
+        "repositoryAsset": "orderq/official-voucher-repository.js",
+        "linkIntegrityAsset": "orderq/unresolved-review-read-model.js",
+        "checkpointClassifierAsset": "orderq/stocktake-conflict-v2.js",
+        "productSnapshotAdapterAsset": "reference-data/product-master-read-adapter.js",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "databaseVersion": 7,
+        "transactionMode": "readwrite",
+        "indexedDbStores": [
+          "purchaseDocuments",
+          "purchaseLines",
+          "salesDocuments",
+          "salesLines",
+          "officialCommands",
+          "voucherRevisions",
+          "inventoryMovements",
+          "pendingInventoryEffects",
+          "inventoryCheckpoints",
+          "unresolvedProducts",
+          "syncQueue"
+        ]
+      },
+      "rollback": "Revert the Phase 6C command/core/Gateway/Repository and contract/test changes as one commit. This disables future 6C calls without deleting existing DB v7 rows; any committed rematch is an auditable business fact and must not be erased by rollback. The Phase 6A read model and Phase 6B read-only UI remain available."
     },
     {
       "id": "orderq-official-sync",

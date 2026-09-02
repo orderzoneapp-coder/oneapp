@@ -240,7 +240,7 @@ assert.match(merchOpsSource, /productSnapshotVersion: String\(data\.productSnaps
 const manifest = JSON.parse(read('app-manifest.json'));
 const app = (id) => manifest.applications.find((item) => item.id === id);
 const contract = (id) => manifest.sharedDataContracts.find((item) => item.id === id);
-assert.equal(manifest.schemaVersion, '1.3.8');
+assert.equal(manifest.schemaVersion, '1.3.9');
 assert.equal(contract('change-history').owner, 'master-lookup');
 assert.equal(contract('change-history').readAdapter, 'ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1');
 assert.ok(!app('merchops').ownedContracts.includes('change-history'));
