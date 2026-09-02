@@ -1,7 +1,7 @@
 import {
   OFFICIAL_COMMAND_GATEWAY_VERSION,
   OfficialCommandGateway
-} from './official-command-gateway.js?v=0.3.0';
+} from './official-command-gateway.js?v=0.4.0';
 
 export const OFFICIAL_COMMAND_ADAPTER_VERSION = 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_ADAPTER_V1';
 
@@ -23,6 +23,7 @@ export function createOfficialCommandAdapter(gateway = OfficialCommandGateway) {
     },
     loadPurchaseCommandAggregate: documentId => gateway.loadPurchaseAggregate(documentId),
     loadSaleCommandAggregate: documentId => gateway.loadSaleAggregate(documentId),
+    inspectStocktakeConflicts: source => gateway.inspectStocktakeConflicts(source),
     beginPurchaseCommand: (draft, actor) => gateway.saveDraft({
       kind: 'PURCHASE',
       ...draft,
@@ -46,6 +47,7 @@ export const findPurchaseCommandContext = identity => OfficialCommandAdapter.fin
 export const findSaleCommandContext = identity => OfficialCommandAdapter.findSaleCommandContext(identity);
 export const loadPurchaseCommandAggregate = documentId => OfficialCommandAdapter.loadPurchaseCommandAggregate(documentId);
 export const loadSaleCommandAggregate = documentId => OfficialCommandAdapter.loadSaleCommandAggregate(documentId);
+export const inspectOfficialStocktakeConflicts = source => OfficialCommandAdapter.inspectStocktakeConflicts(source);
 export const beginPurchaseCommand = (draft, actor) => OfficialCommandAdapter.beginPurchaseCommand(draft, actor);
 export const beginSaleCommand = (draft, actor) => OfficialCommandAdapter.beginSaleCommand(draft, actor);
 export const commitPurchaseCommand = command => OfficialCommandAdapter.commitPurchaseCommand(command);

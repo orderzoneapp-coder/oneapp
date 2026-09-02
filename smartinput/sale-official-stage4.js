@@ -2,9 +2,10 @@ import {
   beginSaleCommand,
   commitSaleCommand,
   findSaleCommandContext,
-  freezeSaleCommandIntent
-} from '../orderq/official-command-adapter.js?v=0.3.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.22.0';
+  freezeSaleCommandIntent,
+  inspectOfficialStocktakeConflicts
+} from '../orderq/official-command-adapter.js?v=0.4.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.23.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -12,7 +13,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.4.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',
@@ -29,6 +30,7 @@ export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({
 export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 
 const text = value => String(value ?? '').trim();
+const copy = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 function finite(value, code) {
   if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) throw new Error(code);
   return Object.is(Number(value), -0) ? 0 : Number(value);
@@ -247,13 +249,22 @@ export function buildSalePostDraft(group = {}, context = {}) {
     ...(identityV2 ? {
       businessDate: preflight.businessDate,
       businessDateDayDefaulted: preflight.dayDefaulted,
+      ...(text(group.businessOccurredAt) ? { businessOccurredAt: text(group.businessOccurredAt) } : {}),
       officialPartnerResolution: group.officialPartnerResolution
     } : {}) };
   const commandBase = { ...document, document, lines, commandType: 'POST_SALE', aggregateId: identity.salesDocumentId,
     expectedRevision: 1, commandId, idempotencyKey: commandId, actor: text(context.actor || SMARTINPUT_SALE_ACTOR_ID),
-    actorId: text(context.actor || SMARTINPUT_SALE_ACTOR_ID), reason: 'SALE_POST', occurredAt };
+    actorId: text(context.actor || SMARTINPUT_SALE_ACTOR_ID), reason: 'SALE_POST', occurredAt,
+    ...(identityV2 && Array.isArray(context.stocktakeDecisions) && context.stocktakeDecisions.length
+      ? { stocktakeDecisions: copy(context.stocktakeDecisions) }
+      : {}) };
   const commandSource = identityV2 ? withOfficialCommandIdentityV2(commandBase) : commandBase;
   return { ...document, ...freezeSaleCommandIntent(commandSource), lines, commandSource };
+}
+
+export async function inspectSaleGroupStocktake(group = {}, context = {}) {
+  const draft = buildSalePostDraft(group, context);
+  return inspectOfficialStocktakeConflicts({ kind: 'SALE', ...draft });
 }
 
 export async function postSaleGroup(group, context = {}) {
@@ -263,7 +274,12 @@ export async function postSaleGroup(group, context = {}) {
     ...(identity.identityVersion ? { identityVersion: identity.identityVersion, voucherGroupKey: identity.voucherGroupKey } : {}) });
   let aggregate = commandContext.aggregate;
   const storedEnvelope = aggregate?.document?.commandEnvelope || null;
-  const draft = buildSalePostDraft(group, storedEnvelope ? { ...context, occurredAt: storedEnvelope.occurredAt, actor: storedEnvelope.actorId } : context);
+  const draft = buildSalePostDraft(group, storedEnvelope ? {
+    ...context,
+    occurredAt: storedEnvelope.occurredAt,
+    actor: storedEnvelope.actorId,
+    stocktakeDecisions: storedEnvelope.stocktakeDecisions
+  } : context);
   if (aggregate && storedEnvelope && text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) throw new Error('ORDERQ_SALE_DRAFT_IDENTITY_CONFLICT');
   if (!aggregate) aggregate = await beginSaleCommand(draft, context.actor || SMARTINPUT_SALE_ACTOR_ID);
   const envelope = aggregate.document?.commandEnvelope || draft.commandEnvelope;

@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.24
+- Architecture document version: 2.1.25
 - Last reviewed: 2026-09-02
-- Current-source baseline: `0492147cd3a9233e2b74d55fdbd7d8322305f5cc`
+- Current-source baseline: `5595dfb265bb1efb4d5e925da749180b1d61e4dc`
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -66,8 +66,9 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다.
-- `NEXUS-SI-V2-02~04`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체했다. V2 경로는 필수검사·Snapshot·회사/판매그룹 ID에 이어 회사+상품코드 및 회사+거래처코드 정확매칭, 입력수량 그대로의 재고효과, 미매칭 검수 레코드와 거래처 미입력·미매칭 원장 미생성 사유를 구현한다. 상품코드는 상품 owner와 동일하게 외곽 trim 뒤 원문 문자열을 key로 쓰고, 거래처코드는 customer master의 `normalizedCustomerCode` 규칙을 쓴다. V2 재고와 기본 채권·채무의 발생일은 전표 `businessDate`이고 명령 `occurredAt`과 분리된다. Gateway와 Repository는 회사·Revision·멱등성·발생일·transaction을 재검사하며 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다.
-- 구매·판매 V2 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud replay·Push/Pull 운영 활성화, checkpoint 충돌 선택, 미매칭 재해결 UI, 수정·취소와 Draft V2는 후속 단계다. 현행 `inventory-rematch-core.js`의 checkpoint 이전 자동 비소급은 아직 V2 완료 기준이 아니다.
+- `NEXUS-SI-V2-02~05`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체했다. V2 경로는 필수검사·Snapshot·회사/판매그룹 ID, 회사+상품코드 및 회사+거래처코드 정확매칭, 입력수량 그대로의 재고효과, 미매칭 검수 레코드와 거래처 미입력·미매칭 원장 미생성 사유에 이어 재고실사 checkpoint 충돌 결정을 구현한다. 상품코드는 상품 owner와 동일하게 외곽 trim 뒤 원문 문자열을 key로 쓰고, 거래처코드는 customer master의 `normalizedCustomerCode` 규칙을 쓴다. V2 재고와 기본 채권·채무의 발생일은 전표 `businessDate`이고 명령 `occurredAt`과 분리된다. Gateway와 Repository는 회사·Revision·멱등성·발생일·checkpoint 결정·transaction을 재검사하며 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다.
+- 각 매칭 행은 회사+상품코드(기존 checkpoint의 숨은 `productId` 호환)+창고 범위에서 최신 확정 checkpoint를 판정한다. `businessDate`가 checkpoint 일자보다 뒤면 정상이고, 앞이면 결정이 필요하며, 같은 날은 양쪽의 신뢰 가능한 업무시각과 timezone으로 전표가 뒤임을 증명할 때만 정상이다. 포함 결정은 원 효과를 `ABSORBED_BY_CHECKPOINT`로 연결해 현재고에 중복 반영하지 않고, 미포함 결정은 `APPLIED_AS_LATE_ADJUSTMENT` 연결조정을 결정적 ID로 정확히 한 번 추가한다. 취소는 Finalize 쓰기 전 반환하며 작업본·선택·스크롤을 보존한다.
+- 구매·판매 V2 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud Push/Pull 운영 활성화, 미매칭 재해결 배치·영구 UI, 수정·취소 기능과 Draft V2는 후속 단계다. 단계 5는 재매칭이 재사용할 수 있는 순수 checkpoint 판정 계약만 제공하며 현행 `inventory-rematch-core.js`의 자동 처리 경로는 활성화하거나 확장하지 않는다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.

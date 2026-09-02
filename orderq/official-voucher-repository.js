@@ -6,14 +6,19 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.8.0';
-import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.22.0';
-import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.1.0';
+import { canonicalSha256, planOfficialVoucherCommand } from './official-voucher-core.js?v=0.23.0';
+import { createInventoryCheckpoint, planPendingInventoryResolution } from './inventory-rematch-core.js?v=0.2.0';
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.3.0';
+} from './official-voucher-v2-contract.js?v=0.4.0';
+import {
+  assertOfficialStocktakeDecisionEnvelopeV2,
+  assertOfficialStocktakeProjectionV2,
+  inspectOfficialStocktakeConflictsV2
+} from './stocktake-conflict-v2.js?v=0.1.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -155,13 +160,29 @@ export async function saveOfficialVoucherDraft(source = {}, actor = '') {
   const document = draftDocument(source, contract, actor);
   const lines = draftLines(source, contract, document);
   const db = await openOrderQDb();
-  const tx = db.transaction([contract.documentStore, contract.lineStore], 'readwrite');
+  const draftStores = [contract.documentStore, contract.lineStore];
+  if (checkedV2) draftStores.push(STORE.INVENTORY_CHECKPOINTS);
+  const tx = db.transaction(draftStores, 'readwrite');
   const documentStore = tx.objectStore(contract.documentStore);
-  const existing = await requestToPromise(documentStore.get(document[contract.documentId]));
+  const [existing, checkpoints] = await Promise.all([
+    requestToPromise(documentStore.get(document[contract.documentId])),
+    checkedV2
+      ? checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), commandEnvelope)
+      : Promise.resolve([])
+  ]);
   if (existing) {
     tx.abort();
     try { await transactionDone(tx); } catch {}
     throw new Error(`ORDERQ_OFFICIAL_DRAFT_EXISTS:${document[contract.documentId]}`);
+  }
+  if (checkedV2) {
+    try {
+      assertOfficialStocktakeDecisionEnvelopeV2(commandEnvelope, checkpoints);
+    } catch (error) {
+      tx.abort();
+      try { await transactionDone(tx); } catch {}
+      throw error;
+    }
   }
   documentStore.add(document);
   const lineStore = tx.objectStore(contract.lineStore);
@@ -197,6 +218,60 @@ export const findOfficialSaleBySource = identity => findBySource('SALE', identit
 
 async function rowsByIndex(store, indexName, query) {
   return requestToPromise(store.index(indexName).getAll(query));
+}
+
+async function checkpointRowsForCommand(store, command = {}) {
+  const companyId = text(command.companyId || command.document?.companyId);
+  const warehouseIds = [...new Set((command.lines || [])
+    .map(row => text(row.warehouseId || command.document?.warehouseId))
+    .filter(Boolean))];
+  const keyRange = globalThis.IDBKeyRange;
+  if (!companyId || !warehouseIds.length || !keyRange
+    || !store.indexNames.contains('byCompanyWarehouseEffectiveAt')) {
+    return requestToPromise(store.getAll());
+  }
+  const index = store.index('byCompanyWarehouseEffectiveAt');
+  const batches = await Promise.all(warehouseIds.map(warehouseId => requestToPromise(index.getAll(
+    keyRange.bound([companyId, warehouseId, ''], [companyId, warehouseId, '\uffff'])
+  ))));
+  return batches.flat();
+}
+
+export async function inspectOfficialStocktakeConflicts(source = {}) {
+  assertSupportedIdentityVersion(source);
+  const command = clone(source.intent || source.commandEnvelope || source.commandSource || source);
+  const checked = isOfficialVoucherIdentityV2(command) ? assertOfficialCommandV2(command) : null;
+  if (!checked) return deepFreeze({ conflicts: [], identityVersion: '' });
+  const contract = inferKind(command);
+  if (checked.kind !== contract.kind) throw new Error('ORDERQ_OFFICIAL_V2_COMMAND_KIND_MISMATCH');
+  const id = documentIdOf(contract, command);
+  const db = await openOrderQDb();
+  const tx = db.transaction([contract.documentStore, STORE.INVENTORY_CHECKPOINTS], 'readonly');
+  const [existingDocument, checkpoints] = await Promise.all([
+    requestToPromise(tx.objectStore(contract.documentStore).get(id)),
+    checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), command)
+  ]);
+  await transactionDone(tx);
+  if (existingDocument) {
+    if (text(existingDocument.companyId) !== checked.companyId
+      || text(existingDocument.voucherGroupKey) !== checked.voucherGroupKey) {
+      throw new Error('ORDERQ_OFFICIAL_V2_DOCUMENT_SCOPE_CONFLICT');
+    }
+    return deepFreeze({
+      schemaVersion: command.schemaVersion,
+      identityVersion: command.identityVersion,
+      companyId: checked.companyId,
+      voucherMode: checked.kind.toLowerCase(),
+      documentId: checked.documentId,
+      conflicts: [],
+      existingDocument: true
+    });
+  }
+  const assessment = inspectOfficialStocktakeConflictsV2({ command, inventoryCheckpoints: checkpoints });
+  if (Array.isArray(command.stocktakeDecisions) && command.stocktakeDecisions.length) {
+    assertOfficialStocktakeDecisionEnvelopeV2(command, checkpoints);
+  }
+  return assessment;
 }
 
 async function loadAggregate(kind, id) {
@@ -348,6 +423,7 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
   const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
     STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
     STORE.PENDING_INVENTORY_EFFECTS, STORE.UNRESOLVED_PRODUCTS, STORE.SYNC_QUEUE];
+  if (checkedV2) storeNames.push(STORE.INVENTORY_CHECKPOINTS);
   const tx = db.transaction(storeNames, 'readwrite');
   const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
   const commandId = text(commandSource.commandId);
@@ -368,6 +444,7 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
     if (checkedV2) {
       try {
         assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+        assertOfficialStocktakeProjectionV2(existingCommand.result, checkedV2.command);
       } catch (error) {
         tx.abort();
         try { await transactionDone(tx); } catch {}
@@ -424,7 +501,22 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
     lines: (Array.isArray(commandSource.lines) ? commandSource.lines : []).map(row => resolveKnownProductIdentity(row, resolutions))
   };
   const resolvedLines = checkedV2 ? lines : lines.map(row => resolveKnownProductIdentity(row, resolutions));
-  const plan = planOfficialVoucherCommand({ command: resolvedCommand, document, lines: resolvedLines });
+  const checkpoints = checkedV2
+    ? await checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), resolvedCommand)
+    : [];
+  let plan;
+  try {
+    plan = planOfficialVoucherCommand({
+      command: resolvedCommand,
+      document,
+      lines: resolvedLines,
+      inventoryCheckpoints: checkpoints
+    });
+  } catch (error) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
   if (checkedV2) {
     if (text(plan.command.companyId) !== checkedV2.companyId
       || text(plan.document.companyId) !== checkedV2.companyId
@@ -445,6 +537,7 @@ export async function runCentralOfficialVoucherCommand(source = {}) {
     }
     try {
       assertOfficialLedgerProjectionV2(plan, checkedV2);
+      assertOfficialStocktakeProjectionV2(plan, checkedV2.command);
     } catch (error) {
       tx.abort();
       try { await transactionDone(tx); } catch {}
@@ -541,6 +634,7 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
   const storeNames = [contract.documentStore, contract.lineStore, STORE.OFFICIAL_COMMANDS,
     STORE.VOUCHER_REVISIONS, STORE.INVENTORY_MOVEMENTS, contract.partnerEntryStore,
     STORE.PENDING_INVENTORY_EFFECTS, STORE.UNRESOLVED_PRODUCTS];
+  if (checkedV2) storeNames.push(STORE.INVENTORY_CHECKPOINTS);
   const tx = db.transaction(storeNames, 'readwrite');
   const commandStore = tx.objectStore(STORE.OFFICIAL_COMMANDS);
   const existingCommand = await requestToPromise(commandStore.get(commandId));
@@ -554,6 +648,7 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     if (checkedV2) {
       try {
         assertOfficialLedgerProjectionV2(existingCommand.result, checkedV2);
+        assertOfficialStocktakeProjectionV2(existingCommand.result, checkedV2.command);
       } catch (error) {
         tx.abort();
         try { await transactionDone(tx); } catch {}
@@ -576,10 +671,21 @@ export async function applyRemoteOfficialVoucherCommandPayload(payload = {}) {
     document = remoteDraftDocument(command, contract);
     lines = clone(command.lines || []);
   }
-  const plan = planOfficialVoucherCommand({ command, document, lines });
+  const checkpoints = checkedV2
+    ? await checkpointRowsForCommand(tx.objectStore(STORE.INVENTORY_CHECKPOINTS), command)
+    : [];
+  let plan;
+  try {
+    plan = planOfficialVoucherCommand({ command, document, lines, inventoryCheckpoints: checkpoints });
+  } catch (error) {
+    tx.abort();
+    try { await transactionDone(tx); } catch {}
+    throw error;
+  }
   if (checkedV2) {
     try {
       assertOfficialLedgerProjectionV2(plan, checkedV2);
+      assertOfficialStocktakeProjectionV2(plan, checkedV2.command);
     } catch (error) {
       tx.abort();
       try { await transactionDone(tx); } catch {}

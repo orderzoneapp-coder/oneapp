@@ -14,8 +14,9 @@ import {
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.3.0';
-import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.3.0';
-import { SaleFinalizeService } from './sale-finalize-service.js?v=0.3.0';
+import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.4.0';
+import { SaleFinalizeService } from './sale-finalize-service.js?v=0.4.0';
+import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.1.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
 import {
@@ -6622,6 +6623,34 @@ function scheduleOfficialVoucherSync(afterLocalMutation = false) {
   }, 0);
 }
 
+function stocktakeConflictsFromFinalizeResults(results = []) {
+  const unique = new Map();
+  results.forEach(row => {
+    if (row.ok || row.error?.code !== 'ORDERQ_OFFICIAL_V2_STOCKTAKE_DECISION_REQUIRED') return;
+    (row.error.conflicts || []).forEach(conflict => {
+      const key = [conflict.companyId, conflict.documentId, conflict.sourceLineId, conflict.checkpointId].join('|');
+      if (!unique.has(key)) unique.set(key, conflict);
+    });
+  });
+  return [...unique.values()];
+}
+
+async function finalizeWithStocktakeDecision(service, request) {
+  let results = await service.finalize(request);
+  const conflicts = stocktakeConflictsFromFinalizeResults(results);
+  if (!conflicts.length) return { cancelled: false, results };
+  const decisionType = await showStocktakeConflictDialog(conflicts);
+  if (!decisionType) return { cancelled: true, results: [] };
+  results = await service.finalize({
+    ...request,
+    stocktakeDecision: {
+      decisionType,
+      judgedAt: new Date().toISOString()
+    }
+  });
+  return { cancelled: false, results };
+}
+
 async function completeSaleOfficial() {
   const current = modeDraft();
   if (!state.saleCapability.ready) {
@@ -6635,7 +6664,8 @@ async function completeSaleOfficial() {
   state.busy = true;
   renderDelivery();
   try {
-    const results = await SaleFinalizeService.finalize({
+    // SaleFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
+    const finalized = await finalizeWithStocktakeDecision(SaleFinalizeService, {
       groups,
       companyId: state.companyId,
       activeMethod: current.activeMethod,
@@ -6645,6 +6675,8 @@ async function completeSaleOfficial() {
       products: state.products,
       warehouses: state.warehouseCatalog.warehouses || []
     });
+    if (finalized.cancelled) return;
+    const results = finalized.results;
     results.filter(row => row.ok).forEach(({ group, result }) => {
       const documentId = result.salesDocumentId || result.document?.salesDocumentId || '';
       const commandId = result.commandId || '';
@@ -6687,13 +6719,16 @@ async function completePurchaseOfficial() {
   state.busy = true;
   renderDelivery();
   try {
-    const results = await PurchaseFinalizeService.finalize({
+    // PurchaseFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
+    const finalized = await finalizeWithStocktakeDecision(PurchaseFinalizeService, {
       groups,
       masters,
       companyId: state.companyId,
       activeMethod: current.activeMethod,
       manualSessionId: current.documentId
     });
+    if (finalized.cancelled) return;
+    const results = finalized.results;
     results.filter(row => row.ok).forEach(({ group, result }) => {
       const documentId = result.purchaseDocumentId || result.document?.purchaseDocumentId || result.central?.changes?.find(row => row.entityType === 'PURCHASE_DOCUMENT')?.entityId || '';
       const commandId = result.commandId || result.central?.commandId || result.central?.result?.commandId || '';

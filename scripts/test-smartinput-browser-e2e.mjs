@@ -557,6 +557,109 @@ try {
     error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT', 'DRAFT'],
     revisions: 0, inventory: 0, pending: 0, unresolved: 0, ledger: 0, commands: 0, queue: 0
   }, 'forced V2 Stage 4 failure must leave zero confirmed partial effects, review records, commands, or queue rows');
+  const officialV2Stage5Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage5-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage5BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage5Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.match(officialV2Stage5Result.preview.error, /STOCKTAKE_DECISION_REQUIRED/);
+  assert.deepEqual(officialV2Stage5Result.preview.conflicts, [{
+    productCode: '0007', productName: '실사 충돌 상품', warehouse: '단계5창고', quantity: 10,
+    checkpointId: 'V2-STAGE5-CP-SEP01'
+  }]);
+  assert.equal(officialV2Stage5Result.preview.submitCount, 0,
+    'checkpoint review must finish before the first official draft or command submit');
+  assert.equal(Object.values(officialV2Stage5Result.preview.countsBeforeDecision).every(count => count === 0), true,
+    'preview and cancel boundary must leave zero official documents, lines, revisions, effects, ledgers, commands, and queue rows');
+  assert.deepEqual(officialV2Stage5Result.included, {
+    status: 'ABSORBED_BY_CHECKPOINT', appliedQuantity: 0, applied: false,
+    checkpointId: 'V2-STAGE5-CP-SEP01', decisions: 1, duplicate: true,
+    movements: 1, commands: 1, revisions: 1
+  }, 'included stocktake quantity must preserve the voucher while applying zero duplicate stock');
+  assert.deepEqual(officialV2Stage5Result.notIncluded, {
+    sourceStatus: 'APPLIED_AS_LATE_ADJUSTMENT',
+    adjustmentStatus: 'APPLIED_AS_LATE_ADJUSTMENT', adjustmentCount: 1,
+    appliedQuantity: -4, checkpointLinked: true, duplicate: true, commands: 1, revisions: 1
+  }, 'not-included sale quantity must create exactly one linked late adjustment and stay idempotent');
+  assert.match(officialV2Stage5Result.staleCheckpoint.error, /STOCKTAKE_DECISION_TARGET_MISMATCH/);
+  assert.deepEqual({ ...officialV2Stage5Result.staleCheckpoint, error: undefined }, {
+    error: undefined, submitCount: 0, officialDocument: false
+  }, 'a newer checkpoint between preview and commit must fail closed before the first write');
+  assert.match(officialV2Stage5Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage5Result.rollback, error: undefined }, {
+    error: undefined, documentStatus: 'DRAFT', documentRevision: 1,
+    revisions: 0, inventory: 0, ledger: 0, commands: 0, queue: 0
+  }, 'forced Stage 5 transaction failure must rollback revision, adjustment, ledger, command, and queue together');
+  assert.equal(officialV2Stage5Result.companyIsolation, true);
+  if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
+    await click(client, '[data-nexus-ui-theme-toggle]');
+    await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'light theme for stocktake popup');
+  }
+  const stocktakeUiBefore = await evaluate(client, `(() => {
+    const input=document.querySelector('#inputRows input:not([type="checkbox"])');
+    if(!input)throw new Error('stocktake state fixture input missing');
+    input.dataset.stage5Focus='true';input.focus({preventScroll:true});
+    if(typeof input.setSelectionRange==='function')input.setSelectionRange(0,Math.min(1,input.value.length));
+    const scroll=document.querySelector('#tableScroll');if(scroll){scroll.scrollTop=17;scroll.scrollLeft=23;}
+    const app=document.querySelector('.app-shell').getBoundingClientRect();
+    return {value:input.value,start:input.selectionStart,end:input.selectionEnd,scrollTop:scroll?.scrollTop||0,scrollLeft:scroll?.scrollLeft||0,
+      selected:[...document.querySelectorAll('#inputRows [data-select-row]')].map(box=>box.checked),
+      modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>button.textContent.trim()),
+      footer:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id),
+      app:{x:app.x,y:app.y,width:app.width,height:app.height}};
+  })()`);
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=1');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+    companyId:'V2-STAGE5-COMPANY',documentId:'PD-UI',sourceLineId:'PL-UI',checkpointId:'CP-UI',
+    productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
+  }]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'light stocktake popup');
+  const stocktakePopupContract = await evaluate(client, `(() => {const dialog=document.querySelector('dialog.stocktake-conflict-dialog');return {
+    message:dialog.querySelector('#stocktakeConflictMessage').textContent.trim(),
+    question:dialog.querySelector('.stocktake-conflict-dialog__question').textContent.trim(),
+    row:dialog.querySelector('.stocktake-conflict-dialog__row').textContent.replace(/\s+/g,' ').trim(),
+    buttons:[...dialog.querySelectorAll('footer button')].map(button=>button.textContent.trim()),
+    labelledBy:dialog.getAttribute('aria-labelledby'),describedBy:dialog.getAttribute('aria-describedby'),
+    focused:document.activeElement?.textContent.trim()};})()`);
+  assert.deepEqual(stocktakePopupContract.buttons, ['실사수량에 포함됨', '실사수량에 포함되지 않음', '확정 취소']);
+  assert.equal(stocktakePopupContract.message, '이 전표는 최근 재고실사 이전의 거래입니다.');
+  assert.equal(stocktakePopupContract.question, '이 수량이 실사 결과에 이미 포함되어 있습니까?');
+  assert.match(stocktakePopupContract.row, /0007 \/ 실사 충돌 상품.*단계5창고.*수량 10/);
+  assert.deepEqual({ labelledBy: stocktakePopupContract.labelledBy, describedBy: stocktakePopupContract.describedBy },
+    { labelledBy: 'stocktakeConflictTitle', describedBy: 'stocktakeConflictMessage' });
+  assert.equal(stocktakePopupContract.focused, '실사수량에 포함됨');
+  const stocktakeLightShot = await capture(client, 'smartinput-stocktake-conflict-light.png');
+  baselineScreenshots.push(stocktakeLightShot);
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await expr(client, `window.__stage5DialogResult===null&&!document.querySelector('dialog.stocktake-conflict-dialog')`, 'stocktake popup ESC cancel');
+  const stocktakeUiAfter = await evaluate(client, `(() => {const input=document.querySelector('[data-stage5-focus="true"]');const scroll=document.querySelector('#tableScroll');const app=document.querySelector('.app-shell').getBoundingClientRect();return {
+    value:input.value,start:input.selectionStart,end:input.selectionEnd,scrollTop:scroll?.scrollTop||0,scrollLeft:scroll?.scrollLeft||0,
+    selected:[...document.querySelectorAll('#inputRows [data-select-row]')].map(box=>box.checked),
+    modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>button.textContent.trim()),
+    footer:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id),
+    app:{x:app.x,y:app.y,width:app.width,height:app.height},focusRestored:document.activeElement===input};})()`);
+  assert.deepEqual({ ...stocktakeUiAfter, focusRestored: undefined }, { ...stocktakeUiBefore, focusRestored: undefined },
+    'ESC/cancel must preserve input, selection, scroll, selected rows, existing buttons, and layout');
+  assert.equal(stocktakeUiAfter.focusRestored, true);
+
+  await click(client, '[data-nexus-ui-theme-toggle]');
+  await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark stocktake popup theme');
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'dark stocktake popup');
+  const stocktakeDarkShot = await capture(client, 'smartinput-stocktake-conflict-dark.png');
+  baselineScreenshots.push(stocktakeDarkShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-cancel]');
+  await evaluate(client, `window.__stage5DialogPromise`);
+  await click(client, '[data-nexus-ui-theme-toggle]');
+  await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'restore light theme after stocktake popup');
+
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]).then(value=>{window.__stage5DialogResult=value;return value;});return true;})()`);
+  await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'mobile stocktake popup');
+  assert.equal(await evaluate(client, `[...document.querySelectorAll('dialog.stocktake-conflict-dialog footer .button')].every(button=>button.getBoundingClientRect().height>=44&&button.getBoundingClientRect().right<=innerWidth)`), true);
+  const stocktakeMobileShot = await capture(client, 'smartinput-stocktake-conflict-mobile.png');
+  baselineScreenshots.push(stocktakeMobileShot);
+  await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="NOT_INCLUDED_IN_CHECKPOINT"]');
+  await expr(client, `window.__stage5DialogResult==='NOT_INCLUDED_IN_CHECKPOINT'`, 'mobile stocktake popup decision');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `window.dispatchEvent(new Event('resize'));true`);
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
   assert.equal(officialSyncResult.online, true);
   assert.equal(officialSyncResult.applied >= 3, true, 'legacy waiting official rows must become uploadable without rewriting the local voucher');
@@ -917,8 +1020,17 @@ try {
       gatewayInjectedFailure: officialGatewayRollbackResult,
       stage3V2: officialV2Stage3Result,
       stage4V2: officialV2Stage4Result,
+      stage5V2: officialV2Stage5Result,
       expectedFinalizeTransactionCount: 1,
       partialFinalizeWritesAfterFailure: 0
+    },
+    stocktakeConflictUi: {
+      contract: stocktakePopupContract,
+      cancelStateBefore: stocktakeUiBefore,
+      cancelStateAfter: stocktakeUiAfter,
+      themes: ['light', 'dark'],
+      mobileViewport: { width: 390, height: 844 },
+      normalFlowPopupCount: 0
     },
     screenshots: baselineScreenshots.map(file => basename(file))
   };

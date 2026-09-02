@@ -6,7 +6,11 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
   OFFICIAL_VOUCHER_V2_ENTITY
-} from './official-voucher-v2-contract.js?v=0.3.0';
+} from './official-voucher-v2-contract.js?v=0.4.0';
+import {
+  applyOfficialStocktakeDecisionsV2,
+  assertOfficialStocktakeProjectionV2
+} from './stocktake-conflict-v2.js?v=0.1.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
@@ -387,6 +391,7 @@ export function planOfficialVoucherCommand(input = {}) {
   const command = normalizeCommand(input.command || input);
   const kind = commandKind(command.commandType);
   const action = commandAction(command.commandType);
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   const previousDocument = clone(input.document);
   const previousLines = clone(Array.isArray(input.lines) ? input.lines : []);
   if (!previousDocument) throw new Error('ORDERQ_OFFICIAL_DOCUMENT_REQUIRED');
@@ -453,8 +458,14 @@ export function planOfficialVoucherCommand(input = {}) {
     if (pending) pendingInventoryEffects.push(pending);
   });
 
+  const stocktakeProjection = identityV2 ? applyOfficialStocktakeDecisionsV2({
+    command,
+    inventoryMovements,
+    inventoryCheckpoints: Array.isArray(input.inventoryCheckpoints) ? input.inventoryCheckpoints : []
+  }) : { inventoryMovements, stocktakeDecisions: [] };
+  inventoryMovements.splice(0, inventoryMovements.length, ...stocktakeProjection.inventoryMovements);
+
   const previousTotal = Number(previousDocument.totalAmount || 0);
-  const identityV2 = isOfficialVoucherIdentityV2(command);
   const oldPartner = identityV2 ? partnerId(kind, previousDocument) : requiredPartnerId(kind, previousDocument);
   const newPartner = partnerId(kind, nextDocument);
   const ledgerEntries = [];
@@ -508,7 +519,14 @@ export function planOfficialVoucherCommand(input = {}) {
       ...inventoryMovements.map(row => ({
         type: 'INVENTORY',
         id: row.movementId,
-        ...(identityV2 ? { status: row.effectStatus, officialInventoryApplied: true } : {})
+        ...(identityV2 ? {
+          status: row.effectStatus,
+          officialInventoryApplied: row.officialInventoryApplied,
+          effectRole: row.effectRole || 'SOURCE_VOUCHER_EFFECT',
+          stocktakeEffectStatus: row.stocktakeEffectStatus || '',
+          stocktakeDecisionId: row.stocktakeDecisionId || '',
+          checkpointId: row.checkpointId || ''
+        } : {})
       })),
       ...pendingInventoryEffects.map(row => ({
         type: identityV2 ? 'UNRESOLVED_PRODUCT_REVIEW' : 'PENDING_INVENTORY',
@@ -527,11 +545,13 @@ export function planOfficialVoucherCommand(input = {}) {
         ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_REVISION
         : OFFICIAL_VOUCHER_V2_ENTITY.SALE_REVISION,
       voucherGroupKey: text(command.voucherGroupKey),
-      partnerEffectDecision
+      businessDate: text(nextDocument.businessDate),
+      partnerEffectDecision,
+      stocktakeDecisions: clone(stocktakeProjection.stocktakeDecisions)
     } : {})
   };
   nextDocument.lastVoucherRevisionId = voucherRevision.voucherRevisionId;
-  return {
+  const result = {
     command,
     kind,
     document: nextDocument,
@@ -550,4 +570,6 @@ export function planOfficialVoucherCommand(input = {}) {
     ledgerEntries,
     voucherRevision
   };
+  if (identityV2) assertOfficialStocktakeProjectionV2(result, command);
+  return result;
 }

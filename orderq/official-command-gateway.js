@@ -5,15 +5,17 @@ import {
   findOfficialSaleBySource,
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
+  inspectOfficialStocktakeConflicts,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
-} from './official-voucher-repository.js?v=0.23.0';
+} from './official-voucher-repository.js?v=0.24.0';
 import {
   assertOfficialCommandV2,
   assertOfficialLedgerProjectionV2,
   isOfficialVoucherIdentityV2,
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2
-} from './official-voucher-v2-contract.js?v=0.3.0';
+} from './official-voucher-v2-contract.js?v=0.4.0';
+import { assertOfficialStocktakeProjectionV2 } from './stocktake-conflict-v2.js?v=0.1.0';
 
 // The public Gateway surface remains V1. Identity V2 is an additive,
 // feature-gated command contract rather than a breaking Gateway API change.
@@ -31,6 +33,7 @@ const repositoryPort = Object.freeze({
   findOfficialSaleBySource,
   loadOfficialPurchaseAggregate,
   loadOfficialSaleAggregate,
+  inspectOfficialStocktakeConflicts,
   runCentralOfficialVoucherCommand,
   saveOfficialVoucherDraft
 });
@@ -81,8 +84,20 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
     findSaleBySource: identity => repository.findOfficialSaleBySource(identity),
     loadPurchaseAggregate: documentId => repository.loadOfficialPurchaseAggregate(documentId),
     loadSaleAggregate: documentId => repository.loadOfficialSaleAggregate(documentId),
+    inspectStocktakeConflicts(source) {
+      const checked = validateV2Boundary(source, featureGates);
+      if (!checked) return Promise.resolve({ conflicts: [], identityVersion: '' });
+      if (typeof repository.inspectOfficialStocktakeConflicts !== 'function') {
+        return Promise.resolve({ conflicts: [], identityVersion: checked.command.identityVersion });
+      }
+      return repository.inspectOfficialStocktakeConflicts(source);
+    },
     saveDraft(source, actor) {
-      validateV2Boundary(source, featureGates);
+      const checked = validateV2Boundary(source, featureGates);
+      if (checked && typeof repository.inspectOfficialStocktakeConflicts === 'function') {
+        return Promise.resolve(repository.inspectOfficialStocktakeConflicts(source))
+          .then(() => repository.saveOfficialVoucherDraft(source, actor));
+      }
       return repository.saveOfficialVoucherDraft(source, actor);
     },
     execute(command) {
@@ -92,6 +107,7 @@ export function createOfficialCommandGateway(repository = repositoryPort, option
       if (!checked) return projected;
       return Promise.resolve(projected).then(result => {
         assertOfficialLedgerProjectionV2(result, checked);
+        assertOfficialStocktakeProjectionV2(result, checked.command);
         return result;
       });
     }
