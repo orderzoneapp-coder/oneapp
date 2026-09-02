@@ -49,6 +49,7 @@ jobs:
           node scripts/test-smartinput-multivoucher-stage1.mjs
           node scripts/test-smartinput-ocr.mjs
           node scripts/test-smartinput-reference-data-ux.mjs
+          node scripts/test-smartinput-official-v2-baseline.mjs
 
       - name: Test SmartInput browser isolation and persistence
         run: node scripts/test-smartinput-browser-e2e.mjs
