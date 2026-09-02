@@ -469,6 +469,33 @@ try {
     status: 'DRAFT', revision: 1, revisions: 0, inventory: 0,
     ledger: 0, pending: 0, commands: 0
   }, 'Gateway-routed failure must preserve the same zero-partial-write rollback result');
+  const officialV2Stage3Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage3-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage3BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage3Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.deepEqual(officialV2Stage3Result.purchase, {
+    date: '2026-09-01', dayDefaulted: true, inventory: 2, ledger: 1,
+    duplicate: true, commands: 1, revisions: 1,
+    frozenName: '확정 상품 P-SUCCESS', frozenCode: 'CODE-P-SUCCESS'
+  }, 'purchase V2 must preserve its confirmed Snapshot and apply one effect across identical retries');
+  assert.deepEqual(officialV2Stage3Result.sale, {
+    inventory: -2, ledger: 1, duplicate: true, differentGroupDocumentId: true
+  }, 'sale V2 must isolate voucher groups and apply one effect across identical retries');
+  assert.match(officialV2Stage3Result.safety.expectedRevisionError, /REVISION_CONFLICT/);
+  assert.match(officialV2Stage3Result.safety.saleExpectedRevisionError, /REVISION_CONFLICT/);
+  assert.match(officialV2Stage3Result.safety.payloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.match(officialV2Stage3Result.safety.salePayloadConflictError, /AMOUNT_DERIVATION_MISMATCH|LINE_SNAPSHOT_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.match(officialV2Stage3Result.safety.repositoryCompanyError, /COMPANY_MISMATCH|COMMAND_PAYLOAD_CONFLICT|COMMAND_ID_INVALID/);
+  assert.match(officialV2Stage3Result.safety.gatewayIdentityError, /IDENTITY_VERSION_INVALID/);
+  assert.match(officialV2Stage3Result.safety.repositoryIdentityError, /IDENTITY_VERSION_INVALID/);
+  assert.match(officialV2Stage3Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage3Result.rollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT'],
+    revisions: 0, inventory: 0, ledger: 0, pending: 0, commands: 0
+  }, 'V2 injected failure must rollback the document, line, revision, inventory, ledger, and command atomically');
+  assert.match(officialV2Stage3Result.saleRollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage3Result.saleRollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT'],
+    revisions: 0, inventory: 0, ledger: 0, pending: 0, commands: 0
+  }, 'sale V2 injected failure must rollback the document, line, revision, inventory, ledger, and command atomically');
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
   assert.equal(officialSyncResult.online, true);
   assert.equal(officialSyncResult.applied >= 3, true, 'legacy waiting official rows must become uploadable without rewriting the local voucher');
@@ -805,6 +832,7 @@ try {
       successBaseline: officialResult,
       injectedFailure: officialRollbackResult,
       gatewayInjectedFailure: officialGatewayRollbackResult,
+      stage3V2: officialV2Stage3Result,
       expectedFinalizeTransactionCount: 1,
       partialFinalizeWritesAfterFailure: 0
     },

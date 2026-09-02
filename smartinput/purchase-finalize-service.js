@@ -29,7 +29,8 @@ export function createPurchaseFinalizeService(ports = {}) {
             actor: request.actor || SMARTINPUT_PURCHASE_ACTOR_ID,
             originSystem: producer,
             manualSessionId: request.manualSessionId,
-            occurredAt: now()
+            occurredAt: now(),
+            ...(request.identityVersion ? { identityVersion: request.identityVersion } : {})
           });
           results.push({ ok: true, group, result });
         } catch (error) {

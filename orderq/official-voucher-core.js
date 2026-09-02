@@ -1,4 +1,12 @@
 import './canonical-hash.js?v=0.2.0';
+import {
+  assertOfficialCommandV2,
+  isOfficialVoucherIdentityV2,
+  officialVoucherRevisionIdV2,
+  OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+  OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+  OFFICIAL_VOUCHER_V2_ENTITY
+} from './official-voucher-v2-contract.js?v=0.1.0';
 
 const sharedCanonicalHash = globalThis.ORDERQ_CANONICAL_HASH;
 if (!sharedCanonicalHash) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
@@ -137,6 +145,7 @@ function partnerId(kind, source = {}) {
 }
 
 function normalizeCommand(source = {}) {
+  if (isOfficialVoucherIdentityV2(source)) assertOfficialCommandV2(source);
   const commandType = text(source.commandType).toUpperCase();
   if (!COMMANDS.has(commandType)) throw new Error(`ORDERQ_OFFICIAL_COMMAND_TYPE_INVALID:${commandType}`);
   const expectedRevision = Number(source.expectedRevision);
@@ -173,6 +182,14 @@ function productIdentity(source = {}) {
 }
 
 function normalizeLine(kind, source, document, revision) {
+  if (isOfficialVoucherIdentityV2(document)
+    && text(source.companyId) && text(source.companyId) !== text(document.companyId)) {
+    throw new Error('ORDERQ_OFFICIAL_LINE_COMPANY_MISMATCH');
+  }
+  if (isOfficialVoucherIdentityV2(document)
+    && text(source.voucherGroupKey) !== text(document.voucherGroupKey)) {
+    throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+  }
   const id = lineId(kind, source);
   const amounts = resolveOfficialLineAmounts(source);
   const baseQuantity = optionalFinite(source.baseQuantity, 'ORDERQ_OFFICIAL_BASE_QUANTITY_INVALID') ?? amounts.quantity;
@@ -270,7 +287,8 @@ function ledgerEntry(kind, command, document, partner, totalAmount, entryType, o
   };
 }
 
-function businessSnapshot(kind, document, lines) {
+function businessSnapshot(kind, document, lines, command) {
+  const identityV2 = isOfficialVoucherIdentityV2(command);
   return {
     companyId: document.companyId,
     voucherMode: kind.toLowerCase(),
@@ -282,6 +300,14 @@ function businessSnapshot(kind, document, lines) {
     supplyAmount: document.supplyAmount,
     vatAmount: document.vatAmount,
     totalAmount: document.totalAmount,
+    ...(identityV2 ? {
+      schemaVersion: OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+      identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+      entityType: kind === 'PURCHASE'
+        ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_REVISION
+        : OFFICIAL_VOUCHER_V2_ENTITY.SALE_REVISION,
+      voucherGroupKey: text(document.voucherGroupKey)
+    } : {}),
     lines: lines.map(line => ({
       lineId: lineId(kind, line),
       lineIdentityId: line.lineIdentityId,
@@ -293,7 +319,21 @@ function businessSnapshot(kind, document, lines) {
       unitPrice: line.unitPrice,
       supplyAmount: line.supplyAmount,
       vatAmount: line.vatAmount,
-      totalAmount: line.totalAmount
+      totalAmount: line.totalAmount,
+      ...(identityV2 ? {
+        schemaVersion: line.schemaVersion,
+        identityVersion: line.identityVersion,
+        entityType: line.entityType,
+        companyId: line.companyId,
+        voucherGroupKey: line.voucherGroupKey,
+        productCode: line.productCode,
+        productName: line.productName,
+        specification: line.specification,
+        unit: line.unit || line.actualUnit,
+        originalProductCode: line.originalProductCode,
+        originalProductName: line.originalProductName,
+        productSnapshot: clone(line.productSnapshot)
+      } : {})
     }))
   };
 }
@@ -307,6 +347,12 @@ export function planOfficialVoucherCommand(input = {}) {
   if (!previousDocument) throw new Error('ORDERQ_OFFICIAL_DOCUMENT_REQUIRED');
   if (text(previousDocument.companyId) && text(previousDocument.companyId) !== command.companyId) {
     throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+  }
+  if (isOfficialVoucherIdentityV2(command)) {
+    if (text(previousDocument.companyId) !== command.companyId) throw new Error('ORDERQ_OFFICIAL_COMPANY_MISMATCH');
+    if (text(previousDocument.voucherGroupKey) !== text(command.voucherGroupKey)) {
+      throw new Error('ORDERQ_OFFICIAL_V2_GROUP_MISMATCH');
+    }
   }
   if (Number(previousDocument.revision || 0) !== command.expectedRevision) {
     throw new Error(`ORDERQ_OFFICIAL_REVISION_CONFLICT:${previousDocument.revision || 0}`);
@@ -381,10 +427,13 @@ export function planOfficialVoucherCommand(input = {}) {
   }
   nextDocument.lastLedgerEntryId = ledgerEntries.at(-1)?.entryId || '';
 
-  const beforeSnapshot = businessSnapshot(kind, previousDocument, previousLines);
-  const afterSnapshot = businessSnapshot(kind, nextDocument, nextLines);
+  const beforeSnapshot = businessSnapshot(kind, previousDocument, previousLines, command);
+  const afterSnapshot = businessSnapshot(kind, nextDocument, nextLines, command);
+  const revisionId = isOfficialVoucherIdentityV2(command)
+    ? officialVoucherRevisionIdV2(kind, command.companyId, documentId(kind, nextDocument), revision)
+    : `${documentId(kind, nextDocument)}:R${revision}`;
   const voucherRevision = {
-    voucherRevisionId: `${documentId(kind, nextDocument)}:R${revision}`,
+    voucherRevisionId: revisionId,
     companyId: command.companyId,
     voucherMode: kind.toLowerCase(),
     documentId: documentId(kind, nextDocument),
@@ -404,7 +453,15 @@ export function planOfficialVoucherCommand(input = {}) {
     ],
     reason: command.reason,
     actor: command.actor,
-    occurredAt: command.occurredAt
+    occurredAt: command.occurredAt,
+    ...(isOfficialVoucherIdentityV2(command) ? {
+      schemaVersion: OFFICIAL_VOUCHER_SCHEMA_VERSION_V2,
+      identityVersion: OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
+      entityType: kind === 'PURCHASE'
+        ? OFFICIAL_VOUCHER_V2_ENTITY.PURCHASE_REVISION
+        : OFFICIAL_VOUCHER_V2_ENTITY.SALE_REVISION,
+      voucherGroupKey: text(command.voucherGroupKey)
+    } : {})
   };
   nextDocument.lastVoucherRevisionId = voucherRevision.voucherRevisionId;
   return {

@@ -63,7 +63,8 @@ export function createSaleFinalizeService(ports = {}) {
             actor: request.actor || SMARTINPUT_SALE_ACTOR_ID,
             originSystem: producer,
             manualSessionId: producerTransactionId,
-            occurredAt: now()
+            occurredAt: now(),
+            ...(request.identityVersion ? { identityVersion: request.identityVersion } : {})
           });
           results.push({ ok: true, group, result });
         } catch (error) {
