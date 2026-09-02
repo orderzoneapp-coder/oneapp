@@ -1443,6 +1443,20 @@
       100% { opacity: 0; transform: translate(-50%, -4px) scale(.98); }
     }
 
+    .results-panel tbody tr.manager-color-row[style*="--manager-color"] > td {
+      color: #172033 !important;
+      background: color-mix(in srgb, var(--manager-color) 48%, #fffdf8) !important;
+    }
+    .results-panel tbody tr.manager-color-row[style*="--manager-color"]:hover > td {
+      background: color-mix(in srgb, var(--manager-color) 58%, #fffdf8) !important;
+    }
+    .results-panel tbody tr.manager-color-row > td *,
+    .results-panel tbody tr.manager-color-row > td { color: #172033 !important; }
+    .results-panel tbody tr.unit-alert-row > td *,
+    .results-panel tbody tr.unit-alert-row > td { color: #b91c1c !important; }
+    .results-panel tbody tr.box-unit-row > td *,
+    .results-panel tbody tr.box-unit-row > td { color: #0f172a !important; }
+
     .print-area { display: none; }
     @page { size: A4 portrait; margin: 8mm; }
     @media print {
@@ -1461,6 +1475,16 @@
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
+      body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
+        color: #172033 !important;
+        background: color-mix(in srgb, var(--manager-color) 48%, #fff) !important;
+      }
+      body.printing-table .print-area tbody tr.manager-color-row > td *,
+      body.printing-table .print-area tbody tr.manager-color-row > td { color: #172033 !important; }
+      body.printing-table .print-area tbody tr.unit-alert-row > td *,
+      body.printing-table .print-area tbody tr.unit-alert-row > td { color: #b91c1c !important; }
+      body.printing-table .print-area tbody tr.box-unit-row > td *,
+      body.printing-table .print-area tbody tr.box-unit-row > td { color: #0f172a !important; }
       body.printing-table .print-area table {
         width: 100% !important;
         min-width: 0 !important;
@@ -5449,6 +5473,8 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
+                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
+                exactBoxUnit(sourceRow) ? "box-unit-row" : "",
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
