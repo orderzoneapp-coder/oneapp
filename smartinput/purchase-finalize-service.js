@@ -2,11 +2,12 @@ import { validatePurchaseGroup } from './legacy-integration-adapter.js?v=0.3.0';
 import {
   postPurchaseGroup,
   SMARTINPUT_PURCHASE_ACTOR_ID
-} from './purchase-official-stage3.js?v=0.4.0';
+} from './purchase-official-stage3.js?v=0.6.0';
 import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.1.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 
 export const PURCHASE_FINALIZE_SERVICE_CONTRACT = Object.freeze({
   version: 'ONEAPP_SMARTINPUT_PURCHASE_FINALIZE_SERVICE_V1',
@@ -27,15 +28,26 @@ export function createPurchaseFinalizeService(ports = {}) {
       for (const group of request.groups || []) {
         try {
           const identityV2 = String(request.identityVersion || '').trim() === OFFICIAL_VOUCHER_IDENTITY_VERSION_V2;
-          const preflight = identityV2 ? preflightOfficialVoucherV2({
-            ...group,
+          const resolvedGroup = identityV2 ? resolveOfficialVoucherReferencesV2({
             kind: 'PURCHASE',
             companyId: request.companyId || group.companyId,
-            warehouseId: group.warehouseId,
-            rows: group.rows
+            group,
+            products: request.masters?.products || request.products || [],
+            customers: request.masters?.customers || request.customers || [],
+            productReferenceSnapshotId: request.productReferenceSnapshotId,
+            customerReferenceSnapshotId: request.customerReferenceSnapshotId
+          }) : group;
+          const preflight = identityV2 ? preflightOfficialVoucherV2({
+            ...resolvedGroup,
+            kind: 'PURCHASE',
+            companyId: request.companyId || resolvedGroup.companyId,
+            warehouseId: resolvedGroup.warehouseId,
+            rows: resolvedGroup.rows
           }) : null;
           if (!identityV2) validateGroup(group, request.masters || {});
-          const submitSource = preflight ? { ...group, companyId: preflight.companyId, rows: preflight.rows } : group;
+          const submitSource = preflight
+            ? { ...resolvedGroup, companyId: preflight.companyId, rows: preflight.rows }
+            : group;
           const producer = request.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : 'SMARTINPUT_MANUAL';
           const result = await submitGroup(submitSource, {
             companyId: request.companyId,

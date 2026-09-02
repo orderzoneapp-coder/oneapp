@@ -475,7 +475,7 @@ try {
     date: '2026-09-01', dayDefaulted: true, inventory: 2, ledger: 1,
     duplicate: true, commands: 1, revisions: 1,
     frozenName: '㈜金 확정상품', frozenCode: '０００７',
-    frozenOriginalName: '㈜金 원본상품', frozenOriginalCode: '０A①'
+    frozenOriginalName: '㈜金 원본상품', frozenOriginalCode: '０００７'
   }, 'purchase V2 must preserve its confirmed Snapshot and apply one effect across identical retries');
   assert.deepEqual(officialV2Stage3Result.sale, {
     inventory: -2, ledger: 1, duplicate: true, differentGroupDocumentId: true
@@ -500,6 +500,63 @@ try {
     error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT'],
     revisions: 0, inventory: 0, ledger: 0, pending: 0, commands: 0
   }, 'sale V2 injected failure must rollback the document, line, revision, inventory, ledger, and command atomically');
+  const officialV2Stage4Result = await evaluate(client, `(async()=>{const scenario=await import('/scripts/fixtures/smartinput-v2-stage4-browser-scenario.js?e2e=1');return scenario.runSmartInputV2Stage4BrowserScenario();})()`);
+  assert.deepEqual(officialV2Stage4Result.featureGates, { PURCHASE: true, SALE: true });
+  assert.deepEqual(officialV2Stage4Result.purchase.matchedEffects, [
+    { quantity: 10, status: 'APPLIED_NORMAL' },
+    { quantity: 0, status: 'ZERO_EFFECT' }
+  ], 'V2 must persist purchase +quantity and a separate ZERO_EFFECT without applying the legacy factor');
+  assert.equal(officialV2Stage4Result.purchase.unresolvedOfficialInventory, 0,
+    'unmatched products must create no official inventory movement, including a zero quantity');
+  assert.deepEqual(officialV2Stage4Result.purchase.pending, [
+    { code: '0099', name: '미등록 상품', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true },
+    { code: '0099', name: '미등록 상품 별칭', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true },
+    { code: '', name: '같은 이름', status: 'UNRESOLVED_PRODUCT', applied: false, documentLinked: true, revisionLinked: true }
+  ], 'code-unmatched and name-only rows must remain reviewable without name auto-matching');
+  assert.equal(officialV2Stage4Result.purchase.unresolvedReviewRecords.length, 2);
+  assert.equal(officialV2Stage4Result.purchase.unresolvedReviewRecords.every(record => record.status === 'UNRESOLVED_PRODUCT'
+    && record.documentLinked && record.lineLinked && record.revisionLinked && record.applied === false), true,
+  'unresolved review records must preserve document, line, and Revision links');
+  assert.deepEqual(officialV2Stage4Result.purchase.unresolvedReviewRecords.map(record => record.linkCount).sort(), [1, 2],
+    'one unresolved product must retain every source line without duplicate links');
+  assert.deepEqual(officialV2Stage4Result.purchase.payable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 2661,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.purchase.documentBusinessDate, '2026-08-05');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.status, 'CREATED');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.reason, 'EXACT_COMPANY_CUSTOMER_CODE');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.purchase.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.purchase.duplicate, true);
+  assert.match(officialV2Stage4Result.purchase.repositoryLedgerDateGuardError, /LEDGER_PROJECTION_MISMATCH/,
+    'Repository retry must reject a stored V2 ledger projection whose effective date was tampered');
+  assert.deepEqual(officialV2Stage4Result.purchase.aggregateCounts, {
+    lines: 5, inventory: 2, pending: 3, unresolved: 2, ledger: 1, revisions: 1, commands: 1, queue: 1
+  }, 'one transaction and one idempotent retry must leave exactly one official projection set and queue row');
+  assert.equal(officialV2Stage4Result.purchase.factorOne, true);
+  assert.equal(officialV2Stage4Result.purchase.leadingZeroProductId, 'V2-STAGE4-P-0007');
+  assert.equal(officialV2Stage4Result.sale.inventory, -4);
+  assert.equal(officialV2Stage4Result.sale.receivables, 0);
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.status, 'NOT_CREATED');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.reason, 'CUSTOMER_CODE_UNMATCHED');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.ledgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.sale.partnerId, '');
+  assert.equal(officialV2Stage4Result.sale.matchedInventory, -4);
+  assert.deepEqual(officialV2Stage4Result.sale.matchedReceivable, [{
+    partnerId: 'V2-STAGE4-C-0003', amount: 400,
+    effectiveAt: '2026-08-05', occurredAt: '2026-09-02T10:00:00.000Z'
+  }]);
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.status, 'CREATED');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.effectiveAt, '2026-08-05');
+  assert.equal(officialV2Stage4Result.sale.matchedLedgerDecision.occurredAt, '2026-09-02T10:00:00.000Z');
+  assert.equal(officialV2Stage4Result.sale.matchedDocumentBusinessDate, '2026-08-05');
+  assert.match(officialV2Stage4Result.rollback.error, /ConstraintError|AbortError|IndexedDB transaction failed/);
+  assert.deepEqual({ ...officialV2Stage4Result.rollback, error: undefined }, {
+    error: undefined, status: 'DRAFT', revision: 1, lineStatuses: ['DRAFT', 'DRAFT'],
+    revisions: 0, inventory: 0, pending: 0, unresolved: 0, ledger: 0, commands: 0, queue: 0
+  }, 'forced V2 Stage 4 failure must leave zero confirmed partial effects, review records, commands, or queue rows');
   const officialSyncResult = await evaluate(client, `(async()=>{const originalFetch=window.fetch;const calls=[];localStorage.setItem('oneapp_cloud_sync_url_v1','https://official-sync.test/exec');window.fetch=async(_url,options)=>{const body=JSON.parse(options.body);calls.push(body);const data=body.action==='orderq_official_sync_push'?{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,results:body.changes.map((row,index)=>({queueId:row.queueId,status:'applied',sequence:index+1,serverRevision:row.revision})),cursor:body.changes.length}:{schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_SYNC_V1',companyId:body.companyId,changes:[],nextCursor:0,hasMore:false};return {ok:true,json:async()=>({status:'success',data})};};try{const sync=await import('/orderq/official-voucher-sync.js?sync-e2e=1');const result=await sync.syncOfficialVouchers('ONEAPP');const state=await sync.getOfficialSyncState('ONEAPP');return {online:result.online,applied:result.push.applied,waiting:state.waiting,acked:state.acked,actions:calls.map(row=>row.action),companies:[...new Set(calls.map(row=>row.companyId))]};}finally{window.fetch=originalFetch;localStorage.removeItem('oneapp_cloud_sync_url_v1');}})()`);
   assert.equal(officialSyncResult.online, true);
   assert.equal(officialSyncResult.applied >= 3, true, 'legacy waiting official rows must become uploadable without rewriting the local voucher');
@@ -859,6 +916,7 @@ try {
       injectedFailure: officialRollbackResult,
       gatewayInjectedFailure: officialGatewayRollbackResult,
       stage3V2: officialV2Stage3Result,
+      stage4V2: officialV2Stage4Result,
       expectedFinalizeTransactionCount: 1,
       partialFinalizeWritesAfterFailure: 0
     },

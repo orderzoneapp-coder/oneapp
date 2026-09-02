@@ -12,7 +12,7 @@ const clone = value => structuredClone(value);
 const errorText = error => `${error?.name || 'Error'}:${error?.message || String(error)}`;
 
 function row(rowId, overrides = {}) {
-  return {
+  const result = {
     rowId,
     itemCode: `CODE-${rowId}`,
     itemName: `확정 상품 ${rowId}`,
@@ -31,6 +31,15 @@ function row(rowId, overrides = {}) {
     actualToBaseFactor: 1,
     ...overrides
   };
+  const inputProductCode = String(Object.prototype.hasOwnProperty.call(result, 'originalProductCode')
+    ? result.originalProductCode
+    : result.itemCode || '').trim();
+  result.officialProductResolution = {
+    status: 'MATCHED', reason: 'EXACT_COMPANY_PRODUCT_CODE', companyId: 'V2-COMPANY',
+    inputProductCode, matchedProductCode: result.itemCode, matchedProductId: result.productId,
+    productMasterRevision: result.productMasterRevision, referenceSnapshotId: result.referenceSnapshotId
+  };
+  return result;
 }
 
 function context(companyId) {
@@ -45,7 +54,7 @@ function context(companyId) {
 }
 
 function purchaseGroup(suffix, overrides = {}) {
-  return {
+  const result = {
     companyId: 'V2-COMPANY',
     voucherGroupKey: `PURCHASE|STAGE3|${suffix}`,
     supplierCustomerId: 'V2-SUPPLIER',
@@ -59,21 +68,29 @@ function purchaseGroup(suffix, overrides = {}) {
     rows: [row(`P-${suffix}`)],
     ...overrides
   };
+  result.officialPartnerResolution = {
+    status: 'MATCHED', reason: 'EXACT_COMPANY_CUSTOMER_CODE', companyId: result.companyId,
+    partnerRole: 'SUPPLIER', inputCustomerCode: result.supplierCustomerCode,
+    matchedCustomerCode: result.supplierCustomerCode, matchedCustomerId: result.supplierCustomerId
+  };
+  return result;
 }
 
 function saleGroup(suffix, overrides = {}) {
-  return {
+  const result = {
     companyId: 'V2-COMPANY',
     voucherGroupKey: `SALE|STAGE3|${suffix}`,
     originSystem: 'SMARTINPUT_E2E',
     originTransactionId: `V2-SALE-${suffix}`,
     sourceDocumentKey: `V2-SALE-${suffix}`,
     salesCustomerId: 'V2-CUSTOMER',
+    salesCustomerCode: 'V2-CUSTOMER',
     salesCustomerName: 'V2 판매처',
     salesCustomerRevision: 1,
     deliveryCustomerId: 'V2-CUSTOMER',
     deliveryCustomerRevision: 1,
     billingCustomerId: 'V2-CUSTOMER',
+    billingCustomerCode: 'V2-CUSTOMER',
     billingCustomerRevision: 1,
     voucherDate: '2026-09-02',
     warehouseId: 'WH-V2',
@@ -82,6 +99,12 @@ function saleGroup(suffix, overrides = {}) {
     rows: [row(`S-${suffix}`)],
     ...overrides
   };
+  result.officialPartnerResolution = {
+    status: 'MATCHED', reason: 'EXACT_COMPANY_CUSTOMER_CODE', companyId: result.companyId,
+    partnerRole: 'BILLING', inputCustomerCode: result.billingCustomerCode,
+    matchedCustomerCode: result.billingCustomerCode, matchedCustomerId: result.billingCustomerId
+  };
+  return result;
 }
 
 async function rejection(action) {
@@ -101,7 +124,7 @@ export async function runSmartInputV2Stage3BrowserScenario() {
   const purchaseSource = purchaseGroup('SUCCESS', { rows: [row('P-SUCCESS', {
     itemCode: '０００７',
     itemName: '㈜金 확정상품',
-    originalProductCode: '０A①',
+    originalProductCode: '０００７',
     originalProductName: '㈜金 원본상품'
   })] });
   const purchaseDraft = buildPurchasePostDraft(purchaseSource, context('V2-COMPANY'));

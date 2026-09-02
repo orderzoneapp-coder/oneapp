@@ -3,8 +3,8 @@ import {
   commitSaleCommand,
   findSaleCommandContext,
   freezeSaleCommandIntent
-} from '../orderq/official-command-adapter.js?v=0.1.0';
-import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.20.0';
+} from '../orderq/official-command-adapter.js?v=0.3.0';
+import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.22.0';
 import {
   createOfficialDocumentIdentityV2,
   createOfficialLineIdentityV2,
@@ -12,7 +12,7 @@ import {
   OFFICIAL_VOUCHER_IDENTITY_VERSION_V2,
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
-} from '../orderq/official-voucher-v2-contract.js?v=0.1.0';
+} from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',
@@ -153,13 +153,15 @@ export function buildSalePostDraft(group = {}, context = {}) {
     const unitPrice = finite(row.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
     const orderLinkMode = text(row.orderLinkMode || group.orderLinkMode || 'DIRECT').toUpperCase();
     const direct = orderLinkMode === 'DIRECT';
-    const actualToBaseFactor = finite(row.actualToBaseFactor ?? (direct ? 1 : undefined), 'ORDERQ_SALE_CONVERSION_REQUIRED');
+    const actualToBaseFactor = identityV2
+      ? 1
+      : finite(row.actualToBaseFactor ?? (direct ? 1 : undefined), 'ORDERQ_SALE_CONVERSION_REQUIRED');
     const actualToRecognizedFactor = orderLinkMode === 'DIRECT' ? 0 : finite(row.actualToRecognizedFactor, 'ORDERQ_SALE_CONVERSION_REQUIRED');
     const actualUnit = text(row.actualUnit || row.unit).toUpperCase();
     const conversionSource = text(row.conversionSource || (direct ? 'DIRECT_SAME_UNIT' : '')).toUpperCase();
     const conversionRuleId = text(row.conversionRuleId || (direct ? 'DIRECT_1_TO_1' : ''));
     const conversionRuleVersion = text(row.conversionRuleVersion || (direct ? 'DIRECT_1_TO_1_V1' : ''));
-    if (direct && (actualToBaseFactor !== 1 || text(row.baseUnit || actualUnit).toUpperCase() !== actualUnit
+    if (!identityV2 && direct && (actualToBaseFactor !== 1 || text(row.baseUnit || actualUnit).toUpperCase() !== actualUnit
       || conversionSource !== 'DIRECT_SAME_UNIT' || !conversionRuleVersion)) {
       throw new Error('ORDERQ_SALE_DIRECT_CONVERSION_PROVENANCE_REQUIRED');
     }
@@ -178,19 +180,24 @@ export function buildSalePostDraft(group = {}, context = {}) {
     const supplyAmount = row.supplyAmount ?? row.supplyAmountWon ?? calculatedSupplyAmount;
     const vatAmount = row.vatAmount ?? row.vatAmountWon ?? null;
     const totalAmount = row.totalAmount ?? row.totalAmountWon ?? row.amountWon ?? supplyAmount;
-    const productId = text(row.productId);
+    const officialProductResolution = identityV2 ? row.officialProductResolution : null;
+    if (identityV2 && !officialProductResolution) throw new Error('ORDERQ_OFFICIAL_V2_PRODUCT_RESOLUTION_REQUIRED');
+    const productId = identityV2
+      ? (text(officialProductResolution.status) === 'MATCHED' ? text(officialProductResolution.matchedProductId) : '')
+      : text(row.productId);
     const unresolvedProductId = text(row.unresolvedProductId)
       || (!productId ? unresolvedProductStableId(companyId, row) : '');
     const productSnapshot = identityV2 ? {
       ...row.productSnapshot,
       matchEvidence: {
         ...row.productSnapshot.matchEvidence,
-        status: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED')).toUpperCase(),
+        status: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED_PRODUCT')).toUpperCase(),
         source: text(row.matchSource || row.referenceResolution),
         productId,
         unresolvedProductId,
         productMasterRevision: Number(row.productMasterRevision || 0),
-        referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId)
+        referenceSnapshotId: text(row.referenceSnapshotId || row.productSnapshotId),
+        officialProductResolution
       }
     } : null;
     const lineIdentity = identityV2 ? createOfficialLineIdentityV2({
@@ -205,7 +212,8 @@ export function buildSalePostDraft(group = {}, context = {}) {
       lineSequence: index + 1, actualQuantity, actualUnit,
       ...(identityV2 ? { unit: productSnapshot.unit } : {}),
       actualToBaseFactor,
-      baseQuantity: actualQuantity * actualToBaseFactor, baseUnit: text(row.baseUnit || row.unit).toUpperCase(),
+      baseQuantity: identityV2 ? actualQuantity : actualQuantity * actualToBaseFactor,
+      baseUnit: text(row.baseUnit || row.unit).toUpperCase(),
       actualToRecognizedFactor, recognizedOrderQuantity: orderLinkMode === 'DIRECT' ? 0 : actualQuantity * actualToRecognizedFactor,
       recognizedUnit: text(row.recognizedUnit || row.unit).toUpperCase(), unitPrice,
       productId, unresolvedProductId,
@@ -214,21 +222,33 @@ export function buildSalePostDraft(group = {}, context = {}) {
         productName: productSnapshot.productName,
         originalProductCode: productSnapshot.originalProductCode,
         originalProductName: productSnapshot.originalProductName,
-        matchStatus: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED')).toUpperCase(),
+        matchStatus: text(row.matchStatus || row.productIdentityStatus || (productId ? 'MATCHED' : 'UNRESOLVED_PRODUCT')).toUpperCase(),
         matchSource: text(row.matchSource || row.referenceResolution),
+        officialProductResolution,
+        inventoryEffectFactor: 1,
         productSnapshot
       } : {}),
       supplyAmount, vatAmount, totalAmount: identityV2 ? productSnapshot.amount : totalAmount,
       taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW', orderLinkMode, conversionSource, conversionRuleId, conversionRuleVersion };
   });
   const commandId = `POST_SALE:${canonicalSha256({ salesDocumentId: identity.salesDocumentId, sourceDocumentKey: identity.sourceDocumentKey, lines: lines.map(row => row.sourceLineKey) })}`;
-  const document = { companyId, ...identity, salesCustomerId: text(group.salesCustomerId), salesCustomerName: text(group.salesCustomerName),
-    salesCustomerRevision: finite(group.salesCustomerRevision ?? group.rows?.[0]?.salesCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), deliveryCustomerId: text(group.deliveryCustomerId),
-    deliveryCustomerRevision: finite(group.deliveryCustomerRevision ?? group.rows?.[0]?.deliveryCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), billingCustomerId: text(group.billingCustomerId),
-    billingCustomerRevision: finite(group.billingCustomerRevision ?? group.rows?.[0]?.billingCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'), saleDate: identityV2 ? preflight.businessDate : text(group.voucherDate || group.saleDate),
+  const document = { companyId, ...identity, salesCustomerId: text(group.salesCustomerId), salesCustomerCode: text(group.salesCustomerCode),
+    salesCustomerName: text(group.salesCustomerName),
+    salesCustomerRevision: identityV2 ? Number(group.salesCustomerRevision || 0) : finite(group.salesCustomerRevision ?? group.rows?.[0]?.salesCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'),
+    deliveryCustomerId: text(group.deliveryCustomerId), deliveryCustomerCode: text(group.deliveryCustomerCode),
+    deliveryCustomerName: text(group.deliveryCustomerName),
+    deliveryCustomerRevision: identityV2 ? Number(group.deliveryCustomerRevision || 0) : finite(group.deliveryCustomerRevision ?? group.rows?.[0]?.deliveryCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'),
+    billingCustomerId: text(group.billingCustomerId), billingCustomerCode: text(group.billingCustomerCode),
+    billingCustomerName: text(group.billingCustomerName),
+    billingCustomerRevision: identityV2 ? Number(group.billingCustomerRevision || 0) : finite(group.billingCustomerRevision ?? group.rows?.[0]?.billingCustomerRevision, 'ORDERQ_SALE_SOURCE_REVISION_STALE'),
+    saleDate: identityV2 ? preflight.businessDate : text(group.voucherDate || group.saleDate),
     warehouseId: text(group.warehouseId), warehouseCode: text(group.warehouseCode), taxType: 'VAT_INCLUDED_IN_SUPPLY', currency: 'KRW',
     normalizedOriginVersion: 'SALE_V2',
-    ...(identityV2 ? { businessDate: preflight.businessDate, businessDateDayDefaulted: preflight.dayDefaulted } : {}) };
+    ...(identityV2 ? {
+      businessDate: preflight.businessDate,
+      businessDateDayDefaulted: preflight.dayDefaulted,
+      officialPartnerResolution: group.officialPartnerResolution
+    } : {}) };
   const commandBase = { ...document, document, lines, commandType: 'POST_SALE', aggregateId: identity.salesDocumentId,
     expectedRevision: 1, commandId, idempotencyKey: commandId, actor: text(context.actor || SMARTINPUT_SALE_ACTOR_ID),
     actorId: text(context.actor || SMARTINPUT_SALE_ACTOR_ID), reason: 'SALE_POST', occurredAt };

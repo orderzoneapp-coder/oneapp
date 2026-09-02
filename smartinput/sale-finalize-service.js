@@ -1,7 +1,9 @@
 import {
   postSaleGroup,
   SMARTINPUT_SALE_ACTOR_ID
-} from './sale-official-stage4.js?v=0.6.0';
+} from './sale-official-stage4.js?v=0.8.0';
+import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../orderq/official-voucher-v2-contract.js?v=0.3.0';
+import { resolveOfficialVoucherReferencesV2 } from './official-voucher-reference-resolver.js?v=0.2.0';
 
 export const SALE_FINALIZE_SERVICE_CONTRACT = Object.freeze({
   version: 'ONEAPP_SMARTINPUT_SALE_FINALIZE_SERVICE_V1',
@@ -23,6 +25,7 @@ export function createSaleFinalizeService(ports = {}) {
       const results = [];
       for (const group of request.groups || []) {
         try {
+          const identityV2 = value(request.identityVersion || '').trim() === OFFICIAL_VOUCHER_IDENTITY_VERSION_V2;
           const producer = value(group.originSystem || group.rows?.[0]?.originSystem
             || (request.activeMethod === 'paste' ? 'SMARTINPUT_CLIPBOARD' : request.activeMethod === 'excel' ? 'SMARTINPUT_FILE' : 'SMARTINPUT_MANUAL')).toUpperCase();
           const producerTransactionId = value(group.originTransactionId || group.rows?.[0]?.originTransactionId
@@ -58,7 +61,16 @@ export function createSaleFinalizeService(ports = {}) {
               };
             })
           };
-          const result = await submitGroup(hydratedGroup, {
+          const submitSource = identityV2 ? resolveOfficialVoucherReferencesV2({
+            kind: 'SALE',
+            companyId: request.companyId || hydratedGroup.companyId,
+            group: hydratedGroup,
+            products: request.products || [],
+            customers: request.customers || [],
+            productReferenceSnapshotId: request.productReferenceSnapshotId,
+            customerReferenceSnapshotId: request.customerReferenceSnapshotId
+          }) : hydratedGroup;
+          const result = await submitGroup(submitSource, {
             companyId: request.companyId,
             actor: request.actor || SMARTINPUT_SALE_ACTOR_ID,
             originSystem: producer,

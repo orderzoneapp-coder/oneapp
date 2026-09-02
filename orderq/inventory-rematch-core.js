@@ -1,4 +1,4 @@
-import { canonicalSha256, voucherStableId } from './official-voucher-core.js?v=0.20.0';
+import { canonicalSha256, voucherStableId } from './official-voucher-core.js?v=0.22.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => JSON.parse(JSON.stringify(value));
