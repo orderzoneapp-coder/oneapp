@@ -1,10 +1,16 @@
+import {
+  hasMeaningfulSourceValue,
+  sourceRowHasMeaningfulValue
+} from './source-row-values.js?v=0.1.0';
+
 const DUPLICATED_FIELD_TERM = /(코드|번호|수량|단가|가격|품목|상품|이름|규격|메모)\1+/g;
 const SUMMARY_LABEL = /^(?:합계|총계|소계)\s*[:：]?\s*$/;
 const FOOTER_LABEL = /^(?:출력일시|출력시간|인쇄일시|작성일시)(?:\s|[:：]|$)/;
 const PRINTED_AT = /^\d{4}[/.\-]\d{1,2}[/.\-]\d{1,2}(?:\s|\([^)]*\)).*(?:오전|오후|\d{1,2}:\d{2})/;
 
 function cellText(value) {
-  return String(value ?? '').normalize('NFKC').trim();
+  const normalized = String(value ?? '').normalize('NFKC');
+  return hasMeaningfulSourceValue(normalized) ? normalized.trim() : '';
 }
 
 export function normalizeStructuredFieldName(value) {
@@ -129,7 +135,7 @@ export function parseStructuredSheet(matrix = [], {
       boundaryPending = false;
       return;
     }
-    const hasSourceValue = (sourceRow || []).some(value => cellText(value));
+    const hasSourceValue = sourceRowHasMeaningfulValue(sourceRow);
     if (!hasSourceValue) {
       boundaryPending = Boolean(rows.length);
       return;
@@ -167,7 +173,6 @@ export function parseStructuredSheet(matrix = [], {
       }
     });
 
-    if (!cellText(values.itemCode) && !cellText(values.itemName)) return;
     if (boundaryPending) {
       sourceVoucherIndex += 1;
       boundaryPending = false;

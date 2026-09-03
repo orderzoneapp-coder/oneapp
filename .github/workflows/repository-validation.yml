@@ -46,6 +46,8 @@ jobs:
       - name: Test SmartInput clipboard and parsers
         run: |
           node scripts/test-smartinput-grid-clipboard.mjs
+          node scripts/test-smartinput-empty-source-rows.mjs
+          node scripts/test-smartinput-xlsx-source-reader.mjs
           node scripts/test-smartinput-input-template-mapping.mjs
           node scripts/test-smartinput-input-template-browser-e2e.mjs
           node scripts/test-smartinput-structured-sheet-parser.mjs

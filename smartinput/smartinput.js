@@ -18,7 +18,7 @@ import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.6.0'
 import { SaleFinalizeService } from './sale-finalize-service.js?v=0.6.0';
 import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
-import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.0';
+import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.1';
 import {
   DECISION as MAPPING_DECISION,
   SESSION_STATUS as MAPPING_SESSION_STATUS,
@@ -33,7 +33,7 @@ import {
   setColumnDecision,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.0';
+} from './input-template-mapper.js?v=0.2.1';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -118,6 +118,7 @@ import {
   settingsInputOrderPreview,
   sortSettingsFields
 } from './settings-input-order.js?v=0.1.0';
+import { hasMeaningfulSourceValue } from './source-row-values.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -259,7 +260,7 @@ const MEANINGFUL_ROW_FIELDS = Object.freeze([
 
 function hasEnteredValue(value) {
   if (value === null || value === undefined) return false;
-  if (typeof value === 'string') return Boolean(value.trim());
+  if (typeof value === 'string') return hasMeaningfulSourceValue(value);
   if (typeof value === 'number') return Number.isFinite(value);
   return Boolean(value);
 }
