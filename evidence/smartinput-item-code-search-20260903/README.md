@@ -53,3 +53,27 @@
   - Tab 다음 행 품목코드, 전표 4종, 데스크톱·모바일, 전체 후속 회귀 시나리오
 - 화면 증적: [일반 모드](./screenshots/smartinput-0a-1920-light.png), [다크 모드](./screenshots/smartinput-0a-1920-dark.png), [모바일](./screenshots/smartinput-0a-mobile.png)
 - 승인된 SmartInput 화면을 고정하는 Phase 6B hash baseline을 이번 단일 열 UI로 갱신했으며, Phase 6B 정적·브라우저 검증도 PASS다.
+
+## 후보 선택 핫픽스 기록
+
+- 사용자 실행 승인 원문: `바로 수정 업데이트 진행해`
+- 분류: 빠른 처리 핫픽스. 기존 `NEXUS-SI-ITEMCODE-SEARCH-20260903-01`의 실제 후보 선택 회귀 결함만 수정한다.
+- 재확인 문서: `AGENTS.md` v2.3.4, `APP_ARCHITECTURE.md` v2.1.30, `app-manifest.json` schema v1.3.9, `orderq/ARCHITECTURE.md` v0.9.0, `smartinput/README.md`
+- 원격 저장소: `https://github.com/orderzoneapp-coder/oneapp.git`
+- 기준 `origin/main`: `bdf6923def0509ee22423e3ed7dd24d65cd0f360`
+- 브랜치: `codex/smartinput-product-picker-hotfix-20260903`
+- 재사용 worktree: `C:\Users\USER\Documents\ChatGPT\NEXUS\work\oneapp-darkmode-soft-surfaces-20260902`
+- 착수 상태: clean. 최신 `origin/main`에서 분기했고 `main`은 직접 수정하지 않는다.
+- 원인: 후보 선택 완료 및 사용자지정 셀 입력 경로가 존재하지 않는 `isLinkedRow(...)`를 호출해 `ReferenceError`를 발생시켰다. 기존 정식 판정 함수는 `rowHasLinkedSource(row = {})`다.
+- 수정 범위: 잘못된 호출 3곳을 정식 함수로 통일하고, 실제 복수 후보의 마우스 클릭·방향키와 Enter 선택·취소·정확일치·오류 0건을 브라우저 테스트로 검증하며 SmartInput JS cache-bust만 갱신한다.
+- 금지 범위: UI·레이아웃·버튼·단축키·검색 흐름, 신규 추상화, DB·저장계약·기준정보·공식전표 V2 계약, 다른 앱과 다크모드는 변경하지 않는다.
+- Rollback: 이 핫픽스 commit을 revert한다. 저장 데이터 삭제·변환은 없으며 기존 작업본과 공식전표 데이터는 그대로 둔다.
+
+### 핫픽스 검증 결과
+
+- `node --check smartinput/smartinput.js` 및 변경 테스트 문법검사: PASS
+- `scripts/test-smartinput-independent-recovery.mjs`: PASS. 미정의 `isLinkedRow` 호출 0건과 정식 helper 사용을 고정한다.
+- `scripts/test-smartinput-browser-e2e.mjs`: PASS. 정확일치 자동선택, 2개 후보의 마우스 클릭 선택, 방향키+Enter 선택, 취소 시 검색어 보존을 실제 DOM에서 검증했다. 선택 뒤 코드·품명·규격·단위 반영, 후보창 닫힘, runtime exception·console error 0건을 확인했다.
+- 같은 전체 E2E에서 일반행 자동저장, 연결 견적행의 자동저장 격리와 명시 저장 반영을 계속 검증했다.
+- `scripts/test-smartinput-v2-unresolved-review-ui.mjs` 및 browser E2E: PASS. 화면·버튼·단축키·정상 영역이 기존 승인 기준과 동일하다.
+- `scripts/validate-repository.mjs`: PASS (`24 checks`, warning 0건).

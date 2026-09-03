@@ -5891,7 +5891,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
         message.textContent = '공통 상품 마스터에 등록된 정상 상품만 선택할 수 있습니다.';
         return;
       }
-      if (isLinkedRow(liveRow)) {
+      if (rowHasLinkedSource(liveRow)) {
         const productSyncFields = ['masterProductId', 'productId', 'itemCode', 'itemName', 'secondaryName', 'searchInfo',
           'specification', 'boxQuantity', 'unit', 'unitPrice', 'sourceUnitPrice', 'outPrice', 'wholesaleA', 'wholesaleB',
           'listingPrice', 'marketPrice', 'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
@@ -5900,7 +5900,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
       }
       modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
       renderRows({ restoreFocus: false });
-      if (isLinkedRow(liveRow)) scheduleSave();
+      if (rowHasLinkedSource(liveRow)) scheduleSave();
       else saveDraftNow();
     }
     search.setAttribute('aria-expanded', 'false');
@@ -7780,7 +7780,7 @@ inputRows.addEventListener('input', event => {
         edited: true
       };
     }
-    if (isLinkedRow(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
+    if (rowHasLinkedSource(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
     scheduleSave();
     return;
   }
