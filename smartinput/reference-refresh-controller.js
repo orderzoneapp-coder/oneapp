@@ -35,7 +35,7 @@ function sessionEmployee() {
 }
 
 export async function readAllReferenceSnapshots({ companyId, referenceLoader = loadReferenceDomain, warehouseLoader = loadWarehouseCatalog } = {}) {
-  const seed = await ensureFieldCatalogSeed();
+  const seed = await ensureFieldCatalogSeed({ force: true });
   const [product, customer, warehouseCatalog] = await Promise.all([
     referenceLoader('product', { allowFallback: false }),
     referenceLoader('customer', { allowFallback: false }),

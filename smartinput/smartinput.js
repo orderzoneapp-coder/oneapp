@@ -34,7 +34,7 @@ import {
   synchronizeWorkingRow,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.3';
+} from './input-template-mapper.js?v=0.2.4';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -109,7 +109,7 @@ import {
   resolveSmartInputCompanyId,
   updateVoucherFieldSettings
 } from './field-registry.js?v=0.1.0';
-import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.0';
+import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.1';
 import { readWorksheetSource } from './xlsx-source-reader.js?v=0.1.0';
 import {
   applyRelatedVoucherImportPlan,
@@ -866,8 +866,10 @@ function availableRegistryFields(scope, mode = state.draft.activeMode, customFie
       sourceField: field.fieldId,
       valueType: field.valueType === 'DECIMAL' ? 'NUMBER' : 'TEXT',
       editable: field.writable,
+      mappable: field.mappable,
       ownerDomain: field.ownerDomain,
       relationshipPath: field.relationshipPath,
+      inputAliases: [...new Set([field.sourceFieldCode, ...(field.aliases || [])].filter(Boolean))],
       registryField: true
     }));
 }
@@ -1087,7 +1089,7 @@ function controlTableViewButton(view) {
   return $('tableViewSwitch')?.querySelector(`[data-table-view="${view}"]`) || null;
 }
 
-function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true } = {}) {
+function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true, includeRegistry = false } = {}) {
   const headerProjection = {
     customer: 'rowCustomerName',
     deliveryDate: 'rowDeliveryDate',
@@ -1103,6 +1105,8 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
     valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
     projectionFieldId: headerProjection[field.id] || field.id,
     custom: Boolean(field.custom),
+    recommendable: enabledHeaderIds.has(field.id),
+    advancedLabel: field.advancedLabel || `${contract.MODES[mode]?.label || mode} > 상단 정보 > ${field.label}`,
     aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
   const voucherTargets = layoutDefinitions('voucher', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledVoucherIds.has(field.id)).map(field => {
@@ -1115,6 +1119,8 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
       valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
       projectionFieldId: canonical?.projectionFieldId || field.id,
       custom: Boolean(field.custom),
+      recommendable: enabledVoucherIds.has(field.id),
+      advancedLabel: field.advancedLabel || canonical?.advancedLabel || `${contract.MODES[mode]?.label || mode} > 작업테이블 > ${canonical?.displayLabel || field.label}`,
       aliases: [...new Set([
         ...(field.inputAliases || []),
         ...(field.masterAliases || []),
@@ -1123,19 +1129,51 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
       ])]
     };
   });
+  const registryTargets = includeRegistry
+    ? [...availableRegistryFields('header', mode), ...availableRegistryFields('voucher', mode)].filter(field => field.mappable).map(field => ({
+        id: field.id,
+        label: field.label,
+        scope: field.scope === 'header' ? 'header' : 'voucher',
+        group: field.group || 'ADDITIONAL',
+        valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
+        projectionFieldId: field.id,
+        custom: true,
+        registryField: true,
+        recommendable: false,
+        advancedLabel: field.advancedLabel || field.optionLabel || field.id,
+        aliases: [...new Set([...(field.inputAliases || []), field.label].filter(Boolean))]
+      }))
+    : [];
   const unique = new Map();
-  [...headerTargets, ...voucherTargets].forEach(target => {
+  [...headerTargets, ...voucherTargets, ...registryTargets].forEach(target => {
     if (!unique.has(target.id)) unique.set(target.id, target);
   });
   return [...unique.values()];
 }
 
+function inputMappingDefinitions(mode = state.draft.activeMode) {
+  return inputMappingTargets(mode, { enabledOnly: false, includeRegistry: true });
+}
+
+function normalizedMappingSearch(value) {
+  return String(value || '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function mappingTargetSearchText(target) {
+  return normalizedMappingSearch([
+    target.label,
+    target.advancedLabel,
+    target.id,
+    ...(target.aliases || [])
+  ].filter(Boolean).join(' '));
+}
+
 function mappingTargetById(fieldId) {
-  return inputMappingTargets().find(target => target.id === fieldId) || null;
+  return inputMappingDefinitions().find(target => target.id === fieldId) || null;
 }
 
 function mappingTargetByProjection(projectionFieldId) {
-  return inputMappingTargets().find(target => (target.projectionFieldId || target.id) === projectionFieldId) || null;
+  return inputMappingDefinitions().find(target => (target.projectionFieldId || target.id) === projectionFieldId) || null;
 }
 
 function rowFieldDisplayValue(row, projectionFieldId, fallback = '') {
@@ -1179,7 +1217,7 @@ function syncMappedWorkingRowAfterMutation(current, beforeRow, nextRow, {
   const updates = mappedRowMutationPlan({
     beforeRow,
     afterRow: nextRow,
-    targetDefinitions: inputMappingTargets(mode, { enabledOnly: false }),
+    targetDefinitions: inputMappingDefinitions(mode),
     mappings: session.mappings,
     displayValues,
     forceFieldIds
@@ -1222,7 +1260,7 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
   const session = inputMappingSession(current);
   if (!session) return;
   const priorRows = preserveProductEdits ? new Map((current.rows || []).map(row => [row.rowId, row])) : new Map();
-  let projectedSources = projectMappedRows(session, inputMappingTargets());
+  let projectedSources = projectMappedRows(session, inputMappingDefinitions());
   if (state.draft.activeMode === 'purchase' && session.purchaseMetaRows) {
     projectedSources = joinPurchaseMeta({
       visibleSheetName: session.sheetName,
@@ -1314,7 +1352,7 @@ function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
     matrix: existing.sourceMatrix,
     headerRowIndex: existing.headerRowIndex,
     templates: state.inputTemplates,
-    targetDefinitions: inputMappingTargets(),
+    targetDefinitions: inputMappingDefinitions(),
     fileName: existing.fileName,
     sheetName: existing.sheetName,
     fileFingerprint: existing.fileFingerprint,
@@ -2644,13 +2682,13 @@ function openFieldMappingDialog(columnIndex) {
   const mapping = session?.mappings?.[columnIndex];
   if (!session || !mapping) return;
   const editable = session.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE;
-  const targets = inputMappingTargets();
+  let targets = inputMappingDefinitions();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Input Field Mapping</small><h2>필드명 매핑</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="field-mapping-current"><strong>${esc(mapping.sourceHeader || `(빈 필드명 · ${columnIndex + 1}열)`)}</strong><span>${columnIndex + 1}열</span><small>${esc(mappingStateText(mapping))}</small></div>
-    ${editable ? '<label class="smart-dialog__search">환경설정 필드 검색<input type="search" data-mapping-search autocomplete="off" placeholder="상단·하단 필드명"></label><div class="field-mapping-results" data-mapping-results></div>' : `<div class="smart-dialog__empty"><strong>${esc(session.templateName || '기존 입력 양식')}</strong><br>기존 양식의 연결은 환경설정의 입력 양식 관리에서만 수정합니다.</div>`}
+    ${editable ? `<div class="field-mapping-search-tools"><label class="smart-dialog__search">매칭할 항목명 검색<input type="search" data-mapping-search autocomplete="off" placeholder="예: 거래처명"></label><button type="button" class="button button--quiet" data-refresh-mapping-reference>기준정보 새로고침</button></div><p class="field-mapping-reference-status" data-mapping-reference-status>검색 결과에서 작업자가 항목을 선택하면 이 원본 열과 연결합니다.</p><div class="field-mapping-results" data-mapping-results></div>` : `<div class="smart-dialog__empty"><strong>${esc(session.templateName || '기존 입력 양식')}</strong><br>기존 양식의 연결은 환경설정의 입력 양식 관리에서만 수정합니다.</div>`}
     <footer><button type="button" class="button button--quiet" data-hide-column>현재 열 숨기기</button>${editable ? '<button type="button" class="button button--danger" data-unmap>비매핑으로 확정</button>' : '<button type="button" class="button button--primary" data-manage-template>입력 양식 관리</button>'}</footer>
   </div>`;
   document.body.append(dialog);
@@ -2675,23 +2713,53 @@ function openFieldMappingDialog(columnIndex) {
   }
   const search = dialog.querySelector('[data-mapping-search]');
   const results = dialog.querySelector('[data-mapping-results]');
+  const refreshButton = dialog.querySelector('[data-refresh-mapping-reference]');
+  const referenceStatus = dialog.querySelector('[data-mapping-reference-status]');
   const renderTargets = () => {
-    const term = search.value.trim().toLowerCase();
+    const term = normalizedMappingSearch(search.value);
     const used = new Map(session.mappings
       .filter(item => item.columnIndex !== columnIndex && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state) && item.targetFieldId)
       .map(item => [item.targetFieldId, item.columnIndex]));
-    const filtered = targets.filter(target => !term || `${target.label} ${target.id}`.toLowerCase().includes(term));
-    results.innerHTML = filtered.map(target => {
+    const filtered = targets
+      .filter(target => !term ? target.recommendable !== false : mappingTargetSearchText(target).includes(term))
+      .sort((left, right) => {
+        const leftExact = term && normalizedMappingSearch(left.label) === term ? 0 : 1;
+        const rightExact = term && normalizedMappingSearch(right.label) === term ? 0 : 1;
+        return leftExact - rightExact
+          || Number(Boolean(left.registryField)) - Number(Boolean(right.registryField))
+          || String(left.advancedLabel || left.label).localeCompare(String(right.advancedLabel || right.label), 'ko');
+      });
+    results.innerHTML = filtered.slice(0, 500).map(target => {
       const usedAt = used.get(target.id);
-      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(target.label)}</strong><small>${target.scope === 'header' ? '상단 정보' : '작업테이블'} · ${esc(target.id)}</small></span>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
-    }).join('') || '<div class="smart-dialog__empty">검색 결과가 없습니다.</div>';
+      const origin = target.registryField ? '기준정보 등록 필드' : (target.scope === 'header' ? '상단 정보' : '작업테이블');
+      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(target.label)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
+    }).join('') || '<div class="smart-dialog__empty">조건에 맞는 항목이 없습니다.<br>기준정보를 새로고침한 뒤 같은 검색어로 다시 확인하세요.</div>';
+    referenceStatus.textContent = term
+      ? `검색 결과 ${filtered.length.toLocaleString('ko-KR')}개 · 자동 선택하지 않습니다.`
+      : '항목명을 입력하면 조건에 맞는 결과를 표시합니다.';
   };
   search.addEventListener('input', renderTargets);
+  refreshButton.addEventListener('click', async () => {
+    const retainedQuery = search.value;
+    refreshButton.disabled = true;
+    refreshButton.textContent = '새로고침 중…';
+    referenceStatus.textContent = '상품·거래처·창고·담당자·프로젝트·필드 기준정보를 확인하고 있습니다.';
+    const refreshed = await refreshAllReferencesFromToolbar();
+    targets = inputMappingDefinitions();
+    search.value = retainedQuery;
+    renderTargets();
+    refreshButton.disabled = false;
+    refreshButton.textContent = '기준정보 새로고침';
+    referenceStatus.textContent = refreshed
+      ? `기준정보를 갱신했습니다. “${retainedQuery || mapping.sourceHeader || '항목명'}” 검색 결과를 다시 표시했습니다.`
+      : '기준정보를 갱신하지 못했습니다. 기존 검색어와 입력 내용은 유지했습니다.';
+    search.focus({ preventScroll: true });
+  });
   results.addEventListener('click', event => {
     const button = event.target.closest('[data-mapping-target]');
     if (!button || button.disabled) return;
     try {
-      modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingTargets());
+      modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingDefinitions());
       projectInputMappingToVoucherRows();
       renderRows({ restoreFocus: false });
       saveDraftNow();
@@ -2701,7 +2769,7 @@ function openFieldMappingDialog(columnIndex) {
     }
   });
   dialog.querySelector('[data-unmap]').addEventListener('click', () => {
-    modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingTargets());
+    modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions());
     projectInputMappingToVoucherRows();
     renderRows({ restoreFocus: false });
     saveDraftNow();
@@ -2719,7 +2787,7 @@ function openInputTemplateSaveDialog() {
     toast('기존 양식 목록을 확인할 수 없어 신규 양식을 저장하지 않습니다. 양식을 다시 불러오세요.', 'error');
     return;
   }
-  const validation = validateTemplateDraft(session, inputMappingTargets());
+  const validation = validateTemplateDraft(session, inputMappingDefinitions());
   if (!validation.valid) {
     const undecided = validation.issues.filter(issue => issue.code === 'UNDECIDED_COLUMN').map(issue => issue.columnIndex + 1);
     toast(undecided.length ? `매핑 또는 비매핑을 결정하지 않은 열이 있습니다: ${undecided.slice(0, 6).join(', ')}열` : '중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
@@ -2760,7 +2828,7 @@ function openInputTemplateSaveDialog() {
     const button = dialog.querySelector('[data-save]');
     button.disabled = true;
     try {
-      const record = createTemplateRecord(inputMappingSession(), name, inputMappingTargets());
+      const record = createTemplateRecord(inputMappingSession(), name, inputMappingDefinitions());
       const nextTemplates = [...state.inputTemplates, record];
       await saveInputTemplates(nextTemplates, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = nextTemplates;
@@ -2770,7 +2838,7 @@ function openInputTemplateSaveDialog() {
         matrix: existing.sourceMatrix,
         headerRowIndex: existing.headerRowIndex,
         templates: nextTemplates,
-        targetDefinitions: inputMappingTargets(),
+        targetDefinitions: inputMappingDefinitions(),
         fileName: existing.fileName,
         sheetName: existing.sheetName,
         fileFingerprint: existing.fileFingerprint,
@@ -2805,7 +2873,7 @@ function openInputTemplateSaveDialog() {
 
 function openInputTemplateEditor(template) {
   if (!template) return;
-  const targets = inputMappingTargets();
+  const targets = inputMappingDefinitions();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
   const options = (selected = '') => [
@@ -4844,7 +4912,7 @@ function useClipboardTableAsSource(rawText, { sourceName = '클립보드 자료'
     matrix,
     headerRowIndex: detection.rowIndex,
     templates: ['READY', 'EMPTY'].includes(state.inputTemplatesStatus) ? state.inputTemplates : [],
-    targetDefinitions: inputMappingTargets(),
+    targetDefinitions: inputMappingDefinitions(),
     fileName: sourceName,
     sheetName: '붙여넣기',
     fileFingerprint: `clipboard-${Date.now().toString(36)}`,
@@ -5876,7 +5944,7 @@ async function handleFile(file) {
       let selected = null;
       let purchaseMetaRows = null;
       let salesMetaRows = null;
-      const targets = inputMappingTargets();
+      const targets = inputMappingDefinitions();
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const worksheetSource = readWorksheetSource(window.XLSX, workbook.Sheets[sheetName]);
@@ -5889,7 +5957,7 @@ async function handleFile(file) {
           if (state.draft.activeMode === 'sale') salesMetaRows = readSalesMeta(matrix);
           return;
         }
-        const detection = detectHeaderRow(matrix, targets);
+        const detection = detectHeaderRow(matrix, inputMappingTargets());
         const candidate = { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName, detection };
         if (!selected || candidate.detection.score > selected.detection.score) selected = candidate;
       });
@@ -7941,7 +8009,7 @@ async function persistFieldRegistryLayout(settings) {
 }
 
 async function refreshAllReferencesFromToolbar() {
-  if (state.busy) return;
+  if (state.busy) return false;
   const focused = document.activeElement;
   const focusId = focused?.id || '';
   const selectionStart = typeof focused?.selectionStart === 'number' ? focused.selectionStart : null;
@@ -7953,8 +8021,16 @@ async function refreshAllReferencesFromToolbar() {
   setAppStatus('상품·거래처·창고·담당자·프로젝트·필드명을 한 번에 새로고침하고 있습니다.');
   try {
     const result = await refreshAllReferenceData({ companyId: state.companyId });
+    const registries = await Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+      companyId: state.companyId,
+      voucherMode,
+      actor: state.actorId
+    })));
     const rowsByDomain = Object.fromEntries(['product', 'customer', 'warehouse', 'employee', 'project', 'fieldDefinition']
       .map(domain => [domain, result.entities.filter(row => row.domain === domain).map(row => row.value)]));
+    state.fieldRegistries = Object.fromEntries(registries.map(registry => [registry.voucherMode, registry]));
+    state.fieldRegistryStatus = 'READY';
+    state.fieldRegistryError = null;
     ['product', 'customer'].forEach(domain => {
       const metadata = result.generation.domains[domain];
       ingestLatestReference(domain, {
@@ -7986,9 +8062,12 @@ async function refreshAllReferencesFromToolbar() {
     }
     setAppStatus(`기준정보 전체 새로고침 완료 · ${result.generation.generationId}`, 'normal');
     toast('전체 기준정보를 갱신하고 현재 검색어로 다시 검색했습니다.', 'success');
+    return true;
   } catch (error) {
+    state.fieldRegistryError = error;
     setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
     toast(error.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
+    return false;
   } finally {
     state.busy = false;
     setActiveActivity('');
@@ -8048,7 +8127,7 @@ $('sourceSheetRows').addEventListener('click', event => {
   const headerRowIndex = Number(button.dataset.useHeaderRow);
   if (!Number.isInteger(headerRowIndex) || headerRowIndex === existing.headerRowIndex) return;
   captureGridPasteUndo();
-  let reassigned = reassignHeaderRow(existing, headerRowIndex, state.inputTemplates, inputMappingTargets());
+  let reassigned = reassignHeaderRow(existing, headerRowIndex, state.inputTemplates, inputMappingDefinitions());
   reassigned.batchId = existing.batchId;
   reassigned.purchaseMetaRows = existing.purchaseMetaRows || null;
   reassigned.salesMetaRows = existing.salesMetaRows || null;
