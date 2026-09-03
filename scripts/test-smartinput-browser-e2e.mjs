@@ -174,7 +174,7 @@ try {
   let loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/fixture.html` });
   await loaded;
-  await evaluate(client, `localStorage.setItem('merchMaster_v870', JSON.stringify([{productId:'P-MASTER-1',itemCode:'MASTER-1',itemName:'마스터 사과',specification:'10kg',finalUnit:'BOX',outPrice:3200,status:'ACTIVE'}]));true`);
+  await evaluate(client, `localStorage.setItem('merchMaster_v870', JSON.stringify([{productId:'P-MASTER-1',itemCode:'MASTER-1',itemName:'마스터 사과',specification:'10kg',finalUnit:'BOX',outPrice:3200,status:'ACTIVE'},{productId:'P-MASTER-2',itemCode:'MASTER-2',itemName:'마스터 포도',specification:'5kg',finalUnit:'EA',outPrice:1800,status:'ACTIVE'}]));true`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
   await loaded;
@@ -385,14 +385,32 @@ try {
   await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
   await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
   await expr(client, `Boolean(document.querySelector('.product-picker-dialog[open] .product-picker-result'))`, 'quality product candidate modal');
-  const productModal = await evaluate(client, `(() => {const dialog=document.querySelector('.product-picker-dialog');const shell=dialog.querySelector('.smart-dialog__shell');const results=dialog.querySelector('.product-picker-results');const option=dialog.querySelector('.product-picker-result');const footer=dialog.querySelector('footer');const cancel=footer.querySelector('button');const dr=dialog.getBoundingClientRect();const rr=results.getBoundingClientRect();const or=option.getBoundingClientRect();const fr=footer.getBoundingClientRect();const cr=cancel.getBoundingClientRect();return {width:dr.width,shellHeight:shell.getBoundingClientRect().height,resultsHeight:rr.height,optionWidth:or.width,optionShadow:getComputedStyle(option).boxShadow,footerHeight:fr.height,footerButtonAligned:Math.abs((fr.top+fr.height/2)-(cr.top+cr.height/2))<2,nativeSearchClear:dialog.querySelectorAll('input[type="search"]').length};})()`);
+  const productModal = await evaluate(client, `(() => {const dialog=document.querySelector('.product-picker-dialog');const shell=dialog.querySelector('.smart-dialog__shell');const results=dialog.querySelector('.product-picker-results');const options=dialog.querySelectorAll('.product-picker-result');const option=options[0];const footer=dialog.querySelector('footer');const cancel=footer.querySelector('button');const dr=dialog.getBoundingClientRect();const rr=results.getBoundingClientRect();const or=option.getBoundingClientRect();const fr=footer.getBoundingClientRect();const cr=cancel.getBoundingClientRect();return {width:dr.width,shellHeight:shell.getBoundingClientRect().height,resultsHeight:rr.height,optionWidth:or.width,optionCount:options.length,optionShadow:getComputedStyle(option).boxShadow,footerHeight:fr.height,footerButtonAligned:Math.abs((fr.top+fr.height/2)-(cr.top+cr.height/2))<2,nativeSearchClear:dialog.querySelectorAll('input[type="search"]').length};})()`);
   assert.ok(productModal.width >= 560 && productModal.shellHeight >= 460 && productModal.resultsHeight >= 220, 'product modal must have a full shared-dialog layout and scrollable result area');
+  assert.equal(productModal.optionCount, 2, 'a broad query must expose multiple product candidates');
   assert.ok(productModal.optionWidth >= productModal.width - 40 && productModal.optionShadow !== 'none', 'candidate must render as one full-width row with a non-green keyboard marker');
   assert.equal(productModal.footerButtonAligned, true, 'product modal actions must remain horizontally aligned');
   assert.equal(productModal.nativeSearchClear, 0, 'product modal must not expose a browser-native search × control');
+  await click(client, '.product-picker-dialog .product-picker-result');
+  await expr(client, `!document.querySelector('.product-picker-dialog')&&(()=>{const row=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].at(-1);return row?.querySelector('[data-field="itemCode"]')?.value==='MASTER-1'&&row?.querySelector('[data-field="itemName"]')?.value==='마스터 사과'&&row?.querySelector('[data-field="specification"]')?.value==='10kg';})()`, 'mouse candidate selection applies the product and closes the dialog');
+  assert.deepEqual(exceptions, [], `mouse product selection runtime exceptions: ${exceptions.join('\n')}`);
+  assert.deepEqual(consoleErrors, [], `mouse product selection console errors: ${consoleErrors.join('\n')}`);
+
+  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
+  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `document.querySelectorAll('.product-picker-dialog[open] .product-picker-result').length===2`, 'keyboard product candidate modal');
+  await evaluate(client, `(() => {const search=document.querySelector('.product-picker-dialog [data-product-search]');search.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('.product-picker-dialog')&&(()=>{const row=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].at(-1);return row?.querySelector('[data-field="itemCode"]')?.value==='MASTER-2'&&row?.querySelector('[data-field="itemName"]')?.value==='마스터 포도'&&row?.querySelector('[data-field="specification"]')?.value==='5kg'&&row?.querySelector('[data-field="unit"]')?.value==='EA';})()`, 'keyboard candidate selection applies the highlighted product and closes the dialog');
+  assert.deepEqual(exceptions, [], `keyboard product selection runtime exceptions: ${exceptions.join('\n')}`);
+  assert.deepEqual(consoleErrors, [], `keyboard product selection console errors: ${consoleErrors.join('\n')}`);
+
+  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
+  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `document.querySelectorAll('.product-picker-dialog[open] .product-picker-result').length===2`, 'cancel product candidate modal');
   await click(client, '.product-picker-dialog [data-close]');
+  await expr(client, `!document.querySelector('.product-picker-dialog')&&[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].at(-1)?.querySelector('[data-field="itemCode"]')?.value==='마스터'`, 'candidate cancel keeps the current query and closes the dialog');
   assert.equal(await evaluate(client, `document.querySelector('#productReferenceStatus').textContent`), 'READY', 'product Snapshot must expose READY independently');
-  assert.equal(await evaluate(client, `document.querySelector('#productReferenceCount').textContent`), '1건');
+  assert.equal(await evaluate(client, `document.querySelector('#productReferenceCount').textContent`), '2건');
   assert.match(await evaluate(client, `document.querySelector('#productReferenceSource').textContent`), /상품관리 Snapshot Adapter/);
   await click(client, '#customerSearchButton');
   await expr(client, `document.querySelector('.smart-customer-dialog .smart-dialog__empty')?.textContent.includes('등록 거래처 0건')`, 'confirmed empty customer state');

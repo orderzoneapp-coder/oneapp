@@ -21,7 +21,7 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.4/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.8/);
 assert.match(html, /smartinput\.css\?v=0\.8\.8/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.1/);
-assert.match(html, /smartinput\.js\?v=0\.11\.7/);
+assert.match(html, /smartinput\.js\?v=0\.11\.8/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.4\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -47,6 +47,10 @@ assert.match(appSource, /data-column="itemCode" class="product-code-search-cell 
   'itemCode cells must expose code, name, and keyword product search');
 assert.doesNotMatch(appSource, /data-column="productSearch"|\|productSearch|field: 'productSearch'/,
   'grid focus and navigation must no longer target the removed productSearch field');
+assert.doesNotMatch(appSource, /\bisLinkedRow\s*\(/,
+  'product selection and linked-row edits must use the existing canonical linked-source helper');
+assert.match(appSource, /rowHasLinkedSource\(liveRow\)[\s\S]*rowHasLinkedSource\(liveRow\)/,
+  'product candidate selection must preserve linked-row sync and save behavior');
 assert.match(appSource, /row-sequence-number[\s\S]*data-select-row=/, 'each row must render its number and checkbox in one cell');
 assert.match(read('smartinput/smartinput.css'), /row-sequence-select-cell > input \{ width: 21px; height: 21px;/, 'row selection checkboxes must remain enlarged');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
