@@ -80,8 +80,12 @@ export function filterInputListRows(rows = [], query = '', { sourceRows = [] } =
   });
 }
 
+export function inputListDisplayRows(allRows = [], visibleRows = [], { searchOpen = false } = {}) {
+  return searchOpen ? visibleRows : allRows;
+}
+
 export function inputListSelectionScopeRowIds(allRows = [], visibleRows = [], { searchOpen = false } = {}) {
-  const rows = searchOpen ? visibleRows : allRows;
+  const rows = inputListDisplayRows(allRows, visibleRows, { searchOpen });
   return [...new Set(rows.map(row => String(row?.rowId || '')).filter(Boolean))];
 }
 

@@ -8,6 +8,7 @@ import {
   constrainInputListSelection,
   createInputListSearchState,
   filterInputListRows,
+  inputListDisplayRows,
   inputListSelectionScopeRowIds,
   reduceInputListSearchState
 } from '../smartinput/input-list-search.js';
@@ -28,6 +29,24 @@ assert.deepEqual(filterInputListRows(rows, '0').map(row => row.rowId), ['CODE'],
   'an explicitly entered numeric zero must remain searchable');
 assert.deepEqual(filterInputListRows(rows, '-2').map(row => row.rowId), ['MEMO'],
   'an explicitly entered negative value must remain searchable');
+
+const totalRows = rows.map(row => row.rowId === 'CODE'
+  ? { ...row, unitPrice: 100, supplyAmount: 0 }
+  : (row.rowId === 'MEMO' ? { ...row, unitPrice: 100, supplyAmount: -200 } : row));
+const zeroDisplayRows = inputListDisplayRows(totalRows, filterInputListRows(totalRows, 'A125'), { searchOpen: true });
+assert.deepEqual(zeroDisplayRows.map(row => row.rowId), ['CODE'],
+  'an open search must expose only the visible result rows to display totals');
+assert.equal(zeroDisplayRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0), 0,
+  'a zero-quantity result must produce a visible quantity total of zero');
+assert.equal(zeroDisplayRows.reduce((sum, row) => sum + Number(row.supplyAmount || 0), 0), 0,
+  'a zero-amount result must produce a visible amount total of zero');
+const negativeDisplayRows = inputListDisplayRows(totalRows, filterInputListRows(totalRows, 'A126'), { searchOpen: true });
+assert.equal(negativeDisplayRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0), -2,
+  'a negative result must remain in the visible quantity total');
+assert.equal(negativeDisplayRows.reduce((sum, row) => sum + Number(row.supplyAmount || 0), 0), -200,
+  'a negative result must remain in the visible amount total');
+assert.equal(inputListDisplayRows(totalRows, zeroDisplayRows, { searchOpen: false }).length, totalRows.length,
+  'closing search must immediately restore the full-row display-total scope');
 
 const sourceRows = [
   { rowId: 'CODE', cells: ['A125', '사과', 'BOX', '0', ''] },

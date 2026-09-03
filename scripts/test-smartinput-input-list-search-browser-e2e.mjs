@@ -131,7 +131,39 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
   await loaded;
   await expr(client, `Boolean(document.querySelector('#inputRows tr'))`, 'SmartInput shell');
-  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js?input-list-search-e2e=1');const contract=window.SMART_INPUT_CONTRACT;const draft=contract.createDraft({activeMode:'order'});const matrix=[['품목코드','품목명','규격','수량','메모','적요(직원)'],['CODE-ZERO','사과','BOX','0','','직원 전달'],['CODE-NEG','배','EA','-2','반품 확인','']];const targets=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.specification',label:'규격',scope:'voucher',projectionFieldId:'specification',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'수량',scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'메모',scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},{id:'description',label:'적요(직원)',scope:'voucher',projectionFieldId:'description',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:0,targetDefinitions:targets,fileName:'검색계약.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-INPUT-LIST-SEARCH-E2E';draft.modes.order.inputMapping=session;draft.modes.order.rows=mapper.projectMappedRows(session,targets).map(row=>contract.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem('merchMaster_v870',JSON.stringify([{productId:'P-F3-A',masterProductId:'MP-F3-A',itemCode:'F3-A',itemName:'상품검색 A',searchInfo:'PAIRCHOICE',specification:'5kg',finalUnit:'BOX',outPrice:100,status:'ACTIVE'},{productId:'P-F3-B',masterProductId:'MP-F3-B',itemCode:'F3-B',itemName:'상품검색 B',searchInfo:'PAIRCHOICE',specification:'10kg',finalUnit:'EA',outPrice:200,status:'ACTIVE'}]));localStorage.setItem('merchMaster_revision_v870','1');localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
+  await evaluate(client, String.raw`(async()=>{
+    const mapper=await import('/smartinput/input-template-mapper.js?input-list-search-e2e=1');
+    const contract=window.SMART_INPUT_CONTRACT;
+    const draft=contract.createDraft({activeMode:'order'});
+    const matrix=[
+      ['품목코드','품목명','규격','수량','단가','공급가액','메모','적요(직원)'],
+      ['CODE-ZERO','사과','BOX','0','100','0','','직원 전달'],
+      ['CODE-NEG','배','EA','-2','100','-200','반품 확인','']
+    ];
+    const targets=[
+      {id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},
+      {id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},
+      {id:'voucher.order.line.specification',label:'규격',scope:'voucher',projectionFieldId:'specification',valueType:'TEXT'},
+      {id:'voucher.order.line.quantity',label:'수량',scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},
+      {id:'voucher.order.line.unitPrice',label:'단가',scope:'voucher',projectionFieldId:'unitPrice',valueType:'NUMBER'},
+      {id:'voucher.order.line.supplyAmount',label:'공급가액',scope:'voucher',projectionFieldId:'supplyAmount',valueType:'NUMBER'},
+      {id:'voucher.order.line.memo',label:'메모',scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},
+      {id:'description',label:'적요(직원)',scope:'voucher',projectionFieldId:'description',valueType:'TEXT'}
+    ];
+    const session=mapper.createMappingSession({matrix,headerRowIndex:0,targetDefinitions:targets,fileName:'검색계약.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});
+    session.batchId='SIBATCH-INPUT-LIST-SEARCH-E2E';
+    draft.modes.order.inputMapping=session;
+    draft.modes.order.rows=mapper.projectMappedRows(session,targets).map(row=>contract.normalizeRow({...row,batchId:session.batchId},session.batchId));
+    draft.modes.order.activeMethod='excel';
+    draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');
+    localStorage.setItem('merchMaster_v870',JSON.stringify([
+      {productId:'P-F3-A',masterProductId:'MP-F3-A',itemCode:'F3-A',itemName:'상품검색 A',searchInfo:'PAIRCHOICE',specification:'5kg',finalUnit:'BOX',outPrice:100,status:'ACTIVE'},
+      {productId:'P-F3-B',masterProductId:'MP-F3-B',itemCode:'F3-B',itemName:'상품검색 B',searchInfo:'PAIRCHOICE',specification:'10kg',finalUnit:'EA',outPrice:200,status:'ACTIVE'}
+    ]));
+    localStorage.setItem('merchMaster_revision_v870','1');
+    localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(draft));
+    return true;
+  })()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
@@ -156,9 +188,14 @@ try {
     await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'restored reference initialization', 30_000);
     await ensureTableView(view);
   };
+  const mappingTotals = () => evaluate(client, `Object.fromEntries([...document.querySelectorAll('#mappingTableTotals [data-mapping-total-column]')].map(cell=>[cell.dataset.mappingTotalColumn,cell.textContent.trim()]))`);
+  const inputTotals = () => evaluate(client, `({quantity:document.querySelector('#totalQuantity').textContent.trim(),amount:document.querySelector('#totalAmount').textContent.trim()})`);
 
   const protectedDataExpression = `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,quantity:row.quantity,unitPrice:row.unitPrice,memo:row.memo,description:row.description,customValues:row.customValues})),inputMapping:{workingRows:mode.inputMapping.workingRows,sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature}});})()`;
   const originalData = await evaluate(client, protectedDataExpression);
+  assert.deepEqual(await mappingTotals(), {
+    0: '합계', 1: '', 2: '', 3: '-2', 4: '200', 5: '-200', 6: '', 7: ''
+  }, 'closed source search must total all working rows, including numeric mapped columns');
   assert.deepEqual(await evaluate(client, `(() => ({panelHidden:document.querySelector('#inputListSearchPanel').hidden,expanded:document.querySelector('#inputListSearchButton').getAttribute('aria-expanded'),role:document.querySelector('#inputListSearchPanel').getAttribute('role'),controls:document.querySelector('#inputListSearchButton').getAttribute('aria-controls'),closeLabel:document.querySelector('#inputListSearchCloseButton').getAttribute('aria-label')}))()`), {
     panelHidden: true,
     expanded: 'false',
@@ -185,6 +222,9 @@ try {
   await expr(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length===1`, 'source-view filtered row');
   const sourceIds = await evaluate(client, `[...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>row.dataset.mappingRowId)`);
   assert.deepEqual(sourceIds, ['source-1']);
+  assert.deepEqual(await mappingTotals(), {
+    0: '합계', 1: '', 2: '', 3: '0', 4: '100', 5: '0', 6: '', 7: ''
+  }, 'source search must total only the visible zero row across mapped numeric columns');
   await key(client, 'Escape', 'Escape', 27);
   await expr(client, `document.querySelector('#inputListSearchPanel').hidden`, 'selection-pruning Escape close');
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-mapping-select-row]')].map(input=>({rowId:input.dataset.mappingSelectRow,checked:input.checked}))`), [
@@ -195,6 +235,16 @@ try {
   assert.deepEqual(await evaluate(client, `(() => {const all=document.querySelector('#mappingSelectAllRows');return {checked:all.checked,indeterminate:all.indeterminate,disabled:all.disabled};})()`), {
     checked: false, indeterminate: true, disabled: false
   }, 'source select-all indeterminate state must be calculated from the currently displayed rows');
+  assert.deepEqual(await mappingTotals(), {
+    0: '합계', 1: '', 2: '', 3: '-2', 4: '200', 5: '-200', 6: '', 7: ''
+  }, 'source Escape must immediately restore whole-working-row totals');
+
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-NEG');
+  assert.deepEqual(await mappingTotals(), {
+    0: '합계', 1: '', 2: '', 3: '-2', 4: '100', 5: '-200', 6: '', 7: ''
+  }, 'source search must preserve negative visible totals');
+  await click(client, '#inputListSearchCloseButton');
 
   await click(client, '#inputListSearchButton');
   await input(client, '#gridSearchInput', 'CODE-ZERO');
@@ -211,9 +261,19 @@ try {
   await input(client, '#gridSearchInput', 'CODE-ZERO');
   const inputIds = await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>row.dataset.rowId)`);
   assert.deepEqual(inputIds, sourceIds, 'source-column and configured-input views must expose the same row IDs');
+  assert.deepEqual(await inputTotals(), { quantity: '0', amount: '0원' },
+    'configured-input search must total only the visible zero row');
   await key(client, 'Escape', 'Escape', 27);
   await expr(client, `document.querySelector('#inputListSearchPanel').hidden&&document.activeElement?.matches('[data-row-id="source-1"] [data-field="itemCode"]')`, 'Escape clear, hide, and focus restoration');
   assert.equal(await evaluate(client, `document.querySelector('#gridSearchInput').value`), '');
+  assert.deepEqual(await inputTotals(), { quantity: '-2', amount: '-200원' },
+    'configured-input Escape must immediately restore whole-row totals');
+
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-NEG');
+  assert.deepEqual(await inputTotals(), { quantity: '-2', amount: '-200원' },
+    'configured-input search must preserve negative visible totals');
+  await click(client, '#inputListSearchCloseButton');
 
   await click(client, '#inputListSearchButton');
   await expr(client, `document.activeElement===document.querySelector('#gridSearchInput')`, 'button-open focus');
@@ -241,6 +301,92 @@ try {
   await expr(client, `document.querySelector('.mode-tab[data-mode="order"]').getAttribute('aria-selected')==='true'`, 'return to order mode');
   assert.equal(await evaluate(client, protectedDataExpression), originalData,
     'search, close, and view/mode transitions must not mutate persisted rows, working rows, source evidence, headers, or signatures');
+
+  await restoreFixture('input');
+  const editBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
+  await input(client, '[data-row-id="source-1"] [data-field="quantity"]', '3');
+  await expr(client, `document.querySelector('#totalQuantity').textContent.trim()==='3'&&document.querySelector('#totalAmount').textContent.trim()==='300원'`, 'visible totals after quantity edit');
+  await input(client, '[data-row-id="source-1"] [data-field="unitPrice"]', '120');
+  await expr(client, `document.querySelector('#totalAmount').textContent.trim()==='360원'`, 'visible totals after unit-price edit');
+  const editAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.deepEqual(editAfter.rows.find(row => row.rowId === 'source-2'), editBefore.rows.find(row => row.rowId === 'source-2'),
+    'editing a visible filtered row must not mutate the hidden voucher row');
+  assert.deepEqual({
+    sourceMatrix: editAfter.inputMapping.sourceMatrix,
+    sourceCellMatrix: editAfter.inputMapping.sourceCellMatrix,
+    signature: editAfter.inputMapping.signature,
+    headerSignature: editAfter.inputMapping.headerSignature
+  }, {
+    sourceMatrix: editBefore.inputMapping.sourceMatrix,
+    sourceCellMatrix: editBefore.inputMapping.sourceCellMatrix,
+    signature: editBefore.inputMapping.signature,
+    headerSignature: editBefore.inputMapping.headerSignature
+  }, 'filtered editing must preserve immutable source evidence and signatures');
+
+  await restoreFixture('input');
+  const productBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await input(client, '[data-row-id][data-default-row="true"] [data-field="itemCode"]', 'PAIRCHOICE');
+  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row])').length===3`, 'materialized product-choice row');
+  const productRowId = await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>row.dataset.rowId).find(rowId=>!['source-1','source-2'].includes(rowId))`);
+  assert.ok(productRowId, 'the product-choice row must have a stable row ID');
+  const productRowSelector = `[data-row-id="${productRowId}"]`;
+  await input(client, `${productRowSelector} [data-field="quantity"]`, '2');
+  await input(client, `${productRowSelector} [data-field="memo"]`, '상품합계');
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', '상품합계');
+  assert.deepEqual(await inputTotals(), { quantity: '2', amount: '0원' },
+    'a filtered row without a selected product price must initially total zero amount');
+  await evaluate(client, `(() => {const cell=document.querySelector(${JSON.stringify(`${productRowSelector} [data-field="itemCode"]`)});cell.focus();cell.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));return true;})()`);
+  await expr(client, `Boolean(document.querySelector('.product-picker-dialog[open]'))`, 'filtered row product-master search');
+  await click(client, '.product-picker-result');
+  await expr(client, `!document.querySelector('.product-picker-dialog[open]')&&document.querySelector('#totalAmount').textContent.trim()==='200원'`, 'visible totals after product selection');
+  assert.deepEqual(await inputTotals(), { quantity: '2', amount: '200원' },
+    'product selection must refresh totals from the still-visible filtered row');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr:not([data-default-row])').length`), 1,
+    'product selection must preserve the active visible-result set');
+  const productAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.deepEqual(productAfter.rows.find(row => row.rowId === 'source-1'), productBefore.rows.find(row => row.rowId === 'source-1'),
+    'filtered product selection must not mutate the first hidden voucher row');
+  assert.deepEqual(productAfter.rows.find(row => row.rowId === 'source-2'), productBefore.rows.find(row => row.rowId === 'source-2'),
+    'filtered product selection must not mutate the second hidden voucher row');
+  assert.deepEqual({
+    sourceMatrix: productAfter.inputMapping.sourceMatrix,
+    sourceCellMatrix: productAfter.inputMapping.sourceCellMatrix,
+    signature: productAfter.inputMapping.signature,
+    headerSignature: productAfter.inputMapping.headerSignature
+  }, {
+    sourceMatrix: productBefore.inputMapping.sourceMatrix,
+    sourceCellMatrix: productBefore.inputMapping.sourceCellMatrix,
+    signature: productBefore.inputMapping.signature,
+    headerSignature: productBefore.inputMapping.headerSignature
+  }, 'filtered product selection must preserve immutable source evidence and signatures');
+
+  await restoreFixture('source');
+  const mappingEditBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
+  await input(client, '[data-mapping-row-id="source-1"] [data-mapping-column="3"] input', '4');
+  await expr(client, `document.querySelector('[data-mapping-total-column="3"]').textContent.trim()==='4'`, 'source visible quantity total after edit');
+  await input(client, '[data-mapping-row-id="source-1"] [data-mapping-column="5"] input', '444');
+  await expr(client, `document.querySelector('[data-mapping-total-column="5"]').textContent.trim()==='444'`, 'source visible supply total after edit');
+  const mappingEditAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.deepEqual(mappingEditAfter.inputMapping.workingRows.find(row => row.rowId === 'source-2'), mappingEditBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2'),
+    'source editing a visible filtered row must not mutate the hidden working row');
+  assert.deepEqual({
+    sourceMatrix: mappingEditAfter.inputMapping.sourceMatrix,
+    sourceCellMatrix: mappingEditAfter.inputMapping.sourceCellMatrix,
+    signature: mappingEditAfter.inputMapping.signature,
+    headerSignature: mappingEditAfter.inputMapping.headerSignature
+  }, {
+    sourceMatrix: mappingEditBefore.inputMapping.sourceMatrix,
+    sourceCellMatrix: mappingEditBefore.inputMapping.sourceCellMatrix,
+    signature: mappingEditBefore.inputMapping.signature,
+    headerSignature: mappingEditBefore.inputMapping.headerSignature
+  }, 'source filtered editing must preserve immutable source evidence and signatures');
+
+  await restoreFixture('input');
 
   const firstItemCode = '[data-row-id="source-1"] [data-field="itemCode"]';
   await input(client, firstItemCode, 'PAIRCHOICE');

@@ -55,9 +55,10 @@ import {
   constrainInputListSelection,
   createInputListSearchState,
   filterInputListRows,
+  inputListDisplayRows,
   inputListSelectionScopeRowIds,
   reduceInputListSearchState
-} from './input-list-search.js?v=0.1.1';
+} from './input-list-search.js?v=0.1.2';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -4587,17 +4588,24 @@ function renderInputMappingStatus() {
   reloadButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '최신 양식 확인' : '양식 다시 불러오기';
 }
 
-function mappingColumnTotals(session, visibleColumns) {
+function mappingColumnTotals(session, visibleColumns, rows = session.workingRows || []) {
   const totals = new Map();
   visibleColumns.forEach(columnIndex => {
     const mapping = session.mappings[columnIndex];
     const target = mappingTargetById(mapping?.targetFieldId);
     if (!target || target.valueType !== 'NUMBER' || ![MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping.state)) return;
-    const values = (session.workingRows || []).map(row => String(row.cells?.[columnIndex] ?? '').replace(/[,원₩\s]/g, '')).filter(value => value !== '');
+    const values = rows.map(row => String(row.cells?.[columnIndex] ?? '').replace(/[,원₩\s]/g, '')).filter(value => value !== '');
     if (!values.length || values.some(value => !Number.isFinite(Number(value)))) return;
     totals.set(columnIndex, values.reduce((sum, value) => sum + Number(value), 0));
   });
   return totals;
+}
+
+function renderMappingTableTotals(session = inputMappingSession(), visibleColumns = mappingVisibleColumns(session), visibleRows = visibleMappingRows(session)) {
+  if (!session) return;
+  const displayRows = inputListDisplayRows(session.workingRows || [], visibleRows, { searchOpen: state.inputListSearch.open });
+  const totals = mappingColumnTotals(session, visibleColumns, displayRows);
+  $('mappingTableTotals').innerHTML = `<td></td>${visibleColumns.map((columnIndex, index) => `<td data-mapping-total-column="${columnIndex}">${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
 }
 
 function renderMappingRows() {
@@ -4632,8 +4640,7 @@ function renderMappingRows() {
       }).join('')}
     </tr>`;
   }).join('');
-  const totals = mappingColumnTotals(session, visibleColumns);
-  $('mappingTableTotals').innerHTML = `<td></td>${visibleColumns.map((columnIndex, index) => `<td>${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
+  renderMappingTableTotals(session, visibleColumns, rows);
   const summary = mappingSummary(session);
   $('gridRowCount').textContent = `${(session.workingRows || []).length.toLocaleString('ko-KR')}행`;
   $('gridSearchCount').hidden = !state.inputListSearch.open;
@@ -4693,6 +4700,7 @@ function scheduleMappingProjection({ render = false } = {}) {
     if (render) renderRows({ restoreFocus: false });
     else {
       updateSummaries();
+      if (sourceTableViewActive()) renderMappingTableTotals();
       renderDelivery();
     }
     scheduleSave();
@@ -4952,9 +4960,12 @@ function renderRows({ restoreFocus = true } = {}) {
 }
 
 function updateSummaries() {
-  const summary = contract.summarizeRows(modeDraft().rows);
+  const allRows = modeDraft().rows;
+  const summary = contract.summarizeRows(allRows);
   const visibleRows = visibleInputListRows();
-  const groups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header);
+  const displayRows = inputListDisplayRows(allRows, visibleRows, { searchOpen: state.inputListSearch.open });
+  const displaySummary = displayRows === allRows ? summary : contract.summarizeRows(displayRows);
+  const groups = groupVoucherRows(state.draft.activeMode, allRows, modeDraft().header);
   const groupSummary = summarizeVoucherGroups(groups);
   $('gridRowCount').textContent = `${summary.total.toLocaleString('ko-KR')}행`;
   $('gridSearchCount').hidden = !state.inputListSearch.open;
@@ -4964,8 +4975,8 @@ function updateSummaries() {
   $('similarCount').textContent = `확인 ${summary.similar.toLocaleString('ko-KR')}`;
   $('failedCount').textContent = `미인식 ${summary.unresolved.toLocaleString('ko-KR')}`;
   $('duplicateCount').textContent = `중복 가능 ${summary.duplicate.toLocaleString('ko-KR')}`;
-  $('totalQuantity').textContent = summary.quantity.toLocaleString('ko-KR');
-  $('totalAmount').textContent = `${summary.amount.toLocaleString('ko-KR')}원`;
+  $('totalQuantity').textContent = displaySummary.quantity.toLocaleString('ko-KR');
+  $('totalAmount').textContent = `${displaySummary.amount.toLocaleString('ko-KR')}원`;
   renderActivityTrail();
   renderVoucherContext(summary);
   renderInlineValidation(summary);
