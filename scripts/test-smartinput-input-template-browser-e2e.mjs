@@ -193,10 +193,33 @@ try {
   await expr(client, `document.querySelector('.field-mapping-dialog[open]')?.textContent.includes('행사발주 공식 양식')`, 'template manager list');
   await click(client, '.field-mapping-dialog [data-close]');
 
+  const existingRowBeforePaste = await evaluate(client, `(() => {const row=document.querySelector('[data-mapping-row-id="source-2"]');return [...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value);})()`);
+  const overwritePasteText = '품목코드\t품목명\t수량\t원본 메모\n009\t\t0\t';
+  await evaluate(client, `(() => {const target=document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="0"] input');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify(overwritePasteText)}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
+  await expr(client, `document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="0"] input').value==='009'`, 'existing mapping-row paste');
+  assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('[data-mapping-row-id="source-2"]');return [...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value);})()`),
+    ['009', '', '0', ''], 'mapping-worktable paste must retain its existing whole-range overwrite contract, including blank cells');
+  await click(client, '#undoGridPasteButton');
+  assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('[data-mapping-row-id="source-2"]');return [...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value);})()`),
+    existingRowBeforePaste, 'mapping-worktable paste undo must restore the overwritten row');
+
   const beforeExactPaste = await evaluate(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length`);
-  await evaluate(client, String.raw`(() => {const target=document.querySelector('[data-mapping-default-row] [data-mapping-column="0"] input');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t품목명\t수량\t원본 메모\n003\t미나리\t4\t추가':''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
-  await expr(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length===${beforeExactPaste + 1}`, 'exact mapping paste');
-  assert.equal(await evaluate(client, `[...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].at(-1).querySelector('[data-mapping-column="3"] input').value`), '추가', 'unmapped cells must remain editable and visible');
+  const exactPasteText = [
+    '품목코드\t품목명\t수량\t원본 메모',
+    '003\t미나리\t0\t',
+    '\t\t\t',
+    ' \t\u00a0\t\u200b\t',
+    '004\t\t-3\t추가',
+    '\t\t\t',
+    '',
+    ''
+  ].join('\n');
+  await evaluate(client, `(() => {const target=document.querySelector('[data-mapping-default-row] [data-mapping-column="0"] input');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify(exactPasteText)}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
+  await expr(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length===${beforeExactPaste + 2}`, 'exact mapping paste without fake blank rows');
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].slice(-2).map(row=>[...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value)))()`), [
+    ['003', '미나리', '0', ''],
+    ['004', '', '-3', '추가']
+  ], 'mapping paste must preserve blank-cell positions, explicit zero, negative values, and trailing blank-row filtering');
   const beforeMismatch = await evaluate(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length`);
   await evaluate(client, String.raw`(() => {const target=document.querySelector('[data-mapping-default-row] [data-mapping-column="0"] input');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t품목명\t수량 오타\t원본 메모\n004\t부추\t2\t':''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
   assert.equal(await evaluate(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length`), beforeMismatch, 'mismatched paste must preserve current work rows');

@@ -1,3 +1,7 @@
+import {
+  hasMeaningfulSourceValue
+} from './source-row-values.js?v=0.1.0';
+
 const DECISION = Object.freeze({
   UNDECIDED: 'UNDECIDED',
   RECOMMENDED: 'RECOMMENDED',
@@ -70,15 +74,15 @@ export function detectHeaderRow(matrix = [], targetDefinitions = [], { maxScanRo
   const targetLabels = new Set((targetDefinitions || []).map(target => cellText(target?.label)).filter(Boolean));
   let best = null;
   source.slice(0, Math.max(1, maxScanRows)).forEach((row, rowIndex) => {
-    const nonEmpty = row.filter(value => value !== '').length;
+    const nonEmpty = row.filter(hasMeaningfulSourceValue).length;
     if (nonEmpty < 2) return;
     const exactTargets = row.filter(value => targetLabels.has(value)).length;
-    const textCells = row.filter(value => value !== '' && !Number.isFinite(Number(value.replace(/,/g, '')))).length;
-    const followingRows = source.slice(rowIndex + 1, rowIndex + 4).filter(candidate => candidate.some(value => value !== '')).length;
+    const textCells = row.filter(value => hasMeaningfulSourceValue(value) && !Number.isFinite(Number(value.replace(/,/g, '')))).length;
+    const followingRows = source.slice(rowIndex + 1, rowIndex + 4).filter(candidate => candidate.some(hasMeaningfulSourceValue)).length;
     const score = (exactTargets * 1000) + (textCells * 20) + (nonEmpty * 5) + followingRows - rowIndex;
     if (!best || score > best.score) best = { rowIndex, rowNumber: rowIndex + 1, score, exactTargets, nonEmpty };
   });
-  return best || { rowIndex: 0, rowNumber: 1, score: 0, exactTargets: 0, nonEmpty: source[0]?.filter(Boolean).length || 0 };
+  return best || { rowIndex: 0, rowNumber: 1, score: 0, exactTargets: 0, nonEmpty: source[0]?.filter(hasMeaningfulSourceValue).length || 0 };
 }
 
 function targetIndex(targetDefinitions = []) {
@@ -188,7 +192,6 @@ function resolveTemplate(companyId, voucherMode, headers, templates = [], target
 
 function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
   const width = headers.length;
-  const hasWorkingValue = value => cellText(value).trim() !== '';
   const sourceRows = sourceMatrix.slice(headerRowIndex + 1).map((sourceRow, offset) => {
     const sourceRowIndex = headerRowIndex + 1 + offset;
     const cells = Array.from({ length: width }, (_, columnIndex) => {
@@ -207,14 +210,14 @@ function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, ed
       })),
       manual: false
     };
-  }).filter(row => row.cells.some(hasWorkingValue));
+  }).filter(row => row.cells.some(hasMeaningfulSourceValue));
   const manual = (manualRows || []).map((row, index) => ({
     rowId: cellText(row?.rowId) || `manual-${index + 1}`,
     sourceRowIndex: null,
     cells: Array.from({ length: width }, (_, columnIndex) => cellText(row?.cells?.[columnIndex])),
     sourceCells: [],
     manual: true
-  })).filter(row => row.cells.some(hasWorkingValue));
+  })).filter(row => row.cells.some(hasMeaningfulSourceValue));
   return [...sourceRows, ...manual];
 }
 
@@ -425,8 +428,8 @@ export function createTemplateRecord(session, templateName, targetDefinitions = 
 }
 
 function targetValue(target, value) {
+  if (!hasMeaningfulSourceValue(value)) return target?.valueType === 'NUMBER' ? null : '';
   if (target?.valueType !== 'NUMBER') return cellText(value);
-  if (value === '' || value === null || value === undefined) return null;
   const number = Number(cellText(value).replace(/[,원₩\s]/g, ''));
   return Number.isFinite(number) ? number : null;
 }
@@ -436,7 +439,7 @@ export function projectMappedRows(session, targetDefinitions = []) {
   const targets = targetIndex(targetDefinitions);
   const mappings = (session.mappings || []).filter(mapping => [DECISION.MAPPED, DECISION.RECOMMENDED].includes(mapping.state));
   return (session.workingRows || [])
-    .filter(row => (row.cells || []).some(value => cellText(value).trim() !== ''))
+    .filter(row => (row.cells || []).some(hasMeaningfulSourceValue))
     .map((row, rowIndex) => {
       const projected = {
         rowId: row.rowId,

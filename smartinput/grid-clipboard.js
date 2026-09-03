@@ -1,14 +1,18 @@
 import {
   buildStructuredFieldIndex,
   normalizeStructuredFieldName
-} from './structured-sheet-parser.js';
+} from './structured-sheet-parser.js?v=0.1.1';
+import {
+  hasMeaningfulSourceValue,
+  sourceRowHasMeaningfulValue
+} from './source-row-values.js?v=0.1.0';
 
 function cellText(value) {
   return String(value ?? '');
 }
 
 function normalizedNumber(value, numberParser) {
-  if (value === '' || value === null || value === undefined) return null;
+  if (!hasMeaningfulSourceValue(value)) return null;
   if (typeof numberParser === 'function') return numberParser(value);
   const number = Number(String(value).replace(/[,원₩\s]/g, ''));
   return Number.isFinite(number) ? number : null;
@@ -110,19 +114,22 @@ export function buildGridPastePlan(rawText = '', {
   if (requireHeaders || (headerMappings.length >= 2 && !headerErrors.length)) {
     const invalidCells = [];
     const expectedColumnCount = (matrix[0] || []).length;
-    const rowErrors = matrix.slice(1).flatMap((sourceRow, rowIndex) => (
+    const sourceRows = matrix.slice(1)
+      .map((sourceRow, rowIndex) => ({ sourceRow, rowIndex }))
+      .filter(({ sourceRow }) => sourceRowHasMeaningfulValue(sourceRow));
+    const rowErrors = sourceRows.flatMap(({ sourceRow, rowIndex }) => (
       sourceRow.length === expectedColumnCount
         ? []
         : [{ rowNumber: rowIndex + 2, expectedColumnCount, actualColumnCount: sourceRow.length, reason: 'COLUMN_COUNT_MISMATCH' }]
     ));
-    const rows = headerErrors.length || rowErrors.length ? [] : matrix.slice(1).map((sourceRow, rowIndex) => ({
+    const rows = headerErrors.length || rowErrors.length ? [] : sourceRows.map(({ sourceRow, rowIndex }) => ({
       rawText: sourceRow.join('\t'),
       cells: headerMappings.map(mapping => {
         const definition = fieldById.get(mapping.fieldId);
         const rawValue = sourceRow[mapping.columnIndex] ?? '';
         if (definition?.valueType !== 'NUMBER') return { fieldId: mapping.fieldId, value: cellText(rawValue) };
         const value = normalizedNumber(rawValue, numberParser);
-        if (cellText(rawValue).trim() && value === null) {
+        if (hasMeaningfulSourceValue(rawValue) && value === null) {
           invalidCells.push({
             rowNumber: rowIndex + 2,
             columnIndex: mapping.columnIndex,
@@ -152,20 +159,23 @@ export function buildGridPastePlan(rawText = '', {
   const targetFields = startIndex >= 0 ? orderedFields.slice(startIndex) : [];
   const invalidCells = [];
   let ignoredColumnCount = 0;
-  const rows = matrix.map((sourceRow, rowIndex) => {
-    ignoredColumnCount = Math.max(ignoredColumnCount, Math.max(0, sourceRow.length - targetFields.length));
-    const cells = sourceRow.slice(0, targetFields.length).map((rawValue, columnIndex) => {
-      const fieldId = targetFields[columnIndex];
-      const definition = fieldById.get(fieldId);
-      if (definition?.valueType !== 'NUMBER') return { fieldId, value: cellText(rawValue) };
-      const value = normalizedNumber(rawValue, numberParser);
-      if (cellText(rawValue).trim() && value === null) {
-        invalidCells.push({ rowNumber: rowIndex + 1, columnIndex, fieldId, value: cellText(rawValue) });
-      }
-      return { fieldId, value };
+  const rows = matrix
+    .map((sourceRow, rowIndex) => ({ sourceRow, rowIndex }))
+    .filter(({ sourceRow }) => sourceRowHasMeaningfulValue(sourceRow))
+    .map(({ sourceRow, rowIndex }) => {
+      ignoredColumnCount = Math.max(ignoredColumnCount, Math.max(0, sourceRow.length - targetFields.length));
+      const cells = sourceRow.slice(0, targetFields.length).map((rawValue, columnIndex) => {
+        const fieldId = targetFields[columnIndex];
+        const definition = fieldById.get(fieldId);
+        if (definition?.valueType !== 'NUMBER') return { fieldId, value: cellText(rawValue) };
+        const value = normalizedNumber(rawValue, numberParser);
+        if (hasMeaningfulSourceValue(rawValue) && value === null) {
+          invalidCells.push({ rowNumber: rowIndex + 1, columnIndex, fieldId, value: cellText(rawValue) });
+        }
+        return { fieldId, value };
+      });
+      return { rawText: sourceRow.join('\t'), cells };
     });
-    return { rawText: sourceRow.join('\t'), cells };
-  });
 
   return {
     kind: 'POSITIONAL',

@@ -331,16 +331,41 @@ try {
   await evaluate(client, `delete window.XLSX;true`);
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
+  const beforeGridPaste = await evaluate(client, `(() => ({
+    quantities:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>input.value),
+    units:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unit"]')].map(input=>input.value)
+  }))()`);
+  const gridPasteText = [
+    '단가\t수량\t단위',
+    '1500\t7\tEA',
+    '\t\t',
+    ' \t\u00a0\t\u200b',
+    '0\t0\t',
+    '1600\t-9\tBOX',
+    '\t\t',
+    '',
+    ''
+  ].join('\n');
   const gridPasteStartedAt = performance.now();
-  await evaluate(client, `(() => {const target=document.querySelector(${JSON.stringify(firstQuantity)});const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify('단가\t수량\t단위\n1500\t7\tEA\n\t\t\n1600\t9\tBOX')}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
+  await evaluate(client, `(() => {const target=document.querySelector(${JSON.stringify(firstQuantity)});const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?${JSON.stringify(gridPasteText)}:''}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
   await expr(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value==='7'`, 'reordered field-name grid paste');
   flowTimings.excelTablePasteMs = Number((performance.now() - gridPasteStartedAt).toFixed(2));
   assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');return {unit:row.querySelector('[data-field="unit"]').value,unitPrice:row.querySelector('[data-field="unitPrice"]').value,pending:!document.querySelector('#pendingPasteToSourceButton').hidden};})()`),
     { unit: 'EA', unitPrice: '1500', pending: false }, 'reordered fields must map by name without opening the source fallback');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value))`), [7, 9],
-    'completely blank clipboard rows must not create work rows while later value rows remain aligned');
+  assert.deepEqual(await evaluate(client, `(() => ({
+    quantities:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value)),
+    unitPrices:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unitPrice"]')].map(input=>Number(input.value)),
+    units:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unit"]')].map(input=>input.value)
+  }))()`), {
+    quantities: [7, 0, -9],
+    unitPrices: [1500, 0, 1600],
+    units: ['EA', beforeGridPaste.units[1], 'BOX']
+  }, 'blank and invisible-whitespace rows must not create work rows; explicit zero and negative values must survive; blank cells keep the existing direct-grid overwrite contract');
   await click(client, '#undoGridPasteButton');
-  assert.equal(await evaluate(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value`), '2', 'reordered grid paste undo must restore the prior row');
+  assert.deepEqual(await evaluate(client, `(() => ({
+    quantities:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>input.value),
+    units:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unit"]')].map(input=>input.value)
+  }))()`), beforeGridPaste, 'reordered grid paste undo must restore the prior rows without retaining a fake blank row');
   await evaluate(client, String.raw`(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const fields=[...document.querySelectorAll('#voucherInputTable thead th[data-column]')].filter(th=>!th.classList.contains('is-column-hidden')).map(th=>th.dataset.column).filter(field=>row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]'));const headers=fields.map(field=>document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').childNodes[0]?.textContent?.trim()||document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').textContent.trim());const values=fields.map(field=>{const input=row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]');return field==='quantity'?'8':input.value;});const target=row.querySelector('[data-field="'+CSS.escape(fields[0])+'"],[data-custom-row-field="'+CSS.escape(fields[0])+'"]');const text=headers.join('\t')+'\n'+values.join('\t');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?text:''}});target.dispatchEvent(event);})()`);
   await wait(120);
   await expr(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value==='8'&&!document.querySelector('#undoGridPasteButton').disabled&&document.querySelector('#pendingPasteToSourceButton').hidden`, 'exact-structure grid paste');
