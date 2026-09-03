@@ -1,7 +1,7 @@
 import {
   OFFICIAL_COMMAND_GATEWAY_VERSION,
   OfficialCommandGateway
-} from './official-command-gateway.js?v=0.7.0';
+} from './official-command-gateway.js?v=0.8.0';
 
 export const OFFICIAL_COMMAND_ADAPTER_VERSION = 'ONEAPP_ORDERQ_OFFICIAL_COMMAND_ADAPTER_V1';
 
@@ -26,6 +26,10 @@ export function createOfficialCommandAdapter(gateway = OfficialCommandGateway) {
     inspectStocktakeConflicts: source => gateway.inspectStocktakeConflicts(source),
     buildInventoryRematchCommand: source => gateway.buildInventoryRematchCommand(source),
     commitInventoryRematchCommand: command => gateway.executeInventoryRematch(command),
+    inspectRevisionTarget: identity => gateway.inspectRevisionTarget(identity),
+    previewRevision: source => gateway.previewRevision(source),
+    buildRevisionCommand: source => gateway.buildRevisionCommand(source),
+    commitRevisionCommand: command => gateway.executeRevision(command),
     beginPurchaseCommand: (draft, actor) => gateway.saveDraft({
       kind: 'PURCHASE',
       ...draft,
@@ -52,6 +56,10 @@ export const loadSaleCommandAggregate = documentId => OfficialCommandAdapter.loa
 export const inspectOfficialStocktakeConflicts = source => OfficialCommandAdapter.inspectStocktakeConflicts(source);
 export const buildInventoryRematchCommand = source => OfficialCommandAdapter.buildInventoryRematchCommand(source);
 export const commitInventoryRematchCommand = command => OfficialCommandAdapter.commitInventoryRematchCommand(command);
+export const inspectOfficialRevisionTarget = identity => OfficialCommandAdapter.inspectRevisionTarget(identity);
+export const previewOfficialRevision = source => OfficialCommandAdapter.previewRevision(source);
+export const buildOfficialRevisionCommand = source => OfficialCommandAdapter.buildRevisionCommand(source);
+export const commitOfficialRevisionCommand = command => OfficialCommandAdapter.commitRevisionCommand(command);
 export const beginPurchaseCommand = (draft, actor) => OfficialCommandAdapter.beginPurchaseCommand(draft, actor);
 export const beginSaleCommand = (draft, actor) => OfficialCommandAdapter.beginSaleCommand(draft, actor);
 export const commitPurchaseCommand = command => OfficialCommandAdapter.commitPurchaseCommand(command);

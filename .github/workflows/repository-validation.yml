@@ -60,11 +60,14 @@ jobs:
           node scripts/test-smartinput-v2-phase6a-ui-unchanged.mjs
           node scripts/test-smartinput-v2-inventory-rematch-command.mjs
           node scripts/test-smartinput-v2-phase6c-ui-unchanged.mjs
+          node scripts/test-smartinput-v2-official-revision-command.mjs
+          node scripts/test-smartinput-v2-official-revision-boundary.mjs
 
       - name: Test SmartInput browser isolation and persistence
         run: |
           node scripts/test-smartinput-browser-e2e.mjs
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
+          node scripts/test-smartinput-v2-official-revision-browser.mjs
 
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs

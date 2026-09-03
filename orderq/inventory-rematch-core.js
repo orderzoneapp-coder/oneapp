@@ -308,6 +308,7 @@ export function planInventoryRematchCommandV2({ command: sourceCommand = {}, pre
       inventoryEffectFactor: 1,
       effectiveAt: impact.businessDate,
       businessDate: impact.businessDate,
+      businessOccurredAt: impact.businessOccurredAt || '',
       occurredAt: command.occurredAt,
       judgedAt: command.judgedAt,
       actor: command.actor,
