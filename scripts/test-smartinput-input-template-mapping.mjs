@@ -12,6 +12,7 @@ import {
   deleteWorkingRows,
   detectHeaderRow,
   projectMappedRows,
+  recommendMappings,
   reassignHeaderRow,
   setColumnDecision,
   templateSignature,
@@ -114,6 +115,20 @@ assert.equal(duplicateNew.mappings[2].state, DECISION.UNDECIDED, 'duplicate sour
 const duplicatedTargetLabels = [...targets, { id: 'quantity-alt', label: '수량', scope: 'voucher', valueType: 'NUMBER' }];
 const ambiguousTarget = createMappingSession({ matrix: [['수량'], ['1']], targetDefinitions: duplicatedTargetLabels });
 assert.equal(ambiguousTarget.mappings[0].state, DECISION.UNDECIDED, 'duplicate setting labels must not be recommended');
+
+const manualOnlyCustomerTarget = {
+  id: 'rowCustomerName',
+  label: '거래처명',
+  scope: 'voucher',
+  projectionFieldId: 'rowCustomerName',
+  valueType: 'TEXT',
+  recommendable: false
+};
+assert.equal(
+  recommendMappings(['거래처명'], [manualOnlyCustomerTarget])[0].state,
+  DECISION.UNDECIDED,
+  'manual-search registry and hidden fields must not widen the automatic recommendation contract'
+);
 
 let decisions = createMappingSession({ matrix: [['품목코드', '알 수 없는 열'], ['001', '보존']], targetDefinitions: targets });
 decisions = setColumnDecision(decisions, 0, DECISION.MAPPED, 'itemCode', targets);

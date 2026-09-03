@@ -121,10 +121,11 @@ for (let position = 0; position < 120; position += 1) {
 const performanceElapsed = performance.now() - performanceStarted;
 assert.ok(performanceElapsed < 2500, `25k snapshot indexing + 120 exact searches took ${performanceElapsed.toFixed(1)}ms`);
 
-const [smartInputSource, dataStoreSource, controllerSource, html] = await Promise.all([
+const [smartInputSource, dataStoreSource, controllerSource, refreshControllerSource, html] = await Promise.all([
   readFile(join(root, 'smartinput/smartinput.js'), 'utf8'),
   readFile(join(root, 'smartinput/smartinput-data-store.js'), 'utf8'),
   readFile(join(root, 'smartinput/reference-data-controller.js'), 'utf8'),
+  readFile(join(root, 'smartinput/reference-refresh-controller.js'), 'utf8'),
   readFile(join(root, 'smartinput/index.html'), 'utf8'),
 ]);
 assert.doesNotMatch(smartInputSource, /orderq\/product-master-search|loadProductCatalog|searchProductCatalog/, 'SmartInput must not treat ORDER Q history as the product master');
@@ -150,5 +151,13 @@ assert.match(html, /id="referencePendingApply"/);
 assert.doesNotMatch(html, /거래처관리에서 등록/, 'obsolete fluorescent customer registration coachmark must stay removed');
 assert.doesNotMatch(html, /ItemMaster\.html/, 'deprecated compatibility page must not be presented as the product owner');
 assert.equal((smartInputSource.match(/allReferenceReload'\)\.addEventListener/g) || []).length, 1, 'full reference reload event must bind once');
+assert.match(smartInputSource, /매칭할 항목명 검색/);
+assert.match(smartInputSource, /data-refresh-mapping-reference/);
+assert.match(smartInputSource, /const retainedQuery = search\.value/,
+  'mapping reference refresh must retain the worker-entered search term');
+assert.match(smartInputSource, /inputMappingTargets\(mode, \{ enabledOnly: false, includeRegistry: true \}\)/,
+  'manual matching must search the full eligible registry independently from displayed columns');
+assert.match(refreshControllerSource, /ensureFieldCatalogSeed\(\{ force: true \}\)/,
+  'explicit full reference refresh must reload the latest field catalog instead of reusing a stale seed');
 
 console.log(`SmartInput reference-data UX contract PASS · large snapshot ${performanceElapsed.toFixed(1)}ms`);

@@ -177,6 +177,40 @@ try {
 
   await click(client, '[data-open-field-mapping="3"]');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-unmap]'))`, 'field mapping modal');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '거 래처명');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="rowCustomerName"]'))`, 'hidden customer-name mapping target search');
+  const beforeReferenceRefresh = await evaluate(client, `(() => {const current=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return {sourceMatrix:current.inputMapping.sourceMatrix,signature:current.inputMapping.signature,workingRows:current.inputMapping.workingRows};})()`);
+  assert.match(
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-target="rowCustomerName"] small').textContent`),
+    /작업테이블/,
+    'the manual result must identify the operational location instead of silently auto-selecting it'
+  );
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await capture(client, 'smartinput-field-mapping-search-1440-light.png');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(client, `(() => {document.documentElement.setAttribute('data-nexus-theme','dark');document.documentElement.setAttribute('data-nexus-ui-theme','dark');return true;})()`);
+  const mobileDialog = await evaluate(client, `(() => {const dialog=document.querySelector('.field-mapping-dialog[open]');const rect=dialog.getBoundingClientRect();return {left:rect.left,right:rect.right,width:rect.width,viewport:innerWidth,overflow:document.documentElement.scrollWidth-innerWidth};})()`);
+  assert.ok(mobileDialog.left >= 0 && mobileDialog.right <= mobileDialog.viewport && mobileDialog.overflow <= 0,
+    `the field mapping search must fit the mobile viewport: ${JSON.stringify(mobileDialog)}`);
+  await capture(client, 'smartinput-field-mapping-search-390-dark.png');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `(() => {document.documentElement.setAttribute('data-nexus-theme','light');document.documentElement.setAttribute('data-nexus-ui-theme','light');return true;})()`);
+  await click(client, '.field-mapping-dialog [data-refresh-mapping-reference]');
+  await expr(client, `document.querySelector('.field-mapping-dialog [data-refresh-mapping-reference]')?.textContent==='기준정보 새로고침'`, 'mapping reference refresh completion', 30_000);
+  assert.equal(await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-search]').value`), '거 래처명',
+    'reference refresh must preserve the worker search term');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="rowCustomerName"]'))`, 'refreshed customer-name result');
+  const afterReferenceRefresh = await evaluate(client, `(() => {const current=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return {sourceMatrix:current.inputMapping.sourceMatrix,signature:current.inputMapping.signature,workingRows:current.inputMapping.workingRows};})()`);
+  assert.deepEqual(afterReferenceRefresh, beforeReferenceRefresh,
+    'reference refresh from the mapping dialog must preserve source evidence, signature and the working copy');
+  await click(client, '.field-mapping-dialog [data-mapping-target="rowCustomerName"]');
+  await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='MAPPED'`, 'manual customer-name mapping');
+  assert.equal(
+    await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.find(row=>row.rowId==='source-3').rowCustomerName`),
+    '확인',
+    'the selected customer-name field must project the source value into the operational row field'
+  );
+  await click(client, '[data-open-field-mapping="3"]');
   await click(client, '.field-mapping-dialog [data-unmap]');
   await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='UNMAPPED'`, 'explicit unmapped decision');
   const reviewedMappings = await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.mappings.map(({state,targetFieldId,reviewed})=>({state,targetFieldId,reviewed}))`);

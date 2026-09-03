@@ -126,7 +126,7 @@ export function recommendMappings(headers = [], targetDefinitions = []) {
   const sourceCounts = new Map();
   headers.forEach(header => sourceCounts.set(cellText(header), (sourceCounts.get(cellText(header)) || 0) + 1));
   const targetsByAlias = new Map();
-  targetDefinitions.filter(target => target?.id).forEach(target => {
+  targetDefinitions.filter(target => target?.id && target.recommendable !== false).forEach(target => {
     [...new Set([target.label, ...(target.aliases || [])].map(cellText).filter(Boolean))].forEach(alias => {
       targetsByAlias.set(alias, [...(targetsByAlias.get(alias) || []), target]);
     });
