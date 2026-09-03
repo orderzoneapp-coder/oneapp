@@ -9,7 +9,7 @@
     <script defer src="nexus/common/nexus-ui.js?v=1.4.2"></script>
     <meta name="google" content="notranslate">
     <title>가격·시세 - NEXUS</title>
-    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.193_OwnerBoundaryHardening]">
+    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.194_NewProductDelete]">
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -34,6 +34,7 @@
         ownerPath: String(ownerPath || ''),
         message: `${String(action || '해당 변경')}은(는) ${String(ownerAppId || 'owner')} 소유 화면에서 수행해야 합니다.`
     }));
+    // v2.1.194: 미등록 상품 검토줄에 현재 작업 상품 삭제를 추가하고 전부 처리되면 기존 업무 화면으로 자동 복귀한다.
     // v2.1.193: legacy global writers까지 owner-routed fail-closed로 고정한다.
     // v2.1.191: 견적/시세 Quick F8 쇼핑몰업로드에서 입고가없음 처리 선택을 즉시 판매여부·재고·테마2 정책에 반영한다.
     // v2.1.190: 이슈 필터를 단일선택으로 통일하고 행사 작업대는 상위 행사테마 선택 시에만 노출하며 입고가없음의 싯가판매/판매정지 예약을 F7 일괄 저장에 연결한다.
@@ -8592,7 +8593,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const rows = getRowsForWorkAction();
         if (rows.length === 0) return ui.showToast('⚠️ 제외할 상품이 없습니다.');
         const scopeText = ui.selectedRows.size > 0 ? `선택 ${rows.length}건` : `현재 필터 ${rows.length}건`;
-        if (!window.confirm(`${scopeText}을 이번 작업에서만 제외하시겠습니까?\n\n- 현재 화면/F8/F9 대상에서 제외\n- 새 파일 불러오기 또는 화면 초기화 시 자동 해제\n- 마스터와 정지관리에는 영향 없음`)) return;
+        const isRegistrationDelete = ui.registrationMode === true;
+        const confirmMessage = isRegistrationDelete
+            ? `${scopeText}을 현재 작업에서 삭제하시겠습니까?\n\n- 현재 작업표/F8/F9 대상에서 제거\n- 원본 Excel과 상품 master는 삭제하지 않음\n- 제외상품 목록에서 복구 가능`
+            : `${scopeText}을 이번 작업에서만 제외하시겠습니까?\n\n- 현재 화면/F8/F9 대상에서 제외\n- 새 파일 불러오기 또는 화면 초기화 시 자동 해제\n- 마스터와 정지관리에는 영향 없음`;
+        if (!window.confirm(confirmMessage)) return;
         const nextExcluded = { ...(ui.sessionExcludedItems || {}) };
         const keys = new Set();
         rows.forEach(row => {
@@ -8607,8 +8612,18 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             return next;
         });
         ui.setSelectedRows(new Set());
-        ui.showToast(`✅ 이번 작업에서 ${rows.length}건 제외`);
-    }, [getRowsForWorkAction, cloneManagedRowForSession, data.setManagedItems, ui]);
+        const remainingRegistrationRows = isRegistrationDelete
+            ? (fullDisplayRows || []).filter(row => !keys.has(window.getManagedRowKey(row))).length
+            : -1;
+        if (isRegistrationDelete && remainingRegistrationRows === 0) {
+            ui.setRegistrationMode?.(false);
+            ui.showToast(`✅ 신규상품 ${rows.length}건을 현재 작업에서 삭제하고 기존 업무 화면으로 복귀했습니다.`);
+            return;
+        }
+        ui.showToast(isRegistrationDelete
+            ? `✅ 신규상품 ${rows.length}건을 현재 작업에서 삭제했습니다. 남은 신규상품 ${remainingRegistrationRows}건`
+            : `✅ 이번 작업에서 ${rows.length}건 제외`);
+    }, [getRowsForWorkAction, cloneManagedRowForSession, data.setManagedItems, fullDisplayRows, ui]);
     const handleRestoreExcludedItems = useCallback((managedKeys = []) => {
         const targetKeys = Array.isArray(managedKeys) && managedKeys.length > 0
             ? managedKeys
@@ -11469,6 +11484,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("button", { onClick: handleRegisterUnregisteredItems, className: "h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700", title: "필수항목이 입력된 미등록 상품을 상품관리 PENDING 변경요청으로 접수" },
                     React.createElement("i", { className: "fas fa-paper-plane mr-1.5 text-[13px]" }),
                     "PENDING 변경요청"),
+                React.createElement("button", { "data-merch-registration-delete": "current-work", onClick: handleExcludeSelectedFromUpdate, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center border ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-700 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택한 미등록 상품을 현재 작업에서 삭제합니다. 선택이 없으면 표시된 미등록 상품 전체가 대상이며 원본 Excel과 상품 master는 삭제하지 않습니다." },
+                    React.createElement("i", { className: "fas fa-trash-can mr-1.5 text-[13px]" }),
+                    "상품 삭제"),
                 React.createElement("button", { onClick: handleExitRegistrationMode, className: "h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center bg-white text-slate-700 border border-slate-300 hover:bg-slate-50", title: "기존 테이블 양식으로 복귀" },
                     React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
                     "이전 양식")),
@@ -14187,7 +14205,7 @@ const App = () => {
                             React.createElement("div", { className: "flex items-center gap-2" },
                                 React.createElement("h1", { className: "text-[15px] font-black text-slate-800 whitespace-nowrap" }, "MerchOps"),
                                 React.createElement("span", { className: "h-7 px-3 rounded-md bg-slate-100 text-slate-700 text-[11px] font-bold hidden sm:flex items-center", "aria-current": "page" }, "가격·시세"),
-                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.193_OwnerBoundaryHardening")),
+                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.194_NewProductDelete")),
                             React.createElement("p", { className: "hidden sm:block text-[10px] text-slate-500 mt-0.5 truncate" }, "상품 가격·프로모션 관리"))),
                     React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode, snapshotStatus: data.productSnapshotStatus, snapshotRevision: data.productSnapshotRevision, snapshotUpdateAvailable: data.productSnapshotUpdateAvailable }),
                     React.createElement("nav", { className: "flex flex-wrap gap-2 shrink-0 items-center justify-end", "aria-label": "MerchOps 주요 작업" },

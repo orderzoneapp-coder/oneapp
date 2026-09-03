@@ -74,7 +74,7 @@ assert.match(smartSource, /stopRecommendation:\s*zeroPrice \|\| row\._isSoldOut 
 assert.match(smartSource, /proposedChanges:\s*zeroPrice \? proposals\.filter/);
 assert.doesNotMatch(smartSource, /zeroPrice[\s\S]{0,300}commitSmartParserStopManagement/);
 
-assert.match(merchSource, /v2\.1\.193_OwnerBoundaryHardening/);
+assert.match(merchSource, /v2\.1\.194_NewProductDelete/);
 assert.doesNotMatch(merchSource, /v2\.1\.178_CIBaselineContractRestore/);
 assert.match(merchSource, /installMerchOpsOwnerBoundary/);
 assert.match(merchSource, /F8\uC740 \uB9C8\uC2A4\uD130\u00B7\uD788\uC2A4\uD1A0\uB9AC\uB97C \uBCC0\uACBD\uD558\uC9C0 \uC54A\uB294\uB2E4/);

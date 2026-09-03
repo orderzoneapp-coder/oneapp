@@ -266,7 +266,7 @@ assert.equal(compare.getApplyReadiness(ready, masterProducts).ready, true);
 assert.equal(compare.getApplyReadiness(ready, { ...masterProducts, A001: { ...masterProducts.A001, 출고가: 15000 } }).ready, false);
 assert.equal(compare.getApplyReadiness(ready, { B002: masterProducts.B002, C003: masterProducts.C003 }).ready, false);
 
-const versions = [...html.matchAll(/v2\.1\.193_OwnerBoundaryHardening/g)].length;
+const versions = [...html.matchAll(/v2\.1\.194_NewProductDelete/g)].length;
 assert.ok(versions >= 2, "all visible MerchOps version labels must use the target version");
 assert.match(html, /handleOpenPromoCompare/);
 assert.match(html, /handleApplyPromoCompare/);
