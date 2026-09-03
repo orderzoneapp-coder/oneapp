@@ -46,11 +46,16 @@ import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js
 import {
   buildOrderGroupPayload,
   decorateStructuredRows,
-  filterVoucherRows,
   groupVoucherRows,
   structuredFieldsForMode,
   summarizeVoucherGroups
 } from './multivoucher-stage1.js?v=0.2.0';
+import {
+  INPUT_LIST_SEARCH_ACTION,
+  createInputListSearchState,
+  filterInputListRows,
+  reduceInputListSearchState
+} from './input-list-search.js?v=0.1.0';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -210,7 +215,8 @@ const state = {
   pendingOcrReview: null,
   pendingSourceName: '',
   pendingStructuredImport: null,
-  gridSearch: '',
+  inputListSearch: createInputListSearchState(),
+  inputListSearchReturnFocus: null,
   tableViewPreferences: createTableViewPreferences(Object.keys(contract.MODES)),
   tableViewScrollPositions: {},
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
@@ -862,6 +868,98 @@ function inputMappingSession(current = modeDraft()) {
     : null;
 }
 
+function inputListSourceRows(session = inputMappingSession()) {
+  return session?.workingRows || [];
+}
+
+function visibleInputListRows(session = inputMappingSession()) {
+  return filterInputListRows(modeDraft().rows, state.inputListSearch.query, {
+    sourceRows: inputListSourceRows(session)
+  });
+}
+
+function renderInputListSearch() {
+  const { open, query } = state.inputListSearch;
+  const panel = $('inputListSearchPanel');
+  const button = $('inputListSearchButton');
+  const input = $('gridSearchInput');
+  panel.hidden = !open;
+  button.setAttribute('aria-expanded', String(open));
+  button.classList.toggle('is-active', open);
+  if (input.value !== query) input.value = query;
+  input.placeholder = sourceTableViewActive()
+    ? '원본 작업행 검색'
+    : '코드·품명·규격·메모 검색';
+}
+
+function inputListSearchFocusRecord(element) {
+  if (!(element instanceof HTMLElement)) return null;
+  const gridRow = element.closest('[data-row-id]');
+  const gridField = element.closest('[data-field], [data-custom-row-field]');
+  if (gridRow && gridField) {
+    const fieldAttribute = gridField.hasAttribute('data-field') ? 'data-field' : 'data-custom-row-field';
+    const field = gridField.getAttribute(fieldAttribute);
+    return {
+      element,
+      selector: `[data-row-id="${CSS.escape(gridRow.dataset.rowId || '')}"] [${fieldAttribute}="${CSS.escape(field || '')}"]`
+    };
+  }
+  const mappingRow = element.closest('[data-mapping-row-id]');
+  const mappingCell = element.closest('[data-mapping-column]');
+  if (mappingRow && mappingCell) {
+    return {
+      element,
+      selector: `[data-mapping-row-id="${CSS.escape(mappingRow.dataset.mappingRowId || '')}"] [data-mapping-column="${CSS.escape(mappingCell.dataset.mappingColumn || '')}"] input`
+    };
+  }
+  if (element.id) return { element, selector: `#${CSS.escape(element.id)}` };
+  return { element, selector: '' };
+}
+
+function inputListSearchFocusTarget(record) {
+  if (record?.element?.isConnected && !record.element.closest('[hidden]')) return record.element;
+  if (record?.selector) {
+    const restored = document.querySelector(record.selector);
+    if (restored && !restored.closest('[hidden]')) return restored;
+  }
+  return $('inputListSearchButton');
+}
+
+function openInputListSearch() {
+  if (!state.inputListSearch.open) {
+    state.inputListSearchReturnFocus = inputListSearchFocusRecord(document.activeElement);
+    state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.OPEN });
+    renderRows({ restoreFocus: false });
+  } else {
+    renderInputListSearch();
+  }
+  window.requestAnimationFrame(() => {
+    const input = $('gridSearchInput');
+    input.focus({ preventScroll: true });
+    input.select();
+  });
+}
+
+function closeInputListSearch({ restoreFocus = true, render = true } = {}) {
+  if (!state.inputListSearch.open && !state.inputListSearch.query) return false;
+  const returnFocus = state.inputListSearchReturnFocus;
+  state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.CLOSE });
+  state.inputListSearchReturnFocus = null;
+  if (render) renderRows({ restoreFocus: false });
+  else renderInputListSearch();
+  if (restoreFocus) window.requestAnimationFrame(() => {
+    const target = inputListSearchFocusTarget(returnFocus);
+    target?.focus({ preventScroll: true });
+  });
+  return true;
+}
+
+function resetInputListSearchForContextChange() {
+  state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.CONTEXT_CHANGE });
+  state.inputListSearchReturnFocus = null;
+  renderInputListSearch();
+}
+
 function currentTableView() {
   return tableViewFor(
     state.tableViewPreferences,
@@ -916,6 +1014,7 @@ function chooseCurrentTableView(view, { focus = true } = {}) {
   if (!inputMappingSession()) return;
   const scroll = $('tableScroll');
   state.tableViewScrollPositions[tableViewScrollKey()] = { top: scroll.scrollTop, left: scroll.scrollLeft };
+  resetInputListSearchForContextChange();
   state.tableViewPreferences = selectTableView(
     state.tableViewPreferences,
     state.draft.activeMode,
@@ -4392,12 +4491,8 @@ async function deleteSelectedGridRows() {
 
 function visibleMappingRows(session = inputMappingSession()) {
   if (!session) return [];
-  const terms = String(state.gridSearch || '').toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return [...(session.workingRows || [])];
-  return (session.workingRows || []).filter(row => {
-    const haystack = (row.cells || []).map(value => String(value ?? '').toLowerCase()).join('|');
-    return terms.every(term => haystack.includes(term));
-  });
+  const visibleIds = new Set(visibleInputListRows(session).map(row => row.rowId));
+  return (session.workingRows || []).filter(row => visibleIds.has(row.rowId));
 }
 
 function renderInputMappingStatus() {
@@ -4463,7 +4558,9 @@ function renderMappingRows() {
     return `<th class="mapping-column-heading" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}"><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(sourceHeader)} 매핑 설정"><strong>${esc(sourceHeader)}</strong><small>${esc(mappingStateText(mapping))}</small></button></th>`;
   }).join('')}`;
   const rows = visibleMappingRows(session);
-  const renderedRows = [...rows, { rowId: MAPPING_DEFAULT_ROW_ID, cells: Array(session.headers.length).fill(''), manual: true, defaultRow: true }];
+  const renderedRows = state.inputListSearch.open
+    ? rows
+    : [...rows, { rowId: MAPPING_DEFAULT_ROW_ID, cells: Array(session.headers.length).fill(''), manual: true, defaultRow: true }];
   $('mappingInputRows').innerHTML = renderedRows.map((row, visibleIndex) => {
     const isDefault = row.rowId === MAPPING_DEFAULT_ROW_ID;
     const sequence = isDefault ? (session.workingRows || []).length + 1 : Math.max(1, (session.workingRows || []).findIndex(item => item.rowId === row.rowId) + 1);
@@ -4480,13 +4577,13 @@ function renderMappingRows() {
   $('mappingTableTotals').innerHTML = `<td></td>${visibleColumns.map((columnIndex, index) => `<td>${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
   const summary = mappingSummary(session);
   $('gridRowCount').textContent = `${(session.workingRows || []).length.toLocaleString('ko-KR')}행`;
-  $('gridSearchCount').hidden = !state.gridSearch;
+  $('gridSearchCount').hidden = !state.inputListSearch.open;
   $('gridSearchCount').textContent = `검색 ${rows.length.toLocaleString('ko-KR')}행`;
   $('matchedCount').textContent = `매핑 ${summary.mapped + summary.recommended}`;
   $('similarCount').textContent = `추천 ${summary.recommended}`;
   $('failedCount').textContent = `미결정 ${summary.undecided}`;
   $('duplicateCount').textContent = `비매핑 ${summary.unmapped}`;
-  $('gridSearchInput').placeholder = '원본 전체 열 검색';
+  renderInputListSearch();
   $('detailColumnsButton').hidden = hidden.size === 0;
   $('detailColumnsButton').textContent = `숨긴 열 ${hidden.size}개 표시`;
   $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
@@ -4715,13 +4812,13 @@ function renderRows({ restoreFocus = true } = {}) {
   applyMappingHeaderLocks(inputMappingSession());
   $('voucherInputTable').hidden = false;
   $('mappingWorktable').hidden = true;
-  $('gridSearchInput').placeholder = '상품명·코드·규격·거래처 검색';
   $('detailColumnsButton').hidden = state.draft.activeMethod !== 'photo';
   renderTableViewSwitch();
   renderInputMappingStatus();
+  renderInputListSearch();
   if (!inputMappingSession()) pruneEmptyWorkRows(modeDraft());
   const rows = modeDraft().rows;
-  const visibleRows = filterVoucherRows(rows, state.gridSearch);
+  const visibleRows = visibleInputListRows();
   const defaultRow = {
     rowId: DEFAULT_INPUT_ROW_ID,
     itemCode: '', itemName: '', secondaryName: '', searchInfo: '', specification: '', boxQuantity: '',
@@ -4730,7 +4827,7 @@ function renderRows({ restoreFocus = true } = {}) {
     memo: '', description: '', noticePrice: '', customValues: {}, duplicatePossible: false,
     matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
   };
-  const renderedRows = [...visibleRows, defaultRow];
+  const renderedRows = state.inputListSearch.open ? visibleRows : [...visibleRows, defaultRow];
   inputRows.innerHTML = renderedRows.map(row => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
     const sequence = isDefault ? rows.length + 1 : Math.max(1, rows.findIndex(item => item.rowId === row.rowId) + 1);
@@ -4793,11 +4890,11 @@ function renderRows({ restoreFocus = true } = {}) {
 
 function updateSummaries() {
   const summary = contract.summarizeRows(modeDraft().rows);
-  const visibleRows = filterVoucherRows(modeDraft().rows, state.gridSearch);
+  const visibleRows = visibleInputListRows();
   const groups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header);
   const groupSummary = summarizeVoucherGroups(groups);
   $('gridRowCount').textContent = `${summary.total.toLocaleString('ko-KR')}행`;
-  $('gridSearchCount').hidden = !state.gridSearch;
+  $('gridSearchCount').hidden = !state.inputListSearch.open;
   $('gridSearchCount').textContent = `검색 ${visibleRows.length.toLocaleString('ko-KR')}행`;
   $('voucherGroupSummary').textContent = state.draft.activeMode === 'estimate' || !modeDraft().rows.length ? '' : groupSummary.label;
   $('matchedCount').textContent = `일치 ${summary.matched.toLocaleString('ko-KR')}`;
@@ -4899,7 +4996,7 @@ function renderMode() {
   $('addRowButton').title = '항상 유지되는 마지막 수기입력 행으로 이동합니다.';
   hydrateHeader();
   renderEstimateHeaderFields();
-  $('gridSearchInput').value = state.gridSearch;
+  renderInputListSearch();
   if (!inputMappingSession() && removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
@@ -4943,6 +5040,7 @@ function setMode(mode) {
   if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
   state.gridPasteUndo = null;
+  resetInputListSearchForContextChange();
   state.draft.activeMode = mode;
   state.voucherActivity = { ...state.voucherActivity, status: 'IDLE', mode: '', sourceMode: mode === 'estimate' ? 'order' : mode, date: '', rows: [], error: null };
   state.inputTemplates = [];
@@ -4955,7 +5053,6 @@ function setMode(mode) {
     state.pendingOcrReview = null;
     state.pendingSourceName = '';
     state.pendingStructuredImport = null;
-    state.gridSearch = '';
     if (mode === 'estimate') {
       state.estimateLibraryKind = 'individual';
       if (estimateCreationActive()) {
@@ -7516,6 +7613,7 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   const hasData = current.rows.length || current.sourceText.trim();
   if (requireConfirmation && hasData && !window.confirm(`${contract.MODES[state.draft.activeMode].label} 입력 내용을 비우고 새로 작성하시겠습니까?`)) return;
   if (hasData) saveDraftNow();
+  resetInputListSearchForContextChange();
   const fallback = contract.createDraft().modes[state.draft.activeMode];
   fallback.header.warehouseId = current.header.warehouseId;
   fallback.header.warehouseCode = current.header.warehouseCode;
@@ -7672,7 +7770,7 @@ async function refreshAllReferencesFromToolbar() {
   const focusId = focused?.id || '';
   const selectionStart = typeof focused?.selectionStart === 'number' ? focused.selectionStart : null;
   const selectionEnd = typeof focused?.selectionEnd === 'number' ? focused.selectionEnd : null;
-  const retainedGridSearch = $('gridSearchInput').value;
+  const retainedInputListSearch = { ...state.inputListSearch };
   state.busy = true;
   setActiveActivity('기준정보 전체 새로고침');
   renderReferenceControls();
@@ -7700,8 +7798,8 @@ async function refreshAllReferencesFromToolbar() {
     });
     state.warehouseCatalog = { warehouses: rowsByDomain.warehouse, aliases: [], revision: result.generation.domains.warehouse.ownerRevision };
     renderWarehouseOptions();
-    $('gridSearchInput').value = retainedGridSearch;
-    state.gridSearch = retainedGridSearch;
+    state.inputListSearch = Object.freeze(retainedInputListSearch);
+    renderInputListSearch();
     renderRows({ restoreFocus: false });
     if (focusId) {
       const target = $(focusId);
@@ -7968,8 +8066,13 @@ photoResizer.addEventListener('keydown', event => {
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
 $('undoGridPasteButton').addEventListener('click', undoGridPaste);
+$('inputListSearchButton').addEventListener('click', openInputListSearch);
+$('inputListSearchCloseButton').addEventListener('click', () => closeInputListSearch());
 $('gridSearchInput').addEventListener('input', event => {
-  state.gridSearch = event.target.value;
+  state.inputListSearch = reduceInputListSearchState(state.inputListSearch, {
+    type: INPUT_LIST_SEARCH_ACTION.QUERY,
+    query: event.target.value
+  });
   renderRows({ restoreFocus: false });
 });
 $('addRowButton').addEventListener('click', () => {
@@ -8170,6 +8273,26 @@ relatedPanelResizer.addEventListener('keydown', event => {
   applyRelatedPanelWidth(Number(state.draft.ui.relatedPaneWidth || 260) + (event.key === 'ArrowLeft' ? step : -step));
   scheduleSave();
 });
+
+function handleInputListSearchShortcut(event) {
+  if (event.isComposing) return;
+  if (event.key === 'F3') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (document.querySelector('dialog[open]')) {
+      toast('열려 있는 창을 닫은 뒤 입력목록 검색을 사용할 수 있습니다.', 'warn');
+      return;
+    }
+    openInputListSearch();
+    return;
+  }
+  if (event.key !== 'Escape' || !state.inputListSearch.open || document.querySelector('dialog[open]')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeInputListSearch();
+}
+
+document.addEventListener('keydown', handleInputListSearchShortcut, true);
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
   event.preventDefault();

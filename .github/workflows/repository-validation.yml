@@ -52,6 +52,8 @@ jobs:
           node scripts/test-smartinput-input-template-browser-e2e.mjs
           node scripts/test-smartinput-structured-sheet-parser.mjs
           node scripts/test-smartinput-multivoucher-stage1.mjs
+          node scripts/test-smartinput-input-list-search.mjs
+          node scripts/test-smartinput-input-list-search-browser-e2e.mjs
           node scripts/test-smartinput-ocr.mjs
           node scripts/test-smartinput-reference-data-ux.mjs
           node scripts/test-smartinput-official-v2-baseline.mjs
