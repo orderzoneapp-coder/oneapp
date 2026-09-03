@@ -117,9 +117,24 @@
 
 운영 ORDER Q, OrderOps, DataOps, NEXUS 공통 UI, manifest와 내비게이션 파일은 변경하지 않았다.
 
+구현 커밋 `1b922e2a56fea60b43c778799ee9fdc694ae7ecf`의 diff는 5 files changed, 1,981 insertions이다. 기존 파일 수정은 workflow의 신규 테스트 호출 5줄뿐이며 나머지는 archive 앱·테스트 2개·본 보고서 신규 파일이다.
+
+### CI 대기와 판단
+
+PR #500의 `Validate repository contracts` job은 2026-09-03 17:43 KST 생성 후 약 5분간 `ubuntu-latest` runner가 할당되지 않은 queued 상태였다. Actions 조회에서 같은 run의 `Validate Phase 6B approved-base UI`는 먼저 통과했고, 대기 job은 `runner_id/name=null`이며 실패·취소가 아니었다. 동일 job을 재실행하거나 다른 run을 취소하면 검증 증적과 다른 작업을 훼손할 수 있어 실행 중인 하나를 그대로 기다렸다. 17:48 KST runner가 배정됐고 1분 43초 동안 신규 OrderQ Lab 단계와 저장소 전체 단계를 포함한 모든 step이 통과했다. Actions run은 `33734878396`, 필수 job은 `100582990630`이다.
+
 ## 배포·운영 확인
 
-목표 운영 URL은 `https://oneapp.orderz.co.kr/archive/OrderQ_Lab.html`이다. 후속 단계에서 commit, PR, CI, merge, Pages 배포 SHA와 실제 URL 응답·화면을 기록한다.
+- 구현 커밋: `1b922e2a56fea60b43c778799ee9fdc694ae7ecf`
+- 구현 PR: `https://github.com/orderzoneapp-coder/oneapp/pull/500`
+- CI: Actions run `33734878396`, 두 job 모두 success
+- 병합 시각: 2026-09-03 17:50:19 KST
+- main 병합 SHA: `85c746471bb65b4b402616056f040a96160c9ce8`
+- GitHub Pages build: `1191654809`, commit `85c746471bb65b4b402616056f040a96160c9ce8`, status `built` (17:51:01 KST)
+- 운영 URL: `https://oneapp.orderz.co.kr/archive/OrderQ_Lab.html`
+- 운영 브라우저 확인: title `ORDER Q LAB · 주문·출고 독립 실험실`, 표시 버전 `EXCEL-ONLY STANDALONE · v1.0`, 준비 메시지 정상, console error/warning 0건
+
+archive lifecycle 원칙에 따라 운영 URL은 직접 진입점이며 manifest·NEXUS 메뉴에는 등록하지 않았다.
 
 ## 잔여 위험·rollback·별도 개선 제안
 
@@ -131,7 +146,7 @@
 
 ### rollback
 
-배포 변경의 rollback은 본 작업 PR을 `git revert`하여 `archive/OrderQ_Lab.html`, 신규 테스트·workflow 호출·보고서를 제거하는 것이다. Lab은 manifest와 운영 앱 데이터에 연결되지 않으므로 기존 ORDER Q/OrderOps/DataOps 데이터 rollback은 필요하지 않다. 이미 사용자가 내려받은 Excel/JSON은 브라우저 밖의 별도 파일이므로 자동 삭제하지 않는다.
+배포 변경의 rollback은 main에서 `git revert -m 1 85c746471bb65b4b402616056f040a96160c9ce8` PR을 만들어 `archive/OrderQ_Lab.html`, 신규 테스트·workflow 호출·보고서를 제거하는 것이다. Lab은 manifest와 운영 앱 데이터에 연결되지 않으므로 기존 ORDER Q/OrderOps/DataOps 데이터 rollback은 필요하지 않다. 이미 사용자가 내려받은 Excel/JSON은 브라우저 밖의 별도 파일이므로 자동 삭제하지 않는다.
 
 ### 별도 개선 제안(이번 범위 미적용)
 
