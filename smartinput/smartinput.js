@@ -33,7 +33,7 @@ import {
   setColumnDecision,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.1';
+} from './input-template-mapper.js?v=0.2.2';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -119,6 +119,15 @@ import {
   sortSettingsFields
 } from './settings-input-order.js?v=0.1.0';
 import { hasMeaningfulSourceValue } from './source-row-values.js?v=0.1.0';
+import {
+  TABLE_VIEW_MODE,
+  createTableViewPreferences,
+  inputViewColumns,
+  resetTableViewForSource,
+  selectTableView,
+  sourceViewColumns,
+  tableViewFor
+} from './table-view-state.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -196,6 +205,8 @@ const state = {
   pendingSourceName: '',
   pendingStructuredImport: null,
   gridSearch: '',
+  tableViewPreferences: createTableViewPreferences(Object.keys(contract.MODES)),
+  tableViewScrollPositions: {},
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
   selectedRowIds: new Set(),
@@ -845,6 +856,74 @@ function inputMappingSession(current = modeDraft()) {
     : null;
 }
 
+function currentTableView() {
+  return tableViewFor(
+    state.tableViewPreferences,
+    state.draft.activeMode,
+    Boolean(inputMappingSession())
+  );
+}
+
+function sourceTableViewActive() {
+  return Boolean(inputMappingSession()) && currentTableView() === TABLE_VIEW_MODE.SOURCE;
+}
+
+function resetCurrentTableViewForSource(mode = state.draft.activeMode) {
+  state.tableViewPreferences = resetTableViewForSource(state.tableViewPreferences, mode);
+}
+
+function tableViewScrollKey(view = currentTableView()) {
+  return `${state.draft.activeMode}:${view}`;
+}
+
+function currentTableScrollPosition() {
+  if (!inputMappingSession()) {
+    return { top: Number(modeUi().scrollTop || 0), left: Number(modeUi().scrollLeft || 0) };
+  }
+  return state.tableViewScrollPositions[tableViewScrollKey()] || { top: 0, left: 0 };
+}
+
+function restoreCurrentTableScroll() {
+  const position = currentTableScrollPosition();
+  window.requestAnimationFrame(() => {
+    $('tableScroll').scrollTop = position.top;
+    $('tableScroll').scrollLeft = position.left;
+  });
+}
+
+function renderTableViewSwitch() {
+  const control = $('tableViewSwitch');
+  const session = inputMappingSession();
+  control.hidden = !session;
+  if (!session) return;
+  const activeView = currentTableView();
+  control.querySelectorAll('[data-table-view]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.tableView === activeView));
+  });
+  $('tableViewHint').textContent = activeView === TABLE_VIEW_MODE.SOURCE
+    ? '원본 열 배치 · 작업본 편집(증적 유지)'
+    : '환경설정 열 배치 · 작업본 편집';
+  $('tableScroll').dataset.tableView = activeView;
+}
+
+function chooseCurrentTableView(view, { focus = true } = {}) {
+  if (!inputMappingSession()) return;
+  const scroll = $('tableScroll');
+  state.tableViewScrollPositions[tableViewScrollKey()] = { top: scroll.scrollTop, left: scroll.scrollLeft };
+  state.tableViewPreferences = selectTableView(
+    state.tableViewPreferences,
+    state.draft.activeMode,
+    view,
+    { hasSource: true }
+  );
+  renderRows({ restoreFocus: false });
+  if (focus) window.requestAnimationFrame(() => controlTableViewButton(view)?.focus());
+}
+
+function controlTableViewButton(view) {
+  return $('tableViewSwitch')?.querySelector(`[data-table-view="${view}"]`) || null;
+}
+
 function inputMappingTargets() {
   const headerProjection = {
     customer: 'rowCustomerName',
@@ -917,6 +996,20 @@ function markMappedFieldEdited(row, projectionFieldId, displayValue) {
       }
     }
   };
+}
+
+function syncInputViewCellToMapping(rowId, projectionFieldId, displayValue) {
+  const current = modeDraft();
+  let session = inputMappingSession(current);
+  if (!session || currentTableView() !== TABLE_VIEW_MODE.INPUT) return;
+  const target = mappingTargetByProjection(projectionFieldId);
+  const mapping = target && session.mappings.find(item => item.targetFieldId === target.id
+    && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state));
+  if (!mapping) return;
+  if (!session.workingRows.some(row => row.rowId === rowId)) {
+    session = addManualRow(session, Array(session.headers.length).fill(''), rowId);
+  }
+  current.inputMapping = updateWorkingCell(session, rowId, mapping.columnIndex, displayValue);
 }
 
 function inputMappingTemplateReady(session = inputMappingSession()) {
@@ -1386,7 +1479,7 @@ function applyFormLayout() {
   document.querySelectorAll('[data-header-field]').forEach(element => {
     element.hidden = !headerFields.has(element.dataset.headerField);
   });
-  const voucherColumns = new Set(voucherColumnsForMode());
+  const voucherColumns = new Set(inputViewColumns(voucherColumnsForMode(), layoutDefinitions('voucher')).map(column => column.id));
   const photoActive = modeDraft().activeMethod === 'photo' && Boolean(currentSourceImage()?.dataUrl);
   const photoBasicColumns = new Set(['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'supplyAmount']
     .filter(fieldId => fieldId === 'itemCode' || voucherColumns.has(fieldId)));
@@ -4012,6 +4105,7 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
   catalogDraft.header.customerName = customerName(linkedCustomer) || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record));
   catalogDraft.header.customerMappingSource = 'CATALOG';
   state.draft.modes.estimate = catalogDraft;
+  if (inputMappingSession(catalogDraft)) resetCurrentTableViewForSource('estimate');
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   if (!preserveSelection) state.noticeEstimateIds = [];
@@ -4202,12 +4296,12 @@ function syncRowSelectionControls() {
   selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
   selectAll.disabled = !rowIds.length;
   $('deleteSelectedRows').disabled = !selectedCount;
-  $('bulkUnitPriceInput').disabled = Boolean(inputMappingSession());
-  $('applyBulkUnitPriceButton').disabled = !selectedCount || Boolean(inputMappingSession());
+  $('bulkUnitPriceInput').disabled = sourceTableViewActive();
+  $('applyBulkUnitPriceButton').disabled = !selectedCount || sourceTableViewActive();
 }
 
 function applySelectedRowsUnitPrice() {
-  if (inputMappingSession()) return toast('입력 양식을 저장한 뒤 전표 행에서 단가를 적용하세요.', 'error');
+  if (sourceTableViewActive()) return toast('입력형으로 전환한 뒤 선택 단가를 적용하세요.', 'error');
   if (!state.selectedRowIds.size) return toast('단가를 적용할 행을 선택하세요.', 'error');
   try {
     invalidateGridPasteUndo();
@@ -4216,6 +4310,13 @@ function applySelectedRowsUnitPrice() {
       actor: resolveSmartInputActor()
     });
     modeDraft().rows = result.rows.map(row => contract.normalizeRow(row));
+    modeDraft().rows
+      .filter(row => state.selectedRowIds.has(row.rowId))
+      .forEach(row => syncInputViewCellToMapping(
+        row.rowId,
+        'unitPrice',
+        rowFieldDisplayValue(row, 'unitPrice', row.sourceUnitPrice ?? row.unitPrice ?? '')
+      ));
     renderRows({ restoreFocus: false });
     saveDraftNow();
     toast(`선택한 ${result.affectedCount.toLocaleString('ko-KR')}행에 단가를 적용했습니다.`, 'success');
@@ -4321,7 +4422,7 @@ function renderMappingRows() {
   const table = $('mappingWorktable');
   table.hidden = false;
   const hidden = new Set(session.hiddenColumns || []);
-  const visibleColumns = session.headers.map((_, index) => index).filter(index => !hidden.has(index));
+  const visibleColumns = sourceViewColumns(session).map(column => column.columnIndex).filter(index => !hidden.has(index));
   const tableWidth = 58 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
   table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
   $('mappingTableColumns').innerHTML = `<col style="width:58px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
@@ -4362,10 +4463,12 @@ function renderMappingRows() {
   $('applyBulkUnitPriceButton').disabled = true;
   $('selectAllRows').checked = false;
   applyMappingHeaderLocks(session);
+  renderTableViewSwitch();
   renderInputMappingStatus();
   renderSourceSurface();
   renderInlineValidation();
   renderVoucherContext(contract.summarizeRows(modeDraft().rows));
+  restoreCurrentTableScroll();
   return true;
 }
 
@@ -4544,6 +4647,7 @@ function useClipboardTableAsSource(rawText, { sourceName = '클립보드 자료'
     companyId: state.companyId,
     voucherMode: state.draft.activeMode
   }));
+  resetCurrentTableViewForSource(modeId);
   if (!['READY', 'EMPTY'].includes(state.inputTemplatesStatus)) current.inputMapping.status = MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR;
   state.pendingGridPasteText = '';
   state.selectedRowIds.clear();
@@ -4576,14 +4680,15 @@ function deleteSelectedMappingRows() {
 }
 
 function renderRows({ restoreFocus = true } = {}) {
-  if (renderMappingRows()) return;
-  applyMappingHeaderLocks(null);
+  if (sourceTableViewActive() && renderMappingRows()) return;
+  applyMappingHeaderLocks(inputMappingSession());
   $('voucherInputTable').hidden = false;
   $('mappingWorktable').hidden = true;
   $('gridSearchInput').placeholder = '상품명·코드·규격·거래처 검색';
   $('detailColumnsButton').hidden = state.draft.activeMethod !== 'photo';
+  renderTableViewSwitch();
   renderInputMappingStatus();
-  pruneEmptyWorkRows(modeDraft());
+  if (!inputMappingSession()) pruneEmptyWorkRows(modeDraft());
   const rows = modeDraft().rows;
   const visibleRows = filterVoucherRows(rows, state.gridSearch);
   const defaultRow = {
@@ -4644,8 +4749,9 @@ function renderRows({ restoreFocus = true } = {}) {
     }
   }
   window.requestAnimationFrame(() => {
-    $('tableScroll').scrollTop = Number(modeUi().scrollTop || 0);
-    $('tableScroll').scrollLeft = Number(modeUi().scrollLeft || 0);
+    const position = currentTableScrollPosition();
+    $('tableScroll').scrollTop = position.top;
+    $('tableScroll').scrollLeft = position.left;
     if (!restoreFocus) return;
     const active = modeUi().activeCellId;
     if (!active) return;
@@ -5118,6 +5224,11 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
         if (cell.fieldId === 'itemCode' || cell.fieldId === 'itemName') identityRows.add(rowIndex);
       });
       current.rows[rowIndex] = contract.normalizeRow(row, batch.batchId);
+      pasteRow.cells.forEach(cell => {
+        if (hasEnteredValue(cell.value)) {
+          syncInputViewCellToMapping(current.rows[rowIndex].rowId, cell.fieldId, cell.value);
+        }
+      });
     });
     identityRows.forEach(rowIndex => {
       current.rows[rowIndex] = matchGridPasteRow(current.rows[rowIndex]);
@@ -5599,6 +5710,7 @@ async function handleFile(file) {
       mapping.purchaseMetaRows = purchaseMetaRows;
       mapping.salesMetaRows = salesMetaRows;
       current.inputMapping = mapping;
+      resetCurrentTableViewForSource(modeId);
       void saveMappingSessionV2(mapping).catch(() => {});
       state.pendingSourceName = `${file.name} · ${selected.sheetName}`;
       state.pendingGridPasteText = '';
@@ -8026,6 +8138,19 @@ document.addEventListener('keydown', event => {
   cancelEstimateCreation();
 });
 $('resetDraftButton').addEventListener('click', () => resetCurrentMode(false));
+$('tableViewSwitch').addEventListener('click', event => {
+  const button = event.target.closest('[data-table-view]');
+  if (!button || button.getAttribute('aria-pressed') === 'true') return;
+  chooseCurrentTableView(button.dataset.tableView);
+});
+$('tableViewSwitch').addEventListener('keydown', event => {
+  const button = event.target.closest('[data-table-view]');
+  if (!button || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const view = ['ArrowLeft', 'Home'].includes(event.key) ? TABLE_VIEW_MODE.SOURCE : TABLE_VIEW_MODE.INPUT;
+  if (currentTableView() === view) controlTableViewButton(view)?.focus();
+  else chooseCurrentTableView(view);
+});
 
 const voucherTableHead = document.querySelector('#tableScroll thead');
 voucherTableHead.addEventListener('pointerdown', beginColumnResize);
@@ -8062,6 +8187,7 @@ inputRows.addEventListener('input', event => {
         edited: true
       };
     }
+    syncInputViewCellToMapping(row.rowId, customInput.dataset.customRowField, customInput.value);
     if (rowHasLinkedSource(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
     scheduleSave();
     return;
@@ -8093,6 +8219,7 @@ inputRows.addEventListener('input', event => {
     if (status) status.textContent = rowStatusText('SIMILAR');
   }
   modeDraft().rows[index] = row;
+  syncInputViewCellToMapping(row.rowId, field, input.value);
   if (field === 'quantity' || field === 'unitPrice') {
     const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
     const amountInput = tr.querySelector('[data-supply-amount]');
@@ -8276,6 +8403,13 @@ if (appBarResizeObserver) {
 }
 
 $('tableScroll').addEventListener('scroll', event => {
+  if (inputMappingSession()) {
+    state.tableViewScrollPositions[tableViewScrollKey()] = {
+      top: event.currentTarget.scrollTop,
+      left: event.currentTarget.scrollLeft
+    };
+    return;
+  }
   modeUi().scrollTop = event.currentTarget.scrollTop;
   modeUi().scrollLeft = event.currentTarget.scrollLeft;
 }, { passive: true });

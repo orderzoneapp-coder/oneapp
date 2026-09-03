@@ -351,12 +351,12 @@ export function updateWorkingCell(session, rowId, columnIndex, value) {
   };
 }
 
-export function addManualRow(session, values = []) {
+export function addManualRow(session, values = [], rowId = '') {
   if (!session) throw new Error('MAPPING_SESSION_REQUIRED');
   const manualRows = [
     ...(session.manualRows || []).map(row => ({ ...row, cells: [...(row.cells || [])] })),
     {
-      rowId: `manual-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      rowId: rowId || `manual-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       cells: Array.from({ length: session.headers.length }, (_, index) => cellText(values[index]))
     }
   ];

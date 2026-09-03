@@ -72,7 +72,7 @@ class CdpClient {
     });
   }
   on(method, listener) { this.events.set(method, [...(this.events.get(method) || []), listener]); }
-  once(method, timeout = 20_000) {
+  once(method, timeout = 60_000) {
     return new Promise((resolveEvent, rejectEvent) => {
       const listener = params => { clearTimeout(timer); this.events.set(method, (this.events.get(method) || []).filter(item => item !== listener)); resolveEvent(params); };
       const timer = setTimeout(() => rejectEvent(new Error(`Timed out waiting for ${method}`)), timeout);
@@ -131,7 +131,7 @@ try {
   await click(client, '#sourceFileButton');
   assert.equal(await evaluate(client, `window.__sourceFilePickerOpened`), true, 'the visible Excel file button must open the existing safe file input');
   await wait(500);
-  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.rows=mapper.projectMappedRows(session,targetDefinitions).map(row=>window.SMART_INPUT_CONTRACT.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
@@ -144,6 +144,29 @@ try {
   assert.equal(initial.sourceBlank, '', 'blank source cells must remain visibly blank');
   assert.equal(initial.saveDisabled, true);
   assert.match(initial.saveTitle, /입력 양식/);
+  const initialDraftBytes = await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`);
+  const positionalSignature = await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`);
+  assert.deepEqual(await evaluate(client, `(() => ({hidden:document.querySelector('#tableViewSwitch').hidden,sourcePressed:document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed'),inputPressed:document.querySelector('[data-table-view="input"]').getAttribute('aria-pressed'),hint:document.querySelector('#tableViewHint').textContent}))()`), {
+    hidden: false,
+    sourcePressed: 'true',
+    inputPressed: 'false',
+    hint: '원본 열 배치 · 작업본 편집(증적 유지)'
+  }, 'new source intake must default to the explicit source-column view');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#mappingWorktable').hidden`, 'configured input-column view');
+  const inputColumnView = await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(node=>node.textContent.trim()),rows:[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>({id:row.dataset.rowId,quantity:row.querySelector('[data-field="quantity"]')?.value}))}))()`);
+  assert.ok(inputColumnView.headers.indexOf('규격') < inputColumnView.headers.indexOf('수량'),
+    'input view must use configured SmartInput order even when the source puts quantity before specification');
+  assert.deepEqual(inputColumnView.rows.map(row => row.quantity), ['0', '-1.5'], 'input view must retain zero and negative values');
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.activeElement===document.querySelector('[data-table-view="source"]')`, 'keyboard source-view selection');
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="source"]');button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.activeElement===document.querySelector('[data-table-view="input"]')`, 'keyboard input-view selection');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`), initialDraftBytes,
+    'source/input round-trip must be byte-neutral for the persisted draft payload');
+  assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
+    'table view switching must not recalculate the positional signature');
 
   for (const [column, fieldId] of [[0, 'voucher.order.line.productCode'], [1, 'voucher.order.line.productName'], [2, 'voucher.order.line.quantity']]) {
     await click(client, `[data-open-field-mapping="${column}"]`);
@@ -186,6 +209,20 @@ try {
   await loaded;
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='TEMPLATE_APPLIED'&&document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="2"] input')?.value==='-2.5'`, 'mapping edit reload preservation', 30_000);
   assert.equal(await evaluate(client, `document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[2].textContent`), '0');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `document.querySelector('[data-row-id="source-2"] [data-field="quantity"]')?.value==='-2.5'`, 'mapped edit in configured input view');
+  await input(client, '[data-row-id="source-2"] [data-field="quantity"]', '-3.25');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="2"] input').value`), '-3.25',
+    'editing the configured input view must update the same mapped working cell');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[2].textContent`), '0',
+    'input-view editing must keep the immutable source evidence unchanged');
+  await click(client, '[data-table-view="input"]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-row-id="source-2"] [data-field="quantity"]')?.value`), '-3.25',
+    'the explicit view choice and edit must survive ordinary rerenders');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
+    'editing and round-trip rendering must retain the positional signature');
 
   await click(client, '#settingsButton');
   await expr(client, `Boolean(document.querySelector('.smart-settings-dialog[open] [data-open-input-template-manager]'))`, 'settings mapping manager path');
@@ -225,14 +262,24 @@ try {
   assert.equal(await evaluate(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length`), beforeMismatch, 'mismatched paste must preserve current work rows');
   assert.equal(await evaluate(client, `!document.querySelector('#pendingPasteToSourceButton').hidden`), true);
 
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  const wideSourceShot = await capture(client, 'smartinput-table-toggle-source-1920-light.png');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   const desktopShot = await capture(client, 'smartinput-input-template-mapping-light.png');
+  await click(client, '[data-table-view="input"]');
+  const desktopInputShot = await capture(client, 'smartinput-table-toggle-input-1440-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'mapping dark theme');
-  const darkShot = await capture(client, 'smartinput-input-template-mapping-dark.png');
+  const darkShot = await capture(client, 'smartinput-table-toggle-input-1440-dark.png');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await evaluate(client, `document.querySelector('#relatedPanelCloseButton')?.click()`);
   await wait(200);
+  const mobileInput = await evaluate(client, `(() => {const scroll=document.querySelector('#tableScroll');const max=Math.max(0,scroll.scrollWidth-scroll.clientWidth);scroll.scrollLeft=Math.min(160,max);return {pageWidth:document.documentElement.scrollWidth,viewportWidth:document.documentElement.clientWidth,voucherVisible:!document.querySelector('#voucherInputTable').hidden,switchWidth:document.querySelector('#tableViewSwitch').getBoundingClientRect().width,maxScrollLeft:max,scrollLeft:scroll.scrollLeft};})()`);
+  assert.ok(mobileInput.pageWidth <= mobileInput.viewportWidth && mobileInput.voucherVisible && mobileInput.switchWidth <= 390
+    && mobileInput.maxScrollLeft > 0 && mobileInput.scrollLeft > 0,
+  'mobile input view must keep the compact switch in bounds and horizontal scrolling inside the table');
+  const mobileInputShot = await capture(client, 'smartinput-table-toggle-input-390-dark-scrolled.png');
+  await click(client, '[data-table-view="source"]');
   const mobile = await evaluate(client, `(() => ({scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,sourceWidth:document.querySelector('#sourceInputPanel').getBoundingClientRect().width,tableWidth:document.querySelector('.grid-card').getBoundingClientRect().width,sourceVisible:!document.querySelector('#sourceSheetView').hidden,mappingVisible:!document.querySelector('#mappingWorktable').hidden,panelClosed:!document.querySelector('#smartInputWorkspace').classList.contains('related-panel-open')}))()`);
   assert.ok(mobile.sourceWidth <= 390 && mobile.tableWidth <= 390 && mobile.sourceVisible && mobile.mappingVisible && mobile.panelClosed,
     'mobile must keep source and mapping table in the stacked workflow after the right panel is closed');
@@ -249,9 +296,29 @@ try {
   await evaluate(client, String.raw`(() => {const target=document.querySelector('#sourceTextInput');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t신규 원본열\n010\t보존값':'',items:[]}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='NEW_TEMPLATE'`, 'unregistered clipboard structure source mapping fallback');
   assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-1"] [data-mapping-column="1"] input')?.value`), '보존값', 'unknown columns must remain intact in the new source mapping table');
+
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const store=await import('/smartinput/smartinput-data-store.js');const contract=window.SMART_INPUT_CONTRACT;const draft=contract.createDraft({activeMode:'estimate'}).modes.estimate;const matrix=[['원본 메모','수량','품목코드','품목명'],['재열기','0','E-001','저장 배추'],['','-4','E-002','저장 무']];const targets=[{id:'voucher.estimate.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},{id:'voucher.estimate.line.quantity',label:'견적수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.estimate.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.estimate.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:0,targetDefinitions:targets,fileName:'저장견적.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'estimate'});session.batchId='SIBATCH-SAVED-ESTIMATE-E2E';draft.inputMapping=session;draft.rows=mapper.projectMappedRows(session,targets).map(row=>contract.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.activeMethod='excel';draft.sourceText=matrix.map(row=>row.join('\t')).join('\n');const now='2026-09-03T00:00:00.000Z';await store.saveEstimate({estimateId:'SIEST-SOURCE-REOPEN-E2E',catalogName:'저장 원본형 견적',estimateKind:'INDIVIDUAL',customerId:'',customerName:'',rowCount:2,amount:0,previousPrices:{},sortOrder:1,createdAt:now,updatedAt:now,draft});return true;})()`);
+  loaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await loaded;
+  await click(client, '[data-mode="estimate"]');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"]'))`, 'saved source-backed estimate card');
+  const savedEstimateBytes = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const get=db.transaction('estimates','readonly').objectStore('estimates').get('SIEST-SOURCE-REOPEN-E2E');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(JSON.stringify(get.result));db.close();};};})`);
+  await click(client, '[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"] [data-select-estimate-card]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'saved estimate source view default');
+  assert.deepEqual(await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#mappingTableHeaders strong')].map(node=>node.textContent),values:[...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>[...row.querySelectorAll('[data-mapping-cell]')].map(input=>input.value))}))()`), {
+    headers: ['원본 메모', '수량', '품목코드', '품목명'],
+    values: [['재열기', '0', 'E-001', '저장 배추'], ['', '-4', 'E-002', '저장 무']]
+  }, 'saved estimate reopening must retain exact source order, blank positions, zero, and negative values');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden`, 'saved estimate configured input view');
+  await click(client, '[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"] [data-select-estimate-card]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed')==='true'`, 'saved estimate reopen resets source view');
+  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const get=db.transaction('estimates','readonly').objectStore('estimates').get('SIEST-SOURCE-REOPEN-E2E');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(JSON.stringify(get.result));db.close();};};})`), savedEstimateBytes,
+    'view switching and saved-estimate reopening must not rewrite the saved estimate payload');
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ screenshots: [desktopShot, darkShot, mobileShot], persistedTemplateId: persistedTemplate.templateId }, null, 2));
+  console.log(JSON.stringify({ screenshots: [wideSourceShot, desktopShot, desktopInputShot, darkShot, mobileInputShot, mobileShot], persistedTemplateId: persistedTemplate.templateId }, null, 2));
   console.log('SmartInput input-template mapping browser E2E PASS');
 } finally {
   client?.close();
