@@ -18,7 +18,7 @@ for (const page of pages) {
   const html = await readFile(page.file, 'utf8');
 
   assert.match(html, new RegExp(`data-nexus-app-id="${page.appId}"`), `${page.file}: common header app id must remain`);
-  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.4\.1/, `${page.file}: common header runtime must remain`);
+  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.4\.2/, `${page.file}: common header runtime must remain`);
   assert.match(html, /const AppHeader =/, `${page.file}: app work header is required`);
   assert.ok(html.includes(`>${page.title}<`), `${page.file}: app title is required`);
   assert.match(html, /min-h-\[56px\]/, `${page.file}: 56px app-header density is required`);

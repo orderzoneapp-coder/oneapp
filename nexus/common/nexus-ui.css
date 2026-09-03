@@ -313,24 +313,36 @@ body.nexus-ui-mounted {
 .nexus-ui-theme__switch {
   position: relative;
   display: inline-flex;
-  flex: 0 0 42px;
+  flex: 0 0 44px;
   align-items: center;
-  width: 42px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--nexus-ui-theme-track-bg);
+  background: transparent;
   color: inherit;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+.nexus-ui-theme__switch::before {
+  position: absolute;
+  top: 8px;
+  left: 1px;
+  width: 42px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--nexus-ui-theme-track-bg);
+  content: "";
   transition: background-color 150ms ease;
 }
 
 .nexus-ui-theme__switch::after {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 12px;
+  left: 5px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -341,6 +353,10 @@ body.nexus-ui-mounted {
 }
 
 .nexus-ui-theme__switch[aria-checked="true"] {
+  background: transparent;
+}
+
+.nexus-ui-theme__switch[aria-checked="true"]::before {
   background: #3776a8;
 }
 
@@ -349,10 +365,18 @@ body.nexus-ui-mounted {
 }
 
 .nexus-ui-theme__switch:hover {
+  background: transparent;
+}
+
+.nexus-ui-theme__switch:hover::before {
   background: var(--nexus-ui-theme-track-hover-bg);
 }
 
 .nexus-ui-theme__switch[aria-checked="true"]:hover {
+  background: transparent;
+}
+
+.nexus-ui-theme__switch[aria-checked="true"]:hover::before {
   background: #416f96;
 }
 
