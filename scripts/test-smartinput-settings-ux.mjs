@@ -141,7 +141,7 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /nexus-ui\.js\?v=1\.4\.2/);
 assert.match(html, /smartinput\.css\?v=0\.9\.3/);
-assert.match(html, /smartinput\.js\?v=0\.11\.17/);
+assert.match(html, /smartinput\.js\?v=0\.11\.18/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);
