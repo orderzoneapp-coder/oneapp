@@ -40,9 +40,9 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.3.4`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.8`;
-  const runtime = `${base}nexus-ui.js?v=1.4.1`;
+  const uiCss = `${base}nexus-ui.css?v=1.3.5`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.9`;
+  const runtime = `${base}nexus-ui.js?v=1.4.2`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -73,6 +73,7 @@ const uiSource = await readFile('nexus/common/nexus-ui.js', 'utf8');
 const uiCss = await readFile('nexus/common/nexus-ui.css', 'utf8');
 const appThemeCss = await readFile('nexus/common/nexus-ui-app-themes.css', 'utf8');
 const smartInputCss = await readFile('smartinput/smartinput.css', 'utf8');
+const dataOpsPage = await readFile('DataOps.html', 'utf8');
 const combinedRuntime = `${initSource}\n${uiSource}`;
 
 for (const forbidden of [
@@ -94,6 +95,9 @@ assert.equal((initSource.match(/localStorage\.setItem/g) || []).length, 1, 'only
 assert.match(uiSource, /dataset\.nexusUiTheme === 'dark' \? 'light' : 'dark'/, 'the header switch must only toggle light/dark');
 assert.match(uiSource, /setAttribute\('role', 'switch'\)/, 'the theme toggle must expose switch semantics');
 assert.match(uiSource, /setAttribute\('aria-checked'/, 'the theme toggle must expose its current state');
+assert.match(uiSource, /toggle\.setAttribute\('aria-label', '다크모드'\)/, 'the theme switch must keep a stable accessible name');
+assert.doesNotMatch(uiSource, /toggle\.setAttribute\('aria-label',\s*dark\s*\?/, 'the theme switch name must not change with state');
+assert.match(uiSource, /toggle\.title = dark \? '일반모드로 전환' : '다크모드로 전환'/, 'the theme switch title must describe the next action');
 assert.match(uiSource, /element\('button', 'nexus-ui-theme__icon', '☼'\)/, 'the light icon must be an interactive button');
 assert.match(uiSource, /element\('button', 'nexus-ui-theme__icon', '☾'\)/, 'the dark icon must be an interactive button');
 assert.match(uiSource, /dataset\.nexusUiThemeSet = 'light'/, 'the light icon must directly apply light mode');
@@ -125,6 +129,8 @@ assert.doesNotMatch(uiSource, /label:\s*'(?:MerchOps|DataOps|Smart Parser|Export
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
 assert.match(uiCss, /\.nexus-ui-theme__icon\s*\{[^}]*width:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s, 'theme icons must expose a 44px touch target');
+assert.match(uiCss, /\.nexus-ui-theme__switch\s*\{[^}]*flex:\s*0\s+0\s+44px[^}]*width:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s, 'the desktop theme switch must expose a 44x44 hit target');
+assert.match(uiCss, /\.nexus-ui-theme__switch::before\s*\{[^}]*width:\s*42px[^}]*height:\s*28px[^}]*background:\s*var\(--nexus-ui-theme-track-bg\)/s, 'the desktop theme switch must retain its 42x28 visual track');
 assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 64px');
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
 assert.match(uiCss, /\.nexus-ui-header\s*\{[^}]*width:\s*100%/s, 'the global header must span the full viewport width');
@@ -161,6 +167,8 @@ assert.match(appThemeCss, /data-nexus-ui-app="orderq-vnext"[^}]*--bg:\s*var\(--n
 assert.match(appThemeCss, /data-nexus-ui-app="customer-master"[^}]*--cm-panel:\s*var\(--nexus-ui-panel-bg\)/s, 'Customer Master must bridge its local light palette to the ivory theme');
 assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*--white:\s*var\(--nexus-ui-panel-bg\)/s, 'OrderOps must bridge its local light palette to the ivory theme');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"/, 'body dark-mode scope is required');
+assert.equal((dataOpsPage.match(/bg-\[\#f8fafc\]/g) || []).length, 3, 'DataOps fixed page wrappers must remain explicitly covered');
+assert.match(appThemeCss, /data-nexus-ui-app="dataops"\] body \.bg-\\\[\\#f8fafc\\\]\s*\{[^}]*background-color:\s*var\(--nexus-ui-page-bg\)\s*!important/s, 'DataOps fixed page wrappers must consume the shared ivory/graphite page token');
 assert.match(appThemeCss, /\.bg-slate-50\\\/50/, 'dark empty-table backgrounds must be mapped');
 assert.match(appThemeCss, /\.bg-indigo-50\\\/50/, 'transparent information surfaces must be mapped');
 assert.match(appThemeCss, /\.disabled\\:bg-slate-200:disabled/, 'disabled Tailwind surfaces must be mapped');

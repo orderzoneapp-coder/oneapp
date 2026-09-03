@@ -98,7 +98,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.4\.1/, `${file}: updated common header runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.4\.2/, `${file}: updated common header runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 

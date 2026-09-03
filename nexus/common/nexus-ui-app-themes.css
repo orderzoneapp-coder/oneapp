@@ -832,6 +832,11 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="history-viewer"] body .row-s
   background-color: var(--nexus-ui-selection-bg) !important;
 }
 
+/* DataOps React wrappers use one fixed Tailwind color in both screen modes. */
+html[data-nexus-ui-app="dataops"] body .bg-\[\#f8fafc\] {
+  background-color: var(--nexus-ui-page-bg) !important;
+}
+
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="dataops"] body #initial-loader {
   background-color: var(--nexus-ui-page-bg) !important;
 }

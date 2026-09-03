@@ -105,6 +105,14 @@ const evaluate = async (client, expression) => {
   return result.result.value;
 };
 const click = (client, selector) => evaluate(client, `(() => { const node=document.querySelector(${JSON.stringify(selector)}); if(!node) throw new Error('Missing ${selector}'); node.click(); return true; })()`);
+const dispatchKey = async (client, key) => {
+  const code = key === 'Enter' ? 'Enter' : 'Space';
+  const virtualKeyCode = key === 'Enter' ? 13 : 32;
+  const text = key === 'Enter' ? '\r' : ' ';
+  const params = { key, code, text, unmodifiedText: text, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', ...params });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', ...params });
+};
 const contrast = (foreground, background) => {
   const channels = (value) => {
     const values = (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
@@ -239,8 +247,133 @@ try {
     'printed EA and 소분 rows must retain the paper-safe red text');
   assert.equal(printMetrics.managerCells[0].background, 'rgb(219, 234, 254)',
     'print-only manager token must preserve the selected pastel without screen-theme dilution');
+
+  await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  const dataOpsConsoleErrors = [];
+  client.on('Runtime.consoleAPICalled', (event) => {
+    if (event.type !== 'error') return;
+    dataOpsConsoleErrors.push(event.args.map((argument) => argument.value ?? argument.description ?? '').join(' '));
+  });
+  const dataOpsLoaded = client.once('Page.loadEventFired');
+  await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/DataOps.html` });
+  await dataOpsLoaded;
+  await waitFor(() => evaluate(client, `document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]').length === 3 && Boolean(document.querySelector('[data-nexus-ui-theme-toggle]'))`), 'DataOps theme surfaces');
+
+  await click(client, '[data-nexus-ui-theme-set="light"]');
+  await wait(100);
+  const lightDataOps = await evaluate(client, `(() => {
+    const toggle=document.querySelector('[data-nexus-ui-theme-toggle]');
+    const headerCell=[...document.querySelectorAll('th')].find((node)=>node.textContent.trim()) || document.querySelector('th');
+    const cellStyle=getComputedStyle(headerCell);
+    return {
+      theme:document.documentElement.dataset.nexusUiTheme,
+      body:getComputedStyle(document.body).backgroundColor,
+      wrappers:[...document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]')].map((node)=>getComputedStyle(node).backgroundColor),
+      headerText:headerCell.textContent.trim(),
+      headerColor:cellStyle.color,
+      headerBackground:cellStyle.backgroundColor,
+      iconPressed:document.querySelector('[data-nexus-ui-theme-set="light"]').getAttribute('aria-pressed'),
+      checked:toggle.getAttribute('aria-checked'),
+      label:toggle.getAttribute('aria-label'),
+      title:toggle.getAttribute('title'),
+    };
+  })()`);
+  assert.equal(lightDataOps.theme, 'light');
+  assert.equal(lightDataOps.body, 'rgb(243, 239, 230)', 'DataOps light body must use the approved ivory page tone');
+  assert.deepEqual(lightDataOps.wrappers, Array(3).fill(lightDataOps.body), 'all DataOps light page wrappers must use the ivory page token');
+  assert.ok(lightDataOps.headerText.length > 0, 'DataOps table header information must remain visible');
+  assert.ok(contrast(lightDataOps.headerColor, lightDataOps.headerBackground) >= 4.5, 'DataOps light table text must remain readable');
+  assert.equal(lightDataOps.iconPressed, 'true', 'the light icon must expose its selected state');
+  assert.equal(lightDataOps.checked, 'false');
+  assert.equal(lightDataOps.label, '다크모드', 'the switch accessible name must remain stable in light mode');
+  assert.equal(lightDataOps.title, '다크모드로 전환', 'the switch title must describe the next light-mode action');
+
+  await click(client, '[data-nexus-ui-theme-set="dark"]');
+  await wait(100);
+  let themeState = await evaluate(client, `({ theme:document.documentElement.dataset.nexusUiTheme, pressed:document.querySelector('[data-nexus-ui-theme-set="dark"]').getAttribute('aria-pressed') })`);
+  assert.deepEqual(themeState, { theme: 'dark', pressed: 'true' }, 'the dark icon must apply dark mode with the correct pressed state');
+  await click(client, '[data-nexus-ui-theme-set="light"]');
+  await click(client, '[data-nexus-ui-theme-toggle]');
+  await wait(100);
+  assert.equal(await evaluate(client, `document.documentElement.dataset.nexusUiTheme`), 'dark', 'mouse activation of the center switch must toggle exactly once');
+  await click(client, '[data-nexus-ui-theme-set="light"]');
+
+  await evaluate(client, `(() => {
+    window.__nexusThemeChangeCount=0;
+    window.addEventListener('nexus-ui:theme-change',()=>{window.__nexusThemeChangeCount+=1;});
+    document.querySelector('[data-nexus-ui-theme-toggle]').focus();
+    return true;
+  })()`);
+  await dispatchKey(client, 'Enter');
+  await wait(100);
+  const afterEnter = await evaluate(client, `({ theme:document.documentElement.dataset.nexusUiTheme, checked:document.querySelector('[data-nexus-ui-theme-toggle]').getAttribute('aria-checked'), events:window.__nexusThemeChangeCount })`);
+  assert.deepEqual(afterEnter, { theme: 'dark', checked: 'true', events: 1 }, 'Enter must toggle the native switch exactly once');
+  await dispatchKey(client, ' ');
+  await wait(100);
+  const afterSpace = await evaluate(client, `({ theme:document.documentElement.dataset.nexusUiTheme, checked:document.querySelector('[data-nexus-ui-theme-toggle]').getAttribute('aria-checked'), events:window.__nexusThemeChangeCount })`);
+  assert.deepEqual(afterSpace, { theme: 'light', checked: 'false', events: 2 }, 'Space must toggle the native switch exactly once');
+
+  await click(client, '[data-nexus-ui-theme-set="dark"]');
+  await wait(100);
+  const darkDataOps = await evaluate(client, `(() => {
+    const toggle=document.querySelector('[data-nexus-ui-theme-toggle]');
+    const rect=toggle.getBoundingClientRect();
+    const track=getComputedStyle(toggle,'::before');
+    const focus=getComputedStyle(toggle);
+    const headerCell=[...document.querySelectorAll('th')].find((node)=>node.textContent.trim()) || document.querySelector('th');
+    const cellStyle=getComputedStyle(headerCell);
+    toggle.focus();
+    return {
+      theme:document.documentElement.dataset.nexusUiTheme,
+      body:getComputedStyle(document.body).backgroundColor,
+      wrappers:[...document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]')].map((node)=>getComputedStyle(node).backgroundColor),
+      width:rect.width,
+      height:rect.height,
+      trackWidth:parseFloat(track.width),
+      trackHeight:parseFloat(track.height),
+      label:toggle.getAttribute('aria-label'),
+      title:toggle.getAttribute('title'),
+      checked:toggle.getAttribute('aria-checked'),
+      outlineStyle:focus.outlineStyle,
+      outlineWidth:parseFloat(focus.outlineWidth),
+      headerColor:cellStyle.color,
+      headerBackground:cellStyle.backgroundColor,
+    };
+  })()`);
+  assert.equal(darkDataOps.body, 'rgb(21, 24, 29)', 'DataOps dark body must use the graphite page tone');
+  assert.deepEqual(darkDataOps.wrappers, Array(3).fill(darkDataOps.body), 'all DataOps dark page wrappers must remove bright side gaps');
+  assert.ok(darkDataOps.width >= 44 && darkDataOps.height >= 44, `theme switch hit target must be at least 44x44, got ${darkDataOps.width}x${darkDataOps.height}`);
+  assert.equal(darkDataOps.trackWidth, 42, 'desktop theme switch visual track width must remain 42px');
+  assert.equal(darkDataOps.trackHeight, 28, 'desktop theme switch visual track height must remain 28px');
+  assert.equal(darkDataOps.label, '다크모드', 'the switch accessible name must remain stable in dark mode');
+  assert.equal(darkDataOps.title, '일반모드로 전환', 'the switch title must describe the next dark-mode action');
+  assert.equal(darkDataOps.checked, 'true');
+  assert.notEqual(darkDataOps.outlineStyle, 'none', 'the focused switch must retain a visible outline');
+  assert.ok(darkDataOps.outlineWidth >= 2, 'the focused switch outline must remain at least 2px');
+  assert.ok(contrast(darkDataOps.headerColor, darkDataOps.headerBackground) >= 4.5, 'DataOps dark table text must remain readable');
+
+  const reloaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await reloaded;
+  await waitFor(() => evaluate(client, `document.documentElement.dataset.nexusUiTheme === 'dark' && document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]').length === 3`), 'persisted DataOps dark mode');
+  assert.equal(await evaluate(client, `document.querySelector('[data-nexus-ui-theme-toggle]').getAttribute('aria-checked')`), 'true', 'dark mode must persist after reload');
+
+  for (const width of [1920, 1440, 390]) {
+    await client.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width === 390 });
+    await wait(80);
+    const layout = await evaluate(client, `(() => {
+      const header=document.querySelector('.nexus-ui-header').getBoundingClientRect();
+      const toggle=document.querySelector('[data-nexus-ui-theme-toggle]').getBoundingClientRect();
+      return { viewport:window.innerWidth, scrollWidth:document.scrollingElement.scrollWidth, headerLeft:header.left, headerWidth:header.width, toggleWidth:toggle.width, toggleHeight:toggle.height };
+    })()`);
+    assert.ok(layout.scrollWidth <= layout.viewport, `DataOps must not add page-level horizontal overflow at ${width}px: ${JSON.stringify(layout)}`);
+    assert.ok(Math.abs(layout.headerLeft) <= 0.5 && Math.abs(layout.headerWidth - layout.viewport) <= 0.5, `common header must span the viewport at ${width}px`);
+    assert.ok(layout.toggleWidth >= 44 && layout.toggleHeight >= 44, `theme switch must retain its hit target at ${width}px`);
+  }
+  assert.deepEqual(dataOpsConsoleErrors, [], `DataOps console errors: ${dataOpsConsoleErrors.join(' | ')}`);
   assert.deepEqual(runtimeErrors, [], `browser runtime errors: ${runtimeErrors.join(' | ')}`);
-  console.log('OrderOps manager color recovery, theme contrast, and print origin browser E2E PASS');
+  console.log('OrderOps theme/print and DataOps page/switch browser E2E PASS');
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) {

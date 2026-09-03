@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.1';
+  const VERSION = '1.4.2';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -51,7 +51,7 @@
     if (!toggle) return;
     const dark = theme === 'dark';
     toggle.setAttribute('aria-checked', String(dark));
-    toggle.setAttribute('aria-label', dark ? '일반모드로 전환' : '다크모드로 전환');
+    toggle.setAttribute('aria-label', '다크모드');
     toggle.title = dark ? '일반모드로 전환' : '다크모드로 전환';
     header.querySelectorAll('[data-nexus-ui-theme-set]').forEach((button) => {
       const active = button.dataset.nexusUiThemeSet === (dark ? 'dark' : 'light');
