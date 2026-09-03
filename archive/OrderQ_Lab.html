@@ -1,0 +1,1391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORDER Q LAB · 주문·출고 독립 실험실</title>
+  <meta name="description" content="주문부터 출고, 대체·소분, 재고수불과 재고실사까지 Excel만으로 검증하는 독립 실행 앱">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b13;
+      --panel: #111827;
+      --panel-2: #182235;
+      --line: #2b3a52;
+      --line-soft: #202d42;
+      --text: #edf4ff;
+      --muted: #91a2bc;
+      --cyan: #17d6cc;
+      --cyan-2: #7ef2eb;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --violet: #a78bfa;
+      --shadow: 0 16px 42px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1180px;
+      background: radial-gradient(circle at 82% 5%, rgba(23, 214, 204, .08), transparent 26%), var(--bg);
+      color: var(--text);
+      font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+      font-size: 13px;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { color: inherit; }
+    .topbar {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 18px;
+      border-bottom: 1px solid #1d2940;
+      background: rgba(5, 9, 17, .94);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      backdrop-filter: blur(16px);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 245px; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid #3b4b65;
+      border-radius: 9px;
+      color: var(--cyan-2);
+      font-weight: 900;
+      letter-spacing: -2px;
+    }
+    .brand strong { font-size: 16px; letter-spacing: .04em; }
+    .brand small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; letter-spacing: .08em; }
+    .top-flow { display: flex; align-items: center; gap: 8px; color: var(--muted); flex: 1; }
+    .flow-step { padding: 7px 12px; border-radius: 999px; border: 1px solid #263650; }
+    .flow-step.active { color: #032522; border-color: var(--cyan); background: var(--cyan); font-weight: 800; }
+    .top-actions { display: flex; gap: 8px; }
+    .btn {
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid #34445e;
+      border-radius: 8px;
+      background: #131d2d;
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--cyan); transform: translateY(-1px); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn.primary { color: #042b27; background: var(--cyan); border-color: var(--cyan); font-weight: 900; }
+    .btn.danger { color: #fecdd3; border-color: #713244; background: #25131a; }
+    .btn.compact { min-height: 28px; padding: 0 9px; font-size: 11px; }
+    main { max-width: 1620px; margin: 0 auto; padding: 16px 18px 28px; }
+    .system-panel {
+      border: 1px solid #2b3c57;
+      border-radius: 16px;
+      background: linear-gradient(145deg, #152136, #111927 72%);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .system-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .system-title { font-weight: 900; font-size: 14px; }
+    .system-message {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 12px;
+      border: 1px solid #235a5c;
+      border-radius: 8px;
+      background: #071616;
+      color: var(--cyan-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #384962; border-radius: 999px; padding: 3px 7px; color: #c7d4e7; font-size: 10px; }
+    .badge.good { color: #a7f3d0; border-color: #246c57; background: #0d2b24; }
+    .badge.warn { color: #fde68a; border-color: #755514; background: #2b220e; }
+    .badge.error { color: #fecdd3; border-color: #79354a; background: #301520; }
+    .file-zone { padding: 14px; }
+    .bundle-drop {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      margin-bottom: 10px;
+      padding: 9px 12px;
+      border: 1px dashed #3b526f;
+      border-radius: 10px;
+      background: rgba(7, 12, 22, .56);
+      color: var(--muted);
+    }
+    .bundle-drop.dragover { border-color: var(--cyan); color: var(--cyan-2); background: rgba(23, 214, 204, .08); }
+    .bundle-drop strong { color: var(--text); }
+    .role-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; }
+    .file-card {
+      position: relative;
+      min-height: 92px;
+      padding: 11px;
+      border: 1px solid #31415a;
+      border-radius: 10px;
+      background: #101827;
+      cursor: pointer;
+    }
+    .file-card:hover, .file-card.dragover { border-color: var(--cyan); background: #12212d; }
+    .file-card.loaded { border-color: #2c7768; background: #10251f; }
+    .file-card.error { border-color: #804052; background: #28151c; }
+    .file-card input { display: none; }
+    .file-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .file-role { font-weight: 900; }
+    .optional { color: var(--muted); font-size: 9px; font-weight: 500; }
+    .file-name { margin-top: 10px; color: #d7e1ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { margin-top: 5px; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-clear { position: absolute; right: 7px; bottom: 7px; display: none; }
+    .file-card.loaded .file-clear, .file-card.error .file-clear { display: inline-flex; }
+    .summary-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; margin-top: 12px; }
+    .summary-card { min-height: 74px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+    .summary-label { color: var(--muted); font-size: 11px; }
+    .summary-value { margin-top: 7px; font-size: 23px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .summary-card.attention .summary-value { color: var(--amber); }
+    .workspace { margin-top: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); overflow: hidden; }
+    .toolbar { display: flex; align-items: center; gap: 7px; min-height: 50px; padding: 8px 11px; border-bottom: 1px solid var(--line); background: #121c2b; }
+    .search { width: 290px; height: 34px; padding: 0 11px; color: var(--text); border: 1px solid #35465f; border-radius: 8px; background: #09111d; outline: none; }
+    .search:focus { border-color: var(--cyan); }
+    .toolbar-spacer { flex: 1; }
+    .selection-note { color: var(--muted); font-size: 11px; }
+    .table-wrap { max-height: 620px; overflow: auto; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding: 10px 8px;
+      color: #b9c8dc;
+      border-bottom: 1px solid #33445d;
+      border-right: 1px solid #26364d;
+      background: #172235;
+      font-size: 11px;
+      text-align: center;
+    }
+    td { padding: 8px; border-bottom: 1px solid #202e43; border-right: 1px solid #202e43; vertical-align: middle; }
+    tbody tr { background: #0f1725; }
+    tbody tr:nth-child(even) { background: #111b2a; }
+    tbody tr:hover { background: #172437; }
+    tbody tr.selected { outline: 1px solid var(--cyan); outline-offset: -1px; background: #12302f; }
+    tbody tr.drop-target { box-shadow: inset 0 0 0 2px var(--cyan); background: #12302f; }
+    .product-cell { cursor: pointer; }
+    .product-name { font-weight: 800; color: #f4f8ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .product-sub { display: flex; gap: 6px; margin-top: 4px; color: var(--muted); font-size: 10px; overflow: hidden; white-space: nowrap; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .num.negative, .variance.bad { color: var(--red); font-weight: 800; }
+    .variance.good { color: var(--green); }
+    .muted { color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; min-height: 26px; align-items: center; }
+    .customer-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 190px;
+      padding: 5px 7px;
+      border: 1px solid #3c5b75;
+      border-radius: 7px;
+      background: #152b40;
+      color: #d9efff;
+      font-size: 10px;
+      cursor: grab;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .customer-chip:active { cursor: grabbing; }
+    .customer-chip.mapped { cursor: default; border-color: #7658a9; background: #271d3c; color: #e9ddff; }
+    .issue-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .empty { padding: 70px 20px; text-align: center; color: var(--muted); }
+    .empty strong { display: block; margin-bottom: 8px; color: #dbe8f8; font-size: 15px; }
+    .history-panel { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+    .history-head { display: flex; justify-content: space-between; align-items: center; padding: 11px 13px; border-bottom: 1px solid var(--line); }
+    .history-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+    .history-item { min-height: 62px; padding: 10px 12px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+    .history-time { color: var(--muted); font-size: 9px; }
+    .history-text { margin-top: 5px; line-height: 1.45; }
+    dialog { width: min(580px, calc(100vw - 40px)); padding: 0; color: var(--text); border: 1px solid #40516b; border-radius: 14px; background: #111a29; box-shadow: 0 25px 90px #000; }
+    dialog::backdrop { background: rgba(0, 0, 0, .72); backdrop-filter: blur(4px); }
+    .modal-head { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .modal-head strong { font-size: 16px; }
+    .modal-body { padding: 16px 18px; }
+    .route-box { display: grid; grid-template-columns: 1fr 34px 1fr; align-items: stretch; gap: 8px; }
+    .route-product { padding: 11px; border: 1px solid #33455f; border-radius: 9px; background: #0b1320; }
+    .route-arrow { display: grid; place-items: center; color: var(--cyan); font-size: 22px; }
+    .route-product small { display: block; color: var(--muted); margin-bottom: 5px; }
+    .route-product b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .route-product span { display: block; margin-top: 5px; color: #aebed3; font-size: 10px; }
+    .admin-rule { margin: 13px 0; padding: 10px 12px; border: 1px solid #69531c; border-radius: 8px; background: #261f0d; color: #fde68a; line-height: 1.5; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+    .field { display: grid; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: #bac8db; font-size: 11px; }
+    .field input, .field textarea { width: 100%; padding: 9px 10px; color: var(--text); border: 1px solid #394b65; border-radius: 8px; background: #08111e; outline: none; }
+    .field input:focus, .field textarea:focus { border-color: var(--cyan); }
+    .field textarea { resize: vertical; min-height: 62px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; }
+    .toast { position: fixed; right: 20px; bottom: 20px; z-index: 100; max-width: 420px; padding: 11px 14px; border: 1px solid #32786c; border-radius: 9px; background: #102b26; color: #c9fff5; box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { border-color: #8a4054; background: #351722; color: #ffd1db; }
+    @media (max-width: 1300px) { .role-grid { grid-template-columns: repeat(3, 1fr); } .summary-grid { grid-template-columns: repeat(3, 1fr); } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">Q</div>
+      <div><strong>ORDER Q LAB</strong><small>EXCEL-ONLY STANDALONE · v1.0</small></div>
+    </div>
+    <nav class="top-flow" aria-label="작업 단계">
+      <span class="flow-step active">파일준비</span><span>›</span>
+      <span class="flow-step">주문·출고</span><span>›</span>
+      <span class="flow-step">대체·소분</span><span>›</span>
+      <span class="flow-step">재고실사</span>
+    </nav>
+    <div class="top-actions">
+      <button class="btn" id="undoButton" disabled>실행취소</button>
+      <button class="btn" id="saveButton">작업 저장</button>
+      <button class="btn primary" id="exportButton">결과 Excel</button>
+      <button class="btn danger" id="resetButton">초기화</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="system-panel">
+      <div class="system-head">
+        <span class="system-title">System.IO</span>
+        <div class="system-message" id="systemMessage">독립 작업공간 준비 완료 · 주문부터 재고실사까지 Excel만 사용합니다.</div>
+        <span class="badge good">운영 연동 없음</span>
+        <span class="badge">원본 불변</span>
+      </div>
+      <div class="file-zone">
+        <div class="bundle-drop" id="bundleDrop" tabindex="0">
+          <strong>전체 파일 자동분류</strong>
+          <span>주문·기초재고·구매·판매·실사재고·상품정보 Excel을 함께 끌어놓으세요. 파일명보다 시트와 정확한 헤더를 우선합니다.</span>
+        </div>
+        <div class="role-grid" id="roleGrid"></div>
+      </div>
+    </section>
+
+    <section class="summary-grid" aria-label="분석 요약">
+      <div class="summary-card"><div class="summary-label">상품</div><div class="summary-value" id="productCount">0</div></div>
+      <div class="summary-card"><div class="summary-label">주문수량</div><div class="summary-value" id="orderTotal">0</div></div>
+      <div class="summary-card"><div class="summary-label">실제 출고수량</div><div class="summary-value" id="outboundTotal">0</div></div>
+      <div class="summary-card attention"><div class="summary-label">미출고수량</div><div class="summary-value" id="unshippedTotal">0</div></div>
+      <div class="summary-card attention"><div class="summary-label">실사차이 상품</div><div class="summary-value" id="varianceCount">0</div></div>
+      <div class="summary-card"><div class="summary-label">대체·소분 작업</div><div class="summary-value" id="substitutionCount">0</div></div>
+    </section>
+
+    <section class="workspace">
+      <div class="toolbar">
+        <input class="search" id="searchInput" placeholder="품목코드 · 품명 · 규격 검색 (F3)">
+        <button class="btn compact" id="issueFilterButton" aria-pressed="false">이슈만</button>
+        <button class="btn compact" id="relationButton" disabled>상품 관계 등록</button>
+        <button class="btn compact" id="clearSelectionButton" disabled>선택 해제</button>
+        <span class="selection-note" id="selectionNote">상품 두 개를 순서대로 선택하면 원상품 → 대체상품 관계만 등록할 수 있습니다.</span>
+        <span class="toolbar-spacer"></span>
+        <span class="badge warn">대체수량 자동계산 금지</span>
+      </div>
+      <div class="table-wrap">
+        <table aria-label="주문 출고 재고 작업표">
+          <colgroup>
+            <col style="width:260px"><col style="width:74px"><col style="width:74px"><col style="width:82px">
+            <col style="width:88px"><col style="width:82px"><col style="width:82px"><col style="width:78px">
+            <col style="width:78px"><col style="width:78px"><col style="width:320px"><col style="width:210px">
+          </colgroup>
+          <thead><tr>
+            <th>상품정보</th><th>주문</th><th>미출고</th><th>기초재고</th><th>구매입고</th><th>실제출고</th>
+            <th>계산잔량</th><th>실사재고</th><th>실사차이</th><th>발주필요</th><th>거래처 출고칩</th><th>이슈·관계</th>
+          </tr></thead>
+          <tbody id="workTableBody"></tbody>
+        </table>
+        <div class="empty" id="emptyState"><strong>Excel 파일을 올려 작업을 시작하세요.</strong>개별 카드 선택 또는 전체 파일 자동분류를 사용할 수 있습니다.</div>
+      </div>
+    </section>
+
+    <section class="history-panel">
+      <div class="history-head"><strong>관리자 작업 이력</strong><span class="muted">원본 행은 수정하지 않고 작업 이벤트만 누적합니다.</span></div>
+      <div class="history-list" id="historyList"><div class="empty">아직 관리자 작업이 없습니다.</div></div>
+    </section>
+  </main>
+
+  <dialog id="substitutionDialog">
+    <form method="dialog" id="substitutionForm">
+      <div class="modal-head"><strong>대체·소분 실제 출고 확정</strong></div>
+      <div class="modal-body">
+        <div class="route-box">
+          <div class="route-product"><small>판매전표·주문 상품</small><b id="sourceProductLabel"></b><span id="sourceProductMeta"></span></div>
+          <div class="route-arrow">→</div>
+          <div class="route-product"><small>실제 재고 차감 상품</small><b id="targetProductLabel"></b><span id="targetProductMeta"></span></div>
+        </div>
+        <div class="admin-rule">규격과 단위는 참고정보입니다. 10kg 박스 → 1kg 상품이라도 실제 차감수량을 10으로 자동 확정하지 않습니다. 로스율과 작업결과를 반영해 관리자가 직접 입력하십시오.</div>
+        <div class="form-grid">
+          <div class="field"><label for="sourceSalesQuantity">원상품에서 전환할 판매수량</label><input id="sourceSalesQuantity" type="number" min="0.0001" step="any" required></div>
+          <div class="field"><label for="actualOutboundQuantity">대체상품 실제 차감수량</label><input id="actualOutboundQuantity" type="number" min="0.0001" step="any" required autocomplete="off"></div>
+          <div class="field full"><label for="substitutionNote">관리자 근거·로스 메모</label><textarea id="substitutionNote" placeholder="예: 손질 후 실중량 기준 9개 차감"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-actions"><button class="btn" type="button" id="cancelSubstitutionButton">취소</button><button class="btn primary" id="confirmSubstitutionButton" value="default">확정</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const VERSION = '1.0.0';
+    const STORAGE_KEY = 'oneapp.orderq.lab.workspace.v1';
+    const MAX_FILE_SIZE = 30 * 1024 * 1024;
+    const ROLE_ORDER = ['orders', 'opening', 'purchases', 'sales', 'stocktake', 'products'];
+    const ROLES = Object.freeze({
+      orders: {
+        label: '주문', optional: false, hint: '주문서·미판매현황', sheetHints: ['주문', '미판매', 'order'], fileHints: ['주문', '미판매'],
+        fields: {
+          date: ['일자', '주문일자', '출고일자', '납품일자'], documentNo: ['일자-no.', '일자no', '주문번호', '전표번호'],
+          customerCode: ['거래처코드', '고객코드'], customer: ['거래처명', '거래처', '고객명', '납품처'], warehouse: ['창고코드', '창고'],
+          code: ['품목코드', '상품코드', '코드'], name: ['품목명', '품명', '상품명'], spec: ['규격'], unit: ['단위', '판매단위'],
+          quantity: ['주문수량', '수량'], unitPrice: ['단가', '판매단가'], note: ['적요', '비고', '전달사항'], group: ['그룹', '분류'], manager: ['담당자', '담당']
+        }, essentials: [['code', 'name'], ['quantity'], ['customer']]
+      },
+      opening: {
+        label: '기초재고', optional: false, hint: '전일 전체재고', sheetHints: ['재고현황', '전체재고', '기초재고'], fileHints: ['전재고', '기초재고', '재고'],
+        fields: {
+          unit: ['단위'], code: ['품목코드', '상품코드', '코드'], name: ['품목명', '품명', '상품명'], spec: ['규격'],
+          quantity: ['재고', '기초수량', '기초재고', '전재고'], recordDate: ['기록', '입고일자'], supplier: ['거래', '구매처', '매입처'],
+          unitPrice: ['구매가', '입고가', '매입단가(원가)', '매입단가'], basic: ['기본', '구분(기본)'], note: ['적요', '비고']
+        }, essentials: [['code', 'name'], ['quantity']]
+      },
+      purchases: {
+        label: '구매', optional: true, hint: '구매현황·매입현황', sheetHints: ['구매', '매입'], fileHints: ['구매', '매입'],
+        fields: {
+          date: ['일자', '구매일자', '매입일자'], documentNo: ['일자-no.', '일자no', '전표번호'], supplierCode: ['거래처코드', '매입처코드'],
+          supplier: ['거래처명', '거래처', '매입처'], warehouse: ['창고코드', '창고'], code: ['품목코드', '상품코드', '코드'],
+          name: ['품목명', '품명', '상품명'], spec: ['규격'], unit: ['단위'], quantity: ['수량', '구매수량', '입고수량'],
+          unitPrice: ['단가', '구매가', '매입단가'], amount: ['합계', '공급가액'], note: ['적요', '비고'], matchSupplier: ['구매처', '원구매처']
+        }, essentials: [['code', 'name'], ['quantity'], ['supplier']]
+      },
+      sales: {
+        label: '판매·출고', optional: true, hint: '판매현황·출고현황', sheetHints: ['판매', '출고'], fileHints: ['판매', '출고'],
+        fields: {
+          date: ['일자', '판매일자', '출고일자'], documentNo: ['일자-no.', '일자no', '전표번호'], warehouse: ['창고코드', '창고'],
+          customerCode: ['거래처코드', '고객코드'], customer: ['거래처명', '거래처', '고객명'], subCustomer: ['no.', '배송처'],
+          code: ['품목코드', '상품코드', '코드'], name: ['품목명', '품명', '상품명'], spec: ['규격'], unit: ['단위', '판매단위'],
+          quantity: ['수량', '판매수량', '출고수량'], unitPrice: ['단가', '판매단가'], amount: ['공급가', '합계'],
+          note: ['적요', '비고'], instruction: ['출고지시', '전달사항'], supplier: ['구매처', '매입처'], purchasePrice: ['구매', '구매단가']
+        }, essentials: [['code', 'name'], ['quantity'], ['customer']]
+      },
+      stocktake: {
+        label: '실사재고', optional: true, hint: '마감·재고변동·실사', sheetHints: ['실사', '재고변동', '재고수불'], fileHints: ['실사', '당일재고', '재고'],
+        fields: {
+          unit: ['단위'], location: ['적재위치'], basic: ['구분(기본)', '기본'], supplier: ['구매처', '거래'],
+          code: ['품목코드', '상품코드', '코드'], name: ['품목명', '품명', '상품명'], spec: ['규격'], quantity: ['실사수량', '기말실사(이월수량)', '재고'],
+          opening: ['전재고', '기초수량'], inbound: ['입고', '입고수량'], outbound: ['출고', '출고량'], balance: ['잔량'], unitPrice: ['입고가', '구매가']
+        }, essentials: [['code', 'name'], ['quantity']]
+      },
+      products: {
+        label: '상품정보', optional: true, hint: '품목마스터·규격·단위', sheetHints: ['상품', '품목', '마스터'], fileHints: ['상품', '품목', '마스터'],
+        fields: {
+          code: ['품목코드', '상품코드', '코드'], name: ['품목명', '품명', '상품명'], spec: ['규격'], unit: ['단위', '판매단위', '재고단위'],
+          baseUnit: ['기준단위', '최소단위'], description: ['설명', '비고', '적요']
+        }, essentials: [['code'], ['name']]
+      }
+    });
+
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const text = (value) => String(value ?? '').trim();
+    const normalizeHeader = (value) => text(value).replace(/[\s()（）\[\]{}._·/\\-]/g, '').toLowerCase();
+    const normalizeIdentity = (value) => text(value).normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase('ko-KR');
+    // 상품코드는 회사 범위 ERP 식별자다. 선행 0·대소문자·내부 공백·문자폭을 보존한다.
+    const normalizeCode = (value) => text(value).replace(/\.0+$/, '');
+    const normalizeCustomer = (value) => text(value).normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+    const escapeHtml = (value) => text(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    const number = (value) => {
+      if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+      const raw = text(value).replace(/,/g, '');
+      if (!raw) return null;
+      const negative = /^\(.*\)$/.test(raw);
+      const numericText = raw.replace(/[()]/g, '').replace(/[^0-9.+-]/g, '');
+      if (!/[0-9]/.test(numericText)) return null;
+      const parsed = Number(numericText);
+      return Number.isFinite(parsed) ? (negative ? -Math.abs(parsed) : parsed) : null;
+    };
+    const round = (value) => Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
+    const formatQty = (value) => Number.isFinite(Number(value)) ? new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 4 }).format(Number(value)) : '-';
+    const id = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+    const nowIso = () => new Date().toISOString();
+    const nowLabel = () => new Date().toLocaleString('ko-KR', { hour12: false });
+    const productKey = (row) => row.code ? `C:${normalizeCode(row.code)}` : `N:${normalizeIdentity(row.name)}|${normalizeIdentity(row.spec)}|${normalizeIdentity(row.unit)}`;
+    const safeExcelText = (value) => /^[=+\-@]/.test(text(value)) ? `'${text(value)}` : text(value);
+    const excelDisplayWidth = (value) => [...String(value ?? '')].reduce((width, character) => width + (/[^\u0000-\u00ff]/.test(character) ? 2 : 1), 0);
+
+    const stableHash = (value) => {
+      const source = typeof value === 'string' ? value : JSON.stringify(value);
+      let hash = 2166136261;
+      for (let index = 0; index < source.length; index += 1) {
+        hash ^= source.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `FNV1A-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+    };
+    const stableByteHash = (bytes) => {
+      let hash = 2166136261;
+      for (const value of bytes) { hash ^= value; hash = Math.imul(hash, 16777619); }
+      return `FNV1A-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+    };
+    const freshState = () => ({
+      schemaVersion: 'orderq-lab-workspace/v1', version: VERSION, sources: {}, sourceArchive: [], relations: [], substitutions: [], cancellations: [], history: [], selectedKeys: [], search: '', issueOnly: false
+    });
+    let state = loadState();
+    let computedRows = [];
+    let pendingSubstitution = null;
+    let toastTimer = 0;
+
+    function loadState() {
+      try {
+        const restored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (restored?.schemaVersion === 'orderq-lab-workspace/v1') {
+          return {
+            ...freshState(), ...restored,
+            sourceArchive: Array.isArray(restored.sourceArchive) ? restored.sourceArchive : [],
+            relations: Array.isArray(restored.relations) ? restored.relations : [],
+            substitutions: Array.isArray(restored.substitutions) ? restored.substitutions : [],
+            cancellations: Array.isArray(restored.cancellations) ? restored.cancellations : [],
+            history: Array.isArray(restored.history) ? restored.history : [],
+            selectedKeys: []
+          };
+        }
+      } catch (error) { console.warn('작업 복구 실패', error); }
+      return freshState();
+    }
+    function persist() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, selectedKeys: [] })); }
+      catch (error) { showToast('브라우저 저장공간이 부족해 자동저장하지 못했습니다.', true); }
+    }
+    function appendHistory(type, actionId, message, details = {}) {
+      const occurredAt = nowIso();
+      const entry = { eventId: id('EVT'), actionId, type, occurredAt, at: nowLabel(), text: message, ...details };
+      state.history.push(entry);
+      return entry;
+    }
+    function cancelledActionIds() { return new Set(state.cancellations.map((entry) => entry.targetActionId)); }
+    function activeRelations() {
+      const cancelled = cancelledActionIds();
+      return state.relations.filter((entry) => !cancelled.has(entry.relationId));
+    }
+    function activeSubstitutions() {
+      const cancelled = cancelledActionIds();
+      return state.substitutions.filter((entry) => !cancelled.has(entry.operationId));
+    }
+    function showToast(message, error = false) {
+      const toast = $('#toast');
+      toast.textContent = message;
+      toast.className = `toast show${error ? ' error' : ''}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.className = 'toast'; }, 3200);
+    }
+    function setSystemMessage(message) { $('#systemMessage').textContent = message; }
+
+    function buildColumnContract(headers, role) {
+      const normalizedHeaders = headers.map(normalizeHeader);
+      const map = {};
+      const conflicts = [];
+      Object.entries(ROLES[role].fields).forEach(([canonical, aliases]) => {
+        const candidates = new Set(aliases.map(normalizeHeader));
+        const indexes = normalizedHeaders.map((header, index) => candidates.has(header) ? index : -1).filter((index) => index >= 0);
+        if (indexes.length === 1) map[canonical] = indexes[0];
+        if (indexes.length > 1) conflicts.push({ canonical, indexes, headers: indexes.map((index) => text(headers[index])) });
+      });
+      const sourceAssignments = new Map();
+      Object.entries(map).forEach(([canonical, index]) => {
+        const fields = sourceAssignments.get(index) || [];
+        fields.push(canonical);
+        sourceAssignments.set(index, fields);
+      });
+      sourceAssignments.forEach((fields, index) => {
+        if (fields.length > 1) conflicts.push({ canonical: fields.join('/'), indexes: [index], headers: [text(headers[index])], reason: 'SOURCE_HEADER_REUSED' });
+      });
+      return { map, conflicts };
+    }
+    function buildColumnMap(headers, role) { return buildColumnContract(headers, role).map; }
+    function satisfiesEssentials(map, role) {
+      return ROLES[role].essentials.every((group) => group.some((field) => Number.isInteger(map[field])));
+    }
+    function roleHintScore(value, hints) {
+      const normalized = normalizeIdentity(value);
+      return hints.reduce((score, hint) => score + (normalized.includes(normalizeIdentity(hint)) ? 3 : 0), 0);
+    }
+    function detectMatrixForRole(matrix, fileName, role, sheetName) {
+      let best = null;
+      for (let rowIndex = 0; rowIndex < Math.min(30, matrix.length); rowIndex += 1) {
+        const headers = matrix[rowIndex] || [];
+        const contract = buildColumnContract(headers, role);
+        const mappedCount = Object.keys(contract.map).length;
+        const essentialValid = satisfiesEssentials(contract.map, role);
+        const valid = essentialValid && contract.conflicts.length === 0;
+        const score = mappedCount + (essentialValid ? 30 : 0) + roleHintScore(sheetName, ROLES[role].sheetHints) + roleHintScore(fileName, ROLES[role].fileHints);
+        if (!best || score > best.score) best = { sheetName, matrix, rowIndex, headers, map: contract.map, conflicts: contract.conflicts, mappedCount, essentialValid, valid, score };
+      }
+      return best;
+    }
+    function detectSheetForRole(workbook, fileName, role) {
+      let best = null;
+      workbook.SheetNames.forEach((sheetName) => {
+        const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '', blankrows: true });
+        const candidate = detectMatrixForRole(matrix, fileName, role, sheetName);
+        if (candidate && (!best || candidate.score > best.score)) best = candidate;
+      });
+      return best;
+    }
+    function isSummaryRow(cells, name, code) {
+      const firstCell = text(cells[0]).replace(/\s/g, '');
+      if (/^(?:총합계|합계|소계|총계|total)$/i.test(firstCell)) return true;
+      // ERP 기간 합계행은 첫 셀에 `2026/09 계`처럼 기간과 계를 함께 기록하고,
+      // 품목코드 열에는 행수 같은 집계값을 둔다. 이를 상품으로 받아들이지 않는다.
+      if (/^\d{4}[./-]\d{1,2}(?:[./-]\d{1,2})?계$/i.test(firstCell)) return true;
+      return !code && /^(합계|소계|총계|total)$/i.test(text(name).replace(/\s/g, ''));
+    }
+    function normalizeWarehouse(value) {
+      const raw = text(value);
+      const match = raw.match(/^0*(\d+)\s*창고?$/);
+      return match ? match[1].padStart(2, '0') : raw;
+    }
+    function inferWarehouse(candidate) {
+      for (let index = 0; index < candidate.rowIndex; index += 1) {
+        const line = (candidate.matrix[index] || []).map(text).join(' / ');
+        const match = line.match(/(?:^|\/)\s*0*(\d+)\s*창고\s*(?:\/|$)/);
+        if (match) return match[1].padStart(2, '0');
+      }
+      return '';
+    }
+    function quantityState(raw, parsed) {
+      if (raw === null || raw === undefined || text(raw) === '') return 'MISSING';
+      if (parsed === null) return 'INVALID';
+      return parsed === 0 ? 'ZERO' : 'VALUE';
+    }
+    function normalizeRows(candidate, role, fileName) {
+      const rows = [];
+      const { matrix, rowIndex, map, sheetName } = candidate;
+      const inferredWarehouse = inferWarehouse(candidate);
+      for (let index = rowIndex + 1; index < matrix.length; index += 1) {
+        const cells = matrix[index] || [];
+        const get = (field) => Number.isInteger(map[field]) ? cells[map[field]] : '';
+        const rawQuantity = get('quantity');
+        const parsedQuantity = number(rawQuantity);
+        const row = {
+          rowId: `${role}:${fileName}:${sheetName}:${index + 1}`,
+          sourceRole: role, sourceFile: fileName, sourceSheet: sheetName, sourceRowNumber: index + 1,
+          date: text(get('date')), documentNo: text(get('documentNo')), warehouse: normalizeWarehouse(get('warehouse')) || inferredWarehouse,
+          customerCode: text(get('customerCode')), customer: text(get('customer')), subCustomer: text(get('subCustomer')),
+          supplierCode: text(get('supplierCode')), supplier: text(get('supplier')), matchSupplier: text(get('matchSupplier')),
+          code: normalizeCode(get('code')), name: text(get('name')), spec: text(get('spec')), unit: text(get('unit')),
+          baseUnit: text(get('baseUnit')), quantity: parsedQuantity, quantityState: quantityState(rawQuantity, parsedQuantity), rawQuantity,
+          unitPrice: number(get('unitPrice')), amount: number(get('amount')),
+          note: text(get('note')), instruction: text(get('instruction')), group: text(get('group')), manager: text(get('manager')),
+          recordDate: text(get('recordDate')), basic: text(get('basic')), location: text(get('location')), description: text(get('description')),
+          opening: number(get('opening')), inbound: number(get('inbound')), outbound: number(get('outbound')), balance: number(get('balance'))
+        };
+        if ((!row.code && !row.name) || isSummaryRow(cells, row.name, row.code)) continue;
+        row.sourceCells = cells.map((cell) => cell ?? '');
+        row.sourceDigest = stableHash({ role, fileName, sheetName, sourceRowNumber: index + 1, cells: row.sourceCells });
+        row.productKey = productKey(row);
+        rows.push(row);
+      }
+      return rows;
+    }
+    function sourceFromCandidate(candidate, role, fileName, fileFingerprint = '') {
+      if (candidate?.conflicts?.length) {
+        const detail = candidate.conflicts.map((item) => `${item.canonical}: ${item.headers.join(', ')}`).join(' / ');
+        throw new Error(`${fileName}: 같은 표준 항목으로 해석되는 헤더가 중복되었습니다 (${detail}).`);
+      }
+      if (!candidate?.essentialValid) throw new Error(`${fileName}: ${ROLES[role].label} 필수 헤더를 찾지 못했습니다.`);
+      const rows = normalizeRows(candidate, role, fileName);
+      if (!rows.length) throw new Error(`${fileName}: ${ROLES[role].label} 데이터행이 없습니다.`);
+      const warnings = [];
+      const noCode = rows.filter((row) => !row.code).length;
+      const missingQuantity = role === 'products' ? 0 : rows.filter((row) => row.quantityState === 'MISSING').length;
+      const invalidQuantity = role === 'products' ? 0 : rows.filter((row) => row.quantityState === 'INVALID').length;
+      if (noCode) warnings.push(`상품코드 없음 ${noCode}행`);
+      if (missingQuantity) warnings.push(`수량 누락 ${missingQuantity}행`);
+      if (invalidQuantity) warnings.push(`수량 형식 오류 ${invalidQuantity}행`);
+      const fingerprint = fileFingerprint || stableHash(candidate.matrix);
+      return {
+        sourceId: `${role}:${fingerprint}`, sourceFingerprint: fingerprint, role, fileName, sheetName: candidate.sheetName,
+        headerRowNumber: candidate.rowIndex + 1, headers: [...candidate.headers], rowCount: rows.length,
+        mappedFields: Object.keys(candidate.map), columnMap: { ...candidate.map }, rows, warnings, loadedAt: nowIso()
+      };
+    }
+    function parseMatrix(matrix, role, fileName = `${role}.xlsx`, sheetName = ROLES[role]?.label || role) {
+      if (!ROLES[role]) throw new Error(`지원하지 않는 자료 역할입니다: ${role}`);
+      return sourceFromCandidate(detectMatrixForRole(matrix, fileName, role, sheetName), role, fileName, stableHash(matrix));
+    }
+    async function parseFile(file, role) {
+      if (!window.XLSX) throw new Error('Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결을 확인하세요.');
+      if (!/\.(xlsx|xls|xlsm|csv)$/i.test(file.name)) throw new Error(`${file.name}: Excel 또는 CSV 파일만 사용할 수 있습니다.`);
+      if (file.size > MAX_FILE_SIZE) throw new Error(`${file.name}: 파일 크기는 30MB 이하여야 합니다.`);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const workbook = XLSX.read(bytes, { type: 'array', cellDates: false, cellText: true, cellNF: true });
+      return sourceFromCandidate(detectSheetForRole(workbook, file.name, role), role, file.name, stableByteHash(bytes));
+    }
+    async function handleRoleFile(role, file) {
+      if (!file) return;
+      setSystemMessage(`${ROLES[role].label} 파일 구조를 확인하고 있습니다 · ${file.name}`);
+      try {
+        const source = await parseFile(file, role);
+        if (!applySource(role, source)) {
+          setSystemMessage(`${ROLES[role].label} 중복 실행 방지 · 이미 같은 원본이 적용되어 있습니다.`);
+          return showToast(`${file.name}은 이미 적용된 동일 원본입니다.`);
+        }
+        state.selectedKeys = [];
+        persist();
+        render();
+        setSystemMessage(`${ROLES[role].label} 적용 완료 · ${state.sources[role].rowCount}행 · 원본은 변경하지 않았습니다.`);
+        showToast(`${file.name} 파일을 ${ROLES[role].label}으로 읽었습니다.`);
+      } catch (error) {
+        showToast(error.message || '파일을 읽지 못했습니다.', true);
+        setSystemMessage(`파일 적용 실패 · 기존 정상 데이터는 유지됩니다.`);
+      }
+    }
+    function applySource(role, source) {
+      const current = state.sources[role];
+      if (current?.sourceFingerprint && current.sourceFingerprint === source.sourceFingerprint) return false;
+      if (current) state.sourceArchive.push({ ...current, archivedAt: nowIso(), archivedReason: 'REPLACED' });
+      state.sources[role] = source;
+      appendHistory('SOURCE_APPLIED', source.sourceId, `${ROLES[role].label} 원본 적용 · ${source.fileName} · ${source.rowCount}행`, {
+        role, sourceFingerprint: source.sourceFingerprint, previousSourceId: current?.sourceId || ''
+      });
+      return true;
+    }
+    async function classifyFile(file) {
+      if (!window.XLSX) throw new Error('Excel 라이브러리를 불러오지 못했습니다.');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const workbook = XLSX.read(bytes, { type: 'array', cellDates: false, cellText: true, cellNF: true });
+      const candidates = ROLE_ORDER.map((role) => ({ role, candidate: detectSheetForRole(workbook, file.name, role) }))
+        .filter((item) => item.candidate?.valid)
+        .sort((left, right) => right.candidate.score - left.candidate.score);
+      if (!candidates.length) throw new Error(`${file.name}: 지원하는 자료 종류를 판별하지 못했습니다.`);
+      if (candidates[1] && candidates[0].candidate.score === candidates[1].candidate.score) {
+        throw new Error(`${file.name}: ${ROLES[candidates[0].role].label}·${ROLES[candidates[1].role].label} 구분이 모호합니다. 개별 카드에 넣어주세요.`);
+      }
+      const selected = candidates[0];
+      return { role: selected.role, source: sourceFromCandidate(selected.candidate, selected.role, file.name, stableByteHash(bytes)) };
+    }
+    async function handleBundle(files) {
+      const list = [...files].filter(Boolean);
+      if (!list.length || list.length > ROLE_ORDER.length) return showToast(`한 번에 1~${ROLE_ORDER.length}개 파일을 넣어주세요.`, true);
+      setSystemMessage(`${list.length}개 파일의 시트·헤더를 기준으로 자동분류 중입니다.`);
+      try {
+        const classified = await Promise.all(list.map(classifyFile));
+        const duplicate = classified.find((entry, index) => classified.findIndex((other) => other.role === entry.role) !== index);
+        if (duplicate) throw new Error(`${ROLES[duplicate.role].label}으로 판별된 파일이 둘 이상입니다. 개별 카드에서 확인하세요.`);
+        let appliedCount = 0;
+        classified.forEach(({ role, source }) => { if (applySource(role, source)) appliedCount += 1; });
+        state.selectedKeys = [];
+        persist();
+        render();
+        setSystemMessage(`자동분류 완료 · ${classified.map(({ role }) => ROLES[role].label).join(' · ')}${appliedCount < classified.length ? ' · 동일 원본 중복 제외' : ''}`);
+        showToast(`${appliedCount}개 새 원본을 구조 기준으로 적용했습니다.`);
+      } catch (error) {
+        setSystemMessage('자동분류 실패 · 기존 정상 데이터는 유지됩니다.');
+        showToast(error.message || '자동분류하지 못했습니다.', true);
+      }
+    }
+
+    function ensureProduct(map, row) {
+      const key = row.productKey || productKey(row);
+      if (!map.has(key)) map.set(key, {
+        key, code: row.code, name: row.name || '(품명 없음)', spec: row.spec, unit: row.unit, baseUnit: row.baseUnit,
+        opening: 0, purchases: 0, logicalSales: 0, physicalOutbound: 0, orders: 0, fulfilled: 0, unmatchedSales: 0,
+        stocktake: null, stocktakeSeen: false, salesCustomers: new Map(), salesBuckets: new Map(), orderCustomers: new Map(), mappedChips: [], sourceRoles: new Set(), issues: []
+      });
+      const target = map.get(key);
+      if (row.sourceRole === 'products' || !target.code) target.code = row.code || target.code;
+      if (row.sourceRole === 'products' || !target.name || target.name === '(품명 없음)') target.name = row.name || target.name;
+      if (row.sourceRole === 'products' || !target.spec) target.spec = row.spec || target.spec;
+      if (row.sourceRole === 'products' || !target.unit) target.unit = row.unit || target.unit;
+      if (row.sourceRole === 'products' || !target.baseUnit) target.baseUnit = row.baseUnit || target.baseUnit;
+      target.sourceRoles.add(row.sourceRole);
+      return target;
+    }
+    function aggregateCustomer(map, key, quantity) { map.set(key || '거래처 미지정', round((map.get(key || '거래처 미지정') || 0) + quantity)); }
+    const numericQuantity = (row) => Number.isFinite(row?.quantity) ? Number(row.quantity) : 0;
+    function customerBucketKey(customer, warehouse) { return JSON.stringify([customer || '거래처 미지정', normalizeWarehouse(warehouse) || '창고 미지정']); }
+    function readCustomerBucket(key) {
+      try { const [customer, warehouse] = JSON.parse(key); return { customer, warehouse }; }
+      catch { return { customer: key || '거래처 미지정', warehouse: '창고 미지정' }; }
+    }
+    function customerMatch(order, sale) {
+      const orderCode = text(order.customerCode);
+      const saleCode = text(sale.customerCode);
+      if (orderCode && saleCode) return orderCode === saleCode ? 'EXACT_CUSTOMER_CODE' : '';
+      const orderName = normalizeCustomer(order.customer);
+      const saleName = normalizeCustomer(sale.customer);
+      return orderName && orderName === saleName ? 'EXACT_CUSTOMER_NAME' : '';
+    }
+    function comparableDate(value) {
+      const match = text(value).match(/(20\d{2})\D?(\d{1,2})\D?(\d{1,2})/);
+      return match ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}` : '';
+    }
+    function buildFulfillment() {
+      const orders = (state.sources.orders?.rows || []).map((row) => ({ row, orderedQuantity: Math.max(0, numericQuantity(row)), matchedQuantity: 0 }));
+      const sales = state.sources.sales?.rows || [];
+      const links = [];
+      const unmatchedSales = [];
+      const balanceByRow = new Map(orders.map((entry) => [entry.row.rowId, entry]));
+      const positiveSales = sales.filter((row) => numericQuantity(row) > 0);
+      positiveSales.forEach((sale) => {
+        let remaining = numericQuantity(sale);
+        const saleDate = comparableDate(sale.date);
+        const candidates = orders.filter((entry) => {
+          if (entry.matchedQuantity >= entry.orderedQuantity || !sale.code || entry.row.code !== sale.code) return false;
+          const orderDate = comparableDate(entry.row.date);
+          return customerMatch(entry.row, sale) && (!saleDate || !orderDate || orderDate <= saleDate);
+        }).sort((left, right) => comparableDate(left.row.date).localeCompare(comparableDate(right.row.date)) || left.row.sourceRowNumber - right.row.sourceRowNumber);
+        candidates.forEach((entry) => {
+          if (remaining <= 0) return;
+          const quantity = round(Math.min(remaining, entry.orderedQuantity - entry.matchedQuantity));
+          if (!(quantity > 0)) return;
+          entry.matchedQuantity = round(entry.matchedQuantity + quantity);
+          remaining = round(remaining - quantity);
+          links.push({
+            linkId: stableHash([entry.row.rowId, sale.rowId, quantity, links.length]), orderRowId: entry.row.rowId, salesRowId: sale.rowId,
+            productKey: sale.productKey, customer: sale.customer, customerCode: sale.customerCode, warehouse: sale.warehouse,
+            allocatedQuantity: quantity, method: `EXACT_PRODUCT_CODE+${customerMatch(entry.row, sale)}`, sourceDigest: sale.sourceDigest
+          });
+        });
+        if (remaining > 0) unmatchedSales.push({ salesRowId: sale.rowId, productKey: sale.productKey, quantity: remaining, reason: 'NO_EXACT_ORDER_MATCH' });
+      });
+      sales.filter((row) => numericQuantity(row) < 0).forEach((sale) => {
+        let remaining = Math.abs(numericQuantity(sale));
+        const eligible = [...links].reverse().filter((link) => {
+          if (link.allocatedQuantity <= 0 || link.productKey !== sale.productKey) return false;
+          const order = balanceByRow.get(link.orderRowId)?.row;
+          return order && customerMatch(order, sale);
+        });
+        eligible.forEach((sourceLink) => {
+          if (remaining <= 0) return;
+          const alreadyReversed = Math.abs(links.filter((link) => link.reversesLinkId === sourceLink.linkId).reduce((sum, link) => sum + Math.min(0, link.allocatedQuantity), 0));
+          const quantity = round(Math.min(remaining, Math.max(0, sourceLink.allocatedQuantity - alreadyReversed)));
+          if (!(quantity > 0)) return;
+          const balance = balanceByRow.get(sourceLink.orderRowId);
+          balance.matchedQuantity = round(Math.max(0, balance.matchedQuantity - quantity));
+          remaining = round(remaining - quantity);
+          links.push({
+            linkId: stableHash([sourceLink.linkId, sale.rowId, -quantity]), reversesLinkId: sourceLink.linkId,
+            orderRowId: sourceLink.orderRowId, salesRowId: sale.rowId, productKey: sale.productKey,
+            customer: sale.customer, customerCode: sale.customerCode, warehouse: sale.warehouse,
+            allocatedQuantity: -quantity, method: 'NEGATIVE_SALES_REVERSAL', sourceDigest: sale.sourceDigest
+          });
+        });
+        if (remaining > 0) unmatchedSales.push({ salesRowId: sale.rowId, productKey: sale.productKey, quantity: -remaining, reason: 'NO_PRIOR_SHIPMENT_TO_REVERSE' });
+      });
+      const balances = orders.map((entry) => ({
+        orderRowId: entry.row.rowId, productKey: entry.row.productKey, customer: entry.row.customer, customerCode: entry.row.customerCode,
+        orderedQuantity: entry.orderedQuantity, matchedQuantity: round(entry.matchedQuantity), remainingQuantity: round(Math.max(0, entry.orderedQuantity - entry.matchedQuantity)),
+        status: entry.orderedQuantity - entry.matchedQuantity > 0.00001 ? 'UNFULFILLED' : 'FULFILLED'
+      }));
+      return { links, balances, unmatchedSales };
+    }
+    function buildProducts() {
+      const map = new Map();
+      ROLE_ORDER.forEach((role) => (state.sources[role]?.rows || []).forEach((row) => ensureProduct(map, row)));
+      (state.sources.products?.rows || []).forEach((row) => ensureProduct(map, row));
+      (state.sources.orders?.rows || []).forEach((row) => {
+        const product = ensureProduct(map, row); const qty = numericQuantity(row);
+        product.orders = round(product.orders + qty); aggregateCustomer(product.orderCustomers, row.customer, qty);
+        if (row.quantityState === 'MISSING') product.issues.push('주문수량 누락');
+        if (row.quantityState === 'INVALID') product.issues.push('주문수량 형식 오류');
+      });
+      (state.sources.opening?.rows || []).forEach((row) => {
+        const product = ensureProduct(map, row); product.opening = round(product.opening + numericQuantity(row));
+        if (row.quantityState === 'MISSING') product.issues.push('기초재고 누락');
+        if (row.quantityState === 'INVALID') product.issues.push('기초재고 형식 오류');
+      });
+      (state.sources.purchases?.rows || []).forEach((row) => {
+        const product = ensureProduct(map, row); product.purchases = round(product.purchases + numericQuantity(row));
+        if (row.quantityState === 'MISSING') product.issues.push('구매수량 누락');
+        if (row.quantityState === 'INVALID') product.issues.push('구매수량 형식 오류');
+      });
+      (state.sources.sales?.rows || []).forEach((row) => {
+        const product = ensureProduct(map, row); const qty = numericQuantity(row);
+        product.logicalSales = round(product.logicalSales + qty); product.physicalOutbound = round(product.physicalOutbound + qty);
+        aggregateCustomer(product.salesCustomers, row.customer, qty);
+        aggregateCustomer(product.salesBuckets, customerBucketKey(row.customer, row.warehouse), qty);
+        if (row.quantityState === 'MISSING') product.issues.push('판매수량 누락');
+        if (row.quantityState === 'INVALID') product.issues.push('판매수량 형식 오류');
+      });
+      (state.sources.stocktake?.rows || []).forEach((row) => {
+        const product = ensureProduct(map, row);
+        if (Number.isFinite(row.quantity)) {
+          product.stocktakeSeen = true;
+          product.stocktake = round((product.stocktake ?? 0) + row.quantity);
+        } else {
+          product.issues.push(row.quantityState === 'INVALID' ? '실사수량 형식 오류' : '실사수량 누락');
+        }
+      });
+      activeSubstitutions().forEach((operation) => {
+        const source = map.get(operation.sourceProductKey); const target = map.get(operation.targetProductKey);
+        if (!source || !target) return;
+        source.physicalOutbound = round(source.physicalOutbound - operation.sourceSalesQuantity);
+        target.physicalOutbound = round(target.physicalOutbound + operation.actualOutboundQuantity);
+        aggregateCustomer(source.salesCustomers, operation.customer, -operation.sourceSalesQuantity);
+        aggregateCustomer(source.salesBuckets, customerBucketKey(operation.customer, operation.warehouse), -operation.sourceSalesQuantity);
+        target.mappedChips.push(operation);
+      });
+      const fulfillment = buildFulfillment();
+      fulfillment.balances.forEach((balance) => {
+        const product = map.get(balance.productKey);
+        if (!product) return;
+        product.fulfilled = round(product.fulfilled + balance.matchedQuantity);
+        product.unshipped = round((product.unshipped || 0) + balance.remainingQuantity);
+      });
+      fulfillment.unmatchedSales.forEach((entry) => {
+        const product = map.get(entry.productKey);
+        if (!product) return;
+        product.unmatchedSales = round(product.unmatchedSales + entry.quantity);
+      });
+      map.forEach((product) => {
+        if (!product.code) product.issues.push('상품코드 확인');
+        if (!product.unit) product.issues.push('단위 확인');
+        if (product.physicalOutbound < 0) product.issues.push('출고 재배정 초과');
+        product.calculated = round(product.opening + product.purchases - product.physicalOutbound);
+        product.variance = product.stocktakeSeen ? round(product.stocktake - product.calculated) : null;
+        product.unshipped = round(product.unshipped || 0);
+        product.purchaseNeed = round(Math.max(0, product.unshipped - Math.max(0, product.calculated)));
+        product.relations = activeRelations().filter((relation) => relation.sourceProductKey === product.key || relation.targetProductKey === product.key);
+        if (product.stocktakeSeen && Math.abs(product.variance) > 0.00001) product.issues.push('실사차이');
+        if (product.unshipped > 0) product.issues.push('미출고');
+        if (Math.abs(product.unmatchedSales) > 0.00001) product.issues.push('판매 미매칭');
+        product.issues = [...new Set(product.issues)];
+      });
+      return [...map.values()].sort((a, b) => (a.code || 'ZZZ').localeCompare(b.code || 'ZZZ', 'ko') || a.name.localeCompare(b.name, 'ko'));
+    }
+    function relationLabels(product, map) {
+      return product.relations.map((relation) => {
+        const otherKey = relation.sourceProductKey === product.key ? relation.targetProductKey : relation.sourceProductKey;
+        const other = map.get(otherKey);
+        const arrow = relation.sourceProductKey === product.key ? '→' : '←';
+        return other ? `${arrow} ${other.name}` : '';
+      }).filter(Boolean);
+    }
+    function renderRoleCards() {
+      $('#roleGrid').innerHTML = ROLE_ORDER.map((role) => {
+        const config = ROLES[role]; const source = state.sources[role];
+        return `<label class="file-card${source ? ' loaded' : ''}" data-file-card="${role}">
+          <input type="file" accept=".xlsx,.xls,.xlsm,.csv" data-file-input="${role}">
+          <span class="file-card-top"><span class="file-role">${escapeHtml(config.label)} ${config.optional ? '<span class="optional">선택</span>' : ''}</span><span class="badge ${source ? 'good' : ''}">${source ? '적용' : '대기'}</span></span>
+          <div class="file-name">${escapeHtml(source?.fileName || '파일을 선택하세요')}</div>
+          <div class="file-meta">${source ? `${escapeHtml(source.sheetName)} · ${formatQty(source.rowCount)}행 · 헤더 ${source.headerRowNumber}` : escapeHtml(config.hint)}</div>
+          <button type="button" class="btn compact file-clear" data-clear-role="${role}" aria-label="${escapeHtml(config.label)} 파일 해제">×</button>
+        </label>`;
+      }).join('');
+    }
+    function renderSummary(rows) {
+      const sum = (field) => round(rows.reduce((total, row) => total + Number(row[field] || 0), 0));
+      $('#productCount').textContent = formatQty(rows.length);
+      $('#orderTotal').textContent = formatQty(sum('orders'));
+      $('#outboundTotal').textContent = formatQty(sum('physicalOutbound'));
+      $('#unshippedTotal').textContent = formatQty(sum('unshipped'));
+      $('#varianceCount').textContent = formatQty(rows.filter((row) => row.stocktakeSeen && Math.abs(row.variance) > 0.00001).length);
+      $('#substitutionCount').textContent = formatQty(activeSubstitutions().length);
+    }
+    function rowMatchesFilter(row) {
+      const query = normalizeIdentity(state.search);
+      if (query && !normalizeIdentity([row.code, row.name, row.spec, row.unit].join(' ')).includes(query)) return false;
+      if (state.issueOnly && row.issues.length === 0) return false;
+      return true;
+    }
+    function chipHtml(product) {
+      const base = [...product.salesBuckets.entries()].filter(([, qty]) => qty > 0.00001).map(([bucketKey, qty]) => {
+        const { customer, warehouse } = readCustomerBucket(bucketKey);
+        const payload = encodeURIComponent(JSON.stringify({ sourceProductKey: product.key, customer, warehouse, availableQuantity: qty }));
+        return `<span class="customer-chip" draggable="true" data-drag-payload="${payload}" title="${escapeHtml(warehouse)} 창고 · 다른 상품행으로 끌어 대체·소분 실제 출고를 등록">${escapeHtml(customer)} · ${escapeHtml(warehouse)} (${formatQty(qty)})</span>`;
+      });
+      const mapped = product.mappedChips.map((operation) => `<span class="customer-chip mapped" title="원판매 ${formatQty(operation.sourceSalesQuantity)} → 실제차감 ${formatQty(operation.actualOutboundQuantity)} · ${escapeHtml(operation.conversionAuthority)}">↳ ${escapeHtml(operation.customer)} · ${escapeHtml(operation.warehouse || '미지정')} (${formatQty(operation.actualOutboundQuantity)})</span>`);
+      return [...base, ...mapped].join('') || '<span class="muted">-</span>';
+    }
+    function renderTable(rows) {
+      const map = new Map(rows.map((row) => [row.key, row]));
+      const visible = rows.filter(rowMatchesFilter);
+      $('#emptyState').style.display = rows.length ? 'none' : 'block';
+      $('#workTableBody').innerHTML = visible.map((row) => {
+        const selected = state.selectedKeys.includes(row.key);
+        const relationBadges = relationLabels(row, map).map((label) => `<span class="badge">${escapeHtml(label)}</span>`);
+        const issueBadges = row.issues.map((issue) => `<span class="badge ${issue === '실사차이' || issue === '출고 재배정 초과' ? 'error' : 'warn'}">${escapeHtml(issue)}</span>`);
+        return `<tr data-product-key="${escapeHtml(row.key)}" class="${selected ? 'selected' : ''}">
+          <td class="product-cell"><div class="product-name">${escapeHtml(row.name)}</div><div class="product-sub"><span>${escapeHtml(row.code || '코드없음')}</span><span>${escapeHtml(row.spec || '-')}</span><span>${escapeHtml(row.unit || '-')}</span></div></td>
+          <td class="num">${formatQty(row.orders)}</td><td class="num ${row.unshipped > 0 ? 'negative' : ''}">${formatQty(row.unshipped)}</td>
+          <td class="num">${formatQty(row.opening)}</td><td class="num">${formatQty(row.purchases)}</td><td class="num">${formatQty(row.physicalOutbound)}</td>
+          <td class="num ${row.calculated < 0 ? 'negative' : ''}">${formatQty(row.calculated)}</td><td class="num">${row.stocktakeSeen ? formatQty(row.stocktake) : '<span class="muted">미입력</span>'}</td>
+          <td class="num variance ${row.variance === null ? '' : Math.abs(row.variance) < .00001 ? 'good' : 'bad'}">${row.variance === null ? '-' : formatQty(row.variance)}</td>
+          <td class="num ${row.purchaseNeed > 0 ? 'negative' : ''}">${formatQty(row.purchaseNeed)}</td><td><div class="chips">${chipHtml(row)}</div></td>
+          <td><div class="issue-list">${[...issueBadges, ...relationBadges].join('') || '<span class="muted">-</span>'}</div></td>
+        </tr>`;
+      }).join('');
+      if (rows.length && !visible.length) $('#workTableBody').innerHTML = '<tr><td colspan="12" class="empty">조건에 맞는 상품이 없습니다.</td></tr>';
+    }
+    function renderHistory() {
+      const history = [...state.history].reverse().slice(0, 12);
+      $('#historyList').innerHTML = history.length ? history.map((entry) => `<div class="history-item"><div class="history-time">${escapeHtml(entry.at)}</div><div class="history-text">${escapeHtml(entry.text)}</div></div>`).join('') : '<div class="empty">아직 관리자 작업이 없습니다.</div>';
+    }
+    function renderControls() {
+      $('#undoButton').disabled = !lastUndoableAction();
+      $('#relationButton').disabled = state.selectedKeys.length !== 2;
+      $('#clearSelectionButton').disabled = state.selectedKeys.length === 0;
+      $('#issueFilterButton').setAttribute('aria-pressed', String(state.issueOnly));
+      $('#issueFilterButton').classList.toggle('primary', state.issueOnly);
+      const selected = state.selectedKeys.map((key) => computedRows.find((row) => row.key === key)?.name).filter(Boolean);
+      $('#selectionNote').textContent = selected.length ? `선택 ${selected.length}/2 · ${selected.join(' → ')}` : '상품 두 개를 순서대로 선택하면 원상품 → 대체상품 관계만 등록할 수 있습니다.';
+    }
+    function render() {
+      renderRoleCards();
+      computedRows = buildProducts();
+      renderSummary(computedRows);
+      renderTable(computedRows);
+      renderHistory();
+      renderControls();
+    }
+
+    function toggleProductSelection(key) {
+      if (state.selectedKeys.includes(key)) state.selectedKeys = state.selectedKeys.filter((value) => value !== key);
+      else state.selectedKeys = [...state.selectedKeys.slice(-1), key];
+      renderTable(computedRows); renderControls();
+    }
+    function registerRelation() {
+      if (state.selectedKeys.length !== 2) return;
+      const [sourceProductKey, targetProductKey] = state.selectedKeys;
+      const source = computedRows.find((row) => row.key === sourceProductKey);
+      const target = computedRows.find((row) => row.key === targetProductKey);
+      if (!source || !target || sourceProductKey === targetProductKey) return;
+      if (activeRelations().some((row) => row.sourceProductKey === sourceProductKey && row.targetProductKey === targetProductKey)) {
+        state.selectedKeys = []; render(); return showToast('이미 같은 방향으로 등록된 상품 관계입니다.');
+      }
+      if (!confirm(`${source.name} → ${target.name}\n\n상품 관계만 등록합니다. 재고수량과 출고수량은 변경하지 않습니다.`)) return;
+      const occurredAt = nowIso();
+      const relation = { relationId: id('REL'), sourceProductKey, targetProductKey, occurredAt, at: nowLabel(), quantityEffect: 'NONE' };
+      state.relations.push(relation);
+      appendHistory('RELATION', relation.relationId, `상품 관계확정 · ${source.name} → ${target.name} · 수량변경 없음`, { quantityEffect: 'NONE' });
+      state.selectedKeys = [];
+      persist(); render(); showToast('상품 관계를 등록했습니다. 재고수량은 변경하지 않았습니다.');
+    }
+    function availableCustomerQuantity(sourceProductKey, customer, warehouse = '') {
+      const sourceRows = state.sources.sales?.rows || [];
+      const warehouseKey = normalizeWarehouse(warehouse) || '창고 미지정';
+      const base = sourceRows.filter((row) => row.productKey === sourceProductKey && (row.customer || '거래처 미지정') === customer && (normalizeWarehouse(row.warehouse) || '창고 미지정') === warehouseKey).reduce((sum, row) => sum + numericQuantity(row), 0);
+      const moved = activeSubstitutions().filter((row) => row.sourceProductKey === sourceProductKey && row.customer === customer && (normalizeWarehouse(row.warehouse) || '창고 미지정') === warehouseKey).reduce((sum, row) => sum + Number(row.sourceSalesQuantity || 0), 0);
+      return round(base - moved);
+    }
+    function openSubstitution(payload, targetProductKey) {
+      const source = computedRows.find((row) => row.key === payload.sourceProductKey);
+      const target = computedRows.find((row) => row.key === targetProductKey);
+      if (!source || !target || source.key === target.key) return;
+      const available = availableCustomerQuantity(source.key, payload.customer, payload.warehouse);
+      if (!(available > 0)) return showToast('이동할 수 있는 판매수량이 없습니다.', true);
+      pendingSubstitution = { operationId: id('SUB'), sourceProductKey: source.key, targetProductKey: target.key, customer: payload.customer, warehouse: normalizeWarehouse(payload.warehouse), availableQuantity: available };
+      $('#sourceProductLabel').textContent = source.name;
+      $('#sourceProductMeta').textContent = `${source.code || '코드없음'} · ${source.spec || '규격없음'} · ${source.unit || '단위없음'} · ${payload.customer} · ${payload.warehouse || '창고 미지정'}`;
+      $('#targetProductLabel').textContent = target.name;
+      $('#targetProductMeta').textContent = `${target.code || '코드없음'} · ${target.spec || '규격없음'} · ${target.unit || '단위없음'}`;
+      $('#sourceSalesQuantity').value = String(available);
+      $('#sourceSalesQuantity').max = String(available);
+      $('#actualOutboundQuantity').value = '';
+      $('#substitutionNote').value = '';
+      $('#confirmSubstitutionButton').disabled = false;
+      $('#substitutionDialog').showModal();
+      setTimeout(() => $('#actualOutboundQuantity').focus(), 30);
+    }
+    function confirmSubstitution(event) {
+      if (!pendingSubstitution) return;
+      event.preventDefault();
+      const sourceSalesQuantity = number($('#sourceSalesQuantity').value);
+      const actualOutboundQuantity = number($('#actualOutboundQuantity').value);
+      const note = text($('#substitutionNote').value);
+      const available = availableCustomerQuantity(pendingSubstitution.sourceProductKey, pendingSubstitution.customer, pendingSubstitution.warehouse);
+      if (!(sourceSalesQuantity > 0) || sourceSalesQuantity > available + 0.00001) return showToast(`전환할 판매수량은 0보다 크고 ${formatQty(available)} 이하여야 합니다.`, true);
+      if (!(actualOutboundQuantity > 0)) return showToast('대체상품 실제 차감수량을 관리자가 입력해야 합니다.', true);
+      if (state.substitutions.some((row) => row.operationId === pendingSubstitution.operationId)) return showToast('이미 확정된 작업입니다. 중복 실행하지 않았습니다.');
+      $('#confirmSubstitutionButton').disabled = true;
+      const source = computedRows.find((row) => row.key === pendingSubstitution.sourceProductKey);
+      const target = computedRows.find((row) => row.key === pendingSubstitution.targetProductKey);
+      const operation = {
+        ...pendingSubstitution, sourceSalesQuantity: round(sourceSalesQuantity), actualOutboundQuantity: round(actualOutboundQuantity),
+        note, occurredAt: nowIso(), at: nowLabel(), conversionAuthority: 'ADMIN_CONFIRMED'
+      };
+      state.substitutions.push(operation);
+      appendHistory('SUBSTITUTION', operation.operationId, `대체·소분 출고 · ${source.name} ${formatQty(sourceSalesQuantity)} → ${target.name} 실제차감 ${formatQty(actualOutboundQuantity)} · ${pendingSubstitution.customer} · ${pendingSubstitution.warehouse || '창고 미지정'}${note ? ` · ${note}` : ''}`, { conversionAuthority: 'ADMIN_CONFIRMED' });
+      pendingSubstitution = null;
+      $('#substitutionDialog').close();
+      persist(); render(); showToast('관리자 확정수량으로 대체·소분 출고를 반영했습니다.');
+    }
+    function lastUndoableAction() {
+      const cancelled = cancelledActionIds();
+      return [...state.history].reverse().find((entry) => ['SUBSTITUTION', 'RELATION'].includes(entry.type) && !cancelled.has(entry.actionId));
+    }
+    function undoLast() {
+      const entry = lastUndoableAction();
+      if (!entry) return;
+      const cancellation = { cancellationId: id('UNDO'), targetActionId: entry.actionId, targetType: entry.type, occurredAt: nowIso(), at: nowLabel() };
+      state.cancellations.push(cancellation);
+      appendHistory('UNDO', cancellation.cancellationId, `실행취소 · ${entry.text}`, { targetActionId: entry.actionId, targetType: entry.type });
+      persist(); render(); showToast('마지막 관리자 작업을 취소했습니다.');
+    }
+    function clearRole(role) {
+      const source = state.sources[role];
+      if (!source || !confirm(`${ROLES[role].label} 자료 ${source.fileName}을 작업공간에서 해제할까요?\n원본 파일은 삭제되지 않습니다.`)) return;
+      state.sourceArchive.push({ ...source, archivedAt: nowIso(), archivedReason: 'CLEARED' });
+      delete state.sources[role];
+      appendHistory('SOURCE_CLEARED', id('SRC-CLEAR'), `${ROLES[role].label} 원본 해제 · ${source.fileName}`, { role, sourceId: source.sourceId, sourceFingerprint: source.sourceFingerprint });
+      state.selectedKeys = [];
+      persist(); render(); setSystemMessage(`${ROLES[role].label} 자료를 해제했습니다. 원본 파일은 변경되지 않았습니다.`);
+    }
+    function resetWorkspace() {
+      if (!confirm('OrderQ Lab의 업로드 자료와 관리자 작업 이력을 모두 초기화할까요?\n원본 Excel 파일은 삭제되지 않습니다.')) return;
+      state = freshState();
+      localStorage.removeItem(STORAGE_KEY);
+      render(); setSystemMessage('독립 작업공간을 초기화했습니다. 원본 Excel은 변경되지 않았습니다.');
+    }
+    function downloadJson() {
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `OrderQ_Lab_Work_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+      showToast('독립 작업 상태를 JSON으로 저장했습니다.');
+    }
+    function buildMovementRows(products = buildProducts()) {
+      const productMap = new Map(products.map((row) => [row.key, row]));
+      const movements = [];
+      let sequence = 0;
+      const push = (row, type, signedQuantity, source = {}, eventId = '') => {
+        const product = productMap.get(row.productKey) || row;
+        movements.push({
+          sequence: ++sequence, date: row.date || row.recordDate || '', documentNo: row.documentNo || '', warehouse: normalizeWarehouse(row.warehouse) || '미지정',
+          productKey: row.productKey, code: product.code || row.code, name: product.name || row.name, spec: product.spec || row.spec, unit: product.unit || row.unit,
+          type, signedQuantity: Number.isFinite(signedQuantity) ? round(signedQuantity) : null,
+          quantityStatus: Number.isFinite(signedQuantity) ? signedQuantity === 0 ? 'ZERO_EFFECT' : 'APPLIED' : row.quantityState || 'MISSING',
+          sourceFile: row.sourceFile || '', sourceSheet: row.sourceSheet || '', sourceRowNumber: row.sourceRowNumber || '', sourceDigest: row.sourceDigest || '', eventId,
+          customer: source.customer || row.customer || '', supplier: source.supplier || row.supplier || ''
+        });
+      };
+      (state.sources.opening?.rows || []).forEach((row) => push(row, '기초재고', Number.isFinite(row.quantity) ? row.quantity : null));
+      (state.sources.purchases?.rows || []).forEach((row) => push(row, '구매입고', Number.isFinite(row.quantity) ? row.quantity : null, { supplier: row.supplier }));
+      (state.sources.sales?.rows || []).forEach((row) => push(row, '판매출고', Number.isFinite(row.quantity) ? -row.quantity : null, { customer: row.customer }));
+      activeSubstitutions().forEach((operation) => {
+        const source = productMap.get(operation.sourceProductKey);
+        const target = productMap.get(operation.targetProductKey);
+        if (!source || !target) return;
+        push({ ...source, productKey: source.key, warehouse: operation.warehouse }, '대체원상품출고복원', operation.sourceSalesQuantity, { customer: operation.customer }, operation.operationId);
+        push({ ...target, productKey: target.key, warehouse: operation.warehouse }, '대체상품실제출고', -operation.actualOutboundQuantity, { customer: operation.customer }, operation.operationId);
+      });
+      const running = new Map();
+      return movements.map((movement) => {
+        const key = `${movement.productKey}|${movement.warehouse}`;
+        const balance = movement.signedQuantity === null ? running.get(key) ?? null : round((running.get(key) || 0) + movement.signedQuantity);
+        if (movement.signedQuantity !== null) running.set(key, balance);
+        return { ...movement, runningBalance: balance };
+      });
+    }
+    function buildOutputRows() {
+      const products = buildProducts();
+      const productMap = new Map(products.map((row) => [row.key, row]));
+      const fulfillment = buildFulfillment();
+      const movedByBucket = new Map();
+      activeSubstitutions().forEach((operation) => {
+        const key = `${operation.sourceProductKey}|${customerBucketKey(operation.customer, operation.warehouse)}`;
+        movedByBucket.set(key, round((movedByBucket.get(key) || 0) + operation.sourceSalesQuantity));
+      });
+      const outbound = (state.sources.sales?.rows || []).map((row) => {
+        const bucketKey = `${row.productKey}|${customerBucketKey(row.customer, row.warehouse)}`;
+        const remainingMove = Math.max(0, movedByBucket.get(bucketKey) || 0);
+        const transferable = Math.max(0, numericQuantity(row));
+        const moved = round(Math.min(remainingMove, transferable));
+        movedByBucket.set(bucketKey, round(remainingMove - moved));
+        const matched = round(fulfillment.links.filter((link) => link.salesRowId === row.rowId).reduce((sum, link) => sum + link.allocatedQuantity, 0));
+        return {
+          구분: '판매원본', 일자: safeExcelText(row.date), 전표번호: safeExcelText(row.documentNo), 창고: safeExcelText(row.warehouse),
+          거래처코드: safeExcelText(row.customerCode), 거래처명: safeExcelText(row.customer), 품목코드: safeExcelText(row.code), 품명: safeExcelText(row.name),
+          규격: safeExcelText(row.spec), 단위: safeExcelText(row.unit), 원판매수량: row.quantity, 주문매칭수량: matched,
+          대체전환수량: moved, 실제재고차감수량: Number.isFinite(row.quantity) ? round(row.quantity - moved) : '',
+          매칭상태: matched === numericQuantity(row) ? 'MATCHED' : matched === 0 ? 'UNMATCHED' : 'PARTIAL', 확정방식: '',
+          원본파일: safeExcelText(row.sourceFile), 원본시트: safeExcelText(row.sourceSheet), 원본행: row.sourceRowNumber, 원본행Digest: row.sourceDigest
+        };
+      });
+      activeSubstitutions().forEach((operation) => {
+        const source = productMap.get(operation.sourceProductKey) || {};
+        const target = productMap.get(operation.targetProductKey) || {};
+        outbound.push({
+          구분: '대체·소분', 일자: '', 전표번호: operation.operationId, 창고: safeExcelText(operation.warehouse), 거래처코드: '', 거래처명: safeExcelText(operation.customer),
+          품목코드: safeExcelText(target.code), 품명: safeExcelText(target.name), 규격: safeExcelText(target.spec), 단위: safeExcelText(target.unit),
+          원판매수량: operation.sourceSalesQuantity, 주문매칭수량: '', 대체전환수량: operation.sourceSalesQuantity,
+          실제재고차감수량: operation.actualOutboundQuantity, 매칭상태: `${safeExcelText(source.code)} → ${safeExcelText(target.code)}`,
+          확정방식: operation.conversionAuthority, 원본파일: '', 원본시트: '', 원본행: '', 원본행Digest: operation.operationId
+        });
+      });
+      const purchase = products.filter((row) => row.purchaseNeed > 0).map((row) => ({
+        품목코드: safeExcelText(row.code), 품명: safeExcelText(row.name), 규격: safeExcelText(row.spec), 단위: safeExcelText(row.unit),
+        주문수량: row.orders, 주문매칭출고: row.fulfilled, 미출고수량: row.unshipped, 현재계산재고: row.calculated,
+        발주필요수량: row.purchaseNeed, 판단상태: row.purchaseNeed > 0 ? 'PURCHASE_REQUIRED' : 'ENOUGH'
+      }));
+      const movements = buildMovementRows(products);
+      const ledger = movements.map((row) => ({
+        순번: row.sequence, 일자: safeExcelText(row.date), 전표번호: safeExcelText(row.documentNo), 창고: safeExcelText(row.warehouse), 품목코드: safeExcelText(row.code),
+        품명: safeExcelText(row.name), 규격: safeExcelText(row.spec), 단위: safeExcelText(row.unit), 수불유형: row.type, 증감수량: row.signedQuantity ?? '',
+        창고누계: row.runningBalance ?? '', 수량상태: row.quantityStatus, 거래처: safeExcelText(row.customer || row.supplier), 원본파일: safeExcelText(row.sourceFile),
+        원본시트: safeExcelText(row.sourceSheet), 원본행: row.sourceRowNumber, 원본행Digest: row.sourceDigest, 이벤트ID: row.eventId
+      }));
+      const warehouseMap = new Map();
+      movements.filter((row) => row.signedQuantity !== null).forEach((movement) => {
+        const key = `${movement.productKey}|${movement.warehouse}`;
+        const product = productMap.get(movement.productKey) || movement;
+        if (!warehouseMap.has(key)) warehouseMap.set(key, { product, warehouse: movement.warehouse, opening: 0, purchases: 0, sales: 0, restored: 0, substituted: 0 });
+        const target = warehouseMap.get(key);
+        if (movement.type === '기초재고') target.opening = round(target.opening + movement.signedQuantity);
+        if (movement.type === '구매입고') target.purchases = round(target.purchases + movement.signedQuantity);
+        if (movement.type === '판매출고') target.sales = round(target.sales - movement.signedQuantity);
+        if (movement.type === '대체원상품출고복원') target.restored = round(target.restored + movement.signedQuantity);
+        if (movement.type === '대체상품실제출고') target.substituted = round(target.substituted - movement.signedQuantity);
+      });
+      const warehouse = [...warehouseMap.values()].map((row) => ({
+        품목코드: safeExcelText(row.product.code), 품명: safeExcelText(row.product.name), 규격: safeExcelText(row.product.spec), 단위: safeExcelText(row.product.unit),
+        창고: safeExcelText(row.warehouse), 기초재고: row.opening, 구매입고: row.purchases, 판매원본출고: row.sales,
+        대체원상품복원: row.restored, 대체상품실제출고: row.substituted,
+        계산재고: round(row.opening + row.purchases - row.sales + row.restored - row.substituted), 실사재고: '', 실사차이: '', 범위: 'WAREHOUSE'
+      }));
+      products.forEach((row) => warehouse.push({
+        품목코드: safeExcelText(row.code), 품명: safeExcelText(row.name), 규격: safeExcelText(row.spec), 단위: safeExcelText(row.unit), 창고: '전체',
+        기초재고: row.opening, 구매입고: row.purchases, 판매원본출고: row.logicalSales,
+        대체원상품복원: round(row.logicalSales - row.physicalOutbound + activeSubstitutions().filter((operation) => operation.targetProductKey === row.key).reduce((sum, operation) => sum + operation.actualOutboundQuantity, 0)),
+        대체상품실제출고: round(activeSubstitutions().filter((operation) => operation.targetProductKey === row.key).reduce((sum, operation) => sum + operation.actualOutboundQuantity, 0)),
+        계산재고: row.calculated, 실사재고: row.stocktakeSeen ? row.stocktake : '', 실사차이: row.variance ?? '', 범위: 'TOTAL'
+      }));
+      const cancelled = cancelledActionIds();
+      const substitutionHistory = state.substitutions.map((operation) => {
+        const source = productMap.get(operation.sourceProductKey) || {};
+        const target = productMap.get(operation.targetProductKey) || {};
+        return {
+          이벤트ID: operation.operationId, 상태: cancelled.has(operation.operationId) ? 'CANCELLED_BY_UNDO' : 'ACTIVE', 확정시각: operation.occurredAt || operation.at,
+          창고: safeExcelText(operation.warehouse), 거래처: safeExcelText(operation.customer), 원상품코드: safeExcelText(source.code), 원상품명: safeExcelText(source.name),
+          전환판매수량: operation.sourceSalesQuantity, 실제상품코드: safeExcelText(target.code), 실제상품명: safeExcelText(target.name),
+          관리자확정차감수량: operation.actualOutboundQuantity, 확정방식: operation.conversionAuthority, 근거메모: safeExcelText(operation.note)
+        };
+      });
+      const relationHistory = state.relations.map((relation) => {
+        const source = productMap.get(relation.sourceProductKey) || {};
+        const target = productMap.get(relation.targetProductKey) || {};
+        return {
+          이벤트ID: relation.relationId, 상태: cancelled.has(relation.relationId) ? 'CANCELLED_BY_UNDO' : 'ACTIVE', 확정시각: relation.occurredAt || relation.at,
+          원상품코드: safeExcelText(source.code), 원상품명: safeExcelText(source.name), 대체상품코드: safeExcelText(target.code), 대체상품명: safeExcelText(target.name),
+          수량변경: '없음', 수량영향: relation.quantityEffect || 'NONE'
+        };
+      });
+      return { products, fulfillment, outbound, purchase, ledger, warehouse, substitutionHistory, relationHistory };
+    }
+    function validateWorkspace() {
+      const issues = [];
+      ['orders', 'opening'].forEach((role) => { if (!state.sources[role]) issues.push({ level: 'ERROR', code: 'REQUIRED_SOURCE_MISSING', role }); });
+      ROLE_ORDER.forEach((role) => (state.sources[role]?.rows || []).forEach((row) => {
+        if (role !== 'products' && ['MISSING', 'INVALID'].includes(row.quantityState)) issues.push({ level: 'ERROR', code: `QUANTITY_${row.quantityState}`, role, rowId: row.rowId });
+      }));
+      const seenOperations = new Set();
+      activeSubstitutions().forEach((operation) => {
+        if (seenOperations.has(operation.operationId)) issues.push({ level: 'ERROR', code: 'DUPLICATE_OPERATION_ID', operationId: operation.operationId });
+        seenOperations.add(operation.operationId);
+        if (operation.conversionAuthority !== 'ADMIN_CONFIRMED' || !(operation.sourceSalesQuantity > 0) || !(operation.actualOutboundQuantity > 0)) {
+          issues.push({ level: 'ERROR', code: 'ADMIN_CONFIRMED_QUANTITY_REQUIRED', operationId: operation.operationId });
+        }
+      });
+      activeRelations().forEach((relation) => {
+        if ((relation.quantityEffect || 'NONE') !== 'NONE') issues.push({ level: 'ERROR', code: 'RELATION_MUST_NOT_CHANGE_QUANTITY', relationId: relation.relationId });
+      });
+      const output = buildOutputRows();
+      const ledgerTotals = new Map();
+      buildMovementRows(output.products).forEach((row) => {
+        if (typeof row.signedQuantity === 'number') ledgerTotals.set(row.productKey, round((ledgerTotals.get(row.productKey) || 0) + row.signedQuantity));
+      });
+      output.products.filter((row) => row.code).forEach((row) => {
+        if (Math.abs((ledgerTotals.get(row.key) || 0) - row.calculated) > 0.00001) issues.push({ level: 'ERROR', code: 'LEDGER_RECONCILIATION_FAILED', productKey: row.key });
+      });
+      output.fulfillment.balances.forEach((row) => {
+        if (Math.abs(row.orderedQuantity - row.matchedQuantity - row.remainingQuantity) > 0.00001) issues.push({ level: 'ERROR', code: 'FULFILLMENT_RECONCILIATION_FAILED', orderRowId: row.orderRowId });
+      });
+      return { ok: !issues.some((issue) => issue.level === 'ERROR'), issues };
+    }
+    function createWorkbook(outputs, xlsx = XLSX) {
+      const workbook = xlsx.utils.book_new();
+      const append = (name, data) => {
+        const rows = data.length ? data : [{ 안내: '데이터 없음' }];
+        const sheet = xlsx.utils.json_to_sheet(rows);
+        const range = xlsx.utils.decode_range(sheet['!ref']);
+        for (let column = range.s.c; column <= range.e.c; column += 1) {
+          const cell = sheet[xlsx.utils.encode_cell({ r: 0, c: column })];
+          if (cell) cell.s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '17324D' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+        }
+        for (let rowIndex = 1; rowIndex <= range.e.r; rowIndex += 1) {
+          for (let column = range.s.c; column <= range.e.c; column += 1) {
+            const cell = sheet[xlsx.utils.encode_cell({ r: rowIndex, c: column })];
+            if (cell?.t === 'n') cell.z = '#,##0.####';
+          }
+        }
+        const headers = Object.keys(rows[0]);
+        sheet['!cols'] = headers.map((header) => ({
+          wch: Math.min(32, Math.max(10, excelDisplayWidth(header) + 2, ...rows.slice(0, 500).map((row) => excelDisplayWidth(row[header]) + 2)))
+        }));
+        sheet['!autofilter'] = { ref: xlsx.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } }) };
+        sheet['!freeze'] = { xSplit: 0, ySplit: 1 };
+        xlsx.utils.book_append_sheet(workbook, sheet, name);
+      };
+      append('출고현황', outputs.outbound);
+      append('발주현황', outputs.purchase);
+      append('재고수불부', outputs.ledger);
+      append('창고별재고', outputs.warehouse);
+      append('대체소분이력', outputs.substitutionHistory);
+      append('상품관계', outputs.relationHistory);
+      return workbook;
+    }
+    function exportExcel() {
+      if (!window.XLSX) return showToast('Excel 라이브러리를 불러오지 못했습니다.', true);
+      const outputs = buildOutputRows();
+      if (!outputs.products.length) return showToast('내보낼 데이터가 없습니다.', true);
+      const validation = validateWorkspace();
+      if (!validation.ok) return showToast(`수량대사 또는 필수자료 오류 ${validation.issues.length}건을 먼저 확인하세요.`, true);
+      const workbook = createWorkbook(outputs, XLSX);
+      XLSX.writeFile(workbook, `OrderQ_Lab_Result_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`, { compression: true });
+      showToast('출고·발주·재고수불·창고재고와 이력 Excel을 생성했습니다.');
+    }
+
+    $('#roleGrid').addEventListener('change', (event) => {
+      const input = event.target.closest('[data-file-input]');
+      if (input?.files?.[0]) handleRoleFile(input.dataset.fileInput, input.files[0]);
+    });
+    $('#roleGrid').addEventListener('click', (event) => {
+      const clear = event.target.closest('[data-clear-role]');
+      if (clear) { event.preventDefault(); event.stopPropagation(); clearRole(clear.dataset.clearRole); }
+    });
+    $('#roleGrid').addEventListener('dragover', (event) => { const card = event.target.closest('[data-file-card]'); if (card) { event.preventDefault(); card.classList.add('dragover'); } });
+    $('#roleGrid').addEventListener('dragleave', (event) => event.target.closest('[data-file-card]')?.classList.remove('dragover'));
+    $('#roleGrid').addEventListener('drop', (event) => {
+      const card = event.target.closest('[data-file-card]');
+      if (!card) return;
+      event.preventDefault(); card.classList.remove('dragover'); handleRoleFile(card.dataset.fileCard, event.dataTransfer.files?.[0]);
+    });
+    $('#bundleDrop').addEventListener('dragover', (event) => { event.preventDefault(); event.currentTarget.classList.add('dragover'); });
+    $('#bundleDrop').addEventListener('dragleave', (event) => event.currentTarget.classList.remove('dragover'));
+    $('#bundleDrop').addEventListener('drop', (event) => { event.preventDefault(); event.currentTarget.classList.remove('dragover'); handleBundle(event.dataTransfer.files); });
+    $('#workTableBody').addEventListener('click', (event) => {
+      if (event.target.closest('.customer-chip, button, input')) return;
+      const row = event.target.closest('[data-product-key]'); if (row) toggleProductSelection(row.dataset.productKey);
+    });
+    $('#workTableBody').addEventListener('dragstart', (event) => {
+      const chip = event.target.closest('[data-drag-payload]');
+      if (!chip) return;
+      event.dataTransfer.setData('application/x-orderq-allocation', decodeURIComponent(chip.dataset.dragPayload));
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    $('#workTableBody').addEventListener('dragover', (event) => {
+      const row = event.target.closest('[data-product-key]');
+      if (row && event.dataTransfer.types.includes('application/x-orderq-allocation')) { event.preventDefault(); row.classList.add('drop-target'); }
+    });
+    $('#workTableBody').addEventListener('dragleave', (event) => event.target.closest('[data-product-key]')?.classList.remove('drop-target'));
+    $('#workTableBody').addEventListener('drop', (event) => {
+      const row = event.target.closest('[data-product-key]'); if (!row) return;
+      event.preventDefault(); row.classList.remove('drop-target');
+      try { openSubstitution(JSON.parse(event.dataTransfer.getData('application/x-orderq-allocation')), row.dataset.productKey); }
+      catch (error) { showToast('드래그 작업정보를 읽지 못했습니다.', true); }
+    });
+    $('#substitutionForm').addEventListener('submit', confirmSubstitution);
+    $('#cancelSubstitutionButton').addEventListener('click', () => { pendingSubstitution = null; $('#substitutionDialog').close('cancel'); });
+    $('#substitutionDialog').addEventListener('close', () => { if ($('#substitutionDialog').returnValue === 'cancel') pendingSubstitution = null; });
+    $('#relationButton').addEventListener('click', registerRelation);
+    $('#clearSelectionButton').addEventListener('click', () => { state.selectedKeys = []; renderTable(computedRows); renderControls(); });
+    $('#undoButton').addEventListener('click', undoLast);
+    $('#saveButton').addEventListener('click', downloadJson);
+    $('#exportButton').addEventListener('click', exportExcel);
+    $('#resetButton').addEventListener('click', resetWorkspace);
+    $('#searchInput').addEventListener('input', (event) => { state.search = event.target.value; renderTable(computedRows); });
+    $('#issueFilterButton').addEventListener('click', () => { state.issueOnly = !state.issueOnly; renderTable(computedRows); renderControls(); });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'F3') { event.preventDefault(); $('#searchInput').focus(); }
+      if (event.key === 'Escape' && state.selectedKeys.length) { state.selectedKeys = []; renderTable(computedRows); renderControls(); }
+    });
+
+    window.OrderQLabTestPort = Object.freeze({
+      version: VERSION,
+      normalizeHeader,
+      normalizeCode,
+      number,
+      parseMatrix,
+      async parseFile(file, role) { return parseFile(file, role); },
+      applySource(role, source) {
+        const applied = applySource(role, source);
+        if (applied) { persist(); render(); }
+        return applied;
+      },
+      injectSources(sources = {}) {
+        const normalizedSources = {};
+        Object.entries(sources).forEach(([role, source]) => {
+          const rows = (source?.rows || []).map((row, index) => {
+            const quantity = row.quantity === null || row.quantity === undefined || row.quantity === '' ? null : Number(row.quantity);
+            const normalized = {
+              sourceRole: role, sourceFile: source.fileName || `${role}.xlsx`, sourceSheet: source.sheetName || ROLES[role]?.label || role,
+              sourceRowNumber: row.sourceRowNumber || index + 2, ...row,
+              code: normalizeCode(row.code), quantity: Number.isFinite(quantity) ? quantity : null,
+              quantityState: row.quantityState || quantityState(row.quantity, Number.isFinite(quantity) ? quantity : null)
+            };
+            normalized.rowId = normalized.rowId || `${role}:test:${index + 2}`;
+            normalized.productKey = normalized.productKey || productKey(normalized);
+            normalized.sourceCells = Array.isArray(normalized.sourceCells) ? normalized.sourceCells : [];
+            normalized.sourceDigest = normalized.sourceDigest || stableHash(normalized);
+            return normalized;
+          });
+          normalizedSources[role] = { role, fileName: `${role}.xlsx`, sheetName: ROLES[role]?.label || role, sourceFingerprint: stableHash(rows), ...source, rows, rowCount: rows.length };
+        });
+        state = { ...freshState(), sources: normalizedSources };
+        persist(); render(); return buildProducts();
+      },
+      getRows() { return buildProducts().map((row) => ({ ...row, salesCustomers: [...row.salesCustomers], salesBuckets: [...row.salesBuckets], orderCustomers: [...row.orderCustomers], sourceRoles: [...row.sourceRoles] })); },
+      getFulfillment() { return buildFulfillment(); },
+      getOutputRows() { return buildOutputRows(); },
+      createWorkbook() { return createWorkbook(buildOutputRows(), window.XLSX); },
+      validate() { return validateWorkspace(); },
+      registerRelation(input = {}) {
+        const relationId = input.relationId || id('TEST-REL');
+        if (state.relations.some((entry) => entry.relationId === relationId)) return { duplicate: true, relationId };
+        const relation = { relationId, occurredAt: nowIso(), at: nowLabel(), quantityEffect: 'NONE', ...input };
+        state.relations.push(relation);
+        appendHistory('RELATION', relation.relationId, '테스트 상품 관계확정 · 수량변경 없음', { quantityEffect: 'NONE' });
+        persist(); render(); return relation;
+      },
+      applyAdminSubstitution(input = {}) {
+        const operation = { operationId: id('TEST-SUB'), conversionAuthority: 'ADMIN_CONFIRMED', occurredAt: nowIso(), at: nowLabel(), note: '', customer: '테스트', warehouse: '', ...input };
+        if (!(Number(operation.sourceSalesQuantity) > 0) || !(Number(operation.actualOutboundQuantity) > 0)) throw new Error('ADMIN_QUANTITY_REQUIRED');
+        if (operation.conversionAuthority !== 'ADMIN_CONFIRMED') throw new Error('ADMIN_CONFIRMATION_REQUIRED');
+        if (state.substitutions.some((entry) => entry.operationId === operation.operationId)) return { duplicate: true, operationId: operation.operationId };
+        const available = availableCustomerQuantity(operation.sourceProductKey, operation.customer, operation.warehouse);
+        if (operation.sourceSalesQuantity > available + 0.00001) throw new Error('SOURCE_SALES_QUANTITY_EXCEEDED');
+        state.substitutions.push(operation);
+        appendHistory('SUBSTITUTION', operation.operationId, '테스트 대체·소분 출고', { conversionAuthority: 'ADMIN_CONFIRMED' });
+        persist(); render(); return buildProducts();
+      },
+      undoLast() { undoLast(); return buildProducts(); },
+      snapshot() { return JSON.parse(JSON.stringify(state)); }
+    });
+
+    $('#searchInput').value = state.search || '';
+    render();
+    if (Object.keys(state.sources).length) setSystemMessage('이 브라우저에 저장된 독립 작업공간을 복구했습니다. 원본 Excel 파일은 포함하지 않습니다.');
+  })();
+  </script>
+</body>
+</html>

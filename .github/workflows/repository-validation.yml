@@ -116,6 +116,11 @@ jobs:
       - name: Test ORDER Q cloud transaction atomicity
         run: node scripts/test-orderq-cloud-atomicity.mjs
 
+      - name: Test archived Excel-only OrderQ Lab contracts and engine
+        run: |
+          node scripts/test-orderq-lab-standalone.mjs
+          node scripts/test-orderq-lab-engine.mjs
+
       - name: Test DataOps zero and negative stock preservation
         run: node scripts/test-dataops-zero-stock-contract.mjs
 
