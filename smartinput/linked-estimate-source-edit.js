@@ -47,6 +47,7 @@ export const LINKED_ESTIMATE_FIELD_LABELS = Object.freeze({
 
 const text = value => String(value ?? '').trim();
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const LINKED_ESTIMATE_CONFLICT_FIELDS = Object.freeze(['quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']);
 
 function clone(value) {
   if (value === undefined) return undefined;
@@ -64,6 +65,10 @@ function canonical(value) {
 
 function same(left, right) {
   return canonical(left) === canonical(right);
+}
+
+function normalizedProductKey(value) {
+  return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[\s()[\]{}<>,.:;·_-]+/g, '');
 }
 
 export function numericInputState(value) {
@@ -324,6 +329,75 @@ export function createLinkedEstimateSourceEditPlan({ evidence, selections = {}, 
   };
 }
 
+function comparableWorkingDraft(input) {
+  const draft = clone(input || null);
+  if (!draft) return null;
+  delete draft.documentId;
+  delete draft.updatedAt;
+  delete draft.delivery;
+  if (draft.header) {
+    delete draft.header.customerMappingSource;
+    if (draft.header.deliveryPolicySnapshot) delete draft.header.deliveryPolicySnapshot.evaluatedAt;
+  }
+  (draft.rows || []).forEach(row => {
+    delete row.editedFields;
+    delete row.candidateProducts;
+    delete row.linkedSyncFields;
+    delete row.linkedConflictResolvedFields;
+  });
+  return draft;
+}
+
+export function linkedEstimateWorkingDraftsEquivalent(left, right) {
+  return same(comparableWorkingDraft(left), comparableWorkingDraft(right));
+}
+
+export function inspectLinkedEstimateSourceWorkingCopyConflicts({ plan, sourceRecords = [], workingCopies = [] } = {}) {
+  if (plan?.schemaVersion !== LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA) throw new Error('LINKED_ESTIMATE_SOURCE_EDIT_PLAN_INVALID');
+  const selectedIds = new Set(plan.operations.map(operation => text(operation.target?.estimateId)).filter(Boolean));
+  const recordsById = new Map(sourceRecords.filter(record => record?.estimateId).map(record => [record.estimateId, record]));
+  const workingById = new Map(workingCopies.filter(copy => copy?.estimateId && copy?.draft).map(copy => [copy.estimateId, copy.draft]));
+  return [...selectedIds].flatMap(estimateId => {
+    const record = recordsById.get(estimateId);
+    const workingDraft = workingById.get(estimateId);
+    if (!record?.draft || !workingDraft || linkedEstimateWorkingDraftsEquivalent(record.draft, workingDraft)) return [];
+    return [{
+      code: 'LINKED_ESTIMATE_SOURCE_WORKING_COPY_CONFLICT',
+      estimateId,
+      estimateName: recordTitle(record),
+      message: `${recordTitle(record)}에 저장하지 않은 작업본이 있습니다.`
+    }];
+  });
+}
+
+function linkedRefSignature(row = {}) {
+  return normalizedSourceRefs(row).map(ref => `${ref.estimateId}:${ref.rowId}`).sort().join('|');
+}
+
+export function restoreLinkedEstimateWorkingRowEdits({ materializedRows = [], workingRows = [] } = {}) {
+  const workingByRefs = new Map(workingRows.map(row => [linkedRefSignature(row), row]).filter(([signature]) => signature));
+  return materializedRows.map(row => {
+    const working = workingByRefs.get(linkedRefSignature(row));
+    if (!working) return clone(row);
+    const fields = [...new Set([
+      ...Object.entries(working.editedFields || {}).filter(([, edited]) => edited).map(([field]) => field),
+      ...(working.linkedSyncFields || [])
+    ])].filter(field => LINKED_ESTIMATE_SOURCE_EDIT_FIELDS.includes(field));
+    if (!fields.length) return clone(row);
+    const restored = clone(row);
+    fields.forEach(field => { restored[field] = clone(working[field]); });
+    if (fields.includes('unitPrice')) restored.sourceUnitPrice = String(working.sourceUnitPrice ?? working.unitPrice ?? '');
+    restored.fieldValues = clone(restored.fieldValues || {});
+    fields.forEach(field => updateTrackedField(restored, field, working));
+    restored.editedFields = clone(working.editedFields || {});
+    restored.linkedSyncFields = [...new Set(working.linkedSyncFields || [])];
+    restored.linkedFieldConflicts = [...new Set(working.linkedFieldConflicts || [])];
+    restored.linkedConflictResolvedFields = [...new Set(working.linkedConflictResolvedFields || [])];
+    restored.linkedPriceConflict = Boolean(working.linkedPriceConflict);
+    return restored;
+  });
+}
+
 function updateTrackedField(row, field, workingRow) {
   const suffixByField = {
     itemCode: '.line.productCode', itemName: '.line.productName', specification: '.line.specification',
@@ -372,6 +446,50 @@ function clearLinkedEditMarkers(row) {
   row.linkedConflictResolvedFields = [];
   row.linkedPriceConflict = false;
   return row;
+}
+
+function linkedProductKey(row = {}) {
+  const code = normalizedProductKey(row.itemCode);
+  if (code) return `CODE:${code}`;
+  return `NAME:${normalizedProductKey(row.itemName)}|${normalizedProductKey(row.specification)}|${normalizedProductKey(row.unit)}`;
+}
+
+function materializeLinkedRows(target, recordsById) {
+  const uniqueRows = new Map();
+  (target.linkedEstimateSources || []).forEach(sourceMeta => {
+    const source = recordsById.get(sourceMeta.estimateId);
+    (source?.draft?.rows || []).forEach(sourceRow => {
+      const key = linkedProductKey(sourceRow);
+      const ref = { estimateId: source.estimateId, estimateName: recordTitle(source), rowId: sourceRow.rowId };
+      const existing = uniqueRows.get(key);
+      if (existing) {
+        const conflicts = LINKED_ESTIMATE_CONFLICT_FIELDS.filter(field => String(existing[field] ?? '') !== String(sourceRow[field] ?? ''));
+        existing.linkedFieldConflicts = [...new Set([...(existing.linkedFieldConflicts || []), ...conflicts])];
+        existing.linkedPriceConflict = existing.linkedFieldConflicts.includes('unitPrice');
+        existing.linkedSourceRefs.push(ref);
+        existing.linkedSourceEstimateIds.push(source.estimateId);
+        existing.linkedSourceEstimateName = `${existing.linkedSourceRefs.length}개 견적서`;
+        return;
+      }
+      uniqueRows.set(key, {
+        ...clone(sourceRow),
+        rowId: `LINKED:${source.estimateId}:${sourceRow.rowId}`,
+        linkedSourceEstimateId: source.estimateId,
+        linkedSourceEstimateName: recordTitle(source),
+        linkedSourceRowId: sourceRow.rowId,
+        linkedSourceEstimateIds: [source.estimateId],
+        linkedSourceRefs: [ref],
+        inputOwnership: 'SOURCE',
+        editedFields: {},
+        linkedSyncFields: [],
+        linkedFieldConflicts: [],
+        linkedConflictResolvedFields: [],
+        linkedPriceConflict: false
+      });
+    });
+  });
+  const manualRows = (target.draft?.rows || []).filter(row => !normalizedSourceRefs(row).length && meaningfulRow(row)).map(row => clearLinkedEditMarkers(clone(row)));
+  return [...uniqueRows.values(), ...manualRows];
 }
 
 function sanitizeNewSourceRow(row, target, plan) {
@@ -496,6 +614,7 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
   target.linkedEstimateSources = (target.linkedEstimateSources || []).map(source => (
     changedIds.has(source.estimateId) ? { ...source, updatedAt: plan.occurredAt } : source
   ));
+  target.draft.rows = materializeLinkedRows(target, recordsById);
   updateSummary(target);
   return {
     linkedRecord: target,

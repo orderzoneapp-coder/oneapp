@@ -121,7 +121,10 @@ import {
   LINKED_ESTIMATE_FIELD_LABELS,
   applyLinkedEstimateSourceEditPlan,
   createLinkedEstimateSourceEditPlan,
-  inspectLinkedEstimateSourceEdits
+  inspectLinkedEstimateSourceEdits,
+  inspectLinkedEstimateSourceWorkingCopyConflicts,
+  linkedEstimateWorkingDraftsEquivalent,
+  restoreLinkedEstimateWorkingRowEdits
 } from './linked-estimate-source-edit.js?v=0.1.0';
 import {
   SETTINGS_FIELD_GROUPS,
@@ -251,6 +254,7 @@ const state = {
   estimateLibraryKind: 'individual',
   estimateMultiSelectKind: '',
   estimateWorkingCopies: new Map(),
+  estimateWorkingCopyBaselines: new Map(),
   estimateSelectionReturnDraft: null,
   lastEstimateSave: null,
   estimateDragSuppressed: false,
@@ -3560,6 +3564,11 @@ function rememberActiveEstimateWork() {
   if (state.draft.activeMode !== 'estimate') return;
   const current = modeDraft();
   if (!current.catalogRecordId || current.estimateKind === 'COMPOSITION_PREVIEW') return;
+  const baseline = state.estimateWorkingCopyBaselines.get(current.catalogRecordId);
+  if (baseline && linkedEstimateWorkingDraftsEquivalent(baseline, current)) {
+    state.estimateWorkingCopies.delete(current.catalogRecordId);
+    return;
+  }
   state.estimateWorkingCopies.set(current.catalogRecordId, JSON.parse(JSON.stringify(current)));
 }
 
@@ -3984,6 +3993,7 @@ async function deleteSelectedEstimates() {
   state.estimates = remaining;
   state.noticeEstimateIds = [];
   deletedIds.forEach(estimateId => state.estimateWorkingCopies.delete(estimateId));
+  deletedIds.forEach(estimateId => state.estimateWorkingCopyBaselines.delete(estimateId));
   if (estimateCreationActive()) previewEstimateCreation();
   else if (deletedIds.has(modeDraft().catalogRecordId)) startNewCatalog();
   else renderCatalogControls();
@@ -4270,14 +4280,22 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
   if (!record?.draft) return;
   syncSourceText();
   state.draft.activeMode = 'estimate';
+  const hasWorkingCopy = state.estimateWorkingCopies.has(record.estimateId);
   const recordDraft = estimateRecordDraft(record);
   const linkedRecords = record.estimateKind === 'LINKED_GROUP'
     ? (record.linkedEstimateSources || []).map(source => state.estimates.find(item => item.estimateId === source.estimateId)).filter(Boolean)
     : [];
+  const materializedRows = record.estimateKind === 'LINKED_GROUP' ? materializeLinkedEstimateRows(linkedRecords) : [];
   const draftSource = record.estimateKind === 'LINKED_GROUP'
-    ? { ...recordDraft, estimateKind: 'LINKED_GROUP', linkedEstimateSources: record.linkedEstimateSources || [], rows: [...materializeLinkedEstimateRows(linkedRecords), ...manualLinkedRows(recordDraft?.rows)] }
+    ? { ...recordDraft, estimateKind: 'LINKED_GROUP', linkedEstimateSources: record.linkedEstimateSources || [], rows: [
+      ...materializedRows,
+      ...manualLinkedRows(recordDraft?.rows)
+    ] }
     : recordDraft;
   const catalogDraft = createCatalogOnlyDraft(draftSource, record.estimateId);
+  if (record.estimateKind === 'LINKED_GROUP' && hasWorkingCopy) {
+    catalogDraft.rows = restoreLinkedEstimateWorkingRowEdits({ materializedRows: catalogDraft.rows, workingRows: recordDraft?.rows || [] });
+  }
   catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
   catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
     ? { ...record.previousPrices }
@@ -4286,6 +4304,7 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
   catalogDraft.header.customerId = linkedCustomer?.customerId || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record));
   catalogDraft.header.customerName = customerName(linkedCustomer) || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record));
   catalogDraft.header.customerMappingSource = 'CATALOG';
+  if (!hasWorkingCopy) state.estimateWorkingCopyBaselines.set(record.estimateId, JSON.parse(JSON.stringify(catalogDraft)));
   state.draft.modes.estimate = catalogDraft;
   if (inputMappingSession(catalogDraft)) resetCurrentTableViewForSource('estimate');
   state.sourceImages.estimate = null;
@@ -7132,6 +7151,17 @@ async function saveEstimateDocument(catalogName) {
           occurredAt: timestamp,
           planId: createRecordId('SILEDIT')
         });
+        const workingCopyConflicts = inspectLinkedEstimateSourceWorkingCopyConflicts({
+          plan,
+          sourceRecords: individualEstimateRecords(),
+          workingCopies: [...state.estimateWorkingCopies].map(([estimateId, draft]) => ({ estimateId, draft }))
+        });
+        if (workingCopyConflicts.length) {
+          const names = workingCopyConflicts.map(conflict => conflict.estimateName).join(', ');
+          const error = new Error(`선택한 원본 ${names}에 저장하지 않은 작업본이 있습니다. 해당 원본을 먼저 열어 저장하거나 작업본을 명시적으로 정리한 뒤 다시 시도하세요.`);
+          error.code = 'LINKED_ESTIMATE_SOURCE_WORKING_COPY_CONFLICT';
+          throw error;
+        }
         const applied = applyLinkedEstimateSourceEditPlan({
           plan,
           linkedRecord: record,
@@ -7166,6 +7196,8 @@ async function saveEstimateDocument(catalogName) {
     saveDraftNow();
     hydrateHeader();
     renderEstimateHeaderFields();
+    state.estimateWorkingCopyBaselines.set(estimateId, JSON.parse(JSON.stringify(nextCurrent)));
+    if (savedRecord.estimateKind === 'LINKED_GROUP') renderRows({ restoreFocus: false });
     const affectedCount = Math.max(0, bundle.length - 1);
     state.lastEstimateSave = { estimateId, linkCount: estimateSaveImpact(savedRecord), affectedCount };
     renderCatalogControls();

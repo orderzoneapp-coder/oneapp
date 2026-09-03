@@ -3,7 +3,9 @@ import {
   applyLinkedEstimateSourceEditPlan,
   createLinkedEstimateSourceEditPlan,
   inspectLinkedEstimateSourceEdits,
-  numericInputState
+  inspectLinkedEstimateSourceWorkingCopyConflicts,
+  numericInputState,
+  restoreLinkedEstimateWorkingRowEdits
 } from '../smartinput/linked-estimate-source-edit.js';
 
 const sourceRow = (rowId, quantity, unitPrice, overrides = {}) => ({
@@ -110,6 +112,9 @@ const updatedRight = appliedRight.upserts.find(record => record.estimateId === '
 assert.equal(updatedLeft, undefined, '선택하지 않은 원본은 upsert 대상이 아니어야 한다.');
 assert.equal(updatedRight.draft.rows[0].quantity, 9);
 assert.equal(updatedRight.draft.rows[0].unitPrice, 1500);
+assert.equal(appliedRight.linkedRecord.draft.rows[0].quantity, 1, 'B만 바꾼 뒤 연동행 대표값은 첫 원본 A의 현재값으로 즉시 다시 물질화해야 한다.');
+assert.ok(appliedRight.linkedRecord.draft.rows[0].linkedFieldConflicts.includes('quantity'), 'A=1/B=9 차이는 저장 직후에도 값 다름으로 표시해야 한다.');
+assert.equal(appliedRight.linkedRecord.draft.rows[0].linkedPriceConflict, true, 'A/B 단가 차이도 저장 직후 다시 계산해야 한다.');
 assert.equal(updatedRight.draft.rows[0].rawQuantity, 3, '원본 수량 evidence는 수정하지 않는다.');
 assert.deepEqual(
   updatedRight.draft.rows[0].fieldValues['voucher.estimate.line.quantity'].evidence,
@@ -117,6 +122,53 @@ assert.deepEqual(
   '원본 source evidence/signature는 보존해야 한다.'
 );
 assert.equal(right.draft.rows[0].quantity, 3, '순수 적용 함수는 입력 레코드를 변경하지 않아야 한다.');
+
+const refreshedMaterializedRows = structuredClone(appliedRight.linkedRecord.draft.rows);
+refreshedMaterializedRows[0].fieldValues['voucher.estimate.line.quantity'].evidence.signature = 'SIG-REFRESHED';
+const restoredLinkedWorkingRows = restoreLinkedEstimateWorkingRowEdits({
+  materializedRows: refreshedMaterializedRows,
+  workingRows: [{ ...linkedRow, quantity: 9, editedFields: { quantity: true }, linkedSyncFields: ['quantity'] }]
+});
+assert.equal(restoredLinkedWorkingRows[0].quantity, 9, '차단 뒤 연동견적 재열기는 같은 linked refs의 sourced-row 편집값을 작업 화면에 복원해야 한다.');
+assert.equal(restoredLinkedWorkingRows[0].editedFields.quantity, true);
+assert.deepEqual(restoredLinkedWorkingRows[0].linkedSyncFields, ['quantity']);
+assert.equal(restoredLinkedWorkingRows[0].fieldValues['voucher.estimate.line.quantity'].currentDisplayValue, '9');
+assert.equal(restoredLinkedWorkingRows[0].fieldValues['voucher.estimate.line.quantity'].evidence.signature, 'SIG-REFRESHED', '작업값 복원은 새로 물질화한 원본 evidence/signature를 덮어쓰면 안 된다.');
+assert.equal(appliedRight.linkedRecord.draft.rows[0].quantity, 1, 'working-row 복원은 저장된 연동 Snapshot을 변경하지 않아야 한다.');
+
+const selectedWorkingCopy = structuredClone(right.draft);
+selectedWorkingCopy.documentId = 'WORKING-DOCUMENT';
+selectedWorkingCopy.updatedAt = '2026-09-03T20:00:10+09:00';
+selectedWorkingCopy.rows[0].memo = '저장하지 않은 원본 B 메모';
+selectedWorkingCopy.rows[0].editedFields = { memo: true };
+const selectedWorkingCopyConflicts = inspectLinkedEstimateSourceWorkingCopyConflicts({
+  plan: selectedRight,
+  sourceRecords: [left, right],
+  workingCopies: [{ estimateId: 'EST-B', draft: selectedWorkingCopy }]
+});
+assert.deepEqual(selectedWorkingCopyConflicts.map(conflict => conflict.estimateId), ['EST-B'], '선택 원본의 persisted draft와 다른 working copy는 저장 전에 차단해야 한다.');
+assert.equal(right.draft.rows[0].memo, '', 'working-copy 검사는 persisted 원본을 변경하지 않아야 한다.');
+
+const metadataSourceRecord = structuredClone(right);
+metadataSourceRecord.draft.header = { deliveryPolicySnapshot: { validationCode: 'AVAILABLE', evaluatedAt: '2026-09-03T20:00:00+09:00' } };
+const metadataOnlyWorkingCopy = structuredClone(metadataSourceRecord.draft);
+metadataOnlyWorkingCopy.documentId = 'REOPENED-DOCUMENT';
+metadataOnlyWorkingCopy.updatedAt = '2026-09-03T20:00:20+09:00';
+metadataOnlyWorkingCopy.header = { deliveryPolicySnapshot: { validationCode: 'AVAILABLE', evaluatedAt: '2026-09-03T20:00:20+09:00' } };
+metadataOnlyWorkingCopy.rows[0].editedFields = { memo: true };
+assert.deepEqual(inspectLinkedEstimateSourceWorkingCopyConflicts({
+  plan: selectedRight,
+  sourceRecords: [left, metadataSourceRecord],
+  workingCopies: [{ estimateId: 'EST-B', draft: metadataOnlyWorkingCopy }]
+}), [], '다시 연 문서 ID·시각·편집표시만 다른 동일 작업본은 데이터 유실 위험으로 오인하면 안 된다.');
+
+const unselectedWorkingCopy = structuredClone(left.draft);
+unselectedWorkingCopy.rows[0].memo = '선택하지 않은 원본 A 작업본';
+assert.deepEqual(inspectLinkedEstimateSourceWorkingCopyConflicts({
+  plan: selectedRight,
+  sourceRecords: [left, right],
+  workingCopies: [{ estimateId: 'EST-A', draft: unselectedWorkingCopy }]
+}), [], '미선택 원본의 working copy는 선택 원본 저장을 차단하거나 폐기하면 안 된다.');
 
 const identityEdit = {
   ...linkedRecord,
