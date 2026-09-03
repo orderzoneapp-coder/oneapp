@@ -19,8 +19,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.4/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.8/);
-assert.match(html, /smartinput\.css\?v=0\.8\.7/);
-assert.match(html, /smartinput\.js\?v=0\.11\.6/);
+assert.match(html, /smartinput\.css\?v=0\.8\.8/);
+assert.match(html, /smartinput-contract\.js\?v=0\.6\.1/);
+assert.match(html, /smartinput\.js\?v=0\.11\.7/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.4\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -38,6 +39,14 @@ assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
 assert.match(html, /<th class="sequence-column sequence-select-column"[^>]*>[\s\S]*No\.[\s\S]*id="selectAllRows"/, 'row number and select-all must share one table heading');
 assert.doesNotMatch(html, /class="col-select"|class="select-column"/, 'the standalone selection column must stay removed');
+assert.doesNotMatch(html, /data-column="productSearch"|class="col-product-search"|>상품 검색<\/th>/,
+  'the worktable must not restore a standalone product-search column');
+assert.match(html, /class="product-code-search-heading" data-column="itemCode"[^>]*>품목코드<\/th>/,
+  'itemCode must be the visible product-search entry heading');
+assert.match(appSource, /data-column="itemCode" class="product-code-search-cell product-search-cell"[\s\S]*data-field="itemCode"[\s\S]*placeholder="코드·품명·검색어"/,
+  'itemCode cells must expose code, name, and keyword product search');
+assert.doesNotMatch(appSource, /data-column="productSearch"|\|productSearch|field: 'productSearch'/,
+  'grid focus and navigation must no longer target the removed productSearch field');
 assert.match(appSource, /row-sequence-number[\s\S]*data-select-row=/, 'each row must render its number and checkbox in one cell');
 assert.match(read('smartinput/smartinput.css'), /row-sequence-select-cell > input \{ width: 21px; height: 21px;/, 'row selection checkboxes must remain enlarged');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
@@ -123,6 +132,16 @@ assert.deepEqual(Object.keys(contract.MODES), ['order', 'purchase', 'sale', 'est
 assert.deepEqual(Array.from(contract.INPUT_METHODS, item => item.id), ['direct', 'excel', 'text', 'paste', 'photo', 'voice']);
 const normalizedSettings = contract.normalizeSettings({ futureSetting: { keep: true } });
 assert.deepEqual(normalizedSettings.futureSetting, { keep: true }, 'unknown settings must survive normalization');
+const legacySearchLayout = contract.normalizeSettings({
+  columnWidths: { productSearch: 244, itemCode: 176 },
+  columnWidthsByMode: { order: { productSearch: 232, itemCode: 188 } },
+  inputOrderByMode: { order: { productSearch: 1, itemCode: 2 } }
+});
+assert.equal('productSearch' in legacySearchLayout.columnWidths, false, 'legacy productSearch width must not restore the removed column');
+assert.equal('productSearch' in legacySearchLayout.columnWidthsByMode.order, false, 'per-mode productSearch width must be discarded');
+assert.equal('productSearch' in legacySearchLayout.inputOrderByMode.order, false, 'productSearch must leave the grid input order');
+assert.equal(legacySearchLayout.columnWidths.itemCode, 176, 'existing itemCode width must survive layout normalization');
+assert.equal(legacySearchLayout.inputOrderByMode.order.itemCode, 2, 'existing itemCode input order must survive layout normalization');
 const draft = contract.createDraft();
 draft.futureRoot = 'keep-root';
 draft.modes.order.futureMode = 'keep-mode';

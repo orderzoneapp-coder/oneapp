@@ -1134,8 +1134,7 @@ function renderCustomLayoutFields() {
 }
 
 const DEFAULT_COLUMN_WIDTHS = Object.freeze({
-  productSearch: 210,
-  itemCode: 112, itemName: 190, specification: 100, quantity: 72, unit: 70,
+  itemCode: 210, itemName: 190, specification: 100, quantity: 72, unit: 70,
   unitPrice: 90, supplyAmount: 102, memo: 112, description: 118, noticePrice: 90,
   secondaryName: 150, searchInfo: 180, boxQuantity: 72, outPrice: 90,
   wholesaleA: 90, wholesaleB: 90, listingPrice: 90, marketPrice: 90, promoPrice: 90,
@@ -1155,7 +1154,7 @@ function columnWidth(fieldId) {
 function ensureColumnResizeHandles() {
   document.querySelectorAll('#tableScroll thead th[data-column]').forEach(th => {
     th.classList.add('column-resizable');
-    if (th.dataset.column === 'productSearch') {
+    if (th.dataset.column === 'itemCode') {
       th.classList.add('column-fixed');
       th.classList.remove('column-draggable');
       th.draggable = false;
@@ -1195,7 +1194,7 @@ function updateTableWidth(visibleColumns) {
 function applyVoucherColumnOrder() {
   const configured = voucherColumnsForMode();
   const allFields = layoutDefinitions('voucher').map(field => field.id);
-  const ordered = [...new Set([...configured, ...allFields])];
+  const ordered = ['itemCode', ...new Set([...configured, ...allFields].filter(fieldId => fieldId !== 'itemCode'))];
   const containers = [
     document.querySelector('#tableScroll colgroup'),
     document.querySelector('#tableScroll thead tr'),
@@ -1384,7 +1383,7 @@ function applyFormLayout() {
   const visibleVoucherColumns = photoActive && !state.photoView.detailColumns ? photoBasicColumns : voucherColumns;
   document.querySelectorAll('[data-column]').forEach(element => {
     const column = element.dataset.column;
-    const visible = column === 'productSearch' || (column === 'status' ? photoActive : visibleVoucherColumns.has(column));
+    const visible = column === 'status' ? photoActive : visibleVoucherColumns.has(column);
     element.classList.toggle('is-column-hidden', !visible);
   });
   const visibleColumns = [...document.querySelectorAll('thead th[data-column]')]
@@ -1799,10 +1798,10 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
 function armItemCodeEntry() {
   const targetRow = modeDraft().rows.find(row => !String(row.itemCode || '').trim()) || modeDraft().rows[0] || null;
   const rowId = targetRow?.rowId || DEFAULT_INPUT_ROW_ID;
-  modeUi().activeCellId = `${rowId}|productSearch`;
+  modeUi().activeCellId = `${rowId}|itemCode`;
   state.draft.ui.selectedRowId = rowId;
   window.requestAnimationFrame(() => {
-    const input = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-product-search]`);
+    const input = inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="itemCode"]`);
     if (!input) return;
     input.focus({ preventScroll: true });
     if (typeof input.setSelectionRange === 'function') input.setSelectionRange(input.value.length, input.value.length);
@@ -3774,7 +3773,7 @@ function startNewCatalog() {
   activatePendingReferences({ explicit: false, render: false });
   saveDraftNow();
   renderMode();
-  window.requestAnimationFrame(() => inputRows.querySelector('[data-product-search]')?.focus());
+  window.requestAnimationFrame(() => inputRows.querySelector('[data-field="itemCode"]')?.focus());
 }
 
 async function rematchRowsForCustomer(customer) {
@@ -4334,8 +4333,7 @@ function renderRows({ restoreFocus = true } = {}) {
     )).join('');
     return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
       <td class="row-sequence-cell row-sequence-select-cell"><span class="row-sequence-number">${sequence}</span><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
-      <td data-column="productSearch" class="product-search-cell"><input data-product-search type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || row.itemName || row.itemCode || '')}" placeholder="코드·품명·검색어" aria-label="상품 검색" title="상품코드, 품명 또는 검색어 입력 후 Enter"></td>
-      <td data-column="itemCode"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemCode', row.itemCode))}" aria-label="품목코드" title="입력 후 Enter로 상품 검색"></td>
+      <td data-column="itemCode" class="product-code-search-cell product-search-cell"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || rowFieldDisplayValue(row, 'itemCode', row.itemCode))}" placeholder="코드·품명·검색어" aria-label="품목코드 및 상품 검색" title="품목코드, 품명, 규격 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemName', row.itemName))}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(rowFieldDisplayValue(row, 'specification', row.specification))}" aria-label="규격"></td>
       <td data-column="quantity"><input data-field="quantity" type="text" inputmode="decimal" value="${esc(rowFieldDisplayValue(row, 'quantity', row.quantity ?? ''))}" aria-label="수량"></td>
@@ -4605,7 +4603,7 @@ function createTrailingDefaultRow(sourceRow) {
     selector.checked = false;
     selector.disabled = true;
   }
-  trailing.querySelectorAll('[data-product-search], [data-field], [data-custom-row-field], [data-supply-amount]').forEach(input => {
+  trailing.querySelectorAll('[data-field], [data-custom-row-field], [data-supply-amount]').forEach(input => {
     input.value = '';
     delete input.dataset.matchSubmitted;
   });
@@ -4618,10 +4616,9 @@ function materializeDefaultRow(tr, sourceInput = document.activeElement) {
   if (!tr || tr.dataset.defaultRow !== 'true') return modeDraft().rows.find(row => row.rowId === tr?.dataset.rowId) || null;
   const row = appendDirectRow();
   const trailing = createTrailingDefaultRow(tr);
-  const activeInput = tr.contains(sourceInput) ? sourceInput : [...tr.querySelectorAll('[data-product-search], [data-field], [data-custom-row-field]')].find(input => hasEnteredValue(input.value));
+  const activeInput = tr.contains(sourceInput) ? sourceInput : [...tr.querySelectorAll('[data-field], [data-custom-row-field]')].find(input => hasEnteredValue(input.value));
   const activeField = gridFieldId(activeInput);
-  if (activeInput?.hasAttribute?.('data-product-search')) row.unregisteredProductQuery = activeInput.value;
-  else if (activeInput?.hasAttribute?.('data-custom-row-field')) row.customValues[activeField] = activeInput.value;
+  if (activeInput?.hasAttribute?.('data-custom-row-field')) row.customValues[activeField] = activeInput.value;
   else if (activeField) Object.assign(row, contract.markProductEdit(row, activeField, activeInput.value));
   tr.dataset.rowId = row.rowId;
   tr.dataset.status = row.matchStatus;
@@ -4633,7 +4630,7 @@ function materializeDefaultRow(tr, sourceInput = document.activeElement) {
     selector.dataset.selectRow = row.rowId;
     selector.disabled = false;
   }
-  modeUi().activeCellId = `${row.rowId}|${gridFieldId(activeInput) || 'productSearch'}`;
+  modeUi().activeCellId = `${row.rowId}|${gridFieldId(activeInput) || 'itemCode'}`;
   state.draft.ui.selectedRowId = row.rowId;
   tr.after(trailing);
   syncRowSelectionControls();
@@ -4644,12 +4641,11 @@ function materializeDefaultRow(tr, sourceInput = document.activeElement) {
 
 function addDirectRow() {
   invalidateGridPasteUndo();
-  const last = inputRows.querySelector('tr[data-default-row="true"] input[data-product-search]');
+  const last = inputRows.querySelector('tr[data-default-row="true"] input[data-field="itemCode"]');
   last?.focus();
 }
 
 function gridFieldId(input) {
-  if (input?.hasAttribute?.('data-product-search')) return 'productSearch';
   return input?.dataset?.field || input?.dataset?.customRowField || '';
 }
 
@@ -4657,9 +4653,7 @@ function visibleEditableGridFields() {
   return [...document.querySelectorAll('#tableScroll thead th[data-column]')]
     .filter(header => !header.classList.contains('is-column-hidden'))
     .map(header => header.dataset.column)
-    .filter(field => field === 'productSearch'
-      ? inputRows.querySelector('[data-product-search]')
-      : inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
+    .filter(field => inputRows.querySelector(`[data-field="${CSS.escape(field)}"], [data-custom-row-field="${CSS.escape(field)}"]`));
 }
 
 function enterGridFields() {
@@ -4673,7 +4667,6 @@ function enterGridFields() {
 }
 
 function gridInput(rowId, field) {
-  if (field === 'productSearch') return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-product-search]`);
   return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
 }
 
@@ -4747,8 +4740,8 @@ function nextRowEntryTarget(rowId, backwards = false) {
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
   if (rowIndex < 0) return null;
   const targetRow = rows[rowIndex + (backwards ? -1 : 1)];
-  if (targetRow) return { rowId: targetRow.dataset.rowId, field: 'productSearch' };
-  return backwards ? null : { append: true, field: 'productSearch' };
+  if (targetRow) return { rowId: targetRow.dataset.rowId, field: 'itemCode' };
+  return backwards ? null : { append: true, field: 'itemCode' };
 }
 
 function gridPasteFieldDefinitions() {
@@ -4756,7 +4749,7 @@ function gridPasteFieldDefinitions() {
 }
 
 function visibleGridPasteFields() {
-  return visibleEditableGridFields().filter(fieldId => fieldId !== 'productSearch');
+  return visibleEditableGridFields();
 }
 
 function applyGridPaste(rawText, startRowId, startFieldId) {
@@ -4764,7 +4757,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
   const startRowIndex = startRowId === DEFAULT_INPUT_ROW_ID
     ? current.rows.length
     : current.rows.findIndex(row => row.rowId === startRowId);
-  if (startRowIndex < 0 || startFieldId === 'productSearch') return false;
+  if (startRowIndex < 0) return false;
   const definitions = gridPasteFieldDefinitions();
   const definitionById = new Map(definitions.map(field => [field.id, field]));
   const visibleFields = visibleGridPasteFields();
@@ -5819,7 +5812,7 @@ function trySearchProductRow(row, query = '', { focusTarget = null } = {}) {
   invalidateGridPasteUndo();
   const match = classifyProductMatch(state.productMatchIndex, searchText, { limit: 12 });
   if (match.autoConfirm) {
-    applyProduct(row, match.product, { forceIdentityFields: false });
+    applyProduct(row, match.product, { forceIdentityFields: true });
     modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
     renderRows({ restoreFocus: false });
     saveDraftNow();
@@ -5836,10 +5829,10 @@ function trySearchProductRow(row, query = '', { focusTarget = null } = {}) {
     renderRows({ restoreFocus: false });
     saveDraftNow();
     toast(state.references.product.active ? '미등록 상품입니다. 현재 행과 입력값은 유지됩니다.' : '상품 기준정보 로드 실패입니다. 현재 행과 입력값은 유지됩니다.', 'error');
-    gridInput(row.rowId, 'productSearch')?.focus();
+    gridInput(row.rowId, 'itemCode')?.focus();
     return;
   }
-  openProductDialog(row, { query: searchText, focusTarget, returnField: 'productSearch' });
+  openProductDialog(row, { query: searchText, focusTarget, returnField: 'itemCode' });
 }
 
 function matchGridPasteRow(row) {
@@ -7772,7 +7765,6 @@ inputRows.addEventListener('input', event => {
   invalidateGridPasteUndo();
   const targetRow = event.target.closest('[data-row-id]');
   if (targetRow?.dataset.defaultRow === 'true' && hasEnteredValue(event.target.value)) materializeDefaultRow(targetRow, event.target);
-  if (event.target.closest('[data-product-search]')) return;
   const customInput = event.target.closest('[data-custom-row-field]');
   if (customInput) {
     const customRow = event.target.closest('[data-row-id]');
@@ -7798,6 +7790,7 @@ inputRows.addEventListener('input', event => {
   const index = modeDraft().rows.findIndex(row => row.rowId === tr.dataset.rowId);
   if (index < 0) return;
   const field = input.dataset.field;
+  if (field === 'itemCode' || field === 'itemName') delete input.dataset.matchSubmitted;
   const previousRow = modeDraft().rows[index];
   if (previousRow.linkedFieldConflicts?.includes(field)) {
     const applyToAll = window.confirm(`연결된 견적서마다 ${input.getAttribute('aria-label') || '이 셀'} 값이 다릅니다. 현재 입력값을 연결된 견적서 모두에 동일 적용할까요?`);
@@ -7812,6 +7805,7 @@ inputRows.addEventListener('input', event => {
   let row = contract.markProductEdit(modeDraft().rows[index], field, input.value);
   row = markMappedFieldEdited(row, field, input.value);
   if (field === 'itemCode' || field === 'itemName') {
+    if (field === 'itemCode') row.unregisteredProductQuery = '';
     tr.dataset.status = 'SIMILAR';
     const status = tr.querySelector('.row-status span');
     if (status) status.textContent = rowStatusText('SIMILAR');
@@ -7826,7 +7820,7 @@ inputRows.addEventListener('input', event => {
   scheduleSave();
 });
 inputRows.addEventListener('keydown', event => {
-  const input = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
+  const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr || event.isComposing) return;
   const field = gridFieldId(input);
@@ -7850,11 +7844,12 @@ inputRows.addEventListener('keydown', event => {
     return;
   }
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
-  if (row && field === 'productSearch') {
+  if (row && field === 'itemCode') {
+    input.dataset.matchSubmitted = 'true';
     trySearchProductRow(row, input.value, { focusTarget });
     return;
   }
-  if (row && ['itemCode', 'itemName'].includes(field)) {
+  if (row && field === 'itemName') {
     input.dataset.matchSubmitted = 'true';
     tryMatchRow(row, field, { focusTarget });
     return;
@@ -7862,7 +7857,7 @@ inputRows.addEventListener('keydown', event => {
   focusGridTarget(focusTarget);
 });
 inputRows.addEventListener('focusin', event => {
-  const input = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
+  const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
   window.requestAnimationFrame(() => {
@@ -7893,7 +7888,8 @@ inputRows.addEventListener('change', event => {
   if (!input || !tr || !['itemCode', 'itemName'].includes(input.dataset.field)) return;
   if (input.dataset.matchSubmitted === 'true') return;
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
-  if (row) tryMatchRow(row, input.dataset.field);
+  if (row && input.dataset.field === 'itemCode') trySearchProductRow(row, input.value);
+  else if (row) tryMatchRow(row, input.dataset.field);
 });
 inputRows.addEventListener('click', event => {
   const registerProduct = event.target.closest('[data-product-register]');
@@ -7915,7 +7911,7 @@ inputRows.addEventListener('click', event => {
     }
   }
   const tr = event.target.closest('[data-row-id]');
-  const editableInput = event.target.closest('[data-product-search], [data-field], [data-custom-row-field]');
+  const editableInput = event.target.closest('[data-field], [data-custom-row-field]');
   if (tr && !editableInput && modeDraft().activeMethod === 'photo') {
     const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
     state.draft.ui.selectedRowId = tr.dataset.rowId;
@@ -7949,13 +7945,6 @@ $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
 $('applyBulkUnitPriceButton').addEventListener('click', applySelectedRowsUnitPrice);
 
 inputRows.addEventListener('paste', event => {
-  const searchInput = event.target.closest('[data-product-search]');
-  if (searchInput) {
-    event.preventDefault();
-    event.stopPropagation();
-    toast('상품 검색 열에는 붙여넣을 수 없습니다. 직접 검색어를 입력하세요.', 'error');
-    return;
-  }
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   const clipboardText = event.clipboardData?.getData('text/plain');
