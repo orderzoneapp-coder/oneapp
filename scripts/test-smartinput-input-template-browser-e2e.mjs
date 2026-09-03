@@ -72,7 +72,7 @@ class CdpClient {
     });
   }
   on(method, listener) { this.events.set(method, [...(this.events.get(method) || []), listener]); }
-  once(method, timeout = 20_000) {
+  once(method, timeout = 60_000) {
     return new Promise((resolveEvent, rejectEvent) => {
       const listener = params => { clearTimeout(timer); this.events.set(method, (this.events.get(method) || []).filter(item => item !== listener)); resolveEvent(params); };
       const timer = setTimeout(() => rejectEvent(new Error(`Timed out waiting for ${method}`)), timeout);
@@ -90,6 +90,7 @@ const evaluate = async (client, expression) => {
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
+const typeWithoutBlur = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.value;})()`);
 const capture = async (client, name) => {
   const result = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, fromSurface: true });
   const target = join(screenshotDir, name);
@@ -131,7 +132,7 @@ try {
   await click(client, '#sourceFileButton');
   assert.equal(await evaluate(client, `window.__sourceFilePickerOpened`), true, 'the visible Excel file button must open the existing safe file input');
   await wait(500);
-  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const draft=window.SMART_INPUT_CONTRACT.createDraft({activeMode:'order'});const matrix=[['2026 행사 발주','','',''],['품목코드','품목명','수량','원본 메모'],['001','취나물','0',''],['002','시금치','-1.5','확인']];const targetDefinitions=[{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.order.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:1,targetDefinitions,fileName:'행사발주.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPING-E2E';draft.modes.order.inputMapping=session;draft.modes.order.rows=mapper.projectMappedRows(session,targetDefinitions).map(row=>window.SMART_INPUT_CONTRACT.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
@@ -144,6 +145,29 @@ try {
   assert.equal(initial.sourceBlank, '', 'blank source cells must remain visibly blank');
   assert.equal(initial.saveDisabled, true);
   assert.match(initial.saveTitle, /입력 양식/);
+  const initialDraftBytes = await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`);
+  const positionalSignature = await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`);
+  assert.deepEqual(await evaluate(client, `(() => ({hidden:document.querySelector('#tableViewSwitch').hidden,sourcePressed:document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed'),inputPressed:document.querySelector('[data-table-view="input"]').getAttribute('aria-pressed'),hint:document.querySelector('#tableViewHint').textContent}))()`), {
+    hidden: false,
+    sourcePressed: 'true',
+    inputPressed: 'false',
+    hint: '원본 열 배치 · 작업본 편집(증적 유지)'
+  }, 'new source intake must default to the explicit source-column view');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#mappingWorktable').hidden`, 'configured input-column view');
+  const inputColumnView = await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(node=>node.textContent.trim()),rows:[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>({id:row.dataset.rowId,quantity:row.querySelector('[data-field="quantity"]')?.value}))}))()`);
+  assert.ok(inputColumnView.headers.indexOf('규격') < inputColumnView.headers.indexOf('수량'),
+    'input view must use configured SmartInput order even when the source puts quantity before specification');
+  assert.deepEqual(inputColumnView.rows.map(row => row.quantity), ['0', '-1.5'], 'input view must retain zero and negative values');
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.activeElement===document.querySelector('[data-table-view="source"]')`, 'keyboard source-view selection');
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="source"]');button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.activeElement===document.querySelector('[data-table-view="input"]')`, 'keyboard input-view selection');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`), initialDraftBytes,
+    'source/input round-trip must be byte-neutral for the persisted draft payload');
+  assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
+    'table view switching must not recalculate the positional signature');
 
   for (const [column, fieldId] of [[0, 'voucher.order.line.productCode'], [1, 'voucher.order.line.productName'], [2, 'voucher.order.line.quantity']]) {
     await click(client, `[data-open-field-mapping="${column}"]`);
@@ -186,6 +210,20 @@ try {
   await loaded;
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='TEMPLATE_APPLIED'&&document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="2"] input')?.value==='-2.5'`, 'mapping edit reload preservation', 30_000);
   assert.equal(await evaluate(client, `document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[2].textContent`), '0');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `document.querySelector('[data-row-id="source-2"] [data-field="quantity"]')?.value==='-2.5'`, 'mapped edit in configured input view');
+  await input(client, '[data-row-id="source-2"] [data-field="quantity"]', '-3.25');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="2"] input').value`), '-3.25',
+    'editing the configured input view must update the same mapped working cell');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[2].textContent`), '0',
+    'input-view editing must keep the immutable source evidence unchanged');
+  await click(client, '[data-table-view="input"]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-row-id="source-2"] [data-field="quantity"]')?.value`), '-3.25',
+    'the explicit view choice and edit must survive ordinary rerenders');
+  await click(client, '[data-table-view="source"]');
+  assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
+    'editing and round-trip rendering must retain the positional signature');
 
   await click(client, '#settingsButton');
   await expr(client, `Boolean(document.querySelector('.smart-settings-dialog[open] [data-open-input-template-manager]'))`, 'settings mapping manager path');
@@ -225,14 +263,24 @@ try {
   assert.equal(await evaluate(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length`), beforeMismatch, 'mismatched paste must preserve current work rows');
   assert.equal(await evaluate(client, `!document.querySelector('#pendingPasteToSourceButton').hidden`), true);
 
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  const wideSourceShot = await capture(client, 'smartinput-table-toggle-source-1920-light.png');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   const desktopShot = await capture(client, 'smartinput-input-template-mapping-light.png');
+  await click(client, '[data-table-view="input"]');
+  const desktopInputShot = await capture(client, 'smartinput-table-toggle-input-1440-light.png');
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'mapping dark theme');
-  const darkShot = await capture(client, 'smartinput-input-template-mapping-dark.png');
+  const darkShot = await capture(client, 'smartinput-table-toggle-input-1440-dark.png');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await evaluate(client, `document.querySelector('#relatedPanelCloseButton')?.click()`);
   await wait(200);
+  const mobileInput = await evaluate(client, `(() => {const scroll=document.querySelector('#tableScroll');const max=Math.max(0,scroll.scrollWidth-scroll.clientWidth);scroll.scrollLeft=Math.min(160,max);return {pageWidth:document.documentElement.scrollWidth,viewportWidth:document.documentElement.clientWidth,voucherVisible:!document.querySelector('#voucherInputTable').hidden,switchWidth:document.querySelector('#tableViewSwitch').getBoundingClientRect().width,maxScrollLeft:max,scrollLeft:scroll.scrollLeft};})()`);
+  assert.ok(mobileInput.pageWidth <= mobileInput.viewportWidth && mobileInput.voucherVisible && mobileInput.switchWidth <= 390
+    && mobileInput.maxScrollLeft > 0 && mobileInput.scrollLeft > 0,
+  'mobile input view must keep the compact switch in bounds and horizontal scrolling inside the table');
+  const mobileInputShot = await capture(client, 'smartinput-table-toggle-input-390-dark-scrolled.png');
+  await click(client, '[data-table-view="source"]');
   const mobile = await evaluate(client, `(() => ({scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,sourceWidth:document.querySelector('#sourceInputPanel').getBoundingClientRect().width,tableWidth:document.querySelector('.grid-card').getBoundingClientRect().width,sourceVisible:!document.querySelector('#sourceSheetView').hidden,mappingVisible:!document.querySelector('#mappingWorktable').hidden,panelClosed:!document.querySelector('#smartInputWorkspace').classList.contains('related-panel-open')}))()`);
   assert.ok(mobile.sourceWidth <= 390 && mobile.tableWidth <= 390 && mobile.sourceVisible && mobile.mappingVisible && mobile.panelClosed,
     'mobile must keep source and mapping table in the stacked workflow after the right panel is closed');
@@ -249,9 +297,100 @@ try {
   await evaluate(client, String.raw`(() => {const target=document.querySelector('#sourceTextInput');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t신규 원본열\n010\t보존값':'',items:[]}});target.dispatchEvent(event);return event.defaultPrevented;})()`);
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='NEW_TEMPLATE'`, 'unregistered clipboard structure source mapping fallback');
   assert.equal(await evaluate(client, `document.querySelector('[data-mapping-row-id="source-1"] [data-mapping-column="1"] input')?.value`), '보존값', 'unknown columns must remain intact in the new source mapping table');
+
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js');const store=await import('/smartinput/smartinput-data-store.js');const contract=window.SMART_INPUT_CONTRACT;const draft=contract.createDraft({activeMode:'estimate'}).modes.estimate;const matrix=[['원본 메모','수량','품목코드','품목명'],['재열기','0','E-001','저장 배추'],['','-4','E-002','저장 무']];const targets=[{id:'voucher.estimate.line.memo',label:'적요',aliases:['메모'],scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},{id:'voucher.estimate.line.quantity',label:'견적수량',aliases:['수량'],scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'},{id:'voucher.estimate.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.estimate.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'}];const session=mapper.createMappingSession({matrix,headerRowIndex:0,targetDefinitions:targets,fileName:'저장견적.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'estimate'});session.batchId='SIBATCH-SAVED-ESTIMATE-E2E';draft.inputMapping=session;draft.rows=mapper.projectMappedRows(session,targets).map(row=>contract.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.activeMethod='excel';draft.sourceText=matrix.map(row=>row.join('\t')).join('\n');const now='2026-09-03T00:00:00.000Z';await store.saveEstimate({estimateId:'SIEST-SOURCE-REOPEN-E2E',catalogName:'저장 원본형 견적',estimateKind:'INDIVIDUAL',customerId:'',customerName:'',rowCount:2,amount:0,previousPrices:{},sortOrder:1,createdAt:now,updatedAt:now,draft});return true;})()`);
+  loaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await loaded;
+  await click(client, '[data-mode="estimate"]');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"]'))`, 'saved source-backed estimate card');
+  const savedEstimateBytes = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const get=db.transaction('estimates','readonly').objectStore('estimates').get('SIEST-SOURCE-REOPEN-E2E');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(JSON.stringify(get.result));db.close();};};})`);
+  await click(client, '[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"] [data-select-estimate-card]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'saved estimate source view default');
+  assert.deepEqual(await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#mappingTableHeaders strong')].map(node=>node.textContent),values:[...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>[...row.querySelectorAll('[data-mapping-cell]')].map(input=>input.value))}))()`), {
+    headers: ['원본 메모', '수량', '품목코드', '품목명'],
+    values: [['재열기', '0', 'E-001', '저장 배추'], ['', '-4', 'E-002', '저장 무']]
+  }, 'saved estimate reopening must retain exact source order, blank positions, zero, and negative values');
+  await click(client, '[data-table-view="input"]');
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden`, 'saved estimate configured input view');
+  await click(client, '[data-estimate-id="SIEST-SOURCE-REOPEN-E2E"] [data-select-estimate-card]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed')==='true'`, 'saved estimate reopen resets source view');
+  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const get=db.transaction('estimates','readonly').objectStore('estimates').get('SIEST-SOURCE-REOPEN-E2E');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(JSON.stringify(get.result));db.close();};};})`), savedEstimateBytes,
+    'view switching and saved-estimate reopening must not rewrite the saved estimate payload');
+
+  await evaluate(client, String.raw`(async()=>{const mapper=await import('/smartinput/input-template-mapper.js?mapped-mutation-e2e=1');const store=await import('/smartinput/smartinput-data-store.js?mapped-mutation-e2e=1');const contract=window.SMART_INPUT_CONTRACT;const draft=contract.createDraft({activeMode:'order'});const matrix=[['원본 메모','원본 단가','원본 코드','원본 공급가액','원본 품명','원본 규격','원본 단위','원본 수량','미매핑 증적'],['정확행','','OLD-A','','과거 정확','과거규격','EA','2','증적-A'],['마우스행','','OLD-B','','과거 마우스','과거규격','EA','-3','증적-B'],['키보드행','','OLD-C','','과거 키보드','과거규격','EA','0','증적-C']];const targetDefinitions=[{id:'voucher.order.line.memo',label:'적요',scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},{id:'voucher.order.line.unitPrice',label:'주문단가',scope:'voucher',projectionFieldId:'unitPrice',valueType:'NUMBER'},{id:'voucher.order.line.productCode',label:'품목코드',scope:'voucher',projectionFieldId:'itemCode',valueType:'TEXT'},{id:'voucher.order.line.supplyAmount',label:'공급가액',scope:'voucher',projectionFieldId:'supplyAmount',valueType:'NUMBER'},{id:'voucher.order.line.productName',label:'품목명',scope:'voucher',projectionFieldId:'itemName',valueType:'TEXT'},{id:'voucher.order.line.specification',label:'규격',scope:'voucher',projectionFieldId:'specification',valueType:'TEXT'},{id:'voucher.order.line.unit',label:'단위',scope:'voucher',projectionFieldId:'unit',valueType:'TEXT'},{id:'voucher.order.line.quantity',label:'주문수량',scope:'voucher',projectionFieldId:'quantity',valueType:'NUMBER'}];const sourceCellMatrix=matrix.map((row,rowIndex)=>row.map((displayValue,columnIndex)=>({address:String.fromCharCode(65+columnIndex)+(rowIndex+1),displayValue,rawValue:displayValue,numberFormat:'@',cellType:'s'})));let reviewed=mapper.createMappingSession({matrix,sourceCellMatrix,headerRowIndex:0,targetDefinitions,fileName:'상품변경동기화.xlsx',sheetName:'원본순서',companyId:'ONEAPP',voucherMode:'order'});targetDefinitions.forEach((target,columnIndex)=>{reviewed=mapper.setColumnDecision(reviewed,columnIndex,mapper.DECISION.MAPPED,target.id,targetDefinitions);});reviewed=mapper.setColumnDecision(reviewed,8,mapper.DECISION.UNMAPPED,'',targetDefinitions);const template=mapper.createTemplateRecord(reviewed,'상품 변경 동기화 양식',targetDefinitions);await store.saveInputTemplates([template],{companyId:'ONEAPP',voucherMode:'order'});const session=mapper.createMappingSession({matrix,sourceCellMatrix,headerRowIndex:0,targetDefinitions,templates:[template],fileName:'상품변경동기화.xlsx',sheetName:'원본순서',companyId:'ONEAPP',voucherMode:'order'});session.batchId='SIBATCH-MAPPED-MUTATION-E2E';draft.modes.order.inputMapping=session;draft.modes.order.rows=mapper.projectMappedRows(session,targetDefinitions).map(row=>contract.normalizeRow({...row,batchId:session.batchId},session.batchId));draft.modes.order.activeMethod='excel';draft.modes.order.sourceText=matrix.map(row=>row.join('\t')).join('\n');localStorage.setItem('merchMaster_v870',JSON.stringify([{productId:'P-SYNC-EXACT',masterProductId:'MP-SYNC-EXACT',itemCode:'SYNC-EXACT',itemName:'동기화 정확 상품',specification:'10kg',finalUnit:'BOX',outPrice:350,status:'ACTIVE'},{productId:'P-SYNC-MOUSE',masterProductId:'MP-SYNC-MOUSE',itemCode:'SYNC-MOUSE',itemName:'동기화 선택 상품 A',searchInfo:'PAIRCHOICE',specification:'5kg',finalUnit:'EA',outPrice:400,status:'ACTIVE'},{productId:'P-SYNC-KEY',masterProductId:'MP-SYNC-KEY',itemCode:'SYNC-KEY',itemName:'동기화 선택 상품 B',searchInfo:'PAIRCHOICE',specification:'1kg',finalUnit:'PACK',outPrice:500,status:'ACTIVE'}]));localStorage.setItem('merchMaster_revision_v870','11');localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(draft));return true;})()`);
+  loaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await loaded;
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'mapped-mutation fixture');
+  await click(client, '#allReferenceReload');
+  await expr(client, `document.querySelector('#productReferenceCount').textContent==='3건'&&document.querySelector('#productReferenceRevision').textContent==='11'`, 'mapped-mutation product reference');
+  const mutationEvidenceBefore = await evaluate(client, `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature,rowIds:mode.rows.map(row=>row.rowId)});})()`);
+  const mutationSignature = await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`);
+  await click(client, '[data-table-view="input"]');
+  await input(client, '[data-row-id="source-1"] [data-field="itemCode"]', 'SYNC-EXACT');
+  await evaluate(client, `document.querySelector('[data-row-id="source-1"] [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await expr(client, `document.querySelector('[data-row-id="source-1"] [data-field="itemName"]')?.value==='동기화 정확 상품'&&document.querySelector('[data-row-id="source-1"] [data-field="unitPrice"]')?.value==='350'`, 'exact product mutation');
+
+  await typeWithoutBlur(client, '[data-row-id="source-2"] [data-field="itemCode"]', 'PAIRCHOICE');
+  await evaluate(client, `document.querySelector('[data-row-id="source-2"] [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await expr(client, `Boolean(document.querySelector('.product-picker-dialog[open] .product-picker-result'))`, 'mouse candidate product dialog');
+  const mouseCandidateCodes = await evaluate(client, `[...document.querySelectorAll('.product-picker-dialog[open] .product-picker-result span')].map(node=>node.textContent)`);
+  assert.ok(mouseCandidateCodes.includes('SYNC-KEY') && mouseCandidateCodes.length >= 2,
+    `mouse candidate set must remain ambiguous: ${JSON.stringify(mouseCandidateCodes)}`);
+  await evaluate(client, `(() => {const button=[...document.querySelectorAll('.product-picker-dialog[open] .product-picker-result')].find(node=>node.textContent.includes('SYNC-KEY'));button.click();return true;})()`);
+  await expr(client, `document.querySelector('[data-row-id="source-2"] [data-field="itemCode"]')?.value==='SYNC-KEY'`, 'mouse candidate applied');
+
+  await typeWithoutBlur(client, '[data-row-id="source-3"] [data-field="itemCode"]', 'PAIRCHOICE');
+  await evaluate(client, `document.querySelector('[data-row-id="source-3"] [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  await expr(client, `Boolean(document.querySelector('.product-picker-dialog[open] .product-picker-result'))`, 'keyboard candidate product dialog');
+  const keyboardCandidateCodes = await evaluate(client, `[...document.querySelectorAll('.product-picker-dialog[open] .product-picker-result span')].map(node=>node.textContent)`);
+  assert.equal(keyboardCandidateCodes[1], 'SYNC-MOUSE',
+    `ArrowDown fixture must keep SYNC-MOUSE second: ${JSON.stringify(keyboardCandidateCodes)}`);
+  await evaluate(client, `(() => {const search=document.querySelector('.product-picker-dialog [data-product-search]');search.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `!document.querySelector('.product-picker-dialog')&&document.querySelector('[data-row-id="source-3"] [data-field="itemCode"]')?.value==='SYNC-MOUSE'`, 'ArrowDown and Enter candidate applied');
+
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>({rowId:row.dataset.rowId,itemCode:row.querySelector('[data-field="itemCode"]')?.value,itemName:row.querySelector('[data-field="itemName"]')?.value,specification:row.querySelector('[data-field="specification"]')?.value,unit:row.querySelector('[data-field="unit"]')?.value,quantity:row.querySelector('[data-field="quantity"]')?.value,unitPrice:row.querySelector('[data-field="unitPrice"]')?.value,supplyAmount:row.querySelector('[data-supply-amount]')?.value})))()`), [
+    { rowId: 'source-1', itemCode: 'SYNC-EXACT', itemName: '동기화 정확 상품', specification: '10kg', unit: 'BOX', quantity: '2', unitPrice: '350', supplyAmount: '700' },
+    { rowId: 'source-2', itemCode: 'SYNC-KEY', itemName: '동기화 선택 상품 B', specification: '1kg', unit: 'PACK', quantity: '-3', unitPrice: '500', supplyAmount: '-1,500' },
+    { rowId: 'source-3', itemCode: 'SYNC-MOUSE', itemName: '동기화 선택 상품 A', specification: '5kg', unit: 'EA', quantity: '0', unitPrice: '400', supplyAmount: '0' }
+  ], 'exact, mouse, and keyboard product paths must render the post-mutation projection including supply amount');
+
+  await click(client, '[data-table-view="source"]');
+  const expectedMutationWorkingRows = [
+    ['정확행', '350', 'SYNC-EXACT', '700', '동기화 정확 상품', '10kg', 'BOX', '2', '증적-A'],
+    ['마우스행', '500', 'SYNC-KEY', '-1500', '동기화 선택 상품 B', '1kg', 'PACK', '-3', '증적-B'],
+    ['키보드행', '400', 'SYNC-MOUSE', '0', '동기화 선택 상품 A', '5kg', 'EA', '0', '증적-C']
+  ];
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>[...row.querySelectorAll('[data-mapping-cell]')].map(input=>input.value)))()`), expectedMutationWorkingRows,
+    'source view must immediately show the same mapped product and calculated amount values in original column order');
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#sourceSheetRows tr')].slice(1).map(row=>[...row.querySelectorAll('td')].map(cell=>cell.textContent)))()`), [
+    ['정확행', '', 'OLD-A', '', '과거 정확', '과거규격', 'EA', '2', '증적-A'],
+    ['마우스행', '', 'OLD-B', '', '과거 마우스', '과거규격', 'EA', '-3', '증적-B'],
+    ['키보드행', '', 'OLD-C', '', '과거 키보드', '과거규격', 'EA', '0', '증적-C']
+  ], 'product mutations must not rewrite the immutable source sheet evidence');
+  assert.equal(await evaluate(client, `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature,rowIds:mode.rows.map(row=>row.rowId)});})()`), mutationEvidenceBefore,
+    'product paths must preserve source matrices, positional signatures, and row identities byte-for-byte');
+  assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), mutationSignature);
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  const mappedMutationShot = await capture(client, 'smartinput-table-toggle-mapped-product-mutation-source-1440.png');
+
+  const savedMutationState = await evaluate(client, `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,unit:row.unit,unitPrice:row.unitPrice,quantity:row.quantity})),workingRows:mode.inputMapping.workingRows.map(row=>({rowId:row.rowId,cells:row.cells})),sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,signature:mode.inputMapping.signature});})()`);
+  loaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await loaded;
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.querySelector('[data-mapping-row-id="source-3"] [data-mapping-column="2"] input')?.value==='SYNC-MOUSE'`, 'saved mapped-mutation draft reopening', 30_000);
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>[...row.querySelectorAll('[data-mapping-cell]')].map(input=>input.value)))()`), expectedMutationWorkingRows,
+    'reopened source view must retain all synchronized working values');
+  assert.equal(await evaluate(client, `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,unit:row.unit,unitPrice:row.unitPrice,quantity:row.quantity})),workingRows:mode.inputMapping.workingRows.map(row=>({rowId:row.rowId,cells:row.cells})),sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,signature:mode.inputMapping.signature});})()`), savedMutationState,
+    'saved row projection and inputMapping working rows must reopen byte-equivalent');
+  await click(client, '[data-table-view="input"]');
+  assert.deepEqual(await evaluate(client, `(() => [...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>[row.dataset.rowId,row.querySelector('[data-field="itemCode"]')?.value,row.querySelector('[data-field="unitPrice"]')?.value,row.querySelector('[data-supply-amount]')?.value]))()`), [
+    ['source-1', 'SYNC-EXACT', '350', '700'], ['source-2', 'SYNC-KEY', '500', '-1,500'], ['source-3', 'SYNC-MOUSE', '400', '0']
+  ], 'reopened input projection must match the synchronized source-order working rows');
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ screenshots: [desktopShot, darkShot, mobileShot], persistedTemplateId: persistedTemplate.templateId }, null, 2));
+  console.log(JSON.stringify({ screenshots: [wideSourceShot, desktopShot, desktopInputShot, darkShot, mobileInputShot, mobileShot, mappedMutationShot], persistedTemplateId: persistedTemplate.templateId }, null, 2));
   console.log('SmartInput input-template mapping browser E2E PASS');
 } finally {
   client?.close();
