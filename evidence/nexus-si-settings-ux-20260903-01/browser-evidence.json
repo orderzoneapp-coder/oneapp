@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "NEXUS_SMARTINPUT_SETTINGS_UX_EVIDENCE_V1",
+  "taskId": "NEXUS-SI-SETTINGS-UX-20260903-01",
+  "recordedAt": "2026-09-03T05:54:13.811Z",
+  "viewports": {
+    "desktop": [
+      1920,
+      1080
+    ],
+    "medium": [
+      1440,
+      900
+    ],
+    "mobile": [
+      390,
+      844
+    ]
+  },
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "initial": {
+    "dialogCount": 1,
+    "width": 1180,
+    "height": 860,
+    "activeMode": "order",
+    "firstGroup": "voucher",
+    "voucherOpen": true,
+    "selected": [
+      "itemCode",
+      "itemName",
+      "specification",
+      "unit",
+      "quantity",
+      "unitPrice",
+      "supplyAmount",
+      "memo"
+    ],
+    "selectedGeometry": [
+      {
+        "id": "itemCode",
+        "top": 471.5,
+        "bottom": 533.5,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "itemName",
+        "top": 471.5,
+        "bottom": 533.5,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "specification",
+        "top": 540.5,
+        "bottom": 602.5,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "unit",
+        "top": 540.5,
+        "bottom": 602.5,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "quantity",
+        "top": 660,
+        "bottom": 722,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "unitPrice",
+        "top": 660,
+        "bottom": 722,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "supplyAmount",
+        "top": 729,
+        "bottom": 791,
+        "height": 62,
+        "display": "grid"
+      },
+      {
+        "id": "memo",
+        "top": 848.5,
+        "bottom": 910.5,
+        "height": 62,
+        "display": "grid"
+      }
+    ],
+    "groupGeometry": [
+      {
+        "id": "ITEM",
+        "clientHeight": 178,
+        "scrollHeight": 178
+      },
+      {
+        "id": "AMOUNT",
+        "clientHeight": 178,
+        "scrollHeight": 178
+      },
+      {
+        "id": "OTHER",
+        "clientHeight": 109,
+        "scrollHeight": 109
+      }
+    ],
+    "groups": [
+      "품목정보",
+      "수량·단가·금액",
+      "메모·기타"
+    ],
+    "requiredDisabled": true,
+    "draggable": 0,
+    "explorerHidden": true
+  },
+  "fixedRegions": {
+    "header": true,
+    "voucherTabs": true,
+    "footer": true,
+    "internalCatalogScroll": true
+  },
+  "keyboard": {
+    "inside": true,
+    "visible": true,
+    "outline": "solid"
+  },
+  "worktableBefore": [
+    "itemCode",
+    "quantity",
+    "itemName",
+    "specification",
+    "unit",
+    "unitPrice",
+    "supplyAmount",
+    "memo"
+  ],
+  "confirmationMessages": [
+    "저장하지 않은 환경설정 변경을 취소하시겠습니까?"
+  ],
+  "storedVoucherColumnsByMode": {
+    "order": [
+      "itemCode",
+      "quantity",
+      "itemName",
+      "specification",
+      "unit",
+      "unitPrice",
+      "supplyAmount",
+      "memo"
+    ],
+    "purchase": [
+      "itemCode",
+      "unitPrice",
+      "itemName",
+      "quantity"
+    ],
+    "sale": [
+      "itemCode",
+      "memo",
+      "brand"
+    ],
+    "estimate": [
+      "itemCode",
+      "noticePrice"
+    ]
+  },
+  "runtimeExceptions": 0,
+  "consoleErrors": 0,
+  "screenshots": [
+    "smartinput-settings-1920-selected.png",
+    "smartinput-settings-1920-light.png",
+    "smartinput-settings-1920-dark.png",
+    "smartinput-settings-1440-light.png",
+    "smartinput-settings-390-light.png"
+  ]
+}

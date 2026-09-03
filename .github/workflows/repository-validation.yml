@@ -41,6 +41,7 @@ jobs:
         run: |
           node scripts/test-smartinput-independent-recovery.mjs
           node scripts/test-smartinput-appheader-workspace.mjs
+          node scripts/test-smartinput-settings-ux.mjs
 
       - name: Test SmartInput clipboard and parsers
         run: |
@@ -65,6 +66,7 @@ jobs:
 
       - name: Test SmartInput browser isolation and persistence
         run: |
+          node scripts/test-smartinput-settings-ux-browser.mjs
           node scripts/test-smartinput-browser-e2e.mjs
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
           node scripts/test-smartinput-v2-official-revision-browser.mjs

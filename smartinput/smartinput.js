@@ -109,6 +109,15 @@ import {
   relatedImportConflicts
 } from './related-voucher-import.js?v=0.1.0';
 import { applyBulkUnitPrice } from './grid-bulk-edit.js?v=0.1.0';
+import {
+  SETTINGS_FIELD_GROUPS,
+  compactSettingsInputOrder,
+  parseSettingsInputOrder,
+  reorderSettingsInputOrder,
+  settingsFieldGroupId,
+  settingsInputOrderPreview,
+  sortSettingsFields
+} from './settings-input-order.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -777,10 +786,10 @@ function optionalProductFields() {
     .map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field);
 }
 
-function layoutDefinitions(scope, customFields = state.settings.customFields || []) {
+function layoutDefinitions(scope, customFields = state.settings.customFields || [], mode = state.draft.activeMode) {
   const builtIn = scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
   const modeFields = scope === 'voucher'
-    ? new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]))
+    ? new Map(structuredFieldsForMode(mode, []).map(field => [field.id, field]))
     : new Map();
   return [
     ...builtIn.map(field => modeFields.has(field.id) ? {
@@ -797,13 +806,13 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
   ];
 }
 
-function availableRegistryFields(scope, mode = state.draft.activeMode) {
+function availableRegistryFields(scope, mode = state.draft.activeMode, customFields = state.settings.customFields || []) {
   const registry = state.fieldRegistries[mode];
   if (!registry) return [];
   const targetScope = scope === 'header' ? 'HEADER' : 'LINE';
   const existingIds = new Set([
     ...(scope === 'header' ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS).map(field => field.id),
-    ...(state.settings.customFields || []).filter(field => field.scope === scope).map(field => field.id)
+    ...customFields.filter(field => field.scope === scope).map(field => field.id)
   ]);
   return registry.catalog
     .filter(field => field.status === 'ACTIVE'
@@ -2252,12 +2261,12 @@ function selectedLayoutFields(form, name) {
   return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
 }
 
-function openLayoutFieldDialog(scope, customFields, onAdd) {
+function openLayoutFieldDialog(scope, customFields, onAdd, mode = state.draft.activeMode) {
   const isHeader = scope === 'header';
   const fieldDialog = document.createElement('dialog');
   fieldDialog.className = 'smart-dialog smart-field-dialog';
   const definitions = isHeader ? contract.HEADER_FIELD_DEFINITIONS : contract.PRODUCT_FIELD_DEFINITIONS;
-  const registeredDefinitions = availableRegistryFields(scope);
+  const registeredDefinitions = availableRegistryFields(scope, mode, customFields);
   const categoryDefinitions = isHeader
     ? {
         CUSTOMER: definitions.filter(field => ['customer', 'taxCustomer'].includes(field.id)),
@@ -2645,16 +2654,26 @@ async function openSettingsDialog() {
   const settingsModeIds = Object.keys(contract.MODES);
   const workingHeaderFieldsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...headerFieldsForMode(mode)]]));
   const workingVoucherColumnsByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, [...voucherColumnsForMode(mode)]]));
-  const workingInputOrderByMode = Object.fromEntries(settingsModeIds.map(mode => [
+  let workingInputOrderByMode = Object.fromEntries(settingsModeIds.map(mode => [
     mode,
     { ...(state.settings.inputOrderByMode?.[mode] || {}) }
   ]));
+  const workingInputOrderDraftValuesByMode = Object.fromEntries(settingsModeIds.map(mode => [
+    mode,
+    Object.fromEntries(Object.entries(workingInputOrderByMode[mode]).map(([fieldId, order]) => [fieldId, String(Number(order) || 0)]))
+  ]));
+  const invalidInputOrderByMode = Object.fromEntries(settingsModeIds.map(mode => [mode, new Map()]));
   let settingsLayoutMode = state.draft.activeMode;
-  const settingsModeButtons = scope => settingsModeIds.map(mode => `<button type="button" data-settings-layout-mode="${esc(mode)}" data-settings-layout-scope="${esc(scope)}" class="${mode === settingsLayoutMode ? 'is-active' : ''}" aria-pressed="${mode === settingsLayoutMode}">${esc(contract.MODES[mode].label)}</button>`).join('');
+  let settingsDirty = false;
+  let voucherExplorerOpen = false;
+  let voucherExplorerCategory = 'ALL';
+  let voucherExplorerSearch = '';
+  const settingsModeButtons = () => settingsModeIds.map(mode => `<button type="button" data-settings-layout-mode="${esc(mode)}" class="${mode === settingsLayoutMode ? 'is-active' : ''}" aria-pressed="${mode === settingsLayoutMode}">${esc(contract.MODES[mode].label)}</button>`).join('');
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-settings-dialog';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>SmartInput Preferences</small><h2>환경설정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <nav class="settings-layout-modes smart-settings-dialog__mode-tabs" data-settings-layout-modes="all" aria-label="환경설정을 편집할 전표">${settingsModeButtons()}</nav>
     <div class="smart-settings-grid">
       <details class="settings-group" data-settings-group="delivery">
         <summary><span><strong>배송 정책</strong><small>마감시간·배송 요일·휴무일</small></span><i aria-hidden="true"></i></summary>
@@ -2672,105 +2691,326 @@ async function openSettingsDialog() {
       </details>
       <details class="settings-group">
         <summary><span><strong>전표별 상단 정보 열</strong><small>전표마다 거래처·배송일·창고 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
-        <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="header" aria-label="상단 정보 열을 편집할 전표">${settingsModeButtons('header')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="header">${esc(contract.MODES[settingsLayoutMode].label)}</b> 상단 정보 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
+        <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span><b data-settings-layout-label="header">${esc(contract.MODES[settingsLayoutMode].label)}</b> 상단 정보 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
       </details>
-      <details class="settings-group">
-        <summary><span><strong>전표별 표시 열</strong><small>전표마다 품목·수량·단가 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
-        <div class="settings-group__body settings-group__body--single"><div class="settings-layout-modes" data-settings-layout-modes="voucher" aria-label="표시 열을 편집할 전표">${settingsModeButtons('voucher')}</div><div class="settings-group__actions"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 표시 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="voucher">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="voucher"></div></div>
+      <details class="settings-group settings-group--voucher" data-settings-group="voucher">
+        <summary><span><strong>전표별 표시 열</strong><small>전표마다 노출 항목과 Enter 입력 순서를 별도 저장</small></span><i aria-hidden="true"></i></summary>
+        <div class="settings-group__body settings-group__body--single settings-voucher-editor">
+          <div class="settings-group__actions settings-voucher-editor__heading"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 선택 항목만 표시합니다. 화면 순서는 업무상 고정이며 작업테이블 열 순서와 별개입니다.</span><button type="button" class="button button--quiet button--small" data-toggle-voucher-explorer aria-expanded="false">항목 추가</button></div>
+          <div class="settings-voucher-summary"><strong data-voucher-selection-count></strong><span data-enter-order-preview></span><small>입력 순서 0은 화면에만 노출하고 Enter 이동에서 제외합니다.</small></div>
+          <div class="settings-voucher-selected" data-layout-fields="voucher" aria-live="polite"></div>
+          <section class="settings-voucher-explorer" data-voucher-field-explorer hidden aria-label="전체 표시 열 탐색">
+            <div class="settings-voucher-explorer__toolbar" data-settings-ui-only>
+              <label><span>항목 검색</span><input type="search" data-voucher-field-search autocomplete="off" placeholder="항목명 또는 필드 ID"></label>
+              <label><span>분류</span><select data-voucher-field-category><option value="ALL">전체</option>${SETTINGS_FIELD_GROUPS.map(group => `<option value="${esc(group.id)}">${esc(group.label)}</option>`).join('')}</select></label>
+            </div>
+            <div class="settings-voucher-explorer__count" data-voucher-explorer-count></div>
+            <div class="settings-voucher-explorer__results" data-voucher-explorer-results></div>
+            <div class="settings-voucher-custom" data-settings-ui-only>
+              <div><strong>사용자지정 항목</strong><small>문자형·숫자형 각각 최대 10개</small></div>
+              <label><span>형식</span><select data-voucher-custom-type><option value="TEXT">문자형</option><option value="NUMBER">숫자형</option></select></label>
+              <label><span>항목명</span><input type="text" data-voucher-custom-label maxlength="30" placeholder="예: 배송 요청사항"></label>
+              <button type="button" class="button button--quiet button--small" data-add-voucher-custom>만들어 추가</button>
+            </div>
+          </section>
+        </div>
       </details>
       <details class="settings-group">
         <summary><span><strong>입력 양식 관리</strong><small>Excel 필드명·열 순서·매핑 revision</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span>기존 양식의 이름과 열별 연결은 여기에서만 수정합니다.</span><button type="button" class="button button--quiet button--small" data-open-input-template-manager>입력 양식 관리</button></div></div>
       </details>
     </div>
-    <p class="smart-dialog__message">선택 불가 날짜에는 사유와 다음 배송 가능일을 표시합니다.</p>
+    <p class="smart-dialog__message" data-settings-message>변경 내용은 설정 저장 전까지 현재 작업표에 적용되지 않습니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>설정 저장</button></footer>
   </form>`;
   document.body.append(dialog);
+  const settingsGrid = dialog.querySelector('.smart-settings-grid');
+  const voucherSettingsGroup = dialog.querySelector('[data-settings-group="voucher"]');
   const deliverySettingsGroup = dialog.querySelector('[data-settings-group="delivery"]');
-  if (deliverySettingsGroup) dialog.querySelector('.smart-settings-grid').append(deliverySettingsGroup);
+  if (voucherSettingsGroup) {
+    settingsGrid.prepend(voucherSettingsGroup);
+    voucherSettingsGroup.open = true;
+  }
+  if (deliverySettingsGroup) settingsGrid.append(deliverySettingsGroup);
   const form = dialog.querySelector('form');
-  const message = dialog.querySelector('.smart-dialog__message');
-  const selectedFieldsByScope = scope => scope === 'header'
-    ? workingHeaderFieldsByMode
-    : workingVoucherColumnsByMode;
-  const inputNameByScope = scope => scope === 'header' ? 'headerFields' : 'voucherColumns';
-  const captureLayoutSelection = scope => {
-    const container = form.querySelector(`[data-layout-fields="${scope}"]`);
+  const message = dialog.querySelector('[data-settings-message]');
+  const defaultMessage = '변경 내용은 설정 저장 전까지 현재 작업표에 적용되지 않습니다.';
+  const inputOrderMessage = code => ({
+    INPUT_ORDER_REQUIRED: '입력 순서는 빈칸으로 둘 수 없습니다.',
+    INPUT_ORDER_NON_NEGATIVE_INTEGER_REQUIRED: '입력 순서는 0 이상의 정수로 입력하세요.',
+    INPUT_ORDER_OUT_OF_RANGE: '입력 순서는 0부터 999까지 입력하세요.',
+    INPUT_ORDER_FIELD_NOT_EDITABLE: '이 항목은 Enter 입력 순서를 지정할 수 없습니다.'
+  }[code] || '입력 순서를 확인하세요.');
+  const markDirty = () => { settingsDirty = true; };
+  const captureHeaderLayoutSelection = () => {
+    const container = form.querySelector('[data-layout-fields="header"]');
     if (!container?.querySelector('input')) return;
-    const checked = selectedLayoutFields(form, inputNameByScope(scope));
+    const checked = selectedLayoutFields(form, 'headerFields');
     const checkedSet = new Set(checked);
-    const previous = selectedFieldsByScope(scope)[settingsLayoutMode];
-    selectedFieldsByScope(scope)[settingsLayoutMode] = [
+    const previous = workingHeaderFieldsByMode[settingsLayoutMode];
+    workingHeaderFieldsByMode[settingsLayoutMode] = [
       ...previous.filter(fieldId => checkedSet.has(fieldId)),
       ...checked.filter(fieldId => !previous.includes(fieldId))
     ];
   };
-  const captureInputOrder = () => {
-    const next = { ...(workingInputOrderByMode[settingsLayoutMode] || {}) };
-    form.querySelectorAll('[data-layout-fields="voucher"] [data-input-order-field]').forEach(input => {
-      next[input.dataset.inputOrderField] = Math.max(0, Math.min(999, Math.round(Number(input.value) || 0)));
-    });
-    workingInputOrderByMode[settingsLayoutMode] = next;
+  const voucherDefinitions = (mode = settingsLayoutMode) => {
+    const builtInIds = new Set(contract.PRODUCT_FIELD_DEFINITIONS.map(field => field.id));
+    const combined = [
+      ...layoutDefinitions('voucher', workingCustomFields, mode).map(field => ({ ...field, builtIn: builtInIds.has(field.id) })),
+      ...availableRegistryFields('voucher', mode, workingCustomFields).map(field => ({ ...field, group: 'ADDITIONAL', builtIn: false }))
+    ];
+    return sortSettingsFields([...new Map(combined.map(field => [field.id, field])).values()]);
   };
-  const renderLayoutGroup = (scope, selected = null) => {
-    const name = inputNameByScope(scope);
-    const previous = selected || selectedFieldsByScope(scope)[settingsLayoutMode];
-    const sourceDefinitions = layoutDefinitions(scope, workingCustomFields);
-    const definitions = scope === 'voucher' ? sourceDefinitions : (() => {
-      const priorIndex = new Map(previous.map((fieldId, index) => [fieldId, index]));
-      return sourceDefinitions.sort((left, right) => {
-        const leftIndex = priorIndex.has(left.id) ? priorIndex.get(left.id) : Number.MAX_SAFE_INTEGER;
-        const rightIndex = priorIndex.has(right.id) ? priorIndex.get(right.id) : Number.MAX_SAFE_INTEGER;
-        return leftIndex - rightIndex;
-      });
-    })();
-    form.querySelector(`[data-layout-fields="${scope}"]`).innerHTML = layoutChecks(
-      name,
-      definitions,
-      previous,
-      scope === 'voucher',
-      scope === 'voucher' ? workingInputOrderByMode[settingsLayoutMode] : null
-    );
-    dialog.querySelector(`[data-settings-layout-label="${scope}"]`).textContent = contract.MODES[settingsLayoutMode].label;
-    dialog.querySelectorAll(`[data-settings-layout-modes="${scope}"] [data-settings-layout-mode]`).forEach(button => {
+  const selectedVoucherDefinitions = (mode = settingsLayoutMode) => {
+    const selected = new Set(workingVoucherColumnsByMode[mode]);
+    return voucherDefinitions(mode).filter(field => selected.has(field.id));
+  };
+  const compactModeOrders = mode => {
+    const selected = workingVoucherColumnsByMode[mode];
+    const editable = selectedVoucherDefinitions(mode).filter(field => field.editable !== false).map(field => field.id);
+    const compacted = compactSettingsInputOrder({
+      inputOrder: workingInputOrderByMode[mode],
+      selectedFieldIds: selected,
+      editableFieldIds: editable
+    });
+    workingInputOrderByMode = { ...workingInputOrderByMode, [mode]: compacted.inputOrder };
+    selected.forEach(fieldId => {
+      if (!invalidInputOrderByMode[mode].has(fieldId)) {
+        workingInputOrderDraftValuesByMode[mode][fieldId] = String(Number(compacted.inputOrder[fieldId]) || 0);
+      }
+    });
+  };
+  const renderHeaderLayout = () => {
+    const previous = workingHeaderFieldsByMode[settingsLayoutMode];
+    const priorIndex = new Map(previous.map((fieldId, index) => [fieldId, index]));
+    const definitions = layoutDefinitions('header', workingCustomFields, settingsLayoutMode).sort((left, right) => {
+      const leftIndex = priorIndex.has(left.id) ? priorIndex.get(left.id) : Number.MAX_SAFE_INTEGER;
+      const rightIndex = priorIndex.has(right.id) ? priorIndex.get(right.id) : Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+    form.querySelector('[data-layout-fields="header"]').innerHTML = layoutChecks('headerFields', definitions, previous);
+    dialog.querySelector('[data-settings-layout-label="header"]').textContent = contract.MODES[settingsLayoutMode].label;
+  };
+  const renderOrderPreview = () => {
+    const definitions = selectedVoucherDefinitions();
+    const labels = Object.fromEntries(definitions.map(field => [field.id, field.label]));
+    const preview = settingsInputOrderPreview({
+      inputOrder: workingInputOrderByMode[settingsLayoutMode],
+      selectedFieldIds: workingVoucherColumnsByMode[settingsLayoutMode],
+      labelById: labels
+    });
+    const previewElement = dialog.querySelector('[data-enter-order-preview]');
+    previewElement.innerHTML = preview.length
+      ? `<b>Enter 이동</b> ${preview.map(item => `<span>${item.order} ${esc(item.label)}</span>`).join('<i aria-hidden="true">→</i>')}`
+      : '<b>Enter 이동</b> 지정된 항목 없음';
+  };
+  const renderVoucherExplorer = () => {
+    const definitions = voucherDefinitions();
+    const selected = new Set(workingVoucherColumnsByMode[settingsLayoutMode]);
+    const term = voucherExplorerSearch.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '');
+    const filtered = definitions.filter(field => {
+      const groupMatches = voucherExplorerCategory === 'ALL' || settingsFieldGroupId(field) === voucherExplorerCategory;
+      const haystack = `${field.optionLabel || field.label} ${field.advancedLabel || ''} ${field.id}`.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+      return groupMatches && (!term || haystack.includes(term));
+    });
+    dialog.querySelector('[data-voucher-explorer-count]').innerHTML = `<strong>전체 ${definitions.length.toLocaleString('ko-KR')}</strong><span>선택 ${selected.size.toLocaleString('ko-KR')}</span><small>검색 결과 ${filtered.length.toLocaleString('ko-KR')}</small>`;
+    dialog.querySelector('[data-voucher-explorer-results]').innerHTML = filtered.slice(0, 500).map(field => {
+      const isSelected = selected.has(field.id);
+      const group = SETTINGS_FIELD_GROUPS.find(item => item.id === settingsFieldGroupId(field));
+      const origin = field.registryField ? '등록 필드' : (field.custom ? '사용자지정' : group?.label || '메모·기타');
+      return `<button type="button" class="settings-voucher-explorer__item${isSelected ? ' is-selected' : ''}" data-add-voucher-field="${esc(field.id)}" aria-pressed="${isSelected}" ${isSelected ? 'disabled' : ''}><span><strong>${esc(field.label)}</strong><small>${esc(field.optionLabel || field.advancedLabel || field.id)}</small></span><em>${esc(origin)}</em><b>${isSelected ? '선택됨' : '추가'}</b></button>`;
+    }).join('') || '<div class="smart-dialog__empty">조건에 맞는 항목이 없습니다.</div>';
+  };
+  const renderVoucherSelected = () => {
+    const definitions = selectedVoucherDefinitions();
+    const orders = workingInputOrderByMode[settingsLayoutMode];
+    const draftValues = workingInputOrderDraftValuesByMode[settingsLayoutMode];
+    const invalid = invalidInputOrderByMode[settingsLayoutMode];
+    dialog.querySelector('[data-layout-fields="voucher"]').innerHTML = SETTINGS_FIELD_GROUPS.map(group => {
+      const fields = definitions.filter(field => settingsFieldGroupId(field) === group.id);
+      if (!fields.length) return '';
+      const rows = fields.map(field => {
+        const errorCode = invalid.get(field.id) || '';
+        const inputValue = Object.prototype.hasOwnProperty.call(draftValues, field.id)
+          ? draftValues[field.id]
+          : String(Number(orders[field.id]) || 0);
+        const badges = [
+          field.required ? '<small class="settings-voucher-row__required">필수</small>' : '',
+          field.editable === false ? '<small>읽기 전용</small>' : '',
+          field.custom ? '<small>사용자지정</small>' : ''
+        ].join('');
+        return `<div class="settings-voucher-row${Number(orders[field.id]) === 0 ? ' is-enter-excluded' : ''}" data-voucher-field-row="${esc(field.id)}">
+          <div class="settings-voucher-row__name"><strong>${esc(field.label)}</strong><span>${esc(field.advancedLabel || field.id)}</span></div>
+          <div class="settings-voucher-row__badges">${badges}</div>
+          <label class="settings-voucher-row__visible"><input type="checkbox" data-voucher-visible-field="${esc(field.id)}" checked ${field.required ? 'disabled' : ''}><span>노출</span></label>
+          <label class="settings-voucher-row__order"><span>Enter 순서</span><input type="number" min="0" max="999" step="1" inputmode="numeric" data-input-order-field="${esc(field.id)}" value="${esc(inputValue)}" aria-label="${esc(field.label)} Enter 입력 순서" ${field.editable === false ? 'disabled' : ''} ${errorCode ? 'aria-invalid="true"' : ''}></label>
+          ${field.custom ? `<button type="button" class="settings-voucher-row__delete" data-remove-custom-field="${esc(field.id)}" aria-label="${esc(field.label)} 사용자지정 항목 삭제">삭제</button>` : ''}
+          <small class="settings-voucher-row__error" data-input-order-error="${esc(field.id)}">${errorCode ? esc(inputOrderMessage(errorCode)) : ''}</small>
+        </div>`;
+      }).join('');
+      return `<section class="settings-voucher-group" data-settings-field-group="${esc(group.id)}"><h4>${esc(group.label)}</h4><div>${rows}</div></section>`;
+    }).join('');
+    dialog.querySelector('[data-voucher-selection-count]').textContent = `${contract.MODES[settingsLayoutMode].label} · 선택 ${definitions.length.toLocaleString('ko-KR')}개`;
+    dialog.querySelector('[data-settings-layout-label="voucher"]').textContent = contract.MODES[settingsLayoutMode].label;
+    renderOrderPreview();
+    renderVoucherExplorer();
+  };
+  const renderSettingsMode = () => {
+    dialog.querySelectorAll('[data-settings-layout-mode]').forEach(button => {
       const active = button.dataset.settingsLayoutMode === settingsLayoutMode;
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-pressed', String(active));
     });
+    renderHeaderLayout();
+    renderVoucherSelected();
   };
-  const switchSettingsLayoutMode = mode => {
-    if (!settingsModeIds.includes(mode) || mode === settingsLayoutMode) return;
-    captureLayoutSelection('header');
-    captureLayoutSelection('voucher');
-    captureInputOrder();
-    settingsLayoutMode = mode;
-    renderLayoutGroup('header');
-    renderLayoutGroup('voucher');
-  };
-  renderLayoutGroup('header');
-  renderLayoutGroup('voucher');
-  dialog.querySelectorAll('[data-settings-layout-mode]').forEach(button => button.addEventListener('click', () => {
-    switchSettingsLayoutMode(button.dataset.settingsLayoutMode);
-  }));
-  dialog.querySelectorAll('[data-add-layout-field]').forEach(button => button.addEventListener('click', () => {
-    const scope = button.dataset.addLayoutField;
-    captureLayoutSelection(scope);
-    openLayoutFieldDialog(scope, workingCustomFields, field => {
-      const selected = selectedFieldsByScope(scope)[settingsLayoutMode];
-      if (!field.builtIn) workingCustomFields.push(field);
-      selectedFieldsByScope(scope)[settingsLayoutMode] = [...new Set([...selected, field.id])];
-      if (scope === 'voucher' && !Number(workingInputOrderByMode[settingsLayoutMode]?.[field.id])) {
-        const nextOrder = Math.max(0, ...Object.values(workingInputOrderByMode[settingsLayoutMode] || {}).map(Number).filter(Number.isFinite)) + 1;
-        workingInputOrderByMode[settingsLayoutMode][field.id] = nextOrder;
-      }
-      renderLayoutGroup(scope);
+  const syncVoucherOrderView = changedFieldId => {
+    const invalid = invalidInputOrderByMode[settingsLayoutMode];
+    dialog.querySelectorAll('[data-layout-fields="voucher"] [data-input-order-field]').forEach(input => {
+      const fieldId = input.dataset.inputOrderField;
+      if (invalid.has(fieldId) && fieldId !== changedFieldId) return;
+      const value = String(Number(workingInputOrderByMode[settingsLayoutMode][fieldId]) || 0);
+      workingInputOrderDraftValuesByMode[settingsLayoutMode][fieldId] = value;
+      input.value = value;
+      input.removeAttribute('aria-invalid');
+      input.setCustomValidity('');
+      const row = input.closest('[data-voucher-field-row]');
+      row?.classList.toggle('is-enter-excluded', value === '0');
+      const error = row?.querySelector('[data-input-order-error]');
+      if (error) error.textContent = '';
     });
+    renderOrderPreview();
+    if (![...invalid.values()].length) message.textContent = defaultMessage;
+  };
+  const addVoucherField = field => {
+    const mode = settingsLayoutMode;
+    if (!field || workingVoucherColumnsByMode[mode].includes(field.id)) return;
+    if (!field.builtIn && !workingCustomFields.some(item => item.id === field.id)) {
+      const { builtIn, custom, ...definition } = field;
+      workingCustomFields.push(definition);
+    }
+    workingVoucherColumnsByMode[mode] = [...workingVoucherColumnsByMode[mode], field.id];
+    workingInputOrderByMode[mode] = { ...workingInputOrderByMode[mode], [field.id]: 0 };
+    workingInputOrderDraftValuesByMode[mode][field.id] = '0';
+    invalidInputOrderByMode[mode].delete(field.id);
+    compactModeOrders(mode);
+    markDirty();
+    renderVoucherSelected();
+  };
+  renderSettingsMode();
+  dialog.querySelectorAll('[data-settings-layout-mode]').forEach(button => button.addEventListener('click', () => {
+    const mode = button.dataset.settingsLayoutMode;
+    if (!settingsModeIds.includes(mode) || mode === settingsLayoutMode) return;
+    captureHeaderLayoutSelection();
+    settingsLayoutMode = mode;
+    renderSettingsMode();
   }));
-  dialog.querySelector('[data-open-input-template-manager]').addEventListener('click', () => {
-    dialog.close();
-    dialog.remove();
-    openInputTemplateManager();
+  dialog.querySelector('[data-add-layout-field="header"]').addEventListener('click', () => {
+    captureHeaderLayoutSelection();
+    openLayoutFieldDialog('header', workingCustomFields, field => {
+      const selected = workingHeaderFieldsByMode[settingsLayoutMode];
+      if (!field.builtIn && !workingCustomFields.some(item => item.id === field.id)) workingCustomFields.push(field);
+      workingHeaderFieldsByMode[settingsLayoutMode] = [...new Set([...selected, field.id])];
+      markDirty();
+      renderHeaderLayout();
+    }, settingsLayoutMode);
+  });
+  const explorer = dialog.querySelector('[data-voucher-field-explorer]');
+  const explorerToggle = dialog.querySelector('[data-toggle-voucher-explorer]');
+  explorerToggle.addEventListener('click', () => {
+    voucherExplorerOpen = !voucherExplorerOpen;
+    explorer.hidden = !voucherExplorerOpen;
+    explorerToggle.setAttribute('aria-expanded', String(voucherExplorerOpen));
+    explorerToggle.textContent = voucherExplorerOpen ? '항목 추가 닫기' : '항목 추가';
+    if (voucherExplorerOpen) {
+      renderVoucherExplorer();
+      dialog.querySelector('[data-voucher-field-search]').focus();
+    }
+  });
+  dialog.querySelector('[data-voucher-field-search]').addEventListener('input', event => {
+    voucherExplorerSearch = event.target.value;
+    renderVoucherExplorer();
+  });
+  dialog.querySelector('[data-voucher-field-category]').addEventListener('change', event => {
+    voucherExplorerCategory = event.target.value;
+    renderVoucherExplorer();
+  });
+  dialog.querySelector('[data-voucher-explorer-results]').addEventListener('click', event => {
+    const button = event.target.closest('[data-add-voucher-field]');
+    if (!button || button.disabled) return;
+    addVoucherField(voucherDefinitions().find(field => field.id === button.dataset.addVoucherField));
+  });
+  dialog.querySelector('[data-add-voucher-custom]').addEventListener('click', () => {
+    const labelInput = dialog.querySelector('[data-voucher-custom-label]');
+    const label = labelInput.value.trim();
+    if (!label) {
+      message.textContent = '사용자지정 항목명을 입력하세요.';
+      labelInput.focus();
+      return;
+    }
+    const valueType = dialog.querySelector('[data-voucher-custom-type]').value === 'NUMBER' ? 'NUMBER' : 'TEXT';
+    const used = workingCustomFields.filter(field => field.scope === 'voucher' && field.category === 'CUSTOM' && (field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT') === valueType).length;
+    if (used >= 10) {
+      message.textContent = `${valueType === 'NUMBER' ? '숫자형' : '문자형'} 사용자지정 항목은 최대 10개까지 만들 수 있습니다.`;
+      return;
+    }
+    const slotPrefix = valueType === 'NUMBER' ? 'custom.number.' : 'custom.text.';
+    const usedIds = new Set(workingCustomFields.map(field => field.id));
+    const fieldId = Array.from({ length: 10 }, (_, index) => `${slotPrefix}${String(index + 1).padStart(2, '0')}`).find(id => !usedIds.has(id));
+    if (!fieldId) {
+      message.textContent = '사용자지정 항목 슬롯을 모두 사용 중입니다.';
+      return;
+    }
+    addVoucherField({ id: fieldId, label, scope: 'voucher', category: 'CUSTOM', sourceField: '', valueType, group: 'ADDITIONAL', builtIn: false, custom: true, editable: true });
+    labelInput.value = '';
+    message.textContent = defaultMessage;
+  });
+  dialog.querySelector('[data-layout-fields="voucher"]').addEventListener('change', event => {
+    const visibility = event.target.closest('[data-voucher-visible-field]');
+    if (!visibility || visibility.checked) return;
+    const mode = settingsLayoutMode;
+    const fieldId = visibility.dataset.voucherVisibleField;
+    const definition = selectedVoucherDefinitions(mode).find(field => field.id === fieldId);
+    if (!definition || definition.required) {
+      visibility.checked = true;
+      return;
+    }
+    workingVoucherColumnsByMode[mode] = workingVoucherColumnsByMode[mode].filter(id => id !== fieldId);
+    workingInputOrderByMode[mode] = { ...workingInputOrderByMode[mode], [fieldId]: 0 };
+    workingInputOrderDraftValuesByMode[mode][fieldId] = '0';
+    invalidInputOrderByMode[mode].delete(fieldId);
+    compactModeOrders(mode);
+    markDirty();
+    renderVoucherSelected();
+  });
+  dialog.querySelector('[data-layout-fields="voucher"]').addEventListener('input', event => {
+    const input = event.target.closest('[data-input-order-field]');
+    if (!input || input.disabled) return;
+    const mode = settingsLayoutMode;
+    const fieldId = input.dataset.inputOrderField;
+    workingInputOrderDraftValuesByMode[mode][fieldId] = input.value;
+    markDirty();
+    const definitions = selectedVoucherDefinitions(mode);
+    const result = reorderSettingsInputOrder({
+      inputOrder: workingInputOrderByMode[mode],
+      selectedFieldIds: workingVoucherColumnsByMode[mode],
+      fieldId,
+      requestedOrder: input.value,
+      editableFieldIds: definitions.filter(field => field.editable !== false).map(field => field.id)
+    });
+    if (!result.valid) {
+      invalidInputOrderByMode[mode].set(fieldId, result.code);
+      const errorMessage = inputOrderMessage(result.code);
+      input.setCustomValidity(errorMessage);
+      input.setAttribute('aria-invalid', 'true');
+      const error = input.closest('[data-voucher-field-row]')?.querySelector('[data-input-order-error]');
+      if (error) error.textContent = errorMessage;
+      message.textContent = errorMessage;
+      return;
+    }
+    invalidInputOrderByMode[mode].delete(fieldId);
+    workingInputOrderByMode = { ...workingInputOrderByMode, [mode]: result.inputOrder };
+    syncVoucherOrderView(fieldId);
   });
   dialog.querySelector('.smart-settings-grid').addEventListener('click', event => {
     const remove = event.target.closest('[data-remove-custom-field]');
@@ -2778,14 +3018,19 @@ async function openSettingsDialog() {
     event.preventDefault();
     const fieldId = remove.dataset.removeCustomField;
     const field = workingCustomFields.find(item => item.id === fieldId);
-    if (!field) return;
-    captureLayoutSelection(field.scope);
+    if (!field || !window.confirm(`${field.label} 사용자지정 항목을 모든 전표 설정에서 삭제하시겠습니까?`)) return;
+    captureHeaderLayoutSelection();
     settingsModeIds.forEach(mode => {
-      selectedFieldsByScope(field.scope)[mode] = selectedFieldsByScope(field.scope)[mode].filter(id => id !== fieldId);
-      if (field.scope === 'voucher') delete workingInputOrderByMode[mode][fieldId];
+      workingHeaderFieldsByMode[mode] = workingHeaderFieldsByMode[mode].filter(id => id !== fieldId);
+      workingVoucherColumnsByMode[mode] = workingVoucherColumnsByMode[mode].filter(id => id !== fieldId);
+      workingInputOrderByMode[mode] = { ...workingInputOrderByMode[mode], [fieldId]: 0 };
+      delete workingInputOrderDraftValuesByMode[mode][fieldId];
+      invalidInputOrderByMode[mode].delete(fieldId);
     });
     workingCustomFields = workingCustomFields.filter(item => item.id !== fieldId);
-    renderLayoutGroup(field.scope);
+    settingsModeIds.forEach(compactModeOrders);
+    markDirty();
+    renderSettingsMode();
   });
   const defaultToggle = form.elements.useDefaultCustomerWeekdays;
   const customerWeekdaysElement = dialog.querySelector('[data-customer-weekdays]');
@@ -2801,9 +3046,46 @@ async function openSettingsDialog() {
     settingGroups.filter(other => other !== group).forEach(other => { other.open = false; });
   }));
   const finish = () => { dialog.close(); dialog.remove(); };
-  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
-  dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
+  const discardAndFinish = () => {
+    if (settingsDirty && !window.confirm('저장하지 않은 환경설정 변경을 취소하시겠습니까?')) return false;
+    finish();
+    return true;
+  };
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', discardAndFinish));
+  dialog.addEventListener('cancel', event => { event.preventDefault(); discardAndFinish(); });
+  form.addEventListener('input', event => {
+    if (event.target.closest('[data-settings-ui-only]') || event.target.matches('[data-input-order-field]')) return;
+    markDirty();
+  });
+  form.addEventListener('change', event => {
+    if (event.target.closest('[data-settings-ui-only]') || event.target.matches('[data-voucher-visible-field]')) return;
+    markDirty();
+  });
+  dialog.querySelector('[data-open-input-template-manager]').addEventListener('click', () => {
+    if (!discardAndFinish()) return;
+    openInputTemplateManager();
+  });
   dialog.querySelector('[data-save]').addEventListener('click', async () => {
+    const invalidOrder = settingsModeIds.flatMap(mode => {
+      const definitionById = new Map(selectedVoucherDefinitions(mode).map(field => [field.id, field]));
+      return workingVoucherColumnsByMode[mode].flatMap(fieldId => {
+        const definition = definitionById.get(fieldId);
+        if (!definition || definition.editable === false) return [];
+        const parsed = parseSettingsInputOrder(workingInputOrderDraftValuesByMode[mode][fieldId]);
+        return parsed.valid ? [] : [{ mode, fieldId, code: invalidInputOrderByMode[mode].get(fieldId) || parsed.code }];
+      });
+    })[0];
+    if (invalidOrder) {
+      captureHeaderLayoutSelection();
+      settingsLayoutMode = invalidOrder.mode;
+      invalidInputOrderByMode[invalidOrder.mode].set(invalidOrder.fieldId, invalidOrder.code);
+      renderSettingsMode();
+      const voucherGroup = dialog.querySelector('[data-settings-group="voucher"]');
+      voucherGroup.open = true;
+      message.textContent = inputOrderMessage(invalidOrder.code);
+      dialog.querySelector(`[data-input-order-field="${CSS.escape(invalidOrder.fieldId)}"]`)?.focus();
+      return;
+    }
     const defaultDeliveryWeekdays = selectedWeekdays(form, 'defaultDeliveryWeekdays');
     if (!defaultDeliveryWeekdays.length) {
       message.textContent = '앱 기본 배송 가능 요일을 1개 이상 선택하세요.';
@@ -2822,9 +3104,7 @@ async function openSettingsDialog() {
       }
     }
     const holidayDates = String(form.elements.holidayDates.value || '').split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
-    captureLayoutSelection('header');
-    captureLayoutSelection('voucher');
-    captureInputOrder();
+    captureHeaderLayoutSelection();
     const next = contract.normalizeSettings({
       ...state.settings,
       orderCutoffTime: form.elements.orderCutoffTime.value,
@@ -2856,6 +3136,7 @@ async function openSettingsDialog() {
       updateDeliveryPolicy();
       renderRows({ restoreFocus: false });
       saveDraftNow();
+      settingsDirty = false;
       finish();
       toast('환경설정을 저장했습니다.', 'success');
     } catch (error) {
