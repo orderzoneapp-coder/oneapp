@@ -129,6 +129,24 @@ function writeFallback(value) {
   localStorage.setItem(FALLBACK_KEY, JSON.stringify(value));
 }
 
+function canonicalRecord(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalRecord).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalRecord(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function assertEstimatePreimages(currentRecords, expectedPreimages = []) {
+  for (const expected of expectedPreimages) {
+    if (!expected?.estimateId) throw new Error('SMARTINPUT_ESTIMATE_BUNDLE_PREIMAGE_INVALID');
+    const current = currentRecords[expected.estimateId] || null;
+    if (canonicalRecord(current) !== canonicalRecord(expected)) {
+      throw new Error('SMARTINPUT_ESTIMATE_BUNDLE_STALE');
+    }
+  }
+}
+
 async function getAll(storeName) {
   const db = await openDatabase();
   if (!db) return Object.values(readFallback()[storeName] || {});
@@ -478,7 +496,7 @@ export function saveEstimate(estimate) {
   return put(DATA_STORES.ESTIMATES, estimate, 'estimateId');
 }
 
-export async function commitEstimateBundle({ upserts = [], deletes = [] } = {}) {
+export async function commitEstimateBundle({ upserts = [], deletes = [], expectedPreimages = [] } = {}) {
   const records = upserts.filter(record => record?.estimateId);
   const ids = [...new Set(deletes.filter(Boolean))];
   if (!records.length && !ids.length) return { upserts: [], deletes: [] };
@@ -486,6 +504,7 @@ export async function commitEstimateBundle({ upserts = [], deletes = [] } = {}) 
   if (!db) {
     const value = readFallback();
     value[DATA_STORES.ESTIMATES] ||= {};
+    assertEstimatePreimages(value[DATA_STORES.ESTIMATES], expectedPreimages);
     records.forEach(record => { value[DATA_STORES.ESTIMATES][record.estimateId] = record; });
     ids.forEach(estimateId => { delete value[DATA_STORES.ESTIMATES][estimateId]; });
     writeFallback(value);
@@ -493,11 +512,23 @@ export async function commitEstimateBundle({ upserts = [], deletes = [] } = {}) 
   }
   const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
   const store = transaction.objectStore(DATA_STORES.ESTIMATES);
-  records.forEach(record => store.put(record));
-  ids.forEach(estimateId => store.delete(estimateId));
-  await transactionDone(transaction);
-  db.close();
-  return { upserts: records, deletes: ids };
+  const completed = transactionDone(transaction);
+  try {
+    const currentRecords = {};
+    const current = await Promise.all(expectedPreimages.map(expected => requestResult(store.get(expected.estimateId))));
+    expectedPreimages.forEach((expected, index) => { currentRecords[expected.estimateId] = current[index] || null; });
+    assertEstimatePreimages(currentRecords, expectedPreimages);
+    records.forEach(record => store.put(record));
+    ids.forEach(estimateId => store.delete(estimateId));
+    await completed;
+    return { upserts: records, deletes: ids };
+  } catch (error) {
+    try { transaction.abort(); } catch (_) {}
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
 }
 
 export async function saveEstimateBundle(estimates = []) {
