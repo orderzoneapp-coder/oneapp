@@ -79,3 +79,13 @@ export function filterInputListRows(rows = [], query = '', { sourceRows = [] } =
     return terms.every(term => haystack.includes(term));
   });
 }
+
+export function inputListSelectionScopeRowIds(allRows = [], visibleRows = [], { searchOpen = false } = {}) {
+  const rows = searchOpen ? visibleRows : allRows;
+  return [...new Set(rows.map(row => String(row?.rowId || '')).filter(Boolean))];
+}
+
+export function constrainInputListSelection(selectedRowIds = [], allowedRowIds = []) {
+  const allowed = new Set(allowedRowIds.map(rowId => String(rowId || '')).filter(Boolean));
+  return [...new Set([...selectedRowIds].map(rowId => String(rowId || '')).filter(rowId => allowed.has(rowId)))];
+}

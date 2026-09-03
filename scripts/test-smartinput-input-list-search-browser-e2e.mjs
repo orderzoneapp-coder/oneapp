@@ -139,7 +139,25 @@ try {
   await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'reference initialization', 30_000);
   await wait(500);
 
-  const protectedDataExpression = `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,quantity:row.quantity,memo:row.memo,description:row.description,customValues:row.customValues})),inputMapping:{workingRows:mode.inputMapping.workingRows,sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature}});})()`;
+  const fixtureDraftJson = await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`);
+  const ensureTableView = async view => {
+    const selector = `[data-table-view="${view}"]`;
+    if (await evaluate(client, `document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-pressed')!=='true'`)) await click(client, selector);
+    await expr(client, view === 'source'
+      ? `!document.querySelector('#mappingWorktable').hidden`
+      : `!document.querySelector('#voucherInputTable').hidden`, `${view} table view`);
+  };
+  const restoreFixture = async view => {
+    await evaluate(client, `localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,${JSON.stringify(fixtureDraftJson)});true`);
+    loaded = client.once('Page.loadEventFired');
+    await client.send('Page.reload', { ignoreCache: true });
+    await loaded;
+    await expr(client, `Boolean(document.querySelector('#inputRows tr')||document.querySelector('#mappingInputRows tr'))`, 'restored SmartInput shell');
+    await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'restored reference initialization', 30_000);
+    await ensureTableView(view);
+  };
+
+  const protectedDataExpression = `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,quantity:row.quantity,unitPrice:row.unitPrice,memo:row.memo,description:row.description,customValues:row.customValues})),inputMapping:{workingRows:mode.inputMapping.workingRows,sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature}});})()`;
   const originalData = await evaluate(client, protectedDataExpression);
   assert.deepEqual(await evaluate(client, `(() => ({panelHidden:document.querySelector('#inputListSearchPanel').hidden,expanded:document.querySelector('#inputListSearchButton').getAttribute('aria-expanded'),role:document.querySelector('#inputListSearchPanel').getAttribute('role'),controls:document.querySelector('#inputListSearchButton').getAttribute('aria-controls'),closeLabel:document.querySelector('#inputListSearchCloseButton').getAttribute('aria-label')}))()`), {
     panelHidden: true,
@@ -149,6 +167,11 @@ try {
     closeLabel: '입력목록 검색 닫기'
   });
 
+  await click(client, '[data-mapping-select-row="source-1"]');
+  await click(client, '[data-mapping-select-row="source-2"]');
+  assert.deepEqual(await evaluate(client, `(() => {const all=document.querySelector('#mappingSelectAllRows');return {checked:all.checked,indeterminate:all.indeterminate,disabled:all.disabled};})()`), {
+    checked: true, indeterminate: false, disabled: false
+  }, 'source select-all state must be calculated from the visible source rows');
   await evaluate(client, `(() => {const scroll=document.querySelector('#tableScroll');scroll.scrollLeft=Math.min(80,Math.max(0,scroll.scrollWidth-scroll.clientWidth));scroll.scrollTop=Math.min(24,Math.max(0,scroll.scrollHeight-scroll.clientHeight));scroll.dispatchEvent(new Event('scroll'));const cell=document.querySelector('[data-mapping-row-id="source-1"] [data-mapping-column="0"] input');cell.focus({preventScroll:true});window.__searchScroll={left:scroll.scrollLeft,top:scroll.scrollTop};return true;})()`);
   assert.equal(await evaluate(client, `(() => {const event=new KeyboardEvent('keydown',{key:'F3',code:'F3',bubbles:true,cancelable:true});document.activeElement.dispatchEvent(event);return event.defaultPrevented;})()`), true,
     'F3 must prevent the browser default');
@@ -158,10 +181,23 @@ try {
     'opening the search must preserve the worktable scroll position');
   assert.equal(await evaluate(client, `document.querySelectorAll('#mappingInputRows tr[data-mapping-default-row]').length`), 0,
     'an open empty query must omit the blank default work row');
-  await input(client, '#gridSearchInput', '반품 -2');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
   await expr(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length===1`, 'source-view filtered row');
   const sourceIds = await evaluate(client, `[...document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])')].map(row=>row.dataset.mappingRowId)`);
-  assert.deepEqual(sourceIds, ['source-2']);
+  assert.deepEqual(sourceIds, ['source-1']);
+  await key(client, 'Escape', 'Escape', 27);
+  await expr(client, `document.querySelector('#inputListSearchPanel').hidden`, 'selection-pruning Escape close');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-mapping-select-row]')].map(input=>({rowId:input.dataset.mappingSelectRow,checked:input.checked}))`), [
+    { rowId: 'source-1', checked: true },
+    { rowId: 'source-2', checked: false },
+    { rowId: '', checked: false }
+  ], 'A/B selected then filtering to A must remove B permanently when Escape closes search');
+  assert.deepEqual(await evaluate(client, `(() => {const all=document.querySelector('#mappingSelectAllRows');return {checked:all.checked,indeterminate:all.indeterminate,disabled:all.disabled};})()`), {
+    checked: false, indeterminate: true, disabled: false
+  }, 'source select-all indeterminate state must be calculated from the currently displayed rows');
+
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
 
   await click(client, '[data-table-view="input"]');
   await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#inputListSearchPanel').hidden`, 'view switch clears search');
@@ -172,7 +208,7 @@ try {
   await evaluate(client, `document.querySelector('[data-row-id="source-1"] [data-field="itemCode"]').focus({preventScroll:true})`);
   await key(client, 'F3', 'F3', 114);
   await expr(client, `document.activeElement===document.querySelector('#gridSearchInput')`, 'input-view F3 focus');
-  await input(client, '#gridSearchInput', '반품 -2');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
   const inputIds = await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>row.dataset.rowId)`);
   assert.deepEqual(inputIds, sourceIds, 'source-column and configured-input views must expose the same row IDs');
   await key(client, 'Escape', 'Escape', 27);
@@ -186,6 +222,13 @@ try {
     'employee description must be searchable');
   await click(client, '#inputListSearchCloseButton');
   await expr(client, `document.querySelector('#inputListSearchPanel').hidden&&document.querySelector('#gridSearchInput').value===''`, 'explicit close clears filter');
+
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'NO-SUCH-INPUT-ROW');
+  assert.deepEqual(await evaluate(client, `(() => {const all=document.querySelector('#selectAllRows');return {checked:all.checked,indeterminate:all.indeterminate,disabled:all.disabled};})()`), {
+    checked: false, indeterminate: false, disabled: true
+  }, 'input select-all must be disabled when the visible search result is empty');
+  await key(client, 'Escape', 'Escape', 27);
 
   await key(client, 'F3', 'F3', 114);
   await input(client, '#gridSearchInput', 'CODE-NEG');
@@ -216,6 +259,84 @@ try {
   await expr(client, `!document.querySelector('.product-picker-dialog[open]')`, 'product dialog Escape');
   await evaluate(client, `document.querySelector('#estimateLibraryView').classList.contains('is-open')&&document.querySelector('#relatedPanelCloseButton').click()`);
   await wait(4_000);
+
+  await restoreFixture('source');
+  const sourceDeleteBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await click(client, '[data-mapping-select-row="source-1"]');
+  await click(client, '[data-mapping-select-row="source-2"]');
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
+  await expr(client, `document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length===1`, 'source delete search result');
+  await click(client, '#deleteSelectedRows');
+  await expr(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.workingRows.length===1`, 'source visible-only deletion');
+  const sourceDeleteAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.deepEqual(sourceDeleteAfter.rows.map(row => row.rowId), ['source-2'],
+    'source view deletion must remove only the selected visible search result');
+  assert.deepEqual(sourceDeleteAfter.rows[0], sourceDeleteBefore.rows.find(row => row.rowId === 'source-2'),
+    'source view deletion must not mutate the hidden voucher row');
+  assert.deepEqual(sourceDeleteAfter.inputMapping.workingRows[0], sourceDeleteBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2'),
+    'source view deletion must not delete or mutate the hidden working row');
+  assert.deepEqual({
+    sourceMatrix: sourceDeleteAfter.inputMapping.sourceMatrix,
+    sourceCellMatrix: sourceDeleteAfter.inputMapping.sourceCellMatrix,
+    headers: sourceDeleteAfter.inputMapping.headers,
+    signature: sourceDeleteAfter.inputMapping.signature,
+    headerSignature: sourceDeleteAfter.inputMapping.headerSignature
+  }, {
+    sourceMatrix: sourceDeleteBefore.inputMapping.sourceMatrix,
+    sourceCellMatrix: sourceDeleteBefore.inputMapping.sourceCellMatrix,
+    headers: sourceDeleteBefore.inputMapping.headers,
+    signature: sourceDeleteBefore.inputMapping.signature,
+    headerSignature: sourceDeleteBefore.inputMapping.headerSignature
+  }, 'source view visible-only deletion must preserve immutable source evidence and signatures');
+
+  await restoreFixture('input');
+  const inputDeleteBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
+  await click(client, '#selectAllRows');
+  assert.deepEqual(await evaluate(client, `(() => {const all=document.querySelector('#selectAllRows');return {checked:all.checked,indeterminate:all.indeterminate,disabled:all.disabled,visible:[...document.querySelectorAll('#inputRows [data-select-row]:checked')].map(input=>input.dataset.selectRow)};})()`), {
+    checked: true, indeterminate: false, disabled: false, visible: ['source-1']
+  }, 'input view select-all must select and calculate state from the one visible result');
+  await click(client, '#deleteSelectedRows');
+  await expr(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.length===1`, 'input visible-only deletion');
+  const inputDeleteAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.deepEqual(inputDeleteAfter.rows, [inputDeleteBefore.rows.find(row => row.rowId === 'source-2')],
+    'input view visible select-all deletion must leave the hidden row unchanged');
+  assert.deepEqual(inputDeleteAfter.inputMapping.workingRows, [inputDeleteBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2')],
+    'input view visible select-all deletion must leave the hidden working row unchanged');
+
+  await restoreFixture('input');
+  const priceBefore = JSON.parse(await evaluate(client, protectedDataExpression));
+  await click(client, '#inputListSearchButton');
+  await input(client, '#gridSearchInput', 'CODE-ZERO');
+  await click(client, '#selectAllRows');
+  await input(client, '#bulkUnitPriceInput', '321');
+  await click(client, '#applyBulkUnitPriceButton');
+  await expr(client, `Number(JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.find(row=>row.rowId==='source-1')?.unitPrice)===321`, 'visible-only unit-price application');
+  const priceAfter = JSON.parse(await evaluate(client, protectedDataExpression));
+  assert.equal(Number(priceAfter.rows.find(row => row.rowId === 'source-1').unitPrice), 321,
+    'selected visible search result must receive the bulk unit price');
+  assert.deepEqual(priceAfter.rows.find(row => row.rowId === 'source-2'), priceBefore.rows.find(row => row.rowId === 'source-2'),
+    'bulk unit price must not mutate the hidden voucher row');
+  assert.deepEqual(priceAfter.inputMapping.workingRows.find(row => row.rowId === 'source-2'), priceBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2'),
+    'bulk unit price must not mutate the hidden working row');
+  assert.deepEqual({
+    sourceMatrix: priceAfter.inputMapping.sourceMatrix,
+    sourceCellMatrix: priceAfter.inputMapping.sourceCellMatrix,
+    headers: priceAfter.inputMapping.headers,
+    signature: priceAfter.inputMapping.signature,
+    headerSignature: priceAfter.inputMapping.headerSignature
+  }, {
+    sourceMatrix: priceBefore.inputMapping.sourceMatrix,
+    sourceCellMatrix: priceBefore.inputMapping.sourceCellMatrix,
+    headers: priceBefore.inputMapping.headers,
+    signature: priceBefore.inputMapping.signature,
+    headerSignature: priceBefore.inputMapping.headerSignature
+  }, 'visible-only bulk price must preserve source evidence and signatures');
+  await click(client, '#inputListSearchCloseButton');
+  assert.equal(await evaluate(client, `document.querySelector('[data-row-id="source-2"] [data-select-row]').checked`), false,
+    'explicit close must not revive hidden selection');
 
   const screenshots = [];
   for (const width of [1920, 1440, 390]) {

@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   INPUT_LIST_SEARCH_ACTION,
+  constrainInputListSelection,
   createInputListSearchState,
   filterInputListRows,
+  inputListSelectionScopeRowIds,
   reduceInputListSearchState
 } from '../smartinput/input-list-search.js';
 
@@ -40,6 +42,20 @@ for (const query of ['', 'A125', '직원', '0', '-2']) {
     `source and input table views must resolve the same row set for query ${query || '(blank)'}`);
 }
 
+const selectedBeforeSearch = new Set(['CODE', 'MEMO']);
+const appleResults = filterInputListRows(rows, '사과', { sourceRows });
+const searchScope = inputListSelectionScopeRowIds(rows, appleResults, { searchOpen: true });
+assert.deepEqual(searchScope, ['CODE'],
+  'search selection scope must contain only currently visible result row IDs');
+assert.deepEqual(constrainInputListSelection(selectedBeforeSearch, searchScope), ['CODE'],
+  'a query change must remove a previously selected row when that row becomes hidden');
+assert.deepEqual(constrainInputListSelection(new Set(['CODE', 'MEMO']), searchScope), ['CODE'],
+  'delete, price, and future bulk actions must resolve only the visible selected intersection');
+assert.deepEqual(inputListSelectionScopeRowIds(rows, appleResults, { searchOpen: false }), rows.map(row => row.rowId),
+  'closing search must preserve the existing whole-row selection scope without reviving pruned IDs');
+assert.deepEqual(constrainInputListSelection(['CODE'], rows.map(row => row.rowId)), ['CODE'],
+  'closing search must not revive a hidden selection that was already pruned');
+
 const dataBefore = JSON.stringify({ rows, sourceRows, sourceMatrix: [['품목코드', '품명', '규격', '수량', '메모'], ...sourceRows.map(row => row.cells)], signature: 'POSITIONAL' });
 let searchState = createInputListSearchState();
 searchState = reduceInputListSearchState(searchState, { type: INPUT_LIST_SEARCH_ACTION.OPEN });
@@ -69,5 +85,15 @@ assert.match(source, /function handleInputListSearchShortcut[\s\S]*event\.preven
   'the F3 handler must suppress the browser shortcut');
 assert.match(source, /field === 'itemCode'[\s\S]*trySearchProductRow\(row, input\.value/,
   'item-code Enter must continue to invoke product master search');
+assert.match(source, /function selectedRowIdsForBulkAction\(\)[\s\S]*constrainInputListSelection/,
+  'bulk actions must share the visible-selection intersection guard');
+assert.match(source, /function applySelectedRowsUnitPrice\(\)[\s\S]*selectedRowIdsForBulkAction\(\)/,
+  'bulk unit-price application must recheck the visible selection immediately before mutation');
+assert.match(source, /function deleteSelectedMappingRows\(\)[\s\S]*selectedRowIdsForBulkAction\(\)/,
+  'source and configured-input deletion must recheck the visible selection immediately before mutation');
+assert.match(source, /id !== 'mappingSelectAllRows'[\s\S]*selectAllRowsInScope\(event\.target\.checked\)/,
+  'source select-all must use the shared selection scope');
+assert.match(source, /\$\('selectAllRows'\)\.addEventListener\('change'[\s\S]*selectAllRowsInScope\(event\.target\.checked\)/,
+  'configured-input select-all must use the shared selection scope');
 
 console.log('SmartInput F3 input-list search tests passed.');

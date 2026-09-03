@@ -52,10 +52,12 @@ import {
 } from './multivoucher-stage1.js?v=0.2.0';
 import {
   INPUT_LIST_SEARCH_ACTION,
+  constrainInputListSelection,
   createInputListSearchState,
   filterInputListRows,
+  inputListSelectionScopeRowIds,
   reduceInputListSearchState
-} from './input-list-search.js?v=0.1.0';
+} from './input-list-search.js?v=0.1.1';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -872,10 +874,53 @@ function inputListSourceRows(session = inputMappingSession()) {
   return session?.workingRows || [];
 }
 
-function visibleInputListRows(session = inputMappingSession()) {
-  return filterInputListRows(modeDraft().rows, state.inputListSearch.query, {
+function visibleInputListRows(session = inputMappingSession(), query = state.inputListSearch.query) {
+  return filterInputListRows(modeDraft().rows, query, {
     sourceRows: inputListSourceRows(session)
   });
+}
+
+function selectionScopeRows() {
+  if (!state.inputListSearch.open) {
+    return sourceTableViewActive()
+      ? visibleMappingRows(inputMappingSession(), '')
+      : modeDraft().rows;
+  }
+  return sourceTableViewActive() ? visibleMappingRows() : visibleInputListRows();
+}
+
+function selectionScopeRowIds() {
+  const allRows = sourceTableViewActive()
+    ? visibleMappingRows(inputMappingSession(), '')
+    : modeDraft().rows;
+  return inputListSelectionScopeRowIds(allRows, selectionScopeRows(), {
+    searchOpen: state.inputListSearch.open
+  });
+}
+
+function reconcileRowSelectionToScope() {
+  const scopeIds = selectionScopeRowIds();
+  state.selectedRowIds = new Set(constrainInputListSelection(state.selectedRowIds, scopeIds));
+  return scopeIds;
+}
+
+function selectedRowIdsForBulkAction() {
+  const scopeIds = selectionScopeRowIds();
+  const selectedIds = constrainInputListSelection(state.selectedRowIds, scopeIds);
+  state.selectedRowIds = new Set(selectedIds);
+  return selectedIds;
+}
+
+function updateRowSelection(rowId, selected) {
+  const normalizedRowId = String(rowId || '');
+  const scopeIds = selectionScopeRowIds();
+  if (selected && scopeIds.includes(normalizedRowId)) state.selectedRowIds.add(normalizedRowId);
+  else state.selectedRowIds.delete(normalizedRowId);
+  state.selectedRowIds = new Set(constrainInputListSelection(state.selectedRowIds, scopeIds));
+}
+
+function selectAllRowsInScope(selected) {
+  state.selectedRowIds = selected ? new Set(selectionScopeRowIds()) : new Set();
 }
 
 function renderInputListSearch() {
@@ -929,6 +974,7 @@ function openInputListSearch() {
   if (!state.inputListSearch.open) {
     state.inputListSearchReturnFocus = inputListSearchFocusRecord(document.activeElement);
     state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.OPEN });
+    reconcileRowSelectionToScope();
     renderRows({ restoreFocus: false });
   } else {
     renderInputListSearch();
@@ -943,6 +989,7 @@ function openInputListSearch() {
 function closeInputListSearch({ restoreFocus = true, render = true } = {}) {
   if (!state.inputListSearch.open && !state.inputListSearch.query) return false;
   const returnFocus = state.inputListSearchReturnFocus;
+  reconcileRowSelectionToScope();
   state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.CLOSE });
   state.inputListSearchReturnFocus = null;
   if (render) renderRows({ restoreFocus: false });
@@ -955,6 +1002,7 @@ function closeInputListSearch({ restoreFocus = true, render = true } = {}) {
 }
 
 function resetInputListSearchForContextChange() {
+  if (state.inputListSearch.open) reconcileRowSelectionToScope();
   state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.CONTEXT_CHANGE });
   state.inputListSearchReturnFocus = null;
   renderInputListSearch();
@@ -4417,13 +4465,14 @@ function undoGridPaste() {
 }
 
 function syncRowSelectionControls() {
-  const rowIds = modeDraft().rows.map(row => row.rowId);
-  state.selectedRowIds = new Set([...state.selectedRowIds].filter(rowId => rowIds.includes(rowId)));
+  const rowIds = reconcileRowSelectionToScope();
   const selectedCount = state.selectedRowIds.size;
-  const selectAll = $('selectAllRows');
-  selectAll.checked = Boolean(rowIds.length && selectedCount === rowIds.length);
-  selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
-  selectAll.disabled = !rowIds.length;
+  const selectAll = sourceTableViewActive() ? $('mappingSelectAllRows') : $('selectAllRows');
+  if (selectAll) {
+    selectAll.checked = Boolean(rowIds.length && selectedCount === rowIds.length);
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
+    selectAll.disabled = !rowIds.length;
+  }
   $('deleteSelectedRows').disabled = !selectedCount;
   $('bulkUnitPriceInput').disabled = sourceTableViewActive();
   $('applyBulkUnitPriceButton').disabled = !selectedCount || sourceTableViewActive();
@@ -4431,18 +4480,23 @@ function syncRowSelectionControls() {
 
 function applySelectedRowsUnitPrice() {
   if (sourceTableViewActive()) return toast('입력형으로 전환한 뒤 선택 단가를 적용하세요.', 'error');
-  if (!state.selectedRowIds.size) return toast('단가를 적용할 행을 선택하세요.', 'error');
+  const selectedRowIds = selectedRowIdsForBulkAction();
+  if (!selectedRowIds.length) {
+    syncRowSelectionControls();
+    return toast('단가를 적용할 행을 선택하세요.', 'error');
+  }
   try {
     invalidateGridPasteUndo();
     const current = modeDraft();
     const beforeRows = new Map(current.rows.map(row => [row.rowId, cloneMappedMutationRow(row)]));
-    const result = applyBulkUnitPrice(current.rows, [...state.selectedRowIds], $('bulkUnitPriceInput').value, {
+    const selectedRowIdSet = new Set(selectedRowIds);
+    const result = applyBulkUnitPrice(current.rows, selectedRowIds, $('bulkUnitPriceInput').value, {
       targetFieldId: mappingTargetByProjection('unitPrice')?.id || '',
       actor: resolveSmartInputActor()
     });
     current.rows = result.rows.map(row => contract.normalizeRow(row));
     current.rows
-      .filter(row => state.selectedRowIds.has(row.rowId))
+      .filter(row => selectedRowIdSet.has(row.rowId))
       .forEach(row => syncMappedWorkingRowAfterMutation(current, beforeRows.get(row.rowId), row, {
         forceFieldIds: ['unitPrice'],
         displayValues: { unitPrice: row.sourceUnitPrice ?? row.unitPrice ?? '' }
@@ -4460,9 +4514,14 @@ async function deleteSelectedGridRows() {
     deleteSelectedMappingRows();
     return;
   }
-  if (!state.selectedRowIds.size) return;
+  const selectedRowIds = selectedRowIdsForBulkAction();
+  if (!selectedRowIds.length) {
+    syncRowSelectionControls();
+    return;
+  }
+  const selectedRowIdSet = new Set(selectedRowIds);
   invalidateGridPasteUndo();
-  const linkedRows = modeDraft().rows.filter(row => state.selectedRowIds.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
+  const linkedRows = modeDraft().rows.filter(row => selectedRowIdSet.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
   if (linkedRows.length) {
     const removals = new Map();
     linkedRows.forEach(row => (row.linkedSourceRefs?.length ? row.linkedSourceRefs : [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }]).forEach(ref => {
@@ -4481,7 +4540,7 @@ async function deleteSelectedGridRows() {
       await saveEstimate(record);
     }
   }
-  modeDraft().rows = modeDraft().rows.filter(row => !state.selectedRowIds.has(row.rowId));
+  modeDraft().rows = modeDraft().rows.filter(row => !selectedRowIdSet.has(row.rowId));
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   state.selectedRowIds.clear();
   renderRows();
@@ -4489,9 +4548,9 @@ async function deleteSelectedGridRows() {
   toast(linkedRows.length ? '선택한 연동 행을 원본 견적서에서도 삭제했습니다.' : '선택한 품목을 삭제했습니다.', 'success');
 }
 
-function visibleMappingRows(session = inputMappingSession()) {
+function visibleMappingRows(session = inputMappingSession(), query = state.inputListSearch.query) {
   if (!session) return [];
-  const visibleIds = new Set(visibleInputListRows(session).map(row => row.rowId));
+  const visibleIds = new Set(visibleInputListRows(session, query).map(row => row.rowId));
   return (session.workingRows || []).filter(row => visibleIds.has(row.rowId));
 }
 
@@ -4586,10 +4645,9 @@ function renderMappingRows() {
   renderInputListSearch();
   $('detailColumnsButton').hidden = hidden.size === 0;
   $('detailColumnsButton').textContent = `숨긴 열 ${hidden.size}개 표시`;
-  $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
-  $('bulkUnitPriceInput').disabled = true;
-  $('applyBulkUnitPriceButton').disabled = true;
+  syncRowSelectionControls();
   $('selectAllRows').checked = false;
+  $('selectAllRows').indeterminate = false;
   applyMappingHeaderLocks(session);
   renderTableViewSwitch();
   renderInputMappingStatus();
@@ -4798,8 +4856,13 @@ function usePendingPasteAsSource() {
 
 function deleteSelectedMappingRows() {
   const session = inputMappingSession();
-  if (!session || !state.selectedRowIds.size) return;
-  modeDraft().inputMapping = deleteWorkingRows(session, [...state.selectedRowIds]);
+  if (!session) return;
+  const selectedRowIds = selectedRowIdsForBulkAction();
+  if (!selectedRowIds.length) {
+    syncRowSelectionControls();
+    return;
+  }
+  modeDraft().inputMapping = deleteWorkingRows(session, selectedRowIds);
   state.selectedRowIds.clear();
   projectInputMappingToVoucherRows();
   renderRows({ restoreFocus: false });
@@ -7889,8 +7952,7 @@ $('mappingTableHeaders').addEventListener('click', event => {
 });
 $('mappingTableHeaders').addEventListener('change', event => {
   if (event.target.id !== 'mappingSelectAllRows') return;
-  const ids = visibleMappingRows().map(row => row.rowId);
-  state.selectedRowIds = event.target.checked ? new Set(ids) : new Set();
+  selectAllRowsInScope(event.target.checked);
   renderRows({ restoreFocus: false });
 });
 $('mappingInputRows').addEventListener('input', event => {
@@ -7919,15 +7981,8 @@ $('mappingInputRows').addEventListener('compositionend', event => {
 $('mappingInputRows').addEventListener('change', event => {
   const selector = event.target.closest('[data-mapping-select-row]');
   if (!selector || !selector.dataset.mappingSelectRow) return;
-  if (selector.checked) state.selectedRowIds.add(selector.dataset.mappingSelectRow);
-  else state.selectedRowIds.delete(selector.dataset.mappingSelectRow);
-  $('deleteSelectedRows').disabled = state.selectedRowIds.size === 0;
-  const all = $('mappingSelectAllRows');
-  const count = visibleMappingRows().length;
-  if (all) {
-    all.checked = Boolean(count && state.selectedRowIds.size === count);
-    all.indeterminate = state.selectedRowIds.size > 0 && state.selectedRowIds.size < count;
-  }
+  updateRowSelection(selector.dataset.mappingSelectRow, selector.checked);
+  syncRowSelectionControls();
 });
 $('mappingInputRows').addEventListener('keydown', event => {
   const input = event.target.closest('[data-mapping-cell]');
@@ -8073,6 +8128,7 @@ $('gridSearchInput').addEventListener('input', event => {
     type: INPUT_LIST_SEARCH_ACTION.QUERY,
     query: event.target.value
   });
+  reconcileRowSelectionToScope();
   renderRows({ restoreFocus: false });
 });
 $('addRowButton').addEventListener('click', () => {
@@ -8456,8 +8512,7 @@ inputRows.addEventListener('focusout', event => {
 inputRows.addEventListener('change', event => {
   const selector = event.target.closest('[data-select-row]');
   if (selector) {
-    if (selector.checked) state.selectedRowIds.add(selector.dataset.selectRow);
-    else state.selectedRowIds.delete(selector.dataset.selectRow);
+    updateRowSelection(selector.dataset.selectRow, selector.checked);
     syncRowSelectionControls();
     return;
   }
@@ -8514,9 +8569,7 @@ inputRows.addEventListener('click', event => {
 });
 
 $('selectAllRows').addEventListener('change', event => {
-  state.selectedRowIds = event.target.checked
-    ? new Set(modeDraft().rows.map(row => row.rowId))
-    : new Set();
+  selectAllRowsInScope(event.target.checked);
   renderRows({ restoreFocus: false });
 });
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
