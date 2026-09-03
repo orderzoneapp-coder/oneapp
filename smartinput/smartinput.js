@@ -35,6 +35,7 @@ import {
   updateWorkingCell,
   validateTemplateDraft
 } from './input-template-mapper.js?v=0.2.4';
+import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -1260,7 +1261,13 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
   const session = inputMappingSession(current);
   if (!session) return;
   const priorRows = preserveProductEdits ? new Map((current.rows || []).map(row => [row.rowId, row])) : new Map();
-  let projectedSources = projectMappedRows(session, inputMappingDefinitions());
+  const targetDefinitions = inputMappingDefinitions();
+  let projectedSources = projectMappedRows(session, targetDefinitions);
+  projectedSources = applyOrderDocumentNumberDerivation({
+    rows: projectedSources,
+    session,
+    targetDefinitions
+  });
   if (state.draft.activeMode === 'purchase' && session.purchaseMetaRows) {
     projectedSources = joinPurchaseMeta({
       visibleSheetName: session.sheetName,
@@ -7530,6 +7537,9 @@ function orderGroupErrors(groups = []) {
   const errors = [];
   groups.forEach((group, index) => {
     const label = `${index + 1}번 전표`;
+    group.rows.forEach((row, rowIndex) => {
+      if (row.orderDocumentNoError) errors.push(`${label} ${rowIndex + 1}행 ${row.orderDocumentNoError}`);
+    });
     if (!group.deliveryCustomerName) errors.push(`${label} 등록 거래처`);
     if (!group.voucherDate) errors.push(`${label} 주문일자`);
     if (!group.deliveryDate) errors.push(`${label} 배송일자`);

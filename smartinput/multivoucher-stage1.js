@@ -11,7 +11,7 @@ const MODE_CONFIG = Object.freeze({
     warehouseLabel: '출하창고코드',
     warehouseAliases: ['창고', '창고코드', '출하창고', '출하창고코드'],
     voucherNoLabel: '주문번호',
-    voucherNoAliases: ['전표번호', '주문번호', '외부전표번호'],
+    voucherNoAliases: ['전표번호', '주문번호', '외부전표번호', '일자-No.'],
     quantityLabel: '주문수량',
     quantityAliases: ['주문수량', '수량'],
     unitPriceLabel: '주문단가',
@@ -332,6 +332,9 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
       });
     }
     const group = groups.get(voucherGroupKey);
+    if (row.orderDocumentNoError) {
+      group.validationErrors.push(`${row.sourceRowNo || index + 1}행 ${row.orderDocumentNoError}`);
+    }
     if (row.quantity === null) group.validationErrors.push(`${row.sourceRowNo || index + 1}행 수량 공란`);
     if (row.unitConversionStatus === 'REVIEW_REQUIRED') group.validationErrors.push(`${row.sourceRowNo || index + 1}행 단위 환산 확인 필요`);
     group.rows.push({ ...row, voucherGroupKey });
@@ -397,6 +400,7 @@ export function buildOrderGroupPayload(group, common = {}) {
     ...common,
     customerId: group.deliveryCustomerId || common.customerId || '',
     customerName: group.deliveryCustomerName || common.customerName || '',
+    externalOrderNo: group.externalVoucherNo || common.externalOrderNo || '',
     orderDate: group.voucherDate || common.orderDate,
     deliveryExpectedDate: group.deliveryDate || common.deliveryExpectedDate || '',
     warehouseId: group.warehouseId || common.warehouseId || '',
