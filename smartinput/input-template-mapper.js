@@ -351,6 +351,62 @@ export function updateWorkingCell(session, rowId, columnIndex, value) {
   };
 }
 
+export function synchronizeWorkingRow(session, rowId, updates = []) {
+  if (!session || !Array.isArray(session.workingRows)) throw new Error('MAPPING_SESSION_REQUIRED');
+  const stableRowId = cellText(rowId);
+  if (!stableRowId) throw new Error('MAPPING_ROW_ID_REQUIRED');
+  const byColumn = new Map();
+  updates.forEach(update => {
+    const columnIndex = Number(update?.columnIndex);
+    if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= session.headers.length) {
+      throw new Error('MAPPING_CELL_INVALID');
+    }
+    byColumn.set(columnIndex, cellText(update?.displayValue));
+  });
+  if (!byColumn.size) return session;
+
+  const existing = session.workingRows.find(row => row.rowId === stableRowId);
+  if (existing) {
+    let next = session;
+    byColumn.forEach((value, columnIndex) => {
+      const live = next.workingRows.find(row => row.rowId === stableRowId);
+      if (cellText(live?.cells?.[columnIndex]) !== value) next = updateWorkingCell(next, stableRowId, columnIndex, value);
+    });
+    return next;
+  }
+
+  const sourceRowIndex = /^source-(\d+)$/.exec(stableRowId)?.[1];
+  if (sourceRowIndex !== undefined
+    && Number(sourceRowIndex) > Number(session.headerRowIndex)
+    && Number(sourceRowIndex) < (session.sourceMatrix || []).length
+    && !(session.deletedSourceRows || []).includes(Number(sourceRowIndex))) {
+    const editJournal = { ...(session.editJournal || {}) };
+    byColumn.forEach((value, columnIndex) => { editJournal[`${sourceRowIndex}:${columnIndex}`] = value; });
+    return {
+      ...session,
+      editJournal,
+      workingRows: activeWorkingRows(session, editJournal, session.manualRows),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  const values = Array(session.headers.length).fill('');
+  byColumn.forEach((value, columnIndex) => { values[columnIndex] = value; });
+  if (!values.some(hasMeaningfulSourceValue)) return session;
+  const manualRows = (session.manualRows || []).map(row => ({ ...row, cells: [...(row.cells || [])] }));
+  const stored = manualRows.find(row => row.rowId === stableRowId);
+  if (stored) {
+    byColumn.forEach((value, columnIndex) => { stored.cells[columnIndex] = value; });
+    return {
+      ...session,
+      manualRows,
+      workingRows: activeWorkingRows(session, session.editJournal, manualRows),
+      updatedAt: new Date().toISOString()
+    };
+  }
+  return addManualRow(session, values, stableRowId);
+}
+
 export function addManualRow(session, values = [], rowId = '') {
   if (!session) throw new Error('MAPPING_SESSION_REQUIRED');
   const manualRows = [

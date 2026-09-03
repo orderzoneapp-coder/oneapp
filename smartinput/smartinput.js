@@ -31,9 +31,10 @@ import {
   projectMappedRows,
   reassignHeaderRow,
   setColumnDecision,
+  synchronizeWorkingRow,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.2';
+} from './input-template-mapper.js?v=0.2.3';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
@@ -128,6 +129,11 @@ import {
   sourceViewColumns,
   tableViewFor
 } from './table-view-state.js?v=0.1.0';
+import {
+  applyMappedFieldUpdates,
+  mappedRowMutationPlan,
+  projectedRowValue
+} from './mapped-row-sync.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -924,16 +930,16 @@ function controlTableViewButton(view) {
   return $('tableViewSwitch')?.querySelector(`[data-table-view="${view}"]`) || null;
 }
 
-function inputMappingTargets() {
+function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true } = {}) {
   const headerProjection = {
     customer: 'rowCustomerName',
     deliveryDate: 'rowDeliveryDate',
     warehouse: 'rowWarehouseCode',
     transactionType: 'rowTransactionType'
   };
-  const enabledHeaderIds = new Set(headerFieldsForMode());
-  const enabledVoucherIds = new Set(voucherColumnsForMode());
-  const headerTargets = layoutDefinitions('header').filter(field => enabledHeaderIds.has(field.id)).map(field => ({
+  const enabledHeaderIds = new Set(headerFieldsForMode(mode));
+  const enabledVoucherIds = new Set(voucherColumnsForMode(mode));
+  const headerTargets = layoutDefinitions('header', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledHeaderIds.has(field.id)).map(field => ({
     id: field.id,
     label: field.label,
     scope: 'header',
@@ -942,8 +948,8 @@ function inputMappingTargets() {
     custom: Boolean(field.custom),
     aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
-  const voucherTargets = layoutDefinitions('voucher').filter(field => enabledVoucherIds.has(field.id)).map(field => {
-    const canonical = coreFieldByProjection(state.draft.activeMode, field.id);
+  const voucherTargets = layoutDefinitions('voucher', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledVoucherIds.has(field.id)).map(field => {
+    const canonical = coreFieldByProjection(mode, field.id);
     return {
       id: canonical?.fieldId || field.id,
       label: canonical?.displayLabel || field.label,
@@ -998,18 +1004,41 @@ function markMappedFieldEdited(row, projectionFieldId, displayValue) {
   };
 }
 
-function syncInputViewCellToMapping(rowId, projectionFieldId, displayValue) {
-  const current = modeDraft();
-  let session = inputMappingSession(current);
-  if (!session || currentTableView() !== TABLE_VIEW_MODE.INPUT) return;
-  const target = mappingTargetByProjection(projectionFieldId);
-  const mapping = target && session.mappings.find(item => item.targetFieldId === target.id
-    && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state));
-  if (!mapping) return;
-  if (!session.workingRows.some(row => row.rowId === rowId)) {
-    session = addManualRow(session, Array(session.headers.length).fill(''), rowId);
+function cloneMappedMutationRow(row) {
+  return row ? {
+    ...row,
+    customValues: { ...(row.customValues || {}) },
+    fieldValues: Object.fromEntries(Object.entries(row.fieldValues || {}).map(([fieldId, value]) => [fieldId, { ...value }]))
+  } : null;
+}
+
+function syncMappedWorkingRowAfterMutation(current, beforeRow, nextRow, {
+  mode = state.draft.activeMode,
+  displayValues = {},
+  forceFieldIds = []
+} = {}) {
+  const session = inputMappingSession(current);
+  if (!session || !nextRow?.rowId) return nextRow;
+  const updates = mappedRowMutationPlan({
+    beforeRow,
+    afterRow: nextRow,
+    targetDefinitions: inputMappingTargets(mode, { enabledOnly: false }),
+    mappings: session.mappings,
+    displayValues,
+    forceFieldIds
+  });
+  if (!updates.length) return nextRow;
+  const trackedRow = applyMappedFieldUpdates(nextRow, updates);
+  if (trackedRow !== nextRow) nextRow.fieldValues = trackedRow.fieldValues;
+  current.inputMapping = synchronizeWorkingRow(session, nextRow.rowId, updates);
+  return nextRow;
+}
+
+function mappedMutationOwner(row) {
+  for (const [mode, current] of Object.entries(state.draft.modes || {})) {
+    if ((current.rows || []).some(item => item === row)) return { mode, current };
   }
-  current.inputMapping = updateWorkingCell(session, rowId, mapping.columnIndex, displayValue);
+  return null;
 }
 
 function inputMappingTemplateReady(session = inputMappingSession()) {
@@ -4154,7 +4183,7 @@ function startNewCatalog() {
 
 async function rematchRowsForCustomer(customer) {
   const current = modeDraft();
-  const before = current.rows.map(row => ({ ...row, editedFields: { ...(row.editedFields || {}) } }));
+  const before = current.rows.map(row => cloneMappedMutationRow({ ...row, editedFields: { ...(row.editedFields || {}) } }));
   try {
     setAppStatus(`${customerName(customer)} 기준으로 상품을 다시 매칭하고 있습니다.`);
     const matched = await rematchExtractedLinesForCustomer(before, customer, 'SMART_INPUT');
@@ -4167,6 +4196,7 @@ async function rematchRowsForCustomer(customer) {
       return enrichRowFromUnifiedCatalog(next);
     });
     current.rows = contract.markDuplicatePossibilities(current.rows);
+    current.rows.forEach((row, index) => syncMappedWorkingRowAfterMutation(current, before[index], row));
     renderRows();
     saveDraftNow();
     const summary = contract.summarizeRows(current.rows);
@@ -4305,18 +4335,19 @@ function applySelectedRowsUnitPrice() {
   if (!state.selectedRowIds.size) return toast('단가를 적용할 행을 선택하세요.', 'error');
   try {
     invalidateGridPasteUndo();
-    const result = applyBulkUnitPrice(modeDraft().rows, [...state.selectedRowIds], $('bulkUnitPriceInput').value, {
+    const current = modeDraft();
+    const beforeRows = new Map(current.rows.map(row => [row.rowId, cloneMappedMutationRow(row)]));
+    const result = applyBulkUnitPrice(current.rows, [...state.selectedRowIds], $('bulkUnitPriceInput').value, {
       targetFieldId: mappingTargetByProjection('unitPrice')?.id || '',
       actor: resolveSmartInputActor()
     });
-    modeDraft().rows = result.rows.map(row => contract.normalizeRow(row));
-    modeDraft().rows
+    current.rows = result.rows.map(row => contract.normalizeRow(row));
+    current.rows
       .filter(row => state.selectedRowIds.has(row.rowId))
-      .forEach(row => syncInputViewCellToMapping(
-        row.rowId,
-        'unitPrice',
-        rowFieldDisplayValue(row, 'unitPrice', row.sourceUnitPrice ?? row.unitPrice ?? '')
-      ));
+      .forEach(row => syncMappedWorkingRowAfterMutation(current, beforeRows.get(row.rowId), row, {
+        forceFieldIds: ['unitPrice'],
+        displayValues: { unitPrice: row.sourceUnitPrice ?? row.unitPrice ?? '' }
+      }));
     renderRows({ restoreFocus: false });
     saveDraftNow();
     toast(`선택한 ${result.affectedCount.toLocaleString('ko-KR')}행에 단가를 적용했습니다.`, 'success');
@@ -5200,6 +5231,7 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
     let pastedCellCount = 0;
     pasteRows.forEach((pasteRow, rowOffset) => {
       const rowIndex = startRowIndex + rowOffset;
+      const beforeRow = cloneMappedMutationRow(current.rows[rowIndex]);
       let row = contract.normalizeRow({
         ...current.rows[rowIndex],
         batchId: batch.batchId,
@@ -5224,10 +5256,10 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
         if (cell.fieldId === 'itemCode' || cell.fieldId === 'itemName') identityRows.add(rowIndex);
       });
       current.rows[rowIndex] = contract.normalizeRow(row, batch.batchId);
-      pasteRow.cells.forEach(cell => {
-        if (hasEnteredValue(cell.value)) {
-          syncInputViewCellToMapping(current.rows[rowIndex].rowId, cell.fieldId, cell.value);
-        }
+      const enteredCells = pasteRow.cells.filter(cell => hasEnteredValue(cell.value));
+      syncMappedWorkingRowAfterMutation(current, beforeRow, current.rows[rowIndex], {
+        forceFieldIds: enteredCells.map(cell => cell.fieldId),
+        displayValues: Object.fromEntries(enteredCells.map(cell => [cell.fieldId, cell.value]))
       });
     });
     identityRows.forEach(rowIndex => {
@@ -6022,6 +6054,8 @@ function masterFieldValue(product, field) {
 
 function applyProduct(row, product, { forceIdentityFields = false, preserveIdentityField = '' } = {}) {
   if (!row || !isSelectableMasterProduct(product)) return false;
+  const mutationOwner = mappedMutationOwner(row);
+  const beforeRow = mutationOwner ? cloneMappedMutationRow(row) : null;
   const protect = field => Boolean(row.editedFields?.[field]);
   const preserveIdentity = field => !forceIdentityFields
     && (preserveIdentityField ? field === preserveIdentityField : protect(field));
@@ -6034,7 +6068,10 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   if (!protect('specification')) row.specification = product.specification || '';
   if (!protect('boxQuantity')) row.boxQuantity = product.boxQuantity;
   if (!protect('unit')) row.unit = product.finalUnit || product.unit || '';
-  if (!protect('unitPrice') && row.unitPrice == null) row.unitPrice = priceFromProduct(product);
+  if (!protect('unitPrice') && row.unitPrice == null) {
+    row.unitPrice = priceFromProduct(product);
+    row.sourceUnitPrice = row.unitPrice ?? '';
+  }
   const priceOptions = new Map((product.priceOptions || []).map(option => [option.key, option.value]));
   ['outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice',
     'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI'].forEach(field => {
@@ -6053,6 +6090,7 @@ function applyProduct(row, product, { forceIdentityFields = false, preserveIdent
   row.candidateProducts = [];
   row.referenceResolution = row.matchStatus === 'MATCHED' ? 'MATCHED' : 'MISSING';
   row.unregisteredProductQuery = '';
+  if (mutationOwner) syncMappedWorkingRowAfterMutation(mutationOwner.current, beforeRow, row, { mode: mutationOwner.mode });
   return row.matchStatus === 'MATCHED';
 }
 
@@ -8177,6 +8215,7 @@ inputRows.addEventListener('input', event => {
     const customRow = event.target.closest('[data-row-id]');
     const row = modeDraft().rows.find(item => item.rowId === customRow?.dataset.rowId);
     if (!row) return;
+    const beforeRow = cloneMappedMutationRow(row);
     row.customValues ||= {};
     row.customValues[customInput.dataset.customRowField] = customInput.value;
     if (row.fieldValues?.[customInput.dataset.customRowField]) {
@@ -8187,7 +8226,10 @@ inputRows.addEventListener('input', event => {
         edited: true
       };
     }
-    syncInputViewCellToMapping(row.rowId, customInput.dataset.customRowField, customInput.value);
+    syncMappedWorkingRowAfterMutation(modeDraft(), beforeRow, row, {
+      forceFieldIds: [customInput.dataset.customRowField],
+      displayValues: { [customInput.dataset.customRowField]: customInput.value }
+    });
     if (rowHasLinkedSource(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
     scheduleSave();
     return;
@@ -8219,11 +8261,15 @@ inputRows.addEventListener('input', event => {
     if (status) status.textContent = rowStatusText('SIMILAR');
   }
   modeDraft().rows[index] = row;
-  syncInputViewCellToMapping(row.rowId, field, input.value);
+  syncMappedWorkingRowAfterMutation(modeDraft(), previousRow, row, {
+    forceFieldIds: [field],
+    displayValues: { [field]: input.value }
+  });
   if (field === 'quantity' || field === 'unitPrice') {
-    const amount = Number(row.quantity || 0) * Number(row.unitPrice || 0);
+    const amountTarget = mappingTargetByProjection('supplyAmount') || { id: 'supplyAmount', projectionFieldId: 'supplyAmount' };
+    const amount = projectedRowValue(row, amountTarget);
     const amountInput = tr.querySelector('[data-supply-amount]');
-    if (amountInput) amountInput.value = amount.toLocaleString('ko-KR');
+    if (amountInput) amountInput.value = amount === '' ? '' : Number(amount).toLocaleString('ko-KR');
   }
   updateSummaries();
   scheduleSave();
