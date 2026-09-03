@@ -52,3 +52,4 @@
   - 품목코드 `입력 → Enter` 정확 일치, 복수 후보 선택창, 미등록 입력 및 owner 왕복 보존
   - Tab 다음 행 품목코드, 전표 4종, 데스크톱·모바일, 전체 후속 회귀 시나리오
 - 화면 증적: [일반 모드](./screenshots/smartinput-0a-1920-light.png), [다크 모드](./screenshots/smartinput-0a-1920-dark.png), [모바일](./screenshots/smartinput-0a-mobile.png)
+- 승인된 SmartInput 화면을 고정하는 Phase 6B hash baseline을 이번 단일 열 UI로 갱신했으며, Phase 6B 정적·브라우저 검증도 PASS다.
