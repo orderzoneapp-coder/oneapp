@@ -1,8 +1,8 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.1.30
-- Last reviewed: 2026-09-03
+- Architecture document version: 2.1.31
+- Last reviewed: 2026-09-04
 - Current-source baseline: `46154150a02da3e3d256a1e39c0f8e3562902bfb`
 - Machine-readable companion: app-manifest.json
 
@@ -66,6 +66,7 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다.
+- `NEXUS-ORDERQ-SHOP-ACTUAL-LEDGER-20260904-01` 1단계는 ORDER Q owner 내부에 `shopping-order-dedupe-core.js → shopping-order-import-repository.js → shopping-order-command-adapter.js` 경계를 추가한다. 고정 17열 쇼핑몰 원본의 상태·그룹·파일명·업로드시각·절대 행번호는 증적으로만 보존하고 회사·확정 거래처·배송일자·확정 출하창고·반복행을 보존한 품목 다중집합으로 signature를 계산한다. 거래처·창고 owner ID와 모든 품목 owner ID·저장 코드·상품명 중 하나라도 미해소이면 후보 전체는 판정·저장 양쪽에서 `REVIEW_REQUIRED`/0-write이고, 동일 가능성이 있는 불완전 legacy 원장도 `EXISTING_LEDGER_BUNDLE_INVALID`로 fail-closed한다. 실제 `orders`·`orderItems` 전체와 같은 signature인 정상 수기 주문도 개수에 포함해 원본 occurrence `n`이 현재 개수 `m` 이하일 때만 `isDuplicate=true`이고 초과분만 생성한다. 후보별 기존 DB v7 readwrite transaction이 실제 개수를 다시 읽고 기존 `orders.bySourceMessageKey` unique index를 사용한 뒤 주문·품목·생성이력·local queue를 함께 확정하므로 중복·문제 후보는 0-write이고 실패 후보는 다른 signature의 정상 후보와 격리된다. `그룹`은 주문번호나 경계가 아니며, 같은 거래처 연속행 안의 동일 주문 반복을 나눌 원본 식별자가 없으면 `AMBIGUOUS_SOURCE_ORDER_BOUNDARY`로 보류한다. 이 단계는 owner Core/Adapter만 제공하고 SmartInput UI, DB schema/Store/index/version, Cloud 계약과 다기기 전역 중복 방지는 활성화하지 않는다.
 - `NEXUS-SI-V2-02~05`는 SmartInput 구매·판매 UI handler를 업무별 Finalize Service에 연결하고, 공식 입력 모듈의 Repository 직접 import를 ORDER Q 소유 `official-command-adapter.js → official-command-gateway.js → official-voucher-repository.js` 경계로 교체했다. V2 경로는 필수검사·Snapshot·회사/판매그룹 ID, 회사+상품코드 및 회사+거래처코드 정확매칭, 입력수량 그대로의 재고효과, 미매칭 검수 레코드와 거래처 미입력·미매칭 원장 미생성 사유에 이어 재고실사 checkpoint 충돌 결정을 구현한다. 상품코드는 상품 owner와 동일하게 외곽 trim 뒤 원문 문자열을 key로 쓰고, 거래처코드는 customer master의 `normalizedCustomerCode` 규칙을 쓴다. V2 재고와 기본 채권·채무의 발생일은 전표 `businessDate`이고 명령 `occurredAt`과 분리된다. Gateway와 Repository는 회사·Revision·멱등성·발생일·checkpoint 결정·transaction을 재검사하며, V2 inspection capability가 없으면 검사·Draft 저장·명령 실행을 모두 fail-closed한다. 새 전역 Runtime이나 NEXUS 공통 Gateway가 아니다.
 - `NEXUS-SI-V2-06A`는 ORDER Q owner 내부에 `ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1`과 `ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1`을 추가한다. owner Repository가 회사 범위의 기존 DB v7 미매칭 레코드·대기효과·확정 문서·행·Revision·실사 checkpoint를 `readonly`로 읽어 조합하며 소비자는 ORDER Q Store를 열지 않는다. 같은 pending-effect ID의 검수 링크와 대기효과는 공통 핵심 필드를 모두 대사한 뒤 중복 제거하고, 상충 필드는 `REVIEW_REQUIRED` issue로 보존한다. point-get 대상이 다른 회사이면 mismatch issue만 남기며 그 회사의 문서·행·Revision·상품·수량·창고·일자·시각 payload는 결과에 사용하지 않는다. 각 결과는 확정 시점 원문 상품·수량·창고·발생일과 전표 추적을 보존하고 공식재고 `미반영`을 수량 0과 구분한다. 현재 Product Snapshot 후보와 재매칭 영향은 검수 참고뿐이며 자동확정·재매칭 command·공식재고·기준정보 쓰기는 없다. 읽기 실패는 `ERROR`로 fail-closed하고 정상 `EMPTY`와 구분하며, 제품 UI와 SmartInput 작업본은 변경하지 않는다.
 - UI Gate U1의 A안 승인에 따른 `NEXUS-SI-V2-06B`는 `orderops/list.html`의 기존 창고재고·출고 결과 영역과 검색·정렬·열 조건 구조 안에 `미매칭` 조회 상태만 추가한다. 제품 UI는 6A Read Adapter만 호출해 최대 200건 단위의 모든 페이지, 원전표 추적, 명시적 후보 선택 뒤 읽기 전용 영향 미리보기를 같은 `#previewTable` 안에서 전환한다. 페이지 이동은 이전·다음과 현재/전체 페이지를 표시하며 검색·정렬·열 조건은 현재 페이지 범위임을 명시한다. 새 상위 화면·탭·패널·팝업·라우트·적용 버튼은 없으며, 회사 범위 조회 실패는 기존 파일·재고·출고 작업과 격리된다. 이 소비자 상태를 제거하면 기존 결과 화면으로 즉시 롤백되고 6A owner 자산과 DB v7 자료는 유지된다.
