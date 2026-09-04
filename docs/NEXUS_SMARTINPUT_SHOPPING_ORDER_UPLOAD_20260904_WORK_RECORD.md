@@ -76,4 +76,6 @@
 ### Git/PR
 
 - 최종 fetch 확인: `origin/main`, branch merge-base 모두 `d44bbda357268289269574aa8f7b36333e013be5`.
-- Commit/PR/CI exact 값은 push와 PR 생성 직후 이 기록에 추가한다. PM 독립 검증 승인 전 merge/deploy는 금지한다.
+- 구현 커밋: `22a344756315ddde8f2e27e3deaa11485f105cb7`.
+- PR: `#512` — `https://github.com/orderzoneapp-coder/oneapp/pull/512`.
+- 최종 head/CI run은 검증 기록 보완 커밋 push 후 PM 위임 보고에 함께 고정한다. PM 독립 검증 승인 전 merge/deploy는 금지한다.
