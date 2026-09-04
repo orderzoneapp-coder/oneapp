@@ -22,26 +22,31 @@ async function resetDb(dbModule) {
   });
 }
 
-function candidateSet(adapter, rows, overrides = {}) {
+function buildCandidateSet(adapter, rows, overrides = {}) {
   const built = adapter.createShoppingOrderCandidates(rows, {
     headers: [
       '배송일자', '거래처명', '그룹', '주문상태', '전하실말씀', '상점메모', '상품코드', '상품명', '규격',
       '수량', '단가', '금액', '복사원코드', '주소', '전화2', '원코드', '유통그룹관리코드'
     ],
     companyId: 'ONEAPP',
-    warehouseId: 'WH-01',
-    warehouseCode: '01',
-    warehouseName: '본사창고',
-    resolveCustomer: raw => ({ customerId: `CUS:${String(raw['거래처명']).trim()}`, customerName: raw['거래처명'] }),
-    resolveProduct: raw => ({
+    warehouseId: Object.hasOwn(overrides, 'warehouseId') ? overrides.warehouseId : 'WH-01',
+    warehouseCode: Object.hasOwn(overrides, 'warehouseCode') ? overrides.warehouseCode : '01',
+    warehouseName: Object.hasOwn(overrides, 'warehouseName') ? overrides.warehouseName : '본사창고',
+    resolveCustomer: overrides.resolveCustomer || (raw => ({ customerId: `CUS:${String(raw['거래처명']).trim()}`, customerName: raw['거래처명'] })),
+    resolveProduct: overrides.resolveProduct || (raw => ({
       productId: `PRODUCT:${String(raw['상품코드']).trim()}`,
       itemCode: String(raw['상품코드']).trim(),
       itemName: raw['상품명'], specification: raw['규격'], unit: raw['규격']
-    }),
+    })),
     fileName: overrides.fileName || 'browser-source.xls',
     sheetName: 'Worksheet',
     uploadedAt: overrides.uploadedAt || '2026-09-04T09:00:00+09:00'
   });
+  return built;
+}
+
+function candidateSet(adapter, rows, overrides = {}) {
+  const built = buildCandidateSet(adapter, rows, overrides);
   if (built.issues.length || built.candidates.some(candidate => candidate.issues.length)) {
     throw new Error(`SHOPPING_TEST_CANDIDATE_INVALID:${JSON.stringify(built)}`);
   }
@@ -190,6 +195,85 @@ export async function runOrderQShoppingActualLedgerScenario() {
     });
     const reviewIsolationState = await storeState(dbModule);
 
+    await resetDb(dbModule);
+    const unresolvedProduct = buildCandidateSet(adapter, [
+      sourceRow({ customer: '상품미해소', code: 'NO-PRODUCT-ID', boundary: 'NO-PRODUCT-ID' })
+    ], {
+      resolveProduct: raw => ({ itemCode: raw['상품코드'], itemName: raw['상품명'], specification: raw['규격'], unit: raw['규격'] })
+    }).candidates[0];
+    unresolvedProduct.candidateId = 'UNRESOLVED-PRODUCT';
+    const partialProduct = buildCandidateSet(adapter, [
+      sourceRow({ customer: '부분상품미해소', code: 'RESOLVED', name: '정상상품', boundary: 'PARTIAL', row: 2 }),
+      sourceRow({ customer: '부분상품미해소', code: 'UNRESOLVED', name: '미해소상품', boundary: 'PARTIAL', row: 3 })
+    ], {
+      resolveProduct: raw => ({
+        productId: raw['상품코드'] === 'UNRESOLVED' ? '' : `PRODUCT:${raw['상품코드']}`,
+        itemCode: raw['상품코드'], itemName: raw['상품명'], specification: raw['규격'], unit: raw['규격']
+      })
+    }).candidates[0];
+    partialProduct.candidateId = 'PARTIAL-UNRESOLVED-PRODUCT';
+    const unresolvedCustomer = buildCandidateSet(adapter, [
+      sourceRow({ customer: '거래처미해소', code: 'NO-CUSTOMER-ID', boundary: 'NO-CUSTOMER-ID' })
+    ], {
+      resolveCustomer: raw => ({ customerName: raw['거래처명'] })
+    }).candidates[0];
+    unresolvedCustomer.candidateId = 'UNRESOLVED-CUSTOMER';
+    const unresolvedWarehouse = buildCandidateSet(adapter, [
+      sourceRow({ customer: '창고미해소', code: 'NO-WAREHOUSE-ID', boundary: 'NO-WAREHOUSE-ID' })
+    ], {
+      warehouseId: '', warehouseCode: '', warehouseName: '미해소창고'
+    }).candidates[0];
+    unresolvedWarehouse.candidateId = 'UNRESOLVED-WAREHOUSE';
+    const ownerResolvedNormal = candidateSet(adapter, [
+      sourceRow({ customer: '해소정상', code: 'OWNER-OK', boundary: 'OWNER-OK' })
+    ])[0];
+    ownerResolvedNormal.candidateId = 'OWNER-RESOLVED-NORMAL';
+    const ownerResolutionCandidates = [
+      unresolvedProduct, partialProduct, unresolvedCustomer, unresolvedWarehouse, ownerResolvedNormal
+    ];
+    const ownerResolutionInspect = await adapter.inspectShoppingOrderImport({
+      schemaVersion: 'ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1', companyId: 'ONEAPP', candidates: ownerResolutionCandidates
+    });
+    const directGuardBefore = await storeState(dbModule);
+    const directGuard = [];
+    for (const unresolved of ownerResolutionCandidates.slice(0, 4)) {
+      const changedAfterInspect = JSON.parse(JSON.stringify(unresolved));
+      changedAfterInspect.issues = [];
+      directGuard.push(await repository.commitShoppingOrderCandidate({
+        candidate: changedAfterInspect,
+        candidateId: changedAfterInspect.candidateId,
+        status: 'NEW',
+        isDuplicate: false,
+        canonicalSignature: '0'.repeat(64),
+        occurrenceNo: 1,
+        issues: []
+      }, { defaultCompanyId: 'ONEAPP', actor: 'DIRECT_GUARD_TEST' }));
+    }
+    const directGuardAfter = await storeState(dbModule);
+    const ownerResolutionBefore = await storeState(dbModule);
+    const ownerResolutionCommit = await adapter.commitShoppingOrderImport({
+      schemaVersion: 'ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1', companyId: 'ONEAPP', candidates: ownerResolutionCandidates, actor: 'BROWSER_TEST'
+    });
+    const ownerResolutionAfter = await storeState(dbModule);
+
+    await resetDb(dbModule);
+    const legacyCandidate = candidateSet(adapter, [
+      sourceRow({ customer: '레거시코드상품', code: 'LEGACY-CODE', boundary: 'LEGACY-CODE' })
+    ])[0];
+    const legacySeedCandidate = JSON.parse(JSON.stringify(legacyCandidate));
+    legacySeedCandidate.items[0].productId = '';
+    const legacySeed = await manualSeed(intake.createOrder, legacySeedCandidate, 'MANUAL-LEGACY-CODE-ONLY');
+    legacyCandidate.customerId = legacySeed.order.customerId;
+    legacyCandidate.warehouseId = legacySeed.order.warehouseId;
+    const legacyInspect = await adapter.inspectShoppingOrderImport({
+      schemaVersion: 'ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1', companyId: 'ONEAPP', candidates: [legacyCandidate]
+    });
+    const legacyBefore = await storeState(dbModule);
+    const legacyCommit = await adapter.commitShoppingOrderImport({
+      schemaVersion: 'ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1', companyId: 'ONEAPP', candidates: [legacyCandidate], actor: 'BROWSER_TEST'
+    });
+    const legacyAfter = await storeState(dbModule);
+
     return {
       capability: adapter.shoppingOrderCapability(),
       evidence: {
@@ -222,7 +306,23 @@ export async function runOrderQShoppingActualLedgerScenario() {
       candidateIsolation: {
         injectedFailure: isolatedFailure,
         reviewResult: reviewIsolation,
-        reviewOrderCount: reviewIsolationState.orders.length
+        reviewOrderCount: reviewIsolationState.orders.length,
+        ownerResolution: {
+          inspect: ownerResolutionInspect,
+          directGuard,
+          directGuardUnchanged: JSON.stringify(directGuardBefore) === JSON.stringify(directGuardAfter),
+          commit: ownerResolutionCommit,
+          beforeCounts: Object.fromEntries(Object.entries(ownerResolutionBefore).map(([key, rows]) => [key, rows.length])),
+          afterCounts: Object.fromEntries(Object.entries(ownerResolutionAfter).map(([key, rows]) => [key, rows.length])),
+          storedCustomerName: ownerResolutionAfter.orders[0]?.customerName || ''
+        },
+        legacyCodeOnly: {
+          inspect: legacyInspect,
+          commit: legacyCommit,
+          beforeOrderCount: legacyBefore.orders.length,
+          afterOrderCount: legacyAfter.orders.length,
+          unchanged: JSON.stringify(legacyBefore) === JSON.stringify(legacyAfter)
+        }
       },
       readwriteTransactions
     };

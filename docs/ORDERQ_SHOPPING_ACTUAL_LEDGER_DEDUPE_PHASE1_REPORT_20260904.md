@@ -25,6 +25,7 @@
 5. `SHOPPING_ORDER_V1:<SHA-256 signature>:<occurrence>`는 기존 unique `orders.bySourceMessageKey`를 재사용하는 내부 멱등키다. 원본 주문번호나 외부 주문번호를 만들어낸 것이 아니며 원본에 번호가 없으므로 `externalOrderNo`는 빈 값으로 저장한다. ORDER Q의 `YYYYMMDD-NNN`은 원장 자체의 내부 관리자 번호다.
 6. 별도 index를 추가하지 않고 실제 bundle 전체를 transaction 안에서 다시 읽는 방식을 선택했다. 현재 DB v7 계약을 보존하면서 stale read·더블클릭·동시 탭의 초과 생성을 막기 위한 선택이다.
 7. 판정할 수 없는 기존 ORDER Q bundle이 같은 header scope와 충돌할 가능성이 있으면 무시하지 않고 `EXISTING_LEDGER_BUNDLE_INVALID`로 보류한다.
+8. Core inspection과 Repository 저장 직전 모두 owner-resolved `customerId`, `warehouseId`, 모든 품목의 `productId`·저장 코드·상품명을 요구한다. 하나라도 미해소이면 그 후보 전체만 `REVIEW_REQUIRED`/0-write이며 다른 정상 후보는 계속 저장한다. itemCode만 남은 legacy 기존 품목처럼 동일 가능성이 있으나 owner identity가 불완전한 원장도 exact `NEW`로 단정하지 않는다.
 
 ## 실제 파일 경계 조사
 
@@ -44,12 +45,15 @@
   - `1+2 → 신규 1`, `2+2 → 신규 0`, `1+3 → 신규 2`
   - 수기 주문 포함, 품목 반복행 보존, 품목 순서 무관 multiset, 상태/그룹/파일명/업로드시각/행 offset 무관
   - 수량·금액 변경은 신규, 0수량과 경계 불명은 보류, 판정 불가능한 기존 bundle은 보류
-  - 실파일 14행/5후보/수량24/금액288400/validation0, 누적 12,301행 최신 데이터 동일, 단독 최종 실행 1.076초
+  - product resolver가 ID를 반환하지 않는 후보, 여러 품목 중 1개만 미해소, 거래처/창고 owner 미해소는 inspect부터 `REVIEW_REQUIRED`; itemCode만 같은 legacy 기존 품목도 `EXISTING_LEDGER_BUNDLE_INVALID`
+  - 실파일 14행/5후보/수량24/금액288400/validation0, 누적 12,301행 최신 데이터 동일, 단독 최종 실행 0.866초
 - 신규 실제 브라우저 IndexedDB: `node scripts/test-orderq-shopping-actual-ledger-browser.mjs` PASS
   - 수기 기존 1 + 원본 2의 동시 두 호출 후 실제 주문 정확히 2
   - stale 사전판정 뒤 수기 주문 추가 시 transaction 재확인으로 duplicate 0-write
   - 동일 후보 재실행 0-write, 저장 원본 상태·메모·주소·행번호 보존, 외부 주문번호 공란
   - `orderItems`, `orderEvents`, `syncQueue` 각 강제 실패 시 `orders/items/events/queue/meta` 전체 rollback
+  - 상품 1개/부분 상품/거래처/창고 미해소 후보는 inspect와 commit 모두 `REVIEW_REQUIRED`/0-write이고 같은 batch의 정상 후보만 저장
+  - itemCode만 있는 legacy 기존 품목과 동일 가능 후보는 false NEW/중복 생성 없이 0-write
   - 한 후보 강제 실패 또는 확인 필요가 다른 정상 signature 후보 저장을 막지 않음
   - 외부·로컬 HTTP mutation 0, 브라우저 runtime exception 0
 - 기존 ORDER Q 14개 + SmartInput 44개 자동 테스트 전체 순차 실행: `ALL_PASS count=58`
@@ -59,6 +63,8 @@
 - `git diff --check`: PASS
 
 PR 최초 CI에서 manifest 계약을 고정한 기존 owner-boundary 테스트가 `1.3.9`를 기대해 실패했고, 이번 계약 추가로 올린 실제 manifest schema `1.3.10`과 일치하도록 assertion을 갱신했다. 업무 로직·DB schema 변경은 아니며 해당 테스트와 전체 CI를 다시 실행한다.
+
+PM이 HEAD `f4cf599` 독립검증에서 후보가 원본 상품코드 fallback만으로 `NEW`가 되고 Repository가 `productId` 없이 `MATCH_FAILED` 주문을 쓸 수 있는 차단 결함을 발견했다. Core와 Repository 양쪽에 owner identity/storage-field 검증을 추가했고, resolver 미해소 상품·부분 미해소 품목·미해소 거래처·미해소 창고, 판정 뒤 변조된 직접 Repository 호출, itemCode만 남은 legacy 실제 주문을 자동 회귀로 고정했다. 모두 해당 후보 `REVIEW_REQUIRED`/0-write이며 같은 batch의 정상 후보는 저장된다.
 
 GitHub Actions에는 신규 pure/브라우저 검증을 repository validation job에 추가했다. 실제 Desktop XLS는 저장소나 CI artifact에 복사하지 않으며, CI에서는 동일 계약의 synthetic fixture를 실행하고 로컬 실파일 검증은 위 결과로 남긴다.
 

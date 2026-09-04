@@ -16,7 +16,8 @@ import {
   findInvalidExistingLedgerConflicts,
   orderBundleToShoppingCandidate,
   planShoppingOrderDuplicates,
-  shoppingSourceMessageKey
+  shoppingSourceMessageKey,
+  validateShoppingOrderCandidate
 } from './shopping-order-dedupe-core.js?v=0.1.0';
 
 export const SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1';
@@ -165,16 +166,7 @@ function repositoryIssue(code, message, detail = {}) {
 }
 
 function candidateSaveIssues(candidate) {
-  const issues = [];
-  if (!text(candidate.customerId)) issues.push(repositoryIssue(
-    'SHOPPING_CUSTOMER_OWNER_ID_REQUIRED',
-    '저장 전 거래처 owner ID를 확정해야 합니다.'
-  ));
-  if (!text(candidate.warehouseId)) issues.push(repositoryIssue(
-    'SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED',
-    '저장 전 출하창고 owner ID를 확정해야 합니다.'
-  ));
-  return issues;
+  return validateShoppingOrderCandidate(candidate);
 }
 
 function duplicateResult(decision, existingBundle, existingCount, reason = 'ACTUAL_LEDGER_COUNT') {
@@ -211,7 +203,7 @@ export async function commitShoppingOrderCandidate(decision, options = {}) {
       candidateId: decision?.candidateId || candidate.candidateId || '',
       status: 'REVIEW_REQUIRED',
       isDuplicate: null,
-      issues: [...(decision?.issues || []), ...saveIssues],
+      issues: saveIssues,
       writes: 0
     };
   }

@@ -165,6 +165,40 @@ try {
   assert.deepEqual(evidence.candidateIsolation.reviewResult.results.map(result => result.status), ['REVIEW_REQUIRED', 'CREATED']);
   assert.equal(evidence.candidateIsolation.reviewOrderCount, 1);
 
+  const ownerResolution = evidence.candidateIsolation.ownerResolution;
+  assert.deepEqual(ownerResolution.inspect.results.map(result => result.status), [
+    'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'NEW'
+  ]);
+  assert.deepEqual(ownerResolution.inspect.results.map(result => result.isDuplicate), [null, null, null, null, false]);
+  assert.ok(ownerResolution.inspect.results[0].issues.some(issue => issue.code === 'SHOPPING_PRODUCT_OWNER_ID_REQUIRED'));
+  assert.ok(ownerResolution.inspect.results[1].issues.some(issue => issue.code === 'SHOPPING_PRODUCT_OWNER_ID_REQUIRED'));
+  assert.ok(ownerResolution.inspect.results[2].issues.some(issue => issue.code === 'SHOPPING_CUSTOMER_OWNER_ID_REQUIRED'));
+  assert.ok(ownerResolution.inspect.results[3].issues.some(issue => issue.code === 'SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED'));
+  assert.deepEqual(ownerResolution.directGuard.map(result => result.status), [
+    'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED'
+  ]);
+  ownerResolution.directGuard.forEach(result => assert.equal(result.writes, 0));
+  assert.equal(ownerResolution.directGuardUnchanged, true,
+    'repository commit must revalidate owner resolution even when handed a forged NEW decision');
+  assert.deepEqual(ownerResolution.commit.results.map(result => result.status), [
+    'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'REVIEW_REQUIRED', 'CREATED'
+  ]);
+  ownerResolution.commit.results.slice(0, 4).forEach(result => assert.equal(result.writes, 0));
+  assert.deepEqual(ownerResolution.beforeCounts, { orders: 0, orderItems: 0, orderEvents: 0, syncQueue: 0, meta: 0 });
+  assert.equal(ownerResolution.afterCounts.orders, 1, 'unresolved owner identities must block only their candidates');
+  assert.equal(ownerResolution.storedCustomerName, '해소정상');
+
+  const legacyCodeOnly = evidence.candidateIsolation.legacyCodeOnly;
+  assert.equal(legacyCodeOnly.inspect.results[0].status, 'REVIEW_REQUIRED');
+  assert.equal(legacyCodeOnly.inspect.results[0].isDuplicate, null);
+  assert.ok(legacyCodeOnly.inspect.results[0].issues.some(issue => issue.code === 'EXISTING_LEDGER_BUNDLE_INVALID'));
+  assert.equal(legacyCodeOnly.commit.results[0].status, 'REVIEW_REQUIRED');
+  assert.equal(legacyCodeOnly.commit.results[0].writes, 0);
+  assert.equal(legacyCodeOnly.beforeOrderCount, 1);
+  assert.equal(legacyCodeOnly.afterOrderCount, 1);
+  assert.equal(legacyCodeOnly.unchanged, true,
+    'a possibly matching legacy itemCode-only bundle must fail closed without a second order');
+
   const atomicTransactions = evidence.readwriteTransactions.filter(stores => {
     const names = new Set(stores);
     return names.size === 5 && names.has('orders') && names.has('orderItems')

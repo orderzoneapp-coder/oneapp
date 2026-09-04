@@ -200,8 +200,17 @@ export function canonicalShoppingOrderSignature(input = {}) {
 
 function itemIssues(item, rowNumber) {
   const issues = [];
+  if (!codeText(item.productId || item.masterProductId)) {
+    issues.push({ code: 'SHOPPING_PRODUCT_OWNER_ID_REQUIRED', message: '상품 owner ID를 확인하세요.', sourceRowNumber: rowNumber });
+  }
   if (itemIdentity(item).kind === 'MISSING') {
     issues.push({ code: 'SHOPPING_PRODUCT_IDENTITY_REQUIRED', message: '상품 식별정보가 필요합니다.', sourceRowNumber: rowNumber });
+  }
+  if (!codeText(item.itemCode || item.productCode || item.sourceProductCode)) {
+    issues.push({ code: 'SHOPPING_PRODUCT_CODE_REQUIRED', message: '저장할 상품코드를 확인하세요.', sourceRowNumber: rowNumber });
+  }
+  if (!exactText(item.itemName || item.productName)) {
+    issues.push({ code: 'SHOPPING_PRODUCT_NAME_REQUIRED', message: '저장할 상품명을 확인하세요.', sourceRowNumber: rowNumber });
   }
   const quantity = numberValue(item.quantity ?? item.finalQuantity ?? item.rawQuantity);
   const unitPrice = numberValue(item.unitPrice ?? item.price);
@@ -213,14 +222,16 @@ function itemIssues(item, rowNumber) {
   return issues;
 }
 
-function candidateIssues(candidate = {}) {
+export function validateShoppingOrderCandidate(candidate = {}) {
   const issues = [...(candidate.issues || [])];
   if (!codeText(candidate.companyId)) issues.push({ code: 'SHOPPING_COMPANY_REQUIRED', message: '회사를 확인하세요.' });
   if (partyIdentity(candidate).kind === 'MISSING') issues.push({ code: 'SHOPPING_CUSTOMER_REQUIRED', message: '거래처를 확인하세요.' });
+  if (!codeText(candidate.customerId)) issues.push({ code: 'SHOPPING_CUSTOMER_OWNER_ID_REQUIRED', message: '거래처 owner ID를 확인하세요.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText(candidate.deliveryDate || candidate.deliveryExpectedDate))) {
     issues.push({ code: 'SHOPPING_DELIVERY_DATE_INVALID', message: '배송일자를 확인하세요.' });
   }
   if (warehouseIdentity(candidate).kind === 'MISSING') issues.push({ code: 'SHOPPING_WAREHOUSE_REQUIRED', message: '출하창고를 확인하세요.' });
+  if (!codeText(candidate.warehouseId)) issues.push({ code: 'SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED', message: '출하창고 owner ID를 확인하세요.' });
   if (!Array.isArray(candidate.items) || !candidate.items.length) issues.push({ code: 'SHOPPING_ITEMS_REQUIRED', message: '주문 품목이 필요합니다.' });
   (candidate.items || []).forEach((item, index) => issues.push(...itemIssues(item, candidate.sourceRows?.[index]?.sourceRowNumber || index + 1)));
   return issues.filter((issue, index, all) => index === all.findIndex(candidateIssue => canonicalShoppingJson(candidateIssue) === canonicalShoppingJson(issue)));
@@ -353,7 +364,7 @@ export function buildShoppingOrderCandidates(sourceRows = [], options = {}) {
       },
       issues
     };
-  }).map(candidate => ({ ...candidate, issues: candidateIssues(candidate) }));
+  }).map(candidate => ({ ...candidate, issues: validateShoppingOrderCandidate(candidate) }));
 
   return { schemaVersion: SHOPPING_ORDER_DEDUPE_SCHEMA, candidates, issues: [] };
 }
@@ -376,6 +387,7 @@ export function orderBundleToShoppingCandidate(bundle = {}, defaultCompanyId = '
       return {
         productId: codeText(item.productId || item.masterProductId),
         itemCode: codeText(item.itemCode || item.productCode || item.sourceProductCode),
+        itemName: exactText(item.itemName || item.productName),
         specification: exactText(item.specification),
         unit: exactText(item.finalUnit ?? item.unit ?? item.rawUnit),
         quantity,
@@ -413,14 +425,14 @@ function potentiallyConflictingHeader(candidate, existing) {
 export function findInvalidExistingLedgerConflicts(candidate, existingBundles = [], defaultCompanyId = 'ONEAPP') {
   return existingBundles.flatMap(bundle => {
     const comparable = orderBundleToShoppingCandidate(bundle, defaultCompanyId);
-    const issues = candidateIssues(comparable);
+    const issues = validateShoppingOrderCandidate(comparable);
     if (!issues.length || !potentiallyConflictingHeader(candidate, comparable)) return [];
     return [{ orderId: bundle.order?.orderId || '', issues }];
   });
 }
 
 function planningEntry(candidate, signature, occurrenceNo, existing = []) {
-  const issues = candidateIssues(candidate);
+  const issues = validateShoppingOrderCandidate(candidate);
   if (issues.length) {
     return {
       candidate,
@@ -453,7 +465,7 @@ export function planShoppingOrderDuplicates(candidates = [], existingBundles = [
   const invalidExisting = [];
   existingBundles.forEach(bundle => {
     const comparable = orderBundleToShoppingCandidate(bundle, defaultCompanyId);
-    const issues = candidateIssues(comparable);
+    const issues = validateShoppingOrderCandidate(comparable);
     if (issues.length) {
       invalidExisting.push({ orderId: bundle.order?.orderId || '', issues });
       return;
@@ -469,7 +481,7 @@ export function planShoppingOrderDuplicates(candidates = [], existingBundles = [
 
   const occurrenceBySignature = new Map();
   const results = candidates.map(candidate => {
-    const preliminaryIssues = candidateIssues(candidate);
+    const preliminaryIssues = validateShoppingOrderCandidate(candidate);
     const signature = preliminaryIssues.length ? '' : canonicalShoppingOrderSignature(candidate);
     const occurrenceNo = signature ? (occurrenceBySignature.get(signature) || 0) + 1 : 0;
     if (signature) occurrenceBySignature.set(signature, occurrenceNo);

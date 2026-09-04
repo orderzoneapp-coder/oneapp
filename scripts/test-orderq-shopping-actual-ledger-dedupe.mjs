@@ -111,6 +111,44 @@ assert.equal(ownerContract.resources.databaseVersion, 7);
 
 const base = build([sourceRow({ sourceBoundaryKey: 'DOC-1' })]).candidates[0];
 assert.equal(base.issues.length, 0);
+const unresolvedProduct = build([sourceRow({ sourceBoundaryKey: 'UNRESOLVED-PRODUCT' })], {
+  resolveProduct: raw => ({ itemCode: raw['상품코드'], itemName: raw['상품명'], specification: raw['규격'], unit: raw['규격'] })
+}).candidates[0];
+const partiallyUnresolvedProduct = build([
+  sourceRow({ code: 'RESOLVED', name: '정상상품', sourceBoundaryKey: 'PARTIAL-PRODUCT', sourceRowNumber: 2 }),
+  sourceRow({ code: 'UNRESOLVED', name: '미해소상품', sourceBoundaryKey: 'PARTIAL-PRODUCT', sourceRowNumber: 3 })
+], {
+  resolveProduct: raw => ({
+    productId: raw['상품코드'] === 'UNRESOLVED' ? '' : `PRODUCT:${raw['상품코드']}`,
+    itemCode: raw['상품코드'], itemName: raw['상품명'], specification: raw['규격'], unit: raw['규격']
+  })
+}).candidates[0];
+const unresolvedCustomer = build([sourceRow({ customer: '미해소거래처', sourceBoundaryKey: 'UNRESOLVED-CUSTOMER' })], {
+  resolveCustomer: raw => ({ customerName: raw['거래처명'] })
+}).candidates[0];
+const unresolvedWarehouse = build([sourceRow({ sourceBoundaryKey: 'UNRESOLVED-WAREHOUSE' })], {
+  warehouseId: '', warehouseCode: '', warehouseName: '미해소창고'
+}).candidates[0];
+[
+  [unresolvedProduct, 'SHOPPING_PRODUCT_OWNER_ID_REQUIRED'],
+  [partiallyUnresolvedProduct, 'SHOPPING_PRODUCT_OWNER_ID_REQUIRED'],
+  [unresolvedCustomer, 'SHOPPING_CUSTOMER_OWNER_ID_REQUIRED'],
+  [unresolvedWarehouse, 'SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED']
+].forEach(([candidate, issueCode]) => {
+  assert.ok(candidate.issues.some(issue => issue.code === issueCode));
+  const unresolvedPlan = planShoppingOrderDuplicates([candidate], []);
+  assert.equal(unresolvedPlan.results[0].status, 'REVIEW_REQUIRED');
+  assert.equal(unresolvedPlan.results[0].isDuplicate, null, `${issueCode} must not be shown as exact NEW`);
+});
+const missingStoredProductFields = cloneCandidate(base, 'MISSING-STORED-PRODUCT-FIELDS');
+missingStoredProductFields.items[0].itemCode = '';
+missingStoredProductFields.items[0].sourceProductCode = '';
+missingStoredProductFields.items[0].itemName = '';
+missingStoredProductFields.issues = [];
+const missingStoredFieldsPlan = planShoppingOrderDuplicates([missingStoredProductFields], []);
+assert.ok(missingStoredFieldsPlan.results[0].issues.some(issue => issue.code === 'SHOPPING_PRODUCT_CODE_REQUIRED'));
+assert.ok(missingStoredFieldsPlan.results[0].issues.some(issue => issue.code === 'SHOPPING_PRODUCT_NAME_REQUIRED'));
+assert.equal(missingStoredFieldsPlan.results[0].isDuplicate, null);
 const oneExisting = [bundle(base, 'MANUAL-1')];
 let candidates = [cloneCandidate(base, 'SOURCE-1'), cloneCandidate(base, 'SOURCE-2')];
 let plan = planShoppingOrderDuplicates(candidates, oneExisting);
@@ -131,6 +169,11 @@ assert.equal(plan.results[0].existingOrderIds[0], 'MANUAL-1', 'manual ORDER Q or
 const invalidLedger = [{ order: { ...bundle(base, 'BROKEN-1').order }, items: [] }];
 plan = planShoppingOrderDuplicates([base], invalidLedger);
 assert.equal(plan.results[0].isDuplicate, null, 'an unscorable possibly matching actual-ledger bundle must fail closed');
+assert.ok(plan.results[0].issues.some(issue => issue.code === 'EXISTING_LEDGER_BUNDLE_INVALID'));
+const legacyCodeOnly = bundle(base, 'LEGACY-CODE-ONLY');
+legacyCodeOnly.items[0].productId = null;
+plan = planShoppingOrderDuplicates([base], [legacyCodeOnly]);
+assert.equal(plan.results[0].isDuplicate, null, 'a possibly matching legacy code-only item must not produce false NEW');
 assert.ok(plan.results[0].issues.some(issue => issue.code === 'EXISTING_LEDGER_BUNDLE_INVALID'));
 
 const repeated = build([
