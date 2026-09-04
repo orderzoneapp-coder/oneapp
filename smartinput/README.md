@@ -63,6 +63,17 @@ NEXUS 공통헤더의 고정 스마트입력 진입점에서 주문서·구매·
 - 매핑 프로세스는 주문·구매·판매·견적서에 공통이다. 전표별 필수값, 저장 payload와 writer 검증은 매핑이 끝난 뒤 기존 전표 계층이 독립적으로 수행한다.
 - 기존 입력 양식은 `oneapp-smartinput` DB v5의 기존 `settings` Store 내 `inputTemplates` KV에 보존한다. 신규 회사·전표별 양식은 `inputTemplatesV2`, 필드 등록부와 사용 설정은 additive v5 Store에 저장한다.
 
+## 쇼핑몰 주문내역 17열
+
+- 주문서 탭의 기존 `+ Excel 파일`은 `배송일자, 거래처명, 그룹, 주문상태, 전하실말씀, 상점메모, 상품코드, 상품명, 규격, 수량, 단가, 금액, 복사원코드, 주소, 전화2, 원코드, 유통그룹관리코드`가 위치까지 정확히 같은 파일을 쇼핑몰 전산 원본으로 인식한다. 다른 Excel은 기존 입력 양식 매핑으로 처리한다.
+- 일일 파일은 모든 행, 누적 파일은 최신 유효 배송일자의 행을 원본 상대순서대로 표시한다. 표시값과 셀 주소·raw 값·수식·형식 증거, 절대 행번호를 초안과 ORDER Q 저장 증거에 복제해 보존하며 수량·단가·금액·상태·메모·주소·전화·원코드를 보정하지 않는다.
+- 명시 주문번호가 없으므로 같은 배송일자의 연속 거래처 run을 후보로 사용하고 비연속 run은 합치지 않는다. 같은 run 안에서 동일 주문 반복을 결정적으로 구분할 수 없으면 `AMBIGUOUS_SOURCE_ORDER_BOUNDARY` 확인 필요로 보류한다. `그룹`, 파일명, 업로드시각과 행번호는 주문 identity가 아니다.
+- 거래처명과 상품명을 누르면 기존 owner Snapshot 검색창을 연다. 결과가 없을 때 `기준정보 새로고침`을 실행해도 검색어를 유지하고, 공식 거래처와 모든 공식 상품을 작업자가 선택해야 한다. 출하창고 역시 기존 창고 owner 목록에서 확정해야 한다. 유사 추천 범위는 확대하지 않는다.
+- 판정과 저장은 `smartinput/shopping-order-upload.js → ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1` 경계만 사용한다. SmartInput은 ORDER Q IndexedDB나 Repository를 직접 열지 않고 별도 signature·중복 원장을 만들지 않는다.
+- 후보 결과는 `신규 저장`, `기존 주문서 제외`(가능할 때 orderNo 포함), `확인 필요`와 원본 행·이유로 표시한다. 금액이 수량×단가와 다르거나 거래처·창고·상품·경계가 미해소인 후보는 전체 0-write이며, 정상 후보는 독립 저장된다.
+- 저장 직전 owner Repository가 동일 signature의 실제 ORDER Q 주문 개수와 occurrence를 기존 DB v7 transaction에서 다시 확인한다. 중복은 0-write, 초과 신규만 주문·품목·생성이력·local queue로 원자 저장된다. 기존 주문의 상태·내용은 수정·취소·삭제하지 않으며 다기기 전역 중복 방지는 이 로컬 단계의 보장이 아니다.
+- rollback은 SmartInput consumer 모듈·패널·manifest/docs/tests를 되돌려 신규 업로드 진입만 비활성화한다. ORDER Q owner core와 이미 명시 저장된 정상 주문 이력은 삭제하거나 다시 쓰지 않는다.
+
 ## 기준정보 Snapshot UX
 
 - 상품은 `ONEAPP_PRODUCT_MASTER_READ_ADAPTER`, 거래처는 `ONEAPP_CUSTOMER_MASTER_READ_ADAPTER`를 사용하며 SmartInput이 owner 원본을 직접 수정하지 않는다.

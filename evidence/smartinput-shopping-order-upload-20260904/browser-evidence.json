@@ -1,0 +1,40 @@
+{
+  "taskId": "NEXUS-SMARTINPUT-SHOPPING-UPLOAD-20260904-01",
+  "status": "PASS",
+  "syntheticSource": true,
+  "candidates": 5,
+  "firstCommit": {
+    "created": 4,
+    "reviewRequired": 1
+  },
+  "secondCommit": {
+    "priorDuplicates": 4,
+    "created": 1
+  },
+  "finalDuplicateZeroWrite": 5,
+  "stored": {
+    "orders": 5,
+    "items": 14,
+    "events": 5,
+    "syncQueue": 10,
+    "externalOrderNumbersBlank": 5,
+    "sourceType": "SHOPPING_MALL_ORIGINAL",
+    "sourceEvidenceColumns": 17
+  },
+  "viewports": [
+    { "width": 1920, "height": 1080, "themes": ["light", "dark"] },
+    { "width": 1440, "height": 1000, "themes": ["light", "dark"] },
+    { "width": 390, "height": 844, "themes": ["light", "dark"] }
+  ],
+  "assertions": {
+    "pageHorizontalOverflow": 0,
+    "panelHorizontalClipping": 0,
+    "candidateHorizontalClipping": 0,
+    "focusFailures": 0,
+    "consoleErrors": 0,
+    "runtimeExceptions": 0,
+    "externalHttpMutations": 0,
+    "localHttpMutations": 0
+  },
+  "temporaryProfileRemoved": true
+}

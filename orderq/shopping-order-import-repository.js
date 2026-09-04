@@ -18,7 +18,7 @@ import {
   planShoppingOrderDuplicates,
   shoppingSourceMessageKey,
   validateShoppingOrderCandidate
-} from './shopping-order-dedupe-core.js?v=0.1.0';
+} from './shopping-order-dedupe-core.js?v=0.2.0';
 
 export const SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1';
 

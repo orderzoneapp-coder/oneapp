@@ -219,6 +219,16 @@ function itemIssues(item, rowNumber) {
   if (quantity === 0) issues.push({ code: 'SHOPPING_ZERO_QUANTITY_REVIEW_REQUIRED', message: '수량 0은 자동 저장하지 않습니다.', sourceRowNumber: rowNumber });
   if (unitPrice === null) issues.push({ code: 'SHOPPING_UNIT_PRICE_INVALID', message: '단가를 숫자로 확인하세요.', sourceRowNumber: rowNumber });
   if (amount === null) issues.push({ code: 'SHOPPING_AMOUNT_INVALID', message: '금액을 숫자로 확인하세요.', sourceRowNumber: rowNumber });
+  if (quantity !== null && unitPrice !== null && amount !== null
+    && Math.abs((quantity * unitPrice) - amount) > 0.000001) {
+    issues.push({
+      code: 'SHOPPING_AMOUNT_MISMATCH',
+      message: '원본 수량 × 단가와 금액이 일치하지 않습니다.',
+      sourceRowNumber: rowNumber,
+      expectedAmount: quantity * unitPrice,
+      actualAmount: amount
+    });
+  }
   return issues;
 }
 
@@ -280,8 +290,8 @@ function normalizeSourceRow(row, index, options) {
       sourceProductCode: codeText(rowValue(row, raw, ['sourceProductCode'], '상품코드')),
       itemCode: codeText(productResolved.itemCode || productResolved.productCode || rowValue(row, raw, ['itemCode', 'productCode'], '상품코드')),
       itemName: exactText(productResolved.itemName || productResolved.productName || rowValue(row, raw, ['itemName', 'productName'], '상품명')),
-      specification: exactText(productResolved.specification || specification),
-      unit: exactText(productResolved.unit || rowValue(row, raw, ['unit', 'finalUnit', 'rawUnit'], '', specification)),
+      specification: exactText(specification),
+      unit: exactText(rowValue(row, raw, ['unit', 'finalUnit', 'rawUnit'], '', specification)),
       quantity,
       unitPrice,
       amount,
@@ -292,6 +302,7 @@ function normalizeSourceRow(row, index, options) {
       sourceRowNumber: Number(row?.sourceRowNumber || row?.sourceRowNo || index + 2),
       sourceRelativeRowNumber: index + 1,
       sourceCells,
+      sourceCellEvidence: deepCopy(Array.isArray(row?.sourceCellEvidence) ? row.sourceCellEvidence : []),
       sourceValues: deepCopy(raw)
     }
   };
@@ -433,6 +444,7 @@ export function findInvalidExistingLedgerConflicts(candidate, existingBundles = 
 
 function planningEntry(candidate, signature, occurrenceNo, existing = []) {
   const issues = validateShoppingOrderCandidate(candidate);
+  const matchedExisting = occurrenceNo > 0 && occurrenceNo <= existing.length ? existing[occurrenceNo - 1] : null;
   if (issues.length) {
     return {
       candidate,
@@ -443,6 +455,8 @@ function planningEntry(candidate, signature, occurrenceNo, existing = []) {
       occurrenceNo: occurrenceNo || 0,
       existingCount: existing.length,
       existingOrderIds: existing.map(bundle => bundle.order?.orderId).filter(Boolean),
+      existingOrderId: '',
+      existingOrderNo: '',
       issues
     };
   }
@@ -455,6 +469,8 @@ function planningEntry(candidate, signature, occurrenceNo, existing = []) {
     occurrenceNo,
     existingCount: existing.length,
     existingOrderIds: existing.map(bundle => bundle.order?.orderId).filter(Boolean),
+    existingOrderId: matchedExisting?.order?.orderId || '',
+    existingOrderNo: matchedExisting?.order?.orderNo || '',
     issues: []
   };
 }

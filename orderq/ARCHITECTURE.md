@@ -45,7 +45,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Effective transferred quantity, remaining quantity, transfer status, and operations status are derived. Negative remaining quantity is an over-transfer error and is never clamped to zero.
 - Operations closure is derived from all valid items having zero remaining quantity, no over-transfer, and administrator status not being `HOLD`. Close/reopen events record the transition and reason; `closedAt` is only a convenience projection.
 
-### 2.1 Shopping-order actual-ledger idempotency (Phase 1)
+### 2.1 Shopping-order actual-ledger idempotency (Phase 1 owner / Phase 2 SmartInput consumer)
 
 `orderq/shopping-order-command-adapter.js` is the only future SmartInput-facing boundary for fixed-source shopping order inspection and commit. It delegates all actual-ledger reads and writes to `shopping-order-import-repository.js`; a consumer must not open ORDER Q IndexedDB or raw Stores.
 
@@ -56,7 +56,8 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - `SHOPPING_ORDER_V1:<signature>:<occurrence>` is an internal idempotency key under the existing unique `orders.bySourceMessageKey` index. It is not a source or external order number; `externalOrderNo` stays blank when the source has none.
 - One candidate transaction uses only existing DB v7 `orders`, `orderItems`, `orderEvents`, `syncQueue`, and `meta`. The order, every item, creation event, queue rows and internal order-number counter all commit or roll back together. Duplicate and review-required candidates are 0-write, and one failed candidate does not roll back a different normal candidate.
 - The fixed 17-column source has no order number. `그룹` is not treated as one. A changed company/customer/delivery-date/warehouse scope or explicit upstream boundary starts a candidate; non-contiguous same-customer runs remain distinct. An otherwise unbounded same-customer run containing a repeated adjacent order-content sequence fails closed with `AMBIGUOUS_SOURCE_ORDER_BOUNDARY`.
-- Existing DB v7 Store, key, index, version, migration, reset, official Voucher V2, inventory, AR/AP, common Runtime, server and Cloud gate remain unchanged. Phase 1 does not connect SmartInput UI and makes no multi-device global-deduplication claim.
+- Phase 2 connects only `smartinput/shopping-order-upload.js` to the public command Adapter. SmartInput recognizes the exact header, retains immutable source-cell evidence, collects owner selections and displays candidate outcomes; it does not import this Repository/Core or open ORDER Q Stores. Candidate save calls remain individually atomic at the owner boundary.
+- Existing DB v7 Store, key, index, version, migration, reset, official Voucher V2, inventory, AR/AP, common Runtime, server and Cloud gate remain unchanged. Neither phase makes a multi-device global-deduplication claim.
 
 ### 2.2 Official purchase/sale V2 contract
 
