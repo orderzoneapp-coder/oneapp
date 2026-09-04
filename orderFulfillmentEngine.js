@@ -7,9 +7,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.18.0";
+  const ENGINE_VERSION = "3.19.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
+  const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
+  const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
   const HEADER_SCAN_LIMIT = 30;
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
     "품목코드",
@@ -1379,6 +1381,75 @@
       .join("\n");
   }
 
+  function ensureSubstitutionHistory(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const existing = workspace.substitutionHistory;
+    if (
+      !existing ||
+      existing.schemaVersion !== SUBSTITUTION_HISTORY_SCHEMA_VERSION ||
+      !Array.isArray(existing.events)
+    ) {
+      workspace.substitutionHistory = {
+        schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION,
+        events: [],
+      };
+    }
+    return workspace.substitutionHistory;
+  }
+
+  function productSnapshot(row) {
+    return {
+      productCode: normalizeProductCode(row?.productCode),
+      productName: cleanText(row?.productName),
+      specification: cleanText(row?.specification ?? row?.spec),
+      unit: cleanText(row?.unit ?? row?.sourceUnit),
+    };
+  }
+
+  function productSnapshotLabel(snapshot) {
+    const name = cleanText(snapshot?.productName) || normalizeProductCode(snapshot?.productCode);
+    const specification = cleanText(snapshot?.specification);
+    return [name, specification].filter(Boolean).join(" ");
+  }
+
+  function substitutionOrderLabel(event) {
+    const customer = cleanText(event?.customer) || "거래처 미지정";
+    const quantity = formatPlainNumber(event?.quantity);
+    return `${customer}${quantity ? `(${quantity})` : ""}`;
+  }
+
+  function getSubstitutionMessages(workspace, productCode) {
+    const code = normalizeProductCode(productCode);
+    if (!code) return [];
+    const history = ensureSubstitutionHistory(workspace);
+    return history.events
+      .filter((event) =>
+        normalizeProductCode(event?.fromProduct?.productCode) === code ||
+        normalizeProductCode(event?.toProduct?.productCode) === code)
+      .slice()
+      .reverse()
+      .map((event) => {
+        const fromCode = normalizeProductCode(event?.fromProduct?.productCode);
+        const viewingFrom = fromCode === code;
+        const orderLabel = substitutionOrderLabel(event);
+        const counterpart = productSnapshotLabel(viewingFrom ? event?.toProduct : event?.fromProduct);
+        const undone = event?.kind === "SUBSTITUTION_UNDONE";
+        const action = undone
+          ? (viewingFrom ? "대체취소" : "복원됨")
+          : (viewingFrom ? "대체됨" : "대체받음");
+        const arrow = viewingFrom ? "→" : "←";
+        return {
+          eventId: cleanText(event?.eventId),
+          kind: undone ? "SUBSTITUTION_UNDONE" : "SUBSTITUTED",
+          occurredAt: cleanText(event?.occurredAt),
+          actor: cleanText(event?.actor) || "사용자",
+          message: `[${action}] ${orderLabel} ${arrow} ${counterpart}`,
+        };
+      });
+  }
+
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const columns = getInventoryColumnDescriptors(workspace);
@@ -1410,6 +1481,7 @@
     const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
+      const systemMessages = getSubstitutionMessages(workspace, productCode);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
       const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
@@ -1435,11 +1507,14 @@
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
         orderNotes: orderNoteDisplay(workspace, productCode),
+        systemMessages,
+        systemMessage: systemMessages.map((message) => message.message).join("\n"),
         inventoryMissing: false,
       };
     });
     orderProducts.forEach((product, productCode) => {
       if (inventoryCodes.has(productCode)) return;
+      const systemMessages = getSubstitutionMessages(workspace, productCode);
       const inventory = {
         productCode,
         productName: product.productName,
@@ -1477,6 +1552,8 @@
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
         orderNotes: orderNoteDisplay(workspace, productCode),
+        systemMessages,
+        systemMessage: systemMessages.map((message) => message.message).join("\n"),
         inventoryMissing: true,
       });
     });
@@ -1746,6 +1823,7 @@
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
     ));
     const orderOpsInputs = JSON.parse(JSON.stringify(workspace.orderOpsInputs || null));
+    const substitutionHistory = JSON.parse(JSON.stringify(ensureSubstitutionHistory(workspace)));
     const acknowledgedIds = [...ensureNoticeState(workspace).acknowledgedIds];
     const orderSource = workspace.sourceFiles?.orders || {};
     const inventorySource = workspace.sourceFiles?.inventory || {};
@@ -1783,6 +1861,7 @@
       createdAt: workspace.createdAt,
     });
     rebuilt.inventoryOverrides = inventoryOverrides;
+    rebuilt.substitutionHistory = substitutionHistory;
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
@@ -1792,6 +1871,149 @@
     noticeState.acknowledgedIds = acknowledgedIds.filter((noticeId) => validNoticeIds.has(noticeId));
     getInventoryViewRows(workspace);
     return workspace;
+  }
+
+  function substitutionEventTime(value) {
+    const parsed = Date.parse(cleanText(value));
+    return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+  }
+
+  function findSubstitutionTarget(workspace, productCode) {
+    const code = normalizeProductCode(productCode);
+    if (!code) return null;
+    return (workspace.inventory || []).find((row) => normalizeProductCode(row?.productCode) === code)
+      || (workspace.orders || []).find((row) => normalizeProductCode(row?.productCode) === code)
+      || null;
+  }
+
+  function substituteOrderProduct(workspace, sourceRowNumber, targetProductCode, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const rowNumber = Number(sourceRowNumber);
+    const order = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
+    if (!order) throw new Error("대체출고할 주문행을 찾지 못했습니다.");
+    const target = findSubstitutionTarget(workspace, targetProductCode);
+    if (!target) throw new Error("대체출고할 상품을 찾지 못했습니다.");
+
+    const fromProduct = productSnapshot(order);
+    const toProduct = productSnapshot(target);
+    if (!fromProduct.productCode || !toProduct.productCode) {
+      throw new Error("원상품과 대체상품의 상품코드를 확인하세요.");
+    }
+    if (fromProduct.productCode === toProduct.productCode) {
+      throw new Error("현재 주문상품과 다른 상품을 선택하세요.");
+    }
+
+    const history = ensureSubstitutionHistory(workspace);
+    const occurredAt = substitutionEventTime(options.occurredAt);
+    const actor = cleanText(options.actor) || "사용자";
+    const previousSubstitution = order.substitution
+      ? JSON.parse(JSON.stringify(order.substitution))
+      : null;
+    const requestedProduct = previousSubstitution?.requestedProduct
+      ? JSON.parse(JSON.stringify(previousSubstitution.requestedProduct))
+      : { ...fromProduct };
+    const eventId = `substitution-${rowNumber}-${stableTextHash([
+      occurredAt,
+      history.events.length + 1,
+      fromProduct.productCode,
+      toProduct.productCode,
+    ].join("|"))}`;
+    const event = {
+      eventId,
+      kind: "SUBSTITUTED",
+      occurredAt,
+      actor,
+      sourceRowNumber: rowNumber,
+      customer: cleanText(order.customer),
+      quantity: order.quantity,
+      unitPrice: typeof order.unitPrice === "number" ? order.unitPrice : null,
+      requestedProduct,
+      fromProduct,
+      toProduct,
+      previousSubstitution,
+    };
+
+    order.productCode = toProduct.productCode;
+    order.productName = toProduct.productName;
+    order.specification = toProduct.specification;
+    order.sourceUnit = toProduct.unit;
+    order.substitution = {
+      schemaVersion: SUBSTITUTION_ORDER_SCHEMA_VERSION,
+      requestedProduct,
+      actualProduct: { ...toProduct },
+      latestEventId: eventId,
+      updatedAt: occurredAt,
+      updatedBy: actor,
+    };
+    history.events.push(event);
+    rebuildWorkspaceFromOrders(workspace);
+    return event;
+  }
+
+  function activeSubstitutionEvents(history) {
+    const undoneEventIds = new Set(
+      history.events
+        .filter((event) => event?.kind === "SUBSTITUTION_UNDONE")
+        .map((event) => cleanText(event?.relatedEventId))
+        .filter(Boolean),
+    );
+    return history.events.filter((event) =>
+      event?.kind === "SUBSTITUTED" && !undoneEventIds.has(cleanText(event?.eventId)));
+  }
+
+  function undoLastSubstitution(workspace, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const history = ensureSubstitutionHistory(workspace);
+    const targetEvent = activeSubstitutionEvents(history).at(-1);
+    if (!targetEvent) throw new Error("취소할 대체출고 작업이 없습니다.");
+    const order = (workspace.orders || []).find(
+      (row) => Number(row?.sourceRowNumber) === Number(targetEvent.sourceRowNumber),
+    );
+    if (!order) throw new Error("대체출고를 복원할 주문행을 찾지 못했습니다.");
+    if (normalizeProductCode(order.productCode) !== normalizeProductCode(targetEvent.toProduct?.productCode)) {
+      throw new Error("주문상품이 이후 변경되어 마지막 대체출고를 자동 복원할 수 없습니다.");
+    }
+
+    const occurredAt = substitutionEventTime(options.occurredAt);
+    const actor = cleanText(options.actor) || "사용자";
+    const currentProduct = productSnapshot(order);
+    const restoredProduct = productSnapshot(targetEvent.fromProduct);
+    const eventId = `substitution-undo-${targetEvent.sourceRowNumber}-${stableTextHash([
+      occurredAt,
+      history.events.length + 1,
+      targetEvent.eventId,
+    ].join("|"))}`;
+    const undoEvent = {
+      eventId,
+      kind: "SUBSTITUTION_UNDONE",
+      relatedEventId: targetEvent.eventId,
+      occurredAt,
+      actor,
+      sourceRowNumber: Number(targetEvent.sourceRowNumber),
+      customer: cleanText(order.customer),
+      quantity: order.quantity,
+      unitPrice: typeof order.unitPrice === "number" ? order.unitPrice : null,
+      requestedProduct: targetEvent.requestedProduct,
+      fromProduct: currentProduct,
+      toProduct: restoredProduct,
+    };
+
+    order.productCode = restoredProduct.productCode;
+    order.productName = restoredProduct.productName;
+    order.specification = restoredProduct.specification;
+    order.sourceUnit = restoredProduct.unit;
+    if (targetEvent.previousSubstitution) {
+      order.substitution = JSON.parse(JSON.stringify(targetEvent.previousSubstitution));
+    } else {
+      delete order.substitution;
+    }
+    history.events.push(undoEvent);
+    rebuildWorkspaceFromOrders(workspace);
+    return undoEvent;
   }
 
   function setOrderValue(workspace, sourceRowNumber, field, value) {
@@ -2258,6 +2480,10 @@
         schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION,
         cells: [],
       },
+      substitutionHistory: {
+        schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION,
+        events: [],
+      },
       inputValidation,
       orders: ordersParsed.rows,
       inventory: inventoryParsed.rows,
@@ -2375,6 +2601,8 @@
     ENGINE_VERSION,
     WORKSPACE_SCHEMA_VERSION,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
+    SUBSTITUTION_HISTORY_SCHEMA_VERSION,
+    SUBSTITUTION_ORDER_SCHEMA_VERSION,
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
     ORDER_DATE_COLUMNS,
@@ -2410,6 +2638,10 @@
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
     getInventoryViewRows,
+    ensureSubstitutionHistory,
+    getSubstitutionMessages,
+    substituteOrderProduct,
+    undoLastSubstitution,
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,

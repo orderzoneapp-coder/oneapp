@@ -8,8 +8,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260903-manager-color-order-total"></script>
-  <script src="orderFulfillmentWorkbook.js?v=20260903-manager-color-order-total"></script>
+  <script src="orderFulfillmentEngine.js?v=20260904-substitute-message"></script>
+  <script src="orderFulfillmentWorkbook.js?v=20260904-substitute-message"></script>
   <style>
     :root {
       color-scheme: light;
@@ -1144,6 +1144,24 @@
       overflow: hidden; border: 1px solid #a7d7cf; border-radius: 999px;
       color: #0f5f58; background: #edf9f7; text-overflow: ellipsis; white-space: nowrap;
     }
+    button.order-information-badge {
+      appearance: none;
+      font: inherit;
+      line-height: inherit;
+      cursor: pointer;
+    }
+    button.order-information-badge:hover,
+    button.order-information-badge:focus-visible {
+      border-color: #0f766e;
+      outline: 2px solid color-mix(in srgb, #14b8a6 42%, transparent);
+      outline-offset: 1px;
+    }
+    button.order-information-badge.substitution-selected {
+      border-color: #2563eb;
+      color: #1e3a8a;
+      background: #dbeafe;
+      box-shadow: inset 0 0 0 1px #2563eb;
+    }
     .order-information-badge.manager-color-badge {
       padding-left: 8px;
       border-color: color-mix(in srgb, var(--manager-color) 58%, #b8c5c3);
@@ -1153,6 +1171,40 @@
     }
     .order-information-quantity,
     .order-information-price { font-size: 10px; }
+    .table-wrap.substitution-target-mode table.preview-inventory tbody tr:not(.substitution-source-product-row) > td {
+      cursor: copy;
+    }
+    .table-wrap.substitution-target-mode table.preview-inventory tbody tr:not(.substitution-source-product-row):hover > td {
+      background: color-mix(in srgb, #14b8a6 14%, var(--white)) !important;
+      box-shadow: inset 0 1px 0 #14b8a6, inset 0 -1px 0 #14b8a6;
+    }
+    table.preview-inventory tr.substitution-source-product-row > td {
+      box-shadow: inset 0 1px 0 #2563eb, inset 0 -1px 0 #2563eb;
+    }
+    .system-history-list { display: grid; min-width: 0; gap: 3px; }
+    .system-history-message {
+      display: grid;
+      min-width: 0;
+      padding: 3px 6px;
+      border-left: 3px solid #0f766e;
+      border-radius: 3px;
+      color: var(--slate-700);
+      background: color-mix(in srgb, #14b8a6 9%, var(--white));
+      line-height: 1.3;
+    }
+    .system-history-message.is-undo {
+      border-left-color: #64748b;
+      background: color-mix(in srgb, #94a3b8 12%, var(--white));
+    }
+    .system-history-main,
+    .system-history-meta {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .system-history-main { font-size: 10px; font-weight: 800; }
+    .system-history-meta { color: var(--slate-500); font-size: 9px; }
+    .system-history-more { color: var(--slate-500); font-size: 9px; font-weight: 800; }
     .tab-shortcut { margin-left: 4px; color: inherit; font-size: 9px; opacity: .78; }
     table.preview-inventory td.inventory-framed-cell { padding: 2px 4px; }
     table.preview-inventory .inventory-value-frame,
@@ -2267,6 +2319,8 @@
         purchaseAutocompleteIndex: 0,
         analysisEnterReady: false,
         analysisEnterLocked: false,
+        selectedSubstitutionOrderRow: null,
+        substitutionCtrlActive: false,
       };
 
       const elements = {
@@ -2993,8 +3047,10 @@
         const verification = await verifyRecoveryRecord(record);
         if (!verification.valid) throw new Error(`복구자료가 차단되었습니다: ${verification.reason}`);
         const payload = verification.record.payload;
+        clearSubstitutionSelection();
         state.workspace = payload.workspace;
         engine.ensureNoticeState(state.workspace);
+        engine.ensureSubstitutionHistory(state.workspace);
         state.activePreview = payload.ui?.activePreview || "validation";
         state.searchQuery = "";
         state.shortageFocus = false;
@@ -3070,6 +3126,7 @@
         }
         const candidateWorkspace = await analyzeCurrentInputs();
         await persistLocalWorkspace(candidateWorkspace, { activePreview: "validation" });
+        clearSubstitutionSelection();
         state.workspace = candidateWorkspace;
         state.activePreview = "validation";
         resetResultViewFilters();
@@ -3426,6 +3483,7 @@
       function resetResults() {
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
+        clearSubstitutionSelection();
         state.workspace = null;
         renderSourceViewCards();
         elements.resultsPanel.classList.add("hidden");
@@ -4685,6 +4743,13 @@
           role: "orderNotes",
           defaultWidth: 220,
         });
+        columns.push({
+          key: "shipping:inventory:system-messages",
+          header: "시스템 메시지",
+          numeric: false,
+          role: "systemMessages",
+          defaultWidth: 320,
+        });
 
         const sourceRows = inventoryView.rows.map((row) => ({
           ...decorateShortageRow(row, shortageSets, inventoryByCode),
@@ -4706,6 +4771,7 @@
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
           values.push(row?.orderInformation ?? "");
           values.push(row?.orderNotes ?? "");
+          values.push(row?.systemMessage ?? "");
           return values;
         });
         return {
@@ -4735,29 +4801,67 @@
         return values.join("\n");
       }
 
-      function orderInformationManagers(sourceRow) {
+      function orderInformationOrders(sourceRow) {
         const productCode = engine.normalizeProductCode(sourceRow?.productCode);
         if (!productCode) return [];
         return (Array.isArray(state.workspace?.orders) ? state.workspace.orders : [])
-          .filter((row) => engine.normalizeProductCode(row?.productCode) === productCode)
-          .map((row) => String(row?.manager || "").trim());
+          .filter((row) => engine.normalizeProductCode(row?.productCode) === productCode);
+      }
+
+      function orderInformationManagers(sourceRow) {
+        return orderInformationOrders(sourceRow).map((row) => String(row?.manager || "").trim());
       }
 
       function renderOrderInformationBadges(value, sourceRow) {
         const entries = String(value ?? "").split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
         if (entries.length === 0) return "";
         const managers = orderInformationManagers(sourceRow);
+        const orders = orderInformationOrders(sourceRow);
         return `<span class="order-information-badges">${entries.map((entry, index) => {
           const manager = managers[index] || "";
+          const order = orders[index];
           const managerColor = managerColorFor(manager);
           const colorAssigned = isSafeManagerName(manager) && managerColor !== COLOR_CANCEL_COLOR;
-          const badgeClass = `order-information-badge${colorAssigned ? " manager-color-badge" : ""}`;
+          const selectable = state.activePreview === "inventory" && Number(order?.sourceRowNumber) > 0;
+          const selected = selectable && Number(state.selectedSubstitutionOrderRow) === Number(order.sourceRowNumber);
+          const badgeClass = `order-information-badge${colorAssigned ? " manager-color-badge" : ""}${selected ? " substitution-selected" : ""}`;
           const badgeStyle = colorAssigned ? ` style="--manager-color:${managerColor}"` : "";
-          const badgeTitle = `${entry}${manager ? ` · 담당 ${manager}` : ""}`;
+          const badgeTitle = `${entry}${manager ? ` · 담당 ${manager}` : ""}${selectable ? " · 클릭 후 Ctrl+상품 클릭으로 대체출고" : ""}`;
           const match = entry.match(/^(.*)(\([^()]*\))([+-]?[\d,]+(?:\.\d+)?)$/);
-          if (!match) return `<span class="${badgeClass}"${badgeStyle} title="${escapeHtml(badgeTitle)}">${escapeHtml(entry)}</span>`;
-          return `<span class="${badgeClass}"${badgeStyle} title="${escapeHtml(badgeTitle)}"><span class="order-information-partner">${escapeHtml(match[1])}</span><span class="order-information-quantity">${escapeHtml(match[2])}</span><span class="order-information-price">${escapeHtml(match[3])}</span></span>`;
+          const inner = !match
+            ? escapeHtml(entry)
+            : `<span class="order-information-partner">${escapeHtml(match[1])}</span><span class="order-information-quantity">${escapeHtml(match[2])}</span><span class="order-information-price">${escapeHtml(match[3])}</span>`;
+          return selectable
+            ? `<button class="${badgeClass}" type="button"${badgeStyle} title="${escapeHtml(badgeTitle)}"
+                aria-pressed="${selected}" data-substitute-order-row="${escapeHtml(order.sourceRowNumber)}">${inner}</button>`
+            : `<span class="${badgeClass}"${badgeStyle} title="${escapeHtml(badgeTitle)}">${inner}</span>`;
         }).join("")}</span>`;
+      }
+
+      function formatSystemMessageTime(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "시각 없음";
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        const hour = String(date.getHours()).padStart(2, "0");
+        const minute = String(date.getMinutes()).padStart(2, "0");
+        return `${month}/${day} ${hour}:${minute}`;
+      }
+
+      function renderSystemMessageHistory(sourceRow) {
+        const messages = Array.isArray(sourceRow?.systemMessages) ? sourceRow.systemMessages : [];
+        if (messages.length === 0) return "";
+        const visible = messages.slice(0, 2);
+        const fullTitle = messages.map((message) =>
+          `${message.message} · ${message.actor || "사용자"} · ${formatSystemMessageTime(message.occurredAt)}`)
+          .join("\n");
+        return `<span class="system-history-list" title="${escapeHtml(fullTitle)}">${visible.map((message) => `
+          <span class="system-history-message ${message.kind === "SUBSTITUTION_UNDONE" ? "is-undo" : ""}">
+            <span class="system-history-main">${escapeHtml(message.message)}</span>
+            <span class="system-history-meta">${escapeHtml(message.actor || "사용자")} · ${escapeHtml(formatSystemMessageTime(message.occurredAt))}</span>
+          </span>`).join("")}${messages.length > visible.length
+            ? `<span class="system-history-more">이전 이력 +${formatNumber(messages.length - visible.length)}건</span>`
+            : ""}</span>`;
       }
 
       function isQuantityColumn(column) {
@@ -5501,6 +5605,10 @@
                 managerColor ? "manager-color-row" : "",
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
                 exactBoxUnit(sourceRow) ? "box-unit-row" : "",
+                previewId === "inventory" && Number(state.selectedSubstitutionOrderRow) > 0 &&
+                  orderInformationOrders(sourceRow).some((order) =>
+                    Number(order?.sourceRowNumber) === Number(state.selectedSubstitutionOrderRow))
+                  ? "substitution-source-product-row" : "",
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
@@ -5565,6 +5673,7 @@
                       warningUnitContext ? "unit-alert-cell" : "",
                       boxUnitContext ? "box-unit-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
+                      column.role === "systemMessages" ? "system-message-value" : "",
                       column.role === "manager" && managerColor ? "manager-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
@@ -5604,6 +5713,8 @@
                               ? ""
                             : column.role === "orderInformation"
                               ? renderOrderInformationBadges(displayValue, sourceRow)
+                            : column.role === "systemMessages"
+                              ? renderSystemMessageHistory(sourceRow)
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
@@ -5678,6 +5789,11 @@
         if (shortageEligible && state.shortageFocus) {
           viewNotes.push(state.activePreview === "allocations" ? "발주 확인상품" : "재고부족 · 주문상품·대체상품 모아보기");
         }
+        if (state.activePreview === "inventory") {
+          viewNotes.push(Number(state.selectedSubstitutionOrderRow) > 0
+            ? "대체할 주문 선택됨 · Ctrl+상품 클릭"
+            : "대체출고: 거래처 칩 선택 → Ctrl+상품 클릭");
+        }
         elements.systemViewNote.textContent = viewNotes.join(" · ");
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
@@ -5709,6 +5825,7 @@
         } else {
           elements.previewTable.innerHTML = previewMarkup;
         }
+        updateSubstitutionTargetMode(state.substitutionCtrlActive);
         updateColumnWidthToolbar();
       }
 
@@ -5873,6 +5990,7 @@
         setSystemMessage("출고분석 중 · 주문·재고·발주수량을 계산합니다");
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
+          clearSubstitutionSelection();
           state.workspace = await analyzeCurrentInputs();
           state.activePreview = "validation";
           resetResultViewFilters();
@@ -6086,8 +6204,10 @@
           ) {
             throw new Error("Cloud 발주계획 계약 또는 fingerprint가 올바르지 않습니다.");
           }
+          clearSubstitutionSelection();
           state.workspace = plan.workspace;
           engine.ensureNoticeState(state.workspace);
+          engine.ensureSubstitutionHistory(state.workspace);
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
           state.activePreview = plan.activePreview || "validation";
           state.searchQuery = "";
@@ -6275,6 +6395,149 @@
           return false;
         }
       }
+
+      function substitutionActor() {
+        return String(elements.cloudSavedByInput?.value || "").trim() || "사용자";
+      }
+
+      function selectedSubstitutionOrder() {
+        const rowNumber = Number(state.selectedSubstitutionOrderRow);
+        if (!(rowNumber > 0) || !state.workspace) return null;
+        return (state.workspace.orders || []).find(
+          (order) => Number(order?.sourceRowNumber) === rowNumber,
+        ) || null;
+      }
+
+      function updateSubstitutionTargetMode(active) {
+        state.substitutionCtrlActive = Boolean(
+          active && state.activePreview === "inventory" && selectedSubstitutionOrder(),
+        );
+        elements.previewTable.classList.toggle("substitution-target-mode", state.substitutionCtrlActive);
+      }
+
+      function clearSubstitutionSelection({ render = false } = {}) {
+        state.selectedSubstitutionOrderRow = null;
+        updateSubstitutionTargetMode(false);
+        if (render && state.workspace && state.activePreview === "inventory") renderPreview();
+      }
+
+      function selectSubstitutionOrder(sourceRowNumber) {
+        if (!state.workspace || state.activePreview !== "inventory") return false;
+        const rowNumber = Number(sourceRowNumber);
+        const order = (state.workspace.orders || []).find(
+          (candidate) => Number(candidate?.sourceRowNumber) === rowNumber,
+        );
+        if (!order) {
+          showToast("대체출고할 거래처 주문을 찾지 못했습니다.", true);
+          return false;
+        }
+        if (Number(state.selectedSubstitutionOrderRow) === rowNumber) {
+          clearSubstitutionSelection({ render: true });
+          setSystemMessage("대체출고 선택 해제 · 거래처 칩을 다시 선택할 수 있습니다");
+          return true;
+        }
+        state.selectedSubstitutionOrderRow = rowNumber;
+        renderPreview();
+        setSystemMessage(`대체출고 주문 선택 · ${order.customer || "거래처 미지정"}(${formatNumber(order.quantity)}) · Ctrl+상품 클릭`);
+        return true;
+      }
+
+      function substitutionProductLabel(product) {
+        return [product?.productName || product?.productCode, product?.specification]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+          .join(" ");
+      }
+
+      function applySelectedSubstitution(targetProductCode) {
+        const order = selectedSubstitutionOrder();
+        if (!order) {
+          clearSubstitutionSelection({ render: true });
+          showToast("대체출고할 거래처 칩을 먼저 선택하세요.", true);
+          return false;
+        }
+        try {
+          const result = engine.substituteOrderProduct(
+            state.workspace,
+            order.sourceRowNumber,
+            targetProductCode,
+            { actor: substitutionActor() },
+          );
+          clearSubstitutionSelection();
+          renderResults();
+          scheduleLocalSave();
+          const summary = `${result.customer || "거래처 미지정"}(${formatNumber(result.quantity)}) · ${substitutionProductLabel(result.fromProduct)} → ${substitutionProductLabel(result.toProduct)}`;
+          setSystemMessage(`대체출고 완료 · ${summary} · Ctrl+Z 취소`);
+          showToast(`대체출고 완료 · ${summary}`);
+          return true;
+        } catch (error) {
+          updateSubstitutionTargetMode(false);
+          showToast(error.message || "대체출고를 적용하지 못했습니다.", true);
+          return false;
+        }
+      }
+
+      function undoLastSubstitutionAction() {
+        if (!state.workspace || typeof engine.undoLastSubstitution !== "function") return false;
+        try {
+          const result = engine.undoLastSubstitution(state.workspace, { actor: substitutionActor() });
+          clearSubstitutionSelection();
+          renderResults();
+          scheduleLocalSave();
+          const summary = `${result.customer || "거래처 미지정"}(${formatNumber(result.quantity)}) · ${substitutionProductLabel(result.fromProduct)} → ${substitutionProductLabel(result.toProduct)}`;
+          setSystemMessage(`대체출고 취소 완료 · ${summary}`);
+          showToast(`대체출고를 복원했습니다 · ${summary}`);
+          return true;
+        } catch (error) {
+          showToast(error.message || "대체출고를 복원하지 못했습니다.", true);
+          return false;
+        }
+      }
+
+      function handleSubstitutionTableClick(event) {
+        if (!state.workspace || state.activePreview !== "inventory") return false;
+        const row = event.target.closest("tr[data-product-code]");
+        const chip = event.target.closest("[data-substitute-order-row]");
+        if (selectedSubstitutionOrder() && (event.ctrlKey || event.metaKey) && row) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          applySelectedSubstitution(row.dataset.productCode);
+          return true;
+        }
+        if (!chip) return false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        selectSubstitutionOrder(chip.dataset.substituteOrderRow);
+        return true;
+      }
+
+      function isNativeUndoTarget(target) {
+        return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if ((event.key === "Control" || event.key === "Meta") && selectedSubstitutionOrder()) {
+          updateSubstitutionTargetMode(true);
+          return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" &&
+            !event.shiftKey && !event.repeat && !isNativeUndoTarget(event.target) && state.workspace) {
+          const history = engine.ensureSubstitutionHistory?.(state.workspace);
+          if (!history?.events?.some((item) => item?.kind === "SUBSTITUTED")) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          undoLastSubstitutionAction();
+          return;
+        }
+        if (event.key === "Escape" && state.selectedSubstitutionOrderRow) {
+          clearSubstitutionSelection({ render: true });
+          setSystemMessage("대체출고 선택 해제 · 기존 작업본은 변경되지 않았습니다");
+        }
+      }, true);
+      document.addEventListener("keyup", (event) => {
+        if (event.key === "Control" || event.key === "Meta") updateSubstitutionTargetMode(false);
+      });
+      window.addEventListener("blur", () => updateSubstitutionTargetMode(false));
 
       function purchaseAutocompleteNames(input, { allowEmpty = false } = {}) {
         const prefix = String(input?.value || "").trim().toLocaleLowerCase("ko-KR");
@@ -6754,6 +7017,7 @@
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
+        if (previewId !== "inventory") clearSubstitutionSelection();
         if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
         scheduleLocalSave();
         return true;
@@ -6809,6 +7073,7 @@
         activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
+        if (handleSubstitutionTableClick(event)) return;
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
         if (trigger && state.workspace) {
           event.preventDefault();

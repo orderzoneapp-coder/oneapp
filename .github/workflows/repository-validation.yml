@@ -186,6 +186,9 @@ jobs:
       - name: Test OrderOps allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs
 
+      - name: Test OrderOps substitute shipment and system-message history
+        run: node scripts/test-orderq-substitute-shipment.mjs
+
       - name: Test OrderOps output and DataOps shared theme interaction
         run: node scripts/test-orderops-theme-browser-e2e.mjs
 
