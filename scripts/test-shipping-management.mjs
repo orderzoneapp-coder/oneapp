@@ -318,8 +318,8 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260903-manager-color-order-total") &&
-  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260903-manager-color-order-total"),
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260904-substitute-message") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260904-substitute-message"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
@@ -718,7 +718,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.18.0");
+assert.equal(engine.ENGINE_VERSION, "3.19.0");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");

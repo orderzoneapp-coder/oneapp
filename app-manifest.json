@@ -1070,6 +1070,7 @@
       "schemaVersion": "ONEAPP_SHIPPING_PURCHASE_PLAN_V1",
       "workspaceSchemaVersion": "shipping-workspace/v2",
       "localRecoverySchemaVersion": "shipping-local-recovery/v1",
+      "substitutionHistorySchemaVersion": "shipping-substitution-history/v1",
       "resources": {
         "indexedDb": {
           "database": "ONEAPPShippingManagementDB",
