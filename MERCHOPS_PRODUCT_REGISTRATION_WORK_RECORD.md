@@ -76,6 +76,7 @@
 ## 검증 결과
 
 - `scripts/test-merchops-all.mjs`: 16개 전체 통과.
+- `scripts/test-smartparser-all.mjs`: 7개 전체 통과.
 - `scripts/test-reference-data-browser-e2e.mjs`: 실제 IndexedDB 숫자형 revision의 최초 등록 `APPLIED`, 동일 명령 재시도 `DUPLICATE`, master/history 검산 통과.
 - `scripts/validate-repository.mjs`: 24개 검사, 경고 0건.
 - `git diff --check`: 오류 없음(LF/CRLF 안내만 존재).
