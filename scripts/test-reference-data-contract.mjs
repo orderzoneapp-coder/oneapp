@@ -140,6 +140,12 @@ assert.equal(productContract.stopCommandException.asset, 'smartparser/stop-manag
 assert.equal(productContract.readAdapterVersion, 'ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1');
 assert.equal(productContract.commandAdapter, 'ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1');
 assert.equal(productContract.commandSchemaVersion, 'MERCHOPS_REVIEWED_WORK_APPLY_V1');
+assert.equal(productContract.registrationCommandSchemaVersion, 'MERCHOPS_PRODUCT_REGISTRATION_V1');
+assert.deepEqual(productContract.registrationAllowedFields, [
+  '코드', '품목코드', '품목명', '규격', '단위', '입고가', '구매처', '창고', '기본', '과세',
+]);
+assert.equal(productRequestContract.consumers.includes('merchops'), false,
+  'MerchOps explicit product registration must not be modeled as a PENDING inbox request');
 assert.equal(productContract.resources.commandAdapterAsset, 'reference-data/product-master-command-adapter.js');
 
 async function sourceFiles(directory = root) {

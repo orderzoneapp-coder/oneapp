@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { buildProductSnapshot } from '../reference-data/product-master-read-adapter.js';
 import {
   createProductMasterCommandAdapter,
+  MERCHOPS_PRODUCT_REGISTRATION_COMMAND_SCHEMA_VERSION,
+  MERCHOPS_PRODUCT_REGISTRATION_FIELDS,
   MERCHOPS_REVIEWED_WORK_COMMAND_SCHEMA_VERSION,
   PRODUCT_MASTER_COMMAND_ADAPTER_VERSION,
 } from '../reference-data/product-master-command-adapter.js';
@@ -16,12 +18,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const clone = (value) => structuredClone(value);
 
 function createHarness(options = {}) {
-  let products = {
+  let products = options.products === undefined ? {
     A001: { 코드: 'A001', 품목명: '사과', 규격: '1kg', 입고가: 1000, 출고가: 1500, 판매여부: 1 },
     B002: { 코드: 'B002', 품목명: '배', 규격: '1kg', 입고가: 2000, 출고가: 2800, 판매여부: 1 },
-  };
+  } : clone(options.products);
   let revisionNumber = 1;
-  let revision = 'rev-1';
+  let revision = options.rawRevision ?? 'rev-1';
   let historyRaw = options.historyRaw ?? '[]';
   let linkedReads = 0;
   let snapshotReads = 0;
@@ -35,7 +37,7 @@ function createHarness(options = {}) {
     return { status: snapshot.status, snapshot, error: null };
   };
   const commitMasterState = async (nextProducts, commitOptions = {}) => {
-    if (String(commitOptions.expectedRevision) !== revision) {
+    if (commitOptions.expectedRevision !== revision) {
       return { ok: false, conflict: true, revision, error: 'REVISION_CONFLICT', rollbackOk: false };
     }
     const previous = clone(products);
@@ -54,6 +56,7 @@ function createHarness(options = {}) {
   };
   const dependencies = {
     readSnapshotResult,
+    readMasterState: async () => ({ revision }),
     commitMasterState,
     readHistoryRaw: () => historyRaw,
     appendHistory: async (logs) => {
@@ -107,6 +110,25 @@ async function commandFor(harness, overrides = {}) {
   };
 }
 
+async function registrationCommandFor(harness, overrides = {}) {
+  const base = (await harness.readSnapshotResult()).snapshot;
+  return {
+    schemaVersion: MERCHOPS_PRODUCT_REGISTRATION_COMMAND_SCHEMA_VERSION,
+    operationId: overrides.operationId || 'register-op-1',
+    ownerAppId: 'master-lookup',
+    sourceAppId: 'merchops',
+    expectedRevision: overrides.expectedRevision || base.snapshotVersion,
+    baseSnapshotId: overrides.baseSnapshotId || base.snapshotId,
+    baseContentHash: overrides.baseContentHash || base.contentHash,
+    reason: overrides.reason || 'MerchOps 미등록 상품 관리자 확인 등록',
+    actor: { actorId: 'tester', actorState: 'UNVERIFIED_LOCAL' },
+    products: overrides.products || [{
+      코드: 'C003', 품목코드: 'C003', 품목명: '감', 규격: '3kg', 단위: 'BOX',
+      입고가: 3000, 구매처: '테스트 공급사', 창고: '01', 기본: '1', 과세: 0,
+    }],
+  };
+}
+
 {
   const harness = createHarness();
   const command = await commandFor(harness);
@@ -135,6 +157,129 @@ async function commandFor(harness, overrides = {}) {
   const conflict = await harness.adapter.commitReviewedMerchOpsWork(stale);
   assert.equal(conflict.status, 'CONFLICT');
   assert.equal(harness.products().A001.출고가, 1600);
+}
+
+{
+  const harness = createHarness();
+  const command = await registrationCommandFor(harness);
+  const applied = await harness.adapter.registerMerchOpsProducts(command);
+  assert.equal(applied.ok, true);
+  assert.equal(applied.status, 'APPLIED');
+  assert.equal(applied.commandSchemaVersion, MERCHOPS_PRODUCT_REGISTRATION_COMMAND_SCHEMA_VERSION);
+  assert.equal(applied.createdCount, 1);
+  assert.equal(harness.products().C003.품목명, '감');
+  assert.equal(harness.products().C003.입고가, 3000);
+  assert.equal('수량' in harness.products().C003, false, 'operational quantity must not enter product master');
+  assert.equal('기준일자' in harness.products().C003, false, 'business date must remain in the worktable');
+  assert.ok(harness.history().some(row => row.actionType === 'merchops_product_registration_job'));
+  assert.ok(harness.history().some(row => row.actionType === 'master_create' && row.code === 'C003' && row.field === '코드'));
+
+  const duplicate = await harness.adapter.registerMerchOpsProducts(command);
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.status, 'DUPLICATE');
+  assert.equal(harness.history().filter(row => row.operationId === command.operationId).length, applied.historyCount,
+    'idempotent registration retry must not duplicate history');
+}
+
+{
+  const harness = createHarness({ rawRevision: 41 });
+  const command = await registrationCommandFor(harness, { operationId: 'register-legacy-numeric-revision' });
+  assert.equal(command.expectedRevision, '41', 'public snapshots normalize legacy numeric revisions to strings');
+  const applied = await harness.adapter.registerMerchOpsProducts(command);
+  assert.equal(applied.status, 'APPLIED', 'owner adapter must preserve the raw revision type at the commit boundary');
+  assert.equal(harness.products().C003.품목명, '감');
+}
+
+{
+  const harness = createHarness({ rawRevision: 41 });
+  const command = await commandFor(harness, { operationId: 'reviewed-work-legacy-numeric-revision' });
+  const applied = await harness.adapter.commitReviewedMerchOpsWork(command);
+  assert.equal(applied.status, 'APPLIED', 'existing reviewed work must also preserve legacy raw revision types');
+  assert.equal(harness.products().A001.출고가, 1600);
+}
+
+{
+  const harness = createHarness({ products: {} });
+  const result = await harness.adapter.registerMerchOpsProducts(await registrationCommandFor(harness, {
+    operationId: 'register-empty-master-batch',
+    products: [
+      { 코드: 'FIRST-1', 품목명: '첫 상품', 규격: '1kg', 단위: 'BOX' },
+      { 코드: 'FIRST-2', 품목명: '둘째 상품', 규격: '2kg', 단위: 'EA', 입고가: 0 },
+    ],
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(result.createdCount, 2);
+  assert.deepEqual(Object.keys(harness.products()).sort(), ['FIRST-1', 'FIRST-2']);
+  assert.equal(harness.products()['FIRST-2'].입고가, 0);
+}
+
+{
+  const harness = createHarness();
+  const before = harness.products();
+  const duplicateCodeBatch = await registrationCommandFor(harness, {
+    operationId: 'register-duplicate-batch',
+    products: [
+      { 코드: 'C003', 품목명: '감', 규격: '3kg', 단위: 'BOX' },
+      { 품목코드: 'C003', 품목명: '감2', 규격: '4kg', 단위: 'EA' },
+    ],
+  });
+  const duplicateResult = await harness.adapter.registerMerchOpsProducts(duplicateCodeBatch);
+  assert.equal(duplicateResult.status, 'REJECTED');
+  assert.equal(duplicateResult.error.code, 'DUPLICATE_REGISTRATION_PRODUCT_CODE');
+  assert.deepEqual(harness.products(), before, 'invalid registration batch must not partially write products');
+
+  const existingCodeBatch = await registrationCommandFor(harness, {
+    operationId: 'register-existing-batch',
+    products: [
+      { 코드: 'C003', 품목명: '감', 규격: '3kg', 단위: 'BOX' },
+      { 코드: 'A001', 품목명: '중복 사과', 규격: '1kg', 단위: 'BOX' },
+    ],
+  });
+  const existingResult = await harness.adapter.registerMerchOpsProducts(existingCodeBatch);
+  assert.equal(existingResult.status, 'CONFLICT');
+  assert.equal(existingResult.error.code, 'REGISTRATION_PRODUCT_ALREADY_EXISTS');
+  assert.equal(harness.products().C003, undefined, 'existing-code conflict must reject the complete selected batch');
+
+  const operationalField = await registrationCommandFor(harness, {
+    operationId: 'register-operational-field',
+    products: [{ 코드: 'C004', 품목명: '감', 규격: '3kg', 단위: 'BOX', 수량: 7 }],
+  });
+  const operationalResult = await harness.adapter.registerMerchOpsProducts(operationalField);
+  assert.equal(operationalResult.status, 'REJECTED');
+  assert.equal(operationalResult.error.code, 'REGISTRATION_FIELD_NOT_ALLOWED');
+  assert.equal(MERCHOPS_PRODUCT_REGISTRATION_FIELDS.includes('수량'), false);
+  assert.equal(MERCHOPS_PRODUCT_REGISTRATION_FIELDS.includes('기준일자'), false);
+}
+
+{
+  const harness = createHarness();
+  const staleCommand = await registrationCommandFor(harness, { operationId: 'register-stale' });
+  staleCommand.expectedRevision = 'rev-stale';
+  const stale = await harness.adapter.registerMerchOpsProducts(staleCommand);
+  assert.equal(stale.status, 'CONFLICT');
+  assert.equal(stale.error.code, 'PRODUCT_SNAPSHOT_CONFLICT');
+  assert.equal(harness.products().C003, undefined);
+}
+
+{
+  const harness = createHarness({ failHistory: true });
+  const result = await harness.adapter.registerMerchOpsProducts(await registrationCommandFor(harness, { operationId: 'register-history-fail' }));
+  assert.equal(result.ok, false);
+  assert.equal(result.rollback.master, true, 'registration history failure must roll back master');
+  assert.equal(result.rollback.history, true);
+  assert.equal(harness.products().C003, undefined);
+  assert.deepEqual(harness.history(), []);
+}
+
+{
+  const harness = createHarness({ failFinalVerify: true });
+  const result = await harness.adapter.registerMerchOpsProducts(await registrationCommandFor(harness, { operationId: 'register-final-fail' }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'FINAL_PRODUCT_REGISTRATION_VERIFY_FAILED');
+  assert.equal(result.rollback.master, true);
+  assert.equal(result.rollback.history, true);
+  assert.equal(harness.products().C003, undefined);
+  assert.deepEqual(harness.history(), []);
 }
 
 {
@@ -322,7 +467,11 @@ assert.match(business, /data\.commitReviewedWork\(newMaster, localLogs/);
 assert.match(business, /data\.commitReviewedWork\(nextMaster, history/);
 assert.match(business, /status: 'OWNER_ROUTED', ownerAppId: 'settings'/);
 assert.match(business, /status: 'OWNER_ROUTED', ownerAppId: 'master-lookup'/);
-assert.match(business, /'PENDING', 'DUPLICATE'/);
+assert.match(business, /data\.registerProducts\(products/);
+assert.match(business, /schemaVersion: 'MERCHOPS_PRODUCT_REGISTRATION_V1'/);
+assert.doesNotMatch(business, /productChangeRequest|ONEAPP_REFERENCE_CHANGE_REQUEST_V1/);
+assert.match(html, /data-merch-registration-apply[^\n]+owner-command[\s\S]*?"선택 상품 등록"/);
+assert.match(html, /작업표 유지: 수량·기준일자/);
 assert.match(html, /MERCHOPS_WORK_VIEW_STATE_KEY = 'merchops_work_view_state_v1'/);
 
 const f8 = business.slice(business.indexOf('const handleQuickExcelExport ='), business.indexOf('const handleCommitEstimate ='));

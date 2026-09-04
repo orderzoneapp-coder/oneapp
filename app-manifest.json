@@ -115,7 +115,7 @@
       "path": "MerchOps.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Consume an immutable owner-issued Product Snapshot, prepare pricing, promotion, and Excel-based product-information work, submit new products as PENDING owner requests, and apply only reviewed F7 field patches through the versioned product command boundary.",
+      "purpose": "Consume an immutable owner-issued Product Snapshot, prepare pricing, promotion, and Excel-based product-information work, explicitly register reviewed missing products through the product-owner command, and apply reviewed F7 field patches through the same versioned owner boundary.",
       "owner": "merchandising-operations",
       "productionWrites": true,
       "navigatesTo": [
@@ -134,7 +134,6 @@
       ],
       "consumedContracts": [
         "product-master",
-        "product-reference-change-request",
         "change-history",
         "parser-dictionary",
         "pricing-rules",
@@ -145,7 +144,6 @@
       ],
       "sharedContracts": [
         "product-master",
-        "product-reference-change-request",
         "change-history",
         "parser-dictionary",
         "pricing-rules",
@@ -1123,7 +1121,20 @@
       "commandAdapter": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandAdapterVersion": "ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1",
       "commandSchemaVersion": "MERCHOPS_REVIEWED_WORK_APPLY_V1",
-      "writerPolicy": "master-lookup is the official owner. SmartParser reads immutable Product Snapshots and submits product proposals only through PENDING owner requests; its page has no raw product writer. The sole SmartParser exception is the versioned stop-management command adapter, limited to explicit STOP/RESUME/UPDATE_METADATA with expected Snapshot/revision and atomic sale-status/linked-state/history/mirror/notification handling. MerchOps may change existing product fields only through its reviewed F7 command adapter. Legacy globals and all other workflows fail closed with OWNER_ROUTED.",
+      "registrationCommandSchemaVersion": "MERCHOPS_PRODUCT_REGISTRATION_V1",
+      "registrationAllowedFields": [
+        "코드",
+        "품목코드",
+        "품목명",
+        "규격",
+        "단위",
+        "입고가",
+        "구매처",
+        "창고",
+        "기본",
+        "과세"
+      ],
+      "writerPolicy": "master-lookup is the official owner. SmartParser reads immutable Product Snapshots and submits product proposals only through PENDING owner requests; its page has no raw product writer. The sole SmartParser exception is the versioned stop-management command adapter, limited to explicit STOP/RESUME/UPDATE_METADATA with expected Snapshot/revision and atomic sale-status/linked-state/history/mirror/notification handling. MerchOps may change existing product fields only through its reviewed F7 command and may create operator-selected missing products only through MERCHOPS_PRODUCT_REGISTRATION_V1; quantity and business date remain work values. Legacy globals and all other workflows fail closed with OWNER_ROUTED.",
       "stopCommandException": {
         "adapter": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1",
         "schemaVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1",
@@ -1167,7 +1178,6 @@
       "owner": "master-lookup",
       "consumers": [
         "smart-input",
-        "merchops",
         "smart-parser"
       ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",

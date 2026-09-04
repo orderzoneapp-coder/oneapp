@@ -184,6 +184,34 @@ try {
   assert.equal(preserved.snapshot['P-FALLBACK'].품목명, 'fallback');
   assert.equal(preserved.inbox.requests.length, 1);
 
+  await evaluate(client, `new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/coreEngine.js?product-registration-e2e=1';script.onload=()=>resolve(true);script.onerror=()=>reject(new Error('coreEngine load failed'));document.head.appendChild(script);})`);
+  const registration = await evaluate(client, `(async()=>{
+    const readModule=await import('/reference-data/product-master-read-adapter.js?registration-base=1');
+    const baseResult=await readModule.productMasterReadAdapter.getSnapshotResult();
+    const commandModule=await import('/reference-data/product-master-command-adapter.js?registration-command=1');
+    const command={
+      schemaVersion:'MERCHOPS_PRODUCT_REGISTRATION_V1',operationId:'BROWSER-MERCHOPS-REGISTER-1',
+      ownerAppId:'master-lookup',sourceAppId:'merchops',expectedRevision:baseResult.snapshot.snapshotVersion,
+      baseSnapshotId:baseResult.snapshot.snapshotId,baseContentHash:baseResult.snapshot.contentHash,
+      reason:'browser product registration e2e',actor:{actorId:'browser-tester',actorState:'UNVERIFIED_LOCAL'},
+      products:[{코드:'P-NEW',품목코드:'P-NEW',품목명:'브라우저 신규상품',규격:'1kg',단위:'BOX',입고가:0,구매처:'공급사',창고:'01',기본:'1',과세:0}]
+    };
+    const first=await commandModule.productMasterCommandAdapter.registerMerchOpsProducts(command);
+    const replay=await commandModule.productMasterCommandAdapter.registerMerchOpsProducts(command);
+    const finalResult=await readModule.productMasterReadAdapter.getSnapshotResult();
+    const product=finalResult.snapshot.data.products.find(row=>row.코드==='P-NEW');
+    const history=JSON.parse(localStorage.getItem('merchHistory_v870')||'[]').filter(row=>row.operationId===command.operationId);
+    return {firstStatus:first.status,replayStatus:replay.status,firstRevision:first.revision,finalRevision:finalResult.snapshot.snapshotVersion,product,historyCount:history.length,firstHistoryCount:first.historyCount,error:first.error,replayError:replay.error,rollback:first.rollback};
+  })()`);
+  assert.equal(registration.firstStatus, 'APPLIED', JSON.stringify(registration));
+  assert.equal(registration.replayStatus, 'DUPLICATE', JSON.stringify(registration));
+  assert.equal(registration.firstRevision, registration.finalRevision);
+  assert.equal(registration.product.품목명, '브라우저 신규상품');
+  assert.equal(registration.product.입고가, 0);
+  assert.equal('수량' in registration.product, false);
+  assert.equal('기준일자' in registration.product, false);
+  assert.equal(registration.historyCount, registration.firstHistoryCount, 'browser retry must not duplicate registration history');
+
   const immutableCopy = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('MerchOpsDB',2);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('master_products','readwrite');tx.objectStore('master_products').put({코드:'P-STORE',품목명:'Owner changed later'});tx.oncomplete=()=>{db.close();resolve({held:globalThis.__heldProductSnapshot.data.products[0].품목명});};tx.onerror=()=>reject(tx.error);};})`);
   assert.equal(immutableCopy.held, 'Store source', 'an already copied Snapshot must not change with a later owner revision');
 
@@ -206,7 +234,7 @@ try {
   await waitFor(() => evaluate(client, `document.querySelector('#changeRequestInboxState').textContent.includes('사용할 수 없습니다')`), 'CustomerMaster unavailable request adapter diagnostic');
   assert.equal(await evaluate(client, `document.documentElement.dataset.customerMasterReady==='true' && !!document.querySelector('#newCustomerButton')`), true, 'request adapter failure must not block CustomerMaster core');
   assert.deepEqual(runtimeErrors, [], `browser console/runtime errors: ${runtimeErrors.join(' | ')}`);
-  console.log('PASS reference Snapshot, no-create read, idempotent inbox, owner failure isolation, and browser console');
+  console.log('PASS reference Snapshot, no-create read, idempotent inbox, product registration owner command, owner failure isolation, and browser console');
 } finally {
   client?.close();
   if (browserProcess && browserProcess.exitCode === null && !browserProcess.killed) {

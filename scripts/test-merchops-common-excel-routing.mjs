@@ -157,7 +157,27 @@ assert.match(html, /ui\.registrationMode === true[\s\S]*?원본 Excel과 상품 
 assert.match(html, /remainingRegistrationRows === 0[\s\S]*?setRegistrationMode\?\.\(false\)/,
   "removing the last unregistered row must return to the normal work view");
 
-const versions = [...html.matchAll(/v2\.1\.194_NewProductDelete/g)].length;
-assert.ok(versions >= 2, "all visible MerchOps version labels must use v2.1.194");
+const registrationHelperStart = html.indexOf("window.MERCH_REGISTRATION_WORK_COLS =");
+const registrationHelperEnd = html.indexOf("</script>", registrationHelperStart);
+assert.ok(registrationHelperStart >= 0 && registrationHelperEnd > registrationHelperStart,
+  "registration product projection helpers must exist");
+const registrationContext = vm.createContext({ window: {} });
+registrationContext.window.keepExcelCellValue = (value, numeric = false) => numeric ? Number(value) : value;
+vm.runInContext(html.slice(registrationHelperStart, registrationHelperEnd), registrationContext, { filename: "MerchOps-registration-helpers.js" });
+const registrationProduct = registrationContext.window.buildMerchRegistrationProduct({
+  품목코드: " N-001 ", 품목명: " 신규상품 ", 규격: " 1kg ", 단위: " BOX ",
+  입고가: 0, 구매처: "공급사", 창고: "01", 기본: "1", 부가세여부: "비과세",
+  수량: 17, 기준일자: "2026-09-04",
+});
+assert.equal(registrationProduct.코드, "N-001");
+assert.equal(registrationProduct.입고가, 0, "explicit numeric zero must survive registration projection");
+assert.equal(registrationProduct.과세, 1);
+assert.equal("수량" in registrationProduct, false, "quantity must remain an operational work value");
+assert.equal("기준일자" in registrationProduct, false, "business date must remain an operational work value");
+assert.match(toolbar.slice(registrationToolsAt), /data-merch-registration-apply[\s\S]*?owner-command[\s\S]*?onClick: handleRegisterUnregisteredItems[\s\S]*?"선택 상품 등록"/,
+  "the registration sub-toolbar must expose actual owner-command product registration");
+
+const versions = [...html.matchAll(/v2\.1\.195_ProductRegistration/g)].length;
+assert.ok(versions >= 2, "all visible MerchOps version labels must use v2.1.195");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");
