@@ -11,6 +11,14 @@ const html = fs.readFileSync(appPath, 'utf8');
 
 assert.match(html, /ORDER Q LAB/);
 assert.match(html, /orderq-lab-workspace\/v1/);
+assert.match(html, /쇼핑몰 주문내역/);
+assert.match(html, /id="shopFileInput"/);
+assert.match(html, /id="shopDateSelect"/);
+assert.match(html, /id="shopCommitButton"/);
+assert.match(html, /function parseShopMatrix\(matrix/);
+assert.match(html, /function analyzeShopDate\(/);
+assert.match(html, /function persistStateAtomically\(/);
+assert.match(html, /documentNo: ''/);
 assert.match(html, /label: '주문'/);
 assert.match(html, /label: '기초재고'/);
 assert.match(html, /label: '구매'/);
