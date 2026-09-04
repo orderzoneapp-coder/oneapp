@@ -141,6 +141,47 @@ const upload = async (client, file) => {
   const fileNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#fileInput' });
   await client.send('DOM.setFileInputFiles', { nodeId: fileNode.nodeId, files: [file] });
 };
+const refreshPicker = async (client, {
+  openSelector, dialogSelector, inputSelector, refreshSelector, resultSelector, expectedQuery, expectSuccess, counterKey
+}) => {
+  await click(client, openSelector);
+  await expr(client, `document.querySelector(${JSON.stringify(dialogSelector)})?.open===true`, `${counterKey} dialog open`);
+  assert.equal(await evaluate(client, `document.querySelector(${JSON.stringify(inputSelector)}).value`), expectedQuery,
+    `${counterKey}: picker must open with its source search term`);
+  const started = await evaluate(client, `(()=>{
+    const button=document.querySelector(${JSON.stringify(refreshSelector)});
+    window[${JSON.stringify(counterKey)}]=0;
+    button.addEventListener('click',()=>{window[${JSON.stringify(counterKey)}]+=1;},{capture:true});
+    button.click();
+    button.click();
+    return {disabled:button.disabled,query:document.querySelector(${JSON.stringify(inputSelector)}).value};
+  })()`);
+  assert.equal(started.disabled, true, `${counterKey}: refresh button must disable before awaiting`);
+  assert.equal(started.query, expectedQuery, `${counterKey}: search term must stay visible during refresh`);
+  await expr(client, `(()=>{
+    const dialog=document.querySelector(${JSON.stringify(dialogSelector)});
+    const button=document.querySelector(${JSON.stringify(refreshSelector)});
+    const input=document.querySelector(${JSON.stringify(inputSelector)});
+    return dialog?.open===true&&button?.disabled===false&&input?.value===${JSON.stringify(expectedQuery)}&&document.activeElement===input;
+  })()`, `${counterKey} refresh completion`, 30_000);
+  const completed = await evaluate(client, `(()=>({
+    clickCount:window[${JSON.stringify(counterKey)}],
+    query:document.querySelector(${JSON.stringify(inputSelector)}).value,
+    focused:document.activeElement===document.querySelector(${JSON.stringify(inputSelector)}),
+    resultCount:document.querySelectorAll(${JSON.stringify(resultSelector)}).length,
+    message:document.querySelector(${JSON.stringify(dialogSelector)}+' .smart-dialog__message').textContent
+  }))()`);
+  assert.equal(completed.clickCount, 1, `${counterKey}: disabled button must suppress a duplicate refresh click`);
+  assert.equal(completed.query, expectedQuery, `${counterKey}: completed refresh must restore the search term`);
+  assert.equal(completed.focused, true, `${counterKey}: completed refresh must restore search focus`);
+  assert.ok(completed.resultCount > 0, `${counterKey}: completed refresh must rerun the retained search`);
+  if (expectSuccess) assert.doesNotMatch(completed.message, /실패/, `${counterKey}: successful refresh must not show failure`);
+  else assert.match(completed.message, /새로고침에 실패했습니다.*검색어와 기존 검색 결과를 유지했습니다/,
+    `${counterKey}: failed refresh must explain preserved query and results`);
+  await click(client, `${dialogSelector} [data-close]`);
+  await expr(client, `!document.querySelector(${JSON.stringify(dialogSelector)})`, `${counterKey} dialog close`);
+  return completed;
+};
 const capture = async (client, name) => {
   const result = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, fromSurface: true });
   const target = join(screenshotDir, name);
@@ -213,6 +254,39 @@ try {
   await expr(client, `document.querySelectorAll('.shopping-order-candidate').length===5&&document.querySelectorAll('.shopping-order-candidate[data-status="NEW"]').length===4&&document.querySelectorAll('.shopping-order-candidate[data-status="REVIEW_REQUIRED"]').length===1`, 'one review candidate and four normal candidates', 30_000);
   assert.match(await evaluate(client, `document.querySelector('.shopping-order-candidate[data-status="REVIEW_REQUIRED"] .shopping-order-issues').textContent`), /금액/);
   assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '신규 주문 저장 4건');
+  const pickerRefresh = {
+    customerSuccess: await refreshPicker(client, {
+      openSelector: '[data-shopping-customer]', dialogSelector: 'dialog.smart-customer-dialog',
+      inputSelector: 'dialog.smart-customer-dialog input[type="search"]',
+      refreshSelector: 'dialog.smart-customer-dialog [data-customer-refresh]',
+      resultSelector: 'dialog.smart-customer-dialog .smart-customer-row', expectedQuery: customerNames[0],
+      expectSuccess: true, counterKey: '__customerRefreshSuccessClicks'
+    }),
+    productSuccess: await refreshPicker(client, {
+      openSelector: '[data-shopping-product-row]', dialogSelector: 'dialog.product-picker-dialog',
+      inputSelector: 'dialog.product-picker-dialog [data-product-search]',
+      refreshSelector: 'dialog.product-picker-dialog [data-refresh-product-reference]',
+      resultSelector: 'dialog.product-picker-dialog .product-picker-result', expectedQuery: sourceRows[0][6],
+      expectSuccess: true, counterKey: '__productRefreshSuccessClicks'
+    })
+  };
+  const validProductSnapshot = await evaluate(client, `localStorage.getItem('merchMaster_v870')`);
+  await evaluate(client, `localStorage.setItem('merchMaster_v870','{');true`);
+  pickerRefresh.customerFailure = await refreshPicker(client, {
+    openSelector: '[data-shopping-customer]', dialogSelector: 'dialog.smart-customer-dialog',
+    inputSelector: 'dialog.smart-customer-dialog input[type="search"]',
+    refreshSelector: 'dialog.smart-customer-dialog [data-customer-refresh]',
+    resultSelector: 'dialog.smart-customer-dialog .smart-customer-row', expectedQuery: customerNames[0],
+    expectSuccess: false, counterKey: '__customerRefreshFailureClicks'
+  });
+  pickerRefresh.productFailure = await refreshPicker(client, {
+    openSelector: '[data-shopping-product-row]', dialogSelector: 'dialog.product-picker-dialog',
+    inputSelector: 'dialog.product-picker-dialog [data-product-search]',
+    refreshSelector: 'dialog.product-picker-dialog [data-refresh-product-reference]',
+    resultSelector: 'dialog.product-picker-dialog .product-picker-result', expectedQuery: sourceRows[0][6],
+    expectSuccess: false, counterKey: '__productRefreshFailureClicks'
+  });
+  await evaluate(client, `localStorage.setItem('merchMaster_v870',${JSON.stringify(validProductSnapshot)});true`);
   await click(client, '#completeButton');
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=1');return (await db.getAll(db.STORE.ORDERS)).length===4;})()`, 'four isolated normal candidates saved', 30_000);
 
@@ -273,6 +347,7 @@ try {
     secondCommit: { priorDuplicates: 4, created: 1 },
     finalDuplicateZeroWrite: 5,
     stored: finalEvidence,
+    pickerRefresh,
     viewports: ['1920 light/dark', '1440 light/dark', '390 light/dark'],
     screenshots,
     isolation: { externalMutations: 0, localMutations: 0, exceptions: 0, consoleErrors: 0, temporaryProfile: true }

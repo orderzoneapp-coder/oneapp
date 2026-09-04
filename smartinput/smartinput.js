@@ -2473,14 +2473,30 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
       dialog.querySelector('[data-close]').addEventListener('click', () => finish(null));
       dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
       dialog.querySelector('[data-customer-refresh]').addEventListener('click', async event => {
+        const refreshButton = event.currentTarget;
+        if (!refreshButton || refreshButton.disabled) return;
         const retainedQuery = input.value;
-        event.currentTarget.disabled = true;
+        let refreshed = false;
+        let refreshError = null;
+        refreshButton.disabled = true;
         message.textContent = '기준정보를 새로고침하고 있습니다. 검색어는 유지됩니다.';
-        await refreshAllReferencesFromToolbar();
-        input.value = retainedQuery;
-        event.currentTarget.disabled = false;
-        render();
-        input.focus();
+        try {
+          refreshed = await refreshAllReferencesFromToolbar();
+        } catch (error) {
+          refreshError = error;
+        } finally {
+          input.value = retainedQuery;
+          refreshButton.disabled = false;
+          if (dialog.isConnected) {
+            render();
+            if (!refreshed) message.textContent = '기준정보 새로고침에 실패했습니다. 검색어와 기존 검색 결과를 유지했습니다.';
+            input.focus();
+          }
+        }
+        if (refreshError) {
+          setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
+          toast(refreshError.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
+        }
       });
       dialog.querySelector('[data-link-mode]').addEventListener('click', () => setLinkMode(!linkMode));
       dialog.querySelector('[data-link-cancel]').addEventListener('click', () => setLinkMode(false));
@@ -7090,14 +7106,30 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
   });
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => finish(null)));
   dialog.querySelector('[data-refresh-product-reference]').addEventListener('click', async event => {
+    const refreshButton = event.currentTarget;
+    if (!refreshButton || refreshButton.disabled) return;
     const retainedQuery = search.value;
-    event.currentTarget.disabled = true;
+    let refreshed = false;
+    let refreshError = null;
+    refreshButton.disabled = true;
     message.textContent = '기준정보를 새로고침하고 있습니다. 검색어는 유지됩니다.';
-    await refreshAllReferencesFromToolbar();
-    search.value = retainedQuery;
-    event.currentTarget.disabled = false;
-    render();
-    search.focus();
+    try {
+      refreshed = await refreshAllReferencesFromToolbar();
+    } catch (error) {
+      refreshError = error;
+    } finally {
+      search.value = retainedQuery;
+      refreshButton.disabled = false;
+      if (dialog.isConnected) {
+        render();
+        if (!refreshed) message.textContent = '기준정보 새로고침에 실패했습니다. 검색어와 기존 검색 결과를 유지했습니다.';
+        search.focus();
+      }
+    }
+    if (refreshError) {
+      setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
+      toast(refreshError.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
+    }
   });
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
   dialog.showModal();
