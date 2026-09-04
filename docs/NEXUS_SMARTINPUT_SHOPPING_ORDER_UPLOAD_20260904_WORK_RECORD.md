@@ -50,7 +50,8 @@
 - `node scripts/test-orderq-shopping-actual-ledger-browser.mjs`: PASS. actual-ledger race, stale read, owner 미해소, legacy fail-closed, candidate isolation, rollback을 검증한다.
 - `node scripts/validate-repository.mjs`: PASS, 24 checks / 0 warnings.
 - `node scripts/test-client-safety.mjs`: PASS.
-- 변경 JavaScript/ESM 11개 `node --check`: PASS.
+- `node scripts/test-history-settings-export-owner-boundaries.mjs`: PASS. manifest v1.3.11 승인 기준을 고정했다.
+- 변경 JavaScript/ESM 12개 `node --check`: PASS.
 - `git diff --check`: PASS.
 
 ### UI 증적
@@ -78,4 +79,5 @@
 - 최종 fetch 확인: `origin/main`, branch merge-base 모두 `d44bbda357268289269574aa8f7b36333e013be5`.
 - 구현 커밋: `22a344756315ddde8f2e27e3deaa11485f105cb7`.
 - PR: `#512` — `https://github.com/orderzoneapp-coder/oneapp/pull/512`.
+- 최초 PR CI run `33852183871`은 기능이 아니라 `test-history-settings-export-owner-boundaries.mjs`의 이전 manifest schema `1.3.10` 고정 assertion에서 중단됐다. 이번 변경 schema `1.3.11`에 맞춰 assertion을 갱신하고 해당 테스트와 validator를 로컬 재통과했다.
 - 최종 head/CI run은 검증 기록 보완 커밋 push 후 PM 위임 보고에 함께 고정한다. PM 독립 검증 승인 전 merge/deploy는 금지한다.

@@ -22,6 +22,7 @@
 - owner race/stale/rollback and incomplete legacy ledger tests PASS
 - 1920/1440/390 light/dark: overflow 0, clipping 0, focus PASS, console/runtime errors 0
 - repository validator 24 checks / 0 warnings, client safety PASS, syntax PASS, `git diff --check` PASS
+- History/Settings/Export cross-owner boundary test PASS with manifest schema v1.3.11
 
 ## Evidence and rollback
 
