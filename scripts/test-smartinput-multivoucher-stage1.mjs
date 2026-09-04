@@ -70,6 +70,22 @@ assert.equal(roleParsed.rows[0].billingCustomerId, 'B1');
 assert.equal(roleParsed.rows[0].billingCustomerCode, 'B-01');
 assert.equal(roleParsed.rows[0].billingCustomerName, '세무사');
 
+const orderBusinessFields = structuredFieldsForMode('order', contract.PRODUCT_FIELD_DEFINITIONS);
+assert.equal(orderBusinessFields.some(field => field.id === 'rowTransactionType'), true,
+  '주문 거래유형은 상단 업무키로 매핑할 수 있어야 한다.');
+assert.equal(orderBusinessFields.some(field => field.id === 'sourceVoucherIndex'), false,
+  '주문 입력 양식에 내부 원본 순번을 선택 대상으로 노출하지 않아야 한다.');
+assert.equal(orderBusinessFields.some(field => field.id === 'manualSplitKey'), false,
+  '주문 전표는 수동 순번·분리키가 아니라 ERP 업무키로만 구분해야 한다.');
+const orderBusinessParsed = parseStructuredSheet([
+  ['거래처코드', '일자-No.', '거래유형', '창고코드', '품목코드', '품목명', '수량'],
+  ['C-01', '2026/09/05-7', '기타', '88', 'A', '상품A', '1']
+], {
+  fieldDefinitions: orderBusinessFields,
+  numberParser: contract.numberOrNull
+});
+assert.equal(orderBusinessParsed.rows[0].rowTransactionType, '기타');
+
 const purchaseRoleParsed = parseStructuredSheet([
   ['공급처ID', '공급처코드', '공급처명', '품목코드', '품목명', '수량'],
   ['P1', 'P-01', '공급사', 'A', '상품A', '1']
@@ -129,6 +145,58 @@ const distinctOrderRole = groupVoucherRows('order', [{
 }])[0];
 assert.equal(distinctOrderRole.deliveryCustomerId, 'D1');
 assert.equal(distinctOrderRole.billingCustomerId, 'B1');
+
+const erpOrderRows = [
+  {
+    rowId: 'ERP-1', sourceBatchId: 'BATCH-UPLOAD', sourceDocumentKey: 'DOC-A', sourceVoucherIndex: 1, manualSplitKey: 'A',
+    rowCustomerId: 'CUSTOMER-A-OLD', rowCustomerCode: 'C-01', rowCustomerName: '거래처A',
+    rowVoucherNo: '2026/09/05-7', rowTransactionType: '기타', rowWarehouseCode: '88',
+    rowVoucherDate: '2026-09-05', rowDeliveryDate: '2026-09-05', itemCode: 'A', itemName: '상품A', quantity: 1, unit: 'EA'
+  },
+  {
+    rowId: 'ERP-OTHER', sourceBatchId: 'BATCH-UPLOAD', sourceDocumentKey: 'DOC-X', sourceVoucherIndex: 99, manualSplitKey: 'X',
+    rowCustomerCode: 'C-02', rowCustomerName: '거래처B', rowVoucherNo: '2026/09/05-8', rowTransactionType: '기타', rowWarehouseCode: '88',
+    rowVoucherDate: '2026-09-05', rowDeliveryDate: '2026-09-05', itemCode: 'B', itemName: '상품B', quantity: 1, unit: 'EA'
+  },
+  {
+    rowId: 'ERP-2', sourceBatchId: 'BATCH-UPLOAD', sourceDocumentKey: 'DOC-B', sourceVoucherIndex: 2, manualSplitKey: 'B',
+    rowCustomerId: 'CUSTOMER-A-NEW', rowCustomerCode: 'C-01', rowCustomerName: '거래처A',
+    rowVoucherNo: '2026/09/05-7', rowTransactionType: '기타', rowWarehouseCode: '88',
+    rowVoucherDate: '2026-09-05', rowDeliveryDate: '2026-09-05', itemCode: 'C', itemName: '상품C', quantity: 2, unit: 'EA'
+  }
+];
+const erpOrderGroups = groupVoucherRows('order', erpOrderRows);
+assert.equal(erpOrderGroups.length, 2, '한 업로드의 주문은 원본 순번·연속 배치가 달라도 같은 네 업무키를 한 전표로 묶어야 한다.');
+assert.deepEqual(erpOrderGroups[0].rows.map(row => row.rowId), ['ERP-1', 'ERP-2'],
+  '비연속 주문행도 거래처코드·주문참조번호·거래유형·창고코드가 같으면 원본 순서대로 합쳐야 한다.');
+assert.doesNotMatch(erpOrderGroups[0].voucherGroupKey, /DOC|INDEX|MANUAL/,
+  '주문 그룹키에 문서키·순번·수동분리키를 포함하지 않아야 한다.');
+assert.deepEqual(erpOrderGroups[0].voucherGroupKey.split('|').slice(2).map(decodeURIComponent), [
+  '2026/09/05-7', '88', 'C-01', '기타'
+], '주문 업무키는 주문번호 → 창고 → 거래처 → 거래유형 우선순위를 명시적으로 유지해야 한다.');
+assert.equal(groupVoucherRows('order', [
+  erpOrderRows[0],
+  { ...erpOrderRows[2], rowId: 'ERP-NEXT-UPLOAD', sourceBatchId: 'BATCH-NEXT' }
+]).length, 2, '서로 다른 업로드 작업은 같은 업무키여도 자동으로 교차 병합하지 않아야 한다.');
+
+for (const [fieldName, changedValue] of [
+  ['rowCustomerCode', 'C-99'],
+  ['rowVoucherNo', '2026/09/05-99'],
+  ['rowTransactionType', '일반'],
+  ['rowWarehouseCode', '77']
+]) {
+  const split = groupVoucherRows('order', [erpOrderRows[0], { ...erpOrderRows[2], rowId: `DIFF-${fieldName}`, [fieldName]: changedValue }]);
+  assert.equal(split.length, 2, `${fieldName}가 다르면 주문 전표를 분리해야 한다.`);
+}
+
+const conflictingOrderDates = groupVoucherRows('order', [
+  erpOrderRows[0],
+  { ...erpOrderRows[2], rowId: 'ERP-DATE-CONFLICT', rowVoucherDate: '2026-09-06' }
+]);
+assert.equal(conflictingOrderDates.length, 1, '주문일은 전표 분리키가 아니어야 한다.');
+assert.equal(conflictingOrderDates[0].validationStatus, 'REVIEW_REQUIRED',
+  '같은 업무키 안의 상단 날짜 충돌은 첫 값을 임의 채택하지 않고 전표 전체 확인으로 차단해야 한다.');
+assert.match(conflictingOrderDates[0].validationErrors.join('\n'), /주문일자 값이 같은 주문서 안에서 다름/);
 
 const purchaseRole = groupVoucherRows('purchase', [{
   sourceBatchId: 'ROLE-PURCHASE', sourceDocumentKey: 'DOC',
@@ -215,5 +283,9 @@ assert.equal(payload.sourceDocumentKey, orderGroup.idempotencyKey);
 assert.equal(payload.items[0].rawQuantity, -1);
 assert.equal(payload.items[0].finalQuantity, -1);
 assert.equal(payload.items[0].supplyAmount, -2000);
+const erpPayload = buildOrderGroupPayload(erpOrderGroups[0], {});
+assert.equal(erpPayload.externalOrderNo, '2026/09/05-7');
+assert.equal(erpPayload.transactionType, '기타');
+assert.equal(erpPayload.warehouseCode, '88');
 
 console.log('SmartInput multi-voucher stage 1 PASS');

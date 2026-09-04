@@ -12,6 +12,8 @@ const MODE_CONFIG = Object.freeze({
     warehouseAliases: ['창고', '창고코드', '출하창고', '출하창고코드'],
     voucherNoLabel: '주문번호',
     voucherNoAliases: ['전표번호', '주문번호', '외부전표번호', '일자-No.'],
+    transactionTypeLabel: '거래유형',
+    transactionTypeAliases: ['거래유형', '거래구분'],
     quantityLabel: '주문수량',
     quantityAliases: ['주문수량', '수량'],
     unitPriceLabel: '주문단가',
@@ -126,6 +128,11 @@ export function modeConfig(mode) {
 
 export function stage1RowFieldDefinitions(mode = 'order') {
   const config = modeConfig(mode);
+  const sourcePartitionFields = mode === 'order' ? [] : [
+    field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
+    field('sourceVoucherIndex', '원본전표순번', ['원본전표순번', '전표순번'], 'NUMBER'),
+    field('manualSplitKey', '전표분리키', ['전표분리키', '수동분리키'])
+  ];
   return Object.freeze([
     field('rowCustomerCode', config.customerCodeLabel, config.customerCodeAliases),
     field('rowCustomerName', config.customerLabel, config.customerAliases),
@@ -133,10 +140,9 @@ export function stage1RowFieldDefinitions(mode = 'order') {
     field('rowDeliveryDate', config.deliveryDateLabel, config.deliveryDateAliases),
     field('rowWarehouseCode', config.warehouseLabel, config.warehouseAliases),
     field('rowVoucherNo', config.voucherNoLabel, config.voucherNoAliases),
+    ...(mode === 'order' ? [field('rowTransactionType', config.transactionTypeLabel, config.transactionTypeAliases)] : []),
     ...roleFieldDefinitions(mode),
-    field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
-    field('sourceVoucherIndex', '원본전표순번', ['원본전표순번', '전표순번'], 'NUMBER'),
-    field('manualSplitKey', '전표분리키', ['전표분리키', '수동분리키'])
+    ...sourcePartitionFields
   ]);
 }
 
@@ -149,7 +155,12 @@ export function structuredFieldsForMode(mode, productFieldDefinitions = []) {
     field('unitPrice', config.unitPriceLabel, config.unitPriceAliases, 'NUMBER')
   ];
   const overriddenIds = new Set(overrides.map(item => item.id));
-  return [...overrides, ...productFieldDefinitions.filter(item => !overriddenIds.has(item.id))];
+  const orderInternalFields = new Set(['sourceDocumentKey', 'sourceVoucherIndex', 'manualSplitKey']);
+  return [
+    ...overrides,
+    ...productFieldDefinitions.filter(item => !overriddenIds.has(item.id)
+      && !(mode === 'order' && orderInternalFields.has(item.id)))
+  ];
 }
 
 export function normalizeStage1Row(row = {}, context = {}) {
@@ -186,6 +197,7 @@ export function normalizeStage1Row(row = {}, context = {}) {
     rowWarehouseId: text(row.rowWarehouseId),
     rowWarehouseCode: text(row.rowWarehouseCode),
     rowVoucherNo: text(row.rowVoucherNo),
+    rowTransactionType: text(row.rowTransactionType),
     sourceBatchId: text(row.sourceBatchId || context.sourceBatchId || row.batchId),
     sourceDocumentKey: text(row.sourceDocumentKey || context.sourceDocumentKey),
     sourceVoucherIndex: numberOrNull(row.sourceVoucherIndex ?? context.sourceVoucherIndex) ?? 1,
@@ -285,6 +297,19 @@ function sourcePartition(row) {
 
 export function buildVoucherGroupKey(mode, row, header = {}) {
   const role = groupRoleSnapshot(mode, row, header);
+  if (mode === 'order') {
+    const customerBusinessKey = role.deliveryCustomerCode
+      || role.deliveryCustomerId
+      || role.deliveryCustomerName;
+    const parts = [
+      text(row.sourceBatchId || row.batchId || header.sourceBatchId),
+      rowValue(row, 'rowVoucherNo', ''),
+      rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName),
+      customerBusinessKey,
+      rowValue(row, 'rowTransactionType', header.transactionType)
+    ];
+    return `ORDER|${parts.map(part => encodeURIComponent(part)).join('|')}`;
+  }
   const parts = [
     text(row.sourceBatchId || row.batchId || header.sourceBatchId),
     sourcePartition(row),
@@ -319,7 +344,7 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
         deliveryDate: rowValue(row, 'rowDeliveryDate', header.deliveryDate),
         warehouseId: rowValue(row, 'rowWarehouseId', header.warehouseId),
         warehouseCode: rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName),
-        transactionType: text(header.transactionType),
+        transactionType: rowValue(row, 'rowTransactionType', header.transactionType),
         externalVoucherNo: text(row.rowVoucherNo),
         sourceBatchId: text(row.sourceBatchId),
         sourceDocumentKey: text(row.sourceDocumentKey),
@@ -337,6 +362,17 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
     }
     if (row.quantity === null) group.validationErrors.push(`${row.sourceRowNo || index + 1}행 수량 공란`);
     if (row.unitConversionStatus === 'REVIEW_REQUIRED') group.validationErrors.push(`${row.sourceRowNo || index + 1}행 단위 환산 확인 필요`);
+    if (mode === 'order') {
+      [
+        ['주문일자', group.voucherDate, rowValue(row, 'rowVoucherDate', header.voucherDate || header.orderDate)],
+        ['배송일자', group.deliveryDate, rowValue(row, 'rowDeliveryDate', header.deliveryDate)],
+        ['출하창고 ID', group.warehouseId, rowValue(row, 'rowWarehouseId', header.warehouseId)]
+      ].forEach(([label, expected, actual]) => {
+        if (text(expected) && text(actual) && text(expected) !== text(actual)) {
+          group.validationErrors.push(`${row.sourceRowNo || index + 1}행 ${label} 값이 같은 주문서 안에서 다름`);
+        }
+      });
+    }
     group.rows.push({ ...row, voucherGroupKey });
   });
   return [...groups.values()].map(group => ({
