@@ -313,10 +313,13 @@
     @media (max-width: 700px) {
       body { min-width: 0; }
       .topbar { height: auto; min-height: 58px; padding: 9px 10px; gap: 8px; flex-wrap: wrap; }
-      .brand { min-width: 0; flex: 1 1 140px; }
+      .brand { min-width: 0; width: 100%; flex: 0 0 100%; }
+      .brand > div:last-child { min-width: 0; }
+      .brand strong, .brand small { white-space: nowrap; }
       .brand small { font-size: 8px; }
-      .top-actions { order: 2; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex-basis: 100%; gap: 5px; }
-      .top-actions .btn { min-width: 0; min-height: 32px; padding: 0 3px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+      .top-actions { order: 2; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; flex: 0 0 100%; gap: 5px; }
+      .top-actions .btn { min-width: 0; width: 100%; min-height: 32px; padding: 0 2px; font-size: clamp(9px, 2.6vw, 10px); white-space: nowrap; }
+      [data-shop-theme="light"] .top-actions .btn.primary { color: #042b27; border-color: var(--cyan); background: var(--cyan); }
       .top-flow { order: 3; flex-basis: 100%; overflow-x: auto; padding-bottom: 2px; }
       .flow-step { flex: 0 0 auto; padding: 6px 9px; }
       main { padding: 10px 8px 20px; }

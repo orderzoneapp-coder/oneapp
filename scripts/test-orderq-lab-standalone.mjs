@@ -52,6 +52,16 @@ assert.match(html, /append\('재고수불부'/);
 assert.match(html, /append\('창고별재고'/);
 assert.match(html, /window\.OrderQLabTestPort/);
 
+const mobileStyles = html.slice(html.indexOf('@media (max-width: 700px)'), html.indexOf('</style>'));
+assert.match(mobileStyles, /\.brand\s*\{[^}]*width:\s*100%;[^}]*flex:\s*0 0 100%;[^}]*\}/s, 'mobile brand must own an independent full-width row');
+assert.match(mobileStyles, /\.top-actions\s*\{[^}]*width:\s*100%;[^}]*flex:\s*0 0 100%;[^}]*\}/s, 'mobile actions must own an independent full-width row');
+assert.match(mobileStyles, /\.top-actions \.btn\s*\{[^}]*width:\s*100%;[^}]*white-space:\s*nowrap;[^}]*\}/s, 'mobile action labels must stay readable without wrapping');
+assert.doesNotMatch(mobileStyles, /\.top-actions \.btn\s*\{[^}]*(?:overflow:\s*hidden|text-overflow:\s*ellipsis)/s, 'mobile action labels must not be clipped or ellipsized');
+assert.match(mobileStyles, /\[data-shop-theme="light"\] \.top-actions \.btn\.primary\s*\{[^}]*color:\s*#042b27;[^}]*background:\s*var\(--cyan\);[^}]*\}/s, 'light mobile primary action must retain readable contrast');
+const topActions = html.match(/<div class="top-actions">([\s\S]*?)<\/div>/)?.[1] || '';
+const topActionLabels = [...topActions.matchAll(/<button[^>]*>([^<]+)<\/button>/g)].map((match) => match[1].trim());
+assert.deepEqual(topActionLabels, ['일반모드', '실행취소', '작업 저장', '결과 Excel', '초기화']);
+
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
 assert.equal(new Set(ids).size, ids.length, 'HTML id attributes must be unique');
 

@@ -92,7 +92,8 @@
 - 1920×1080 dark 및 light: 페이지 가로 넘침 없음, 쇼핑몰 패널 1,554px, 파일 선택 버튼 대비 정상
 - 1440×900 dark 및 light: 페이지 가로 넘침 없음, 쇼핑몰 패널 1,359px, 파일 선택 버튼 대비 정상
 - 390×844 dark 및 light: 문서 폭 375px로 페이지 가로 넘침 없음, 쇼핑몰 패널 337px. 1,506px 결과 표는 357px `table-wrap` 내부 스크롤로 제한
-- 모바일 상단 5개 액션은 동일 폭 grid로 배치해 잘림을 줄였고 light 모드 파일 선택 버튼의 전경/배경 대비를 별도로 보정
+- PM 1차 독립검증에서 브랜드와 첫 액션이 같은 행에 겹친 증적을 차단 이슈로 판정했다. 모바일 브랜드와 액션을 각각 `width: 100%; flex: 0 0 100%`인 독립 1·2행으로 고정하고 버튼 clip/ellipsis를 제거했다.
+- 수정 후 390px light/dark에서 브랜드 영역은 세로 9–43px, 액션 영역은 51–83px로 겹침 0, 브랜드 두 문구 모두 1줄, 5개 버튼 모두 `scrollWidth <= clientWidth`, 문서 `scrollWidth = clientWidth = 375px`를 확인했다. light 모드 `결과 Excel`은 cyan 배경과 짙은 글자색을 명시해 라벨 대비를 복구했다.
 - 실제 14행 파일: `9월 4일 2차 업로드 · 변경 없음`, 14행·5블록·2ms
 - 실제 누적 파일: 207개 날짜 옵션, 기본 선택 2026-09-04, 전체 12,301행 중 14행·5블록·664ms, 변경 없음
 - `결과 Excel`을 브라우저에서 실행해 성공 안내를 확인했고, 생성 workbook의 6개 시트와 값은 engine 재개봉 테스트로 검증
@@ -101,7 +102,8 @@
 캡처는 저장소 밖 작업 증적 폴더에 두어 제품 diff에 포함하지 않았다.
 
 - `C:\Users\USER\Documents\ChatGPT\NEXUS\evidence\NEXUS-ORDERQ-SHOP-SNAPSHOT-20260904-01\orderq-shop-1920-dark.png`
-- `C:\Users\USER\Documents\ChatGPT\NEXUS\evidence\NEXUS-ORDERQ-SHOP-SNAPSHOT-20260904-01\orderq-shop-390-light.png`
+- `C:\Users\USER\Documents\ChatGPT\NEXUS\evidence\NEXUS-ORDERQ-SHOP-SNAPSHOT-20260904-01\orderq-shop-390-light-pmfix.png`
+- `C:\Users\USER\Documents\ChatGPT\NEXUS\evidence\NEXUS-ORDERQ-SHOP-SNAPSHOT-20260904-01\orderq-shop-390-dark-pmfix.png`
 
 ## 알려진 제한·rollback
 
