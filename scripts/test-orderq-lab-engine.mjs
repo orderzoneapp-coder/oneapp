@@ -85,7 +85,7 @@ const context = {
 context.window = context;
 vm.runInNewContext(script, context, { filename: 'OrderQ_Lab.inline.js' });
 const port = context.OrderQLabTestPort;
-assert.equal(port.version, '1.0.0');
+assert.equal(port.version, '1.1.0');
 
 const opening = port.parseMatrix([
   ['회사명 : 원앱 / 1창고 / 2026/09/02 / 재고현황'],
