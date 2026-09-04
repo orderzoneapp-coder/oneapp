@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.9",
-  "updatedAt": "2026-09-03",
+  "schemaVersion": "1.3.10",
+  "updatedAt": "2026-09-04",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -443,14 +443,16 @@
       "ownedContracts": [
         "orderq-official-voucher-core",
         "orderq-official-sync",
-        "orderq-unresolved-review-read-model"
+        "orderq-unresolved-review-read-model",
+        "orderq-shopping-order-import"
       ],
       "sharedContracts": [
         "cloud-url",
         "orderq-vnext-sync",
         "voucher-activity-snapshot",
         "product-master",
-        "orderq-unresolved-review-read-model"
+        "orderq-unresolved-review-read-model",
+        "orderq-shopping-order-import"
       ]
     },
     {
@@ -834,6 +836,37 @@
           "syncQueue"
         ]
       }
+    },
+    {
+      "id": "orderq-shopping-order-import",
+      "owner": "orderq-vnext",
+      "consumers": [],
+      "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+      "adapterVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1",
+      "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1",
+      "writerPolicy": "Only the ORDER Q shopping-order command Adapter delegates to the owner Repository. The Repository reads actual ORDER Q orders and orderItems, recomputes the company/customer/delivery-date/warehouse/item-multiset signature and actual count inside each candidate's existing DB v7 transaction, and writes only the next surplus order with its items, creation event and local queue rows. Duplicate and review-required candidates write nothing; a failed candidate transaction does not roll back a different candidate.",
+      "identityPolicy": "The signature uses company, owner-resolved customer, delivery date, owner-resolved shipment warehouse, and a duplicate-preserving item multiset of product identity, specification, unit, quantity, unit price and amount. Source order status, group, filename, upload time, absolute row number, memo, address and phone remain immutable evidence but do not change isDuplicate. Existing manual ORDER Q orders count when the same actual signature can be derived.",
+      "occurrencePolicy": "For source occurrence n and actual-ledger count m, isDuplicate is n <= m and the surplus is max(0,n-m). The sourceMessageKey is an internal signature-plus-occurrence idempotency key, never a fabricated external order number. Each write transaction rechecks m before insertion and resolves a matching unique-key race to the existing order.",
+      "boundaryPolicy": "The fixed 17-column shopping source has no order number. Group is not an order identifier. A changed company/customer/delivery-date/warehouse scope or an explicit upstream source boundary starts a candidate; non-contiguous same-customer runs stay separate. Repeated adjacent order-content sequences inside one otherwise unbounded customer run fail closed as AMBIGUOUS_SOURCE_ORDER_BOUNDARY.",
+      "activationPolicy": "Owner core and Adapter only. SmartInput product UI and upload flow are not connected in this phase. This is local actual-ledger idempotency and does not claim multi-device global duplicate prevention.",
+      "migrationPolicy": "Reuse oneapp-orderq-pre-m1-v6 DB version 7 and the existing orders, orderItems, orderEvents, syncQueue and meta Stores plus the existing unique orders.bySourceMessageKey index. No DB version, Store, key, index, migration, reset or existing record rewrite is introduced.",
+      "resources": {
+        "coreAsset": "orderq/shopping-order-dedupe-core.js",
+        "adapterAsset": "orderq/shopping-order-command-adapter.js",
+        "repositoryAsset": "orderq/shopping-order-import-repository.js",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "databaseVersion": 7,
+        "transactionMode": "readwrite per candidate",
+        "indexedDbStores": [
+          "orders",
+          "orderItems",
+          "orderEvents",
+          "syncQueue",
+          "meta"
+        ],
+        "existingUniqueIndex": "orders.bySourceMessageKey"
+      },
+      "rollback": "Revert the Phase 1 core, Adapter, Repository, manifest, architecture, report and tests as one commit. This removes future shopping-order calls without deleting or rewriting any ORDER Q DB v7 data; orders already created through an explicitly invoked owner command remain ordinary auditable ORDER Q facts."
     },
     {
       "id": "orderq-unresolved-review-read-model",

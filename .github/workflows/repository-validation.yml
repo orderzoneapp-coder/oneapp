@@ -119,6 +119,11 @@ jobs:
       - name: Test ORDER Q cloud transaction atomicity
         run: node scripts/test-orderq-cloud-atomicity.mjs
 
+      - name: Test ORDER Q shopping-order actual-ledger idempotency
+        run: |
+          node scripts/test-orderq-shopping-actual-ledger-dedupe.mjs
+          node scripts/test-orderq-shopping-actual-ledger-browser.mjs
+
       - name: Test archived Excel-only OrderQ Lab contracts and engine
         run: |
           node scripts/test-orderq-lab-standalone.mjs

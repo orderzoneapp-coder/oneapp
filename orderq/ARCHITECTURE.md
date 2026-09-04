@@ -1,7 +1,7 @@
 # ORDER Q vNext Architecture
 
-Version: 0.9.0
-Reviewed: 2026-09-03
+Version: 0.9.1
+Reviewed: 2026-09-04
 Official voucher boundary review: `NEXUS-SI-V2-07A` / 2026-09-03
 
 ## 1. Scope
@@ -45,7 +45,19 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Effective transferred quantity, remaining quantity, transfer status, and operations status are derived. Negative remaining quantity is an over-transfer error and is never clamped to zero.
 - Operations closure is derived from all valid items having zero remaining quantity, no over-transfer, and administrator status not being `HOLD`. Close/reopen events record the transition and reason; `closedAt` is only a convenience projection.
 
-### 2.1 Official purchase/sale V2 contract
+### 2.1 Shopping-order actual-ledger idempotency (Phase 1)
+
+`orderq/shopping-order-command-adapter.js` is the only future SmartInput-facing boundary for fixed-source shopping order inspection and commit. It delegates all actual-ledger reads and writes to `shopping-order-import-repository.js`; a consumer must not open ORDER Q IndexedDB or raw Stores.
+
+- The authority is the current ORDER Q `orders` plus `orderItems`, including manual orders. Lab snapshots and SmartInput recovery data are evidence or cache only.
+- `ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1` hashes company, owner-resolved customer, delivery date, owner-resolved shipment warehouse, and the duplicate-preserving item multiset of product identity, specification, unit, quantity, unit price and amount. Status, group, filename, upload time, absolute row number, memo, address and phone are preserved evidence and excluded from duplicate identity.
+- For one signature, source occurrence `n` is duplicate exactly when `n <= existingCount`; the candidate surplus is `max(0, n-existingCount)`. The Repository repeats the actual count in the candidate transaction, so stale inspection, a second click, and concurrent tabs cannot create more than the surplus.
+- `SHOPPING_ORDER_V1:<signature>:<occurrence>` is an internal idempotency key under the existing unique `orders.bySourceMessageKey` index. It is not a source or external order number; `externalOrderNo` stays blank when the source has none.
+- One candidate transaction uses only existing DB v7 `orders`, `orderItems`, `orderEvents`, `syncQueue`, and `meta`. The order, every item, creation event, queue rows and internal order-number counter all commit or roll back together. Duplicate and review-required candidates are 0-write, and one failed candidate does not roll back a different normal candidate.
+- The fixed 17-column source has no order number. `그룹` is not treated as one. A changed company/customer/delivery-date/warehouse scope or explicit upstream boundary starts a candidate; non-contiguous same-customer runs remain distinct. An otherwise unbounded same-customer run containing a repeated adjacent order-content sequence fails closed with `AMBIGUOUS_SOURCE_ORDER_BOUNDARY`.
+- Existing DB v7 Store, key, index, version, migration, reset, official Voucher V2, inventory, AR/AP, common Runtime, server and Cloud gate remain unchanged. Phase 1 does not connect SmartInput UI and makes no multi-device global-deduplication claim.
+
+### 2.2 Official purchase/sale V2 contract
 
 - The current `VOUCHER_CORE_V1` finalize transaction writes the official document and lines, command receipt, voucher Revision, matched inventory movement or unresolved pending effect, the validated partner's base payable/receivable entry, unresolved-product identity where needed, and one `syncQueue` row as one IndexedDB commit. Failure leaves none of those finalize effects partially committed.
 - V1 keeps its existing partner validation. V2 separates voucher creation from customer matching: customer code and name are not voucher-required fields; a company-scoped Customer Snapshot code match under the owner `normalizedCustomerCode` rule creates the sale receivable or purchase payable base effect, while a missing or unmatched customer creates no AR/AP effect and does not block the voucher or inventory decision. The omission reason is stored in the Revision. Each created V2 AR/AP entry stores `effectiveAt=businessDate` and keeps command `occurredAt` separately; the Revision decision retains both dates. AR/AP closing, balance adjustment, tax invoices, offsetting and separate account adjustments remain outside this contract.
@@ -55,7 +67,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Existing official-voucher, Draft and test records are not migrated to V2 and are not read through a new V1 compatibility migration. Development stays additive inside SmartInput DB v5 and ORDER Q DB v7; existing stores and records are not deleted or reinitialized.
 - Purchase and sale use separate feature gates, validation and rollback. Normal SmartInput layout, buttons, keyboard shortcuts and workflow remain unchanged. Cloud Push/Pull, server deployment and official production activation are separate acceptance scopes.
 
-### 2.2 Unresolved-product review and impact-preview contract
+### 2.3 Unresolved-product review and impact-preview contract
 
 - Schema `ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1` requires `companyId` and provides deterministic exact filters, stable sorting with an unresolved-ID tie-breaker, and page/limit up to 200. It joins every pending effect and stored review link by `pendingEffectId`; an orphan effect, a missing document/line/Revision, an unconfirmed target, or a broken scope remains visible as `REVIEW_REQUIRED` rather than disappearing.
 - Each link keeps the confirmation-time original product code, name, specification and unit; warehouse; `businessDate`; input and signed purchase/sale quantity; document kind, document ID, line ID, document Revision and Revision ID; and a trace URL. Official inventory is represented as `{ status: NOT_APPLIED, label: 미반영, officialQuantity: null }`; the unapplied signed quantity is a separate field and is never rendered as official stock zero.
@@ -63,7 +75,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - Schema `ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1` is a pure, read-only projection. It returns affected documents, lines, signed/input totals, warehouses, dates and each latest relevant checkpoint, and reuses `evaluateStocktakeCheckpointConflictV2()`. Effects before the checkpoint and same-day effects without trusted order evidence are `DECISION_REQUIRED`; proven later effects are `APPLY_READY`; missing source evidence is `REVIEW_REQUIRED`. It creates no rematch command, inventory movement, reference-data change or UI action.
 - UI Gate U1 A was approved for Phase 6B, so `orderops` is the sole product UI consumer. It adds only a `미매칭` filter state to the existing `#resultsPanel`/`#previewTable`, exposes every Adapter page through bounded previous/next navigation, labels search/sort/column conditions as current-page scope, preserves the current page across list/detail transitions and the host view state on enter/exit, and calls impact preview only after explicit candidate selection. It adds no global tab, independent panel, popup, route, confirmation/apply action, write, Store or migration. Rollback removes the consumer module, result-state branch and manifest consumer registration while retaining all Phase 6A owner assets and DB v7 data. Phase 6B UI still exposes no rematch execution; the Phase 6C owner command is default-off and deliberately unconnected to product UI. Cloud/Pilot activation, correction/cancel and DB migration remain excluded.
 
-### 2.3 Inventory-rematch command contract
+### 2.4 Inventory-rematch command contract
 
 - Schema `ONEAPP_ORDERQ_INVENTORY_REMATCH_COMMAND_V2` requires the current company and official identity version, deterministic `commandId=idempotencyKey`, actor, zoned `occurredAt`/`judgedAt`, explicit selection evidence with `automaticConfirmation=false`, the current Product Snapshot schema/snapshot ID/revision/content hash, and complete expected document/effect link sets. Product names and similarity never authorize selection.
 - Before writing, the Repository verifies the Product Snapshot content hash and exact selected company/product ID/code/name/specification/unit. A readonly preflight, repeated inside the write transaction, reconciles pending and review evidence against the confirmed document, active confirmed line and hashed original Revision. It recalculates the factor-1 actual quantity, purchase-positive/sale-negative sign, warehouse, calendar-valid business date and only line/document-trusted business time, and requires document/line/Revision/pending/review to identify the same original command. Missing, partial, cross-company, changed, stale, jointly forged, or already-resolved evidence fails closed before official writes.
@@ -71,7 +83,7 @@ Later, only the Cloud Adapter boundary is intended to change to `Server API → 
 - One existing DB v7 transaction updates the unresolved and pending records and adds deterministic inventory/absorption movements, one unresolved-scoped audit Revision, one official command receipt, and one `OFFICIAL_INVENTORY_REMATCH_COMMAND` local syncQueue row. Original confirmed documents, lines, confirmation-time Product Snapshots, and their Revisions remain unchanged. A duplicate receipt returns the stored result even if the Product Snapshot later changes; a changed payload, stale evidence, or any write failure produces no partial official writes.
 - The rematch feature gate stays OFF by default. Its queue status is `WAITING_SERVER_CONTRACT` and is not in the current official Cloud entity allowlist. Phase 6C adds no UI action, product-master write, production/Pilot activation, correction/cancellation, DB version, Store, or migration. Rollback reverts the 6C core/Gateway/Repository additions and their docs/tests; existing DB v7 rows created during explicit test execution remain historical facts and are not deleted automatically.
 
-### 2.4 Official correction/cancel Revision contract
+### 2.5 Official correction/cancel Revision contract
 
 - Schema `ONEAPP_ORDERQ_OFFICIAL_REVISION_COMMAND_V2` and plan `ONEAPP_ORDERQ_OFFICIAL_REVISION_PLAN_V2` are owner-only contracts. A command requires company, purchase/sale kind, document ID, current expected Revision, `CORRECT` or `CANCEL`, actor, a calendar-valid zoned timestamp, reason, deterministic `commandId=idempotencyKey`, payload digest and the complete `ONEAPP_ORDERQ_OFFICIAL_REVISION_TARGET_V2` Head Snapshot. `CORRECT` also carries a complete replacement document/line Snapshot. The target contains the current projection, ACTIVE/CONFIRMED lines, hash-verified Head Revision, active inventory or pending-effect links and current command-receipt evidence.
 - The Repository performs the same state read first in a readonly transaction and then again in the single write transaction. It rejects a stale Revision, cancelled/non-confirmed document, company/kind/document mismatch, altered Revision hash, broken active effect, different payload under the same command ID, and missing or changed command receipt. Initial POST `businessSnapshot` and Phase 7A full after-Snapshot formats are handled explicitly: every stored business, identity and linkage field is reconciled to the current projection, and both `status` and `businessStatus` must independently be `CONFIRMED`. A successful retry returns the stored receipt without adding effects.
