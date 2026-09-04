@@ -44,7 +44,7 @@
   - `1+2 → 신규 1`, `2+2 → 신규 0`, `1+3 → 신규 2`
   - 수기 주문 포함, 품목 반복행 보존, 품목 순서 무관 multiset, 상태/그룹/파일명/업로드시각/행 offset 무관
   - 수량·금액 변경은 신규, 0수량과 경계 불명은 보류, 판정 불가능한 기존 bundle은 보류
-  - 실파일 14행/5후보/수량24/금액288400/validation0, 누적 12,301행 최신 데이터 동일, 단독 최종 실행 1.064초
+  - 실파일 14행/5후보/수량24/금액288400/validation0, 누적 12,301행 최신 데이터 동일, 단독 최종 실행 1.076초
 - 신규 실제 브라우저 IndexedDB: `node scripts/test-orderq-shopping-actual-ledger-browser.mjs` PASS
   - 수기 기존 1 + 원본 2의 동시 두 호출 후 실제 주문 정확히 2
   - stale 사전판정 뒤 수기 주문 추가 시 transaction 재확인으로 duplicate 0-write
@@ -57,6 +57,8 @@
 - `node scripts/test-client-safety.mjs`: PASS
 - 변경 JavaScript 6개 `node --check`: PASS
 - `git diff --check`: PASS
+
+PR 최초 CI에서 manifest 계약을 고정한 기존 owner-boundary 테스트가 `1.3.9`를 기대해 실패했고, 이번 계약 추가로 올린 실제 manifest schema `1.3.10`과 일치하도록 assertion을 갱신했다. 업무 로직·DB schema 변경은 아니며 해당 테스트와 전체 CI를 다시 실행한다.
 
 GitHub Actions에는 신규 pure/브라우저 검증을 repository validation job에 추가했다. 실제 Desktop XLS는 저장소나 CI artifact에 복사하지 않으며, CI에서는 동일 계약의 synthetic fixture를 실행하고 로컬 실파일 검증은 위 결과로 남긴다.
 
