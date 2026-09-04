@@ -172,9 +172,9 @@ assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '1aa022ed1af0cbb096729bbd60628714d7e70b4e5678e71623118ea08ca135af'],
-  ['../smartinput/smartinput.css', '99413d9e6b976163e48954b79b67e884fc308e50115e16dde1bddf186a1feec5'],
-  ['../smartinput/smartinput.js', 'c6521beddbe6bd566c3483f15de1651b6810e8ab3e74cc0d493aca27540a5ce4']
+  ['../smartinput/index.html', '4294e059c636b82f7a46c0414f4719e4233f3618cbc8534a9a4e00cf48c99ebb'],
+  ['../smartinput/smartinput.css', '09c931b31d7a55f7a5912e68fc4accb2f26b327bd6c6dda189862c97cd263401'],
+  ['../smartinput/smartinput.js', 'cc34202198dc9d5489c5d4a520eb28c6110e3f2afccaa8d1ee0d4092a0fe6583']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match approved SmartInput product UI NEXUS-SI-ORDER-DOCNO-20260904-01 apart from the shared theme cache token`);
+    `${relativePath} must match approved SmartInput product UI NEXUS-SI-ESTIMATE-BULK-UPDATE-20260904-01 apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -195,6 +195,6 @@ console.log(JSON.stringify({
   officialInventory: { value: null, label: '미반영' },
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
-  smartInputUiBaseline: 'NEXUS-SI-ORDER-DOCNO-20260904-01',
+  smartInputUiBaseline: 'NEXUS-SI-ESTIMATE-BULK-UPDATE-20260904-01',
   smartInputUiChanged: false
 }, null, 2));

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "NEXUS_SMARTINPUT_ESTIMATE_BULK_BROWSER_EVIDENCE_V1",
+  "taskId": "NEXUS-SI-ESTIMATE-BULK-UPDATE-20260904-01",
+  "fixture": {
+    "kind": "SYNTHETIC_ONLY",
+    "estimateGroups": 2,
+    "itemRows": 3,
+    "ignoredFooterRows": 1
+  },
+  "viewports": [
+    { "width": 1920, "height": 1080, "themes": ["light", "dark"], "dialogWidth": 980, "dialogHeight": 392.09375 },
+    { "width": 1440, "height": 900, "themes": ["light", "dark"], "dialogWidth": 980, "dialogHeight": 392.09375 },
+    { "width": 390, "height": 844, "themes": ["light", "dark"], "dialogWidth": 356, "dialogHeight": 547.1875 }
+  ],
+  "interaction": {
+    "initialFocus": "FIRST_TARGET_SELECT",
+    "escapeWriteCount": 0,
+    "duplicateTargetBlocked": true,
+    "explicitUnresolvedBlocked": true,
+    "manualTargetChange": true,
+    "uploadViewRetainedAfterSuccess": true
+  },
+  "atomicity": {
+    "stalePreimageAllTargetsUnchanged": true,
+    "indexedDbSecondPutRollbackAllTargets": true,
+    "retrySucceeded": true
+  },
+  "result": {
+    "updatedEstimates": 2,
+    "updatedItems": 3,
+    "untargetedEstimateUnchanged": true,
+    "linkedEstimateUnchanged": true,
+    "crossCustomerSourceEvidence": 0,
+    "consoleErrors": 0,
+    "runtimeExceptions": 0
+  }
+}
