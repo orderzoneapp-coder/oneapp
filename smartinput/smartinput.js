@@ -159,6 +159,19 @@ import {
   mappedRowMutationPlan,
   projectedRowValue
 } from './mapped-row-sync.js?v=0.1.0';
+import {
+  SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA,
+  buildShoppingOrderUploadRequest,
+  commitShoppingOrderUpload,
+  createShoppingOrderUpload,
+  inspectShoppingOrderUpload,
+  isExactShoppingOrderMatrix,
+  selectShoppingCustomer,
+  selectShoppingProduct,
+  shoppingCustomerSelectionKey,
+  shoppingProductSelectionKey,
+  shoppingUploadTotals
+} from './shopping-order-upload.js?v=0.1.0';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -271,7 +284,9 @@ const state = {
   estimateSelectionQueue: Promise.resolve(),
   voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
   purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' },
-  saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' }
+  saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' },
+  shoppingInspectionRequestId: 0,
+  shoppingInspectionTimer: null
 };
 if (state.draft.ui.relatedPanelLayoutVersion !== 1) {
   state.draft.ui.relatedPanelLayoutVersion = 1;
@@ -517,6 +532,7 @@ async function restoreLatestAutosave() {
     state.autosaveAvailable = true;
     state.autosaveUpdatedAt = record.updatedAt || state.draft.updatedAt || '';
     renderMode();
+    if (shoppingOrderImport()) void refreshShoppingOrderInspection({ persist: true });
     setAppStatus(`최근 자동저장을 복구했습니다${state.autosaveUpdatedAt ? ` · ${new Date(state.autosaveUpdatedAt).toLocaleString('ko-KR')}` : ''}.`);
     toast('최근 자동저장을 복구했습니다.', 'success');
   } catch (error) {
@@ -888,6 +904,12 @@ const MAPPING_DEFAULT_ROW_ID = '__SMARTINPUT_MAPPING_DEFAULT_ROW__';
 function inputMappingSession(current = modeDraft()) {
   return current?.inputMapping?.schemaVersion === 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2'
     ? current.inputMapping
+    : null;
+}
+
+function shoppingOrderImport(current = modeDraft()) {
+  return current?.shoppingOrderImport?.schemaVersion === SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA
+    ? current.shoppingOrderImport
     : null;
 }
 
@@ -1803,7 +1825,16 @@ function renderPhotoTransform() {
 }
 
 function renderSourceSheet() {
-  const session = inputMappingSession();
+  const shopping = shoppingOrderImport();
+  const session = inputMappingSession() || (shopping ? {
+    sourceMatrix: shopping.sourceMatrix,
+    headers: shopping.headers,
+    fileName: shopping.fileName,
+    sheetName: shopping.sheetName,
+    sourceCellMatrix: shopping.sourceCellMatrix,
+    headerRowIndex: 0,
+    fixedHeader: true
+  } : null);
   const view = $('sourceSheetView');
   if (!session) {
     view.hidden = true;
@@ -1813,13 +1844,16 @@ function renderSourceSheet() {
   const width = Math.max(session.headers.length, ...matrix.map(row => row.length), 0);
   $('sourceSheetTitle').textContent = session.fileName || 'Excel 원본';
   $('sourceSheetMeta').textContent = `${session.sheetName || '시트'} · ${matrix.length.toLocaleString('ko-KR')}행 · ${width.toLocaleString('ko-KR')}열`;
-  $('sourceHeaderRowStatus').textContent = `필드명 ${session.headerRowIndex + 1}행`;
+  $('sourceHeaderRowStatus').textContent = session.fixedHeader ? '쇼핑몰 17열 · 필드명 1행' : `필드명 ${session.headerRowIndex + 1}행`;
   $('sourceSheetRows').innerHTML = matrix.map((row, rowIndex) => (
     `<tr class="${rowIndex === session.headerRowIndex ? 'is-header-row' : ''}" data-source-row-index="${rowIndex}">
-      <th scope="row"><button type="button" data-use-header-row="${rowIndex}" aria-label="${rowIndex + 1}행을 필드명으로 사용">${rowIndex + 1}</button></th>
+      <th scope="row">${session.fixedHeader ? `<span>${Number(session.sourceCellMatrix?.[rowIndex]?.[0]?.rowIndex) + 1 || rowIndex + 1}</span>` : `<button type="button" data-use-header-row="${rowIndex}" aria-label="${rowIndex + 1}행을 필드명으로 사용">${rowIndex + 1}</button>`}</th>
       ${Array.from({ length: width }, (_, columnIndex) => `<td title="${esc(row[columnIndex] ?? '')}">${esc(row[columnIndex] ?? '')}</td>`).join('')}
     </tr>`
   )).join('');
+  view.querySelector('footer span').textContent = session.fixedHeader
+    ? '정확한 쇼핑몰 17열 필드명과 원본 행 순서를 유지합니다.'
+    : '행 번호를 누르면 해당 행을 필드명으로 사용합니다.';
   window.requestAnimationFrame(() => {
     const selected = $('sourceSheetRows').querySelector('.is-header-row');
     selected?.scrollIntoView({ block: 'nearest' });
@@ -1829,7 +1863,7 @@ function renderSourceSheet() {
 function renderSourceSurface() {
   const evidence = currentSourceImage();
   const photoMode = modeDraft().activeMethod === 'photo';
-  const sheetMode = modeDraft().activeMethod === 'excel' && Boolean(inputMappingSession());
+  const sheetMode = modeDraft().activeMethod === 'excel' && Boolean(inputMappingSession() || shoppingOrderImport());
   const showPhoto = photoMode && Boolean(evidence?.dataUrl);
   const workspace = document.querySelector('.workspace');
   const photoViewer = $('photoViewer');
@@ -2320,18 +2354,18 @@ async function persistLinkGroup(group) {
   saveDraftNow();
 }
 
-async function chooseCustomer() {
+async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelected = null, officialOnly = false } = {}) {
   try {
     const customer = await new Promise(resolve => {
       const dialog = document.createElement('dialog');
       dialog.className = 'smart-dialog smart-customer-dialog';
       dialog.innerHTML = `<div class="smart-dialog__shell">
         <header><div><small>Customer Master</small><h2>스마트입력 거래처 찾기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-link-mode>거래처 관계 설정</button><button type="button" class="button button--quiet" data-temp-create>임시 배송처</button></div>
-        <label class="smart-dialog__search">거래처명 또는 코드<input type="search" value="${esc($('customerInput').value)}" autocomplete="off"></label>
+        <div class="smart-dialog__toolbar"><button type="button" class="button button--quiet" data-customer-refresh>기준정보 새로고침</button><button type="button" class="button button--quiet" data-link-mode ${officialOnly ? 'hidden disabled' : ''}>거래처 관계 설정</button><button type="button" class="button button--quiet" data-temp-create ${officialOnly ? 'hidden disabled' : ''}>임시 배송처</button></div>
+        <label class="smart-dialog__search">거래처명 또는 코드<input type="search" value="${esc(initialQuery || $('customerInput').value)}" autocomplete="off"></label>
         <div class="smart-dialog__message">거래처 앞 체크박스를 선택한 뒤 용도를 지정하세요.</div>
         <div class="smart-customer-results"></div>
-        <footer class="smart-customer-action-footer"><span data-customer-selection>선택된 거래처가 없습니다.</span><button type="button" class="button button--quiet" data-customer-use>배송 거래처 선택</button><button type="button" class="button button--primary" data-tax-register>세무 거래처 등록</button></footer>
+        <footer class="smart-customer-action-footer"><span data-customer-selection>선택된 거래처가 없습니다.</span><button type="button" class="button button--quiet" data-customer-use>${officialOnly ? '거래처 선택' : '배송 거래처 선택'}</button><button type="button" class="button button--primary" data-tax-register ${officialOnly ? 'hidden disabled' : ''}>세무 거래처 등록</button></footer>
         <footer class="smart-link-footer" hidden><span>배송처 1곳 이상과 세무거래처 1곳을 지정하세요.</span><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>관계 저장</button></footer>
       </div>`;
       document.body.append(dialog);
@@ -2354,6 +2388,7 @@ async function chooseCustomer() {
       const render = () => {
         const query = input.value.trim();
         visibleCustomers = normalizedCustomerCandidates(state.customers)
+          .filter(customerItem => !officialOnly || !temporaryMeta(customerItem.customerId))
           .filter(customerItem => !query || normalizedKey(customerSearchText(customerItem)).includes(normalizedKey(query)))
             .sort((left, right) => customerName(left).localeCompare(customerName(right), 'ko'))
             .slice(0, 80);
@@ -2437,6 +2472,16 @@ async function chooseCustomer() {
       };
       dialog.querySelector('[data-close]').addEventListener('click', () => finish(null));
       dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+      dialog.querySelector('[data-customer-refresh]').addEventListener('click', async event => {
+        const retainedQuery = input.value;
+        event.currentTarget.disabled = true;
+        message.textContent = '기준정보를 새로고침하고 있습니다. 검색어는 유지됩니다.';
+        await refreshAllReferencesFromToolbar();
+        input.value = retainedQuery;
+        event.currentTarget.disabled = false;
+        render();
+        input.focus();
+      });
       dialog.querySelector('[data-link-mode]').addEventListener('click', () => setLinkMode(!linkMode));
       dialog.querySelector('[data-link-cancel]').addEventListener('click', () => setLinkMode(false));
       dialog.querySelector('[data-customer-use]').addEventListener('click', () => {
@@ -2558,7 +2603,9 @@ async function chooseCustomer() {
           message.textContent = error.message || '거래처 목록을 불러오지 못했습니다.';
         });
     });
-    if (customer) applyCustomer(customer);
+    if (customer && typeof onSelected === 'function') onSelected(customer);
+    else if (customer && applyToHeader) applyCustomer(customer);
+    return customer || null;
   } catch (error) {
     toast(error.message || '거래처 목록을 열지 못했습니다.', 'error');
   }
@@ -4478,21 +4525,26 @@ function applyWarehouseMatch() {
   header.warehouseCode = match?.warehouseCode || '';
   header.warehouseName = match ? warehouseDisplayName(match) : value.trim();
   renderVoucherContext();
+  if (shoppingOrderImport()) scheduleShoppingOrderInspection();
   scheduleSave();
 }
 
 function hydrateHeader() {
   const header = modeDraft().header;
+  const shopping = shoppingOrderImport();
   $('customerInput').value = header.customerName;
   $('customerInput').dataset.customerId = header.customerId;
-  $('deliveryDateInput').value = state.draft.activeMode === 'order'
+  $('deliveryDateInput').value = shopping?.selectedDeliveryDate || (state.draft.activeMode === 'order'
     ? (header.orderDate || header.voucherDate || header.deliveryDate)
-    : (state.draft.activeMode === 'estimate' ? header.deliveryDate : (header.voucherDate || header.deliveryDate));
+    : (state.draft.activeMode === 'estimate' ? header.deliveryDate : (header.voucherDate || header.deliveryDate)));
   $('warehouseInput').value = header.warehouseName;
   $('transactionTypeInput').value = header.transactionType || '기타';
   $('customerHint').textContent = header.customerId ? '등록 거래처 · 마스터 연결됨' : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
   applyCustomerRelationship(header);
-  updateDeliveryPolicy();
+  if (shopping) {
+    $('deliveryPolicyHint').textContent = '쇼핑몰 원본 배송일자를 주문 후보에 그대로 적용합니다.';
+    $('deliveryPolicyHint').dataset.tone = '';
+  } else updateDeliveryPolicy();
 }
 
 function renderEstimateHeaderFields() {
@@ -4545,6 +4597,7 @@ function captureGridPasteUndo() {
     sourceText: current.sourceText,
     activeMethod: current.activeMethod,
     inputMapping: current.inputMapping ? cloneGridValue(current.inputMapping) : null,
+    shoppingOrderImport: current.shoppingOrderImport ? cloneGridValue(current.shoppingOrderImport) : null,
     rows: cloneGridValue(current.rows),
     batches: cloneGridValue(current.batches),
     selectedRowIds: [...state.selectedRowIds],
@@ -4564,6 +4617,8 @@ function undoGridPaste() {
   if (snapshot.activeMethod) current.activeMethod = snapshot.activeMethod;
   if (snapshot.inputMapping) current.inputMapping = cloneGridValue(snapshot.inputMapping);
   else delete current.inputMapping;
+  if (snapshot.shoppingOrderImport) current.shoppingOrderImport = cloneGridValue(snapshot.shoppingOrderImport);
+  else delete current.shoppingOrderImport;
   state.selectedRowIds = new Set(snapshot.selectedRowIds);
   modeUi().activeCellId = snapshot.activeCellId;
   state.gridPasteUndo = null;
@@ -4923,6 +4978,7 @@ function useClipboardTableAsSource(rawText, { sourceName = '클립보드 자료'
   current.header = cloneGridValue(fresh.header);
   current.sourceText = rawText;
   current.activeMethod = 'excel';
+  delete current.shoppingOrderImport;
   const detection = detectHeaderRow(matrix, inputMappingTargets());
   current.inputMapping = mappingSessionWithBatch(createMappingSession({
     matrix,
@@ -4972,11 +5028,249 @@ function deleteSelectedMappingRows() {
   toast('선택한 원본 작업행을 삭제했습니다. 원본입력뷰는 변경되지 않습니다.', 'success');
 }
 
+function shoppingSourceValues(upload, sourceRow) {
+  return Object.fromEntries((upload?.headers || []).map((header, index) => [header, sourceRow?.sourceCells?.[index] ?? '']));
+}
+
+function shoppingWarehouseContext(current = modeDraft()) {
+  return {
+    warehouseId: current.header.warehouseId,
+    warehouseCode: current.header.warehouseCode,
+    warehouseName: current.header.warehouseName
+  };
+}
+
+function clearShoppingCommitEvidence(upload) {
+  if (!upload) return;
+  upload.commitResult = null;
+  upload.committedAt = '';
+}
+
+function scheduleShoppingOrderInspection(delay = 180) {
+  const upload = shoppingOrderImport();
+  clearTimeout(state.shoppingInspectionTimer);
+  if (!upload) return;
+  clearShoppingCommitEvidence(upload);
+  upload.inspection = null;
+  upload.inspectionError = null;
+  upload.status = 'ANALYZING';
+  renderShoppingOrderPanel();
+  renderDelivery();
+  state.shoppingInspectionTimer = window.setTimeout(() => {
+    state.shoppingInspectionTimer = null;
+    void refreshShoppingOrderInspection({ persist: true });
+  }, delay);
+}
+
+function applyAutomaticShoppingOwnerMatches(upload) {
+  if (!upload) return;
+  const customerIndex = upload.headers.indexOf('거래처명');
+  const productCodeIndex = upload.headers.indexOf('상품코드');
+  const productNameIndex = upload.headers.indexOf('상품명');
+  (upload.sourceRows || []).forEach(sourceRow => {
+    const sourceCustomerName = sourceRow.sourceCells?.[customerIndex] ?? '';
+    const customerKey = shoppingCustomerSelectionKey(sourceCustomerName);
+    if (customerKey && !upload.customerSelections?.[customerKey]) {
+      const matches = normalizedCustomerCandidates(state.customers).filter(customer =>
+        !temporaryMeta(customer.customerId)
+        && shoppingCustomerSelectionKey(customerName(customer)) === customerKey);
+      if (matches.length === 1) selectShoppingCustomer(upload, sourceCustomerName, matches[0]);
+    }
+    const productKey = shoppingProductSelectionKey(sourceRow.sourceRowNumber);
+    if (!upload.productSelections?.[productKey]) {
+      const query = sourceRow.sourceCells?.[productCodeIndex] || sourceRow.sourceCells?.[productNameIndex] || '';
+      const match = classifyProductMatch(state.productMatchIndex, query, { limit: 12 });
+      if (match.autoConfirm && isSelectableMasterProduct(match.product)) {
+        selectShoppingProduct(upload, sourceRow.sourceRowNumber, match.product);
+      }
+    }
+  });
+}
+
+function shoppingRequestContext(current = modeDraft()) {
+  return {
+    companyId: state.companyId,
+    warehouse: shoppingWarehouseContext(current),
+    actor: state.actorId || 'SMART_INPUT_ADMIN'
+  };
+}
+
+function preparedShoppingCandidates(upload = shoppingOrderImport()) {
+  if (!upload) return [];
+  try {
+    const prepared = buildShoppingOrderUploadRequest(upload, shoppingRequestContext());
+    upload.candidates = prepared.built.candidates;
+    upload.sourceIssues = prepared.built.issues;
+    return prepared.built.candidates;
+  } catch (error) {
+    upload.sourceIssues = [{ code: error.code || 'SMARTINPUT_SHOPPING_PREPARE_FAILED', message: error.message || String(error) }];
+    upload.candidates = [];
+    return [];
+  }
+}
+
+async function refreshShoppingOrderInspection({ persist = true, announce = false } = {}) {
+  const upload = shoppingOrderImport();
+  if (!upload) return null;
+  const requestId = ++state.shoppingInspectionRequestId;
+  applyAutomaticShoppingOwnerMatches(upload);
+  preparedShoppingCandidates(upload);
+  upload.status = 'ANALYZING';
+  upload.inspectionError = null;
+  renderShoppingOrderPanel();
+  renderDelivery();
+  try {
+    const inspection = await inspectShoppingOrderUpload(upload, shoppingRequestContext());
+    if (requestId !== state.shoppingInspectionRequestId || shoppingOrderImport()?.fileFingerprint !== upload.fileFingerprint) return null;
+    upload.inspection = inspection;
+    upload.status = 'READY';
+    upload.inspectionError = null;
+    upload.inspectedAt = new Date().toISOString();
+    if (persist) saveDraftNow();
+    renderShoppingOrderPanel();
+    renderDelivery();
+    renderInlineValidation();
+    if (announce) toast('실제 ORDER Q 주문서 기준 중복 판정을 새로 확인했습니다.', 'success');
+    return inspection;
+  } catch (error) {
+    if (requestId !== state.shoppingInspectionRequestId) return null;
+    upload.status = 'ERROR';
+    upload.inspectionError = { code: error.code || 'SHOPPING_ORDER_INSPECTION_FAILED', message: error.message || String(error) };
+    upload.inspection = null;
+    if (persist) saveDraftNow();
+    renderShoppingOrderPanel();
+    renderDelivery();
+    renderInlineValidation();
+    return null;
+  }
+}
+
+function shoppingDecisionLabel(decision, commitDecision) {
+  if (commitDecision?.status === 'CREATED') return { status: 'CREATED', label: `저장 완료 · ${commitDecision.order?.orderNo || 'ORDER Q'}` };
+  if (decision?.status === 'DUPLICATE') return { status: 'DUPLICATE', label: `기존 주문서 제외${decision.existingOrderNo ? ` · ${decision.existingOrderNo}` : ''}` };
+  if (decision?.status === 'NEW') return { status: 'NEW', label: '신규 저장' };
+  if (decision?.status === 'REVIEW_REQUIRED') return { status: 'REVIEW_REQUIRED', label: '확인 필요' };
+  return { status: 'ANALYZING', label: '판정 중' };
+}
+
+function renderShoppingOrderPanel() {
+  const panel = $('shoppingOrderImport');
+  const current = modeDraft();
+  const upload = state.draft.activeMode === 'order' ? shoppingOrderImport(current) : null;
+  panel.hidden = !upload;
+  $('tableScroll').hidden = Boolean(upload);
+  document.querySelector('.grid-card')?.classList.toggle('has-shopping-order-import', Boolean(upload));
+  if (!upload) return;
+  const candidates = preparedShoppingCandidates(upload);
+  const decisions = new Map((upload.inspection?.results || []).map(result => [result.candidateId, result]));
+  const committed = new Map((upload.commitResult?.results || []).map(result => [result.candidateId, result]));
+  const totals = shoppingUploadTotals(upload);
+  const summary = upload.inspection?.summary || {};
+  const resolvedSummary = upload.status === 'ERROR'
+    ? '원장 판정 오류'
+    : (upload.status === 'ANALYZING'
+      ? '실제 원장 확인 중'
+      : `신규 ${Number(summary.newCount || 0).toLocaleString('ko-KR')} · 기존 제외 ${Number(summary.duplicateCount || 0).toLocaleString('ko-KR')} · 확인 필요 ${Number(summary.reviewRequiredCount || 0).toLocaleString('ko-KR')}`);
+  $('shoppingOrderSummary').innerHTML = `<span>${esc(upload.selectedDeliveryDate || '배송일 미확인')}</span><strong>${candidates.length.toLocaleString('ko-KR')}후보 · ${totals.rowCount.toLocaleString('ko-KR')}행</strong><span>수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원</span>`;
+  $('shoppingOrderNotice').textContent = upload.status === 'ERROR'
+    ? `실제 ORDER Q 원장을 확인하지 못했습니다. 저장하지 않습니다: ${upload.inspectionError?.message || '원인 미확인'}`
+    : `${upload.fileName} · ${upload.sheetName} · ${resolvedSummary} · 상태·메모·주소·전화 등 17열 원본은 증거로 보존됩니다.`;
+  $('shoppingOrderCandidates').innerHTML = candidates.map((candidate, candidateIndex) => {
+    const decision = decisions.get(candidate.candidateId);
+    const commitDecision = committed.get(candidate.candidateId);
+    const status = shoppingDecisionLabel(decision, commitDecision);
+    const sourceCustomerName = candidate.sourceRows?.[0]?.sourceValues?.['거래처명'] || candidate.customerName || '';
+    const selectedCustomer = upload.customerSelections?.[shoppingCustomerSelectionKey(sourceCustomerName)];
+    const issues = decision?.issues?.length ? decision.issues : (candidate.issues || []);
+    const issueList = issues.map(issue => `<li><strong>${issue.sourceRowNumber ? `${issue.sourceRowNumber}행` : '후보'}</strong><span>${esc(issue.message || issue.code)}</span></li>`).join('');
+    const itemRows = (candidate.sourceRows || []).map((sourceRow, itemIndex) => {
+      const source = sourceRow.sourceValues || shoppingSourceValues(upload, sourceRow);
+      const selected = upload.productSelections?.[shoppingProductSelectionKey(sourceRow.sourceRowNumber)];
+      return `<li class="shopping-order-item ${selected?.productId ? 'is-resolved' : 'is-unresolved'}">
+        <button type="button" data-shopping-product-row="${sourceRow.sourceRowNumber}" aria-label="${esc(source['상품명'] || source['상품코드'])} 상품 기준정보 선택">
+          <strong>${esc(source['상품명'] || '상품명 없음')}</strong><span>${esc(source['상품코드'] || '코드 없음')} · ${esc(source['규격'] || '규격 없음')}</span>
+          <small>${selected?.productId ? `연결: ${esc(selected.itemCode)} · ${esc(selected.itemName)}` : '상품 선택 필요'}</small>
+        </button>
+        <span>${esc(source['수량'])} × ${esc(source['단가'])} = ${esc(source['금액'])}원</span>
+      </li>`;
+    }).join('');
+    return `<article class="shopping-order-candidate" data-shopping-candidate="${esc(candidate.candidateId)}" data-status="${status.status}">
+      <header><div><small>${candidateIndex + 1}번 후보 · 원본 ${candidate.sourceRows?.[0]?.sourceRowNumber || '?'}~${candidate.sourceRows?.at(-1)?.sourceRowNumber || '?'}행</small><button type="button" data-shopping-customer="${esc(sourceCustomerName)}"><strong>${esc(sourceCustomerName || '거래처 미확인')}</strong><span>${selectedCustomer?.customerId ? `연결: ${esc(selectedCustomer.customerCode || selectedCustomer.customerName)}` : '거래처 선택 필요'}</span></button></div><em>${esc(status.label)}</em></header>
+      <ul class="shopping-order-items">${itemRows}</ul>
+      ${issueList ? `<ul class="shopping-order-issues">${issueList}</ul>` : ''}
+    </article>`;
+  }).join('') || '<div class="shopping-order-empty">선택한 배송일자의 주문 후보가 없습니다.</div>';
+}
+
+async function completeShoppingOrderImport() {
+  const upload = shoppingOrderImport();
+  if (!upload || state.busy) return;
+  if (upload.status !== 'READY') {
+    await refreshShoppingOrderInspection({ persist: true });
+    if (shoppingOrderImport()?.status !== 'READY') return toast('실제 ORDER Q 원장 판정을 확인한 뒤 저장하세요.', 'error');
+  }
+  const newCount = Number(upload.inspection?.summary?.newCount || 0);
+  if (!newCount) return toast('새로 저장할 주문 후보가 없습니다.', 'warn');
+  state.busy = true;
+  clearShoppingCommitEvidence(upload);
+  renderDelivery();
+  renderShoppingOrderPanel();
+  setAppStatus(`쇼핑몰 신규 주문 ${newCount}건을 후보별로 저장하고 있습니다.`);
+  try {
+    const result = await commitShoppingOrderUpload(upload, shoppingRequestContext());
+    upload.commitResult = result;
+    upload.committedAt = new Date().toISOString();
+    const created = result.results.filter(row => row.status === 'CREATED');
+    created.forEach(row => appendDeliveryHistory({
+      status: 'SAVED',
+      targetId: 'orderq-vnext',
+      targetRecordId: row.order?.orderId || '',
+      orderNo: row.order?.orderNo || '',
+      deliveredAt: upload.committedAt,
+      online: false,
+      draftId: state.draft.draftId,
+      sourceBatchIds: [],
+      orderDate: row.order?.orderDate || upload.selectedDeliveryDate,
+      customerId: row.order?.customerId || '',
+      customerName: row.order?.customerName || '',
+      rowCount: row.items?.length || 0,
+      sourceType: 'SHOPPING_MALL_ORIGINAL'
+    }));
+    const last = created.at(-1);
+    if (last) state.draft.ui.lastDelivery = {
+      status: 'SAVED', targetId: 'orderq-vnext', targetRecordId: last.order?.orderId || '',
+      orderNo: last.order?.orderNo || '', deliveredAt: upload.committedAt, online: false
+    };
+    upload.delivery = {
+      createdCount: created.length,
+      duplicateCount: result.results.filter(row => row.status === 'DUPLICATE').length,
+      reviewRequiredCount: result.results.filter(row => row.status === 'REVIEW_REQUIRED').length,
+      failedCount: result.results.filter(row => row.status === 'FAILED').length
+    };
+    await refreshShoppingOrderInspection({ persist: false });
+    upload.commitResult = result;
+    saveDraftNow();
+    renderShoppingOrderPanel();
+    const failed = Number(result.summary.failedCount || 0);
+    const review = Number(result.summary.reviewRequiredCount || 0);
+    setAppStatus(`쇼핑몰 주문 저장 완료 ${created.length}건 · 기존 제외 ${result.summary.duplicateCount}건 · 확인 필요 ${review + failed}건`, review || failed ? 'warn' : 'normal');
+    toast(created.length ? `신규 주문 ${created.length}건을 ORDER Q에 저장했습니다.` : '새로 저장된 주문이 없습니다.', created.length ? 'success' : 'warn');
+  } catch (error) {
+    setAppStatus('쇼핑몰 주문 저장을 완료하지 못했습니다. 원본과 판정은 유지됩니다.', 'error');
+    toast(error.message || '쇼핑몰 주문 저장에 실패했습니다.', 'error');
+  } finally {
+    state.busy = false;
+    renderShoppingOrderPanel();
+    renderDelivery();
+  }
+}
+
 function renderRows({ restoreFocus = true } = {}) {
   if (sourceTableViewActive() && renderMappingRows()) return;
   applyMappingHeaderLocks(inputMappingSession());
   $('voucherInputTable').hidden = false;
   $('mappingWorktable').hidden = true;
+  $('tableScroll').hidden = Boolean(shoppingOrderImport());
   $('detailColumnsButton').hidden = state.draft.activeMethod !== 'photo';
   renderTableViewSwitch();
   renderInputMappingStatus();
@@ -5055,6 +5349,24 @@ function renderRows({ restoreFocus = true } = {}) {
 
 function updateSummaries() {
   const allRows = modeDraft().rows;
+  const shopping = shoppingOrderImport();
+  if (shopping) {
+    const totals = shoppingUploadTotals(shopping);
+    const summary = shopping.inspection?.summary || {};
+    $('gridRowCount').textContent = `${totals.rowCount.toLocaleString('ko-KR')}행`;
+    $('gridSearchCount').hidden = true;
+    $('voucherGroupSummary').textContent = `${Number(summary.candidateCount || shopping.candidates?.length || 0).toLocaleString('ko-KR')}개 주문 후보`;
+    $('matchedCount').textContent = `신규 ${Number(summary.newCount || 0).toLocaleString('ko-KR')}`;
+    $('similarCount').textContent = `확인 ${Number(summary.reviewRequiredCount || 0).toLocaleString('ko-KR')}`;
+    $('failedCount').textContent = `기존 제외 ${Number(summary.duplicateCount || 0).toLocaleString('ko-KR')}`;
+    $('duplicateCount').textContent = '실제 원장 기준';
+    $('totalQuantity').textContent = totals.quantity.toLocaleString('ko-KR');
+    $('totalAmount').textContent = `${totals.amount.toLocaleString('ko-KR')}원`;
+    renderActivityTrail();
+    renderVoucherContext();
+    renderInlineValidation();
+    return;
+  }
   const summary = contract.summarizeRows(allRows);
   const visibleRows = visibleInputListRows();
   const displayRows = inputListDisplayRows(allRows, visibleRows, { searchOpen: state.inputListSearch.open });
@@ -5080,16 +5392,22 @@ function renderInlineValidation(precomputedSummary = null) {
   const mode = state.draft.activeMode;
   const current = modeDraft();
   const estimateMode = mode === 'estimate';
+  const shopping = mode === 'order' ? shoppingOrderImport(current) : null;
   const summary = precomputedSummary || contract.summarizeRows((current.rows || []).filter(rowHasMeaningfulInput));
-  const customerInvalid = !estimateMode && !(current.header.customerId && current.header.customerName);
-  const dateValue = mode === 'order' ? (current.header.orderDate || current.header.voucherDate) : (current.header.voucherDate || current.header.deliveryDate);
+  const customerInvalid = !shopping && !estimateMode && !(current.header.customerId && current.header.customerName);
+  const dateValue = shopping?.selectedDeliveryDate || (mode === 'order' ? (current.header.orderDate || current.header.voucherDate) : (current.header.voucherDate || current.header.deliveryDate));
   const dateInvalid = !estimateMode && !/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ''));
   const warehouseInvalid = !estimateMode && !((current.header.warehouseId || current.header.warehouseCode) && current.header.warehouseName);
-  const rowCount = (current.rows || []).filter(rowHasMeaningfulInput).length;
+  const rowCount = shopping ? shoppingUploadTotals(shopping).rowCount : (current.rows || []).filter(rowHasMeaningfulInput).length;
+  const shoppingReviewCount = Number(shopping?.inspection?.summary?.reviewRequiredCount || 0);
   $('customerValidation').textContent = customerInvalid ? '등록 거래처를 선택하세요.' : '';
   $('dateValidation').textContent = dateInvalid ? '전표일자를 입력하세요.' : '';
   $('warehouseValidation').textContent = warehouseInvalid ? '등록 창고를 선택하세요.' : '';
-  $('gridValidation').textContent = rowCount < 1 ? '상품을 1개 이상 입력하세요.' : (summary.unresolved ? `미등록 상품 ${summary.unresolved}건을 확인하세요.` : '');
+  $('gridValidation').textContent = shopping
+    ? (shopping.status === 'ERROR'
+      ? '실제 ORDER Q 원장 판정을 완료하지 못했습니다.'
+      : (shoppingReviewCount ? `확인 필요 주문 후보 ${shoppingReviewCount}건을 확인하세요.` : ''))
+    : (rowCount < 1 ? '상품을 1개 이상 입력하세요.' : (summary.unresolved ? `미등록 상품 ${summary.unresolved}건을 확인하세요.` : ''));
   $('customerInput').setAttribute('aria-invalid', String(customerInvalid));
   $('deliveryDateInput').setAttribute('aria-invalid', String(dateInvalid));
   $('warehouseInput').setAttribute('aria-invalid', String(warehouseInvalid));
@@ -5100,11 +5418,12 @@ function renderDelivery() {
   const isPurchase = state.draft.activeMode === 'purchase';
   const isSale = state.draft.activeMode === 'sale';
   const isEstimate = state.draft.activeMode === 'estimate';
+  const shopping = isOrder ? shoppingOrderImport() : null;
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
-  $('deliveryTarget').textContent = isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : (isSale ? '공식 판매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`)));
+  $('deliveryTarget').textContent = shopping ? 'ORDER Q 실제 주문서' : (isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : (isSale ? '공식 판매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`))));
   $('deliveryDescription').textContent = isOrder
-    ? 'ORDER Q vNext 저장소에 먼저 기록합니다.'
+    ? (shopping ? '실제 ORDER Q 원장의 동일 주문 개수를 다시 확인한 뒤 초과 신규 후보만 저장합니다.' : 'ORDER Q vNext 저장소에 먼저 기록합니다.')
     : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : (isPurchase
       ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
       : (isSale ? (state.saleCapability.ready ? '중앙 공식 판매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
@@ -5117,10 +5436,14 @@ function renderDelivery() {
   const creation = estimateCreation();
   const creationCount = creation?.selectedIds.length || 0;
   const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
-  $('completeButton').disabled = state.busy || Boolean(creation) || mappingBlocksVoucher;
-  $('completeButton').title = mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '';
+  const shoppingNewCount = Number(shopping?.inspection?.summary?.newCount || 0);
+  $('completeButton').disabled = state.busy || Boolean(creation) || mappingBlocksVoucher
+    || Boolean(shopping && (shopping.status !== 'READY' || shoppingNewCount < 1));
+  $('completeButton').title = shopping
+    ? (shopping.status !== 'READY' ? '실제 ORDER Q 원장 판정을 기다리고 있습니다.' : (shoppingNewCount < 1 ? '새로 저장할 주문 후보가 없습니다.' : ''))
+    : (mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '');
   $('completeButton').hidden = false;
-  $('completeButton').textContent = '저장';
+  $('completeButton').textContent = shopping ? `신규 주문 저장 ${shoppingNewCount}건` : '저장';
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
   $('saveEstimateAsButton').hidden = !isEstimate;
   $('saveEstimateAsButton').disabled = state.busy || !loadedEstimate || Boolean(creation);
@@ -5159,7 +5482,11 @@ function renderMode() {
   $('estimateNoticeButton').textContent = '카톡 공유';
   $('estimateExcelButton').textContent = 'EXCEL';
   const linkedEstimate = estimateMode && (modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP');
-  $('customerInput').disabled = linkedEstimate;
+  const shopping = selected.id === 'order' ? shoppingOrderImport() : null;
+  $('customerInput').disabled = linkedEstimate || Boolean(shopping);
+  $('customerInput').placeholder = shopping ? '후보별 거래처 선택' : (estimateMode ? '선택 입력' : '거래처명 또는 코드');
+  $('customerRequiredMark').hidden = estimateMode || Boolean(shopping);
+  $('deliveryDateInput').disabled = Boolean(shopping);
   $('addRowButton').disabled = false;
   $('addRowButton').title = '항상 유지되는 마지막 수기입력 행으로 이동합니다.';
   hydrateHeader();
@@ -5170,6 +5497,7 @@ function renderMode() {
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   updateMethod(modeDraft().activeMethod, { persist: false });
   renderRows();
+  renderShoppingOrderPanel();
   renderCatalogControls();
   renderEstimateWorkspace();
   renderDelivery();
@@ -5185,7 +5513,7 @@ function renderMode() {
       ? '주문서 입력을 시작할 수 있습니다.'
       : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 원본은 견적서 생성 전까지 변경되지 않습니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
-  if (sourceTextInput.value.trim() && !inputMappingSession()) scheduleAutoAnalysis(650);
+  if (sourceTextInput.value.trim() && !inputMappingSession() && !shoppingOrderImport()) scheduleAutoAnalysis(650);
 }
 
 function setMode(mode) {
@@ -5632,6 +5960,10 @@ function clearParserWorkspace() {
   current.rows = contract.markDuplicatePossibilities((current.rows || []).filter(row => !parserBatchIds.has(row.batchId)));
   current.sourceText = '';
   delete current.inputMapping;
+  delete current.shoppingOrderImport;
+  state.shoppingInspectionRequestId += 1;
+  clearTimeout(state.shoppingInspectionTimer);
+  state.shoppingInspectionTimer = null;
   current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
   sourceTextInput.value = '';
   $('fileInput').value = '';
@@ -5958,6 +6290,7 @@ async function handleFile(file) {
       const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
       const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
       let selected = null;
+      let shoppingSelected = null;
       let purchaseMetaRows = null;
       let salesMetaRows = null;
       const targets = inputMappingDefinitions();
@@ -5965,6 +6298,10 @@ async function handleFile(file) {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const worksheetSource = readWorksheetSource(window.XLSX, workbook.Sheets[sheetName]);
         const matrix = worksheetSource.displayMatrix;
+        if (state.draft.activeMode === 'order' && isExactShoppingOrderMatrix(matrix)) {
+          shoppingSelected ||= { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName };
+          return;
+        }
         if (isPurchaseMetaSheet(sheetName, matrix)) {
           if (state.draft.activeMode === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
           return;
@@ -5977,6 +6314,60 @@ async function handleFile(file) {
         const candidate = { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName, detection };
         if (!selected || candidate.detection.score > selected.detection.score) selected = candidate;
       });
+      if (shoppingSelected) {
+        captureGridPasteUndo();
+        const current = modeDraft();
+        const previousWarehouse = shoppingWarehouseContext(current);
+        const upload = createShoppingOrderUpload({
+          ...shoppingSelected,
+          fileName: file.name,
+          fileFingerprint: fileDigest,
+          uploadedAt: new Date().toISOString()
+        });
+        if (!upload) throw new Error('쇼핑몰 주문내역 17열 원본을 구성하지 못했습니다.');
+        const fresh = contract.createDraft({ activeMode: 'order' }).modes.order;
+        current.header = {
+          ...cloneGridValue(fresh.header),
+          orderDate: upload.selectedDeliveryDate,
+          voucherDate: upload.selectedDeliveryDate,
+          deliveryDate: upload.selectedDeliveryDate,
+          manualDeliveryOverride: true,
+          ...previousWarehouse
+        };
+        current.sourceText = upload.sourceMatrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
+        current.activeMethod = 'excel';
+        current.batches = [contract.createBatch({
+          sequence: 1,
+          method: 'excel',
+          sourceType: 'SHOPPING_MALL_ORIGINAL',
+          sourceName: `${file.name} · ${shoppingSelected.sheetName}`,
+          sourceRole: 'SHOPPING_SOURCE',
+          sourceSheetName: shoppingSelected.sheetName,
+          rawText: current.sourceText,
+          contentHash: fileDigest
+        })];
+        current.rows = [];
+        current.voucherGroups = [];
+        current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+        delete current.inputMapping;
+        current.shoppingOrderImport = upload;
+        resetCurrentTableViewForSource('order');
+        state.pendingSourceName = `${file.name} · ${shoppingSelected.sheetName}`;
+        state.pendingGridPasteText = '';
+        state.selectedRowIds.clear();
+        sourceTextInput.value = current.sourceText;
+        applyAutomaticShoppingOwnerMatches(upload);
+        preparedShoppingCandidates(upload);
+        saveDraftNow();
+        renderMode();
+        await refreshShoppingOrderInspection({ persist: true });
+        const totals = shoppingUploadTotals(upload);
+        const summary = upload.inspection?.summary || {};
+        const reviewCount = Number(summary.reviewRequiredCount || 0);
+        setAppStatus(`쇼핑몰 주문내역 ${totals.rowCount}행 · 후보 ${Number(summary.candidateCount || upload.candidates?.length || 0)}건 · 신규 ${Number(summary.newCount || 0)}건 · 기존 제외 ${Number(summary.duplicateCount || 0)}건 · 확인 필요 ${reviewCount}건`, reviewCount ? 'warn' : 'normal');
+        toast('쇼핑몰 17열 원본을 인식해 실제 ORDER Q 주문서와 비교했습니다.', reviewCount ? 'warn' : 'success');
+        return;
+      }
       if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
       captureGridPasteUndo();
       const modeId = state.draft.activeMode;
@@ -6006,6 +6397,7 @@ async function handleFile(file) {
       }
       mapping.purchaseMetaRows = purchaseMetaRows;
       mapping.salesMetaRows = salesMetaRows;
+      delete current.shoppingOrderImport;
       current.inputMapping = mapping;
       resetCurrentTableViewForSource(modeId);
       void saveMappingSessionV2(mapping).catch(() => {});
@@ -6024,6 +6416,7 @@ async function handleFile(file) {
       return;
     } else {
       const rawText = await file.text();
+      delete modeDraft().shoppingOrderImport;
       state.pendingSourceName = file.name;
       state.pendingStructuredImport = null;
       sourceTextInput.value = rawText;
@@ -6050,6 +6443,11 @@ function isParserDocumentFile(file) {
 
 function appendParserText(text, method = 'text') {
   if (!text) return;
+  if (shoppingOrderImport()) {
+    delete modeDraft().shoppingOrderImport;
+    state.shoppingInspectionRequestId += 1;
+    sourceTextInput.value = '';
+  }
   updateMethod(method);
   const separator = sourceTextInput.value && !sourceTextInput.value.endsWith('\n') ? '\n' : '';
   sourceTextInput.value += `${separator}${text}`;
@@ -6125,6 +6523,11 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 async function recognizeImage(file) {
   if (!isImageFile(file)) return;
   invalidateGridPasteUndo();
+  if (shoppingOrderImport()) {
+    delete modeDraft().shoppingOrderImport;
+    state.shoppingInspectionRequestId += 1;
+    sourceTextInput.value = '';
+  }
   const captureSequence = ++state.photoCaptureSequence;
   updateMethod('photo');
   let imageEvidence;
@@ -6559,7 +6962,7 @@ function matchGridPasteRow(row) {
   return row;
 }
 
-function openProductDialog(row, { query = '', focusTarget = null, returnField = '' } = {}) {
+function openProductDialog(row, { query = '', focusTarget = null, returnField = '', onSelected = null } = {}) {
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog product-picker-dialog';
   dialog.setAttribute('aria-labelledby', 'productPickerTitle');
@@ -6568,7 +6971,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     <label class="smart-dialog__search product-picker-search"><span>상품명 또는 품목코드</span><input type="text" data-product-search autocomplete="off" placeholder="상품명·코드·규격으로 검색" role="combobox" aria-autocomplete="list" aria-controls="productCandidateResults" aria-expanded="true"></label>
     <div class="smart-dialog__message product-picker-message" data-product-message role="status" aria-live="polite"></div>
     <div class="product-picker-results" id="productCandidateResults" data-product-results role="listbox" aria-label="상품 후보"></div>
-    <footer><small>↑↓ 이동 · Enter 선택 · Esc 닫기</small><button type="button" class="button button--quiet" data-close>취소</button></footer>
+    <footer><small>↑↓ 이동 · Enter 선택 · Esc 닫기</small><button type="button" class="button button--quiet" data-refresh-product-reference>기준정보 새로고침</button><button type="button" class="button button--quiet" data-close>취소</button></footer>
   </div>`;
   document.body.append(dialog);
   const search = dialog.querySelector('[data-product-search]');
@@ -6582,6 +6985,13 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     closed = true;
     const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
     if (product) {
+      if (typeof onSelected === 'function') {
+        onSelected(product);
+        search.setAttribute('aria-expanded', 'false');
+        dialog.close();
+        dialog.remove();
+        return;
+      }
       const before = { ...liveRow, customValues: { ...(liveRow.customValues || {}) } };
       if (!applyProduct(liveRow, product, { forceIdentityFields: true })) {
         closed = false;
@@ -6679,6 +7089,16 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     }
   });
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => finish(null)));
+  dialog.querySelector('[data-refresh-product-reference]').addEventListener('click', async event => {
+    const retainedQuery = search.value;
+    event.currentTarget.disabled = true;
+    message.textContent = '기준정보를 새로고침하고 있습니다. 검색어는 유지됩니다.';
+    await refreshAllReferencesFromToolbar();
+    search.value = retainedQuery;
+    event.currentTarget.disabled = false;
+    render();
+    search.focus();
+  });
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
   dialog.showModal();
   search.focus();
@@ -7668,6 +8088,7 @@ function confirmGroupedVoucherCreation(mode, groups = []) {
 }
 
 async function completeOrder() {
+  if (shoppingOrderImport()) return completeShoppingOrderImport();
   if (inputMappingSession() && !inputMappingTemplateReady()) {
     setAppStatus('입력 양식이 확정되지 않아 전표 저장을 중단했습니다. 현재 작업은 유지됩니다.', 'error');
     toast('모든 열을 매핑 또는 비매핑으로 결정하고 입력 양식을 저장하세요.', 'error');
@@ -9087,6 +9508,51 @@ $('selectAllRows').addEventListener('change', event => {
   selectAllRowsInScope(event.target.checked);
   renderRows({ restoreFocus: false });
 });
+$('shoppingOrderCandidates').addEventListener('click', event => {
+  const customerButton = event.target.closest('[data-shopping-customer]');
+  if (customerButton) {
+    const sourceCustomerName = customerButton.dataset.shoppingCustomer || '';
+    void chooseCustomer({
+      initialQuery: sourceCustomerName,
+      applyToHeader: false,
+      officialOnly: true,
+      onSelected: customer => {
+        const upload = shoppingOrderImport();
+        if (!upload) return;
+        clearShoppingCommitEvidence(upload);
+        selectShoppingCustomer(upload, sourceCustomerName, customer);
+        preparedShoppingCandidates(upload);
+        saveDraftNow();
+        scheduleShoppingOrderInspection(0);
+      }
+    });
+    return;
+  }
+  const productButton = event.target.closest('[data-shopping-product-row]');
+  if (!productButton) return;
+  const sourceRowNumber = Number(productButton.dataset.shoppingProductRow);
+  const upload = shoppingOrderImport();
+  const sourceRow = upload?.sourceRows?.find(row => Number(row.sourceRowNumber) === sourceRowNumber);
+  if (!upload || !sourceRow) return;
+  const source = shoppingSourceValues(upload, sourceRow);
+  openProductDialog({
+    rowId: `SHOPPING:${sourceRowNumber}`,
+    itemCode: source['상품코드'] || '',
+    itemName: source['상품명'] || '',
+    specification: source['규격'] || ''
+  }, {
+    query: source['상품코드'] || source['상품명'] || '',
+    onSelected: product => {
+      const liveUpload = shoppingOrderImport();
+      if (!liveUpload || !isSelectableMasterProduct(product)) return;
+      clearShoppingCommitEvidence(liveUpload);
+      selectShoppingProduct(liveUpload, sourceRowNumber, product);
+      preparedShoppingCandidates(liveUpload);
+      saveDraftNow();
+      scheduleShoppingOrderInspection(0);
+    }
+  });
+});
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
 $('applyBulkUnitPriceButton').addEventListener('click', applySelectedRowsUnitPrice);
 
@@ -9156,4 +9622,6 @@ window.addEventListener('pagehide', () => {
 });
 renderMode();
 initializeAutosave();
-hydrateReferences();
+void hydrateReferences().then(() => {
+  if (shoppingOrderImport()) void refreshShoppingOrderInspection({ persist: true });
+});

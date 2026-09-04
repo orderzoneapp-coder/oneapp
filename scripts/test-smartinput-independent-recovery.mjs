@@ -20,9 +20,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
-assert.match(html, /smartinput\.css\?v=0\.9\.5/);
+assert.match(html, /smartinput\.css\?v=0\.9\.6/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.1/);
-assert.match(html, /smartinput\.js\?v=0\.11\.20/);
+assert.match(html, /smartinput\.js\?v=0\.11\.21/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.4\.2/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -106,7 +106,7 @@ for (const dependency of ['source-parser', 'order-event-detector', 'order-line-p
 }
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
-assert.match(appSource, /renderMode\(\);[\s\S]*?hydrateReferences\(\);/, 'local shell must render before optional references');
+assert.match(appSource, /renderMode\(\);[\s\S]*?(?:void\s+)?hydrateReferences\(\)/, 'local shell must render before optional references');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 
 for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList', 'linkedEstimateList']) {

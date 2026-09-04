@@ -95,18 +95,21 @@ const adapterSource = readSource('orderq/shopping-order-command-adapter.js');
 const repositorySource = readSource('orderq/shopping-order-import-repository.js');
 const dbSource = readSource('orderq/orderq-db.js');
 const smartInputSource = readSource('smartinput/smartinput.js');
+const smartInputShoppingSource = readSource('smartinput/shopping-order-upload.js');
 assert.doesNotMatch(adapterSource, /openOrderQDb|indexedDB|objectStore\s*\(/, 'consumer Adapter must not expose raw ORDER Q storage');
 assert.match(repositorySource, /db\.transaction\(transactionStores\(\), 'readwrite'\)/);
 assert.match(repositorySource, /STORE\.ORDERS, STORE\.ORDER_ITEMS, STORE\.ORDER_EVENTS, STORE\.SYNC_QUEUE, STORE\.META/);
 assert.match(dbSource, /export const DB_VERSION = 7/);
 assert.match(dbSource, /ensureIndex\(store, 'bySourceMessageKey', 'sourceMessageKey', \{ unique: true \}\)/);
 assert.doesNotMatch(smartInputSource, /shopping-order-(?:dedupe-core|import-repository|command-adapter)/,
-  'Phase 1 must not wire the SmartInput product UI');
+  'SmartInput product UI must not bypass its consumer integration module');
+assert.match(smartInputShoppingSource, /shopping-order-command-adapter/);
+assert.doesNotMatch(smartInputShoppingSource, /shopping-order-(?:dedupe-core|import-repository)/);
 const manifest = JSON.parse(readSource('app-manifest.json'));
 const ownerContract = manifest.sharedDataContracts.find(contract => contract.id === 'orderq-shopping-order-import');
 assert.ok(ownerContract);
 assert.equal(ownerContract.owner, 'orderq-vnext');
-assert.deepEqual(ownerContract.consumers, []);
+assert.deepEqual(ownerContract.consumers, ['smart-input']);
 assert.equal(ownerContract.resources.databaseVersion, 7);
 
 const base = build([sourceRow({ sourceBoundaryKey: 'DOC-1' })]).candidates[0];
@@ -233,6 +236,9 @@ const quantityChanged = build([sourceRow({ quantity: 2, amount: 2000, sourceBoun
 const amountChanged = build([sourceRow({ quantity: 1, amount: 900, sourceBoundaryKey: 'DOC-A' })]).candidates[0];
 assert.notEqual(canonicalShoppingOrderSignature(statusA), canonicalShoppingOrderSignature(quantityChanged));
 assert.notEqual(canonicalShoppingOrderSignature(statusA), canonicalShoppingOrderSignature(amountChanged));
+assert.ok(amountChanged.issues.some(issue => issue.code === 'SHOPPING_AMOUNT_MISMATCH'));
+assert.equal(planShoppingOrderDuplicates([amountChanged], []).results[0].isDuplicate, null,
+  'an original quantity x unit price mismatch must remain evidence and fail closed');
 
 const zero = build([sourceRow({ quantity: 0, amount: 0, sourceBoundaryKey: 'DOC-ZERO' })]).candidates[0];
 assert.ok(zero.issues.some(issue => issue.code === 'SHOPPING_ZERO_QUANTITY_REVIEW_REQUIRED'));
