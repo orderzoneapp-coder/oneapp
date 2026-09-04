@@ -1260,6 +1260,14 @@
     }
     .order-edit-input:focus { outline: 0; background: transparent; }
     .table-wrap td:focus-within { background: #edf9f7 !important; }
+    @media screen {
+      #previewTable tbody tr:focus-within {
+        position: relative;
+        z-index: 1;
+        outline: 2px solid var(--nexus-ui-focus, #5eead4);
+        outline-offset: -2px;
+      }
+    }
     tr td.ordered-context-cell { background: #eff6ff !important; }
     td.ledger-negative-cell,
     td.purchase-negative-cell { color: #854d0e !important; background: #fef9c3 !important; font-weight: 900; }
