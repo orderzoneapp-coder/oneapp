@@ -129,11 +129,12 @@ import {
 } from './linked-estimate-source-edit.js?v=0.1.0';
 import {
   classifyEstimateBulkRows,
+  createEstimateBulkNewRecord,
+  createEstimateBulkProgress,
   createEstimateBulkReplacementRecord,
-  inspectEstimateBulkWorkingCopyConflicts,
-  resolveEstimateBulkTargets,
-  splitEstimateBulkInputMapping
-} from './estimate-bulk-update.js?v=0.1.0';
+  createEstimatePerCustomerPlan,
+  estimateBulkDraftsEquivalent
+} from './estimate-bulk-update.js?v=0.2.0';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -1336,7 +1337,8 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
       matchStatus: 'UNRESOLVED'
     }, session.batchId);
     if (previous) {
-      ['productId', 'masterProductId', 'candidateProducts', 'referenceResolution', 'productMasterRevision', 'matchStatus']
+      ['productId', 'masterProductId', 'candidateProducts', 'referenceResolution', 'productMasterRevision', 'matchStatus',
+        'reviewStatus', 'productIdentityStatus', 'matchSource']
         .forEach(field => { if (previous[field] !== undefined) row[field] = cloneGridValue(previous[field]); });
     }
     if (!row.productId || !row.masterProductId) row = matchGridPasteRow(row);
@@ -7083,125 +7085,190 @@ function estimateBulkCustomerLabel(group = {}) {
   return group.customerName || group.customerCode || group.customerId || '거래처 미확인';
 }
 
-function estimateBulkMatchLabel(method = '') {
-  if (method === 'CUSTOMER_ID') return 'ID 정확 일치';
-  if (method === 'CUSTOMER_CODE') return '코드 정확 일치';
-  if (method === 'CUSTOMER_NAME') return '거래처명 정확 일치';
-  if (method === 'MANUAL') return '작업자 선택';
-  return '미해결';
+function estimateBulkStatusLabel(status = '') {
+  return ({
+    READY: '저장 가능',
+    PENDING: '확인 필요',
+    UNCHANGED: '변경 없음',
+    COMPLETED: '저장 완료',
+    FAILED: '저장 실패',
+    EXCLUDED: '이번 작업 제외'
+  })[status] || '확인 필요';
 }
 
-function estimateBulkTargetOptions(selectedEstimateId = '') {
-  return `<option value="">기존 견적서를 선택하세요</option>${individualEstimateRecords().map(record => (
-    `<option value="${esc(record.estimateId)}"${record.estimateId === selectedEstimateId ? ' selected' : ''}>${esc(estimateTitle(record))} · ${(record.rowCount || record.draft?.rows?.length || 0).toLocaleString('ko-KR')}품목</option>`
-  )).join('')}`;
+function estimateBulkSelectionValue(entry = {}) {
+  if (entry.action === 'UPDATE' && entry.targetEstimateId) return `UPDATE:${entry.targetEstimateId}`;
+  if (entry.action === 'CREATE') return 'CREATE';
+  if (entry.action === 'EXCLUDE') return 'EXCLUDE';
+  return '';
 }
 
-function estimateBulkWorkingCopyConflicts(targetEstimateIds) {
-  return inspectEstimateBulkWorkingCopyConflicts({
-    targetEstimateIds,
+function estimateBulkTargetOptions(entry = {}) {
+  const selected = estimateBulkSelectionValue(entry);
+  const options = [
+    ['','기존 견적서를 선택하세요'],
+    ...individualEstimateRecords().map(record => [`UPDATE:${record.estimateId}`, `${estimateTitle(record)} · ${(record.rowCount || record.draft?.rows?.length || 0).toLocaleString('ko-KR')}품목`]),
+    ['CREATE', '새 견적서 명시 등록'],
+    ['EXCLUDE', '이번 작업 제외']
+  ];
+  return options.map(([value, label]) => `<option value="${esc(value)}"${value === selected ? ' selected' : ''}>${esc(label)}</option>`).join('');
+}
+
+function estimateBulkSelectionFromValue(value, catalogName = '') {
+  const selected = String(value || '');
+  if (selected.startsWith('UPDATE:')) return { action: 'UPDATE', targetEstimateId: selected.slice(7), catalogName: '' };
+  if (selected === 'CREATE') return { action: 'CREATE', targetEstimateId: '', catalogName: String(catalogName || '').trim() };
+  if (selected === 'EXCLUDE') return { action: 'EXCLUDE', targetEstimateId: '', catalogName: '' };
+  return { action: 'NONE', targetEstimateId: '', catalogName: '' };
+}
+
+function createEstimatePerCustomerPlanForCurrent(classification, selections = {}) {
+  const current = modeDraft();
+  return createEstimatePerCustomerPlan({
+    classification,
     estimates: state.estimates,
-    workingCopies: [...state.estimateWorkingCopies].map(([estimateId, draft]) => ({ estimateId, draft }))
+    selections,
+    session: inputMappingSession(current),
+    workingCopies: [...state.estimateWorkingCopies].map(([estimateId, draft]) => ({ estimateId, draft })),
+    progress: current.estimateBulkProgress
   });
 }
 
-function createEstimateBulkUpserts(classification, resolution, timestamp) {
+function createEstimateBulkRecord(entry, timestamp) {
   const current = modeDraft();
-  const session = inputMappingSession(current);
-  if (!session || !inputMappingTemplateReady(session)) throw new Error('적용된 입력 양식과 원본 증적을 확인할 수 없습니다.');
-  return resolution.assignments.map(assignment => {
-    const target = state.estimates.find(record => record.estimateId === assignment.targetEstimateId);
-    if (!target || target.estimateKind === 'LINKED_GROUP') throw new Error(`${estimateBulkCustomerLabel(assignment.group)}의 기존 개별 견적서를 다시 선택하세요.`);
-    const split = splitEstimateBulkInputMapping({ session, rows: assignment.group.rows });
-    const sourceDraft = {
-      ...cloneGridValue(current),
-      header: cloneGridValue(target.draft?.header || current.header || {}),
-      rows: split.rows,
-      inputMapping: split.session
+  if (!entry?.candidate?.split) throw new Error(`${estimateBulkCustomerLabel(entry?.group)}의 원본 증적을 확인할 수 없습니다.`);
+  const action = entry.candidate.action;
+  const target = action === 'UPDATE' ? state.estimates.find(record => record.estimateId === entry.candidate.targetEstimateId) : null;
+  if (action === 'UPDATE' && (!target || target.estimateKind === 'LINKED_GROUP')) throw new Error(`${estimateBulkCustomerLabel(entry.group)}의 기존 개별 견적서를 다시 선택하세요.`);
+  const estimateId = target?.estimateId || createRecordId('SIEST');
+  const sourceDraft = cloneGridValue(current);
+  delete sourceDraft.estimateBulkProgress;
+  sourceDraft.header = target
+    ? cloneGridValue(target.draft?.header || current.header || {})
+    : {
+      ...cloneGridValue(current.header || {}),
+      customerId: entry.group.customerId || '',
+      customerCode: entry.group.customerCode || '',
+      customerName: entry.group.customerName || ''
     };
-    const replacementDraft = createCatalogOnlyDraft(sourceDraft, target.estimateId);
-    const previousPrices = buildCatalogPriceSnapshot(target.draft?.rows || []);
-    const baselinePrices = buildCatalogPriceSnapshot(replacementDraft.rows);
-    replacementDraft.catalogPreviousPrices = { ...previousPrices };
-    replacementDraft.catalogBaselinePrices = { ...baselinePrices };
-    const summary = contract.summarizeRows(replacementDraft.rows);
-    return createEstimateBulkReplacementRecord({
-      target,
-      replacementDraft,
-      previousPrices,
-      baselinePrices,
-      summary,
-      timestamp
-    });
+  sourceDraft.rows = entry.candidate.split.rows;
+  sourceDraft.inputMapping = entry.candidate.split.session;
+  const replacementDraft = createCatalogOnlyDraft(sourceDraft, estimateId);
+  const previousPrices = buildCatalogPriceSnapshot(target?.draft?.rows || []);
+  const baselinePrices = buildCatalogPriceSnapshot(replacementDraft.rows);
+  replacementDraft.catalogPreviousPrices = { ...previousPrices };
+  replacementDraft.catalogBaselinePrices = { ...baselinePrices };
+  const summary = contract.summarizeRows(replacementDraft.rows);
+  if (target) {
+    return createEstimateBulkReplacementRecord({ target, replacementDraft, previousPrices, baselinePrices, summary, timestamp });
+  }
+  return createEstimateBulkNewRecord({
+    estimateId,
+    catalogName: entry.candidate.catalogName,
+    group: entry.group,
+    replacementDraft,
+    summary,
+    timestamp,
+    sortOrder: state.estimates.length + 1
   });
 }
 
-async function applyEstimateBulkUpdate(classification, selections) {
-  const resolution = resolveEstimateBulkTargets({ groups: classification.groups, estimates: state.estimates, selections });
-  const targetEstimateIds = resolution.assignments.map(assignment => assignment.targetEstimateId).filter(Boolean);
-  const conflicts = estimateBulkWorkingCopyConflicts(targetEstimateIds);
-  if (classification.issues.length || resolution.issues.length || conflicts.length) {
-    const error = new Error([...classification.issues, ...resolution.issues, ...conflicts][0]?.message || '모든 거래처의 기존 견적서를 확인하세요.');
-    error.code = 'ESTIMATE_BULK_PLAN_BLOCKED';
-    throw error;
-  }
-  const timestamp = new Date().toISOString();
-  const upserts = createEstimateBulkUpserts(classification, resolution, timestamp);
-  const upsertIds = new Set(upserts.map(record => record.estimateId));
-  const expectedPreimages = state.estimates
-    .filter(record => upsertIds.has(record.estimateId))
-    .map(record => cloneGridValue(record));
-  await commitEstimateBundle({ upserts, expectedPreimages });
-  const upsertsById = new Map(upserts.map(record => [record.estimateId, record]));
-  state.estimates = normalizeEstimateOrder(state.estimates.map(record => upsertsById.get(record.estimateId) || record));
-  upsertIds.forEach(estimateId => {
-    state.estimateWorkingCopies.delete(estimateId);
-    state.estimateWorkingCopyBaselines.delete(estimateId);
-  });
-  const current = modeDraft();
-  current.catalogRecordId = '';
-  current.catalogBaselinePrices = {};
-  current.catalogPreviousPrices = {};
-  current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
-  state.noticeEstimateIds = [];
-  state.lastEstimateSave = null;
-  state.estimateLibraryKind = 'individual';
+function persistEstimateBulkProgress(plan, statusOverrides = {}) {
+  modeDraft().estimateBulkProgress = createEstimateBulkProgress({ plan, statusOverrides });
   saveDraftNow();
-  renderMode();
-  const message = `${upserts.length.toLocaleString('ko-KR')}개 견적서 · ${classification.totalItemRows.toLocaleString('ko-KR')}품목 업데이트 완료`;
-  setAppStatus(message);
-  toast(message, 'success');
-  return { upserts, message };
+}
+
+function acceptEstimateBulkRecord(record) {
+  const existing = state.estimates.some(item => item.estimateId === record.estimateId);
+  state.estimates = normalizeEstimateOrder(existing
+    ? state.estimates.map(item => item.estimateId === record.estimateId ? record : item)
+    : [...state.estimates, record]);
+  state.estimateWorkingCopies.delete(record.estimateId);
+  state.estimateWorkingCopyBaselines.delete(record.estimateId);
+}
+
+async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgress) {
+  const statusOverrides = {};
+  const results = [];
+  for (const entry of plan.entries) {
+    if (!selectedGroupIds.has(entry.groupId) || !['READY', 'FAILED'].includes(entry.status) || !entry.candidate) continue;
+    const timestamp = new Date().toISOString();
+    try {
+      const record = createEstimateBulkRecord(entry, timestamp);
+      if (entry.candidate.target && estimateBulkDraftsEquivalent(entry.candidate.target.draft, record.draft)) {
+        statusOverrides[entry.groupId] = { status: 'UNCHANGED', targetEstimateId: record.estimateId, updatedAt: timestamp };
+        results.push({ groupId: entry.groupId, status: 'UNCHANGED', record: null });
+      } else {
+        const expectedPreimages = entry.candidate.target ? [cloneGridValue(entry.candidate.target)] : [];
+        await commitEstimateBundle({ upserts: [record], expectedPreimages });
+        acceptEstimateBulkRecord(record);
+        statusOverrides[entry.groupId] = { status: 'COMPLETED', action: 'UPDATE', targetEstimateId: record.estimateId, catalogName: record.catalogName, updatedAt: timestamp };
+        results.push({ groupId: entry.groupId, status: 'COMPLETED', record });
+      }
+    } catch (error) {
+      const stale = String(error?.message || '').includes('SMARTINPUT_ESTIMATE_BUNDLE_STALE');
+      const message = stale
+        ? '확인 후 기존 견적서가 변경되었습니다. 이 거래처 전표를 다시 확인하세요.'
+        : (error?.message || '이 거래처 견적서를 저장하지 못했습니다.');
+      statusOverrides[entry.groupId] = {
+        status: 'FAILED',
+        errorCode: stale ? 'ESTIMATE_BULK_GROUP_STALE' : (error?.code || 'ESTIMATE_BULK_GROUP_COMMIT_FAILED'),
+        errorMessage: message,
+        firstIssue: { code: stale ? 'ESTIMATE_BULK_GROUP_STALE' : 'ESTIMATE_BULK_GROUP_COMMIT_FAILED', groupId: entry.groupId, message },
+        updatedAt: timestamp
+      };
+      results.push({ groupId: entry.groupId, status: 'FAILED', error });
+    }
+    persistEstimateBulkProgress(plan, statusOverrides);
+    onProgress?.({ entry, statusOverrides, results });
+  }
+  const completed = results.filter(result => result.status === 'COMPLETED').length;
+  if (completed) {
+    const current = modeDraft();
+    current.catalogRecordId = '';
+    current.catalogBaselinePrices = {};
+    current.catalogPreviousPrices = {};
+    current.delivery = { status: 'DRAFT', targetId: '', targetRecordId: '', deliveredAt: '' };
+    state.noticeEstimateIds = [];
+    state.lastEstimateSave = null;
+    state.estimateLibraryKind = 'individual';
+    saveDraftNow();
+    renderCatalogControls();
+    renderDelivery();
+  }
+  return { statusOverrides, results };
 }
 
 function showEstimateBulkUpdateDialog(classification) {
-  const initial = resolveEstimateBulkTargets({ groups: classification.groups, estimates: state.estimates });
-  const initialSelections = Object.fromEntries(initial.assignments
-    .filter(assignment => assignment.targetEstimateId)
-    .map(assignment => [assignment.groupId, assignment.targetEstimateId]));
-  const selectionOverrides = {};
+  let currentPlan = createEstimatePerCustomerPlanForCurrent(classification);
+  const selections = Object.fromEntries(currentPlan.entries.map(entry => [entry.groupId, {
+    action: entry.action,
+    targetEstimateId: entry.targetEstimateId,
+    catalogName: entry.catalogName
+  }]));
+  const selectedGroupIds = new Set(currentPlan.entries.filter(entry => ['READY', 'FAILED'].includes(entry.status)).map(entry => entry.groupId));
+  const selectionTouched = new Set();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-bulk-update-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Bulk estimate update</small><h2>전체 견적서 업데이트</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <p class="smart-dialog__message">선택한 기존 견적서의 품목 전체를 거래처별 새 품목으로 교체합니다. 업로드에 없는 나머지 견적서는 변경하지 않습니다.</p>
+    <header><div><small>Per-customer estimate update</small><h2>거래처별 견적서 업데이트</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <p class="smart-dialog__message">정상 전표만 거래처별로 독립 저장합니다. 문제가 있는 거래처는 품목 일부도 저장하지 않고 확인 필요로 유지하며, 업로드에 없는 견적서는 변경하지 않습니다.</p>
     <div class="estimate-bulk-summary" data-bulk-summary role="status" aria-live="polite"></div>
+    <div class="estimate-bulk-view" role="group" aria-label="전표 표시 범위"><button type="button" class="button button--quiet" data-bulk-view="review" aria-pressed="false">확인 필요</button><button type="button" class="button button--quiet" data-bulk-view="all" aria-pressed="true">전체 보기</button></div>
     <div class="estimate-bulk-issues" data-bulk-issues aria-live="polite"></div>
-    <div class="estimate-bulk-body">${classification.groups.map(group => {
-      const selected = initialSelections[group.groupId] || '';
-      return `<section class="estimate-bulk-row" data-bulk-group="${esc(group.groupId)}">
-        <div class="estimate-bulk-row__source"><small>원본 거래처</small><strong title="${esc(estimateBulkCustomerLabel(group))}">${esc(estimateBulkCustomerLabel(group))}</strong><span>${group.itemCount.toLocaleString('ko-KR')}품목</span></div>
-        <label><span>연결 대상</span><select data-bulk-target aria-label="${esc(estimateBulkCustomerLabel(group))} 연결 대상">${estimateBulkTargetOptions(selected)}</select></label>
-        <div class="estimate-bulk-row__result"><span data-bulk-count>— → ${group.itemCount.toLocaleString('ko-KR')}품목</span><strong data-bulk-state>미해결</strong></div>
-      </section>`;
-    }).join('')}</div>
-    <footer><small data-bulk-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-bulk>전체 업데이트</button></footer>
+    <div class="estimate-bulk-body">${currentPlan.entries.map(entry => `<section class="estimate-bulk-row" data-bulk-group="${esc(entry.groupId)}" data-bulk-state-value="${esc(entry.status)}">
+        <label class="estimate-bulk-row__check"><input type="checkbox" data-bulk-select aria-label="${esc(estimateBulkCustomerLabel(entry.group))} 저장 선택"><span>선택</span></label>
+        <div class="estimate-bulk-row__source"><small>원본 거래처</small><strong title="${esc(estimateBulkCustomerLabel(entry.group))}">${esc(estimateBulkCustomerLabel(entry.group))}</strong><span>${entry.group.itemCount.toLocaleString('ko-KR')}품목</span></div>
+        <div class="estimate-bulk-row__target"><label><span>처리 대상</span><select data-bulk-action aria-label="${esc(estimateBulkCustomerLabel(entry.group))} 처리 대상">${estimateBulkTargetOptions(entry)}</select></label><label data-bulk-create-name-wrap${entry.action === 'CREATE' ? '' : ' hidden'}><span>새 견적서명</span><input type="text" maxlength="80" data-bulk-create-name value="${esc(entry.catalogName)}" placeholder="견적서명을 입력하세요" aria-label="${esc(estimateBulkCustomerLabel(entry.group))} 새 견적서명"></label></div>
+        <div class="estimate-bulk-row__result"><span data-bulk-count>— → ${entry.group.itemCount.toLocaleString('ko-KR')}품목</span><strong data-bulk-state>${esc(estimateBulkStatusLabel(entry.status))}</strong><small data-bulk-reason></small></div>
+      </section>`
+    ).join('')}</div>
+    <footer><small data-bulk-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>닫기</button><button type="button" class="button button--primary" data-confirm-bulk>정상 전표 업데이트</button></footer>
   </div>`;
   document.body.append(dialog);
   let settled = false;
   let applying = false;
-  let currentResolution = initial;
-  let currentConflicts = [];
+  let view = 'all';
   const finish = () => {
     if (settled || applying) return;
     settled = true;
@@ -7209,74 +7276,111 @@ function showEstimateBulkUpdateDialog(classification) {
     dialog.remove();
   };
   const sync = () => {
-    currentResolution = resolveEstimateBulkTargets({ groups: classification.groups, estimates: state.estimates, selections: selectionOverrides });
-    const targetIds = currentResolution.assignments.map(assignment => assignment.targetEstimateId).filter(Boolean);
-    currentConflicts = estimateBulkWorkingCopyConflicts(targetIds);
-    const duplicateTargets = new Set(currentResolution.issues
-      .filter(issue => issue.code === 'ESTIMATE_BULK_TARGET_DUPLICATED')
-      .map(issue => issue.targetEstimateId));
-    const conflictTargets = new Set(currentConflicts
-      .filter(issue => issue.code === 'ESTIMATE_BULK_TARGET_WORKING_COPY_CONFLICT')
-      .map(issue => issue.estimateId));
-    currentResolution.assignments.forEach(assignment => {
-      const section = dialog.querySelector(`[data-bulk-group="${CSS.escape(assignment.groupId)}"]`);
-      const target = assignment.targetEstimateId
-        ? state.estimates.find(record => record.estimateId === assignment.targetEstimateId)
-        : null;
-      section.querySelector('[data-bulk-count]').textContent = `${Number(target?.rowCount || target?.draft?.rows?.length || 0).toLocaleString('ko-KR')} → ${assignment.group.itemCount.toLocaleString('ko-KR')}품목`;
-      const blocked = duplicateTargets.has(assignment.targetEstimateId) || conflictTargets.has(assignment.targetEstimateId);
-      section.querySelector('[data-bulk-state]').textContent = blocked ? '충돌' : estimateBulkMatchLabel(assignment.targetEstimateId ? assignment.matchMethod : '');
-      section.classList.toggle('is-blocked', !assignment.targetEstimateId || blocked);
+    currentPlan = createEstimatePerCustomerPlanForCurrent(classification, selections);
+    currentPlan.entries.forEach((entry, index) => {
+      const section = dialog.querySelector(`[data-bulk-group="${CSS.escape(entry.groupId)}"]`);
+      const checkbox = section.querySelector('[data-bulk-select]');
+      const eligible = ['READY', 'FAILED'].includes(entry.status) && Boolean(entry.candidate);
+      if (eligible && !selectionTouched.has(entry.groupId)) selectedGroupIds.add(entry.groupId);
+      if (!eligible) selectedGroupIds.delete(entry.groupId);
+      checkbox.disabled = !eligible || applying;
+      checkbox.checked = eligible && selectedGroupIds.has(entry.groupId);
+      const target = entry.target;
+      section.querySelector('[data-bulk-count]').textContent = `${Number(target?.rowCount || target?.draft?.rows?.length || 0).toLocaleString('ko-KR')} → ${entry.group.itemCount.toLocaleString('ko-KR')}품목`;
+      section.querySelector('[data-bulk-state]').textContent = estimateBulkStatusLabel(entry.status);
+      section.querySelector('[data-bulk-reason]').textContent = entry.firstIssue?.message || entry.previousEntry?.errorMessage || '';
+      section.querySelector('[data-bulk-action]').value = estimateBulkSelectionValue(entry);
+      const createNameInput = section.querySelector('[data-bulk-create-name]');
+      if (document.activeElement !== createNameInput && createNameInput.value !== entry.catalogName) createNameInput.value = entry.catalogName;
+      section.dataset.bulkStateValue = entry.status;
+      section.classList.toggle('is-blocked', ['PENDING', 'FAILED'].includes(entry.status));
+      section.classList.toggle('is-complete', ['COMPLETED', 'UNCHANGED', 'EXCLUDED'].includes(entry.status));
+      section.style.order = String(['PENDING', 'FAILED', 'READY', 'UNCHANGED', 'COMPLETED', 'EXCLUDED'].indexOf(entry.status) * 1000 + index);
+      section.hidden = view === 'review' && ['COMPLETED', 'UNCHANGED', 'EXCLUDED'].includes(entry.status);
+      section.querySelector('[data-bulk-create-name-wrap]').hidden = entry.action !== 'CREATE';
     });
-    const blocking = [...classification.issues, ...currentResolution.issues, ...currentConflicts];
-    const unresolved = currentResolution.assignments.filter(assignment => !assignment.targetEstimateId).length;
-    dialog.querySelector('[data-bulk-summary]').innerHTML = `<span>전체 <strong>${classification.groups.length}</strong></span><span>연결 <strong>${currentResolution.connectedCount}</strong></span><span>미해결 <strong>${unresolved}</strong></span><span>미대상 <strong>${currentResolution.untouchedCount}</strong></span>`;
-    dialog.querySelector('[data-bulk-issues]').innerHTML = blocking.length
-      ? `<strong>${esc(blocking[0].message)}</strong>${blocking.length > 1 ? `<span>외 ${blocking.length - 1}건을 확인하세요.</span>` : ''}`
+    const summary = currentPlan.summary;
+    const attention = currentPlan.entries.filter(entry => ['PENDING', 'FAILED'].includes(entry.status));
+    const selectedReady = currentPlan.entries.filter(entry => selectedGroupIds.has(entry.groupId) && ['READY', 'FAILED'].includes(entry.status) && entry.candidate);
+    dialog.querySelector('[data-bulk-summary]').innerHTML = `<span>전체 <strong>${summary.total}</strong></span><span>저장 가능 <strong>${summary.ready}</strong></span><span>확인 필요 <strong>${summary.pending + summary.failed}</strong></span><span>변경 없음 <strong>${summary.unchanged}</strong></span><span>저장 완료 <strong>${summary.completed}</strong></span><span>제외 <strong>${summary.excluded}</strong></span>`;
+    dialog.querySelector('[data-bulk-issues]').innerHTML = attention.length
+      ? `<strong>${esc(attention[0].firstIssue?.message || attention[0].previousEntry?.errorMessage || `${estimateBulkCustomerLabel(attention[0].group)} 전표를 확인하세요.`)}</strong>${attention.length > 1 ? `<span>외 ${attention.length - 1}개 전표를 확인하세요.</span>` : ''}`
       : '';
-    dialog.querySelector('[data-bulk-status]').textContent = blocking.length
-      ? '모든 거래처 연결과 작업본 충돌을 해결해야 적용할 수 있습니다.'
-      : `${classification.groups.length.toLocaleString('ko-KR')}개 기존 견적서의 품목을 한 번에 교체합니다.`;
-    dialog.querySelector('[data-confirm-bulk]').disabled = blocking.length > 0 || applying;
+    dialog.querySelector('[data-bulk-status]').textContent = selectedReady.length
+      ? `선택한 저장 가능 전표 ${selectedReady.length.toLocaleString('ko-KR')}개를 거래처별로 순차 저장합니다.`
+      : '저장할 정상 전표를 선택하세요. 확인 필요 전표는 저장되지 않습니다.';
+    dialog.querySelector('[data-confirm-bulk]').disabled = !selectedReady.length || applying;
+    dialog.querySelectorAll('[data-bulk-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.bulkView === view)));
+    persistEstimateBulkProgress(currentPlan);
   };
-  dialog.querySelectorAll('[data-bulk-target]').forEach(select => select.addEventListener('change', () => {
-    selectionOverrides[select.closest('[data-bulk-group]').dataset.bulkGroup] = select.value;
+  dialog.querySelectorAll('[data-bulk-action]').forEach(select => select.addEventListener('change', () => {
+    const section = select.closest('[data-bulk-group]');
+    const groupId = section.dataset.bulkGroup;
+    selections[groupId] = estimateBulkSelectionFromValue(select.value, section.querySelector('[data-bulk-create-name]').value);
+    selectionTouched.delete(groupId);
+    sync();
+  }));
+  dialog.querySelectorAll('[data-bulk-create-name]').forEach(input => input.addEventListener('input', () => {
+    const section = input.closest('[data-bulk-group]');
+    selections[section.dataset.bulkGroup] = estimateBulkSelectionFromValue('CREATE', input.value);
+    selectionTouched.delete(section.dataset.bulkGroup);
+    sync();
+  }));
+  dialog.querySelectorAll('[data-bulk-select]').forEach(input => input.addEventListener('change', () => {
+    const groupId = input.closest('[data-bulk-group]').dataset.bulkGroup;
+    selectionTouched.add(groupId);
+    if (input.checked) selectedGroupIds.add(groupId);
+    else selectedGroupIds.delete(groupId);
+    sync();
+  }));
+  dialog.querySelectorAll('[data-bulk-view]').forEach(button => button.addEventListener('click', () => {
+    view = button.dataset.bulkView;
     sync();
   }));
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
   dialog.querySelector('[data-confirm-bulk]').addEventListener('click', async () => {
     sync();
-    if (classification.issues.length || currentResolution.issues.length || currentConflicts.length) return;
+    const executableIds = new Set(currentPlan.entries
+      .filter(entry => selectedGroupIds.has(entry.groupId) && ['READY', 'FAILED'].includes(entry.status) && entry.candidate)
+      .map(entry => entry.groupId));
+    if (!executableIds.size) return;
     applying = true;
-    dialog.querySelectorAll('button, select').forEach(control => { control.disabled = true; });
-    dialog.querySelector('[data-bulk-status]').textContent = '모든 대상 견적서를 하나의 트랜잭션으로 업데이트하고 있습니다.';
+    dialog.querySelectorAll('button, select, input').forEach(control => { control.disabled = true; });
+    dialog.querySelector('[data-bulk-status]').textContent = '정상 전표를 거래처별로 독립 저장하고 있습니다.';
     state.busy = true;
     renderDelivery();
     try {
-      await applyEstimateBulkUpdate(classification, selectionOverrides);
+      const applied = await applyEstimatePerCustomerUpdates(currentPlan, executableIds, ({ results }) => {
+        const completed = results.filter(result => result.status === 'COMPLETED').length;
+        const failed = results.filter(result => result.status === 'FAILED').length;
+        dialog.querySelector('[data-bulk-status]').textContent = `처리 중 · 저장 완료 ${completed}개${failed ? ` · 저장 실패 ${failed}개` : ''}`;
+      });
+      applied.results.filter(result => result.record).forEach(result => {
+        selections[result.groupId] = { action: 'UPDATE', targetEstimateId: result.record.estimateId, catalogName: '' };
+      });
       applying = false;
-      finish();
-    } catch (error) {
-      applying = false;
-      dialog.querySelectorAll('button, select').forEach(control => { control.disabled = false; });
+      view = applied.results.some(result => result.status === 'FAILED') || currentPlan.summary.pending ? 'review' : 'all';
       sync();
-      const stale = String(error?.message || '').includes('SMARTINPUT_ESTIMATE_BUNDLE_STALE');
-      const message = stale
-        ? '확인 후 기존 견적서가 변경되어 전체 적용하지 않았습니다. 대상을 다시 확인하세요.'
-        : (error.message || '전체 견적서를 업데이트하지 못했습니다. 입력은 유지됩니다.');
-      dialog.querySelector('[data-bulk-issues]').innerHTML = `<strong>${esc(message)}</strong>`;
-      setAppStatus('전체 견적서를 업데이트하지 못했습니다. 입력 내용은 유지됩니다.', 'error');
-      toast(message, 'error');
+      const summary = currentPlan.summary;
+      const message = `저장 완료 ${summary.completed}개 · 확인 필요 ${summary.pending + summary.failed}개 · 변경 없음 ${summary.unchanged}개`;
+      setAppStatus(message, summary.failed ? 'warn' : undefined);
+      toast(message, summary.failed ? 'warn' : 'success');
     } finally {
       state.busy = false;
+      applying = false;
+      dialog.querySelectorAll('button, select, input').forEach(control => { control.disabled = false; });
+      sync();
       renderDelivery();
     }
   });
   sync();
   dialog.showModal();
-  const firstUnresolved = [...dialog.querySelectorAll('[data-bulk-target]')].find(select => !select.value);
-  (firstUnresolved || dialog.querySelector('[data-bulk-target]') || dialog.querySelector('[data-close]'))?.focus({ preventScroll: true });
+  const firstPending = currentPlan.entries.find(entry => ['PENDING', 'FAILED'].includes(entry.status));
+  const firstControl = firstPending
+    ? dialog.querySelector(`[data-bulk-group="${CSS.escape(firstPending.groupId)}"] [data-bulk-action]`)
+    : dialog.querySelector('[data-bulk-action]');
+  (firstControl || dialog.querySelector('[data-close]'))?.focus({ preventScroll: true });
 }
 
 function openEstimateSaveDialog({ saveAs = false } = {}) {
