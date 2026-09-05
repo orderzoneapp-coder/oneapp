@@ -107,7 +107,7 @@ assert.match(master, /추가한 항목과 표시 순서는 상품 저장 후 다
 assert.doesNotMatch(master, /Inbox 새로고침/);
 assert.match(sku, /SKU_MANAGEMENT_MASTER_WRITE_BLOCKED/);
 assert.match(sku, /SKU 후보 생성 및 상품 등록 요청/);
-assert.match(sku, /> 상품관리로 이동/);
+assert.match(sku, />\s*← 상품관리/);
 assert.match(sku, /bg-indigo-600 text-white text-\[12px\] font-black shadow-md/);
 assert.doesNotMatch(sku, /id: 'theme', label: '행사테마'/);
 assert.doesNotMatch(commonUi, /label: '상품등록'/);
