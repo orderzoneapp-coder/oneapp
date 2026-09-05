@@ -240,7 +240,7 @@ assert.match(merchOpsSource, /productSnapshotVersion: String\(data\.productSnaps
 const manifest = JSON.parse(read('app-manifest.json'));
 const app = (id) => manifest.applications.find((item) => item.id === id);
 const contract = (id) => manifest.sharedDataContracts.find((item) => item.id === id);
-assert.equal(manifest.schemaVersion, '1.3.11');
+assert.equal(manifest.schemaVersion, '1.3.12');
 assert.equal(contract('change-history').owner, 'master-lookup');
 assert.equal(contract('change-history').readAdapter, 'ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1');
 assert.ok(!app('merchops').ownedContracts.includes('change-history'));
@@ -258,6 +258,6 @@ const architecture = read('APP_ARCHITECTURE.md');
 assert.match(architecture, /ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1/);
 assert.match(architecture, /ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1/);
 assert.match(architecture, /F9와 화면 버튼 모두 output-only/);
-assert.match(architecture, /`settings\.html`, `export_center\.html`을 제거/);
+assert.match(architecture, /`settings\.html`, `export_center\.html`, `Item_manager\.html`을 제거/);
 
 console.log('History · Settings · Export owner-boundary contracts passed.');
