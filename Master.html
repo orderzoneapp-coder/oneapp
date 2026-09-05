@@ -1292,7 +1292,7 @@
             const refreshChangeRequestInbox = useCallback(async () => {
                 try {
                     const module = await window.__loadProductChangeRequestAdapter();
-                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ status: ['PENDING', 'IN_REVIEW'], limit: 200 });
+                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ status: ['PENDING', 'IN_REVIEW'], limit: 200, collapseDuplicates: true });
                     setChangeRequestInbox(result);
                 } catch (error) {
                     setChangeRequestInbox({ status: 'ERROR', requests: [], error: { code: error.message || String(error) } });
@@ -1361,7 +1361,7 @@
                 try {
                     const module = await window.__loadProductChangeRequestAdapter();
                     const result = await module.productMasterChangeRequestAdapter.beginReview({ requestId: entry.request?.requestId, actor: null });
-                    if (result.entry) setSelectedChangeRequest(result.entry);
+                    if (result.entry) setSelectedChangeRequest({ ...result.entry, duplicateRequestIds: entry.duplicateRequestIds || [], repeatedRequestCount: entry.repeatedRequestCount || 1 });
                     await refreshChangeRequestInbox();
                 } catch (error) {
                     console.error(error);
@@ -1376,6 +1376,18 @@
                     resolution, productCode, reason, actor: null, result,
                 });
                 if (!['APPLIED', 'LINKED', 'REJECTED'].includes(completed.status)) throw new Error(completed.error?.code || '요청 완료 처리 실패');
+                const duplicateResolution = resolution === 'APPLIED' ? 'LINKED' : resolution;
+                for (const requestId of selectedChangeRequest?.duplicateRequestIds || []) {
+                    const duplicateCompleted = await module.productMasterChangeRequestAdapter.completeChangeRequest({
+                        requestId,
+                        resolution: duplicateResolution,
+                        productCode,
+                        reason: [reason, '동일 요청 통합 처리'].filter(Boolean).join(' · '),
+                        actor: null,
+                        result,
+                    });
+                    if (!['APPLIED', 'LINKED', 'REJECTED'].includes(duplicateCompleted.status)) console.warn('동일 상품 중복 요청 정리 실패', requestId, duplicateCompleted.error?.code);
+                }
                 setSelectedChangeRequest(null);
                 await refreshChangeRequestInbox();
                 return completed;
@@ -1485,6 +1497,17 @@
                                 result: { revision: commitResult?.revision ?? masterPageRevision },
                             });
                             if (completed.status !== 'APPLIED') throw new Error(completed.error?.code || '요청 완료 처리 실패');
+                            for (const requestId of entry.duplicateRequestIds || []) {
+                                const duplicateCompleted = await module.productMasterChangeRequestAdapter.completeChangeRequest({
+                                    requestId,
+                                    resolution: 'LINKED',
+                                    productCode: code,
+                                    reason: '신규 상품 전체 등록 · 동일 요청 통합 처리',
+                                    actor: null,
+                                    result: { revision: commitResult?.revision ?? masterPageRevision },
+                                });
+                                if (duplicateCompleted.status !== 'LINKED') console.warn('동일 상품 중복 요청 정리 실패', requestId, duplicateCompleted.error?.code);
+                            }
                             successCount += 1;
                         } catch (error) {
                             console.error(error);
@@ -2047,7 +2070,7 @@
                                             {changeRequestInbox.requests.map((entry) => (
                                                 <tr key={`${entry.request?.requestId}-${entry.receivedAt}`} className="hover:bg-amber-50/60">
                                                     <td className="px-3 py-2 font-black text-amber-900">{requestTypeLabel(entry)}</td>
-                                                    <td className="px-3 py-2 font-bold text-slate-800">{entry.request?.changes?.find(change => change.field === '품목명')?.proposedValue || entry.request?.entityId || '-'}</td>
+                                                    <td className="px-3 py-2 font-bold text-slate-800">{entry.request?.changes?.find(change => change.field === '품목명')?.proposedValue || entry.request?.entityId || '-'}{entry.repeatedRequestCount > 1 && <span className="ml-2 inline-flex px-2 py-0.5 rounded-full bg-slate-100 text-[10px] text-slate-600">동일 요청 {entry.repeatedRequestCount}회</span>}</td>
                                                     <td className="px-3 py-2 text-slate-600">{entry.request?.changes?.find(change => change.field === '규격')?.proposedValue || '-'}</td>
                                                     <td className="px-3 py-2 text-slate-600">{entry.request?.changes?.find(change => change.field === '단위')?.proposedValue || '-'}</td>
                                                     <td className="px-3 py-2 text-slate-600"><div className="truncate">{entry.request?.actor?.actorName || '요청자 미확인'} · {requestSourceLabel(entry)}</div></td>
