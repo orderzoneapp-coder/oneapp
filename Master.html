@@ -722,21 +722,45 @@
             { category: '관리대상', key: '사용여부', label: '사용여부' },
         ];
 
+        const PRODUCT_EDITOR_FIELD_LAYOUT_KEY = 'oneapp.master.product-editor-field-layout.v1';
+        const defaultProductEditorFieldKeys = () => PRODUCT_FORM_FIELDS.map(field => field.key);
+        const loadProductEditorFieldKeys = () => {
+            const defaults = defaultProductEditorFieldKeys();
+            try {
+                const saved = JSON.parse(localStorage.getItem(PRODUCT_EDITOR_FIELD_LAYOUT_KEY) || '[]');
+                if (!Array.isArray(saved)) return defaults;
+                const unique = saved.map(safeStr).filter((key, index, rows) => key && rows.indexOf(key) === index);
+                return [...unique, ...defaults.filter(key => !unique.includes(key))];
+            } catch {
+                return defaults;
+            }
+        };
+
         const ProductEditorModal = ({ item, onCancel, onSave, isSaving }) => {
             const [form, setForm] = useState({});
             const [errorMessage, setErrorMessage] = useState('');
-            const [detailKeys, setDetailKeys] = useState([]);
+            const [fieldKeys, setFieldKeys] = useState(defaultProductEditorFieldKeys);
             const [detailSelection, setDetailSelection] = useState('');
             const isOpen = item !== null;
             const isEditing = Boolean(item && safeStr(item.코드 || item.품목코드).trim());
             useEffect(() => {
                 if (!isOpen) return;
                 setForm(item ? { ...item, 코드: safeStr(item.코드 || item.품목코드) } : {});
-                setDetailKeys([]);
+                setFieldKeys(loadProductEditorFieldKeys());
                 setDetailSelection('');
                 setErrorMessage('');
             }, [item, isOpen]);
             if (!isOpen) return null;
+            const moveField = (key, direction) => {
+                setFieldKeys(current => {
+                    const index = current.indexOf(key);
+                    const target = index + direction;
+                    if (index < 0 || target < 0 || target >= current.length) return current;
+                    const next = current.slice();
+                    [next[index], next[target]] = [next[target], next[index]];
+                    return next;
+                });
+            };
             const handleSubmit = async () => {
                 try {
                     const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(form);
@@ -744,11 +768,12 @@
                         if (safeStr(normalized[field]).trim() !== '') normalized[field] = Number(normalized[field]);
                     });
                     await onSave(normalized, { isEditing });
+                    try { localStorage.setItem(PRODUCT_EDITOR_FIELD_LAYOUT_KEY, JSON.stringify(fieldKeys)); } catch {}
                 } catch (error) {
                     setErrorMessage(error.message);
                 }
             };
-            const visibleDetailFields = detailKeys.map(key => DETAIL_PRODUCT_FIELDS.find(field => field.key === key) || { key, label: key });
+            const visibleFields = fieldKeys.map(key => PRODUCT_FORM_FIELDS.find(field => field.key === key) || DETAIL_PRODUCT_FIELDS.find(field => field.key === key) || { key, label: key });
             return (
                 <div className="fixed inset-0 z-[135] bg-slate-950/60 flex items-center justify-center p-5">
                     <div className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
@@ -757,28 +782,36 @@
                             <p className="text-xs text-slate-300 mt-1">공식 master·revision·history 계약으로 저장됩니다.</p>
                         </div>
                         <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {PRODUCT_FORM_FIELDS.concat(visibleDetailFields).map(field => (
-                                <label key={field.key} className="block">
-                                    <span className="text-[11px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span>
+                            {visibleFields.map((field, index) => (
+                                <div key={field.key} className="block">
+                                    <span className="min-h-6 flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
+                                        <span>{field.label}{field.required ? ' *' : ''}</span>
+                                        <span className="flex items-center gap-1">
+                                            <button type="button" onClick={() => moveField(field.key, -1)} disabled={index === 0} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 앞으로 이동`}>↑</button>
+                                            <button type="button" onClick={() => moveField(field.key, 1)} disabled={index === visibleFields.length - 1} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 뒤로 이동`}>↓</button>
+                                            {!PRODUCT_FORM_FIELDS.some(baseField => baseField.key === field.key) && <button type="button" onClick={() => setFieldKeys(current => current.filter(key => key !== field.key))} className="w-6 h-6 rounded border border-rose-200 bg-white text-rose-600 hover:bg-rose-50" aria-label={`${field.label} 기본항목에서 제외`}>×</button>}
+                                        </span>
+                                    </span>
                                     <input
+                                        aria-label={field.label}
                                         type={field.type || 'text'}
                                         value={form[field.key] ?? ''}
                                         disabled={isEditing && field.key === '코드'}
                                         onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))}
                                         className="mt-1 w-full h-10 px-3 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
                                     />
-                                </label>
+                                </div>
                             ))}
                             <div className="md:col-span-2 border-t border-slate-200 pt-4">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                                     <select value={detailSelection} onChange={event => setDetailSelection(event.target.value)} className="h-10 flex-1 px-3 rounded-lg border border-slate-300 text-sm bg-white">
                                         <option value="">상세항목 선택</option>
-                                        {DETAIL_PRODUCT_FIELDS.filter(field => !detailKeys.includes(field.key)).map(field => <option key={field.key} value={field.key}>{field.category} · {field.label}</option>)}
-                                        {Object.keys(form).filter(key => !PRODUCT_FORM_FIELDS.some(field => field.key === key) && !DETAIL_PRODUCT_FIELDS.some(field => field.key === key) && !detailKeys.includes(key)).map(key => <option key={key} value={key}>등록되지 않은 항목 · {key}</option>)}
+                                        {DETAIL_PRODUCT_FIELDS.filter(field => !fieldKeys.includes(field.key)).map(field => <option key={field.key} value={field.key}>{field.category} · {field.label}</option>)}
+                                        {Object.keys(form).filter(key => !PRODUCT_FORM_FIELDS.some(field => field.key === key) && !DETAIL_PRODUCT_FIELDS.some(field => field.key === key) && !fieldKeys.includes(key)).map(key => <option key={key} value={key}>등록되지 않은 항목 · {key}</option>)}
                                     </select>
-                                    <button type="button" onClick={() => { if (detailSelection) setDetailKeys(current => [...current, detailSelection]); setDetailSelection(''); }} disabled={!detailSelection} className="h-10 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black disabled:opacity-40">+ 항목 추가</button>
+                                    <button type="button" onClick={() => { if (detailSelection) setFieldKeys(current => [...current, detailSelection]); setDetailSelection(''); }} disabled={!detailSelection} className="h-10 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black disabled:opacity-40">+ 기본항목 추가</button>
                                 </div>
-                                <p className="text-[10px] text-slate-500 mt-2">화면에 추가하지 않은 기존 필드도 삭제하지 않고 그대로 보존합니다.</p>
+                                <p className="text-[10px] text-slate-500 mt-2">추가한 항목과 표시 순서는 상품 저장 후 다음 수정창에도 유지됩니다. 화면에서 제외한 기존 필드값은 삭제하지 않습니다.</p>
                             </div>
                         </div>
                         {errorMessage && <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">{errorMessage}</div>}
@@ -822,8 +855,8 @@
             const request = entry.request || {};
             const original = request.source?.original || request.changes?.map(change => ({ field: change.field, value: change.beforeValue })) || {};
             return (
-                <div className="fixed inset-0 z-[145] bg-slate-950/65 flex items-center justify-center p-3 sm:p-5">
-                    <div className="w-full max-w-6xl max-h-[94vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                <div className="fixed inset-x-0 bottom-0 z-[145] bg-slate-950/65 flex items-center justify-center p-3 sm:p-5" style={{ top: 'var(--nexus-ui-header-height, 64px)' }}>
+                    <div className="w-full max-w-6xl max-h-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
                         <div className="px-5 sm:px-6 py-4 bg-slate-900 text-white flex items-start justify-between gap-4">
                             <div><h2 className="text-lg font-black">{requestTypeLabel(entry)}</h2><p className="text-xs text-slate-300 mt-1">{requestSourceLabel(entry)} · {request.actor?.actorName || '요청자 미확인'} · {new Date(request.requestedAt || entry.receivedAt).toLocaleString('ko-KR')}</p></div>
                             <button type="button" onClick={onClose} disabled={isProcessing} className="w-9 h-9 rounded-lg border border-slate-600 text-slate-200">×</button>
@@ -1400,6 +1433,83 @@
                 }
             };
 
+            const handleRegisterAllCreateRequests = async () => {
+                const targets = (changeRequestInbox.requests || []).filter(entry => entry.request?.operation === 'CREATE');
+                if (targets.length === 0 || isProcessing) return;
+                if (!window.confirm(`신규 상품 등록 요청 ${targets.length.toLocaleString()}건을 전체 등록하시겠습니까?\n중복 코드 또는 필수값 오류가 있는 요청은 등록하지 않고 목록에 남깁니다.`)) return;
+
+                setIsProcessing(true);
+                setProcessMsg(`신규 상품 전체 등록 준비 중... (0/${targets.length})`);
+                let workingMaster = masterProducts;
+                let successCount = 0;
+                const failures = [];
+                try {
+                    const module = await window.__loadProductChangeRequestAdapter();
+                    for (let index = 0; index < targets.length; index += 1) {
+                        const entry = targets[index];
+                        const request = entry.request || {};
+                        const displayName = request.changes?.find(change => change.field === '품목명')?.proposedValue || request.entityId || `요청 ${index + 1}`;
+                        setProcessMsg(`신규 상품 전체 등록 중... (${index + 1}/${targets.length}) ${displayName}`);
+                        try {
+                            const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(requestProposedItem(entry, workingMaster));
+                            PRODUCT_FORM_FIELDS.concat(DETAIL_PRODUCT_FIELDS).filter(field => field.type === 'number').forEach(({ key }) => {
+                                if (safeStr(normalized[key]).trim() !== '') normalized[key] = Number(normalized[key]);
+                            });
+                            const code = safeStr(normalized.코드 || normalized.품목코드).trim();
+                            const existing = workingMaster[code];
+                            const preparedTarget = entry.review?.applyTarget?.targetProduct;
+                            const preparedAlreadyApplied = Boolean(existing && preparedTarget && Object.entries(preparedTarget).every(([key, value]) => Object.is(existing[key] ?? '', value ?? '')));
+                            let commitResult = null;
+                            if (!preparedAlreadyApplied) {
+                                if (existing) throw new Error('같은 상품코드가 이미 존재합니다. 개별 수정에서 기존 상품 연결 또는 다른 코드를 선택하세요.');
+                                const prepared = await module.productMasterChangeRequestAdapter.prepareApply({ requestId: request.requestId, productCode: code, targetProduct: normalized, actor: null });
+                                if (prepared.status !== 'IN_REVIEW') throw new Error(prepared.error?.code || '요청 반영 준비 기록 실패');
+                                commitResult = await window.ONEAPP_MASTER_ADD_UPDATE.commitSingleProductChange({
+                                    item: normalized,
+                                    isEditing: false,
+                                    expectedRevision: masterPageRevision,
+                                    storage: window.ONEAPP?.STORAGE,
+                                    historyApi: window.ONEAPP?.HISTORY,
+                                    localStorageRef: window.localStorage,
+                                    actor: null,
+                                });
+                                masterPageRevision = commitResult.revision;
+                                workingMaster = commitResult.masterMap;
+                            }
+                            const completed = await module.productMasterChangeRequestAdapter.completeChangeRequest({
+                                requestId: request.requestId,
+                                resolution: 'APPLIED',
+                                productCode: code,
+                                reason: '신규 상품 전체 등록',
+                                actor: null,
+                                result: { revision: commitResult?.revision ?? masterPageRevision },
+                            });
+                            if (completed.status !== 'APPLIED') throw new Error(completed.error?.code || '요청 완료 처리 실패');
+                            successCount += 1;
+                        } catch (error) {
+                            console.error(error);
+                            failures.push({ name: displayName, reason: error.message || String(error) });
+                            if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+                                workingMaster = await loadMasterLocal().catch(() => workingMaster);
+                            }
+                        }
+                    }
+                    setMasterProducts(workingMaster);
+                    await refreshChangeRequestInbox();
+                    if (failures.length > 0) {
+                        showToast(`⚠️ 전체 등록 결과: 성공 ${successCount}건 · 확인 필요 ${failures.length}건`);
+                    } else {
+                        showToast(`✅ 신규 상품 ${successCount}건 전체 등록 완료`);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    showToast(`❌ 전체 등록 실패: ${error.message}`);
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
             const handleLinkChangeRequest = async (productCode, reason) => {
                 if (!masterProducts[productCode]) return showToast('❌ 연결할 기존 상품코드를 확인하세요.');
                 setIsProcessing(true);
@@ -1902,7 +2012,7 @@
                         )}
 
                         <section className="px-3 sm:px-6 py-3 bg-white border-b border-slate-200 shrink-0" data-product-change-request-inbox={changeRequestInbox.status}>
-                            <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[12px] font-black text-slate-800">신규 상품 등록 요청 {(changeRequestInbox.requests || []).filter(entry => entry.request?.operation === 'CREATE').length.toLocaleString()}건 · 상품정보 수정 요청 {(changeRequestInbox.requests || []).filter(entry => entry.request?.operation !== 'CREATE').length.toLocaleString()}건</div>
                                     <div className={`text-[10px] mt-0.5 ${changeRequestInbox.status === 'ERROR' || changeRequestInbox.status === 'NOT_AVAILABLE' ? 'text-rose-700' : 'text-slate-500'}`}>
@@ -1915,17 +2025,40 @@
                                                     : `요청함 확인 실패: ${changeRequestInbox.error?.code || changeRequestInbox.status}`}
                                     </div>
                                 </div>
-                                {(changeRequestInbox.requests || []).length > 0 && (
-                                    <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-1.5" aria-label="상품 등록·수정 요청">
-                                        {changeRequestInbox.requests.map((entry) => (
-                                            <div key={`${entry.request?.requestId}-${entry.receivedAt}`} className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-950 flex items-center gap-2">
-                                                <div className="flex-1 min-w-0"><div className="font-black truncate">{requestTypeLabel(entry)} · {entry.request?.changes?.find(change => change.field === '품목명')?.proposedValue || entry.request?.entityId || '-'}</div><div className="mt-0.5 text-amber-800 truncate">{entry.request?.changes?.find(change => change.field === '규격')?.proposedValue || '-'} · {entry.request?.changes?.find(change => change.field === '단위')?.proposedValue || '-'} · {requestSourceLabel(entry)} · {entry.request?.actor?.actorName || '요청자 미확인'}</div></div>
-                                                <button type="button" onClick={() => openChangeRequest(entry)} className="h-7 px-3 rounded-md bg-white border border-amber-300 font-black hover:bg-amber-100">보기</button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                {(changeRequestInbox.requests || []).some(entry => entry.request?.operation === 'CREATE') && (
+                                    <button type="button" onClick={handleRegisterAllCreateRequests} disabled={isProcessing} className="h-9 px-5 rounded-lg bg-indigo-600 text-white text-[11px] font-black shadow-md hover:bg-indigo-700 disabled:bg-slate-400 whitespace-nowrap">전체 등록</button>
                                 )}
                             </div>
+                            {(changeRequestInbox.requests || []).length > 0 && (
+                                <div className="mt-3 max-h-52 overflow-auto rounded-lg border border-slate-200" aria-label="상품 등록·수정 요청 목록">
+                                    <table className="w-full min-w-[860px] text-[11px] text-left">
+                                        <thead className="sticky top-0 z-10 bg-slate-100 text-slate-600 border-b border-slate-200">
+                                            <tr>
+                                                <th className="px-3 py-2 font-black w-36">요청 구분</th>
+                                                <th className="px-3 py-2 font-black">품목명</th>
+                                                <th className="px-3 py-2 font-black w-32">규격</th>
+                                                <th className="px-3 py-2 font-black w-24">단위</th>
+                                                <th className="px-3 py-2 font-black w-44">요청자·출처</th>
+                                                <th className="px-3 py-2 font-black w-24">상태</th>
+                                                <th className="px-3 py-2 font-black text-center w-20">관리</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {changeRequestInbox.requests.map((entry) => (
+                                                <tr key={`${entry.request?.requestId}-${entry.receivedAt}`} className="hover:bg-amber-50/60">
+                                                    <td className="px-3 py-2 font-black text-amber-900">{requestTypeLabel(entry)}</td>
+                                                    <td className="px-3 py-2 font-bold text-slate-800">{entry.request?.changes?.find(change => change.field === '품목명')?.proposedValue || entry.request?.entityId || '-'}</td>
+                                                    <td className="px-3 py-2 text-slate-600">{entry.request?.changes?.find(change => change.field === '규격')?.proposedValue || '-'}</td>
+                                                    <td className="px-3 py-2 text-slate-600">{entry.request?.changes?.find(change => change.field === '단위')?.proposedValue || '-'}</td>
+                                                    <td className="px-3 py-2 text-slate-600"><div className="truncate">{entry.request?.actor?.actorName || '요청자 미확인'} · {requestSourceLabel(entry)}</div></td>
+                                                    <td className="px-3 py-2"><span className={`inline-flex px-2 py-1 rounded-full font-black ${entry.status === 'IN_REVIEW' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-800'}`}>{entry.status === 'IN_REVIEW' ? '검토 중' : '검토 대기'}</span></td>
+                                                    <td className="px-3 py-2 text-center"><button type="button" onClick={() => openChangeRequest(entry)} className="h-7 px-3 rounded-md bg-white border border-indigo-300 text-indigo-700 font-black hover:bg-indigo-50">수정</button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </section>
 
                         {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
