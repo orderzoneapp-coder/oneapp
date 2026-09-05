@@ -34,7 +34,7 @@ import {
   synchronizeWorkingRow,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.4';
+} from './input-template-mapper.js?v=0.2.5';
 import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
@@ -46,12 +46,20 @@ import {
 import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js?v=0.1.0';
 import {
   buildOrderGroupPayload,
+  captureOrderHeaderSubmission,
+  captureOrderRowSubmission,
   decorateStructuredRows,
+  executeOrderGroupSavePlan,
   groupVoucherRows,
+  orderGroupValidationErrors,
+  orderHeaderChangedSinceSubmission,
+  partitionOrderGroups,
+  requiresOrderGroupSavePath,
+  retainUnsavedOrderRows,
   stage1RowFieldDefinitions,
   structuredFieldsForMode,
   summarizeVoucherGroups
-} from './multivoucher-stage1.js?v=0.2.1';
+} from './multivoucher-stage1.js?v=0.2.2';
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,
@@ -3038,7 +3046,7 @@ function openInputTemplateEditor(template) {
       reviewed: true
     }));
     try {
-      const updated = createTemplateRecord({ companyId: state.companyId, voucherMode: state.draft.activeMode, signature: template.signature, headers: template.headers, mappings }, name, targets, template);
+      const updated = createTemplateRecord({ companyId: state.companyId, voucherMode: state.draft.activeMode, signature: template.signature, headers: template.headers, mappings }, name, allTargets, template);
       const next = state.inputTemplates.map(record => record.templateId === template.templateId ? updated : record);
       await saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = next;
@@ -8351,22 +8359,8 @@ async function completePurchaseOfficial() {
 }
 
 function orderGroupErrors(groups = []) {
-  const errors = [];
-  groups.forEach((group, index) => {
-    const label = `${index + 1}번 전표`;
-    (group.validationErrors || []).forEach(error => errors.push(`${label} ${error}`));
-    if (!group.deliveryCustomerName) errors.push(`${label} 등록 거래처`);
-    if (!group.voucherDate) errors.push(`${label} 주문일자`);
-    if (!group.deliveryDate) errors.push(`${label} 배송일자`);
-    if (!group.warehouseId && !group.warehouseCode) errors.push(`${label} 출하창고`);
-    if (!group.rows.length) errors.push(`${label} 상품`);
-    group.rows.forEach((row, rowIndex) => {
-      if (!row.itemCode && !row.itemName) errors.push(`${label} ${rowIndex + 1}행 상품`);
-      if (row.quantity === null) errors.push(`${label} ${rowIndex + 1}행 수량`);
-      if (row.unitConversionStatus === 'REVIEW_REQUIRED') errors.push(`${label} ${rowIndex + 1}행 단위 환산`);
-    });
-  });
-  return errors;
+  return groups.flatMap((group, index) => orderGroupValidationErrors(group)
+    .map(error => `${index + 1}번 전표 ${error}`));
 }
 
 function orderGroupCommonPayload(current, rawFingerprint) {
@@ -8396,45 +8390,42 @@ function orderGroupCommonPayload(current, rawFingerprint) {
   };
 }
 
-async function saveOrderGroups(current, groups, submittedAt) {
+async function saveOrderGroups(current, groupPlan, submittedAt) {
+  const rowSubmission = captureOrderRowSubmission(current.rows, current.header);
+  const headerSubmission = captureOrderHeaderSubmission(current.header);
   const batchText = current.batches.map(batch => batch.rawText).join('\n\n--- SMART INPUT BATCH ---\n\n');
   const rawFingerprint = await sha256Text(batchText);
   const common = orderGroupCommonPayload(current, rawFingerprint);
-  const results = [];
-  for (const group of groups) {
+  const results = await executeOrderGroupSavePlan(groupPlan, async group => {
+    const payload = buildOrderGroupPayload(group, common);
+    payload.items = payload.items.map((row, index) => {
+      const masterLinked = hasMasterProductIdentity(row);
+      return {
+        ...row,
+        lineNo: index + 1,
+        productId: masterLinked ? row.productId : null,
+        masterProductId: masterLinked ? row.masterProductId : null,
+        rawQuantity: row.rawQuantity,
+        rawUnit: row.rawUnit,
+        finalQuantity: row.quantity,
+        finalUnit: row.unit,
+        price: row.unitPrice,
+        supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
+        matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
+        matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
+        sourceLineKey: row.sourceLineKey || `${row.sourceBatchId}:${row.sourceRowNo || index + 1}`,
+        reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
+        productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
+      };
+    });
+    const result = await createOrder(payload);
+    let online = false;
     try {
-      const payload = buildOrderGroupPayload(group, common);
-      payload.items = payload.items.map((row, index) => {
-        const masterLinked = hasMasterProductIdentity(row);
-        return {
-          ...row,
-          lineNo: index + 1,
-          productId: masterLinked ? row.productId : null,
-          masterProductId: masterLinked ? row.masterProductId : null,
-          rawQuantity: row.rawQuantity,
-          rawUnit: row.rawUnit,
-          finalQuantity: row.quantity,
-          finalUnit: row.unit,
-          price: row.unitPrice,
-          supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
-          matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
-          matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
-          sourceLineKey: row.sourceLineKey || `${row.sourceBatchId}:${row.sourceRowNo || index + 1}`,
-          reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
-          productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
-        };
-      });
-      const result = await createOrder(payload);
-      let online = false;
-      try {
-        const sync = await syncAfterLocalMutation(result.order.orderId);
-        online = Boolean(sync?.online);
-      } catch (_) {}
-      results.push({ ok: true, group, result, online });
-    } catch (error) {
-      results.push({ ok: false, group, error });
-    }
-  }
+      const sync = await syncAfterLocalMutation(result.order.orderId);
+      online = Boolean(sync?.online);
+    } catch (_) {}
+    return { result, online };
+  });
 
   const succeeded = results.filter(result => result.ok);
   const failed = results.filter(result => !result.ok);
@@ -8455,16 +8446,27 @@ async function saveOrderGroups(current, groups, submittedAt) {
     voucherGroupKey: group.voucherGroupKey
   }));
 
-  if (failed.length) {
-    const failedKeys = new Set(failed.map(result => result.group.voucherGroupKey));
-    current.rows = current.rows.filter(row => failedKeys.has(buildVoucherGroupKeyForCurrentRow(row)));
-    current.voucherGroups = failed.map(result => result.group);
-    current.delivery = { status: 'PARTIAL', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
+  const remainingRows = retainUnsavedOrderRows(current.rows, rowSubmission, succeeded.map(result => result.group), current.header);
+  const headerChanged = orderHeaderChangedSinceSubmission(current.header, headerSubmission);
+  if (failed.length || remainingRows.length || headerChanged) {
+    current.rows = remainingRows;
+    current.voucherGroups = groupVoucherRows('order', remainingRows, current.header);
+    current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
     saveDraftNow();
     renderMode();
-    const firstMessage = failed[0].error?.message || '저장 실패';
-    setAppStatus(`주문 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
-    toast(`${failed.length}건 저장 필요: ${firstMessage}`, 'error');
+    const reviewCount = failed.filter(result => result.blocked).length;
+    const saveFailureCount = failed.length - reviewCount;
+    const changedDuringSave = failed.length ? '' : [
+      remainingRows.length ? `${remainingRows.length}행` : '',
+      headerChanged ? '상단 정보' : ''
+    ].filter(Boolean).join('·');
+    setAppStatus(`주문 ${succeeded.length}건 저장 완료${reviewCount ? ` · 확인 필요 ${reviewCount}건` : ''}${saveFailureCount ? ` · 저장 실패 ${saveFailureCount}건` : ''}${changedDuringSave ? ` · 저장 중 변경 ${changedDuringSave}` : ''} · 입력 상태를 유지했습니다.`, 'warn');
+    if (failed.length) {
+      const firstMessage = failed[0].error?.message || '저장 실패';
+      toast(`${failed.length}건 저장 보류: ${firstMessage}`, 'error');
+    } else {
+      toast(`저장 중 변경된 ${changedDuringSave}를 입력 상태에 유지했습니다.`, 'warn');
+    }
     return;
   }
 
@@ -8499,10 +8501,6 @@ async function saveOrderGroups(current, groups, submittedAt) {
   toast(`전표 그룹별 주문 ${succeeded.length}건을 중복 없이 저장했습니다.`, 'success');
 }
 
-function buildVoucherGroupKeyForCurrentRow(row) {
-  return groupVoucherRows('order', [row], modeDraft().header)[0]?.voucherGroupKey || '';
-}
-
 async function completeOrderLegacy() {
   const current = modeDraft();
   if (state.draft.activeMode !== 'order') {
@@ -8516,21 +8514,21 @@ async function completeOrderLegacy() {
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('order', current.rows, current.header);
-  const groupedInput = groups.length > 1 || current.rows.some(row => row.rowCustomerCode || row.rowCustomerName
-    || row.rowVoucherDate || row.rowDeliveryDate || row.rowWarehouseCode || row.rowVoucherNo || row.rowTransactionType);
+  const groupedInput = requiresOrderGroupSavePath(groups, current.rows);
   if (groupedInput) {
-    const errors = orderGroupErrors(groups);
-    if (errors.length) {
+    const groupPlan = partitionOrderGroups(groups);
+    if (!groupPlan.readyGroups.length) {
+      const errors = orderGroupErrors(groupPlan.reviewRequiredGroups);
       setAppStatus('다중 전표 정보를 확인하세요.', 'error');
       return toast(`${errors[0]}을(를) 확인하세요.`, 'error');
     }
-    if (!confirmGroupedVoucherCreation('order', groups)) return;
+    if (!confirmGroupedVoucherCreation('order', groupPlan.readyGroups)) return;
     if (!current.header.taxCustomerId && !current.header.customerName && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
     state.busy = true;
     renderDelivery();
-    setAppStatus(`전표 그룹 ${groups.length}건을 공통 주문서 원장에 저장하고 있습니다.`);
+    setAppStatus(`전표 그룹 ${groupPlan.readyGroups.length}건을 공통 주문서 원장에 저장하고 있습니다.${groupPlan.reviewRequiredGroups.length ? ` 확인 필요 ${groupPlan.reviewRequiredGroups.length}건은 입력표에 유지합니다.` : ''}`);
     try {
-      await saveOrderGroups(current, groups, submittedAt);
+      await saveOrderGroups(current, groupPlan, submittedAt);
     } finally {
       state.busy = false;
       renderDelivery();

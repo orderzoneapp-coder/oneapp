@@ -98,6 +98,25 @@
 - 후속 실행환경에는 Chromium 계열 실행 파일이 없어 브라우저 13개는 로컬에서 중복 실행하지 않는다. Push된 최종 head의 GitHub Actions가 Chromium 브라우저 회귀와 Phase 6B 브라우저 Gate의 최종 증거다.
 - DB schema/Store/index/version, ORDER Q 쇼핑몰 signature·occurrence 계산, 공식전표 V2, 원장·재고·채권채무, Cloud 계약 변경은 없다.
 
+## 독립감사 보정 결과
+
+- 최신 `main` 통합 head에 대한 독립감사에서 상단 충돌 범위, legacy/canonical 동일 projection 중복, 기존 숨김 target 양식 재저장, 정상·확인필요 전표 혼재 저장, 화면 요약 불일치를 병합 차단 항목으로 확인했다.
+- 같은 네 업무키 그룹의 주문일·납기일·창고 ID·배송처 ID/코드/명·세무거래처 ID/코드/명 충돌을 fail-closed하고, 공란 뒤 확인된 단일 값은 데이터 손실 없이 보강한다. 그룹키인 배송처 코드가 다르면 기존 규칙대로 별도 전표로 나뉜다.
+- 양식 중복 판정을 target ID가 아닌 실제 `projectionFieldId`로 일원화했다. 기존 `rowCustomerName`과 신규 `customer`가 다른 열에 동시 지정되면 조용한 덮어쓰기 대신 `TARGET_DUPLICATED`로 차단하며, 숨겨진 legacy target을 사용하는 기존 양식은 변경 없이 저장해도 ID와 연결을 유지한다.
+- 정상 그룹과 `REVIEW_REQUIRED` 그룹을 분리해 정상 그룹만 ORDER Q 원장 쓰기 callback에 전달한다. 확인 필요·저장 실패 행은 입력표에 남기고, 저장 대기 중 수정·추가된 행과 상단 정보도 제출 snapshot과 비교해 부분 실패·전체 성공 모두에서 보존한다.
+- 행별 상단·역할 필드가 있는 주문은 항상 그룹 검증 경로를 통과하며, 행별 상단값이 없는 기존 단일 직접입력은 기존 필드 포커스·오류 문구 계약을 유지한다.
+- 전표 요약에 `reviewRequiredVoucherCount`를 추가해 상품이 모두 `MATCHED`여도 상단 충돌 전표를 `확인 필요 전표 N건 · 확인 필요 N행`으로 표시한다.
+- 구매·판매·견적의 `sourceDocumentKey/sourceVoucherIndex/manualSplitKey` 매핑·source partition은 기존대로 유지하고 3개 모드 회귀로 고정했다. 일반 주문에서만 해당 내부 분할값을 그룹키에서 제외한다.
+- 최종 자산 버전은 SmartInput `v0.11.25`, input template mapper `v0.2.5`, multi-voucher stage 1 `v0.2.2`, 공통 UI `v1.5.0`이다. DB schema·Store·index·version·migration은 변경하지 않았다.
+
+## 독립감사 보정 후 검증
+
+- `test-orderq*.mjs` + `test-smartinput*.mjs` 65개 중 로컬에서 브라우저 실행 파일이 필요하지 않은 52개를 전수 실행해 모든 Node 프로세스가 exit 0으로 종료했다.
+- 실제 `orderlist-260904.xls`/`orderlist-260904 (분석).xls`가 현재 실행환경에 없어 `test-orderq-lab-shop-snapshot.mjs`, `test-orderq-shopping-actual-ledger-dedupe.mjs`, `test-smartinput-shopping-order-upload.mjs`의 실제 XLS 추가 확인은 `SKIP_LOCAL_FILES_NOT_PRESENT`로 기록됐다. 각 스크립트의 합성 fixture·occurrence·owner 0-write 회귀는 통과했고, 쇼핑몰 실제 원장 알고리즘 파일은 변경하지 않았다.
+- 13개 브라우저 스크립트를 별도로 실행했으나 로컬 환경에 Chromium/Chrome/Edge 실행 파일이 없어 13개 모두 executable preflight에서 exit 1로 종료했고 test body는 실행되지 않았다. 기능 회귀 실패와 구분하며, GitHub workflow가 65개 중 47개를 자동 실행하므로 Push된 exact head의 Actions에서 Chromium/Phase 6B browser Gate를 최종 확인해야 한다.
+- repository validator `24 checks / 0 warnings`, History·Settings·Export owner-boundary, client safety, 변경 JavaScript 문법검사, `git diff --check`가 통과했다.
+- Phase 6B 정적 UI baseline은 공통 theme token 정규화 후 index `67e48c9ea46c0807521aa9771ac8a0da648ba325d5e82422afd520e86671a5a0`, CSS `82ee90f8658d69aa1c126d247795a532dc0c695dc6c2f34235a4c7f466654cf7`, JS `a5459fc76a85d2dacbb176cbf085564e240961b469e065b078ac122cb1e6f614`로 갱신했고 통과했다.
+
 ## 병합 조건
 
 - PM 독립검증 전 병합·배포하지 않는다.
