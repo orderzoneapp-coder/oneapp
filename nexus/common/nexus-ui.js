@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.2';
+  const VERSION = '1.5.0';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -19,10 +19,11 @@
     Object.freeze({ id: 'smart-parser', label: '문서분석', path: 'SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', path: 'export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', path: 'settings.html' }),
-    Object.freeze({ id: 'item-manager', label: '상품등록', path: 'Item_manager.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', path: 'history_viewer.html' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문현황', path: 'orderq/index.html' }),
   ]);
+  const CURRENT_APP_ALIASES = Object.freeze({ 'item-manager': 'master-lookup' });
+  const HIDDEN_COMPATIBILITY_APP_IDS = new Set(['item-manager']);
 
   const visibleApps = () => {
     try {
@@ -31,9 +32,10 @@
       if (!Array.isArray(projection.visibleAppIds)) return APPS;
       const ids = projection.visibleAppIds;
       const valid = ids.every((id, index) => typeof id === 'string'
-        && APPS.some((app) => app.id === id)
+        && (APPS.some((app) => app.id === id) || HIDDEN_COMPATIBILITY_APP_IDS.has(id))
         && ids.indexOf(id) === index);
-      return valid ? APPS.filter((app) => ids.includes(app.id)) : APPS;
+      const visibleIds = new Set(ids.map((id) => CURRENT_APP_ALIASES[id] || id));
+      return valid ? APPS.filter((app) => visibleIds.has(app.id)) : APPS;
     } catch {
       return APPS;
     }
@@ -88,7 +90,8 @@
   };
 
   const buildHeader = () => {
-    const currentAppId = String(root.dataset.nexusUiApp || '').trim();
+    const rawCurrentAppId = String(root.dataset.nexusUiApp || '').trim();
+    const currentAppId = CURRENT_APP_ALIASES[rawCurrentAppId] || rawCurrentAppId;
     const currentApp = APPS.find((app) => app.id === currentAppId);
     const header = element('header', 'nexus-ui-header');
     header.id = 'nexusUiHeader';
