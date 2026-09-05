@@ -89,6 +89,47 @@ function storedResult(entry, status = entry.status) {
 const REVIEWABLE_STATUSES = new Set(['PENDING', 'IN_REVIEW']);
 const FINAL_STATUSES = new Set(['APPLIED', 'LINKED', 'REJECTED']);
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function productChangeRequestSemanticKey(entryOrRequest) {
+  const request = entryOrRequest?.request || entryOrRequest || {};
+  if (request.operation !== 'CREATE') return `REQUEST:${clean(request.requestId)}`;
+  const proposed = {};
+  (Array.isArray(request.changes) ? request.changes : []).forEach((change) => {
+    const field = clean(change?.field);
+    if (field) proposed[field] = change?.proposedValue;
+  });
+  const entityId = clean(request.entityId || proposed.품목코드 || proposed.코드);
+  return `CREATE:${entityId}:${stableJson(proposed)}`;
+}
+
+export function collapseProductChangeRequestDuplicates(rows = []) {
+  const groups = new Map();
+  rows.forEach((entry) => {
+    const key = productChangeRequestSemanticKey(entry);
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { primary: entry, entries: [entry] });
+      return;
+    }
+    group.entries.push(entry);
+    if (group.primary.status !== 'IN_REVIEW' && entry.status === 'IN_REVIEW') group.primary = entry;
+  });
+  return [...groups.values()].map(({ primary, entries }) => ({
+    ...cloneJson(primary),
+    repeatedRequestCount: entries.length,
+    duplicateRequestIds: entries
+      .map((entry) => clean(entry.request?.requestId))
+      .filter((requestId) => requestId && requestId !== clean(primary.request?.requestId)),
+  }));
+}
+
 function publicEntry(entry) {
   return deepFreeze(cloneJson(entry));
 }
@@ -181,6 +222,12 @@ export async function submitProductChangeRequest(input) {
       try { await done; } catch {}
       return failureResult('CONFLICT', new Error('REQUEST_ID_CONFLICT'), request);
     }
+    const semanticDuplicate = inbox.requests.find((entry) => REVIEWABLE_STATUSES.has(entry.status)
+      && productChangeRequestSemanticKey(entry) === productChangeRequestSemanticKey(request));
+    if (semanticDuplicate) {
+      await done;
+      return storedResult(semanticDuplicate, 'DUPLICATE');
+    }
     const entry = {
       status: 'PENDING',
       payloadHash,
@@ -207,7 +254,7 @@ export async function submitProductChangeRequest(input) {
   }
 }
 
-export async function listProductChangeRequests({ status = '', limit = 200 } = {}) {
+export async function listProductChangeRequests({ status = '', limit = 200, collapseDuplicates = false } = {}) {
   let db;
   try {
     db = await openProductOwnerDb({ createIfMissing: false });
@@ -219,9 +266,11 @@ export async function listProductChangeRequests({ status = '', limit = 200 } = {
     await done;
     const inbox = normalizedInbox(value);
     const statuses = Array.isArray(status) ? status.map(clean).filter(Boolean) : [clean(status)].filter(Boolean);
-    const rows = inbox.requests.filter((entry) => statuses.length === 0 || statuses.includes(entry.status))
+    const sorted = inbox.requests.filter((entry) => statuses.length === 0 || statuses.includes(entry.status))
       .slice().sort((left, right) => String(right.receivedAt).localeCompare(String(left.receivedAt)))
-      .slice(0, Math.max(0, limit)).map(cloneJson);
+      .map(cloneJson);
+    const rows = (collapseDuplicates ? collapseProductChangeRequestDuplicates(sorted) : sorted)
+      .slice(0, Math.max(0, limit));
     return deepFreeze({ status: rows.length ? 'READY' : 'EMPTY', revision: inbox.revision, requests: rows, error: null });
   } catch (error) {
     return deepFreeze({ status: 'ERROR', requests: [], error: { code: clean(error?.message) || 'PRODUCT_CHANGE_REQUEST_LIST_FAILED', retryable: true } });
