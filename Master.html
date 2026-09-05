@@ -783,23 +783,23 @@
                         </div>
                         <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
                             {visibleFields.map((field, index) => (
-                                <div key={field.key} className="block">
-                                    <span className="min-h-6 flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600">
-                                        <span>{field.label}{field.required ? ' *' : ''}</span>
-                                        <span className="flex items-center gap-1">
-                                            <button type="button" onClick={() => moveField(field.key, -1)} disabled={index === 0} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 앞으로 이동`}>↑</button>
-                                            <button type="button" onClick={() => moveField(field.key, 1)} disabled={index === visibleFields.length - 1} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 뒤로 이동`}>↓</button>
-                                            {!PRODUCT_FORM_FIELDS.some(baseField => baseField.key === field.key) && <button type="button" onClick={() => setFieldKeys(current => current.filter(key => key !== field.key))} className="w-6 h-6 rounded border border-rose-200 bg-white text-rose-600 hover:bg-rose-50" aria-label={`${field.label} 기본항목에서 제외`}>×</button>}
-                                        </span>
+                                <div key={field.key} className="relative">
+                                    <label className="block">
+                                        <span className="min-h-6 flex items-center pr-24 text-[11px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span>
+                                        <input
+                                            aria-label={field.label}
+                                            type={field.type || 'text'}
+                                            value={form[field.key] ?? ''}
+                                            disabled={isEditing && field.key === '코드'}
+                                            onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))}
+                                            className="mt-1 w-full h-10 px-3 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
+                                        />
+                                    </label>
+                                    <span className="absolute top-0 right-0 flex items-center gap-1">
+                                        <button type="button" onClick={() => moveField(field.key, -1)} disabled={index === 0} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 앞으로 이동`}>↑</button>
+                                        <button type="button" onClick={() => moveField(field.key, 1)} disabled={index === visibleFields.length - 1} className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 disabled:opacity-30" aria-label={`${field.label} 뒤로 이동`}>↓</button>
+                                        {!PRODUCT_FORM_FIELDS.some(baseField => baseField.key === field.key) && <button type="button" onClick={() => setFieldKeys(current => current.filter(key => key !== field.key))} className="w-6 h-6 rounded border border-rose-200 bg-white text-rose-600 hover:bg-rose-50" aria-label={`${field.label} 기본항목에서 제외`}>×</button>}
                                     </span>
-                                    <input
-                                        aria-label={field.label}
-                                        type={field.type || 'text'}
-                                        value={form[field.key] ?? ''}
-                                        disabled={isEditing && field.key === '코드'}
-                                        onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))}
-                                        className="mt-1 w-full h-10 px-3 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
-                                    />
                                 </div>
                             ))}
                             <div className="md:col-span-2 border-t border-slate-200 pt-4">
