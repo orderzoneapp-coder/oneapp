@@ -195,7 +195,8 @@ function summarizeDocumentItems(items = []) {
   return {
     itemCount: visibleItems.length,
     representativeItemName: String(visibleItems[0]?.itemName || visibleItems[0]?.itemCode || '').trim(),
-    totalQuantity: visibleItems.reduce((sum, item) => sum + Number(item.finalQuantity ?? item.rawQuantity ?? 0), 0)
+    totalQuantity: visibleItems.reduce((sum, item) => sum + Number(item.finalQuantity ?? item.rawQuantity ?? 0), 0),
+    itemSearchText: visibleItems.map(item => [item.itemCode, item.itemName, item.specification].filter(Boolean).join(' ')).join(' ')
   };
 }
 

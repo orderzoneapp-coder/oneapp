@@ -30,11 +30,27 @@
       </div>
     </header>
     <main class="panel">
-      <p class="notice">주문전표를 펼쳐 상품·금액·변경이력을 확인하고 수정하거나 출력합니다. 재고·부족·발주·출고·미출고 처리는 ORDER Q 운영에서 진행합니다.</p>
+      <nav class="order-view-switcher" aria-label="주문현황 화면 전환">
+        <button class="btn view-switch is-active" type="button" data-view="query" aria-controls="queryView" aria-selected="true">주문조회</button>
+        <button class="btn view-switch" type="button" data-view="processing" aria-controls="processingView" aria-selected="false">처리현황</button>
+      </nav>
+      <section id="processingView" class="processing-view" hidden>
+        <h2>처리현황</h2>
+        <p>처리현황은 판매이관 결과를 확인하는 읽기 전용 화면입니다. 상세 현황은 준비 중입니다.</p>
+        <button class="btn" type="button" data-view="query">주문조회로 돌아가기</button>
+      </section>
+      <section id="queryView">
+      <p class="notice">주문전표 조회·검증·정정은 이 화면에서, 실제 출고 처리는 주문·출고에서 진행합니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
         <button class="btn" id="syncBtn" type="button">클라우드 동기화</button>
+        <label>기간
+          <select id="periodMode"><option value="all">전체</option><option value="custom">기간 지정</option></select>
+        </label>
+        <label class="date-range-field">시작일 <input id="dateFrom" type="date" disabled></label>
+        <label class="date-range-field">종료일 <input id="dateTo" type="date" disabled></label>
+        <button class="btn" id="periodResetBtn" type="button">기간 초기화</button>
         <label>주문상태
           <select id="orderStatusFilter">
             <option value="">전체</option>
@@ -52,7 +68,7 @@
         <label>담당자
           <select id="assigneeFilter"><option value="">전체</option></select>
         </label>
-        <input class="history-search" id="orderSearch" type="search" placeholder="주문번호·외부번호·거래처 검색">
+        <input class="history-search" id="orderSearch" type="search" placeholder="주문번호·거래처·품목 통합검색">
         <span class="spacer"></span>
         <span class="status" id="summaryText">불러오는 중...</span>
         <span class="status" id="syncText">동기화 상태 확인 중...</span>
@@ -71,14 +87,17 @@
               <th>주문금액</th>
               <th>주문상태</th>
               <th>관리자상태</th>
+              <th>판매이관</th>
               <th>ORDER Q</th>
               <th>출하창고</th>
               <th>입력경로</th>
+              <th>최종 수정</th>
             </tr>
           </thead>
           <tbody id="orderRows"></tbody>
         </table>
       </div>
+      </section>
     </main>
   </div>
   <datalist id="inlineAssigneeOptions"></datalist>
@@ -95,12 +114,19 @@
     import {
       ORDER_STATUS_LABEL, ADMIN_STATUS_LABEL, OPS_STATUS_LABEL, INPUT_CHANNEL_LABEL
     } from './order-document-model.js?v=0.7.1';
+    import { TRANSFER_STATUS_LABEL } from './order-fulfillment-lifecycle.js?v=0.7.1';
 
     const rows = document.getElementById('orderRows');
     const summary = document.getElementById('summaryText');
     const syncText = document.getElementById('syncText');
     const message = document.getElementById('message');
     const syncButton = document.getElementById('syncBtn');
+    const queryView = document.getElementById('queryView');
+    const processingView = document.getElementById('processingView');
+    const viewSwitches = [...document.querySelectorAll('[data-view]')];
+    const periodMode = document.getElementById('periodMode');
+    const dateFrom = document.getElementById('dateFrom');
+    const dateTo = document.getElementById('dateTo');
     const filters = {
       orderStatus: document.getElementById('orderStatusFilter'),
       adminStatus: document.getElementById('adminStatusFilter'),
@@ -108,8 +134,10 @@
       assignee: document.getElementById('assigneeFilter'),
       search: document.getElementById('orderSearch')
     };
-    const params = new URLSearchParams(location.search);
-    const focusedOrderId = params.get('focus') || '';
+    let routeParams = new URLSearchParams(location.search);
+    let focusedOrderId = routeParams.get('focus') || '';
+    let currentView = ['query', 'processing'].includes(routeParams.get('view')) ? routeParams.get('view') : 'query';
+    let savedValue = routeParams.get('saved') || '';
     const detailCache = new Map();
     const expandedOrders = new Set();
     const editModeOrders = new Set();
@@ -121,6 +149,7 @@
       ['COMPLETED', '완료'], ['FULL_CANCEL', '전체취소'], ['PARTIAL_CANCEL', '부분취소']
     ];
     const ADMIN_STATUS_OPTIONS = [['UNCHECKED', '미확인'], ['CHECKED', '확인'], ['HOLD', '보류']];
+    const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const formatTime = value => value ? new Date(value).toLocaleString('ko-KR', { hour12: false }) : '';
@@ -132,6 +161,51 @@
     const channelLabel = order => INPUT_CHANNEL_LABEL[order.inputChannel] || order.inputChannel || order.sourceType || '';
     const currentActorName = () => String(localStorage.getItem(ACTOR_STORAGE_KEY) || 'LOCAL_USER').trim() || 'LOCAL_USER';
     const optionHtml = (options, selected) => options.map(([value, label]) => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(label)}</option>`).join('');
+
+    function applyRoute({ canonicalize = true } = {}) {
+      routeParams = new URLSearchParams(location.search);
+      const requestedView = routeParams.get('view');
+      currentView = ['query', 'processing'].includes(requestedView) ? requestedView : 'query';
+      focusedOrderId = routeParams.get('focus') || '';
+      savedValue = routeParams.get('saved') || '';
+      if (canonicalize && requestedView && requestedView !== currentView) {
+        routeParams.set('view', 'query');
+        history.replaceState(null, '', `${location.pathname}?${routeParams}${location.hash}`);
+      }
+      const from = isDate(routeParams.get('from')) ? routeParams.get('from') : '';
+      const to = isDate(routeParams.get('to')) ? routeParams.get('to') : '';
+      periodMode.value = routeParams.get('period') === 'custom' || from || to ? 'custom' : 'all';
+      dateFrom.value = from;
+      dateTo.value = to;
+      dateFrom.disabled = periodMode.value !== 'custom';
+      dateTo.disabled = periodMode.value !== 'custom';
+      filters.search.value = routeParams.get('q') || '';
+      queryView.hidden = currentView !== 'query';
+      processingView.hidden = currentView !== 'processing';
+      viewSwitches.forEach(button => {
+        const selected = button.dataset.view === currentView;
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+      });
+    }
+
+    function updateQueryParams({ push = false } = {}) {
+      const next = new URLSearchParams(routeParams);
+      next.set('view', currentView);
+      if (periodMode.value === 'custom') {
+        next.set('period', 'custom');
+        if (isDate(dateFrom.value)) next.set('from', dateFrom.value); else next.delete('from');
+        if (isDate(dateTo.value)) next.set('to', dateTo.value); else next.delete('to');
+      } else {
+        next.delete('period');
+        next.delete('from'); next.delete('to');
+      }
+      const query = filters.search.value.trim();
+      if (query) next.set('q', query); else next.delete('q');
+      const href = `${location.pathname}?${next}${location.hash}`;
+      if (push) history.pushState(null, '', href); else history.replaceState(null, '', href);
+      applyRoute({ canonicalize: false });
+    }
 
     function showMessage(text, type = 'info') {
       message.textContent = text;
@@ -153,11 +227,16 @@
     function filteredOrders() {
       const query = filters.search.value.trim().toLowerCase();
       return allOrders.filter(order => {
+        const focused = order.orderId === focusedOrderId;
+        if (!focused && periodMode.value === 'custom') {
+          if (isDate(dateFrom.value) && String(order.orderDate || '') < dateFrom.value) return false;
+          if (isDate(dateTo.value) && String(order.orderDate || '') > dateTo.value) return false;
+        }
         if (filters.orderStatus.value && order.orderStatus !== filters.orderStatus.value) return false;
         if (filters.adminStatus.value && order.adminStatus !== filters.adminStatus.value) return false;
         if (filters.opsStatus.value && order.opsStatus !== filters.opsStatus.value) return false;
         if (filters.assignee.value && order.assigneeName !== filters.assignee.value) return false;
-        if (query && ![order.orderNo, order.externalOrderNo, order.customerName, order.orderId].some(value => String(value || '').toLowerCase().includes(query))) return false;
+        if (!focused && query && ![order.orderNo, order.externalOrderNo, order.customerName, order.orderId, order.itemSearchText].some(value => String(value || '').toLowerCase().includes(query))) return false;
         return true;
       }).sort((a, b) => {
         if (a.orderId === focusedOrderId) return -1;
@@ -184,11 +263,13 @@
           <td class="num">${amount == null ? '-' : `${money(amount)}원`}</td>
           <td class="center">${statusBadge(order.orderStatus, ORDER_STATUS_LABEL, 'order')}</td>
           <td class="center">${statusBadge(order.adminStatus, ADMIN_STATUS_LABEL, 'admin')}</td>
+          <td class="center">${statusBadge(order.transferStatus, TRANSFER_STATUS_LABEL, 'transfer')}</td>
           <td class="center">${statusBadge(order.opsStatus, OPS_STATUS_LABEL, 'ops')}</td>
           <td>${esc(order.warehouseName || order.warehouseCode || order.warehouse || '')}</td>
           <td class="center">${esc(channelLabel(order))}</td>
+          <td class="center">${esc(formatTime(order.updatedAt))}</td>
         </tr>
-        <tr class="document-detail-row" data-detail-for="${esc(order.orderId)}" ${expanded ? '' : 'hidden'}><td colspan="13"><div class="document-detail" data-detail-body="${esc(order.orderId)}">불러오는 중...</div></td></tr>`;
+        <tr class="document-detail-row" data-detail-for="${esc(order.orderId)}" ${expanded ? '' : 'hidden'}><td colspan="15"><div class="document-detail" data-detail-body="${esc(order.orderId)}">불러오는 중...</div></td></tr>`;
     }
 
     function commerceDetail(order) {
@@ -500,7 +581,7 @@
       const unchecked = allOrders.filter(order => order.adminStatus === 'UNCHECKED').length;
       const holds = allOrders.filter(order => order.adminStatus === 'HOLD').length;
       summary.textContent = `전표 ${visible.length}/${allOrders.length}건 · 미확인 ${unchecked}건 · 보류 ${holds}건`;
-      rows.innerHTML = visible.length ? visible.map(summaryRow).join('') : '<tr><td colspan="13" class="empty">조건에 맞는 주문전표가 없습니다.</td></tr>';
+      rows.innerHTML = visible.length ? visible.map(summaryRow).join('') : '<tr><td colspan="15" class="empty">조건에 맞는 주문전표가 없습니다.</td></tr>';
       for (const orderId of [...expandedOrders]) if (visible.some(order => order.orderId === orderId)) await expandOrder(orderId, true);
       if (focusedOrderId && visible.some(order => order.orderId === focusedOrderId)) await expandOrder(focusedOrderId, true);
       await renderSyncState();
@@ -666,9 +747,25 @@
       if (form) refreshInlineAmounts(form);
     });
     rows.addEventListener('submit', event => event.preventDefault());
-    Object.values(filters).forEach(control => control.addEventListener(control === filters.search ? 'input' : 'change', render));
+    Object.values(filters).filter(control => control !== filters.search).forEach(control => control.addEventListener('change', render));
     document.getElementById('refreshBtn').addEventListener('click', () => { detailCache.clear(); render(); });
     syncButton.addEventListener('click', () => runSync(true));
+    viewSwitches.forEach(button => button.addEventListener('click', () => {
+      const nextView = button.dataset.view;
+      if (!['query', 'processing'].includes(nextView) || nextView === currentView) return;
+      currentView = nextView;
+      updateQueryParams({ push: true });
+      if (currentView === 'query') render();
+    }));
+    periodMode.addEventListener('change', () => { updateQueryParams(); render(); });
+    dateFrom.addEventListener('change', () => { if (periodMode.value === 'custom') { updateQueryParams(); render(); } });
+    dateTo.addEventListener('change', () => { if (periodMode.value === 'custom') { updateQueryParams(); render(); } });
+    document.getElementById('periodResetBtn').addEventListener('click', () => {
+      periodMode.value = 'all'; dateFrom.value = ''; dateTo.value = '';
+      updateQueryParams(); render();
+    });
+    filters.search.addEventListener('input', () => { updateQueryParams(); render(); });
+    window.addEventListener('popstate', () => { applyRoute(); render(); });
     subscribeOrderChanges(() => {
       if (editModeOrders.size) {
         showMessage('다른 화면에서 주문이 변경되었습니다. 현재 편집내용은 유지되며 저장 시 Revision을 다시 확인합니다.', 'warn');
@@ -678,8 +775,9 @@
       render();
     });
 
+    applyRoute();
     render().then(() => {
-      if (params.get('saved') === '1') showMessage('주문전표를 저장했습니다. 방금 저장한 전표를 펼쳤습니다.', 'info');
+      if (savedValue === '1') showMessage('주문전표를 저장했습니다. 방금 저장한 전표를 펼쳤습니다.', 'info');
       if (getCloudUrl()) runSync(false);
     }).catch(error => { summary.textContent = `오류: ${error.message}`; });
   </script>

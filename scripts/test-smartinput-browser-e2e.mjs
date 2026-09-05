@@ -871,7 +871,7 @@ try {
     'remote unmatched-product resolution must apply its authoritative inventory decision once');
   await input(client, '#deliveryDateInput', '2026-08-29');
   await expr(client, `document.querySelector('#voucherContextDelivery').textContent.includes('READY')&&document.querySelector('#voucherContextList').textContent.includes('격리 검증 거래처')`, 'date-scoped order activity adapter');
-  assert.match(await evaluate(client, `document.querySelector('#voucherContextList .voucher-activity-item a')?.getAttribute('href')||''`), new RegExp(`voucher-query\\.html\\?mode=order&date=2026-08-29&focus=${orderResult.orderId}`), 'activity card must route to read-only voucher detail without replacing the worktable');
+  assert.match(await evaluate(client, `document.querySelector('#voucherContextList .voucher-activity-item a')?.getAttribute('href')||''`), new RegExp(`index\\.html\\?view=query&focus=${orderResult.orderId}`), 'activity card must route to the integrated order query without replacing the worktable');
   await wait(350);
 
   const documentId = await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.order.documentId`);

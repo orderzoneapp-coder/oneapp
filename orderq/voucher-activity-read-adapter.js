@@ -113,7 +113,9 @@ export async function readVoucherActivity({ mode, date, companyId = '' }) {
           unitPriceDisplay: String(line.sourceUnitPrice ?? line.unitPrice ?? line.price ?? ''),
           amount: line.totalAmount ?? line.supplyAmount ?? ''
         })),
-        detailHref: `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&focus=${encodeURIComponent(id)}`
+        detailHref: mode === 'order'
+          ? `../orderq/index.html?view=query&focus=${encodeURIComponent(id)}`
+          : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&focus=${encodeURIComponent(id)}`
       };
     }).sort((left, right) => String(right.savedAt || '').localeCompare(String(left.savedAt || '')));
     return {
