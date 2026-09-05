@@ -485,11 +485,10 @@
         // ==========================================
         // SKU 관리 작업헤더: 공식 상품 확정은 상품관리에서만 수행한다.
         // ==========================================
-        const AppHeader = ({ itemCount, isProcessing, processMsg, onBack }) => (
+        const AppHeader = ({ itemCount, isProcessing, processMsg }) => (
             <div className="nexus-app-header shrink-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm" data-nexus-app-header="item-manager">
                 <header className="min-h-[56px] w-full px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0 flex items-center gap-3">
-                        <button type="button" onClick={onBack} className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-black hover:bg-slate-50" aria-label="상품관리로 이동">← 상품관리</button>
                         <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100" aria-hidden="true">
                             <SafeIcon name="package-search" size={17} />
                         </span>
@@ -1191,7 +1190,6 @@
                         itemCount={Object.keys(managedItems).length}
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
-                        onBack={handleBackToMaster}
                     />
 
                     <div className="min-h-[42px] bg-slate-50 border-b border-slate-200 shadow-sm shrink-0 overflow-x-auto custom-scrollbar">
@@ -1201,6 +1199,10 @@
                                     <SafeIcon name={nav.icon} size={14} /> {nav.label}
                                 </button>
                             ))}
+                            <span className="h-6 w-px bg-slate-300 mx-2" aria-hidden="true"></span>
+                            <button type="button" onClick={handleBackToMaster} className="h-9 px-5 rounded-lg bg-indigo-600 text-white text-[12px] font-black shadow-md hover:bg-indigo-700 hover:-translate-y-0.5 transition-all whitespace-nowrap" aria-label="상품관리로 이동">
+                                ← 상품관리
+                            </button>
                         </nav>
                     </div>
 
