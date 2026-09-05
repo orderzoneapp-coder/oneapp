@@ -172,9 +172,9 @@ assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', 'd3d0040f35525f5bb91fe8a40ca8937afb375327fee6ed06a0d6e4afd8a46de6'],
+  ['../smartinput/index.html', '67e48c9ea46c0807521aa9771ac8a0da648ba325d5e82422afd520e86671a5a0'],
   ['../smartinput/smartinput.css', '82ee90f8658d69aa1c126d247795a532dc0c695dc6c2f34235a4c7f466654cf7'],
-  ['../smartinput/smartinput.js', '1e4d8ee22999ceb36682f54ee0e0d2ef3e29b5c69a49838bf7f3b010d5c7ecb9']
+  ['../smartinput/smartinput.js', 'a5459fc76a85d2dacbb176cbf085564e240961b469e065b078ac122cb1e6f614']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline plus the NEXUS-ORDERQ-QUERY-20260906-01 order-query link change, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline for ERP business-key fail-closed grouping and the ORDER Q query-link change, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -195,6 +195,6 @@ console.log(JSON.stringify({
   officialInventory: { value: null, label: '미반영' },
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
-  smartInputUiBaseline: 'NEXUS-SMARTINPUT-SHOPPING-UPLOAD-20260904-01 plus NEXUS-ORDERQ-QUERY-20260906-01 approved order-query link change',
-  smartInputUiChanged: 'approved-order-query-link-only'
+  smartInputUiBaseline: 'ERP business-key fail-closed grouping plus ORDER Q query-link',
+  smartInputUiChanged: 'approved-business-key-review-isolation-and-order-query-link'
 }, null, 2));

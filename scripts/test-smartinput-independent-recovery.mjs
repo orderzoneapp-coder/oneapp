@@ -22,7 +22,7 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /smartinput\.css\?v=0\.9\.6/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.1/);
-assert.match(html, /smartinput\.js\?v=0\.11\.22/);
+assert.match(html, /smartinput\.js\?v=0\.11\.25/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);

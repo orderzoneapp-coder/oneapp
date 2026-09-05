@@ -178,13 +178,15 @@ try {
   await click(client, '[data-open-field-mapping="3"]');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-unmap]'))`, 'field mapping modal');
   await input(client, '.field-mapping-dialog [data-mapping-search]', '거 래처명');
-  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="rowCustomerName"]'))`, 'hidden customer-name mapping target search');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="customer"]'))`, 'customer-name mapping target search');
   const beforeReferenceRefresh = await evaluate(client, `(() => {const current=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return {sourceMatrix:current.inputMapping.sourceMatrix,signature:current.inputMapping.signature,workingRows:current.inputMapping.workingRows};})()`);
   assert.match(
-    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-target="rowCustomerName"] small').textContent`),
-    /작업테이블/,
-    'the manual result must identify the operational location instead of silently auto-selecting it'
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-target="customer"] small').textContent`),
+    /상단 정보/,
+    'the customer mapping result must use the worker-facing top information section'
   );
+  assert.equal(await evaluate(client, `document.querySelector('.field-mapping-dialog[open]').textContent.includes('작업테이블')`), false,
+    'the mapping UI must not expose an implementation-only worktable section');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await capture(client, 'smartinput-field-mapping-search-1440-light.png');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -199,17 +201,27 @@ try {
   await expr(client, `document.querySelector('.field-mapping-dialog [data-refresh-mapping-reference]')?.textContent==='기준정보 새로고침'`, 'mapping reference refresh completion', 30_000);
   assert.equal(await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-search]').value`), '거 래처명',
     'reference refresh must preserve the worker search term');
-  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="rowCustomerName"]'))`, 'refreshed customer-name result');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="customer"]'))`, 'refreshed customer-name result');
   const afterReferenceRefresh = await evaluate(client, `(() => {const current=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return {sourceMatrix:current.inputMapping.sourceMatrix,signature:current.inputMapping.signature,workingRows:current.inputMapping.workingRows};})()`);
   assert.deepEqual(afterReferenceRefresh, beforeReferenceRefresh,
     'reference refresh from the mapping dialog must preserve source evidence, signature and the working copy');
-  await click(client, '.field-mapping-dialog [data-mapping-target="rowCustomerName"]');
+  await click(client, '.field-mapping-dialog [data-mapping-target="customer"]');
   await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='MAPPED'`, 'manual customer-name mapping');
   assert.equal(
     await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.find(row=>row.rowId==='source-3').rowCustomerName`),
     '확인',
     'the selected customer-name field must project the source value into the operational row field'
   );
+  await click(client, '[data-open-field-mapping="3"]');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '창고코드');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="warehouse"]'))`, 'warehouse-code mapping target search');
+  const warehouseMappingResults = await evaluate(client, `(() => {const dialog=document.querySelector('.field-mapping-dialog[open]');return {projectionTargets:[...dialog.querySelectorAll('[data-mapping-target]')].filter(button=>button.dataset.mappingTarget==='warehouse'||button.dataset.mappingTarget==='voucher.order.header.warehouseId'||button.dataset.mappingTarget==='rowWarehouseCode').map(button=>button.dataset.mappingTarget),badges:[...dialog.querySelectorAll('.field-mapping-option>b')].map(node=>node.textContent),hasSequence:dialog.textContent.includes('원본전표순번')||dialog.textContent.includes('전표분리키')};})()`);
+  assert.deepEqual(warehouseMappingResults.projectionTargets, ['warehouse'],
+    'same warehouse business role must appear once instead of header/worktable/registry duplicates');
+  assert.equal(warehouseMappingResults.badges.every(label => ['상단 정보', '하단 정보'].includes(label)), true,
+    'mapping results must use only the two worker-facing sections');
+  assert.equal(warehouseMappingResults.hasSequence, false, 'order mapping must not expose sequence or manual split fields');
+  await click(client, '.field-mapping-dialog [data-close]');
   await click(client, '[data-open-field-mapping="3"]');
   await click(client, '.field-mapping-dialog [data-unmap]');
   await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='UNMAPPED'`, 'explicit unmapped decision');

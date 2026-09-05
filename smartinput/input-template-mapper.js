@@ -89,6 +89,10 @@ function targetIndex(targetDefinitions = []) {
   return new Map((targetDefinitions || []).filter(target => target?.id).map(target => [target.id, target]));
 }
 
+function targetProjectionId(target) {
+  return cellText(target?.projectionFieldId || target?.id);
+}
+
 function mappingValidation(mappings = [], targetDefinitions = []) {
   const targets = targetIndex(targetDefinitions);
   const used = new Map();
@@ -108,16 +112,21 @@ function mappingValidation(mappings = [], targetDefinitions = []) {
       issues.push({ code: 'TARGET_MISSING', columnIndex, targetFieldId: mapping.targetFieldId || '' });
       return;
     }
-    if (used.has(mapping.targetFieldId)) {
+    const target = targets.get(mapping.targetFieldId);
+    const projectionFieldId = targetProjectionId(target);
+    if (used.has(projectionFieldId)) {
+      const previous = used.get(projectionFieldId);
       issues.push({
         code: 'TARGET_DUPLICATED',
         columnIndex,
-        otherColumnIndex: used.get(mapping.targetFieldId),
-        targetFieldId: mapping.targetFieldId
+        otherColumnIndex: previous.columnIndex,
+        targetFieldId: mapping.targetFieldId,
+        otherTargetFieldId: previous.targetFieldId,
+        projectionFieldId
       });
       return;
     }
-    used.set(mapping.targetFieldId, columnIndex);
+    used.set(projectionFieldId, { columnIndex, targetFieldId: mapping.targetFieldId });
   });
   return { valid: issues.length === 0, issues };
 }
@@ -312,12 +321,15 @@ export function setColumnDecision(session, columnIndex, decision, targetFieldId 
   if (decision === DECISION.MAPPED) {
     const targets = targetIndex(targetDefinitions);
     if (!targets.has(targetFieldId)) throw new Error('MAPPING_TARGET_MISSING');
+    const projectionFieldId = targetProjectionId(targets.get(targetFieldId));
     const duplicate = mappings.find(mapping => mapping.columnIndex !== columnIndex
       && [DECISION.MAPPED, DECISION.RECOMMENDED].includes(mapping.state)
-      && mapping.targetFieldId === targetFieldId);
+      && targetProjectionId(targets.get(mapping.targetFieldId)) === projectionFieldId);
     if (duplicate) {
       const error = new Error('MAPPING_TARGET_DUPLICATED');
       error.otherColumnIndex = duplicate.columnIndex;
+      error.otherTargetFieldId = duplicate.targetFieldId;
+      error.projectionFieldId = projectionFieldId;
       throw error;
     }
     mappings[columnIndex] = { ...mappings[columnIndex], state: DECISION.MAPPED, targetFieldId, reviewed: true };

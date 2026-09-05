@@ -34,7 +34,7 @@ import {
   synchronizeWorkingRow,
   updateWorkingCell,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.4';
+} from './input-template-mapper.js?v=0.2.5';
 import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
@@ -46,11 +46,20 @@ import {
 import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js?v=0.1.0';
 import {
   buildOrderGroupPayload,
+  captureOrderHeaderSubmission,
+  captureOrderRowSubmission,
   decorateStructuredRows,
+  executeOrderGroupSavePlan,
   groupVoucherRows,
+  orderGroupValidationErrors,
+  orderHeaderChangedSinceSubmission,
+  partitionOrderGroups,
+  requiresOrderGroupSavePath,
+  retainUnsavedOrderRows,
+  stage1RowFieldDefinitions,
   structuredFieldsForMode,
   summarizeVoucherGroups
-} from './multivoucher-stage1.js?v=0.2.0';
+} from './multivoucher-stage1.js?v=0.2.2';
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,
@@ -1129,6 +1138,7 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
   };
   const enabledHeaderIds = new Set(headerFieldsForMode(mode));
   const enabledVoucherIds = new Set(voucherColumnsForMode(mode));
+  const stageHeaderIds = new Set(stage1RowFieldDefinitions(mode).map(field => field.id));
   const headerTargets = layoutDefinitions('header', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledHeaderIds.has(field.id)).map(field => ({
     id: field.id,
     label: field.label,
@@ -1137,21 +1147,23 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
     projectionFieldId: headerProjection[field.id] || field.id,
     custom: Boolean(field.custom),
     recommendable: enabledHeaderIds.has(field.id),
-    advancedLabel: field.advancedLabel || `${contract.MODES[mode]?.label || mode} > 상단 정보 > ${field.label}`,
+    advancedLabel: `${contract.MODES[mode]?.label || mode} > 상단 정보 > ${field.label}`,
     aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
   const voucherTargets = layoutDefinitions('voucher', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledVoucherIds.has(field.id)).map(field => {
     const canonical = coreFieldByProjection(mode, field.id);
+    const semanticScope = canonical?.scope === 'HEADER' || stageHeaderIds.has(field.id) ? 'header' : 'voucher';
+    const sectionLabel = semanticScope === 'header' ? '상단 정보' : '하단 정보';
     return {
       id: canonical?.fieldId || field.id,
       label: canonical?.displayLabel || field.label,
-      scope: 'voucher',
+      scope: semanticScope,
       group: field.group || 'ADDITIONAL',
       valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
       projectionFieldId: canonical?.projectionFieldId || field.id,
       custom: Boolean(field.custom),
       recommendable: enabledVoucherIds.has(field.id),
-      advancedLabel: field.advancedLabel || canonical?.advancedLabel || `${contract.MODES[mode]?.label || mode} > 작업테이블 > ${canonical?.displayLabel || field.label}`,
+      advancedLabel: `${contract.MODES[mode]?.label || mode} > ${sectionLabel} > ${canonical?.displayLabel || field.label}`,
       aliases: [...new Set([
         ...(field.inputAliases || []),
         ...(field.masterAliases || []),
@@ -1171,7 +1183,7 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
         custom: true,
         registryField: true,
         recommendable: false,
-        advancedLabel: field.advancedLabel || field.optionLabel || field.id,
+        advancedLabel: `${contract.MODES[mode]?.label || mode} > ${field.scope === 'header' ? '상단 정보' : '하단 정보'} > ${field.label}`,
         aliases: [...new Set([...(field.inputAliases || []), field.label].filter(Boolean))]
       }))
     : [];
@@ -1179,7 +1191,41 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
   [...headerTargets, ...voucherTargets, ...registryTargets].forEach(target => {
     if (!unique.has(target.id)) unique.set(target.id, target);
   });
-  return [...unique.values()];
+  const targets = [...unique.values()];
+  const byProjection = new Map();
+  targets.filter(target => !target.registryField).forEach(target => {
+    const projection = target.projectionFieldId || target.id;
+    const preferred = byProjection.get(projection);
+    if (!preferred || (target.scope === 'header' && preferred.scope !== 'header')) byProjection.set(projection, target);
+  });
+  byProjection.forEach(preferred => {
+    const duplicates = targets.filter(target => !target.registryField
+      && (target.projectionFieldId || target.id) === (preferred.projectionFieldId || preferred.id));
+    preferred.aliases = [...new Set(duplicates.flatMap(target => [target.label, ...(target.aliases || [])]).filter(Boolean))];
+    duplicates.filter(target => target !== preferred).forEach(target => {
+      target.pickerVisible = false;
+      target.recommendable = false;
+    });
+  });
+  const visibleBusinessTerms = new Map();
+  targets.filter(target => !target.registryField && target.pickerVisible !== false).forEach(target => {
+    const terms = new Set([target.label, ...(target.aliases || [])].map(normalizedMappingSearch).filter(Boolean));
+    visibleBusinessTerms.set(target.scope, new Set([...(visibleBusinessTerms.get(target.scope) || []), ...terms]));
+  });
+  targets.filter(target => target.registryField).forEach(target => {
+    if (visibleBusinessTerms.get(target.scope)?.has(normalizedMappingSearch(target.label))) {
+      target.pickerVisible = false;
+      target.recommendable = false;
+    }
+  });
+  if (mode === 'order') {
+    const excludedOrderIds = new Set(['sourceDocumentKey', 'sourceVoucherIndex', 'manualSplitKey']);
+    targets.filter(target => excludedOrderIds.has(target.projectionFieldId || target.id)).forEach(target => {
+      target.pickerVisible = false;
+      target.recommendable = false;
+    });
+  }
+  return targets;
 }
 
 function inputMappingDefinitions(mode = state.draft.activeMode) {
@@ -2800,6 +2846,7 @@ function openFieldMappingDialog(columnIndex) {
       .filter(item => item.columnIndex !== columnIndex && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state) && item.targetFieldId)
       .map(item => [item.targetFieldId, item.columnIndex]));
     const filtered = targets
+      .filter(target => target.pickerVisible !== false)
       .filter(target => !term ? target.recommendable !== false : mappingTargetSearchText(target).includes(term))
       .sort((left, right) => {
         const leftExact = term && normalizedMappingSearch(left.label) === term ? 0 : 1;
@@ -2810,7 +2857,7 @@ function openFieldMappingDialog(columnIndex) {
       });
     results.innerHTML = filtered.slice(0, 500).map(target => {
       const usedAt = used.get(target.id);
-      const origin = target.registryField ? '기준정보 등록 필드' : (target.scope === 'header' ? '상단 정보' : '작업테이블');
+      const origin = target.scope === 'header' ? '상단 정보' : '하단 정보';
       return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(target.label)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
     }).join('') || '<div class="smart-dialog__empty">조건에 맞는 항목이 없습니다.<br>기준정보를 새로고침한 뒤 같은 검색어로 다시 확인하세요.</div>';
     referenceStatus.textContent = term
@@ -2952,13 +2999,14 @@ function openInputTemplateSaveDialog() {
 
 function openInputTemplateEditor(template) {
   if (!template) return;
-  const targets = inputMappingDefinitions();
+  const allTargets = inputMappingDefinitions();
+  const targets = allTargets.filter(target => target.pickerVisible !== false);
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
   const options = (selected = '') => [
     `<option value="" ${selected === '' ? 'selected' : ''}>연결 대상 없음</option>`,
     `<option value="__UNMAPPED__" ${selected === '__UNMAPPED__' ? 'selected' : ''}>비매핑 · 전표 제외</option>`,
-    ...targets.map(target => `<option value="${esc(target.id)}" ${selected === target.id ? 'selected' : ''}>${esc(target.label)} · ${target.scope === 'header' ? '상단' : '작업테이블'}</option>`)
+    ...targets.map(target => `<option value="${esc(target.id)}" ${selected === target.id ? 'selected' : ''}>${esc(target.label)} · ${target.scope === 'header' ? '상단 정보' : '하단 정보'}</option>`)
   ].join('');
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>Input Template Management</small><h2>입력 양식 수정</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
@@ -2966,8 +3014,10 @@ function openInputTemplateEditor(template) {
     <div class="template-manager-list">${template.headers.map((header, columnIndex) => {
       const mapping = template.mappings.find(item => Number(item.columnIndex) === columnIndex);
       const selected = mapping?.state === MAPPING_DECISION.UNMAPPED ? '__UNMAPPED__' : (mapping?.targetFieldId || '');
-      const missing = selected && selected !== '__UNMAPPED__' && !targets.some(target => target.id === selected);
-      return `<label class="template-manager-row"><div><strong>${columnIndex + 1}열 · ${esc(header || '(빈 필드명)')}</strong><small>${missing ? `삭제된 연결 대상: ${esc(selected)}` : '열 위치는 변경할 수 없습니다.'}</small></div><select data-template-column="${columnIndex}">${missing ? `<option value="${esc(selected)}" selected>연결 대상 없음 · ${esc(selected)}</option>` : ''}${options(selected)}</select></label>`;
+      const compatible = selected && selected !== '__UNMAPPED__' ? allTargets.find(target => target.id === selected) : null;
+      const missing = selected && selected !== '__UNMAPPED__' && !compatible;
+      const legacy = compatible && compatible.pickerVisible === false;
+      return `<label class="template-manager-row"><div><strong>${columnIndex + 1}열 · ${esc(header || '(빈 필드명)')}</strong><small>${missing ? `삭제된 연결 대상: ${esc(selected)}` : (legacy ? '기존 연결은 호환 유지되며 새 대상 선택 시 정리됩니다.' : '열 위치는 변경할 수 없습니다.')}</small></div><select data-template-column="${columnIndex}">${missing ? `<option value="${esc(selected)}" selected>연결 대상 없음 · ${esc(selected)}</option>` : (legacy ? `<option value="${esc(selected)}" selected>${esc(compatible.label)} · 기존 연결</option>` : '')}${options(selected)}</select></label>`;
     }).join('')}</div>
     <p class="smart-dialog__message">기존 양식의 변경은 다음 파일부터 적용됩니다. 현재 파일은 양식 다시 불러오기를 실행하기 전까지 유지됩니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>변경 저장</button></footer>
@@ -2996,7 +3046,7 @@ function openInputTemplateEditor(template) {
       reviewed: true
     }));
     try {
-      const updated = createTemplateRecord({ companyId: state.companyId, voucherMode: state.draft.activeMode, signature: template.signature, headers: template.headers, mappings }, name, targets, template);
+      const updated = createTemplateRecord({ companyId: state.companyId, voucherMode: state.draft.activeMode, signature: template.signature, headers: template.headers, mappings }, name, allTargets, template);
       const next = state.inputTemplates.map(record => record.templateId === template.templateId ? updated : record);
       await saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = next;
@@ -8117,7 +8167,9 @@ function confirmGroupedVoucherCreation(mode, groups = []) {
   return window.confirm(
     `${label} 자료가 ${groups.length}개의 전표로 나뉩니다.\n`
     + `거래처 ${customerCount || '미확인'}곳 · 창고 ${warehouseCount || '미확인'}곳\n\n`
-    + '거래처·창고·일자·원본 전표가 다른 행은 자동으로 합치지 않습니다. 이 구분대로 저장하시겠습니까?'
+    + (mode === 'order'
+      ? '주문참조번호 → 창고코드 → 거래처코드 → 거래유형 순으로 확인해 같은 행만 한 주문서로 묶습니다. 순번과 행 위치는 사용하지 않습니다. 이 구분대로 저장하시겠습니까?'
+      : '거래처·창고·일자·원본 전표가 다른 행은 자동으로 합치지 않습니다. 이 구분대로 저장하시겠습니까?')
   );
 }
 
@@ -8307,24 +8359,8 @@ async function completePurchaseOfficial() {
 }
 
 function orderGroupErrors(groups = []) {
-  const errors = [];
-  groups.forEach((group, index) => {
-    const label = `${index + 1}번 전표`;
-    group.rows.forEach((row, rowIndex) => {
-      if (row.orderDocumentNoError) errors.push(`${label} ${rowIndex + 1}행 ${row.orderDocumentNoError}`);
-    });
-    if (!group.deliveryCustomerName) errors.push(`${label} 등록 거래처`);
-    if (!group.voucherDate) errors.push(`${label} 주문일자`);
-    if (!group.deliveryDate) errors.push(`${label} 배송일자`);
-    if (!group.warehouseId && !group.warehouseCode) errors.push(`${label} 출하창고`);
-    if (!group.rows.length) errors.push(`${label} 상품`);
-    group.rows.forEach((row, rowIndex) => {
-      if (!row.itemCode && !row.itemName) errors.push(`${label} ${rowIndex + 1}행 상품`);
-      if (row.quantity === null) errors.push(`${label} ${rowIndex + 1}행 수량`);
-      if (row.unitConversionStatus === 'REVIEW_REQUIRED') errors.push(`${label} ${rowIndex + 1}행 단위 환산`);
-    });
-  });
-  return errors;
+  return groups.flatMap((group, index) => orderGroupValidationErrors(group)
+    .map(error => `${index + 1}번 전표 ${error}`));
 }
 
 function orderGroupCommonPayload(current, rawFingerprint) {
@@ -8354,45 +8390,42 @@ function orderGroupCommonPayload(current, rawFingerprint) {
   };
 }
 
-async function saveOrderGroups(current, groups, submittedAt) {
+async function saveOrderGroups(current, groupPlan, submittedAt) {
+  const rowSubmission = captureOrderRowSubmission(current.rows, current.header);
+  const headerSubmission = captureOrderHeaderSubmission(current.header);
   const batchText = current.batches.map(batch => batch.rawText).join('\n\n--- SMART INPUT BATCH ---\n\n');
   const rawFingerprint = await sha256Text(batchText);
   const common = orderGroupCommonPayload(current, rawFingerprint);
-  const results = [];
-  for (const group of groups) {
+  const results = await executeOrderGroupSavePlan(groupPlan, async group => {
+    const payload = buildOrderGroupPayload(group, common);
+    payload.items = payload.items.map((row, index) => {
+      const masterLinked = hasMasterProductIdentity(row);
+      return {
+        ...row,
+        lineNo: index + 1,
+        productId: masterLinked ? row.productId : null,
+        masterProductId: masterLinked ? row.masterProductId : null,
+        rawQuantity: row.rawQuantity,
+        rawUnit: row.rawUnit,
+        finalQuantity: row.quantity,
+        finalUnit: row.unit,
+        price: row.unitPrice,
+        supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
+        matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
+        matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
+        sourceLineKey: row.sourceLineKey || `${row.sourceBatchId}:${row.sourceRowNo || index + 1}`,
+        reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
+        productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
+      };
+    });
+    const result = await createOrder(payload);
+    let online = false;
     try {
-      const payload = buildOrderGroupPayload(group, common);
-      payload.items = payload.items.map((row, index) => {
-        const masterLinked = hasMasterProductIdentity(row);
-        return {
-          ...row,
-          lineNo: index + 1,
-          productId: masterLinked ? row.productId : null,
-          masterProductId: masterLinked ? row.masterProductId : null,
-          rawQuantity: row.rawQuantity,
-          rawUnit: row.rawUnit,
-          finalQuantity: row.quantity,
-          finalUnit: row.unit,
-          price: row.unitPrice,
-          supplyAmount: Number(row.quantity || 0) * Number(row.unitPrice || 0),
-          matchStatus: masterLinked ? 'MATCHED' : 'MATCH_FAILED',
-          matchSource: masterLinked ? 'SMART_INPUT_COMMON_MASTER' : 'SMART_INPUT_UNRESOLVED',
-          sourceLineKey: row.sourceLineKey || `${row.sourceBatchId}:${row.sourceRowNo || index + 1}`,
-          reviewStatus: masterLinked ? 'CONFIRMED' : 'PENDING',
-          productIdentityStatus: masterLinked ? 'MASTER_LINKED' : 'UNRESOLVED'
-        };
-      });
-      const result = await createOrder(payload);
-      let online = false;
-      try {
-        const sync = await syncAfterLocalMutation(result.order.orderId);
-        online = Boolean(sync?.online);
-      } catch (_) {}
-      results.push({ ok: true, group, result, online });
-    } catch (error) {
-      results.push({ ok: false, group, error });
-    }
-  }
+      const sync = await syncAfterLocalMutation(result.order.orderId);
+      online = Boolean(sync?.online);
+    } catch (_) {}
+    return { result, online };
+  });
 
   const succeeded = results.filter(result => result.ok);
   const failed = results.filter(result => !result.ok);
@@ -8413,16 +8446,27 @@ async function saveOrderGroups(current, groups, submittedAt) {
     voucherGroupKey: group.voucherGroupKey
   }));
 
-  if (failed.length) {
-    const failedKeys = new Set(failed.map(result => result.group.voucherGroupKey));
-    current.rows = current.rows.filter(row => failedKeys.has(buildVoucherGroupKeyForCurrentRow(row)));
-    current.voucherGroups = failed.map(result => result.group);
-    current.delivery = { status: 'PARTIAL', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
+  const remainingRows = retainUnsavedOrderRows(current.rows, rowSubmission, succeeded.map(result => result.group), current.header);
+  const headerChanged = orderHeaderChangedSinceSubmission(current.header, headerSubmission);
+  if (failed.length || remainingRows.length || headerChanged) {
+    current.rows = remainingRows;
+    current.voucherGroups = groupVoucherRows('order', remainingRows, current.header);
+    current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
     saveDraftNow();
     renderMode();
-    const firstMessage = failed[0].error?.message || '저장 실패';
-    setAppStatus(`주문 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
-    toast(`${failed.length}건 저장 필요: ${firstMessage}`, 'error');
+    const reviewCount = failed.filter(result => result.blocked).length;
+    const saveFailureCount = failed.length - reviewCount;
+    const changedDuringSave = failed.length ? '' : [
+      remainingRows.length ? `${remainingRows.length}행` : '',
+      headerChanged ? '상단 정보' : ''
+    ].filter(Boolean).join('·');
+    setAppStatus(`주문 ${succeeded.length}건 저장 완료${reviewCount ? ` · 확인 필요 ${reviewCount}건` : ''}${saveFailureCount ? ` · 저장 실패 ${saveFailureCount}건` : ''}${changedDuringSave ? ` · 저장 중 변경 ${changedDuringSave}` : ''} · 입력 상태를 유지했습니다.`, 'warn');
+    if (failed.length) {
+      const firstMessage = failed[0].error?.message || '저장 실패';
+      toast(`${failed.length}건 저장 보류: ${firstMessage}`, 'error');
+    } else {
+      toast(`저장 중 변경된 ${changedDuringSave}를 입력 상태에 유지했습니다.`, 'warn');
+    }
     return;
   }
 
@@ -8457,10 +8501,6 @@ async function saveOrderGroups(current, groups, submittedAt) {
   toast(`전표 그룹별 주문 ${succeeded.length}건을 중복 없이 저장했습니다.`, 'success');
 }
 
-function buildVoucherGroupKeyForCurrentRow(row) {
-  return groupVoucherRows('order', [row], modeDraft().header)[0]?.voucherGroupKey || '';
-}
-
 async function completeOrderLegacy() {
   const current = modeDraft();
   if (state.draft.activeMode !== 'order') {
@@ -8474,22 +8514,21 @@ async function completeOrderLegacy() {
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('order', current.rows, current.header);
-  const groupedInput = groups.length > 1 || current.rows.some(row => row.sourceDocumentKey || row.manualSplitKey
-    || row.rowCustomerCode || row.rowCustomerName || row.rowVoucherDate || row.rowDeliveryDate
-    || row.rowWarehouseCode || row.rowVoucherNo);
+  const groupedInput = requiresOrderGroupSavePath(groups, current.rows);
   if (groupedInput) {
-    const errors = orderGroupErrors(groups);
-    if (errors.length) {
+    const groupPlan = partitionOrderGroups(groups);
+    if (!groupPlan.readyGroups.length) {
+      const errors = orderGroupErrors(groupPlan.reviewRequiredGroups);
       setAppStatus('다중 전표 정보를 확인하세요.', 'error');
       return toast(`${errors[0]}을(를) 확인하세요.`, 'error');
     }
-    if (!confirmGroupedVoucherCreation('order', groups)) return;
+    if (!confirmGroupedVoucherCreation('order', groupPlan.readyGroups)) return;
     if (!current.header.taxCustomerId && !current.header.customerName && !window.confirm('세무 거래처가 지정되지 않았습니다. 배송처별 주문은 유지한 채 ORDER Q에 저장하시겠습니까?')) return;
     state.busy = true;
     renderDelivery();
-    setAppStatus(`전표 그룹 ${groups.length}건을 공통 주문서 원장에 저장하고 있습니다.`);
+    setAppStatus(`전표 그룹 ${groupPlan.readyGroups.length}건을 공통 주문서 원장에 저장하고 있습니다.${groupPlan.reviewRequiredGroups.length ? ` 확인 필요 ${groupPlan.reviewRequiredGroups.length}건은 입력표에 유지합니다.` : ''}`);
     try {
-      await saveOrderGroups(current, groups, submittedAt);
+      await saveOrderGroups(current, groupPlan, submittedAt);
     } finally {
       state.busy = false;
       renderDelivery();

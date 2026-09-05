@@ -20,6 +20,7 @@ import {
   updateWorkingCell,
   validateTemplateDraft
 } from '../smartinput/input-template-mapper.js';
+import { structuredFieldsForMode } from '../smartinput/multivoucher-stage1.js';
 
 const targets = [
   { id: 'customer', label: '거래처명', scope: 'header', projectionFieldId: 'rowCustomerName', valueType: 'TEXT' },
@@ -130,6 +131,125 @@ assert.equal(
   'manual-search registry and hidden fields must not widen the automatic recommendation contract'
 );
 
+const targetsWithLegacyCustomer = [...targets, { ...manualOnlyCustomerTarget, pickerVisible: false }];
+const legacyHeaders = ['기존 거래처', '품목코드'];
+const legacyCustomerTemplate = {
+  schemaVersion: 'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2',
+  templateId: 'SITPL-LEGACY-CUSTOMER',
+  companyId: 'C1',
+  voucherMode: 'order',
+  templateName: '기존 거래처 연결 양식',
+  revision: 4,
+  signature: templateSignatureV2('C1', 'order', legacyHeaders),
+  headerSignature: templateSignature(legacyHeaders),
+  headers: legacyHeaders,
+  mappings: [
+    { columnIndex: 0, sourceHeader: '기존 거래처', state: DECISION.MAPPED, targetFieldId: 'rowCustomerName', reviewed: true },
+    { columnIndex: 1, sourceHeader: '품목코드', state: DECISION.MAPPED, targetFieldId: 'itemCode', reviewed: true }
+  ]
+};
+const legacyCustomerApplied = createMappingSession({
+  matrix: [legacyHeaders, ['거래처A', 'A-01']],
+  companyId: 'C1',
+  voucherMode: 'order',
+  templates: [legacyCustomerTemplate],
+  targetDefinitions: targetsWithLegacyCustomer
+});
+assert.equal(legacyCustomerApplied.status, SESSION_STATUS.TEMPLATE_APPLIED,
+  '숨김 처리된 기존 거래처 target은 기존 입력 양식에서 계속 적용되어야 한다.');
+const legacyCustomerUpdated = createTemplateRecord({
+  companyId: legacyCustomerTemplate.companyId,
+  voucherMode: legacyCustomerTemplate.voucherMode,
+  headers: legacyCustomerTemplate.headers,
+  mappings: legacyCustomerTemplate.mappings
+}, legacyCustomerTemplate.templateName, targetsWithLegacyCustomer, legacyCustomerTemplate);
+assert.equal(legacyCustomerUpdated.revision, 5);
+assert.equal(legacyCustomerUpdated.templateId, legacyCustomerTemplate.templateId);
+assert.deepEqual(legacyCustomerUpdated.mappings, legacyCustomerTemplate.mappings,
+  '사용자에게 숨긴 기존 target을 바꾸지 않은 양식 저장은 모든 열 연결을 그대로 보존해야 한다.');
+
+const duplicatedProjectionHeaders = ['기존 거래처', '표준 거래처'];
+const duplicatedProjectionTemplate = {
+  ...legacyCustomerTemplate,
+  templateId: 'SITPL-DUPLICATED-CUSTOMER-PROJECTION',
+  signature: templateSignatureV2('C1', 'order', duplicatedProjectionHeaders),
+  headerSignature: templateSignature(duplicatedProjectionHeaders),
+  headers: duplicatedProjectionHeaders,
+  mappings: [
+    { columnIndex: 0, sourceHeader: '기존 거래처', state: DECISION.MAPPED, targetFieldId: 'rowCustomerName', reviewed: true },
+    { columnIndex: 1, sourceHeader: '표준 거래처', state: DECISION.MAPPED, targetFieldId: 'customer', reviewed: true }
+  ]
+};
+const duplicatedProjectionApplied = createMappingSession({
+  matrix: [duplicatedProjectionHeaders, ['거래처A', '거래처B']],
+  companyId: 'C1',
+  voucherMode: 'order',
+  templates: [duplicatedProjectionTemplate],
+  targetDefinitions: targetsWithLegacyCustomer
+});
+assert.equal(duplicatedProjectionApplied.status, SESSION_STATUS.INVALID_TEMPLATE,
+  '서로 다른 target ID가 같은 전표 필드로 투영되면 기존 양식을 적용하지 않아야 한다.');
+assert.deepEqual(
+  duplicatedProjectionApplied.issues.map(issue => ({
+    code: issue.code,
+    targetFieldId: issue.targetFieldId,
+    otherTargetFieldId: issue.otherTargetFieldId,
+    projectionFieldId: issue.projectionFieldId
+  })),
+  [{
+    code: 'TARGET_DUPLICATED',
+    targetFieldId: 'customer',
+    otherTargetFieldId: 'rowCustomerName',
+    projectionFieldId: 'rowCustomerName'
+  }]
+);
+
+let duplicatedProjectionDecision = createMappingSession({
+  matrix: [duplicatedProjectionHeaders, ['거래처A', '거래처B']],
+  targetDefinitions: targetsWithLegacyCustomer
+});
+duplicatedProjectionDecision = setColumnDecision(
+  duplicatedProjectionDecision,
+  0,
+  DECISION.MAPPED,
+  'rowCustomerName',
+  targetsWithLegacyCustomer
+);
+assert.throws(
+  () => setColumnDecision(duplicatedProjectionDecision, 1, DECISION.MAPPED, 'customer', targetsWithLegacyCustomer),
+  error => error?.message === 'MAPPING_TARGET_DUPLICATED'
+    && error?.otherTargetFieldId === 'rowCustomerName'
+    && error?.projectionFieldId === 'rowCustomerName',
+  '같은 투영 필드의 기존·표준 target을 두 열에 동시에 연결하지 않아야 한다.'
+);
+
+for (const voucherMode of ['purchase', 'sale', 'estimate']) {
+  const modeTargets = structuredFieldsForMode(voucherMode, []);
+  const modeMatrix = [['원본문서키', '원본전표순번', '전표분리키'], ['DOC-A', '2', 'SPLIT-A']];
+  let modeSession = createMappingSession({
+    matrix: modeMatrix,
+    companyId: 'C-MODE',
+    voucherMode,
+    targetDefinitions: modeTargets
+  });
+  modeSession = confirmRecommendations(modeSession, modeTargets);
+  const modeTemplate = createTemplateRecord(modeSession, `${voucherMode} 입력 양식`, modeTargets);
+  const modeApplied = createMappingSession({
+    matrix: modeMatrix,
+    companyId: 'C-MODE',
+    voucherMode,
+    templates: [modeTemplate],
+    targetDefinitions: modeTargets
+  });
+  assert.equal(modeApplied.status, SESSION_STATUS.TEMPLATE_APPLIED,
+    `${voucherMode} 입력 양식은 주문 target 호환 보정 후에도 그대로 적용되어야 한다.`);
+  assert.deepEqual(
+    projectMappedRows(modeApplied, modeTargets).map(row => [row.sourceDocumentKey, row.sourceVoucherIndex, row.manualSplitKey]),
+    [['DOC-A', 2, 'SPLIT-A']],
+    `${voucherMode} 입력 양식의 기존 원본문서 분리 필드 매핑을 보존해야 한다.`
+  );
+}
+
 let decisions = createMappingSession({ matrix: [['품목코드', '알 수 없는 열'], ['001', '보존']], targetDefinitions: targets });
 decisions = setColumnDecision(decisions, 0, DECISION.MAPPED, 'itemCode', targets);
 assert.throws(() => setColumnDecision(decisions, 1, DECISION.MAPPED, 'itemCode', targets), /MAPPING_TARGET_DUPLICATED/);
@@ -233,5 +353,10 @@ assert.equal((smartInputSource.match(/\$\('mappingInputRows'\)\.addEventListener
   'mapping-table input delegation must be registered once');
 assert.match(smartInputSource, /scheduleMappingProjection\(\)/,
   'mapping edits must use the scheduled projection path instead of querying storage per cell');
+assert.match(
+  smartInputSource,
+  /createTemplateRecord\(\{ companyId: state\.companyId, voucherMode: state\.draft\.activeMode, signature: template\.signature, headers: template\.headers, mappings \}, name, allTargets, template\)/,
+  'input-template editing must validate against the full target registry so unchanged hidden legacy targets remain saveable'
+);
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);

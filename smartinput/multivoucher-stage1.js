@@ -12,6 +12,8 @@ const MODE_CONFIG = Object.freeze({
     warehouseAliases: ['창고', '창고코드', '출하창고', '출하창고코드'],
     voucherNoLabel: '주문번호',
     voucherNoAliases: ['전표번호', '주문번호', '외부전표번호', '일자-No.'],
+    transactionTypeLabel: '거래유형',
+    transactionTypeAliases: ['거래유형', '거래구분'],
     quantityLabel: '주문수량',
     quantityAliases: ['주문수량', '수량'],
     unitPriceLabel: '주문단가',
@@ -126,6 +128,11 @@ export function modeConfig(mode) {
 
 export function stage1RowFieldDefinitions(mode = 'order') {
   const config = modeConfig(mode);
+  const sourcePartitionFields = mode === 'order' ? [] : [
+    field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
+    field('sourceVoucherIndex', '원본전표순번', ['원본전표순번', '전표순번'], 'NUMBER'),
+    field('manualSplitKey', '전표분리키', ['전표분리키', '수동분리키'])
+  ];
   return Object.freeze([
     field('rowCustomerCode', config.customerCodeLabel, config.customerCodeAliases),
     field('rowCustomerName', config.customerLabel, config.customerAliases),
@@ -133,10 +140,9 @@ export function stage1RowFieldDefinitions(mode = 'order') {
     field('rowDeliveryDate', config.deliveryDateLabel, config.deliveryDateAliases),
     field('rowWarehouseCode', config.warehouseLabel, config.warehouseAliases),
     field('rowVoucherNo', config.voucherNoLabel, config.voucherNoAliases),
+    ...(mode === 'order' ? [field('rowTransactionType', config.transactionTypeLabel, config.transactionTypeAliases)] : []),
     ...roleFieldDefinitions(mode),
-    field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
-    field('sourceVoucherIndex', '원본전표순번', ['원본전표순번', '전표순번'], 'NUMBER'),
-    field('manualSplitKey', '전표분리키', ['전표분리키', '수동분리키'])
+    ...sourcePartitionFields
   ]);
 }
 
@@ -149,7 +155,12 @@ export function structuredFieldsForMode(mode, productFieldDefinitions = []) {
     field('unitPrice', config.unitPriceLabel, config.unitPriceAliases, 'NUMBER')
   ];
   const overriddenIds = new Set(overrides.map(item => item.id));
-  return [...overrides, ...productFieldDefinitions.filter(item => !overriddenIds.has(item.id))];
+  const orderInternalFields = new Set(['sourceDocumentKey', 'sourceVoucherIndex', 'manualSplitKey']);
+  return [
+    ...overrides,
+    ...productFieldDefinitions.filter(item => !overriddenIds.has(item.id)
+      && !(mode === 'order' && orderInternalFields.has(item.id)))
+  ];
 }
 
 export function normalizeStage1Row(row = {}, context = {}) {
@@ -186,6 +197,7 @@ export function normalizeStage1Row(row = {}, context = {}) {
     rowWarehouseId: text(row.rowWarehouseId),
     rowWarehouseCode: text(row.rowWarehouseCode),
     rowVoucherNo: text(row.rowVoucherNo),
+    rowTransactionType: text(row.rowTransactionType),
     sourceBatchId: text(row.sourceBatchId || context.sourceBatchId || row.batchId),
     sourceDocumentKey: text(row.sourceDocumentKey || context.sourceDocumentKey),
     sourceVoucherIndex: numberOrNull(row.sourceVoucherIndex ?? context.sourceVoucherIndex) ?? 1,
@@ -285,6 +297,19 @@ function sourcePartition(row) {
 
 export function buildVoucherGroupKey(mode, row, header = {}) {
   const role = groupRoleSnapshot(mode, row, header);
+  if (mode === 'order') {
+    const customerBusinessKey = role.deliveryCustomerCode
+      || role.deliveryCustomerId
+      || role.deliveryCustomerName;
+    const parts = [
+      text(row.sourceBatchId || row.batchId || header.sourceBatchId),
+      rowValue(row, 'rowVoucherNo', ''),
+      rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName),
+      customerBusinessKey,
+      rowValue(row, 'rowTransactionType', header.transactionType)
+    ];
+    return `ORDER|${parts.map(part => encodeURIComponent(part)).join('|')}`;
+  }
   const parts = [
     text(row.sourceBatchId || row.batchId || header.sourceBatchId),
     sourcePartition(row),
@@ -301,9 +326,9 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
   const groups = new Map();
   rows.forEach((input, index) => {
     const row = normalizeStage1Row(input, { sourceBatchId: input.batchId, sourceRowNo: input.sourceLineNo || index + 1 });
+    const rowRole = groupRoleSnapshot(mode, row, header);
     const voucherGroupKey = buildVoucherGroupKey(mode, row, header);
     if (!groups.has(voucherGroupKey)) {
-      const role = groupRoleSnapshot(mode, row, header);
       const idempotencyParts = [
         mode,
         row.sourceBatchId,
@@ -314,12 +339,12 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
         voucherGroupKey,
         idempotencyKey: `SMART_INPUT_STAGE1:${idempotencyParts.map(part => encodeURIComponent(text(part))).join('|')}`,
         voucherType: mode,
-        ...role,
+        ...rowRole,
         voucherDate: rowValue(row, 'rowVoucherDate', header.voucherDate || header.orderDate),
         deliveryDate: rowValue(row, 'rowDeliveryDate', header.deliveryDate),
         warehouseId: rowValue(row, 'rowWarehouseId', header.warehouseId),
         warehouseCode: rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName),
-        transactionType: text(header.transactionType),
+        transactionType: rowValue(row, 'rowTransactionType', header.transactionType),
         externalVoucherNo: text(row.rowVoucherNo),
         sourceBatchId: text(row.sourceBatchId),
         sourceDocumentKey: text(row.sourceDocumentKey),
@@ -337,6 +362,27 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
     }
     if (row.quantity === null) group.validationErrors.push(`${row.sourceRowNo || index + 1}행 수량 공란`);
     if (row.unitConversionStatus === 'REVIEW_REQUIRED') group.validationErrors.push(`${row.sourceRowNo || index + 1}행 단위 환산 확인 필요`);
+    if (mode === 'order') {
+      [
+        ['주문일자', 'voucherDate', rowValue(row, 'rowVoucherDate', header.voucherDate || header.orderDate)],
+        ['배송일자', 'deliveryDate', rowValue(row, 'rowDeliveryDate', header.deliveryDate)],
+        ['출하창고 ID', 'warehouseId', rowValue(row, 'rowWarehouseId', header.warehouseId)],
+        ['배송처 ID', 'deliveryCustomerId', rowRole.deliveryCustomerId],
+        ['배송처코드', 'deliveryCustomerCode', rowRole.deliveryCustomerCode],
+        ['배송처명', 'deliveryCustomerName', rowRole.deliveryCustomerName],
+        ['세무거래처 ID', 'billingCustomerId', rowRole.billingCustomerId],
+        ['세무거래처코드', 'billingCustomerCode', rowRole.billingCustomerCode],
+        ['세무거래처명', 'billingCustomerName', rowRole.billingCustomerName]
+      ].forEach(([label, fieldName, actual]) => {
+        const expected = text(group[fieldName]);
+        const candidate = text(actual);
+        if (!expected && candidate) {
+          group[fieldName] = candidate;
+        } else if (expected && candidate && expected !== candidate) {
+          group.validationErrors.push(`${row.sourceRowNo || index + 1}행 ${label} 값이 같은 주문서 안에서 다름`);
+        }
+      });
+    }
     group.rows.push({ ...row, voucherGroupKey });
   });
   return [...groups.values()].map(group => ({
@@ -346,17 +392,138 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
   }));
 }
 
+export function orderGroupValidationErrors(group = {}) {
+  const errors = [...(group.validationErrors || [])];
+  if (!group.deliveryCustomerName) errors.push('등록 거래처');
+  if (!group.voucherDate) errors.push('주문일자');
+  if (!group.deliveryDate) errors.push('배송일자');
+  if (!group.warehouseId && !group.warehouseCode) errors.push('출하창고');
+  if (!group.rows?.length) errors.push('상품');
+  (group.rows || []).forEach((row, rowIndex) => {
+    if (!row.itemCode && !row.itemName) errors.push(`${rowIndex + 1}행 상품`);
+    if (row.quantity === null) errors.push(`${rowIndex + 1}행 수량`);
+    if (row.unitConversionStatus === 'REVIEW_REQUIRED') errors.push(`${rowIndex + 1}행 단위 환산`);
+  });
+  return [...new Set(errors)];
+}
+
+export function partitionOrderGroups(groups = []) {
+  const readyGroups = [];
+  const reviewRequiredGroups = [];
+  (groups || []).forEach(group => {
+    const validationErrors = orderGroupValidationErrors(group);
+    const assessed = {
+      ...group,
+      validationErrors,
+      validationStatus: validationErrors.length ? 'REVIEW_REQUIRED' : 'READY'
+    };
+    (validationErrors.length ? reviewRequiredGroups : readyGroups).push(assessed);
+  });
+  return { readyGroups, reviewRequiredGroups };
+}
+
+const ORDER_GROUP_ROW_HEADER_FIELDS = Object.freeze([
+  'rowCustomerId', 'rowCustomerCode', 'rowCustomerName',
+  'rowVoucherDate', 'rowDeliveryDate', 'rowWarehouseId', 'rowWarehouseCode',
+  'rowVoucherNo', 'rowTransactionType',
+  'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName',
+  'billingCustomerId', 'billingCustomerCode', 'billingCustomerName'
+]);
+
+export function requiresOrderGroupSavePath(groups = [], rows = []) {
+  return (groups || []).length > 1
+    || (rows || []).some(row => ORDER_GROUP_ROW_HEADER_FIELDS.some(fieldName => text(row?.[fieldName])));
+}
+
+export async function executeOrderGroupSavePlan(groupPlan = {}, saveReadyGroup) {
+  if (typeof saveReadyGroup !== 'function') throw new Error('ORDER_GROUP_SAVE_HANDLER_REQUIRED');
+  const readyGroups = groupPlan?.readyGroups || [];
+  const reviewRequiredGroups = groupPlan?.reviewRequiredGroups || [];
+  const results = reviewRequiredGroups.map(group => ({
+    ok: false,
+    blocked: true,
+    group,
+    error: new Error(group.validationErrors?.[0] || '주문서 확인 필요')
+  }));
+  for (const group of readyGroups) {
+    try {
+      const saved = await saveReadyGroup(group);
+      results.push({ ...(saved || {}), ok: true, group });
+    } catch (error) {
+      results.push({ ok: false, group, error });
+    }
+  }
+  return results;
+}
+
+function stableRowSnapshot(value) {
+  if (Array.isArray(value)) return `[${value.map(stableRowSnapshot).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().filter(key => value[key] !== undefined)
+      .map(key => `${JSON.stringify(key)}:${stableRowSnapshot(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? '';
+}
+
+function orderRowSaveIdentity(row = {}, header = {}) {
+  if (text(row.rowId)) return `ROW:${text(row.rowId)}`;
+  if (text(row.sourceLineKey)) return `SOURCE_LINE:${text(row.sourceLineKey)}`;
+  const sourceBatchId = text(row.sourceBatchId || row.batchId || header.sourceBatchId);
+  const sourceRowNo = Number(row.sourceRowNo || row.sourceLineNo || 0);
+  if (sourceBatchId && sourceRowNo > 0) return `SOURCE_ROW:${sourceBatchId}:${sourceRowNo}`;
+  return `BUSINESS_KEY:${buildVoucherGroupKey('order', row, header)}`;
+}
+
+export function captureOrderRowSubmission(rows = [], header = {}) {
+  return (rows || []).map(row => ({
+    groupKey: buildVoucherGroupKey('order', row, header),
+    identity: orderRowSaveIdentity(row, header),
+    snapshot: stableRowSnapshot(row)
+  }));
+}
+
+export function captureOrderHeaderSubmission(header = {}) {
+  const { submittedAt: _submittedAt, ...businessHeader } = header || {};
+  return stableRowSnapshot(businessHeader);
+}
+
+export function orderHeaderChangedSinceSubmission(header = {}, submission = '') {
+  return captureOrderHeaderSubmission(header) !== submission;
+}
+
+export function retainUnsavedOrderRows(rows = [], submission = [], succeededGroups = [], header = {}) {
+  const succeededKeys = new Set((succeededGroups || []).map(group => group?.voucherGroupKey).filter(Boolean));
+  const removals = new Map();
+  (submission || []).filter(row => succeededKeys.has(row?.groupKey)).forEach(row => {
+    const token = `${row.identity}\n${row.snapshot}`;
+    removals.set(token, (removals.get(token) || 0) + 1);
+  });
+  return (rows || []).filter(row => {
+    const token = `${orderRowSaveIdentity(row, header)}\n${stableRowSnapshot(row)}`;
+    const count = removals.get(token) || 0;
+    if (!count) return true;
+    if (count === 1) removals.delete(token);
+    else removals.set(token, count - 1);
+    return false;
+  });
+}
+
 export function summarizeVoucherGroups(groups = []) {
   const customerKeys = new Set();
   let rowCount = 0;
   let reviewRequired = 0;
+  let reviewRequiredVoucherCount = 0;
   groups.forEach(group => {
     customerKeys.add(group.supplierCustomerId || group.supplierCustomerCode || group.supplierCustomerName
       || group.salesCustomerId || group.salesCustomerCode || group.salesCustomerName
       || group.deliveryCustomerId || group.deliveryCustomerCode || group.deliveryCustomerName || '');
     rowCount += group.rows.length;
-    reviewRequired += group.rows.filter(row => row.matchStatus !== 'MATCHED'
-      || row.quantity === null || row.unitConversionStatus === 'REVIEW_REQUIRED').length;
+    const reviewRows = group.rows.filter(row => row.matchStatus !== 'MATCHED'
+      || row.quantity === null || row.unitConversionStatus === 'REVIEW_REQUIRED');
+    const groupReviewRequired = group.validationStatus === 'REVIEW_REQUIRED'
+      || Boolean(group.validationErrors?.length);
+    if (groupReviewRequired || reviewRows.length) reviewRequiredVoucherCount += 1;
+    reviewRequired += groupReviewRequired ? group.rows.length : reviewRows.length;
   });
   customerKeys.delete('');
   return {
@@ -364,7 +531,8 @@ export function summarizeVoucherGroups(groups = []) {
     voucherCount: groups.length,
     rowCount,
     reviewRequired,
-    label: `거래처 ${customerKeys.size}곳 · 생성 예정 전표 ${groups.length}건 · 상품 ${rowCount}행 · 확인 필요 ${reviewRequired}행`
+    reviewRequiredVoucherCount,
+    label: `거래처 ${customerKeys.size}곳 · 생성 예정 전표 ${groups.length}건 · 상품 ${rowCount}행 · 확인 필요 전표 ${reviewRequiredVoucherCount}건 · 확인 필요 ${reviewRequired}행`
   };
 }
 
