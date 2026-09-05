@@ -465,10 +465,10 @@ try {
   await clickButton(client, 'JSON 백업');
   assert.match((await evaluate(client, `window.__legacyDownload?.download || ''`)), /^ItemMaster-legacy-backup-/);
 
-  await clickButton(client, '추가·갱신 검토');
-  await waitForExpression(client, `document.body?.innerText.includes('추가·갱신 확인요청')`, 'legacy review confirmation');
+  await clickButton(client, '정보수정 Excel 검토');
+  await waitForExpression(client, `document.body?.innerText.includes('정보수정 Excel 확인요청')`, 'legacy review confirmation');
   assert.equal((await readStoredProduct(client, initialCode)).product?.품목명, '최초 Excel 상품');
-  await clickModalButton(client, '추가·갱신 확인요청', '이슈 확인 화면으로 이동');
+  await clickModalButton(client, '정보수정 Excel 확인요청', '이슈 확인 화면으로 이동');
   await waitForExpression(client, `document.body?.innerText.includes('LEGACY-NEW-001')`, 'legacy review candidates');
   await evaluate(client, `(() => {
     const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes('LEGACY-NEW-001'));
@@ -505,9 +505,8 @@ try {
     });
   })()`);
   assert.equal(requestReceipt.status, 'PENDING', JSON.stringify(requestReceipt));
-  await clickButton(client, 'Inbox 새로고침');
   try {
-    await waitForExpression(client, `document.querySelector('[data-product-change-request-inbox="READY"]')?.innerText.includes(${JSON.stringify(testCode)}) && document.body.innerText.includes('자동 승인·자동 master 반영 없음')`, 'product read-only change-request inbox');
+    await waitForExpression(client, `document.querySelector('[data-product-change-request-inbox="READY"]')?.innerText.includes('검토 제안 상품명') && document.body.innerText.includes('관리자가 원본과 반영 예정값을 확인한 뒤 처리합니다.')`, 'product change-request work inbox');
   } catch (error) {
     const diagnostic = await evaluate(client, `({status:document.querySelector('[data-product-change-request-inbox]')?.getAttribute('data-product-change-request-inbox'),text:document.querySelector('[data-product-change-request-inbox]')?.innerText,global:window.ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER?.version})`);
     throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}`);
@@ -523,7 +522,8 @@ try {
   pageLoaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/Item_manager.html` });
   await pageLoaded;
-  assert.equal(await evaluate(client, `document.title.length > 0 && document.body.innerText.length > 0`), true);
+  assert.equal(await evaluate(client, `document.title`), 'SKU 관리 - NEXUS');
+  assert.equal(await evaluate(client, `document.body.innerText.includes('← 상품관리') && document.body.innerText.includes('상품관리 〉 SKU 관리')`), true);
 
   assert.deepEqual(runtimeErrors, [], `browser runtime errors: ${runtimeErrors.join(' | ')}`);
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(' | ')}`);

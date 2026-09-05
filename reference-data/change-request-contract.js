@@ -14,8 +14,10 @@ export const REFERENCE_CHANGE_REQUEST_OPERATIONS = Object.freeze([
 
 export const REFERENCE_CHANGE_REQUEST_STATUSES = Object.freeze([
   'PENDING',
+  'IN_REVIEW',
   'DUPLICATE',
   'REJECTED',
+  'LINKED',
   'APPLIED',
   'CONFLICT',
   'NOT_AVAILABLE',

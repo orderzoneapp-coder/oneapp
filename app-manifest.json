@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.11",
-  "updatedAt": "2026-09-04",
+  "schemaVersion": "1.3.12",
+  "updatedAt": "2026-09-05",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -292,6 +292,20 @@
       "runtimeDependencies": [
         "core-engine"
       ],
+      "coreCapabilities": [
+        "product lookup and category browsing",
+        "revision-checked single-product registration and update",
+        "administrator-reviewed Excel information updates",
+        "product-registration and product-information request review",
+        "request apply, existing-product link, and rejection",
+        "revision and change-history recording"
+      ],
+      "dependencyMode": {
+        "localLookupAndEdit": "LOCAL_OPERATION",
+        "requestReview": "LOCAL_OPERATION",
+        "cloudBackupAndPull": "BACKGROUND_SYNC"
+      },
+      "offlinePolicy": "Render and manage the last verified local product master without waiting for cloud. Request-adapter failure is shown separately and does not turn the product list into a confirmed empty state.",
       "ownedContracts": [
         "product-master",
         "product-reference-change-request",
@@ -338,18 +352,30 @@
     },
     {
       "id": "item-manager",
-      "name": "Item Manager",
+      "name": "SKU 관리",
       "path": "Item_manager.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide category-based product lookup and controlled product-management writes.",
+      "purpose": "Create local SKU candidates from product-category references and submit reviewed product-registration requests to the product master owner without directly changing the official product master.",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
       ],
+      "coreCapabilities": [
+        "category-based SKU candidate drafting",
+        "manual SKU candidate drafting",
+        "set and BOM candidate composition",
+        "product-registration request submission and result lookup"
+      ],
+      "dependencyMode": {
+        "candidateDrafting": "LOCAL_OPERATION",
+        "productReferenceRead": "LOCAL_OPERATION",
+        "registrationRequestSubmission": "LOCAL_OPERATION"
+      },
+      "offlinePolicy": "Keep existing local SKU candidate drafts available when the product owner request adapter is unavailable; only final request submission is deferred and the official product master is never changed directly.",
       "sharedContracts": [
         "product-master",
-        "change-history"
+        "product-reference-change-request"
       ]
     },
     {
@@ -1188,7 +1214,6 @@
       },
       "legacyWriterAllowlist": [
         "Master.html",
-        "Item_manager.html",
         "coreEngine.js",
         "masterAddUpdate.js"
       ],
@@ -1218,12 +1243,13 @@
       "id": "product-reference-change-request",
       "owner": "master-lookup",
       "consumers": [
+        "item-manager",
         "smart-input",
         "smart-parser"
       ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
-      "writerPolicy": "Only master-lookup receives requests into the existing owner KV store. Receipt remains PENDING and never applies product master data automatically.",
+      "writerPolicy": "Only master-lookup receives requests into the existing owner KV store. Requests transition from PENDING to IN_REVIEW and then APPLIED, LINKED, or REJECTED; product master data changes only through an explicit administrator-confirmed owner write.",
       "resources": {
         "contractAsset": "reference-data/change-request-contract.js",
         "adapterAsset": "reference-data/product-change-request-adapter.js",

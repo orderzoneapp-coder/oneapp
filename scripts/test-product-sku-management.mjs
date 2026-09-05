@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import {
+  beginProductChangeRequestReview,
+  completeProductChangeRequest,
+  getProductChangeRequest,
+  listProductChangeRequests,
+  prepareProductChangeRequestApply,
+  submitProductChangeRequest,
+} from '../reference-data/product-change-request-adapter.js';
+
+const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+const values = new Map();
+const database = {
+  objectStoreNames: { contains: (name) => ['store', 'master_products'].includes(name) },
+  transaction(storeName, mode) {
+    assert.equal(storeName, 'store');
+    let finished = false;
+    const transaction = {
+      oncomplete: null, onerror: null, onabort: null, error: null,
+      objectStore(name) {
+        assert.equal(name, 'store');
+        return {
+          get(key) {
+            const request = { result: undefined, onsuccess: null, onerror: null };
+            setTimeout(() => {
+              request.result = clone(values.get(key));
+              request.onsuccess?.();
+              if (mode === 'readonly') setTimeout(() => { if (!finished) { finished = true; transaction.oncomplete?.(); } }, 0);
+            }, 0);
+            return request;
+          },
+          put(value, key) {
+            values.set(key, clone(value));
+            setTimeout(() => { if (!finished) { finished = true; transaction.oncomplete?.(); } }, 0);
+          },
+        };
+      },
+      abort() { finished = true; setTimeout(() => transaction.onabort?.(), 0); },
+    };
+    return transaction;
+  },
+  close() {},
+};
+
+globalThis.indexedDB = {
+  async databases() { return [{ name: 'MerchOpsDB', version: 2 }]; },
+  open() {
+    const request = { result: database, onsuccess: null, onerror: null, onblocked: null, onupgradeneeded: null };
+    setTimeout(() => request.onsuccess?.(), 0);
+    return request;
+  },
+};
+
+const request = {
+  schemaVersion: 'ONEAPP_REFERENCE_CHANGE_REQUEST_V1',
+  requestId: 'SKU-REQUEST-TEST-1',
+  idempotencyKey: 'SKU-REQUEST-TEST-1',
+  domain: 'PRODUCT',
+  ownerAppId: 'master-lookup',
+  entityId: 'SKU-TEST-001',
+  operation: 'CREATE',
+  changes: [
+    { field: '품목코드', beforeValue: '', proposedValue: 'SKU-TEST-001' },
+    { field: '품목명', beforeValue: '', proposedValue: 'SKU 후보 테스트' },
+    { field: '규격', beforeValue: '', proposedValue: '1kg' },
+    { field: '단위', beforeValue: '', proposedValue: 'BOX' },
+  ],
+  reason: 'SKU 관리 상품 등록 요청',
+  source: { appId: 'item-manager', workflow: 'SKU_MANAGEMENT', original: { name: 'SKU 후보 테스트' } },
+  actor: { actorId: null, actorName: '작업자', actorState: 'UNVERIFIED_LOCAL' },
+  requestedAt: '2026-09-05T12:00:00.000Z',
+};
+
+assert.equal((await submitProductChangeRequest(request)).status, 'PENDING');
+assert.equal((await beginProductChangeRequestReview({ requestId: request.requestId })).status, 'IN_REVIEW');
+assert.equal((await getProductChangeRequest(request.requestId)).entry.status, 'IN_REVIEW');
+const prepared = await prepareProductChangeRequestApply({ requestId: request.requestId, productCode: 'SKU-TEST-001', targetProduct: { 코드: 'SKU-TEST-001', 품목명: 'SKU 후보 테스트' } });
+assert.equal(prepared.status, 'IN_REVIEW');
+assert.equal(prepared.entry.review.applyTarget.targetProduct.품목명, 'SKU 후보 테스트');
+assert.equal((await completeProductChangeRequest({ requestId: request.requestId, resolution: 'APPLIED', productCode: 'SKU-TEST-001', result: { revision: 2 } })).status, 'APPLIED');
+assert.equal((await getProductChangeRequest(request.requestId)).entry.result.revision, 2);
+assert.equal((await listProductChangeRequests({ status: ['PENDING', 'IN_REVIEW'] })).requests.length, 0);
+assert.equal((await completeProductChangeRequest({ requestId: request.requestId, resolution: 'REJECTED', reason: 'late reject' })).status, 'CONFLICT');
+
+const master = readFileSync(new URL('../Master.html', import.meta.url), 'utf8');
+const sku = readFileSync(new URL('../Item_manager.html', import.meta.url), 'utf8');
+const commonUi = readFileSync(new URL('../nexus/common/nexus-ui.js', import.meta.url), 'utf8');
+assert.match(master, />SKU 관리</);
+assert.match(master, /정보수정 Excel/);
+assert.match(master, /ProductRequestReviewModal/);
+assert.match(master, /확인 및 등록/);
+assert.match(master, /기존 상품 연결/);
+assert.match(master, />반려</);
+assert.doesNotMatch(master, /Inbox 새로고침/);
+assert.match(sku, /SKU_MANAGEMENT_MASTER_WRITE_BLOCKED/);
+assert.match(sku, /SKU 후보 생성 및 상품 등록 요청/);
+assert.doesNotMatch(sku, /id: 'theme', label: '행사테마'/);
+assert.doesNotMatch(commonUi, /label: '상품등록'/);
+assert.match(commonUi, /'item-manager': 'master-lookup'/);
+
+console.log('PASS product management and SKU request workflow');

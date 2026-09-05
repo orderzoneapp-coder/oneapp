@@ -6,7 +6,7 @@
     <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="master-lookup"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="nexus/common/nexus-ui.js?v=1.4.2"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.5.0"></script>
     <meta name="google" content="notranslate">
     <title>상품관리 - NEXUS</title>
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
@@ -94,7 +94,7 @@
 
     <script type="text/babel">
         if (!window.React || !window.ReactDOM) { throw new Error('React/ReactDOM 라이브러리 로드 실패'); }
-        const { useState, useMemo, useEffect, useCallback, Fragment } = React;
+        const { useState, useMemo, useEffect, useCallback, useRef, Fragment } = React;
 
         // ==========================================
         // 🔑 Global Storage Keys & Constants
@@ -688,25 +688,59 @@
             { key: '2그룹명', label: '중분류명' },
             { key: '3코드', label: '소분류 코드' },
             { key: '3그룹명', label: '소분류명' },
+            { key: '오더즈', label: '오더즈분류3' },
+            { key: '구매처', label: '구매처' },
+            { key: '브랜드', label: '브랜드' },
+            { key: '상품설명', label: '상품설명' },
+            { key: '검색명', label: '검색명' },
+            { key: '구분', label: '구분' },
             { key: '입고가', label: '입고가', type: 'number' },
-            { key: '출고가', label: '출고가', type: 'number' }
+            { key: '출고가', label: '출고가', type: 'number' },
+            { key: '도매A', label: '도매A', type: 'number' },
+            { key: '최종입고', label: '최종입고', type: 'number' },
+            { key: '행사가', label: '행사가', type: 'number' },
+            { key: '준비기간', label: '준비기간' },
+            { key: '주문마감시간', label: '주문마감시간' },
+            { key: '외주비단가', label: '외주비단가', type: 'number' },
+            { key: '표준노무시간', label: '표준노무시간', type: 'number' },
+            { key: '경비가중치', label: '경비가중치', type: 'number' },
+            { key: '1종', label: '1종 관련 정보' },
+            { key: '2종', label: '2종 관련 정보' },
+            { key: '비과세', label: '비과세' }
+        ];
+
+        const DETAIL_PRODUCT_FIELDS = [
+            { category: '품목정보', key: '바코드', label: '바코드' },
+            { category: '품목정보', key: '원산지', label: '원산지' },
+            { category: '수량', key: '최소주문수량', label: '최소주문수량', type: 'number' },
+            { category: '수량', key: '최대주문수량', label: '최대주문수량', type: 'number' },
+            { category: '단가', key: '입고B', label: '입고B', type: 'number' },
+            { category: '단가', key: '도매B', label: '도매B', type: 'number' },
+            { category: '원가', key: '표준원가', label: '표준원가', type: 'number' },
+            { category: '부가정보', key: '보관방법', label: '보관방법' },
+            { category: '관리대상', key: '관리대상', label: '관리대상' },
+            { category: '관리대상', key: '사용여부', label: '사용여부' },
         ];
 
         const ProductEditorModal = ({ item, onCancel, onSave, isSaving }) => {
             const [form, setForm] = useState({});
             const [errorMessage, setErrorMessage] = useState('');
+            const [detailKeys, setDetailKeys] = useState([]);
+            const [detailSelection, setDetailSelection] = useState('');
             const isOpen = item !== null;
             const isEditing = Boolean(item && safeStr(item.코드 || item.품목코드).trim());
             useEffect(() => {
                 if (!isOpen) return;
                 setForm(item ? { ...item, 코드: safeStr(item.코드 || item.품목코드) } : {});
+                setDetailKeys([]);
+                setDetailSelection('');
                 setErrorMessage('');
             }, [item, isOpen]);
             if (!isOpen) return null;
             const handleSubmit = async () => {
                 try {
                     const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(form);
-                    ['입고가', '출고가'].forEach(field => {
+                    PRODUCT_FORM_FIELDS.concat(DETAIL_PRODUCT_FIELDS).filter(field => field.type === 'number').forEach(({ key: field }) => {
                         if (safeStr(normalized[field]).trim() !== '') normalized[field] = Number(normalized[field]);
                     });
                     await onSave(normalized, { isEditing });
@@ -714,6 +748,7 @@
                     setErrorMessage(error.message);
                 }
             };
+            const visibleDetailFields = detailKeys.map(key => DETAIL_PRODUCT_FIELDS.find(field => field.key === key) || { key, label: key });
             return (
                 <div className="fixed inset-0 z-[135] bg-slate-950/60 flex items-center justify-center p-5">
                     <div className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
@@ -722,7 +757,7 @@
                             <p className="text-xs text-slate-300 mt-1">공식 master·revision·history 계약으로 저장됩니다.</p>
                         </div>
                         <div className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {PRODUCT_FORM_FIELDS.map(field => (
+                            {PRODUCT_FORM_FIELDS.concat(visibleDetailFields).map(field => (
                                 <label key={field.key} className="block">
                                     <span className="text-[11px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span>
                                     <input
@@ -734,6 +769,17 @@
                                     />
                                 </label>
                             ))}
+                            <div className="md:col-span-2 border-t border-slate-200 pt-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                    <select value={detailSelection} onChange={event => setDetailSelection(event.target.value)} className="h-10 flex-1 px-3 rounded-lg border border-slate-300 text-sm bg-white">
+                                        <option value="">상세항목 선택</option>
+                                        {DETAIL_PRODUCT_FIELDS.filter(field => !detailKeys.includes(field.key)).map(field => <option key={field.key} value={field.key}>{field.category} · {field.label}</option>)}
+                                        {Object.keys(form).filter(key => !PRODUCT_FORM_FIELDS.some(field => field.key === key) && !DETAIL_PRODUCT_FIELDS.some(field => field.key === key) && !detailKeys.includes(key)).map(key => <option key={key} value={key}>등록되지 않은 항목 · {key}</option>)}
+                                    </select>
+                                    <button type="button" onClick={() => { if (detailSelection) setDetailKeys(current => [...current, detailSelection]); setDetailSelection(''); }} disabled={!detailSelection} className="h-10 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black disabled:opacity-40">+ 항목 추가</button>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-2">화면에 추가하지 않은 기존 필드도 삭제하지 않고 그대로 보존합니다.</p>
+                            </div>
                         </div>
                         {errorMessage && <div className="mx-6 mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700">{errorMessage}</div>}
                         <div className="px-6 pb-6 flex justify-end gap-2">
@@ -741,6 +787,72 @@
                             <button onClick={handleSubmit} disabled={isSaving} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:bg-slate-400">
                                 {isSaving ? '저장 중...' : (isEditing ? '수정 저장' : '상품 등록')}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const requestTypeLabel = (entry) => entry?.request?.operation === 'CREATE' ? '신규 상품 등록 요청' : '상품정보 수정 요청';
+        const requestSourceLabel = (entry) => [entry?.request?.source?.appId, entry?.request?.source?.workflow].filter(Boolean).join(' · ') || '알 수 없는 업무';
+        const requestProposedItem = (entry, masterProducts = {}) => {
+            const request = entry?.request || {};
+            if (entry?.review?.applyTarget?.targetProduct) return { ...entry.review.applyTarget.targetProduct };
+            const base = request.operation === 'CREATE' ? {} : (masterProducts[request.entityId] || {});
+            const item = { ...base, 코드: safeStr(base.코드 || request.entityId), 품목코드: safeStr(base.품목코드 || request.entityId) };
+            (request.changes || []).forEach(change => { item[change.field] = change.proposedValue; });
+            return item;
+        };
+
+        const ProductRequestReviewModal = ({ entry, masterProducts, onClose, onApply, onLink, onReject, isProcessing }) => {
+            const proposed = useMemo(() => requestProposedItem(entry, masterProducts), [entry, masterProducts]);
+            const [form, setForm] = useState(proposed);
+            const [linkCode, setLinkCode] = useState('');
+            const [reason, setReason] = useState('');
+            useEffect(() => { setForm(proposed); setLinkCode(''); setReason(''); }, [proposed]);
+            const similarProducts = useMemo(() => {
+                const target = safeStr(proposed.품목명).toLowerCase().replace(/\s+/g, '');
+                if (!target) return [];
+                return Object.values(masterProducts || {}).filter(item => {
+                    const name = safeStr(item.품목명).toLowerCase().replace(/\s+/g, '');
+                    return name && (name.includes(target) || target.includes(name));
+                }).slice(0, 5);
+            }, [proposed, masterProducts]);
+            if (!entry) return null;
+            const request = entry.request || {};
+            const original = request.source?.original || request.changes?.map(change => ({ field: change.field, value: change.beforeValue })) || {};
+            return (
+                <div className="fixed inset-0 z-[145] bg-slate-950/65 flex items-center justify-center p-3 sm:p-5">
+                    <div className="w-full max-w-6xl max-h-[94vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                        <div className="px-5 sm:px-6 py-4 bg-slate-900 text-white flex items-start justify-between gap-4">
+                            <div><h2 className="text-lg font-black">{requestTypeLabel(entry)}</h2><p className="text-xs text-slate-300 mt-1">{requestSourceLabel(entry)} · {request.actor?.actorName || '요청자 미확인'} · {new Date(request.requestedAt || entry.receivedAt).toLocaleString('ko-KR')}</p></div>
+                            <button type="button" onClick={onClose} disabled={isProcessing} className="w-9 h-9 rounded-lg border border-slate-600 text-slate-200">×</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-5 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <section className="space-y-3">
+                                <h3 className="text-xs font-black text-slate-800">작업자 원본 · 읽기 전용</h3>
+                                <pre className="min-h-32 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-slate-200 bg-slate-50 p-4 text-[11px] text-slate-700">{JSON.stringify(original, null, 2)}</pre>
+                                <h3 className="text-xs font-black text-slate-800">동일·유사 상품 후보</h3>
+                                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+                                    {similarProducts.length ? similarProducts.map(item => {
+                                        const code = safeStr(item.코드 || item.품목코드);
+                                        return <button type="button" key={code} onClick={() => setLinkCode(code)} className={`w-full p-3 text-left text-xs hover:bg-indigo-50 ${linkCode === code ? 'bg-indigo-50 text-indigo-800' : ''}`}><strong>{safeStr(item.품목명, '-')}</strong> · {safeStr(item.규격, '-')} · {code}</button>;
+                                    }) : <div className="p-4 text-xs text-slate-500">동일·유사 상품 후보가 없습니다.</div>}
+                                </div>
+                                <input value={linkCode} onChange={event => setLinkCode(event.target.value)} placeholder="연결할 기존 상품코드" className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm" />
+                            </section>
+                            <section>
+                                <h3 className="text-xs font-black text-slate-800 mb-3">공식 상품 반영 예정값</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {PRODUCT_FORM_FIELDS.map(field => <label key={field.key} className="block"><span className="text-[10px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span><input type={field.type || 'text'} value={form[field.key] ?? ''} disabled={request.operation !== 'CREATE' && field.key === '코드'} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-1 w-full h-9 px-3 rounded-lg border border-slate-300 text-xs disabled:bg-slate-100" /></label>)}
+                                </div>
+                            </section>
+                        </div>
+                        <div className="px-5 sm:px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-col lg:flex-row gap-2 lg:items-center">
+                            <input value={reason} onChange={event => setReason(event.target.value)} placeholder="반려 사유 또는 처리 메모" className="h-10 flex-1 px-3 rounded-lg border border-slate-300 text-xs" />
+                            <button type="button" onClick={() => onReject(reason)} disabled={isProcessing || !reason.trim()} className="h-10 px-4 rounded-lg border border-rose-300 text-rose-700 text-xs font-black disabled:opacity-40">반려</button>
+                            <button type="button" onClick={() => onLink(linkCode, reason)} disabled={isProcessing || !linkCode.trim()} className="h-10 px-4 rounded-lg border border-indigo-300 text-indigo-700 text-xs font-black disabled:opacity-40">기존 상품 연결</button>
+                            <button type="button" onClick={() => onApply(form, reason)} disabled={isProcessing} className="h-10 px-5 rounded-lg bg-indigo-600 text-white text-xs font-black disabled:bg-slate-400">{request.operation === 'CREATE' ? '확인 및 등록' : '확인 및 반영'}</button>
                         </div>
                     </div>
                 </div>
@@ -775,7 +887,7 @@
                 <div className="fixed inset-0 z-[120] bg-slate-950/55 flex items-center justify-center p-5">
                     <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
                         <div className="px-6 py-5 bg-amber-50 border-b border-amber-200">
-                            <h2 className="text-lg font-black text-amber-900">추가·갱신 확인요청</h2>
+                            <h2 className="text-lg font-black text-amber-900">정보수정 Excel 확인요청</h2>
                             <p className="text-xs text-amber-800 mt-1">아직 master에는 아무 값도 저장하지 않았습니다. 이슈 화면에서 승인 범위를 결정하세요.</p>
                         </div>
                         <div className="p-6 grid grid-cols-3 gap-3">
@@ -813,7 +925,7 @@
                 <div className="fixed inset-0 z-[125] bg-slate-950/55 flex items-center justify-center p-5">
                     <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-6 py-5 bg-emerald-50 border-b border-emerald-200">
-                            <h2 className="text-lg font-black text-emerald-900">추가·갱신 저장·검증 완료</h2>
+                            <h2 className="text-lg font-black text-emerald-900">정보수정 Excel 저장·검증 완료</h2>
                             <p className="text-xs text-emerald-800 mt-1">master와 공식 history를 저장한 뒤 다시 읽어 일치 여부를 확인했습니다.</p>
                         </div>
                         <div className="p-6">
@@ -876,7 +988,7 @@
                 <div className="fixed inset-0 z-[110] bg-slate-100 flex flex-col">
                     <div className="h-16 px-6 bg-slate-900 text-white flex items-center justify-between shrink-0 shadow-lg">
                         <div>
-                            <h2 className="text-lg font-black">Master 추가·갱신 이슈 확인</h2>
+                            <h2 className="text-lg font-black">정보수정 Excel 이슈 확인</h2>
                             <p className="text-[11px] text-slate-300">{analysis.fileName} · 선택 필터는 모두 포함(AND) 조건입니다.</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1135,6 +1247,8 @@
             const [editingProduct, setEditingProduct] = useState(null);
             const [legacyState, setLegacyState] = useState({ status: 'checking', exists: false, masterMap: {}, rawItems: [], revision: null });
             const [changeRequestInbox, setChangeRequestInbox] = useState({ status: 'LOADING', requests: [], error: null });
+            const [selectedChangeRequest, setSelectedChangeRequest] = useState(null);
+            const productTableScrollRef = useRef(null);
 
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
@@ -1145,7 +1259,7 @@
             const refreshChangeRequestInbox = useCallback(async () => {
                 try {
                     const module = await window.__loadProductChangeRequestAdapter();
-                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ limit: 5 });
+                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ status: ['PENDING', 'IN_REVIEW'], limit: 200 });
                     setChangeRequestInbox(result);
                 } catch (error) {
                     setChangeRequestInbox({ status: 'ERROR', requests: [], error: { code: error.message || String(error) } });
@@ -1154,7 +1268,21 @@
 
             useEffect(() => {
                 loadMasterLocal().then(data => {
-                    if (data && typeof data === 'object') setMasterProducts(data);
+                    if (data && typeof data === 'object') {
+                        setMasterProducts(data);
+                        try {
+                            const saved = JSON.parse(sessionStorage.getItem('oneapp.master.sku-return-state.v1') || 'null');
+                            if (saved) {
+                                setGlobalSearch(saved.globalSearch || '');
+                                setActiveC1(saved.activeC1 || '');
+                                setActiveC2(saved.activeC2 || '');
+                                setActiveC3(saved.activeC3 || '');
+                                if (saved.editingCode && data[saved.editingCode]) setEditingProduct(data[saved.editingCode]);
+                                setTimeout(() => { if (productTableScrollRef.current) productTableScrollRef.current.scrollTop = Number(saved.scrollTop || 0); }, 0);
+                                sessionStorage.removeItem('oneapp.master.sku-return-state.v1');
+                            }
+                        } catch {}
+                    }
                 }).catch(error => {
                     console.error(error);
                     showToast(`❌ 마스터 불러오기 실패: ${error.message}`);
@@ -1175,9 +1303,121 @@
                         });
                     }
                 };
+                const handleRequestChange = () => refreshChangeRequestInbox();
                 window.addEventListener('message', handleMessage);
-                return () => window.removeEventListener('message', handleMessage);
+                window.addEventListener('oneapp:product-change-request-change', handleRequestChange);
+                return () => {
+                    window.removeEventListener('message', handleMessage);
+                    window.removeEventListener('oneapp:product-change-request-change', handleRequestChange);
+                };
             }, []);
+
+            const openSkuManagement = () => {
+                try {
+                    sessionStorage.setItem('oneapp.master.sku-return-state.v1', JSON.stringify({
+                        globalSearch, activeC1, activeC2, activeC3,
+                        editingCode: safeStr(editingProduct?.코드 || editingProduct?.품목코드),
+                        scrollTop: productTableScrollRef.current?.scrollTop || 0,
+                    }));
+                } catch {}
+                window.location.href = 'Item_manager.html';
+            };
+
+            const openChangeRequest = async (entry) => {
+                setSelectedChangeRequest(entry);
+                try {
+                    const module = await window.__loadProductChangeRequestAdapter();
+                    const result = await module.productMasterChangeRequestAdapter.beginReview({ requestId: entry.request?.requestId, actor: null });
+                    if (result.entry) setSelectedChangeRequest(result.entry);
+                    await refreshChangeRequestInbox();
+                } catch (error) {
+                    console.error(error);
+                    showToast(`❌ 요청 상세조회 실패: ${error.message}`);
+                }
+            };
+
+            const completeSelectedRequest = async ({ resolution, productCode = '', reason = '', result = null }) => {
+                const module = await window.__loadProductChangeRequestAdapter();
+                const completed = await module.productMasterChangeRequestAdapter.completeChangeRequest({
+                    requestId: selectedChangeRequest?.request?.requestId,
+                    resolution, productCode, reason, actor: null, result,
+                });
+                if (!['APPLIED', 'LINKED', 'REJECTED'].includes(completed.status)) throw new Error(completed.error?.code || '요청 완료 처리 실패');
+                setSelectedChangeRequest(null);
+                await refreshChangeRequestInbox();
+                return completed;
+            };
+
+            const handleApplyChangeRequest = async (input, reason) => {
+                if (!selectedChangeRequest) return;
+                const request = selectedChangeRequest.request || {};
+                setIsProcessing(true);
+                setProcessMsg(request.operation === 'CREATE' ? '요청 상품을 공식 마스터에 등록 중...' : '요청 수정값을 공식 마스터에 반영 중...');
+                try {
+                    const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(input);
+                    PRODUCT_FORM_FIELDS.concat(DETAIL_PRODUCT_FIELDS).filter(field => field.type === 'number').forEach(({ key }) => {
+                        if (safeStr(normalized[key]).trim() !== '') normalized[key] = Number(normalized[key]);
+                    });
+                    const code = safeStr(normalized.코드 || normalized.품목코드).trim();
+                    const existing = masterProducts[code];
+                    const preparedTarget = selectedChangeRequest.review?.applyTarget?.targetProduct;
+                    const preparedAlreadyApplied = Boolean(existing && preparedTarget && Object.entries(preparedTarget).every(([key, value]) => Object.is(existing[key] ?? '', value ?? '')));
+                    let commitResult = null;
+                    if (preparedAlreadyApplied) {
+                        commitResult = null;
+                    } else if (request.operation === 'CREATE' && existing) {
+                        throw new Error('같은 상품코드가 이미 존재합니다. 기존 상품 연결 또는 다른 코드를 선택하세요.');
+                    } else {
+                        if (request.operation !== 'CREATE' && !existing) throw new Error('수정할 기존 상품을 찾지 못했습니다. 최신 상품정보를 확인하세요.');
+                        const module = await window.__loadProductChangeRequestAdapter();
+                        const prepared = await module.productMasterChangeRequestAdapter.prepareApply({ requestId: request.requestId, productCode: code, targetProduct: normalized, actor: null });
+                        if (prepared.status !== 'IN_REVIEW') throw new Error(prepared.error?.code || '요청 반영 준비 기록 실패');
+                        setSelectedChangeRequest(prepared.entry);
+                        commitResult = await window.ONEAPP_MASTER_ADD_UPDATE.commitSingleProductChange({
+                            item: normalized,
+                            isEditing: request.operation !== 'CREATE',
+                            expectedRevision: masterPageRevision,
+                            storage: window.ONEAPP?.STORAGE,
+                            historyApi: window.ONEAPP?.HISTORY,
+                            localStorageRef: window.localStorage,
+                            actor: null,
+                        });
+                        masterPageRevision = commitResult.revision;
+                        setMasterProducts(commitResult.masterMap);
+                    }
+                    await completeSelectedRequest({ resolution: 'APPLIED', productCode: code, reason, result: { revision: commitResult?.revision ?? masterPageRevision } });
+                    showToast(`✅ [${safeStr(normalized.품목명, code)}] 요청 처리가 완료되었습니다.`);
+                } catch (error) {
+                    console.error(error);
+                    if (error?.code === 'MERCH_MASTER_REVISION_CONFLICT') {
+                        const latestMaster = await loadMasterLocal().catch(() => masterProducts);
+                        setMasterProducts(latestMaster);
+                    }
+                    showToast(`❌ 요청 처리 실패: ${error.message}`);
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
+            const handleLinkChangeRequest = async (productCode, reason) => {
+                if (!masterProducts[productCode]) return showToast('❌ 연결할 기존 상품코드를 확인하세요.');
+                setIsProcessing(true);
+                try {
+                    await completeSelectedRequest({ resolution: 'LINKED', productCode, reason });
+                    showToast(`✅ 기존 상품 [${productCode}]에 연결했습니다.`);
+                } catch (error) { showToast(`❌ 기존 상품 연결 실패: ${error.message}`); }
+                finally { setIsProcessing(false); }
+            };
+
+            const handleRejectChangeRequest = async (reason) => {
+                setIsProcessing(true);
+                try {
+                    await completeSelectedRequest({ resolution: 'REJECTED', reason });
+                    showToast('✅ 요청을 반려하고 사유를 기록했습니다.');
+                } catch (error) { showToast(`❌ 반려 처리 실패: ${error.message}`); }
+                finally { setIsProcessing(false); }
+            };
 
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
@@ -1261,7 +1501,7 @@
                 event.target.value = '';
                 const extension = safeStr(file.name).toLowerCase().split('.').pop();
                 if (!['xlsx', 'xls'].includes(extension)) {
-                    showToast('❌ 추가·갱신은 xlsx 또는 xls 파일만 사용할 수 있습니다.');
+                    showToast('❌ 정보수정 Excel은 xlsx 또는 xls 파일만 사용할 수 있습니다.');
                     return;
                 }
                 if (file.size > 25 * 1024 * 1024) {
@@ -1269,7 +1509,7 @@
                     return;
                 }
                 if (!window.ONEAPP_MASTER_ADD_UPDATE) {
-                    showToast('❌ Master 추가·갱신 검토 모듈을 불러오지 못했습니다.');
+                    showToast('❌ 정보수정 Excel 검토 모듈을 불러오지 못했습니다.');
                     return;
                 }
                 setIsProcessing(true); setProcessMsg("분석 중...");
@@ -1579,6 +1819,16 @@
                         isSaving={isProcessing}
                     />
 
+                    <ProductRequestReviewModal
+                        entry={selectedChangeRequest}
+                        masterProducts={masterProducts}
+                        onClose={() => setSelectedChangeRequest(null)}
+                        onApply={handleApplyChangeRequest}
+                        onLink={handleLinkChangeRequest}
+                        onReject={handleRejectChangeRequest}
+                        isProcessing={isProcessing}
+                    />
+
                     {showAddUpdateConfirm && (
                         <MasterAddUpdateConfirmModal
                             analysis={addUpdateAnalysis}
@@ -1617,9 +1867,10 @@
                                     <SafeIcon name="plus" size={13} className="mr-2" /> 상품 등록
                                 </button>
                                 <label className={`w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center justify-center shadow-sm ${isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}>
-                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> {Object.keys(masterProducts).length === 0 ? '최초 등록 Excel' : '추가·갱신 Excel 비교'}
+                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> {Object.keys(masterProducts).length === 0 ? '최초 등록 Excel' : '정보수정 Excel'}
                                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing} />
                                 </label>
+                                <button type="button" onClick={openSkuManagement} disabled={isProcessing} className="w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40">SKU 관리</button>
                                 {addUpdateAnalysis && !showAddUpdateConfirm && !showAddUpdateReview && (
                                     <button onClick={() => setShowAddUpdateReview(true)} className="h-9 px-4 rounded-lg text-[12px] font-black bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
                                         검토 이어보기
@@ -1640,7 +1891,7 @@
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button onClick={downloadLegacyBackup} className="h-8 px-3 rounded-lg border border-amber-300 bg-white text-amber-900 text-[11px] font-bold hover:bg-amber-100">JSON 백업</button>
-                                    <button onClick={startLegacyReview} disabled={isProcessing} className="h-8 px-3 rounded-lg bg-amber-700 text-white text-[11px] font-black hover:bg-amber-800 disabled:bg-slate-400">추가·갱신 검토</button>
+                                    <button onClick={startLegacyReview} disabled={isProcessing} className="h-8 px-3 rounded-lg bg-amber-700 text-white text-[11px] font-black hover:bg-amber-800 disabled:bg-slate-400">정보수정 Excel 검토</button>
                                 </div>
                             </div>
                         )}
@@ -1650,30 +1901,30 @@
                             </div>
                         )}
 
-                        <section className="px-3 sm:px-6 py-2 bg-white border-b border-slate-200 shrink-0" data-product-change-request-inbox={changeRequestInbox.status}>
+                        <section className="px-3 sm:px-6 py-3 bg-white border-b border-slate-200 shrink-0" data-product-change-request-inbox={changeRequestInbox.status}>
                             <div className="flex flex-col lg:flex-row lg:items-center gap-2">
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-[11px] font-black text-slate-700">상품 기준정보 변경요청 Inbox · 읽기 전용</div>
+                                    <div className="text-[12px] font-black text-slate-800">신규 상품 등록 요청 {(changeRequestInbox.requests || []).filter(entry => entry.request?.operation === 'CREATE').length.toLocaleString()}건 · 상품정보 수정 요청 {(changeRequestInbox.requests || []).filter(entry => entry.request?.operation !== 'CREATE').length.toLocaleString()}건</div>
                                     <div className={`text-[10px] mt-0.5 ${changeRequestInbox.status === 'ERROR' || changeRequestInbox.status === 'NOT_AVAILABLE' ? 'text-rose-700' : 'text-slate-500'}`}>
                                         {changeRequestInbox.status === 'READY'
-                                            ? `미처리 요청 ${(changeRequestInbox.requests || []).length.toLocaleString()}건 표시 · 자동 승인·자동 master 반영 없음`
+                                            ? '관리자가 원본과 반영 예정값을 확인한 뒤 처리합니다.'
                                             : changeRequestInbox.status === 'EMPTY'
-                                                ? '접수된 요청 없음 · 자동 승인·자동 master 반영 없음'
+                                                ? '접수된 요청이 없습니다.'
                                                 : changeRequestInbox.status === 'LOADING'
-                                                    ? 'Inbox 확인 중'
-                                                    : `Inbox 진단: ${changeRequestInbox.error?.code || changeRequestInbox.status}`}
+                                                    ? '요청 확인 중'
+                                                    : `요청함 확인 실패: ${changeRequestInbox.error?.code || changeRequestInbox.status}`}
                                     </div>
                                 </div>
                                 {(changeRequestInbox.requests || []).length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5" aria-label="최근 상품 변경요청">
+                                    <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-1.5" aria-label="상품 등록·수정 요청">
                                         {changeRequestInbox.requests.map((entry) => (
-                                            <span key={`${entry.request?.requestId}-${entry.receivedAt}`} className="px-2 py-1 rounded-md bg-amber-50 border border-amber-200 text-[10px] text-amber-900" title={entry.request?.reason || ''}>
-                                                {entry.request?.entityId || '-'} · {entry.request?.operation || '-'} · {entry.status}
-                                            </span>
+                                            <div key={`${entry.request?.requestId}-${entry.receivedAt}`} className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-950 flex items-center gap-2">
+                                                <div className="flex-1 min-w-0"><div className="font-black truncate">{requestTypeLabel(entry)} · {entry.request?.changes?.find(change => change.field === '품목명')?.proposedValue || entry.request?.entityId || '-'}</div><div className="mt-0.5 text-amber-800 truncate">{entry.request?.changes?.find(change => change.field === '규격')?.proposedValue || '-'} · {entry.request?.changes?.find(change => change.field === '단위')?.proposedValue || '-'} · {requestSourceLabel(entry)} · {entry.request?.actor?.actorName || '요청자 미확인'}</div></div>
+                                                <button type="button" onClick={() => openChangeRequest(entry)} className="h-7 px-3 rounded-md bg-white border border-amber-300 font-black hover:bg-amber-100">보기</button>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
-                                <button type="button" onClick={refreshChangeRequestInbox} className="h-7 px-3 rounded-md border border-slate-300 bg-white text-[10px] font-bold text-slate-600 hover:bg-slate-50">Inbox 새로고침</button>
                             </div>
                         </section>
 
@@ -1726,7 +1977,7 @@
                                         <span className="text-slate-500 font-medium">총 {displayRows.length}건 표시됨</span>
                                     </div>
                                 )}
-                                <div className="flex-1 overflow-auto custom-scrollbar relative">
+                                <div ref={productTableScrollRef} className="flex-1 overflow-auto custom-scrollbar relative">
                                     <table className="w-full text-left text-[12px] whitespace-nowrap">
                                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                                             <tr>

@@ -59,8 +59,11 @@ assert.match(nexusHome, /path:\s*['"]\/Master\.html['"]/);
 assert.match(nexusUi, /id:\s*['"]master-lookup['"][\s\S]*?path:\s*['"]Master\.html['"]/);
 assert.match(dashboard, /label:\s*['"]상품관리['"][\s\S]*?path:\s*['"]Master\.html['"]/);
 
-for (const feature of ['카탈로그', '행사테마', 'BOM']) {
+for (const feature of ['카탈로그', 'SKU 후보', 'BOM', '상품 등록 요청']) {
   assert.ok(itemManager.includes(feature), `Item_manager ${feature} feature must remain`);
 }
+assert.match(itemManager, /SKU_MANAGEMENT_MASTER_WRITE_BLOCKED/, 'SKU management must block direct product-master writes');
+assert.match(itemManager, /submitChangeRequest/, 'SKU management must submit product-owner requests');
+assert.doesNotMatch(itemManager, /id: 'theme', label: '행사테마'/, 'promotion-theme management must not remain in SKU navigation');
 
 console.log('PASS Master consolidation and ItemMaster compatibility source contracts');

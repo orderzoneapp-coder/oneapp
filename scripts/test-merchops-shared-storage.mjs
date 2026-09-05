@@ -682,7 +682,7 @@ assert.doesNotMatch(files["settings.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["settings.html"], /setIDB\('merchMaster_v870'/);
 assert.doesNotMatch(files["export_center.html"], /bulkPutIDB\('master_products'/);
 assert.doesNotMatch(files["export_center.html"], /setIDB\('merchMaster_v870'/);
-for (const name of ["Master.html", "Item_manager.html"]) {
+for (const name of ["Master.html"]) {
   const saveMasterLocal = files[name].match(/const saveMasterLocal = async[\s\S]*?\n        };/)?.[0] || "";
   assert.match(saveMasterLocal, /commitMasterStateOrThrow\(safeMap, \{\s*expectedRevision:/, `${name} must use the revision-checked shared writer`);
   assert.doesNotMatch(saveMasterLocal, /setIDB\(/, `${name} must not split the snapshot write`);
@@ -696,9 +696,11 @@ for (const name of ["Master.html", "Item_manager.html"]) {
 }
 assert.match(
   files["Item_manager.html"],
-  /const handleMasterItemUpdate = async[\s\S]*?catch \(error\)[\s\S]*?마스터 저장 실패/,
-  "Item manager must absorb writer rejection and avoid a false success UI",
+  /const saveMasterLocal = async[\s\S]*?SKU_MANAGEMENT_MASTER_WRITE_BLOCKED/,
+  "SKU management must block direct product-master writes",
 );
+assert.doesNotMatch(files["Item_manager.html"], /id: 'theme', label: '행사테마'/);
+assert.match(files["Item_manager.html"], /submitChangeRequest/);
 assert.doesNotMatch(files["coreEngine.js"], /bulkPutIDB\(STORE_MASTER/);
 assert.doesNotMatch(files["coreEngine.js"], /replaceAllIDB\(STORE_MASTER/);
 assert.match(files["coreEngine.js"], /CLOUD\.pullMerchMasterForDataOps[\s\S]*commitMasterStateOrThrow\(normalizedMaster, \{/);

@@ -10,7 +10,7 @@ const pages = [
   {
     file: 'Item_manager.html',
     appId: 'item-manager',
-    title: '상품관리',
+    title: 'SKU 관리',
   },
 ];
 
@@ -18,7 +18,7 @@ for (const page of pages) {
   const html = await readFile(page.file, 'utf8');
 
   assert.match(html, new RegExp(`data-nexus-app-id="${page.appId}"`), `${page.file}: common header app id must remain`);
-  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.4\.2/, `${page.file}: common header runtime must remain`);
+  assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.5\.0/, `${page.file}: common header runtime must remain`);
   assert.match(html, /const AppHeader =/, `${page.file}: app work header is required`);
   assert.ok(html.includes(`>${page.title}<`), `${page.file}: app title is required`);
   assert.match(html, /min-h-\[56px\]/, `${page.file}: 56px app-header density is required`);
@@ -38,7 +38,6 @@ for (const [label, path] of [
   ['환경설정', 'settings.html'],
   ['상품관리', 'Master.html'],
   ['거래처관리', 'customer-master/index.html'],
-  ['상품등록', 'Item_manager.html'],
   ['변경이력', 'history_viewer.html'],
   ['주문·출고', 'orderops/list.html'],
   ['주문현황', 'orderq/index.html'],
@@ -46,5 +45,7 @@ for (const [label, path] of [
 ]) {
   assert.ok(commonUi.includes(`label: '${label}', path: '${path}'`), `common header must retain ${label}`);
 }
+assert.doesNotMatch(commonUi, /label: '상품등록', path: 'Item_manager\.html'/, 'SKU management must not be exposed as a separate common-header tab');
+assert.match(commonUi, /'item-manager': 'master-lookup'/, 'direct SKU URL must activate the product-management tab');
 
 console.log('PASS Master and Item Manager app-header contracts');

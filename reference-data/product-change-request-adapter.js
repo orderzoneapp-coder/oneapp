@@ -86,6 +86,56 @@ function storedResult(entry, status = entry.status) {
   });
 }
 
+const REVIEWABLE_STATUSES = new Set(['PENDING', 'IN_REVIEW']);
+const FINAL_STATUSES = new Set(['APPLIED', 'LINKED', 'REJECTED']);
+
+function publicEntry(entry) {
+  return deepFreeze(cloneJson(entry));
+}
+
+async function mutateInbox(requestId, updater) {
+  const cleanRequestId = clean(requestId);
+  if (!cleanRequestId) return failureResult('REJECTED', new Error('REQUEST_ID_REQUIRED'), { requestId });
+  let db;
+  try {
+    db = await openProductOwnerDb({ createIfMissing: false });
+    if (!db) return failureResult('NOT_AVAILABLE', new Error('PRODUCT_OWNER_REPOSITORY_NOT_AVAILABLE'), { requestId });
+    if (!db.objectStoreNames.contains(KV_STORE)) throw new Error('PRODUCT_OWNER_STORE_NOT_AVAILABLE');
+    const transaction = db.transaction(KV_STORE, 'readwrite');
+    const done = transactionDone(transaction);
+    const store = transaction.objectStore(KV_STORE);
+    const inbox = normalizedInbox(await requestResult(store.get(PRODUCT_CHANGE_REQUEST_INBOX_KEY), 'PRODUCT_CHANGE_REQUEST_INBOX_READ_FAILED'));
+    const index = inbox.requests.findIndex((entry) => entry.request?.requestId === cleanRequestId);
+    if (index < 0) {
+      transaction.abort();
+      try { await done; } catch {}
+      return failureResult('NOT_AVAILABLE', new Error('PRODUCT_CHANGE_REQUEST_NOT_FOUND'), { requestId });
+    }
+    const current = cloneJson(inbox.requests[index]);
+    const next = updater(current);
+    if (!next || next.error) {
+      transaction.abort();
+      try { await done; } catch {}
+      return failureResult(next?.status || 'CONFLICT', new Error(next?.error || 'PRODUCT_CHANGE_REQUEST_UPDATE_REJECTED'), { requestId });
+    }
+    const requests = inbox.requests.slice();
+    requests[index] = next;
+    store.put({ ...inbox, revision: inbox.revision + 1, requests }, PRODUCT_CHANGE_REQUEST_INBOX_KEY);
+    await done;
+    try {
+      globalThis.dispatchEvent?.(new CustomEvent('oneapp:product-change-request-change', {
+        detail: { requestId: cleanRequestId, status: next.status, revision: inbox.revision + 1 },
+      }));
+    } catch {}
+    return deepFreeze({ status: next.status, revision: inbox.revision + 1, entry: publicEntry(next), error: null });
+  } catch (error) {
+    const unavailable = /(?:NOT_AVAILABLE|OPEN_FAILED|OPEN_BLOCKED|STORE_NOT_AVAILABLE)/.test(clean(error?.message));
+    return failureResult(unavailable ? 'NOT_AVAILABLE' : 'ERROR', error, { requestId });
+  } finally {
+    db?.close();
+  }
+}
+
 function failureResult(status, error, input = {}) {
   return deepFreeze({
     schemaVersion: REFERENCE_CHANGE_REQUEST_SCHEMA_VERSION,
@@ -143,6 +193,11 @@ export async function submitProductChangeRequest(input) {
       requests: [...inbox.requests, entry],
     }, PRODUCT_CHANGE_REQUEST_INBOX_KEY);
     await done;
+    try {
+      globalThis.dispatchEvent?.(new CustomEvent('oneapp:product-change-request-change', {
+        detail: { requestId: request.requestId, status: entry.status, revision: inbox.revision + 1 },
+      }));
+    } catch {}
     return storedResult(entry);
   } catch (error) {
     const unavailable = /(?:NOT_AVAILABLE|OPEN_FAILED|OPEN_BLOCKED|STORE_NOT_AVAILABLE)/.test(clean(error?.message));
@@ -163,7 +218,8 @@ export async function listProductChangeRequests({ status = '', limit = 200 } = {
     const value = await requestResult(transaction.objectStore(KV_STORE).get(PRODUCT_CHANGE_REQUEST_INBOX_KEY), 'PRODUCT_CHANGE_REQUEST_INBOX_READ_FAILED');
     await done;
     const inbox = normalizedInbox(value);
-    const rows = inbox.requests.filter((entry) => !status || entry.status === status)
+    const statuses = Array.isArray(status) ? status.map(clean).filter(Boolean) : [clean(status)].filter(Boolean);
+    const rows = inbox.requests.filter((entry) => statuses.length === 0 || statuses.includes(entry.status))
       .slice().sort((left, right) => String(right.receivedAt).localeCompare(String(left.receivedAt)))
       .slice(0, Math.max(0, limit)).map(cloneJson);
     return deepFreeze({ status: rows.length ? 'READY' : 'EMPTY', revision: inbox.revision, requests: rows, error: null });
@@ -174,6 +230,84 @@ export async function listProductChangeRequests({ status = '', limit = 200 } = {
   }
 }
 
+export async function getProductChangeRequest(requestId) {
+  const result = await listProductChangeRequests({ limit: 100000 });
+  if (result.status === 'ERROR' || result.status === 'NOT_AVAILABLE') return result;
+  const entry = result.requests.find((row) => row.request?.requestId === clean(requestId));
+  return entry
+    ? deepFreeze({ status: 'READY', revision: result.revision, entry: publicEntry(entry), error: null })
+    : deepFreeze({ status: 'NOT_AVAILABLE', revision: result.revision, entry: null, error: { code: 'PRODUCT_CHANGE_REQUEST_NOT_FOUND', retryable: false } });
+}
+
+export async function beginProductChangeRequestReview({ requestId, actor = null } = {}) {
+  return mutateInbox(requestId, (entry) => {
+    if (FINAL_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_ALREADY_COMPLETED' };
+    if (!REVIEWABLE_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_STATUS_CONFLICT' };
+    return {
+      ...entry,
+      status: 'IN_REVIEW',
+      review: {
+        ...(entry.review || {}),
+        startedAt: entry.review?.startedAt || new Date().toISOString(),
+        actor: actor ? cloneJson(actor) : (entry.review?.actor || null),
+      },
+    };
+  });
+}
+
+export async function prepareProductChangeRequestApply({ requestId, productCode = '', targetProduct = null, actor = null } = {}) {
+  if (!clean(productCode) || !targetProduct || typeof targetProduct !== 'object' || Array.isArray(targetProduct)) {
+    return failureResult('REJECTED', new Error('PRODUCT_CHANGE_REQUEST_APPLY_TARGET_INVALID'), { requestId });
+  }
+  return mutateInbox(requestId, (entry) => {
+    if (FINAL_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_ALREADY_COMPLETED' };
+    if (!REVIEWABLE_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_STATUS_CONFLICT' };
+    return {
+      ...entry,
+      status: 'IN_REVIEW',
+      review: {
+        ...(entry.review || {}),
+        startedAt: entry.review?.startedAt || new Date().toISOString(),
+        actor: actor ? cloneJson(actor) : (entry.review?.actor || null),
+        applyTarget: {
+          productCode: clean(productCode),
+          targetProduct: cloneJson(targetProduct),
+          preparedAt: new Date().toISOString(),
+        },
+      },
+    };
+  });
+}
+
+export async function completeProductChangeRequest({ requestId, resolution, productCode = '', reason = '', actor = null, result = null } = {}) {
+  const finalStatus = clean(resolution).toUpperCase();
+  if (!FINAL_STATUSES.has(finalStatus)) {
+    return failureResult('REJECTED', new Error('PRODUCT_CHANGE_REQUEST_RESOLUTION_INVALID'), { requestId });
+  }
+  if ((finalStatus === 'APPLIED' || finalStatus === 'LINKED') && !clean(productCode)) {
+    return failureResult('REJECTED', new Error('PRODUCT_CODE_REQUIRED'), { requestId });
+  }
+  return mutateInbox(requestId, (entry) => {
+    if (entry.status === finalStatus && clean(entry.result?.productCode) === clean(productCode)) return entry;
+    if (FINAL_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_ALREADY_COMPLETED' };
+    if (!REVIEWABLE_STATUSES.has(entry.status)) return { status: 'CONFLICT', error: 'PRODUCT_CHANGE_REQUEST_STATUS_CONFLICT' };
+    return {
+      ...entry,
+      status: finalStatus,
+      completedAt: new Date().toISOString(),
+      review: {
+        ...(entry.review || {}),
+        actor: actor ? cloneJson(actor) : (entry.review?.actor || null),
+        reason: clean(reason),
+      },
+      result: {
+        ...(result && typeof result === 'object' ? cloneJson(result) : {}),
+        productCode: clean(productCode),
+      },
+    };
+  });
+}
+
 export const productMasterChangeRequestAdapter = deepFreeze({
   version: PRODUCT_CHANGE_REQUEST_ADAPTER_VERSION,
   schemaVersion: REFERENCE_CHANGE_REQUEST_SCHEMA_VERSION,
@@ -181,6 +315,10 @@ export const productMasterChangeRequestAdapter = deepFreeze({
   domain: 'PRODUCT',
   submitChangeRequest: submitProductChangeRequest,
   listChangeRequests: listProductChangeRequests,
+  getChangeRequest: getProductChangeRequest,
+  beginReview: beginProductChangeRequestReview,
+  prepareApply: prepareProductChangeRequestApply,
+  completeChangeRequest: completeProductChangeRequest,
 });
 
 globalThis.ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER = productMasterChangeRequestAdapter;
