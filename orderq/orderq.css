@@ -111,9 +111,40 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .order-link { color: #1d4ed8; font-weight: 900; text-decoration: none; }
 .order-link:hover { text-decoration: underline; }
 .page-message { margin: 8px 14px 0; white-space: normal; }
+.order-view-switcher { display: flex; gap: 6px; padding: 10px 14px 0; border-bottom: 1px solid var(--line); }
+.view-switch { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.view-switch.is-active { border-color: #0f766e; color: #fff; background: #0f766e; }
+.processing-view { display: grid; gap: 10px; padding: 24px 18px 32px; color: var(--ink); }
+.processing-view[hidden] { display: none; }
+.processing-view h2, .processing-view p { margin: 0; }
+.processing-view p { max-width: 760px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.processing-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.processing-head h2 { margin-bottom: 5px; }
+.processing-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.processing-error { padding: 9px 11px; border: 1px solid #fecaca; border-radius: 7px; background: var(--red-bg); color: var(--red); font-size: 11px; font-weight: 800; }
+.processing-summary { padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 800; }
+.processing-table-wrap { max-height: calc(100vh - 250px); }
+.processing-table { min-width: 1560px; table-layout: auto; }
+.processing-table th { top: 0; }
+.processing-table td { padding: 7px 8px; }
+.processing-table td > b { display: block; }
+.processing-secondary, .processing-line-status, .processing-unit, .processing-over-note, .processing-time small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+.processing-unit { display: inline; margin-left: 4px; }
+.processing-over { background: var(--red-bg); color: var(--red); font-weight: 900; }
+.processing-over-note { color: var(--red); }
+.processing-line-status { color: var(--muted); font-weight: 800; white-space: nowrap; }
+.processing-time { min-width: 150px; white-space: nowrap; }
+.processing-link { display: inline-flex; padding: 4px 7px; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 10px; font-weight: 900; text-decoration: none; white-space: nowrap; }
+.processing-unavailable { color: var(--muted); }
+.document-badge.processing-untransferred { background: #f1f5f9; color: #475569; }
+.document-badge.processing-partial { background: var(--amber-bg); color: var(--amber); }
+.document-badge.processing-transferred { background: var(--green-bg); color: var(--green); }
+.document-badge.processing-over_transferred, .document-badge.processing-needs_correction { background: var(--red-bg); color: var(--red); }
+.document-badge.processing-not_applicable, .document-badge.processing-review_required { background: #fef3c7; color: #92400e; }
 .document-filters { gap: 7px; padding-top: 9px; padding-bottom: 9px; }
 .document-filters label { display: inline-flex; align-items: center; gap: 5px; color: #475569; font-size: 10px; font-weight: 900; }
-.document-filters select, .history-search { min-height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 7px; background: white; font-size: 11px; }
+.document-filters select, .document-filters input, .history-search { min-height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 7px; background: white; font-size: 11px; }
+.date-range-field input:disabled { opacity: .55; }
 .history-search { width: 190px; }
 .document-list-wrap { max-height: calc(100vh - 190px); }
 .document-list { min-width: 1380px; table-layout: auto; }
@@ -271,4 +302,7 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
   .inline-edit-grid { grid-template-columns: 1fr; }
   .inline-edit-wide { grid-column: span 1; }
   .change-history li { grid-template-columns: 1fr; }
+  .processing-head { flex-direction: column; }
+  .processing-actions { width: 100%; }
+  .processing-actions .btn { flex: 1; }
 }

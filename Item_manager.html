@@ -6,9 +6,9 @@
     <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="item-manager"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="nexus/common/nexus-ui.js?v=1.4.2"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.5.0"></script>
     <meta name="google" content="notranslate">
-    <title>상품등록 - NEXUS</title>
+    <title>SKU 관리 - NEXUS</title>
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -46,6 +46,9 @@
     <script>
         (function () {
             window.__oneappStarted = false;
+            window.__loadProductChangeRequestAdapter = function () {
+                return import('./reference-data/product-change-request-adapter.js');
+            };
             function esc(v) {
                 return String(v == null ? '' : v).replace(/[&<>"]/g, function (ch) {
                     return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch];
@@ -283,16 +286,8 @@
         };
 
         const saveMasterLocal = async (masterMap = {}) => {
-            const safeMap = masterArrayToMap(masterMap);
-            if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
-                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-            }
-            const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
-                expectedRevision: itemManagerMasterRevision
-            });
-            itemManagerMasterRevision = result.revision;
-            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
-            return safeMap;
+            void masterMap;
+            throw new Error('SKU_MANAGEMENT_MASTER_WRITE_BLOCKED');
         };
 
         const loadMasterLocal = async () => {
@@ -302,8 +297,7 @@
             if (items && items.length > 0) return masterArrayToMap(items);
             const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
             if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {
-                const safeMap = await saveMasterLocal(legacy);
-                return safeMap;
+                return masterArrayToMap(legacy);
             }
             return {};
         };
@@ -489,18 +483,18 @@
         };
 
         // ==========================================
-        // 상품관리 앱 작업헤더: 앱 이동은 NEXUS 공통헤더가 전담한다.
+        // SKU 관리 작업헤더: 공식 상품 확정은 상품관리에서만 수행한다.
         // ==========================================
-        const AppHeader = ({ itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull }) => (
-            <div className="shrink-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm">
+        const AppHeader = ({ itemCount, isProcessing, processMsg }) => (
+            <div className="nexus-app-header shrink-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm" data-nexus-app-header="item-manager">
                 <header className="min-h-[56px] w-full px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0 flex items-center gap-3">
                         <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100" aria-hidden="true">
                             <SafeIcon name="package-search" size={17} />
                         </span>
                         <div className="min-w-0">
-                            <h1 className="text-[15px] font-black text-slate-800 whitespace-nowrap">상품관리</h1>
-                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">상품 기초정보 작업</p>
+                            <h1 className="text-[15px] font-black text-slate-800 whitespace-nowrap">SKU 관리</h1>
+                            <p className="text-[10px] text-slate-500 mt-0.5 truncate" aria-label="현재 위치">상품관리 〉 SKU 관리</p>
                         </div>
                     </div>
 
@@ -509,11 +503,8 @@
                             {isProcessing
                                 ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[11px]"></i>
                                 : <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>}
-                            <span className="text-[11px] font-mono font-bold text-slate-600">{itemCount.toLocaleString()}건</span>
+                            <span className="text-[11px] font-mono font-bold text-slate-600">후보 {itemCount.toLocaleString()}건</span>
                         </div>
-                        <button type="button" onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-indigo-600" title="데이터 불러오기" aria-label="데이터 불러오기"><SafeIcon name="cloud-download" size={16} /></button>
-                        <button type="button" onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-indigo-600" title="데이터 백업하기" aria-label="데이터 백업하기"><SafeIcon name="cloud-upload" size={16} /></button>
-                        <button type="button" onClick={onOpenSettings} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-slate-600" title="환경설정 열기" aria-label="환경설정 열기"><SafeIcon name="settings" size={16} /></button>
                     </div>
                 </header>
             </div>
@@ -659,7 +650,7 @@
                             {cart.length === 0 && <div className="h-full flex items-center justify-center text-slate-300 text-[11px] italic">담긴 항목이 없습니다.</div>}
                         </div>
                         <div className="p-4 bg-white border-t border-slate-200">
-                            <button onClick={() => { onRegister(cart, activeC1); setCart([]); }} disabled={cart.length === 0} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${cart.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>템플릿 발급 및 파이프라인 전송</button>
+                            <button onClick={() => { onRegister(cart, activeC1); setCart([]); }} disabled={cart.length === 0} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${cart.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>SKU 후보 생성 및 등록 요청</button>
                         </div>
                     </div>
                 </div>
@@ -685,7 +676,7 @@
                 setPreviewSku(generatePseudoSKU(cat.orders3Code)); setKeyword('');
             };
 
-            const handleSubmit = () => {
+            const handleSubmit = async () => {
                 if (!selectedCat) return showToast('⚠️ 카테고리를 선택해주세요.');
                 if (!formData.name) return showToast('⚠️ 품목명을 입력해주세요.');
                 
@@ -703,8 +694,8 @@
                     }
                 };
 
-                onRegister(newItem);
-                showToast(`✅ [${formData.name}] SKU가 발급되었습니다.`);
+                const submitted = await onRegister(newItem);
+                if (!submitted) return;
                 setKeyword(''); setSelectedCat(null); setFormData({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' }); setPreviewSku('');
             };
 
@@ -713,7 +704,7 @@
                     <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[680px] overflow-hidden my-10 relative fade-in">
                         <div className="px-6 py-5 border-b border-gray-100 bg-slate-50 flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><i className="fas fa-bolt text-lg"></i></div>
-                            <div><h2 className="text-base font-bold text-slate-800">단건 수기 등록 (스마트 폼)</h2><p className="text-sm text-slate-500 mt-0.5">품명, 단가 등 기초 정보만 입력하면 시스템이 표준 SKU를 발급합니다.</p></div>
+                            <div><h2 className="text-base font-bold text-slate-800">SKU 후보 수기 작성</h2><p className="text-sm text-slate-500 mt-0.5">필요한 정보를 입력해 공식 상품 등록을 요청합니다.</p></div>
                         </div>
                         <div className="p-8 space-y-6">
                             <div className="relative z-20">
@@ -740,7 +731,7 @@
                                     <div className="flex justify-between items-center bg-indigo-50 border-2 border-indigo-200 px-5 py-4 rounded-lg mt-2">
                                         <div><div className="text-[15px] font-bold text-indigo-900 mb-1">{selectedCat.c3Name}</div><div className="text-xs font-medium text-indigo-500 flex items-center gap-1">{selectedCat.c1Name} <i className="fas fa-chevron-right text-[8px] opacity-50"></i> {selectedCat.c2Name}</div></div>
                                         <div className="flex items-center gap-4">
-                                            <div className="text-right"><div className="text-[10px] text-indigo-400 font-bold mb-0.5 uppercase tracking-wider">Generated SKU</div><div className="text-sm font-mono font-black text-indigo-700 bg-white px-2 py-1 rounded shadow-sm border border-indigo-100">{previewSku}</div></div>
+                                            <div className="text-right"><div className="text-[10px] text-indigo-400 font-bold mb-0.5 uppercase tracking-wider">SKU 후보</div><div className="text-sm font-mono font-black text-indigo-700 bg-white px-2 py-1 rounded shadow-sm border border-indigo-100">{previewSku}</div></div>
                                             <button onClick={()=>{setSelectedCat(null); setKeyword(''); setPreviewSku('');}} className="w-8 h-8 rounded-full bg-white text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 flex items-center justify-center transition-colors border border-indigo-100 shadow-sm" title="카테고리 변경"><i className="fas fa-sync-alt text-xs"></i></button>
                                         </div>
                                     </div>
@@ -760,7 +751,7 @@
                                     <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">구매처/벤더</label><input type="text" value={formData.vendor} onChange={e=>setFormData({...formData, vendor: e.target.value})} placeholder="예: 가락시장" className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-shadow" /></div>
                                 </div>
                                 <button onClick={handleSubmit} disabled={!selectedCat} className={`w-full py-3.5 rounded-lg font-bold text-sm transition-all flex justify-center items-center shadow-md ${selectedCat ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'}`}>
-                                    <i className="fas fa-check-circle mr-2"></i> SKU 최종 발급 및 대기열 등록
+                                    <i className="fas fa-check-circle mr-2"></i> SKU 후보 생성 및 상품 등록 요청
                                 </button>
                             </div>
                         </div>
@@ -793,7 +784,7 @@
             const removeFromBom = (id) => setBomList(bomList.filter(b => b.id !== id));
             const totalCost = bomList.reduce((sum, item) => sum + ((item.basePrice || 0) * item.qty), 0);
 
-            const handleSubmit = () => {
+            const handleSubmit = async () => {
                 if(bomList.length < 2) return showToast('⚠️ 상품을 2개 이상 선택하세요.');
                 if(!bomName) return showToast('⚠️ 세트 상품명을 입력하세요.');
                 const pseudoSKU = `BOM-${Date.now().toString().slice(-6)}`;
@@ -802,8 +793,8 @@
                     sources: { 'bom': { '품목명': bomName, '규격': bomSpec, '입고가': totalCost, '간단설명': `구성: ${bomList.map(b=>b.name).join(', ')}` } },
                     finalData: { '품목명': bomName, '규격': bomSpec, '입고가': totalCost, '간단설명': `구성: ${bomList.map(b=>b.name).join(', ')}`, '오더즈': '999999', '3코드': '999999', '3그룹명': '기획세트' }
                 };
-                onRegister(newItem);
-                showToast(`✅ [${bomName}] 기획 SKU가 발급되었습니다.`);
+                const submitted = await onRegister(newItem);
+                if (!submitted) return;
                 setBomList([]); setBomName(''); setBomSpec('');
             };
 
@@ -854,7 +845,7 @@
                                 <div className="flex-1"><label className="text-xs font-bold text-slate-700 mb-1.5 block">기획(세트) 품목명</label><input type="text" value={bomName} onChange={e=>setBomName(e.target.value)} className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
                                 <div className="w-1/3"><label className="text-xs font-bold text-slate-700 mb-1.5 block">규격</label><input type="text" value={bomSpec} onChange={e=>setBomSpec(e.target.value)} placeholder="예: 1세트" className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
                             </div>
-                            <button onClick={handleSubmit} disabled={bomList.length < 2 || !bomName} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${bomList.length >= 2 && bomName ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>세트 SKU 발급 및 대기열 전송</button>
+                            <button onClick={handleSubmit} disabled={bomList.length < 2 || !bomName} className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${bomList.length >= 2 && bomName ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>세트 SKU 후보 생성 및 등록 요청</button>
                         </div>
                     </div>
                 </div>
@@ -971,16 +962,32 @@
             );
         };
 
+        const skuRequestStatusLabel = (status) => ({
+            PENDING: '검토 대기', IN_REVIEW: '검토 중', APPLIED: '등록 완료', LINKED: '기존 상품 연결', REJECTED: '반려'
+        }[status] || '작성 중');
+
+        const SkuRequestStatusView = ({ managedItems, onRefresh }) => {
+            const rows = Object.values(managedItems || {}).sort((left, right) => safeStr(right.request?.requestedAt).localeCompare(safeStr(left.request?.requestedAt)));
+            return (
+                <div className="h-full overflow-y-auto p-4 sm:p-6 bg-slate-50">
+                    <div className="max-w-5xl mx-auto bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3"><div><h2 className="text-sm font-black text-slate-900">상품 등록 요청 현황</h2><p className="text-xs text-slate-500 mt-1">상품관리에서 처리한 결과를 확인합니다.</p></div><button type="button" onClick={onRefresh} className="h-9 px-3 rounded-lg border border-slate-300 text-xs font-bold hover:bg-slate-50">처리결과 확인</button></div>
+                        <div className="divide-y divide-slate-100">
+                            {rows.length ? rows.map(item => <div key={item.코드} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-2"><div className="flex-1 min-w-0"><div className="text-sm font-black text-slate-800 truncate">{safeStr(item.finalData?.품목명, item.코드)}</div><div className="text-xs text-slate-500 mt-1">{item.코드} · {safeStr(item.finalData?.규격, '-')} · {safeStr(item.finalData?.단위, '-')}</div></div><div className="text-right"><span className="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-black">{skuRequestStatusLabel(item.request?.status)}</span>{item.request?.productCode && <div className="text-[10px] text-slate-500 mt-1">확정 상품코드 {item.request.productCode}</div>}</div></div>) : <div className="p-12 text-center text-sm text-slate-400">작성한 SKU 후보가 없습니다.</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // ==========================================
         // ⚙️ 6. Main App Container
         // ==========================================
         function App() {
-            const config = useMerchConfig();
             const [viewMode, setViewMode] = useState('catalog'); 
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
-            const [showSettingsModal, setShowSettingsModal] = useState(false);
             
             const [masterProducts, setMasterProducts] = useState({});
             const [managedItems, setManagedItems] = useState({});
@@ -1002,33 +1009,6 @@
                     showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
                 }
             }, [showToast]);
-
-            // [I-CLOUD-01] MerchOps 공통 클라우드 Push
-            const handlePush = async () => {
-                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 전송 중...");
-                try {
-                    const result = await pushMerchOpsCloudMaster(masterProducts, {
-                        cloudUrl: targetUrl,
-                        onProgress: (msg) => setProcessMsg(msg)
-                    });
-                    showToast(`✅ MerchOps 클라우드 백업 완료! 마스터 ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
-            };
-
-            // [I-CLOUD-02] MerchOps 공통 클라우드 Pull
-            const handlePull = async () => {
-                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
-                if (!targetUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 수신 중...");
-                try {
-                    const result = await pullMerchOpsCloudMaster(targetUrl);
-                    setMasterProducts(result.masterMap);
-                    await loadMaster();
-                    showToast(`✅ MerchOps 클라우드 동기화 완료: ${result.count.toLocaleString()}건`);
-                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
-            };
 
             const loadMaster = useCallback(() => {
                 return loadMasterLocal().then(data => {
@@ -1072,18 +1052,8 @@
                 };
                 window.addEventListener('storage', handleStorageChange);
                 
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
-                const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadMaster(); 
-                    }
-                };
-                window.addEventListener('message', handleMessage);
-
                 return () => {
                     window.removeEventListener('storage', handleStorageChange);
-                    window.removeEventListener('message', handleMessage);
                 };
             }, [loadMaster]);
 
@@ -1093,84 +1063,158 @@
                 }
             }, [managedItems]);
 
-
-            const handleMasterItemUpdate = async (updatedItem) => {
-                const normalized = normalizeMasterItem(updatedItem, updatedItem && (updatedItem.코드 || updatedItem['품목코드']));
-                if (!normalized.코드) return showToast('⚠️ 품목코드가 없는 상품은 저장할 수 없습니다.');
-                const nextMaster = { ...masterProducts, [normalized.코드]: normalized };
+            const refreshManagedRequestStatuses = useCallback(async () => {
                 try {
-                    const saved = await saveMasterLocal(nextMaster);
-                    setMasterProducts(saved);
-                    await loadMaster();
-                    showToast(`✅ [${safeStr(normalized['품목명'], normalized.코드)}] 행사테마 ${safeStr(normalized['행사테마'], '미지정')} 저장 완료`);
+                    const module = await window.__loadProductChangeRequestAdapter();
+                    const result = await module.productMasterChangeRequestAdapter.listChangeRequests({ limit: 100000 });
+                    if (result.status === 'ERROR' || result.status === 'NOT_AVAILABLE') throw new Error(result.error?.code || '요청 결과 조회 실패');
+                    const byId = new Map((result.requests || []).map(entry => [entry.request?.requestId, entry]));
+                    setManagedItems(current => Object.fromEntries(Object.entries(current).map(([code, item]) => {
+                        const entry = byId.get(item.request?.requestId);
+                        return [code, entry ? { ...item, request: { ...item.request, status: entry.status, productCode: entry.result?.productCode || '', completedAt: entry.completedAt || '' } } : item];
+                    })));
                 } catch (error) {
                     console.error(error);
-                    showToast(`❌ 마스터 저장 실패: ${error.message}`);
+                    showToast(`❌ 처리결과 확인 실패: ${error.message}`);
                 }
+            }, [showToast]);
+
+            useEffect(() => { if (viewMode === 'requests') refreshManagedRequestStatuses(); }, [viewMode, refreshManagedRequestStatuses]);
+
+
+            const createRequestId = (prefix = 'SKU') => {
+                const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                return `${prefix}-${suffix}`;
+            };
+
+            const submitSkuCandidate = async (candidate) => {
+                const code = safeStr(candidate?.코드).trim();
+                const finalData = candidate?.finalData && typeof candidate.finalData === 'object' ? candidate.finalData : {};
+                if (!code) throw new Error('SKU 후보 코드가 없습니다.');
+                const fields = { 품목코드: code, ...finalData };
+                const changes = Object.entries(fields).map(([field, proposedValue]) => ({ field, beforeValue: '', proposedValue }));
+                const requestId = createRequestId('SKU-REQUEST');
+                const module = await window.__loadProductChangeRequestAdapter();
+                const result = await module.productMasterChangeRequestAdapter.submitChangeRequest({
+                    schemaVersion: 'ONEAPP_REFERENCE_CHANGE_REQUEST_V1',
+                    requestId,
+                    idempotencyKey: requestId,
+                    domain: 'PRODUCT',
+                    ownerAppId: 'master-lookup',
+                    entityId: code,
+                    operation: 'CREATE',
+                    changes,
+                    reason: 'SKU 관리 상품 등록 요청',
+                    source: {
+                        appId: 'item-manager',
+                        workflow: 'SKU_MANAGEMENT',
+                        original: candidate?.sources || {},
+                    },
+                    actor: { actorId: null, actorName: 'SKU 관리 작업자', actorState: 'UNVERIFIED_LOCAL' },
+                    requestedAt: new Date().toISOString(),
+                });
+                if (!['PENDING', 'DUPLICATE'].includes(result.status)) {
+                    throw new Error(result.error?.code || result.errors?.[0]?.code || '상품 등록 요청 저장 실패');
+                }
+                return { ...candidate, request: { requestId: result.requestId, status: 'PENDING', requestedAt: result.receivedAt || new Date().toISOString() } };
             };
 
             // 카탈로그에서 다수 항목 전송 시 (Pipeline 관리 대기열로 넘김)
-            const handleCatalogRegister = (cartItems, activeC1) => {
+            const handleCatalogRegister = async (cartItems, activeC1) => {
                 let currentCounter = 1;
                 const newManaged = { ...managedItems };
-                
-                cartItems.forEach(item => {
+                setIsProcessing(true);
+                setProcessMsg('상품 등록 요청을 전송 중...');
+                try {
+                  for (const item of cartItems) {
                     const seq = String(currentCounter++).padStart(3, '0');
                     const catPrefix = activeC1 === '10' ? 'C1' : activeC1 === '20' ? 'F1' : activeC1 === '30' ? 'F2' : activeC1 === '40' ? 'S1' : 'E1';
                     const newSku = `SHOP-${catPrefix}-${new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\./g, '').replace(/\s/g, '')}-${seq}`;
-                    
-                    newManaged[newSku] = {
+                    const candidate = {
                         코드: newSku,
                         sources: { 'catalog': { ...item } },
                         finalData: { 
-                            '품목명': '', '규격': '', '구매처': '자체조달',
+                            '품목명': item.c3Name || '', '규격': '', '단위': '', '구매처': '자체조달',
                             '입고가': 0, '출고가': 0, 
                             '오더즈': item.ordersCode || '999999', '3코드': item.erp3Code || '999999', '3그룹명': item.c3Name || '기타' 
                         }
                     };
-                });
-                setManagedItems(newManaged);
-                showToast(`✅ ${cartItems.length}개의 템플릿이 시세 관리 큐에 등록되었습니다.`);
-                setTimeout(() => handleNavigate(null, 'Pipeline.html'), 1000);
+                    newManaged[newSku] = await submitSkuCandidate(candidate);
+                  }
+                  setManagedItems(newManaged);
+                  setViewMode('requests');
+                  showToast(`✅ SKU 후보 ${cartItems.length}건을 상품 등록 요청으로 전송했습니다.`);
+                } catch (error) {
+                  console.error(error);
+                  showToast(`❌ 상품 등록 요청 실패: ${error.message}`);
+                } finally {
+                  setIsProcessing(false);
+                  setProcessMsg('');
+                }
             };
 
-            // 수기/BOM 단건 전송 시 (Pipeline 관리 대기열로 넘김)
-            const handleSingleRegister = (newItem) => {
-                const newManaged = { ...managedItems, [newItem.코드]: newItem };
-                setManagedItems(newManaged);
-                setTimeout(() => handleNavigate(null, 'Pipeline.html'), 1000);
+            // 수기/BOM 후보는 로컬 작업본으로 보존하고 상품관리 요청함에 전달한다.
+            const handleSingleRegister = async (newItem) => {
+                setIsProcessing(true);
+                setProcessMsg('상품 등록 요청을 전송 중...');
+                try {
+                    const storedCandidate = await submitSkuCandidate(newItem);
+                    setManagedItems(current => ({ ...current, [newItem.코드]: storedCandidate }));
+                    setViewMode('requests');
+                    showToast(`✅ [${safeStr(newItem.finalData?.품목명, newItem.코드)}] 상품 등록 요청을 전송했습니다.`);
+                    return true;
+                } catch (error) {
+                    console.error(error);
+                    showToast(`❌ 상품 등록 요청 실패: ${error.message}`);
+                    return false;
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
+            const handleBackToMaster = () => {
+                try {
+                    const referrer = document.referrer ? new URL(document.referrer) : null;
+                    if (referrer && referrer.origin === window.location.origin && /\/Master\.html$/.test(referrer.pathname)) {
+                        window.history.back();
+                        return;
+                    }
+                } catch {}
+                handleNavigate(null, 'Master.html?restore=sku-management');
             };
 
             return (
                 <div className="w-full flex flex-col font-sans overflow-hidden bg-slate-100 relative select-none" style={{ height: 'calc(100vh - var(--nexus-ui-header-height, 64px))' }}>
                     <AppHeader
-                        itemCount={Object.keys(masterProducts).length} 
+                        itemCount={Object.keys(managedItems).length}
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
                     />
 
                     <div className="min-h-[42px] bg-slate-50 border-b border-slate-200 shadow-sm shrink-0 overflow-x-auto custom-scrollbar">
-                        <nav className="w-full max-w-[1440px] min-w-max mx-auto px-3 sm:px-6 flex items-center gap-1.5" aria-label="상품관리 내부 기능">
-                            {[ { id: 'catalog', label: '카탈로그 소싱', icon: "network" }, { id: 'theme', label: '행사테마', icon: "tags" }, { id: 'smartform', label: '수기등록', icon: "file-code" }, { id: 'bom', label: 'BOM 조립', icon: "boxes" } ].map(nav => (
+                        <nav className="w-full max-w-[1440px] min-w-max mx-auto px-3 sm:px-6 flex items-center gap-1.5" aria-label="SKU 관리 기능">
+                            {[ { id: 'catalog', label: '카탈로그 소싱', icon: "network" }, { id: 'smartform', label: 'SKU 후보 작성', icon: "file-code" }, { id: 'bom', label: '세트/BOM 구성', icon: "boxes" }, { id: 'requests', label: '요청 현황', icon: "check-circle-2" } ].map(nav => (
                                 <button key={nav.id} onClick={() => setViewMode(nav.id)} aria-current={viewMode === nav.id ? 'page' : undefined} className={`h-9 flex items-center gap-2 px-4 rounded-md text-[12px] font-bold transition-all whitespace-nowrap ${viewMode === nav.id ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800 hover:bg-white/60 border border-transparent'}`}>
                                     <SafeIcon name={nav.icon} size={14} /> {nav.label}
                                 </button>
                             ))}
+                            <span className="h-6 w-px bg-slate-300 mx-2" aria-hidden="true"></span>
+                            <button type="button" onClick={handleBackToMaster} className="h-9 px-5 rounded-lg bg-indigo-600 text-white text-[12px] font-black shadow-md hover:bg-indigo-700 hover:-translate-y-0.5 transition-all whitespace-nowrap" aria-label="상품관리로 이동">
+                                ← 상품관리
+                            </button>
                         </nav>
                     </div>
 
                     <main className="w-full max-w-[1440px] mx-auto flex-1 overflow-hidden relative bg-slate-50 flex flex-col border-x border-slate-200">
                         {viewMode === 'catalog' ? (
                             <CategorySourcingView data={{masterCatalogProducts}} ui={{ showToast }} onRegister={handleCatalogRegister} />
-                        ) : viewMode === 'theme' ? (
-                            <PromotionThemeManagerView data={{masterProducts}} ui={{ showToast }} onUpdateMaster={handleMasterItemUpdate} />
                         ) : viewMode === 'smartform' ? (
                             <SmartFormView data={{masterProducts}} ui={{ showToast }} onRegister={handleSingleRegister} />
-                        ) : (
+                        ) : viewMode === 'bom' ? (
                             <BOMBuilderView data={{masterCatalogProducts}} ui={{ showToast }} onRegister={handleSingleRegister} />
+                        ) : (
+                            <SkuRequestStatusView managedItems={managedItems} onRefresh={refreshManagedRequestStatuses} />
                         )}
                         
                         {toastMsg && (
@@ -1181,8 +1225,6 @@
                         )}
                     </main>
 
-                    {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
-                    <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                 </div>
             );
         }

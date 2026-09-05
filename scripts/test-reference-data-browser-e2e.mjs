@@ -224,7 +224,7 @@ try {
   await evaluate(client, `new Promise((resolve,reject)=>{const deletion=indexedDB.deleteDatabase('MerchOpsDB');deletion.onerror=()=>reject(deletion.error);deletion.onsuccess=()=>resolve(true);})`);
   blockRequestAdapters = true;
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/Master.html?adapterFailure=1` });
-  await waitFor(() => evaluate(client, `document.body?.innerText.includes('Excel 최초 등록 또는 상품 단건 등록으로 시작하세요') && document.querySelector('[data-product-change-request-inbox="ERROR"]')?.innerText.includes('Inbox 진단')`), 'Master core with unavailable request adapter', 45_000);
+  await waitFor(() => evaluate(client, `document.body?.innerText.includes('Excel 최초 등록 또는 상품 단건 등록으로 시작하세요') && document.querySelector('[data-product-change-request-inbox="ERROR"]')?.innerText.includes('요청함 확인 실패')`), 'Master core with unavailable request adapter', 45_000);
   assert.equal(await evaluate(client, `document.getElementById('boot-error')?.style.display !== 'block'`), true);
 
   const customerDb = `oneapp-customermaster-adapter-failure-${Date.now()}`;

@@ -6,7 +6,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="../nexus/common/nexus-ui.js?v=1.4.2"></script>
+    <script defer src="../nexus/common/nexus-ui.js?v=1.5.0"></script>
   <meta name="google" content="notranslate">
   <title>주문·출고 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
@@ -1260,6 +1260,14 @@
     }
     .order-edit-input:focus { outline: 0; background: transparent; }
     .table-wrap td:focus-within { background: #edf9f7 !important; }
+    @media screen {
+      #previewTable tbody tr:focus-within {
+        position: relative;
+        z-index: 1;
+        outline: 2px solid var(--nexus-ui-focus, #5eead4);
+        outline-offset: -2px;
+      }
+    }
     tr td.ordered-context-cell { background: #eff6ff !important; }
     td.ledger-negative-cell,
     td.purchase-negative-cell { color: #854d0e !important; background: #fef9c3 !important; font-weight: 900; }
@@ -5478,6 +5486,7 @@
             key,
             label: isBlankCell(value) ? "(공백)" : String(value),
             blank: isBlankCell(value),
+            zero: numericColumn && isZeroCell(value),
           });
         });
         return [...unique.values()].sort((left, right) => {
@@ -5635,7 +5644,9 @@
         if (!(context.textSelection instanceof Set)) {
           const selected = Array.isArray(filter?.allowedValues)
             ? filter.allowedValues
-            : context.textOptions.map((option) => option.key);
+            : context.textOptions
+              .filter((option) => !(filter?.excludeZero && option.zero))
+              .map((option) => option.key);
           context.textSelection = new Set(selected);
         }
         const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
@@ -5708,9 +5719,17 @@
         if (!state.columnFilters[context.previewId]) state.columnFilters[context.previewId] = Object.create(null);
         const allKeys = context.textOptions.map((option) => option.key);
         const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
+        const zeroKeys = new Set(context.textOptions.filter((option) => option.zero).map((option) => option.key));
+        const allExceptZeroSelected = zeroKeys.size > 0 && allKeys.every((key) =>
+          zeroKeys.has(key) ? !context.textSelection.has(key) : context.textSelection.has(key));
         const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
-        if (selectedKeys.length === allKeys.length) delete next.allowedValues;
-        else next.allowedValues = selectedKeys;
+        if (allExceptZeroSelected) {
+          next.excludeZero = true;
+          delete next.allowedValues;
+        } else {
+          if (selectedKeys.length === allKeys.length) delete next.allowedValues;
+          else next.allowedValues = selectedKeys;
+        }
         if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
         else delete state.columnFilters[context.previewId][context.columnKey];
         if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];

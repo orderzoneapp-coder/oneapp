@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const index = read('orderq/index.html');
+const engine = read('orderq/order-intake-engine.js');
+const adapter = read('orderq/voucher-activity-read-adapter.js');
+const voucher = read('orderq/voucher-query.js');
+const voucherHtml = read('orderq/voucher-query.html');
+const smartInput = read('smartinput/smartinput.js');
+const parser = read('orderq/parser-ui.js');
+const input = read('orderq/input.html');
+const operations = read('orderq/operations.html');
+const db = read('orderq/orderq-db.js');
+
+assert.match(index, /data-view="query"[^>]*>주문조회/);
+assert.match(index, /data-view="processing"[^>]*>처리현황/);
+assert.match(index, /requestedView && requestedView !== currentView/);
+assert.match(index, /routeParams\.set\('view', 'query'\)/);
+assert.match(index, /id="periodMode"/);
+assert.match(index, /id="dateFrom"/);
+assert.match(index, /id="dateTo"/);
+assert.match(index, /id="periodResetBtn"/);
+assert.match(index, /order\.orderId === focusedOrderId/);
+assert.match(index, /order\.itemSearchText/);
+assert.match(index, /TRANSFER_STATUS_LABEL/);
+assert.match(index, /formatTime\(order\.updatedAt\)/);
+assert.match(index, /colspan="15"/);
+assert.match(index, /처리현황은 판매이관 결과를 확인하는 읽기 전용 화면입니다/);
+assert.match(index, /주문전표 조회·검증·정정은 이 화면에서, 실제 출고 처리는 주문·출고에서 진행합니다/);
+assert.match(engine, /itemSearchText: visibleItems\.map/);
+assert.match(adapter, /mode === 'order'[\s\S]*index\.html\?view=query&focus=/);
+assert.match(adapter, /voucher-query\.html\?mode=/);
+assert.match(voucherHtml, /id="orderQueryEntry"/);
+assert.match(voucher, /row\.voucherMode === 'order' \? '주문현황에서 열기'/);
+assert.match(voucher, /query\.set\('from', dateInput\.value\)/);
+assert.match(voucher, /orderQueryEntry\.hidden = !isOrderMode/);
+assert.match(smartInput, /mode === 'order'[\s\S]*index\.html\?view=query&from=/);
+assert.match(parser, /index\.html\?focus=/);
+assert.match(input, /index\.html\?focus=/);
+assert.match(operations, /\.\/\?focus=/);
+assert.match(db, /bySourceMessageKey/);
+assert.match(engine, /OrderRevisionConflictError|ORDER_REVISION_CONFLICT/);
+
+console.log('ORDER Q integrated order query view/date/search/focus/processing and voucher-link compatibility contracts passed.');

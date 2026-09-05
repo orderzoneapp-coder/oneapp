@@ -3929,7 +3929,9 @@ function renderVoucherActivitySnapshot() {
   $('voucherActivitySourceMode').value = mode;
   $('voucherContextEyebrow').textContent = 'VOUCHER ACTIVITY';
   $('voucherContextTitle').textContent = mode === 'estimate' ? '저장 견적서' : voucherActivityTitle(mode, date);
-  $('voucherActivityOpenAll').dataset.href = `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`;
+  $('voucherActivityOpenAll').dataset.href = mode === 'order'
+    ? `../orderq/index.html?view=query&from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`
+    : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`;
   $('voucherActivityOpenAll').hidden = mode === 'estimate';
   if (activity.status === 'LOADING') {
     $('voucherContextSummary').textContent = `${date} 전표를 불러오는 중입니다.`;

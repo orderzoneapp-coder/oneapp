@@ -23,12 +23,13 @@
         <label>전표 <select id="modeInput"><option value="order">주문서</option><option value="purchase">구매전표</option><option value="sale">판매전표</option></select></label>
         <label>전표일자 <input id="dateInput" type="date"></label>
         <button class="btn" id="reloadButton" type="button">다시 조회</button>
+        <a class="btn" id="orderQueryEntry" href="../orderq/index.html?view=query">주문현황 주문조회로 이동</a>
         <span class="spacer"></span><span class="status" id="queryStatus" role="status">조회 준비</span>
       </div>
       <div class="voucher-query__list" id="voucherList"></div>
     </main>
   </div>
   <script type="module" src="./voucher-query.js?v=0.1.0"></script>
-  <script defer src="../nexus/common/nexus-ui.js?v=1.4.2"></script>
+  <script defer src="../nexus/common/nexus-ui.js?v=1.5.0"></script>
 </body>
 </html>

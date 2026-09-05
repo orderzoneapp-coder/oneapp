@@ -58,12 +58,12 @@ ONEAPP은 여러 업무 앱을 한 화면에 묶는 단일 거대 앱이 아니�
 - SmartParser의 사용자가 별도 품절/정지 화면에서 명시한 `STOP`·`RESUME`·`UPDATE_METADATA`만 `smartparser/stop-management-command-adapter.js`를 통해 expected Snapshot/revision과 operation ID를 검증한 뒤 판매여부·정지목록·쇼핑몰 상태 대기열·실제 history·mirror·notification을 한 성공 단위로 반영한다. 분석의 0원·품절은 issue와 정지 권고일 뿐 command를 자동 실행하지 않는다.
 - `reference-data/product-master-command-adapter.js`는 `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1` 아래 `MERCHOPS_REVIEWED_WORK_APPLY_V1`과 `MERCHOPS_PRODUCT_REGISTRATION_V1` 경계를 제공한다. MerchOps는 작업 시작 Snapshot ID·revision·hash와 검토 증거를 보내며 F7은 기존 상품 field patch만, 관리자 확인 신규등록은 제한된 생성 field만 수행한다. 행 삭제·임의 필드·일반 판매여부 변경은 거부하고 충돌, history 실패, 연결상태 변경, 후검산 실패는 전체 변경을 rollback한다.
 - MerchOps의 bundled/external core 호환 API는 Adapter 로드 직후 owner boundary로 다시 고정한다. cloud URL seed·쓰기, full backup/restore, config 복원, master cloud import·Excel apply·backup restore 및 공개 master commit alias는 `OWNER_ROUTED`로 fail-closed하며 시작 시 Settings 키를 만들거나 덮어쓰지 않는다.
-- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`을 제거했다. SmartParser 전용 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 판매상태 예외 경계다. 남은 호환 writer는 `Master.html`, `Item_manager.html`과 공유 `coreEngine.js`·`masterAddUpdate.js`며 새 cross-app 직접 writer를 허용하지 않는다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
+- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`을 제거했다. SmartParser 전용 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 판매상태 예외 경계다. 공식 화면 writer는 `Master.html`이며 공유 `coreEngine.js`·`masterAddUpdate.js`의 검증 명령 경계를 사용한다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
 - DEC-021에 따라 History Viewer는 `ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1`의 불변 Snapshot만 읽고 Cloud 결과를 메모리에서만 병합한다. Settings는 `ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1` allowlist와 검증·pre-image·rollback·후검산 경계로 설정만 복구하며 상품·이력·정지 상태 변경은 owner 화면으로 보낸다. Export Center는 기존 `merch_export_draft`를 유지하고 Product Snapshot을 읽기 전용 참조하며 F9와 화면 버튼 모두 output-only로 실행한다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
-- `Item_manager.html`은 manifest의 `item-manager`로 등록된 별도 상품 관리 파일럿이다. `Master.html`, `ItemMaster.html`과 현재 경로·저장계약을 각각 유지한다.
+- `Item_manager.html`은 manifest의 `item-manager` ID와 기존 URL을 호환 유지하는 `SKU 관리` 파일럿이다. 상품 분류를 읽어 SKU 후보·BOM 작업본을 만들고 상품관리 요청함으로 등록 요청을 전달하며 공식 상품 master·revision·history를 직접 쓰지 않는다.
 - `customer-master/index.html`은 독립 거래처관리 파일럿이다. `oneapp-customermaster-v1` DB의 거래처 원본·별칭·외부코드 매핑·변경이력·Excel 작업을 소유하고 상태가 명시된 읽기 전용 Snapshot Adapter를 제공한다. SmartInput은 이 Snapshot의 읽기 전용 소비자로 전환됐고 ORDER Q 소비자 전환은 아직 수행하지 않는다.
-- 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 접수 상태는 `PENDING`이며 자동 승인·자동 master 적용은 하지 않는다.
+- 두 owner는 `ONEAPP_REFERENCE_CHANGE_REQUEST_V1`을 검증하고 기존 owner Repository의 additive KV inbox에 멱등 저장한다. 상품 요청은 `PENDING → IN_REVIEW → APPLIED | LINKED | REJECTED` 상태와 원본·처리결과를 보존하며 관리자 확인 전 자동 master 적용은 하지 않는다.
 - ORDER Q의 `orderops`와 `orderq-vnext`는 파일럿이며 각자의 로컬·클라우드 계약을 유지한다.
 - ORDER Q vNext의 `oneapp-orderq-pre-m1-v6` DB v7과 `orderq/official-voucher-repository.js`가 현행 구매·판매 공식전표 저장 경계다. `runCentralOfficialVoucherCommand()`는 한 IndexedDB transaction에서 공식 문서·행, 명령 영수증, Revision, 매칭 재고 이동 또는 미매칭 대기효과, 현재 Adapter에서 정확히 확인된 거래처의 기본 채권·채무 효과와 공식 `syncQueue` 행을 함께 저장한다.
 - `NEXUS-ORDERQ-SHOP-ACTUAL-LEDGER-20260904-01` 1단계는 ORDER Q owner 내부에 `shopping-order-dedupe-core.js → shopping-order-import-repository.js → shopping-order-command-adapter.js` 경계를 추가한다. 고정 17열 쇼핑몰 원본의 상태·그룹·파일명·업로드시각·절대 행번호는 증적으로만 보존하고 회사·확정 거래처·배송일자·확정 출하창고·반복행을 보존한 품목 다중집합으로 signature를 계산한다. 거래처·창고 owner ID와 모든 품목 owner ID·저장 코드·상품명 중 하나라도 미해소이면 후보 전체는 판정·저장 양쪽에서 `REVIEW_REQUIRED`/0-write이고, 동일 가능성이 있는 불완전 legacy 원장도 `EXISTING_LEDGER_BUNDLE_INVALID`로 fail-closed한다. 실제 `orders`·`orderItems` 전체와 같은 signature인 정상 수기 주문도 개수에 포함해 원본 occurrence `n`이 현재 개수 `m` 이하일 때만 `isDuplicate=true`이고 초과분만 생성한다. 후보별 기존 DB v7 readwrite transaction이 실제 개수를 다시 읽고 기존 `orders.bySourceMessageKey` unique index를 사용한 뒤 주문·품목·생성이력·local queue를 함께 확정하므로 중복·문제 후보는 0-write이고 실패 후보는 다른 signature의 정상 후보와 격리된다. `그룹`은 주문번호나 경계가 아니며, 같은 거래처 연속행 안의 동일 주문 반복을 나눌 원본 식별자가 없으면 `AMBIGUOUS_SOURCE_ORDER_BOUNDARY`로 보류한다. 이 단계는 owner Core/Adapter만 제공하고 SmartInput UI, DB schema/Store/index/version, Cloud 계약과 다기기 전역 중복 방지는 활성화하지 않는다.
@@ -136,7 +136,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | NEXUS 회사정보 | 운영 | 전용 상세 화면의 보호 조회·쓰기·revision·감사는 서버 Gateway가 확정하며, 홈·공통헤더·업무 앱은 회사정보 서버를 조회하지 않음 | 회사 원본과 전용 관리 경계를 유지하고 다른 업무 앱 저장소를 수정하지 않음 |
 | 상품관리 (`Master.html`) | 파일럿·공식 | `product-master` 공식 owner이며 기존 운영 상품 저장·revision·history·Cloud 계약, 읽기 Snapshot과 변경요청 inbox를 소유 | 유일한 공식 상품관리 구현과 Adapter owner로 유지 |
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
-| Item Manager (`Item_manager.html`) | 파일럿·유지 | 기존 `product-master` 계약을 사용하는 별도 상품 기초정보 관리 화면 | Master 교체와 무관하게 별도 상품 관리 화면으로 유지 |
+| SKU 관리 (`Item_manager.html`) | 파일럿·유지 | 상품 분류를 참조해 SKU 후보·BOM 작업본을 만들고 상품 등록 요청을 전달하는 보조 화면 | 공식 상품 Master를 직접 쓰지 않는 SKU 후보 생성·등록 요청 도구 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
 | SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. 구매·판매 UI는 업무별 Finalize Service만 호출하고 ORDER Q command Adapter를 거쳐 공식 Gateway를 소비하며 Repository나 공식 Store를 직접 열지 않음 | 전표 작성 작업본·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot과 ORDER Q 공식 command Adapter 소비 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 계약과 DB v7의 공식 문서·Revision·재고/미매칭·기본 채권채무·공식 sync queue Repository를 운영 전 검증 중 | 공식전표 `OfficialCommandGateway`·Repository와 공식 데이터의 단일 쓰기 소유자 |
@@ -153,15 +153,15 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 - `파일럿`: 구현은 있으나 제한 검증 단계다. 목표 소유권을 전체 운영 소유권으로 간주하지 않는다.
 - `운영`: 배포된 기본 흐름, 데이터 계약과 롤백이 검증된 상태다.
 - 목표 역할은 방향을 뜻하며 현재 저장소 owner를 즉시 바꾸지 않는다.
-- `Master.html`은 `master-lookup` 공식 경로와 운영 저장계약을 유지한다. `ItemMaster.html`의 중복 구현은 폐기되고 정적 호환 안내만 남으며, `Item_manager.html`은 별도 앱·경로·기능을 유지한다.
-- `Item_manager.html`은 `master-lookup` 교체 대상이 아니며 기존 `item-manager` 앱 ID와 역할을 유지한다.
+- `Master.html`은 `master-lookup` 공식 경로와 운영 저장계약을 유지한다. `ItemMaster.html`의 중복 구현은 폐기되고 정적 호환 안내만 남으며, `Item_manager.html`은 기존 URL과 앱 ID를 유지하는 상품관리 내부 `SKU 관리` 보조 화면이다.
+- `Item_manager.html` 직접 URL에서도 공통헤더 `상품관리`를 현재 탭으로 표시하고, 공식 상품 Master 쓰기와 Cloud 전체 Master 관리를 제공하지 않는다.
 - 소유권 전환은 소유 Repository, Read/Integration Adapter, 소비자 전환, 데이터 이전, 회귀검증, 독립 롤백과 manifest 갱신을 같은 별도 작업에서 완료해야 한다.
 - 미구축 앱의 이름이나 목표 계약을 기존 앱의 필수 Runtime 의존성으로 추가하지 않는다.
 - `계획(미등록)`은 아키텍처 목표만 기록된 상태다. 실제 개발이 승인되면 `plannedApplications` 등록 기준을 충족한 뒤 파일럿 승격 절차를 시작한다.
 
 ### 4.2 현재 manifest 등록 목록
 
-아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.8의 현재 등록 상태다.
+아래 표는 목표 역할이 아니라 `app-manifest.json` v1.3.12의 현재 등록 상태다.
 
 | 앱 ID | 현재 경로 | 상태 | 현재 책임 |
 |---|---|---|---|
@@ -174,7 +174,7 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 | `settings` | `settings.html` | 운영 | 매핑·가격정책·열·보기·Cloud URL과 검증된 설정 백업·복원, 외부 소유 작업 owner routing |
 | `master-lookup` | `Master.html` | 파일럿 | 상품 조회와 관리자 검토형 추가·수정 |
 | `customer-master` | `customer-master/index.html` | 파일럿 | 거래처 조회·등록·수정·정보 보완·Excel 업서트·매핑·Snapshot·v17 읽기 전용 이전 |
-| `item-manager` | `Item_manager.html` | 파일럿 | 상품 기초정보 조회·등록·수정 |
+| `item-manager` | `Item_manager.html` | 파일럿 | SKU 후보 작성·BOM 구성·상품 등록 요청. 공식 상품 Master 직접 쓰기 없음 |
 | `history-viewer` | `history_viewer.html` | 운영 | 불변 상품 변경이력 Snapshot·가격 추이 조회와 현재 화면 JSON/CSV 출력 |
 | `core-engine` | `coreEngine.js` | 운영 공유 라이브러리 | 현행 저장·가격·이력·출력·Cloud·master 유틸리티 |
 | `orderops` | `orderops/list.html` | 파일럿 | 출고·재고·구매계획과 검토형 출력 |
@@ -191,8 +191,9 @@ NEXUS 공통 UI ── 정적 이동·테마·공통 상태 ──> 각 독립 �
 2. 격리 검증된 빈 DB 최초 등록과 단건 등록·수정만 `Master.html`의 공용 저장·revision·history 계약으로 승계한다.
 3. `ItemMaster.html`은 중복 앱·DB 쓰기 없이 공식 주소를 안내하는 정적 호환 페이지로 유지한다.
 4. 과거 `oneapp-itemmaster-isolated-v1`은 자동 삭제·덮어쓰기하지 않는다. 실제 데이터가 있으면 `Master.html`에서 비차단 안내, JSON 백업과 관리자 승인형 추가·갱신 검토만 제공한다.
-5. `Item_manager.html`은 `item-manager` 공식 경로와 카탈로그 소싱·행사테마·BOM 등 현재 기능·저장계약을 유지한다.
+5. `Item_manager.html`은 기존 경로와 SKU 후보 작업본 호환성을 유지한다. 카탈로그 소싱·수기 후보·BOM 구성은 상품 등록 요청으로 전달하며 행사테마·Master Cloud Push/Pull·공식 상품 직접 저장은 SKU 관리 화면에서 제공하지 않는다.
 6. manifest와 NEXUS·dashboard 공식 상품관리 연결은 계속 `Master.html`을 가리킨다.
+7. 상품 등록·수정 요청은 `ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER`가 소유하고 원본과 처리결과를 보존한다.
 
 ---
 
@@ -948,7 +949,7 @@ Their business meaning must not be unified merely because the key number is the 
    - `Master.html`은 기존 `master-lookup` 공식 경로와 운영 상품 저장·revision·history·Cloud 계약을 유지한다.
    - 격리 검증된 최초 Excel 등록과 단건 등록·수정만 공식 `Master.html`에 승계한다.
    - `ItemMaster.html`은 미등록 정적 호환 안내로 축소하고 레거시 격리 DB는 자동 삭제·덮어쓰기하지 않는다.
-   - `Item_manager.html`은 기존 `item-manager` 공식 경로와 카탈로그 소싱·행사테마·BOM 등 현재 구현을 유지한다.
+   - `Item_manager.html`은 기존 URL과 `item-manager` ID를 호환 유지하되 `SKU 관리`로 표시하고 카탈로그 소싱·수기 후보·BOM 구성에서 상품 등록 요청만 생성한다.
 4. **CustomerMaster 구축**
    - 독립 앱 엔트리, 소유 Repository, customer Snapshot Read Adapter와 v17 읽기 전용 이전 경계를 파일럿으로 구현한다.
    - SmartInput은 로컬 캐시 우선·장애 격리형 소비자로 연결하고, ORDER Q의 필수 운영 의존성, Cloud 동기화와 인증 통제는 소비자별 후속 작업으로 분리한다.

@@ -5,6 +5,7 @@ const modeInput = document.getElementById('modeInput');
 const dateInput = document.getElementById('dateInput');
 const status = document.getElementById('queryStatus');
 const list = document.getElementById('voucherList');
+const orderQueryEntry = document.getElementById('orderQueryEntry');
 const focusId = params.get('focus') || '';
 modeInput.value = ['order', 'purchase', 'sale'].includes(params.get('mode')) ? params.get('mode') : 'order';
 dateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : new Date().toLocaleDateString('sv-SE');
@@ -12,15 +13,26 @@ dateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const won = value => `${Number(value || 0).toLocaleString('ko-KR')}원`;
 
+function updateOrderQueryEntry() {
+  const query = new URLSearchParams({ view: 'query' });
+  const isOrderMode = modeInput.value === 'order';
+  if (isOrderMode && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.value)) {
+    query.set('from', dateInput.value); query.set('to', dateInput.value);
+  }
+  orderQueryEntry.href = `../orderq/index.html?${query}`;
+  orderQueryEntry.hidden = !isOrderMode;
+}
+
 function card(row) {
   const items = row.items || [];
   return `<article class="voucher-query-card ${row.id === focusId ? 'is-focused' : ''}" id="voucher-${esc(row.id)}">
-    <header><h2>${esc(row.customerName)}</h2><span>${esc(row.voucherNo)} · ${esc(row.status)}</span><strong>${won(row.totalAmount)}</strong></header>
+    <header><div><h2>${esc(row.customerName)}</h2><span>${esc(row.voucherNo)} · ${esc(row.status)}</span></div><strong>${won(row.totalAmount)}</strong>${row.detailHref ? `<a class="voucher-query-card__open" href="${esc(row.detailHref)}">${row.voucherMode === 'order' ? '주문현황에서 열기' : '전표 상세 열기'}</a>` : ''}</header>
     <div class="table-wrap"><table><thead><tr><th>No.</th><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th></tr></thead><tbody>${items.map((item, index) => `<tr><td class="center">${index + 1}</td><td>${esc(item.code)}</td><td>${esc(item.name)}</td><td>${esc(item.specification)}</td><td class="num">${esc(item.quantity)}</td><td>${esc(item.unit)}</td><td class="num">${item.unitPrice === '' ? '' : Number(item.unitPrice).toLocaleString('ko-KR')}</td><td class="num">${item.amount === '' ? '' : Number(item.amount).toLocaleString('ko-KR')}</td></tr>`).join('')}</tbody></table></div>
   </article>`;
 }
 
 async function load() {
+  updateOrderQueryEntry();
   status.textContent = '불러오는 중…';
   list.innerHTML = '<div class="voucher-query-state">전표를 불러오는 중입니다.</div>';
   const snapshot = await readVoucherActivity({ mode: modeInput.value, date: dateInput.value });
@@ -43,4 +55,5 @@ function updateQuery() {
 document.getElementById('reloadButton').addEventListener('click', load);
 modeInput.addEventListener('change', updateQuery);
 dateInput.addEventListener('change', updateQuery);
+updateOrderQueryEntry();
 void load();

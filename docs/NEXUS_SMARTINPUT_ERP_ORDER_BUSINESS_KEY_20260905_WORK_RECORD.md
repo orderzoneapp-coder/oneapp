@@ -12,6 +12,18 @@
 - 시작 상태: clean
 - 확인 규범: `AGENTS.md` v2.3.4, `roles/DEVELOPER.md`, `APP_ARCHITECTURE.md`, `app-manifest.json` schema v1.3.11, `orderq/ARCHITECTURE.md`, `smartinput/README.md`
 
+## 2026-09-06 최신 main 통합 착수
+
+- 후속 실행 지시: PR #515가 운영 `main`에 포함되지 않은 상태를 확인하고 최신 `main` 충돌을 해소한 뒤 재검증·Push한다. PM 독립검증 전에는 병합·배포하지 않는다.
+- 원격: `https://github.com/orderzoneapp-coder/oneapp.git`
+- 최신 `origin/main`: `c2ea3b8d88f90d7e08a36589bb43112f419a5840`
+- 통합 전 PR head: `02b4006bdd89d6903ee89dad11de39e37075c88d`
+- 후속 전용 worktree: `/workspace/scratch/7ec7f5653ab2/pr515-rebase-NRaWXX`
+- 시작 상태: clean. 기존 checkout과 다른 작업 변경은 수정·정리·reset하지 않는다.
+- 재확인 규범: `AGENTS.md` v2.3.4, `roles/DEVELOPER.md`, `APP_ARCHITECTURE.md` v2.1.32, `app-manifest.json` schema v1.3.12, `orderq/ARCHITECTURE.md`, `smartinput/README.md`, SmartInput 필드 매핑·쇼핑몰 17열 작업 기록.
+- 최신 main 반영분: PR #516~#523의 ORDER Q 행 포커스·0 제외 필터·상품관리/SKU 흐름·주문조회·판매이관 처리현황·상품 그룹코드 변경. 이번 주문 업무키·SmartInput 저장 계약과 직접 정책 충돌은 없다.
+- 예상 충돌 범위: `smartinput/index.html`, `smartinput/smartinput.js`, SmartInput 승인 자산 버전·해시 테스트. 주문 그룹키 구현, 매핑 후보 정리, 쇼핑몰 17열 실제원장 중복제외 계약은 그대로 유지한다.
+
 ## 현재 상태와 이슈
 
 - 일반 주문 다중전표 그룹키는 한 업로드 안에서도 `sourceDocumentKey/sourceVoucherIndex/manualSplitKey`와 행 연속성으로 분리될 수 있고 거래유형은 포함하지 않아 확정된 ERP 업무키와 다르다.
@@ -75,6 +87,16 @@
 - 쇼핑몰 exact 17열 업로드는 기존 ORDER Q 공개 command adapter와 실제원장 중복 signature를 그대로 사용하며 이번 일반 주문 그룹키를 사용하지 않는다.
 - DB schema/Store/key/index/version/migration/reset, SmartInput Draft 저장계약, 공식전표 V2, 재고, 채권·채무, 기준정보 owner, 공통 Runtime, Cloud gate 변경은 없다.
 - 테스트는 격리 데이터로 수행했고 운영 주문·전표·재고·채권/채무 write는 0건이다.
+
+## 최신 main 통합 결과
+
+- `origin/main` `c2ea3b8d88f90d7e08a36589bb43112f419a5840`을 PR 브랜치에 병합했다. 통합 commit은 `7f69b8d5cc17d465918047179891adedfa2a97c0`이다.
+- 충돌은 `smartinput/index.html`, `scripts/test-smartinput-v2-unresolved-review-ui.mjs` 두 파일뿐이었다. 기존 업무키 변경과 최신 주문조회 링크를 함께 보존하고, 공통 UI `v1.5.0` 및 SmartInput `v0.11.24`로 자산 버전을 정리했다.
+- 최신 main 대비 PR 변경 범위는 SmartInput 생산 파일 4개, 관련 테스트 5개, 작업 기록 1개로 유지된다. PR #516~#523의 ORDER Q·상품관리 변경 파일을 별도로 수정하지 않았다.
+- 브라우저 이름이 없는 SmartInput·ORDER Q 관련 회귀 52개를 순차 실행해 `52/52 PASS`했다. 주문 업무키, 매핑, 쇼핑몰 중복제외, 주문조회·판매이관, 공식전표·미매칭·재매칭 계약이 모두 포함된다.
+- `validate-repository.mjs`는 `24 checks / 0 warnings`, History·Settings·Export owner-boundary, client safety, 변경 JavaScript 문법검사, Phase 6B 정적 UI 계약과 `git diff --check`가 통과했다.
+- 후속 실행환경에는 Chromium 계열 실행 파일이 없어 브라우저 13개는 로컬에서 중복 실행하지 않는다. Push된 최종 head의 GitHub Actions가 Chromium 브라우저 회귀와 Phase 6B 브라우저 Gate의 최종 증거다.
+- DB schema/Store/index/version, ORDER Q 쇼핑몰 signature·occurrence 계산, 공식전표 V2, 원장·재고·채권채무, Cloud 계약 변경은 없다.
 
 ## 병합 조건
 

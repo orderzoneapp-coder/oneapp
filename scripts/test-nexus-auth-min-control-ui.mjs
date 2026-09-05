@@ -15,6 +15,7 @@ const officialApps = [
   'master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops',
   'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext',
 ];
+const commonHeaderApps = officialApps.filter(appId => appId !== 'item-manager');
 
 assert.match(homeHtml, /id="activationForm"[^>]+hidden/, 'first activation form must be opt-in');
 assert.match(homeHtml, /id="adminLink"[^>]+href="\/nexus\/admin\/"[^>]+hidden/, 'admin entry must be hidden until OWNER_MASTER is known');
@@ -53,9 +54,10 @@ assert.doesNotMatch(adminRuntime, /nexus_admin_(?:delete|permissions|service)/, 
 
 for (const appId of officialApps) {
   assert.match(homeRuntime, new RegExp(`id: '${appId}'`), `home requires official app ${appId}`);
-  assert.match(commonRuntime, new RegExp(`id: '${appId}'`), `common header requires official app ${appId}`);
   assert.match(gateway, new RegExp(`'${appId}'`), `server allowlist requires official app ${appId}`);
 }
+for (const appId of commonHeaderApps) assert.match(commonRuntime, new RegExp(`id: '${appId}'`), `common header requires official app ${appId}`);
+assert.doesNotMatch(commonRuntime, /Object\.freeze\(\{ id: 'item-manager', label:/, 'SKU management must not be a separate common-header app');
 assert.match(commonRuntime, /sessionStorage\.getItem\(VISIBILITY_STORAGE_KEY\)/, 'header must only read the same-tab UI projection');
 assert.doesNotMatch(commonRuntime, /\bfetch\s*\(|XMLHttpRequest|WebSocket|AUTH_ENDPOINT|sessionToken|userId|loginId|displayName/i, 'global header must stay independent from auth and identity');
 assert.doesNotMatch(commonRuntime, /sessionStorage\.setItem/, 'global header must never write projection state');
@@ -67,7 +69,7 @@ const directPages = [
 ];
 for (const page of directPages) {
   const html = await readFile(page, 'utf8');
-  assert.match(html, /nexus-ui\.js\?v=1\.4\.2/, `${page}: visibility-only header is required`);
+  assert.match(html, /nexus-ui\.js\?v=1\.5\.0/, `${page}: visibility-only header is required`);
   assert.doesNotMatch(html, /http-equiv=["']refresh|location\.(?:href|replace)[^\n]+\/nexus\//i, `${page}: direct entry must not redirect to login`);
 }
 

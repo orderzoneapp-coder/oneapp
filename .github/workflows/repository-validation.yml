@@ -96,13 +96,18 @@ jobs:
         run: node scripts/test-nexus-company-profile.mjs
 
       - name: Test Master and Item Manager app-header separation
-        run: node scripts/test-master-itemmanager-app-header.mjs
+        run: |
+          node scripts/test-master-itemmanager-app-header.mjs
+          node scripts/test-product-sku-management.mjs
 
       - name: Test ORDER Q vNext cloud sync contracts
         run: node scripts/test-orderq-vnext-cloud-contract.mjs
 
       - name: Test ORDER Q order-document workflow
         run: node scripts/test-orderq-order-workflow.mjs
+
+      - name: Test ORDER Q integrated query view and voucher links
+        run: node scripts/test-orderq-query-integration.mjs
 
       - name: Test ORDER Q sales-transfer lifecycle and operations aggregation
         run: node scripts/test-orderq-fulfillment-lifecycle.mjs
