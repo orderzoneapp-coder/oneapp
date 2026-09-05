@@ -723,6 +723,11 @@
         ];
 
         const PRODUCT_EDITOR_FIELD_LAYOUT_KEY = 'oneapp.master.product-editor-field-layout.v1';
+        const isDerivedGroupCodeField = (field, productCode) => {
+            const requiredLength = { '1코드': 2, '2코드': 4, '3코드': 6 }[field];
+            const code = safeStr(productCode).trim();
+            return Boolean(requiredLength && /^\d+$/.test(code) && code.length >= requiredLength);
+        };
         const defaultProductEditorFieldKeys = () => PRODUCT_FORM_FIELDS.map(field => field.key);
         const loadProductEditorFieldKeys = () => {
             const defaults = defaultProductEditorFieldKeys();
@@ -736,7 +741,7 @@
             }
         };
 
-        const ProductEditorModal = ({ item, onCancel, onSave, isSaving }) => {
+        const ProductEditorModal = ({ item, masterProducts, onCancel, onSave, isSaving }) => {
             const [form, setForm] = useState({});
             const [errorMessage, setErrorMessage] = useState('');
             const [fieldKeys, setFieldKeys] = useState(defaultProductEditorFieldKeys);
@@ -745,7 +750,8 @@
             const isEditing = Boolean(item && safeStr(item.코드 || item.품목코드).trim());
             useEffect(() => {
                 if (!isOpen) return;
-                setForm(item ? { ...item, 코드: safeStr(item.코드 || item.품목코드) } : {});
+                const source = item ? { ...item, 코드: safeStr(item.코드 || item.품목코드) } : {};
+                setForm(isEditing ? source : window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(source, masterProducts));
                 setFieldKeys(loadProductEditorFieldKeys());
                 setDetailSelection('');
                 setErrorMessage('');
@@ -790,8 +796,15 @@
                                             aria-label={field.label}
                                             type={field.type || 'text'}
                                             value={form[field.key] ?? ''}
-                                            disabled={isEditing && field.key === '코드'}
-                                            onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))}
+                                            disabled={(isEditing && field.key === '코드') || (!isEditing && isDerivedGroupCodeField(field.key, form.코드 || form.품목코드))}
+                                            onChange={event => setForm(current => {
+                                                const next = field.key === '코드'
+                                                    ? { ...current, 코드: event.target.value, 품목코드: event.target.value }
+                                                    : { ...current, [field.key]: event.target.value };
+                                                return !isEditing && field.key === '코드'
+                                                    ? window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(next, masterProducts)
+                                                    : next;
+                                            })}
                                             className="mt-1 w-full h-10 px-3 rounded-lg border border-slate-300 text-sm outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
                                         />
                                     </label>
@@ -830,11 +843,18 @@
         const requestSourceLabel = (entry) => [entry?.request?.source?.appId, entry?.request?.source?.workflow].filter(Boolean).join(' · ') || '알 수 없는 업무';
         const requestProposedItem = (entry, masterProducts = {}) => {
             const request = entry?.request || {};
-            if (entry?.review?.applyTarget?.targetProduct) return { ...entry.review.applyTarget.targetProduct };
+            if (entry?.review?.applyTarget?.targetProduct) {
+                const prepared = { ...entry.review.applyTarget.targetProduct };
+                return request.operation === 'CREATE'
+                    ? window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(prepared, masterProducts)
+                    : prepared;
+            }
             const base = request.operation === 'CREATE' ? {} : (masterProducts[request.entityId] || {});
             const item = { ...base, 코드: safeStr(base.코드 || request.entityId), 품목코드: safeStr(base.품목코드 || request.entityId) };
             (request.changes || []).forEach(change => { item[change.field] = change.proposedValue; });
-            return item;
+            return request.operation === 'CREATE'
+                ? window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(item, masterProducts)
+                : item;
         };
 
         const ProductRequestReviewModal = ({ entry, masterProducts, onClose, onApply, onLink, onReject, isProcessing }) => {
@@ -877,7 +897,14 @@
                             <section>
                                 <h3 className="text-xs font-black text-slate-800 mb-3">공식 상품 반영 예정값</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {PRODUCT_FORM_FIELDS.map(field => <label key={field.key} className="block"><span className="text-[10px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span><input type={field.type || 'text'} value={form[field.key] ?? ''} disabled={request.operation !== 'CREATE' && field.key === '코드'} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-1 w-full h-9 px-3 rounded-lg border border-slate-300 text-xs disabled:bg-slate-100" /></label>)}
+                                    {PRODUCT_FORM_FIELDS.map(field => <label key={field.key} className="block"><span className="text-[10px] font-bold text-slate-600">{field.label}{field.required ? ' *' : ''}</span><input type={field.type || 'text'} value={form[field.key] ?? ''} disabled={(request.operation !== 'CREATE' && field.key === '코드') || (request.operation === 'CREATE' && isDerivedGroupCodeField(field.key, form.코드 || form.품목코드))} onChange={event => setForm(current => {
+                                        const next = field.key === '코드'
+                                            ? { ...current, 코드: event.target.value, 품목코드: event.target.value }
+                                            : { ...current, [field.key]: event.target.value };
+                                        return request.operation === 'CREATE' && field.key === '코드'
+                                            ? window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(next, masterProducts)
+                                            : next;
+                                    })} className="mt-1 w-full h-9 px-3 rounded-lg border border-slate-300 text-xs disabled:bg-slate-100" /></label>)}
                                 </div>
                             </section>
                         </div>
@@ -1399,7 +1426,9 @@
                 setIsProcessing(true);
                 setProcessMsg(request.operation === 'CREATE' ? '요청 상품을 공식 마스터에 등록 중...' : '요청 수정값을 공식 마스터에 반영 중...');
                 try {
-                    const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(input);
+                    const normalized = window.ONEAPP_MASTER_ADD_UPDATE.validateSingleProductInput(request.operation === 'CREATE'
+                        ? window.ONEAPP_MASTER_ADD_UPDATE.deriveProductCategoryFields(input, masterProducts)
+                        : input);
                     PRODUCT_FORM_FIELDS.concat(DETAIL_PRODUCT_FIELDS).filter(field => field.type === 'number').forEach(({ key }) => {
                         if (safeStr(normalized[key]).trim() !== '') normalized[key] = Number(normalized[key]);
                     });
@@ -1947,6 +1976,7 @@
 
                     <ProductEditorModal
                         item={editingProduct}
+                        masterProducts={masterProducts}
                         onCancel={() => setEditingProduct(null)}
                         onSave={handleSaveProduct}
                         isSaving={isProcessing}

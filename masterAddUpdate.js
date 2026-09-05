@@ -74,6 +74,46 @@
 
   const normalizeCode = (value) => String(value === undefined || value === null ? '' : value).trim();
   const normalizeSharedProductCode = (value) => normalizeCode(value).replace(/\s/g, '');
+  const deriveProductCategoryFields = (input = {}, masterMap = {}) => {
+    const item = cloneValue(input || {});
+    const productCode = normalizeSharedProductCode(item['ERP 품목코드'] || item['품목코드'] || item['코드']);
+    if (!/^\d{2,}/.test(productCode)) return item;
+
+    const derivedCodes = {
+      '1코드': productCode.length >= 2 ? productCode.slice(0, 2) : '',
+      '2코드': productCode.length >= 4 ? productCode.slice(0, 4) : '',
+      '3코드': productCode.length >= 6 ? productCode.slice(0, 6) : ''
+    };
+    const nameFields = { '1코드': '1그룹명', '2코드': '2그룹명', '3코드': '3그룹명' };
+    const categoryNames = { '1코드': new Map(), '2코드': new Map(), '3코드': new Map() };
+
+    Object.values(masterMap && typeof masterMap === 'object' ? masterMap : {}).forEach(product => {
+      if (!product || typeof product !== 'object') return;
+      const existingProductCode = normalizeSharedProductCode(product['ERP 품목코드'] || product['품목코드'] || product['코드']);
+      Object.entries(nameFields).forEach(([codeField, nameField]) => {
+        const length = codeField === '1코드' ? 2 : (codeField === '2코드' ? 4 : 6);
+        const categoryName = normalizeCode(product[nameField]);
+        const codes = [
+          normalizeCode(product[codeField]),
+          /^\d{6,}/.test(existingProductCode) ? existingProductCode.slice(0, length) : ''
+        ].filter(Boolean);
+        codes.forEach(categoryCode => {
+          if (categoryName && !categoryNames[codeField].has(categoryCode)) categoryNames[codeField].set(categoryCode, categoryName);
+        });
+      });
+    });
+
+    const next = { ...item, 코드: productCode, 품목코드: productCode };
+    Object.entries(derivedCodes).forEach(([codeField, categoryCode]) => {
+      if (!categoryCode) return;
+      const nameField = nameFields[codeField];
+      const previousCode = normalizeCode(item[codeField]);
+      const mappedName = categoryNames[codeField].get(categoryCode) || '';
+      next[codeField] = categoryCode;
+      next[nameField] = mappedName || (previousCode === categoryCode ? normalizeCode(item[nameField]) : '');
+    });
+    return next;
+  };
   const isBlankValue = (value) => (
     value === null
     || value === undefined
@@ -1034,14 +1074,14 @@
 
   const normalizeSingleProductInput = (input = {}) => {
     const code = normalizeSharedProductCode(input['ERP 품목코드'] || input['품목코드'] || input['코드']);
-    return {
+    return deriveProductCategoryFields({
       ...cloneValue(input),
       코드: code,
       품목코드: code,
       품목명: normalizeCode(input['품목명'] || input['상품명']),
       규격: normalizeCode(input['규격']),
       단위: normalizeCode(input['단위'])
-    };
+    });
   };
 
   const validateSingleProductInput = (input = {}) => {
@@ -1301,7 +1341,7 @@
     }
 
     const previousItem = duplicate ? cloneValue(duplicate[1]) : {};
-    const normalizedItem = validateSingleProductInput({ ...previousItem, ...cloneValue(item), 코드: inputCode });
+    const normalizedItem = validateSingleProductInput(deriveProductCategoryFields({ ...previousItem, ...cloneValue(item), 코드: inputCode }, currentMaster));
     const nextItem = { ...previousItem, ...normalizedItem, 코드: inputCode, 품목코드: inputCode };
     const fields = [...new Set([...Object.keys(previousItem), ...Object.keys(nextItem)])]
       .filter(field => !field.startsWith('__'))
@@ -1699,6 +1739,7 @@
     ISSUE_TAGS,
     normalizeCode,
     normalizeSharedProductCode,
+    deriveProductCategoryFields,
     getRowCode,
     getMasterCode,
     buildMasterIndex,
