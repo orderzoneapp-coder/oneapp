@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   beginProductChangeRequestReview,
+  collapseProductChangeRequestDuplicates,
   completeProductChangeRequest,
   getProductChangeRequest,
   listProductChangeRequests,
@@ -28,7 +29,7 @@ const database = {
             setTimeout(() => {
               request.result = clone(values.get(key));
               request.onsuccess?.();
-              if (mode === 'readonly') setTimeout(() => { if (!finished) { finished = true; transaction.oncomplete?.(); } }, 0);
+              setTimeout(() => { if (!finished) { finished = true; transaction.oncomplete?.(); } }, 0);
             }, 0);
             return request;
           },
@@ -77,6 +78,27 @@ const request = {
 assert.equal((await submitProductChangeRequest(request)).status, 'PENDING');
 assert.equal((await beginProductChangeRequestReview({ requestId: request.requestId })).status, 'IN_REVIEW');
 assert.equal((await getProductChangeRequest(request.requestId)).entry.status, 'IN_REVIEW');
+const repeatedRequest = {
+  ...request,
+  requestId: 'SKU-REQUEST-TEST-2',
+  idempotencyKey: 'SKU-REQUEST-TEST-2',
+  requestedAt: '2026-09-05T12:01:00.000Z',
+};
+const groupedExistingRequests = collapseProductChangeRequestDuplicates([
+  { status: 'PENDING', receivedAt: request.requestedAt, request },
+  { status: 'IN_REVIEW', receivedAt: repeatedRequest.requestedAt, request: repeatedRequest },
+]);
+assert.equal(groupedExistingRequests.length, 1);
+assert.equal(groupedExistingRequests[0].status, 'IN_REVIEW');
+assert.equal(groupedExistingRequests[0].repeatedRequestCount, 2);
+assert.deepEqual(groupedExistingRequests[0].duplicateRequestIds, [request.requestId]);
+const repeatedResult = await submitProductChangeRequest(repeatedRequest);
+assert.equal(repeatedResult.status, 'DUPLICATE');
+assert.equal(repeatedResult.requestId, request.requestId);
+assert.equal((await listProductChangeRequests({ status: ['PENDING', 'IN_REVIEW'] })).requests.length, 1);
+const collapsed = await listProductChangeRequests({ status: ['PENDING', 'IN_REVIEW'], collapseDuplicates: true });
+assert.equal(collapsed.requests.length, 1);
+assert.equal(collapsed.requests[0].repeatedRequestCount, 1);
 const prepared = await prepareProductChangeRequestApply({ requestId: request.requestId, productCode: 'SKU-TEST-001', targetProduct: { 코드: 'SKU-TEST-001', 품목명: 'SKU 후보 테스트' } });
 assert.equal(prepared.status, 'IN_REVIEW');
 assert.equal(prepared.entry.review.applyTarget.targetProduct.품목명, 'SKU 후보 테스트');
@@ -96,6 +118,9 @@ assert.match(master, /기존 상품 연결/);
 assert.match(master, />반려</);
 assert.match(master, /상품 등록·수정 요청 목록/);
 assert.match(master, /handleRegisterAllCreateRequests/);
+assert.match(master, /collapseDuplicates: true/);
+assert.match(master, /동일 요청 통합 처리/);
+assert.match(master, /동일 요청 \{entry\.repeatedRequestCount\}회/);
 assert.match(master, />전체 등록</);
 assert.match(master, />수정</);
 assert.match(master, /top: 'var\(--nexus-ui-header-height, 64px\)'/);
