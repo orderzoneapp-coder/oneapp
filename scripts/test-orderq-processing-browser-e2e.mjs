@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const server = createServer((request, response) => {
+  const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
+  const relative = pathname === '/' ? 'orderq/index.html' : `${pathname.slice(1)}${pathname.endsWith('/') ? 'index.html' : ''}`;
+  const file = normalize(resolve(root, relative));
+  if (file !== root && !file.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
+  if (!existsSync(file) || !statSync(file).isFile()) return response.writeHead(404).end('Not found');
+  response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(file).toLowerCase()] || 'application/octet-stream' });
+  response.end(readFileSync(file));
+});
+const listen = () => new Promise((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolveListen(server.address())); });
+const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
+const waitFor = async (check, label, timeout = 20_000) => { const end = Date.now() + timeout; while (Date.now() < end) { try { const value = await check(); if (value) return value; } catch {} await wait(80); } throw new Error(`Timed out waiting for ${label}`); };
+const browserPath = () => [process.env.CHROME_PATH, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'), process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'), process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe')].filter(Boolean).find(existsSync) || '';
+
+class Cdp {
+  constructor(url) { this.url = url; this.socket = null; this.id = 0; this.pending = new Map(); this.events = new Map(); }
+  async connect() { this.socket = new WebSocket(this.url); this.socket.addEventListener('message', event => { const message = JSON.parse(event.data); if (message.id) { const pending = this.pending.get(message.id); if (!pending) return; this.pending.delete(message.id); return message.error ? pending.reject(new Error(message.error.message)) : pending.resolve(message.result); } (this.events.get(message.method) || []).forEach(listener => listener(message.params)); }); await new Promise((resolveOpen, reject) => { this.socket.addEventListener('open', resolveOpen, { once: true }); this.socket.addEventListener('error', reject, { once: true }); }); }
+  send(method, params = {}) { const id = ++this.id; return new Promise((resolveSend, reject) => { this.pending.set(id, { resolve: resolveSend, reject }); this.socket.send(JSON.stringify({ id, method, params })); }); }
+  once(method) { return new Promise((resolveEvent, reject) => { const listener = params => { clearTimeout(timer); this.events.set(method, (this.events.get(method) || []).filter(item => item !== listener)); resolveEvent(params); }; const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${method}`)), 20_000); this.events.set(method, [...(this.events.get(method) || []), listener]); }); }
+  on(method, listener) { this.events.set(method, [...(this.events.get(method) || []), listener]); }
+  close() { this.socket?.close(); }
+}
+const evaluate = (client, expression) => client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }).then(result => { if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; });
+const navigate = async (client, url) => { const loaded = client.once('Page.loadEventFired'); await client.send('Page.navigate', { url }); await loaded; await waitFor(() => evaluate(client, `document.readyState==='complete'`), 'page ready'); await wait(250); };
+const seed = client => evaluate(client, `new Promise((resolve,reject)=>{const r=indexedDB.open('oneapp-orderq-pre-m1-v6');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const tx=db.transaction(['orders','orderItems','orderEvents'],'readwrite');const order=(orderId,orderStatus='ORDER')=>({orderId,orderNo:orderId,orderDate:'2026-09-06',customerName:'Gate B 거래처',customerId:'C-GATE',warehouseName:'검증창고',orderStatus,adminStatus:'CHECKED',opsStatus:'ACTIVE',sourceType:'MANUAL',inputChannel:'DIRECT',revision:1,sourceMessageKey:'gate-'+orderId,createdAt:'2026-09-06T01:00:00.000Z',updatedAt:'2026-09-06T01:00:00.000Z'});const orders=[order('ORD-PART'),order('ORD-REV'),order('ORD-CANCEL','FULL_CANCEL'),order('ORD-PC','PARTIAL_CANCEL'),order('ORD-FRACTION'),order('ORD-MULTI')];const items=[['ORD-PART','OI-PART',5,'BOX'],['ORD-REV','OI-REV',5,'BOX'],['ORD-CANCEL','OI-CANCEL',5,'BOX'],['ORD-PC','OI-PC',5,'BOX'],['ORD-FRACTION','OI-FRACTION',1.25,'KG'],['ORD-MULTI','OI-M1',2,'BOX'],['ORD-MULTI','OI-M2',3,'BOX'],['ORD-FAIL','OI-FAIL',5,'BOX']].map(([orderId,orderItemId,quantity,unit])=>({orderId,orderItemId,lineNo:1,itemCode:orderItemId,itemName:orderItemId,specification:'검증',finalUnit:unit,rawUnit:unit,finalQuantity:quantity,rawQuantity:quantity,price:100,matchStatus:'MATCHED'}));orders.push(order('ORD-FAIL'));const event=(eventId,orderId,orderItemId,quantity,extra={})=>({eventId,orderId,revision:1,eventType:'SALES_TRANSFER_ALLOCATED',actor:'GATE',createdAt:'2026-09-06T02:00:00.000Z',detail:{orderItemId,salesDocumentId:'SD-'+eventId,salesLineId:'SL-'+eventId,transferredQty:quantity,...extra}});const events=[event('E-PART','ORD-PART','OI-PART',2),event('E-REV-A','ORD-REV','OI-REV',5),{eventId:'E-REV-R',orderId:'ORD-REV',revision:1,eventType:'SALES_TRANSFER_REVERSED',createdAt:'2026-09-06T03:00:00.000Z',detail:{orderItemId:'OI-REV',allocationEventId:'E-REV-A',salesDocumentId:'SD-E-REV-A',salesLineId:'SL-E-REV-A',transferredQty:2}},event('E-PC','ORD-PC','OI-PC',3),event('E-FRAC','ORD-FRACTION','OI-FRACTION',0.25),event('E-M1','ORD-MULTI','OI-M1',2),event('E-M2','ORD-MULTI','OI-M2',1),{eventId:'E-FAIL',orderId:'ORD-FAIL',revision:1,eventType:'SALES_TRANSFER_ALLOCATED',createdAt:'2026-09-06T02:00:00.000Z',detail:{orderItemId:'OI-FAIL',transferredQty:2}}];const pc=items.find(item=>item.orderItemId==='OI-PC');pc.cancelledQuantity=2;items.forEach(item=>tx.objectStore('orderItems').put(item));orders.forEach(item=>tx.objectStore('orders').put(item));orders.forEach(item=>tx.objectStore('orderEvents').put({eventId:'CREATED-'+item.orderId,orderId:item.orderId,eventType:'ORDER_CREATED',revision:1,createdAt:item.createdAt,detail:{}}));events.forEach(item=>tx.objectStore('orderEvents').put(item));tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)}})`);
+const screenshotPath = (profile, name) => join(profile, name);
+
+let browserProcess; let client; let address; const profile = join(tmpdir(), `oneapp-orderq-processing-${Date.now()}`);
+try {
+  address = await listen();
+  const executable = browserPath(); assert.ok(executable, 'Chrome/Edge is required for ORDER Q processing browser E2E');
+  mkdirSync(profile, { recursive: true });
+  browserProcess = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  const portFile = join(profile, 'DevToolsActivePort');
+  const debugPort = await waitFor(() => existsSync(portFile) ? readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] : '', 'browser debug port');
+  const target = await waitFor(async () => { const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`); return response.ok ? (await response.json()).find(item => item.type === 'page') : null; }, 'browser target');
+  client = new Cdp(target.webSocketDebuggerUrl); await client.connect(); await client.send('Page.enable'); await client.send('Runtime.enable');
+  const runtimeErrors = []; client.on('Runtime.exceptionThrown', event => runtimeErrors.push(event.exceptionDetails?.text || 'runtime exception'));
+  const origin = `http://127.0.0.1:${address.port}`;
+  await navigate(client, `${origin}/orderq/index.html`); await seed(client); await navigate(client, `${origin}/orderq/index.html?view=processing`);
+  await waitFor(() => evaluate(client, `document.querySelectorAll('#processingRows tr[data-processing-row]').length===8`), 'processing rows');
+  const evidence = await evaluate(client, `(()=>{const row=id=>document.querySelector('[data-processing-row][data-order-id="'+id+'"]');return {summary:document.querySelector('#processingSummary').textContent,part:row('ORD-PART').textContent,reverse:row('ORD-REV').textContent,cancel:row('ORD-CANCEL').textContent,partialCancel:row('ORD-PC').textContent,fraction:row('ORD-FRACTION').textContent,multi:document.querySelectorAll('[data-processing-row][data-order-id="ORD-MULTI"]').length,failure:row('ORD-FAIL').textContent,controls:document.querySelectorAll('#processingRows input,#processingRows select,#processingRows textarea,#processingRows button').length,opsHref:row('ORD-PART').querySelector('a[href*="orderops/list.html"]')?.href||'',queryHref:row('ORD-PART').querySelector('a[href*="view=query"]')?.href||'',forbidden:/미출고|부분출고|출고완료|출고대기|실제 출고수량/.test(document.querySelector('#processingView').textContent)}})()`);
+  assert.match(evidence.part, /일부이관/); assert.match(evidence.part, /3/); assert.match(evidence.reverse, /3/); assert.match(evidence.reverse, /반영됨/); assert.match(evidence.cancel, /해당 없음/); assert.match(evidence.partialCancel, /이관완료/); assert.match(evidence.fraction, /1\.25/); assert.equal(evidence.multi, 2); assert.match(evidence.failure, /확인 필요/); assert.equal(evidence.controls, 0); assert.match(evidence.opsHref, /orderops\/list\.html\?orderId=ORD-PART/); assert.match(evidence.queryHref, /view=query&focus=ORD-PART/); assert.equal(evidence.forbidden, false);
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }); await wait(250); writeFileSync(screenshotPath(profile, 'processing-mobile-light.png'), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await evaluate(client, `document.documentElement.dataset.nexusUiTheme='dark';document.documentElement.dataset.nexusTheme='dark';true`); await wait(250); writeFileSync(screenshotPath(profile, 'processing-mobile-dark.png'), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }); await evaluate(client, `document.documentElement.dataset.nexusUiTheme='light';document.documentElement.dataset.nexusTheme='light';true`); await wait(250); writeFileSync(screenshotPath(profile, 'processing-desktop-light.png'), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }); await navigate(client, `${origin}/orderq/index.html?view=query`); await waitFor(() => evaluate(client, `!document.querySelector('#queryView').hidden`), 'query after processing');
+  assert.equal(runtimeErrors.length, 0, `browser runtime errors: ${runtimeErrors.join('; ')}`);
+  console.log(`ORDER Q processing browser E2E passed: ${JSON.stringify({ ...evidence, screenshots: profile })}`);
+} finally { client?.close(); browserProcess?.kill(); server.close(); }
