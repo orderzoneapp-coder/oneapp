@@ -15,6 +15,30 @@ const api = browser.ONEAPP_MASTER_ADD_UPDATE;
 
 assert.ok(api, "Master add/update module must initialize");
 
+const categoryMaster = {
+  "106010100": {
+    코드: "106010100", 품목코드: "106010100",
+    "1코드": "10", "1그룹명": "채소.과일",
+    "2코드": "1060", "2그룹명": "상추류",
+    "3코드": "106010", "3그룹명": "상추"
+  }
+};
+const derivedCategory = api.deriveProductCategoryFields({
+  코드: "106010141", "1코드": "99", "1그룹명": "이전 분류",
+  "2코드": "9999", "2그룹명": "이전 중분류", "3코드": "999999", "3그룹명": "이전 소분류"
+}, categoryMaster);
+assert.equal(derivedCategory["1코드"], "10");
+assert.equal(derivedCategory["2코드"], "1060");
+assert.equal(derivedCategory["3코드"], "106010");
+assert.equal(derivedCategory["1그룹명"], "채소.과일");
+assert.equal(derivedCategory["2그룹명"], "상추류");
+assert.equal(derivedCategory["3그룹명"], "상추");
+const unknownCategory = api.deriveProductCategoryFields({ 코드: "999999001", "1코드": "10", "1그룹명": "이전 분류" }, categoryMaster);
+assert.equal(unknownCategory["1코드"], "99");
+assert.equal(unknownCategory["2코드"], "9999");
+assert.equal(unknownCategory["3코드"], "999999");
+assert.equal(unknownCategory["1그룹명"], "");
+
 const clone = (value) => structuredClone(value);
 const baseMaster = {
   "001": { 코드: "001", 품목코드: "001", 품목명: "사과", 규격: "1kg", 단위: "EA", 시중가: 1000, 유지필드: "보존" },
@@ -688,6 +712,8 @@ assert.doesNotMatch(masterHtml, /const newMaster = \{\};[\s\S]{0,1500}saveMaster
 assert.match(masterHtml, /buildInitialMasterImport/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitInitialRegistration/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitSingleProductChange/);
+assert.match(masterHtml, /deriveProductCategoryFields\(item, masterProducts\)/);
+assert.match(masterHtml, /isDerivedGroupCodeField/);
 assert.match(masterHtml, /상품 DB가 비어 있습니다[\s\S]*Excel 최초 등록 또는 상품 단건 등록/);
 assert.doesNotMatch(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
 assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
