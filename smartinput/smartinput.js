@@ -4964,14 +4964,17 @@ function renderInputMappingStatus() {
   const reloadButton = $('inputTemplateReloadButton');
   const pendingPasteButton = $('pendingPasteToSourceButton');
   const validationNav = $('mappingValidationNav');
+  const subWorkBar = $('subWorkBar');
   pendingPasteButton.hidden = !state.pendingGridPasteText;
   if (!session) {
     panel.hidden = true;
     saveButton.hidden = true;
     reloadButton.hidden = true;
     validationNav.hidden = true;
+    subWorkBar.hidden = pendingPasteButton.hidden;
     return;
   }
+  subWorkBar.hidden = false;
   panel.hidden = false;
   panel.dataset.status = session.status;
   panel.dataset.templateStoreStatus = state.inputTemplatesStatus;

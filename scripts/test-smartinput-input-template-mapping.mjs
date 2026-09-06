@@ -375,9 +375,20 @@ assert.match(smartInputHtml, /id="mappingValidationPrevious"[\s\S]*id="mappingVa
   'guided validation must expose previous and next issue navigation');
 assert.match(smartInputHtml, /class="sr-only" id="gridValidation"/,
   'inline text to the right of voucher reset must remain accessible without consuming toolbar space');
-assert.match(smartInputCss, /\.work-action-bar \.reset-draft-button \{ position: sticky; right: 0;/,
-  'voucher reset must remain pinned to the right edge of the middle section when the window changes size');
+assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="resetDraftButton"/,
+  'voucher reset must be structurally separated from the horizontally scrolling basic actions');
+assert.match(smartInputCss, /\.grid-card > \.work-action-bar \.basic-action-scroll \{ flex: 1 1 auto; \}/,
+  'the basic actions must scroll within their own fixed slot while voucher reset remains visible');
 assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
   'problem mapping headers must receive a visible validation highlight');
+assert.match(smartInputHtml, /id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*id="inputMappingStatus"/,
+  'dynamic mapping and validation controls must live below the fixed basic toolbar');
+assert.doesNotMatch(
+  smartInputHtml.match(/<div class="document-fields__right">([\s\S]*?)<\/div>\s*<div class="sub-work-bar"/)?.[1] || '',
+  /id="inputMappingStatus"|id="mappingValidationNav"|id="inputTemplateSaveButton"/,
+  'template workflow controls must not be inserted between permanent basic-toolbar buttons'
+);
+assert.match(smartInputCss, /\.sub-work-bar \{[\s\S]*animation: sub-work-bar-open/,
+  'the single contextual toolbar must expand below the fixed basic toolbar');
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);
