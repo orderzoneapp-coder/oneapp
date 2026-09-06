@@ -274,6 +274,7 @@ const state = {
   pendingStructuredImport: null,
   inputListSearch: createInputListSearchState(),
   inputListSearchReturnFocus: null,
+  mappingIssueFilter: null,
   tableViewPreferences: createTableViewPreferences(Object.keys(contract.MODES)),
   tableViewScrollPositions: {},
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
@@ -929,6 +930,32 @@ function inputMappingSession(current = modeDraft()) {
   return current?.inputMapping?.schemaVersion === 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2'
     ? current.inputMapping
     : null;
+}
+
+function mappingIssueColumns(validation) {
+  const columns = new Set();
+  (validation?.issues || []).forEach(issue => {
+    if (Number.isInteger(issue?.columnIndex)) columns.add(issue.columnIndex);
+    if (issue?.code === 'TARGET_DUPLICATED' && Number.isInteger(issue.otherColumnIndex)) columns.add(issue.otherColumnIndex);
+  });
+  return [...columns].sort((left, right) => left - right);
+}
+
+function mappingIssueFilterColumns(session = inputMappingSession()) {
+  const filter = state.mappingIssueFilter;
+  if (!session || !filter || filter.batchId !== session.batchId) return null;
+  return new Set(filter.columns || []);
+}
+
+function refreshMappingIssueFilter(session = inputMappingSession()) {
+  if (!session || !state.mappingIssueFilter || state.mappingIssueFilter.batchId !== session.batchId) return null;
+  const validation = validateTemplateDraft(session, inputMappingDefinitions());
+  if (validation.valid) {
+    state.mappingIssueFilter = null;
+    return validation;
+  }
+  state.mappingIssueFilter = { batchId: session.batchId, columns: mappingIssueColumns(validation) };
+  return validation;
 }
 
 function shoppingOrderImport(current = modeDraft()) {
@@ -2843,13 +2870,17 @@ function openFieldMappingDialog(columnIndex) {
   const mapping = session?.mappings?.[columnIndex];
   if (!session || !mapping) return;
   const editable = [MAPPING_SESSION_STATUS.NEW_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_APPLIED].includes(session.status);
+  const recommendedTarget = mapping.state === MAPPING_DECISION.RECOMMENDED
+    ? mappingTargetById(mapping.targetFieldId)
+    : null;
   let targets = inputMappingDefinitions();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Input Field Mapping</small><h2>필드명 매핑</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="field-mapping-current"><strong>${esc(mapping.sourceHeader || `(빈 필드명 · ${columnIndex + 1}열)`)}</strong><span>${columnIndex + 1}열</span><small>${esc(mappingStateText(mapping))}</small></div>
-    ${editable ? `<div class="field-mapping-search-tools"><label class="smart-dialog__search">매칭할 항목명 검색<input type="search" data-mapping-search autocomplete="off" placeholder="예: 거래처명"></label><button type="button" class="button button--quiet" data-refresh-mapping-reference>기준정보 새로고침</button></div><p class="field-mapping-reference-status" data-mapping-reference-status>검색 결과에서 작업자가 항목을 선택하면 이 원본 열과 연결합니다.</p><div class="field-mapping-results" data-mapping-results></div>` : `<div class="smart-dialog__empty"><strong>${esc(session.templateName || '기존 입력 양식')}</strong><br>기존 양식의 연결은 환경설정의 입력 양식 관리에서만 수정합니다.</div>`}
+    <div class="field-mapping-current" data-mapping-state="${esc(mapping.state || MAPPING_DECISION.UNDECIDED)}"><strong>${esc(mapping.sourceHeader || `(빈 필드명 · ${columnIndex + 1}열)`)}</strong><span>${columnIndex + 1}열</span><small>${esc(mappingStateText(mapping))}</small></div>
+    ${editable && recommendedTarget ? `<section class="field-mapping-recommendation" data-mapping-recommendation><div><span>추천 항목 · 승인 전</span><strong>${esc(recommendedTarget.label)}</strong><small>${esc(recommendedTarget.advancedLabel || `${recommendedTarget.scope === 'header' ? '상단 정보' : '하단 정보'} · ${recommendedTarget.id}`)}</small></div><button type="button" class="button button--primary" data-approve-recommendation>추천 승인 · 바로 확정</button></section>` : ''}
+    ${editable ? `<div class="field-mapping-search-tools"><label class="smart-dialog__search">매칭할 항목명 검색<input type="search" data-mapping-search autocomplete="off" placeholder="예: 거래처명" aria-controls="fieldMappingResults"></label><button type="button" class="button button--quiet" data-refresh-mapping-reference>기준정보 새로고침</button></div><p class="field-mapping-reference-status" data-mapping-reference-status>검색 후 Enter 또는 ↓ 키로 결과를 선택할 수 있습니다.</p><div class="field-mapping-results" id="fieldMappingResults" data-mapping-results aria-label="필드 매핑 검색 결과"></div>` : `<div class="smart-dialog__empty"><strong>${esc(session.templateName || '기존 입력 양식')}</strong><br>기존 양식의 연결은 환경설정의 입력 양식 관리에서만 수정합니다.</div>`}
     <footer><button type="button" class="button button--quiet" data-hide-column>현재 열 숨기기</button>${editable ? '<button type="button" class="button button--danger" data-unmap>비매핑으로 확정</button>' : '<button type="button" class="button button--primary" data-manage-template>입력 양식 관리</button>'}</footer>
   </div>`;
   document.body.append(dialog);
@@ -2876,11 +2907,50 @@ function openFieldMappingDialog(columnIndex) {
   const results = dialog.querySelector('[data-mapping-results]');
   const refreshButton = dialog.querySelector('[data-refresh-mapping-reference]');
   const referenceStatus = dialog.querySelector('[data-mapping-reference-status]');
+  const confirmTarget = targetFieldId => {
+    try {
+      const target = mappingTargetById(targetFieldId);
+      const current = inputMappingSession();
+      modeDraft().inputMapping = {
+        ...setColumnDecision(current, columnIndex, MAPPING_DECISION.MAPPED, targetFieldId, inputMappingDefinitions()),
+        templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
+      };
+      refreshMappingIssueFilter(modeDraft().inputMapping);
+      projectInputMappingToVoucherRows();
+      renderRows({ restoreFocus: false });
+      saveDraftNow();
+      toast(`${target?.label || '추천 항목'} 매핑을 확정했습니다.`, 'success');
+      finish();
+    } catch (error) {
+      toast(error.message === 'MAPPING_TARGET_DUPLICATED' ? '하나의 설정 필드에는 파일 열 하나만 연결할 수 있습니다.' : '필드를 연결하지 못했습니다.', 'error');
+    }
+  };
+  dialog.querySelector('[data-approve-recommendation]')?.addEventListener('click', () => {
+    confirmTarget(mapping.targetFieldId);
+  });
+  const selectableOptions = () => [...results.querySelectorAll('[data-mapping-target]:not(:disabled)')];
+  const focusMappingOption = requestedIndex => {
+    const options = selectableOptions();
+    if (!options.length) {
+      referenceStatus.textContent = '선택할 수 있는 검색 결과가 없습니다.';
+      return false;
+    }
+    const index = (requestedIndex + options.length) % options.length;
+    options.forEach((option, optionIndex) => {
+      const active = optionIndex === index;
+      option.tabIndex = active ? 0 : -1;
+      option.dataset.keyboardActive = active ? 'true' : 'false';
+    });
+    options[index].focus({ preventScroll: true });
+    options[index].scrollIntoView({ block: 'nearest' });
+    referenceStatus.textContent = `${index + 1}/${options.length} ${options[index].querySelector('strong')?.textContent || '항목'} · Enter로 지정`;
+    return true;
+  };
   const renderTargets = () => {
     const term = normalizedMappingSearch(search.value);
     const used = new Map(session.mappings
       .filter(item => item.columnIndex !== columnIndex && [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(item.state) && item.targetFieldId)
-      .map(item => [item.targetFieldId, item.columnIndex]));
+      .map(item => [item.targetFieldId, { columnIndex: item.columnIndex, state: item.state }]));
     const filtered = targets
       .filter(target => target.pickerVisible !== false)
       .filter(target => !term ? target.recommendable !== false : mappingTargetSearchText(target).includes(term))
@@ -2892,16 +2962,27 @@ function openFieldMappingDialog(columnIndex) {
           || String(left.advancedLabel || left.label).localeCompare(String(right.advancedLabel || right.label), 'ko');
       });
     results.innerHTML = filtered.slice(0, 500).map(target => {
-      const usedAt = used.get(target.id);
+      const usedBy = used.get(target.id);
+      const usedAt = usedBy?.columnIndex;
+      const usedText = usedBy?.state === MAPPING_DECISION.RECOMMENDED
+        ? `${usedAt + 1}열에서 추천 중`
+        : `${usedAt + 1}열에서 사용 중`;
       const origin = target.custom ? '사용자지정' : (target.scope === 'header' ? '상단 정보' : '하단 정보');
       const displayLabel = target.custom ? `${target.label}(사용자)` : target.label;
-      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(displayLabel)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
+      const recommended = mapping.state === MAPPING_DECISION.RECOMMENDED && mapping.targetFieldId === target.id;
+      return `<button type="button" tabindex="-1" class="field-mapping-option${recommended ? ' field-mapping-option--recommended' : ''}" data-mapping-target="${esc(target.id)}" ${recommended ? 'data-recommended="true"' : ''} ${usedBy ? `disabled title="${esc(usedText)}"` : ''}><span><strong>${esc(displayLabel)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${recommended ? '<i>추천 · 선택하면 바로 확정</i>' : ''}${usedBy ? `<em>${esc(usedText)}</em>` : ''}</button>`;
     }).join('') || '<div class="smart-dialog__empty">조건에 맞는 항목이 없습니다.<br>기준정보를 새로고침한 뒤 같은 검색어로 다시 확인하세요.</div>';
     referenceStatus.textContent = term
-      ? `검색 결과 ${filtered.length.toLocaleString('ko-KR')}개 · 자동 선택하지 않습니다.`
-      : '항목명을 입력하면 조건에 맞는 결과를 표시합니다.';
+      ? `검색 결과 ${filtered.length.toLocaleString('ko-KR')}개 · Enter 또는 ↓ 키로 결과 선택`
+      : '항목명을 입력하고 Enter 또는 ↓ 키를 누르세요.';
   };
   search.addEventListener('input', renderTargets);
+  search.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229) return;
+    if (!['Enter', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault();
+    focusMappingOption(event.key === 'ArrowUp' ? selectableOptions().length - 1 : 0);
+  });
   refreshButton.addEventListener('click', async () => {
     const retainedQuery = search.value;
     refreshButton.disabled = true;
@@ -2921,19 +3002,29 @@ function openFieldMappingDialog(columnIndex) {
   results.addEventListener('click', event => {
     const button = event.target.closest('[data-mapping-target]');
     if (!button || button.disabled) return;
-    try {
-      const current = inputMappingSession();
-      modeDraft().inputMapping = {
-        ...setColumnDecision(current, columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingDefinitions()),
-        templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
-      };
-      projectInputMappingToVoucherRows();
-      renderRows({ restoreFocus: false });
-      saveDraftNow();
-      finish();
-    } catch (error) {
-      toast(error.message === 'MAPPING_TARGET_DUPLICATED' ? '하나의 설정 필드에는 파일 열 하나만 연결할 수 있습니다.' : '필드를 연결하지 못했습니다.', 'error');
+    confirmTarget(button.dataset.mappingTarget);
+  });
+  results.addEventListener('keydown', event => {
+    const button = event.target.closest('[data-mapping-target]');
+    if (!button || button.disabled) return;
+    const options = selectableOptions();
+    const index = options.indexOf(button);
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      confirmTarget(button.dataset.mappingTarget);
+      return;
     }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      search.focus();
+      return;
+    }
+    const nextIndex = event.key === 'ArrowDown' ? index + 1
+      : (event.key === 'ArrowUp' ? index - 1
+        : (event.key === 'Home' ? 0 : (event.key === 'End' ? options.length - 1 : null)));
+    if (nextIndex === null) return;
+    event.preventDefault();
+    focusMappingOption(nextIndex);
   });
   dialog.querySelector('[data-unmap]').addEventListener('click', () => {
     const current = inputMappingSession();
@@ -2941,6 +3032,7 @@ function openFieldMappingDialog(columnIndex) {
       ...setColumnDecision(current, columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions()),
       templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
     };
+    refreshMappingIssueFilter(modeDraft().inputMapping);
     projectInputMappingToVoucherRows();
     renderRows({ restoreFocus: false });
     saveDraftNow();
@@ -2963,29 +3055,49 @@ function openInputTemplateSaveDialog() {
     toast('기존 양식 목록을 확인할 수 없어 신규 양식을 저장하지 않습니다. 양식을 다시 불러오세요.', 'error');
     return;
   }
-  const unresolvedCount = session.mappings.filter(mapping => mapping.state === MAPPING_DECISION.UNDECIDED).length;
-  const preparedSession = unresolvedCount ? {
-    ...session,
-    mappings: session.mappings.map(mapping => mapping.state === MAPPING_DECISION.UNDECIDED
-      ? { ...mapping, state: MAPPING_DECISION.UNMAPPED, targetFieldId: '', reviewed: true }
-      : mapping)
-  } : session;
-  const validation = validateTemplateDraft(preparedSession, inputMappingDefinitions());
+  const validation = validateTemplateDraft(session, inputMappingDefinitions());
   if (!validation.valid) {
-    toast('중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
+    state.mappingIssueFilter = { batchId: session.batchId, columns: mappingIssueColumns(validation) };
+    renderRows({ restoreFocus: false });
+    const issueColumnText = issue => `${issue.columnIndex + 1}열 ${session.headers[issue.columnIndex] || '(빈 필드명)'}`;
+    const recommendations = validation.issues
+      .filter(issue => issue.code === 'RECOMMENDATION_APPROVAL_REQUIRED')
+      .map(issueColumnText);
+    const undecided = validation.issues.filter(issue => issue.code === 'UNDECIDED_COLUMN').map(issue => issue.columnIndex + 1);
+    if (recommendations.length) {
+      toast(`추천 승인이 필요한 열이 있습니다: ${recommendations.slice(0, 4).join(', ')}`, 'error');
+    } else if (undecided.length) {
+      toast(`매핑 또는 비매핑을 결정하지 않은 열이 있습니다: ${undecided.slice(0, 6).join(', ')}열`, 'error');
+    } else {
+      const issue = validation.issues[0];
+      const target = mappingTargetById(issue?.targetFieldId);
+      const targetLabel = target?.label || issue?.targetFieldId || '삭제된 연결 대상';
+      if (issue?.code === 'TARGET_DUPLICATED') {
+        toast(`${issueColumnText(issue)}이 ${issue.otherColumnIndex + 1}열과 같은 “${targetLabel}”에 연결되어 있습니다.`, 'error');
+      } else if (issue?.code === 'TARGET_MISSING') {
+        toast(`${issueColumnText(issue)}의 연결 대상 “${targetLabel}”을 찾을 수 없습니다. 다시 지정하세요.`, 'error');
+      } else if (issue?.code === 'REVIEW_REQUIRED') {
+        toast(`${issueColumnText(issue)}의 매핑을 다시 선택하여 확정하세요.`, 'error');
+      } else {
+        toast(`${issueColumnText(issue)}의 연결 상태를 확인하세요.`, 'error');
+      }
+    }
+    const firstIssue = validation.issues[0];
+    if (Number.isInteger(firstIssue?.columnIndex)) window.setTimeout(() => openFieldMappingDialog(firstIssue.columnIndex), 0);
     return;
   }
+  state.mappingIssueFilter = null;
   if (state.inputTemplates.some(template => template.signature === session.signature)) {
     toast('같은 구조의 공식 입력 양식이 이미 있습니다. 양식관리에서 수정하세요.', 'error');
     return;
   }
-  const summary = mappingSummary(preparedSession);
+  const summary = mappingSummary(session);
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-dialog--compact';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>New Input Template</small><h2>입력 양식 저장</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <label class="smart-dialog__search">양식명<input name="templateName" maxlength="80" autocomplete="off" placeholder="파일 구조를 구분할 이름" autofocus></label>
-    <p class="smart-dialog__message">${session.headers.length}열 · 매핑 ${summary.mapped + summary.recommended} · 비매핑 ${summary.unmapped}.${unresolvedCount ? ` 미결정 ${unresolvedCount}열은 비매핑으로 제외해 저장합니다.` : ''} 추천 매핑을 포함한 현재 결정을 공식 양식으로 저장합니다.</p>
+    <p class="smart-dialog__message">${session.headers.length}열 · 확정 매핑 ${summary.mapped} · 비매핑 ${summary.unmapped}. 승인과 검토가 끝난 현재 설정을 공식 양식으로 저장합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>양식 저장</button></footer>
   </form>`;
   document.body.append(dialog);
@@ -3010,7 +3122,7 @@ function openInputTemplateSaveDialog() {
     const button = dialog.querySelector('[data-save]');
     button.disabled = true;
     try {
-      const record = createTemplateRecord(preparedSession, name, inputMappingDefinitions());
+      const record = createTemplateRecord(session, name, inputMappingDefinitions());
       const nextTemplates = [...state.inputTemplates, record];
       await saveInputTemplates(nextTemplates, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = nextTemplates;
@@ -4913,7 +5025,7 @@ function renderInputMappingStatus() {
   $('inputMappingStatusTitle').textContent = title;
   $('inputMappingStatusSummary').textContent = state.inputTemplatesStatus === 'ERROR'
     ? '양식 조회 오류'
-    : `매핑 ${summary.mapped} · 추천 ${summary.recommended} · 비매핑 ${summary.unmapped} · 미결정 ${summary.undecided}`;
+    : `매핑 ${summary.mapped} · 추천 ${summary.recommended} · 비매핑 ${summary.unmapped} · 미결정 ${summary.undecided}${mappingIssueFilterColumns(session) ? ` · 문제 필드 ${mappingIssueFilterColumns(session).size}개만 표시` : ''}`;
   saveButton.hidden = session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE
     && !(session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty);
   saveButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '양식 변경 저장' : '입력 양식 저장';
@@ -4948,7 +5060,9 @@ function renderMappingRows() {
   const table = $('mappingWorktable');
   table.hidden = false;
   const hidden = new Set(session.hiddenColumns || []);
-  const visibleColumns = sourceViewColumns(session).map(column => column.columnIndex).filter(index => !hidden.has(index));
+  const issueColumns = mappingIssueFilterColumns(session);
+  const visibleColumns = sourceViewColumns(session).map(column => column.columnIndex)
+    .filter(index => !hidden.has(index) && (!issueColumns || issueColumns.has(index)));
   const tableWidth = 58 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
   table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
   $('mappingTableColumns').innerHTML = `<col style="width:58px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;

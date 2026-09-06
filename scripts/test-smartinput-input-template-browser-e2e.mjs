@@ -172,11 +172,53 @@ try {
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
     'table view switching must not recalculate the positional signature');
 
-  for (const [column, fieldId] of [[0, 'voucher.order.line.productCode'], [1, 'voucher.order.line.productName'], [2, 'voucher.order.line.quantity']]) {
-    await click(client, `[data-open-field-mapping="${column}"]`);
-    await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="${fieldId}"]'))`, `review mapping column ${column + 1}`);
-    await click(client, `.field-mapping-dialog [data-mapping-target="${fieldId}"]`);
-  }
+  await click(client, '[data-open-field-mapping="0"]');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-recommendation] [data-approve-recommendation]'))`, 'recommended mapping approval');
+  assert.match(
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-recommendation]').textContent`),
+    /추천 항목 · 승인 전.*추천 승인 · 바로 확정/s,
+    'a recommendation must be visually distinct and explain that approval confirms it immediately'
+  );
+  assert.equal(
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-target="voucher.order.line.productCode"]').dataset.recommended`),
+    'true',
+    'the recommended target must be marked separately in the mapping result list'
+  );
+  await click(client, '.field-mapping-dialog [data-approve-recommendation]');
+  await expr(client, `document.querySelector('[data-mapping-column="0"]').dataset.mappingState==='MAPPED'`, 'immediate recommendation confirmation');
+
+  await expr(client, `['READY','EMPTY'].includes(document.querySelector('#inputMappingStatus').dataset.templateStoreStatus)`, 'input-template store readiness before invalid-save filtering');
+  await click(client, '#inputTemplateSaveButton');
+  await wait(500);
+  const invalidMappingDiagnostic = await evaluate(client, `({dialog:Boolean(document.querySelector('.field-mapping-dialog[open]')),headers:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-column]')].map(node=>Number(node.dataset.mappingColumn)),summary:document.querySelector('#inputMappingStatusSummary').textContent,toast:document.querySelector('#toast').textContent,exceptions:window.__smartInputRuntimeErrors||[]})`);
+  assert.equal(invalidMappingDiagnostic.dialog, true, `first invalid mapping must open after template-save validation: ${JSON.stringify(invalidMappingDiagnostic)}`);
+  assert.deepEqual(
+    await evaluate(client, `[...document.querySelectorAll('#mappingTableHeaders [data-mapping-column]')].map(node=>Number(node.dataset.mappingColumn))`),
+    [1, 2, 3],
+    'template-save validation must filter the source table to unresolved mapping columns only'
+  );
+  assert.match(
+    await evaluate(client, `document.querySelector('#inputMappingStatusSummary').textContent`),
+    /문제 필드 3개만 표시/,
+    'the mapping status must explain that the worktable is filtered'
+  );
+  await click(client, '.field-mapping-dialog [data-close]');
+
+  await click(client, '[data-open-field-mapping="1"]');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '품목명');
+  await evaluate(client, `(() => {const search=document.querySelector('.field-mapping-dialog [data-mapping-search]');search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `document.activeElement?.matches('.field-mapping-option[data-keyboard-active="true"]')`, 'keyboard focus on first mapping result');
+  assert.equal(
+    await evaluate(client, `document.activeElement.dataset.mappingTarget`),
+    'voucher.order.line.productName',
+    'Enter in the mapping search must focus the best matching result'
+  );
+  await evaluate(client, `(() => {document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `JSON.stringify([...document.querySelectorAll('#mappingTableHeaders [data-mapping-column]')].map(node=>Number(node.dataset.mappingColumn)))==='[2,3]'`, 'keyboard mapping result confirmation and unresolved-only refiltering');
+
+  await click(client, '[data-open-field-mapping="2"]');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="voucher.order.line.quantity"]'))`, 'review mapping column 3');
+  await click(client, '.field-mapping-dialog [data-mapping-target="voucher.order.line.quantity"]');
 
   await click(client, '[data-open-field-mapping="3"]');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-unmap]'))`, 'field mapping modal');

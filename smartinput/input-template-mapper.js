@@ -98,13 +98,21 @@ function mappingValidation(mappings = [], targetDefinitions = []) {
   const used = new Map();
   const issues = [];
   mappings.forEach((mapping, columnIndex) => {
-    if (mapping?.reviewed !== true) {
-      issues.push({ code: 'REVIEW_REQUIRED', columnIndex });
+    const state = mapping?.state;
+    if (state === DECISION.RECOMMENDED) {
+      issues.push({
+        code: 'RECOMMENDATION_APPROVAL_REQUIRED',
+        columnIndex,
+        targetFieldId: mapping.targetFieldId || ''
+      });
       return;
     }
-    const state = mapping?.state;
     if (![DECISION.MAPPED, DECISION.UNMAPPED].includes(state)) {
       issues.push({ code: 'UNDECIDED_COLUMN', columnIndex });
+      return;
+    }
+    if (mapping?.reviewed !== true) {
+      issues.push({ code: 'REVIEW_REQUIRED', columnIndex });
       return;
     }
     if (state === DECISION.UNMAPPED) return;

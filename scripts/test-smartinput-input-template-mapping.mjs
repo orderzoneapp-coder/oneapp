@@ -53,6 +53,11 @@ assert.equal(fresh.mappings.every(mapping => mapping.state === DECISION.RECOMMEN
   'unique exact source/setting labels may be recommendations before explicit template save');
 assert.equal(validateTemplateDraft(fresh, targets).valid, false,
   'a changed or new workbook must require explicit review of every recommended column');
+assert.deepEqual(
+  validateTemplateDraft(fresh, targets).issues.map(issue => issue.code),
+  Array(fresh.mappings.length).fill('RECOMMENDATION_APPROVAL_REQUIRED'),
+  'recommended columns must report that explicit approval is required'
+);
 fresh = confirmRecommendations(fresh);
 assert.equal(validateTemplateDraft(fresh, targets).valid, true);
 
@@ -357,6 +362,26 @@ assert.match(
   smartInputSource,
   /createTemplateRecord\(\{ companyId: state\.companyId, voucherMode: state\.draft\.activeMode, signature: template\.signature, headers: template\.headers, mappings \}, name, allTargets, template\)/,
   'input-template editing must validate against the full target registry so unchanged hidden legacy targets remain saveable'
+);
+assert.match(
+  smartInputSource,
+  /같은 “\$\{targetLabel\}”에 연결되어 있습니다/,
+  'template-save validation must identify the duplicated target and both source columns'
+);
+assert.match(
+  smartInputSource,
+  /연결 대상 “\$\{targetLabel\}”을 찾을 수 없습니다\. 다시 지정하세요/,
+  'template-save validation must identify a removed mapping target instead of showing a generic error'
+);
+assert.match(
+  smartInputSource,
+  /openFieldMappingDialog\(firstIssue\.columnIndex\)/,
+  'template-save validation must open the first invalid source column for immediate correction'
+);
+assert.match(
+  smartInputSource,
+  /문제 필드 \$\{mappingIssueFilterColumns\(session\)\.size\}개만 표시/,
+  'template-save validation must filter the worktable to invalid mapping columns'
 );
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);
