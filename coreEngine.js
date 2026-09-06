@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.3.0 / Parser Catalog Warehouse Pricing
+ * v1.3.1 / Master Excel Mapping Accuracy
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -43,6 +43,10 @@
  * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
  * - 룰적용(forceRecalc)은 명시 액션으로만 출고가를 계산한다. 견적 작업만 출고가/시중가 동시 계산을 허용하고, 구매/재고는 출고가만 계산한다.
  * - 작업 source 역할(estimate/purchase/inventory/info)을 판정하는 PRICING helper를 추가한다.
+ *
+ * v1.3.1_MasterExcelMappingFix:
+ * - 상품관리 Excel의 표준 필드 매핑·숫자 비교를 공통 MASTER 계약으로 고정한다.
+ * - 기존 상품의 업로드 공란을 기존값 유지로 처리하고 충돌·미지원 헤더는 적용 전에 차단한다.
  */
 
 (function initOneAppCore(global) {
@@ -2248,7 +2252,7 @@
   // 정책:
   // - 기준키: 품목코드 우선, 없으면 코드/상품코드/바코드 후보
   // - 컬럼 없음: 기존값 유지
-  // - 컬럼 있음 + 공란: 공란으로 반영
+  // - 기존 상품의 컬럼 있음 + 공란: 기존값 유지(명시적 공란 선택만 삭제)
   // - 엑셀에 없는 기존 마스터: 삭제/정지하지 않고 유지
   // - 적용 전 자동 백업, 변경된 항목만 히스토리 기록
   // ============================================================
@@ -2313,6 +2317,62 @@
     return MASTER_FIELD_ALIASES[clean] || clean;
   };
 
+  const MASTER_CODE_SOURCE_FIELDS = new Set(['코드', '품목코드', '상품코드', '바코드', '상품번호', 'ERP 품목코드']);
+  const MASTER_SUPPORTED_FIELDS = new Set([...MASTER_HEADERS, '품목코드']);
+  const MASTER_THEME_SOURCE_FIELDS = new Set(['테마1', '테마2', '테마3', '테마4', '테마5']);
+  const masterExcelColumnName = (columnIndex) => {
+    let current = Number(columnIndex) + 1;
+    let out = '';
+    while (current > 0) {
+      const remainder = (current - 1) % 26;
+      out = String.fromCharCode(65 + remainder) + out;
+      current = Math.floor((current - 1) / 26);
+    }
+    return out;
+  };
+
+  MASTER.mapMasterExcelHeaders = (sourceHeaders = []) => {
+    const mappings = [];
+    const issues = [];
+    const byCanonicalField = new Map();
+    (Array.isArray(sourceHeaders) ? sourceHeaders : []).forEach((sourceHeader, columnIndex) => {
+      const cleanHeader = String(sourceHeader ?? '').trim();
+      if (!cleanHeader) return;
+      const canonicalField = MASTER_CODE_SOURCE_FIELDS.has(cleanHeader)
+        ? '품목코드'
+        : MASTER.canonicalMasterFieldName(cleanHeader);
+      if (!canonicalField || !MASTER_SUPPORTED_FIELDS.has(canonicalField)) {
+        issues.push({
+          type: 'unsupported_header',
+          sourceHeader: cleanHeader,
+          columnIndex,
+          message: `지원하지 않는 Excel 헤더입니다: ${cleanHeader}`
+        });
+        return;
+      }
+      const mapping = {
+        sourceHeader: cleanHeader,
+        canonicalField,
+        columnIndex,
+        aggregate: MASTER_THEME_SOURCE_FIELDS.has(cleanHeader) ? 'promotion_theme' : ''
+      };
+      mappings.push(mapping);
+      if (!byCanonicalField.has(canonicalField)) byCanonicalField.set(canonicalField, []);
+      byCanonicalField.get(canonicalField).push(mapping);
+    });
+    byCanonicalField.forEach((entries, canonicalField) => {
+      if (entries.length < 2) return;
+      if (canonicalField === '행사테마' && entries.every(entry => entry.aggregate === 'promotion_theme')) return;
+      issues.push({
+        type: 'canonical_field_collision',
+        canonicalField,
+        sourceHeaders: entries.map(entry => entry.sourceHeader),
+        message: `서로 다른 Excel 헤더가 같은 표준 필드 ${canonicalField}(으)로 충돌합니다: ${entries.map(entry => entry.sourceHeader).join(', ')}`
+      });
+    });
+    return { mappings, issues };
+  };
+
   MASTER.normalizeMasterCode = (v) => String(v ?? '').trim().replace(/\s/g, '');
 
   MASTER.getMasterCode = (item = {}) => {
@@ -2340,29 +2400,56 @@
     const out = {};
     const sourceColumns = [];
     const themeSource = {};
+    const sourceEvidence = {};
+    const headerMapping = MASTER.mapMasterExcelHeaders(headers);
+    if (headerMapping.issues.length > 0) {
+      const error = new Error(headerMapping.issues.map(issue => issue.message).join(' '));
+      error.code = 'MASTER_EXCEL_MAPPING_BLOCKED';
+      error.mappingIssues = headerMapping.issues;
+      throw error;
+    }
 
-    headers.forEach(header => {
-      if (header === undefined || header === null || String(header).trim() === '') return;
-      const cleanHeader = String(header).trim();
-      const field = MASTER.canonicalMasterFieldName(cleanHeader);
-      if (!field) return;
+    headerMapping.mappings.forEach(mapping => {
+      const { sourceHeader: cleanHeader, canonicalField: field, columnIndex } = mapping;
+      const rawValue = row[cleanHeader];
+      const displayValue = row && row.__display && Object.prototype.hasOwnProperty.call(row.__display, cleanHeader)
+        ? row.__display[cleanHeader]
+        : rawValue;
 
       // 테마1~테마5는 개별 컬럼값을 덮어쓰지 않고 내부 행사테마 코드로 합산한다.
-      if (/^테마[1-5]$/.test(cleanHeader)) {
-        themeSource[cleanHeader] = row[header];
-        if (!sourceColumns.includes('행사테마')) sourceColumns.push('행사테마');
+      if (mapping.aggregate === 'promotion_theme') {
+        if (String(displayValue ?? rawValue ?? '').trim() !== '') {
+          themeSource[cleanHeader] = rawValue;
+          if (!sourceEvidence[field]) sourceEvidence[field] = [];
+          sourceEvidence[field].push({
+            sourceHeader: cleanHeader,
+            rawValue,
+            displayValue,
+            cellAddress: row.__rowNumber ? `${masterExcelColumnName(columnIndex)}${row.__rowNumber}` : ''
+          });
+        }
         return;
       }
 
-      // 엑셀에 존재하는 컬럼만 sourceColumns에 넣는다. 값이 공란이어도 존재 컬럼이다.
+      // 실제 값이 있는 컬럼만 비교 대상으로 사용한다. 공란 삭제는 검토 화면의 명시적 선택으로만 가능하다.
+      const valueForMapping = field === '품목코드' ? (displayValue ?? rawValue) : rawValue;
+      if (valueForMapping === undefined || valueForMapping === null || String(valueForMapping).trim() === '') return;
       if (!sourceColumns.includes(field)) sourceColumns.push(field);
-      out[field] = MASTER.normalizeMasterCellValue(field, row[header]);
+      out[field] = MASTER.normalizeMasterCellValue(field, valueForMapping);
+      sourceEvidence[field] = {
+        sourceHeader: cleanHeader,
+        rawValue,
+        displayValue,
+        cellAddress: row.__rowNumber ? `${masterExcelColumnName(columnIndex)}${row.__rowNumber}` : ''
+      };
     });
 
     if (Object.keys(themeSource).length > 0) {
       const normalizedTheme = normalizePromotionThemeValue(themeSource);
-      // 테마 컬럼이 존재했으면 모두 공란인 경우도 행사테마 초기화 의도로 보존한다.
-      out['행사테마'] = normalizedTheme;
+      if (normalizedTheme !== '') {
+        out['행사테마'] = normalizedTheme;
+        if (!sourceColumns.includes('행사테마')) sourceColumns.push('행사테마');
+      }
     }
 
     const code = MASTER.getMasterCode(out);
@@ -2371,7 +2458,7 @@
       out['코드'] = code;
       if (!sourceColumns.includes('품목코드')) sourceColumns.unshift('품목코드');
     }
-    return { item: out, sourceColumns };
+    return { item: out, sourceColumns, sourceHeaders: headers.slice(), sourceEvidence, mappingIssues: [] };
   };
 
   MASTER.buildMasterIndex = (masterInput = {}) => {
@@ -2393,7 +2480,7 @@
       if (aBlank && bBlank) return true;
       return parseNum(a) === parseNum(b);
     }
-    return String(a ?? '') === String(b ?? '');
+    return String(MASTER.normalizeMasterCellValue(field, a) ?? '') === String(MASTER.normalizeMasterCellValue(field, b) ?? '');
   };
 
   MASTER.validateMasterExcelAnalysis = (analysis = {}) => {

@@ -7,9 +7,11 @@ import path from "node:path";
 import vm from "node:vm";
 
 const ROOT = process.cwd();
+const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
 const source = fs.readFileSync(path.join(ROOT, "masterAddUpdate.js"), "utf8");
 const browser = { crypto: { randomUUID: () => crypto.randomUUID() } };
-const context = vm.createContext({ window: browser, console, Date, Math, JSON, Object, Array, Set, Map, String, Number, Boolean });
+const context = vm.createContext({ window: browser, console, Date, Math, JSON, Object, Array, Set, Map, String, Number, Boolean, Promise, Uint8Array, ArrayBuffer, TextEncoder });
+vm.runInContext(coreSource, context, { filename: "coreEngine.js" });
 vm.runInContext(source, context, { filename: "masterAddUpdate.js" });
 const api = browser.ONEAPP_MASTER_ADD_UPDATE;
 
@@ -169,6 +171,81 @@ const scenario = async (name, fn) => {
   scenarios.push(name);
 };
 
+await scenario("ERP 1. coreEngine 표준 별칭·원본 표시값 증거", () => {
+  const review = analyze({
+    headers: ["상품코드", "상품명", "매입가", "단위"],
+    rows: [{
+      __rowNumber: 3,
+      __display: { 상품코드: "001", 상품명: "청사과", 매입가: "5,000", 단위: "EA" },
+      상품코드: 1,
+      상품명: "청사과",
+      매입가: 5000,
+      단위: "EA",
+    }],
+  });
+  const candidate = findCode(review, "001");
+  assert.ok(candidate);
+  assert.ok(candidate.fields.품목명);
+  assert.ok(candidate.fields.입고가);
+  assert.equal(candidate.fields.상품명, undefined);
+  assert.equal(candidate.fields.매입가, undefined);
+  assert.equal(candidate.fields.입고가.sourceHeader, "매입가");
+  assert.equal(candidate.fields.입고가.uploadDisplay, "5,000");
+  assert.equal(candidate.uploadRow.__sourceEvidence.입고가.cellAddress, "C3");
+  const approved = approveField(review, "001", "입고가");
+  const detail = api.buildExecutionPlan(approved, baseMaster).details.find(item => item.executionField === "입고가");
+  assert.equal(detail.sourceHeader, "매입가");
+  assert.equal(detail.uploadDisplay, "5,000");
+  assert.equal(detail.sourceCellAddress, "C3");
+});
+
+await scenario("ERP 2. 기존 상품 공란 유지·숫자 문자열 동등 비교", () => {
+  const master = {
+    "001": { 코드: "001", 품목코드: "001", 품목명: "사과", 규격: "1kg", 단위: "EA", 입고가: "5000" },
+  };
+  const review = analyze({
+    master,
+    headers: ["품목코드", "품목명", "규격", "단위", "입고가"],
+    rows: [makeRow(3, "001", { 품목명: "사과", 규격: "", 단위: "EA", 입고가: 5000 })],
+  });
+  const candidate = findCode(review, "001");
+  assert.equal(candidate.status, "same");
+  assert.equal(candidate.fields.규격, undefined, "existing-product blank upload must be omitted");
+  assert.equal(candidate.fields.입고가.changed, false, "numeric string and number must compare equal");
+  assert.equal(review.summary.changedCount, 0);
+});
+
+await scenario("ERP 3. 카테고리 공란 상품도 품목코드가 있으면 유지", () => {
+  const categoryBlankMaster = {
+    "900": { 코드: "900", 품목코드: "900", 품목명: "관리자용", 규격: "1EA", 단위: "EA" },
+  };
+  const review = analyze({
+    master: categoryBlankMaster,
+    headers: ["1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "품목코드", "품목명", "규격", "단위"],
+    rows: [makeRow(3, "900", {
+      "1코드": "", "1그룹명": "", "2코드": "", "2그룹명": "", "3코드": "", "3그룹명": "",
+      품목명: "관리자용", 규격: "1EA", 단위: "EA",
+    })],
+  });
+  const candidate = findCode(review, "900");
+  assert.equal(candidate.status, "same");
+  assert.equal(candidate.blockingReasons.length, 0);
+});
+
+await scenario("ERP 4. 표준 필드 충돌은 자동 덮어쓰기 없이 차단", () => {
+  assert.throws(() => analyze({
+    headers: ["품목코드", "품목명", "상품명"],
+    rows: [makeRow(3, "001", { 품목명: "사과", 상품명: "청사과" })],
+  }), /같은 표준 필드.*품목명.*상품명|품목명.*충돌/);
+});
+
+await scenario("ERP 5. 미지원 헤더는 이해 가능한 오류로 차단", () => {
+  assert.throws(() => analyze({
+    headers: ["품목코드", "품목명", "알수없는ERP필드"],
+    rows: [makeRow(3, "001", { 품목명: "사과", 알수없는ERP필드: "값" })],
+  }), /지원하지 않는 Excel 헤더.*알수없는ERP필드/);
+});
+
 await scenario("1. 신규 상품", () => {
   const formattedCodeRow = {
     __rowNumber: 2,
@@ -247,12 +324,14 @@ await scenario("7. 규격 변경", () => {
   assert.ok(hasTag(findCode(review, "001"), api.ISSUE_TAGS.SPEC_CHANGED));
 });
 
-await scenario("8. 규격 누락", () => {
+await scenario("8. 기존 상품 규격 공란은 기존값 유지", () => {
   const review = analyze({
     headers: ["품목코드", "규격"],
     rows: [makeRow(2, "001", { 규격: "" })]
   });
-  assert.ok(hasTag(findCode(review, "001"), api.ISSUE_TAGS.SPEC_MISSING));
+  const candidate = findCode(review, "001");
+  assert.equal(candidate.status, "same");
+  assert.equal(candidate.fields.규격, undefined);
 });
 
 await scenario("9. 단위 변경", () => {
@@ -263,12 +342,14 @@ await scenario("9. 단위 변경", () => {
   assert.ok(hasTag(findCode(review, "001"), api.ISSUE_TAGS.UNIT_CHANGED));
 });
 
-await scenario("10. 단위 누락", () => {
+await scenario("10. 기존 상품 단위 공란은 기존값 유지", () => {
   const review = analyze({
     headers: ["품목코드", "단위"],
     rows: [makeRow(2, "001", { 단위: "" })]
   });
-  assert.ok(hasTag(findCode(review, "001"), api.ISSUE_TAGS.UNIT_MISSING));
+  const candidate = findCode(review, "001");
+  assert.equal(candidate.status, "same");
+  assert.equal(candidate.fields.단위, undefined);
 });
 
 await scenario("11. 동일 중복코드", () => {
@@ -315,14 +396,15 @@ await scenario("추가. 공란 상품코드 저장 차단", () => {
   assert.equal(review.summary.blockingCount, 1);
 });
 
-await scenario("13. 업로드 공란", () => {
+await scenario("13. 업로드 공란은 기존 상품 비교에서 생략", () => {
   const review = analyze({
     headers: ["품목코드", "규격"],
     rows: [makeRow(2, "001", { 규격: "" })]
   });
-  const field = findCode(review, "001").fields.규격;
-  assert.equal(field.uploadRaw, "");
-  assert.ok(field.issueTags.includes(api.ISSUE_TAGS.BLANK));
+  const candidate = findCode(review, "001");
+  assert.equal(candidate.status, "same");
+  assert.equal(candidate.fields.규격, undefined);
+  assert.equal(candidate.issueTags.includes(api.ISSUE_TAGS.BLANK), false);
 });
 
 await scenario("14. 업로드 숫자 0", () => {
@@ -507,6 +589,9 @@ await scenario("24. 누락 상품 유지 검증", async () => {
   assert.ok(detail);
   assert.equal(detail.uploadRaw, "청사과");
   assert.equal(detail.uploadOriginalValue, "청사과");
+  assert.equal(detail.uploadDisplayValue, "청사과");
+  assert.equal(detail.sourceHeader, "품목명");
+  assert.equal(detail.sourceCellAddress, "B2");
   assert.equal(detail.oldMasterValue, "사과");
   assert.equal(detail.adminValue, null);
   assert.equal(detail.approvalStatus, "상품 승인");
@@ -683,6 +768,49 @@ await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history
   assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
 });
 
+await scenario("성능. 2,500개 초과 변경 후보는 50건 DOM 윈도우로 이동", () => {
+  const productCount = 2605;
+  const largeMaster = Object.fromEntries(Array.from({ length: productCount }, (_, index) => {
+    const code = `P-${String(index + 1).padStart(4, "0")}`;
+    return [code, { 코드: code, 품목코드: code, 품목명: `기존 ${index + 1}` }];
+  }));
+  let review = analyze({
+    headers: ["품목코드", "품목명"],
+    master: largeMaster,
+    rows: Array.from({ length: productCount }, (_, index) => {
+      const code = `P-${String(index + 1).padStart(4, "0")}`;
+      return makeRow(index + 3, code, { 품목명: `변경 ${index + 1}` });
+    })
+  });
+  const changed = api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]);
+  const firstPage = api.paginateCandidates(changed, 0, 50);
+  const secondPage = api.paginateCandidates(changed, 1, 50);
+  const lastPage = api.paginateCandidates(changed, 9999, 50);
+
+  assert.equal(changed.length, productCount, "전체 필터 집계는 유지해야 한다");
+  assert.equal(firstPage.items.length, 50, "첫 렌더 DOM 후보는 50건 이하여야 한다");
+  assert.equal(secondPage.items.length, 50, "다음 페이지도 50건 이하여야 한다");
+  assert.equal(secondPage.startIndex, 50);
+  assert.equal(lastPage.pageIndex, 52, "범위를 벗어난 페이지는 마지막 페이지로 안전하게 보정해야 한다");
+  assert.equal(lastPage.items.length, 5);
+
+  const decidedId = firstPage.items[0].id;
+  review = api.setProductApproved(review, decidedId, true);
+  review = api.setAdminComplete(review, decidedId, true);
+  const secondPageDecisionId = secondPage.items[0].id;
+  review = api.setProductApproved(review, secondPageDecisionId, true);
+  review = api.setAdminComplete(review, secondPageDecisionId, true);
+  const decidedPage = api.paginateCandidates(
+    api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]),
+    0,
+    50
+  );
+  assert.equal(decidedPage.items[0].productApproved, true, "페이지 이동 후에도 전체 분석의 승인 결정은 유지해야 한다");
+  assert.equal(review.summary.changedCount, productCount, "페이지 분할은 전체 집계를 변경하면 안 된다");
+  const plan = api.buildExecutionPlan(review, largeMaster);
+  assert.equal(plan.counts.savedProductCount, 2, "서로 다른 페이지의 승인 결정은 동일한 전체 저장 계획에 포함되어야 한다");
+});
+
 await scenario("25. MerchOps F7 회귀검사", () => {
   const merchOps = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
   const business = merchOps.slice(merchOps.indexOf("const useMerchConfig ="));
@@ -717,5 +845,9 @@ assert.match(masterHtml, /isDerivedGroupCodeField/);
 assert.match(masterHtml, /상품 DB가 비어 있습니다[\s\S]*Excel 최초 등록 또는 상품 단건 등록/);
 assert.doesNotMatch(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
 assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
+assert.match(masterHtml, /paginateCandidates\(visible, pageIndex, REVIEW_PAGE_SIZE\)/);
+assert.match(masterHtml, /page\.items\.map\(candidate =>/);
+assert.doesNotMatch(masterHtml, /visible\.map\(candidate =>/);
+assert.match(masterHtml, /setPageIndex\(0\)/, "필터 변경은 첫 페이지로 이동해야 한다");
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);
