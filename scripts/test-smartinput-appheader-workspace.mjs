@@ -20,7 +20,7 @@ assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
 assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.8"/, 'the estimate touch-target CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.29"/, 'the early estimate-panel interaction must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.30"/, 'the early estimate-panel interaction must use the next cache-bust version');
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>이름 변경<\/button>/, 'the estimate library footer must expose only deletion and rename');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
@@ -56,7 +56,7 @@ assert.match(js, /function selectEstimateLibraryKind\(kind\)\s*\{[\s\S]*const mu
   'switching estimate-list kind must safely cancel multi-select before navigation');
 assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
   'the right-panel footer must stay at or below 44px with two horizontal actions');
-assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>F8 EXCEL<\/button>/,
+assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/,
   'the table footer must keep Save left and approved estimate/output actions right in order');
 assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
   'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');

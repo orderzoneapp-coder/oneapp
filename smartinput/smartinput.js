@@ -4148,7 +4148,7 @@ function renderCatalogControls() {
   createButton.textContent = '연동견적서 생성';
   createButton.title = creation ? `${selectedCount}개 선택` : '먼저 + 버튼이나 Ctrl+클릭으로 견적서를 다중 선택하세요.';
   $('estimateNoticeButton').textContent = '카톡 공유';
-  $('estimateExcelButton').textContent = 'F8 EXCEL';
+  $('estimateExcelButton').textContent = '보고서';
   renderEstimateWorkspace();
 }
 
@@ -5590,7 +5590,7 @@ function renderMode() {
     : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
   $('estimateOutputActions').hidden = false;
   $('estimateNoticeButton').textContent = '카톡 공유';
-  $('estimateExcelButton').textContent = 'F8 EXCEL';
+  $('estimateExcelButton').textContent = '보고서';
   const linkedEstimate = estimateMode && (modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP');
   const shopping = selected.id === 'order' ? shoppingOrderImport() : null;
   $('customerInput').disabled = linkedEstimate || Boolean(shopping);
