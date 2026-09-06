@@ -40,6 +40,7 @@
 - `0905전송.xlsx`: 유효 218행, 확인 4건, 구매 업로드 218행 확인
 - SmartInput 데스크톱·모바일 전체 브라우저 회귀 통과
 - 정적 자산 cache-bust: `smartinput.js?v=0.11.38`, `estimate-output.js?v=0.2.2`, 신규 `purchase-sales-output.js?v=0.1.0`
+- 의도된 보고서 동작 및 cache-bust 변경에 맞춰 SmartInput 승인 UI 해시와 독립 복구 버전 계약을 함께 갱신했다.
 
 ## 롤백
 
