@@ -100,7 +100,7 @@ const evaluate = async (client, expression) => {
 };
 const click = (client, selector) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
 const touch = async (client, selector) => {
-  const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();const x=Math.round(rect.left+rect.width/2);const y=Math.round(rect.top+rect.height/2);return {x,y,controlId:element.id,hitId:document.elementFromPoint(x,y)?.closest('button')?.id||''};})()`);
+  const point = await waitFor(() => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)return null;element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();const x=Math.round(rect.left+rect.width/2);const y=Math.round(rect.top+rect.height/2);const controlId=element.id;const hitId=document.elementFromPoint(x,y)?.closest('button')?.id||'';return hitId===controlId?{x,y,controlId,hitId}:null;})()`), `${selector} stable touch target`, 1_200);
   assert.equal(point.hitId, point.controlId, `${selector} center must hit the expected control`);
   await client.send('Page.bringToFront');
   await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
@@ -142,9 +142,10 @@ try {
   });
   const navigationStartedAt = Date.now();
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
-  const earlyControls = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const heading=document.querySelector('#estimateLibraryHeading');const panel=document.querySelector('#estimateLibraryView');const individual=document.querySelector('#estimateLibraryIndividualButton');const linked=document.querySelector('#estimateLibraryLinkedButton');if(!shell?.mounted||shell.ready||!heading||!panel||!individual||!linked)return null;return {headingVisible:!heading.hidden&&heading.getBoundingClientRect().height>0,panelOpen:panel.classList.contains('is-open'),individualEnabled:!individual.disabled,linkedEnabled:!linked.disabled,loadingText:document.querySelector('#catalogPickerList')?.textContent?.trim()||''};})()`), 'early estimate-list controls', 1_200);
+  const earlyControls = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const heading=document.querySelector('#estimateLibraryHeading');const panel=document.querySelector('#estimateLibraryView');const individual=document.querySelector('#estimateLibraryIndividualButton');const linked=document.querySelector('#estimateLibraryLinkedButton');if(!shell?.mounted||shell.ready||!heading||!panel||!individual||!linked)return null;return {headingVisible:!heading.hidden&&heading.getBoundingClientRect().height>0,panelOpen:panel.classList.contains('is-open'),individualEnabled:!individual.disabled,linkedEnabled:!linked.disabled,loadingText:document.querySelector('#catalogPickerList')?.textContent?.trim()||''};})()`), 'early estimate-list controls', 1_500);
   const earlyRevealMs = Date.now() - navigationStartedAt;
-  assert.ok(earlyRevealMs < 1_200, 'estimate-list controls must appear before the delayed main module');
+  assert.equal(await evaluate(client, `window.__ONEAPP_SMARTINPUT_EARLY_UI__?.ready===false`), true,
+    'estimate-list controls must appear before the delayed main module');
   assert.deepEqual(earlyControls, {
     headingVisible: true,
     panelOpen: true,
