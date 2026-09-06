@@ -20,7 +20,7 @@ assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
 assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.8"/, 'the estimate touch-target CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.29"/, 'the early estimate-panel interaction must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.30"/, 'the early estimate-panel interaction must use the next cache-bust version');
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>이름 변경<\/button>/, 'the estimate library footer must expose only deletion and rename');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
