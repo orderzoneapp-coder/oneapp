@@ -172,7 +172,7 @@ assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', 'b75af1041d7a8b2b9d641855826f2e9d1f8ced8702c455313d5b6f0ffea8fcac'],
+  ['../smartinput/index.html', 'bf5fc4ecbb5808c1fc91fd6597e32ae5842f768ac6a98b789c72379aabd83791'],
   ['../smartinput/smartinput.css', '5265d6b45fd0bbafc04d170e1aa3ccb74e8a7ea92b68e2ff8b3a00903756fe36'],
   ['../smartinput/smartinput.js', '848dbe2a619dbe46576251c35800bf61dcbdb53e3c35b2843785966385ddd9f4']
 ]);
