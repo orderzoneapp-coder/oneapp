@@ -12,6 +12,7 @@
   const EDITABLE_FIELDS = ['품목명', '규격', '단위'];
   const REQUIRED_NEW_FIELDS = ['품목명', '규격', '단위'];
   const HISTORY_DEFAULT_LIMIT = 5000;
+  const DEFAULT_REVIEW_PAGE_SIZE = 50;
   const ERROR_CODES = {
     INITIAL_REGISTRATION_REQUIRED: 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED',
     NEW_REQUIRED_MISSING: 'MASTER_ADD_UPDATE_NEW_REQUIRED_MISSING',
@@ -713,6 +714,32 @@
       if (tags.length === 0) return true;
       return tags.every(tag => matchesTag(candidate, tag));
     });
+  };
+
+  const paginateCandidates = (candidates = [], requestedPageIndex = 0, requestedPageSize = DEFAULT_REVIEW_PAGE_SIZE) => {
+    const list = Array.isArray(candidates) ? candidates : [];
+    const numericPageSize = Number(requestedPageSize);
+    const pageSize = Number.isFinite(numericPageSize)
+      ? Math.min(100, Math.max(1, Math.trunc(numericPageSize)))
+      : DEFAULT_REVIEW_PAGE_SIZE;
+    const totalCount = list.length;
+    const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+    const numericPageIndex = Number(requestedPageIndex);
+    const normalizedPageIndex = Number.isFinite(numericPageIndex) ? Math.trunc(numericPageIndex) : 0;
+    const pageIndex = Math.min(pageCount - 1, Math.max(0, normalizedPageIndex));
+    const startIndex = pageIndex * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, totalCount);
+    return {
+      items: list.slice(startIndex, endIndex),
+      totalCount,
+      pageSize,
+      pageIndex,
+      pageCount,
+      startIndex,
+      endIndex,
+      hasPrevious: pageIndex > 0,
+      hasNext: pageIndex + 1 < pageCount
+    };
   };
 
   const assertNewProductsComplete = (plan, stage = '실행계획') => {
@@ -1821,6 +1848,7 @@
     EDITABLE_FIELDS,
     REQUIRED_NEW_FIELDS,
     HISTORY_DEFAULT_LIMIT,
+    DEFAULT_REVIEW_PAGE_SIZE,
     ERROR_CODES,
     ISSUE_TAGS,
     normalizeCode,
@@ -1834,6 +1862,7 @@
     analyzeUploadRows,
     summarize,
     filterCandidates,
+    paginateCandidates,
     setProductApproved,
     setProductExcluded,
     setAdminComplete,

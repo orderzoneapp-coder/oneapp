@@ -768,6 +768,49 @@ await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history
   assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
 });
 
+await scenario("성능. 2,500개 초과 변경 후보는 50건 DOM 윈도우로 이동", () => {
+  const productCount = 2605;
+  const largeMaster = Object.fromEntries(Array.from({ length: productCount }, (_, index) => {
+    const code = `P-${String(index + 1).padStart(4, "0")}`;
+    return [code, { 코드: code, 품목코드: code, 품목명: `기존 ${index + 1}` }];
+  }));
+  let review = analyze({
+    headers: ["품목코드", "품목명"],
+    master: largeMaster,
+    rows: Array.from({ length: productCount }, (_, index) => {
+      const code = `P-${String(index + 1).padStart(4, "0")}`;
+      return makeRow(index + 3, code, { 품목명: `변경 ${index + 1}` });
+    })
+  });
+  const changed = api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]);
+  const firstPage = api.paginateCandidates(changed, 0, 50);
+  const secondPage = api.paginateCandidates(changed, 1, 50);
+  const lastPage = api.paginateCandidates(changed, 9999, 50);
+
+  assert.equal(changed.length, productCount, "전체 필터 집계는 유지해야 한다");
+  assert.equal(firstPage.items.length, 50, "첫 렌더 DOM 후보는 50건 이하여야 한다");
+  assert.equal(secondPage.items.length, 50, "다음 페이지도 50건 이하여야 한다");
+  assert.equal(secondPage.startIndex, 50);
+  assert.equal(lastPage.pageIndex, 52, "범위를 벗어난 페이지는 마지막 페이지로 안전하게 보정해야 한다");
+  assert.equal(lastPage.items.length, 5);
+
+  const decidedId = firstPage.items[0].id;
+  review = api.setProductApproved(review, decidedId, true);
+  review = api.setAdminComplete(review, decidedId, true);
+  const secondPageDecisionId = secondPage.items[0].id;
+  review = api.setProductApproved(review, secondPageDecisionId, true);
+  review = api.setAdminComplete(review, secondPageDecisionId, true);
+  const decidedPage = api.paginateCandidates(
+    api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]),
+    0,
+    50
+  );
+  assert.equal(decidedPage.items[0].productApproved, true, "페이지 이동 후에도 전체 분석의 승인 결정은 유지해야 한다");
+  assert.equal(review.summary.changedCount, productCount, "페이지 분할은 전체 집계를 변경하면 안 된다");
+  const plan = api.buildExecutionPlan(review, largeMaster);
+  assert.equal(plan.counts.savedProductCount, 2, "서로 다른 페이지의 승인 결정은 동일한 전체 저장 계획에 포함되어야 한다");
+});
+
 await scenario("25. MerchOps F7 회귀검사", () => {
   const merchOps = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
   const business = merchOps.slice(merchOps.indexOf("const useMerchConfig ="));
@@ -802,5 +845,9 @@ assert.match(masterHtml, /isDerivedGroupCodeField/);
 assert.match(masterHtml, /상품 DB가 비어 있습니다[\s\S]*Excel 최초 등록 또는 상품 단건 등록/);
 assert.doesNotMatch(masterHtml, /기존 master가 0건입니다[\s\S]*최초 등록은 차단/);
 assert.match(masterHtml, /MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED/);
+assert.match(masterHtml, /paginateCandidates\(visible, pageIndex, REVIEW_PAGE_SIZE\)/);
+assert.match(masterHtml, /page\.items\.map\(candidate =>/);
+assert.doesNotMatch(masterHtml, /visible\.map\(candidate =>/);
+assert.match(masterHtml, /setPageIndex\(0\)/, "필터 변경은 첫 페이지로 이동해야 한다");
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);

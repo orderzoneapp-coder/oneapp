@@ -108,6 +108,9 @@ assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);
 assert.match(masterHtml, /formatReviewValue\(field\.uploadDisplay, field\.uploadPresent\)/);
 assert.match(masterHtml, /원본 \{field\.sourceHeader\}/);
+assert.match(masterHtml, /paginateCandidates\(visible, pageIndex, REVIEW_PAGE_SIZE\)/);
+assert.match(masterHtml, /page\.items\.map\(candidate =>/);
+assert.doesNotMatch(masterHtml, /visible\.map\(candidate =>/);
 
 const context = makeBrowserContext();
 const api = context.ONEAPP_MASTER_ADD_UPDATE;
@@ -239,7 +242,14 @@ if (actualErpPath) {
   assert.equal(actualAnalysis.summary.sameCount, 4350, "blank omission and numeric-string storage must not create false changes");
   assert.equal(actualAnalysis.summary.changedCount, 0);
   assert.equal(actualAnalysis.summary.blockingCount, 0);
-  console.log(`ERP workbook verified: parsed=${actual.rows.length}, duplicates=${codes.length - new Set(codes).size}, timestampBlocked=0, falseChanges=${actualAnalysis.summary.changedCount}`);
+  const actualVisible = api.filterCandidates(actualAnalysis, [], { includeSame: true });
+  const actualFirstPage = api.paginateCandidates(actualVisible, 0, api.DEFAULT_REVIEW_PAGE_SIZE);
+  const actualSecondPage = api.paginateCandidates(actualVisible, 1, api.DEFAULT_REVIEW_PAGE_SIZE);
+  assert.equal(actualFirstPage.totalCount, 4350, "actual ERP review total must remain complete");
+  assert.equal(actualFirstPage.items.length, 50, "actual ERP review must render only the first 50 candidates");
+  assert.equal(actualSecondPage.items.length, 50, "actual ERP next-page review must remain bounded");
+  assert.equal(actualSecondPage.startIndex, 50);
+  console.log(`ERP workbook verified: parsed=${actual.rows.length}, duplicates=${codes.length - new Set(codes).size}, timestampBlocked=0, falseChanges=${actualAnalysis.summary.changedCount}, reviewWindow=${actualFirstPage.items.length}`);
 }
 
 console.log("Master screen path read a real XLSX fixture, applied approvals/exclusions, saved, refreshed, and verified master/history successfully.");
