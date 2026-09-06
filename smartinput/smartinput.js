@@ -264,6 +264,7 @@ const state = {
   pendingGridPasteText: '',
   mappingPasteUndo: null,
   mappingProjectionTimer: null,
+  mappingValidation: null,
   noticeEstimateIds: [],
   smartDataReady: false,
   smartDataError: null,
@@ -2842,7 +2843,7 @@ function openFieldMappingDialog(columnIndex) {
   const session = inputMappingSession();
   const mapping = session?.mappings?.[columnIndex];
   if (!session || !mapping) return;
-  const editable = [MAPPING_SESSION_STATUS.NEW_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_APPLIED].includes(session.status);
+  const editable = [MAPPING_SESSION_STATUS.NEW_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status);
   let targets = inputMappingDefinitions();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
@@ -2925,12 +2926,13 @@ function openFieldMappingDialog(columnIndex) {
       const current = inputMappingSession();
       modeDraft().inputMapping = {
         ...setColumnDecision(current, columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingDefinitions()),
-        templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
+        templateDirty: current.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE || current.templateDirty === true
       };
       projectInputMappingToVoucherRows();
       renderRows({ restoreFocus: false });
       saveDraftNow();
       finish();
+      setTimeout(() => continueMappingValidation(columnIndex), 0);
     } catch (error) {
       toast(error.message === 'MAPPING_TARGET_DUPLICATED' ? '하나의 설정 필드에는 파일 열 하나만 연결할 수 있습니다.' : '필드를 연결하지 못했습니다.', 'error');
     }
@@ -2939,22 +2941,88 @@ function openFieldMappingDialog(columnIndex) {
     const current = inputMappingSession();
     modeDraft().inputMapping = {
       ...setColumnDecision(current, columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions()),
-      templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
+      templateDirty: current.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE || current.templateDirty === true
     };
     projectInputMappingToVoucherRows();
     renderRows({ restoreFocus: false });
     saveDraftNow();
     finish();
+    setTimeout(() => continueMappingValidation(columnIndex), 0);
   });
   renderTargets();
   dialog.showModal();
   search.focus();
 }
 
+function mappingValidationIssueText(issue, session = inputMappingSession()) {
+  const column = Number(issue?.columnIndex);
+  const source = session?.headers?.[column] || `(빈 필드명 · ${column + 1}열)`;
+  if (issue?.code === 'TARGET_DUPLICATED') {
+    const otherColumn = Number(issue.otherColumnIndex);
+    const other = session?.headers?.[otherColumn] || `${otherColumn + 1}열`;
+    const target = mappingTargetById(issue.targetFieldId)?.label || '같은 연결 대상';
+    return `${column + 1}열 ${source} — ${otherColumn + 1}열 ${other}와 ${target} 중복 연결`;
+  }
+  if (issue?.code === 'TARGET_MISSING') return `${column + 1}열 ${source} — 연결 대상이 삭제되었거나 존재하지 않습니다.`;
+  return `${column + 1}열 ${source} — 매핑 또는 비매핑 결정이 필요합니다.`;
+}
+
+function mappingValidationColumns(issue) {
+  return [...new Set([Number(issue?.columnIndex), Number(issue?.otherColumnIndex)].filter(Number.isInteger))];
+}
+
+function focusMappingValidationIssue({ openEditor = true } = {}) {
+  const validation = state.mappingValidation;
+  const issue = validation?.issues?.[validation.index];
+  if (!issue) return;
+  const session = inputMappingSession();
+  const issueColumns = new Set(mappingValidationColumns(issue));
+  if (session?.hiddenColumns?.some(columnIndex => issueColumns.has(Number(columnIndex)))) {
+    session.hiddenColumns = session.hiddenColumns.filter(columnIndex => !issueColumns.has(Number(columnIndex)));
+  }
+  renderInputMappingStatus();
+  renderMappingRows();
+  requestAnimationFrame(() => {
+    const heading = document.querySelector(`#mappingTableHeaders [data-mapping-column="${issue.columnIndex}"]`);
+    heading?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    heading?.querySelector('button')?.focus({ preventScroll: true });
+    if (openEditor && !document.querySelector('.field-mapping-dialog[open]')) openFieldMappingDialog(Number(issue.columnIndex));
+  });
+}
+
+function startMappingValidation(issues = [], retry = 'NEW_TEMPLATE') {
+  if (!issues.length) return;
+  state.mappingValidation = { issues: issues.map(issue => ({ ...issue })), index: 0, retry, signature: inputMappingSession()?.signature || '' };
+  renderInputMappingStatus();
+  renderMappingRows();
+  toast(`저장할 수 없습니다. 수정이 필요한 매핑이 ${issues.length}건 있습니다.`, 'error');
+  focusMappingValidationIssue();
+}
+
+function continueMappingValidation(changedColumnIndex) {
+  const active = state.mappingValidation;
+  if (!active) return;
+  const validation = validateTemplateDraft(inputMappingSession(), inputMappingDefinitions());
+  if (validation.valid) {
+    const retry = active.retry;
+    state.mappingValidation = null;
+    renderInputMappingStatus();
+    renderMappingRows();
+    toast('양식 검증을 완료했습니다.', 'success');
+    setTimeout(() => retry === 'TEMPLATE_APPLIED' ? void saveAppliedInputTemplateChanges() : openInputTemplateSaveDialog(), 0);
+    return;
+  }
+  const nextIssues = validation.issues.map(issue => ({ ...issue }));
+  const currentIndex = nextIssues.findIndex(issue => mappingValidationColumns(issue).includes(Number(changedColumnIndex)));
+  state.mappingValidation = { ...active, issues: nextIssues, index: currentIndex >= 0 ? currentIndex : 0 };
+  focusMappingValidationIssue();
+}
+
 function openInputTemplateSaveDialog() {
   const session = inputMappingSession();
   if (!session) return;
-  if (session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty) {
+  if ([MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status)
+    && session.templateId && (session.templateDirty || session.status !== MAPPING_SESSION_STATUS.TEMPLATE_APPLIED)) {
     void saveAppliedInputTemplateChanges();
     return;
   }
@@ -2970,9 +3038,10 @@ function openInputTemplateSaveDialog() {
       ? { ...mapping, state: MAPPING_DECISION.UNMAPPED, targetFieldId: '', reviewed: true }
       : mapping)
   } : session;
+  if (unresolvedCount) modeDraft().inputMapping = preparedSession;
   const validation = validateTemplateDraft(preparedSession, inputMappingDefinitions());
   if (!validation.valid) {
-    toast('중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
+    startMappingValidation(validation.issues, 'NEW_TEMPLATE');
     return;
   }
   if (state.inputTemplates.some(template => template.signature === session.signature)) {
@@ -3055,7 +3124,7 @@ function openInputTemplateSaveDialog() {
 
 async function saveAppliedInputTemplateChanges() {
   const session = inputMappingSession();
-  if (!session?.templateId || session.status !== MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || !session.templateDirty) return;
+  if (!session?.templateId || ![MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status)) return;
   const previous = state.inputTemplates.find(template => template.templateId === session.templateId);
   if (!previous) {
     toast('적용된 입력 양식을 찾지 못했습니다. 양식 목록을 다시 불러오세요.', 'error');
@@ -3063,7 +3132,7 @@ async function saveAppliedInputTemplateChanges() {
   }
   const validation = validateTemplateDraft(session, inputMappingDefinitions());
   if (!validation.valid) {
-    toast('모든 열을 매핑 또는 비매핑으로 결정하고 중복 연결을 제거하세요.', 'error');
+    startMappingValidation(validation.issues, 'TEMPLATE_APPLIED');
     return;
   }
   const button = $('inputTemplateSaveButton');
@@ -3077,7 +3146,9 @@ async function saveAppliedInputTemplateChanges() {
       ...session,
       templateName: updated.templateName,
       templateRevision: updated.revision,
-      templateDirty: false
+      templateDirty: false,
+      status: MAPPING_SESSION_STATUS.TEMPLATE_APPLIED,
+      issues: []
     };
     saveDraftNow();
     renderMode();
@@ -4892,11 +4963,13 @@ function renderInputMappingStatus() {
   const saveButton = $('inputTemplateSaveButton');
   const reloadButton = $('inputTemplateReloadButton');
   const pendingPasteButton = $('pendingPasteToSourceButton');
+  const validationNav = $('mappingValidationNav');
   pendingPasteButton.hidden = !state.pendingGridPasteText;
   if (!session) {
     panel.hidden = true;
     saveButton.hidden = true;
     reloadButton.hidden = true;
+    validationNav.hidden = true;
     return;
   }
   panel.hidden = false;
@@ -4914,11 +4987,22 @@ function renderInputMappingStatus() {
   $('inputMappingStatusSummary').textContent = state.inputTemplatesStatus === 'ERROR'
     ? '양식 조회 오류'
     : `매핑 ${summary.mapped} · 추천 ${summary.recommended} · 비매핑 ${summary.unmapped} · 미결정 ${summary.undecided}`;
+  const repairableTemplate = [MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status) && Boolean(session.templateId);
   saveButton.hidden = session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE
-    && !(session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty);
-  saveButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '양식 변경 저장' : '입력 양식 저장';
+    && !(session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty)
+    && !repairableTemplate;
+  saveButton.textContent = repairableTemplate ? '양식 오류 수정' : (session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '양식 변경 저장' : '입력 양식 저장');
   reloadButton.hidden = ![MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT, MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR].includes(session.status);
   reloadButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '최신 양식 확인' : '양식 다시 불러오기';
+  const validation = state.mappingValidation?.signature === session.signature ? state.mappingValidation : null;
+  validationNav.hidden = !validation?.issues?.length;
+  if (validation?.issues?.length) {
+    const issue = validation.issues[validation.index] || validation.issues[0];
+    $('mappingValidationCount').textContent = `검증 중 ${validation.index + 1}/${validation.issues.length} · 수정 필요 ${validation.issues.length}건`;
+    $('mappingValidationMessage').textContent = mappingValidationIssueText(issue, session);
+    $('mappingValidationPrevious').disabled = validation.issues.length < 2;
+    $('mappingValidationNext').disabled = validation.issues.length < 2;
+  }
 }
 
 function mappingColumnTotals(session, visibleColumns, rows = session.workingRows || []) {
@@ -4955,7 +5039,12 @@ function renderMappingRows() {
   $('mappingTableHeaders').innerHTML = `<th class="sequence-column sequence-select-column" scope="col"><span>No.</span><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"></th>${visibleColumns.map(columnIndex => {
     const mapping = session.mappings[columnIndex];
     const sourceHeader = session.headers[columnIndex] || `(빈 필드명 · ${columnIndex + 1}열)`;
-    return `<th class="mapping-column-heading" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}"><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(sourceHeader)} 매핑 설정"><strong>${esc(sourceHeader)}</strong><small>${esc(mappingStateText(mapping))}</small></button></th>`;
+    const validation = state.mappingValidation?.signature === session.signature ? state.mappingValidation : null;
+    const issueIndex = validation?.issues?.findIndex(issue => mappingValidationColumns(issue).includes(columnIndex)) ?? -1;
+    const issue = issueIndex >= 0 ? validation.issues[issueIndex] : null;
+    const errorClass = issue ? ` is-validation-error${issueIndex === validation.index ? ' is-validation-current' : ''}` : '';
+    const stateLabel = issue ? mappingValidationIssueText(issue, session) : mappingStateText(mapping);
+    return `<th class="mapping-column-heading${errorClass}" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}" ${issue ? `data-validation-error="${esc(issue.code)}"` : ''}><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(stateLabel)}"><strong>${esc(sourceHeader)}</strong><small>${esc(stateLabel)}</small></button></th>`;
   }).join('')}`;
   const rows = visibleMappingRows(session);
   const renderedRows = state.inputListSearch.open
@@ -9161,6 +9250,18 @@ $('sourceSheetRows').addEventListener('click', event => {
 $('mappingTableHeaders').addEventListener('click', event => {
   const button = event.target.closest('[data-open-field-mapping]');
   if (button) openFieldMappingDialog(Number(button.dataset.openFieldMapping));
+});
+$('mappingValidationPrevious').addEventListener('click', () => {
+  const validation = state.mappingValidation;
+  if (!validation?.issues?.length) return;
+  validation.index = (validation.index - 1 + validation.issues.length) % validation.issues.length;
+  focusMappingValidationIssue();
+});
+$('mappingValidationNext').addEventListener('click', () => {
+  const validation = state.mappingValidation;
+  if (!validation?.issues?.length) return;
+  validation.index = (validation.index + 1) % validation.issues.length;
+  focusMappingValidationIssue();
 });
 $('mappingTableHeaders').addEventListener('change', event => {
   if (event.target.id !== 'mappingSelectAllRows') return;

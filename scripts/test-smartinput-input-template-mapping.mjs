@@ -358,5 +358,26 @@ assert.match(
   /createTemplateRecord\(\{ companyId: state\.companyId, voucherMode: state\.draft\.activeMode, signature: template\.signature, headers: template\.headers, mappings \}, name, allTargets, template\)/,
   'input-template editing must validate against the full target registry so unchanged hidden legacy targets remain saveable'
 );
+assert.match(smartInputSource, /startMappingValidation\(validation\.issues, 'NEW_TEMPLATE'\)/,
+  'new-template save failures must enter guided validation mode');
+assert.match(smartInputSource, /startMappingValidation\(validation\.issues, 'TEMPLATE_APPLIED'\)/,
+  'applied-template change failures must enter the same guided validation mode');
+assert.match(smartInputSource, /mappingValidationColumns\(issue\).*is-validation-error/s,
+  'guided validation must identify every source column involved in an issue, including both duplicate columns');
+assert.match(smartInputSource, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest', inline: 'center' \}\)/,
+  'guided validation must horizontally reveal the current problem column');
+assert.match(smartInputSource, /continueMappingValidation\(columnIndex\)/,
+  'a corrected mapping must immediately continue to the next validation issue');
+
+const smartInputHtml = readFileSync(fileURLToPath(new URL('../smartinput/index.html', import.meta.url)), 'utf8');
+const smartInputCss = readFileSync(fileURLToPath(new URL('../smartinput/smartinput.css', import.meta.url)), 'utf8');
+assert.match(smartInputHtml, /id="mappingValidationPrevious"[\s\S]*id="mappingValidationNext"/,
+  'guided validation must expose previous and next issue navigation');
+assert.match(smartInputHtml, /class="sr-only" id="gridValidation"/,
+  'inline text to the right of voucher reset must remain accessible without consuming toolbar space');
+assert.match(smartInputCss, /\.work-action-bar \.reset-draft-button \{ position: sticky; right: 0;/,
+  'voucher reset must remain pinned to the right edge of the middle section when the window changes size');
+assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
+  'problem mapping headers must receive a visible validation highlight');
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);
