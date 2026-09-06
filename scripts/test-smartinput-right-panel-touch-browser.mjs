@@ -96,11 +96,15 @@ const evaluate = async (client, expression) => {
 };
 const click = (client, selector) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
 const touch = async (client, selector) => {
-  const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};})()`);
+  const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();const x=Math.round(rect.left+rect.width/2);const y=Math.round(rect.top+rect.height/2);return {x,y,controlId:element.id,hitId:document.elementFromPoint(x,y)?.closest('button')?.id||''};})()`);
+  assert.equal(point.hitId, point.controlId, `${selector} center must hit the expected control`);
+  await client.send('Page.bringToFront');
   await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   try {
-    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, radiusX: 1, radiusY: 1, force: 1 }] });
-    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const timestamp = Date.now() / 1000;
+    await client.send('Input.emulateTouchFromMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1, timestamp });
+    await wait(50);
+    await client.send('Input.emulateTouchFromMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1, timestamp: timestamp + 0.05 });
   } finally {
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: false });
   }
@@ -138,6 +142,8 @@ try {
     await click(client, '#relatedPanelToggle');
   }
   await waitFor(() => evaluate(client, `document.querySelector('#estimateLibraryView').classList.contains('is-open')`), 'mobile estimate drawer');
+  await wait(500);
+  await evaluate(client, `(() => {window.__touchInputEvidence=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{const control=event.target.closest?.('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton');if(control)window.__touchInputEvidence.push({type,controlId:control.id,pointerType:event.pointerType||''});},true);return true;})()`);
 
   const controls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
   assert.equal(controls.every(control => control.width >= 44 && control.height >= 44 && control.touchAction === 'manipulation' && !control.disabled), true,
@@ -153,12 +159,16 @@ try {
   await waitFor(() => evaluate(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&!document.querySelector('#linkedEstimateList').hidden&&document.querySelector('#catalogPickerList').hidden`), 'linked list touch after multiselect');
   await touch(client, '#estimateLibraryIndividualButton');
   await waitFor(() => evaluate(client, `!document.querySelector('#catalogPickerList').hidden&&document.querySelector('#linkedEstimateList').hidden`), 'individual list touch return');
+  const touchEvidence = await evaluate(client, `window.__touchInputEvidence`);
+  assert.ok(touchEvidence.filter(event => event.type === 'pointerdown' && event.pointerType === 'touch').length >= 5, 'each control tap must use a touch pointer');
+  assert.ok(touchEvidence.filter(event => event.type === 'pointerup' && event.pointerType === 'touch').length >= 5, 'each touch pointer must complete');
+  assert.ok(touchEvidence.filter(event => event.type === 'click' && event.pointerType === 'touch').length >= 5, 'each touch sequence must synthesize its activation click');
 
-  console.log('SmartInput right-panel touchscreen hotfix PASS', controls);
+  console.log('SmartInput right-panel touchscreen hotfix PASS', { controls, touchEvents: touchEvidence.length });
 } finally {
   if (client) {
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
-    await client.send('Browser.close').catch(() => {});
+    await Promise.race([client.send('Browser.close').catch(() => {}), wait(2_000)]);
     client.close();
   }
   if (browser && browser.exitCode === null) {
@@ -166,7 +176,8 @@ try {
     browser.kill();
     await Promise.race([exited, wait(5_000)]);
   }
-  await new Promise(resolveClose => server.close(resolveClose));
+  server.closeAllConnections?.();
+  await Promise.race([new Promise(resolveClose => server.close(resolveClose)), wait(2_000)]);
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
       rmSync(profile, { recursive: true, force: true });

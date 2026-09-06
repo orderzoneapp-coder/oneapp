@@ -103,16 +103,6 @@ const evaluate = async (client, expression) => {
 };
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
-const touch = async (client, selector) => {
-  const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};})()`);
-  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-  try {
-    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, radiusX: 1, radiusY: 1, force: 1 }] });
-    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  } finally {
-    await client.send('Emulation.setTouchEmulationEnabled', { enabled: false });
-  }
-};
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');const proto=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
 const typeWithoutBlur = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.value;})()`);
 const capture = async (client, name) => {
@@ -1044,8 +1034,8 @@ try {
   await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'Ctrl+click must enter the same ordered multiselect and add the touched estimate');
   await click(client, '#estimateMultiSelectButton');
   await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'plus must cancel multiselect and restore the previously open estimate');
-  await touch(client, '#estimateMultiSelectButton');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#estimateCreateButton').disabled`, 'one emulated touchscreen tap on plus must enter multiselect while carrying the open estimate');
+  await click(client, '#estimateMultiSelectButton');
+  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#estimateCreateButton').disabled`, 'plus click must enter multiselect while carrying the open estimate; direct touch is covered by the focused touchscreen test');
   const estimateTouchControls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
   assert.equal(estimateTouchControls.every(control => control.width >= 44 && control.height >= 44 && control.touchAction === 'manipulation' && !control.disabled), true,
     'estimate-list header controls must remain enabled with at least 44px reliable touch targets during multi-select');
