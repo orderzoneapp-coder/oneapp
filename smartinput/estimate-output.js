@@ -4,11 +4,14 @@ const SHOP_HEADERS = Object.freeze([
   '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
 ]);
 const ERP_HEADERS = Object.freeze([
-  '품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n',
-  '최종(전송)', 'n', '행사', 'n', '1'
+  '품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'
 ]);
 const CONFIRM_HEADERS = Object.freeze([
   '확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청'
+]);
+const ESTIMATE_UPLOAD_HEADERS = Object.freeze([
+  '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '참조', '담당자',
+  '품목코드', '품목명', '규격', '수량', '단가', 'B단가', 'A판매', 'B판매', '적요', '지시사항', '적요2'
 ]);
 export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
 
@@ -139,6 +142,7 @@ function mappingSourceFields(row = {}, mappingSession = null) {
 
 export function buildEstimateF8RowsFromDraft(draft = {}) {
   const rows = Array.isArray(draft?.rows) ? draft.rows : [];
+  const header = draft?.header || {};
   const mappingBacked = Boolean(
     draft?.inputMapping
     && ((Array.isArray(draft.inputMapping.headers) && draft.inputMapping.headers.length)
@@ -146,6 +150,13 @@ export function buildEstimateF8RowsFromDraft(draft = {}) {
   );
   return rows.map(row => ({
     ...row,
+    rowVoucherDate: row?.rowVoucherDate || header.voucherDate || header.deliveryDate || header.orderDate || '',
+    rowCustomerCode: row?.rowCustomerCode || header.customerCode || '',
+    rowCustomerName: row?.rowCustomerName || header.customerName || '',
+    rowWarehouseCode: row?.rowWarehouseCode || header.warehouseCode || header.warehouseName || '',
+    rowTransactionType: row?.rowTransactionType || header.transactionType || '',
+    reference: row?.reference || header.reference || '',
+    manager: row?.manager || header.managerName || header.manager || '',
     estimateF8SourceOnly: mappingBacked || row?.estimateF8SourceOnly === true,
     estimateF8SourceFields: mappingBacked
       ? mappingSourceFields(row, draft?.inputMapping)
@@ -306,15 +317,8 @@ export function validateEstimateRows(rows = []) {
   return { ok: errors.length === 0, errors, entries: candidates, rows: candidates.map(({ row }) => row) };
 }
 
-function saleCode(row = {}) {
-  const value = outputText(row, ['판매여부', '판매', '판매상태'], ['saleAvailability', 'saleCode']);
-  const normalized = text(value).toLowerCase();
-  if (!normalized) return '';
-  if (['0', 'false', 'n', 'no', '정지', '정지중', '중단', '판매중단', '판매정지', '미판매', '판매안함', '판매불가', '사용안함'].includes(normalized)) return '0';
-  if (['1', 'true', 'y', 'yes', '판매', '판매중', '판매가능', '정상', '사용'].includes(normalized)) return '1';
-  const parsed = Number(normalized.replace(/,/g, ''));
-  if (Number.isFinite(parsed) && (parsed === 0 || parsed === 1)) return String(parsed);
-  return '';
+function saleCodeFromOutPrice(value) {
+  return (numeric(value) || 0) > 0 ? 1 : 0;
 }
 
 function themeFlags(row = {}) {
@@ -393,8 +397,8 @@ function subdivisionCandidate(row = {}) {
     subInbound,
     subSale,
     specification: outputText(row, ['1종규격'], ['type1Specification']),
-    saleCode: saleCode(row),
-    stock: outputNumber(row, ['재고수량'], ['stockQuantity', 'inventoryQuantity']),
+    saleCode: 1,
+    stock: 999,
     themes: themeFlags(row)
   };
 }
@@ -415,6 +419,7 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
   const erpData = [[...ERP_HEADERS]];
   const warnings = collectWholesaleWarnings(validation.rows);
   const confirmData = [[...CONFIRM_HEADERS], ...warnings];
+  const estimateUploadData = [[...ESTIMATE_UPLOAD_HEADERS]];
   const subdivisionByCode = new Map();
 
   validation.entries.forEach(({ row }) => {
@@ -427,12 +432,30 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
     const wholesaleA = outputNumber(row, ['도매A', 'A판매', 'A판매가'], ['wholesaleA']);
     const wholesaleB = outputNumber(row, ['도매B', 'B도매', 'B도매가'], ['wholesaleB']);
     const marketPrice = outputNumber(row, ['시중가', '시중단가'], ['marketPrice']);
-    const finalTransmission = outputNumber(row, ['최종전송', '최종(전송)', '최종입고'], ['finalTransmission', 'lastPurchasePrice']);
-    const stock = outputNumber(row, ['재고수량'], ['stockQuantity', 'inventoryQuantity']);
     const themes = themeFlags(row);
+    estimateUploadData.push([
+      outputText(row, ['일자', '날짜', '견적일자'], ['rowVoucherDate']),
+      outputText(row, ['순번', 'No.', '번호'], ['sequence']),
+      outputText(row, ['거래처코드', '업체코드'], ['rowCustomerCode', 'customerCode']),
+      outputText(row, ['거래처명', '거래처'], ['rowCustomerName', 'customerName']),
+      outputText(row, ['출하창고', '창고', '창고코드'], ['rowWarehouseCode', 'warehouseCode']),
+      outputText(row, ['거래유형'], ['rowTransactionType', 'transactionType']),
+      outputText(row, ['참조'], ['reference']),
+      outputText(row, ['담당자'], ['manager']),
+      code,
+      outputText(row, ['품목명', '상품명'], ['itemName']),
+      outputText(row, ['규격', '단위'], ['specification', 'unit']),
+      outputNumber(row, ['수량'], ['quantity']),
+      outputNumber(row, ['단가', '출고가', '판매가'], ['unitPrice', 'outPrice']),
+      purchasePriceB,
+      wholesaleA,
+      wholesaleB,
+      outputText(row, ['적요'], ['memo']),
+      outputText(row, ['지시사항', '간단설명'], ['description']),
+      outputText(row, ['적요2'], ['memo2'])
+    ]);
     erpData.push([
-      code, inboundPrice, '0', outPrice, '0', purchasePriceB, 'n', wholesaleA, 'n', wholesaleB, 'n',
-      finalTransmission, 'n', promoPrice, 'n', (numeric(inboundPrice) || 0) > 0 ? '1' : ''
+      code, inboundPrice, '0', outPrice, '0', purchasePriceB, 'n', wholesaleA, 'n', wholesaleB, 'n'
     ]);
     shopData.push([
       code,
@@ -449,8 +472,8 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
       0,
       outputText(row, ['브랜드'], ['brand']),
       outputText(row, ['간단설명', '기본설명'], ['productDescription']),
-      saleCode(row),
-      stock,
+      saleCodeFromOutPrice(outPrice),
+      999,
       ...themes,
       outputText(row, ['검색어등록', '상품태그'], ['searchInfo', 'productTags'])
     ]);
@@ -479,7 +502,6 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
     const shopIndexes = shopData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);
     const erpIndexes = erpData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);
     if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
-    const basic = subdivision.subInbound > 0 ? '1' : '';
     if (shopIndexes.length === 1 && erpIndexes.length === 1) {
       const shopRow = shopData[shopIndexes[0]];
       shopRow[3] = subdivision.subSale;
@@ -488,8 +510,6 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
       const erpRow = erpData[erpIndexes[0]];
       erpRow[1] = subdivision.subInbound;
       erpRow[3] = subdivision.subSale;
-      erpRow[11] = subdivision.subInbound;
-      erpRow[15] = basic;
       return;
     }
     const product = catalog.get(subdivision.code) || {};
@@ -498,7 +518,7 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
       errors.push({ code: 'SUBDIVISION_PRODUCT_REQUIRED', item: subdivision.code, field: '1종코드', originalValue: subdivision.code, message: `소분상품 ${subdivision.code}의 상품정보를 확인할 수 없습니다.`, guide: '상품 기준정보를 새로고침한 뒤 다시 출력하세요.' });
       return;
     }
-    erpData.push([subdivision.code, subdivision.subInbound, '0', subdivision.subSale, '0', '', 'n', '', 'n', '', 'n', subdivision.subInbound, 'n', '', 'n', basic]);
+    erpData.push([subdivision.code, subdivision.subInbound, '0', subdivision.subSale, '0', '', 'n', '', 'n', '', 'n']);
     shopData.push([
       subdivision.code,
       name,
@@ -529,6 +549,7 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
     warnings,
     rows: validation.rows,
     confirmData,
+    estimateUploadData,
     errorData: confirmData,
     shopData,
     erpData,
@@ -635,4 +656,10 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
   return pages;
 }
 
-export const ESTIMATE_F8_HEADERS = Object.freeze({ confirm: CONFIRM_HEADERS, error: CONFIRM_HEADERS, shop: SHOP_HEADERS, erp: ERP_HEADERS });
+export const ESTIMATE_F8_HEADERS = Object.freeze({
+  confirm: CONFIRM_HEADERS,
+  error: CONFIRM_HEADERS,
+  shop: SHOP_HEADERS,
+  erp: ERP_HEADERS,
+  upload: ESTIMATE_UPLOAD_HEADERS
+});

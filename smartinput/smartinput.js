@@ -79,7 +79,8 @@ import {
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.1';
+} from './estimate-output.js?v=0.2.2';
+import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.0';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
   chooseEstimateWorkbookCandidate,
@@ -7607,6 +7608,10 @@ async function exportEstimateExcel() {
     if (output.confirmData.length > 1) {
       window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.confirmData), '확인요청');
     }
+    const estimateUploadSheet = window.XLSX.utils.aoa_to_sheet(output.estimateUploadData);
+    estimateUploadSheet['!cols'] = [10, 8, 14, 18, 10, 10, 12, 12, 14, 34, 14, 10, 12, 12, 12, 12, 18, 20, 18]
+      .map(wch => ({ wch }));
+    window.XLSX.utils.book_append_sheet(workbook, estimateUploadSheet, '견적서 업로드');
     const dateStamp = new Date().toLocaleDateString('sv-SE');
     window.XLSX.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
     setAppStatus(`견적 F8 Excel 생성 완료 · ${plan.selectionCount}개 견적 · ${output.outputRowCount}품목 · 확인 ${output.confirmData.length - 1}건`);
@@ -7668,6 +7673,164 @@ function buildVoucherOutputMatrix(mode = state.draft.activeMode, current = modeD
     ['No.', ...fields.map(field => field.label)],
     ...rows.map((row, index) => [index + 1, ...fields.map(field => voucherOutputFieldValue(row, field))])
   ];
+}
+
+function purchaseSourceHeaderKeys(headers = [], width = headers.length) {
+  const counts = new Map();
+  return Array.from({ length: width }, (_, columnIndex) => {
+    const base = String(headers[columnIndex] ?? '').trim() || `__EMPTY_${columnIndex + 1}`;
+    const count = counts.get(base) || 0;
+    counts.set(base, count + 1);
+    return count ? `${base}_${count}` : base;
+  });
+}
+
+function purchaseRawRow(headers = [], cells = []) {
+  const width = Math.max(headers.length, cells.length);
+  const keys = purchaseSourceHeaderKeys(headers, width);
+  return Object.fromEntries(keys.map((key, columnIndex) => [key, cells[columnIndex] ?? '']));
+}
+
+function normalizedPurchaseSourceHeader(value) {
+  return String(value ?? '').normalize('NFKC').replace(/\s/g, '').toLowerCase();
+}
+
+function setPurchaseSourceValue(raw, aliases, value, fallbackHeader) {
+  const normalizedAliases = new Set(aliases.map(normalizedPurchaseSourceHeader));
+  const key = Object.keys(raw).find(candidate => normalizedAliases.has(normalizedPurchaseSourceHeader(candidate)));
+  raw[key || fallbackHeader] = value ?? '';
+}
+
+function setPurchaseSourceDefault(raw, aliases, value, fallbackHeader) {
+  const normalizedAliases = new Set(aliases.map(normalizedPurchaseSourceHeader));
+  if (Object.keys(raw).some(candidate => normalizedAliases.has(normalizedPurchaseSourceHeader(candidate)))) return;
+  if (!hasEnteredValue(value)) return;
+  raw[fallbackHeader] = value;
+}
+
+function applyPurchaseHeaderDefaults(raw, row = {}, header = {}) {
+  setPurchaseSourceDefault(raw, ['거래처', '거래처명'], row.rowCustomerName || header.customerName, '거래처명');
+  setPurchaseSourceDefault(raw, ['거래처코드', '구매처코드'], row.rowCustomerCode || header.customerCode, '거래처코드');
+  setPurchaseSourceDefault(raw, ['입고창고', '창고코드', '창고'], row.rowWarehouseCode || header.warehouseCode || header.warehouseName, '입고창고');
+  setPurchaseSourceDefault(raw, ['거래유형'], row.rowTransactionType || header.transactionType, '거래유형');
+  setPurchaseSourceDefault(raw, ['일자', '날짜', '매입일자'], row.rowVoucherDate || header.voucherDate, '일자');
+  return raw;
+}
+
+function directPurchaseSourceRow(row = {}, header = {}) {
+  const customer = row.rowCustomerName || header.customerName || header.customerCode || '';
+  const warehouse = row.rowWarehouseCode || header.warehouseCode || header.warehouseName || '';
+  const supplyAmount = hasEnteredValue(row.quantity) && hasEnteredValue(row.unitPrice)
+    ? Number(row.quantity) * Number(row.unitPrice)
+    : '';
+  return {
+    '거래처': customer,
+    '거래처명': customer,
+    '거래처코드': row.rowCustomerCode || header.customerCode || '',
+    '창고': warehouse,
+    '창고코드': warehouse,
+    '입고창고': warehouse,
+    '거래유형': row.rowTransactionType || header.transactionType || '',
+    '순번': row.rowVoucherNo || '',
+    '코드': row.itemCode || '',
+    '품명': row.itemName || '',
+    '품목명(규격)': row.itemName || '',
+    '규격': row.specification || '',
+    '규격(기본)': row.specification || '',
+    '수량': row.quantity ?? '',
+    '입고가': row.unitPrice ?? '',
+    '공급가': supplyAmount,
+    '상장가': row.listingPrice ?? '',
+    '출고(외노)': row.outPrice ?? '',
+    '출고가 (공지)': row.noticePrice ?? '',
+    '도매A': row.wholesaleA ?? '',
+    '적요': row.description || '',
+    '간단설명(품위)': row.description || '',
+    '전달사항': row.memo || '',
+    '지시사항': row.memo || '',
+    '구매처': row.supplier || row.supplierCustomerName || '',
+    '일자': row.rowVoucherDate || header.voucherDate || ''
+  };
+}
+
+function applyEditedPurchaseValues(raw, row = {}) {
+  const edited = row.editedFields || {};
+  const fields = [
+    ['itemCode', ['품목코드', '상품코드', '코드'], '품목코드'],
+    ['itemName', ['품목명(규격)', '품명', '품목명', '상품명'], '품목명(규격)'],
+    ['specification', ['규격', '규격명', '포장규격', '상품규격'], '규격'],
+    ['quantity', ['수량', '입고수량', '구매수량', '매입수량'], '수량'],
+    ['unitPrice', ['단가', '입고가', '매입단가'], '입고가'],
+    ['rowCustomerName', ['거래처명'], '거래처명'],
+    ['rowCustomerCode', ['거래처코드', '구매처코드'], '거래처코드'],
+    ['rowWarehouseCode', ['입고창고', '창고코드', '창고'], '입고창고'],
+    ['rowVoucherNo', ['순번', '일자-No.', '일자-No', '일자No'], '순번'],
+    ['rowTransactionType', ['거래유형'], '거래유형'],
+    ['rowVoucherDate', ['일자', '날짜', '매입일자'], '일자'],
+    ['description', ['적요'], '적요'],
+    ['memo', ['전달사항', '전달 사항', '메모', '비고'], '전달사항'],
+    ['noticePrice', ['출고가(공지)', '출고가 (공지)'], '출고가 (공지)'],
+    ['wholesaleA', ['도매A'], '도매A'],
+    ['listingPrice', ['상장가'], '상장가'],
+    ['outPrice', ['출고(외노)'], '출고(외노)'],
+    ['supplier', ['구매처', '원구매처', '매입처'], '구매처']
+  ];
+  fields.forEach(([field, aliases, fallbackHeader]) => {
+    if (edited[field]) setPurchaseSourceValue(raw, aliases, row[field], fallbackHeader);
+  });
+  return raw;
+}
+
+function buildPurchaseReportSourceRows(current = modeDraft()) {
+  const rows = voucherOutputRows(current);
+  const session = current.inputMapping;
+  if (!session?.headers?.length) return rows.map(row => directPurchaseSourceRow(row, current.header));
+  const workingById = new Map((session.workingRows || []).map(row => [String(row.rowId || ''), row]));
+  const workingBySourceIndex = new Map((session.workingRows || [])
+    .filter(row => Number.isInteger(row.sourceRowIndex))
+    .map(row => [row.sourceRowIndex, row]));
+  return rows.map(row => {
+    const sourceIndex = Number(row.sourceRowNo || row.sourceLineNo || 0) - 1;
+    const working = workingById.get(String(row.rowId || '')) || workingBySourceIndex.get(sourceIndex);
+    const cells = Array.isArray(working?.cells) && working.cells.length
+      ? working.cells
+      : (Number.isInteger(sourceIndex) && sourceIndex >= 0 ? session.sourceMatrix?.[sourceIndex] : null);
+    if (!Array.isArray(cells)) return directPurchaseSourceRow(row, current.header);
+    return applyPurchaseHeaderDefaults(
+      applyEditedPurchaseValues(purchaseRawRow(session.headers, cells), row),
+      row,
+      current.header
+    );
+  });
+}
+
+let purchaseSalesExportInFlight = false;
+
+async function exportPurchaseSalesExcel() {
+  if (purchaseSalesExportInFlight) {
+    toast('구매 판매업로드 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
+    return;
+  }
+  const current = modeDraft();
+  const rows = voucherOutputRows(current);
+  if (!rows.length) return toast('Excel로 출력할 구매 품목이 없습니다.', 'error');
+  purchaseSalesExportInFlight = true;
+  try {
+    try { await ensureXlsx(); }
+    catch (error) { return toast(error.message, 'error'); }
+    const output = buildPurchaseSalesUploadData(buildPurchaseReportSourceRows(current));
+    const workbook = window.XLSX.utils.book_new();
+    output.sheetNames.forEach(sheetName => {
+      const sheet = window.XLSX.utils.aoa_to_sheet(output.matrices[sheetName]);
+      sheet['!cols'] = (output.widths[sheetName] || []).map(wch => ({ wch }));
+      window.XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    });
+    window.XLSX.writeFile(workbook, output.fileName);
+    setAppStatus(`구매 판매업로드 생성 완료 · ${output.stats.outputRows}행 · 확인 ${output.stats.fatalErrors + output.stats.warnings}건`);
+    toast('DataOps 판매업로드 Excel을 생성했습니다.', 'success');
+  } finally {
+    purchaseSalesExportInFlight = false;
+  }
 }
 
 function buildVoucherShareText(mode = state.draft.activeMode, current = modeDraft()) {
@@ -7737,6 +7900,7 @@ async function shareCurrentVoucher() {
 
 async function exportCurrentVoucherExcel() {
   if (state.draft.activeMode === 'estimate') return exportEstimateExcel();
+  if (state.draft.activeMode === 'purchase') return exportPurchaseSalesExcel();
   const rows = voucherOutputRows();
   if (!rows.length) return toast('Excel로 출력할 전표 품목이 없습니다.', 'error');
   try { await ensureXlsx(); }
