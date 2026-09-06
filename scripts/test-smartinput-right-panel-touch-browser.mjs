@@ -17,8 +17,12 @@ const server = createServer((request, response) => {
   const target = normalize(resolve(root, relative));
   if (target !== root && !target.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
   if (!existsSync(target) || !statSync(target).isFile()) return response.writeHead(404).end('<!doctype html><title>fixture</title>');
-  response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(target)] || 'application/octet-stream' });
-  response.end(readFileSync(target));
+  const send = () => {
+    response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(target)] || 'application/octet-stream' });
+    response.end(readFileSync(target));
+  };
+  if (pathname === '/smartinput/smartinput-contract.js') return setTimeout(send, 1_800);
+  send();
 });
 
 const wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds));
@@ -133,8 +137,27 @@ try {
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable')]);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try{if(location.hostname==='127.0.0.1')localStorage.setItem('oneapp.smartinput.draft.v1',JSON.stringify({schemaVersion:'ONEAPP_SMART_INPUT_DRAFT_V1',activeMode:'estimate',modes:{},ui:{relatedPanelLayoutVersion:1,relatedOpen:true}}));}catch(_){}`
+  });
+  const navigationStartedAt = Date.now();
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
-  await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))&&Boolean(document.querySelector('#inputRows tr'))`), 'SmartInput shell');
+  const earlyControls = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const heading=document.querySelector('#estimateLibraryHeading');const panel=document.querySelector('#estimateLibraryView');const individual=document.querySelector('#estimateLibraryIndividualButton');const linked=document.querySelector('#estimateLibraryLinkedButton');if(!shell?.mounted||shell.ready||!heading||!panel||!individual||!linked)return null;return {headingVisible:!heading.hidden&&heading.getBoundingClientRect().height>0,panelOpen:panel.classList.contains('is-open'),individualEnabled:!individual.disabled,linkedEnabled:!linked.disabled,loadingText:document.querySelector('#catalogPickerList')?.textContent?.trim()||''};})()`), 'early estimate-list controls', 1_200);
+  const earlyRevealMs = Date.now() - navigationStartedAt;
+  assert.ok(earlyRevealMs < 1_200, 'estimate-list controls must appear before the delayed main module');
+  assert.deepEqual(earlyControls, {
+    headingVisible: true,
+    panelOpen: true,
+    individualEnabled: true,
+    linkedEnabled: true,
+    loadingText: '견적서 목록을 불러오는 중입니다.'
+  }, 'local UI state must reveal the estimate-list shell before the main module');
+  await touch(client, '#estimateLibraryLinkedButton');
+  const earlyLinked = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const linked=document.querySelector('#estimateLibraryLinkedButton');const list=document.querySelector('#linkedEstimateList');return shell&&!shell.ready&&linked?.getAttribute('aria-pressed')==='true'&&!list?.hidden?{kind:shell.estimateLibraryKind,loadingText:list.textContent.trim()}:null;})()`), 'early linked-estimate selection', 1_200);
+  assert.deepEqual(earlyLinked, { kind: 'linked', loadingText: '연동견적서를 불러오는 중입니다.' }, 'linked-estimate selection must respond while data modules load');
+  await waitFor(() => evaluate(client, `window.__ONEAPP_SMARTINPUT_EARLY_UI__?.ready===true&&Boolean(document.querySelector('.nexus-ui-header'))&&Boolean(document.querySelector('#inputRows tr'))`), 'SmartInput shell');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateLibraryLinkedButton').getAttribute('aria-pressed')==='true'&&!document.querySelector('#linkedEstimateList').hidden`), true,
+    'early linked-estimate selection must survive main-module initialization');
 
   await click(client, '[data-mode="estimate"]');
   await waitFor(() => evaluate(client, `!document.querySelector('#estimateLibraryHeading').hidden`), 'estimate library');
@@ -142,6 +165,7 @@ try {
     await click(client, '#relatedPanelToggle');
   }
   await waitFor(() => evaluate(client, `document.querySelector('#estimateLibraryView').classList.contains('is-open')`), 'mobile estimate drawer');
+  await waitFor(() => evaluate(client, `!document.querySelector('#estimateMultiSelectButton').disabled`), 'estimate library data');
   await wait(500);
   await evaluate(client, `(() => {window.__touchInputEvidence=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{const control=event.target.closest?.('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton');if(control)window.__touchInputEvidence.push({type,controlId:control.id,pointerType:event.pointerType||''});},true);return true;})()`);
 
@@ -164,7 +188,7 @@ try {
   assert.ok(touchEvidence.filter(event => event.type === 'pointerup' && event.pointerType === 'touch').length >= 5, 'each touch pointer must complete');
   assert.ok(touchEvidence.filter(event => event.type === 'click' && event.pointerType === 'touch').length >= 5, 'each touch sequence must synthesize its activation click');
 
-  console.log('SmartInput right-panel touchscreen hotfix PASS', { controls, touchEvents: touchEvidence.length });
+  console.log('SmartInput right-panel touchscreen hotfix PASS', { earlyRevealMs, delayedContractMs: 1_800, controls, touchEvents: touchEvidence.length });
 } finally {
   if (client) {
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
