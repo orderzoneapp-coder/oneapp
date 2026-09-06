@@ -552,8 +552,14 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .linked-source-edit-metric.is-changed strong { color: var(--accent-strong); }
 .linked-source-edit-dialog footer { flex-wrap: wrap; }
 .linked-source-edit-dialog footer > small { margin-right: auto; color: var(--text-soft); font-size: 10px; font-weight: 800; }
-.estimate-bulk-update-dialog { width: min(980px, calc(100vw - 28px)); }
-.estimate-bulk-update-dialog .smart-dialog__shell { max-height: min(820px, calc(100dvh - 28px)); }
+.estimate-bulk-update-dialog { width: min(980px, calc(100vw - 28px)); height: min(820px, calc(100dvh - 28px)); max-height: min(820px, calc(100dvh - 28px)); }
+.estimate-bulk-update-dialog .smart-dialog__shell { height: min(820px, calc(100dvh - 28px)); max-height: min(820px, calc(100dvh - 28px)); }
+.estimate-bulk-update-dialog header,
+.estimate-bulk-update-dialog > .smart-dialog__shell > .smart-dialog__message,
+.estimate-bulk-update-dialog .estimate-bulk-summary,
+.estimate-bulk-update-dialog .estimate-bulk-view,
+.estimate-bulk-update-dialog .estimate-bulk-issues,
+.estimate-bulk-update-dialog footer { flex: 0 0 auto; }
 .estimate-bulk-update-dialog > .smart-dialog__shell > .smart-dialog__message { padding: 11px 18px; border-bottom: 1px solid var(--border); background: var(--surface-muted); line-height: 1.55; }
 .estimate-bulk-summary { padding: 9px 18px; display: flex; flex-wrap: wrap; gap: 7px; border-bottom: 1px solid var(--border); }
 .estimate-bulk-summary span { padding: 4px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-strong); font-size: 10px; font-weight: 800; }
@@ -582,7 +588,8 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .estimate-bulk-row__result strong { color: var(--accent-strong); font-size: 10px; }
 .estimate-bulk-row__result small { max-width: 100%; overflow: hidden; color: var(--text-faint); font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .estimate-bulk-row.is-blocked .estimate-bulk-row__result strong { color: var(--warning); }
-.estimate-bulk-update-dialog footer { flex-wrap: wrap; }
+.estimate-bulk-update-dialog footer { position: sticky; bottom: 0; z-index: 2; flex-wrap: wrap; }
+.estimate-bulk-update-dialog footer .button { min-height: 38px; white-space: nowrap; }
 .estimate-bulk-update-dialog footer > small { margin-right: auto; color: var(--text-soft); font-size: 10px; font-weight: 800; }
 .stocktake-conflict-dialog__message { padding-top: 16px; color: var(--navy); font-weight: 800; }
 .stocktake-conflict-dialog__rows { min-height: 0; margin: 0 16px 8px; border: 1px solid var(--border); border-radius: 10px; overflow: auto; }
@@ -845,8 +852,8 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
   .linked-source-edit-identity { grid-template-columns: auto minmax(0, 1fr); }
   .linked-source-edit-metrics { grid-template-columns: 1fr; }
   .linked-source-edit-dialog footer > small { width: 100%; }
-  .estimate-bulk-update-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; }
-  .estimate-bulk-update-dialog .smart-dialog__shell { max-height: calc(100dvh - 16px); }
+  .estimate-bulk-update-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; }
+  .estimate-bulk-update-dialog .smart-dialog__shell { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
   .estimate-bulk-update-dialog > .smart-dialog__shell > .smart-dialog__message { padding: 9px 11px; }
   .estimate-bulk-summary, .estimate-bulk-issues:not(:empty), .estimate-bulk-view { padding-inline: 11px; }
   .estimate-bulk-body { padding: 8px; }

@@ -74,9 +74,17 @@ import {
   priceSnapshotsEqual,
   buildKakaoNoticeRows,
   buildEstimateF8Data,
+  buildEstimateF8RowsFromDraft,
+  buildEstimateF8RowsFromPlan,
+  validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.1.5';
+} from './estimate-output.js?v=0.2.1';
+import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
+import {
+  chooseEstimateWorkbookCandidate,
+  inspectEstimateWorkbookCandidate
+} from './estimate-workbook-selector.js?v=0.1.0';
 import {
   createRecordId,
   commitEstimateBundle,
@@ -1454,6 +1462,9 @@ function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
   restored.batchId = existing.batchId || mappingSessionWithBatch(restored).batchId;
   restored.purchaseMetaRows = existing.purchaseMetaRows || null;
   restored.salesMetaRows = existing.salesMetaRows || null;
+  if (existing.estimateErpSummary?.recognized) {
+    restored.estimateErpSummary = cloneGridValue(existing.estimateErpSummary);
+  }
   restored.deletedSourceRows = [...(existing.deletedSourceRows || [])];
   if (restored.deletedSourceRows.length) {
     restored.workingRows = restored.workingRows.filter(row => row.manual || !restored.deletedSourceRows.includes(row.sourceRowIndex));
@@ -1889,7 +1900,9 @@ function renderSourceSheet() {
   const matrix = session.sourceMatrix || [];
   const width = Math.max(session.headers.length, ...matrix.map(row => row.length), 0);
   $('sourceSheetTitle').textContent = session.fileName || 'Excel 원본';
-  $('sourceSheetMeta').textContent = `${session.sheetName || '시트'} · ${matrix.length.toLocaleString('ko-KR')}행 · ${width.toLocaleString('ko-KR')}열`;
+  $('sourceSheetMeta').textContent = session.estimateErpSummary?.recognized
+    ? `${session.sheetName || '시트'} · 거래처 ${Number(session.estimateErpSummary.customerCount || 0).toLocaleString('ko-KR')}곳 · 품목 ${Number(session.estimateErpSummary.itemCount || 0).toLocaleString('ko-KR')}개 · 원본 ${matrix.length.toLocaleString('ko-KR')}행`
+    : `${session.sheetName || '시트'} · ${matrix.length.toLocaleString('ko-KR')}행 · ${width.toLocaleString('ko-KR')}열`;
   $('sourceHeaderRowStatus').textContent = session.fixedHeader ? '쇼핑몰 17열 · 필드명 1행' : `필드명 ${session.headerRowIndex + 1}행`;
   $('sourceSheetRows').innerHTML = matrix.map((row, rowIndex) => (
     `<tr class="${rowIndex === session.headerRowIndex ? 'is-header-row' : ''}" data-source-row-index="${rowIndex}">
@@ -4106,7 +4119,7 @@ function renderCatalogControls() {
   createButton.textContent = '연동견적서 생성';
   createButton.title = creation ? `${selectedCount}개 선택` : '먼저 + 버튼이나 Ctrl+클릭으로 견적서를 다중 선택하세요.';
   $('estimateNoticeButton').textContent = '카톡 공유';
-  $('estimateExcelButton').textContent = 'EXCEL';
+  $('estimateExcelButton').textContent = 'F8 EXCEL';
   renderEstimateWorkspace();
 }
 
@@ -5548,7 +5561,7 @@ function renderMode() {
     : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
   $('estimateOutputActions').hidden = false;
   $('estimateNoticeButton').textContent = '카톡 공유';
-  $('estimateExcelButton').textContent = 'EXCEL';
+  $('estimateExcelButton').textContent = 'F8 EXCEL';
   const linkedEstimate = estimateMode && (modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP');
   const shopping = selected.id === 'order' ? shoppingOrderImport() : null;
   $('customerInput').disabled = linkedEstimate || Boolean(shopping);
@@ -6380,7 +6393,8 @@ async function handleFile(file) {
         }
         const detection = detectHeaderRow(matrix, inputMappingTargets());
         const candidate = { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName, detection };
-        if (!selected || candidate.detection.score > selected.detection.score) selected = candidate;
+        candidate.estimateErpSummary = inspectEstimateWorkbookCandidate(candidate, state.draft.activeMode);
+        selected = chooseEstimateWorkbookCandidate(selected, candidate, state.draft.activeMode);
       });
       if (shoppingSelected) {
         captureGridPasteUndo();
@@ -6465,6 +6479,7 @@ async function handleFile(file) {
       }
       mapping.purchaseMetaRows = purchaseMetaRows;
       mapping.salesMetaRows = salesMetaRows;
+      if (selected.estimateErpSummary?.recognized) mapping.estimateErpSummary = selected.estimateErpSummary;
       delete current.shoppingOrderImport;
       current.inputMapping = mapping;
       resetCurrentTableViewForSource(modeId);
@@ -6477,9 +6492,12 @@ async function handleFile(file) {
       saveDraftNow();
       renderMode();
       const applied = mapping.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED;
+      const estimateSummary = mapping.estimateErpSummary?.recognized
+        ? ` · ${mapping.sheetName} · 거래처 ${mapping.estimateErpSummary.customerCount.toLocaleString('ko-KR')}곳 · 품목 ${mapping.estimateErpSummary.itemCount.toLocaleString('ko-KR')}개`
+        : '';
       setAppStatus(applied
-        ? `${mapping.templateName} 양식을 적용했습니다. 원본과 매핑 결과를 확인하세요.`
-        : `${file.name}의 ${mapping.headerRowIndex + 1}행을 필드명 후보로 표시했습니다. 신규 양식을 확인하세요.`, applied ? '' : 'warn');
+        ? `${mapping.templateName} 양식을 적용했습니다${estimateSummary}. 원본과 매핑 결과를 확인하세요.`
+        : `${file.name}의 ${mapping.headerRowIndex + 1}행을 필드명 후보로 표시했습니다${estimateSummary}. 신규 양식을 확인하세요.`, applied ? '' : 'warn');
       toast(applied ? `${mapping.templateName} 양식을 완벽 일치로 적용했습니다.` : '기존 양식과 완벽 일치하지 않아 신규 양식 설정을 시작합니다.', applied ? 'success' : 'warn');
       return;
     } else {
@@ -7328,23 +7346,75 @@ function openEstimateNoticePreview() {
   dialog.showModal();
 }
 
+let estimateF8ExportInFlight = false;
+
+function estimateF8FailureDetail(errors = []) {
+  const duplicateCodes = [...new Set(errors
+    .filter(error => ['DUPLICATE_ITEM_CODE', 'DUPLICATE_OUTPUT_CODE'].includes(error.code))
+    .map(error => String(error.originalValue ?? '').trim())
+    .filter(Boolean))];
+  const first = errors[0];
+  return duplicateCodes.length
+    ? `중복 품목코드 ${duplicateCodes.slice(0, 8).join(', ')}${duplicateCodes.length > 8 ? ` 외 ${duplicateCodes.length - 8}건` : ''}`
+    : (first?.message || '출력 대상을 확인하세요.');
+}
+
 async function exportEstimateExcel() {
-  const creation = estimateCreation();
-  const selectedRecords = selectedEstimateRecords();
-  const sourceRows = creation ? modeDraft().rows : (selectedRecords.length ? combinedEstimateRows(selectedRecords) : modeDraft().rows);
-  const output = buildEstimateF8Data(sourceRows);
-  try { await ensureXlsx(); }
-  catch (error) { return toast(error.message, 'error'); }
-  const workbook = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
-  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
-  window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.errorData), '오류정보');
-  const dateStamp = new Date().toLocaleDateString('sv-SE');
-  const selectionCount = creation?.selectedIds.length || selectedRecords.length;
-  const selectionLabel = selectionCount ? `선택견적_${selectionCount}개_` : '';
-  window.XLSX.writeFile(workbook, `통합업로드용_${selectionLabel}견적F8_${dateStamp}.xlsx`);
-  setAppStatus(`견적 Excel 생성 완료 · ${selectionCount || 1}개 견적 · ${output.rows.length}품목 · 확인 ${output.errorData.length - 1}건`);
-  toast(selectionCount ? '현재 테이블 미리보기와 같은 상품을 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
+  if (estimateF8ExportInFlight) {
+    toast('견적 F8 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
+    return;
+  }
+  estimateF8ExportInFlight = true;
+  try {
+    const creation = estimateCreation();
+    const selectedRecords = selectedEstimateRecords();
+    const currentDraft = modeDraft();
+    const plan = buildEstimateF8DraftPlan({
+      creation,
+      selectedRecords,
+      currentDraft,
+      individualRecords: individualEstimateRecords(),
+      allRecords: availableCatalogs(),
+      workingDrafts: state.estimateWorkingCopies
+    });
+    if (!plan.ok) {
+      setAppStatus(`견적 F8 출력 차단 · ${plan.error}`, 'error');
+      toast(`F8 Excel을 생성하지 않았습니다. ${plan.error}`, 'error');
+      return;
+    }
+
+    // 연동견적/조합은 병합 전 개별 원본을 펼쳐 first-wins로 숨은 중복까지 먼저 차단한다.
+    const rawValidation = validateEstimateRows(plan.validationDrafts.flatMap(draft => buildEstimateF8RowsFromDraft(draft)));
+    if (!rawValidation.ok) {
+      const detail = estimateF8FailureDetail(rawValidation.errors);
+      setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');
+      toast(`F8 Excel을 생성하지 않았습니다. ${detail}`, 'error');
+      return;
+    }
+
+    const sourceRows = buildEstimateF8RowsFromPlan(plan);
+    const output = buildEstimateF8Data(sourceRows, { productCatalog: state.products });
+    if (!output.ok) {
+      const detail = estimateF8FailureDetail(output.errors);
+      setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');
+      toast(`F8 Excel을 생성하지 않았습니다. ${detail}`, 'error');
+      return;
+    }
+    try { await ensureXlsx(); }
+    catch (error) { return toast(error.message, 'error'); }
+    const workbook = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
+    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
+    if (output.confirmData.length > 1) {
+      window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.confirmData), '확인요청');
+    }
+    const dateStamp = new Date().toLocaleDateString('sv-SE');
+    window.XLSX.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
+    setAppStatus(`견적 F8 Excel 생성 완료 · ${plan.selectionCount}개 견적 · ${output.outputRowCount}품목 · 확인 ${output.confirmData.length - 1}건`);
+    toast(plan.selectionCount > 1 ? '현재 테이블 미리보기와 같은 상품을 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
+  } finally {
+    estimateF8ExportInFlight = false;
+  }
 }
 
 function voucherOutputRows(current = modeDraft()) {
@@ -9362,7 +9432,25 @@ function handleInputListSearchShortcut(event) {
   closeInputListSearch();
 }
 
+function handleEstimateF8Shortcut(event) {
+  if (event.isComposing || event.key !== 'F8' || state.draft.activeMode !== 'estimate') return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (document.querySelector('dialog[open]')) {
+    toast('선택창을 먼저 완료하거나 취소하세요.', 'warn');
+    return;
+  }
+  if (state.busy) {
+    toast('다른 작업이 진행 중입니다. 완료 후 다시 출력하세요.', 'warn');
+    return;
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) active.blur();
+  void exportEstimateExcel();
+}
+
 document.addEventListener('keydown', handleInputListSearchShortcut, true);
+document.addEventListener('keydown', handleEstimateF8Shortcut, true);
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
   event.preventDefault();

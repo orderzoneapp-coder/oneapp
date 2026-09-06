@@ -139,7 +139,7 @@ try {
     const signature=JSON.stringify({companyId:'ONEAPP',voucherMode:'estimate',headers});
     const targetFieldIds=['voucher.estimate.header.date','rowCustomerName','voucher.estimate.line.productCode','voucher.estimate.line.productName','voucher.estimate.line.quantity','noticePrice','voucher.estimate.line.memo'];
     const mappings=headers.map((sourceHeader,columnIndex)=>({columnIndex,sourceHeader,state:'MAPPED',targetFieldId:targetFieldIds[columnIndex],reviewed:true}));
-    const session={schemaVersion:'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2',sessionId:'BULK-BROWSER-SESSION',companyId:'ONEAPP',voucherMode:'estimate',fileName:'합성 견적서현황.xlsx',sheetName:'견적서현황내역',fileFingerprint:'SYNTHETIC-BULK-E2E',sourceMatrix,sourceCellMatrix,headerRowIndex:1,headers,headerSignature,signature,status:'TEMPLATE_APPLIED',templateId:'BULK-TEMPLATE',templateName:'견적서 현황',templateRevision:1,mappings,issues:[],editJournal:{},manualRows:[],deletedSourceRows:[],workingRows};
+    const session={schemaVersion:'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2',sessionId:'BULK-BROWSER-SESSION',companyId:'ONEAPP',voucherMode:'estimate',fileName:'합성 견적서현황.xlsx',sheetName:'견적서현황내역',fileFingerprint:'SYNTHETIC-BULK-E2E',sourceMatrix,sourceCellMatrix,headerRowIndex:1,headers,headerSignature,signature,status:'TEMPLATE_APPLIED',templateId:'BULK-TEMPLATE',templateName:'견적서 현황',templateRevision:1,mappings,issues:[],editJournal:{},manualRows:[],deletedSourceRows:[],workingRows,estimateErpSummary:{schemaVersion:'ONEAPP_SMARTINPUT_ERP_ESTIMATE_STATUS_SUMMARY_V1',recognized:true,preferred:true,sheetName:'견적서현황내역',itemCount:277,customerCount:10,sourceRowCount:280,sourceColumnCount:23}};
     const template={schemaVersion:'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2',templateId:'BULK-TEMPLATE',companyId:'ONEAPP',voucherMode:'estimate',templateName:'견적서 현황',revision:1,signature,headerSignature,headers,fieldCount:headers.length,mappings,createdAt:'2026-09-01T00:00:00.000Z',updatedAt:'2026-09-01T00:00:00.000Z',status:'ACTIVE'};
     const makeField=(address,value)=>({currentDisplayValue:String(value??''),sourceDisplayValue:String(value??''),parsedValue:value,edited:false,evidence:{address,rowIndex:Number(address.match(/\d+/)[0])-1,columnIndex:letters.indexOf(address[0]),displayValue:String(value??''),signature:'CELL-EVIDENCE'}});
     const currentRows=[
@@ -186,11 +186,13 @@ try {
     rowCodes: ['SHARED', 'A-2', 'B-CHECK', 'SHARED', ''],
     appStatus: fixtureState.appStatus
   });
+  assert.match(await evaluate(client, `document.querySelector('#sourceSheetMeta')?.textContent||''`), /견적서현황내역 · 거래처 10곳 · 품목 277개/,
+    'ERP 견적서현황 원본을 선택하면 시트명·거래처 수·품목 수를 화면에 명시해야 한다.');
   const before = await readEstimates(client);
   const beforeJson = JSON.stringify(before);
 
   const matrix = [];
-  const viewports = [{ width: 1920, height: 1080, mobile: false }, { width: 1440, height: 900, mobile: false }, { width: 390, height: 844, mobile: true }];
+  const viewports = [{ width: 1920, height: 1080, mobile: false }, { width: 1840, height: 864, mobile: false }, { width: 1440, height: 900, mobile: false }, { width: 390, height: 844, mobile: true }];
   let representativeScreenshot = '';
   for (const viewport of viewports) {
     await client.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1 });
@@ -205,15 +207,27 @@ try {
     assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-bulk-row').length`), 3);
     const initialDialogState = await evaluate(client, `({disabled:document.querySelector('.estimate-bulk-update-dialog [data-confirm-bulk]').disabled,states:[...document.querySelectorAll('.estimate-bulk-row')].map(row=>({name:row.querySelector('.estimate-bulk-row__source strong').textContent,status:row.dataset.bulkStateValue,reason:row.querySelector('[data-bulk-reason]').textContent,selected:row.querySelector('[data-bulk-select]').checked})),rows:JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.estimate.rows.map(row=>({customer:row.rowCustomerName,code:row.itemCode,master:row.masterProductId,product:row.productId,match:row.matchStatus,review:row.reviewStatus,identity:row.productIdentityStatus})),summary:document.querySelector('[data-bulk-summary]').textContent})`);
     assert.equal(initialDialogState.disabled, false, JSON.stringify(initialDialogState));
+    await evaluate(client, `(() => {const body=document.querySelector('.estimate-bulk-update-dialog .estimate-bulk-body');const seed=body.querySelector('.estimate-bulk-row');for(let index=3;index<10;index+=1){const clone=seed.cloneNode(true);clone.dataset.bulkGroup='GEOMETRY-'+index;clone.querySelector('.estimate-bulk-row__source strong').textContent='가시성 검증 '+(index+1);body.append(clone);}return body.children.length;})()`);
+    assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-bulk-row').length`), 10,
+      '실제 첨부파일의 거래처 10곳처럼 본문이 넘치는 상태에서 footer를 검증해야 한다.');
     for (const theme of ['light', 'dark']) {
-      await evaluate(client, `document.documentElement.dataset.nexusTheme=${JSON.stringify(theme)};true`);
+      await evaluate(client, `window.ONEAPP_NEXUS_UI_THEME.apply(${JSON.stringify(theme)},{persist:false})`);
       await wait(80);
-      const geometry = await evaluate(client, `(() => {const dialog=document.querySelector('.estimate-bulk-update-dialog');const body=dialog.querySelector('.estimate-bulk-body');const footer=dialog.querySelector('footer');const rect=dialog.getBoundingClientRect();const footerRect=footer.getBoundingClientRect();return {theme:document.documentElement.dataset.nexusTheme,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,documentScrollWidth:document.documentElement.scrollWidth,bodyOverflow:getComputedStyle(body).overflowY,bodyScrollHeight:body.scrollHeight,bodyClientHeight:body.clientHeight,footerBottom:footerRect.bottom,text:dialog.textContent};})()`);
+      const geometry = await evaluate(client, `(() => {const dialog=document.querySelector('.estimate-bulk-update-dialog');const header=dialog.querySelector('.smart-dialog__shell > header');const body=dialog.querySelector('.estimate-bulk-body');const footer=dialog.querySelector('footer');body.scrollTop=body.scrollHeight;const rect=dialog.getBoundingClientRect();const headerRect=header.getBoundingClientRect();const footerRect=footer.getBoundingClientRect();const buttons=[...footer.querySelectorAll('button')].map(button=>{const bounds=button.getBoundingClientRect();return {text:button.textContent.trim(),left:bounds.left,top:bounds.top,right:bounds.right,bottom:bounds.bottom,width:bounds.width,height:bounds.height};});return {theme:document.documentElement.dataset.nexusUiTheme,left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,documentScrollWidth:document.documentElement.scrollWidth,bodyOverflow:getComputedStyle(body).overflowY,bodyScrollHeight:body.scrollHeight,bodyClientHeight:body.clientHeight,bodyScrollTop:body.scrollTop,headerTop:headerRect.top,headerBottom:headerRect.bottom,footerTop:footerRect.top,footerBottom:footerRect.bottom,buttons,text:dialog.textContent};})()`);
       assert.equal(geometry.theme, theme);
       assert.ok(geometry.left >= 0 && geometry.top >= 0 && geometry.right <= geometry.viewportWidth && geometry.bottom <= geometry.viewportHeight, `${viewport.width}px ${theme} dialog must fit`);
       assert.ok(geometry.documentScrollWidth <= geometry.viewportWidth, `${viewport.width}px ${theme} must not overflow document`);
       assert.equal(geometry.bodyOverflow, 'auto');
+      assert.ok(geometry.bodyScrollHeight > geometry.bodyClientHeight && geometry.bodyScrollTop > 0,
+        `${viewport.width}px ${theme} 10개 거래처 본문이 독립 스크롤되어야 한다.`);
+      assert.ok(geometry.headerTop >= geometry.top - 1 && geometry.headerBottom < geometry.footerTop,
+        `${viewport.width}px ${theme} header와 footer는 스크롤 후에도 분리되어 보여야 한다.`);
       assert.ok(geometry.footerBottom <= geometry.bottom + 1);
+      assert.deepEqual(geometry.buttons.map(button => button.text), ['닫기', '정상 전표 업데이트']);
+      assert.ok(geometry.buttons.every(button => button.width > 0 && button.height >= 38
+        && button.left >= 0 && button.right <= geometry.viewportWidth
+        && button.top >= geometry.footerTop && button.bottom <= geometry.footerBottom + 1),
+      `${viewport.width}px ${theme} 하단 버튼명과 전체 버튼 영역이 viewport 안에 보여야 한다.`);
       assert.match(geometry.text, /정상 전표만 거래처별로 독립 저장/);
       assert.match(geometry.text, /전체 3/);
       assert.match(geometry.text, /확인 필요 1/);
@@ -286,10 +300,12 @@ try {
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
+  await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'corrected reference initialization', 60_000);
   await expr(client, `document.querySelector('#completeButton')&&!document.querySelector('#completeButton').disabled`, 'corrected fixture ready', 60_000);
   await click(client, '#completeButton');
   await expr(client, `Boolean(document.querySelector('.estimate-bulk-update-dialog[open]'))`, 'corrected group dialog');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('.estimate-bulk-row')].map(row=>[row.querySelector('.estimate-bulk-row__source strong').textContent,row.dataset.bulkStateValue])`), [['거래처 A','COMPLETED'],['거래처 B','READY'],['거래처 C','COMPLETED']], 'only corrected B must become ready after reload');
+  const correctedDialogState = await evaluate(client, `[...document.querySelectorAll('.estimate-bulk-row')].map(row=>({name:row.querySelector('.estimate-bulk-row__source strong').textContent,status:row.dataset.bulkStateValue,reason:row.querySelector('[data-bulk-reason]').textContent,action:row.querySelector('[data-bulk-action]').value,checked:row.querySelector('[data-bulk-select]').checked}))`);
+  assert.deepEqual(correctedDialogState.map(row => [row.name, row.status]), [['거래처 A','COMPLETED'],['거래처 B','READY'],['거래처 C','COMPLETED']], `only corrected B must become ready after reload: ${JSON.stringify(correctedDialogState)}`);
 
   await evaluate(client, `(() => {window.__bulkPutOriginal=IDBObjectStore.prototype.put;window.__bulkFailed=false;IDBObjectStore.prototype.put=function(...args){if(this.name==='estimates'&&!window.__bulkFailed){window.__bulkFailed=true;throw new DOMException('Injected per-customer write failure','AbortError');}return window.__bulkPutOriginal.apply(this,args);};return true;})()`);
   await click(client, '[data-confirm-bulk]');
@@ -298,8 +314,18 @@ try {
   assert.equal(afterBFailure.find(record => record.estimateId === 'EST-BULK-B').draft.rows[0].itemCode, 'OLD-B', 'failed B transaction must be zero-write');
   assert.equal(afterBFailure.find(record => record.estimateId === 'EST-BULK-C').updatedAt, firstCUpdatedAt, 'B failure must not rewrite completed C');
   await evaluate(client, `IDBObjectStore.prototype.put=window.__bulkPutOriginal;delete window.__bulkPutOriginal;true`);
+  const retryReady = await evaluate(client, `(() => {const row=document.querySelector('[data-bulk-group="NAME:거래처 b"]');const button=document.querySelector('[data-confirm-bulk]');return {rowStatus:row?.dataset.bulkStateValue,checked:row?.querySelector('[data-bulk-select]')?.checked,checkboxDisabled:row?.querySelector('[data-bulk-select]')?.disabled,buttonDisabled:button?.disabled,appStatus:document.querySelector('#appStatus')?.textContent,footer:document.querySelector('[data-bulk-status]')?.textContent};})()`);
+  assert.deepEqual(retryReady, {
+    rowStatus: 'FAILED', checked: true, checkboxDisabled: false, buttonDisabled: false,
+    appStatus: retryReady.appStatus, footer: retryReady.footer
+  }, `failed customer must remain selected and executable: ${JSON.stringify(retryReady)}`);
   await click(client, '[data-confirm-bulk]');
-  await expr(client, `document.querySelector('#appStatus').textContent.includes('저장 완료 3개')&&document.querySelector('#appStatus').textContent.includes('확인 필요 0개')`, 'successful B-only retry');
+  try {
+    await expr(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]')?.dataset.bulkStateValue==='COMPLETED'&&document.querySelector('[data-bulk-summary]')?.textContent.includes('저장 완료 3')&&document.querySelector('[data-bulk-summary]')?.textContent.includes('확인 필요 0')`, 'successful B-only retry');
+  } catch (error) {
+    const retryFailure = await evaluate(client, `(() => {const row=document.querySelector('[data-bulk-group="NAME:거래처 b"]');const draft=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY));return {rowStatus:row?.dataset.bulkStateValue,reason:row?.querySelector('[data-bulk-reason]')?.textContent,checked:row?.querySelector('[data-bulk-select]')?.checked,buttonDisabled:document.querySelector('[data-confirm-bulk]')?.disabled,appStatus:document.querySelector('#appStatus')?.textContent,footer:document.querySelector('[data-bulk-status]')?.textContent,progress:draft?.modes?.estimate?.estimateBulkProgress};})()`);
+    throw new Error(`${error.message}: ${JSON.stringify(retryFailure)}`);
+  }
 
   const after = await readEstimates(client);
   const targetA = after.find(record => record.estimateId === 'EST-BULK-A');

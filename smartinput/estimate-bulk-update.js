@@ -303,6 +303,15 @@ export function splitEstimateBulkInputMapping({ session, rows = [] } = {}) {
     deletedSourceRows: [],
     workingRows: [...sourceWorkingRows, ...manualWorkingRows]
   };
+  if (session.estimateErpSummary?.recognized) {
+    nextSession.estimateErpSummary = {
+      ...clone(session.estimateErpSummary),
+      customerCount: 1,
+      itemCount: selectedRows.length,
+      sourceRowCount: nextSourceMatrix.length,
+      sourceColumnCount: Math.max(nextSession.headers.length, ...nextSourceMatrix.map(row => row.length), 0)
+    };
+  }
   return { session: nextSession, rows: mappedRows, rowIdMap: Object.fromEntries(rowIdMap) };
 }
 

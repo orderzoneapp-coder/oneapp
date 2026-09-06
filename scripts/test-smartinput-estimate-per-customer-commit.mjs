@@ -77,7 +77,17 @@ const session = {
   editJournal: {},
   manualRows: [],
   deletedSourceRows: [],
-  workingRows
+  workingRows,
+  estimateErpSummary: {
+    schemaVersion: 'ONEAPP_SMARTINPUT_ERP_ESTIMATE_STATUS_SUMMARY_V1',
+    recognized: true,
+    preferred: true,
+    sheetName: '견적서현황내역',
+    itemCount: 277,
+    customerCount: 10,
+    sourceRowCount: 279,
+    sourceColumnCount: headers.length
+  }
 };
 
 const troubledRows = structuredClone(rows);
@@ -110,6 +120,13 @@ estimates.push({ ...structuredClone(estimates[4]), estimateId: 'EST-5-DUP', cata
 
 const group8 = classified.groups.find(group => group.customerName === '거래처 8');
 const group8Split = splitEstimateBulkInputMapping({ session, rows: group8.itemRows });
+assert.deepEqual(group8Split.session.estimateErpSummary, {
+  ...session.estimateErpSummary,
+  itemCount: 18,
+  customerCount: 1,
+  sourceRowCount: 19,
+  sourceColumnCount: headers.length
+}, '거래처별 저장 원본 요약은 전체 파일 수치가 아니라 분할된 한 거래처 자료를 표시해야 한다.');
 estimates[7].draft = { ...estimates[7].draft, rows: group8Split.rows, inputMapping: group8Split.session };
 
 const dirtyGroup6 = structuredClone(estimates[5].draft);
