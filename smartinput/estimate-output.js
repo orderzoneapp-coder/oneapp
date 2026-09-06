@@ -412,6 +412,18 @@ function duplicateCodes(rows = []) {
   return [...counts.entries()].filter(([, count]) => count > 1).map(([code]) => code);
 }
 
+function compareUploadText(left, right) {
+  return text(left).localeCompare(text(right), 'ko-KR', { numeric: true, sensitivity: 'base' });
+}
+
+export function sortEstimateUploadRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row, index) => ({ row, index }))
+    .sort((left, right) => compareUploadText(left.row?.[3], right.row?.[3])
+      || compareUploadText(left.row?.[8], right.row?.[8])
+      || left.index - right.index)
+    .map(entry => entry.row);
+}
+
 export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
   const validation = validateEstimateRows(rows);
   const errors = [...validation.errors];
@@ -480,6 +492,7 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
     const subdivision = subdivisionCandidate(row);
     if (subdivision) subdivisionByCode.set(subdivision.code, [...(subdivisionByCode.get(subdivision.code) || []), subdivision]);
   });
+  estimateUploadData.splice(1, estimateUploadData.length - 1, ...sortEstimateUploadRows(estimateUploadData.slice(1)));
 
   const selectedSubdivisions = new Map();
   subdivisionByCode.forEach((candidates, subCode) => {

@@ -79,8 +79,8 @@ import {
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.2';
-import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.0';
+} from './estimate-output.js?v=0.2.3';
+import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
   chooseEstimateWorkbookCandidate,
@@ -147,13 +147,16 @@ import {
   restoreLinkedEstimateWorkingRowEdits
 } from './linked-estimate-source-edit.js?v=0.1.0';
 import {
+  ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
+  ESTIMATE_BULK_TARGET_MATCH_TYPE,
   classifyEstimateBulkRows,
   createEstimateBulkNewRecord,
   createEstimateBulkProgress,
   createEstimateBulkReplacementRecord,
   createEstimatePerCustomerPlan,
+  estimateBulkTargetMatchContextKey,
   estimateBulkDraftsEquivalent
-} from './estimate-bulk-update.js?v=0.2.1';
+} from './estimate-bulk-update.js?v=0.2.2';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -2147,7 +2150,8 @@ function applyCustomerRelationship(header = modeDraft().header) {
 function effectiveAliasMappings(rawOrdererName, sourceType) {
   const normalizedName = normalizeAliasName(rawOrdererName);
   if (!normalizedName) return [];
-  const confirmed = state.aliasMappings.filter(mapping => mapping.status === 'CONFIRMED' && mapping.normalizedName === normalizedName);
+  const confirmed = state.aliasMappings.filter(mapping => mapping.mappingType !== ESTIMATE_BULK_TARGET_MATCH_TYPE
+    && mapping.status === 'CONFIRMED' && mapping.normalizedName === normalizedName);
   const exactContext = confirmed.filter(mapping => mapping.contextKey === aliasContextKey(sourceType));
   return exactContext.length ? exactContext : confirmed;
 }
@@ -8073,10 +8077,10 @@ function estimateBulkTargetOptions(entry = {}) {
 
 function estimateBulkSelectionFromValue(value, catalogName = '') {
   const selected = String(value || '');
-  if (selected.startsWith('UPDATE:')) return { action: 'UPDATE', targetEstimateId: selected.slice(7), catalogName: '' };
-  if (selected === 'CREATE') return { action: 'CREATE', targetEstimateId: '', catalogName: String(catalogName || '').trim() };
-  if (selected === 'EXCLUDE') return { action: 'EXCLUDE', targetEstimateId: '', catalogName: '' };
-  return { action: 'NONE', targetEstimateId: '', catalogName: '' };
+  if (selected.startsWith('UPDATE:')) return { action: 'UPDATE', targetEstimateId: selected.slice(7), catalogName: '', matchMethod: 'MANUAL' };
+  if (selected === 'CREATE') return { action: 'CREATE', targetEstimateId: '', catalogName: String(catalogName || '').trim(), matchMethod: 'MANUAL' };
+  if (selected === 'EXCLUDE') return { action: 'EXCLUDE', targetEstimateId: '', catalogName: '', matchMethod: 'MANUAL' };
+  return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: 'MANUAL' };
 }
 
 function createEstimatePerCustomerPlanForCurrent(classification, selections = {}, activeEstimateId = modeDraft().catalogRecordId) {
@@ -8088,7 +8092,9 @@ function createEstimatePerCustomerPlanForCurrent(classification, selections = {}
     session: inputMappingSession(current),
     workingCopies: [...state.estimateWorkingCopies].map(([estimateId, draft]) => ({ estimateId, draft })),
     activeEstimateId,
-    progress: current.estimateBulkProgress
+    progress: current.estimateBulkProgress,
+    matchMappings: state.aliasMappings,
+    companyId: state.companyId
   });
 }
 
@@ -8145,6 +8151,63 @@ function acceptEstimateBulkRecord(record) {
   state.estimateWorkingCopyBaselines.delete(record.estimateId);
 }
 
+function estimateBulkExistingTargetMatch(group, contextKey) {
+  const scoped = state.aliasMappings.filter(mapping => mapping.mappingType === ESTIMATE_BULK_TARGET_MATCH_TYPE
+    && mapping.status === 'CONFIRMED' && mapping.contextKey === contextKey);
+  if (group.customerId) return scoped.find(mapping => String(mapping.sourceCustomerId || '') === String(group.customerId)) || null;
+  if (group.customerCode) return scoped.find(mapping => String(mapping.sourceCustomerCode || '') === String(group.customerCode)) || null;
+  const normalizedName = normalizeAliasName(group.customerName);
+  return scoped.find(mapping => mapping.normalizedName === normalizedName) || null;
+}
+
+function createEstimateBulkTargetMatch(entry, target, timestamp) {
+  const contextKey = estimateBulkTargetMatchContextKey(state.companyId);
+  if (!contextKey || !entry?.group || !target?.estimateId || target.estimateKind === 'LINKED_GROUP') return null;
+  const group = entry.group;
+  const normalizedName = normalizeAliasName(group.customerName);
+  const existing = estimateBulkExistingTargetMatch(group, contextKey);
+  return {
+    aliasMappingId: existing?.aliasMappingId || createRecordId('SIEMATCH'),
+    schemaVersion: ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
+    mappingType: ESTIMATE_BULK_TARGET_MATCH_TYPE,
+    companyId: state.companyId,
+    contextKey,
+    matchKey: group.groupId,
+    sourceCustomerId: String(group.customerId || ''),
+    sourceCustomerCode: String(group.customerCode || ''),
+    sourceCustomerName: String(group.customerName || '').trim(),
+    rawOrdererName: String(group.customerName || '').trim(),
+    normalizedName,
+    targetEstimateId: target.estimateId,
+    targetEstimateName: estimateTitle(target),
+    status: 'CONFIRMED',
+    confirmedBy: state.actorId || 'SMART_INPUT_ADMIN',
+    confirmedAt: existing?.confirmedAt || timestamp,
+    useCount: Number(existing?.useCount || 0) + 1,
+    lastUsedAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
+async function rememberEstimateBulkTargetMatches(plan, results) {
+  let savedCount = 0;
+  for (const result of results) {
+    if (!['COMPLETED', 'UNCHANGED'].includes(result.status)) continue;
+    const entry = plan.entries.find(candidate => candidate.groupId === result.groupId);
+    const targetId = result.record?.estimateId || result.targetEstimateId || entry?.targetEstimateId;
+    const target = state.estimates.find(record => record.estimateId === targetId) || result.record;
+    const timestamp = new Date().toISOString();
+    const mapping = createEstimateBulkTargetMatch(entry, target, timestamp);
+    if (!mapping) continue;
+    await saveAliasMapping(mapping);
+    const index = state.aliasMappings.findIndex(item => item.aliasMappingId === mapping.aliasMappingId);
+    if (index >= 0) state.aliasMappings[index] = mapping;
+    else state.aliasMappings.push(mapping);
+    savedCount += 1;
+  }
+  return savedCount;
+}
+
 async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgress) {
   const statusOverrides = {};
   const results = [];
@@ -8155,13 +8218,13 @@ async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgres
       const record = createEstimateBulkRecord(entry, timestamp);
       if (entry.candidate.target && estimateBulkDraftsEquivalent(entry.candidate.target.draft, record.draft)) {
         statusOverrides[entry.groupId] = { status: 'UNCHANGED', targetEstimateId: record.estimateId, updatedAt: timestamp };
-        results.push({ groupId: entry.groupId, status: 'UNCHANGED', record: null });
+        results.push({ groupId: entry.groupId, status: 'UNCHANGED', record: null, targetEstimateId: record.estimateId });
       } else {
         const expectedPreimages = entry.candidate.target ? [cloneGridValue(entry.candidate.target)] : [];
         await commitEstimateBundle({ upserts: [record], expectedPreimages });
         acceptEstimateBulkRecord(record);
         statusOverrides[entry.groupId] = { status: 'COMPLETED', action: 'UPDATE', targetEstimateId: record.estimateId, catalogName: record.catalogName, updatedAt: timestamp };
-        results.push({ groupId: entry.groupId, status: 'COMPLETED', record });
+        results.push({ groupId: entry.groupId, status: 'COMPLETED', record, targetEstimateId: record.estimateId });
       }
     } catch (error) {
       const stale = String(error?.message || '').includes('SMARTINPUT_ESTIMATE_BUNDLE_STALE');
@@ -8203,7 +8266,8 @@ function showEstimateBulkUpdateDialog(classification) {
   const selections = Object.fromEntries(currentPlan.entries.map(entry => [entry.groupId, {
     action: entry.action,
     targetEstimateId: entry.targetEstimateId,
-    catalogName: entry.catalogName
+    catalogName: entry.catalogName,
+    matchMethod: entry.matchMethod
   }]));
   const selectedGroupIds = new Set(currentPlan.entries.filter(entry => ['READY', 'FAILED'].includes(entry.status)).map(entry => entry.groupId));
   const selectionTouched = new Set();
@@ -8247,7 +8311,8 @@ function showEstimateBulkUpdateDialog(classification) {
       const target = entry.target;
       section.querySelector('[data-bulk-count]').textContent = `${Number(target?.rowCount || target?.draft?.rows?.length || 0).toLocaleString('ko-KR')} → ${entry.group.itemCount.toLocaleString('ko-KR')}품목`;
       section.querySelector('[data-bulk-state]').textContent = estimateBulkStatusLabel(entry.status);
-      section.querySelector('[data-bulk-reason]').textContent = entry.firstIssue?.message || entry.previousEntry?.errorMessage || '';
+      section.querySelector('[data-bulk-reason]').textContent = entry.firstIssue?.message || entry.previousEntry?.errorMessage
+        || (String(entry.matchMethod || '').startsWith('MATCH_DICTIONARY') ? '매칭사전 자동 적용' : '');
       section.querySelector('[data-bulk-action]').value = estimateBulkSelectionValue(entry);
       const createNameInput = section.querySelector('[data-bulk-create-name]');
       if (document.activeElement !== createNameInput && createNameInput.value !== entry.catalogName) createNameInput.value = entry.catalogName;
@@ -8272,12 +8337,21 @@ function showEstimateBulkUpdateDialog(classification) {
     dialog.querySelectorAll('[data-bulk-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.bulkView === view)));
     persistEstimateBulkProgress(currentPlan);
   };
-  dialog.querySelectorAll('[data-bulk-action]').forEach(select => select.addEventListener('change', () => {
+  dialog.querySelectorAll('[data-bulk-action]').forEach(select => select.addEventListener('change', async () => {
     const section = select.closest('[data-bulk-group]');
     const groupId = section.dataset.bulkGroup;
     selections[groupId] = estimateBulkSelectionFromValue(select.value, section.querySelector('[data-bulk-create-name]').value);
     selectionTouched.delete(groupId);
     sync();
+    const entry = currentPlan.entries.find(candidate => candidate.groupId === groupId);
+    if (entry?.status === 'UNCHANGED' && entry.targetEstimateId) {
+      try {
+        await rememberEstimateBulkTargetMatches(currentPlan, [{ groupId, status: 'UNCHANGED', targetEstimateId: entry.targetEstimateId }]);
+        section.querySelector('[data-bulk-reason]').textContent = '매칭사전 저장 완료';
+      } catch (_) {
+        toast('견적서는 변경이 없지만 매칭사전을 저장하지 못했습니다.', 'warn');
+      }
+    }
   }));
   dialog.querySelectorAll('[data-bulk-create-name]').forEach(input => input.addEventListener('input', () => {
     const section = input.closest('[data-bulk-group]');
@@ -8315,16 +8389,23 @@ function showEstimateBulkUpdateDialog(classification) {
         const failed = results.filter(result => result.status === 'FAILED').length;
         dialog.querySelector('[data-bulk-status]').textContent = `처리 중 · 저장 완료 ${completed}개${failed ? ` · 저장 실패 ${failed}개` : ''}`;
       });
-      applied.results.filter(result => result.record).forEach(result => {
-        selections[result.groupId] = { action: 'UPDATE', targetEstimateId: result.record.estimateId, catalogName: '' };
+      applied.results.filter(result => result.targetEstimateId).forEach(result => {
+        selections[result.groupId] = { action: 'UPDATE', targetEstimateId: result.targetEstimateId, catalogName: '', matchMethod: 'MATCH_DICTIONARY_SAVED' };
       });
+      let matchSaveError = null;
+      try {
+        await rememberEstimateBulkTargetMatches(currentPlan, applied.results);
+      } catch (error) {
+        matchSaveError = error;
+      }
       applying = false;
       view = applied.results.some(result => result.status === 'FAILED') || currentPlan.summary.pending ? 'review' : 'all';
       sync();
       const summary = currentPlan.summary;
-      const message = `저장 완료 ${summary.completed}개 · 확인 필요 ${summary.pending + summary.failed}개 · 변경 없음 ${summary.unchanged}개`;
-      setAppStatus(message, summary.failed ? 'warn' : undefined);
-      toast(message, summary.failed ? 'warn' : 'success');
+      const message = `저장 완료 ${summary.completed}개 · 확인 필요 ${summary.pending + summary.failed}개 · 변경 없음 ${summary.unchanged}개${matchSaveError ? ' · 매칭사전 저장 실패' : ''}`;
+      const warning = summary.failed || matchSaveError;
+      setAppStatus(message, warning ? 'warn' : undefined);
+      toast(message, warning ? 'warn' : 'success');
     } finally {
       state.busy = false;
       applying = false;

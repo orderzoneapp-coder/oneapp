@@ -93,6 +93,16 @@ assert.deepEqual(uploadByCode['FRUIT-1'].slice(0, 5), ['2026-09-05', '', '', '�
 assert.deepEqual(uploadByCode['FRUIT-1'].slice(7, 13), ['전달', 'FRUIT-1', '상품-FRUIT-1', '마산실거래', 2, 3200]);
 assert.equal(uploadByCode['FRUIT-1'][14], 6400, '공급가가 없으면 수량×입고가를 사용해야 합니다.');
 assert.equal(uploadByCode['ZERO-1'][14], 0, '수량 공란은 구매 업로드 공급가 0을 보존해야 합니다.');
+const sortedPurchaseOutput = buildPurchaseSalesUploadData([
+  row('원본그룹', '나 거래처', 'N-2', 1),
+  row('원본그룹', '가 거래처', 'C-10', 1),
+  row('원본그룹', '가 거래처', 'C-2', 1)
+]);
+assert.deepEqual(sortedPurchaseOutput.matrices['구매 업로드'].slice(1).map(values => [values[3], values[8]]), [
+  ['가 거래처', 'C-2'], ['가 거래처', 'C-10'], ['나 거래처', 'N-2']
+], '구매 업로드는 거래처명 다음 코드 순으로 정렬해 거래처별 전표 행을 연속 배치해야 합니다.');
+assert.deepEqual(sortedPurchaseOutput.matrices['판매입력'].slice(1).map(values => values[8]), ['C-10', 'C-2', 'N-2'],
+  '기존 판매입력 정렬 계약은 유지해야 합니다.');
 
 const purchaseFormOutput = buildPurchaseSalesUploadData([{
   일자: '2026-09-05', '일자-No.': '2026-09-05 -10', 거래처코드: '6151876286', 거래처명: '4연산',

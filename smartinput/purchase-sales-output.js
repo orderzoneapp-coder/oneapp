@@ -305,6 +305,15 @@ function purchaseUploadRow(fields) {
   ];
 }
 
+function sortPurchaseUploadRows(rows = []) {
+  const compare = (left, right) => text(left).localeCompare(text(right), 'ko-KR', { numeric: true, sensitivity: 'base' });
+  return rows.map((row, index) => ({ row, index }))
+    .sort((left, right) => compare(left.row?.[3], right.row?.[3])
+      || compare(left.row?.[8], right.row?.[8])
+      || left.index - right.index)
+    .map(entry => entry.row);
+}
+
 export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date() } = {}) {
   const groups = priceGroups();
   const rows = [];
@@ -431,7 +440,7 @@ export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date()
     '전송구매': [PURCHASE_HEADERS, ...purchaseRows.map(row => rowValues(row, PURCHASE_HEADERS))],
     '거래처별': [PREVIEW_HEADERS, ...previewRows.map(row => rowValues(row, PREVIEW_HEADERS))],
     '단가설정': [SETTINGS_HEADERS, ...settingRows.map(row => rowValues(row, SETTINGS_HEADERS))],
-    '구매 업로드': [PURCHASE_UPLOAD_HEADERS, ...purchaseUploadRows]
+    '구매 업로드': [PURCHASE_UPLOAD_HEADERS, ...sortPurchaseUploadRows(purchaseUploadRows)]
   };
   const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   return {
