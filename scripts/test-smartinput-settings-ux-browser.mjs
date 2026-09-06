@@ -258,6 +258,18 @@ try {
   assert.equal(explorerState.categoryCount, 4);
   await click(client, '[data-add-voucher-field="brand"]');
   assert.equal(await evaluate(client, `document.querySelector('[data-input-order-field="brand"]').value`), '0');
+  await input(client, '[data-voucher-custom-label]', '하단 확인사항');
+  await click(client, '[data-add-voucher-custom]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-voucher-field-row="custom.text.01"] .settings-voucher-row__name strong')?.textContent`), '하단 확인사항',
+    'a worker must be able to create and add a custom lower voucher field');
+  await click(client, '[data-settings-group="header"] > summary');
+  await click(client, '[data-add-layout-field="header"]');
+  await evaluate(client, `(() => {const select=document.querySelector('.smart-field-dialog select[name="category"]');select.value='CUSTOM';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await input(client, '.smart-field-dialog input[name="customLabel"]', '상단 확인사항');
+  await click(client, '.smart-field-dialog [data-add]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-layout-fields="header"] input[value="custom.text.02"]')?.checked`), true,
+    'a worker must be able to create and add a custom top voucher field');
+  await click(client, '[data-settings-group="voucher"] > summary');
   assert.deepEqual(await visibleWorktableColumns(client), worktableBefore, 'adding a setting must not change the active worktable before Save');
 
   await input(client, '[data-input-order-field="quantity"]', '2');

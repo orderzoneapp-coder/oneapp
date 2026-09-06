@@ -1162,7 +1162,9 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
     projectionFieldId: headerProjection[field.id] || field.id,
     custom: Boolean(field.custom),
     recommendable: enabledHeaderIds.has(field.id),
-    advancedLabel: `${contract.MODES[mode]?.label || mode} > 상단 정보 > ${field.label}`,
+    advancedLabel: field.custom
+      ? `${contract.MODES[mode]?.label || mode} > 사용자지정 > 상단 정보 > ${field.label}`
+      : `${contract.MODES[mode]?.label || mode} > 상단 정보 > ${field.label}`,
     aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
   const voucherTargets = layoutDefinitions('voucher', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledVoucherIds.has(field.id)).map(field => {
@@ -1178,7 +1180,9 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
       projectionFieldId: canonical?.projectionFieldId || field.id,
       custom: Boolean(field.custom),
       recommendable: enabledVoucherIds.has(field.id),
-      advancedLabel: `${contract.MODES[mode]?.label || mode} > ${sectionLabel} > ${canonical?.displayLabel || field.label}`,
+      advancedLabel: field.custom
+        ? `${contract.MODES[mode]?.label || mode} > 사용자지정 > ${sectionLabel} > ${field.label}`
+        : `${contract.MODES[mode]?.label || mode} > ${sectionLabel} > ${canonical?.displayLabel || field.label}`,
       aliases: [...new Set([
         ...(field.inputAliases || []),
         ...(field.masterAliases || []),
@@ -1332,9 +1336,15 @@ function inputMappingTemplateReady(session = inputMappingSession()) {
   return Boolean(session?.templateId && session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED);
 }
 
+function mappingTargetWorkerLabel(target) {
+  if (!target) return '확인 필요';
+  if (target.custom) return `${target.scope === 'header' ? '상' : '하'},${target.label}(i)`;
+  return `${target.scope === 'header' ? '상단 정보' : '하단 정보'} > ${target.label}`;
+}
+
 function mappingStateText(mapping) {
   if (mapping?.state === MAPPING_DECISION.MAPPED) return mappingTargetById(mapping.targetFieldId)?.label || '연결 대상 없음';
-  if (mapping?.state === MAPPING_DECISION.RECOMMENDED) return `${mappingTargetById(mapping.targetFieldId)?.label || '확인 필요'} · 추천`;
+  if (mapping?.state === MAPPING_DECISION.RECOMMENDED) return mappingTargetWorkerLabel(mappingTargetById(mapping.targetFieldId));
   if (mapping?.state === MAPPING_DECISION.UNMAPPED) return '비매핑 · 전표 제외';
   return '매핑을 지정하세요';
 }
@@ -2751,10 +2761,10 @@ function openLayoutFieldDialog(scope, customFields, onAdd, mode = state.draft.ac
   fieldDialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>Form Field Library</small><h2>${isHeader ? '상단 정보열' : '전표 열'} 항목 추가</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <div class="smart-form">
-      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : productCategoryOptions}<option value="REGISTERED">전체 등록 필드 (${registeredDefinitions.length.toLocaleString('ko-KR')})</option><option value="CUSTOM">${isHeader ? '사용자지정' : '부가정보 · 사용자지정'}</option></select></label>
+      <label><span>항목 분류</span><select name="category">${isHeader ? '<option value="CUSTOMER">거래처정보</option><option value="ORDER">주문정보</option>' : productCategoryOptions}<option value="REGISTERED">전체 등록 필드 (${registeredDefinitions.length.toLocaleString('ko-KR')})</option><option value="CUSTOM">사용자지정 (전표 ${isHeader ? '상단' : '하단'} 배치)</option></select></label>
       <label data-library-field><span>추가할 항목</span><input type="search" name="librarySearch" placeholder="항목명 검색" autocomplete="off"><select name="libraryField" size="8"></select></label>
       <label data-custom-type hidden><span>사용자지정 형식</span><select name="customType"><option value="TEXT">문자형 · 최대 10개</option><option value="NUMBER">숫자형 · 최대 10개</option></select></label>
-      <label data-custom-label hidden><span>사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
+      <label data-custom-label hidden><span>전표 ${isHeader ? '상단' : '하단'} 사용자지정 항목명</span><input name="customLabel" maxlength="30" placeholder="예: 배송 요청사항"></label>
     </div>
     <p class="smart-dialog__message">현재 전표에 적용 가능한 필드만 표시합니다. 전체 등록 필드는 경로로 구분합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-add>항목 추가</button></footer>
@@ -2883,8 +2893,9 @@ function openFieldMappingDialog(columnIndex) {
       });
     results.innerHTML = filtered.slice(0, 500).map(target => {
       const usedAt = used.get(target.id);
-      const origin = target.scope === 'header' ? '상단 정보' : '하단 정보';
-      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(target.label)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
+      const origin = target.custom ? '사용자지정' : (target.scope === 'header' ? '상단 정보' : '하단 정보');
+      const displayLabel = target.custom ? `${target.label}(사용자)` : target.label;
+      return `<button type="button" class="field-mapping-option" data-mapping-target="${esc(target.id)}" ${usedAt !== undefined ? 'disabled' : ''}><span><strong>${esc(displayLabel)}</strong><small>${esc(target.advancedLabel || `${origin} · ${target.id}`)}</small></span><b>${esc(origin)}</b>${usedAt !== undefined ? `<em>${usedAt + 1}열에서 사용 중</em>` : ''}</button>`;
     }).join('') || '<div class="smart-dialog__empty">조건에 맞는 항목이 없습니다.<br>기준정보를 새로고침한 뒤 같은 검색어로 다시 확인하세요.</div>';
     referenceStatus.textContent = term
       ? `검색 결과 ${filtered.length.toLocaleString('ko-KR')}개 · 자동 선택하지 않습니다.`
@@ -3192,7 +3203,7 @@ async function openSettingsDialog() {
           </fieldset>
         </div>
       </details>
-      <details class="settings-group">
+      <details class="settings-group" data-settings-group="header">
         <summary><span><strong>전표별 상단 정보 열</strong><small>전표마다 거래처·배송일·창고 구성을 별도 저장</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body settings-group__body--single"><div class="settings-group__actions"><span><b data-settings-layout-label="header">${esc(contract.MODES[settingsLayoutMode].label)}</b> 상단 정보 열을 편집합니다.</span><button type="button" class="button button--quiet button--small" data-add-layout-field="header">항목 추가</button></div><div class="layout-check-grid" data-layout-fields="header"></div></div>
       </details>
@@ -3210,7 +3221,7 @@ async function openSettingsDialog() {
             <div class="settings-voucher-explorer__count" data-voucher-explorer-count></div>
             <div class="settings-voucher-explorer__results" data-voucher-explorer-results></div>
             <div class="settings-voucher-custom" data-settings-ui-only>
-              <div><strong>사용자지정 항목</strong><small>문자형·숫자형 각각 최대 10개</small></div>
+              <div><strong>사용자지정</strong><small>여기서 만든 항목은 전표 하단에 배치 · 전표 상단 항목은 상단 정보 열에서 추가</small></div>
               <label><span>형식</span><select data-voucher-custom-type><option value="TEXT">문자형</option><option value="NUMBER">숫자형</option></select></label>
               <label><span>항목명</span><input type="text" data-voucher-custom-label maxlength="30" placeholder="예: 배송 요청사항"></label>
               <button type="button" class="button button--quiet button--small" data-add-voucher-custom>만들어 추가</button>
