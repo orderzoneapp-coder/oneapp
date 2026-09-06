@@ -101,33 +101,8 @@ const evaluate = async (client, expression) => {
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
   return response.result.value;
 };
-const boundedCdpSend = (promise, label, timeout = 5_000) => new Promise((resolveSend, rejectSend) => {
-  const timer = setTimeout(() => rejectSend(new Error(`Timed out waiting for ${label}`)), timeout);
-  promise.then(
-    value => { clearTimeout(timer); resolveSend(value); },
-    error => { clearTimeout(timer); rejectSend(error); }
-  );
-});
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
-const touch = async (client, selector) => {
-  const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};})()`);
-  console.log('SmartInput browser E2E touch checkpoint: enable start');
-  await boundedCdpSend(client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 }), 'touch emulation enable');
-  console.log('SmartInput browser E2E touch checkpoint: enable complete');
-  try {
-    console.log('SmartInput browser E2E touch checkpoint: touchStart start');
-    await boundedCdpSend(client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, radiusX: 1, radiusY: 1, force: 1 }] }), 'touchStart');
-    console.log('SmartInput browser E2E touch checkpoint: touchStart complete');
-    console.log('SmartInput browser E2E touch checkpoint: touchEnd start');
-    await boundedCdpSend(client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }), 'touchEnd');
-    console.log('SmartInput browser E2E touch checkpoint: touchEnd complete');
-  } finally {
-    console.log('SmartInput browser E2E touch checkpoint: disable start');
-    await boundedCdpSend(client.send('Emulation.setTouchEmulationEnabled', { enabled: false }), 'touch emulation disable');
-    console.log('SmartInput browser E2E touch checkpoint: disable complete');
-  }
-};
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');const proto=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
 const typeWithoutBlur = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.value;})()`);
 const capture = async (client, name) => {
@@ -141,8 +116,6 @@ let browser;
 let client;
 const networkRequests = [];
 const flowTimings = {};
-const startedAt = Date.now();
-const checkpoint = label => console.log(`SmartInput browser E2E checkpoint: ${label} +${Date.now() - startedAt}ms`);
 const officialSaveEntryEvidence = [];
 const baselineScreenshots = [];
 try {
@@ -215,7 +188,6 @@ try {
   await wait(260);
   const metrics = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return {title:document.title,global:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),resizer:q('#photoResizer'),workbench:q('.workbench'),grid:q('.grid-card'),related:q('.related-panel'),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
   console.log('SmartInput desktop metrics', metrics);
-  checkpoint('desktop metrics');
   assert.equal(metrics.title, '스마트입력 - NEXUS');
   assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'desktop must preserve the independent parser and larger work table');
   assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'desktop must preserve the parser resizer and right estimate library');
@@ -418,7 +390,6 @@ try {
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개\n자동저장 성능 기준선');
   await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').get('current');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.draft?.modes?.order?.sourceText?.includes('자동저장 성능 기준선'));db.close();};};})`, 'autosave response baseline');
   flowTimings.autosavePersistMs = Number((performance.now() - autosaveStartedAt).toFixed(2));
-  checkpoint('direct input and autosave');
   await evaluate(client, `(() => {window.confirm=()=>true;document.querySelector('#sourceTextInput').value='화면에서만 바뀐 값';return true;})()`);
   await click(client, '#restoreAutosaveButton');
   await expr(client, `document.querySelector('#sourceTextInput').value.includes('사과 2박스')`, 'explicit latest autosave restore');
@@ -541,7 +512,6 @@ try {
     ledger: 0, pending: 0, commands: 0, queue: 0, unresolved: 0
   }, 'an injected finalize failure must leave the pre-existing draft intact and commit zero partial effects');
   const officialGatewayRollbackResult = await evaluate(client, `(async()=>{const repo=await import('/orderq/official-voucher-repository.js?gateway-rollback-read=1');const gateway=await import('/orderq/official-command-gateway.js?gateway-rollback-e2e=1');const id='PD-E2E-ROLLBACK';const before=await repo.loadOfficialPurchaseAggregate(id);let error='';try{const envelope=before.document.commandEnvelope;await gateway.OfficialCommandGateway.execute({...envelope,intent:envelope});}catch(cause){error=(cause?.name||'')+':'+(cause?.message||String(cause));}const after=await repo.loadOfficialPurchaseAggregate(id);return {error,status:after.document.status,revision:after.document.revision,revisions:after.revisions.length,inventory:after.inventoryMovements.length,ledger:after.ledgerEntries.length,pending:after.pendingInventoryEffects.length,commands:after.commands.length};})()`);
-  checkpoint('legacy and official boundaries');
   const { error: officialGatewayRollbackError, ...officialGatewayRollbackState } = officialGatewayRollbackResult;
   assert.match(officialGatewayRollbackError, /ConstraintError|AbortError|IndexedDB transaction failed/,
     'the owner Gateway must propagate the same injected repository transaction failure');
@@ -719,7 +689,6 @@ try {
       countsUnchanged:JSON.stringify(before)===JSON.stringify(after)
     };
   })()`);
-  checkpoint('official V2 phase 6A read model');
   assert.equal(officialV2Phase6AReadResult.databaseVersion, 7, 'Phase 6A read must reuse the existing ORDER Q schema');
   assert.deepEqual({
     status: officialV2Phase6AReadResult.reviewStatus,
@@ -875,7 +844,6 @@ try {
   await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'mobile stocktake popup');
   assert.equal(await evaluate(client, `[...document.querySelectorAll('dialog.stocktake-conflict-dialog footer .button')].every(button=>button.getBoundingClientRect().height>=44&&button.getBoundingClientRect().right<=innerWidth)`), true);
   const stocktakeMobileShot = await capture(client, 'smartinput-stocktake-conflict-mobile.png');
-  checkpoint('stocktake conflict UI');
   baselineScreenshots.push(stocktakeMobileShot);
   await click(client, 'dialog.stocktake-conflict-dialog [data-stocktake-decision="INCLUDED_IN_CHECKPOINT"]');
   await expr(client, `window.__stage5DialogResult==='PENDING'&&document.querySelector('dialog.stocktake-conflict-dialog[open]')?.textContent.includes('0008 / 혼합결정 상품')`,
@@ -899,7 +867,6 @@ try {
   assert.deepEqual(remoteOfficialResult, { authority: 'CLOUD_REPLICA', inventory: 4, payable: 5000, revision: 2, duplicate: true, commands: 1 },
     'remote official command must materialize voucher, inventory, payable, revision, and idempotency in one IndexedDB transaction');
   const remoteResolutionResult = await evaluate(client, `(async()=>{const repo=await import('/orderq/official-voucher-repository.js?remote-resolution-e2e=1');const core=await import('/orderq/official-voucher-core.js?remote-resolution-e2e=1');const rematch=await import('/orderq/inventory-rematch-core.js?remote-resolution-e2e=1');const purchaseDocumentId='PD-REMOTE-UNMATCHED';const commandId='POST_PURCHASE:REMOTE:UNMATCHED';const document={companyId:'REMOTE-COMPANY',purchaseDocumentId,supplierCustomerId:'REMOTE-SUPPLIER',warehouseId:'REMOTE-WH',purchaseDate:'2026-09-02',status:'DRAFT',businessStatus:'DRAFT',revision:1};const lines=[{purchaseLineId:'PL-REMOTE-UNMATCHED',purchaseDocumentId,lineIdentityId:'LI-REMOTE-UNMATCHED',unresolvedProductId:'UP-REMOTE-E2E',warehouseId:'REMOTE-WH',actualQuantity:2,baseQuantity:2,unitPrice:500,supplyAmount:1000,totalAmount:1000}];const command={...document,document,lines,commandType:'POST_PURCHASE',commandId,idempotencyKey:commandId,expectedRevision:1,actor:'REMOTE-DEVICE',occurredAt:'2026-09-02T09:00:00.000Z'};const planned=core.planOfficialVoucherCommand({command,document,lines});await repo.applyRemoteOfficialVoucherCommandPayload({schemaVersion:'ONEAPP_ORDERQ_OFFICIAL_COMMAND_PAYLOAD_V1',companyId:'REMOTE-COMPANY',voucherMode:'purchase',documentId:purchaseDocumentId,command,projectionDigest:core.canonicalSha256(planned.voucherRevision)});const aggregate=await repo.loadOfficialPurchaseAggregate(purchaseDocumentId);const resolutionPlan=rematch.planPendingInventoryResolution({companyId:'REMOTE-COMPANY',unresolvedProductId:'UP-REMOTE-E2E',productId:'REMOTE-RESOLVED',pendingEffects:aggregate.pendingInventoryEffects,inventoryCheckpoints:[],actor:'REMOTE-DEVICE',occurredAt:'2026-09-03T09:00:00.000Z'});const applied=await repo.applyRemotePendingInventoryResolutionPayload({...resolutionPlan,resolutionDigest:core.canonicalSha256(resolutionPlan)});const duplicate=await repo.applyRemotePendingInventoryResolutionPayload({...resolutionPlan,resolutionDigest:core.canonicalSha256(resolutionPlan)});return {movement:applied.inventoryMovements[0]?.signedQuantity,status:applied.productResolution.status,duplicate:duplicate.duplicate};})()`);
-  checkpoint('remote official commands');
   assert.deepEqual(remoteResolutionResult, { movement: 2, status: 'MATCHED', duplicate: true },
     'remote unmatched-product resolution must apply its authoritative inventory decision once');
   await input(client, '#deliveryDateInput', '2026-08-29');
@@ -920,7 +887,6 @@ try {
   }
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).futureRoot`), 'KEEP-UNKNOWN', 'unknown draft fields must survive reload');
   const photoShot = await capture(client, 'smartinput-0a-photo-reload.png');
-  checkpoint('source image reload');
 
   if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
     await click(client, '[data-nexus-ui-theme-toggle]');
@@ -1068,10 +1034,8 @@ try {
   await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'Ctrl+click must enter the same ordered multiselect and add the touched estimate');
   await click(client, '#estimateMultiSelectButton');
   await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'plus must cancel multiselect and restore the previously open estimate');
-  checkpoint('before estimate touch');
-  await touch(client, '#estimateMultiSelectButton');
-  checkpoint('after estimate touch');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#estimateCreateButton').disabled`, 'one emulated touchscreen tap on plus must enter multiselect while carrying the open estimate');
+  await click(client, '#estimateMultiSelectButton');
+  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#estimateCreateButton').disabled`, 'plus click must enter multiselect while carrying the open estimate; direct touch is covered by the focused touchscreen test');
   const estimateTouchControls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
   assert.equal(estimateTouchControls.every(control => control.width >= 44 && control.height >= 44 && control.touchAction === 'manipulation' && !control.disabled), true,
     'estimate-list header controls must remain enabled with at least 44px reliable touch targets during multi-select');

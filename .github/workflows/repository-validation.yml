@@ -74,6 +74,7 @@ jobs:
       - name: Test SmartInput browser isolation and persistence
         run: |
           node scripts/test-smartinput-settings-ux-browser.mjs
+          node scripts/test-smartinput-right-panel-touch-browser.mjs
           node scripts/test-smartinput-browser-e2e.mjs
           node scripts/test-smartinput-estimate-bulk-update-browser.mjs
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
