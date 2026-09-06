@@ -148,7 +148,7 @@ try {
       {id:'voucher.order.line.unitPrice',label:'단가',scope:'voucher',projectionFieldId:'unitPrice',valueType:'NUMBER'},
       {id:'voucher.order.line.supplyAmount',label:'공급가액',scope:'voucher',projectionFieldId:'supplyAmount',valueType:'NUMBER'},
       {id:'voucher.order.line.memo',label:'메모',scope:'voucher',projectionFieldId:'memo',valueType:'TEXT'},
-      {id:'description',label:'적요(직원)',scope:'voucher',projectionFieldId:'description',valueType:'TEXT'}
+      {id:'productDescription',label:'간단설명(품위)',scope:'voucher',projectionFieldId:'productDescription',valueType:'TEXT'}
     ];
     const session=mapper.createMappingSession({matrix,headerRowIndex:0,targetDefinitions:targets,fileName:'검색계약.xlsx',sheetName:'원본',companyId:'ONEAPP',voucherMode:'order'});
     session.batchId='SIBATCH-INPUT-LIST-SEARCH-E2E';
@@ -191,7 +191,7 @@ try {
   const mappingTotals = () => evaluate(client, `Object.fromEntries([...document.querySelectorAll('#mappingTableTotals [data-mapping-total-column]')].map(cell=>[cell.dataset.mappingTotalColumn,cell.textContent.trim()]))`);
   const inputTotals = () => evaluate(client, `({quantity:document.querySelector('#totalQuantity').textContent.trim(),amount:document.querySelector('#totalAmount').textContent.trim()})`);
 
-  const protectedDataExpression = `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,quantity:row.quantity,unitPrice:row.unitPrice,memo:row.memo,description:row.description,customValues:row.customValues})),inputMapping:{workingRows:mode.inputMapping.workingRows,sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature}});})()`;
+  const protectedDataExpression = `(() => {const mode=JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order;return JSON.stringify({rows:mode.rows.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,specification:row.specification,quantity:row.quantity,unitPrice:row.unitPrice,memo:row.memo,productDescription:row.productDescription,customValues:row.customValues})),inputMapping:{workingRows:mode.inputMapping.workingRows,sourceMatrix:mode.inputMapping.sourceMatrix,sourceCellMatrix:mode.inputMapping.sourceCellMatrix,headers:mode.inputMapping.headers,signature:mode.inputMapping.signature,headerSignature:mode.inputMapping.headerSignature}});})()`;
   const originalData = await evaluate(client, protectedDataExpression);
   assert.deepEqual(await mappingTotals(), {
     0: '합계', 1: '', 2: '', 3: '-2', 4: '200', 5: '-200', 6: '', 7: ''
@@ -279,7 +279,7 @@ try {
   await expr(client, `document.activeElement===document.querySelector('#gridSearchInput')`, 'button-open focus');
   await input(client, '#gridSearchInput', '직원');
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>row.dataset.rowId)`), ['source-1'],
-    'employee description must be searchable');
+    'product description must be searchable');
   await click(client, '#inputListSearchCloseButton');
   await expr(client, `document.querySelector('#inputListSearchPanel').hidden&&document.querySelector('#gridSearchInput').value===''`, 'explicit close clears filter');
 
