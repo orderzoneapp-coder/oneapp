@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {
+  ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
+  ESTIMATE_BULK_TARGET_MATCH_TYPE,
   classifyEstimateBulkRows,
   createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
@@ -125,6 +127,38 @@ assert.equal(autoResolved.assignments[2].targetEstimateId, 'EST-NAME');
 assert.equal(autoResolved.assignments[2].matchMethod, 'CUSTOMER_NAME');
 assert.equal(autoResolved.assignments[3].targetEstimateId, '', 'fuzzy 이름과 연동그룹은 자동 대상이 되면 안 된다.');
 assert.ok(autoResolved.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_UNRESOLVED'));
+const rememberedMapping = {
+  aliasMappingId: 'SIEMATCH-FUZZY',
+  schemaVersion: ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
+  mappingType: ESTIMATE_BULK_TARGET_MATCH_TYPE,
+  companyId: 'COMPANY',
+  contextKey: `${ESTIMATE_BULK_TARGET_MATCH_TYPE}:COMPANY`,
+  matchKey: identityGroups[3].groupId,
+  sourceCustomerId: '',
+  sourceCustomerCode: '',
+  sourceCustomerName: '비슷 상호',
+  normalizedName: '비슷 상호',
+  targetEstimateId: 'EST-FUZZY',
+  status: 'CONFIRMED'
+};
+const rememberedResolved = resolveEstimateBulkTargets({
+  groups: [identityGroups[3]], estimates, matchMappings: [rememberedMapping], companyId: 'COMPANY'
+});
+assert.equal(rememberedResolved.assignments[0].targetEstimateId, 'EST-FUZZY');
+assert.equal(rememberedResolved.assignments[0].matchMethod, 'MATCH_DICTIONARY_NAME');
+assert.equal(resolveEstimateBulkTargets({
+  groups: [identityGroups[3]], estimates, matchMappings: [{ ...rememberedMapping, targetEstimateId: 'MISSING' }], companyId: 'COMPANY'
+}).assignments[0].targetEstimateId, '', '삭제된 매칭사전 대상은 자동 적용하면 안 된다.');
+assert.equal(resolveEstimateBulkTargets({
+  groups: [identityGroups[3]], estimates, matchMappings: [{ ...rememberedMapping, targetEstimateId: 'EST-LINKED' }], companyId: 'COMPANY'
+}).assignments[0].targetEstimateId, '', '연동견적서는 매칭사전 대상이어도 자동 적용하면 안 된다.');
+const conflictingRemembered = resolveEstimateBulkTargets({
+  groups: [identityGroups[3]], estimates,
+  matchMappings: [rememberedMapping, { ...rememberedMapping, aliasMappingId: 'SIEMATCH-CONFLICT', targetEstimateId: 'EST-NAME' }],
+  companyId: 'COMPANY'
+});
+assert.equal(conflictingRemembered.assignments[0].targetEstimateId, '', '같은 원본 거래처에 서로 다른 매칭사전 대상이 있으면 fail closed 해야 한다.');
+assert.ok(conflictingRemembered.issues.some(issue => issue.code === 'ESTIMATE_BULK_MATCH_DICTIONARY_AMBIGUOUS'));
 const ambiguous = resolveEstimateBulkTargets({
   groups: [identityGroups[2]],
   estimates: [...estimates, { ...estimates[2], estimateId: 'EST-NAME-2', catalogName: '같은 이름의 두 번째 대상' }]
@@ -164,6 +198,28 @@ assert.equal(split.rows[0].fieldValues['voucher.estimate.line.itemCode'].evidenc
 assert.equal(split.session.sourceCellMatrix[1][0].address, 'A3');
 assert.ok(!JSON.stringify(split.session.sourceMatrix).includes('거래처 2'), '분할 draft에 다른 거래처 원본 데이터가 있으면 안 된다.');
 assert.equal(split.session.editJournal['1:5'], '수정 메모', '편집 journal은 압축된 원본 행 위치로 안전하게 이동해야 한다.');
+
+const rememberedPlanTarget = {
+  estimateId: 'EST-REMEMBERED-PLAN', estimateKind: 'INDIVIDUAL', customerName: '현재 이름과 다름',
+  catalogName: '수동 매칭했던 견적서', draft: { header: { customerName: '현재 이름과 다름' }, rows: [] }
+};
+const rememberedPlan = createEstimatePerCustomerPlan({
+  classification: { groups: [firstGroup] },
+  estimates: [rememberedPlanTarget],
+  session,
+  matchMappings: [{
+    ...rememberedMapping,
+    aliasMappingId: 'SIEMATCH-PLAN',
+    matchKey: firstGroup.groupId,
+    sourceCustomerName: firstGroup.customerName,
+    normalizedName: firstGroup.normalizedCustomerName,
+    targetEstimateId: rememberedPlanTarget.estimateId
+  }],
+  companyId: 'COMPANY'
+});
+assert.equal(rememberedPlan.entries[0].targetEstimateId, rememberedPlanTarget.estimateId);
+assert.match(rememberedPlan.entries[0].matchMethod, /^MATCH_DICTIONARY_/);
+assert.equal(rememberedPlan.entries[0].status, 'READY');
 
 const target = {
   estimateId: 'TARGET-1',

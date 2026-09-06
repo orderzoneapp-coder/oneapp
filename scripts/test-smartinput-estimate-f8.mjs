@@ -485,6 +485,16 @@ const mappedRows = buildEstimateF8RowsFromDraft(mappedDraft);
 const mappedOutput = buildEstimateF8Data(mappedRows, {
   productCatalog: [{ itemCode: '000101', itemName: '마스터상품명', brand: '마스터브랜드', marketPrice: 999999 }]
 });
+const sortedEstimateUploadOutput = buildEstimateF8Data([
+  { rowCustomerName: '나 거래처', itemCode: 'N-2', itemName: '나 상품' },
+  { rowCustomerName: '가 거래처', itemCode: 'C-10', itemName: '가 상품 10' },
+  { rowCustomerName: '가 거래처', itemCode: 'C-2', itemName: '가 상품 2' }
+]);
+assert.deepEqual(sortedEstimateUploadOutput.estimateUploadData.slice(1).map(row => [row[3], row[8]]), [
+  ['가 거래처', 'C-2'], ['가 거래처', 'C-10'], ['나 거래처', 'N-2']
+], '견적서 업로드는 거래처명 다음 품목코드 순으로 정렬해야 한다.');
+assert.deepEqual(sortedEstimateUploadOutput.shopData.slice(1).map(row => row[0]), ['N-2', 'C-10', 'C-2'],
+  '견적서 업로드 정렬이 쇼핑몰 업로드 행 순서를 바꾸면 안 된다.');
 assert.equal(mappedOutput.ok, true);
 assert.deepEqual(ESTIMATE_F8_HEADERS.shop, [
   '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
