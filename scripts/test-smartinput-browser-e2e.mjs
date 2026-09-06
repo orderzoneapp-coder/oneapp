@@ -227,7 +227,7 @@ try {
   assert.equal(visualZones.completeText, '저장');
   assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
   assert.equal(visualZones.deliveryCardVisible, false, 'the footer left side must expose only the Save action');
-  assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: 'F8 EXCEL', footer: true }, 'voucher output actions must remain in the table footer for every mode');
+  assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: '보고서', footer: true }, 'voucher output actions must remain in the table footer for every mode');
   assert.equal(visualZones.sequence, 'No.');
   const domBaseline = await evaluate(client, `(() => {const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(value.x),y:Math.round(value.y),width:Math.round(value.width),height:Math.round(value.height)};};return {
     title:document.title,
