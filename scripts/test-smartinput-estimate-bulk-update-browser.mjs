@@ -352,6 +352,8 @@ try {
   assert.equal(targetA.draft.catalogBaselinePrices['MASTER:PRODUCT-SHARED'], 100);
   assert.deepEqual(after.find(record => record.estimateId === 'EST-UNTOUCHED'), before.find(record => record.estimateId === 'EST-UNTOUCHED'));
   assert.deepEqual(after.find(record => record.estimateId === 'EST-LINKED'), before.find(record => record.estimateId === 'EST-LINKED'));
+  await click(client, '[data-table-view="source"]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'full upload source view');
   assert.equal(await evaluate(client, `[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='A-2')&&[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='B-CHECK')&&[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='SHARED')`), true, 'successful per-customer updates must retain the full upload view');
   const progressStatuses = await evaluate(client, `Object.values(JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.estimate.estimateBulkProgress.groups).map(entry=>entry.status).sort()`);
   assert.deepEqual(progressStatuses, ['COMPLETED','COMPLETED','COMPLETED'], 'completed progress must persist without a new store or schema');

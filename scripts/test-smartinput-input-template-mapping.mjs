@@ -375,8 +375,8 @@ assert.match(smartInputHtml, /id="mappingValidationPrevious"[\s\S]*id="mappingVa
   'guided validation must expose previous and next issue navigation');
 assert.match(smartInputHtml, /class="sr-only" id="gridValidation"/,
   'inline text to the right of voucher reset must remain accessible without consuming toolbar space');
-assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="resetDraftButton"/,
-  'voucher reset must be structurally separated from the horizontally scrolling basic actions');
+assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*id="inputTemplateSaveButton"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="addRowButton"[\s\S]*id="undoGridPasteButton"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/,
+  'template save must stay left while blank row, paste undo and selection delete use the fixed right-side order');
 assert.match(smartInputCss, /\.grid-card > \.work-action-bar \.basic-action-scroll \{ flex: 1 1 auto; \}/,
   'the basic actions must scroll within their own fixed slot while voucher reset remains visible');
 assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
@@ -385,8 +385,8 @@ assert.match(smartInputHtml, /id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*
   'dynamic mapping and validation controls must live below the fixed basic toolbar');
 assert.doesNotMatch(
   smartInputHtml.match(/<div class="document-fields__right">([\s\S]*?)<\/div>\s*<div class="sub-work-bar"/)?.[1] || '',
-  /id="inputMappingStatus"|id="mappingValidationNav"|id="inputTemplateSaveButton"/,
-  'template workflow controls must not be inserted between permanent basic-toolbar buttons'
+  /id="inputMappingStatus"|id="mappingValidationNav"/,
+  'dynamic template status and validation controls must not be inserted between permanent basic-toolbar buttons'
 );
 assert.match(smartInputCss, /\.sub-work-bar \{[\s\S]*animation: sub-work-bar-open/,
   'the single contextual toolbar must expand below the fixed basic toolbar');
