@@ -249,6 +249,22 @@ try {
   assert.deepEqual(persistedTemplate.headers, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(persistedTemplate.mappings.map(mapping => mapping.state), ['MAPPED', 'MAPPED', 'MAPPED', 'UNMAPPED']);
 
+  await click(client, '[data-open-field-mapping="3"]');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-search]'))`, 'applied template direct remapping');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '적요');
+  await click(client, '.field-mapping-dialog [data-mapping-target="voucher.order.line.memo"]');
+  assert.equal(await evaluate(client, `document.querySelector('#inputTemplateSaveButton').textContent`), '양식 변경 저장');
+  await click(client, '#inputTemplateSaveButton');
+  await expr(client, `document.querySelector('#inputTemplateSaveButton').hidden`, 'applied template change save');
+  const revisedTemplate = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const get=db.transaction('inputTemplatesV2','readonly').objectStore('inputTemplatesV2').get(${JSON.stringify(persistedTemplate.templateId)});get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};})`);
+  assert.equal(revisedTemplate.revision, 2);
+  assert.equal(revisedTemplate.mappings[3].targetFieldId, 'voucher.order.line.memo',
+    'a wrong applied mapping must be directly editable and persist as the next template revision');
+  const reportByTemplate = await evaluate(client, `(async()=>{window.__templateReport=null;window.XLSX={utils:{book_new:()=>({SheetNames:[],Sheets:{}}),aoa_to_sheet:matrix=>({matrix}),book_append_sheet:(book,sheet,name)=>{book.SheetNames.push(name);book.Sheets[name]=sheet;}},writeFile:(book,fileName)=>{window.__templateReport={matrix:book.Sheets[book.SheetNames[0]].matrix,fileName};}};document.querySelector('#estimateExcelButton').click();await new Promise(resolve=>setTimeout(resolve,50));return window.__templateReport;})()`);
+  assert.match(reportByTemplate.fileName, /행사발주 공식 양식/);
+  assert.equal(reportByTemplate.matrix[4].includes('적요'), true,
+    'the report columns must come from the applied template mapping instead of the common screen-column settings');
+
   await input(client, '[data-mapping-row-id="source-2"] [data-mapping-column="2"] input', '-2.5');
   await wait(900);
   assert.equal(await evaluate(client, `document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[2].textContent`), '0', 'worktable editing must not mutate source display');
