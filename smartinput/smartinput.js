@@ -2842,7 +2842,7 @@ function openFieldMappingDialog(columnIndex) {
   const session = inputMappingSession();
   const mapping = session?.mappings?.[columnIndex];
   if (!session || !mapping) return;
-  const editable = session.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE;
+  const editable = [MAPPING_SESSION_STATUS.NEW_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_APPLIED].includes(session.status);
   let targets = inputMappingDefinitions();
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog field-mapping-dialog';
@@ -2922,7 +2922,11 @@ function openFieldMappingDialog(columnIndex) {
     const button = event.target.closest('[data-mapping-target]');
     if (!button || button.disabled) return;
     try {
-      modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingDefinitions());
+      const current = inputMappingSession();
+      modeDraft().inputMapping = {
+        ...setColumnDecision(current, columnIndex, MAPPING_DECISION.MAPPED, button.dataset.mappingTarget, inputMappingDefinitions()),
+        templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
+      };
       projectInputMappingToVoucherRows();
       renderRows({ restoreFocus: false });
       saveDraftNow();
@@ -2932,7 +2936,11 @@ function openFieldMappingDialog(columnIndex) {
     }
   });
   dialog.querySelector('[data-unmap]').addEventListener('click', () => {
-    modeDraft().inputMapping = setColumnDecision(inputMappingSession(), columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions());
+    const current = inputMappingSession();
+    modeDraft().inputMapping = {
+      ...setColumnDecision(current, columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions()),
+      templateDirty: current.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || current.templateDirty === true
+    };
     projectInputMappingToVoucherRows();
     renderRows({ restoreFocus: false });
     saveDraftNow();
@@ -2945,28 +2953,39 @@ function openFieldMappingDialog(columnIndex) {
 
 function openInputTemplateSaveDialog() {
   const session = inputMappingSession();
-  if (!session || session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE) return;
+  if (!session) return;
+  if (session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty) {
+    void saveAppliedInputTemplateChanges();
+    return;
+  }
+  if (session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE) return;
   if (!['READY', 'EMPTY'].includes(state.inputTemplatesStatus)) {
     toast('기존 양식 목록을 확인할 수 없어 신규 양식을 저장하지 않습니다. 양식을 다시 불러오세요.', 'error');
     return;
   }
-  const validation = validateTemplateDraft(session, inputMappingDefinitions());
+  const unresolvedCount = session.mappings.filter(mapping => mapping.state === MAPPING_DECISION.UNDECIDED).length;
+  const preparedSession = unresolvedCount ? {
+    ...session,
+    mappings: session.mappings.map(mapping => mapping.state === MAPPING_DECISION.UNDECIDED
+      ? { ...mapping, state: MAPPING_DECISION.UNMAPPED, targetFieldId: '', reviewed: true }
+      : mapping)
+  } : session;
+  const validation = validateTemplateDraft(preparedSession, inputMappingDefinitions());
   if (!validation.valid) {
-    const undecided = validation.issues.filter(issue => issue.code === 'UNDECIDED_COLUMN').map(issue => issue.columnIndex + 1);
-    toast(undecided.length ? `매핑 또는 비매핑을 결정하지 않은 열이 있습니다: ${undecided.slice(0, 6).join(', ')}열` : '중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
+    toast('중복되거나 삭제된 연결 대상을 확인하세요.', 'error');
     return;
   }
   if (state.inputTemplates.some(template => template.signature === session.signature)) {
     toast('같은 구조의 공식 입력 양식이 이미 있습니다. 양식관리에서 수정하세요.', 'error');
     return;
   }
-  const summary = mappingSummary(session);
+  const summary = mappingSummary(preparedSession);
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog smart-dialog--compact';
   dialog.innerHTML = `<form method="dialog" class="smart-dialog__shell">
     <header><div><small>New Input Template</small><h2>입력 양식 저장</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
     <label class="smart-dialog__search">양식명<input name="templateName" maxlength="80" autocomplete="off" placeholder="파일 구조를 구분할 이름" autofocus></label>
-    <p class="smart-dialog__message">${session.headers.length}열 · 매핑 ${summary.mapped + summary.recommended} · 비매핑 ${summary.unmapped}. 추천 매핑을 포함한 현재 결정을 공식 양식으로 저장합니다.</p>
+    <p class="smart-dialog__message">${session.headers.length}열 · 매핑 ${summary.mapped + summary.recommended} · 비매핑 ${summary.unmapped}.${unresolvedCount ? ` 미결정 ${unresolvedCount}열은 비매핑으로 제외해 저장합니다.` : ''} 추천 매핑을 포함한 현재 결정을 공식 양식으로 저장합니다.</p>
     <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-save>양식 저장</button></footer>
   </form>`;
   document.body.append(dialog);
@@ -2991,7 +3010,7 @@ function openInputTemplateSaveDialog() {
     const button = dialog.querySelector('[data-save]');
     button.disabled = true;
     try {
-      const record = createTemplateRecord(inputMappingSession(), name, inputMappingDefinitions());
+      const record = createTemplateRecord(preparedSession, name, inputMappingDefinitions());
       const nextTemplates = [...state.inputTemplates, record];
       await saveInputTemplates(nextTemplates, { companyId: state.companyId, voucherMode: state.draft.activeMode });
       state.inputTemplates = nextTemplates;
@@ -3032,6 +3051,41 @@ function openInputTemplateSaveDialog() {
   form.addEventListener('submit', event => { event.preventDefault(); void submit(); });
   dialog.showModal();
   form.elements.templateName.focus();
+}
+
+async function saveAppliedInputTemplateChanges() {
+  const session = inputMappingSession();
+  if (!session?.templateId || session.status !== MAPPING_SESSION_STATUS.TEMPLATE_APPLIED || !session.templateDirty) return;
+  const previous = state.inputTemplates.find(template => template.templateId === session.templateId);
+  if (!previous) {
+    toast('적용된 입력 양식을 찾지 못했습니다. 양식 목록을 다시 불러오세요.', 'error');
+    return;
+  }
+  const validation = validateTemplateDraft(session, inputMappingDefinitions());
+  if (!validation.valid) {
+    toast('모든 열을 매핑 또는 비매핑으로 결정하고 중복 연결을 제거하세요.', 'error');
+    return;
+  }
+  const button = $('inputTemplateSaveButton');
+  button.disabled = true;
+  try {
+    const updated = createTemplateRecord(session, previous.templateName, inputMappingDefinitions(), previous);
+    const next = state.inputTemplates.map(template => template.templateId === updated.templateId ? updated : template);
+    await saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode });
+    state.inputTemplates = next;
+    modeDraft().inputMapping = {
+      ...session,
+      templateName: updated.templateName,
+      templateRevision: updated.revision,
+      templateDirty: false
+    };
+    saveDraftNow();
+    renderMode();
+    toast(`${updated.templateName} 입력 양식을 변경했습니다. 현재 작업과 다음 동일 파일에 적용됩니다.`, 'success');
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message || '입력 양식을 변경하지 못했습니다.', 'error');
+  }
 }
 
 function openInputTemplateEditor(template) {
@@ -4860,7 +4914,9 @@ function renderInputMappingStatus() {
   $('inputMappingStatusSummary').textContent = state.inputTemplatesStatus === 'ERROR'
     ? '양식 조회 오류'
     : `매핑 ${summary.mapped} · 추천 ${summary.recommended} · 비매핑 ${summary.unmapped} · 미결정 ${summary.undecided}`;
-  saveButton.hidden = session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE;
+  saveButton.hidden = session.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE
+    && !(session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && session.templateDirty);
+  saveButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '양식 변경 저장' : '입력 양식 저장';
   reloadButton.hidden = ![MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT, MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR].includes(session.status);
   reloadButton.textContent = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED ? '최신 양식 확인' : '양식 다시 불러오기';
 }
@@ -7483,15 +7539,33 @@ function voucherOutputFieldValue(row, field) {
   return field.custom ? (row.customValues?.[field.id] ?? '') : (row[field.id] ?? '');
 }
 
-function buildVoucherOutputMatrix(mode = state.draft.activeMode, current = modeDraft()) {
+function voucherOutputFields(mode = state.draft.activeMode, current = modeDraft()) {
+  const session = current.inputMapping;
+  if (session?.templateId && session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED) {
+    const targets = new Map(inputMappingDefinitions(mode).map(target => [target.id, target]));
+    const seen = new Set();
+    return [...(session.mappings || [])]
+      .sort((left, right) => Number(left.columnIndex) - Number(right.columnIndex))
+      .map(mapping => targets.get(mapping.targetFieldId))
+      .filter(target => target?.scope === 'voucher')
+      .map(target => ({ ...target, id: target.projectionFieldId || target.id }))
+      .filter(field => !seen.has(field.id) && seen.add(field.id));
+  }
   const selectedFields = new Set(voucherColumnsForMode(mode));
-  const fieldById = new Map(layoutDefinitions('voucher').map(field => [field.id, field]));
-  const fields = [...selectedFields].map(fieldId => fieldById.get(fieldId)).filter(Boolean);
+  const fieldById = new Map(layoutDefinitions('voucher', state.settings.customFields || [], mode).map(field => [field.id, field]));
+  return [...selectedFields].map(fieldId => fieldById.get(fieldId)).filter(Boolean);
+}
+
+function buildVoucherOutputMatrix(mode = state.draft.activeMode, current = modeDraft()) {
+  const fields = voucherOutputFields(mode, current);
   const header = current.header || {};
   const rows = voucherOutputRows(current);
   const dateLabel = mode === 'purchase' ? '구매일자' : (mode === 'sale' ? '판매일자' : '주문일자');
+  const templateSuffix = current.inputMapping?.templateId && current.inputMapping?.templateName
+    ? ` · ${current.inputMapping.templateName}`
+    : '';
   return [
-    [`${contract.MODES[mode].label} 출력`],
+    [`${contract.MODES[mode].label} 출력${templateSuffix}`],
     [dateLabel, voucherOutputDate(mode, header), '거래처', header.customerName || header.customerCode || '', '창고', header.warehouseName || header.warehouseCode || ''],
     ['거래유형', header.transactionType || ''],
     [],
@@ -7576,7 +7650,9 @@ async function exportCurrentVoucherExcel() {
   const sheet = window.XLSX.utils.aoa_to_sheet(buildVoucherOutputMatrix(mode));
   window.XLSX.utils.book_append_sheet(workbook, sheet, contract.MODES[mode].label);
   const dateStamp = voucherOutputDate(mode, modeDraft().header) || new Date().toLocaleDateString('sv-SE');
-  window.XLSX.writeFile(workbook, `스마트입력_${contract.MODES[mode].label}_${dateStamp}.xlsx`);
+  const templateName = String(modeDraft().inputMapping?.templateName || '').replace(/[\\/:*?"<>|]/g, '_').trim();
+  const templatePart = templateName ? `_${templateName}` : '';
+  window.XLSX.writeFile(workbook, `스마트입력_${contract.MODES[mode].label}${templatePart}_${dateStamp}.xlsx`);
   toast(`${contract.MODES[mode].label} Excel을 생성했습니다.`, 'success');
 }
 
