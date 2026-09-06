@@ -4057,8 +4057,8 @@ function renderEstimateWorkspace() {
   linkedButton.classList.toggle('is-active', linkedList);
   individualButton.setAttribute('aria-pressed', String(!linkedList));
   linkedButton.setAttribute('aria-pressed', String(linkedList));
-  individualButton.disabled = state.busy || multiSelect;
-  linkedButton.disabled = state.busy || multiSelect;
+  individualButton.disabled = state.busy;
+  linkedButton.disabled = state.busy;
   multiSelectButton.disabled = state.busy;
   multiSelectButton.classList.toggle('is-active', multiSelect);
   multiSelectButton.setAttribute('aria-pressed', String(multiSelect));
@@ -9300,7 +9300,11 @@ $('estimateMultiSelectButton').addEventListener('click', () => {
   else beginEstimateMultiSelect();
 });
 function selectEstimateLibraryKind(kind) {
-  if (!['individual', 'linked'].includes(kind) || estimateMultiSelectActive() || state.estimateLibraryKind === kind) return;
+  if (!['individual', 'linked'].includes(kind)) return;
+  const multiSelect = estimateMultiSelectActive();
+  if (!multiSelect && state.estimateLibraryKind === kind) return;
+  if (multiSelect) cancelEstimateMultiSelect();
+  if (state.estimateLibraryKind === kind) return;
   rememberActiveEstimateWork();
   const returnDraft = state.estimateSelectionReturnDraft;
   state.noticeEstimateIds = [];

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile('smartinput/index.html', 'utf8');
 const css = await readFile('smartinput/smartinput.css', 'utf8');
+const js = await readFile('smartinput/smartinput.js', 'utf8');
 
 assert.match(html, /<header class="app-bar">/, '0a SmartInput app bar must be restored');
 assert.match(html, /<div class="workspace" id="smartInputWorkspace">/, 'the protected desktop workspace must remain');
@@ -18,6 +19,8 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.8"/, 'the estimate touch-target CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.28"/, 'the estimate multiselect interaction must use the next cache-bust version');
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>이름 변경<\/button>/, 'the estimate library footer must expose only deletion and rename');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
@@ -43,6 +46,14 @@ assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{
   'all voucher modes must keep search, counts, and editing controls on one stable toolbar row');
 assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
+assert.match(css, /\.estimate-library-toolbar\s*\{[^}]*grid-template-columns:[^;}]*44px/s,
+  'the icon-only estimate multi-select control must receive a 44px grid track');
+assert.match(css, /\.estimate-library-kind-button,\s*\.estimate-multi-select-button\s*\{[^}]*min-height:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s,
+  'all estimate-library header controls must expose reliable 44px touch targets');
+assert.match(js, /individualButton\.disabled\s*=\s*state\.busy;[\s\S]*linkedButton\.disabled\s*=\s*state\.busy;/,
+  'estimate-list kind controls must remain actionable during multi-select');
+assert.match(js, /function selectEstimateLibraryKind\(kind\)\s*\{[\s\S]*const multiSelect = estimateMultiSelectActive\(\);[\s\S]*if \(multiSelect\) cancelEstimateMultiSelect\(\);[\s\S]*state\.estimateLibraryKind = kind;/,
+  'switching estimate-list kind must safely cancel multi-select before navigation');
 assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
   'the right-panel footer must stay at or below 44px with two horizontal actions');
 assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>F8 EXCEL<\/button>/,
