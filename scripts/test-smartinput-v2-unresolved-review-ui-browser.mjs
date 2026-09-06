@@ -382,7 +382,7 @@ try {
   const mobileScreenshot = await capture(client, 'orderops-unresolved-review-mobile-390.png');
 
   await click(client, '#unresolvedReviewToggle');
-  await expr(client, `document.querySelector('#tableSearchInput').value==='정상상품'&&document.querySelector('#inventoryDrop').getAttribute('aria-selected')==='true'`, 'host view restoration');
+  await expr(client, `document.querySelector('#tableSearchInput').value==='정상상품'&&document.querySelector('#inventoryDrop').getAttribute('aria-selected')==='true'&&document.querySelector('#previewTable').scrollLeft===80&&document.activeElement.id==='tableSearchInput'`, 'host view restoration');
   const hostAfter = await evaluate(client, `({search:document.querySelector('#tableSearchInput').value,spec:document.querySelector('#specFilterGroup input[value="EA"]').checked,scrollLeft:document.querySelector('#previewTable').scrollLeft,activeCard:document.querySelector('#inventoryDrop').getAttribute('aria-selected'),focus:document.activeElement.id,output:{print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled}})`);
   assert.deepEqual(hostAfter, hostBefore, 'search, selection, scroll, active view, and focus must restore on exit');
 

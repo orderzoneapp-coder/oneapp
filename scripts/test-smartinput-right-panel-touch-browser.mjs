@@ -158,7 +158,7 @@ try {
 } finally {
   if (client) {
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
-    await client.send('Browser.close').catch(() => {});
+    await Promise.race([client.send('Browser.close').catch(() => {}), wait(2_000)]);
     client.close();
   }
   if (browser && browser.exitCode === null) {
