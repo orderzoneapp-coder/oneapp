@@ -14,6 +14,10 @@ function meaningful(value) {
   return cellText(value) !== '';
 }
 
+export function isEstimateWorkbookItemRow(row = []) {
+  return Array.isArray(row) && ERP_ESTIMATE_HEADERS.slice(0, 6).every((unused, index) => meaningful(row[index]));
+}
+
 export function inspectEstimateWorkbookCandidate(candidate = {}, voucherMode = '') {
   const matrix = Array.isArray(candidate.matrix) ? candidate.matrix : [];
   const headerRowIndex = Number(candidate?.detection?.rowIndex);
@@ -26,9 +30,7 @@ export function inspectEstimateWorkbookCandidate(candidate = {}, voucherMode = '
     && header.slice(ERP_ESTIMATE_HEADERS.length).every(value => !meaningful(value));
   if (!recognized) return Object.freeze({ recognized: false, preferred: false });
 
-  const itemRows = matrix.slice(headerRowIndex + 1).filter(row => (
-    Array.isArray(row) && ERP_ESTIMATE_HEADERS.slice(0, 6).every((unused, index) => meaningful(row[index]))
-  ));
+  const itemRows = matrix.slice(headerRowIndex + 1).filter(isEstimateWorkbookItemRow);
   const customerNames = new Set(itemRows.map(row => cellText(row[2])).filter(Boolean));
   return Object.freeze({
     schemaVersion: 'ONEAPP_SMARTINPUT_ERP_ESTIMATE_STATUS_SUMMARY_V1',

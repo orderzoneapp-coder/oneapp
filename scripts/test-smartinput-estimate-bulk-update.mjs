@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   classifyEstimateBulkRows,
+  createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
   inspectEstimateBulkWorkingCopyConflicts,
   resolveEstimateBulkTargets,
@@ -221,5 +222,34 @@ assert.deepEqual(conflicts.map(conflict => conflict.code).sort(), [
   'ESTIMATE_BULK_LINKED_WORKING_COPY_CONFLICT',
   'ESTIMATE_BULK_TARGET_WORKING_COPY_CONFLICT'
 ]);
+
+const activeLinkedPlan = createEstimatePerCustomerPlan({
+  classification: { groups: [firstGroup] },
+  estimates: [target, linked],
+  selections: { [firstGroup.groupId]: { action: 'UPDATE', targetEstimateId: target.estimateId } },
+  session,
+  workingCopies: [{ estimateId: linked.estimateId, draft: dirtyLinked }],
+  activeEstimateId: linked.estimateId
+});
+assert.equal(activeLinkedPlan.entries[0].status, 'READY',
+  '현재 ERP 갱신 입력으로 사용 중인 연동견적서 작업본이 자기 원본 업데이트를 순환 차단하면 안 된다.');
+
+const otherLinked = { ...linked, estimateId: 'LINKED-OTHER', catalogName: '다른 연동 견적' };
+const otherDirtyLinked = structuredClone(otherLinked.draft);
+otherDirtyLinked.rows[0].memo = '다른 연동견적서의 저장하지 않은 편집';
+const protectedPlan = createEstimatePerCustomerPlan({
+  classification: { groups: [firstGroup] },
+  estimates: [target, linked, otherLinked],
+  selections: { [firstGroup.groupId]: { action: 'UPDATE', targetEstimateId: target.estimateId } },
+  session,
+  workingCopies: [
+    { estimateId: linked.estimateId, draft: dirtyLinked },
+    { estimateId: otherLinked.estimateId, draft: otherDirtyLinked }
+  ],
+  activeEstimateId: linked.estimateId
+});
+assert.equal(protectedPlan.entries[0].status, 'PENDING',
+  '현재 작업본이 아닌 다른 연동견적서의 미저장 편집은 계속 보호해야 한다.');
+assert.equal(protectedPlan.entries[0].firstIssue.code, 'ESTIMATE_BULK_LINKED_WORKING_COPY_CONFLICT');
 
 console.log('SmartInput estimate bulk grouping, exact target matching, evidence split, record replacement, and working-copy guards passed.');

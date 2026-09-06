@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   ERP_ESTIMATE_HEADERS,
   chooseEstimateWorkbookCandidate,
-  inspectEstimateWorkbookCandidate
+  inspectEstimateWorkbookCandidate,
+  isEstimateWorkbookItemRow
 } from '../smartinput/estimate-workbook-selector.js';
 
 const distribution = [72, 51, 32, 25, 22, 20, 18, 18, 12, 7];
@@ -49,6 +50,10 @@ assert.equal(full.estimateErpSummary.itemCount, 277);
 assert.equal(full.estimateErpSummary.customerCount, 10);
 assert.equal(full.estimateErpSummary.sourceRowCount, 280);
 assert.equal(full.estimateErpSummary.sourceColumnCount, 23);
+assert.equal(isEstimateWorkbookItemRow(fullMatrix.at(-1)), false,
+  '생성시각만 있는 마지막 시스템 푸터는 견적 상품행이 아니다.');
+assert.equal(isEstimateWorkbookItemRow(fullMatrix[2]), true,
+  'A~F 필수값이 모두 있는 실제 품목행은 유지해야 한다.');
 assert.equal(chooseEstimateWorkbookCandidate(subset, full, 'estimate')?.sheetName, '견적서현황내역',
   '동일 점수이면 전체 ERP 견적서현황내역 시트를 선택해야 한다.');
 
