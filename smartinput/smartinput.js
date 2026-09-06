@@ -83,8 +83,9 @@ import {
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
   chooseEstimateWorkbookCandidate,
-  inspectEstimateWorkbookCandidate
-} from './estimate-workbook-selector.js?v=0.1.0';
+  inspectEstimateWorkbookCandidate,
+  isEstimateWorkbookItemRow
+} from './estimate-workbook-selector.js?v=0.1.1';
 import {
   createRecordId,
   commitEstimateBundle,
@@ -151,7 +152,7 @@ import {
   createEstimateBulkReplacementRecord,
   createEstimatePerCustomerPlan,
   estimateBulkDraftsEquivalent
-} from './estimate-bulk-update.js?v=0.2.0';
+} from './estimate-bulk-update.js?v=0.2.1';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -1352,7 +1353,13 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
   if (!session) return;
   const priorRows = preserveProductEdits ? new Map((current.rows || []).map(row => [row.rowId, row])) : new Map();
   const targetDefinitions = inputMappingDefinitions();
-  let projectedSources = projectMappedRows(session, targetDefinitions);
+  const projectionSession = session.estimateErpSummary?.recognized
+    ? {
+      ...session,
+      workingRows: (session.workingRows || []).filter(row => row.manual || isEstimateWorkbookItemRow(row.cells))
+    }
+    : session;
+  let projectedSources = projectMappedRows(projectionSession, targetDefinitions);
   projectedSources = applyOrderDocumentNumberDerivation({
     rows: projectedSources,
     session,
@@ -3004,7 +3011,7 @@ function openInputTemplateSaveDialog() {
       saveDraftNow();
       renderMode();
       finish();
-      toast(`${record.templateName} 입력 양식을 저장하고 현재 파일에 적용했습니다.`, 'success');
+      toast(`${record.templateName} 입력 양식을 저장했습니다. 다음 동일 열 구성에는 자동 적용됩니다.`, 'success');
     } catch (error) {
       button.disabled = false;
       message.textContent = error.message || '입력 양식을 저장하지 못했습니다.';
@@ -7725,7 +7732,7 @@ function estimateBulkSelectionFromValue(value, catalogName = '') {
   return { action: 'NONE', targetEstimateId: '', catalogName: '' };
 }
 
-function createEstimatePerCustomerPlanForCurrent(classification, selections = {}) {
+function createEstimatePerCustomerPlanForCurrent(classification, selections = {}, activeEstimateId = modeDraft().catalogRecordId) {
   const current = modeDraft();
   return createEstimatePerCustomerPlan({
     classification,
@@ -7733,6 +7740,7 @@ function createEstimatePerCustomerPlanForCurrent(classification, selections = {}
     selections,
     session: inputMappingSession(current),
     workingCopies: [...state.estimateWorkingCopies].map(([estimateId, draft]) => ({ estimateId, draft })),
+    activeEstimateId,
     progress: current.estimateBulkProgress
   });
 }
@@ -7843,7 +7851,8 @@ async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgres
 }
 
 function showEstimateBulkUpdateDialog(classification) {
-  let currentPlan = createEstimatePerCustomerPlanForCurrent(classification);
+  const bulkInputEstimateId = modeDraft().catalogRecordId;
+  let currentPlan = createEstimatePerCustomerPlanForCurrent(classification, {}, bulkInputEstimateId);
   const selections = Object.fromEntries(currentPlan.entries.map(entry => [entry.groupId, {
     action: entry.action,
     targetEstimateId: entry.targetEstimateId,
@@ -7879,7 +7888,7 @@ function showEstimateBulkUpdateDialog(classification) {
     dialog.remove();
   };
   const sync = () => {
-    currentPlan = createEstimatePerCustomerPlanForCurrent(classification, selections);
+    currentPlan = createEstimatePerCustomerPlanForCurrent(classification, selections, bulkInputEstimateId);
     currentPlan.entries.forEach((entry, index) => {
       const section = dialog.querySelector(`[data-bulk-group="${CSS.escape(entry.groupId)}"]`);
       const checkbox = section.querySelector('[data-bulk-select]');

@@ -168,7 +168,7 @@ try {
     const productSnapshot={cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',domain:'product',ownerAppId:'master-lookup',schemaVersion:'ONEAPP_PRODUCT_SNAPSHOT_V1',adapterVersion:'BULK-E2E',status:'READY',source:'BULK_E2E_FIXTURE',fallback:false,count:productRows.length,revision:'BULK-E2E-1',snapshotId:'PRODUCT-BULK-E2E-1',contentHash:'BULK-E2E-HASH',snapshotCreatedAt:timestamp,checkedAt:timestamp,rows:productRows};
     await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction(['estimates','inputTemplatesV2','settings'],'readwrite');tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve()};[targetA,targetB,targetC,untouched,linked].forEach(record=>tx.objectStore('estimates').put(record));tx.objectStore('inputTemplatesV2').put(template);tx.objectStore('settings').put({key:'reference:product',value:{cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',applied:productSnapshot,pending:null,updatedAt:timestamp},updatedAt:timestamp});};});
     base.activeMode='estimate';
-    base.modes.estimate={...base.modes.estimate,activeMethod:'excel',catalogRecordId:'',inputMapping:session,rows:currentRows,sourceText:sourceMatrix.map(row=>row.join('\t')).join('\n')};
+    base.modes.estimate={...base.modes.estimate,activeMethod:'excel',catalogRecordId:'EST-LINKED',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-BULK-B'},{estimateId:'EST-BULK-C'}],inputMapping:session,rows:currentRows,sourceText:sourceMatrix.map(row=>row.join('\t')).join('\n')};
     localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(base));
     return true;
   })()`);
@@ -190,6 +190,8 @@ try {
     'ERP 견적서현황 원본을 선택하면 시트명·거래처 수·품목 수를 화면에 명시해야 한다.');
   const before = await readEstimates(client);
   const beforeJson = JSON.stringify(before);
+
+  await click(client, '#estimateLibraryLinkedButton');
 
   const matrix = [];
   const viewports = [{ width: 1920, height: 1080, mobile: false }, { width: 1840, height: 864, mobile: false }, { width: 1440, height: 900, mobile: false }, { width: 390, height: 844, mobile: true }];

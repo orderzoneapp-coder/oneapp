@@ -583,7 +583,7 @@ function planSummary(entries) {
   return summary;
 }
 
-export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], progress } = {}) {
+export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], activeEstimateId = '', progress } = {}) {
   const groups = Array.isArray(classification?.groups) ? classification.groups : [];
   const allRecords = (Array.isArray(estimates) ? estimates : []).filter(record => record?.estimateId);
   const individualRecords = allRecords.filter(record => record.estimateKind !== 'LINKED_GROUP');
@@ -627,7 +627,9 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
   });
 
   const targetIds = [...targetGroups.keys()];
-  const workingConflicts = inspectEstimateBulkWorkingCopyConflicts({ targetEstimateIds: targetIds, estimates: allRecords, workingCopies });
+  const normalizedActiveEstimateId = text(activeEstimateId);
+  const protectedWorkingCopies = (workingCopies || []).filter(copy => text(copy?.estimateId) !== normalizedActiveEstimateId);
+  const workingConflicts = inspectEstimateBulkWorkingCopyConflicts({ targetEstimateIds: targetIds, estimates: allRecords, workingCopies: protectedWorkingCopies });
   drafts.forEach(entry => {
     if (entry.decision.action !== 'UPDATE') return;
     workingConflicts.filter(conflict => (conflict.targetEstimateIds || []).includes(entry.decision.targetEstimateId))
