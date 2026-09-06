@@ -362,7 +362,11 @@ try {
   await clickModalButton(client, '상품관리 최초 Excel 등록', '1건 최초 저장');
   const initial = await waitFor(async () => {
     const state = await readStoredProduct(client, initialCode);
-    return state.product?.품목명 === '최초 Excel 상품' && state.revision ? state : null;
+    return state.product?.품목명 === '최초 Excel 상품'
+      && state.revision
+      && state.history.some(log => log.recordType === 'master_initial_registration_job')
+      ? state
+      : null;
   }, 'initial product in official IndexedDB');
   assert.ok(initial.history.some(log => log.recordType === 'master_initial_registration_job'));
 
@@ -384,7 +388,11 @@ try {
 
   const saved = await waitFor(async () => {
     const state = await readStoredProduct(client, testCode);
-    return state.product?.품목명 === originalName && state.revision !== initial.revision ? state : null;
+    return state.product?.품목명 === originalName
+      && state.revision !== initial.revision
+      && state.history.some(log => log.code === testCode && log.actionType === 'master_create')
+      ? state
+      : null;
   }, 'registered product in official IndexedDB');
   assert.equal(saved.product.코드, testCode);
   assert.ok(saved.history.some(log => log.code === testCode && log.actionType === 'master_create'));
@@ -411,7 +419,11 @@ try {
   await clickModalButton(client, '상품 수정', '수정 저장');
   const edited = await waitFor(async () => {
     const state = await readStoredProduct(client, testCode);
-    return state.product?.품목명 === editedName && state.revision !== saved.revision ? state : null;
+    return state.product?.품목명 === editedName
+      && state.revision !== saved.revision
+      && state.history.some(log => log.code === testCode && log.field === '품목명' && log.newVal === editedName)
+      ? state
+      : null;
   }, 'edited product in official IndexedDB');
   assert.ok(edited.history.some(log => log.code === testCode && log.field === '품목명' && log.newVal === editedName));
 
@@ -466,26 +478,23 @@ try {
   assert.match((await evaluate(client, `window.__legacyDownload?.download || ''`)), /^ItemMaster-legacy-backup-/);
 
   await clickButton(client, '정보수정 Excel 검토');
-  await waitForExpression(client, `document.body?.innerText.includes('정보수정 Excel 확인요청')`, 'legacy review confirmation');
+  await waitForExpression(client, `document.body?.innerText.includes('2. 정보수정 Excel 비교 결과 요약')`, 'legacy review confirmation');
   assert.equal((await readStoredProduct(client, initialCode)).product?.품목명, '최초 Excel 상품');
-  await clickModalButton(client, '정보수정 Excel 확인요청', '이슈 확인 화면으로 이동');
+  await clickModalButton(client, '2. 정보수정 Excel 비교 결과 요약', '3. 이슈 확인으로 이동');
   await waitForExpression(client, `document.body?.innerText.includes('LEGACY-NEW-001')`, 'legacy review candidates');
   await evaluate(client, `(() => {
-    const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes('LEGACY-NEW-001'));
-    const approve = Array.from(section?.querySelectorAll('button') || []).find(button => button.textContent.includes('상품 전체 승인'));
-    if (!approve) throw new Error('Legacy approve button not found');
-    approve.click();
+    const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes(${JSON.stringify(initialCode)}));
+    const exclude = Array.from(section?.querySelectorAll('button') || []).find(button => button.textContent.includes('상품 전체 제외'));
+    if (!exclude) throw new Error('Legacy conflict exclusion button not found');
+    exclude.click();
     return true;
   })()`);
   await wait(100);
-  await evaluate(client, `(() => {
-    const section = Array.from(document.querySelectorAll('section')).find(item => item.textContent.includes('LEGACY-NEW-001'));
-    const checkbox = section?.querySelector('input[type="checkbox"]');
-    if (!checkbox || checkbox.disabled) throw new Error('Legacy admin-complete checkbox unavailable');
-    checkbox.click();
-    return true;
-  })()`);
-  await clickButton(client, '승인 범위 저장');
+  await clickButton(client, '5. 전체 일괄 적용');
+  await waitForExpression(client, `document.body?.innerText.includes('6. 적용 예정 결과 확인')`, 'legacy apply preview');
+  assert.equal((await readStoredProduct(client, 'LEGACY-NEW-001')).product, null, 'preview must not save the new product');
+  assert.equal(await evaluate(client, `document.body.innerText.includes('아직 master에는 저장하지 않았')`), true);
+  await clickModalButton(client, '6. 적용 예정 결과 확인', '7. 승인 항목 저장');
   const imported = await waitFor(async () => {
     const state = await readStoredProduct(client, 'LEGACY-NEW-001');
     return state.product?.품목명 === '레거시 신규 상품' ? state : null;

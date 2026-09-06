@@ -742,6 +742,70 @@
     };
   };
 
+  const prepareBulkApproval = (analysis) => {
+    if (!analysis || analysis.mode !== MODE) throw new Error('추가·갱신 비교 결과가 없습니다.');
+    const next = {
+      ...analysis,
+      candidates: (analysis.candidates || []).map(candidate => ({
+        ...candidate,
+        issueTags: [...(candidate.issueTags || [])],
+        blockingReasons: [...(candidate.blockingReasons || [])]
+      })),
+      summary: { ...(analysis.summary || {}) }
+    };
+    const counts = {
+      approvedCount: 0,
+      excludedCount: 0,
+      blockedCount: 0,
+      sameCount: 0,
+      missingCount: 0,
+      fieldExcludedCount: 0
+    };
+
+    next.candidates.forEach(candidate => {
+      counts.fieldExcludedCount += Object.values(candidate.fields || {})
+        .filter(field => field.excluded).length;
+      if (candidate.productExcluded) {
+        counts.excludedCount++;
+        return;
+      }
+      if (candidate.status === 'same') {
+        counts.sameCount++;
+        return;
+      }
+      if (candidate.status === 'missing') {
+        counts.missingCount++;
+        return;
+      }
+
+      syncCandidateBlocking(candidate);
+      const hardBlockingReasons = (candidate.blockingReasons || [])
+        .filter(reason => reason !== 'new_required_approval_incomplete');
+      if (candidate.status === 'blocked' || hardBlockingReasons.length > 0 || next.masterMismatch) {
+        candidate.productApproved = false;
+        candidate.adminComplete = false;
+        counts.blockedCount++;
+        return;
+      }
+      if (!['new', 'changed'].includes(candidate.status)) return;
+
+      candidate.productApproved = true;
+      candidate.adminComplete = true;
+      syncCandidateBlocking(candidate);
+      if (candidate.blockingReasons.length > 0) {
+        candidate.productApproved = false;
+        candidate.adminComplete = false;
+        syncCandidateBlocking(candidate);
+        counts.blockedCount++;
+        return;
+      }
+      counts.approvedCount++;
+    });
+
+    next.summary = summarize(next.candidates);
+    return { analysis: next, counts };
+  };
+
   const assertNewProductsComplete = (plan, stage = '실행계획') => {
     const createdCodes = (plan && plan.details || [])
       .filter(detail => detail.executionField === '코드')
@@ -878,6 +942,46 @@
     const plan = { nextMaster, details, counts };
     assertNewProductsComplete(plan, '추가·갱신 실행계획');
     return plan;
+  };
+
+  const buildExecutionPreview = (analysis, currentMaster = {}) => {
+    const plan = buildExecutionPlan(analysis, currentMaster);
+    const candidates = analysis?.candidates || [];
+    const excludedCount = candidates.filter(candidate => candidate.productExcluded).length;
+    const blockedCount = candidates.filter(candidate => (
+      !candidate.productExcluded
+      && (candidate.status === 'blocked' || (candidate.blockingReasons || []).length > 0)
+    )).length;
+    const eligible = candidates.filter(candidate => (
+      ['new', 'changed'].includes(candidate.status)
+      && !candidate.productExcluded
+      && (candidate.blockingReasons || []).length === 0
+    ));
+    const unapprovedCount = eligible.filter(candidate => {
+      if (!candidate.adminComplete) return true;
+      if (candidate.productApproved) return false;
+      return !Object.values(candidate.fields || {}).some(field => field.approved && !field.excluded);
+    }).length;
+    const approvedCount = eligible.length - unapprovedCount;
+    const fieldExcludedCount = candidates.reduce((count, candidate) => (
+      count + Object.values(candidate.fields || {}).filter(field => field.excluded).length
+    ), 0);
+    const noAppliedFieldProductCount = Math.max(
+      0,
+      eligible.length - plan.counts.savedProductCount - unapprovedCount
+    );
+    return {
+      plan,
+      counts: {
+        ...plan.counts,
+        excludedCount,
+        blockedCount,
+        approvedCount,
+        unapprovedCount,
+        fieldExcludedCount,
+        noAppliedFieldProductCount
+      }
+    };
   };
 
   const createExecutionId = () => {
@@ -1863,6 +1967,7 @@
     summarize,
     filterCandidates,
     paginateCandidates,
+    prepareBulkApproval,
     setProductApproved,
     setProductExcluded,
     setAdminComplete,
@@ -1872,6 +1977,7 @@
     getFieldFinalValue,
     assertNewProductsComplete,
     buildExecutionPlan,
+    buildExecutionPreview,
     buildOfficialLogs,
     prepareHistoryAppend,
     verifyMasterAndHistory,
