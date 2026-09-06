@@ -111,6 +111,10 @@ assert.match(masterHtml, /원본 \{field\.sourceHeader\}/);
 assert.match(masterHtml, /paginateCandidates\(visible, pageIndex, REVIEW_PAGE_SIZE\)/);
 assert.match(masterHtml, /page\.items\.map\(candidate =>/);
 assert.doesNotMatch(masterHtml, /visible\.map\(candidate =>/);
+assert.match(masterHtml, /5\. 전체 일괄 적용/);
+assert.match(masterHtml, /6\. 적용 예정 결과 확인/);
+assert.match(masterHtml, /7\. 승인 항목 저장/);
+assert.match(masterHtml, /아직 master에는 저장하지 않았/);
 
 const context = makeBrowserContext();
 const api = context.ONEAPP_MASTER_ADD_UPDATE;
@@ -249,7 +253,60 @@ if (actualErpPath) {
   assert.equal(actualFirstPage.items.length, 50, "actual ERP review must render only the first 50 candidates");
   assert.equal(actualSecondPage.items.length, 50, "actual ERP next-page review must remain bounded");
   assert.equal(actualSecondPage.startIndex, 50);
-  console.log(`ERP workbook verified: parsed=${actual.rows.length}, duplicates=${codes.length - new Set(codes).size}, timestampBlocked=0, falseChanges=${actualAnalysis.summary.changedCount}, reviewWindow=${actualFirstPage.items.length}`);
+
+  const workerMaster = clone(syntheticMaster);
+  const newCodes = codes.slice(0, 11);
+  newCodes.forEach(code => delete workerMaster[code]);
+  const changedCodes = codes.slice(11, 11 + 2529);
+  changedCodes.forEach((code, index) => {
+    workerMaster[code].품목명 = `비교 전 품목명 ${index + 1}`;
+  });
+  for (let index = 1; index <= 5; index++) {
+    const code = `WORKER-MISSING-${index}`;
+    workerMaster[code] = { 코드: code, 품목코드: code, 품목명: `누락 유지 ${index}`, 규격: "EA", 단위: "EA" };
+  }
+
+  const analysisStartedAt = performance.now();
+  let workerAnalysis = api.analyzeUploadRows({
+    ...actual,
+    currentMaster: workerMaster,
+    revision: "erp-worker-flow",
+    fileName: path.basename(actualErpPath),
+  });
+  const analysisMs = performance.now() - analysisStartedAt;
+  assert.equal(workerAnalysis.summary.newCount, 11);
+  assert.equal(workerAnalysis.summary.changedCount, 2529);
+  assert.equal(workerAnalysis.summary.missingCount, 5);
+  assert.equal(workerAnalysis.summary.blockingCount, 0);
+  const exceptionCandidate = workerAnalysis.candidates.find(candidate => candidate.code === changedCodes[0]);
+  workerAnalysis = api.setProductExcluded(workerAnalysis, exceptionCandidate.id, true);
+  const workerMasterBeforePreview = api.stableSerialize(workerMaster);
+  const bulkStartedAt = performance.now();
+  const workerBulk = api.prepareBulkApproval(workerAnalysis);
+  const bulkMs = performance.now() - bulkStartedAt;
+  const previewStartedAt = performance.now();
+  const workerPreview = api.buildExecutionPreview(workerBulk.analysis, workerMaster);
+  const previewMs = performance.now() - previewStartedAt;
+  const workerVisible = api.filterCandidates(workerBulk.analysis);
+  const workerFirstPage = api.paginateCandidates(workerVisible, 0, api.DEFAULT_REVIEW_PAGE_SIZE);
+  const workerSecondPage = api.paginateCandidates(workerVisible, 1, api.DEFAULT_REVIEW_PAGE_SIZE);
+
+  assert.equal(workerVisible.length, 2545, "worker issue view must retain all new, changed, and missing candidates");
+  assert.equal(workerFirstPage.items.length, 50);
+  assert.equal(workerSecondPage.items.length, 50);
+  assert.equal(workerBulk.counts.approvedCount, 2539, "all eligible candidates except the explicit exception must be prepared");
+  assert.equal(workerBulk.counts.excludedCount, 1);
+  assert.equal(workerBulk.counts.blockedCount, 0);
+  assert.equal(workerPreview.counts.createCount, 11);
+  assert.equal(workerPreview.counts.updateCount, 2528);
+  assert.equal(workerPreview.counts.excludedCount, 1);
+  assert.equal(workerPreview.counts.unapprovedCount, 0);
+  assert.equal(workerPreview.counts.blockedCount, 0);
+  assert.equal(api.stableSerialize(workerMaster), workerMasterBeforePreview, "worker preview must not mutate master");
+  assert.ok(analysisMs < 10000, `worker analysis exceeded 10s: ${analysisMs.toFixed(1)}ms`);
+  assert.ok(bulkMs < 5000, `worker bulk preparation exceeded 5s: ${bulkMs.toFixed(1)}ms`);
+  assert.ok(previewMs < 5000, `worker preview exceeded 5s: ${previewMs.toFixed(1)}ms`);
+  console.log(`ERP workbook verified: parsed=${actual.rows.length}, duplicates=${codes.length - new Set(codes).size}, timestampBlocked=0, falseChanges=${actualAnalysis.summary.changedCount}, reviewWindow=${actualFirstPage.items.length}, worker=11/2529/5/0, analysisMs=${analysisMs.toFixed(1)}, bulkMs=${bulkMs.toFixed(1)}, previewMs=${previewMs.toFixed(1)}`);
 }
 
 console.log("Master screen path read a real XLSX fixture, applied approvals/exclusions, saved, refreshed, and verified master/history successfully.");

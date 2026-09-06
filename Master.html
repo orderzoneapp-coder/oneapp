@@ -947,8 +947,8 @@
                 <div className="fixed inset-0 z-[120] bg-slate-950/55 flex items-center justify-center p-5">
                     <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
                         <div className="px-6 py-5 bg-amber-50 border-b border-amber-200">
-                            <h2 className="text-lg font-black text-amber-900">정보수정 Excel 확인요청</h2>
-                            <p className="text-xs text-amber-800 mt-1">아직 master에는 아무 값도 저장하지 않았습니다. 이슈 화면에서 승인 범위를 결정하세요.</p>
+                            <h2 className="text-lg font-black text-amber-900">2. 정보수정 Excel 비교 결과 요약</h2>
+                            <p className="text-xs text-amber-800 mt-1">아직 master에는 아무 값도 저장하지 않았습니다. 이슈 화면에서 예외 상품을 확인하세요.</p>
                         </div>
                         <div className="p-6 grid grid-cols-3 gap-3">
                             {rows.map(([label, count]) => (
@@ -961,7 +961,53 @@
                         <div className="px-6 pb-6 flex justify-end gap-2">
                             <button onClick={onDiscard} className="px-4 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50">비교 결과 폐기</button>
                             <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-50">업로드 취소</button>
-                            <button onClick={onReview} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black hover:bg-indigo-700">이슈 확인 화면으로 이동</button>
+                            <button onClick={onReview} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-black hover:bg-indigo-700">3. 이슈 확인으로 이동</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MasterAddUpdatePreviewModal = ({ preview, onBack, onSave, isSaving }) => {
+            if (!preview) return null;
+            const counts = preview.counts;
+            const rows = [
+                ['일괄 승인 준비', counts.approvedCount],
+                ['신규 적용 예정', counts.createCount],
+                ['기존 상품 수정 예정', counts.updateCount],
+                ['적용 예정 변경 필드', counts.appliedFieldCount],
+                ['상품 전체 제외', counts.excludedCount],
+                ['필드 반영 제외', counts.fieldExcludedCount],
+                ['미승인', counts.unapprovedCount],
+                ['저장 차단', counts.blockedCount],
+                ['반영 필드 없음', counts.noAppliedFieldProductCount],
+                ['누락 상품 · 기존 유지', counts.missingRetainedCount]
+            ];
+            return (
+                <div className="fixed inset-0 z-[124] bg-slate-950/55 flex items-center justify-center p-5">
+                    <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-5 bg-indigo-50 border-b border-indigo-200">
+                            <h2 className="text-lg font-black text-indigo-900">6. 적용 예정 결과 확인</h2>
+                            <p className="text-xs text-indigo-800 mt-1">현재 승인 결정을 기존 master에 적용한다고 가정해 계산한 읽기 전용 결과입니다. 아직 master에는 저장하지 않았으며 history도 기록하지 않았습니다.</p>
+                        </div>
+                        <div className="p-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                {rows.map(([label, count]) => (
+                                    <div key={label} className={`rounded-xl border p-3 ${label === '저장 차단' && count > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+                                        <div className="text-[11px] font-bold text-slate-500">{label}</div>
+                                        <div className="text-lg font-black text-slate-900 mt-1">{count.toLocaleString()}건</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs font-bold text-amber-900">
+                                이 화면의 수치는 저장 전 미리보기입니다. 아래 저장 버튼을 누르기 전에는 상품 master·revision·history가 변경되지 않습니다.
+                            </div>
+                        </div>
+                        <div className="px-6 pb-6 flex justify-end gap-2">
+                            <button type="button" onClick={onBack} disabled={isSaving} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-bold disabled:opacity-40">이슈 확인으로 돌아가기</button>
+                            <button type="button" onClick={onSave} disabled={isSaving || counts.savedProductCount === 0} className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black disabled:bg-slate-400">
+                                {isSaving ? '저장·검증 중...' : '7. 승인 항목 저장'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1019,7 +1065,7 @@
             onChange,
             onClose,
             onDiscard,
-            onSave,
+            onBulkApply,
             isSaving,
             errorMessage
         }) => {
@@ -1061,14 +1107,14 @@
                 <div className="fixed inset-0 z-[110] bg-slate-100 flex flex-col">
                     <div className="h-16 px-6 bg-slate-900 text-white flex items-center justify-between shrink-0 shadow-lg">
                         <div>
-                            <h2 className="text-lg font-black">정보수정 Excel 이슈 확인</h2>
-                            <p className="text-[11px] text-slate-300">{analysis.fileName} · 선택 필터는 모두 포함(AND) 조건입니다.</p>
+                            <h2 className="text-lg font-black">3. 이슈 확인 · 4. 예외 상품 반영 제외</h2>
+                            <p className="text-[11px] text-slate-300">{analysis.fileName} · 예외만 제외한 뒤 전체 일괄 적용으로 저장 전 결과를 확인합니다.</p>
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={onDiscard} disabled={isSaving} className="px-3 py-2 rounded-lg border border-rose-400/60 text-rose-200 text-xs font-bold">비교 폐기</button>
                             <button onClick={onClose} disabled={isSaving} className="px-3 py-2 rounded-lg border border-slate-500 text-slate-200 text-xs font-bold">조회 화면으로</button>
-                            <button onClick={onSave} disabled={isSaving || analysis.masterMismatch} className="px-5 py-2 rounded-lg bg-emerald-500 disabled:bg-slate-600 text-white text-xs font-black">
-                                {isSaving ? '저장·검증 중...' : '승인 범위 저장'}
+                            <button onClick={onBulkApply} disabled={isSaving || analysis.masterMismatch} className="px-5 py-2 rounded-lg bg-indigo-500 disabled:bg-slate-600 text-white text-xs font-black">
+                                5. 전체 일괄 적용
                             </button>
                         </div>
                     </div>
@@ -1340,6 +1386,7 @@
             const [showAddUpdateConfirm, setShowAddUpdateConfirm] = useState(false);
             const [showAddUpdateReview, setShowAddUpdateReview] = useState(false);
             const [addUpdateError, setAddUpdateError] = useState('');
+            const [addUpdatePreview, setAddUpdatePreview] = useState(null);
             const [addUpdateResult, setAddUpdateResult] = useState(null);
             const [initialImportDraft, setInitialImportDraft] = useState(null);
             const [editingProduct, setEditingProduct] = useState(null);
@@ -1621,6 +1668,7 @@
 
             const discardAddUpdateAnalysis = () => {
                 setAddUpdateAnalysis(null);
+                setAddUpdatePreview(null);
                 setShowAddUpdateConfirm(false);
                 setShowAddUpdateReview(false);
                 setAddUpdateError('');
@@ -1688,6 +1736,7 @@
                     });
                     analysis.sourceType = 'legacy-itemmaster-isolated';
                     setAddUpdateAnalysis(analysis);
+                    setAddUpdatePreview(null);
                     setAddUpdateError('레거시 원본은 읽기 전용으로 유지됩니다. 신규·변경 항목을 검토해 명시적으로 승인한 값만 공식 master에 저장하세요.');
                     setShowAddUpdateReview(false);
                     setShowAddUpdateConfirm(true);
@@ -1738,6 +1787,7 @@
                             return;
                         }
                         setAddUpdateAnalysis(analysis);
+                        setAddUpdatePreview(null);
                         setAddUpdateError('');
                         setShowAddUpdateReview(false);
                         setShowAddUpdateConfirm(true);
@@ -1819,27 +1869,54 @@
                 }
             };
 
-            const handleSaveAddUpdate = async () => {
+            const handleChangeAddUpdateAnalysis = (nextAnalysis) => {
+                setAddUpdateAnalysis(nextAnalysis);
+                setAddUpdatePreview(null);
+            };
+
+            const handlePrepareBulkApply = async () => {
                 if (!addUpdateAnalysis || !window.ONEAPP_MASTER_ADD_UPDATE) return;
                 setIsProcessing(true);
-                setProcessMsg('승인 범위 master·history 저장 및 재검증 중...');
+                setProcessMsg('저장 전 일괄 승인과 적용 예정 결과를 계산 중...');
+                setAddUpdateError('');
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                    const prepared = window.ONEAPP_MASTER_ADD_UPDATE.prepareBulkApproval(addUpdateAnalysis);
+                    const preview = window.ONEAPP_MASTER_ADD_UPDATE.buildExecutionPreview(prepared.analysis, masterProducts);
+                    setAddUpdateAnalysis(prepared.analysis);
+                    setAddUpdatePreview({ counts: preview.counts, analysis: prepared.analysis });
+                    showToast(`✅ 일괄 승인 준비 ${prepared.counts.approvedCount.toLocaleString()}건 · 상품 제외 ${prepared.counts.excludedCount.toLocaleString()}건 · 차단 ${prepared.counts.blockedCount.toLocaleString()}건`);
+                } catch (error) {
+                    setAddUpdatePreview(null);
+                    setAddUpdateError(`전체 일괄 적용 준비 실패: ${error.message}`);
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            };
+
+            const handleSaveAddUpdate = async (analysisToSave = addUpdateAnalysis) => {
+                if (!analysisToSave || !window.ONEAPP_MASTER_ADD_UPDATE) return;
+                setIsProcessing(true);
+                setProcessMsg('7단계 승인 항목을 master·history에 저장하고 재검증 중...');
                 setAddUpdateError('');
                 try {
                     const result = await window.ONEAPP_MASTER_ADD_UPDATE.commitApprovedChanges({
-                        analysis: addUpdateAnalysis,
+                        analysis: analysisToSave,
                         currentMaster: masterProducts,
-                        expectedRevision: addUpdateAnalysis.baseRevision,
+                        expectedRevision: analysisToSave.baseRevision,
                         storage: window.ONEAPP?.STORAGE,
                         historyApi: window.ONEAPP?.HISTORY,
                         localStorageRef: window.localStorage,
                         actor: null,
-                        allowEmptyMaster: addUpdateAnalysis.allowEmptyMaster === true
+                        allowEmptyMaster: analysisToSave.allowEmptyMaster === true
                     });
                     masterPageRevision = result.revision;
                     setMasterProducts(result.masterMap);
                     try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
                     setAddUpdateResult(result);
                     setAddUpdateAnalysis(null);
+                    setAddUpdatePreview(null);
                     setShowAddUpdateReview(false);
                     setShowAddUpdateConfirm(false);
                 } catch (error) {
@@ -1850,15 +1927,16 @@
                             masterPageRevision = latest.revision;
                             setMasterProducts(latest.masterMap);
                             const refreshed = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
-                                headers: addUpdateAnalysis.headers,
-                                rows: addUpdateAnalysis.rows,
+                                headers: analysisToSave.headers,
+                                rows: analysisToSave.rows,
                                 currentMaster: latest.masterMap,
                                 revision: latest.revision,
-                                fileName: addUpdateAnalysis.fileName,
+                                fileName: analysisToSave.fileName,
                                 masterMismatch: true,
-                                allowEmptyMaster: addUpdateAnalysis.allowEmptyMaster === true
+                                allowEmptyMaster: analysisToSave.allowEmptyMaster === true
                             });
                             setAddUpdateAnalysis(refreshed);
+                            setAddUpdatePreview(null);
                             setShowAddUpdateReview(true);
                             setAddUpdateError('비교 이후 master가 변경되어 저장을 차단했습니다. 최신 master 기준으로 비교를 다시 만들었고 이전 승인 상태는 모두 폐기했습니다.');
                         } catch (reloadError) {
@@ -1873,6 +1951,7 @@
                         }
                     } else if (error?.code === 'MASTER_ADD_UPDATE_INITIAL_REGISTRATION_REQUIRED') {
                         setAddUpdateAnalysis(null);
+                        setAddUpdatePreview(null);
                         setShowAddUpdateReview(false);
                         setShowAddUpdateConfirm(false);
                         setAddUpdateError(error.message);
@@ -2043,14 +2122,21 @@
                     {showAddUpdateReview && (
                         <MasterAddUpdateReview
                             analysis={addUpdateAnalysis}
-                            onChange={setAddUpdateAnalysis}
+                            onChange={handleChangeAddUpdateAnalysis}
                             onClose={() => setShowAddUpdateReview(false)}
                             onDiscard={discardAddUpdateAnalysis}
-                            onSave={handleSaveAddUpdate}
+                            onBulkApply={handlePrepareBulkApply}
                             isSaving={isProcessing}
                             errorMessage={addUpdateError}
                         />
                     )}
+
+                    <MasterAddUpdatePreviewModal
+                        preview={addUpdatePreview}
+                        onBack={() => setAddUpdatePreview(null)}
+                        onSave={() => handleSaveAddUpdate(addUpdatePreview?.analysis)}
+                        isSaving={isProcessing}
+                    />
 
                     <MasterAddUpdateResultModal result={addUpdateResult} onClose={() => setAddUpdateResult(null)} />
 
@@ -2069,7 +2155,7 @@
                                     <SafeIcon name="plus" size={13} className="mr-2" /> 상품 등록
                                 </button>
                                 <label className={`w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border transition-colors flex items-center justify-center shadow-sm ${isProcessing ? 'cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200' : 'cursor-pointer bg-white text-slate-700 hover:bg-slate-100 border-slate-300'}`}>
-                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> {Object.keys(masterProducts).length === 0 ? '최초 등록 Excel' : '정보수정 Excel'}
+                                    <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> {Object.keys(masterProducts).length === 0 ? '최초 등록 Excel' : '1. 정보수정 Excel'}
                                     <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={isProcessing} />
                                 </label>
                                 <button type="button" onClick={openSkuManagement} disabled={isProcessing} className="w-full sm:w-auto h-9 px-3 sm:px-4 rounded-lg text-[12px] font-bold border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40">SKU 관리</button>

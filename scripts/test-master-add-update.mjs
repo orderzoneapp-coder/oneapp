@@ -768,47 +768,113 @@ await scenario("필수 8. 브라우저 저장공간 부족 시 master와 history
   assert.equal(local.getItem(api.HISTORY_KEY), beforeHistory);
 });
 
-await scenario("성능. 2,500개 초과 변경 후보는 50건 DOM 윈도우로 이동", () => {
+await scenario("성능. 2,500개 초과 후보에서 예외 보존·일괄 승인·preview·최종 저장", async () => {
   const productCount = 2605;
   const largeMaster = Object.fromEntries(Array.from({ length: productCount }, (_, index) => {
     const code = `P-${String(index + 1).padStart(4, "0")}`;
     return [code, { 코드: code, 품목코드: code, 품목명: `기존 ${index + 1}` }];
   }));
+  const rows = Array.from({ length: productCount }, (_, index) => {
+    const code = `P-${String(index + 1).padStart(4, "0")}`;
+    if (code === "P-2604") return null;
+    const name = code === "P-2605" ? `기존 ${index + 1}` : `변경 ${index + 1}`;
+    return makeRow(index + 3, code, { 품목명: name });
+  }).filter(Boolean);
+  rows.push(makeRow(productCount + 3, "P-0003", { 품목명: "변경 3" }));
   let review = analyze({
     headers: ["품목코드", "품목명"],
     master: largeMaster,
-    rows: Array.from({ length: productCount }, (_, index) => {
-      const code = `P-${String(index + 1).padStart(4, "0")}`;
-      return makeRow(index + 3, code, { 품목명: `변경 ${index + 1}` });
-    })
+    rows
   });
   const changed = api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]);
   const firstPage = api.paginateCandidates(changed, 0, 50);
   const secondPage = api.paginateCandidates(changed, 1, 50);
   const lastPage = api.paginateCandidates(changed, 9999, 50);
 
-  assert.equal(changed.length, productCount, "전체 필터 집계는 유지해야 한다");
+  assert.equal(changed.length, 2603, "same·missing을 제외해도 2,500개 초과 변경 후보를 유지해야 한다");
   assert.equal(firstPage.items.length, 50, "첫 렌더 DOM 후보는 50건 이하여야 한다");
   assert.equal(secondPage.items.length, 50, "다음 페이지도 50건 이하여야 한다");
   assert.equal(secondPage.startIndex, 50);
   assert.equal(lastPage.pageIndex, 52, "범위를 벗어난 페이지는 마지막 페이지로 안전하게 보정해야 한다");
-  assert.equal(lastPage.items.length, 5);
+  assert.equal(lastPage.items.length, 3);
 
-  const decidedId = firstPage.items[0].id;
-  review = api.setProductApproved(review, decidedId, true);
-  review = api.setAdminComplete(review, decidedId, true);
-  const secondPageDecisionId = secondPage.items[0].id;
-  review = api.setProductApproved(review, secondPageDecisionId, true);
-  review = api.setAdminComplete(review, secondPageDecisionId, true);
-  const decidedPage = api.paginateCandidates(
-    api.filterCandidates(review, [api.ISSUE_TAGS.CHANGED]),
-    0,
-    50
+  review = api.setProductExcluded(review, findCode(review, "P-0001").id, true);
+  review = api.setProductExcluded(review, findCode(review, "P-0051").id, true);
+  review = api.setFieldDecision(review, findCode(review, "P-0002").id, "품목명", { excluded: true });
+  const reviewBeforeBulk = api.stableSerialize(review);
+  const bulk = api.prepareBulkApproval(review);
+  const prepared = bulk.analysis;
+
+  assert.equal(api.stableSerialize(review), reviewBeforeBulk, "일괄 승인 준비는 입력 analysis를 변경하면 안 된다");
+  assert.equal(bulk.counts.approvedCount, 2600);
+  assert.equal(bulk.counts.excludedCount, 2);
+  assert.equal(bulk.counts.blockedCount, 1);
+  assert.equal(bulk.counts.sameCount, 1);
+  assert.equal(bulk.counts.missingCount, 1);
+  assert.equal(bulk.counts.fieldExcludedCount, 1);
+  assert.equal(findCode(prepared, "P-0001").productExcluded, true, "첫 페이지 상품 제외를 보존해야 한다");
+  assert.equal(findCode(prepared, "P-0051").productExcluded, true, "다른 페이지 상품 제외를 보존해야 한다");
+  assert.equal(findCode(prepared, "P-0002").fields.품목명.excluded, true, "필드별 반영 제외를 보존해야 한다");
+  assert.equal(findCode(prepared, "P-0003").productApproved, false, "중복 차단 후보를 승인하면 안 된다");
+  assert.equal(findCode(prepared, "P-0003").adminComplete, false, "중복 차단 후보를 관리자 완료 처리하면 안 된다");
+  assert.equal(findCode(prepared, "P-0004").productApproved, true);
+  assert.equal(findCode(prepared, "P-0004").adminComplete, true);
+  assert.equal(findCode(prepared, "P-2605").productApproved, false, "same 후보를 일괄 승인하면 안 된다");
+  assert.equal(prepared.candidates.find(candidate => candidate.code === "P-2604" && candidate.status === "missing").adminComplete, false);
+
+  const analysisBeforePreview = api.stableSerialize(prepared);
+  const masterBeforePreview = api.stableSerialize(largeMaster);
+  const preview = api.buildExecutionPreview(prepared, largeMaster);
+  assert.equal(api.stableSerialize(prepared), analysisBeforePreview, "preview는 analysis 결정을 변경하면 안 된다");
+  assert.equal(api.stableSerialize(largeMaster), masterBeforePreview, "preview는 현재 master를 변경하면 안 된다");
+  assert.equal(preview.counts.createCount, 0);
+  assert.equal(preview.counts.updateCount, 2599);
+  assert.equal(preview.counts.excludedCount, 2);
+  assert.equal(preview.counts.approvedCount, 2600);
+  assert.equal(preview.counts.unapprovedCount, 0);
+  assert.equal(preview.counts.blockedCount, 1);
+  assert.equal(preview.counts.appliedFieldCount, 2599);
+  assert.equal(preview.counts.noAppliedFieldProductCount, 1);
+
+  const local = new MemoryLocalStorage();
+  const storage = createStorage(largeMaster, local);
+  const result = await api.commitApprovedChanges({
+    analysis: prepared,
+    currentMaster: largeMaster,
+    expectedRevision: "rev-1",
+    storage,
+    localStorageRef: local,
+    actor: "bulk-test-admin"
+  });
+  assert.equal(result.counts.savedProductCount, 2599);
+  assert.equal(storage.state.masterMap["P-0001"].품목명, "기존 1");
+  assert.equal(storage.state.masterMap["P-0051"].품목명, "기존 51");
+  assert.equal(storage.state.masterMap["P-0002"].품목명, "기존 2");
+  assert.equal(storage.state.masterMap["P-0003"].품목명, "기존 3");
+  assert.equal(storage.state.masterMap["P-0004"].품목명, "변경 4");
+});
+
+await scenario("일괄 승인. 신규 필수값과 master mismatch 차단을 우회하지 않음", () => {
+  const incompleteNew = analyze({
+    headers: ["품목코드", "품목명"],
+    rows: [makeRow(2, "N-BLOCK", { 품목명: "필수값 부족" })]
+  });
+  const incompleteBulk = api.prepareBulkApproval(incompleteNew);
+  assert.equal(findCode(incompleteBulk.analysis, "N-BLOCK").productApproved, false);
+  assert.equal(findCode(incompleteBulk.analysis, "N-BLOCK").adminComplete, false);
+  assert.equal(incompleteBulk.counts.blockedCount, 1);
+
+  const mismatch = analyze({
+    headers: ["품목코드", "품목명"],
+    rows: [makeRow(2, "001", { 품목명: "revision 충돌" })],
+    masterMismatch: true
+  });
+  const mismatchBulk = api.prepareBulkApproval(mismatch);
+  assert.equal(findCode(mismatchBulk.analysis, "001").productApproved, false);
+  assert.throws(
+    () => api.buildExecutionPreview(mismatchBulk.analysis, baseMaster),
+    error => error.code === "MASTER_ADD_UPDATE_MASTER_MISMATCH"
   );
-  assert.equal(decidedPage.items[0].productApproved, true, "페이지 이동 후에도 전체 분석의 승인 결정은 유지해야 한다");
-  assert.equal(review.summary.changedCount, productCount, "페이지 분할은 전체 집계를 변경하면 안 된다");
-  const plan = api.buildExecutionPlan(review, largeMaster);
-  assert.equal(plan.counts.savedProductCount, 2, "서로 다른 페이지의 승인 결정은 동일한 전체 저장 계획에 포함되어야 한다");
 });
 
 await scenario("25. MerchOps F7 회귀검사", () => {
@@ -849,5 +915,10 @@ assert.match(masterHtml, /paginateCandidates\(visible, pageIndex, REVIEW_PAGE_SI
 assert.match(masterHtml, /page\.items\.map\(candidate =>/);
 assert.doesNotMatch(masterHtml, /visible\.map\(candidate =>/);
 assert.match(masterHtml, /setPageIndex\(0\)/, "필터 변경은 첫 페이지로 이동해야 한다");
+assert.match(masterHtml, /5\. 전체 일괄 적용/);
+assert.match(masterHtml, /6\. 적용 예정 결과 확인/);
+assert.match(masterHtml, /7\. 승인 항목 저장/);
+assert.match(masterHtml, /아직 master에는 저장하지 않았/);
+assert.match(masterHtml, /buildExecutionPreview\(prepared\.analysis, masterProducts\)/);
 
 console.log(`Master add/update tests passed (${scenarios.length} required scenarios).`);
