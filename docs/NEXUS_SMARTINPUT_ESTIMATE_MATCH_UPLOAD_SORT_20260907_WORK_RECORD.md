@@ -67,4 +67,8 @@
 
 배포 결과:
 
-- 커밋·PR·배포 확인 후 갱신한다.
+- 기능 PR: `#541` (`feat(smartinput): 견적 매칭사전과 업로드 정렬`)
+- 병합 커밋: `c09a94e5bc416b1b3bcaa50c7573d545797c7925`
+- GitHub Actions: `Validate Phase 6B approved-base UI` 통과, `Validate repository contracts` 통과
+- GitHub Pages 빌드: `1198296985`, 상태 `built`, 대상 커밋 `c09a94e5bc416b1b3bcaa50c7573d545797c7925`
+- 운영 확인: `https://oneapp.orderz.co.kr/smartinput/` HTTP 200, `smartinput.js?v=0.11.39`
