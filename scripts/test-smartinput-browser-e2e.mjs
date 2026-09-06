@@ -234,7 +234,7 @@ try {
     modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>({mode:button.dataset.mode,label:button.textContent.trim()})),
     sourceMethods:[...document.querySelectorAll('.parser-toolbar [data-method]')].map(button=>({method:button.dataset.method,label:button.textContent.replace(/^[＋●]\s*/, '').trim()})),
     actionButtons:['restoreAutosaveButton','analyzeButton','addRowButton','resetDraftButton','completeButton','estimateNoticeButton','estimateExcelButton'].map(id=>({id,label:document.getElementById(id).textContent.replace(/✦|↻/g,'').replace(/\s+/g,' ').trim()})),
-    tableColumns:[...document.querySelectorAll('#voucherInputTable thead th')].map(cell=>({id:cell.dataset.column||'sequence',label:cell.textContent.trim()})),
+    tableColumns:[...document.querySelectorAll('#voucherInputTable thead th:not(.is-column-hidden)')].map(cell=>({id:cell.dataset.column||'sequence',label:cell.textContent.trim()})),
     regions:{appBar:rect('.app-bar'),parser:rect('.parser-card'),workbench:rect('.workbench'),grid:rect('.grid-card'),related:rect('.related-panel')},
     footerOrder:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id)
   };})()`);
@@ -249,7 +249,7 @@ try {
     { method: 'voice', label: '음성' }
   ]);
   assert.deepEqual(domBaseline.tableColumns.map(column => column.label), [
-    'No.', '품목코드', '품목명', '규격', '수량', '단위', '단가', '공급가액', '메모', '적요(직원)', '공지단가', '상태'
+    'No.', '코드', '품명', '규격(기본)', '수량', '단가', '공급가', '간단설명(품위)', '지시사항', '출고가 (공지)', '판매no.'
   ]);
   assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton']);
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
@@ -374,7 +374,7 @@ try {
   await click(client, '#inputRows [data-select-row]');
   assert.equal(await evaluate(client, `!document.querySelector('#deleteSelectedRows').disabled`), true, 'row selection must enable bulk delete');
   await evaluate(client, `(() => {const current=document.querySelector(${JSON.stringify(firstQuantity)});current.focus();current.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
-  assert.equal(await evaluate(client, `document.activeElement?.dataset?.field`), 'unit', 'keyboard navigation must move to the adjacent cell');
+  assert.equal(await evaluate(client, `document.activeElement?.dataset?.field`), 'unitPrice', 'keyboard navigation must move to the adjacent visible cell');
   const handleWidthBefore = await evaluate(client, `document.querySelector('col[data-column="itemName"]').getBoundingClientRect().width`);
   await evaluate(client, `(() => {const handle=document.querySelector('.column-resize-handle[data-resize-column="itemName"]');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
   const handleWidthAfter = await expr(client, `document.querySelector('col[data-column="itemName"]').getBoundingClientRect().width>${handleWidthBefore}&&document.querySelector('col[data-column="itemName"]').getBoundingClientRect().width`, 'keyboard column resize');

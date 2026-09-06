@@ -869,7 +869,10 @@ function optionalProductFields() {
   const modeFields = new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]));
   return contract.PRODUCT_FIELD_DEFINITIONS
     .filter(field => !baseIds.has(field.id) && selectedIds.has(field.id))
-    .map(field => modeFields.has(field.id) ? { ...field, label: modeFields.get(field.id).label } : field);
+    .map(field => modeFields.has(field.id) ? {
+      ...field,
+      inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
+    } : field);
 }
 
 function layoutDefinitions(scope, customFields = state.settings.customFields || [], mode = state.draft.activeMode) {
@@ -880,8 +883,7 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
   return [
     ...builtIn.map(field => modeFields.has(field.id) ? {
       ...field,
-      label: modeFields.get(field.id).label,
-      inputAliases: [...new Set([...(field.inputAliases || []), ...(modeFields.get(field.id).inputAliases || [])])]
+      inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
     } : field),
     ...customFields.filter(field => field.scope === scope).map(field => ({
       ...field,
