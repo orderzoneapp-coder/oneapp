@@ -68,6 +68,15 @@ assert.match(indexHtml, /syncNow/);
 assert.match(cloudHtml, /CUSTOMER_ALIAS_MAPPING/);
 assert.match(cloudHtml, /최신본 적용/);
 assert.match(cloudHtml, /officialConflictRows/, 'official conflicts must be shown separately from editable order conflicts');
+assert.match(cloudHtml, /id="cloudToken" type="password" autocomplete="off"/, 'the token entry must remain a password input');
+assert.match(cloudHtml, /id="cloudTokenState" data-state="unknown"/, 'the current browser needs a non-secret token state indicator');
+assert.match(cloudHtml, /현재 브라우저의 로컬 저장소에만 저장됩니다/, 'browser-local token storage must be explained');
+assert.doesNotMatch(cloudHtml, /cloudToken\.value\s*=\s*getCloudAccessToken\(\)/, 'a stored token must never be restored into the DOM input value');
+assert.match(cloudHtml, /const token = cloudToken\.value\.trim\(\);\s*if \(!token\)[\s\S]*?setCloudUrl\(cloudUrl\.value\)/,
+  'blank token validation must run before either cloud setting setter');
+assert.match(cloudHtml, /setCloudAccessToken\(token, true\);\s*const persisted = getCloudAccessToken\(\) === token;\s*cloudToken\.value = '';[\s\S]*?if \(!persisted\) throw new Error/,
+  'success must require a private set/get persistence comparison and immediate input clearing');
+assert.doesNotMatch(cloudHtml, /console\.(?:log|info|warn|error)\s*\(/, 'the Cloud settings page must not log token-bearing state');
 assert.match(inputHtml, /syncBeforeOrderMutation/);
 assert.match(inputHtml, /현재 입력내용은 유지됩니다/);
 assert.match(inputHtml, /최신본을 적용한 후 주문서를 다시 열어 입력·저장/);

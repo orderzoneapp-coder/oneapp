@@ -40,7 +40,9 @@
         </div>
         <div class="field wide">
           <label for="cloudToken">ORDER Q Cloud 접근 토큰</label>
-          <input class="control" id="cloudToken" type="password" autocomplete="off" placeholder="Apps Script Property의 ORDER Q 또는 Shipping 전용 토큰">
+          <input class="control" id="cloudToken" type="password" autocomplete="off" placeholder="변경할 때만 새 토큰을 입력하세요">
+          <span class="status" id="cloudTokenState" data-state="unknown" aria-live="polite">현재 브라우저 토큰: 확인 중...</span>
+          <span class="status">토큰은 현재 브라우저의 로컬 저장소에만 저장됩니다. 다른 브라우저·기기에는 자동으로 공유되지 않으며 저장된 원문은 화면에 다시 표시하지 않습니다.</span>
         </div>
         <div class="field">
           <label>Device ID</label>
@@ -123,6 +125,7 @@
 
     const cloudUrl = document.getElementById('cloudUrl');
     const cloudToken = document.getElementById('cloudToken');
+    const cloudTokenState = document.getElementById('cloudTokenState');
     const message = document.getElementById('message');
     const syncBtn = document.getElementById('syncBtn');
     const conflictRows = document.getElementById('conflictRows');
@@ -135,10 +138,17 @@
       message.className = `message show ${type}`;
     }
 
+    function renderCloudTokenState() {
+      const saved = Boolean(getCloudAccessToken());
+      cloudToken.value = '';
+      cloudTokenState.dataset.state = saved ? 'saved' : 'unset';
+      cloudTokenState.textContent = `현재 브라우저 토큰: ${saved ? '저장됨' : '미설정'}`;
+    }
+
     async function render() {
       const state = await getSyncState();
       cloudUrl.value = state.cloudUrl || '';
-      cloudToken.value = getCloudAccessToken();
+      renderCloudTokenState();
       document.getElementById('deviceId').textContent = state.deviceId;
       document.getElementById('cursor').textContent = String(state.cursor);
       const totalConflicts = state.conflicts.length + state.officialConflicts.length;
@@ -161,12 +171,26 @@
     }
 
     document.getElementById('saveUrlBtn').addEventListener('click', async () => {
+      const token = cloudToken.value.trim();
+      if (!token) {
+        cloudToken.value = '';
+        renderCloudTokenState();
+        return show('ORDER Q Cloud 접근 토큰을 입력하세요. 빈 값은 저장할 수 없습니다.', 'warn');
+      }
       try {
         setCloudUrl(cloudUrl.value);
-        setCloudAccessToken(cloudToken.value, true);
+        setCloudAccessToken(token, true);
+        const persisted = getCloudAccessToken() === token;
+        cloudToken.value = '';
+        renderCloudTokenState();
+        if (!persisted) throw new Error('ORDER Q 접근 토큰 저장을 확인하지 못했습니다. 현재 브라우저 저장소를 확인한 뒤 다시 시도하세요.');
         show('클라우드 URL과 ORDER Q 접근 토큰을 저장했습니다.', 'info');
         await render();
-      } catch (error) { show(error.message || String(error), 'error'); }
+      } catch (error) {
+        cloudToken.value = '';
+        renderCloudTokenState();
+        show(error.message || String(error), 'error');
+      }
     });
 
     syncBtn.addEventListener('click', async () => {
