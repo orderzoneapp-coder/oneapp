@@ -101,16 +101,31 @@ const evaluate = async (client, expression) => {
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
   return response.result.value;
 };
+const boundedCdpSend = (promise, label, timeout = 5_000) => new Promise((resolveSend, rejectSend) => {
+  const timer = setTimeout(() => rejectSend(new Error(`Timed out waiting for ${label}`)), timeout);
+  promise.then(
+    value => { clearTimeout(timer); resolveSend(value); },
+    error => { clearTimeout(timer); rejectSend(error); }
+  );
+});
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
 const touch = async (client, selector) => {
   const point = await evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.scrollIntoView({block:'center',inline:'center'});const rect=element.getBoundingClientRect();return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+rect.height/2)};})()`);
-  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  console.log('SmartInput browser E2E touch checkpoint: enable start');
+  await boundedCdpSend(client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 }), 'touch emulation enable');
+  console.log('SmartInput browser E2E touch checkpoint: enable complete');
   try {
-    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, radiusX: 1, radiusY: 1, force: 1 }] });
-    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    console.log('SmartInput browser E2E touch checkpoint: touchStart start');
+    await boundedCdpSend(client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, radiusX: 1, radiusY: 1, force: 1 }] }), 'touchStart');
+    console.log('SmartInput browser E2E touch checkpoint: touchStart complete');
+    console.log('SmartInput browser E2E touch checkpoint: touchEnd start');
+    await boundedCdpSend(client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }), 'touchEnd');
+    console.log('SmartInput browser E2E touch checkpoint: touchEnd complete');
   } finally {
-    await client.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    console.log('SmartInput browser E2E touch checkpoint: disable start');
+    await boundedCdpSend(client.send('Emulation.setTouchEmulationEnabled', { enabled: false }), 'touch emulation disable');
+    console.log('SmartInput browser E2E touch checkpoint: disable complete');
   }
 };
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');const proto=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
