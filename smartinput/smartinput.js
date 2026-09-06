@@ -1114,8 +1114,8 @@ function restoreCurrentTableScroll() {
 function renderTableViewSwitch() {
   const control = $('tableViewSwitch');
   const session = inputMappingSession();
-  control.hidden = !session;
-  if (!session) return;
+  control.hidden = false;
+  control.querySelector('[data-table-view="source"]').disabled = !session;
   const activeView = currentTableView();
   control.querySelectorAll('[data-table-view]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.tableView === activeView));
@@ -4690,7 +4690,11 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
   catalogDraft.header.customerMappingSource = 'CATALOG';
   if (!hasWorkingCopy) state.estimateWorkingCopyBaselines.set(record.estimateId, JSON.parse(JSON.stringify(catalogDraft)));
   state.draft.modes.estimate = catalogDraft;
-  if (inputMappingSession(catalogDraft)) resetCurrentTableViewForSource('estimate');
+  if (inputMappingSession(catalogDraft)) {
+    state.tableViewPreferences = record.estimateKind === 'LINKED_GROUP'
+      ? selectTableView(state.tableViewPreferences, 'estimate', TABLE_VIEW_MODE.SOURCE, { hasSource: true })
+      : resetTableViewForSource(state.tableViewPreferences, 'estimate');
+  }
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
   if (!preserveSelection) state.noticeEstimateIds = [];

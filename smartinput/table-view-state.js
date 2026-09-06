@@ -4,7 +4,7 @@ export const TABLE_VIEW_MODE = Object.freeze({
 });
 
 export function createTableViewPreferences(modes = []) {
-  return Object.fromEntries(modes.map(mode => [mode, TABLE_VIEW_MODE.SOURCE]));
+  return Object.fromEntries(modes.map(mode => [mode, TABLE_VIEW_MODE.INPUT]));
 }
 
 export function tableViewFor(preferences, mode, hasSource) {
@@ -25,7 +25,7 @@ export function selectTableView(preferences, mode, view, { hasSource = true } = 
 export function resetTableViewForSource(preferences, mode) {
   return {
     ...(preferences || {}),
-    [mode]: TABLE_VIEW_MODE.SOURCE
+    [mode]: TABLE_VIEW_MODE.INPUT
   };
 }
 

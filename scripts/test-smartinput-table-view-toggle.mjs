@@ -15,8 +15,8 @@ import {
 
 const modes = ['order', 'purchase', 'sale', 'estimate'];
 const preferences = createTableViewPreferences(modes);
-assert.equal(tableViewFor(preferences, 'order', true), TABLE_VIEW_MODE.SOURCE,
-  'a source-backed work session must open in source-column view');
+assert.equal(tableViewFor(preferences, 'order', true), TABLE_VIEW_MODE.INPUT,
+  'a source-backed work session must open in the configured input view');
 assert.equal(tableViewFor(preferences, 'order', false), TABLE_VIEW_MODE.INPUT,
   'a work session without source evidence must keep the normal input table');
 
@@ -76,9 +76,9 @@ assert.equal(JSON.stringify({ sourceSession, voucherRows, savePayload }), dataBe
   'round-trip table switching must be data-neutral');
 
 const resetForNewSource = resetTableViewForSource(inputSelected, 'order');
-assert.equal(tableViewFor(resetForNewSource, 'order', true), TABLE_VIEW_MODE.SOURCE,
-  'a newly analyzed or reopened source must explicitly reset to source view');
-assert.equal(tableViewFor(inputSelected, 'purchase', true), TABLE_VIEW_MODE.SOURCE,
+assert.equal(tableViewFor(resetForNewSource, 'order', true), TABLE_VIEW_MODE.INPUT,
+  'a newly analyzed or reopened source must explicitly default to input view');
+assert.equal(tableViewFor(inputSelected, 'purchase', true), TABLE_VIEW_MODE.INPUT,
   'view choices must remain isolated per voucher mode');
 
 assert.equal(sourceSession.sourceMatrix[1][0], '', 'an intermediate blank cell must remain present');
@@ -94,6 +94,8 @@ assert.match(html, /data-table-view="source"[\s\S]*data-table-view="input"/,
 assert.match(source, /tableViewFor\(/,
   'SmartInput rendering must resolve the explicit session table-view choice');
 assert.match(source, /resetTableViewForSource\(/,
-  'new source intake and saved-estimate reopening must use the explicit source-view reset');
+  'new source intake and saved-estimate reopening must use the explicit input-view reset');
+assert.match(source, /record\.estimateKind === 'LINKED_GROUP'[\s\S]*?TABLE_VIEW_MODE\.SOURCE/,
+  'selecting a linked estimate from the right panel must explicitly open its source view');
 
 console.log('SmartInput source/input table-view toggle tests passed.');
