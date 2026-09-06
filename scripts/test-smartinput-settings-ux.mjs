@@ -141,12 +141,26 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.0/);
 assert.match(html, /smartinput\.css\?v=0\.9\.8/);
-assert.match(html, /smartinput\.js\?v=0\.11\.31/);
+assert.match(html, /smartinput\.js\?v=0\.11\.32/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);
 assert.match(app, /data-voucher-explorer-count/);
 assert.match(app, /data-add-voucher-field/);
+assert.match(app, /사용자지정 \(전표 \$\{isHeader \? '상단' : '하단'\} 배치\)/,
+  'custom fields must be creatable for either the top or bottom voucher location');
+assert.match(app, /\? `\$\{contract\.MODES\[mode\]\?\.label \|\| mode\} > 사용자지정 > 상단 정보 > \$\{field\.label\}`/,
+  'custom top fields must identify the custom origin above their placement');
+assert.match(app, /\? `\$\{contract\.MODES\[mode\]\?\.label \|\| mode\} > 사용자지정 > \$\{sectionLabel\} > \$\{field\.label\}`/,
+  'custom line fields must identify the custom origin above their placement');
+assert.match(app, /const origin = target\.custom \? '사용자지정'/,
+  'mapping results must visually distinguish custom fields from built-in fields');
+assert.match(app, /const displayLabel = target\.custom \? `\$\{target\.label\}\(사용자\)`/,
+  'the mapping result title must visibly mark a custom field');
+assert.match(app, /if \(mapping\?\.state === MAPPING_DECISION\.RECOMMENDED\) return mappingTargetWorkerLabel/,
+  'recommended worktable columns must show worker-facing location information instead of a recommendation suffix');
+assert.match(app, /if \(target\.custom\) return `\$\{target\.scope === 'header' \? '상' : '하'\},\$\{target\.label\}\(i\)`/,
+  'custom recommendations in the outer worktable must use the compact location and custom marker');
 assert.doesNotMatch(app, /data-add-layout-field="voucher"/,
   'voucher field discovery must stay inline instead of opening the legacy nested modal');
 assert.match(app, /workingVoucherColumnsByMode\[mode\] = \[\.\.\.workingVoucherColumnsByMode\[mode\], field\.id\]/,

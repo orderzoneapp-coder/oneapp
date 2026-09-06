@@ -137,11 +137,14 @@ try {
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
   await expr(client, `!document.querySelector('#mappingWorktable').hidden&&!document.querySelector('#sourceSheetView').hidden`, 'mapping source and worktable');
-  const initial = await evaluate(client, `(() => ({sourceRows:document.querySelectorAll('#sourceSheetRows tr').length,sourceHeader:[...document.querySelectorAll('#sourceSheetRows tr.is-header-row td')].map(cell=>cell.textContent),workingRows:document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length,headers:[...document.querySelectorAll('#mappingTableHeaders [data-open-field-mapping] strong')].map(node=>node.textContent),states:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-state]')].map(node=>node.dataset.mappingState),saveDisabled:document.querySelector('#completeButton').disabled,saveTitle:document.querySelector('#completeButton').title,sourceBlank:document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[3].textContent}))()`);
+  const initial = await evaluate(client, `(() => ({sourceRows:document.querySelectorAll('#sourceSheetRows tr').length,sourceHeader:[...document.querySelectorAll('#sourceSheetRows tr.is-header-row td')].map(cell=>cell.textContent),workingRows:document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length,headers:[...document.querySelectorAll('#mappingTableHeaders [data-open-field-mapping] strong')].map(node=>node.textContent),states:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-state]')].map(node=>node.dataset.mappingState),mappingLabels:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-state] small')].map(node=>node.textContent),saveDisabled:document.querySelector('#completeButton').disabled,saveTitle:document.querySelector('#completeButton').title,sourceBlank:document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[3].textContent}))()`);
   assert.equal(initial.sourceRows, 4);
   assert.deepEqual(initial.sourceHeader, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(initial.headers, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(initial.states, ['RECOMMENDED', 'RECOMMENDED', 'RECOMMENDED', 'UNDECIDED']);
+  assert.deepEqual(initial.mappingLabels.slice(0, 3), ['하단 정보 > 품목코드', '하단 정보 > 품목명', '하단 정보 > 주문수량'],
+    'recommended worktable headers must show top/bottom business context instead of the word recommendation');
+  assert.equal(initial.mappingLabels.some(label => label.includes('추천')), false);
   assert.equal(initial.sourceBlank, '', 'blank source cells must remain visibly blank');
   assert.equal(initial.saveDisabled, true);
   assert.match(initial.saveTitle, /입력 양식/);
