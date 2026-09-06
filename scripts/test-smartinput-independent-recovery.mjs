@@ -34,7 +34,7 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>F8 EXCEL<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/);
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
