@@ -53,6 +53,7 @@ jobs:
           node scripts/test-smartinput-structured-sheet-parser.mjs
           node scripts/test-smartinput-estimate-workbook-selection.mjs
           node scripts/test-smartinput-estimate-f8.mjs
+          node scripts/test-smartinput-purchase-sales-output.mjs
           node scripts/test-smartinput-multivoucher-stage1.mjs
           node scripts/test-smartinput-order-document-number.mjs
           node scripts/test-smartinput-input-list-search.mjs

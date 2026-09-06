@@ -1197,11 +1197,11 @@ try {
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
   assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'SmartInput F8 must omit 확인요청 when there are no warnings');
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'SmartInput F8 must omit 확인요청 when there are no warnings and append 견적서 업로드 last');
   await evaluate(client, `window.__estimateExportName='';window.__estimateExportSheets=[];document.dispatchEvent(new KeyboardEvent('keydown',{key:'F8',code:'F8',bubbles:true,cancelable:true}));true`);
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate F8 keyboard export');
   assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'F8 key must use the same estimate output path as the button');
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'F8 key must use the same estimate output path as the button');
   await click(client, '#catalogPickerList [data-select-estimate-card]');
   const renameTargetId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
   await click(client, '#estimateRenameButton');
