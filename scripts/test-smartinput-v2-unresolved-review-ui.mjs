@@ -172,9 +172,9 @@ assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', 'bf5fc4ecbb5808c1fc91fd6597e32ae5842f768ac6a98b789c72379aabd83791'],
+  ['../smartinput/index.html', '45048a1faade97f76d149b7d68e146f23e341c1a9f63c73f02d7bcce2670622e'],
   ['../smartinput/smartinput.css', '5265d6b45fd0bbafc04d170e1aa3ccb74e8a7ea92b68e2ff8b3a00903756fe36'],
-  ['../smartinput/smartinput.js', '848dbe2a619dbe46576251c35800bf61dcbdb53e3c35b2843785966385ddd9f4']
+  ['../smartinput/smartinput.js', '84aef7b3db791d7f555bac43c541ab4700db09e5641b8eb50192dc1386c450ba']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')

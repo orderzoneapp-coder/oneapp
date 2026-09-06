@@ -8,6 +8,84 @@
   <meta name="description" content="주문서·구매·판매·견적 자료를 분석하고 표준 입력표로 전달하는 NEXUS 스마트입력">
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-input"></script>
+  <script>
+    (() => {
+      const validModes = ['order', 'purchase', 'sale', 'estimate'];
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1') || 'null');
+      } catch (_) {}
+      const savedUi = saved?.ui || {};
+      const abortController = new AbortController();
+      const shell = {
+        activeMode: validModes.includes(saved?.activeMode) ? saved.activeMode : 'order',
+        relatedOpen: savedUi.relatedPanelLayoutVersion === 1 ? Boolean(savedUi.relatedOpen) : true,
+        estimateLibraryKind: 'individual',
+        interacted: false,
+        mounted: false,
+        ready: false,
+        abortController,
+        mount() {
+          if (shell.mounted) return;
+          const byId = id => document.getElementById(id);
+          const setMode = (mode, interacted = false) => {
+            if (!validModes.includes(mode)) return;
+            shell.activeMode = mode;
+            shell.interacted ||= interacted;
+            document.querySelectorAll('.mode-tab[data-mode]').forEach(button => {
+              const selected = button.dataset.mode === mode;
+              button.classList.toggle('is-active', selected);
+              button.setAttribute('aria-selected', String(selected));
+            });
+            const estimateMode = mode === 'estimate';
+            byId('voucherContextView').hidden = estimateMode;
+            byId('estimateLibraryHeading').hidden = !estimateMode;
+            byId('catalogComposeArea').hidden = !estimateMode;
+            byId('relatedPanelToggleLabel').textContent = estimateMode ? '견적서 목록' : '전표 목록';
+          };
+          const setLibraryKind = (kind, interacted = false) => {
+            if (!['individual', 'linked'].includes(kind)) return;
+            shell.estimateLibraryKind = kind;
+            shell.interacted ||= interacted;
+            const linked = kind === 'linked';
+            const individualButton = byId('estimateLibraryIndividualButton');
+            const linkedButton = byId('estimateLibraryLinkedButton');
+            individualButton.classList.toggle('is-active', !linked);
+            linkedButton.classList.toggle('is-active', linked);
+            individualButton.setAttribute('aria-pressed', String(!linked));
+            linkedButton.setAttribute('aria-pressed', String(linked));
+            byId('catalogPickerList').hidden = linked;
+            byId('linkedEstimateList').hidden = !linked;
+          };
+          const setPanelOpen = (open, interacted = false) => {
+            shell.relatedOpen = Boolean(open);
+            shell.interacted ||= interacted;
+            byId('smartInputWorkspace').classList.toggle('related-panel-open', shell.relatedOpen);
+            byId('estimateLibraryView').classList.toggle('is-open', shell.relatedOpen);
+            byId('estimateLibraryView').setAttribute('aria-hidden', String(!shell.relatedOpen));
+            byId('relatedPanelToggle').setAttribute('aria-expanded', String(shell.relatedOpen));
+            byId('relatedCollapseButton').setAttribute('aria-expanded', String(shell.relatedOpen));
+          };
+
+          shell.mounted = true;
+          setMode(shell.activeMode);
+          setLibraryKind(shell.estimateLibraryKind);
+          setPanelOpen(shell.relatedOpen);
+
+          const options = { signal: abortController.signal };
+          document.querySelectorAll('.mode-tab[data-mode]').forEach(button => {
+            button.addEventListener('click', () => setMode(button.dataset.mode, true), options);
+          });
+          byId('estimateLibraryIndividualButton').addEventListener('click', () => setLibraryKind('individual', true), options);
+          byId('estimateLibraryLinkedButton').addEventListener('click', () => setLibraryKind('linked', true), options);
+          byId('relatedPanelToggle').addEventListener('click', () => setPanelOpen(!shell.relatedOpen, true), options);
+          byId('relatedPanelCloseButton').addEventListener('click', () => setPanelOpen(false, true), options);
+          byId('relatedCollapseButton').addEventListener('click', () => setPanelOpen(!shell.relatedOpen, true), options);
+        }
+      };
+      window.__ONEAPP_SMARTINPUT_EARLY_UI__ = shell;
+    })();
+  </script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.9">
   <link rel="stylesheet" href="./smartinput.css?v=0.9.8">
@@ -264,12 +342,12 @@
           <div class="estimate-library-toolbar" role="group" aria-label="견적서 목록과 다중 선택">
             <button class="estimate-library-kind-button is-active" id="estimateLibraryIndividualButton" type="button" aria-pressed="true">견적서 목록</button>
             <button class="estimate-library-kind-button" id="estimateLibraryLinkedButton" type="button" aria-pressed="false">연동견적서</button>
-            <button class="estimate-multi-select-button" id="estimateMultiSelectButton" type="button" aria-label="견적서 다중 선택" aria-pressed="false" title="다중 선택"><span aria-hidden="true">+</span></button>
+            <button class="estimate-multi-select-button" id="estimateMultiSelectButton" type="button" aria-label="견적서 다중 선택" aria-pressed="false" title="다중 선택" disabled><span aria-hidden="true">+</span></button>
           </div>
           <p id="estimateLibrarySummary" class="sr-only">저장된 견적서 카드를 터치해 선택하고 바로 확인합니다.</p>
         </header>
-        <div class="estimate-library-grid saved-voucher-list" id="catalogPickerList"></div>
-        <div class="estimate-library-grid saved-voucher-list" id="linkedEstimateList" hidden></div>
+        <div class="estimate-library-grid saved-voucher-list" id="catalogPickerList" aria-busy="true"><div class="smart-dialog__empty">견적서 목록을 불러오는 중입니다.</div></div>
+        <div class="estimate-library-grid saved-voucher-list" id="linkedEstimateList" aria-busy="true" hidden><div class="smart-dialog__empty">연동견적서를 불러오는 중입니다.</div></div>
         <footer class="estimate-library-actions" id="catalogComposeArea">
           <span class="sr-only" id="estimateSelectionSummary" role="status" aria-live="polite">0개 선택</span>
           <button class="button button--danger button--small" id="selectedEstimateDeleteButton" type="button" disabled>선택 삭제</button>
@@ -281,8 +359,9 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script>window.__ONEAPP_SMARTINPUT_EARLY_UI__?.mount();</script>
   <script src="./smartinput-contract.js?v=0.6.1"></script>
-  <script type="module" src="./smartinput.js?v=0.11.29"></script>
+  <script type="module" src="./smartinput.js?v=0.11.30"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.5.0"></script>
 </body>
 </html>

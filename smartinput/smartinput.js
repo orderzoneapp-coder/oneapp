@@ -227,8 +227,13 @@ const methodButtons = [...document.querySelectorAll('[data-method]')];
 const sourceTextInput = $('sourceTextInput');
 const inputRows = $('inputRows');
 const parserCard = document.querySelector('.parser-card');
+const earlyUi = window.__ONEAPP_SMARTINPUT_EARLY_UI__;
+const initialDraft = loadDraft();
+if (earlyUi && contract.MODES[earlyUi.activeMode]) initialDraft.activeMode = earlyUi.activeMode;
+if (earlyUi && typeof earlyUi.relatedOpen === 'boolean') initialDraft.ui.relatedOpen = earlyUi.relatedOpen;
+earlyUi?.abortController?.abort();
 const state = {
-  draft: loadDraft(),
+  draft: initialDraft,
   customers: [],
   products: [],
   productMatchIndex: createProductMatchIndex([]),
@@ -260,6 +265,7 @@ const state = {
   mappingProjectionTimer: null,
   noticeEstimateIds: [],
   smartDataReady: false,
+  smartDataError: null,
   pendingImageEvidence: null,
   photoCaptureSequence: 0,
   pendingOcrReview: null,
@@ -290,7 +296,7 @@ const state = {
   columnDrag: null,
   gridPasteUndo: null,
   applyingGridPaste: false,
-  estimateLibraryKind: 'individual',
+  estimateLibraryKind: earlyUi?.estimateLibraryKind === 'linked' ? 'linked' : 'individual',
   estimateMultiSelectKind: '',
   estimateWorkingCopies: new Map(),
   estimateWorkingCopyBaselines: new Map(),
@@ -4059,7 +4065,7 @@ function renderEstimateWorkspace() {
   linkedButton.setAttribute('aria-pressed', String(linkedList));
   individualButton.disabled = state.busy;
   linkedButton.disabled = state.busy;
-  multiSelectButton.disabled = state.busy;
+  multiSelectButton.disabled = state.busy || !state.smartDataReady;
   multiSelectButton.classList.toggle('is-active', multiSelect);
   multiSelectButton.setAttribute('aria-pressed', String(multiSelect));
   multiSelectButton.setAttribute('aria-label', multiSelect ? '견적서 다중 선택 종료' : '견적서 다중 선택');
@@ -4084,9 +4090,32 @@ function estimateCardMarkup(record) {
 
 function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
+  const catalogList = $('catalogPickerList');
+  const linkedList = $('linkedEstimateList');
+  if (!state.smartDataReady) {
+    const failed = Boolean(state.smartDataError);
+    const catalogMessage = failed
+      ? '견적서 목록을 불러오지 못했습니다. 현재 입력 작업은 계속할 수 있습니다.'
+      : '견적서 목록을 불러오는 중입니다.';
+    const linkedMessage = failed
+      ? '연동견적서를 불러오지 못했습니다. 현재 입력 작업은 계속할 수 있습니다.'
+      : '연동견적서를 불러오는 중입니다.';
+    catalogList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${catalogMessage}</div>`;
+    linkedList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${linkedMessage}</div>`;
+    catalogList.setAttribute('aria-busy', String(!failed));
+    linkedList.setAttribute('aria-busy', String(!failed));
+    $('estimateSelectionSummary').textContent = failed ? '견적서 목록 로드 실패' : '견적서 목록을 불러오는 중입니다.';
+    $('selectedEstimateDeleteButton').disabled = true;
+    $('estimateRenameButton').disabled = true;
+    $('estimateCreateButton').disabled = true;
+    if (visible) renderEstimateWorkspace();
+    return;
+  }
+  catalogList.removeAttribute('aria-busy');
+  linkedList.removeAttribute('aria-busy');
   if (!visible) {
-    $('catalogPickerList').innerHTML = '<div class="smart-dialog__empty">견적서 모드에서 개별 견적서를 관리합니다.</div>';
-    $('linkedEstimateList').innerHTML = '';
+    catalogList.innerHTML = '<div class="smart-dialog__empty">견적서 모드에서 개별 견적서를 관리합니다.</div>';
+    linkedList.innerHTML = '';
     return;
   }
   state.estimates = normalizeEstimateOrder();
@@ -4098,8 +4127,8 @@ function renderCatalogControls() {
   const availableIds = new Set((creation ? records : estimateRecordsForKind()).map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
   const selectedCount = state.noticeEstimateIds.length;
-  $('catalogPickerList').innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다. 입력표를 작성하고 저장하면 자동 생성됩니다.</div>';
-  $('linkedEstimateList').innerHTML = linkedRecords.length ? linkedRecords.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
+  catalogList.innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다. 입력표를 작성하고 저장하면 자동 생성됩니다.</div>';
+  linkedList.innerHTML = linkedRecords.length ? linkedRecords.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
   const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
   const impactCount = estimateSaveImpact(currentRecord);
   const lastSave = state.lastEstimateSave?.estimateId === currentRecord?.estimateId ? state.lastEstimateSave : null;
@@ -8807,12 +8836,15 @@ async function hydrateReferences() {
     restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartDataReady = true;
+    state.smartDataError = null;
     restoreInputMappingSession({ applyLatestTemplate: false });
     renderMode();
   } else {
+    state.smartDataError = smartDataResult[0].reason || new Error('스마트입력 설정 로드 실패');
     state.inputTemplates = [];
     state.inputTemplatesStatus = 'ERROR';
-    state.inputTemplatesError = smartDataResult[0].reason || new Error('입력 양식 목록 로드 실패');
+    state.inputTemplatesError = state.smartDataError;
+    renderMode();
   }
   try {
     await ensureFieldCatalogSeed();
@@ -9786,6 +9818,7 @@ window.addEventListener('pagehide', () => {
   if (state.draftDirty) saveDraftNow();
 });
 renderMode();
+if (earlyUi) earlyUi.ready = true;
 initializeAutosave();
 void hydrateReferences().then(() => {
   if (shoppingOrderImport()) void refreshShoppingOrderInspection({ persist: true });
