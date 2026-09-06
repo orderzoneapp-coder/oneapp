@@ -119,7 +119,59 @@
     || value === undefined
     || (typeof value === 'string' && value.trim() === '')
   );
-  const valuesEqual = (left, right) => Object.is(left, right);
+  const getMasterContract = () => {
+    const contract = global.ONEAPP && global.ONEAPP.MASTER;
+    if (!contract || typeof contract.mapMasterExcelHeaders !== 'function' || typeof contract.normalizeExcelRowForMaster !== 'function' || typeof contract.valuesEqual !== 'function') {
+      throw new Error('공통 ONEAPP.MASTER Excel 매핑 계약을 사용할 수 없습니다. coreEngine.js 로드 상태를 확인하세요.');
+    }
+    return contract;
+  };
+  const valuesEqual = (field, left, right) => {
+    const contract = global.ONEAPP && global.ONEAPP.MASTER;
+    return contract && typeof contract.valuesEqual === 'function'
+      ? contract.valuesEqual(field, left, right)
+      : Object.is(left, right);
+  };
+
+  const normalizeUploadRows = (headers = [], rows = [], sourceHeaders = []) => {
+    const contract = getMasterContract();
+    if ((rows || []).length > 0 && rows.every(row => row && row.__masterMapped === true)) {
+      return {
+        headers: (headers || []).slice(),
+        sourceHeaders: (sourceHeaders.length > 0 ? sourceHeaders : headers).slice(),
+        rows: cloneValue(rows)
+      };
+    }
+    const originals = sourceHeaders.length > 0 ? sourceHeaders : headers;
+    const headerMapping = contract.mapMasterExcelHeaders(originals);
+    if (headerMapping.issues.length > 0) {
+      const error = new Error(headerMapping.issues.map(issue => issue.message).join(' '));
+      error.code = 'MASTER_EXCEL_MAPPING_BLOCKED';
+      error.mappingIssues = cloneValue(headerMapping.issues);
+      throw error;
+    }
+    const canonicalHeaders = [];
+    headerMapping.mappings.forEach(mapping => {
+      if (!canonicalHeaders.includes(mapping.canonicalField)) canonicalHeaders.push(mapping.canonicalField);
+    });
+    const normalizedRows = (rows || []).map(row => {
+      const normalized = contract.normalizeExcelRowForMaster(row, originals);
+      const display = {};
+      Object.entries(normalized.sourceEvidence || {}).forEach(([field, evidence]) => {
+        display[field] = Array.isArray(evidence)
+          ? normalized.item[field]
+          : evidence.displayValue;
+      });
+      return {
+        ...normalized.item,
+        __rowNumber: row.__rowNumber,
+        __display: display,
+        __sourceEvidence: normalized.sourceEvidence,
+        __masterMapped: true
+      };
+    });
+    return { headers: canonicalHeaders, sourceHeaders: originals.slice(), rows: normalizedRows };
+  };
 
   const getDisplayValue = (row, field) => {
     if (row && row.__display && hasOwn(row.__display, field)) return row.__display[field];
@@ -188,29 +240,42 @@
     let headerRowIndex = -1;
     for (let index = 0; index < Math.min(15, displayRows.length); index++) {
       const labels = (displayRows[index] || []).map(value => String(value ?? '').trim());
-      if (labels.some(label => CODE_FIELDS.includes(label))) {
+      const mappings = getMasterContract().mapMasterExcelHeaders(labels).mappings;
+      if (mappings.some(mapping => mapping.canonicalField === '품목코드')) {
         headerRowIndex = index;
         break;
       }
     }
     if (headerRowIndex < 0) {
-      throw new Error('Excel 상단 15행 안에서 코드·품목코드·상품코드 헤더를 찾지 못했습니다.');
+      throw new Error('Excel 상단 15행 안에서 품목코드 식별 헤더(품목코드·상품코드·바코드 등)를 찾지 못했습니다.');
     }
-    const headers = (displayRows[headerRowIndex] || []).map(value => String(value ?? '').trim());
-    const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index);
+    const sourceHeaders = (displayRows[headerRowIndex] || []).map(value => String(value ?? '').trim());
+    const duplicateHeaders = sourceHeaders.filter((header, index) => header && sourceHeaders.indexOf(header) !== index);
     if (duplicateHeaders.length > 0) {
       throw new Error(`중복 Excel 컬럼명이 있습니다: ${[...new Set(duplicateHeaders)].join(', ')}`);
     }
     const rows = [];
+    const reportRows = [];
+    for (let rowIndex = 0; rowIndex < headerRowIndex; rowIndex++) {
+      const values = (displayRows[rowIndex] || []).map(value => String(value ?? '').trim()).filter(Boolean);
+      if (values.length > 0) reportRows.push({ kind: 'header_information', rowNumber: rowIndex + 1, displayValues: values });
+    }
     for (let rowIndex = headerRowIndex + 1; rowIndex < rawRows.length; rowIndex++) {
       const rawRow = rawRows[rowIndex] || [];
       const displayRow = displayRows[rowIndex] || [];
-      const hasAnyValue = headers.some((header, columnIndex) => (
+      const hasAnyValue = sourceHeaders.some((header, columnIndex) => (
         header && String(displayRow[columnIndex] ?? rawRow[columnIndex] ?? '').trim() !== ''
       ));
       if (!hasAnyValue) continue;
+      const nonblankDisplayValues = sourceHeaders
+        .map((header, columnIndex) => header ? String(displayRow[columnIndex] ?? rawRow[columnIndex] ?? '').trim() : '')
+        .filter(Boolean);
+      if (nonblankDisplayValues.length === 1 && /^\d{4}[./-]\d{1,2}[./-]\d{1,2}\s+(?:(?:오전|오후)\s*)?\d{1,2}:\d{2}:\d{2}$/.test(nonblankDisplayValues[0])) {
+        reportRows.push({ kind: 'output_timestamp', rowNumber: rowIndex + 1, displayValues: nonblankDisplayValues });
+        continue;
+      }
       const row = { __rowNumber: rowIndex + 1, __display: {} };
-      headers.forEach((header, columnIndex) => {
+      sourceHeaders.forEach((header, columnIndex) => {
         if (!header) return;
         row[header] = rawRow[columnIndex] === undefined ? '' : rawRow[columnIndex];
         row.__display[header] = displayRow[columnIndex];
@@ -219,7 +284,12 @@
       if (rows.length > 100000) throw new Error('Excel 데이터 행은 100,000건을 초과할 수 없습니다.');
     }
     if (rows.length === 0) throw new Error('비교할 상품 행이 없습니다.');
-    return { headers: headers.filter(Boolean), rows };
+    const normalized = normalizeUploadRows(sourceHeaders.filter(Boolean), rows, sourceHeaders.filter(Boolean));
+    return {
+      ...normalized,
+      headerRowNumber: headerRowIndex + 1,
+      reportRows
+    };
   };
 
   const getSourceFields = (row = {}, headers = []) => {
@@ -250,7 +320,7 @@
 
   const fieldIssueTags = ({ field, oldValue, uploadValue, isNew, uploadPresent }) => {
     const tags = [];
-    const changed = isNew ? uploadPresent : (uploadPresent && !valuesEqual(oldValue, uploadValue));
+    const changed = isNew ? uploadPresent : (uploadPresent && !valuesEqual(field, oldValue, uploadValue));
     if (!changed && !(isNew && REQUIRED_NEW_FIELDS.includes(field) && (!uploadPresent || isBlankValue(uploadValue)))) {
       return tags;
     }
@@ -264,7 +334,7 @@
       else if (!isNew && changed) addTag(tags, ISSUE_TAGS.UNIT_CHANGED);
     }
     if (uploadPresent && isBlankValue(uploadValue) && (isNew || !isBlankValue(oldValue))) addTag(tags, ISSUE_TAGS.BLANK);
-    if (uploadPresent && uploadValue === 0 && !valuesEqual(oldValue, uploadValue)) addTag(tags, ISSUE_TAGS.ZERO);
+    if (uploadPresent && uploadValue === 0 && !valuesEqual(field, oldValue, uploadValue)) addTag(tags, ISSUE_TAGS.ZERO);
     if (['판매여부', '판매상태'].includes(field) && changed) addTag(tags, ISSUE_TAGS.SALE);
     if (['연동상태', '연동 상태', '판매 및 연동 상태'].includes(field) && changed) addTag(tags, ISSUE_TAGS.INTEGRATION);
     if (['싯가', '시중가'].includes(field) && changed) addTag(tags, ISSUE_TAGS.SPOT);
@@ -314,7 +384,9 @@
       ? row.__display[field]
       : uploadRaw;
     const oldValue = hasOwn(existing, field) ? existing[field] : undefined;
-    const changed = isNew ? uploadPresent : (uploadPresent && !valuesEqual(oldValue, uploadRaw));
+    const evidence = row && row.__sourceEvidence ? row.__sourceEvidence[field] : null;
+    const primaryEvidence = Array.isArray(evidence) ? evidence[0] : evidence;
+    const changed = isNew ? uploadPresent : (uploadPresent && !valuesEqual(field, oldValue, uploadRaw));
     const issueTags = fieldIssueTags({ field, oldValue, uploadValue: uploadRaw, isNew, uploadPresent });
     return {
       field,
@@ -322,6 +394,8 @@
       uploadPresent,
       uploadRaw,
       uploadDisplay,
+      sourceHeader: primaryEvidence?.sourceHeader || field,
+      sourceCellAddress: primaryEvidence?.cellAddress || '',
       adminValue: undefined,
       adminEdited: false,
       source: 'upload',
@@ -446,6 +520,7 @@
 
   const analyzeUploadRows = ({
     headers = [],
+    sourceHeaders = [],
     rows = [],
     currentMaster = {},
     revision,
@@ -453,6 +528,10 @@
     masterMismatch = false,
     allowEmptyMaster = false
   } = {}) => {
+    const normalizedUpload = normalizeUploadRows(headers, rows, sourceHeaders);
+    headers = normalizedUpload.headers;
+    sourceHeaders = normalizedUpload.sourceHeaders;
+    rows = normalizedUpload.rows;
     const master = allowEmptyMaster
       ? buildMasterIndex(currentMaster)
       : assertExistingMaster(currentMaster, '추가·갱신 비교 분석');
@@ -526,6 +605,7 @@
       mode: MODE,
       fileName,
       headers: headers.slice(),
+      sourceHeaders: sourceHeaders.slice(),
       rows: cloneValue(rows),
       baseRevision: revision,
       baseMaster: master,
@@ -693,7 +773,7 @@
         if (!approved) return;
         const finalValue = getFieldFinalValue(field);
         if (finalValue === undefined) return;
-        const changed = isNew ? true : !valuesEqual(field.oldValue, finalValue);
+        const changed = isNew ? true : !valuesEqual(field.field, field.oldValue, finalValue);
         if (!changed) return;
         target[field.field] = cloneValue(finalValue);
         acceptedFields.push({
@@ -704,6 +784,9 @@
           uploadRawType: field.uploadPresent
             ? (field.uploadRaw === '' ? 'blank' : typeof field.uploadRaw)
             : 'missing',
+          uploadDisplay: field.uploadPresent ? cloneValue(field.uploadDisplay) : null,
+          sourceHeader: field.sourceHeader || field.field,
+          sourceCellAddress: field.sourceCellAddress || '',
           adminEdited: field.adminEdited,
           adminValue: field.adminEdited ? cloneValue(field.adminValue) : null,
           finalValue: cloneValue(finalValue),
@@ -838,6 +921,9 @@
       uploadRaw: detail.uploadRaw,
       uploadRawType: detail.uploadRawType,
       uploadOriginalValue: detail.uploadRaw,
+      uploadDisplayValue: detail.uploadDisplay,
+      sourceHeader: detail.sourceHeader,
+      sourceCellAddress: detail.sourceCellAddress,
       adminEdited: detail.adminEdited,
       adminValue: detail.adminValue,
       adminModifiedValue: detail.adminValue,
@@ -950,7 +1036,7 @@
       if (log.recordType !== 'master_add_update_detail') continue;
       const item = state.masterMap[log.code];
       const actual = log.field === '코드' ? (item && item.코드) : (item && item[log.field]);
-      if (!valuesEqual(actual, log.finalValue)) {
+      if (!valuesEqual(log.field, actual, log.finalValue)) {
         throw new Error(`master와 history 최종값 불일치: ${log.code} / ${log.field}`);
       }
     }
@@ -1345,7 +1431,7 @@
     const nextItem = { ...previousItem, ...normalizedItem, 코드: inputCode, 품목코드: inputCode };
     const fields = [...new Set([...Object.keys(previousItem), ...Object.keys(nextItem)])]
       .filter(field => !field.startsWith('__'))
-      .filter(field => !valuesEqual(previousItem[field], nextItem[field]));
+      .filter(field => !valuesEqual(field, previousItem[field], nextItem[field]));
     if (fields.length === 0) {
       throw createOperationalError('MASTER_SINGLE_PRODUCT_NO_CHANGE', '변경된 상품 정보가 없습니다.');
     }

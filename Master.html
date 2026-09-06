@@ -1187,10 +1187,13 @@
                                                             <tr key={field.field} className={`border-t border-slate-100 ${field.excluded ? 'bg-slate-100 opacity-70' : ''}`}>
                                                                 <td className="px-3 py-3 align-top">
                                                                     <div className="font-black text-slate-800">{field.field}</div>
+                                                                    {(field.sourceHeader !== field.field || field.sourceCellAddress) && (
+                                                                        <div className="mt-0.5 text-[9px] text-slate-500">원본 {field.sourceHeader}{field.sourceCellAddress ? ` · ${field.sourceCellAddress}` : ''}</div>
+                                                                    )}
                                                                     <div className="mt-1 flex flex-wrap gap-1">{field.issueTags.map(tag => <span key={tag} className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">{tag}</span>)}</div>
                                                                 </td>
                                                                 <td className="px-3 py-3 align-top break-all">{formatReviewValue(field.oldValue, Object.prototype.hasOwnProperty.call(candidate.existing, field.field))}</td>
-                                                                <td className="px-3 py-3 align-top break-all">{formatReviewValue(field.uploadRaw, field.uploadPresent)}</td>
+                                                                <td className="px-3 py-3 align-top break-all">{formatReviewValue(field.uploadDisplay, field.uploadPresent)}</td>
                                                                 <td className="px-3 py-3 align-top">
                                                                     {canDirectEdit && (
                                                                         <input
@@ -1637,7 +1640,8 @@
                     const rows = values.map((item, index) => ({
                         ...item,
                         __rowNumber: index + 1,
-                        __display: Object.fromEntries(headers.map(field => [field, item[field]]))
+                        __display: Object.fromEntries(headers.map(field => [field, item[field]])),
+                        __masterMapped: true
                     }));
                     const analysis = window.ONEAPP_MASTER_ADD_UPDATE.analyzeUploadRows({
                         headers,
