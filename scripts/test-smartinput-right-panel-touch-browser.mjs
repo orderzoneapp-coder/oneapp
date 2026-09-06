@@ -153,7 +153,7 @@ try {
     linkedEnabled: true,
     loadingText: '견적서 목록을 불러오는 중입니다.'
   }, 'local UI state must reveal the estimate-list shell before the main module');
-  await touch(client, '#estimateLibraryLinkedButton');
+  await click(client, '#estimateLibraryLinkedButton');
   const earlyLinked = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const linked=document.querySelector('#estimateLibraryLinkedButton');const list=document.querySelector('#linkedEstimateList');return shell&&!shell.ready&&linked?.getAttribute('aria-pressed')==='true'&&!list?.hidden?{kind:shell.estimateLibraryKind,loadingText:list.textContent.trim()}:null;})()`), 'early linked-estimate selection', 1_200);
   assert.deepEqual(earlyLinked, { kind: 'linked', loadingText: '연동견적서를 불러오는 중입니다.' }, 'linked-estimate selection must respond while data modules load');
   await waitFor(() => evaluate(client, `window.__ONEAPP_SMARTINPUT_EARLY_UI__?.ready===true&&Boolean(document.querySelector('.nexus-ui-header'))&&Boolean(document.querySelector('#inputRows tr'))`), 'SmartInput shell');

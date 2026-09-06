@@ -248,7 +248,7 @@ try {
   const portFile = join(profile, 'DevToolsActivePort');
   const debugPort = await waitFor(() => {
     try { return readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] || null; } catch { return null; }
-  }, 'browser debugging port');
+  }, 'browser debugging port', 40_000);
   const targets = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     return response.ok ? (await response.json()).filter(target => target.type === 'page') : null;
