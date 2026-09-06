@@ -129,10 +129,13 @@ assert.deepEqual(Array.from(normalizedPriceRows, row => row.sourceUnitPrice), ['
   'Excel 파서에서 견적 행 생성까지 단가 원본을 별도로 유지해야 한다.');
 const priceOutput = buildEstimateF8Data(normalizedPriceRows);
 assert.equal(priceOutput.ok, true);
-assert.deepEqual(priceOutput.shopData.slice(1).map(row => row[4]), ['', 0, 1500, '가격 확인']);
+assert.deepEqual(priceOutput.shopData.slice(1).map(row => row[4]), ['', '', '', ''],
+  '일반 단가(unitPrice)를 쇼핑몰 도매A로 오용하면 안 된다.');
+assert.deepEqual(priceOutput.erpData.slice(1).map(row => row[1]), ['', '', '', ''],
+  '일반 단가(unitPrice)를 ERP 입고가로 오용하면 안 된다.');
 assert.deepEqual(priceOutput.erpData.slice(1).map(row => row[7]), ['', '', '', '']);
-assert.ok(priceOutput.errorData.some(row => row[0] === 1 && row[2] === '단가' && row[3] === ''));
-assert.ok(priceOutput.errorData.some(row => row[0] === 4 && row[2] === '단가' && row[3] === '가격 확인'));
+assert.equal(priceOutput.confirmData.length, 1,
+  '입고가와 도매가 비교 근거가 없으면 확인요청 행을 임의 생성하면 안 된다.');
 
 const notStructured = parseStructuredSheet([
   ['오늘 주문합니다'],

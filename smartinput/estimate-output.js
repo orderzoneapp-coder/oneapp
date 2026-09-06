@@ -3,8 +3,13 @@ const SHOP_HEADERS = Object.freeze([
   'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부',
   '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
 ]);
-const ERP_HEADERS = Object.freeze(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n']);
-const ERROR_HEADERS = Object.freeze(['행', '품목', '필드', '원본값', '오류내용', '관리자 판단 안내']);
+const ERP_HEADERS = Object.freeze([
+  '품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n',
+  '최종(전송)', 'n', '행사', 'n', '1'
+]);
+const CONFIRM_HEADERS = Object.freeze([
+  '확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청'
+]);
 export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
 
 export function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
@@ -33,13 +38,179 @@ function sourceNumber(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number') return value;
   const parsed = numeric(value);
-  return parsed === null ? String(value) : parsed;
+  return parsed === null ? 0 : parsed;
 }
 
-function unitPriceSource(row = {}) {
-  return Object.prototype.hasOwnProperty.call(row, 'sourceUnitPrice') && row.sourceUnitPrice !== null
-    ? row.sourceUnitPrice
-    : row.unitPrice;
+const own = (value, key) => Boolean(value && Object.prototype.hasOwnProperty.call(value, key));
+const normalizedSourceHeader = value => text(value).normalize('NFKC').replace(/\s+/g, '');
+
+function sourceFieldEntry(row = {}, aliases = []) {
+  const fields = row.estimateF8SourceFields && typeof row.estimateF8SourceFields === 'object'
+    ? row.estimateF8SourceFields
+    : {};
+  for (const alias of aliases) {
+    const key = normalizedSourceHeader(alias);
+    if (own(fields, key)) return fields[key];
+  }
+  return null;
+}
+
+function directValue(row = {}, keys = [], fallback = '') {
+  for (const key of keys) {
+    if (!own(row, key)) continue;
+    if (row.estimateF8SourceOnly === true && !row.editedFields?.[key]) continue;
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    return value;
+  }
+  return fallback;
+}
+
+function explicitDirectValue(row = {}, keys = []) {
+  for (const key of keys) {
+    if (!row.editedFields?.[key] || !own(row, key)) continue;
+    const value = row[key];
+    return { found: true, value: value === null || value === undefined ? '' : value };
+  }
+  return { found: false, value: '' };
+}
+
+function outputNumber(row = {}, aliases = [], directKeys = [], fallback = '') {
+  const explicit = explicitDirectValue(row, directKeys);
+  if (explicit.found) return explicit.value === '' ? '' : sourceNumber(explicit.value);
+  const source = sourceFieldEntry(row, aliases);
+  if (source) {
+    const displayValue = source.currentDisplayValue ?? source.displayValue ?? '';
+    if (String(displayValue).trim() === '') return '';
+    if (typeof source.parsedValue === 'number' && Number.isFinite(source.parsedValue)) return source.parsedValue;
+    return sourceNumber(displayValue);
+  }
+  const value = directValue(row, directKeys, fallback);
+  return value === '' ? '' : sourceNumber(value);
+}
+
+function outputText(row = {}, aliases = [], directKeys = [], fallback = '') {
+  const explicit = explicitDirectValue(row, directKeys);
+  if (explicit.found) return String(explicit.value);
+  const source = sourceFieldEntry(row, aliases);
+  if (source) return String(source.currentDisplayValue ?? source.displayValue ?? '');
+  const value = directValue(row, directKeys, fallback);
+  return value === null || value === undefined ? '' : String(value);
+}
+
+const normalizedCodeValue = value => String(value ?? '').replace(/\s/g, '');
+
+function outputCode(row = {}) {
+  return normalizedCodeValue(outputText(row, ['품목코드', '상품코드', '코드'], ['itemCode']));
+}
+
+function mappingSourceFields(row = {}, mappingSession = null) {
+  if (!mappingSession) return {};
+  const workingRow = (mappingSession.workingRows || []).find(candidate => text(candidate?.rowId) === text(row?.rowId));
+  const fields = {};
+  const headerRowIndex = Number(mappingSession.headerRowIndex || 0);
+  const headers = Array.isArray(mappingSession.headers) && mappingSession.headers.length
+    ? mappingSession.headers
+    : (mappingSession.sourceMatrix?.[headerRowIndex] || []);
+  const mappingsByColumn = new Map((mappingSession.mappings || [])
+    .filter(mapping => ['MAPPED', 'RECOMMENDED'].includes(mapping?.state))
+    .map(mapping => [Number(mapping.columnIndex), mapping]));
+  headers.forEach((sourceHeader, columnIndex) => {
+    const header = normalizedSourceHeader(sourceHeader);
+    if (!header || own(fields, header)) return;
+    const mapping = mappingsByColumn.get(columnIndex);
+    const tracked = mapping ? row?.fieldValues?.[mapping.targetFieldId] : null;
+    const workingValue = workingRow?.cells?.[columnIndex];
+    const rawSourceRowIndex = workingRow?.sourceRowIndex;
+    const sourceRowIndex = rawSourceRowIndex === null || rawSourceRowIndex === undefined || rawSourceRowIndex === ''
+      ? Number.NaN
+      : Number(rawSourceRowIndex);
+    const sourceValue = Number.isInteger(sourceRowIndex) && sourceRowIndex >= 0
+      ? mappingSession.sourceMatrix?.[sourceRowIndex]?.[columnIndex]
+      : undefined;
+    fields[header] = Object.freeze({
+      currentDisplayValue: String(tracked?.currentDisplayValue ?? workingValue ?? sourceValue ?? ''),
+      parsedValue: tracked?.parsedValue ?? null,
+      targetFieldId: text(mapping?.targetFieldId)
+    });
+  });
+  return fields;
+}
+
+export function buildEstimateF8RowsFromDraft(draft = {}) {
+  const rows = Array.isArray(draft?.rows) ? draft.rows : [];
+  const mappingBacked = Boolean(
+    draft?.inputMapping
+    && ((Array.isArray(draft.inputMapping.headers) && draft.inputMapping.headers.length)
+      || (Array.isArray(draft.inputMapping.sourceMatrix) && draft.inputMapping.sourceMatrix.length))
+  );
+  return rows.map(row => ({
+    ...row,
+    estimateF8SourceOnly: mappingBacked || row?.estimateF8SourceOnly === true,
+    estimateF8SourceFields: mappingBacked
+      ? mappingSourceFields(row, draft?.inputMapping)
+      : (row?.estimateF8SourceFields && typeof row.estimateF8SourceFields === 'object' ? row.estimateF8SourceFields : {})
+  }));
+}
+
+function linkedRefSignature(row = {}) {
+  const refs = Array.isArray(row.linkedSourceRefs) && row.linkedSourceRefs.length
+    ? row.linkedSourceRefs
+    : (row.linkedSourceEstimateId && row.linkedSourceRowId
+      ? [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }]
+      : []);
+  return refs.map(ref => `${text(ref?.estimateId)}:${text(ref?.rowId)}`).filter(value => value !== ':').sort().join('|');
+}
+
+function derivedPlanRows(entry = {}) {
+  const sourceRows = [];
+  (entry.sourceDrafts || []).forEach((draft, sourceIndex) => {
+    const estimateId = text(entry.sourceIds?.[sourceIndex]);
+    buildEstimateF8RowsFromDraft(draft).forEach((row, rowIndex) => {
+      const sourceRowId = text(row.rowId) || `ROW-${rowIndex + 1}`;
+      sourceRows.push({
+        ...row,
+        linkedSourceEstimateId: estimateId,
+        linkedSourceRowId: sourceRowId,
+        linkedSourceEstimateIds: estimateId ? [estimateId] : [],
+        linkedSourceRefs: estimateId ? [{ estimateId, rowId: sourceRowId }] : []
+      });
+    });
+  });
+
+  const workingRows = Array.isArray(entry.workingDraft?.rows) ? entry.workingDraft.rows : [];
+  const workingByRefs = new Map(workingRows
+    .map(row => [linkedRefSignature(row), row])
+    .filter(([signature]) => signature));
+  const restored = sourceRows.map(row => {
+    const working = workingByRefs.get(linkedRefSignature(row));
+    if (!working) return row;
+    const fields = [...new Set([
+      ...Object.entries(working.editedFields || {}).filter(([, edited]) => edited).map(([field]) => field),
+      ...(working.linkedSyncFields || [])
+    ])];
+    if (!fields.length) return row;
+    const next = {
+      ...row,
+      editedFields: {
+        ...(row.editedFields || {}),
+        ...(working.editedFields || {}),
+        ...Object.fromEntries(fields.map(field => [field, true]))
+      }
+    };
+    fields.forEach(field => { next[field] = working[field]; });
+    return next;
+  });
+  const manualRows = workingRows.filter(row => !linkedRefSignature(row));
+  return [...restored, ...buildEstimateF8RowsFromDraft({ rows: manualRows })];
+}
+
+export function buildEstimateF8RowsFromPlan(plan = {}) {
+  return (plan.entries || []).flatMap(entry => (
+    entry?.kind === 'DERIVED'
+      ? derivedPlanRows(entry)
+      : buildEstimateF8RowsFromDraft(entry?.draft || {})
+  ));
 }
 
 function itemLabel(row = {}) {
@@ -48,17 +219,6 @@ function itemLabel(row = {}) {
 
 function estimateIssue(code, row, rowIndex, field, originalValue, message, guide) {
   return { code, rowIndex, item: itemLabel(row), field, originalValue, message, guide };
-}
-
-function issueDataRow(issue = {}) {
-  return [
-    Number.isInteger(issue.rowIndex) ? issue.rowIndex + 1 : '',
-    issue.item || '',
-    issue.field || '',
-    issue.originalValue ?? '',
-    issue.message || '',
-    issue.guide || '오류 정보를 확인한 뒤 관리자가 업로드 여부를 판단하세요.'
-  ];
 }
 
 function priceKey(row = {}, index = 0) {
@@ -117,7 +277,10 @@ export function buildKakaoNoticeRows(rows = [], previousPrices = {}, priceFields
 export function validateEstimateRows(rows = []) {
   const candidates = (Array.isArray(rows) ? rows : [])
     .map((row, rowIndex) => ({ row, rowIndex }))
-    .filter(({ row }) => text(row.itemCode) || text(row.itemName));
+    .filter(({ row }) => (
+      text(outputCode(row))
+      || text(outputText(row, ['품목명', '상품명'], ['itemName']))
+    ));
   const errors = [];
   if (!candidates.length) errors.push({
     code: 'EMPTY', rowIndex: null, item: '', field: '품목', originalValue: '',
@@ -126,70 +289,250 @@ export function validateEstimateRows(rows = []) {
   });
   const codeCounts = new Map();
   candidates.forEach(({ row, rowIndex }) => {
-    const code = text(row.itemCode);
+    const code = outputCode(row);
     if (!code) errors.push(estimateIssue(
       'ITEM_CODE_REQUIRED', row, rowIndex, '품목코드', row.itemCode ?? '', '품목코드가 없습니다.',
-      '업로드 대상 시스템에서 코드 공백을 허용하는지 확인하고 업로드 여부를 판단하세요.'
+      '품목코드를 확인한 뒤 다시 출력하세요.'
     ));
     else codeCounts.set(code, (codeCounts.get(code) || 0) + 1);
-    if (!text(row.masterProductId)) {
-      errors.push(estimateIssue(
-        'MASTER_LINK_REQUIRED', row, rowIndex, '마스터 연결', row.masterProductId ?? '', '마스터 상품이 연결되지 않았습니다.',
-        '원본 품목과 업로드 결과를 대조하고 업로드 여부를 판단하세요.'
-      ));
-    }
-    const originalUnitPrice = unitPriceSource(row);
-    if (numeric(originalUnitPrice) === null) {
-      const originalValue = originalUnitPrice ?? '';
-      errors.push(estimateIssue(
-        'UNIT_PRICE_INVALID', row, rowIndex, '단가', originalValue,
-        String(originalValue) === '' ? '단가가 공백입니다.' : '단가가 숫자가 아닙니다.',
-        '원본 단가를 그대로 출력했습니다. 업로드 대상 시스템의 허용 여부를 확인하고 판단하세요.'
-      ));
-    }
   });
   candidates.forEach(({ row, rowIndex }) => {
-    const code = text(row.itemCode);
+    const code = outputCode(row);
     if (code && codeCounts.get(code) > 1) errors.push(estimateIssue(
-      'DUPLICATE_ITEM_CODE', row, rowIndex, '품목코드', row.itemCode ?? '', `품목코드 ${code}가 중복되었습니다.`,
-      '중복 행을 각각 업로드할지 확인하고 업로드 여부를 판단하세요.'
+      'DUPLICATE_ITEM_CODE', row, rowIndex, '품목코드', code, `품목코드 ${code}가 중복되었습니다.`,
+      'MerchOps F8과 동일하게 중복 품목코드를 정리한 뒤 다시 출력하세요.'
     ));
   });
   return { ok: errors.length === 0, errors, entries: candidates, rows: candidates.map(({ row }) => row) };
 }
 
-export function buildEstimateF8Data(rows = []) {
+function saleCode(row = {}) {
+  const value = outputText(row, ['판매여부', '판매', '판매상태'], ['saleAvailability', 'saleCode']);
+  const normalized = text(value).toLowerCase();
+  if (!normalized) return '';
+  if (['0', 'false', 'n', 'no', '정지', '정지중', '중단', '판매중단', '판매정지', '미판매', '판매안함', '판매불가', '사용안함'].includes(normalized)) return '0';
+  if (['1', 'true', 'y', 'yes', '판매', '판매중', '판매가능', '정상', '사용'].includes(normalized)) return '1';
+  const parsed = Number(normalized.replace(/,/g, ''));
+  if (Number.isFinite(parsed) && (parsed === 0 || parsed === 1)) return String(parsed);
+  return '';
+}
+
+function themeFlags(row = {}) {
+  const explicit = [1, 2, 3, 4, 5].map(index => outputText(row, [`테마${index}`], [`theme${index}`]));
+  if (explicit.some(value => text(value) !== '')) {
+    return explicit.map(value => ['1', 'true'].includes(text(value).toLowerCase()) ? '1' : '');
+  }
+  const themeValue = outputText(row, ['행사테마'], ['promotionTheme', 'eventTheme']);
+  const codes = new Set(String(themeValue || '').split(/[,/|\s]+/).map(text).filter(code => ['1', '2', '3', '4', '5'].includes(code)));
+  return [1, 2, 3, 4, 5].map(index => codes.has(String(index)) ? '1' : '');
+}
+
+function collectWholesaleWarnings(rows = []) {
+  const warnings = [];
+  rows.forEach(row => {
+    const code = outputCode(row);
+    const name = outputText(row, ['품목명', '상품명'], ['itemName']);
+    const specification = outputText(row, ['규격'], ['specification']);
+    [
+      { baseField: '입고가', baseAliases: ['입고가'], baseKeys: ['inboundPrice'], wholesaleField: '도매A', wholesaleAliases: ['도매A', 'A판매', 'A판매가'], wholesaleKeys: ['wholesaleA'] },
+      { baseField: '입고B', baseAliases: ['입고B'], baseKeys: ['purchasePriceB'], wholesaleField: '도매B', wholesaleAliases: ['도매B', 'B도매', 'B도매가'], wholesaleKeys: ['wholesaleB'] }
+    ].forEach(pair => {
+      const basePrice = numeric(outputNumber(row, pair.baseAliases, pair.baseKeys));
+      const wholesalePrice = numeric(outputNumber(row, pair.wholesaleAliases, pair.wholesaleKeys));
+      if (!(basePrice > 0 && wholesalePrice > 0 && wholesalePrice < basePrice)) return;
+      warnings.push([
+        '매칭 도매가 낮음', code, name, specification, pair.baseField, basePrice,
+        pair.wholesaleField, wholesalePrice, wholesalePrice - basePrice, `${pair.wholesaleField}가 ${pair.baseField}보다 낮음`
+      ]);
+    });
+  });
+  return warnings;
+}
+
+function productCatalogIndex(products = []) {
+  const index = new Map();
+  const source = Array.isArray(products) ? products : Object.values(products || {});
+  source.forEach(product => {
+    const code = normalizedCodeValue(product?.itemCode || product?.productCode || product?.code || product?.품목코드 || product?.상품코드 || product?.코드);
+    if (code && !index.has(code)) index.set(code, product);
+  });
+  return index;
+}
+
+function catalogText(product = {}, keys = []) {
+  for (const key of keys) {
+    if (own(product, key) && text(product[key])) return String(product[key]);
+    if (own(product?.raw, key) && text(product.raw[key])) return String(product.raw[key]);
+  }
+  return '';
+}
+
+function roundSubdivisionSalePrice(value) {
+  const amount = Number(value) || 0;
+  if (amount <= 0) return 0;
+  const unit = amount >= 1000 ? 100 : 10;
+  return Math.round(amount / unit) * unit;
+}
+
+function subdivisionCandidate(row = {}) {
+  const code = outputCode(row);
+  const subCode = normalizedCodeValue(outputText(row, ['1종코드'], ['type1Code']));
+  const division = numeric(outputNumber(row, ['1종연산'], ['type1Operation']));
+  if (!subCode || ['0', '00', '-'].includes(subCode) || !(division > 0)) return null;
+  const inboundPrice = numeric(outputNumber(row, ['입고가'], ['inboundPrice'])) || 0;
+  const outPrice = numeric(outputNumber(row, ['출고가', '판매가'], ['outPrice'])) || 0;
+  const outsourcing = numeric(outputNumber(row, ['외주비'], ['outsourcingStandardCost', 'outsourcingUnitPrice'])) || 0;
+  const expense = numeric(outputNumber(row, ['경비'], ['expenseStandardCost'])) || 0;
+  const subInbound = inboundPrice > 0 ? Math.round(((inboundPrice + outsourcing) / division) / 100) * 100 : 0;
+  const subSale = outPrice > 0 ? roundSubdivisionSalePrice((outPrice / division) + expense) : 0;
+  if (subInbound <= 0 || subSale <= 0) return null;
+  return {
+    code: subCode,
+    parentCode: code,
+    parentInboundPrice: inboundPrice,
+    subInbound,
+    subSale,
+    specification: outputText(row, ['1종규격'], ['type1Specification']),
+    saleCode: saleCode(row),
+    stock: outputNumber(row, ['재고수량'], ['stockQuantity', 'inventoryQuantity']),
+    themes: themeFlags(row)
+  };
+}
+
+function duplicateCodes(rows = []) {
+  const counts = new Map();
+  rows.slice(1).forEach(row => {
+    const code = text(row?.[0]);
+    if (code) counts.set(code, (counts.get(code) || 0) + 1);
+  });
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([code]) => code);
+}
+
+export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
   const validation = validateEstimateRows(rows);
+  const errors = [...validation.errors];
   const shopData = [[...SHOP_HEADERS]];
   const erpData = [[...ERP_HEADERS]];
-  const errorData = [[...ERROR_HEADERS], ...validation.errors.map(issueDataRow)];
-  validation.entries.forEach(({ row, rowIndex }) => {
-    const code = text(row.itemCode);
-    const originalUnitPrice = unitPriceSource(row);
-    const unitPrice = sourceNumber(originalUnitPrice);
-    const noticePrice = numeric(row.noticePrice) ?? 0;
-    shopData.push([
-      code, text(row.itemName), text(row.specification), '', unitPrice, noticePrice, '', '',
-      0, 0, 0, 0, '', '', 1, '', '', '', '', '', '', ''
-    ]);
+  const warnings = collectWholesaleWarnings(validation.rows);
+  const confirmData = [[...CONFIRM_HEADERS], ...warnings];
+  const subdivisionByCode = new Map();
+
+  validation.entries.forEach(({ row }) => {
+    const code = outputCode(row);
+    const inboundPrice = outputNumber(row, ['입고가'], ['inboundPrice']);
+    const outPrice = outputNumber(row, ['출고가', '판매가'], ['outPrice']);
+    const promoPrice = outputNumber(row, ['행사가'], ['promoPrice']);
+    const shopSalePrice = (numeric(promoPrice) || 0) > 0 ? promoPrice : outPrice;
+    const purchasePriceB = outputNumber(row, ['입고B'], ['purchasePriceB']);
+    const wholesaleA = outputNumber(row, ['도매A', 'A판매', 'A판매가'], ['wholesaleA']);
+    const wholesaleB = outputNumber(row, ['도매B', 'B도매', 'B도매가'], ['wholesaleB']);
+    const marketPrice = outputNumber(row, ['시중가', '시중단가'], ['marketPrice']);
+    const finalTransmission = outputNumber(row, ['최종전송', '최종(전송)', '최종입고'], ['finalTransmission', 'lastPurchasePrice']);
+    const stock = outputNumber(row, ['재고수량'], ['stockQuantity', 'inventoryQuantity']);
+    const themes = themeFlags(row);
     erpData.push([
-      code, unitPrice, '0', '', '0', sourceNumber(row.purchasePriceB), 'n', sourceNumber(row.wholesaleA), 'n', sourceNumber(row.wholesaleB), 'n'
+      code, inboundPrice, '0', outPrice, '0', purchasePriceB, 'n', wholesaleA, 'n', wholesaleB, 'n',
+      finalTransmission, 'n', promoPrice, 'n', (numeric(inboundPrice) || 0) > 0 ? '1' : ''
     ]);
-    if (row.unitPriceReviewStatus === 'PENDING' && numeric(originalUnitPrice) !== null) {
-      errorData.push(issueDataRow(estimateIssue(
-        'UNIT_PRICE_REVIEW_REQUIRED', row, rowIndex, '단가', originalUnitPrice ?? '', '사진 인식 단가 확인이 필요합니다.',
-        '원본 사진과 단가를 대조한 뒤 업로드 여부를 판단하세요.'
-      )));
-    }
+    shopData.push([
+      code,
+      outputText(row, ['품목명', '상품명'], ['itemName']),
+      outputText(row, ['규격', '단위'], ['specification', 'unit']),
+      shopSalePrice,
+      wholesaleA,
+      marketPrice,
+      outputNumber(row, ['B판매가', 'B 판매가'], ['bSalePrice']),
+      wholesaleB,
+      0,
+      0,
+      0,
+      0,
+      outputText(row, ['브랜드'], ['brand']),
+      outputText(row, ['간단설명', '기본설명'], ['productDescription']),
+      saleCode(row),
+      stock,
+      ...themes,
+      outputText(row, ['검색어등록', '상품태그'], ['searchInfo', 'productTags'])
+    ]);
+    const subdivision = subdivisionCandidate(row);
+    if (subdivision) subdivisionByCode.set(subdivision.code, [...(subdivisionByCode.get(subdivision.code) || []), subdivision]);
   });
+
+  const selectedSubdivisions = new Map();
+  subdivisionByCode.forEach((candidates, subCode) => {
+    const byParent = new Map();
+    candidates.forEach(candidate => {
+      const previous = byParent.get(candidate.parentCode);
+      if (previous && (previous.subInbound !== candidate.subInbound || previous.subSale !== candidate.subSale || previous.parentInboundPrice !== candidate.parentInboundPrice)) {
+        errors.push({ code: 'SUBDIVISION_PRICE_CONFLICT', item: subCode, field: '1종코드', originalValue: subCode, message: `소분코드 ${subCode}의 계산 가격이 서로 다릅니다.`, guide: '원본 가격을 확인한 뒤 다시 출력하세요.' });
+      } else if (!previous) byParent.set(candidate.parentCode, candidate);
+    });
+    if (byParent.size > 1) {
+      errors.push({ code: 'SUBDIVISION_SOURCE_SELECTION_REQUIRED', item: subCode, field: '1종코드', originalValue: subCode, message: `소분코드 ${subCode}에 연결된 원물이 여러 개입니다.`, guide: 'MerchOps에서 원물을 선택하거나 한 원물만 남긴 뒤 다시 출력하세요.' });
+      return;
+    }
+    if (byParent.size === 1) selectedSubdivisions.set(subCode, [...byParent.values()][0]);
+  });
+
+  const catalog = productCatalogIndex(productCatalog);
+  selectedSubdivisions.forEach(subdivision => {
+    const shopIndexes = shopData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);
+    const erpIndexes = erpData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);
+    if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
+    const basic = subdivision.subInbound > 0 ? '1' : '';
+    if (shopIndexes.length === 1 && erpIndexes.length === 1) {
+      const shopRow = shopData[shopIndexes[0]];
+      shopRow[3] = subdivision.subSale;
+      shopRow[4] = subdivision.subSale;
+      shopRow[5] = subdivision.subSale;
+      const erpRow = erpData[erpIndexes[0]];
+      erpRow[1] = subdivision.subInbound;
+      erpRow[3] = subdivision.subSale;
+      erpRow[11] = subdivision.subInbound;
+      erpRow[15] = basic;
+      return;
+    }
+    const product = catalog.get(subdivision.code) || {};
+    const name = catalogText(product, ['itemName', 'productName', '품목명', '상품명']);
+    if (!name || shopIndexes.length !== erpIndexes.length) {
+      errors.push({ code: 'SUBDIVISION_PRODUCT_REQUIRED', item: subdivision.code, field: '1종코드', originalValue: subdivision.code, message: `소분상품 ${subdivision.code}의 상품정보를 확인할 수 없습니다.`, guide: '상품 기준정보를 새로고침한 뒤 다시 출력하세요.' });
+      return;
+    }
+    erpData.push([subdivision.code, subdivision.subInbound, '0', subdivision.subSale, '0', '', 'n', '', 'n', '', 'n', subdivision.subInbound, 'n', '', 'n', basic]);
+    shopData.push([
+      subdivision.code,
+      name,
+      catalogText(product, ['specification', 'spec', '규격']) || subdivision.specification,
+      subdivision.subSale,
+      subdivision.subSale,
+      subdivision.subSale,
+      '', '', 0, 0, 0, 0,
+      catalogText(product, ['brand', '브랜드']),
+      catalogText(product, ['productDescription', '간단설명', '기본설명']),
+      subdivision.saleCode,
+      subdivision.stock,
+      ...subdivision.themes,
+      catalogText(product, ['searchInfo', 'productTags', '검색어등록', '상품태그'])
+    ]);
+  });
+
+  const outputDuplicates = new Set([...duplicateCodes(shopData), ...duplicateCodes(erpData)]);
+  outputDuplicates.forEach(code => {
+    if (errors.some(error => error.code === 'DUPLICATE_ITEM_CODE' && text(error.originalValue) === code)) return;
+    errors.push({ code: 'DUPLICATE_OUTPUT_CODE', item: code, field: '품목코드', originalValue: code, message: `품목코드 ${code}가 출력에서 중복되었습니다.`, guide: '중복 출력 행을 정리한 뒤 다시 출력하세요.' });
+  });
+
   return {
-    ok: true,
-    validationOk: validation.ok,
-    errors: validation.errors,
+    ok: errors.length === 0,
+    validationOk: errors.length === 0,
+    errors,
+    warnings,
     rows: validation.rows,
-    errorData,
+    confirmData,
+    errorData: confirmData,
     shopData,
-    erpData
+    erpData,
+    outputRowCount: Math.max(0, shopData.length - 1)
   };
 }
 
@@ -292,4 +635,4 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
   return pages;
 }
 
-export const ESTIMATE_F8_HEADERS = Object.freeze({ error: ERROR_HEADERS, shop: SHOP_HEADERS, erp: ERP_HEADERS });
+export const ESTIMATE_F8_HEADERS = Object.freeze({ confirm: CONFIRM_HEADERS, error: CONFIRM_HEADERS, shop: SHOP_HEADERS, erp: ERP_HEADERS });

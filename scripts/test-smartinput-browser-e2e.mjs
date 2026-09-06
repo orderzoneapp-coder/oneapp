@@ -227,7 +227,7 @@ try {
   assert.equal(visualZones.completeText, '저장');
   assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
   assert.equal(visualZones.deliveryCardVisible, false, 'the footer left side must expose only the Save action');
-  assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: 'EXCEL', footer: true }, 'voucher output actions must remain in the table footer for every mode');
+  assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: 'F8 EXCEL', footer: true }, 'voucher output actions must remain in the table footer for every mode');
   assert.equal(visualZones.sequence, 'No.');
   const domBaseline = await evaluate(client, `(() => {const rect=selector=>{const value=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(value.x),y:Math.round(value.y),width:Math.round(value.width),height:Math.round(value.height)};};return {
     title:document.title,
@@ -1043,6 +1043,12 @@ try {
   assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /다중 선택 · 2개 선택 · 미리보기/, 'multiselect status must distinguish selected sources and preview');
   assert.equal(await evaluate(client, `!/중복 제거|상품 미리보기/.test(document.querySelector('#toast').textContent)`), true, 'estimate selection must not create a redundant lower coachmark');
   assert.equal(await evaluate(client, `document.querySelector('#estimateCreateButton').textContent.trim()`), '연동견적서 생성', 'linked creation belongs in the main table footer');
+  await evaluate(client, `window.__estimateBlockedWrites=0;window.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:data=>data,book_append_sheet:()=>{}},writeFile:()=>{window.__estimateBlockedWrites+=1;}};true`);
+  await click(client, '#estimateExcelButton');
+  await expr(client, `document.querySelector('#appStatus').textContent.includes('중복 품목코드 EST-1')`, 'raw selected estimate duplicate export block');
+  assert.equal(await evaluate(client, `window.__estimateBlockedWrites`), 0,
+    'F8 must validate the selected source drafts before the composition preview removes duplicate codes');
+  await evaluate(client, `delete window.XLSX;true`);
   await click(client, '#estimateCreateButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');
   await input(client, '[data-estimate-name]', '가을 행사 연동견적');
@@ -1174,12 +1180,18 @@ try {
   await input(client, '[data-estimate-name]', '가을 행사 연동견적 수정');
   await click(client, '[data-confirm-save]');
   await expr(client, `document.querySelectorAll('#linkedEstimateList [data-estimate-kind="LINKED_GROUP"]').length===2&&[...document.querySelectorAll('#linkedEstimateList [data-select-estimate-card]')].some(button=>button.textContent.includes('가을 행사 연동견적 수정'))`, 'Save As must create a new named form and preserve the original');
+  await click(client, '#estimateLibraryIndividualButton');
+  await click(client, '#catalogPickerList [data-select-estimate-card]');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'single individual estimate selected for successful F8 export');
   await evaluate(client, `window.XLSX={utils:{book_new:()=>({names:[]}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>book.names.push(name)},writeFile:(book,name)=>{window.__estimateExportName=name;window.__estimateExportSheets=book.names}};true`);
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
-  assert.match(await evaluate(client, `window.__estimateExportName`), /견적F8/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','오류정보'], 'SmartInput Excel must place usable data sheets before errors');
-  await click(client, '#estimateLibraryIndividualButton');
+  assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'SmartInput F8 must omit 확인요청 when there are no warnings');
+  await evaluate(client, `window.__estimateExportName='';window.__estimateExportSheets=[];document.dispatchEvent(new KeyboardEvent('keydown',{key:'F8',code:'F8',bubbles:true,cancelable:true}));true`);
+  await expr(client, `Boolean(window.__estimateExportName)`, 'estimate F8 keyboard export');
+  assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'F8 key must use the same estimate output path as the button');
   await click(client, '#catalogPickerList [data-select-estimate-card]');
   const renameTargetId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
   await click(client, '#estimateRenameButton');

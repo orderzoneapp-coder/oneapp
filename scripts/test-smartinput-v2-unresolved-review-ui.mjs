@@ -172,9 +172,9 @@ assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '67e48c9ea46c0807521aa9771ac8a0da648ba325d5e82422afd520e86671a5a0'],
-  ['../smartinput/smartinput.css', '82ee90f8658d69aa1c126d247795a532dc0c695dc6c2f34235a4c7f466654cf7'],
-  ['../smartinput/smartinput.js', 'a5459fc76a85d2dacbb176cbf085564e240961b469e065b078ac122cb1e6f614']
+  ['../smartinput/index.html', '213845ea52e1e1f2a5ccbc3b0147817ff54c95fe445bae2b7e634c9a339fed9f'],
+  ['../smartinput/smartinput.css', '891852c80e5ee7f545e5bc43720554813583227300dcb4f3f5ef4333ff13759d'],
+  ['../smartinput/smartinput.js', 'ea3a17a64cd47c0850c40a068f8ecb08812b78a22f2b69e88dc286573c19b4fb']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline for ERP business-key fail-closed grouping and the ORDER Q query-link change, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline for ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and the ORDER Q query-link change, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -195,6 +195,6 @@ console.log(JSON.stringify({
   officialInventory: { value: null, label: '미반영' },
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
-  smartInputUiBaseline: 'ERP business-key fail-closed grouping plus ORDER Q query-link',
-  smartInputUiChanged: 'approved-business-key-review-isolation-and-order-query-link'
+  smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
+  smartInputUiChanged: 'approved-estimate-full-sheet-f8-bulk-dialog-business-key-review-isolation-and-order-query-link'
 }, null, 2));
