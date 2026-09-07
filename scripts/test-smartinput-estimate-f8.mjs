@@ -159,15 +159,11 @@ assert.equal(compositionShopA?.[5], 7400, '원본에 없더라도 editedFields�
 assert.equal(compositionShopA?.[12], '원본견적-사용자브랜드-A',
   '개별 원본의 명시 편집은 파생 작업표에서 다른 필드를 편집해도 소실되면 안 된다.');
 assert.deepEqual(
-  [compositionShopB?.[5], compositionShopB?.[12], compositionShopB?.[21], compositionErpB?.[11]],
-  ['', '', '', ''],
-  '원본에 없는 시중가·브랜드·상품태그·최종전송은 작업표나 마스터성 직접값에서 유출되면 안 된다.'
+  [compositionShopB?.[5], compositionShopB?.[12], compositionShopB?.[21]],
+  ['', '', ''],
+  '원본에 없는 시중가·브랜드·상품태그는 작업표나 마스터성 직접값에서 유출되면 안 된다.'
 );
-assert.deepEqual(
-  [compositionShopA?.[21], compositionErpA?.[11]],
-  ['', ''],
-  'editedFields로 명시하지 않은 파생 작업표 값은 출력에 반영하면 안 된다.'
-);
+assert.equal(compositionShopA?.[21], '', 'editedFields로 명시하지 않은 파생 작업표 값은 출력에 반영하면 안 된다.');
 
 const clearedCompositionDraft = structuredClone(compositionPreview);
 clearedCompositionDraft.rows[0].outPrice = null;
@@ -489,6 +485,16 @@ const mappedRows = buildEstimateF8RowsFromDraft(mappedDraft);
 const mappedOutput = buildEstimateF8Data(mappedRows, {
   productCatalog: [{ itemCode: '000101', itemName: '마스터상품명', brand: '마스터브랜드', marketPrice: 999999 }]
 });
+const sortedEstimateUploadOutput = buildEstimateF8Data([
+  { rowCustomerName: '나 거래처', itemCode: 'N-2', itemName: '나 상품' },
+  { rowCustomerName: '가 거래처', itemCode: 'C-10', itemName: '가 상품 10' },
+  { rowCustomerName: '가 거래처', itemCode: 'C-2', itemName: '가 상품 2' }
+]);
+assert.deepEqual(sortedEstimateUploadOutput.estimateUploadData.slice(1).map(row => [row[3], row[8]]), [
+  ['가 거래처', 'C-2'], ['가 거래처', 'C-10'], ['나 거래처', 'N-2']
+], '견적서 업로드는 거래처명 다음 품목코드 순으로 정렬해야 한다.');
+assert.deepEqual(sortedEstimateUploadOutput.shopData.slice(1).map(row => row[0]), ['N-2', 'C-10', 'C-2'],
+  '견적서 업로드 정렬이 쇼핑몰 업로드 행 순서를 바꾸면 안 된다.');
 assert.equal(mappedOutput.ok, true);
 assert.deepEqual(ESTIMATE_F8_HEADERS.shop, [
   '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
@@ -496,11 +502,14 @@ assert.deepEqual(ESTIMATE_F8_HEADERS.shop, [
   '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
 ]);
 assert.deepEqual(ESTIMATE_F8_HEADERS.erp, [
-  '품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n',
-  '최종(전송)', 'n', '행사', 'n', '1'
+  '품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n'
+]);
+assert.deepEqual(ESTIMATE_F8_HEADERS.upload, [
+  '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '참조', '담당자',
+  '품목코드', '품목명', '규격', '수량', '단가', 'B단가', 'A판매', 'B판매', '적요', '지시사항', '적요2'
 ]);
 assert.equal(mappedOutput.shopData[1].length, 22);
-assert.equal(mappedOutput.erpData[1].length, 16);
+assert.equal(mappedOutput.erpData[1].length, 11);
 assert.equal(mappedOutput.shopData[1][0], '000101', '문자 품목코드와 선행 0을 보존해야 한다.');
 assert.equal(mappedOutput.shopData[1][1], '원본상품A', '기준상품 마스터값으로 원본 상품명을 덮어쓰면 안 된다.');
 assert.equal(mappedOutput.shopData[1][3], 2000, '행사가가 있으면 쇼핑몰 출고가에 우선 적용해야 한다.');
@@ -509,14 +518,29 @@ assert.equal(mappedOutput.shopData[1][6], '', '원본에 없는 B판매가는 �
 assert.deepEqual(mappedOutput.shopData[1].slice(8, 12), [0, 0, 0, 0],
   'C/D 판매가·도매가는 원본이나 직접값과 무관하게 숫자 0으로 출력해야 한다.');
 assert.equal(mappedOutput.shopData[1][12], '', '원본에 없는 브랜드를 직접값이나 마스터값으로 보강하면 안 된다.');
-assert.equal(mappedOutput.shopData[1][15], '', '원본에 없는 재고수량을 직접값으로 보강하면 안 된다.');
+assert.equal(mappedOutput.shopData[1][14], 1, '원본 출고가가 있으면 판매여부는 숫자 1이어야 한다.');
+assert.equal(mappedOutput.shopData[2][14], 0, '원본 출고가가 공란이면 판매여부는 숫자 0이어야 한다.');
+assert.equal(mappedOutput.shopData[1][15], 999, '모든 쇼핑몰 출력행의 재고수량은 숫자 999여야 한다.');
 assert.equal(mappedOutput.shopData[1][21], '', '원본에 없는 상품태그를 직접값이나 마스터값으로 보강하면 안 된다.');
 assert.equal(mappedOutput.erpData[1][1], 1000, '입고가는 단가(unitPrice)가 아니라 원본 입고가를 사용해야 한다.');
 assert.equal(mappedOutput.erpData[1][5], 0, '입고B의 명시적 0을 보존해야 한다.');
-assert.equal(mappedOutput.erpData[1][11], '', '원본에 없는 최종전송은 직접값으로 보강하면 안 된다.');
 assert.equal(mappedOutput.erpData[2][1], '', '원본 입고가 공란은 직접값이나 마스터값으로 보강하면 안 된다.');
-assert.equal(mappedOutput.erpData[2][11], '', '원본에 없는 최종전송은 대체 직접 필드에서도 보강하면 안 된다.');
+assert.equal(mappedOutput.estimateUploadData[1].length, 19);
+assert.deepEqual(mappedOutput.estimateUploadData[1].slice(0, 6), ['2026-09-05', '', '', '거래처A', '02', '']);
+assert.deepEqual(mappedOutput.estimateUploadData[1].slice(8, 16), ['000101', '원본상품A', '1kg', '', 2500, 0, 900, 800]);
+assert.deepEqual(mappedOutput.estimateUploadData[1].slice(16), ['', '원본설명A', '']);
 assert.equal(mappedOutput.confirmData.length, 3, '입고가보다 낮은 도매A/도매B 두 건만 확인요청에 포함해야 한다.');
+const manualUploadOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft({
+  header: {
+    voucherDate: '2026-09-07', customerCode: 'C-7', customerName: '수기거래처',
+    warehouseCode: '02', transactionType: '일반', managerName: '담당A'
+  },
+  rows: [{ itemCode: 'MANUAL-1', itemName: '수기상품', specification: 'EA', quantity: 3, outPrice: 4500 }]
+}));
+assert.deepEqual(manualUploadOutput.estimateUploadData[1].slice(0, 8),
+  ['2026-09-07', '', 'C-7', '수기거래처', '02', '일반', '', '담당A'],
+  '원본 Excel이 없는 수기 견적은 선택 전표 상단정보를 업로드 양식에 사용해야 한다.');
+assert.deepEqual(manualUploadOutput.estimateUploadData[1].slice(8, 13), ['MANUAL-1', '수기상품', 'EA', 3, 4500]);
 const splitMapped = splitEstimateBulkInputMapping({ session: mappedDraft.inputMapping, rows: [mappedDraft.rows[1]] });
 const splitMappedOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft({
   rows: splitMapped.rows,
@@ -525,7 +549,6 @@ const splitMappedOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft({
 assert.equal(splitMappedOutput.erpData[1][0], '000102',
   '거래처별 분할 저장 뒤에도 remap된 rowId로 원본 매핑 증적을 읽어야 한다.');
 assert.equal(splitMappedOutput.erpData[1][1], '', '거래처별 분할 뒤에도 원본 공란을 보존해야 한다.');
-assert.equal(splitMappedOutput.erpData[1][11], '', '거래처별 분할 뒤에도 원본에 없는 직접 필드를 보강하면 안 된다.');
 const matrixFallbackDraft = structuredClone({ rows: splitMapped.rows, inputMapping: splitMapped.session });
 delete matrixFallbackDraft.rows[0].fieldValues;
 delete matrixFallbackDraft.inputMapping.workingRows[0].cells;
@@ -547,22 +570,25 @@ const unitAliasOutput = buildEstimateF8Data([{ itemCode: 'UNIT-1', itemName: '�
 assert.equal(unitAliasOutput.ok, true);
 assert.equal(unitAliasOutput.shopData[1][2], '10kg', '직접 행의 단위 값은 쇼핑몰 규격으로 출력해야 한다.');
 
-const saleAliasOutput = buildEstimateF8Data([
+const saleFromOutPriceOutput = buildEstimateF8Data([
   {
-    itemCode: 'SALE-STATE-1', itemName: '판매상태 별칭', estimateF8SourceOnly: true,
+    itemCode: 'SALE-STATE-1', itemName: '출고가 있음', estimateF8SourceOnly: true,
     estimateF8SourceFields: {
       품목코드: { currentDisplayValue: 'SALE-STATE-1' },
-      품목명: { currentDisplayValue: '판매상태 별칭' },
-      판매상태: { currentDisplayValue: '판매중' }
+      품목명: { currentDisplayValue: '출고가 있음' },
+      출고가: { currentDisplayValue: '1000' },
+      판매상태: { currentDisplayValue: '판매중단' }
     }
   },
-  { itemCode: 'SALE-STOP-1', itemName: '정지 동의어', saleAvailability: '정지중' },
-  { itemCode: 'SALE-STOP-2', itemName: '판매불가 동의어', saleCode: '판매불가' },
-  { itemCode: 'SALE-NUMERIC-1', itemName: '숫자형 판매', saleAvailability: '1.0' }
+  { itemCode: 'SALE-STOP-1', itemName: '출고가 공란', outPrice: '', saleAvailability: '판매중' },
+  { itemCode: 'SALE-STOP-2', itemName: '출고가 0', outPrice: 0, saleCode: '판매중' },
+  { itemCode: 'SALE-NUMERIC-1', itemName: '출고가 양수', outPrice: 1, saleAvailability: '판매불가' }
 ]);
-assert.equal(saleAliasOutput.ok, true);
-assert.deepEqual(saleAliasOutput.shopData.slice(1).map(row => row[14]), ['1', '0', '0', '1'],
-  '판매상태 별칭·정지 동의어·숫자형 0/1은 MerchOps 판매여부 코드와 같아야 한다.');
+assert.equal(saleFromOutPriceOutput.ok, true);
+assert.deepEqual(saleFromOutPriceOutput.shopData.slice(1).map(row => row[14]), [1, 0, 0, 1],
+  '판매여부는 판매상태가 아니라 원본 출고가 양수 여부로만 결정해야 한다.');
+assert.ok(saleFromOutPriceOutput.shopData.slice(1).every(row => row[15] === 999),
+  '판매여부와 무관하게 모든 행의 재고수량은 숫자 999여야 한다.');
 
 const subdivisionOutput = buildEstimateF8Data([
   {
@@ -585,6 +611,8 @@ assert.equal(subdivisionOutput.ok, true);
 assert.equal(subdivisionOutput.shopData.filter(row => row[0] === 'SUB-NEW').length, 1);
 assert.equal(subdivisionOutput.erpData.find(row => row[0] === 'SUB-NEW')?.[1], 6000);
 assert.equal(subdivisionOutput.shopData.find(row => row[0] === 'SUB-NEW')?.[3], 10500);
+assert.deepEqual(subdivisionOutput.shopData.filter(row => ['SUB-NEW', 'SUB-EXIST'].includes(row[0])).map(row => [row[14], row[15]]), [[1, 999], [1, 999]],
+  '신규·기존 소분행도 판매여부 1과 재고수량 999를 적용해야 한다.');
 assert.equal(subdivisionOutput.shopData.find(row => row[0] === 'SUB-EXIST')?.[3], 8000,
   '이미 기준행에 있는 소분코드는 행을 늘리지 않고 계산 단가만 갱신해야 한다.');
 
@@ -652,9 +680,10 @@ XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(mappedOutput.erpD
 if (mappedOutput.confirmData.length > 1) {
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(mappedOutput.confirmData), '확인요청');
 }
+XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(mappedOutput.estimateUploadData), '견적서 업로드');
 const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
 const reopened = XLSX.read(new Uint8Array(bytes), { type: 'array' });
-assert.deepEqual(Array.from(reopened.SheetNames), ['쇼핑몰업로드', 'ERP업데이트', '확인요청']);
+assert.deepEqual(Array.from(reopened.SheetNames), ['쇼핑몰업로드', 'ERP업데이트', '확인요청', '견적서 업로드']);
 const reopenedShop = XLSX.utils.sheet_to_json(reopened.Sheets['쇼핑몰업로드'], { header: 1, raw: true, defval: '' });
 const reopenedErp = XLSX.utils.sheet_to_json(reopened.Sheets['ERP업데이트'], { header: 1, raw: true, defval: '' });
 assert.equal(reopenedShop[1][0], '000101', '실제 XLSX 저장·재열기 뒤에도 선행 0 코드를 보존해야 한다.');
@@ -663,6 +692,9 @@ assert.deepEqual(Array.from(reopenedShop[1].slice(8, 12)), [0, 0, 0, 0],
   '실제 XLSX 저장·재열기 뒤에도 C/D 판매가·도매가는 숫자 0이어야 한다.');
 assert.equal(reopenedErp[1][1], 1000);
 assert.equal(reopenedErp[2][1], '', '실제 XLSX 저장·재열기 뒤에도 공란을 보존해야 한다.');
+assert.equal(reopenedErp[0].length, 11, '실제 XLSX 재열기 뒤 ERP업데이트는 11열이어야 한다.');
+assert.equal(XLSX.utils.decode_range(reopened.Sheets['ERP업데이트']['!ref']).e.c, 10,
+  'ERP업데이트 사용범위에 삭제한 후행 5열이 남으면 안 된다.');
 
 const noWarningWorkbook = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(noWarningWorkbook, XLSX.utils.aoa_to_sheet(subdivisionOutput.shopData), '쇼핑몰업로드');
@@ -670,9 +702,10 @@ XLSX.utils.book_append_sheet(noWarningWorkbook, XLSX.utils.aoa_to_sheet(subdivis
 if (subdivisionOutput.confirmData.length > 1) {
   XLSX.utils.book_append_sheet(noWarningWorkbook, XLSX.utils.aoa_to_sheet(subdivisionOutput.confirmData), '확인요청');
 }
+XLSX.utils.book_append_sheet(noWarningWorkbook, XLSX.utils.aoa_to_sheet(subdivisionOutput.estimateUploadData), '견적서 업로드');
 const noWarningBytes = XLSX.write(noWarningWorkbook, { type: 'array', bookType: 'xlsx' });
 const noWarningReopened = XLSX.read(new Uint8Array(noWarningBytes), { type: 'array' });
-assert.deepEqual(Array.from(noWarningReopened.SheetNames), ['쇼핑몰업로드', 'ERP업데이트'],
-  '경고가 없는 실제 XLSX에는 확인요청 시트를 만들면 안 된다.');
+assert.deepEqual(Array.from(noWarningReopened.SheetNames), ['쇼핑몰업로드', 'ERP업데이트', '견적서 업로드'],
+  '경고가 없는 실제 XLSX에는 확인요청 없이 견적서 업로드가 마지막이어야 한다.');
 
 console.log('SmartInput estimate F8 adapter and XLSX contract tests passed.');

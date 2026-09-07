@@ -42,6 +42,7 @@
   });
   const HEADER_FIELD_DEFINITIONS = Object.freeze([
     Object.freeze({ id: 'customer', label: '배송 거래처', required: true }),
+    Object.freeze({ id: 'assignee', label: '담당자', required: false }),
     Object.freeze({ id: 'deliveryDate', label: '배송일자', required: true }),
     Object.freeze({ id: 'warehouse', label: '출하창고', required: true }),
     Object.freeze({ id: 'transactionType', label: '거래유형', required: false })
@@ -342,6 +343,7 @@
       mode,
       normalizeLayout(sourceHeaderFieldsByMode[mode], HEADER_FIELD_DEFINITIONS, legacyHeaderFields, 'header')
     ]));
+    if (!headerFieldsByMode.order.includes('assignee')) headerFieldsByMode.order.push('assignee');
     const voucherColumnsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
       mode,
       normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS, legacyVoucherColumns, 'voucher')
@@ -503,6 +505,8 @@
         rawOrdererName: '',
         aliasMappingId: '',
         customerMappingSource: '',
+        assigneeId: '',
+        assigneeName: '',
         orderDate: date,
         voucherDate: date,
         voucherDateMonthAnchor: date.slice(0, 7),
@@ -567,6 +571,8 @@
       rawOrdererName: text(value.rawOrdererName || fallback.rawOrdererName),
       aliasMappingId: text(value.aliasMappingId || fallback.aliasMappingId),
       customerMappingSource: text(value.customerMappingSource || fallback.customerMappingSource),
+      assigneeId: text(value.assigneeId || fallback.assigneeId),
+      assigneeName: text(value.assigneeName || fallback.assigneeName),
       orderDate: businessDate(recordedAt),
       voucherDate,
       voucherDateMonthAnchor,

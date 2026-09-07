@@ -216,5 +216,9 @@ assert.match(sequentialBoundary, /for \(const entry of plan\.entries\)/, '정상
 assert.match(sequentialBoundary, /commitEstimateBundle\(\{ upserts: \[record\], expectedPreimages \}\)/, '한 commit에는 한 거래처 record와 그 preimage만 들어가야 한다.');
 assert.match(sequentialBoundary, /catch \(error\)[\s\S]*results\.push\(\{ groupId: entry\.groupId, status: 'FAILED'/, '한 거래처 실패를 기록하고 다음 거래처 처리를 계속해야 한다.');
 assert.doesNotMatch(sequentialBoundary, /모든 대상 견적서|하나의 트랜잭션/, '폐기된 전체 묶음 성공·실패 표현이 남으면 안 된다.');
+assert.match(appSource, /rememberEstimateBulkTargetMatches\(currentPlan, applied\.results\)/,
+  '성공한 거래처별 대상은 다음 파일에서 재사용할 매칭사전으로 저장해야 한다.');
+assert.match(appSource, /mapping\.mappingType !== ESTIMATE_BULK_TARGET_MATCH_TYPE/,
+  '견적서 매칭사전은 일반 주문 거래처 별칭 해석에서 제외해야 한다.');
 
 console.log('SmartInput per-customer estimate planning, hold, unchanged, and resumable progress contracts passed.');

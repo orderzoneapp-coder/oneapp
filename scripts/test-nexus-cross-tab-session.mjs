@@ -53,6 +53,7 @@ const dispatchMessage = async (sourceClient, data) => {
 
 const bundle = {
   token: 'SESSION-A',
+  rememberLogin: true,
   session: {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     user: { userId: 'USR-1', displayName: '관리자', role: 'OWNER_MASTER' },
@@ -73,6 +74,7 @@ messages.clear();
 await dispatchMessage(homeB, { type: 'NEXUS_SESSION_REQUEST', requestId: 'request-1' });
 assert.equal(messages.get('home-b')?.at(-1)?.type, 'NEXUS_SESSION_RESPONSE', 'new NEXUS window must receive the active session');
 assert.equal(messages.get('home-b')?.at(-1)?.bundle?.token, bundle.token);
+assert.equal(messages.get('home-b')?.at(-1)?.bundle?.rememberLogin, true, 'persistent-login consent must survive cross-tab transfer');
 
 messages.clear();
 await dispatchMessage(homeA, { type: 'NEXUS_SESSION_CLEAR', token: 'STALE-SESSION' });

@@ -365,23 +365,45 @@ assert.match(
 );
 assert.match(
   smartInputSource,
-  /같은 “\$\{targetLabel\}”에 연결되어 있습니다/,
-  'template-save validation must identify the duplicated target and both source columns'
+  /RECOMMENDATION_APPROVAL_REQUIRED.*추천 매핑을 승인하거나 다른 항목을 선택하세요/s,
+  'guided validation must explain that recommended mappings require explicit approval'
 );
 assert.match(
   smartInputSource,
-  /연결 대상 “\$\{targetLabel\}”을 찾을 수 없습니다\. 다시 지정하세요/,
-  'template-save validation must identify a removed mapping target instead of showing a generic error'
+  /const validation = validateTemplateDraft\(session, inputMappingDefinitions\(\)\);[\s\S]*startMappingValidation\(validation\.issues, 'NEW_TEMPLATE'\)/,
+  'new-template save must validate recommended and undecided columns without silently converting them to unmapped'
 );
-assert.match(
-  smartInputSource,
-  /openFieldMappingDialog\(firstIssue\.columnIndex\)/,
-  'template-save validation must open the first invalid source column for immediate correction'
+assert.match(smartInputSource, /startMappingValidation\(validation\.issues, 'NEW_TEMPLATE'\)/,
+  'new-template save failures must enter guided validation mode');
+assert.match(smartInputSource, /startMappingValidation\(validation\.issues, 'TEMPLATE_APPLIED'\)/,
+  'applied-template change failures must enter the same guided validation mode');
+assert.match(smartInputSource, /mappingValidationColumns\(issue\).*is-validation-error/s,
+  'guided validation must identify every source column involved in an issue, including both duplicate columns');
+assert.match(smartInputSource, /scrollIntoView\(\{ behavior: 'smooth', block: 'nearest', inline: 'center' \}\)/,
+  'guided validation must horizontally reveal the current problem column');
+assert.match(smartInputSource, /continueMappingValidation\(columnIndex\)/,
+  'a corrected mapping must immediately continue to the next validation issue');
+
+const smartInputHtml = readFileSync(fileURLToPath(new URL('../smartinput/index.html', import.meta.url)), 'utf8');
+const smartInputCss = readFileSync(fileURLToPath(new URL('../smartinput/smartinput.css', import.meta.url)), 'utf8');
+assert.match(smartInputHtml, /id="mappingValidationPrevious"[\s\S]*id="mappingValidationNext"/,
+  'guided validation must expose previous and next issue navigation');
+assert.match(smartInputHtml, /class="sr-only" id="gridValidation"/,
+  'inline text to the right of voucher reset must remain accessible without consuming toolbar space');
+assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*id="inputTemplateSaveButton"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="addRowButton"[\s\S]*id="undoGridPasteButton"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/,
+  'template save must stay left while blank row, paste undo and selection delete use the fixed right-side order');
+assert.match(smartInputCss, /\.grid-card > \.work-action-bar \.basic-action-scroll \{ flex: 1 1 auto; \}/,
+  'the basic actions must scroll within their own fixed slot while voucher reset remains visible');
+assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
+  'problem mapping headers must receive a visible validation highlight');
+assert.match(smartInputHtml, /id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*id="inputMappingStatus"/,
+  'dynamic mapping and validation controls must live below the fixed basic toolbar');
+assert.doesNotMatch(
+  smartInputHtml.match(/<div class="document-fields__right">([\s\S]*?)<\/div>\s*<div class="sub-work-bar"/)?.[1] || '',
+  /id="inputMappingStatus"|id="mappingValidationNav"/,
+  'dynamic template status and validation controls must not be inserted between permanent basic-toolbar buttons'
 );
-assert.match(
-  smartInputSource,
-  /문제 필드 \$\{mappingIssueFilterColumns\(session\)\.size\}개만 표시/,
-  'template-save validation must filter the worktable to invalid mapping columns'
-);
+assert.match(smartInputCss, /\.sub-work-bar \{[\s\S]*animation: sub-work-bar-open/,
+  'the single contextual toolbar must expand below the fixed basic toolbar');
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);

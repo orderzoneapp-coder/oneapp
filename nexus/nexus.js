@@ -3,6 +3,7 @@
 
   const AUTH_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec';
   const STORAGE_KEY = 'oneapp.nexus.home.session.v1';
+  const PERSISTENT_STORAGE_KEY = 'oneapp.nexus.home.persistent-session.v1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const THEME_CHANGE_EVENT = 'nexus-ui:theme-change';
@@ -29,14 +30,14 @@
     Object.freeze({ id: 'customer-master', label: '거래처관리', detail: '거래처 기준정보 조회·관리', path: '/customer-master/' }),
     Object.freeze({ id: 'merchops', label: '가격·시세', detail: '가격·상품 운영', path: '/MerchOps.html' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력', detail: '전표 작성 작업', path: '/smartinput/' }),
-    Object.freeze({ id: 'orderops', label: '주문·출고', detail: '주문 및 출고 관리', path: '/orderops/list.html' }),
+    Object.freeze({ id: 'orderops', label: '출고관리', detail: '주문별 출고 작업 및 확정', path: '/orderops/list.html' }),
     Object.freeze({ id: 'dataops', label: '재고·정산', detail: '재고와 정산 분석', path: '/DataOps.html' }),
     Object.freeze({ id: 'smart-parser', label: '문서분석', detail: '외부 문서 분석', path: '/SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', detail: '업무 자료 출력', path: '/export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', detail: '앱 공통 설정', path: '/settings.html' }),
     Object.freeze({ id: 'item-manager', label: '상품등록', detail: '상품 등록 및 수정', path: '/Item_manager.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', detail: '변경 내역 확인', path: '/history_viewer.html' }),
-    Object.freeze({ id: 'orderq-vnext', label: '주문현황', detail: '확정 주문 현황', path: '/orderq/' }),
+    Object.freeze({ id: 'orderq-vnext', label: '주문조회', detail: '주문 조회·검증·정정', path: '/orderq/' }),
   ]);
   const SESSION_ERRORS = new Set([
     'NEXUS_AUTH_SESSION_REQUIRED',
@@ -135,35 +136,43 @@
     const session = bundle?.session;
     const expiresAt = Date.parse(session?.expiresAt || '');
     if (!token || !session?.user || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
-    return { token, session };
+    return { token, session, rememberLogin: bundle?.rememberLogin === true };
   };
 
   const clearCachedSession = () => {
     try {
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(VISIBILITY_STORAGE_KEY);
+      localStorage.removeItem(PERSISTENT_STORAGE_KEY);
     } catch {}
   };
 
-  const saveCachedSession = (token, session) => {
+  const saveCachedSession = (token, session, rememberLogin = false) => {
+    const bundle = { token, session, rememberLogin: rememberLogin === true };
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token, session }));
-    } catch {}
-  };
-
-  const readCachedSession = () => {
-    try {
-      const cached = normalizeSessionBundle(JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null'));
-      if (!cached) {
-        clearCachedSession();
-        return null;
+      if (bundle.rememberLogin) {
+        localStorage.setItem(PERSISTENT_STORAGE_KEY, JSON.stringify(bundle));
+        sessionStorage.removeItem(STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(bundle));
+        localStorage.removeItem(PERSISTENT_STORAGE_KEY);
       }
-      return cached;
-    } catch {
-      clearCachedSession();
-      return null;
-    }
+    } catch {}
   };
+
+  const readStoredBundle = (storage, key, rememberLogin) => {
+    try {
+      const cached = normalizeSessionBundle(JSON.parse(storage.getItem(key) || 'null'));
+      if (cached) return { ...cached, rememberLogin };
+      storage.removeItem(key);
+    } catch {
+      try { storage.removeItem(key); } catch {}
+    }
+    return null;
+  };
+
+  const readCachedSession = () => readStoredBundle(sessionStorage, STORAGE_KEY, false)
+    || readStoredBundle(localStorage, PERSISTENT_STORAGE_KEY, true);
 
   const isSessionBridgeWorker = (worker) => {
     const scriptUrl = cleanText(worker?.scriptURL);
@@ -217,7 +226,7 @@
     if (message.type === SESSION_BRIDGE_MESSAGE.UPDATED) {
       const shared = normalizeSessionBundle(message.bundle);
       if (!shared) return;
-      saveCachedSession(shared.token, shared.session);
+      saveCachedSession(shared.token, shared.session, shared.rememberLogin);
       showHome(shared.session);
       return;
     }
@@ -434,8 +443,8 @@
       const result = await callAuth('nexus_auth_session', { sessionToken: cached.token });
       const session = sessionFromResponse(result);
       if (!session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-      saveCachedSession(cached.token, session);
-      void publishSession({ token: cached.token, session });
+      saveCachedSession(cached.token, session, cached.rememberLogin);
+      void publishSession({ token: cached.token, session, rememberLogin: cached.rememberLogin });
       showHome(session);
       sessionNotice.textContent = '';
     } catch (error) {
@@ -449,7 +458,7 @@
     }
   };
 
-  const login = async (loginId, password) => {
+  const login = async (loginId, password, rememberLogin) => {
     const normalizedLoginId = cleanText(loginId).toLowerCase();
     const challenge = await callAuth('nexus_auth_challenge', { loginId: normalizedLoginId });
     const iterations = Number(challenge?.passwordKdf?.iterations || 310000);
@@ -457,14 +466,15 @@
     const result = await callAuth('nexus_auth_login', {
       loginId: normalizedLoginId,
       passwordVerifier: verifier,
+      rememberLogin: rememberLogin === true,
       device: navigator.userAgent,
     });
     const session = sessionFromResponse(result);
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-    saveCachedSession(token, session);
-    void publishSession({ token, session });
-    return { token, session };
+    saveCachedSession(token, session, rememberLogin);
+    void publishSession({ token, session, rememberLogin });
+    return { token, session, rememberLogin };
   };
 
   const activate = async (loginId, activationCode, password) => {
@@ -481,19 +491,20 @@
     const session = sessionFromResponse(result);
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-    saveCachedSession(token, session);
-    void publishSession({ token, session });
-    return { token, session };
+    saveCachedSession(token, session, false);
+    void publishSession({ token, session, rememberLogin: false });
+    return { token, session, rememberLogin: false };
   };
 
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const loginId = document.getElementById('loginId').value;
     const password = document.getElementById('password').value;
+    const rememberLogin = document.getElementById('rememberLogin').checked;
     loginButton.disabled = true;
     setLoginMessage('로그인 정보를 확인하고 있습니다.', true);
     try {
-      const authenticated = await login(loginId, password);
+      const authenticated = await login(loginId, password, rememberLogin);
       loginForm.reset();
       setLoginMessage('');
       showHome(authenticated.session);

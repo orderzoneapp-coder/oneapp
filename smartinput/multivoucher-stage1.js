@@ -576,6 +576,7 @@ export function buildOrderGroupPayload(group, common = {}) {
     warehouseName: group.warehouseCode || common.warehouseName || '',
     transactionType: group.transactionType || common.transactionType || '',
     sourceDocumentKey: group.idempotencyKey,
+    sourceMessageKey: group.idempotencyKey,
     sourceId: group.sourceBatchId,
     items: group.rows.map((row, index) => ({
       ...row,

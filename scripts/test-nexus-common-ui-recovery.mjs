@@ -26,8 +26,8 @@ const pages = [
   ['customer-master/index.html', 'customer-master', '../nexus/common/', '거래처관리 - NEXUS'],
   ['Item_manager.html', 'item-manager', 'nexus/common/', 'SKU 관리 - NEXUS'],
   ['history_viewer.html', 'history-viewer', 'nexus/common/', '변경이력 - NEXUS'],
-  ['orderops/list.html', 'orderops', '../nexus/common/', '주문·출고 - NEXUS'],
-  ['orderq/index.html', 'orderq-vnext', '../nexus/common/', '주문현황 - NEXUS'],
+  ['orderops/list.html', 'orderops', '../nexus/common/', '출고관리 - NEXUS'],
+  ['orderq/index.html', 'orderq-vnext', '../nexus/common/', '주문조회 - NEXUS'],
   ['orderq/input.html', 'orderq-vnext', '../nexus/common/', '주문서 입력 - NEXUS'],
   ['orderq/operations.html', 'orderq-vnext', '../nexus/common/', '출고운영 - NEXUS'],
   ['orderq/parser.html', 'orderq-vnext', '../nexus/common/', '주문분석 - NEXUS'],
@@ -41,8 +41,8 @@ for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.5`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.9`;
-  const runtime = `${base}nexus-ui.js?v=1.5.0`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=${file === 'orderops/list.html' ? '1.3.10' : '1.3.9'}`;
+  const runtime = `${base}nexus-ui.js?v=1.5.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -117,7 +117,7 @@ assert.match(uiSource, /NEXUS_UI_VISIBILITY_V1/, 'common UI visibility projectio
 assert.match(uiSource, /sessionStorage\.getItem/, 'common UI must synchronously read the same-tab visibility projection');
 assert.doesNotMatch(uiSource, /sessionStorage\.setItem/, 'common UI must never write the visibility projection');
 assert.doesNotMatch(uiSource, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
-for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '상품관리', '거래처관리', '변경이력', '주문·출고', '주문현황', '스마트입력']) {
+for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '상품관리', '거래처관리', '변경이력', '출고관리', '주문조회', '스마트입력']) {
   assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
 }
 assert.doesNotMatch(uiSource, /label: '상품등록'/, 'SKU management must not be a separate common-header tab');

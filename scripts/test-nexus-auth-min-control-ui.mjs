@@ -27,7 +27,9 @@ assert.match(homeRuntime, /name: 'PBKDF2'/, 'activation and login must preserve 
 assert.match(homeRuntime, /iterations[^\n]+310000|310000/, 'PBKDF2 iteration strength must not be reduced');
 assert.match(homeRuntime, /visibleAppsConfigured/, 'home must consume the server visibility contract');
 assert.match(homeRuntime, /schemaVersion:\s*VISIBILITY_SCHEMA/, 'home must emit a schema-versioned projection');
-assert.doesNotMatch(homeRuntime, /localStorage/, 'home must not persist auth or visibility in localStorage');
+assert.match(homeRuntime, /if \(bundle\.rememberLogin\)[\s\S]*localStorage\.setItem\(PERSISTENT_STORAGE_KEY/, 'home may persist auth only after explicit remember-login consent');
+assert.match(homeRuntime, /localStorage\.removeItem\(PERSISTENT_STORAGE_KEY\)/, 'logout and unchecked login must clear persistent auth');
+assert.doesNotMatch(homeRuntime, /localStorage\.(?:setItem|getItem)[^\n]+VISIBILITY_STORAGE_KEY/, 'UI visibility must remain session-scoped');
 assert.match(homeRuntime, /scope:\s*SESSION_BRIDGE_SCOPE/, 'home must restrict the session bridge to /nexus/');
 assert.match(sessionBridge, /url\.pathname\.startsWith\(NEXUS_PATH_PREFIX\)/, 'bridge messages must reject clients outside /nexus/');
 assert.doesNotMatch(sessionBridge, /addEventListener\(['"]fetch|\bcaches\b|localStorage|indexedDB|document\.cookie/, 'bridge must not persist tokens or control fetch');
@@ -69,7 +71,7 @@ const directPages = [
 ];
 for (const page of directPages) {
   const html = await readFile(page, 'utf8');
-  assert.match(html, /nexus-ui\.js\?v=1\.5\.0/, `${page}: visibility-only header is required`);
+  assert.match(html, /nexus-ui\.js\?v=1\.5\.1/, `${page}: visibility-only header is required`);
   assert.doesNotMatch(html, /http-equiv=["']refresh|location\.(?:href|replace)[^\n]+\/nexus\//i, `${page}: direct entry must not redirect to login`);
 }
 

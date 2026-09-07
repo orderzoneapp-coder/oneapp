@@ -978,7 +978,7 @@ try {
   assert.deepEqual(estimateHeader.customer, headerBeforeEstimate.customer, 'customer entry position and size must stay fixed across voucher switching');
   assert.deepEqual(estimateHeader.fields, headerBeforeEstimate.fields, 'header field shell must stay fixed across voucher switching');
   assert.equal(await evaluate(client, `!document.querySelector('#estimateEditorView').hidden&&!document.querySelector('#sourceInputPanel').hidden&&document.querySelector('#tableScroll').offsetWidth>0&&!document.querySelector('#estimateLibraryButton')&&!document.querySelector('#estimateEditorButton')`), true, 'estimate mode must always preserve the parser and table beside the right list');
-  assert.equal(await evaluate(client, `(() => {const trigger=document.querySelector('#inputListSearchButton').getBoundingClientRect();const stats=document.querySelector('#gridRowCount').getBoundingClientRect();const reset=document.querySelector('#resetDraftButton').getBoundingClientRect();return document.querySelector('#inputListSearchPanel').hidden&&Math.abs(trigger.y-stats.y)<12&&Math.abs(trigger.y-reset.y)<12&&!document.querySelector('.grid-toolbar');})()`), true, 'the compact input-list search trigger, counts, and editing controls must share one toolbar row while the field stays hidden');
+  assert.equal(await evaluate(client, `(() => {const trigger=document.querySelector('#inputListSearchButton').getBoundingClientRect();const reset=document.querySelector('#resetDraftButton').getBoundingClientRect();const toolbar=document.querySelector('.work-action-bar').getBoundingClientRect();const stats=document.querySelector('#gridRowCount');return document.querySelector('#inputListSearchPanel').hidden&&Math.abs(trigger.y-reset.y)<12&&Math.abs(toolbar.right-reset.right)<14&&stats.closest('.sr-only')&&!document.querySelector('.grid-toolbar');})()`), true, 'the compact basic actions must remain on one row, hide status counts, and pin voucher reset to the right edge');
   const estimateRailFooter = await evaluate(client, `(() => {const footer=document.querySelector('#catalogComposeArea').getBoundingClientRect();const buttons=[...document.querySelectorAll('#catalogComposeArea .button')].map(button=>{const rect=button.getBoundingClientRect();return {id:button.id,y:Math.round(rect.y),height:Math.round(rect.height),hidden:button.hidden};});return {height:Math.round(footer.height),buttons};})()`);
   assert.equal(estimateRailFooter.height <= 44, true, 'right rail footer must not exceed 44px');
   assert.deepEqual(estimateRailFooter.buttons.map(button => button.id), ['selectedEstimateDeleteButton', 'estimateRenameButton'], 'right rail footer must contain only deletion and rename');
@@ -1197,11 +1197,11 @@ try {
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
   assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'SmartInput F8 must omit 확인요청 when there are no warnings');
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'SmartInput F8 must omit 확인요청 when there are no warnings and append 견적서 업로드 last');
   await evaluate(client, `window.__estimateExportName='';window.__estimateExportSheets=[];document.dispatchEvent(new KeyboardEvent('keydown',{key:'F8',code:'F8',bubbles:true,cancelable:true}));true`);
   await expr(client, `Boolean(window.__estimateExportName)`, 'estimate F8 keyboard export');
   assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트'], 'F8 key must use the same estimate output path as the button');
+  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'F8 key must use the same estimate output path as the button');
   await click(client, '#catalogPickerList [data-select-estimate-card]');
   const renameTargetId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
   await click(client, '#estimateRenameButton');

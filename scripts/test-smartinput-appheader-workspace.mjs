@@ -19,12 +19,12 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
-assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.9"/, 'the estimate touch-target CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.35"/, 'the field-label contract must use the next cache-bust version');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.13"/, 'the mapping approval CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.40"/, 'the mapping approval route must use the next cache-bust version');
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>이름 변경<\/button>/, 'the estimate library footer must expose only deletion and rename');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
-assert.match(html, /id="gridSearchInput"[\s\S]*id="gridRowCount"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/, 'search, review counts, and row actions must share one toolbar row');
+assert.match(html, /id="gridSearchInput"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*id="gridRowCount"/, 'permanent row actions must stay in the fixed toolbar while contextual status lives below it');
 assert.doesNotMatch(html, /class="grid-toolbar"|class="grid-review-tools"/, 'the former second status row must be removed');
 assert.match(html, /id="inputRows"/, 'the restored editable grid body must remain');
 assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || []).length, 4,
@@ -42,8 +42,8 @@ assert.match(css, /@media \(min-width:\s*821px\) and \(max-width:\s*1480px\)[\s\
   'intermediate desktop widths must preserve side-by-side parser and table columns');
 assert.match(css, /\.header-field\.is-layout-placeholder\s*\{[^}]*visibility:\s*hidden/,
   'estimate mode must preserve the transaction field slot without exposing an irrelevant control');
-assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s,
-  'all voucher modes must keep search, counts, and editing controls on one stable toolbar row');
+assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow:\s*visible[^}]*\}[\s\S]*\.grid-card > \.work-action-bar \.basic-action-scroll\s*\{[^}]*flex:\s*1 1 auto/s,
+  'all voucher modes must keep permanent controls in one stable scrolling slot beside the fixed reset action');
 assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
 assert.match(css, /\.estimate-library-toolbar\s*\{[^}]*grid-template-columns:[^;}]*44px/s,

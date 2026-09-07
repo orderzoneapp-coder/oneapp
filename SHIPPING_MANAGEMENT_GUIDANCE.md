@@ -1,21 +1,22 @@
 # Shipping Management 개발 가이드
 
-- 문서 버전: 3.4.0
-- 대상 진입점: `orders.html`
-- 현재 단계: 구매계획·로컬 복구·명시적 클라우드 저장 Pilot
+- 문서 버전: 3.5.0
+- 대상 진입점: `orderops/list.html`, 호환 mirror `orderops_list.html`
+- 현재 단계: 주문 자동연동·출고결과·구매계획·로컬 복구 Pilot
 - 업무 소유자: 배송·발주 운영 관리자
-- 기술 소유 범위: `orders.html`, `orderFulfillmentEngine.js`, `orderFulfillmentWorkbook.js`, `code.gs`의 Shipping 전용 action/시트
+- 기술 소유 범위: `orderops/`, `orderops_list.html`, `orderFulfillmentEngine.js`, `orderFulfillmentWorkbook.js`, `code.gs`의 Shipping 전용 action/시트
 
 ## 1. 제품 목적
 
 Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수작업으로 대조하던 시간을 줄이는 독립형 ONEAPP 애플리케이션이다.
 
-현재 Pilot의 목표는 다음 네 단계로 업무를 단순화하는 것이다.
+현재 Pilot의 목표는 다음 다섯 단계로 업무를 단순화하는 것이다.
 
-1. `주문현황 → 수불현황 → 창고재고 → 구매현황 → 판매현황` 결과 탭의 개별 파일 버튼이나 여러 개별파일 자동분류를 사용한다. 여러 시트를 한 번에 올릴 때만 `데이터 소스` 옆의 작은 폴더형 `통합` 버튼을 사용하며 별도의 큰 통합 업로드 영역은 노출하지 않는다.
+1. 주문조회에서 `orderId`로 진입하면 ORDER Q 주문을 자동연동한다. 주문현황 Excel은 호환 입력으로 유지하고 창고재고 Excel은 계속 필수다.
 2. 상품코드 기준으로 출고 가능 수량과 추가 구매 필요량을 분석한다.
 3. 창고별 재고 검수 그리드에서 창고수량·기본·전송·창고단가·구매를 검수하고 로컬 자동복구 또는 명시적 클라우드 revision으로 보존한다.
 4. 원본·계산·검증 내역을 함께 담은 `Shipping 업무표 Excel` 또는 ERP 형식의 `구매업로드 Excel`을 내려받는다.
+5. 주문별 실제 출고수량과 부분출고·보류 사유를 검수해 출고결과를 확정하거나 기존 확정을 역분개한다.
 
 계산 결과는 관리자 판단을 대신하지 않는다. 관리자는 `발주관리`, `주문원본`, `창고별 재고`, `검증결과`를 통해 원본과 처리 결과를 직접 비교한 뒤 실제 출고·구매를 결정한다.
 
@@ -23,6 +24,9 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 
 ### Pilot 범위
 
+- `orderops/list.html?orderId=...`는 `ONEAPP_ORDERQ_SHIPMENT_CANDIDATE_V1` Read Adapter로 주문을 자동연동한다. 공식 주문조회 URL 파라미터는 `focus`이고 `orderId`는 호환 별칭이다.
+- OrderOps는 ORDER Q Store를 직접 열거나 쓰지 않는다. 주문은 불변 Snapshot으로 받고, 출고결과는 별도 `ONEAPPShippingResultDB` v1이 소유한다.
+- ORDER Q 자동연동 때도 창고별재고 Excel은 필수다. 작업자가 주문 Excel을 수동으로 올리면 자동연동 주문을 대체하는 호환 경로로 처리한다.
 - 브라우저는 주문·재고 필수자료와 구매·판매 선택자료를 종류별 활성 데이터로 관리한다.
 - 개별파일 자동분류는 열 구조를 우선 판별하고 시트명·파일명 별칭을 보조 기준으로 사용한다. `통합파일`은 하나의 workbook을 시트별로 분리한 뒤 `환경설정 > 통합 Excel 시트명 매칭`의 데이터 종류별 복수 시트명 별칭을 적용한다. 정규화된 시트명과 정확히 일치하는 별칭을 부분일치보다 우선하며, 그 뒤 기존 필수 헤더·열 구조를 다시 검증한다. 판별 순서는 `시트명 매칭 → 헤더·필수열 검증 → 데이터 종류 확정`이다. 서로 다른 데이터 종류에 동일한 정규화 별칭이 있으면 경고하고 저장을 차단한다.
 - 통합파일의 정상 시트는 해당 종류의 활성 데이터만 교체한다. 같은 종류의 뒤쪽 정상 시트 또는 이후 개별 업로드가 마지막 정상본이 되며, 통합파일에 없거나 오류가 난 종류는 기존 활성 데이터를 유지한다. 일부 시트 오류가 다른 정상 시트 적용을 막지 않는다.
@@ -48,6 +52,8 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 그리드 열 숨김 뒤 Enter/방향키는 보이는 열만 이동한다. 창고별 재고의 계산 `수량`과 `구매`는 검수 보호열이라 숨길 수 없고 모든 탭은 최소 한 열을 표시한다.
 - 편집 셀은 평상시 셀 구분선 안의 무테 입력값으로 표시하고 포커스 중에만 편집 경계를 강조한다. 헤더·읽기·편집값이 실제로 잘릴 때만 정확한 `..`를 표시하며 title 또는 포커스로 전체 값을 확인한다.
 - 사용자가 명시적으로 저장한 계획만 `ONEAPP_SHIPPING_PURCHASE_PLAN_V1` cloud revision으로 공유한다.
+- 출고 확정·보류·역분개는 `ONEAPP_SHIPPING_RESULT_V1`으로 append-only 저장한다. 문서·행·이벤트·멱등 영수증은 하나의 IndexedDB transaction에서 함께 확정한다.
+- 주문조회는 출고결과를 읽기 전용으로 소비해 기존 상태와 별도인 `출고대기·출고보류·부분출고·출고완료·출고취소·확인필요` 축을 표시한다.
 - 원본 A:T 계약을 보존하는 별도 `구매업로드_YYYYMMDD.xlsx`를 생성한다.
 - 헤더의 ONEAPP NEXUS 브랜드 전체는 `dashboard.html`로 이동하는 링크이며, cloud·로컬 관리 컨트롤은 헤더 환경설정 modal에서 제공한다.
 - 환경설정 modal은 키보드 포커스를 내부에 유지하고 ESC·닫기·배경 클릭으로 닫으며, 로컬 복구 초기화는 명시 확인 뒤에만 실행한다.
@@ -72,6 +78,15 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - `Ctrl+Z`는 마지막 유효 대체출고를 복원하고 `[복원됨]`·`[대체취소]` 이벤트를 추가한다. 기존 변경 이력은 삭제하지 않는다.
 - 같은 상품, 존재하지 않는 상품과 존재하지 않는 주문행은 작업본을 변경하지 않고 오류로 반환한다. 부분수량 분할과 단위 환산은 현재 범위에 포함하지 않는다.
 
+### 주문 Revision과 출고 확정 충돌
+
+- 출고 작업 시작 시 ORDER Q 주문의 `orderRevision`과 `snapshotHash`를 고정한다.
+- 확정·보류 명령은 현재 주문을 먼저 검증하고, 결과 저장 직전에 같은 값을 한 번 더 읽는다. 하나라도 달라지면 저장하지 않고 작업자의 출고수량·사유 입력을 유지한다.
+- 확정 직후에도 현재 주문과 결과를 대사한다. 이후 주문 변경이 확인되면 기존 확정을 삭제하지 않고 조회 상태를 `REVIEW_REQUIRED`로 전환한다.
+- 출고 취소는 확정 결과를 삭제하거나 수정하지 않고 원확정을 가리키는 `REVERSED` 보상 기록을 추가한다. 같은 확정의 중복 역분개는 차단한다.
+- 서로 다른 출고 화면이 동시에 확정할 때는 출고결과 DB transaction 안에서 현재 순출고수량을 다시 계산해 잔여 주문수량 초과를 차단한다.
+- 서로 다른 IndexedDB 사이의 원자적 잠금은 제공하지 않는다. 이 Pilot은 낙관적 이중 검증과 사후 검수 상태를 공식 충돌 정책으로 사용한다.
+
 ### 명시적 비범위
 
 - 대체출고 외 주문 수기 등록·상품 변경·삭제
@@ -79,8 +94,8 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - MerchOps 마스터 또는 다른 운영 데이터 직접 쓰기
 - 자동 클라우드 전송 또는 revision 자동 삭제
 - Lot별 재고·구매·FIFO
-- 출고완료 처리
 - 판매전표 초안 생성
+- NEXUS 판매전표 직접 등록 및 출고결과 Cloud 동기화
 - 긴급도·거래처 우선순위 자동 추론
 - 상품명 유사도 또는 이미지로 상품코드 자동 확정
 
@@ -175,8 +190,10 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 
 - `orderFulfillmentEngine.js`는 파일 독립적인 정규화·검증·배정·대사 로직의 소유자다.
 - `orderFulfillmentWorkbook.js`는 Shipping Management 결과 통합문서 구조와 표시 형식의 소유자다.
-- `orders.html`은 파일 선택, 상태 표시, 결과 미리보기, 다운로드 흐름만 소유한다.
-- 로컬 복구는 전용 IndexedDB `ONEAPPShippingManagementDB`의 `workspaces` store를 사용한다. `sourceFingerprint`와 `schemaVersion`이 일치하지 않는 자료는 자동복구하지 않는다.
+- `orderops/list.html`과 호환 mirror는 주문 Adapter 입력, 파일 선택, 상태 표시, 결과 미리보기, 출고 명령, 다운로드 흐름만 소유한다.
+- 로컬 복구는 전용 IndexedDB `ONEAPPShippingRecoveryDB` v1의 `recoveryRecords` store를 사용하고 기존 `ONEAPPShippingManagementDB/workspaces`는 호환 읽기로만 유지한다. `sourceFingerprint`와 `schemaVersion`이 일치하지 않는 자료는 자동복구하지 않는다.
+- `orderq/shipment-order-read-adapter.js`는 ORDER Q 주문 Store의 유일한 출고후보 읽기 경계이고 `orderops/orderq-order-source-adapter.js`는 Snapshot을 기존 분석행으로만 변환한다.
+- 출고결과는 `orderops/shipment-result-command-adapter.js`를 통해서만 `ONEAPPShippingResultDB`에 쓰며, ORDER Q가 필요할 때는 출고결과 Read Adapter만 소비한다.
 - 재고 override는 `shipping-workspace/v2` 안의 선택 필드이므로 기존 workspace·Cloud revision은 그대로 읽힌다. schema·품목코드·안정 열키·값 타입 검증에 실패한 override만 무시하고 해당 원본 셀로 fallback한다.
 - 대체출고 이력은 `shipping-workspace/v2` 안의 `shipping-substitution-history/v1` 선택 필드이며 로컬 복구와 명시적 Cloud 저장에 함께 포함한다. 이전 workspace는 빈 이력으로 읽고 기존 계산을 유지한다.
 - 탭별 열폭은 Shipping 전용 localStorage `oneapp.shipping.table-widths.v1`에 UI preference로만 저장하며 workspace, IndexedDB 복구, cloud plan, 구매업로드에는 포함하지 않는다. 화면 인쇄와 일반 workbook 열폭도 이 preference를 사용하지 않는다.
@@ -185,7 +202,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - Shipping cloud action은 전용 `ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN`을 사용하고 DataOps/Master/History/Config 저장계약과 격리한다.
 - `coreEngine.js`를 로드하거나 수정하지 않는다.
 - MerchOps와 DataOps의 데이터·업무 의미·함수키·저장 흐름을 변경하지 않는다.
-- NEXUS Operations의 기존 `orders.html` 경로만 사용하며, 다른 운영 화면을 Shipping Management의 종속성으로 만들지 않는다.
+- 기존 `orderops/list.html` 경로와 root 호환 mirror를 유지한다. ORDER Q 연결은 명시된 versioned Adapter에 한정하며 다른 운영 화면이나 Store를 종속성으로 만들지 않는다.
 
 ## 6. 통합 계약과 향후 경계
 
@@ -206,7 +223,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 | Smart Parser | 원본 열 인식 후보와 신뢰도 | 필수 열 매핑을 자동 확정하지 않고 관리자 확인 전에는 계산 계약을 바꾸지 않는다. |
 | 이미지 인식 | 송장·라벨 이미지에서 추출한 후보 코드와 근거 영역 | 후보를 검토 대상으로만 전달하고 이미지 결과만으로 상품코드를 확정하지 않는다. |
 | 구매·Lot 데이터 | 구매 ID, Lot ID, 입고일, 잔량, 소유 시스템, 기준시각 | `shipping-workspace/v2` 이상의 별도 계약으로 도입하며 집계재고 MVP 결과와 혼합하지 않는다. |
-| 출고확정 | 승인자, 확정수량, 확정시각, 멱등키 | 분석 결과와 출고확정 기록을 분리하며 중복 확정을 막는 쓰기 API가 승인된 뒤 도입한다. |
+| 출고확정 | `ONEAPP_SHIPPING_RESULT_V1`, 작업자, 확정수량, 확정시각, 명령 ID, 주문 Revision·Snapshot hash | 분석 작업본과 결과를 분리하고 원자적 멱등 영수증, 확정 직전 이중 검증, 사후 `REVIEW_REQUIRED`, append-only 역분개를 적용한다. |
 | 판매전표 초안 | 확정 출고행과 거래처·단가 검증 결과 | 초안만 생성하고 원장 반영은 소유 시스템의 검토·승인 절차를 따른다. |
 
 ## 7. 검증, 테스트, 롤백
@@ -228,6 +245,8 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 브라우저에서 재고부족 모아보기의 주문행 제외, 6자리 대체후보 묶음, 음수 수량의 부호 유지와 포인트 배색, 상태 배지, 정보 단가 콤마와 Tab 중앙 이동을 확인한다.
 - 브라우저에서 거래처 칩 선택, Ctrl+다른 상품 행 클릭, 즉시 재계산, 양쪽 상품 시스템 메시지, Ctrl+Z 복원과 로컬 복구 후 이력 유지를 확인한다.
 - 주문현황에서 검색·규격·담당자·열 필터와 필터 내부 정렬을 조합해 이름 있는 양식으로 저장한 뒤 재선택하여 같은 조건이 복원되는지 확인한다. 양식은 현재 브라우저의 보기 설정이며 분석자료와 Cloud 완료본에는 포함하지 않는다.
+- 주문 자동연동의 orderId·orderItemId·sourceLineKey·revision·snapshotHash 보존, 주문 미존재/빈 주문/오류 상태, 수동 주문 Excel 대체를 확인한다.
+- 출고 명령의 같은 commandId 재시도 멱등성, 다른 payload 충돌, 확정 직전 Revision 변경 차단, 확정 뒤 변경의 `REVIEW_REQUIRED`, 중복 역분개 차단과 역분개 후 순출고수량을 확인한다.
 
 ### 테스트 기준
 

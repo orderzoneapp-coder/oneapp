@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.12",
-  "updatedAt": "2026-09-05",
+  "schemaVersion": "1.3.13",
+  "updatedAt": "2026-09-07",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -432,18 +432,24 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Manage the shipment workflow from customer order through available inventory, purchasing, staged shipment completion, and reviewed outbound workbooks.",
+      "purpose": "Consume immutable ORDER Q shipment candidates, manage inventory-backed shipment work, and own append-only shipment confirmations, holds, reversals, and review-required results.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [
         "cloud-sync"
       ],
+      "ownedContracts": [
+        "shipping-result"
+      ],
       "sharedContracts": [
         "cloud-url",
-        "shipping-purchase-plan"
+        "shipping-purchase-plan",
+        "orderq-shipment-candidate-read-model",
+        "shipping-result"
       ],
       "consumedContracts": [
-        "orderq-unresolved-review-read-model"
+        "orderq-unresolved-review-read-model",
+        "orderq-shipment-candidate-read-model"
       ]
     },
     {
@@ -452,7 +458,7 @@
       "path": "orderq/index.html",
       "kind": "web-entry-group",
       "status": "pilot",
-      "purpose": "Provide manual and text order intake, source-preserving historical collection, order-to-sales fulfillment evidence, and the owner boundary for official purchase/sale commands, documents, revisions, inventory or pending effects, base AR/AP effects, the read-only unresolved-product review model and impact preview, and the official local sync queue without changing the existing OrderOps compatibility route.",
+      "purpose": "Own order intake, revisions, immutable shipment-candidate reads, source-preserving history, order-to-sales evidence, official purchase/sale commands, unresolved-product review, and the official local sync queue.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "entries": [
@@ -470,7 +476,8 @@
         "orderq-official-voucher-core",
         "orderq-official-sync",
         "orderq-unresolved-review-read-model",
-        "orderq-shopping-order-import"
+        "orderq-shopping-order-import",
+        "orderq-shipment-candidate-read-model"
       ],
       "sharedContracts": [
         "cloud-url",
@@ -478,7 +485,12 @@
         "voucher-activity-snapshot",
         "product-master",
         "orderq-unresolved-review-read-model",
-        "orderq-shopping-order-import"
+        "orderq-shopping-order-import",
+        "orderq-shipment-candidate-read-model",
+        "shipping-result"
+      ],
+      "consumedContracts": [
+        "shipping-result"
       ]
     },
     {
@@ -902,6 +914,35 @@
       "rollback": "Revert the Phase 2 SmartInput consumer, UI wiring, manifest/docs and tests to disable new uploads while retaining the Phase 1 ORDER Q owner core. This does not delete or rewrite ORDER Q DB v7 data; orders already created through an explicit owner command remain ordinary auditable ORDER Q facts."
     },
     {
+      "id": "orderq-shipment-candidate-read-model",
+      "owner": "orderq-vnext",
+      "consumers": [
+        "orderops"
+      ],
+      "schemaVersion": "ONEAPP_ORDERQ_SHIPMENT_CANDIDATE_V1",
+      "statuses": [
+        "READY",
+        "EMPTY",
+        "NOT_FOUND",
+        "STALE",
+        "ERROR"
+      ],
+      "readerPolicy": "ORDER Q alone reads its order Stores and emits a deeply frozen, source-line-preserving shipment Snapshot. Point reads compare orderRevision and snapshotHash when supplied; list reads are bounded to 200 candidates and EMPTY, NOT_FOUND, STALE, and ERROR are never represented as READY.",
+      "ownershipPolicy": "OrderOps consumes only the read Adapter and must not import or write ORDER Q Stores. The Snapshot preserves orderId, orderItemId, sourceLineKey, product identity, ordered and cancelled quantities, existing order and administrator statuses, revision, and deterministic hash.",
+      "resources": {
+        "contractAsset": "orderq/shipment-order-read-model.js",
+        "adapterAsset": "orderq/shipment-order-read-adapter.js",
+        "sourceDatabase": "oneapp-orderq-pre-m1-v6",
+        "sourceDatabaseVersion": 7,
+        "transactionMode": "readonly",
+        "indexedDbStores": [
+          "orders",
+          "orderItems"
+        ]
+      },
+      "rollback": "Remove the OrderOps candidate Adapter consumer and direct-order entry UI. ORDER Q orders and revisions remain unchanged; the manual order-Excel compatibility path remains available."
+    },
+    {
       "id": "orderq-unresolved-review-read-model",
       "owner": "orderq-vnext",
       "consumers": [
@@ -1106,6 +1147,11 @@
       "substitutionHistorySchemaVersion": "shipping-substitution-history/v1",
       "resources": {
         "indexedDb": {
+          "database": "ONEAPPShippingRecoveryDB",
+          "version": 1,
+          "store": "recoveryRecords"
+        },
+        "legacyCompatibilityIndexedDb": {
           "database": "ONEAPPShippingManagementDB",
           "store": "workspaces"
         },
@@ -1123,6 +1169,48 @@
           "ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN"
         ]
       }
+    },
+    {
+      "id": "shipping-result",
+      "owner": "orderops",
+      "consumers": [
+        "orderq-vnext"
+      ],
+      "schemaVersion": "ONEAPP_SHIPPING_RESULT_V1",
+      "statuses": [
+        "HOLD",
+        "CONFIRMED",
+        "REVERSED",
+        "REVIEW_REQUIRED"
+      ],
+      "progressStatuses": [
+        "WAITING",
+        "HOLD",
+        "PARTIAL",
+        "COMPLETED",
+        "REVERSED",
+        "REVIEW_REQUIRED"
+      ],
+      "writerPolicy": "Only the OrderOps shipment-result command Adapter may append results. One IndexedDB transaction stores the document, lines, event, and idempotency receipt. A repeated commandId with the same canonical payload returns the existing result; a changed payload fails closed.",
+      "concurrencyPolicy": "Shipment work freezes the ORDER Q orderRevision and snapshotHash. Confirm and hold commands reread immediately before commit and fail on mismatch while preserving operator inputs. The result Repository also checks remaining quantities and duplicate reversals inside its own write transaction. A post-commit order mismatch is surfaced as REVIEW_REQUIRED; reversal is an append-only compensating result and never deletes the confirmation.",
+      "ownershipPolicy": "OrderOps owns shipment work and results in a separate database. It must not write ORDER Q Stores, and ORDER Q may consume only the shipment-result Read Adapter. Direct NEXUS sales-voucher registration and Cloud synchronization are outside this contract version.",
+      "resources": {
+        "coreAsset": "orderops/shipment-result-core.js",
+        "commandAdapterAsset": "orderops/shipment-result-command-adapter.js",
+        "readAdapterAsset": "orderops/shipment-result-read-adapter.js",
+        "repositoryAsset": "orderops/shipment-result-repository.js",
+        "indexedDb": {
+          "database": "ONEAPPShippingResultDB",
+          "version": 1,
+          "stores": [
+            "shipmentDocuments",
+            "shipmentLines",
+            "shipmentEvents",
+            "shipmentCommandReceipts"
+          ]
+        }
+      },
+      "rollback": "Disable shipment confirm, hold, reversal, and result-read UI and remove the OrderOps result contract code. Existing append-only shipment records remain preserved for audit and are not deleted by rollback."
     },
     {
       "id": "dataops-inventory-snapshot",

@@ -168,13 +168,13 @@ assert.doesNotMatch(listHtml, /from\s+["'][^"']*(?:official-voucher-repository|u
 
 const orderops = manifest.applications.find(app => app.id === 'orderops');
 const contract = manifest.sharedDataContracts.find(entry => entry.id === 'orderq-unresolved-review-read-model');
-assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-model']);
+assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-model'));
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '14db3aa3bc3990409fbf0f7f6d27b5330a76417eb7391bd5e39f07c8db4caf5f'],
-  ['../smartinput/smartinput.css', 'eb7b62b9314a09037466a50de1a3ddc44904ad050d69a8445def7e5fffbfc574'],
-  ['../smartinput/smartinput.js', '54aa6d5020c4a1100eda8d5677a3be670466307d51448c2484fc665e19b101dc']
+  ['../smartinput/index.html', '84522bb4ef8dcb1341813c1ecc0354d63fcbe7e3ef7dfa4eb3f01ade3d9628c9'],
+  ['../smartinput/smartinput.css', 'f0b38e7b5f63db24ea04a90120c60a40b1599c1b77233c03e147c3dbfda96cd8'],
+  ['../smartinput/smartinput.js', 'cdbbc3c4d11a66ed4095e82f04dd25fdc92b75901b93087be66d4d29bb308c38']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline for ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and the ORDER Q query-link change, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline for estimate match-dictionary persistence and voucher upload sorting, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -196,5 +196,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-full-sheet-f8-bulk-dialog-business-key-review-isolation-and-order-query-link'
+  smartInputUiChanged: 'approved-estimate-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
 }, null, 2));

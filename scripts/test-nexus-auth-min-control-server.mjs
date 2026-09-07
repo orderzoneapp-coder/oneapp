@@ -147,6 +147,9 @@ const expectCode = (fn, code) => assert.throws(fn, (error) => error?.message ===
 const sheetSnapshot = (name) => structuredClone(state.database.getSheetByName(name).rows);
 
 assert.equal(context.NEXUS_AUTH_VERSION, 'NEXUS_AUTH_V2');
+assert.equal(context.NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT, '9999-12-31T23:59:59.999Z');
+assert.match(source, /nexusAuthIssueSession_\(user, payload\.device, payload\.rememberLogin === true\)/, 'login must forward the explicit persistence choice');
+assert.match(source, /expiresAt: rememberLogin === true[\s\S]*NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT[\s\S]*NEXUS_AUTH_SESSION_TTL_MS/, 'session expiry must branch between persistent and 12-hour policies');
 assert.equal(context.nexusAuthSessionView_(ownerContext()).user.visibleAppsConfigured, false);
 assert.equal(context.nexusAuthSessionView_(ownerContext()).user.visibleAppIds.length, 12);
 expectCode(() => context.nexusAuthAdminUsers_({ user: { role: 'VIEWER', status: 'ACTIVE' } }), 'NEXUS_AUTH_ADMIN_DENIED');

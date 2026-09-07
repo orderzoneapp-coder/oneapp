@@ -85,8 +85,9 @@ const smartInputSource = fs.readFileSync(path.join(ROOT, "smartinput", "smartinp
 const shopSheetAt = smartInputSource.indexOf("'쇼핑몰업로드'");
 const erpSheetAt = smartInputSource.indexOf("'ERP업데이트'", shopSheetAt);
 const confirmSheetAt = smartInputSource.indexOf("'확인요청'", erpSheetAt);
-assert.ok(shopSheetAt >= 0 && shopSheetAt < erpSheetAt && erpSheetAt < confirmSheetAt,
-  "SmartInput 견적 F8은 쇼핑몰업로드, ERP업데이트, 조건부 확인요청 순서로 생성해야 한다");
+const estimateUploadSheetAt = smartInputSource.indexOf("'견적서 업로드'", confirmSheetAt);
+assert.ok(shopSheetAt >= 0 && shopSheetAt < erpSheetAt && erpSheetAt < confirmSheetAt && confirmSheetAt < estimateUploadSheetAt,
+  "SmartInput 견적 F8은 쇼핑몰업로드, ERP업데이트, 조건부 확인요청 뒤 견적서 업로드를 마지막으로 생성해야 한다");
 assert.equal(smartInputSource.indexOf("'오류정보'"), -1,
   "SmartInput 견적 F8은 폐기된 오류정보 시트를 다시 생성하면 안 된다");
 

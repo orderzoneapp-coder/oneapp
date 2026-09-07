@@ -92,7 +92,7 @@ assert.equal(JSON.stringify({ rows, sourceRows, sourceMatrix: [['품목코드', 
 const html = readFileSync(fileURLToPath(new URL('../smartinput/index.html', import.meta.url)), 'utf8');
 const source = readFileSync(fileURLToPath(new URL('../smartinput/smartinput.js', import.meta.url)), 'utf8');
 
-assert.match(html, /id="inputListSearchButton"[^>]*>입력목록 검색\(F3\)<\/button>/,
+assert.match(html, /id="inputListSearchButton"[^>]*>검색\(F3\)<\/button>/,
   'the table toolbar must expose the approved compact input-list search control');
 assert.match(html, /id="inputListSearchPanel"[^>]*hidden/,
   'the input-list search field must be hidden during ordinary work');

@@ -14,13 +14,13 @@
     Object.freeze({ id: 'customer-master', label: '거래처관리', path: 'customer-master/index.html' }),
     Object.freeze({ id: 'merchops', label: '가격·시세', path: 'MerchOps.html' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
-    Object.freeze({ id: 'orderops', label: '주문·출고', path: 'orderops/list.html' }),
+    Object.freeze({ id: 'orderops', label: '출고관리', path: 'orderops/list.html' }),
     Object.freeze({ id: 'dataops', label: '재고·정산', path: 'DataOps.html' }),
     Object.freeze({ id: 'smart-parser', label: '문서분석', path: 'SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', path: 'export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', path: 'settings.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', path: 'history_viewer.html' }),
-    Object.freeze({ id: 'orderq-vnext', label: '주문현황', path: 'orderq/index.html' }),
+    Object.freeze({ id: 'orderq-vnext', label: '주문조회', path: 'orderq/index.html' }),
   ]);
   const CURRENT_APP_ALIASES = Object.freeze({ 'item-manager': 'master-lookup' });
   const HIDDEN_COMPATIBILITY_APP_IDS = new Set(['item-manager']);

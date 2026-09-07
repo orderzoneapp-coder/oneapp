@@ -167,6 +167,8 @@ try {
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
+  await expr(client, `!document.querySelector('#voucherInputTable').hidden`, 'default input-column table view');
+  await click(client, '[data-table-view="source"]');
   await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'source-column table view');
   await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'reference initialization', 30_000);
   await wait(500);

@@ -3,6 +3,22 @@ import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-
 const text = value => String(value ?? '').trim();
 const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
+export const ESTIMATE_BULK_TARGET_MATCH_TYPE = 'ESTIMATE_BULK_TARGET';
+export const ESTIMATE_BULK_TARGET_MATCH_SCHEMA = 'ONEAPP_SMARTINPUT_ESTIMATE_BULK_TARGET_MATCH_V1';
+
+export function estimateBulkTargetMatchContextKey(companyId = '') {
+  const company = text(companyId);
+  return company ? `${ESTIMATE_BULK_TARGET_MATCH_TYPE}:${company}` : '';
+}
+
+function normalizeEstimateBulkMatchName(value) {
+  return text(value)
+    .normalize('NFKC')
+    .toLocaleLowerCase('ko-KR')
+    .replace(/\s+/g, ' ')
+    .replace(/[.,:;·_()[\]{}<>]/g, '');
+}
+
 export function normalizeEstimateBulkCustomerName(value) {
   return text(value).normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
 }
@@ -150,16 +166,45 @@ function autoTargetCandidates(group, records) {
   return { method: '', candidates: [] };
 }
 
-export function resolveEstimateBulkTargets({ groups = [], estimates = [], selections = {} } = {}) {
+function rememberedTargetCandidates(group, records, matchMappings, companyId) {
+  const contextKey = estimateBulkTargetMatchContextKey(companyId);
+  if (!contextKey) return { method: '', candidates: [], ambiguous: false };
+  const recordsById = new Map(records.map(record => [text(record.estimateId), record]));
+  const scoped = (Array.isArray(matchMappings) ? matchMappings : [])
+    .filter(mapping => mapping?.mappingType === ESTIMATE_BULK_TARGET_MATCH_TYPE)
+    .filter(mapping => mapping.status === 'CONFIRMED' && mapping.contextKey === contextKey)
+    .filter(mapping => recordsById.has(text(mapping.targetEstimateId)));
+  const stages = [
+    ['MATCH_DICTIONARY_CUSTOMER_ID', group.customerId, mapping => text(mapping.sourceCustomerId)],
+    ['MATCH_DICTIONARY_CUSTOMER_CODE', group.customerCode, mapping => text(mapping.sourceCustomerCode)],
+    ['MATCH_DICTIONARY_NAME', normalizeEstimateBulkMatchName(group.customerName), mapping => normalizeEstimateBulkMatchName(mapping.normalizedName || mapping.sourceCustomerName || mapping.rawOrdererName)],
+    ['MATCH_DICTIONARY_GROUP', group.groupId, mapping => text(mapping.matchKey)]
+  ];
+  for (const [method, sourceValue, valueForMapping] of stages) {
+    if (!sourceValue) continue;
+    const targetIds = [...new Set(scoped.filter(mapping => valueForMapping(mapping) === sourceValue)
+      .map(mapping => text(mapping.targetEstimateId)).filter(Boolean))];
+    if (!targetIds.length) continue;
+    return {
+      method,
+      candidates: targetIds.map(targetId => recordsById.get(targetId)).filter(Boolean),
+      ambiguous: targetIds.length > 1
+    };
+  }
+  return { method: '', candidates: [], ambiguous: false };
+}
+
+export function resolveEstimateBulkTargets({ groups = [], estimates = [], selections = {}, matchMappings = [], companyId = '' } = {}) {
   const allRecords = (Array.isArray(estimates) ? estimates : []).filter(record => record?.estimateId);
   const individualRecords = allRecords.filter(record => record.estimateKind !== 'LINKED_GROUP');
   const recordsById = new Map(allRecords.map(record => [text(record.estimateId), record]));
   const issues = [];
   const assignments = (Array.isArray(groups) ? groups : []).map(group => {
     const hasManualSelection = Object.prototype.hasOwnProperty.call(selections || {}, group.groupId);
+    const remembered = rememberedTargetCandidates(group, individualRecords, matchMappings, companyId);
     const auto = autoTargetCandidates(group, individualRecords);
     let targetEstimateId = '';
-    let matchMethod = auto.method;
+    let matchMethod = remembered.method || auto.method;
     if (hasManualSelection) {
       targetEstimateId = text(selections[group.groupId]);
       matchMethod = 'MANUAL';
@@ -178,6 +223,15 @@ export function resolveEstimateBulkTargets({ groups = [], estimates = [], select
         issues.push({ code: 'ESTIMATE_BULK_LINKED_TARGET_FORBIDDEN', groupId: group.groupId, targetEstimateId, message: '연동견적서는 일괄 업데이트 대상으로 선택할 수 없습니다.' });
         targetEstimateId = '';
       }
+    } else if (remembered.candidates.length === 1 && !remembered.ambiguous) {
+      targetEstimateId = text(remembered.candidates[0].estimateId);
+    } else if (remembered.ambiguous) {
+      issues.push({
+        code: 'ESTIMATE_BULK_MATCH_DICTIONARY_AMBIGUOUS',
+        groupId: group.groupId,
+        candidateEstimateIds: remembered.candidates.map(record => text(record.estimateId)),
+        message: `${group.customerName || group.customerCode || group.customerId}의 매칭사전에 서로 다른 대상이 있습니다.`
+      });
     } else if (auto.candidates.length === 1) {
       targetEstimateId = text(auto.candidates[0].estimateId);
     } else if (auto.candidates.length > 1) {
@@ -457,23 +511,33 @@ function groupReviewIssues(group = {}) {
   return issues;
 }
 
-function normalizeDecision(selection, previousEntry, group, individualRecords) {
+function normalizeDecision(selection, previousEntry, group, individualRecords, matchMappings, companyId) {
   if (selection !== undefined) {
-    if (typeof selection === 'string') return selection ? { action: 'UPDATE', targetEstimateId: text(selection), catalogName: '' } : { action: 'NONE', targetEstimateId: '', catalogName: '' };
+    if (typeof selection === 'string') return selection ? { action: 'UPDATE', targetEstimateId: text(selection), catalogName: '', matchMethod: 'MANUAL' } : { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: 'MANUAL' };
     const action = text(selection?.action).toUpperCase() || 'NONE';
-    return { action, targetEstimateId: text(selection?.targetEstimateId), catalogName: action === 'CREATE' ? text(selection?.catalogName) : '' };
+    return {
+      action,
+      targetEstimateId: text(selection?.targetEstimateId),
+      catalogName: action === 'CREATE' ? text(selection?.catalogName) : '',
+      matchMethod: text(selection?.matchMethod) || 'MANUAL'
+    };
   }
   if (previousEntry?.action && previousEntry.groupFingerprint) {
     return {
       action: text(previousEntry.action).toUpperCase(),
       targetEstimateId: text(previousEntry.targetEstimateId),
-      catalogName: text(previousEntry.catalogName)
+      catalogName: text(previousEntry.catalogName),
+      matchMethod: text(previousEntry.matchMethod) || 'PROGRESS'
     };
   }
-  if (group.groupType === 'UNASSIGNED') return { action: 'NONE', targetEstimateId: '', catalogName: '' };
+  if (group.groupType === 'UNASSIGNED') return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: '' };
+  const remembered = rememberedTargetCandidates(group, individualRecords, matchMappings, companyId);
+  if (remembered.candidates.length === 1 && !remembered.ambiguous) {
+    return { action: 'UPDATE', targetEstimateId: text(remembered.candidates[0].estimateId), catalogName: '', matchMethod: remembered.method };
+  }
   const auto = autoTargetCandidates(group, individualRecords);
-  if (auto.candidates.length === 1) return { action: 'UPDATE', targetEstimateId: text(auto.candidates[0].estimateId), catalogName: '' };
-  return { action: 'NONE', targetEstimateId: '', catalogName: '', auto };
+  if (!remembered.ambiguous && auto.candidates.length === 1) return { action: 'UPDATE', targetEstimateId: text(auto.candidates[0].estimateId), catalogName: '', matchMethod: auto.method };
+  return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: remembered.method, auto, remembered };
 }
 
 function decisionFingerprint(decision) {
@@ -583,7 +647,7 @@ function planSummary(entries) {
   return summary;
 }
 
-export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], activeEstimateId = '', progress } = {}) {
+export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], activeEstimateId = '', progress, matchMappings = [], companyId = '' } = {}) {
   const groups = Array.isArray(classification?.groups) ? classification.groups : [];
   const allRecords = (Array.isArray(estimates) ? estimates : []).filter(record => record?.estimateId);
   const individualRecords = allRecords.filter(record => record.estimateKind !== 'LINKED_GROUP');
@@ -605,7 +669,7 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
     const fingerprint = groupFingerprint(group, split);
     const previousEntry = previousGroups[group.groupId]?.groupFingerprint === fingerprint ? previousGroups[group.groupId] : null;
     const selection = Object.prototype.hasOwnProperty.call(selections || {}, group.groupId) ? selections[group.groupId] : undefined;
-    const decision = normalizeDecision(selection, previousEntry, group, individualRecords);
+    const decision = normalizeDecision(selection, previousEntry, group, individualRecords, matchMappings, companyId);
     const issues = [...groupReviewIssues(group), ...issueForDecision(decision, group, recordsById, individualRecords)];
     if (splitIssue) issues.push(splitIssue);
     return { group, groupId: group.groupId, split, groupFingerprint: fingerprint, previousEntry, decision, issues };
@@ -651,6 +715,7 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
       targetEstimateId: entry.decision.targetEstimateId,
       target,
       catalogName: entry.decision.catalogName,
+      matchMethod: entry.decision.matchMethod,
       split: entry.split
     };
     const previousFailure = previousStatus === ESTIMATE_BULK_GROUP_STATUS.FAILED && entry.previousEntry?.errorMessage
@@ -662,6 +727,7 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
       targetEstimateId: entry.decision.targetEstimateId,
       target,
       catalogName: entry.decision.catalogName,
+      matchMethod: entry.decision.matchMethod,
       decisionFingerprint: fingerprint,
       firstIssue: entry.issues[0] || previousFailure,
       errorCode: previousFailure?.code || '',
@@ -691,6 +757,7 @@ export function createEstimateBulkProgress({ plan, statusOverrides = {} } = {}) 
         action,
         targetEstimateId,
         catalogName,
+        matchMethod: text(override.matchMethod ?? entry.matchMethod),
         status,
         itemCount: Number(entry.group?.itemCount || 0),
         firstIssue: clone(override.firstIssue === undefined ? entry.firstIssue : override.firstIssue),

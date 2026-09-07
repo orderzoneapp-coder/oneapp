@@ -164,6 +164,10 @@ td input:focus, td select:focus { outline: none; background: #f0fdfa; border-col
 .document-badge.transfer-partial { background: var(--amber-bg); color: var(--amber); }
 .document-badge.transfer-transferred { background: var(--green-bg); color: var(--green); }
 .document-badge.transfer-over_transferred { background: var(--red-bg); color: var(--red); }
+.document-badge.shipment-partial, .document-badge.shipment-hold { background: var(--amber-bg); color: var(--amber); }
+.document-badge.shipment-completed { background: var(--green-bg); color: var(--green); }
+.document-badge.shipment-review_required { background: var(--red-bg); color: var(--red); }
+.document-badge.shipment-reversed { background: #f1f5f9; color: #475569; }
 .document-detail-row[hidden] { display: none; }
 .document-detail-row > td { padding: 0; background: #f8fafc; }
 .document-detail { padding: 14px; border-left: 4px solid #2563eb; }

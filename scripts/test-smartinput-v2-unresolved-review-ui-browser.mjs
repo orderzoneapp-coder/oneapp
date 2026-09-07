@@ -223,7 +223,7 @@ const prepareWorkspace = async client => {
 const normalMetrics = client => evaluate(client, `(() => {
   const rect = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width)};};
   return {
-    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>id!=='unresolvedReviewToggle').sort(),
+    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>!['unresolvedReviewToggle','shipmentConfirmButton','shipmentHoldButton'].includes(id)).sort(),
     sourceTabs:[...document.querySelectorAll('#sourceSelector [role="tab"]')].map(node=>({id:node.id,label:node.getAttribute('aria-label')})),
     shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
     regions:{sourceSelector:rect('#sourceSelector'),resultsPanel:rect('#resultsPanel'),previewTable:rect('#previewTable')},
@@ -248,7 +248,7 @@ try {
   const portFile = join(profile, 'DevToolsActivePort');
   const debugPort = await waitFor(() => {
     try { return readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] || null; } catch { return null; }
-  }, 'browser debugging port');
+  }, 'browser debugging port', 40_000);
   const targets = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
     return response.ok ? (await response.json()).filter(target => target.type === 'page') : null;
