@@ -170,6 +170,29 @@
       padding: 22px 0 28px;
     }
     .panel { background: var(--white); }
+    .orderq-source-picker {
+      display: grid;
+      grid-template-columns: minmax(180px, .8fr) minmax(0, 2.2fr);
+      align-items: center;
+      gap: 8px 12px;
+      padding: 9px 12px;
+      border-bottom: 1px solid #334155;
+      color: #e2e8f0;
+      background: #111c31;
+      pointer-events: auto;
+      text-align: left;
+    }
+    .orderq-source-picker__title { display: grid; gap: 2px; }
+    .orderq-source-picker__title strong { color: #99f6e4; font-size: 12px; }
+    .orderq-source-picker__title span { color: #94a3b8; font-size: 10px; font-weight: 700; }
+    .orderq-source-picker__controls { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(220px, 1.5fr) auto auto auto; gap: 6px; align-items: center; }
+    .orderq-source-picker :is(input, select, button, a) { min-height: 32px; border: 1px solid #64748b; border-radius: 5px; font-size: 11px; font-weight: 800; }
+    .orderq-source-picker :is(input, select) { min-width: 0; padding: 0 8px; color: var(--slate-900); background: var(--white); }
+    .orderq-source-picker button, .orderq-source-picker a { display: inline-flex; align-items: center; justify-content: center; padding: 0 9px; color: #e2e8f0; background: #1e293b; text-decoration: none; white-space: nowrap; }
+    .orderq-source-picker button:hover:not(:disabled), .orderq-source-picker a:hover { border-color: #5eead4; color: #fff; background: #0f766e; }
+    .orderq-source-picker button:disabled { opacity: .55; }
+    .orderq-source-picker__notice { grid-column: 2; margin: 0; color: #cbd5e1; font-size: 10px; line-height: 1.4; }
+    .orderq-source-picker__notice.is-error { color: #fecaca; }
 
     /* =========================================================
        OrderOps v1.11 System.IO compact border strip
@@ -677,6 +700,11 @@
     .shipment-action.secondary { color: #92400e; border-color: #f59e0b; background: #fffbeb; }
     .shipment-result-history { margin-top: 8px; color: #475569; font-size: 10px; }
     .shipment-result-history button { margin-left: 6px; border: 0; color: #b91c1c; background: transparent; font-weight: 800; text-decoration: underline; cursor: pointer; }
+    .shipment-source-actions { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 7px 8px; border: 1px solid #f59e0b; border-radius: 5px; color: #92400e; background: #fffbeb; }
+    .shipment-source-actions[hidden] { display: none; }
+    .shipment-source-actions span { flex: 1; font-size: 11px; font-weight: 800; }
+    .shipment-source-actions button { min-height: 30px; padding: 0 9px; border: 1px solid #d97706; border-radius: 4px; color: #78350f; background: #fff; font-size: 10px; font-weight: 900; }
+    .shipment-draft-input { width: 100%; min-width: 64px; height: 28px; padding: 3px 7px; border: 1px solid #0d9488; border-radius: 4px; color: #0f172a; background: #f0fdfa; text-align: right; font-weight: 900; }
     .view-controls {
       display: flex;
       align-items: center;
@@ -1998,6 +2026,10 @@
       .view-controls .tab-button { padding: 0 8px; }
     }
     @media (max-width: 900px) {
+      .orderq-source-picker { grid-template-columns: 1fr; }
+      .orderq-source-picker__controls { grid-template-columns: 1fr 1fr; }
+      .orderq-source-picker__controls :is(input, select) { grid-column: 1 / -1; }
+      .orderq-source-picker__notice { grid-column: 1; }
       .input-panel { grid-template-columns: 1fr; }
       .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .execution-panel { min-height: 44px; }
@@ -2064,6 +2096,21 @@
           <span id="cloudStatus">완료본 저장 · 미연결</span>
         </div>
       </div>
+
+      <section class="orderq-source-picker" id="orderQSourcePicker" aria-label="저장된 ORDER Q 주문 선택">
+        <div class="orderq-source-picker__title">
+          <strong>저장 주문 선택</strong>
+          <span>ORDER Q에 저장된 출고 가능 주문을 찾아 작업에 연결합니다.</span>
+        </div>
+        <div class="orderq-source-picker__controls">
+          <input id="orderQCandidateSearch" type="search" autocomplete="off" placeholder="주문번호·거래처·창고 검색" aria-label="저장 주문 검색">
+          <select id="orderQCandidateSelect" aria-label="출고할 저장 주문 선택"><option value="">주문 목록을 불러오는 중...</option></select>
+          <button id="orderQCandidateLoadButton" type="button" disabled>주문 불러오기</button>
+          <button id="orderQCandidateRefreshButton" type="button">목록 새로고침</button>
+          <a href="../orderq/index.html?view=query" id="orderQReturnLink">주문조회</a>
+        </div>
+        <p class="orderq-source-picker__notice" id="orderQSourceNotice" role="status" aria-live="polite">저장 주문 목록을 확인하고 있습니다. 창고재고 Excel은 계속 필요합니다.</p>
+      </section>
 
       <section class="panel input-panel" aria-label="입력 파일과 실행">
         <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
@@ -2154,7 +2201,12 @@
 
       <section class="shipment-execution" id="shipmentExecution" aria-label="출고 확정" hidden>
         <div class="shipment-execution__head"><h3>출고 작업·확정</h3><span class="shipment-execution__status" id="shipmentExecutionStatus"></span></div>
-        <div class="table-wrap"><table class="shipment-execution__table"><thead><tr><th>주문품목</th><th>실제 출고품목</th><th>남은 주문수량</th><th>출고수량</th><th>부분출고 사유</th></tr></thead><tbody id="shipmentExecutionRows"></tbody></table></div>
+        <div class="shipment-source-actions" id="shipmentSourceActions" hidden>
+          <span id="shipmentSourceActionMessage">주문 변경이 감지되었습니다. 현재 작업은 보존되며 확정은 최신 주문 검증 전까지 차단됩니다.</span>
+          <button id="shipmentApplyLatestButton" type="button">최신 주문 적용</button>
+          <button id="shipmentKeepWorkButton" type="button">현재 작업 유지</button>
+        </div>
+        <div class="table-wrap"><table class="shipment-execution__table"><thead><tr><th>주문품목</th><th>실제 출고품목</th><th>주문수량</th><th>기출고</th><th>남은 주문수량</th><th>이번 실제 출고수량</th><th>부분출고 사유</th></tr></thead><tbody id="shipmentExecutionRows"></tbody></table></div>
         <div class="shipment-execution__actions">
           <input id="shipmentHoldReason" type="text" placeholder="보류 사유">
           <button class="shipment-action secondary" id="shipmentHoldButton" type="button">출고 보류</button>
@@ -2429,9 +2481,14 @@
       const state = {
         orders: null,
         orderQSource: null,
+        orderQCandidates: [],
+        orderQCandidateMeta: null,
+        orderQCandidateLoading: false,
         shipmentResults: null,
         shipmentCommandBusy: false,
         shipmentCommandError: "",
+        shipmentSourceChanged: false,
+        shipmentKeepWorkAcknowledged: false,
         shipmentDraft: Object.create(null),
         inventory: null,
         purchases: null,
@@ -2534,10 +2591,21 @@
         shipmentExecution: document.getElementById("shipmentExecution"),
         shipmentExecutionStatus: document.getElementById("shipmentExecutionStatus"),
         shipmentExecutionRows: document.getElementById("shipmentExecutionRows"),
+        shipmentSourceActions: document.getElementById("shipmentSourceActions"),
+        shipmentSourceActionMessage: document.getElementById("shipmentSourceActionMessage"),
+        shipmentApplyLatestButton: document.getElementById("shipmentApplyLatestButton"),
+        shipmentKeepWorkButton: document.getElementById("shipmentKeepWorkButton"),
         shipmentHoldReason: document.getElementById("shipmentHoldReason"),
         shipmentHoldButton: document.getElementById("shipmentHoldButton"),
         shipmentConfirmButton: document.getElementById("shipmentConfirmButton"),
         shipmentResultHistory: document.getElementById("shipmentResultHistory"),
+        orderQSourcePicker: document.getElementById("orderQSourcePicker"),
+        orderQCandidateSearch: document.getElementById("orderQCandidateSearch"),
+        orderQCandidateSelect: document.getElementById("orderQCandidateSelect"),
+        orderQCandidateLoadButton: document.getElementById("orderQCandidateLoadButton"),
+        orderQCandidateRefreshButton: document.getElementById("orderQCandidateRefreshButton"),
+        orderQSourceNotice: document.getElementById("orderQSourceNotice"),
+        orderQReturnLink: document.getElementById("orderQReturnLink"),
         tableSearchInput: document.getElementById("tableSearchInput"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
         shortageFocusButton: document.getElementById("shortageFocusButton"),
@@ -3285,6 +3353,7 @@
         const payload = verification.record.payload;
         clearSubstitutionSelection();
         state.workspace = payload.workspace;
+        hydrateShipmentDraftFromWorkspace(state.workspace);
         engine.ensureNoticeState(state.workspace);
         engine.ensureSubstitutionHistory(state.workspace);
         state.activePreview = payload.ui?.activePreview || "validation";
@@ -3672,7 +3741,7 @@
             byKind.set(item.kind, item.parsed);
           });
           byKind.forEach((parsed, kind) => { state[kind] = parsed; });
-          if (byKind.has("orders")) state.orderQSource = null;
+          if (byKind.has("orders")) disconnectOrderQSource();
           refreshInputState();
 
           if (state.validation?.canAnalyze) {
@@ -3731,6 +3800,7 @@
         renderSourceViewCards();
         elements.resultsPanel.classList.add("hidden");
         elements.shipmentExecution.hidden = true;
+        elements.shipmentExecutionRows.replaceChildren();
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
@@ -3754,7 +3824,7 @@
           state[kind] = ["orders", "inventory"].includes(kind)
             ? await parseExcelFile(file, kind)
             : await parseGenericExcelFile(file, kind);
-          if (kind === "orders") state.orderQSource = null;
+          if (kind === "orders") disconnectOrderQSource();
           showToast(`${file.name} 파일을 읽었습니다.`);
         } catch (error) {
           state[kind] = null;
@@ -3789,7 +3859,7 @@
           resetResults();
           result.applied.forEach((parsed, kind) => {
             state[kind] = parsed;
-            if (kind === "orders") state.orderQSource = null;
+            if (kind === "orders") disconnectOrderQSource();
           });
           state.integratedFile = result;
           const appliedLabels = [...result.applied.keys()].map((kind) => FILE_KIND_LABELS[kind]);
@@ -3896,37 +3966,174 @@
         }
       }
 
+      let orderQSourceAdapterPromise = null;
+
+      function orderQSourceAdapter() {
+        if (!orderQSourceAdapterPromise) {
+          orderQSourceAdapterPromise = import("./orderq-order-source-adapter.js?v=1.1.0");
+        }
+        return orderQSourceAdapterPromise;
+      }
+
+      function setOrderQSourceNotice(message, error = false) {
+        elements.orderQSourceNotice.textContent = message;
+        elements.orderQSourceNotice.classList.toggle("is-error", error);
+      }
+
+      function orderQCandidateLabel(snapshot) {
+        return [
+          snapshot.orderNo || snapshot.orderId,
+          snapshot.orderDate,
+          snapshot.customerName,
+          snapshot.warehouseName || snapshot.warehouseCode,
+          snapshot.assigneeName,
+        ].filter(Boolean).join(" · ");
+      }
+
+      async function renderOrderQCandidateOptions() {
+        const { orderQCandidateMatches } = await orderQSourceAdapter();
+        const query = elements.orderQCandidateSearch.value;
+        const selectedOrderId = elements.orderQCandidateSelect.value || state.orderQSource?.snapshot?.orderId || "";
+        const visible = state.orderQCandidates.filter(snapshot => orderQCandidateMatches(snapshot, query));
+        const options = visible.map(snapshot => new Option(orderQCandidateLabel(snapshot), snapshot.orderId));
+        if (!options.length) options.push(new Option(state.orderQCandidateLoading ? "주문 목록을 불러오는 중..." : "조건에 맞는 출고 가능 주문이 없습니다", ""));
+        elements.orderQCandidateSelect.replaceChildren(...options);
+        if (visible.some(snapshot => snapshot.orderId === selectedOrderId)) elements.orderQCandidateSelect.value = selectedOrderId;
+        elements.orderQCandidateLoadButton.disabled = state.orderQCandidateLoading || !elements.orderQCandidateSelect.value;
+      }
+
+      async function refreshOrderQCandidateList({ quiet = false } = {}) {
+        if (state.orderQCandidateLoading) return;
+        state.orderQCandidateLoading = true;
+        elements.orderQCandidateRefreshButton.disabled = true;
+        if (!quiet) setOrderQSourceNotice("저장된 출고 가능 주문을 확인하고 있습니다. 창고재고 Excel은 계속 필요합니다.");
+        await renderOrderQCandidateOptions();
+        try {
+          const { listOrderQOrderSources } = await orderQSourceAdapter();
+          const result = await listOrderQOrderSources({ limit: 200 });
+          if (result.status === "ERROR") throw new Error(result.error?.message || "주문 목록을 읽지 못했습니다.");
+          state.orderQCandidates = result.candidates || [];
+          state.orderQCandidateMeta = result;
+          const truncation = result.truncated ? ` · 전체 ${result.totalCount}건 중 최근 ${result.examinedCount}건만 표시` : "";
+          setOrderQSourceNotice(`출고 가능 주문 ${state.orderQCandidates.length}건${truncation} · 주문 선택 후에도 창고재고 Excel은 필수입니다.`);
+        } catch (error) {
+          state.orderQCandidates = [];
+          state.orderQCandidateMeta = null;
+          setOrderQSourceNotice(`주문 목록을 불러오지 못했습니다. 목록 새로고침을 누르거나 주문현황 Excel을 사용하세요. · ${error.message || error}`, true);
+        } finally {
+          state.orderQCandidateLoading = false;
+          elements.orderQCandidateRefreshButton.disabled = false;
+          await renderOrderQCandidateOptions();
+        }
+      }
+
+      function updateOrderQRoute(orderId) {
+        const route = new URL(location.href);
+        if (orderId) route.searchParams.set("orderId", orderId);
+        else route.searchParams.delete("orderId");
+        history.replaceState(null, "", `${route.pathname}${route.search}${route.hash}`);
+      }
+
+      function disconnectOrderQSource() {
+        state.orderQSource = null;
+        state.shipmentResults = null;
+        state.shipmentDraft = Object.create(null);
+        state.shipmentCommandError = "";
+        state.shipmentSourceChanged = false;
+        state.shipmentKeepWorkAcknowledged = false;
+        updateOrderQRoute("");
+        elements.orderQReturnLink.href = "../orderq/index.html?view=query";
+      }
+
+      function orderQReadFailureMessage(result) {
+        const labels = {
+          NOT_FOUND: "주문을 찾을 수 없습니다. 주문조회로 돌아가거나 저장 주문 목록을 다시 불러오세요.",
+          EMPTY: "최신 주문에 남은 출고 대상이 없습니다. 주문조회에서 주문 상태를 확인하세요.",
+          STALE: "주문 Revision이 변경되었습니다. 최신 주문 적용 또는 현재 작업 유지를 선택하세요.",
+          ERROR: `주문을 읽지 못했습니다. 다시 시도하거나 주문현황 Excel을 사용하세요. · ${result.error?.message || "읽기 오류"}`,
+        };
+        return labels[result.status] || "ORDER Q 주문을 불러오지 못했습니다.";
+      }
+
+      async function loadOrderQSource(orderId, { applyLatest = false, skipSwitchConfirm = false } = {}) {
+        const requestedOrderId = String(orderId || "").trim();
+        if (!requestedOrderId) return false;
+        const previousSnapshot = state.orderQSource?.snapshot || null;
+        const switchingOrder = Boolean(previousSnapshot?.orderId && previousSnapshot.orderId !== requestedOrderId);
+        if (switchingOrder && state.workspace && !skipSwitchConfirm && !window.confirm("현재 출고 분석 작업을 종료하고 선택한 주문으로 전환하시겠습니까? 창고재고 파일은 유지됩니다.")) return false;
+        captureShipmentDraftInputs();
+        setSystemMessage("ORDER Q 주문 확인 중 · 주문 Revision과 출고대상을 읽고 있습니다");
+        setOrderQSourceNotice(`주문 ${requestedOrderId}을 확인하고 있습니다. 기존 작업은 성공적으로 불러온 뒤에만 교체됩니다.`);
+        try {
+          const { loadOrderQOrderSource, reconcileShipmentDraft } = await orderQSourceAdapter();
+          const result = await loadOrderQOrderSource(requestedOrderId);
+          const applicable = result.status === "READY" || (applyLatest && result.status === "EMPTY" && result.snapshot);
+          if (!applicable) {
+            const message = orderQReadFailureMessage(result);
+            setSystemMessage(`ORDER Q 주문 연결 보류 · ${message}`);
+            setOrderQSourceNotice(`${message} 기존 화면 작업은 변경되지 않았습니다.`, true);
+            elements.orderQReturnLink.href = `../orderq/index.html?view=query&focus=${encodeURIComponent(requestedOrderId)}`;
+            showToast(message, true);
+            return false;
+          }
+
+          const reconciliation = applyLatest && previousSnapshot?.orderId === result.snapshot.orderId
+            ? reconcileShipmentDraft(previousSnapshot, result.snapshot, state.shipmentDraft)
+            : { draft: Object.create(null), retainedOrderItemIds: [], removedOrderItemIds: [], addedOrderItemIds: [] };
+          let nextWorkspace = null;
+          if (state.workspace && state.inventory && result.parsedOrders?.rows?.length) {
+            const validation = engine.validateInputs(result.parsedOrders, state.inventory);
+            if (!validation.canAnalyze) throw new Error(validation.errors?.map(issue => issue.message).join(" · ") || "최신 주문을 현재 창고재고와 분석할 수 없습니다.");
+            nextWorkspace = await analyzeCurrentInputs({ orders: result.parsedOrders, inventory: state.inventory });
+          }
+
+          const previousPreview = state.activePreview;
+          resetResults();
+          state.orderQSource = result;
+          state.orders = result.parsedOrders;
+          state.shipmentDraft = reconciliation.draft;
+          state.shipmentCommandError = "";
+          state.shipmentSourceChanged = false;
+          state.shipmentKeepWorkAcknowledged = false;
+          refreshInputState();
+          updateOrderQRoute(result.snapshot.orderId);
+          if (!state.orderQCandidates.some(candidate => candidate.orderId === result.snapshot.orderId) && result.status === "READY") {
+            state.orderQCandidates = [result.snapshot, ...state.orderQCandidates];
+          }
+          await renderOrderQCandidateOptions();
+          elements.orderQCandidateSelect.value = result.snapshot.orderId;
+          elements.orderQReturnLink.href = `../orderq/index.html?view=query&focus=${encodeURIComponent(result.snapshot.orderId)}`;
+          if (nextWorkspace) {
+            state.workspace = nextWorkspace;
+            state.activePreview = previousPreview;
+            resetResultViewFilters();
+            renderResults();
+            scheduleLocalSave();
+          }
+          const lineChanges = applyLatest
+            ? ` · 입력 유지 ${reconciliation.retainedOrderItemIds.length}행 · 추가 ${reconciliation.addedOrderItemIds.length}행 · 제외 ${reconciliation.removedOrderItemIds.length}행`
+            : "";
+          const message = result.status === "EMPTY"
+            ? `ORDER Q ${result.snapshot.orderNo} 최신본 적용 · 남은 출고 대상 없음${lineChanges}`
+            : state.inventory
+              ? `ORDER Q ${result.snapshot.orderNo} · Revision ${result.snapshot.orderRevision} 연결 완료${lineChanges} · 출고분석을 확인하세요`
+              : `ORDER Q ${result.snapshot.orderNo} · Revision ${result.snapshot.orderRevision} 연결 완료 · 창고재고 Excel을 선택하세요`;
+          setSystemMessage(message);
+          setOrderQSourceNotice(`${message}. 주문 원본은 ORDER Q가 소유하며 이 화면은 출고결과만 저장합니다.`);
+          showToast(message);
+          return true;
+        } catch (error) {
+          const message = `ORDER Q 주문 연결 실패 · ${error.message || error}`;
+          setSystemMessage(`${message} · 주문현황 Excel로 계속 진행할 수 있습니다`);
+          setOrderQSourceNotice(`${message}. 다시 시도하거나 주문현황 Excel을 사용하세요. 기존 화면 작업은 유지되었습니다.`, true);
+          showToast(error.message || "ORDER Q 주문을 불러오지 못했습니다.", true);
+          return false;
+        }
+      }
+
       async function loadOrderQSourceFromRoute() {
         const orderId = new URLSearchParams(location.search).get("orderId")?.trim() || "";
-        if (!orderId) return;
-        setSystemMessage("ORDER Q 주문 확인 중 · 주문 Revision과 출고대상을 읽고 있습니다");
-        try {
-          const { loadOrderQOrderSource } = await import("./orderq-order-source-adapter.js?v=1.0.0");
-          const result = await loadOrderQOrderSource(orderId);
-          state.orderQSource = result;
-          if (result.status !== "READY") {
-            const labels = {
-              NOT_FOUND: "주문을 찾을 수 없습니다",
-              EMPTY: "출고할 주문수량이 없습니다",
-              STALE: "주문이 변경되어 다시 열어야 합니다",
-              ERROR: result.error?.message || "주문을 읽지 못했습니다",
-            };
-            setSystemMessage(`ORDER Q 주문 연결 실패 · ${labels[result.status] || result.status}`);
-            showToast(`${labels[result.status] || "ORDER Q 주문을 불러오지 못했습니다."} · 주문현황 Excel로 계속할 수 있습니다.`, true);
-            return;
-          }
-          resetResults();
-          state.orders = result.parsedOrders;
-          refreshInputState();
-          setSystemMessage(state.inventory
-            ? `ORDER Q ${result.snapshot.orderNo} 연결 완료 · 출고분석을 실행하세요`
-            : `ORDER Q ${result.snapshot.orderNo} · Revision ${result.snapshot.orderRevision} 연결 완료 · 창고재고 Excel을 선택하세요`);
-          showToast(`주문 ${result.snapshot.orderNo}을 불러왔습니다. 창고재고 Excel은 계속 필요합니다.`);
-        } catch (error) {
-          state.orderQSource = null;
-          setSystemMessage("ORDER Q 주문 연결 실패 · 주문현황 Excel로 계속 진행할 수 있습니다");
-          showToast(error.message || "ORDER Q 주문을 불러오지 못했습니다.", true);
-        }
+        if (orderId) await loadOrderQSource(orderId, { skipSwitchConfirm: true });
       }
 
       function isPlainRecord(value) {
@@ -5148,7 +5355,7 @@
       function isQuantityColumn(column) {
         return [
           "warehouseQuantity", "stockQuantity", "inboundQuantity", "orderQuantity",
-          "salesQuantity", "calculatedQuantity",
+          "salesQuantity", "actualShipmentQuantity", "calculatedQuantity",
         ].includes(column?.role) || column?.orderField === "quantity";
       }
 
@@ -5219,8 +5426,14 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 10;
+        const directOrderQShipment = workspace?.sourceFiles?.orders?.sourceKind === "ORDERQ_READ_MODEL";
+        const actualShipmentIndex = directOrderQShipment ? 9 : -1;
+        const unitPriceIndex = directOrderQShipment ? 10 : 9;
+        const allocationWarehouseStart = unitPriceIndex + 1;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
+        const shipmentNet = state.shipmentResults?.netByOrderItem || {};
+        const shipmentSnapshotByItem = new Map((state.orderQSource?.snapshot?.candidateLines || [])
+          .map(line => [String(line.orderItemId || ""), line]));
         const allocationProductSummaries = new Map();
         workspace.allocations.forEach((row) => {
           const productCode = engine.normalizeProductCode(row?.productCode);
@@ -5239,19 +5452,34 @@
           if (productCode) allocationAggregateShown.add(productCode);
           return {
             ...decorateShortageRow(row, shortageSets, inventoryByCode),
+            actualShipmentQuantity: directOrderQShipment
+              ? (() => {
+                  const orderItemId = String(row?.orderItemId || "");
+                  const draft = state.shipmentDraft[orderItemId];
+                  if (draft && Object.prototype.hasOwnProperty.call(draft, "shippedQuantity")) return draft.shippedQuantity;
+                  const line = shipmentSnapshotByItem.get(orderItemId);
+                  return line ? Math.max(0, Number(line.shippableQuantity || 0) - Number(shipmentNet[orderItemId] || 0)) : "";
+                })()
+              : "",
             productAggregateQuantity: showAggregate
               ? Math.round(summary.quantity * 1000000) / 1000000
               : "",
           };
         });
+        const standardAllocationView = {
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+        };
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: directOrderQShipment
+            ? ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문수량", "실제출고", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]
+            : standardAllocationView.headers,
           numeric: [
             7,
             8,
-            9,
+            ...(directOrderQShipment ? [actualShipmentIndex] : []),
+            unitPriceIndex,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
           ],
           inventory: [],
@@ -5269,6 +5497,7 @@
             row.specification || row.spec || "",
             row.productAggregateQuantity,
             row.quantity,
+            ...(directOrderQShipment ? [row.actualShipmentQuantity] : []),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
             formatDeliveryNotice(row),
@@ -5278,7 +5507,7 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 138, 82, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
+        [76, 138, 82, 92, 94, 160, 62, 112, 72, ...(directOrderQShipment ? [82] : []), 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
         allocations.columns[0].role = "warehouse";
@@ -5290,9 +5519,13 @@
         allocations.columns[6].role = "specification";
         allocations.columns[7].role = "productAggregateQuantity";
         allocations.columns[8].role = "orderQuantity";
-        allocations.columns[8].orderField = "quantity";
-        allocations.columns[9].role = "unitPrice";
-        allocations.columns[9].orderField = "unitPrice";
+        if (!directOrderQShipment) allocations.columns[8].orderField = "quantity";
+        if (directOrderQShipment) {
+          allocations.columns[actualShipmentIndex].role = "actualShipmentQuantity";
+          allocations.columns[actualShipmentIndex].shipmentDraft = true;
+        }
+        allocations.columns[unitPriceIndex].role = "unitPrice";
+        allocations.columns[unitPriceIndex].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -5977,6 +6210,7 @@
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
+                    const editableShipmentDraft = editable && previewId === "allocations" && column.shipmentDraft && sourceRow?.orderItemId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const unresolvedReviewAction = previewId === "unresolved" && column.role === "unresolvedReviewAction";
                     const unresolvedOfficialInventory = previewId === "unresolved" && column.role === "unresolvedOfficialInventory";
@@ -5999,6 +6233,10 @@
                             data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
                             inputmode="decimal" autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
+                      : editableShipmentDraft
+                        ? `<input class="shipment-draft-input" data-shipment-draft-line="${escapeHtml(sourceRow.orderItemId)}"
+                            inputmode="decimal" autocomplete="off" value="${escapeHtml(displayValue)}"
+                            aria-label="${escapeHtml(sourceRow?.productCode || "")} 실제 출고수량">`
                       : editableOrder
                         ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
                             data-order-field="${escapeHtml(column.orderField)}"
@@ -6402,17 +6640,45 @@
         return `${kind}:${randomId}`;
       }
 
-      function renderShipmentExecution() {
+      function persistShipmentDraftToWorkspace() {
+        if (!state.workspace || state.workspace?.sourceFiles?.orders?.sourceKind !== "ORDERQ_READ_MODEL") return;
+        state.workspace.shipmentExecutionDraft = {
+          schemaVersion: "orderops-shipment-execution-draft/v1",
+          orderId: state.orderQSource?.snapshot?.orderId || state.workspace.sourceFiles.orders.orderId || "",
+          orderRevision: state.orderQSource?.snapshot?.orderRevision || state.workspace.sourceFiles.orders.orderRevision || 0,
+          values: Object.fromEntries(Object.entries(state.shipmentDraft).map(([orderItemId, value]) => [orderItemId, {
+            shippedQuantity: String(value?.shippedQuantity ?? ""),
+            reason: String(value?.reason ?? ""),
+          }]))
+        };
+      }
+
+      function hydrateShipmentDraftFromWorkspace(workspace = state.workspace) {
+        const record = workspace?.shipmentExecutionDraft;
+        if (record?.schemaVersion !== "orderops-shipment-execution-draft/v1" || !record.values || typeof record.values !== "object") return;
+        state.shipmentDraft = Object.fromEntries(Object.entries(record.values).map(([orderItemId, value]) => [orderItemId, {
+          shippedQuantity: String(value?.shippedQuantity ?? ""),
+          reason: String(value?.reason ?? ""),
+        }]));
+      }
+
+      function captureShipmentDraftInputs() {
+        if (!elements.shipmentExecutionRows) return;
+        [...elements.shipmentExecutionRows.querySelectorAll("[data-shipment-line]")].forEach((row) => {
+          state.shipmentDraft[row.dataset.shipmentLine] = {
+            shippedQuantity: row.querySelector("[data-shipped-quantity]")?.value ?? "",
+            reason: row.querySelector("[data-shipment-reason]")?.value ?? "",
+          };
+        });
+        persistShipmentDraftToWorkspace();
+      }
+
+      function renderShipmentExecution({ capture = true } = {}) {
         const snapshot = state.orderQSource?.snapshot;
         const directOrderQ = state.workspace?.sourceFiles?.orders?.sourceKind === "ORDERQ_READ_MODEL";
         elements.shipmentExecution.hidden = !snapshot || !directOrderQ;
         if (!snapshot || !directOrderQ) return;
-        [...elements.shipmentExecutionRows.querySelectorAll("[data-shipment-line]")].forEach((row) => {
-          state.shipmentDraft[row.dataset.shipmentLine] = {
-            shippedQuantity: row.querySelector("[data-shipped-quantity]")?.value || "",
-            reason: row.querySelector("[data-shipment-reason]")?.value || "",
-          };
-        });
+        if (capture) captureShipmentDraftInputs();
         const net = state.shipmentResults?.netByOrderItem || {};
         const workspaceByItem = new Map((state.workspace.orders || []).map((row) => [String(row.orderItemId || ""), row]));
         elements.shipmentExecutionRows.innerHTML = snapshot.candidateLines.map((line) => {
@@ -6420,13 +6686,18 @@
           const actual = workspaceRow?.substitution?.actualProduct || workspaceRow || {};
           const actualName = actual.productName || actual.itemName || line.itemName;
           const actualCode = actual.productCode || actual.itemCode || line.itemCode;
-          const remaining = Math.max(0, Number(line.shippableQuantity || 0) - Number(net[line.orderItemId] || 0));
+          const alreadyShipped = Math.max(0, Number(net[line.orderItemId] || 0));
+          const remaining = Math.max(0, Number(line.shippableQuantity || 0) - alreadyShipped);
           const draft = state.shipmentDraft[line.orderItemId] || {};
+          const draftQuantity = Object.prototype.hasOwnProperty.call(draft, "shippedQuantity") ? draft.shippedQuantity : remaining;
+          const draftExceedsRemaining = draftQuantity !== "" && Number(draftQuantity) > remaining;
           return `<tr data-shipment-line="${escapeHtml(line.orderItemId)}">
             <td>${escapeHtml(line.itemCode)} · ${escapeHtml(line.itemName)}</td>
             <td>${escapeHtml(actualCode)} · ${escapeHtml(actualName)}</td>
+            <td>${escapeHtml(formatNumber(line.orderedQuantity))} ${escapeHtml(line.unit)}</td>
+            <td>${escapeHtml(formatNumber(alreadyShipped))} ${escapeHtml(line.unit)}</td>
             <td>${escapeHtml(formatNumber(remaining))} ${escapeHtml(line.unit)}</td>
-            <td><input data-shipped-quantity type="number" min="0" max="${escapeHtml(remaining)}" step="any" value="${escapeHtml(Object.prototype.hasOwnProperty.call(draft, "shippedQuantity") ? draft.shippedQuantity : remaining)}"></td>
+            <td><input data-shipped-quantity type="number" min="0" max="${escapeHtml(remaining)}" step="any" value="${escapeHtml(draftQuantity)}" aria-invalid="${draftExceedsRemaining}"></td>
             <td><input data-shipment-reason type="text" placeholder="부분출고일 때 필수" value="${escapeHtml(draft.reason || "")}"></td>
           </tr>`;
         }).join("");
@@ -6440,11 +6711,20 @@
             }).join(" · ")
           : "출고 확정 이력이 없습니다.";
         const reviewRequired = Boolean(state.shipmentResults?.reviewRequired);
+        elements.shipmentSourceActions.hidden = !state.shipmentSourceChanged;
+        if (state.shipmentSourceChanged) {
+          elements.shipmentSourceActionMessage.textContent = state.shipmentKeepWorkAcknowledged
+            ? "현재 작업을 유지합니다. 입력값은 보존되지만 이전 Revision으로는 확정할 수 없습니다. 준비되면 최신 주문을 적용하세요."
+            : "주문 변경이 감지되었습니다. 현재 작업은 보존되며 확정은 최신 주문 검증 전까지 차단됩니다.";
+        }
         elements.shipmentExecutionStatus.textContent = state.shipmentCommandError || (reviewRequired
           ? `주문 Revision 변경 감지 · 기존 출고 취소 또는 정정 필요`
           : `${snapshot.orderNo} · 동결 Revision ${snapshot.orderRevision}${results.length ? ` · 결과 ${results.length}건` : " · 확정 전"}`);
-        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired;
+        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired || state.shipmentSourceChanged;
         elements.shipmentHoldButton.disabled = state.shipmentCommandBusy;
+        elements.shipmentApplyLatestButton.disabled = state.shipmentCommandBusy;
+        elements.shipmentKeepWorkButton.disabled = state.shipmentCommandBusy || state.shipmentKeepWorkAcknowledged;
+        persistShipmentDraftToWorkspace();
       }
 
       async function refreshShipmentExecution() {
@@ -6456,10 +6736,39 @@
         try {
           const { readShipmentResultsByOrder } = await import("./shipment-result-read-adapter.js?v=1.0.0");
           state.shipmentResults = await readShipmentResultsByOrder(snapshot.orderId);
+          const currentSnapshot = state.shipmentResults?.currentSnapshot;
+          if (currentSnapshot && (
+            Number(currentSnapshot.orderRevision) !== Number(snapshot.orderRevision) ||
+            currentSnapshot.snapshotHash !== snapshot.snapshotHash
+          )) state.shipmentSourceChanged = true;
         } catch (error) {
           state.shipmentResults = { status: "ERROR", results: [], netByOrderItem: {}, reviewRequired: false, error: { message: error.message || String(error) } };
         }
         renderShipmentExecution();
+        if (state.activePreview === "allocations") renderPreview();
+      }
+
+      async function applyLatestOrderQSource() {
+        const orderId = state.orderQSource?.snapshot?.orderId;
+        if (!orderId || state.shipmentCommandBusy) return;
+        state.shipmentCommandBusy = true;
+        renderShipmentExecution();
+        try {
+          await loadOrderQSource(orderId, { applyLatest: true, skipSwitchConfirm: true });
+        } finally {
+          state.shipmentCommandBusy = false;
+          renderShipmentExecution();
+        }
+      }
+
+      function keepCurrentShipmentWork() {
+        captureShipmentDraftInputs();
+        state.shipmentKeepWorkAcknowledged = true;
+        state.shipmentCommandError = "현재 작업을 유지했습니다. 입력값은 보존되며 최신 주문을 적용하기 전까지 확정은 차단됩니다.";
+        persistShipmentDraftToWorkspace();
+        scheduleLocalSave();
+        renderShipmentExecution();
+        setSystemMessage("현재 출고 작업 유지 · 최신 주문 적용 전까지 확정 차단");
       }
 
       function shipmentLineInputs() {
@@ -6498,6 +6807,7 @@
           await refreshShipmentExecution();
         } catch (error) {
           const conflict = error?.code === "SHIPMENT_ORDER_REVISION_CONFLICT";
+          if (conflict) state.shipmentSourceChanged = true;
           state.shipmentCommandError = conflict
             ? "주문이 변경되어 확정하지 않았습니다. 입력값을 유지한 채 최신 주문을 다시 확인하세요."
             : `출고 처리 실패 · ${error.message || error}`;
@@ -6607,49 +6917,55 @@
         showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
 
-      async function analyzeCurrentInputs() {
-        if (!state.validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+      async function analyzeCurrentInputs({
+        orders = state.orders,
+        inventory = state.inventory,
+        purchases = state.purchases,
+        sales = state.sales,
+      } = {}) {
+        const validation = orders && inventory ? engine.validateInputs(orders, inventory) : null;
+        if (!validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
         const sourceFingerprint = await sha256Hex(JSON.stringify({
           schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
           orders: {
-            sha256: state.orders.fileHash,
-            fileName: state.orders.fileName,
-            sheetName: state.orders.sheetName,
-            rowCount: state.orders.rowCount,
+            sha256: orders.fileHash,
+            fileName: orders.fileName,
+            sheetName: orders.sheetName,
+            rowCount: orders.rowCount,
           },
           inventory: {
-            sha256: state.inventory.fileHash,
-            fileName: state.inventory.fileName,
-            sheetName: state.inventory.sheetName,
-            rowCount: state.inventory.rowCount,
+            sha256: inventory.fileHash,
+            fileName: inventory.fileName,
+            sheetName: inventory.sheetName,
+            rowCount: inventory.rowCount,
           },
-          purchases: state.purchases ? {
-            sha256: state.purchases.fileHash,
-            fileName: state.purchases.fileName,
-            sheetName: state.purchases.sheetName,
-            rowCount: state.purchases.rowCount,
+          purchases: purchases ? {
+            sha256: purchases.fileHash,
+            fileName: purchases.fileName,
+            sheetName: purchases.sheetName,
+            rowCount: purchases.rowCount,
           } : null,
-          sales: state.sales ? {
-            sha256: state.sales.fileHash,
-            fileName: state.sales.fileName,
-            sheetName: state.sales.sheetName,
-            rowCount: state.sales.rowCount,
+          sales: sales ? {
+            sha256: sales.fileHash,
+            fileName: sales.fileName,
+            sheetName: sales.sheetName,
+            rowCount: sales.rowCount,
           } : null,
         }));
-        const workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+        const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
-          purchases: state.purchases ? {
-            fileName: state.purchases.fileName,
-            sheetName: state.purchases.sheetName,
-            fileHash: state.purchases.fileHash,
-            rows: state.purchases.rows || [],
+          purchases: purchases ? {
+            fileName: purchases.fileName,
+            sheetName: purchases.sheetName,
+            fileHash: purchases.fileHash,
+            rows: purchases.rows || [],
           } : null,
-          sales: state.sales ? {
-            fileName: state.sales.fileName,
-            sheetName: state.sales.sheetName,
-            fileHash: state.sales.fileHash,
-            rows: state.sales.rows || [],
+          sales: sales ? {
+            fileName: sales.fileName,
+            sheetName: sales.sheetName,
+            fileHash: sales.fileHash,
+            rows: sales.rows || [],
           } : null,
         };
         return workspace;
@@ -7068,6 +7384,29 @@
           renderPreview();
           return false;
         }
+      }
+
+      function commitShipmentDraftInput(input) {
+        if (!input || !state.workspace || state.activePreview !== "allocations") return false;
+        const orderItemId = String(input.dataset.shipmentDraftLine || "");
+        const line = state.orderQSource?.snapshot?.candidateLines?.find(candidate => candidate.orderItemId === orderItemId);
+        const value = input.value.trim();
+        const quantity = value === "" ? null : Number(value);
+        const alreadyShipped = Number(state.shipmentResults?.netByOrderItem?.[orderItemId] || 0);
+        const remaining = Math.max(0, Number(line?.shippableQuantity || 0) - alreadyShipped);
+        if (!line || quantity === null || !Number.isFinite(quantity) || quantity < 0 || quantity > remaining) {
+          showToast(`실제 출고수량은 0부터 남은 주문수량 ${formatNumber(remaining)}까지 입력하세요.`, true);
+          renderPreview();
+          return false;
+        }
+        state.shipmentDraft[orderItemId] = {
+          shippedQuantity: String(Math.round((quantity + Number.EPSILON) * 1e9) / 1e9),
+          reason: String(state.shipmentDraft[orderItemId]?.reason || ""),
+        };
+        persistShipmentDraftToWorkspace();
+        renderShipmentExecution({ capture: false });
+        scheduleLocalSave();
+        return true;
       }
 
       function substitutionActor() {
@@ -7505,6 +7844,7 @@
 
       function refreshCurrentSession() {
         FILE_KINDS.forEach((kind) => { state[kind] = null; state.loading[kind] = false; });
+        disconnectOrderQSource();
         state.integratedFile = null;
         state.loading.integrated = false;
         state.validation = null;
@@ -7529,10 +7869,29 @@
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.shipmentConfirmButton.addEventListener("click", () => executeShipmentCommand("CONFIRM"));
       elements.shipmentHoldButton.addEventListener("click", () => executeShipmentCommand("HOLD"));
+      elements.shipmentApplyLatestButton.addEventListener("click", applyLatestOrderQSource);
+      elements.shipmentKeepWorkButton.addEventListener("click", keepCurrentShipmentWork);
+      elements.shipmentExecutionRows.addEventListener("change", () => {
+        captureShipmentDraftInputs();
+        scheduleLocalSave();
+      });
       elements.shipmentResultHistory.addEventListener("click", (event) => {
         const button = event.target.closest("[data-reverse-shipment]");
         if (button) executeShipmentReversal(button.dataset.reverseShipment);
       });
+      elements.orderQCandidateSearch.addEventListener("input", () => { void renderOrderQCandidateOptions(); });
+      elements.orderQCandidateSearch.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing || !elements.orderQCandidateSelect.value) return;
+        event.preventDefault();
+        void loadOrderQSource(elements.orderQCandidateSelect.value);
+      });
+      elements.orderQCandidateSelect.addEventListener("change", () => {
+        elements.orderQCandidateLoadButton.disabled = !elements.orderQCandidateSelect.value;
+      });
+      elements.orderQCandidateLoadButton.addEventListener("click", () => {
+        void loadOrderQSource(elements.orderQCandidateSelect.value);
+      });
+      elements.orderQCandidateRefreshButton.addEventListener("click", () => { void refreshOrderQCandidateList(); });
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.printButton.addEventListener("click", printActiveTable);
@@ -7942,6 +8301,11 @@
           previewSelectedUnresolvedCandidate(unresolvedCandidate.dataset.unresolvedCandidate);
           return;
         }
+        const shipmentDraftInput = event.target.closest(".shipment-draft-input[data-shipment-draft-line]");
+        if (shipmentDraftInput) {
+          commitShipmentDraftInput(shipmentDraftInput);
+          return;
+        }
         const orderInput = event.target.closest(".order-edit-input[data-order-row][data-order-field]");
         if (orderInput) {
           commitOrderInput(orderInput);
@@ -7968,7 +8332,7 @@
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("keydown", (event) => {
-        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
+        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field], .shipment-draft-input[data-shipment-draft-line]");
         if (!input || event.key !== "Enter" || event.isComposing) return;
         event.preventDefault();
         input.blur();
@@ -8039,7 +8403,10 @@
         const shipmentChanges = new BroadcastChannel("oneapp-orderops-shipment-results");
         orderChanges.addEventListener("message", (event) => {
           if (event.data?.orderId !== state.orderQSource?.snapshot?.orderId) return;
-          state.shipmentCommandError = "주문 변경이 감지되었습니다. 현재 출고 입력은 유지되며 확정 시 최신 Revision을 다시 검증합니다.";
+          captureShipmentDraftInputs();
+          state.shipmentSourceChanged = true;
+          state.shipmentKeepWorkAcknowledged = false;
+          state.shipmentCommandError = "주문 변경이 감지되었습니다. 현재 출고 입력은 유지되며 최신 주문 적용 전까지 확정하지 않습니다.";
           void refreshShipmentExecution();
         });
         shipmentChanges.addEventListener("message", (event) => {
@@ -8059,7 +8426,12 @@
           if (!button.closest(".global-header")) button.disabled = true;
         });
       } else {
-        initializeLocalRecovery().then(loadOrderQSourceFromRoute);
+        initializeLocalRecovery().then(async () => {
+          await refreshOrderQCandidateList({ quiet: true });
+          await loadOrderQSourceFromRoute();
+        }).catch((error) => {
+          setOrderQSourceNotice(`초기 주문 연결을 완료하지 못했습니다. 목록 새로고침 또는 주문현황 Excel을 사용하세요. · ${error.message || error}`, true);
+        });
       }
     })();
   </script>

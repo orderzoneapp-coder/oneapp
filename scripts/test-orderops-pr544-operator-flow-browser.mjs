@@ -1,0 +1,125 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const orderOpsHtml = readFileSync(join(root, 'orderops', 'list.html'), 'utf8').replace(
+  'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+  '/customer-master/vendor/xlsx.full.min.js',
+);
+const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const server = createServer((request, response) => {
+  const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
+  if (pathname === '/orderops/list.html') {
+    response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime['.html'] });
+    return response.end(orderOpsHtml);
+  }
+  const relative = pathname === '/' ? 'orderq/index.html' : `${pathname.replace(/^\/+/, '')}${pathname.endsWith('/') ? 'index.html' : ''}`;
+  const file = normalize(resolve(root, relative));
+  if (file !== root && !file.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
+  if (!existsSync(file) || !statSync(file).isFile()) return response.writeHead(404).end('Not found');
+  response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(file).toLowerCase()] || 'application/octet-stream' });
+  response.end(readFileSync(file));
+});
+const listen = () => new Promise((resolveListen, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolveListen(server.address())); });
+const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
+const waitFor = async (check, label, timeout = 25_000) => { const end = Date.now() + timeout; while (Date.now() < end) { try { const value = await check(); if (value) return value; } catch {} await wait(80); } throw new Error(`Timed out waiting for ${label}`); };
+const browserPath = () => [process.env.CHROME_PATH, process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'), process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'), process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe')].filter(Boolean).find(existsSync) || '';
+
+class Cdp {
+  constructor(url) { this.url = url; this.socket = null; this.id = 0; this.pending = new Map(); this.events = new Map(); }
+  async connect() { this.socket = new WebSocket(this.url); this.socket.addEventListener('message', event => { const message = JSON.parse(event.data); if (message.id) { const pending = this.pending.get(message.id); if (!pending) return; this.pending.delete(message.id); return message.error ? pending.reject(new Error(message.error.message)) : pending.resolve(message.result); } (this.events.get(message.method) || []).forEach(listener => listener(message.params)); }); await new Promise((resolveOpen, reject) => { this.socket.addEventListener('open', resolveOpen, { once: true }); this.socket.addEventListener('error', reject, { once: true }); }); }
+  send(method, params = {}) { const id = ++this.id; return new Promise((resolveSend, reject) => { this.pending.set(id, { resolve: resolveSend, reject }); this.socket.send(JSON.stringify({ id, method, params })); }); }
+  once(method) { return new Promise((resolveEvent, reject) => { const listener = params => { clearTimeout(timer); this.events.set(method, (this.events.get(method) || []).filter(item => item !== listener)); resolveEvent(params); }; const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${method}`)), 20_000); this.events.set(method, [...(this.events.get(method) || []), listener]); }); }
+  close() { this.socket?.close(); }
+}
+const evaluate = (client, expression) => client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }).then(result => { if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; });
+const navigate = async (client, url) => { const loaded = client.once('Page.loadEventFired'); await client.send('Page.navigate', { url }); await loaded; await waitFor(() => evaluate(client, `document.readyState==='complete'`), 'page ready'); };
+const uploadInventory = client => evaluate(client, `(async()=>{const workbook=XLSX.utils.book_new();const matrix=[['회사명 : 테스트 / 창고별재고'],['사용','품목코드','단위','품목명','규격','수량','1창고','2전송','3서울','4전송','7진영','기본','전송','창고'],['Yes','P-1','BOX','부분출고 상품','BOX',20,20,'','','','','','',''],['Yes','P-2','EA','복구 상품','EA',20,20,'','','','','','','']];XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(matrix),'재고현황');const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});const transfer=new DataTransfer();transfer.items.add(new File([bytes],'PR544_창고별재고.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const input=document.querySelector('#inventoryInput');Object.defineProperty(input,'files',{configurable:true,value:transfer.files});input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+const analyze = async client => {
+  await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'analysis readiness');
+  await evaluate(client, `document.querySelector('#analyzeButton').click()`);
+  await waitFor(() => evaluate(client, `!document.querySelector('#shipmentExecution').hidden`), 'shipment execution');
+};
+
+let browserProcess; let client;
+const profile = join(tmpdir(), `oneapp-pr544-operator-flow-${Date.now()}`);
+try {
+  const address = await listen();
+  const executable = browserPath();
+  assert.ok(executable, 'Chrome/Edge is required');
+  mkdirSync(profile, { recursive: true });
+  browserProcess = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore', windowsHide: true });
+  const portFile = join(profile, 'DevToolsActivePort');
+  const debugPort = await waitFor(() => existsSync(portFile) ? readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] : '', 'browser debug port');
+  const target = await waitFor(async () => { const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`); return response.ok ? (await response.json()).find(item => item.type === 'page') : null; }, 'browser target');
+  client = new Cdp(target.webSocketDebuggerUrl); await client.connect(); await client.send('Page.enable'); await client.send('Runtime.enable');
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  await navigate(client, `${origin}/orderq/index.html?view=query`);
+  const operationsMenu = await evaluate(client, `(()=>{const details=document.querySelector('.operations-tools');details.querySelector('summary').click();return {open:details.open,links:[...details.querySelectorAll('nav a')].map(link=>link.textContent.trim()),primary:document.querySelector('.top-actions>a.btn.primary')?.textContent.trim()}})()`);
+  assert.equal(operationsMenu.open, true);
+  assert.equal(operationsMenu.links.length, 4);
+  assert.equal(operationsMenu.primary, '+ 주문서 입력');
+  await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-orderq-pre-m1-v6');request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction(['orders','orderItems','orderEvents'],'readwrite');const orders=[{orderId:'ORD-PARTIAL',orderNo:'20260908-001',itemId:'OI-PARTIAL',itemCode:'P-1',itemName:'부분출고 상품',quantity:10},{orderId:'ORD-RECOVERY',orderNo:'20260908-002',itemId:'OI-RECOVERY',itemCode:'P-2',itemName:'복구 상품',quantity:5}];orders.forEach((entry,index)=>{tx.objectStore('orders').put({orderId:entry.orderId,orderNo:entry.orderNo,orderDate:'2026-09-08',customerId:'CUS-'+index,customerName:index?'복구상사':'부분상사',warehouseId:'WH-1',warehouseCode:'88',warehouseName:'본창고',assigneeName:'작업자',orderStatus:'ORDER',adminStatus:'CHECKED',opsStatus:'ACTIVE',sourceType:'SMART_INPUT',inputChannel:'SMART_INPUT',revision:1,createdAt:'2026-09-08T00:00:00.000Z',updatedAt:'2026-09-08T00:00:00.000Z'});tx.objectStore('orderItems').put({orderItemId:entry.itemId,orderId:entry.orderId,lineNo:1,sourceLineKey:'SOURCE-'+index,productId:entry.itemCode,itemCode:entry.itemCode,itemName:entry.itemName,specification:index?'EA':'BOX',finalQuantity:entry.quantity,rawQuantity:entry.quantity,finalUnit:index?'EA':'BOX',rawUnit:index?'EA':'BOX',matchStatus:'MATCHED'});tx.objectStore('orderEvents').put({eventId:'EVENT-'+index,orderId:entry.orderId,revision:1,eventType:'ORDER_CREATED',createdAt:'2026-09-08T00:00:00.000Z',detail:{}})});tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)}})`);
+
+  await navigate(client, `${origin}/orderops/list.html`);
+  await waitFor(() => evaluate(client, `[...document.querySelector('#orderQCandidateSelect').options].some(option=>option.value==='ORD-PARTIAL')`), 'general-entry saved order candidates');
+  await evaluate(client, `(()=>{const search=document.querySelector('#orderQCandidateSearch');search.value='복구상사';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+  assert.deepEqual(await waitFor(async () => { const values = await evaluate(client, `[...document.querySelector('#orderQCandidateSelect').options].map(option=>option.value).filter(Boolean)`); return values.length === 1 ? values : null; }, 'saved-order search'), ['ORD-RECOVERY']);
+  await evaluate(client, `(()=>{const search=document.querySelector('#orderQCandidateSearch');search.value='';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+  await waitFor(() => evaluate(client, `[...document.querySelector('#orderQCandidateSelect').options].some(option=>option.value==='ORD-PARTIAL')`), 'cleared saved-order search');
+  const initial = await evaluate(client, `(()=>{const select=document.querySelector('#orderQCandidateSelect');select.value='ORD-PARTIAL';select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#orderQCandidateLoadButton').click();return {analyzeDisabled:document.querySelector('#analyzeButton').disabled,title:document.querySelector('#orderQSourcePicker strong').textContent}})()`);
+  assert.equal(initial.analyzeDisabled, true, '창고재고 Excel 없이는 분석할 수 없어야 한다.');
+  assert.equal(initial.title, '저장 주문 선택');
+  await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-001')`), 'selected saved order source');
+  assert.equal(await evaluate(client, `document.querySelector('#analyzeButton').disabled`), true, '저장 주문을 선택해도 창고재고 Excel은 필수다.');
+  await uploadInventory(client);
+  await analyze(client);
+  await evaluate(client, `document.querySelector('#ordersDrop').click()`);
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'worktable actual shipment input');
+  const handoff = await evaluate(client, `(()=>{const work=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');work.value='6';work.dispatchEvent(new Event('change',{bubbles:true}));const confirm=document.querySelector('[data-shipment-line="OI-PARTIAL"]');confirm.querySelector('[data-shipment-reason]').value='부분 출고';confirm.querySelector('[data-shipment-reason]').dispatchEvent(new Event('change',{bubbles:true}));return {work:work.value,confirm:confirm.querySelector('[data-shipped-quantity]').value,headers:[...document.querySelectorAll('.shipment-execution__table th')].map(node=>node.textContent.trim())}})()`);
+  assert.equal(handoff.work, '6');
+  assert.equal(handoff.confirm, '6', '작업표 실제 출고수량이 확정표에 전달되어야 한다.');
+  assert.deepEqual(handoff.headers.slice(2, 6), ['주문수량', '기출고', '남은 주문수량', '이번 실제 출고수량']);
+  await evaluate(client, `document.querySelector('#shipmentConfirmButton').click()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#shipmentResultHistory').textContent.includes('확정')&&document.querySelector('[data-shipment-line="OI-PARTIAL"] [data-shipped-quantity]').value==='4'`), 'partial shipment remaining quantity');
+  const partial = await evaluate(client, `(async()=>{const adapter=await import('/orderops/shipment-result-read-adapter.js?pr544');const result=await adapter.readShipmentResultsByOrder('ORD-PARTIAL');return {net:result.netByOrderItem['OI-PARTIAL'],status:result.shipmentStatus,remaining:document.querySelector('[data-shipment-line="OI-PARTIAL"] td:nth-child(5)').textContent.trim()}})()`);
+  assert.deepEqual(partial, { net: 6, status: 'PARTIAL', remaining: '4 BOX' });
+  await navigate(client, `${origin}/orderq/index.html?view=query&focus=ORD-PARTIAL`);
+  const queryStatus = () => evaluate(client, `(()=>{const headers=[...document.querySelectorAll('.document-list thead th')];const index=headers.findIndex(header=>header.textContent.trim()==='출고상태');return document.querySelector('[data-order-id="ORD-PARTIAL"]')?.children[index]?.textContent.trim()||''})()`);
+  assert.equal(await waitFor(async () => (await queryStatus()) === '부분출고' ? '부분출고' : '', 'ORDER Q partial shipment status'), '부분출고');
+
+  await navigate(client, `${origin}/orderops/list.html?orderId=ORD-RECOVERY`);
+  await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-002')`), 'recovery order source');
+  await uploadInventory(client);
+  await analyze(client);
+  await evaluate(client, `document.querySelector('#ordersDrop').click()`);
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-RECOVERY"]'))`), 'recovery worktable input');
+  await evaluate(client, `(()=>{const work=document.querySelector('[data-shipment-draft-line="OI-RECOVERY"]');work.value='2';work.dispatchEvent(new Event('change',{bubbles:true}));const reason=document.querySelector('[data-shipment-line="OI-RECOVERY"] [data-shipment-reason]');reason.value='작업 유지 사유';reason.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+  await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-orderq-pre-m1-v6');request.onsuccess=()=>{const db=request.result;const tx=db.transaction(['orders','orderItems'],'readwrite');const order=tx.objectStore('orders').get('ORD-RECOVERY');order.onsuccess=()=>{order.result.revision=2;order.result.updatedAt='2026-09-08T02:00:00.000Z';tx.objectStore('orders').put(order.result)};const item=tx.objectStore('orderItems').get('OI-RECOVERY');item.onsuccess=()=>{item.result.finalQuantity=6;tx.objectStore('orderItems').put(item.result)};tx.oncomplete=()=>{db.close();const channel=new BroadcastChannel('oneapp-orderq-orders');channel.postMessage({orderId:'ORD-RECOVERY'});channel.close();resolve(true)};tx.onerror=()=>reject(tx.error)}})`);
+  await waitFor(() => evaluate(client, `!document.querySelector('#shipmentSourceActions').hidden&&document.querySelector('#shipmentConfirmButton').disabled`), 'changed-order recovery choices');
+  const retainedBefore = await evaluate(client, `(()=>{const row=document.querySelector('[data-shipment-line="OI-RECOVERY"]');return {quantity:row.querySelector('[data-shipped-quantity]').value,reason:row.querySelector('[data-shipment-reason]').value}})()`);
+  assert.deepEqual(retainedBefore, { quantity: '2', reason: '작업 유지 사유' });
+  await evaluate(client, `document.querySelector('#shipmentKeepWorkButton').click()`);
+  assert.equal(await evaluate(client, `document.querySelector('#shipmentConfirmButton').disabled&&document.querySelector('#shipmentSourceActionMessage').textContent.includes('현재 작업을 유지')`), true);
+  await evaluate(client, `document.querySelector('#shipmentApplyLatestButton').click()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#shipmentExecutionStatus').textContent.includes('동결 Revision 2')&&document.querySelector('#shipmentSourceActions').hidden`), 'latest order applied');
+  const retainedAfter = await evaluate(client, `(()=>{const row=document.querySelector('[data-shipment-line="OI-RECOVERY"]');return {quantity:row.querySelector('[data-shipped-quantity]').value,reason:row.querySelector('[data-shipment-reason]').value,max:row.querySelector('[data-shipped-quantity]').max,confirmDisabled:document.querySelector('#shipmentConfirmButton').disabled,url:location.search}})()`);
+  assert.deepEqual(retainedAfter, { quantity: '2', reason: '작업 유지 사유', max: '6', confirmDisabled: false, url: '?orderId=ORD-RECOVERY' });
+
+  await navigate(client, `${origin}/orderops/list.html?orderId=DOES-NOT-EXIST`);
+  const notFound = await waitFor(async () => { const value = await evaluate(client, `(()=>({notice:document.querySelector('#orderQSourceNotice').textContent,href:document.querySelector('#orderQReturnLink').getAttribute('href'),orders:document.querySelector('#ordersFileName').textContent}))()`); return value.notice.includes('주문을 찾을 수 없습니다') ? value : null; }, 'not-found recovery notice');
+  assert.match(notFound.href, /orderq\/index\.html\?view=query&focus=DOES-NOT-EXIST/);
+  assert.equal(notFound.orders, '파일을 선택하세요');
+
+  console.log('PR #544 browser acceptance: general picker, Excel gate, 10→6→4 partial shipment, query status, and changed-order recovery passed.');
+} finally {
+  client?.close();
+  browserProcess?.kill();
+  server.close();
+}
