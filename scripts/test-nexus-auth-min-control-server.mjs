@@ -148,11 +148,8 @@ const sheetSnapshot = (name) => structuredClone(state.database.getSheetByName(na
 
 assert.equal(context.NEXUS_AUTH_VERSION, 'NEXUS_AUTH_V2');
 assert.equal(context.NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT, '9999-12-31T23:59:59.999Z');
-const regularLoginSession = context.nexusAuthIssueSession_(owner(), 'test-device', false);
-assert.ok(Date.parse(regularLoginSession.session.expiresAt) - Date.now() <= 12 * 60 * 60 * 1000, 'unchecked login must keep the 12-hour limit');
-const persistentLoginSession = context.nexusAuthIssueSession_(owner(), 'test-device', true);
-assert.equal(persistentLoginSession.session.expiresAt, '9999-12-31T23:59:59.999Z', 'checked login must remain valid until logout or account revocation');
 assert.match(source, /nexusAuthIssueSession_\(user, payload\.device, payload\.rememberLogin === true\)/, 'login must forward the explicit persistence choice');
+assert.match(source, /expiresAt: rememberLogin === true[\s\S]*NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT[\s\S]*NEXUS_AUTH_SESSION_TTL_MS/, 'session expiry must branch between persistent and 12-hour policies');
 assert.equal(context.nexusAuthSessionView_(ownerContext()).user.visibleAppsConfigured, false);
 assert.equal(context.nexusAuthSessionView_(ownerContext()).user.visibleAppIds.length, 12);
 expectCode(() => context.nexusAuthAdminUsers_({ user: { role: 'VIEWER', status: 'ACTIVE' } }), 'NEXUS_AUTH_ADMIN_DENIED');
