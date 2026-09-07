@@ -13,6 +13,7 @@ var NEXUS_AUTH_APP_CONTEXT_VERSION = 'NEXUS_APP_CONTEXT_V1';
 var NEXUS_AUTH_SESSION_CONTEXT_VERSION = 'NEXUS_SESSION_CONTEXT_V1';
 var NEXUS_AUTH_DEFAULT_UPSTREAM_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
 var NEXUS_AUTH_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+var NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT = '9999-12-31T23:59:59.999Z';
 var NEXUS_AUTH_CLIENT_CONTEXT_TTL_MS = 5 * 60 * 1000;
 var NEXUS_AUTH_INVITE_TTL_MS = 72 * 60 * 60 * 1000;
 var NEXUS_AUTH_RECOVERY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -253,7 +254,7 @@ function nexusAuthLogin_(payload) {
   }
   nexusAuthRateClear_(loginId);
   nexusAuthAudit_('LOGIN_SUCCESS', user.userId, user.userId, 'SUCCESS', {});
-  return nexusAuthIssueSession_(user, payload.device);
+  return nexusAuthIssueSession_(user, payload.device, payload.rememberLogin === true);
 }
 
 function nexusAuthLogout_(payload) {
@@ -269,12 +270,14 @@ function nexusAuthLogout_(payload) {
   return { loggedOut: true };
 }
 
-function nexusAuthIssueSession_(user, device) {
+function nexusAuthIssueSession_(user, device, rememberLogin) {
   var rawToken = nexusAuthRandomToken_(48);
   var now = new Date();
   var session = {
     sessionDigest: nexusAuthSha256_(rawToken), userId: user.userId,
-    issuedAt: now.toISOString(), expiresAt: new Date(now.getTime() + NEXUS_AUTH_SESSION_TTL_MS).toISOString(),
+    issuedAt: now.toISOString(), expiresAt: rememberLogin === true
+      ? NEXUS_AUTH_PERSISTENT_SESSION_EXPIRES_AT
+      : new Date(now.getTime() + NEXUS_AUTH_SESSION_TTL_MS).toISOString(),
     lastSeenAt: now.toISOString(), revokedAt: '', device: nexusAuthText_(device).slice(0, 240)
   };
   nexusAuthAppend_(NEXUS_AUTH_SHEETS.SESSIONS, session);

@@ -30,7 +30,7 @@ const normalizeBundle = (bundle) => {
   const session = bundle?.session;
   const expiresAt = Date.parse(session?.expiresAt || '');
   if (!token || token.length > 4096 || !session?.user || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
-  return { token, session };
+  return { token, session, rememberLogin: bundle?.rememberLogin === true };
 };
 
 const bundleExpiry = (bundle) => Date.parse(bundle?.session?.expiresAt || '') || 0;

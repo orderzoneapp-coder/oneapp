@@ -59,7 +59,8 @@ assert.match(homeHtml, /<footer class="nexus-footer">원앱 \| NEXUS 사내 업�
 assert.doesNotMatch(homeHtml, /nexus-company-card|companyStatus|companyName|companySummary|companyAddress|companyNotice|companyEditLink|READY|ERROR/, 'home must not retain company-card or company-state DOM');
 assert.doesNotMatch(homeHtml, /사업자번호|대표자|주소|연락처/, 'the Footer must not expose company fields');
 assert.doesNotMatch(homeSource, /company-transport|callCompanyGateway|company\.profile_read|COMPANY_SNAPSHOT|refreshCompany|revision/i, 'home startup must remain independent from the company service');
-assert.doesNotMatch(homeSource, /localStorage/, 'home authentication state must not be persisted in localStorage');
+assert.match(homeSource, /if \(bundle\.rememberLogin\)[\s\S]*localStorage\.setItem\(PERSISTENT_STORAGE_KEY/, 'home authentication may persist only after explicit remember-login consent');
+assert.doesNotMatch(homeSource, /localStorage\.(?:setItem|getItem)[^\n]+VISIBILITY_STORAGE_KEY/, 'company and visibility state must not be persisted with authentication');
 
 assert.match(companyHtml, /nexus-ui-theme-init\.js\?v=1\.3\.1/, 'company management must consume the current common UI contract');
 assert.match(companyHtml, /company\.js\?v=1\.0\.1/, 'company management must cache-bust the app-local header correction');

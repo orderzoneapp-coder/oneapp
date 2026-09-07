@@ -836,3 +836,32 @@ body.nexus-home-page .nexus-home-theme__switch:focus-visible {
     min-height: 104px;
   }
 }
+
+
+.nexus-login-card .nexus-remember-login {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  margin-top: 2px;
+  color: var(--nexus-label-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.nexus-login-card .nexus-remember-login input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  accent-color: var(--nexus-accent);
+  cursor: pointer;
+}
+
+.nexus-login-card .nexus-remember-login span {
+  font-size: 13px;
+  font-weight: 650;
+}
