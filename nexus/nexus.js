@@ -3,6 +3,7 @@
 
   const AUTH_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwIaouo6kzff1J3H3B0K5bWuAEJAcp4K21tyEkL2BuM-SiNsPDGGYVBEXIkBeUGwp4i/exec';
   const STORAGE_KEY = 'oneapp.nexus.home.session.v1';
+  const PERSISTENT_STORAGE_KEY = 'oneapp.nexus.home.persistent-session.v1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const THEME_CHANGE_EVENT = 'nexus-ui:theme-change';
@@ -135,35 +136,43 @@
     const session = bundle?.session;
     const expiresAt = Date.parse(session?.expiresAt || '');
     if (!token || !session?.user || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
-    return { token, session };
+    return { token, session, rememberLogin: bundle?.rememberLogin === true };
   };
 
   const clearCachedSession = () => {
     try {
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(VISIBILITY_STORAGE_KEY);
+      localStorage.removeItem(PERSISTENT_STORAGE_KEY);
     } catch {}
   };
 
-  const saveCachedSession = (token, session) => {
+  const saveCachedSession = (token, session, rememberLogin = false) => {
+    const bundle = { token, session, rememberLogin: rememberLogin === true };
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ token, session }));
-    } catch {}
-  };
-
-  const readCachedSession = () => {
-    try {
-      const cached = normalizeSessionBundle(JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null'));
-      if (!cached) {
-        clearCachedSession();
-        return null;
+      if (bundle.rememberLogin) {
+        localStorage.setItem(PERSISTENT_STORAGE_KEY, JSON.stringify(bundle));
+        sessionStorage.removeItem(STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(bundle));
+        localStorage.removeItem(PERSISTENT_STORAGE_KEY);
       }
-      return cached;
-    } catch {
-      clearCachedSession();
-      return null;
-    }
+    } catch {}
   };
+
+  const readStoredBundle = (storage, key, rememberLogin) => {
+    try {
+      const cached = normalizeSessionBundle(JSON.parse(storage.getItem(key) || 'null'));
+      if (cached) return { ...cached, rememberLogin };
+      storage.removeItem(key);
+    } catch {
+      try { storage.removeItem(key); } catch {}
+    }
+    return null;
+  };
+
+  const readCachedSession = () => readStoredBundle(sessionStorage, STORAGE_KEY, false)
+    || readStoredBundle(localStorage, PERSISTENT_STORAGE_KEY, true);
 
   const isSessionBridgeWorker = (worker) => {
     const scriptUrl = cleanText(worker?.scriptURL);
@@ -217,7 +226,7 @@
     if (message.type === SESSION_BRIDGE_MESSAGE.UPDATED) {
       const shared = normalizeSessionBundle(message.bundle);
       if (!shared) return;
-      saveCachedSession(shared.token, shared.session);
+      saveCachedSession(shared.token, shared.session, shared.rememberLogin);
       showHome(shared.session);
       return;
     }
@@ -434,7 +443,7 @@
       const result = await callAuth('nexus_auth_session', { sessionToken: cached.token });
       const session = sessionFromResponse(result);
       if (!session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-      saveCachedSession(cached.token, session);
+      saveCachedSession(cached.token, session, cached.rememberLogin);
       void publishSession({ token: cached.token, session });
       showHome(session);
       sessionNotice.textContent = '';
@@ -449,7 +458,7 @@
     }
   };
 
-  const login = async (loginId, password) => {
+  const login = async (loginId, password, rememberLogin) => {
     const normalizedLoginId = cleanText(loginId).toLowerCase();
     const challenge = await callAuth('nexus_auth_challenge', { loginId: normalizedLoginId });
     const iterations = Number(challenge?.passwordKdf?.iterations || 310000);
@@ -457,14 +466,15 @@
     const result = await callAuth('nexus_auth_login', {
       loginId: normalizedLoginId,
       passwordVerifier: verifier,
+      rememberLogin: rememberLogin === true,
       device: navigator.userAgent,
     });
     const session = sessionFromResponse(result);
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-    saveCachedSession(token, session);
-    void publishSession({ token, session });
-    return { token, session };
+    saveCachedSession(token, session, rememberLogin);
+    void publishSession({ token, session, rememberLogin });
+    return { token, session, rememberLogin };
   };
 
   const activate = async (loginId, activationCode, password) => {
@@ -481,19 +491,20 @@
     const session = sessionFromResponse(result);
     const token = cleanText(result?.sessionToken);
     if (!token || !session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
-    saveCachedSession(token, session);
-    void publishSession({ token, session });
-    return { token, session };
+    saveCachedSession(token, session, false);
+    void publishSession({ token, session, rememberLogin: false });
+    return { token, session, rememberLogin: false };
   };
 
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const loginId = document.getElementById('loginId').value;
     const password = document.getElementById('password').value;
+    const rememberLogin = document.getElementById('rememberLogin').checked;
     loginButton.disabled = true;
     setLoginMessage('로그인 정보를 확인하고 있습니다.', true);
     try {
-      const authenticated = await login(loginId, password);
+      const authenticated = await login(loginId, password, rememberLogin);
       loginForm.reset();
       setLoginMessage('');
       showHome(authenticated.session);
