@@ -20,9 +20,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
-assert.match(html, /smartinput\.css\?v=0\.9\.12/);
-assert.match(html, /smartinput-contract\.js\?v=0\.6\.1/);
-assert.match(html, /smartinput\.js\?v=0\.11\.39/);
+assert.match(html, /smartinput\.css\?v=0\.9\.13/);
+assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
+assert.match(html, /smartinput\.js\?v=0\.11\.40/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -42,7 +42,7 @@ assert.match(html, /<th class="sequence-column sequence-select-column"[^>]*>[\s\
 assert.doesNotMatch(html, /class="col-select"|class="select-column"/, 'the standalone selection column must stay removed');
 assert.doesNotMatch(html, /data-column="productSearch"|class="col-product-search"|>상품 검색<\/th>/,
   'the worktable must not restore a standalone product-search column');
-assert.match(html, /class="product-code-search-heading" data-column="itemCode"[^>]*>품목코드<\/th>/,
+assert.match(html, /class="product-code-search-heading" data-column="itemCode"[^>]*>코드<\/th>/,
   'itemCode must be the visible product-search entry heading');
 assert.match(appSource, /data-column="itemCode" class="product-code-search-cell product-search-cell"[\s\S]*data-field="itemCode"[\s\S]*placeholder="코드·품명·검색어"/,
   'itemCode cells must expose code, name, and keyword product search');

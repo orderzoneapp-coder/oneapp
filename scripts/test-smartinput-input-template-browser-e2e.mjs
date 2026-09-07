@@ -161,7 +161,7 @@ try {
   await click(client, '[data-table-view="input"]');
   await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#mappingWorktable').hidden`, 'configured input-column view');
   const inputColumnView = await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(node=>node.textContent.trim()),rows:[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>({id:row.dataset.rowId,quantity:row.querySelector('[data-field="quantity"]')?.value}))}))()`);
-  assert.ok(inputColumnView.headers.indexOf('규격') < inputColumnView.headers.indexOf('수량'),
+  assert.ok(inputColumnView.headers.indexOf('규격(기본)') < inputColumnView.headers.indexOf('수량'),
     'input view must use configured SmartInput order even when the source puts quantity before specification');
   assert.deepEqual(inputColumnView.rows.map(row => row.quantity), ['0', '-1.5'], 'input view must retain zero and negative values');
   await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
@@ -174,13 +174,54 @@ try {
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.inputMapping.signature`), positionalSignature,
     'table view switching must not recalculate the positional signature');
 
-  for (const [column, fieldId] of [[0, 'voucher.order.line.productCode'], [1, 'voucher.order.line.productName'], [2, 'voucher.order.line.quantity']]) {
-    await click(client, `[data-open-field-mapping="${column}"]`);
-    await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="${fieldId}"]'))`, `review mapping column ${column + 1}`);
-    await click(client, `.field-mapping-dialog [data-mapping-target="${fieldId}"]`);
-  }
+  await click(client, '[data-open-field-mapping="0"]');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-recommendation] [data-approve-recommendation]'))`, 'recommended mapping approval');
+  assert.match(
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-recommendation]').textContent`),
+    /추천 항목 · 승인 전.*추천 승인 · 바로 확정/s,
+    'a recommendation must be visually distinct and explain that approval confirms it immediately'
+  );
+  assert.equal(
+    await evaluate(client, `document.querySelector('.field-mapping-dialog [data-mapping-target="voucher.order.line.productCode"]').dataset.recommended`),
+    'true',
+    'the recommended target must be marked separately in the mapping result list'
+  );
+  await click(client, '.field-mapping-dialog [data-approve-recommendation]');
+  await expr(client, `document.querySelector('[data-mapping-column="0"]').dataset.mappingState==='MAPPED'`, 'immediate recommendation confirmation');
 
-  await click(client, '[data-open-field-mapping="3"]');
+  await expr(client, `['READY','EMPTY'].includes(document.querySelector('#inputMappingStatus').dataset.templateStoreStatus)`, 'input-template store readiness before guided validation');
+  await click(client, '#inputTemplateSaveButton');
+  await wait(500);
+  const invalidMappingDiagnostic = await evaluate(client, `({dialog:Boolean(document.querySelector('.field-mapping-dialog[open]')),headers:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-column]')].map(node=>Number(node.dataset.mappingColumn)),summary:document.querySelector('#inputMappingStatusSummary').textContent,toast:document.querySelector('#toast').textContent,exceptions:window.__smartInputRuntimeErrors||[]})`);
+  assert.equal(invalidMappingDiagnostic.dialog, true, `first invalid mapping must open after template-save validation: ${JSON.stringify(invalidMappingDiagnostic)}`);
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#mappingTableHeaders [data-mapping-column]')].map(node=>Number(node.dataset.mappingColumn))`), [0, 1, 2, 3],
+    'guided validation must preserve source-table context');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#mappingTableHeaders [data-validation-error]')].map(node=>Number(node.dataset.mappingColumn))`), [1, 2, 3],
+    'guided validation must highlight every recommended or undecided source column');
+  assert.match(
+    await evaluate(client, `document.querySelector('#mappingValidationMessage').textContent`),
+    /추천 매핑을 승인하거나 다른 항목을 선택하세요/,
+    'guided validation must explain why the recommended mapping cannot be saved yet'
+  );
+  await click(client, '.field-mapping-dialog [data-close]');
+
+  await click(client, '[data-open-field-mapping="1"]');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '품목명');
+  await evaluate(client, `(() => {const search=document.querySelector('.field-mapping-dialog [data-mapping-search]');search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `document.activeElement?.matches('.field-mapping-option[data-keyboard-active="true"]')`, 'keyboard focus on first mapping result');
+  assert.equal(
+    await evaluate(client, `document.activeElement.dataset.mappingTarget`),
+    'voucher.order.line.productName',
+    'Enter in the mapping search must focus the best matching result'
+  );
+  await evaluate(client, `(() => {document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await expr(client, `JSON.stringify([...document.querySelectorAll('#mappingTableHeaders [data-validation-error]')].map(node=>Number(node.dataset.mappingColumn)))==='[2,3]'`, 'keyboard mapping result confirmation and guided-validation refresh');
+
+  await expr(client, `document.querySelector('.field-mapping-dialog[open] .field-mapping-current span')?.textContent==='3열'`, 'guided validation advance to column 3');
+  await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="voucher.order.line.quantity"]'))`, 'review mapping column 3');
+  await click(client, '.field-mapping-dialog [data-mapping-target="voucher.order.line.quantity"]');
+
+  await expr(client, `document.querySelector('.field-mapping-dialog[open] .field-mapping-current span')?.textContent==='4열'`, 'guided validation advance to column 4');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-unmap]'))`, 'field mapping modal');
   await input(client, '.field-mapping-dialog [data-mapping-search]', '거 래처명');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-target="customer"]'))`, 'customer-name mapping target search');
@@ -212,6 +253,8 @@ try {
     'reference refresh from the mapping dialog must preserve source evidence, signature and the working copy');
   await click(client, '.field-mapping-dialog [data-mapping-target="customer"]');
   await expr(client, `document.querySelector('[data-mapping-column="3"]').dataset.mappingState==='MAPPED'`, 'manual customer-name mapping');
+  await expr(client, `Boolean(document.querySelector('dialog[open] input[name="templateName"]'))`, 'automatic template-save resume after guided validation');
+  await click(client, 'dialog[open] [data-close]');
   assert.equal(
     await evaluate(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.find(row=>row.rowId==='source-3').rowCustomerName`),
     '확인',

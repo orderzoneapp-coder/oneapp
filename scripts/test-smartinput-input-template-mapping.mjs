@@ -53,6 +53,11 @@ assert.equal(fresh.mappings.every(mapping => mapping.state === DECISION.RECOMMEN
   'unique exact source/setting labels may be recommendations before explicit template save');
 assert.equal(validateTemplateDraft(fresh, targets).valid, false,
   'a changed or new workbook must require explicit review of every recommended column');
+assert.deepEqual(
+  validateTemplateDraft(fresh, targets).issues.map(issue => issue.code),
+  Array(fresh.mappings.length).fill('RECOMMENDATION_APPROVAL_REQUIRED'),
+  'recommended columns must report that explicit approval is required'
+);
 fresh = confirmRecommendations(fresh);
 assert.equal(validateTemplateDraft(fresh, targets).valid, true);
 
@@ -357,6 +362,16 @@ assert.match(
   smartInputSource,
   /createTemplateRecord\(\{ companyId: state\.companyId, voucherMode: state\.draft\.activeMode, signature: template\.signature, headers: template\.headers, mappings \}, name, allTargets, template\)/,
   'input-template editing must validate against the full target registry so unchanged hidden legacy targets remain saveable'
+);
+assert.match(
+  smartInputSource,
+  /RECOMMENDATION_APPROVAL_REQUIRED.*추천 매핑을 승인하거나 다른 항목을 선택하세요/s,
+  'guided validation must explain that recommended mappings require explicit approval'
+);
+assert.match(
+  smartInputSource,
+  /const validation = validateTemplateDraft\(session, inputMappingDefinitions\(\)\);[\s\S]*startMappingValidation\(validation\.issues, 'NEW_TEMPLATE'\)/,
+  'new-template save must validate recommended and undecided columns without silently converting them to unmapped'
 );
 assert.match(smartInputSource, /startMappingValidation\(validation\.issues, 'NEW_TEMPLATE'\)/,
   'new-template save failures must enter guided validation mode');

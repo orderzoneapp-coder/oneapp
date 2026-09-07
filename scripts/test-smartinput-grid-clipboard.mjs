@@ -155,7 +155,10 @@ assert.equal(unevenRows.rowErrors[0].reason, 'COLUMN_COUNT_MISMATCH');
 
 const html = fs.readFileSync('smartinput/index.html', 'utf8');
 const app = fs.readFileSync('smartinput/smartinput.js', 'utf8');
-for (const label of ['품목코드', '품목명', '규격', '수량', '단위', '단가', '메모']) assert.match(html, new RegExp(label));
+const contractSource = fs.readFileSync('smartinput/smartinput-contract.js', 'utf8');
+for (const label of ['코드', '품명', '규격(기본)', '수량', '단가', '공급가', '간단설명(품위)', '지시사항', '출고가 (공지)', '판매no.']) {
+  assert.match(`${html}\n${contractSource}`, new RegExp(label.replace(/[()]/g, '\\$&')));
+}
 assert.match(html, /id="inputRows"/);
 assert.match(html, /id="sourceFileButton"[^>]*data-method="excel"[^>]*>[^<]*<span[^>]*>＋<\/span> Excel 파일<\/button>/,
   'the source input view must expose the existing file input through a visible Excel file button');

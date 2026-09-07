@@ -48,16 +48,16 @@
     Object.freeze({ id: 'transactionType', label: '거래유형', required: false })
   ]);
   const VOUCHER_COLUMN_DEFINITIONS = Object.freeze([
-    productField('itemCode', '품목코드', 'ITEM', { required: true, masterAliases: ['itemCode', 'productCode', '코드', '품목코드', '상품코드'] }),
-    productField('itemName', '품목(상품명)', 'ITEM', { masterAliases: ['itemName', 'productName', '품목명', '상품명', '제품명', '품명'] }),
-    productField('specification', '규격', 'ITEM', { masterAliases: ['specification', 'spec', '규격', '규격명'] }),
+    productField('itemCode', '코드', 'ITEM', { required: true, masterAliases: ['itemCode', 'productCode', '코드', '품목코드', '상품코드'] }),
+    productField('itemName', '품명', 'ITEM', { masterAliases: ['itemName', 'productName', '품목명', '상품명', '제품명', '품명'] }),
+    productField('specification', '규격(기본)', 'ITEM', { masterAliases: ['specification', 'spec', '규격', '규격명', '규격(기본)'] }),
     productField('quantity', '수량', 'QUANTITY', { valueType: 'NUMBER' }),
     productField('unit', '단위(상품구성)', 'ITEM', { masterAliases: ['finalUnit', 'unit', '업무단위', '단위', '상품구성'] }),
     productField('unitPrice', '단가', 'PRICE', { valueType: 'NUMBER', inputAliases: ['견적단가', '판매단가', '주문단가'] }),
-    productField('supplyAmount', '공급가액', 'PRICE', { valueType: 'NUMBER', editable: false }),
-    productField('memo', '메모', 'ADDITIONAL', { inputAliases: ['지시사항', '비고', '요청사항'] }),
+    productField('supplyAmount', '공급가', 'PRICE', { valueType: 'NUMBER', editable: false }),
+    productField('memo', '지시사항', 'ADDITIONAL', { inputAliases: ['메모', '지시사항', '비고', '요청사항'] }),
     productField('description', '적요(직원)', 'ADDITIONAL', { inputAliases: ['적요', '직원적요'] }),
-    productField('noticePrice', '공지단가', 'PRICE', { valueType: 'NUMBER' })
+    productField('noticePrice', '출고가 (공지)', 'PRICE', { valueType: 'NUMBER', inputAliases: ['공지단가', '출고가'] })
   ]);
   const voucherField = id => VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === id);
   const PRODUCT_FIELD_DEFINITIONS = Object.freeze([
@@ -76,7 +76,7 @@
     productField('productGroup1', '품목그룹1', 'ITEM', { masterAliases: ['productGroup1', '품목그룹1', '1그룹명'] }),
     productField('productGroup2', '품목그룹2', 'ITEM', { masterAliases: ['productGroup2', '품목그룹2', '2그룹명'] }),
     productField('productGroup3', '품목그룹3', 'ITEM', { masterAliases: ['productGroup3', '품목그룹3', '3그룹명'] }),
-    productField('productDescription', '상품설명', 'ITEM', { masterAliases: ['productDescription', '상품설명', '간단설명'] }),
+    productField('productDescription', '간단설명(품위)', 'ITEM', { masterAliases: ['productDescription', '상품설명', '간단설명', '품위', '간단설명(품위)'] }),
     productField('qualityInspectionType', '품질검사유형', 'ITEM', { masterAliases: ['qualityInspectionType', '품질검사유형'] }),
     productField('qualityInspectionMethod', '품질검사방법', 'ITEM', { masterAliases: ['qualityInspectionMethod', '품질검사방법'] }),
 
@@ -175,7 +175,7 @@
     productField('rowVoucherDate', '전표일자', 'ADDITIONAL', { inputAliases: ['주문일자', '구매일자', '판매일자'] }),
     productField('rowDeliveryDate', '배송·입출고일자', 'ADDITIONAL', { inputAliases: ['배송일자', '납품일자', '입고일자', '출고일자'] }),
     productField('rowWarehouseCode', '창고코드', 'ADDITIONAL', { inputAliases: ['출하창고코드', '입고창고코드'] }),
-    productField('rowVoucherNo', '외부전표번호', 'ADDITIONAL', { inputAliases: ['전표번호', '주문번호', '구매전표번호', '판매전표번호'] }),
+    productField('rowVoucherNo', '판매no.', 'ADDITIONAL', { inputAliases: ['외부전표번호', '전표번호', '주문번호', '구매전표번호', '판매전표번호', '판매No', '판매 No.', '판매no.'] }),
     productField('sourceDocumentKey', '원본문서키', 'ADDITIONAL'),
     productField('sourceVoucherIndex', '원본전표순번', 'ADDITIONAL', { valueType: 'NUMBER' }),
     productField('manualSplitKey', '전표분리키', 'ADDITIONAL'),
@@ -184,19 +184,34 @@
   ]);
   const ROW_FIELDS = Object.freeze(PRODUCT_FIELD_DEFINITIONS.filter(field => field.editable !== false).map(field => field.id));
   const DEFAULT_HEADER_FIELDS = Object.freeze(HEADER_FIELD_DEFINITIONS.map(field => field.id));
-  const DEFAULT_VOUCHER_COLUMNS = Object.freeze(VOUCHER_COLUMN_DEFINITIONS.map(field => field.id));
+  const DEFAULT_VOUCHER_COLUMNS = Object.freeze([
+    'itemCode',
+    'itemName',
+    'specification',
+    'quantity',
+    'unitPrice',
+    'supplyAmount',
+    'productDescription',
+    'memo',
+    'noticePrice',
+    'rowVoucherNo'
+  ]);
   const DEFAULT_HEADER_FIELDS_BY_MODE = Object.freeze(Object.fromEntries(
     MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_HEADER_FIELDS])])
   ));
   const DEFAULT_VOUCHER_COLUMNS_BY_MODE = Object.freeze(Object.fromEntries(
     MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
   ));
+  const DEFAULT_INPUT_ORDER = Object.freeze(Object.fromEntries((() => {
+    let editableOrder = 0;
+    return DEFAULT_VOUCHER_COLUMNS.map(fieldId => {
+      const field = PRODUCT_FIELD_DEFINITIONS.find(definition => definition.id === fieldId);
+      return [fieldId, field?.editable === false ? 0 : ++editableOrder];
+    });
+  })()));
   const DEFAULT_INPUT_ORDER_BY_MODE = Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [
     mode,
-    Object.freeze(Object.fromEntries(DEFAULT_VOUCHER_COLUMNS.map((fieldId, index) => [
-      fieldId,
-      VOUCHER_COLUMN_DEFINITIONS.find(field => field.id === fieldId)?.editable === false ? 0 : index + 1
-    ])))
+    DEFAULT_INPUT_ORDER
   ])));
   const ESTIMATE_NOTICE_PRICE_FIELD_IDS = Object.freeze([
     'noticePrice', 'unitPrice', 'wholesaleA', 'wholesaleB', 'outPrice',

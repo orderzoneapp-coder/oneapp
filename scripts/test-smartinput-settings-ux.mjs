@@ -119,6 +119,30 @@ const context = { window: {}, globalThis: {}, Date, Math, String, Number, Boolea
 vm.runInNewContext(contractSource, context);
 const contract = context.window.SMART_INPUT_CONTRACT;
 assert.deepEqual(Object.keys(contract.MODES), ['order', 'purchase', 'sale', 'estimate']);
+const requestedDefaultFields = [
+  ['itemCode', '코드'],
+  ['itemName', '품명'],
+  ['specification', '규격(기본)'],
+  ['quantity', '수량'],
+  ['unitPrice', '단가'],
+  ['supplyAmount', '공급가'],
+  ['productDescription', '간단설명(품위)'],
+  ['memo', '지시사항'],
+  ['noticePrice', '출고가 (공지)'],
+  ['rowVoucherNo', '판매no.']
+];
+assert.deepEqual(Array.from(contract.DEFAULT_SETTINGS.voucherColumns), requestedDefaultFields.map(([fieldId]) => fieldId),
+  'the default SmartInput fields must use the requested ten-field composition and order');
+assert.deepEqual(
+  requestedDefaultFields.map(([fieldId]) => [fieldId, contract.PRODUCT_FIELD_DEFINITIONS.find(field => field.id === fieldId)?.label]),
+  requestedDefaultFields,
+  'the default SmartInput field labels must match the requested worker-facing names'
+);
+assert.deepEqual(
+  Object.fromEntries(requestedDefaultFields.map(([fieldId]) => [fieldId, contract.DEFAULT_SETTINGS.inputOrderByMode.order[fieldId]])),
+  { itemCode: 1, itemName: 2, specification: 3, quantity: 4, unitPrice: 5, supplyAmount: 0, productDescription: 6, memo: 7, noticePrice: 8, rowVoucherNo: 9 },
+  'Enter order must follow the requested default field order while skipping the calculated supply amount'
+);
 const customWorktableOrder = ['quantity', 'itemCode', 'itemName', 'memo'];
 const normalized = contract.normalizeSettings({
   voucherColumnsByMode: {
@@ -140,8 +164,9 @@ const css = read('smartinput/smartinput.css');
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
-assert.match(html, /smartinput\.css\?v=0\.9\.12/);
-assert.match(html, /smartinput\.js\?v=0\.11\.39/);
+assert.match(html, /smartinput\.css\?v=0\.9\.13/);
+assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
+assert.match(html, /smartinput\.js\?v=0\.11\.40/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);
