@@ -1053,6 +1053,14 @@ function openInputListSearch() {
   }
   window.requestAnimationFrame(() => {
     const input = $('gridSearchInput');
+    const panel = $('inputListSearchPanel');
+    const scroller = panel.closest('.basic-action-scroll');
+    if (scroller) {
+      const panelRect = panel.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      if (panelRect.right > scrollerRect.right) scroller.scrollLeft += panelRect.right - scrollerRect.right;
+      else if (panelRect.left < scrollerRect.left) scroller.scrollLeft -= scrollerRect.left - panelRect.left;
+    }
     input.focus({ preventScroll: true });
     input.select();
   });
@@ -1152,6 +1160,7 @@ function controlTableViewButton(view) {
 function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true, includeRegistry = false } = {}) {
   const headerProjection = {
     customer: 'rowCustomerName',
+    assignee: 'assigneeName',
     deliveryDate: 'rowDeliveryDate',
     warehouse: 'rowWarehouseCode',
     transactionType: 'rowTransactionType'
@@ -2245,6 +2254,7 @@ function applyCustomer(customer, { rematch = true, mappingSource = 'MANUAL', lea
   header.customerMappingSource = mappingSource;
   $('customerInput').value = header.customerName;
   $('customerInput').dataset.customerId = header.customerId;
+  $('assigneeInput').value = header.assigneeName || '';
   $('customerHint').textContent = `${customerCode(customer) || (temporaryMeta(header.customerId) ? '임시 배송처' : '등록 거래처')} · ${mappingSource === 'CONFIRMED_ALIAS' ? '주문자명 자동 지정' : '마스터 연결됨'}`;
   applyCustomerRelationship(header);
   updateDeliveryPolicy();
@@ -4796,6 +4806,7 @@ function hydrateHeader() {
   const shopping = shoppingOrderImport();
   $('customerInput').value = header.customerName;
   $('customerInput').dataset.customerId = header.customerId;
+  $('assigneeInput').value = header.assigneeName || '';
   $('deliveryDateInput').value = shopping?.selectedDeliveryDate || (state.draft.activeMode === 'order'
     ? (header.orderDate || header.voucherDate || header.deliveryDate)
     : (state.draft.activeMode === 'estimate' ? header.deliveryDate : (header.voucherDate || header.deliveryDate)));
@@ -5110,6 +5121,7 @@ function applyMappingHeaderLocks(session = null) {
   const linkedEstimate = estimateMode && (modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP');
   const controls = [
     { id: 'customerInput', target: 'customer', baseDisabled: linkedEstimate },
+    { id: 'assigneeInput', target: 'assignee', baseDisabled: state.draft.activeMode !== 'order' },
     { id: 'deliveryDateInput', target: 'deliveryDate', baseDisabled: false },
     { id: 'warehouseInput', target: 'warehouse', baseDisabled: estimateMode },
     { id: 'transactionTypeInput', target: 'transactionType', baseDisabled: estimateMode }
@@ -5706,6 +5718,11 @@ function renderDelivery() {
   const shopping = isOrder ? shoppingOrderImport() : null;
   const delivery = modeDraft().delivery;
   const lastDelivery = isOrder ? state.draft.ui.lastDelivery : null;
+  const lastDeliveries = isOrder
+    ? (Array.isArray(state.draft.ui.lastDeliveries) && state.draft.ui.lastDeliveries.length
+      ? state.draft.ui.lastDeliveries
+      : (lastDelivery ? [lastDelivery] : []))
+    : [];
   $('deliveryTarget').textContent = shopping ? 'ORDER Q 실제 주문서' : (isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : (isSale ? '공식 판매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`))));
   $('deliveryDescription').textContent = isOrder
     ? (shopping ? '실제 ORDER Q 원장의 동일 주문 개수를 다시 확인한 뒤 초과 신규 후보만 저장합니다.' : 'ORDER Q vNext 저장소에 먼저 기록합니다.')
@@ -5718,6 +5735,17 @@ function renderDelivery() {
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '전달 전';
   document.querySelector('.delivery-state span').style.background = visibleDelivery ? '#5eead4' : '#fbbf24';
+  const deliveryCard = document.querySelector('.delivery-card--compact');
+  deliveryCard.hidden = !lastDeliveries.length;
+  const deliveryLinks = $('deliveryLinks');
+  deliveryLinks.replaceChildren(...lastDeliveries.map((saved, index) => {
+    const link = document.createElement('a');
+    const orderId = String(saved.targetRecordId || '');
+    link.href = `../orderq/index.html?view=query&focus=${encodeURIComponent(orderId)}&saved=1`;
+    link.textContent = `${saved.orderNo || `${index + 1}번 주문`} 조회`;
+    link.title = '주문조회에서 저장 결과 확인';
+    return link;
+  }));
   const creation = estimateCreation();
   const creationCount = creation?.selectedIds.length || 0;
   const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
@@ -8905,6 +8933,8 @@ function orderGroupCommonPayload(current, rawFingerprint) {
     deliveryExpectedDate: current.header.deliveryDate,
     customerId: current.header.customerId,
     customerName: current.header.customerName,
+    assigneeId: current.header.assigneeId,
+    assigneeName: current.header.assigneeName,
     warehouseId: current.header.warehouseId,
     warehouseCode: current.header.warehouseCode,
     warehouseName: current.header.warehouseName,
@@ -8965,6 +8995,16 @@ async function saveOrderGroups(current, groupPlan, submittedAt) {
 
   const succeeded = results.filter(result => result.ok);
   const failed = results.filter(result => !result.ok);
+  const savedDeliveries = succeeded.map(({ result, online }) => ({
+    status: 'SAVED',
+    targetId: 'orderq-vnext',
+    targetRecordId: result.order.orderId,
+    orderNo: result.order.orderNo,
+    deliveredAt: new Date().toISOString(),
+    online
+  }));
+  state.draft.ui.lastDeliveries = savedDeliveries;
+  state.draft.ui.lastDelivery = savedDeliveries.at(-1) || null;
   current.header.submittedAt = submittedAt.toISOString();
   succeeded.forEach(({ group, result, online }) => appendDeliveryHistory({
     status: 'SAVED',
@@ -9006,15 +9046,6 @@ async function saveOrderGroups(current, groupPlan, submittedAt) {
     return;
   }
 
-  const last = succeeded[succeeded.length - 1];
-  state.draft.ui.lastDelivery = last ? {
-    status: 'SAVED',
-    targetId: 'orderq-vnext',
-    targetRecordId: last.result.order.orderId,
-    orderNo: last.result.order.orderNo,
-    deliveredAt: new Date().toISOString(),
-    online: last.online
-  } : null;
   const next = contract.createDraft().modes.order;
   next.header.warehouseId = current.header.warehouseId;
   next.header.warehouseCode = current.header.warehouseCode;
@@ -9100,6 +9131,8 @@ async function completeOrderLegacy() {
       deliveryExpectedDate: current.header.deliveryDate,
       customerId: current.header.customerId,
       customerName: current.header.customerName,
+      assigneeId: current.header.assigneeId,
+      assigneeName: current.header.assigneeName,
       warehouseId: current.header.warehouseId,
       warehouseCode: current.header.warehouseCode,
       warehouseName: current.header.warehouseName,
@@ -9116,6 +9149,7 @@ async function completeOrderLegacy() {
       sourceType: 'SMART_INPUT',
       sourceId: current.batches[0]?.batchId || state.draft.draftId,
       sourceDocumentKey: `SMART_INPUT:${current.batches[0]?.batchId || state.draft.draftId}:ORDER`,
+      sourceMessageKey: `SMART_INPUT:${current.batches[0]?.batchId || state.draft.draftId}:ORDER`,
       intakeSessionId: sourceBatch?.intakeSessionId || '',
       intakeDocumentId: sourceBatch?.intakeDocumentId || '',
       rawFingerprint,
@@ -9165,6 +9199,7 @@ async function completeOrderLegacy() {
       online
     };
     state.draft.ui.lastDelivery = { ...delivery, orderNo: result.order.orderNo };
+    state.draft.ui.lastDeliveries = [state.draft.ui.lastDelivery];
     appendDeliveryHistory({
       ...delivery,
       orderNo: result.order.orderNo,
@@ -9759,6 +9794,12 @@ $('deliveryDateInput').addEventListener('input', event => {
   updateDeliveryPolicy();
   state.voucherActivity.status = 'IDLE';
   renderVoucherContext();
+  scheduleSave();
+});
+$('assigneeInput').addEventListener('input', event => {
+  const header = modeDraft().header;
+  header.assigneeName = event.target.value;
+  header.assigneeId = '';
   scheduleSave();
 });
 $('warehouseInput').addEventListener('input', applyWarehouseMatch);

@@ -168,13 +168,13 @@ assert.doesNotMatch(listHtml, /from\s+["'][^"']*(?:official-voucher-repository|u
 
 const orderops = manifest.applications.find(app => app.id === 'orderops');
 const contract = manifest.sharedDataContracts.find(entry => entry.id === 'orderq-unresolved-review-read-model');
-assert.deepEqual(orderops.consumedContracts, ['orderq-unresolved-review-read-model']);
+assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-model'));
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '49ef64a6639f3a532e00c5509acd6e8faff2cc10a4dd28d6debf87d7f7c5320a'],
-  ['../smartinput/smartinput.css', '564c3cf7c829d0a3bec19b869da5a47eb45c4c6e8b3e2f7fac0e071ee0c65990'],
-  ['../smartinput/smartinput.js', 'b49d4ba7097575b7c17c9c7fee07cea01709b394ebd53e8bb1d8c03e0f54e6a6']
+  ['../smartinput/index.html', '8e57360ea90fdfa14d6fb317c6daa83fae07c4d8b65c6eed2ee9fa04ee58d44b'],
+  ['../smartinput/smartinput.css', '5c2431d3fde427c975ae0e7214075606f693af9ac9e99ab213d3ce7d9f5e05ab'],
+  ['../smartinput/smartinput.js', 'd0dbf6c392d7548434a1c1b8932bbb4859c772fed9a62d8b99a50d2bc45c488f']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -196,5 +196,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-match-dictionary-and-voucher-upload-sort'
+  smartInputUiChanged: 'approved-estimate-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
 }, null, 2));

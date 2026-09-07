@@ -16,6 +16,7 @@ import {
   normalizedOrderView, documentFieldChanges, orderItemChanges
 } from './order-document-model.js?v=0.7.1';
 import { deriveOrderLifecycle, TRANSFER_EVENT_TYPE } from './order-fulfillment-lifecycle.js?v=0.7.1';
+import { orderSourcePayloadHash } from './order-source-identity.js?v=0.8.0';
 
 export { ORDER_STATUS, ADMIN_STATUS, OPS_STATUS, INPUT_CHANNEL };
 
@@ -47,6 +48,23 @@ export class DuplicateSourceMessageError extends Error {
     super('이미 처리한 원문입니다. 기존 주문을 확인해 주세요.');
     this.name = 'DuplicateSourceMessageError';
     this.code = 'ORDER_SOURCE_MESSAGE_DUPLICATE';
+    this.existingOrder = existingOrder;
+  }
+}
+
+export class SourceIdempotencyConflictError extends Error {
+  constructor(existingOrder) {
+    super('같은 원본 키에 다른 주문 내용이 저장되어 있습니다. 기존 주문을 확인한 뒤 다시 시도하세요.');
+    this.name = 'SourceIdempotencyConflictError';
+    this.code = 'ORDER_SOURCE_IDEMPOTENCY_CONFLICT';
+    this.existingOrder = existingOrder;
+  }
+}
+
+class ExistingSourcePayloadError extends Error {
+  constructor(existingOrder) {
+    super('ORDER_SOURCE_PAYLOAD_ALREADY_SAVED');
+    this.name = 'ExistingSourcePayloadError';
     this.existingOrder = existingOrder;
   }
 }
@@ -92,6 +110,7 @@ function normalizeItem(input, orderId, previous = null) {
     orderId,
     lineNo: Number(input.lineNo) || 0,
     productId,
+    masterProductId: String(input.masterProductId ?? previous?.masterProductId ?? '').trim() || null,
     itemCode,
     itemName,
     specification: String(input.specification ?? '').trim(),
@@ -108,6 +127,11 @@ function normalizeItem(input, orderId, previous = null) {
     memo: String(input.memo ?? '').trim(),
     description: String(input.description ?? '').trim(),
     noticePrice: asNumberOrNull(input.noticePrice),
+    customValues: input.customValues && typeof input.customValues === 'object' ? { ...input.customValues } : {},
+    intakeLineId: String(input.intakeLineId ?? previous?.intakeLineId ?? '').trim(),
+    sourceLineKey: String(input.sourceLineKey ?? previous?.sourceLineKey ?? '').trim(),
+    reviewStatus: String(input.reviewStatus ?? previous?.reviewStatus ?? '').trim(),
+    productIdentityStatus: String(input.productIdentityStatus ?? previous?.productIdentityStatus ?? '').trim(),
     matchStatus,
     matchSource: input.matchSource || (hasProductIdentity ? 'MASTER_SELECTED' : 'UNRESOLVED'),
     updatedAt: nowIso(),
@@ -261,6 +285,8 @@ function appendLifecycleTransition(tx, beforeOrder, beforeItems, afterOrder, aft
 }
 
 export async function createOrder(payload) {
+  const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
+  const sourcePayloadHash = sourceMessageKey ? orderSourcePayloadHash(payload) : '';
   const db = await openOrderQDb();
   const tx = db.transaction([
     STORE.CUSTOMERS, STORE.CUSTOMER_ALIASES, STORE.WAREHOUSES, STORE.WAREHOUSE_ALIASES, STORE.ORDERS, STORE.ORDER_ITEMS,
@@ -268,14 +294,17 @@ export async function createOrder(payload) {
   ], 'readwrite');
 
   try {
-    const customer = await resolveCustomerInTransaction(tx, payload);
-    const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || 'MANUAL' });
     const orderStore = tx.objectStore(STORE.ORDERS);
-    const sourceMessageKey = String(payload.sourceMessageKey || '').trim();
     if (sourceMessageKey) {
       const existingSourceOrder = await requestToPromise(orderStore.index('bySourceMessageKey').get(sourceMessageKey));
-      if (existingSourceOrder) throw new DuplicateSourceMessageError(existingSourceOrder);
+      if (existingSourceOrder) {
+        if (!existingSourceOrder.sourcePayloadHash) throw new DuplicateSourceMessageError(existingSourceOrder);
+        if (existingSourceOrder.sourcePayloadHash === sourcePayloadHash) throw new ExistingSourcePayloadError(existingSourceOrder);
+        throw new SourceIdempotencyConflictError(existingSourceOrder);
+      }
     }
+    const customer = await resolveCustomerInTransaction(tx, payload);
+    const warehouse = await resolveWarehouseInTransaction(tx, payload, { sourceType: payload.sourceType || 'MANUAL' });
     const orderId = newId('ORD');
     const orderNo = await allocateOrderNoInTransaction(tx, payload.orderDate, payload.orderNo);
     let items = (payload.items || [])
@@ -303,6 +332,14 @@ export async function createOrder(payload) {
       sourceType: payload.sourceType || 'MANUAL',
       sourceId: payload.sourceId || '',
       sourceMessageKey: sourceMessageKey || undefined,
+      sourceDocumentKey: String(payload.sourceDocumentKey || '').trim(),
+      sourcePayloadHash: sourcePayloadHash || undefined,
+      rawFingerprint: String(payload.rawFingerprint || '').trim(),
+      intakeSessionId: String(payload.intakeSessionId || '').trim(),
+      intakeDocumentId: String(payload.intakeDocumentId || '').trim(),
+      intakeContractVersion: String(payload.intakeContractVersion || '').trim(),
+      customValues: payload.customValues && typeof payload.customValues === 'object' ? { ...payload.customValues } : {},
+      formLayoutSnapshot: payload.formLayoutSnapshot && typeof payload.formLayoutSnapshot === 'object' ? structuredClone(payload.formLayoutSnapshot) : null,
       ...workflow,
       status: matchingStatus,
       matchingStatus,
@@ -340,9 +377,24 @@ export async function createOrder(payload) {
 
     await transactionDone(tx);
     broadcast('ORDER_CREATED', order);
-    return { order, items, customer, warehouse };
+    return { order, items, customer, warehouse, duplicate: false };
   } catch (error) {
     try { tx.abort(); } catch (_) {}
+    try { await transactionDone(tx); } catch (_) {}
+    if (error instanceof ExistingSourcePayloadError) {
+      const existing = await getOrder(error.existingOrder.orderId);
+      return { ...existing, customer: null, warehouse: null, duplicate: true };
+    }
+    if (error?.name === 'ConstraintError' && sourceMessageKey) {
+      const readTx = db.transaction([STORE.ORDERS], 'readonly');
+      const existingOrder = await requestToPromise(readTx.objectStore(STORE.ORDERS).index('bySourceMessageKey').get(sourceMessageKey));
+      await transactionDone(readTx);
+      if (existingOrder?.sourcePayloadHash === sourcePayloadHash) {
+        const existing = await getOrder(existingOrder.orderId);
+        return { ...existing, customer: null, warehouse: null, duplicate: true };
+      }
+      if (existingOrder) throw new SourceIdempotencyConflictError(existingOrder);
+    }
     throw error;
   }
 }

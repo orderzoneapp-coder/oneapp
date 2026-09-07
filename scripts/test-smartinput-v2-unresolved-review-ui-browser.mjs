@@ -223,7 +223,7 @@ const prepareWorkspace = async client => {
 const normalMetrics = client => evaluate(client, `(() => {
   const rect = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width)};};
   return {
-    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>id!=='unresolvedReviewToggle').sort(),
+    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>!['unresolvedReviewToggle','shipmentConfirmButton','shipmentHoldButton'].includes(id)).sort(),
     sourceTabs:[...document.querySelectorAll('#sourceSelector [role="tab"]')].map(node=>({id:node.id,label:node.getAttribute('aria-label')})),
     shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
     regions:{sourceSelector:rect('#sourceSelector'),resultsPanel:rect('#resultsPanel'),previewTable:rect('#previewTable')},

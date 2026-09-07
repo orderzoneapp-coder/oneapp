@@ -1,14 +1,15 @@
 # ORDER Q vNext
 
-신규 ORDER Q 개발 경로. 기존 `orderops/` 및 `orderops_list.html`은 변경하지 않는다.
+ORDER Q 주문 소유 경로. `orderops/` 및 `orderops_list.html`은 ORDER Q가 제공하는 읽기 전용 출고후보 Adapter를 소비하고 출고 작업·결과를 별도 소유한다.
 
 ## vNext 0.8.0 URL
 
-- `/orderq/` 또는 `/orderq/index.html`: 주문현황(전표 목록·펼침·상품상세·수정·출력)
+- `/orderq/` 또는 `/orderq/index.html`: 주문조회(전표 목록·펼침·상품상세·수정·출력)
 - `/orderq/input.html`: 주문서 직접입력·수정
 - `/orderq/parser.html`: ORDER IN(카카오/일반 텍스트 SmartParser)
 - `/orderq/operations.html`: ORDER Q 운영관리(전표조건 선필터·상품집계·재고·판매이관·미출고)
-- `/orderops/list.html`: 기존 Excel 기반 출고관리(호환 유지)
+- `/orderops/list.html?orderId=...`: 주문조회에서 연결되는 출고관리. 주문은 자동연동하고 창고재고 Excel은 필수로 유지한다.
+- `/orderops/list.html`: 주문현황 Excel 수동 입력도 호환 경로로 유지한다.
 - `/orderq/collector.html`: 과거 주문·판매·구매·재고·거래처원장·카카오 이력수집과 주문↔판매 연결
 - `/orderq/cloud.html`: Cloud Sync 설정·충돌 처리
 
@@ -16,7 +17,7 @@
 
 브라우저 IndexedDB `oneapp-orderq-pre-m1-v6` v7을 로컬 업무 DB로 사용하고, Apps Script Web App을 통해 목적별 Google Sheet와 증분 동기화한다. 기존 M1~M10 DB는 삭제하지 않고 별도 보존한다. 주문 동기화와 공식 구매·판매 동기화는 서로 다른 schema와 회사별 cursor를 사용한다.
 
-업무 흐름은 `주문서 입력 → 주문현황(전표관리) → ORDER Q(운영관리)`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. 저장 후 주문현황으로 이동해 방금 저장한 전표를 최상단에서 자동으로 펼친다.
+작업자 흐름은 `스마트입력 → 주문조회 → 출고관리`로 구분한다. 직접입력·ORDER IN·Excel·쇼핑몰·외부연동은 모두 공통 `createOrder`를 호출하며 입력경로는 `inputChannel`로 기록한다. SmartInput 다건 입력은 건별 부분 성공을 허용하고 성공 전표마다 공식 `focus` URL을 제공한다. `orderId` 조회 파라미터는 호환 별칭으로만 받아 `focus`로 정규화한다.
 
 `orderId`는 시스템 내부키, `orderNo`는 저장 시 발급하는 날짜별 관리자 주문번호(`YYYYMMDD-NNN`), `externalOrderNo`는 쇼핑몰·외부 연결키다. 기존 주문은 DB v6 전환 때 주문일 순서로 주문번호를 보완한다.
 
@@ -46,7 +47,7 @@
 
 공식 구매·판매는 전표·재고·채권·채무를 먼저 로컬 transaction으로 확정한 뒤 `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1`으로 백그라운드 동기화한다. 서버 미배포·오류는 로컬 확정을 취소하지 않는다. 서버는 회사별 전표 Revision과 미매칭 상품 최초 매칭을 검사하고 경쟁 변경은 `CONFLICT`로 보존한다.
 
-주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다.
+주문 수정은 `revision` 비교를 사용한다. 같은 주문을 두 탭에서 열고 한쪽이 먼저 저장하면, 다른 쪽의 오래된 revision 저장은 차단한다. 출고관리는 작업 시작 시 주문 `revision`과 `snapshotHash`를 고정하고 확정 직전에 다시 읽는다. 불일치하면 작업자 입력을 유지한 채 확정을 차단하며, 확정 뒤 주문이 바뀐 결과는 `REVIEW_REQUIRED`로 표시한다. 출고결과 저장 transaction도 동시 확정의 잔여수량과 중복 역분개를 검사한다. 출고취소는 확정 기록을 삭제하지 않고 별도 역분개 결과를 추가한다. 주문조회에는 이 결과를 기존 주문·관리자·운영·판매이관 상태와 섞지 않고 `출고상태` 축으로 별도 표시한다.
 
 주문현황은 전표별 대표품목·총수량·주문금액을 기본 목록에 표시한다. 전표를 펼친 뒤 별도 페이지 이동 없이 거래처, 창고, 담당자, 배송예정일, 주문상태, 관리자상태, 메모와 상품별 규격·수량·판매가를 수정할 수 있다. 담당자·상태·상품 변경은 변경자와 시간, 전후값을 기존 주문 이벤트에 기록한다. 전체취소 전표는 상품과 금액을 바꿀 수 없지만 담당자와 관리자상태는 다시 변경할 수 있다.
 
@@ -60,4 +61,4 @@
 
 단가 헤더는 클릭 가능한 드롭다운이며 기본값은 `판매가`다. 판매가는 행사가가 있으면 행사가, 없거나 0이면 출고가를 자동 적용한다. 헤더 선택이나 단가 셀의 ▲▼·키보드 위·아래 화살표로 `판매가 → 출고가 → 도매A → 도매B → 상장가 → 시중가 → 행사가`를 전환하면 헤더명과 전체 단가열이 함께 바뀐다. 직접 금액을 수정한 행은 `직접입력`, 서로 다른 단가가 섞인 주문은 `혼합단가`로 헤더에 표시한다. 선택한 단가 종류는 주문 품목의 `priceType`으로 보존한다.
 
-SmartParser는 원문을 `rawInputs`, 메시지별 판정·후보·관리자 확정값을 `parseResults`에 분리 저장한다. 신규 주문으로 확정할 때만 공통 `createOrder`를 호출한다. 부분 변경·취소 메시지는 주문 전체를 자동 변경하지 않고 수기 검수 대기로 남긴다. 동일 `sourceMessageKey`는 기존 결과를 다시 보여주며 신규 주문을 중복 생성하지 않는다.
+SmartParser는 원문을 `rawInputs`, 메시지별 판정·후보·관리자 확정값을 `parseResults`에 분리 저장한다. 신규 주문으로 확정할 때만 공통 `createOrder`를 호출한다. 부분 변경·취소 메시지는 주문 전체를 자동 변경하지 않고 수기 검수 대기로 남긴다. 동일 `sourceMessageKey`와 동일 payload hash는 기존 결과를 다시 보여주고, 같은 키의 다른 payload는 충돌로 차단한다. `sourceDocumentKey`와 `sourceLineKey`는 주문·행까지 보존한다.
