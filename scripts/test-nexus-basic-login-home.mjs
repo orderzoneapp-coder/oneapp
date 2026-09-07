@@ -44,6 +44,7 @@ assert.match(runtime, /sessionStorage\.setItem/, 'each NEXUS tab must retain its
 assert.match(runtime, /PERSISTENT_STORAGE_KEY\s*=\s*'oneapp\.nexus\.home\.persistent-session\.v1'/, 'persistent login must use a dedicated storage key');
 assert.match(runtime, /if \(bundle\.rememberLogin\)[\s\S]*localStorage\.setItem\(PERSISTENT_STORAGE_KEY/, 'only an explicitly remembered login may persist');
 assert.match(runtime, /else \{[\s\S]*sessionStorage\.setItem\(STORAGE_KEY[\s\S]*localStorage\.removeItem\(PERSISTENT_STORAGE_KEY\)/, 'unchecked login must remain tab-scoped and clear stale persistence');
+assert.match(runtime, /publishSession\(\{ token: cached\.token, session, rememberLogin: cached\.rememberLogin \}\)/, 'background session refresh must preserve the persistent-login choice');
 assert.match(runtime, /navigator\.serviceWorker\.register\(SESSION_BRIDGE_URL/, 'NEXUS home must register the scoped session bridge');
 assert.match(runtime, /SESSION_BRIDGE_READY_WAIT_MS\s*=\s*3000/, 'bridge activation must tolerate a delayed first install');
 assert.match(runtime, /SESSION_BRIDGE_RESPONSE_WAIT_MS\s*=\s*3000/, 'an active background NEXUS window must have time to answer');
