@@ -206,6 +206,15 @@ jobs:
       - name: Test OrderOps substitute shipment and system-message history
         run: node scripts/test-orderq-substitute-shipment.mjs
 
+      - name: Test ORDER Q to OrderOps shipment pipeline and operator recovery
+        run: |
+          node scripts/test-orderq-shipment-read-model.mjs
+          node scripts/test-orderops-orderq-source.mjs
+          node scripts/test-orderops-shipment-result.mjs
+          node scripts/test-orderops-pr544-operator-flow.mjs
+          node scripts/test-orderops-shipment-conflict-browser.mjs
+          node scripts/test-orderops-pr544-operator-flow-browser.mjs
+
       - name: Test OrderOps output and DataOps shared theme interaction
         run: node scripts/test-orderops-theme-browser-e2e.mjs
 
