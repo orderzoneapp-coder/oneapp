@@ -30,14 +30,14 @@
     Object.freeze({ id: 'customer-master', label: '거래처관리', detail: '거래처 기준정보 조회·관리', path: '/customer-master/' }),
     Object.freeze({ id: 'merchops', label: '가격·시세', detail: '가격·상품 운영', path: '/MerchOps.html' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력', detail: '전표 작성 작업', path: '/smartinput/' }),
-    Object.freeze({ id: 'orderops', label: '주문·출고', detail: '주문 및 출고 관리', path: '/orderops/list.html' }),
+    Object.freeze({ id: 'orderops', label: '출고관리', detail: '주문별 출고 작업 및 확정', path: '/orderops/list.html' }),
     Object.freeze({ id: 'dataops', label: '재고·정산', detail: '재고와 정산 분석', path: '/DataOps.html' }),
     Object.freeze({ id: 'smart-parser', label: '문서분석', detail: '외부 문서 분석', path: '/SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', detail: '업무 자료 출력', path: '/export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', detail: '앱 공통 설정', path: '/settings.html' }),
     Object.freeze({ id: 'item-manager', label: '상품등록', detail: '상품 등록 및 수정', path: '/Item_manager.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', detail: '변경 내역 확인', path: '/history_viewer.html' }),
-    Object.freeze({ id: 'orderq-vnext', label: '주문현황', detail: '확정 주문 현황', path: '/orderq/' }),
+    Object.freeze({ id: 'orderq-vnext', label: '주문조회', detail: '주문 조회·검증·정정', path: '/orderq/' }),
   ]);
   const SESSION_ERRORS = new Set([
     'NEXUS_AUTH_SESSION_REQUIRED',

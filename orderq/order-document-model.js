@@ -21,6 +21,7 @@ export const OPS_STATUS = Object.freeze({
 
 export const INPUT_CHANNEL = Object.freeze({
   DIRECT: 'DIRECT',
+  SMART_INPUT: 'SMART_INPUT',
   ORDER_IN: 'ORDER_IN',
   EXCEL: 'EXCEL',
   SHOPPING_MALL: 'SHOPPING_MALL',
@@ -50,6 +51,7 @@ export const OPS_STATUS_LABEL = Object.freeze({
 
 export const INPUT_CHANNEL_LABEL = Object.freeze({
   [INPUT_CHANNEL.DIRECT]: '직접입력',
+  [INPUT_CHANNEL.SMART_INPUT]: '스마트입력',
   [INPUT_CHANNEL.ORDER_IN]: 'ORDER IN',
   [INPUT_CHANNEL.EXCEL]: 'Excel',
   [INPUT_CHANNEL.SHOPPING_MALL]: '쇼핑몰',
@@ -81,7 +83,8 @@ export function inferInputChannel(sourceType = '', requested = '') {
   const explicit = String(requested || '').trim().toUpperCase();
   if (VALID_INPUT_CHANNEL.has(explicit)) return explicit;
   const source = String(sourceType || '').trim().toUpperCase();
-  if (source.includes('KAKAO') || source.includes('ORDER_IN') || source.includes('SMART')) return INPUT_CHANNEL.ORDER_IN;
+  if (source.includes('SMART')) return INPUT_CHANNEL.SMART_INPUT;
+  if (source.includes('KAKAO') || source.includes('ORDER_IN')) return INPUT_CHANNEL.ORDER_IN;
   if (source.includes('EXCEL') || source.includes('XLS')) return INPUT_CHANNEL.EXCEL;
   if (source.includes('SHOP') || source.includes('MALL') || source.includes('YOUNGCART')) return INPUT_CHANNEL.SHOPPING_MALL;
   if (source.includes('EXTERNAL') || source.includes('API')) return INPUT_CHANNEL.EXTERNAL;

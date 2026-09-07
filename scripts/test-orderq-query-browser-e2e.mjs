@@ -64,6 +64,12 @@ try {
   await navigate(client, `${origin}/orderq/index.html?view=query&from=2026-09-02&to=2026-09-03&focus=ORD-OLD&saved=1`);
   await waitFor(() => evaluate(client, `document.querySelector('[data-order-id="ORD-OLD"]') && !document.querySelector('[data-detail-for="ORD-OLD"]').hidden`), 'out-of-range focus');
   assert.equal(await evaluate(client, `document.querySelector('#message').textContent.includes('저장했습니다')`), true);
+  await navigate(client, `${origin}/orderq/index.html?view=query&orderId=ORD-OLD`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('focus')==='ORD-OLD' && !new URL(location.href).searchParams.has('orderId')`), 'orderId compatibility alias canonicalization');
+  await waitFor(() => evaluate(client, `document.querySelector('[data-detail-for="ORD-OLD"]') && !document.querySelector('[data-detail-for="ORD-OLD"]').hidden`), 'orderId alias focus');
+  assert.equal(await evaluate(client, `document.querySelector('[data-detail-body="ORD-OLD"] a[href*="orderops/list.html?orderId=ORD-OLD"]') !== null`), true);
+  await navigate(client, `${origin}/orderq/index.html?view=query&focus=ORD-MISSING`);
+  await waitFor(() => evaluate(client, `document.querySelector('#message').textContent.includes('찾을 수 없습니다')`), 'missing focused order message');
   await navigate(client, `${origin}/orderq/index.html?view=invalid&focus=ORD-OLD`);
   assert.equal(await evaluate(client, `new URL(location.href).searchParams.get('view')`), 'query');
   await click(client, '[data-view="processing"]'); await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('view')==='processing' && !document.querySelector('#processingView').hidden`), 'processing view');

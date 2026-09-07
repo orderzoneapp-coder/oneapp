@@ -165,6 +165,9 @@ assert.equal(groups[0].validationStatus, 'READY');
 assert.match(groups[0].idempotencyKey, /HASH-1/);
 assert.match(groups[0].idempotencyKey, /BATCH-1/);
 assert.match(groups[0].idempotencyKey, /PURCHASE/);
+const idempotentPayload = buildOrderGroupPayload(groups[0], { sourceType: 'SMART_INPUT' });
+assert.equal(idempotentPayload.sourceMessageKey, groups[0].idempotencyKey);
+assert.equal(idempotentPayload.sourceDocumentKey, groups[0].idempotencyKey);
 
 const sameOrderRole = groupVoucherRows('order', [{
   sourceBatchId: 'ROLE-ORDER-SAME', sourceDocumentKey: 'DOC', rowCustomerId: 'C1', rowCustomerCode: 'C-1', rowCustomerName: '공통사',

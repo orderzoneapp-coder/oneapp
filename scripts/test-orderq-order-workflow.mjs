@@ -22,6 +22,7 @@ import {
   documentFieldChanges,
   orderItemChanges
 } from '../orderq/order-document-model.js';
+import { orderSourcePayloadHash } from '../orderq/order-source-identity.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -43,12 +44,24 @@ assert.equal(normalizeAdminStatus(''), ADMIN_STATUS.UNCHECKED);
 assert.equal(normalizeAdminStatus('CHECKED'), ADMIN_STATUS.CHECKED);
 assert.equal(normalizeOpsStatus('CLOSED'), OPS_STATUS.CLOSED);
 assert.equal(inferInputChannel('KAKAO_TEXT'), INPUT_CHANNEL.ORDER_IN);
+assert.equal(inferInputChannel('SMART_INPUT'), INPUT_CHANNEL.SMART_INPUT);
 assert.equal(inferInputChannel('EXCEL_UPLOAD'), INPUT_CHANNEL.EXCEL);
 assert.equal(inferInputChannel('SHOP_ORDER'), INPUT_CHANNEL.SHOPPING_MALL);
 assert.equal(inferInputChannel('MANUAL'), INPUT_CHANNEL.DIRECT);
 assert.equal(initialAdminStatus('MANUAL', INPUT_CHANNEL.DIRECT), ADMIN_STATUS.CHECKED);
 assert.equal(initialAdminStatus('KAKAO_TEXT', INPUT_CHANNEL.ORDER_IN), ADMIN_STATUS.UNCHECKED);
 assert.equal(initialAdminStatus('EXCEL_UPLOAD', INPUT_CHANNEL.EXCEL), ADMIN_STATUS.UNCHECKED);
+assert.equal(initialAdminStatus('SMART_INPUT', INPUT_CHANNEL.SMART_INPUT), ADMIN_STATUS.UNCHECKED);
+
+const sourcePayload = {
+  sourceDocumentKey: 'SMART_INPUT:DOC-1', orderDate: '2026-09-07', customerId: 'CUS-1', warehouseCode: '88',
+  items: [{ lineNo: 1, sourceLineKey: 'LINE-1', itemCode: 'ITEM-1', finalQuantity: 2, finalUnit: 'EA' }]
+};
+assert.equal(orderSourcePayloadHash(sourcePayload), orderSourcePayloadHash(structuredClone(sourcePayload)));
+assert.notEqual(orderSourcePayloadHash(sourcePayload), orderSourcePayloadHash({
+  ...sourcePayload,
+  items: [{ ...sourcePayload.items[0], finalQuantity: 3 }]
+}));
 
 const firstAssignee = assigneeIdentity('김관리');
 assert.match(firstAssignee.assigneeId, /^MGR-/);
@@ -101,6 +114,9 @@ assert.match(engine, /ORDER_CREATED/);
 assert.match(engine, /ORDER_UPDATED/);
 assert.match(engine, /initialAdminStatus\(sourceType, inputChannel\)/);
 assert.match(engine, /normalizedOrderView/);
+assert.match(engine, /sourcePayloadHash/);
+assert.match(engine, /SourceIdempotencyConflictError/);
+assert.match(engine, /sourceLineKey/);
 
 assert.match(input, /id="assigneeName"/);
 assert.match(input, /id="orderStatus"/);
@@ -112,7 +128,7 @@ assert.match(input, /id="externalOrderNo"/);
 assert.match(input, /id="paymentAmount"/);
 assert.match(input, /\.\/index\.html\?focus=/, 'save must return to order document history');
 
-assert.match(history, /주문현황 · 전표관리/);
+assert.match(history, /주문조회 · 전표관리/);
 assert.match(history, /data-detail-for=/);
 assert.match(history, /펼침영역 수정/);
 assert.match(history, /data-edit-form=/);

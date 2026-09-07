@@ -10,14 +10,14 @@
     Object.freeze({ id: 'customer-master', label: '거래처관리' }),
     Object.freeze({ id: 'merchops', label: '가격·시세' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력' }),
-    Object.freeze({ id: 'orderops', label: '주문·출고' }),
+    Object.freeze({ id: 'orderops', label: '출고관리' }),
     Object.freeze({ id: 'dataops', label: '재고·정산' }),
     Object.freeze({ id: 'smart-parser', label: '문서분석' }),
     Object.freeze({ id: 'export-center', label: '출력검증' }),
     Object.freeze({ id: 'settings', label: '환경설정' }),
     Object.freeze({ id: 'item-manager', label: '상품등록' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력' }),
-    Object.freeze({ id: 'orderq-vnext', label: '주문현황' }),
+    Object.freeze({ id: 'orderq-vnext', label: '주문조회' }),
   ]);
   const MESSAGE = Object.freeze({
     NEXUS_AUTH_ADMIN_DENIED: '최상위 관리자 Session이 필요합니다.',

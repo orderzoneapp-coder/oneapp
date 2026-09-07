@@ -6,11 +6,11 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderq-vnext"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="../nexus/common/nexus-ui.js?v=1.5.0"></script>
+    <script defer src="../nexus/common/nexus-ui.js?v=1.5.1"></script>
   <meta name="google" content="notranslate">
-  <title>주문현황 - NEXUS</title>
+  <title>주문조회 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
-    <link rel="stylesheet" href="./orderq.css?v=0.8.1">
+    <link rel="stylesheet" href="./orderq.css?v=0.8.2">
 </head>
 <body class="order-history-page">
   <div class="shell">
@@ -19,7 +19,7 @@
         <strong>ONEAPP</strong>
         <span class="logo-frame" aria-hidden="true"><img src="../assets/order-q-logo.png" alt=""></span>
         <span class="badge">vNext 0.8.0</span>
-        <span>주문현황 · 전표관리</span>
+        <span>주문조회 · 전표관리</span>
       </div>
       <div class="top-actions">
         <a class="btn dark" href="./collector.html">이력수집</a>
@@ -30,28 +30,28 @@
       </div>
     </header>
     <main class="panel">
-      <nav class="order-view-switcher" aria-label="주문현황 화면 전환">
+      <nav class="order-view-switcher" aria-label="주문조회 화면 전환">
         <button class="btn view-switch is-active" type="button" data-view="query" aria-controls="queryView" aria-selected="true">주문조회</button>
-        <button class="btn view-switch" type="button" data-view="processing" aria-controls="processingView" aria-selected="false">처리현황</button>
+        <button class="btn view-switch" type="button" data-view="processing" aria-controls="processingView" aria-selected="false">판매처리 검증</button>
       </nav>
       <section id="processingView" class="processing-view" hidden data-processing-readonly>
         <div class="processing-head">
-          <div><h2>처리현황</h2><p>처리현황은 판매이관 결과를 확인하는 읽기 전용 화면입니다. 판매이관 이벤트와 기존 주문 취소 계약만 읽어 계산하며, 수량·상태를 이 화면에서 변경할 수 없습니다.</p></div>
+          <div><h2>판매처리 검증</h2><p>판매처리 검증은 판매이관 결과를 확인하는 읽기 전용 화면입니다. 판매이관 이벤트와 기존 주문 취소 계약만 읽어 계산하며, 수량·상태를 이 화면에서 변경할 수 없습니다.</p></div>
           <div class="processing-actions"><button class="btn" id="processingRefreshBtn" type="button">새로고침</button><button class="btn" type="button" data-view="query">주문조회로 돌아가기</button></div>
         </div>
         <div id="processingError" class="processing-error" role="status" hidden></div>
-        <div class="processing-summary" id="processingSummary">처리현황을 불러오는 중...</div>
+        <div class="processing-summary" id="processingSummary">판매처리 검증을 불러오는 중...</div>
         <div class="table-wrap processing-table-wrap">
           <table class="processing-table">
             <thead><tr>
-              <th>주문번호</th><th>주문일자</th><th>거래처</th><th>주문 품목</th><th>주문수량</th><th>취소수량</th><th>유효주문수량</th><th>순판매이관수량</th><th>미이관수량</th><th>판매이관상태</th><th>역이관 반영 여부</th><th>최종 이벤트·계산 시각</th><th>주문조회</th><th>주문·출고</th>
+              <th>주문번호</th><th>주문일자</th><th>거래처</th><th>주문 품목</th><th>주문수량</th><th>취소수량</th><th>유효주문수량</th><th>순판매이관수량</th><th>미이관수량</th><th>판매이관상태</th><th>역이관 반영 여부</th><th>최종 이벤트·계산 시각</th><th>주문조회</th><th>출고관리</th>
             </tr></thead>
             <tbody id="processingRows"></tbody>
           </table>
         </div>
       </section>
       <section id="queryView">
-      <p class="notice">주문전표 조회·검증·정정은 이 화면에서, 실제 출고 처리는 주문·출고에서 진행합니다.</p>
+      <p class="notice">주문전표 조회·검증·정정은 이 화면에서, 실제 출고 처리는 출고관리에서 진행합니다.</p>
       <div id="message" class="message page-message"></div>
       <div class="toolbar document-filters">
         <button class="btn" id="refreshBtn" type="button">새로고침</button>
@@ -99,6 +99,7 @@
               <th>주문상태</th>
               <th>관리자상태</th>
               <th>판매이관</th>
+              <th>출고상태</th>
               <th>ORDER Q</th>
               <th>출하창고</th>
               <th>입력경로</th>
@@ -151,12 +152,13 @@
       search: document.getElementById('orderSearch')
     };
     let routeParams = new URLSearchParams(location.search);
-    let focusedOrderId = routeParams.get('focus') || '';
+    let focusedOrderId = routeParams.get('focus') || routeParams.get('orderId') || '';
     let currentView = ['query', 'processing'].includes(routeParams.get('view')) ? routeParams.get('view') : 'query';
     let savedValue = routeParams.get('saved') || '';
     const detailCache = new Map();
     const expandedOrders = new Set();
     const editModeOrders = new Set();
+    const shipmentStatusCache = new Map();
     let allOrders = [];
 
     const ACTOR_STORAGE_KEY = 'oneapp.orderq.actor-name.v1';
@@ -182,10 +184,13 @@
       routeParams = new URLSearchParams(location.search);
       const requestedView = routeParams.get('view');
       currentView = ['query', 'processing'].includes(requestedView) ? requestedView : 'query';
-      focusedOrderId = routeParams.get('focus') || '';
+      const compatibilityOrderId = routeParams.get('orderId') || '';
+      focusedOrderId = routeParams.get('focus') || compatibilityOrderId;
       savedValue = routeParams.get('saved') || '';
-      if (canonicalize && requestedView && requestedView !== currentView) {
-        routeParams.set('view', 'query');
+      if (canonicalize && ((requestedView && requestedView !== currentView) || compatibilityOrderId)) {
+        if (requestedView && requestedView !== currentView) routeParams.set('view', 'query');
+        if (!routeParams.get('focus') && compatibilityOrderId) routeParams.set('focus', compatibilityOrderId);
+        routeParams.delete('orderId');
         history.replaceState(null, '', `${location.pathname}?${routeParams}${location.hash}`);
       }
       const from = isDate(routeParams.get('from')) ? routeParams.get('from') : '';
@@ -232,6 +237,15 @@
       return `<span class="document-badge ${kind}-${esc(String(value || '').toLowerCase())}">${esc(labels[value] || value || '-')}</span>`;
     }
 
+    async function refreshShipmentStatuses(orders) {
+      shipmentStatusCache.clear();
+      try {
+        const { readShipmentResultsByOrder } = await import('../orderops/shipment-result-read-adapter.js?v=1.0.0');
+        const results = await Promise.all(orders.slice(0, 200).map(order => readShipmentResultsByOrder(order.orderId)));
+        results.forEach(result => shipmentStatusCache.set(result.orderId, result));
+      } catch (_) {}
+    }
+
     const processingQuantity = value => value == null ? '-' : Number(value).toLocaleString('ko-KR', { useGrouping: true, maximumFractionDigits: 20 });
     const processingStatusBadge = value => `<span class="document-badge processing-${esc(String(value || '').toLowerCase())}">${esc(PROCESSING_STATUS_LABEL[value] || value || '-')}</span>`;
 
@@ -240,7 +254,7 @@
         ? `<a class="processing-link" href="./index.html?view=query&focus=${encodeURIComponent(row.orderId)}">주문조회</a>`
         : '<span class="processing-unavailable">-</span>';
       const orderOpsLink = row.orderId
-        ? `<a class="processing-link" href="../orderops/list.html?orderId=${encodeURIComponent(row.orderId)}">주문·출고</a>`
+        ? `<a class="processing-link" href="../orderops/list.html?orderId=${encodeURIComponent(row.orderId)}">출고관리</a>`
         : '<span class="processing-unavailable">-</span>';
       const orderNumber = row.orderId
         ? `<a class="document-number" href="./index.html?view=query&focus=${encodeURIComponent(row.orderId)}">${esc(row.orderNo || row.orderId)}</a>`
@@ -267,7 +281,7 @@
     async function renderProcessing() {
       if (currentView !== 'processing') return;
       processingError.hidden = true;
-      processingRows.innerHTML = '<tr><td colspan="14" class="empty">처리현황을 불러오는 중...</td></tr>';
+      processingRows.innerHTML = '<tr><td colspan="14" class="empty">판매처리 검증을 불러오는 중...</td></tr>';
       try {
         const snapshot = await readProcessingSnapshot();
         const reviewCount = snapshot.rows.filter(row => row.orderStatus === 'REVIEW_REQUIRED' || row.transferStatus === 'REVIEW_REQUIRED').length;
@@ -276,9 +290,9 @@
           ? snapshot.rows.map(processingRowHtml).join('')
           : '<tr><td colspan="14" class="empty">표시할 주문행이 없습니다.</td></tr>';
       } catch (error) {
-        processingSummary.textContent = '처리현황을 계산하지 못했습니다.';
-        processingRows.innerHTML = '<tr><td colspan="14" class="empty">처리현황을 표시할 수 없습니다. 주문조회는 계속 사용할 수 있습니다.</td></tr>';
-        processingError.textContent = `처리현황 읽기 실패: ${error.message || error}`;
+        processingSummary.textContent = '판매처리 검증을 계산하지 못했습니다.';
+        processingRows.innerHTML = '<tr><td colspan="14" class="empty">판매처리 검증을 표시할 수 없습니다. 주문조회는 계속 사용할 수 있습니다.</td></tr>';
+        processingError.textContent = `판매처리 검증 읽기 실패: ${error.message || error}`;
         processingError.hidden = false;
       }
     }
@@ -318,6 +332,7 @@
       const representativeItem = order.representativeItemName
         ? `${order.representativeItemName}${Number(order.itemCount || 0) > 1 ? ` 외 ${Number(order.itemCount) - 1}건` : ''}`
         : '-';
+      const shipment = shipmentStatusCache.get(order.orderId);
       return `
         <tr class="document-row ${order.orderId === focusedOrderId ? 'focused' : ''}" data-order-id="${esc(order.orderId)}">
           <td class="center"><button class="expand-button" type="button" data-expand="${esc(order.orderId)}" aria-expanded="${expanded}">${expanded ? '−' : '+'}</button></td>
@@ -331,12 +346,13 @@
           <td class="center">${statusBadge(order.orderStatus, ORDER_STATUS_LABEL, 'order')}</td>
           <td class="center">${statusBadge(order.adminStatus, ADMIN_STATUS_LABEL, 'admin')}</td>
           <td class="center">${statusBadge(order.transferStatus, TRANSFER_STATUS_LABEL, 'transfer')}</td>
+          <td class="center">${shipment ? statusBadge(shipment.shipmentStatus, { [shipment.shipmentStatus]: shipment.shipmentStatusLabel }, 'shipment') : '-'}</td>
           <td class="center">${statusBadge(order.opsStatus, OPS_STATUS_LABEL, 'ops')}</td>
           <td>${esc(order.warehouseName || order.warehouseCode || order.warehouse || '')}</td>
           <td class="center">${esc(channelLabel(order))}</td>
           <td class="center">${esc(formatTime(order.updatedAt))}</td>
         </tr>
-        <tr class="document-detail-row" data-detail-for="${esc(order.orderId)}" ${expanded ? '' : 'hidden'}><td colspan="15"><div class="document-detail" data-detail-body="${esc(order.orderId)}">불러오는 중...</div></td></tr>`;
+        <tr class="document-detail-row" data-detail-for="${esc(order.orderId)}" ${expanded ? '' : 'hidden'}><td colspan="16"><div class="document-detail" data-detail-body="${esc(order.orderId)}">불러오는 중...</div></td></tr>`;
     }
 
     function commerceDetail(order) {
@@ -393,12 +409,14 @@
 
     function readDetailHtml(data) {
       const { order, items, events = [] } = data;
+      const shipment = shipmentStatusCache.get(order.orderId);
       const total = documentAmount(items);
       const vat = items.reduce((sum, item) => sum + Number(item.vatAmount || 0), 0);
       return `
         <div class="document-detail-head">
           <div><strong>${esc(order.orderNo || order.orderId)}</strong><span>${esc(order.customerName)} · ${esc(order.warehouseName || order.warehouse || '')}</span></div>
           <div class="document-actions">
+            <a class="btn primary" href="../orderops/list.html?orderId=${encodeURIComponent(order.orderId)}">출고관리 열기</a>
             <button class="btn primary" type="button" data-edit="${esc(order.orderId)}">펼침영역 수정</button>
             <button class="btn" type="button" data-print="${esc(order.orderId)}">일반 인쇄</button>
             <button class="btn kakao-copy" type="button" data-kakao="${esc(order.orderId)}">카카오톡 복사</button>
@@ -408,7 +426,8 @@
           <span><b>거래처</b>${esc(order.customerName || '-')}</span><span><b>창고</b>${esc(order.warehouseName || order.warehouse || '-')}</span>
           <span><b>담당자</b>${esc(order.assigneeName || '-')}</span><span><b>배송예정일</b>${esc(order.deliveryExpectedDate || '-')}</span>
           <span><b>주문상태</b>${esc(ORDER_STATUS_LABEL[order.orderStatus] || order.orderStatus)}</span><span><b>관리자상태</b>${esc(ADMIN_STATUS_LABEL[order.adminStatus] || order.adminStatus)}</span>
-          <span><b>ORDER Q</b>${esc(OPS_STATUS_LABEL[order.opsStatus] || order.opsStatus)}</span><span><b>입력경로</b>${esc(channelLabel(order))}</span>
+          <span><b>ORDER Q</b>${esc(OPS_STATUS_LABEL[order.opsStatus] || order.opsStatus)}</span><span><b>출고상태</b>${esc(shipment?.shipmentStatusLabel || '-')}</span>
+          <span><b>입력경로</b>${esc(channelLabel(order))}</span>
           <span><b>시스템 ID</b>${esc(order.orderId)}</span>
         </div>
         ${order.orderMessage ? `<p class="document-memo"><b>전표 메모</b>${esc(order.orderMessage)}</p>` : ''}
@@ -646,15 +665,19 @@
         allOrders = await listOrders();
         populateAssignees(allOrders);
         const visible = filteredOrders();
+        await refreshShipmentStatuses(visible);
         const unchecked = allOrders.filter(order => order.adminStatus === 'UNCHECKED').length;
         const holds = allOrders.filter(order => order.adminStatus === 'HOLD').length;
         summary.textContent = `전표 ${visible.length}/${allOrders.length}건 · 미확인 ${unchecked}건 · 보류 ${holds}건`;
-        rows.innerHTML = visible.length ? visible.map(summaryRow).join('') : '<tr><td colspan="15" class="empty">조건에 맞는 주문전표가 없습니다.</td></tr>';
+        rows.innerHTML = visible.length ? visible.map(summaryRow).join('') : '<tr><td colspan="16" class="empty">조건에 맞는 주문전표가 없습니다.</td></tr>';
+        if (focusedOrderId && !allOrders.some(order => order.orderId === focusedOrderId)) {
+          showMessage(`주문전표를 찾을 수 없습니다. (${focusedOrderId})`, 'error');
+        }
         for (const orderId of [...expandedOrders]) if (visible.some(order => order.orderId === orderId)) await expandOrder(orderId, true);
         if (focusedOrderId && visible.some(order => order.orderId === focusedOrderId)) await expandOrder(focusedOrderId, true);
       } catch (error) {
         summary.textContent = `주문조회 오류: ${error.message || error}`;
-        rows.innerHTML = '<tr><td colspan="15" class="empty">주문조회 데이터를 표시할 수 없습니다.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="16" class="empty">주문조회 데이터를 표시할 수 없습니다.</td></tr>';
       }
     }
 
@@ -852,10 +875,17 @@
       detailCache.clear();
       render();
     });
+    if ('BroadcastChannel' in globalThis) {
+      const shipmentChanges = new BroadcastChannel('oneapp-orderops-shipment-results');
+      shipmentChanges.addEventListener('message', event => {
+        if (allOrders.some(order => order.orderId === event.data?.orderId)) render();
+      });
+      window.addEventListener('pagehide', () => shipmentChanges.close(), { once: true });
+    }
 
     applyRoute();
     render().then(() => {
-      if (currentView === 'query' && savedValue === '1') showMessage('주문전표를 저장했습니다. 방금 저장한 전표를 펼쳤습니다.', 'info');
+      if (currentView === 'query' && savedValue === '1' && allOrders.some(order => order.orderId === focusedOrderId)) showMessage('주문전표를 저장했습니다. 방금 저장한 전표를 펼쳤습니다.', 'info');
       if (currentView === 'query' && getCloudUrl()) runSync(false);
     });
   </script>

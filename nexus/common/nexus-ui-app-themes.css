@@ -891,6 +891,29 @@ html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-pan
   color: #edf1f5 !important;
 }
 
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .shipment-execution {
+  border-color: var(--nexus-ui-selection-border) !important;
+  background: var(--nexus-ui-panel-subtle) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .shipment-execution :is(
+  .shipment-execution__head h3,
+  .shipment-execution__status,
+  .shipment-result-history
+) {
+  color: var(--nexus-ui-text) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .shipment-execution__table {
+  background: var(--nexus-ui-panel-bg) !important;
+}
+
+html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .shipment-action.secondary {
+  border-color: var(--nexus-ui-warning) !important;
+  background: var(--nexus-ui-warning-bg) !important;
+  color: var(--nexus-ui-warning) !important;
+}
+
 html[data-nexus-ui-theme="dark"][data-nexus-ui-app="orderops"] body .results-panel :is(
   .purchase-input,
   .order-edit-input,
