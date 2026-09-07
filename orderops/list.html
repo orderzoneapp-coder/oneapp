@@ -193,6 +193,7 @@
     .orderq-source-picker button:disabled { opacity: .55; }
     .orderq-source-picker__notice { grid-column: 2; margin: 0; color: #cbd5e1; font-size: 10px; line-height: 1.4; }
     .orderq-source-picker__notice.is-error { color: #fecaca; }
+    .orderq-source-picker[hidden] { display: none; }
 
     /* =========================================================
        OrderOps v1.11 System.IO compact border strip
@@ -2104,12 +2105,12 @@
         </div>
         <div class="orderq-source-picker__controls">
           <input id="orderQCandidateSearch" type="search" autocomplete="off" placeholder="주문번호·거래처·창고 검색" aria-label="저장 주문 검색">
-          <select id="orderQCandidateSelect" aria-label="출고할 저장 주문 선택"><option value="">주문 목록을 불러오는 중...</option></select>
-          <button id="orderQCandidateLoadButton" type="button" disabled>주문 불러오기</button>
-          <button id="orderQCandidateRefreshButton" type="button">목록 새로고침</button>
+          <select id="orderQCandidateSelect" aria-label="출고할 저장 주문 선택"><option value="">목록 새로고침을 눌러주세요</option></select>
+          <button type="button" data-orderq-candidate-action="load" disabled>주문 불러오기</button>
+          <button type="button" data-orderq-candidate-action="refresh">목록 새로고침</button>
           <a href="../orderq/index.html?view=query" id="orderQReturnLink">주문조회</a>
         </div>
-        <p class="orderq-source-picker__notice" id="orderQSourceNotice" role="status" aria-live="polite">저장 주문 목록을 확인하고 있습니다. 창고재고 Excel은 계속 필요합니다.</p>
+        <p class="orderq-source-picker__notice" id="orderQSourceNotice" role="status" aria-live="polite">저장 주문을 찾으려면 목록 새로고침을 누르세요. 창고재고 Excel은 계속 필요합니다.</p>
       </section>
 
       <section class="panel input-panel" aria-label="입력 파일과 실행">
@@ -2203,8 +2204,8 @@
         <div class="shipment-execution__head"><h3>출고 작업·확정</h3><span class="shipment-execution__status" id="shipmentExecutionStatus"></span></div>
         <div class="shipment-source-actions" id="shipmentSourceActions" hidden>
           <span id="shipmentSourceActionMessage">주문 변경이 감지되었습니다. 현재 작업은 보존되며 확정은 최신 주문 검증 전까지 차단됩니다.</span>
-          <button id="shipmentApplyLatestButton" type="button">최신 주문 적용</button>
-          <button id="shipmentKeepWorkButton" type="button">현재 작업 유지</button>
+          <button type="button" data-shipment-source-action="apply-latest">최신 주문 적용</button>
+          <button type="button" data-shipment-source-action="keep-work">현재 작업 유지</button>
         </div>
         <div class="table-wrap"><table class="shipment-execution__table"><thead><tr><th>주문품목</th><th>실제 출고품목</th><th>주문수량</th><th>기출고</th><th>남은 주문수량</th><th>이번 실제 출고수량</th><th>부분출고 사유</th></tr></thead><tbody id="shipmentExecutionRows"></tbody></table></div>
         <div class="shipment-execution__actions">
@@ -2593,8 +2594,8 @@
         shipmentExecutionRows: document.getElementById("shipmentExecutionRows"),
         shipmentSourceActions: document.getElementById("shipmentSourceActions"),
         shipmentSourceActionMessage: document.getElementById("shipmentSourceActionMessage"),
-        shipmentApplyLatestButton: document.getElementById("shipmentApplyLatestButton"),
-        shipmentKeepWorkButton: document.getElementById("shipmentKeepWorkButton"),
+        shipmentApplyLatestButton: document.querySelector('[data-shipment-source-action="apply-latest"]'),
+        shipmentKeepWorkButton: document.querySelector('[data-shipment-source-action="keep-work"]'),
         shipmentHoldReason: document.getElementById("shipmentHoldReason"),
         shipmentHoldButton: document.getElementById("shipmentHoldButton"),
         shipmentConfirmButton: document.getElementById("shipmentConfirmButton"),
@@ -2602,8 +2603,8 @@
         orderQSourcePicker: document.getElementById("orderQSourcePicker"),
         orderQCandidateSearch: document.getElementById("orderQCandidateSearch"),
         orderQCandidateSelect: document.getElementById("orderQCandidateSelect"),
-        orderQCandidateLoadButton: document.getElementById("orderQCandidateLoadButton"),
-        orderQCandidateRefreshButton: document.getElementById("orderQCandidateRefreshButton"),
+        orderQCandidateLoadButton: document.querySelector('[data-orderq-candidate-action="load"]'),
+        orderQCandidateRefreshButton: document.querySelector('[data-orderq-candidate-action="refresh"]'),
         orderQSourceNotice: document.getElementById("orderQSourceNotice"),
         orderQReturnLink: document.getElementById("orderQReturnLink"),
         tableSearchInput: document.getElementById("tableSearchInput"),
@@ -3947,6 +3948,7 @@
       }
 
       function refreshInputState() {
+        elements.orderQSourcePicker.hidden = Boolean(state.orders);
         state.validation = state.orders && state.inventory
           ? engine.validateInputs(state.orders, state.inventory)
           : null;
@@ -3996,7 +3998,14 @@
         const selectedOrderId = elements.orderQCandidateSelect.value || state.orderQSource?.snapshot?.orderId || "";
         const visible = state.orderQCandidates.filter(snapshot => orderQCandidateMatches(snapshot, query));
         const options = visible.map(snapshot => new Option(orderQCandidateLabel(snapshot), snapshot.orderId));
-        if (!options.length) options.push(new Option(state.orderQCandidateLoading ? "주문 목록을 불러오는 중..." : "조건에 맞는 출고 가능 주문이 없습니다", ""));
+        if (!options.length) options.push(new Option(
+          state.orderQCandidateLoading
+            ? "주문 목록을 불러오는 중..."
+            : state.orderQCandidateMeta
+              ? "조건에 맞는 출고 가능 주문이 없습니다"
+              : "목록 새로고침을 눌러주세요",
+          "",
+        ));
         elements.orderQCandidateSelect.replaceChildren(...options);
         if (visible.some(snapshot => snapshot.orderId === selectedOrderId)) elements.orderQCandidateSelect.value = selectedOrderId;
         elements.orderQCandidateLoadButton.disabled = state.orderQCandidateLoading || !elements.orderQCandidateSelect.value;
@@ -8426,10 +8435,7 @@
           if (!button.closest(".global-header")) button.disabled = true;
         });
       } else {
-        initializeLocalRecovery().then(async () => {
-          await refreshOrderQCandidateList({ quiet: true });
-          await loadOrderQSourceFromRoute();
-        }).catch((error) => {
+        initializeLocalRecovery().then(loadOrderQSourceFromRoute).catch((error) => {
           setOrderQSourceNotice(`초기 주문 연결을 완료하지 못했습니다. 목록 새로고침 또는 주문현황 Excel을 사용하세요. · ${error.message || error}`, true);
         });
       }

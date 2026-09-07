@@ -54,7 +54,7 @@
 ## 구현 결과
 
 - A: 주문조회 상단의 이력수집·클라우드·ORDER IN·ORDER Q 운영을 접근 가능한 `운영 도구` 메뉴로 묶고 `+ 주문서 입력`은 주 작업으로 유지했다.
-- B: 출고관리 일반 진입에 저장 주문 검색·선택·목록 새로고침·주문조회 복귀를 추가했다. 목록은 기존 bounded read adapter의 최근 최대 200건만 읽고, 성공적으로 읽은 주문만 현재 작업에 반영한다.
+- B: 출고관리 일반 진입에 저장 주문 검색·선택·목록 새로고침·주문조회 복귀를 추가했다. 일반 진입만으로 저장소를 읽지 않고 작업자가 `목록 새로고침`을 선택할 때 기존 bounded read adapter의 최근 최대 200건만 읽으며, 성공적으로 읽은 주문만 현재 작업에 반영한다. 주문 또는 Excel 작업이 시작되면 선택기를 접어 기존 작업 화면 배치를 유지한다.
 - C: ORDER Q 직접 연결 작업표에서 원본 `주문수량`은 읽기 전용으로 유지하고 별도 `실제출고` 입력을 추가했다. 동일 draft가 확정표의 `이번 실제 출고수량`으로 전달되며, 확정표에는 주문수량·기출고·남은 주문수량을 별도 표시한다. 수동 주문현황 Excel의 기존 `주문` 편집 계약은 유지했다.
 - D: NOT_FOUND/EMPTY/ERROR에서 주문조회 복귀·목록 재시도·수동 Excel 대안을 표시하고 기존 화면 작업을 교체하지 않는다. 주문 변경 시 입력수량·사유를 보존하고 `최신 주문 적용`과 `현재 작업 유지`를 분리했다. 최신 적용은 `orderItemId` 우선, 양쪽에서 유일한 `sourceLineKey`만 보조 매칭하며 추가/삭제/중복 행을 임의 연결하지 않는다. 이전 Revision/hash의 확정은 UI와 command adapter 양쪽에서 계속 차단한다.
 
@@ -70,6 +70,9 @@
 - `scripts/validate-repository.mjs`: 24 checks, 0 warnings.
 - client safety, common UI 18 pages, basic login/home 16 apps, shipping purchase-plan failure injection `PASS`.
 - `scripts/test-shipping-management.mjs`: 실제 기준 fixture 83주문/274재고 포함 `PASS`.
+- Phase 6B approved-base UI 브라우저 회귀: 기존 버튼 ID·단축키·일반 작업 배치 불변, 일반 진입 선행 ORDER Q DB 접근 0건 `PASS`.
 - DB schema/Store/version/migration 변경 없음. ORDER Q/OrderOps 데이터 소유권과 창고재고 Excel 필수 계약 유지.
+
+첫 GitHub Actions run `34152573800`에서 새 버튼 ID의 기존 DOM 불변 계약 침범과 Linux Chrome 경로 누락을 확인했다. 신규 버튼 동작은 ID가 아닌 `data-*`로 분리하고 브라우저 시험의 Windows/Linux 실행 경로를 모두 지원하도록 보완했으며, 자동 후보 조회도 명시적 목록 새로고침으로 바꿔 앱 독립성 계약을 지켰다. 수정 후 신규 수락·동시성 충돌·기존 승인 UI 브라우저 회귀를 다시 실행해 모두 `PASS`했다.
 
 GitHub PR/CI/병합/배포 상태는 후속 커밋·Push 이후 exact SHA와 run을 추가 기록한다.
