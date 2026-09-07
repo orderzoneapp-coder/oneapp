@@ -444,7 +444,7 @@
       const session = sessionFromResponse(result);
       if (!session) throw new Error('NEXUS_AUTH_RESPONSE_INVALID');
       saveCachedSession(cached.token, session, cached.rememberLogin);
-      void publishSession({ token: cached.token, session });
+      void publishSession({ token: cached.token, session, rememberLogin: cached.rememberLogin });
       showHome(session);
       sessionNotice.textContent = '';
     } catch (error) {
