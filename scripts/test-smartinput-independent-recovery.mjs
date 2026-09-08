@@ -20,9 +20,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
-assert.match(html, /smartinput\.css\?v=0\.9\.13/);
+assert.match(html, /smartinput\.css\?v=0\.9\.14/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
-assert.match(html, /smartinput\.js\?v=0\.11\.40/);
+assert.match(html, /smartinput\.js\?v=0\.11\.41/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -66,10 +66,16 @@ assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
-assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>이름 변경</, 'the estimate library must expose only selected deletion and rename actions');
+assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>정보 변경</, 'the estimate library must expose only selected deletion and information actions');
 assert.match(html, /id="saveEstimateAsButton"[^>]*>새 견적서 저장</, 'a loaded estimate must use Save As instead of in-place rename');
-assert.match(appSource, /function openSelectedEstimateRenameDialog\([\s\S]*commitEstimateBundle\(\{ upserts: bundle \}\)/,
-  'single-record rename must preserve ids and atomically update linked display metadata');
+assert.match(appSource, /function openSelectedEstimateInformationDialog\([\s\S]*data-estimate-customer-match[\s\S]*commitEstimateBundle\(\{ upserts: bundle \}\)/,
+  'single-record information changes must support customer rematching while preserving linked display metadata');
+assert.match(appSource, /target\.customerId[\s\S]*target\.customerCode[\s\S]*target\.customerName[\s\S]*target\.draft\.header = estimateHeaderWithCustomer/,
+  'estimate information changes must persist the same customer identity on the record and draft header');
+assert.doesNotMatch(appSource, /state\.draft\.modes\.estimate = nextCurrent;[\s\S]{0,600}clearCustomerAfterSave\(nextCurrent\.header\)/,
+  'saving the selected estimate must not clear its rematched customer before a later in-place save');
+assert.match(appSource, /mapping\.targetEstimateId[\s\S]*TARGET_CUSTOMER_CHANGED/,
+  'changing an estimate customer must retire stale per-customer target mappings');
 assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreateChoiceDialog/,
   'MerchOps and redundant estimate-kind choice controls must stay removed');
 assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,

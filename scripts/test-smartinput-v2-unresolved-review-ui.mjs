@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '84522bb4ef8dcb1341813c1ecc0354d63fcbe7e3ef7dfa4eb3f01ade3d9628c9'],
-  ['../smartinput/smartinput.css', 'f0b38e7b5f63db24ea04a90120c60a40b1599c1b77233c03e147c3dbfda96cd8'],
-  ['../smartinput/smartinput.js', 'cdbbc3c4d11a66ed4095e82f04dd25fdc92b75901b93087be66d4d29bb308c38']
+  ['../smartinput/index.html', '656e7a5d0015c4d0bb3936eeeb6fa4d44c98b2ffc6074d76dd4caa4af04cab85'],
+  ['../smartinput/smartinput.css', '74cbd35536fe121d746f3447f5498bf26e426689ef92cdc9c302a64ecf3da4fc'],
+  ['../smartinput/smartinput.js', 'dfe178b358e3929c29149cafa0fa9816a002acd602c3eb3ce0d5cf6b790d2801']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline for estimate match-dictionary persistence and voucher upload sorting, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline for estimate information changes, match-dictionary persistence, and voucher upload sorting, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -196,5 +196,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
+  smartInputUiChanged: 'approved-estimate-information-rematch-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
 }, null, 2));
