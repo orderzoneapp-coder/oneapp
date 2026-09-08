@@ -981,7 +981,8 @@ try {
   assert.equal(await evaluate(client, `(() => {const trigger=document.querySelector('#inputListSearchButton').getBoundingClientRect();const reset=document.querySelector('#resetDraftButton').getBoundingClientRect();const toolbar=document.querySelector('.work-action-bar').getBoundingClientRect();const stats=document.querySelector('#gridRowCount');return document.querySelector('#inputListSearchPanel').hidden&&Math.abs(trigger.y-reset.y)<12&&Math.abs(toolbar.right-reset.right)<14&&stats.closest('.sr-only')&&!document.querySelector('.grid-toolbar');})()`), true, 'the compact basic actions must remain on one row, hide status counts, and pin voucher reset to the right edge');
   const estimateRailFooter = await evaluate(client, `(() => {const footer=document.querySelector('#catalogComposeArea').getBoundingClientRect();const buttons=[...document.querySelectorAll('#catalogComposeArea .button')].map(button=>{const rect=button.getBoundingClientRect();return {id:button.id,y:Math.round(rect.y),height:Math.round(rect.height),hidden:button.hidden};});return {height:Math.round(footer.height),buttons};})()`);
   assert.equal(estimateRailFooter.height <= 44, true, 'right rail footer must not exceed 44px');
-  assert.deepEqual(estimateRailFooter.buttons.map(button => button.id), ['selectedEstimateDeleteButton', 'estimateRenameButton'], 'right rail footer must contain only deletion and rename');
+  assert.deepEqual(estimateRailFooter.buttons.map(button => button.id), ['selectedEstimateDeleteButton', 'estimateRenameButton'], 'right rail footer must contain only deletion and information change');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateRenameButton').textContent.trim()`), '정보 변경', 'the selected-estimate action must be labeled information change');
   assert.equal(new Set(estimateRailFooter.buttons.map(button => button.y)).size, 1, 'right rail actions must remain horizontal');
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#estimateOutputActions .button')].map(button=>button.id)`), ['estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton'], 'estimate table footer must keep linked creation, Save As, Kakao, and Excel in the approved order');
   await click(client, '#addRowButton');
@@ -1205,10 +1206,30 @@ try {
   await click(client, '#catalogPickerList [data-select-estimate-card]');
   const renameTargetId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
   await click(client, '#estimateRenameButton');
-  await expr(client, `document.activeElement?.matches('[data-estimate-rename]')`, 'rename dialog direct input focus');
-  await input(client, '[data-estimate-rename]', '이름 변경된 견적');
-  await click(client, '[data-confirm-rename]');
-  await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]')?.textContent.includes('이름 변경된 견적')`, 'single estimate rename persisted without changing its id');
+  await expr(client, `document.activeElement?.matches('[data-estimate-name-change]')`, 'information dialog direct input focus');
+  assert.equal(await evaluate(client, `document.querySelector('[data-estimate-customer-name]').textContent.trim()`), '거래처 미지정', 'legacy customerless estimate must make the missing customer explicit');
+  await click(client, '[data-estimate-customer-match]');
+  await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]'))`, 'estimate information customer fixture');
+  await click(client, '.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]');
+  await click(client, '.smart-customer-dialog [data-customer-use]');
+  await expr(client, `!document.querySelector('.smart-customer-dialog')&&document.querySelector('[data-estimate-customer-name]')?.textContent.trim()==='격리 검증 거래처'`, 'estimate information customer rematched');
+  await input(client, '[data-estimate-name-change]', '정보 변경된 견적');
+  await click(client, '[data-confirm-information]');
+  await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]')?.textContent.includes('정보 변경된 견적')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'estimate name and customer applied without changing its id');
+  const estimateInformation = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');return {record:{id:record.customerId,code:record.customerCode,name:record.customerName},header:{id:record.draft.header.customerId,code:record.draft.header.customerCode,name:record.draft.header.customerName}};})()`);
+  assert.deepEqual(estimateInformation, {
+    record: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처' },
+    header: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처' }
+  }, 'estimate information must persist identical customer identity on the record and draft header');
+  await input(client, '#inputRows [data-field="unitPrice"]', '1801');
+  await click(client, '#completeButton');
+  await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'first in-place save preserves the rematched customer');
+  await input(client, '#inputRows [data-field="unitPrice"]', '1802');
+  await click(client, '#completeButton');
+  await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-resave-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');return record?.customerId==='E2E-CUSTOMER'&&record?.draft?.header?.customerId==='E2E-CUSTOMER'&&record?.draft?.rows?.some(row=>Number(row.unitPrice)===1802);})()`, 'repeated in-place saves preserve the rematched customer');
+  await click(client, `#catalogPickerList .estimate-card:not([data-estimate-id="${renameTargetId}"]) [data-select-estimate-card]`);
+  await click(client, `#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]`);
+  await expr(client, `document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'&&document.querySelector('#customerInput').value==='격리 검증 거래처'`, 'estimate list reselection restores the rematched customer');
   await click(client, '#saveEstimateAsButton');
   await input(client, '[data-estimate-name]', '삭제 확인용 사본');
   await click(client, '[data-confirm-save]');

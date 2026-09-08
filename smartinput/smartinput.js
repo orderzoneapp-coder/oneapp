@@ -3877,8 +3877,41 @@ function catalogCustomerId(record) {
   return String(record?.customerId || record?.draft?.header?.customerId || '').trim();
 }
 
+function catalogCustomerCode(record) {
+  return String(record?.customerCode || record?.draft?.header?.customerCode || '').trim();
+}
+
 function catalogCustomerName(record) {
   return String(record?.customerName || record?.draft?.header?.customerName || '').trim();
+}
+
+function estimateStoredCustomer(record) {
+  const customerId = catalogCustomerId(record);
+  const matched = customerId ? customerById(customerId) : null;
+  if (matched) return matched;
+  const customerCodeValue = catalogCustomerCode(record);
+  const customerNameValue = catalogCustomerName(record);
+  if (!customerId && !customerCodeValue && !customerNameValue) return null;
+  return { customerId, customerCode: customerCodeValue, customerName: customerNameValue };
+}
+
+function estimateHeaderWithCustomer(header = {}, customer, mappingSource = 'CATALOG_INFORMATION_UPDATE') {
+  if (!customer) return { ...header };
+  const customerId = String(customer.customerId || '').trim();
+  const group = groupForCustomer(customerId);
+  const taxCustomer = group?.taxCustomerId ? customerById(group.taxCustomerId) : null;
+  return {
+    ...header,
+    customerId,
+    customerCode: customerCode(customer),
+    customerName: customerName(customer),
+    customerMappingSource: mappingSource,
+    aliasMappingId: '',
+    customerLinkGroupId: group?.linkGroupId || '',
+    taxCustomerId: taxCustomer?.customerId || '',
+    taxCustomerName: customerName(taxCustomer),
+    isTemporaryCustomer: Boolean(temporaryMeta(customerId))
+  };
 }
 
 function normalizeEstimateOrder(records = state.estimates) {
@@ -4474,10 +4507,18 @@ function renameEstimateSourceMetadata(draft, estimateId, catalogName) {
   return draft;
 }
 
-function renamedEstimateBundle(record, catalogName, timestamp) {
+function updatedEstimateInformationBundle(record, { catalogName, customer = null } = {}, timestamp) {
   const target = JSON.parse(JSON.stringify(record));
   target.catalogName = catalogName;
   target.updatedAt = timestamp;
+  if (target.draft) target.draft.updatedAt = timestamp;
+  if (target.estimateKind !== 'LINKED_GROUP' && customer) {
+    target.customerId = String(customer.customerId || '').trim();
+    target.customerCode = customerCode(customer);
+    target.customerName = customerName(customer);
+    target.draft = target.draft || {};
+    target.draft.header = estimateHeaderWithCustomer(target.draft.header || {}, customer);
+  }
   const changed = new Map([[target.estimateId, target]]);
   if (target.estimateKind !== 'LINKED_GROUP') {
     linkedEstimateRecords().forEach(linkedRecord => {
@@ -4495,65 +4536,120 @@ function renamedEstimateBundle(record, catalogName, timestamp) {
   return [...changed.values()];
 }
 
-function openSelectedEstimateRenameDialog() {
+async function retireEstimateTargetMappingsAfterCustomerChange(record, customer, timestamp) {
+  if (!customer || record.estimateKind === 'LINKED_GROUP') return 0;
+  const previous = [catalogCustomerId(record), catalogCustomerCode(record), catalogCustomerName(record)].join('|');
+  const next = [String(customer.customerId || '').trim(), customerCode(customer), customerName(customer)].join('|');
+  if (previous === next) return 0;
+  const mappings = state.aliasMappings.filter(mapping => mapping.mappingType === ESTIMATE_BULK_TARGET_MATCH_TYPE
+    && mapping.status === 'CONFIRMED'
+    && String(mapping.targetEstimateId || '').trim() === record.estimateId);
+  for (const mapping of mappings) {
+    const retired = { ...mapping, status: 'INACTIVE', inactiveReason: 'TARGET_CUSTOMER_CHANGED', updatedAt: timestamp };
+    await saveAliasMapping(retired);
+    const index = state.aliasMappings.findIndex(item => item.aliasMappingId === retired.aliasMappingId);
+    if (index >= 0) state.aliasMappings[index] = retired;
+  }
+  return mappings.length;
+}
+
+function openSelectedEstimateInformationDialog() {
   const records = selectedEstimateRecords();
-  if (records.length !== 1) return toast('이름을 변경할 견적서 하나를 선택하세요.', 'warn');
+  if (records.length !== 1) return toast('정보를 변경할 견적서 하나를 선택하세요.', 'warn');
   const record = records[0];
   const currentName = estimateTitle(record);
+  let selectedCustomer = record.estimateKind === 'LINKED_GROUP' ? null : estimateStoredCustomer(record);
   const dialog = document.createElement('dialog');
-  dialog.className = 'smart-dialog estimate-save-dialog estimate-rename-dialog';
+  dialog.className = 'smart-dialog estimate-save-dialog estimate-information-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
-    <header><div><small>Estimate Rename</small><h2>견적서 이름 변경</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">견적서 내용과 연결 관계는 유지하고 목록 이름만 변경합니다.</div>
-    <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-rename maxlength="80" value="${esc(currentName)}" autocomplete="off" enterkeyhint="done" autofocus></label></div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-rename>변경</button></footer>
+    <header><div><small>Estimate Information</small><h2>견적서 정보 변경</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="smart-dialog__message">${record.estimateKind === 'LINKED_GROUP' ? '연동견적서는 원본별 거래처를 유지하며 견적서명만 변경합니다.' : '견적서명과 연결 거래처를 변경합니다. 품목과 가격은 그대로 유지됩니다.'}</div>
+    <div class="estimate-dialog-form">
+      <label><span>견적서명</span><input type="text" data-estimate-name-change maxlength="80" value="${esc(currentName)}" autocomplete="off" enterkeyhint="done" autofocus></label>
+      ${record.estimateKind === 'LINKED_GROUP' ? '' : `<div class="estimate-info-customer"><span>거래처</span><div class="estimate-info-customer__value"><span class="estimate-info-customer__copy"><strong data-estimate-customer-name></strong><small data-estimate-customer-code></small></span><button type="button" class="button button--quiet button--small" data-estimate-customer-match>거래처 다시 매칭</button></div></div>`}
+    </div>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-information>변경</button></footer>
   </div>`;
   document.body.append(dialog);
   const close = () => { dialog.close(); dialog.remove(); };
+  const renderCustomer = () => {
+    if (record.estimateKind === 'LINKED_GROUP') return;
+    dialog.querySelector('[data-estimate-customer-name]').textContent = customerName(selectedCustomer) || '거래처 미지정';
+    dialog.querySelector('[data-estimate-customer-code]').textContent = customerCode(selectedCustomer) || (selectedCustomer?.customerId ? '코드 미등록' : '거래처를 다시 매칭하세요.');
+  };
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', close));
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
+  dialog.querySelector('[data-estimate-customer-match]')?.addEventListener('click', async () => {
+    const customer = await chooseCustomer({ initialQuery: customerName(selectedCustomer), applyToHeader: false });
+    if (!customer || !dialog.isConnected) return;
+    selectedCustomer = customer;
+    renderCustomer();
+  });
   const submit = async () => {
-    const input = dialog.querySelector('[data-estimate-rename]');
+    const input = dialog.querySelector('[data-estimate-name-change]');
     const catalogName = input.value.trim();
     if (!catalogName) {
       input.focus();
       return;
     }
-    if (catalogName === currentName) return close();
-    const confirmButton = dialog.querySelector('[data-confirm-rename]');
+    const currentCustomer = estimateStoredCustomer(record);
+    const customerChanged = record.estimateKind !== 'LINKED_GROUP' && [
+      String(currentCustomer?.customerId || '').trim(), customerCode(currentCustomer), customerName(currentCustomer)
+    ].join('|') !== [
+      String(selectedCustomer?.customerId || '').trim(), customerCode(selectedCustomer), customerName(selectedCustomer)
+    ].join('|');
+    if (catalogName === currentName && !customerChanged) return close();
+    const confirmButton = dialog.querySelector('[data-confirm-information]');
     confirmButton.disabled = true;
     state.busy = true;
     renderCatalogControls();
     try {
       const timestamp = new Date().toISOString();
-      const bundle = renamedEstimateBundle(record, catalogName, timestamp);
+      const bundle = updatedEstimateInformationBundle(record, { catalogName, customer: selectedCustomer }, timestamp);
       await commitEstimateBundle({ upserts: bundle });
       const bundleById = new Map(bundle.map(item => [item.estimateId, item]));
       state.estimates = normalizeEstimateOrder(state.estimates.map(item => bundleById.get(item.estimateId) || item));
       renameEstimateSourceMetadata(modeDraft(), record.estimateId, catalogName);
       state.estimateWorkingCopies.forEach(draft => renameEstimateSourceMetadata(draft, record.estimateId, catalogName));
+      const updatedRecord = bundleById.get(record.estimateId);
+      if (updatedRecord?.estimateKind !== 'LINKED_GROUP' && selectedCustomer) {
+        if (modeDraft().catalogRecordId === record.estimateId) modeDraft().header = estimateHeaderWithCustomer(modeDraft().header, selectedCustomer);
+        const workingCopy = state.estimateWorkingCopies.get(record.estimateId);
+        if (workingCopy) workingCopy.header = estimateHeaderWithCustomer(workingCopy.header, selectedCustomer);
+        const baseline = state.estimateWorkingCopyBaselines.get(record.estimateId);
+        if (baseline) baseline.header = estimateHeaderWithCustomer(baseline.header, selectedCustomer);
+      }
       saveDraftNow();
       close();
       if (estimateCreationActive()) previewEstimateCreation();
       else renderMode();
-      setAppStatus(`“${catalogName}”으로 이름을 변경했습니다.`);
+      let mappingWarning = false;
+      try {
+        await retireEstimateTargetMappingsAfterCustomerChange(record, selectedCustomer, timestamp);
+      } catch (_) {
+        mappingWarning = true;
+      }
+      setAppStatus(mappingWarning
+        ? `“${catalogName}” 정보를 변경했지만 이전 거래처 매칭사전은 정리하지 못했습니다.`
+        : `“${catalogName}” 정보를 변경했습니다.`, mappingWarning ? 'warn' : '');
     } catch (error) {
       confirmButton.disabled = false;
-      toast(error.message || '견적서 이름을 변경하지 못했습니다. 기존 이름은 유지됩니다.', 'error');
+      toast(error.message || '견적서 정보를 변경하지 못했습니다. 기존 정보는 유지됩니다.', 'error');
     } finally {
       state.busy = false;
       renderCatalogControls();
       renderDelivery();
     }
   };
-  dialog.querySelector('[data-confirm-rename]').addEventListener('click', () => { void submit(); });
-  dialog.querySelector('[data-estimate-rename]').addEventListener('keydown', event => {
+  dialog.querySelector('[data-confirm-information]').addEventListener('click', () => { void submit(); });
+  dialog.querySelector('[data-estimate-name-change]').addEventListener('keydown', event => {
     if (event.key !== 'Enter' || event.isComposing) return;
     event.preventDefault();
     void submit();
   });
   dialog.showModal();
-  const input = dialog.querySelector('[data-estimate-rename]');
+  renderCustomer();
+  const input = dialog.querySelector('[data-estimate-name-change]');
   const focusInput = () => { input.focus({ preventScroll: true }); input.select(); };
   focusInput();
   window.setTimeout(focusInput, 0);
@@ -4759,9 +4855,14 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
     ? { ...record.previousPrices }
     : { ...(catalogDraft.catalogPreviousPrices || {}) };
   const linkedCustomer = record.estimateKind === 'LINKED_GROUP' ? null : customerById(catalogCustomerId(record));
-  catalogDraft.header.customerId = linkedCustomer?.customerId || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record));
-  catalogDraft.header.customerName = customerName(linkedCustomer) || (record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record));
-  catalogDraft.header.customerMappingSource = 'CATALOG';
+  if (linkedCustomer) {
+    catalogDraft.header = estimateHeaderWithCustomer(catalogDraft.header, linkedCustomer, 'CATALOG');
+  } else {
+    catalogDraft.header.customerId = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record);
+    catalogDraft.header.customerCode = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerCode(record);
+    catalogDraft.header.customerName = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record);
+    catalogDraft.header.customerMappingSource = 'CATALOG';
+  }
   if (!hasWorkingCopy) state.estimateWorkingCopyBaselines.set(record.estimateId, JSON.parse(JSON.stringify(catalogDraft)));
   state.draft.modes.estimate = catalogDraft;
   if (inputMappingSession(catalogDraft)) {
@@ -8630,6 +8731,7 @@ async function saveEstimateDocument(catalogName) {
       estimateKind: intendedKind,
       linkedEstimateSources: intendedKind === 'LINKED_GROUP' ? nextCurrent.linkedEstimateSources.map(source => ({ ...source })) : [],
       customerId: intendedKind === 'LINKED_GROUP' ? '' : nextCurrent.header.customerId,
+      customerCode: intendedKind === 'LINKED_GROUP' ? '' : nextCurrent.header.customerCode,
       customerName: intendedKind === 'LINKED_GROUP' ? '' : nextCurrent.header.customerName,
       rowCount: summary.total,
       amount: summary.amount,
@@ -8706,7 +8808,6 @@ async function saveEstimateDocument(catalogName) {
     state.estimateSelectionReturnDraft = null;
     state.estimateMultiSelectKind = '';
     setEstimateCreation(null);
-    clearCustomerAfterSave(nextCurrent.header);
     saveDraftNow();
     hydrateHeader();
     renderEstimateHeaderFields();
@@ -9873,7 +9974,7 @@ $('estimateExcelButton').addEventListener('click', exportCurrentVoucherExcel);
 $('selectedEstimateDeleteButton').addEventListener('click', () => {
   void deleteSelectedEstimates();
 });
-$('estimateRenameButton').addEventListener('click', openSelectedEstimateRenameDialog);
+$('estimateRenameButton').addEventListener('click', openSelectedEstimateInformationDialog);
 $('estimateCreateButton').addEventListener('click', () => {
   if (estimateCreationActive()) void completeOrder();
 });
