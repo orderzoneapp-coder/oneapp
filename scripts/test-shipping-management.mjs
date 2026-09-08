@@ -13,7 +13,7 @@ assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
   "the public OrderOps mirror must remain a complete HTML document");
-assert.match(orderOpsHtml, /brand-badge">v1\.55</, "ORDER Q visible version must be v1.55");
+assert.match(orderOpsHtml, /brand-badge">v1\.56</, "ORDER Q visible version must be v1.56");
 assert.match(orderOpsHtml, /<title>출고관리 - NEXUS<\/title>/,
   "the public page title must establish ORDER Q as shipment management");
 assert.match(orderOpsHtml, /aria-label="ONEAPP ORDER Q 출고관리"/,
@@ -22,7 +22,7 @@ assert.match(orderOpsHtml, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the public header must use the approved ORDER Q logo asset");
 assert.match(orderOpsHtml, /\.brand-logo-frame\s*\{[\s\S]*?width:\s*120px;[\s\S]*?height:\s*20px;/,
   "the public ORDER Q logo must match the ONEAPP wordmark height");
-assert.match(orderOpsHtml, /ORDER Q v1\.55 · 출고관리/,
+assert.match(orderOpsHtml, /ORDER Q v1\.56 · 출고관리/,
   "the public footer must use the ORDER Q product concept");
 assert.doesNotMatch(
   orderOpsHtml.slice(orderOpsHtml.indexOf('<header class="global-header">'), orderOpsHtml.indexOf('</header>')),
@@ -37,7 +37,7 @@ assert.equal(
   "the repository logo must be the unmodified approved source image",
 );
 assert.ok(orderOpsHtml.includes('class="execution-panel"'),
-  "the public v1.55 execution controls must be separate from the upload strip");
+  "the public v1.56 execution controls must be separate from the upload strip");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,/,
   "the public execution controls must use two independent buttons");
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
@@ -48,7 +48,7 @@ assert.match(orderOpsHtml, /\.system-topbar\s*\{[^}]*min-height:\s*58px;[^}]*pad
   "the public System.IO status row must use the DataOps-scale vertical spacing");
 assert.match(orderOpsHtml, /\.upload-card,\s*\.execution-panel\s*\{[^}]*min-height:\s*54px;/,
   "the public uploader tabs must retain the taller DataOps-scale hit area");
-assert.match(orderOpsHtml, /ORDER Q v1\.55: align System\.IO directly under the global header[\s\S]*?\.page-shell\s*\{\s*padding-top:\s*0;/,
+assert.match(orderOpsHtml, /ORDER Q v1\.56:[\s\S]*?\.page-shell\s*\{\s*padding-top:\s*0;/,
   "the public System.IO workbench must start directly below the global header");
 assert.ok(orderOpsHtml.includes('class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면"'),
   "the five source/result cards must form one accessible tab list");
@@ -202,7 +202,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(orderOpsHtml.includes(requiredInteractionContract),
-    `public ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
+    `public ORDER Q v1.56 interaction contract is missing: ${requiredInteractionContract}`);
 }
 const publicApplyViewPresetSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf("function applyOrderViewPreset"),
@@ -291,14 +291,21 @@ assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>
 assert.ok(orderOpsHtml.includes(
   'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "합계", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the public order table must include the source customer group in the approved sequence");
-assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
-  "the order warehouse column must remain read-only");
+for (const editableFieldContract of ['[0, "warehouse"]', '[1, "customer"]', '[2, "group"]', '[3, "manager"]', '[8, "quantity"]']) {
+  assert.ok(orderOpsHtml.includes(editableFieldContract), `public ORDER Q editable cell contract is missing: ${editableFieldContract}`);
+}
+assert.ok(orderOpsHtml.includes('[allocationTailStart, "deliveryNotice"]'),
+  "public ORDER Q delivery notice cell must replace both source memo fields as one editable value");
+assert.doesNotMatch(orderOpsHtml, /\[(?:4|5|6),\s*"(?:productCode|productName|specification)"\]/,
+  "product identity columns must remain fixed while business cells are editable");
 assert.match(orderOpsHtml, /table\s*\{[^}]*border-collapse:\s*collapse;[^}]*border:\s*1px solid #d9e2ec;/,
   "public preview tables must use a light Excel-like grid");
 assert.match(orderOpsHtml, /\.order-edit-input\s*\{[^}]*border:\s*0;/,
   "public editable cells must not draw an inner input border");
 assert.match(orderOpsHtml, /\.table-wrap td:focus-within\s*\{[^}]*background:\s*#edf9f7 !important;/,
   "public editable cells must show a light focus fill");
+assert.match(orderOpsHtml, /#previewTable tbody tr:focus-within\s*\{[^}]*outline:\s*2px solid/,
+  "public ORDER Q active row must show an Excel-style focus border");
 assert.doesNotMatch(orderOpsHtml, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "the compact source strip must not retain a permanent bundle panel");
 assert.match(orderOpsHtml, /function setActiveFilterPanel\(panelName = ""\)/,
@@ -325,7 +332,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260904-substitute-message") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260910-excel-grid") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260904-substitute-message"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -725,7 +732,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.0");
+assert.equal(engine.ENGINE_VERSION, "3.20.0");
+assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
@@ -1061,26 +1069,72 @@ assert.deepEqual(
 assert.equal(salesOnlyLedgerRow?.salesOnly, true);
 
 const editableWorkspace = engine.analyze(
-  parseOrders(buildOrderMatrix([{ code: "EDIT-001", quantity: 2, price: 1000, note: "기존 전달" }])),
+  parseOrders(buildOrderMatrix([{ code: "EDIT-001", quantity: 2, price: 1000, note: "기존 전달", note1: "기존 적요1" }])),
   parseInventory(buildInventoryMatrix([{ code: "EDIT-001", whole: 5, seoul: 0, transfer: 0 }])),
   { createdAt: "2026-08-12T00:00:00.000Z", sourceFingerprint: "7".repeat(64) },
 );
 const editableOrderRow = editableWorkspace.orders[0].sourceRowNumber;
-engine.setOrderValue(editableWorkspace, editableOrderRow, "warehouse", "1창고");
-engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "7");
-engine.setOrderValue(editableWorkspace, editableOrderRow, "unitPrice", "1200");
-engine.setOrderValue(editableWorkspace, editableOrderRow, "note", "변경 전달");
-engine.setOrderValue(editableWorkspace, editableOrderRow, "purchase", "구매처B");
+const editAuditOptions = {
+  actor: "검증작업자",
+  occurredAt: "2026-09-10T01:02:03.000Z",
+  recordHistory: true,
+};
+engine.setOrderValue(editableWorkspace, editableOrderRow, "warehouse", "1창고", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "7", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "unitPrice", "1200", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "deliveryNotice", "변경 전달", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "customer", "변경 거래처", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "group", "변경 그룹", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "변경 담당자", editAuditOptions);
+engine.setOrderValue(editableWorkspace, editableOrderRow, "purchase", "구매처B", editAuditOptions);
 assert.deepEqual(
   [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].quantity,
     editableWorkspace.orders[0].unitPrice, editableWorkspace.orders[0].supplyAmount,
-    editableWorkspace.orders[0].note, editableWorkspace.allocations[0].purchase],
-  ["1창고", 7, 1200, 8400, "변경 전달", "구매처B"],
+    editableWorkspace.orders[0].note, editableWorkspace.orders[0].note1, editableWorkspace.orders[0].customer,
+    editableWorkspace.orders[0].group, editableWorkspace.orders[0].manager,
+    editableWorkspace.allocations[0].purchase],
+  ["1창고", 7, 1200, 8400, "변경 전달", "", "변경 거래처", "변경 그룹", "변경 담당자", "구매처B"],
   "editable order values must survive the workspace recalculation",
 );
 assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].remainingQuantity, -2);
 assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 2);
-assert.equal(editableWorkspace.notices[0].warehouse, "1창고");
+assert.deepEqual(
+  [editableWorkspace.notices[0].warehouse, editableWorkspace.notices[0].customer, editableWorkspace.notices[0].manager],
+  ["1창고", "변경 거래처", "변경 담당자"],
+  "successful cell edits must flow into delivery notices without changing product identity",
+);
+assert.deepEqual(
+  [editableWorkspace.orders[0].productCode, editableWorkspace.orders[0].productName, editableWorkspace.orders[0].specification],
+  ["EDIT-001", "상품 EDIT-001", "EA"],
+  "business-cell edits must keep the product row identity fixed",
+);
+assert.throws(
+  () => engine.setOrderValue(editableWorkspace, editableOrderRow, "productCode", "EDIT-002"),
+  /수정할 수 없는 주문 항목/,
+  "product identity must not be editable through the operational cell editor",
+);
+const editAuditEvents = editableWorkspace.systemHistory.events;
+assert.equal(editableWorkspace.systemHistory.schemaVersion, engine.SYSTEM_HISTORY_SCHEMA_VERSION);
+assert.ok(editAuditEvents.some((event) => event.field === "customer" && event.previousValue !== event.nextValue));
+assert.ok(editAuditEvents.some((event) => event.field === "deliveryNotice" && event.nextValue === "변경 전달"));
+const auditCountBeforeNoop = editAuditEvents.length;
+engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "변경 담당자", editAuditOptions);
+assert.equal(editableWorkspace.systemHistory.events.length, auditCountBeforeNoop,
+  "confirming an unchanged cell must not append system history");
+assert.ok(
+  engine.getInventoryViewRows(editableWorkspace).rows[0].systemMessages.some((message) =>
+    message.message.includes("[정보수정] 거래처") && message.actor === "검증작업자"),
+  "successful business-cell edits must project actor and before/after values into system messages",
+);
+const editableWarehouseColumn = engine.getInventoryColumnDescriptors(editableWorkspace)
+  .find((column) => column.role === "warehouseQuantity");
+const auditCountBeforeInventoryEdit = editableWorkspace.systemHistory.events.length;
+engine.setInventoryOverride(editableWorkspace, "EDIT-001", editableWarehouseColumn.key, 4, editAuditOptions);
+assert.equal(editableWorkspace.systemHistory.events.length, auditCountBeforeInventoryEdit + 1);
+assert.equal(editableWorkspace.systemHistory.events.at(-1).fieldLabel, editableWarehouseColumn.header);
+engine.setInventoryOverride(editableWorkspace, "EDIT-001", editableWarehouseColumn.key, 4, editAuditOptions);
+assert.equal(editableWorkspace.systemHistory.events.length, auditCountBeforeInventoryEdit + 1,
+  "confirming an unchanged inventory cell must not append system history");
 assert.equal(
   dynamicView.rows[0].orderInformation,
   "거래처 1(2)1,000\n반복거래처(1)1,000",
@@ -1839,7 +1893,7 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.55</, "canonical ORDER Q visible version must be v1.55");
+assert.match(html, /brand-badge">v1\.56</, "canonical ORDER Q visible version must be v1.56");
 assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
@@ -1928,7 +1982,7 @@ for (const requiredWarehouseColorContract of [
   'oneapp.orderops.warehouse-colors.v1',
   'data-warehouse-filter',
   'data-palette-color',
-  'class="inventory-input"',
+  'inventory-input excel-grid-input',
   'class="inventory-total-frame"',
 ]) {
   assert.ok(html.includes(requiredWarehouseColorContract),
@@ -2006,7 +2060,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
+    `canonical ORDER Q interaction contract is missing: ${requiredInteractionContract}`);
 }
 const canonicalApplyViewPresetSource = html.slice(
   html.indexOf("function applyOrderViewPreset"),
@@ -2032,14 +2086,32 @@ assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
 assert.ok(html.includes(
   'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "합계", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the canonical order table must include the source customer group in the approved sequence");
-assert.doesNotMatch(html, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
-  "the canonical order warehouse column must remain read-only");
+for (const editableFieldContract of ['[0, "warehouse"]', '[1, "customer"]', '[2, "group"]', '[3, "manager"]', '[8, "quantity"]']) {
+  assert.ok(html.includes(editableFieldContract), `canonical ORDER Q editable cell contract is missing: ${editableFieldContract}`);
+}
+assert.ok(html.includes('[allocationTailStart, "deliveryNotice"]'),
+  "canonical ORDER Q delivery notice cell must replace both source memo fields as one editable value");
+assert.doesNotMatch(html, /\[(?:4|5|6),\s*"(?:productCode|productName|specification)"\]/,
+  "canonical product identity columns must remain fixed while business cells are editable");
+for (const excelGridContract of [
+  'class="order-edit-input excel-grid-input"',
+  'class="inventory-input excel-grid-input"',
+  'data-grid-row-key=',
+  'function handleExcelGridNavigation',
+  'event.key === "ArrowDown" || event.key === "Enter" ? 1 : 0',
+  'addEventListener("keydown", handleExcelGridNavigation)',
+  'recordHistory: true',
+]) {
+  assert.ok(html.includes(excelGridContract), `canonical Excel grid contract is missing: ${excelGridContract}`);
+}
 assert.match(combinedCss, /\.purchase-input\s*\{[^}]*border:\s*0;/,
   "canonical purchase editors must not draw an inner input border");
 assert.match(combinedCss, /table\.preview-inventory \.inventory-input\s*\{[^}]*border:\s*0;/,
   "canonical inventory editors must not draw an inner input border");
 assert.match(combinedCss, /\.table-wrap td:focus-within\s*\{[^}]*background:\s*#edf9f7 !important;/,
   "canonical editable cells must show a light focus fill");
+assert.match(combinedCss, /#previewTable tbody tr:focus-within\s*\{[^}]*outline:\s*2px solid/,
+  "canonical ORDER Q active row must show an Excel-style focus border");
 assert.doesNotMatch(html, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
   "canonical compact source strip must not retain a permanent bundle panel");
 assert.match(html, /function setActiveFilterPanel\(panelName = ""\)/,
@@ -2629,12 +2701,12 @@ assert.ok(settingsSource.includes('setAttribute("aria-expanded", String(open))')
 assert.match(html, /id="settingsModal"[\s\S]*role="dialog" aria-modal="true"/, "settings must open as a modal dialog");
 for (const contract of [
   "normalizeExcelMappingRecord", "saveExcelMappingsFromEditor", "headerAliases",
-  "handleInventoryGridArrowNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
+  "handleExcelGridNavigation", "autocompletePurchaseInput", "rememberPurchaseName",
   "purchaseAutocompleteNames", "handlePurchaseAutocompleteKeyboard", "finishPurchaseEntry",
   "showPurchaseCompletionCoachmark",
   "function resetResultViewFilters()", 'grid-template-columns: repeat(2, minmax(0, 1fr))',
 ]) {
-  assert.ok(html.includes(contract), `ORDER Q v1.55 contract is missing: ${contract}`);
+  assert.ok(html.includes(contract), `ORDER Q v1.56 contract is missing: ${contract}`);
 }
 const purchaseAutocompleteStart = html.indexOf("function purchaseAutocompleteNames");
 const purchaseAutocompleteEnd = html.indexOf("function closePurchaseAutocomplete", purchaseAutocompleteStart);

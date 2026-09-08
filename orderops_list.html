@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260904-substitute-message"></script>
+  <script src="orderFulfillmentEngine.js?v=20260910-excel-grid"></script>
   <script src="orderFulfillmentWorkbook.js?v=20260904-substitute-message"></script>
   <style>
     :root {
@@ -1133,7 +1133,17 @@
       outline: 0; background: transparent; box-shadow: none; font-size: 12px;
     }
     .order-edit-input:focus { outline: 0; background: transparent; }
+    .excel-grid-input { width: 100%; min-width: 0; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
+    .excel-grid-input:focus { outline: 0; background: transparent; }
     .table-wrap td:focus-within { background: #edf9f7 !important; }
+    @media screen {
+      #previewTable tbody tr:focus-within {
+        position: relative;
+        z-index: 1;
+        outline: 2px solid var(--nexus-ui-focus, #5eead4);
+        outline-offset: -2px;
+      }
+    }
     tr td.ordered-context-cell { background: #eff6ff !important; }
     td.ledger-negative-cell,
     td.purchase-negative-cell { color: #854d0e !important; background: #fef9c3 !important; font-weight: 900; }
@@ -1186,10 +1196,10 @@
     }
     .order-information-quantity,
     .order-information-price { font-size: 10px; }
-    .table-wrap.substitution-target-mode table.preview-inventory tbody tr:not(.substitution-source-product-row) > td {
+    .table-wrap.substitution-target-mode table.preview-inventory td.substitution-target-cell {
       cursor: copy;
     }
-    .table-wrap.substitution-target-mode table.preview-inventory tbody tr:not(.substitution-source-product-row):hover > td {
+    .table-wrap.substitution-target-mode table.preview-inventory td.substitution-target-cell:hover {
       background: color-mix(in srgb, #14b8a6 14%, var(--white)) !important;
       box-shadow: inset 0 1px 0 #14b8a6, inset 0 -1px 0 #14b8a6;
     }
@@ -1820,7 +1830,7 @@
     .derived-view-label { margin: 5px 5px 5px 0; }
     .integrated-file-button { min-height: 28px; }
     .execution-button { min-height: 54px; }
-    /* ORDER Q v1.55: align System.IO directly under the global header */
+    /* ORDER Q v1.56: Excel-style cell editing and navigation */
     .page-shell { padding-top: 0; }
     .system-topbar .validation-box { flex: 0 1 auto; min-width: 190px; padding: 2px 8px; border: 0; background: transparent; }
     .system-topbar .validation-box p { margin: 0; white-space: nowrap; font-size: 10px; }
@@ -1885,7 +1895,7 @@
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
       <span class="brand-logo-frame" aria-hidden="true"><img class="brand-logo" src="assets/order-q-logo.png" alt=""></span>
-      <span class="brand-badge">v1.55</span>
+      <span class="brand-badge">v1.56</span>
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
@@ -2104,7 +2114,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.56 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -4908,7 +4918,7 @@
           const selected = selectable && Number(state.selectedSubstitutionOrderRow) === Number(order.sourceRowNumber);
           const badgeClass = `order-information-badge${colorAssigned ? " manager-color-badge" : ""}${selected ? " substitution-selected" : ""}`;
           const badgeStyle = colorAssigned ? ` style="--manager-color:${managerColor}"` : "";
-          const badgeTitle = `${entry}${manager ? ` · 담당 ${manager}` : ""}${selectable ? " · 클릭 후 Ctrl+상품 클릭으로 대체출고" : ""}`;
+          const badgeTitle = `${entry}${manager ? ` · 담당 ${manager}` : ""}${selectable ? " · 클릭 후 Ctrl+대상 정보 셀 클릭으로 대체출고" : ""}`;
           const match = entry.match(/^(.*)(\([^()]*\))([+-]?[\d,]+(?:\.\d+)?)$/);
           const inner = !match
             ? escapeHtml(entry)
@@ -5091,21 +5101,30 @@
         allocations.columns[6].role = "specification";
         allocations.columns[7].role = "productAggregateQuantity";
         allocations.columns[8].role = "orderQuantity";
-        allocations.columns[8].orderField = "quantity";
+        [
+          [0, "warehouse"],
+          [1, "customer"],
+          [2, "group"],
+          [3, "manager"],
+          [8, "quantity"],
+          [9, "unitPrice"],
+          [allocationTailStart, "deliveryNotice"],
+        ].forEach(([index, field]) => {
+          if (allocations.columns[index]) allocations.columns[index].orderField = field;
+        });
         allocations.columns[9].role = "unitPrice";
-        allocations.columns[9].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
             column.defaultWidth = 56;
             column.role = "warehouseQuantity";
+            column.inventoryColumnKey = allocationInventoryView.columns[index]?.key || "";
           }
         });
         [160, 90].forEach((width, index) => {
           const column = allocations.columns[allocationTailStart + index];
           if (column) column.defaultWidth = width;
         });
-        allocations.columns[allocationTailStart].orderField = "note";
         allocations.shortageCount = shortageContext.shortageCount || 0;
 
         const notices = {
@@ -5721,14 +5740,19 @@
                     Number(order?.sourceRowNumber) === Number(state.selectedSubstitutionOrderRow))
                   ? "substitution-source-product-row" : "",
               ].filter(Boolean).join(" ");
+              const gridRowKey = sourceRow?.sourceRowNumber
+                ? `order:${sourceRow.sourceRowNumber}`
+                : sourceRow?.productCode
+                  ? `product:${sourceRow.productCode}`
+                  : `row:${pairIndex}`;
               return `
-                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
+                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-grid-row-key="${escapeHtml(gridRowKey)}" data-shortage-category="${escapeHtml(shortageCategory)}"
                   style="${rowStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
                     const isNumber = Boolean(column.numeric) && value !== "";
                     const isStatus = preview.status === index;
-                    const warehouseQuantity = previewId === "inventory" &&
+                    const warehouseQuantity = ["inventory", "allocations"].includes(previewId) &&
                       column.role === "warehouseQuantity" && !referenceRow;
                     const calculatedQuantity = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && !referenceRow;
@@ -5749,7 +5773,9 @@
                       ? warehouseColorFor(preview, column)
                       : "";
                     const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
-                    const editableInventory = editable && warehouseQuantity;
+                    const inventoryEditColumnKey = column.inventoryColumnKey || (previewId === "inventory" ? column.key : "");
+                    const editableInventory = editable && warehouseQuantity && Boolean(inventoryEditColumnKey) &&
+                      ["inventory", "allocations"].includes(previewId);
                     const editableLedgerPrice = editable && previewId === "ledger" &&
                       column.role === "unitPrice" && column.editable === true &&
                       Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
@@ -5785,6 +5811,7 @@
                       boxUnitContext ? "box-unit-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
                       column.role === "systemMessages" ? "system-message-value" : "",
+                      previewId === "inventory" && column.role === "orderInformation" && !referenceRow ? "substitution-target-cell" : "",
                       column.role === "manager" && managerColor ? "manager-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
@@ -5794,19 +5821,21 @@
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const content = editablePurchase
-                      ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
-                          data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
+                      ? `<input class="purchase-input excel-grid-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
+                          data-grid-column="${escapeHtml(column.key)}" data-original-value="${escapeHtml(displayValue)}"
+                          data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
                           tabindex="${negativeBalance || previewId === "allocations" ? "0" : "-1"}"
                           value="${escapeHtml(displayValue)}" aria-label="${escapeHtml(sourceRow?.productCode || "")} 구매처">`
                       : editableLedgerPrice
-                        ? `<input class="inventory-input ledger-price-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
+                        ? `<input class="inventory-input ledger-price-input excel-grid-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                             data-inventory-column="${escapeHtml(column.inventoryColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
                             inputmode="decimal" autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
                       : editableOrder
-                        ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
+                        ? `<input class="order-edit-input excel-grid-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
                             data-order-field="${escapeHtml(column.orderField)}"
+                            data-grid-column="${escapeHtml(column.key)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
@@ -5815,8 +5844,8 @@
                         : acknowledgement
                           ? `<label class="notice-acknowledgement"><input type="checkbox" data-notice-acknowledgement="${escapeHtml(sourceRow.noticeId)}" ${engine.isNoticeAcknowledged(state.workspace, sourceRow.noticeId) ? "checked" : ""}>확인</label>`
                           : editableInventory
-                            ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
-                                data-inventory-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
+                            ? `<input class="inventory-input excel-grid-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
+                                data-inventory-column="${escapeHtml(inventoryEditColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(displayValue)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
@@ -5829,7 +5858,10 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    return `<td class="${classes}"
+                    const substitutionTarget = previewId === "inventory" && column.role === "orderInformation" && !referenceRow
+                      ? `data-substitution-target-product="${escapeHtml(sourceRow?.productCode || "")}"`
+                      : "";
+                    return `<td class="${classes}" ${substitutionTarget}
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
@@ -5902,8 +5934,8 @@
         }
         if (state.activePreview === "inventory") {
           viewNotes.push(Number(state.selectedSubstitutionOrderRow) > 0
-            ? "대체할 주문 선택됨 · Ctrl+상품 클릭"
-            : "대체출고: 거래처 칩 선택 → Ctrl+상품 클릭");
+            ? "대체할 주문 선택됨 · Ctrl+대상 정보 셀 클릭"
+            : "대체출고: 거래처 칩 선택 → Ctrl+대상 정보 셀 클릭");
         }
         elements.systemViewNote.textContent = viewNotes.join(" · ");
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
@@ -6609,13 +6641,18 @@
 
       function commitPurchaseInput(input) {
         if (!input || !state.workspace) return false;
-        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value, {
+          actor: substitutionActor(),
+          previousValue: input.dataset.originalValue || "",
+          recordHistory: true,
+        });
+        input.dataset.originalValue = input.value;
         rememberPurchaseName(input.value);
         scheduleLocalSave();
         return true;
       }
 
-      function commitOrderInput(input) {
+      function commitOrderInput(input, { render = true } = {}) {
         if (!input || !state.workspace || state.activePreview !== "allocations") return false;
         try {
           engine.setOrderValue(
@@ -6623,8 +6660,9 @@
             input.dataset.orderRow,
             input.dataset.orderField,
             input.value,
+            { actor: substitutionActor(), recordHistory: true },
           );
-          renderResults();
+          if (render) renderResults();
           scheduleLocalSave();
           return true;
         } catch (error) {
@@ -6676,7 +6714,7 @@
         }
         state.selectedSubstitutionOrderRow = rowNumber;
         renderPreview();
-        setSystemMessage(`대체출고 주문 선택 · ${order.customer || "거래처 미지정"}(${formatNumber(order.quantity)}) · Ctrl+상품 클릭`);
+        setSystemMessage(`대체출고 주문 선택 · ${order.customer || "거래처 미지정"}(${formatNumber(order.quantity)}) · Ctrl+대상 정보 셀 클릭`);
         return true;
       }
 
@@ -6734,12 +6772,12 @@
 
       function handleSubstitutionTableClick(event) {
         if (!state.workspace || state.activePreview !== "inventory") return false;
-        const row = event.target.closest("tr[data-product-code]");
+        const targetCell = event.target.closest("[data-substitution-target-product]");
         const chip = event.target.closest("[data-substitute-order-row]");
-        if (selectedSubstitutionOrder() && (event.ctrlKey || event.metaKey) && row) {
+        if (selectedSubstitutionOrder() && (event.ctrlKey || event.metaKey) && targetCell) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          applySelectedSubstitution(row.dataset.productCode);
+          applySelectedSubstitution(targetCell.dataset.substitutionTargetProduct);
           return true;
         }
         if (!chip) return false;
@@ -6928,9 +6966,15 @@
       }
 
       function commitInventoryInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview)) return false;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return false;
         try {
-          engine.setInventoryOverride(state.workspace, input.dataset.inventoryCode, input.dataset.inventoryColumn, input.value);
+          engine.setInventoryOverride(
+            state.workspace,
+            input.dataset.inventoryCode,
+            input.dataset.inventoryColumn,
+            input.value,
+            { actor: substitutionActor(), recordHistory: true },
+          );
           scheduleLocalSave();
           if (render) renderPreview();
           return true;
@@ -6978,21 +7022,6 @@
           return;
         }
 
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commitPurchaseInput(input);
-          const direction = event.shiftKey ? -1 : 1;
-          if (direction > 0 && currentIndex === inputs.length - 1) {
-            const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
-            finishPurchaseEntry(negatives.length > 0 ? negatives : inputs);
-            return;
-          }
-          const nextIndex = Math.max(0, Math.min(inputs.length - 1, currentIndex + direction));
-          const next = inputs[nextIndex];
-          if (next && next !== input) focusPurchaseInput(next);
-          return;
-        }
-
         if (event.key !== "Tab") return;
         commitPurchaseInput(input);
         const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
@@ -7024,47 +7053,55 @@
         focusPurchaseInput(target);
       }
 
-      function handleInventoryGridArrowNavigation(event) {
-        const input = event.target.closest?.(".purchase-input[data-grid-column], .inventory-input[data-grid-column]");
-        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview) || event.isComposing) return;
-        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-product-code]"));
-        const row = input.closest("tr[data-product-code]");
-        const rowIndex = rows.indexOf(row);
-        const rowInputs = Array.from(row.querySelectorAll("[data-grid-column]"));
-        const columnIndex = rowInputs.indexOf(input);
-        if (rowIndex < 0 || columnIndex < 0) return;
-        event.preventDefault();
-        if (input.classList.contains("purchase-input")) commitPurchaseInput(input);
-        else if (!commitInventoryInput(input, { render: false })) return;
-        const nextRowIndex = event.key === "ArrowUp" ? Math.max(0, rowIndex - 1)
-          : event.key === "ArrowDown" ? Math.min(rows.length - 1, rowIndex + 1) : rowIndex;
-        const nextColumnIndex = event.key === "ArrowLeft" ? Math.max(0, columnIndex - 1)
-          : event.key === "ArrowRight" ? Math.min(rowInputs.length - 1, columnIndex + 1) : columnIndex;
-        const targetProductCode = rows[nextRowIndex]?.dataset.productCode || "";
-        const targetColumn = ["ArrowUp", "ArrowDown"].includes(event.key) ? input.dataset.gridColumn : rowInputs[nextColumnIndex]?.dataset.gridColumn;
-        if (input.classList.contains("inventory-input")) renderPreview();
-        const targetRow = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-product-code]"))
-          .find((candidate) => candidate.dataset.productCode === targetProductCode);
-        const target = Array.from(targetRow?.querySelectorAll("[data-grid-column]") || [])
-          .find((candidate) => candidate.dataset.gridColumn === targetColumn);
-        if (target?.classList.contains("purchase-input")) focusPurchaseInput(target);
-        else focusInventoryInput(target);
+      function commitExcelGridInput(input) {
+        if (input.matches(".order-edit-input[data-order-row][data-order-field]")) {
+          return commitOrderInput(input, { render: false });
+        }
+        if (input.matches(".inventory-input[data-inventory-code][data-inventory-column]")) {
+          return commitInventoryInput(input, { render: false });
+        }
+        if (input.matches(".purchase-input[data-purchase-code]")) return commitPurchaseInput(input);
+        return false;
       }
 
-      function handleInventoryQuantityNavigation(event) {
-        const input = event.target.closest?.(".inventory-input[data-inventory-code][data-inventory-column]");
-        if (!input || !state.workspace || !["inventory", "ledger"].includes(state.activePreview) || event.isComposing) return;
-        if (!["Enter", "Tab"].includes(event.key)) return;
+      function focusExcelGridInput(rowKey, columnKey) {
+        window.requestAnimationFrame(() => {
+          const row = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"))
+            .find((candidate) => candidate.dataset.gridRowKey === rowKey);
+          const input = Array.from(row?.querySelectorAll(".excel-grid-input[data-grid-column]") || [])
+            .find((candidate) => candidate.dataset.gridColumn === columnKey);
+          if (!input) return;
+          input.focus({ preventScroll: true });
+          input.scrollIntoView({ block: "nearest", inline: "nearest" });
+          input.select?.();
+        });
+      }
+
+      function handleExcelGridNavigation(event) {
+        if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+        if (!["Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+        const input = event.target.closest?.(".excel-grid-input[data-grid-column]");
+        if (!input || !state.workspace) return;
+        const row = input.closest("tr[data-grid-row-key]");
+        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"))
+          .filter((candidate) => candidate.querySelector(".excel-grid-input[data-grid-column]"));
+        const rowIndex = rows.indexOf(row);
+        const rowInputs = Array.from(row?.querySelectorAll(".excel-grid-input[data-grid-column]") || []);
+        const columnIndex = rowInputs.indexOf(input);
+        if (rowIndex < 0 || columnIndex < 0) return;
+
         event.preventDefault();
-        const inputs = Array.from(elements.previewTable.querySelectorAll(".inventory-input[data-inventory-code][data-inventory-column]"));
-        const currentIndex = inputs.indexOf(input);
-        if (currentIndex < 0 || !commitInventoryInput(input, { render: false })) return;
-        const direction = event.shiftKey ? -1 : 1;
-        const targetIndex = (currentIndex + direction + inputs.length) % inputs.length;
-        renderPreview();
-        const refreshed = Array.from(elements.previewTable.querySelectorAll(".inventory-input[data-inventory-code][data-inventory-column]"));
-        focusInventoryInput(refreshed[targetIndex]);
+        const verticalOffset = event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1
+          : event.key === "ArrowDown" || event.key === "Enter" ? 1 : 0;
+        const horizontalOffset = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+        const targetRow = rows[Math.max(0, Math.min(rows.length - 1, rowIndex + verticalOffset))] || row;
+        const targetRowKey = targetRow.dataset.gridRowKey;
+        const targetColumnKey = horizontalOffset
+          ? (rowInputs[Math.max(0, Math.min(rowInputs.length - 1, columnIndex + horizontalOffset))]?.dataset.gridColumn || input.dataset.gridColumn)
+          : input.dataset.gridColumn;
+        if (!commitExcelGridInput(input)) return;
+        renderResults();
+        focusExcelGridInput(targetRowKey, targetColumnKey);
       }
 
       function refreshCurrentSession() {
@@ -7446,8 +7483,6 @@
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
         if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
-        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
-        scheduleLocalSave();
         if (input.dataset.composing !== "true") renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("compositionstart", (event) => {
@@ -7461,8 +7496,6 @@
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
         if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         input.dataset.composing = "false";
-        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
-        scheduleLocalSave();
         renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
@@ -7491,20 +7524,13 @@
         if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         commitPurchaseInput(input);
       });
-      elements.previewTable.addEventListener("keydown", (event) => {
-        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
-        if (!input || event.key !== "Enter" || event.isComposing) return;
-        event.preventDefault();
-        input.blur();
-      });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("dragstart", handleColumnDragStart);
       elements.previewTable.addEventListener("dragover", handleColumnDragOver);
       elements.previewTable.addEventListener("drop", handleColumnDrop);
       elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
-      elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
-      elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
+      elements.previewTable.addEventListener("keydown", handleExcelGridNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
       elements.previewTable.addEventListener("keydown", handleColumnResizeKeydown);
       elements.recoveryRecordList.addEventListener("change", (event) => {

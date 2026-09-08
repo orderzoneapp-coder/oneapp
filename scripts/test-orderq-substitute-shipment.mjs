@@ -128,11 +128,21 @@ for (const relativePath of ["orderops/list.html", "orderops_list.html"]) {
     'function handleSubstitutionTableClick',
     'engine.substituteOrderProduct(',
     'engine.undoLastSubstitution(',
-    '대체출고: 거래처 칩 선택 → Ctrl+상품 클릭',
+    '대체출고: 거래처 칩 선택 → Ctrl+대상 정보 셀 클릭',
+    'data-substitution-target-product=',
+    'substitution-target-cell',
     'substitution-target-mode',
   ]) {
     assert.ok(html.includes(contract), `${relativePath} 대체출고 UI 계약 누락: ${contract}`);
   }
+  const tableClickSource = html.slice(
+    html.indexOf('function handleSubstitutionTableClick'),
+    html.indexOf('function isNativeUndoTarget'),
+  );
+  assert.match(tableClickSource, /closest\("\[data-substitution-target-product\]"\)/,
+    `${relativePath} 대체출고는 명시적인 정보 셀만 대상으로 삼아야 합니다.`);
+  assert.doesNotMatch(tableClickSource, /closest\("tr\[data-product-code\]"\)/,
+    `${relativePath} 행 전체를 대체출고 대상으로 삼으면 안 됩니다.`);
 }
 
 console.log("ORDER Q substitute shipment and system-message tests passed.");
