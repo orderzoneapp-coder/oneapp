@@ -3,7 +3,7 @@ import {
   activateReferenceGeneration,
   loadActiveReferenceGeneration,
   saveReferenceGenerationState
-} from './smartinput-data-store.js?v=0.6.0';
+} from './smartinput-data-store.js?v=0.6.1';
 
 export const REFERENCE_GENERATION_SCHEMA = 'ONEAPP_REFERENCE_GENERATION_V1';
 export const REFERENCE_DOMAINS = Object.freeze(['customer', 'product', 'warehouse', 'employee', 'project', 'fieldDefinition']);

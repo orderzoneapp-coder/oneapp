@@ -167,6 +167,8 @@ try {
   }
   await waitFor(() => evaluate(client, `document.querySelector('#estimateLibraryView').classList.contains('is-open')`), 'mobile estimate drawer');
   await waitFor(() => evaluate(client, `!document.querySelector('#estimateMultiSelectButton').disabled`), 'estimate library data');
+  const estimateLibraryReadyMs = await evaluate(client, `performance.getEntriesByName('smartinput-estimate-library-ready').at(-1)?.duration ?? -1`);
+  assert.ok(estimateLibraryReadyMs >= 0 && estimateLibraryReadyMs < 2_500, 'estimate library fast path must finish inside its independent local-read budget');
   await wait(500);
   await evaluate(client, `(() => {window.__touchInputEvidence=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{const control=event.target.closest?.('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton');if(control)window.__touchInputEvidence.push({type,controlId:control.id,pointerType:event.pointerType||''});},true);return true;})()`);
 
@@ -189,7 +191,7 @@ try {
   assert.ok(touchEvidence.filter(event => event.type === 'pointerup' && event.pointerType === 'touch').length >= 5, 'each touch pointer must complete');
   assert.ok(touchEvidence.filter(event => event.type === 'click' && event.pointerType === 'touch').length >= 5, 'each touch sequence must synthesize its activation click');
 
-  console.log('SmartInput right-panel touchscreen hotfix PASS', { earlyRevealMs, delayedContractMs: 1_800, controls, touchEvents: touchEvidence.length });
+  console.log('SmartInput right-panel touchscreen hotfix PASS', { earlyRevealMs, estimateLibraryReadyMs, delayedContractMs: 1_800, controls, touchEvents: touchEvidence.length });
 } finally {
   if (client) {
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});

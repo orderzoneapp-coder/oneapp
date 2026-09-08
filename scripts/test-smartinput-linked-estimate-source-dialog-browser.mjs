@@ -189,6 +189,27 @@ try {
     assert.deepEqual(await sourceQuantities(client), { 'EST-DIALOG-A': 1, 'EST-DIALOG-B': 3 }, `${viewport.width}px cancel must preserve both sources`);
   }
 
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, mobile: false, deviceScaleFactor: 1 });
+  await click(client, '#estimateLibraryIndividualButton');
+  await click(client, '#catalogPickerList [data-estimate-id="EST-DIALOG-A"] [data-select-estimate-card]');
+  await click(client, '#selectedEstimateDeleteButton');
+  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===1&&document.querySelector('#toast').textContent.includes('연동견적서 1개')`, 'individual source deletion cascade');
+  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{const linked=get.result.find(record=>record.estimateKind==='LINKED_GROUP');resolve(!get.result.some(record=>record.estimateId==='EST-DIALOG-A')&&linked.linkedEstimateSources.length===1&&linked.linkedEstimateSources[0].estimateId==='EST-DIALOG-B'&&linked.draft.rows.length===1&&linked.draft.rows[0].linkedSourceEstimateId==='EST-DIALOG-B');db.close();};};})`), true,
+    'individual source deletion must remove its products and source metadata from the linked estimate while preserving the other source');
+  await click(client, '#estimateLibraryLinkedButton');
+  await click(client, '#linkedEstimateList [data-select-estimate-card]');
+  await expr(client, `document.querySelector('#inputRows [data-field="quantity"]')?.value==='3'`, 'remaining source rematerialized after source deletion');
+  await click(client, '#selectAllRows');
+  await click(client, '#deleteSelectedRows');
+  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===0`, 'linked row removed from working draft');
+  await click(client, '#completeButton');
+  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked deletion confirmation');
+  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]').length===0&&!document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled`), true,
+    'deleting a linked row must target every linked source without an ambiguous single-source choice');
+  assert.match(await evaluate(client, `document.querySelector('.linked-source-edit-dialog').textContent`), /품목이 0개가 되는 원본 견적서는 함께 삭제/);
+  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
+  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.length===1&&get.result[0].estimateKind==='LINKED_GROUP'&&get.result[0].linkedEstimateSources.length===0&&get.result[0].draft.rows.length===0);db.close();};};})`, 'empty source estimates deleted atomically');
+
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
   console.log(JSON.stringify({ matrix, representativeScreenshot, profileCleanupTarget: profile }, null, 2));

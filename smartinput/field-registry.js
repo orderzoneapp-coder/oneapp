@@ -5,7 +5,7 @@ import {
   replaceFieldCatalogGeneration,
   saveCompanyVoucherFieldSettings,
   saveSettingValue
-} from './smartinput-data-store.js?v=0.6.0';
+} from './smartinput-data-store.js?v=0.6.1';
 import {
   CORE_FIELD_DEFINITIONS,
   CUSTOM_FIELD_DEFINITIONS,

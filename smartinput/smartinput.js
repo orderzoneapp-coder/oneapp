@@ -90,6 +90,7 @@ import {
 import {
   createRecordId,
   commitEstimateBundle,
+  loadEstimateLibrary,
   loadSmartInputData,
   normalizeAliasName,
   saveAliasMapping,
@@ -104,7 +105,7 @@ import {
   loadInputTemplates,
   saveInputTemplates,
   saveMappingSessionV2
-} from './smartinput-data-store.js?v=0.6.0';
+} from './smartinput-data-store.js?v=0.6.1';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -144,8 +145,9 @@ import {
   inspectLinkedEstimateSourceEdits,
   inspectLinkedEstimateSourceWorkingCopyConflicts,
   linkedEstimateWorkingDraftsEquivalent,
+  removeLinkedEstimateSources,
   restoreLinkedEstimateWorkingRowEdits
-} from './linked-estimate-source-edit.js?v=0.1.0';
+} from './linked-estimate-source-edit.js?v=0.1.1';
 import {
   ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
   ESTIMATE_BULK_TARGET_MATCH_TYPE,
@@ -272,6 +274,7 @@ const state = {
   noticeEstimateIds: [],
   smartDataReady: false,
   smartDataError: null,
+  smartAuxiliaryDataError: null,
   pendingImageEvidence: null,
   photoCaptureSequence: 0,
   pendingOcrReview: null,
@@ -2153,9 +2156,9 @@ function applyCustomerRelationship(header = modeDraft().header) {
   header.isTemporaryCustomer = Boolean(temporaryMeta(header.customerId));
   $('taxCustomerInput').value = header.taxCustomerName;
   $('customerRelationHint').textContent = group
-    ? (taxCustomer ? `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳` : `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 지정 필요`)
+    ? (taxCustomer ? `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳` : `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 미지정`)
     : '연결되지 않은 배송 거래처입니다.';
-  $('customerRelationHint').dataset.tone = group && !taxCustomer ? 'warn' : '';
+  $('customerRelationHint').dataset.tone = '';
 }
 
 function effectiveAliasMappings(rawOrdererName, sourceType) {
@@ -2466,7 +2469,7 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
         <div class="smart-dialog__message">거래처 앞 체크박스를 선택한 뒤 용도를 지정하세요.</div>
         <div class="smart-customer-results"></div>
         <footer class="smart-customer-action-footer"><span data-customer-selection>선택된 거래처가 없습니다.</span><button type="button" class="button button--quiet" data-customer-use>${officialOnly ? '거래처 선택' : '배송 거래처 선택'}</button><button type="button" class="button button--primary" data-tax-register ${officialOnly ? 'hidden disabled' : ''}>세무 거래처 등록</button></footer>
-        <footer class="smart-link-footer" hidden><span>배송처 1곳 이상과 세무거래처 1곳을 지정하세요.</span><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>관계 저장</button></footer>
+        <footer class="smart-link-footer" hidden><span>배송처를 1곳 이상 지정하세요. 세무거래처는 선택사항입니다.</span><button type="button" class="button button--quiet" data-tax-clear>세무 지정 안 함</button><button type="button" class="button button--quiet" data-link-cancel>취소</button><button type="button" class="button button--primary" data-link-save>관계 저장</button></footer>
       </div>`;
       document.body.append(dialog);
       const input = dialog.querySelector('input[type="search"]');
@@ -2492,10 +2495,9 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
           .filter(customerItem => !query || normalizedKey(customerSearchText(customerItem)).includes(normalizedKey(query)))
             .sort((left, right) => customerName(left).localeCompare(customerName(right), 'ko'))
             .slice(0, 80);
-        if (linkMode && visibleCustomers.length === 1 && !selected.size && !selectedTaxCustomerId) {
+        if (linkMode && visibleCustomers.length === 1 && !selected.size) {
           const onlyCustomer = visibleCustomers[0];
           selected.add(onlyCustomer.customerId);
-          if (!temporaryMeta(onlyCustomer.customerId)) selectedTaxCustomerId = onlyCustomer.customerId;
         }
         const emptyState = query
           ? '검색 결과 0건'
@@ -2558,8 +2560,6 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
             selected.clear();
             deliveryCustomerIds.forEach(customerId => selected.add(customerId));
             selectedTaxCustomerId = existingGroup.taxCustomerId || '';
-          } else if (anchorCustomerId && !temporaryMeta(anchorCustomerId)) {
-            selectedTaxCustomerId = anchorCustomerId;
           }
         } else {
           selected.clear();
@@ -2599,6 +2599,10 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
         }
       });
       dialog.querySelector('[data-link-mode]').addEventListener('click', () => setLinkMode(!linkMode));
+      dialog.querySelector('[data-tax-clear]').addEventListener('click', () => {
+        selectedTaxCustomerId = '';
+        render();
+      });
       dialog.querySelector('[data-link-cancel]').addEventListener('click', () => setLinkMode(false));
       dialog.querySelector('[data-customer-use]').addEventListener('click', () => {
         const customerId = [...selected][0];
@@ -2655,11 +2659,7 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
           message.textContent = '배송처를 1곳 이상 선택하세요.';
           return;
         }
-        if (!selectedTaxCustomerId) {
-          message.textContent = '세무거래처를 정확히 1곳 지정하세요.';
-          return;
-        }
-        if (temporaryMeta(selectedTaxCustomerId)) {
+        if (selectedTaxCustomerId && temporaryMeta(selectedTaxCustomerId)) {
           message.textContent = '임시 배송처는 세무거래처로 지정할 수 없습니다.';
           return;
         }
@@ -2670,7 +2670,7 @@ async function chooseCustomer({ initialQuery = '', applyToHeader = true, onSelec
         }
         const existing = groupIds.length ? state.linkGroups.find(group => group.linkGroupId === groupIds[0]) : null;
         const deliveryCustomerIds = [...selected];
-        const memberCustomerIds = [...new Set([...deliveryCustomerIds, selectedTaxCustomerId])];
+        const memberCustomerIds = [...new Set([...deliveryCustomerIds, ...(selectedTaxCustomerId ? [selectedTaxCustomerId] : [])])];
         const timestamp = new Date().toISOString();
         const group = {
           linkGroupId: existing?.linkGroupId || createRecordId('SILINK'),
@@ -4344,20 +4344,28 @@ function renderCatalogControls() {
   const linkedList = $('linkedEstimateList');
   if (!state.smartDataReady) {
     const failed = Boolean(state.smartDataError);
+    const failureDetail = state.smartDataError?.code === 'SMARTINPUT_DB_UPGRADE_BLOCKED'
+      ? '다른 스마트입력 화면이 저장소 갱신을 막고 있습니다.'
+      : (state.smartDataError?.message || '브라우저 로컬 저장소를 확인하세요.');
     const catalogMessage = failed
       ? '견적서 목록을 불러오지 못했습니다. 현재 입력 작업은 계속할 수 있습니다.'
       : '견적서 목록을 불러오는 중입니다.';
     const linkedMessage = failed
       ? '연동견적서를 불러오지 못했습니다. 현재 입력 작업은 계속할 수 있습니다.'
       : '연동견적서를 불러오는 중입니다.';
-    catalogList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${catalogMessage}</div>`;
-    linkedList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${linkedMessage}</div>`;
+    catalogList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${catalogMessage}${failed ? `<small>${esc(failureDetail)}</small><button type="button" class="button button--quiet button--small" data-retry-estimate-library>다시 불러오기</button>` : ''}</div>`;
+    linkedList.innerHTML = `<div class="smart-dialog__empty${failed ? ' is-error' : ''}">${linkedMessage}${failed ? `<small>${esc(failureDetail)}</small><button type="button" class="button button--quiet button--small" data-retry-estimate-library>다시 불러오기</button>` : ''}</div>`;
     catalogList.setAttribute('aria-busy', String(!failed));
     linkedList.setAttribute('aria-busy', String(!failed));
     $('estimateSelectionSummary').textContent = failed ? '견적서 목록 로드 실패' : '견적서 목록을 불러오는 중입니다.';
     $('selectedEstimateDeleteButton').disabled = true;
     $('estimateRenameButton').disabled = true;
     $('estimateCreateButton').disabled = true;
+    document.querySelectorAll('[data-retry-estimate-library]').forEach(button => button.addEventListener('click', () => {
+      state.smartDataError = null;
+      renderCatalogControls();
+      void hydrateEstimateLibrary();
+    }, { once: true }));
     if (visible) renderEstimateWorkspace();
     return;
   }
@@ -4463,19 +4471,56 @@ function cancelEstimateCreation({ silent = false } = {}) {
   return true;
 }
 
+function linkedEstimateUpdatesAfterSourceDeletion(records, deletedIds, timestamp) {
+  const sourceRecords = records.filter(record => record.estimateKind !== 'LINKED_GROUP' && !deletedIds.has(record.estimateId));
+  return new Map(records
+    .filter(record => record.estimateKind === 'LINKED_GROUP'
+      && (record.linkedEstimateSources || []).some(source => deletedIds.has(source.estimateId)))
+    .map(record => [record.estimateId, removeLinkedEstimateSources({
+      linkedRecord: record,
+      sourceRecords,
+      removedEstimateIds: [...deletedIds],
+      occurredAt: timestamp
+    })]));
+}
+
+function pruneLinkedEstimateWorkingCopies(linkedUpdates, deletedIds, timestamp) {
+  if (!linkedUpdates.size) return;
+  const sourceRecords = state.estimates.filter(record => record.estimateKind !== 'LINKED_GROUP' && !deletedIds.has(record.estimateId));
+  linkedUpdates.forEach((updatedRecord, linkedEstimateId) => {
+    const workingDraft = state.estimateWorkingCopies.get(linkedEstimateId);
+    if (!workingDraft) {
+      state.estimateWorkingCopyBaselines.set(linkedEstimateId, JSON.parse(JSON.stringify(updatedRecord.draft)));
+      return;
+    }
+    const pruned = removeLinkedEstimateSources({
+      linkedRecord: { ...updatedRecord, draft: workingDraft },
+      sourceRecords,
+      removedEstimateIds: [...deletedIds],
+      occurredAt: timestamp
+    });
+    pruned.draft.rows = restoreLinkedEstimateWorkingRowEdits({
+      materializedRows: pruned.draft.rows,
+      workingRows: workingDraft.rows || []
+    });
+    state.estimateWorkingCopies.set(linkedEstimateId, pruned.draft);
+    state.estimateWorkingCopyBaselines.set(linkedEstimateId, JSON.parse(JSON.stringify(updatedRecord.draft)));
+  });
+}
+
 async function deleteSelectedEstimates() {
   const records = selectedEstimateRecords();
   if (!records.length) return toast('삭제할 견적서를 선택하세요.', 'error');
-  const selectedIds = new Set(records.map(record => record.estimateId));
-  const linkedUsage = state.estimateLibraryKind === 'individual'
-    ? linkedEstimateRecords().filter(group => (group.linkedEstimateSources || []).some(source => selectedIds.has(source.estimateId)))
-    : [];
-  if (linkedUsage.length) {
-    return toast(`선택한 견적서는 ${linkedUsage.length}개 연동견적서에서 사용 중입니다. 연동 구성을 먼저 변경하세요.`, 'error');
-  }
   if (records.length > 1 && !window.confirm(`선택한 견적서 ${records.length}개를 삭제하시겠습니까? 삭제 후에는 자동 복구되지 않습니다.`)) return;
+  rememberActiveEstimateWork();
   const deletedIds = new Set(records.map(record => record.estimateId));
-  const remaining = normalizeEstimateOrder(state.estimates.filter(record => !deletedIds.has(record.estimateId)));
+  const timestamp = new Date().toISOString();
+  const linkedUpdates = state.estimateLibraryKind === 'individual'
+    ? linkedEstimateUpdatesAfterSourceDeletion(state.estimates, deletedIds, timestamp)
+    : new Map();
+  const remaining = normalizeEstimateOrder(state.estimates
+    .filter(record => !deletedIds.has(record.estimateId))
+    .map(record => linkedUpdates.get(record.estimateId) || record));
   try {
     await commitEstimateBundle({ upserts: remaining, deletes: [...deletedIds] });
   } catch (error) {
@@ -4485,10 +4530,12 @@ async function deleteSelectedEstimates() {
   state.noticeEstimateIds = [];
   deletedIds.forEach(estimateId => state.estimateWorkingCopies.delete(estimateId));
   deletedIds.forEach(estimateId => state.estimateWorkingCopyBaselines.delete(estimateId));
+  pruneLinkedEstimateWorkingCopies(linkedUpdates, deletedIds, timestamp);
   if (estimateCreationActive()) previewEstimateCreation();
   else if (deletedIds.has(modeDraft().catalogRecordId)) startNewCatalog();
+  else if (linkedUpdates.has(modeDraft().catalogRecordId)) loadCatalogRecord(linkedUpdates.get(modeDraft().catalogRecordId), { preserveSelection: true });
   else renderCatalogControls();
-  toast(`견적서 ${deletedIds.size}개를 삭제했습니다.`, 'success');
+  toast(`견적서 ${deletedIds.size}개를 삭제했습니다.${linkedUpdates.size ? ` 연동견적서 ${linkedUpdates.size}개에서도 해당 품목을 제거했습니다.` : ''}`, 'success');
 }
 
 function renameEstimateSourceMetadata(draft, estimateId, catalogName) {
@@ -5119,16 +5166,14 @@ async function deleteSelectedGridRows() {
   const selectedRowIdSet = new Set(selectedRowIds);
   invalidateGridPasteUndo();
   const linkedRows = modeDraft().rows.filter(row => selectedRowIdSet.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
-  if (linkedRows.length) {
-    toast('연동 원본 행 삭제는 원본별 수정 경계가 지원되지 않아 저장하지 않았습니다. 삭제할 원본 견적서를 직접 열어 처리하세요.', 'error');
-    return;
-  }
   modeDraft().rows = modeDraft().rows.filter(row => !selectedRowIdSet.has(row.rowId));
   modeDraft().rows = contract.markDuplicatePossibilities(modeDraft().rows);
   state.selectedRowIds.clear();
   renderRows();
   saveDraftNow();
-  toast('선택한 품목을 삭제했습니다.', 'success');
+  toast(linkedRows.length
+    ? `선택한 품목을 삭제했습니다. 저장하면 연결된 원본 ${new Set(linkedRows.flatMap(row => row.linkedSourceEstimateIds?.length ? row.linkedSourceEstimateIds : [row.linkedSourceEstimateId]).filter(Boolean)).size}개에도 반영됩니다.`
+    : '선택한 품목을 삭제했습니다.', 'success');
 }
 
 function visibleMappingRows(session = inputMappingSession(), query = state.inputListSearch.query) {
@@ -8113,6 +8158,11 @@ function validateEstimateDocument() {
   const current = modeDraft();
   pruneEmptyWorkRows(current);
   if (!current.rows.length) {
+    const loadedRecord = state.estimates.find(record => record.estimateId === current.catalogRecordId);
+    const deletingAllLinkedRows = current.estimateKind === 'LINKED_GROUP'
+      && loadedRecord?.estimateKind === 'LINKED_GROUP'
+      && (loadedRecord.draft?.rows || []).some(rowHasLinkedSource);
+    if (deletingAllLinkedRows) return true;
     toast('견적 품목을 1개 이상 입력하세요.', 'error');
     return false;
   }
@@ -8154,35 +8204,39 @@ function linkedSourceMetricMarkup(label, before, after, field) {
 function linkedSourceOptionMarkup(row, source, preselected) {
   const before = source.before;
   const after = row.after;
+  const deletion = row.operation === 'DELETE';
   const sourceRow = before
     ? `원본 ${source.sourceRowNo || '—'}행 · ${source.sourceRowId}`
     : '추가 위치 · 새 원본 행';
   const differenceCount = before ? source.differencesFromWorking?.length || 0 : row.changedFields.length;
   const evidence = before?.sourceEvidence || {};
   const evidenceLabel = evidence.sourceDocumentKey || evidence.sourceFingerprint || evidence.sourceBatchId || '저장된 원본 Snapshot';
-  return `<label class="linked-source-edit-option" data-source-option>
-    <input type="radio" name="linked-source-${esc(row.rowId)}" value="${esc(source.key)}" data-source-choice data-working-row-id="${esc(row.rowId)}" ${preselected ? 'checked' : ''}>
+  const tag = deletion ? 'article' : 'label';
+  const metricAfter = deletion ? { quantity: '삭제', unitPrice: '삭제', amount: '삭제' } : after;
+  return `<${tag} class="linked-source-edit-option ${deletion ? 'is-selected' : ''}" data-source-option>
+    ${deletion ? '' : `<input type="radio" name="linked-source-${esc(row.rowId)}" value="${esc(source.key)}" data-source-choice data-working-row-id="${esc(row.rowId)}" ${preselected ? 'checked' : ''}>`}
     <span class="linked-source-edit-option__body">
-      <span class="linked-source-edit-option__title"><strong>${esc(source.estimateName)}</strong><em>${before ? `${differenceCount}개 차이` : '신규 추가'}</em></span>
+      <span class="linked-source-edit-option__title"><strong>${esc(source.estimateName)}</strong><em>${deletion ? '삭제 대상' : (before ? `${differenceCount}개 차이` : '신규 추가')}</em></span>
       <small class="linked-source-edit-option__id">견적 ID ${esc(source.estimateId)} · ${esc(sourceRow)}</small>
-      <span class="linked-source-edit-identity"><small>원본 품목</small><b>${esc(linkedSourceIdentity(before))}</b><small>작업 품목</small><strong>${esc(linkedSourceIdentity(after))}</strong></span>
+      <span class="linked-source-edit-identity"><small>원본 품목</small><b>${esc(linkedSourceIdentity(before))}</b><small>${deletion ? '처리' : '작업 품목'}</small><strong>${deletion ? '삭제' : esc(linkedSourceIdentity(after))}</strong></span>
       <span class="linked-source-edit-metrics">
-        ${linkedSourceMetricMarkup('수량', before, after, 'quantity')}
-        ${linkedSourceMetricMarkup('단가', before, after, 'unitPrice')}
-        ${linkedSourceMetricMarkup('금액', before, after, 'amount')}
+        ${linkedSourceMetricMarkup('수량', before, metricAfter, 'quantity')}
+        ${linkedSourceMetricMarkup('단가', before, metricAfter, 'unitPrice')}
+        ${linkedSourceMetricMarkup('금액', before, metricAfter, 'amount')}
       </span>
       <small class="linked-source-edit-evidence">근거 ${esc(evidenceLabel)} · 수정 ${esc(source.estimateUpdatedAt || '기록 없음')}</small>
     </span>
-  </label>`;
+  </${tag}>`;
 }
 
 function linkedSourceRowMarkup(row) {
   const singleSource = row.operation === 'UPDATE' && row.sources.length === 1;
-  const actionLabel = row.operation === 'ADD' ? '신규 행 추가' : '기존 행 수정';
+  const deletion = row.operation === 'DELETE';
+  const actionLabel = row.operation === 'ADD' ? '신규 행 추가' : (deletion ? '기존 행 삭제' : '기존 행 수정');
   const changedLabels = row.changedFields.map(field => LINKED_ESTIMATE_FIELD_LABELS[field] || field).join(' · ');
-  return `<section class="linked-source-edit-row" data-linked-source-row="${esc(row.rowId)}" data-selection-required="${singleSource ? 'false' : 'true'}">
-    <header><div><small>작업행 ${row.rowNo} · ${actionLabel}</small><h3>${esc(linkedSourceIdentity(row.after))}</h3></div><span>${esc(changedLabels || '신규 품목')}</span></header>
-    <p>${singleSource ? '연결된 원본 한 건을 확인하고 적용하세요.' : (row.operation === 'ADD' ? '이 행을 추가할 원본 견적서를 직접 선택하세요.' : '값을 바꿀 원본 견적서와 원본 행을 직접 선택하세요.')}</p>
+  return `<section class="linked-source-edit-row" data-linked-source-row="${esc(row.rowId)}" data-selection-required="${singleSource || deletion ? 'false' : 'true'}">
+    <header><div><small>작업행 ${row.rowNo} · ${actionLabel}</small><h3>${esc(linkedSourceIdentity(row.after || row.before))}</h3></div><span>${esc(deletion ? '연결 원본 품목 삭제' : (changedLabels || '신규 품목'))}</span></header>
+    <p>${deletion ? `이 품목을 연결된 원본 ${row.sources.length}개에서 삭제합니다. 품목이 0개가 되는 원본 견적서는 함께 삭제됩니다.` : (singleSource ? '연결된 원본 한 건을 확인하고 적용하세요.' : (row.operation === 'ADD' ? '이 행을 추가할 원본 견적서를 직접 선택하세요.' : '값을 바꿀 원본 견적서와 원본 행을 직접 선택하세요.'))}</p>
     <div class="linked-source-edit-options">${row.sources.map(source => linkedSourceOptionMarkup(row, source, singleSource)).join('')}</div>
   </section>`;
 }
@@ -8193,9 +8247,9 @@ function showLinkedEstimateSourceEditDialog(evidence) {
     dialog.className = 'smart-dialog linked-source-edit-dialog';
     dialog.innerHTML = `<div class="smart-dialog__shell">
       <header><div><small>Source-specific edit</small><h2>수정할 원본 확인</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-      <p class="smart-dialog__message">${esc(evidence.linkedEstimateName)}의 ${evidence.rows.length}개 작업행입니다. 선택한 원본만 바뀌며, 모두 하나의 원자적 저장으로 처리됩니다.</p>
+      <p class="smart-dialog__message">${esc(evidence.linkedEstimateName)}의 ${evidence.rows.length}개 작업행입니다. 수정은 선택한 원본에, 삭제는 연결된 모든 원본에 반영되며 하나의 원자적 저장으로 처리됩니다.</p>
       <div class="linked-source-edit-body">${evidence.rows.map(linkedSourceRowMarkup).join('')}</div>
-      <footer><small data-selection-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-source>선택한 원본에 저장</button></footer>
+      <footer><small data-selection-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-source>변경 저장</button></footer>
     </div>`;
     document.body.append(dialog);
     let settled = false;
@@ -8212,7 +8266,7 @@ function showLinkedEstimateSourceEditDialog(evidence) {
       dialog.querySelectorAll('[data-source-choice]').forEach(input => {
         input.closest('[data-source-option]')?.classList.toggle('is-selected', input.checked);
       });
-      const unresolved = evidence.rows.filter(row => !(row.operation === 'UPDATE' && row.sources.length === 1) && !selections[row.rowId]);
+      const unresolved = evidence.rows.filter(row => row.operation !== 'DELETE' && !(row.operation === 'UPDATE' && row.sources.length === 1) && !selections[row.rowId]);
       dialog.querySelector('[data-confirm-source]').disabled = unresolved.length > 0;
       dialog.querySelector('[data-selection-status]').textContent = unresolved.length
         ? `${unresolved.length}개 작업행의 원본을 선택하세요.`
@@ -8227,7 +8281,7 @@ function showLinkedEstimateSourceEditDialog(evidence) {
     dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
     sync();
     dialog.showModal();
-    dialog.querySelector('[data-source-choice]')?.focus({ preventScroll: true });
+    (dialog.querySelector('[data-source-choice]') || dialog.querySelector('[data-confirm-source]'))?.focus({ preventScroll: true });
   });
 }
 
@@ -8742,9 +8796,12 @@ async function saveEstimateDocument(catalogName) {
       draft: JSON.parse(JSON.stringify(createCatalogOnlyDraft(nextCurrent, estimateId)))
     };
     let bundle = [record];
+    let deletedEstimateIds = [];
+    let cascadedLinkedUpdates = new Map();
     if (record.estimateKind === 'LINKED_GROUP') {
       const evidence = inspectLinkedEstimateSourceEdits({
         linkedRecord: record,
+        baselineLinkedRecord: overwriteRecord,
         currentDraft: nextCurrent,
         sourceRecords: individualEstimateRecords()
       });
@@ -8785,24 +8842,50 @@ async function saveEstimateDocument(catalogName) {
         });
         record = applied.linkedRecord;
         bundle = applied.upserts;
+        deletedEstimateIds = applied.deletes || [];
+        if (deletedEstimateIds.length) {
+          const deletedIds = new Set(deletedEstimateIds);
+          const changedById = new Map(bundle.map(item => [item.estimateId, item]));
+          const remainingSourceRecords = individualEstimateRecords()
+            .filter(item => !deletedIds.has(item.estimateId))
+            .map(item => changedById.get(item.estimateId) || item);
+          cascadedLinkedUpdates = new Map(linkedEstimateRecords()
+            .filter(item => item.estimateId !== record.estimateId
+              && (item.linkedEstimateSources || []).some(source => deletedIds.has(source.estimateId)))
+            .map(item => [item.estimateId, removeLinkedEstimateSources({
+              linkedRecord: item,
+              sourceRecords: remainingSourceRecords,
+              removedEstimateIds: deletedEstimateIds,
+              occurredAt: timestamp
+            })]));
+          bundle = [...bundle, ...cascadedLinkedUpdates.values()];
+        }
         nextCurrent.rows = record.draft.rows.map(row => contract.normalizeRow({ ...row }));
         nextCurrent.linkedSourceEditHistory = JSON.parse(JSON.stringify(record.linkedSourceEditHistory || []));
         nextCurrent.linkedEstimateSources = record.linkedEstimateSources.map(source => ({ ...source }));
         nextCurrent.catalogBaselinePrices = buildCatalogPriceSnapshot(nextCurrent.rows);
       }
     }
-    const bundleIds = new Set(bundle.map(item => item.estimateId));
+    const bundleIds = new Set([...bundle.map(item => item.estimateId), ...deletedEstimateIds]);
     const expectedPreimages = state.estimates
       .filter(item => bundleIds.has(item.estimateId))
       .map(item => JSON.parse(JSON.stringify(item)));
-    await commitEstimateBundle({ upserts: bundle, expectedPreimages });
+    await commitEstimateBundle({ upserts: bundle, deletes: deletedEstimateIds, expectedPreimages });
     const bundleById = new Map(bundle.map(item => [item.estimateId, item]));
     const savedRecord = bundleById.get(estimateId) || record;
+    const deletedIds = new Set(deletedEstimateIds);
     state.estimates = normalizeEstimateOrder(updateExistingRecord
-      ? state.estimates.map(item => bundleById.get(item.estimateId) || item)
-      : [...state.estimates.map(item => bundleById.get(item.estimateId) || item), savedRecord]);
+      ? state.estimates.filter(item => !deletedIds.has(item.estimateId)).map(item => bundleById.get(item.estimateId) || item)
+      : [...state.estimates.filter(item => !deletedIds.has(item.estimateId)).map(item => bundleById.get(item.estimateId) || item), savedRecord]);
     state.draft.modes.estimate = nextCurrent;
-    bundle.forEach(item => state.estimateWorkingCopies.delete(item.estimateId));
+    bundle.forEach(item => {
+      if (!cascadedLinkedUpdates.has(item.estimateId)) state.estimateWorkingCopies.delete(item.estimateId);
+    });
+    deletedEstimateIds.forEach(deletedId => {
+      state.estimateWorkingCopies.delete(deletedId);
+      state.estimateWorkingCopyBaselines.delete(deletedId);
+    });
+    pruneLinkedEstimateWorkingCopies(cascadedLinkedUpdates, deletedIds, timestamp);
     state.estimateLibraryKind = savedRecord.estimateKind === 'LINKED_GROUP' ? 'linked' : 'individual';
     state.noticeEstimateIds = [estimateId];
     state.estimateSelectionReturnDraft = null;
@@ -8813,11 +8896,11 @@ async function saveEstimateDocument(catalogName) {
     renderEstimateHeaderFields();
     state.estimateWorkingCopyBaselines.set(estimateId, JSON.parse(JSON.stringify(nextCurrent)));
     if (savedRecord.estimateKind === 'LINKED_GROUP') renderRows({ restoreFocus: false });
-    const affectedCount = Math.max(0, bundle.length - 1);
+    const affectedCount = Math.max(0, bundle.length - 1) + deletedEstimateIds.length;
     state.lastEstimateSave = { estimateId, linkCount: estimateSaveImpact(savedRecord), affectedCount };
     renderCatalogControls();
     renderDelivery();
-    setAppStatus(`${estimateTitle(savedRecord)} · ${savedRecord.rowCount}품목 저장 완료${state.lastEstimateSave.linkCount ? ` · 연결 ${state.lastEstimateSave.linkCount}개` : ''}${affectedCount ? ` · 연동 ${affectedCount}건 반영` : ''}`);
+    setAppStatus(`${estimateTitle(savedRecord)} · ${savedRecord.rowCount}품목 저장 완료${state.lastEstimateSave.linkCount ? ` · 연결 ${state.lastEstimateSave.linkCount}개` : ''}${affectedCount ? ` · 연동 ${affectedCount}건 반영` : ''}${deletedEstimateIds.length ? ` · 빈 원본 ${deletedEstimateIds.length}개 자동 삭제` : ''}`);
     toast(updateExistingRecord ? '기존 견적서를 덮어썼습니다.' : '새 견적서를 목록 최하단에 저장했습니다.', 'success');
     return true;
   } catch (error) {
@@ -9439,6 +9522,25 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   toast(successMessage, 'success');
 }
 
+async function hydrateEstimateLibrary() {
+  try {
+    performance.mark?.('smartinput-estimate-library-load-start');
+    const estimates = await withTimeout(loadEstimateLibrary(), 2500, '견적서 목록 로딩 시간 초과');
+    state.estimates = normalizeEstimateOrder(estimates || []);
+    state.smartDataReady = true;
+    state.smartDataError = null;
+  } catch (error) {
+    state.smartDataReady = false;
+    state.smartDataError = error || new Error('견적서 목록 로드 실패');
+  } finally {
+    renderMode();
+    performance.mark?.('smartinput-estimate-library-rendered');
+    try {
+      performance.measure?.('smartinput-estimate-library-ready', 'smartinput-estimate-library-load-start', 'smartinput-estimate-library-rendered');
+    } catch (_) {}
+  }
+}
+
 async function hydrateReferences() {
   state.catalogStatus = 'LOADING';
   state.customerStatus = 'LOADING';
@@ -9447,36 +9549,31 @@ async function hydrateReferences() {
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
-    withTimeout(loadSmartInputData(), 5000, '스마트입력 설정 로딩 시간 초과'),
+    withTimeout(loadSmartInputData({ includeEstimates: false }), 5000, '스마트입력 설정 로딩 시간 초과'),
     withTimeout(loadInputTemplates(state.companyId, state.draft.activeMode), 5000, '입력 양식 로딩 시간 초과')
   ]);
+  state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
+    ? smartDataResult[1].value
+    : [];
+  state.inputTemplatesStatus = smartDataResult[1].status === 'rejected'
+    ? 'ERROR'
+    : (state.inputTemplates.length ? 'READY' : 'EMPTY');
+  state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
   if (smartDataResult[0].status === 'fulfilled') {
     const data = smartDataResult[0].value;
     state.settings = contract.normalizeSettings(data.settings || {});
     state.linkGroups = data.linkGroups || [];
     state.temporaryCustomers = data.temporaryCustomers || [];
     state.aliasMappings = data.aliasMappings || [];
-    state.estimates = normalizeEstimateOrder(data.estimates || []);
-    state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
-      ? smartDataResult[1].value
-      : [];
-    state.inputTemplatesStatus = smartDataResult[1].status === 'rejected'
-      ? 'ERROR'
-      : (state.inputTemplates.length ? 'READY' : 'EMPTY');
-    state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
     state.sourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
-    state.smartDataReady = true;
-    state.smartDataError = null;
+    state.smartAuxiliaryDataError = null;
     restoreInputMappingSession({ applyLatestTemplate: false });
     renderMode();
   } else {
-    state.smartDataError = smartDataResult[0].reason || new Error('스마트입력 설정 로드 실패');
-    state.inputTemplates = [];
-    state.inputTemplatesStatus = 'ERROR';
-    state.inputTemplatesError = state.smartDataError;
+    state.smartAuxiliaryDataError = smartDataResult[0].reason || new Error('스마트입력 설정 로드 실패');
     renderMode();
   }
   try {
@@ -10471,6 +10568,7 @@ window.addEventListener('pagehide', () => {
 renderMode();
 if (earlyUi) earlyUi.ready = true;
 initializeAutosave();
+void hydrateEstimateLibrary();
 void hydrateReferences().then(() => {
   if (shoppingOrderImport()) void refreshShoppingOrderInspection({ persist: true });
 });

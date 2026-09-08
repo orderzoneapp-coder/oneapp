@@ -1069,11 +1069,8 @@ try {
   assert.match(await evaluate(client, `document.querySelector('#linkedEstimateList [data-select-estimate-card] small')?.textContent`), /작성 .*수정/, 'estimate cards must distinguish immutable creation and latest modification dates');
   await click(client, '#estimateLibraryIndividualButton');
   await click(client, '#catalogPickerList [data-select-estimate-card]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'individual source selected before protected deletion');
-  await click(client, '#selectedEstimateDeleteButton');
-  await expr(client, `document.querySelector('#toast').textContent.includes('연동견적서에서 사용 중')`, 'linked source deletion blocked');
-  assert.equal(await evaluate(client, `(() => {const toast=document.querySelector('#toast').getBoundingClientRect();const actions=document.querySelector('#catalogComposeArea').getBoundingClientRect();return toast.bottom<=actions.top;})()`), true, 'required error notifications must stay above the lower action buttons');
-  assert.equal(await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length`), 2, 'linked source protection must preserve all selected individual estimates');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'individual source selected before cascading deletion');
+  assert.equal(await evaluate(client, `!document.querySelector('#selectedEstimateDeleteButton').disabled`), true, 'a linked source estimate must remain directly deletable; cascade semantics are covered by the focused source-edit contract');
   const unselectedWorkingCopySourceId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
   await evaluate(client, `(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const input=row.querySelector('[data-field="memo"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'저장하지 않은 미선택 원본 메모');input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
   await click(client, '#catalogPickerList .estimate-card:not(.is-selected) [data-select-estimate-card]');
@@ -1210,17 +1207,22 @@ try {
   assert.equal(await evaluate(client, `document.querySelector('[data-estimate-customer-name]').textContent.trim()`), '거래처 미지정', 'legacy customerless estimate must make the missing customer explicit');
   await click(client, '[data-estimate-customer-match]');
   await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]'))`, 'estimate information customer fixture');
-  await click(client, '.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]');
-  await click(client, '.smart-customer-dialog [data-customer-use]');
+  await input(client, '.smart-customer-dialog input[type="search"]', '격리 검증 거래처');
+  await click(client, '.smart-customer-dialog [data-link-mode]');
+  await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]:checked'))`, 'relationship delivery customer auto-selection');
+  assert.equal(await evaluate(client, `document.querySelectorAll('.smart-customer-dialog input[name="taxCustomerRole"]:checked').length`), 0, 'tax customer must remain optional instead of being auto-selected');
+  assert.match(await evaluate(client, `document.querySelector('.smart-customer-dialog .smart-link-footer').textContent`), /세무거래처는 선택사항/);
+  await click(client, '.smart-customer-dialog [data-link-save]');
   await expr(client, `!document.querySelector('.smart-customer-dialog')&&document.querySelector('[data-estimate-customer-name]')?.textContent.trim()==='격리 검증 거래처'`, 'estimate information customer rematched');
   await input(client, '[data-estimate-name-change]', '정보 변경된 견적');
   await click(client, '[data-confirm-information]');
   await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]')?.textContent.includes('정보 변경된 견적')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'estimate name and customer applied without changing its id');
-  const estimateInformation = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');return {record:{id:record.customerId,code:record.customerCode,name:record.customerName},header:{id:record.draft.header.customerId,code:record.draft.header.customerCode,name:record.draft.header.customerName}};})()`);
+  const estimateInformation = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');const group=data.linkGroups.find(item=>item.memberCustomerIds?.includes('E2E-CUSTOMER'));return {record:{id:record.customerId,code:record.customerCode,name:record.customerName},header:{id:record.draft.header.customerId,code:record.draft.header.customerCode,name:record.draft.header.customerName,taxId:record.draft.header.taxCustomerId,taxName:record.draft.header.taxCustomerName},relationship:{deliveryIds:group.deliveryCustomerIds,taxCustomerId:group.taxCustomerId}};})()`);
   assert.deepEqual(estimateInformation, {
     record: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처' },
-    header: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처' }
-  }, 'estimate information must persist identical customer identity on the record and draft header');
+    header: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처', taxId: '', taxName: '' },
+    relationship: { deliveryIds: ['E2E-CUSTOMER'], taxCustomerId: '' }
+  }, 'estimate information must persist its customer and allow a delivery-only relationship without a tax customer');
   await input(client, '#inputRows [data-field="unitPrice"]', '1801');
   await click(client, '#completeButton');
   await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'first in-place save preserves the rematched customer');
@@ -1253,6 +1255,25 @@ try {
   await click(client, '#selectedEstimateDeleteButton');
   await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'confirmed multiple deletion');
   assert.equal(await evaluate(client, `window.__estimateDeleteConfirmCalls`), 1, 'two selected cards must require one confirmation');
+
+  await click(client, '#catalogPickerList [data-select-estimate-card]');
+  const cascadedSourceId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
+  await click(client, '#selectedEstimateDeleteButton');
+  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===1&&document.querySelector('#toast').textContent.includes('연동견적서')`, 'individual source deletion cascades to linked estimates');
+  assert.equal(await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?source-delete-cascade-e2e=1');const data=await store.loadSmartInputData();return !data.estimates.some(record=>record.estimateId===${JSON.stringify(cascadedSourceId)})&&data.estimates.filter(record=>record.estimateKind==='LINKED_GROUP').every(record=>!(record.linkedEstimateSources||[]).some(source=>source.estimateId===${JSON.stringify(cascadedSourceId)})&&!(record.draft?.rows||[]).some(row=>(row.linkedSourceEstimateIds||[]).includes(${JSON.stringify(cascadedSourceId)})));})()`), true,
+    'deleting an individual estimate must remove its source metadata and products from every linked estimate');
+
+  await click(client, '#estimateLibraryLinkedButton');
+  await click(client, '#linkedEstimateList [data-select-estimate-card]');
+  await click(client, '#selectAllRows');
+  await click(client, '#deleteSelectedRows');
+  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===0`, 'all linked products removed from working draft');
+  await click(client, '#completeButton');
+  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked product deletion confirmation');
+  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]').length===0&&!document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled&&document.querySelector('.linked-source-edit-dialog').textContent.includes('품목이 0개가 되는 원본 견적서는 함께 삭제')`), true,
+    'linked product deletion must target every source automatically and disclose empty-estimate deletion');
+  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
+  await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?linked-delete-cascade-e2e=1');const data=await store.loadSmartInputData();return data.estimates.filter(record=>record.estimateKind!=='LINKED_GROUP').length===0&&data.estimates.filter(record=>record.estimateKind==='LINKED_GROUP').every(record=>(record.linkedEstimateSources||[]).length===0&&(record.draft?.rows||[]).length===0);})()`, 'linked product deletion removes empty source estimate and cascades to sibling linked estimates');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await client.send('Page.reload', { ignoreCache: true });
