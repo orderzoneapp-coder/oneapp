@@ -210,7 +210,7 @@ function sourceCandidate(record, sourceRow = null, ref = null) {
   };
 }
 
-export function inspectLinkedEstimateSourceEdits({ linkedRecord, currentDraft, sourceRecords = [] } = {}) {
+export function inspectLinkedEstimateSourceEdits({ linkedRecord, baselineLinkedRecord = null, currentDraft, sourceRecords = [] } = {}) {
   const issues = [];
   if (linkedRecord?.estimateKind !== 'LINKED_GROUP') {
     issues.push({ code: 'LINKED_ESTIMATE_RECORD_REQUIRED', message: '연동견적서만 원본별 수정할 수 있습니다.' });
@@ -272,6 +272,42 @@ export function inspectLinkedEstimateSourceEdits({ linkedRecord, currentDraft, s
       sources
     });
   });
+  const currentSourceSignatures = new Set((currentDraft?.rows || [])
+    .filter(meaningfulRow)
+    .map(linkedRefSignature)
+    .filter(Boolean));
+  const baselineRows = baselineLinkedRecord?.estimateId === linkedRecord?.estimateId
+    ? (baselineLinkedRecord.draft?.rows || [])
+    : (linkedRecord?.draft?.rows || []);
+  baselineRows.filter(meaningfulRow).forEach((row, index) => {
+    const signature = linkedRefSignature(row);
+    if (!signature || currentSourceSignatures.has(signature)) return;
+    const rowId = text(row.rowId) || `LINKED-DELETED-ROW-${index + 1}`;
+    const sources = normalizedSourceRefs(row).flatMap(ref => {
+      const record = recordsById.get(ref.estimateId);
+      if (!record) {
+        issues.push({ code: 'LINKED_ESTIMATE_SOURCE_RECORD_MISSING', rowId, estimateId: ref.estimateId, message: `원본 견적서 ${ref.estimateId}을 찾을 수 없습니다.` });
+        return [];
+      }
+      const sourceRow = (record.draft?.rows || []).find(candidate => candidate.rowId === ref.rowId);
+      if (!sourceRow) {
+        issues.push({ code: 'LINKED_ESTIMATE_SOURCE_ROW_MISSING', rowId, estimateId: ref.estimateId, sourceRowId: ref.rowId, message: `${recordTitle(record)}의 원본 행 ${ref.rowId}을 찾을 수 없습니다.` });
+        return [];
+      }
+      return [sourceCandidate(record, sourceRow, ref)];
+    });
+    if (!sources.length) return;
+    rows.push({
+      rowId,
+      rowNo: index + 1,
+      operation: 'DELETE',
+      changedFields: [],
+      before: lineSnapshot(row),
+      after: null,
+      workingRow: null,
+      sources
+    });
+  });
   return {
     schemaVersion: LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA,
     linkedEstimateId: text(linkedRecord?.estimateId),
@@ -282,6 +318,7 @@ export function inspectLinkedEstimateSourceEdits({ linkedRecord, currentDraft, s
 }
 
 function requiredSelection(row, selections) {
+  if (row.operation === 'DELETE') return null;
   if (row.operation === 'UPDATE' && row.sources.length === 1) return row.sources[0];
   const selectedKey = text(selections?.[row.rowId]);
   const selected = row.sources.find(source => source.key === selectedKey);
@@ -307,6 +344,19 @@ export function createLinkedEstimateSourceEditPlan({ evidence, selections = {}, 
   }
   const operations = evidence.rows.map(row => {
     const selected = requiredSelection(row, selections);
+    if (row.operation === 'DELETE') {
+      return {
+        operation: row.operation,
+        workingRowId: row.rowId,
+        workingRowNo: row.rowNo,
+        changedFields: [],
+        before: clone(row.before),
+        after: null,
+        workingRow: null,
+        target: clone(row.sources[0]),
+        targets: row.sources.map(clone)
+      };
+    }
     return {
       operation: row.operation,
       workingRowId: row.rowId,
@@ -354,7 +404,9 @@ export function linkedEstimateWorkingDraftsEquivalent(left, right) {
 
 export function inspectLinkedEstimateSourceWorkingCopyConflicts({ plan, sourceRecords = [], workingCopies = [] } = {}) {
   if (plan?.schemaVersion !== LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA) throw new Error('LINKED_ESTIMATE_SOURCE_EDIT_PLAN_INVALID');
-  const selectedIds = new Set(plan.operations.map(operation => text(operation.target?.estimateId)).filter(Boolean));
+  const selectedIds = new Set(plan.operations.flatMap(operation => (
+    operation.operation === 'DELETE' ? (operation.targets || []) : [operation.target]
+  )).map(target => text(target?.estimateId)).filter(Boolean));
   const recordsById = new Map(sourceRecords.filter(record => record?.estimateId).map(record => [record.estimateId, record]));
   const workingById = new Map(workingCopies.filter(copy => copy?.estimateId && copy?.draft).map(copy => [copy.estimateId, copy.draft]));
   return [...selectedIds].flatMap(estimateId => {
@@ -492,6 +544,24 @@ function materializeLinkedRows(target, recordsById) {
   return [...uniqueRows.values(), ...manualRows];
 }
 
+export function removeLinkedEstimateSources({ linkedRecord, sourceRecords = [], removedEstimateIds = [], occurredAt } = {}) {
+  if (linkedRecord?.estimateKind !== 'LINKED_GROUP') throw new Error('LINKED_ESTIMATE_RECORD_REQUIRED');
+  const removedIds = new Set(removedEstimateIds.map(text).filter(Boolean));
+  const target = clone(linkedRecord);
+  target.linkedEstimateSources = (target.linkedEstimateSources || []).filter(source => !removedIds.has(text(source.estimateId)));
+  target.draft ||= { rows: [] };
+  target.draft.linkedEstimateSources = target.linkedEstimateSources.map(clone);
+  const recordsById = new Map(sourceRecords
+    .filter(record => record?.estimateId && record.estimateKind !== 'LINKED_GROUP' && !removedIds.has(text(record.estimateId)))
+    .map(record => [record.estimateId, record]));
+  target.draft.rows = materializeLinkedRows(target, recordsById);
+  const timestamp = text(occurredAt) || new Date().toISOString();
+  target.updatedAt = timestamp;
+  target.draft.updatedAt = timestamp;
+  updateSummary(target);
+  return target;
+}
+
 function sanitizeNewSourceRow(row, target, plan) {
   const next = clone(row);
   next.rowId = text(next.rowId) || `SIROW-LINKED-${plan.planId}`;
@@ -533,6 +603,22 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
   const targetRows = new Map((target.draft?.rows || []).map(row => [row.rowId, row]));
 
   for (const operation of plan.operations) {
+    if (operation.operation === 'DELETE') {
+      for (const deletionTarget of operation.targets || [operation.target]) {
+        const source = recordsById.get(deletionTarget?.estimateId);
+        if (!source?.draft?.rows) throw new Error('LINKED_ESTIMATE_SOURCE_STALE');
+        const sourceIndex = source.draft.rows.findIndex(row => row.rowId === deletionTarget.sourceRowId);
+        if (sourceIndex < 0 || !same(source.draft.rows[sourceIndex], deletionTarget.expectedRow)) {
+          throw new Error('LINKED_ESTIMATE_SOURCE_STALE');
+        }
+        source.draft.rows.splice(sourceIndex, 1);
+        source.updatedAt = plan.occurredAt;
+        source.draft.updatedAt = plan.occurredAt;
+        updateSummary(source);
+        changedIds.add(source.estimateId);
+      }
+      continue;
+    }
     const source = recordsById.get(operation.target.estimateId);
     if (!source?.draft?.rows) throw new Error('LINKED_ESTIMATE_SOURCE_STALE');
     if (operation.operation === 'UPDATE') {
@@ -588,6 +674,14 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
     if (linkedRow) clearLinkedEditMarkers(linkedRow);
   }
 
+  const deletedSourceIds = new Set([...changedIds].filter(estimateId => (
+    !(recordsById.get(estimateId)?.draft?.rows || []).some(meaningfulRow)
+  )));
+  if (deletedSourceIds.size) {
+    target.linkedEstimateSources = (target.linkedEstimateSources || []).filter(source => !deletedSourceIds.has(text(source.estimateId)));
+    if (target.draft) target.draft.linkedEstimateSources = target.linkedEstimateSources.map(clone);
+  }
+
   const audit = {
     schemaVersion: LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA,
     planId: plan.planId,
@@ -597,9 +691,10 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
     operations: plan.operations.map(operation => ({
       action: operation.operation,
       workingRowId: operation.workingRowId,
-      targetEstimateId: operation.target.estimateId,
-      targetEstimateName: operation.target.estimateName,
-      targetSourceRowId: operation.operation === 'ADD' ? operation.workingRowId : operation.target.sourceRowId,
+      targetEstimateId: operation.target?.estimateId || '',
+      targetEstimateIds: (operation.operation === 'DELETE' ? (operation.targets || []) : [operation.target]).map(item => item?.estimateId).filter(Boolean),
+      targetEstimateName: operation.target?.estimateName || '',
+      targetSourceRowId: operation.operation === 'ADD' ? operation.workingRowId : (operation.target?.sourceRowId || ''),
       changedFields: [...operation.changedFields],
       before: clone(operation.before),
       after: clone(operation.after)
@@ -619,7 +714,9 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
   return {
     linkedRecord: target,
     changedSourceIds: [...changedIds],
-    upserts: [target, ...[...changedIds].map(estimateId => recordsById.get(estimateId))],
+    deletedSourceIds: [...deletedSourceIds],
+    upserts: [target, ...[...changedIds].filter(estimateId => !deletedSourceIds.has(estimateId)).map(estimateId => recordsById.get(estimateId))],
+    deletes: [...deletedSourceIds],
     audit
   };
 }

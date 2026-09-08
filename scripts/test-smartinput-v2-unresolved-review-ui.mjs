@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '656e7a5d0015c4d0bb3936eeeb6fa4d44c98b2ffc6074d76dd4caa4af04cab85'],
+  ['../smartinput/index.html', '31a798a8ce0dbeab2390be251f195f58aa716da2ce1daeeaf9c883bb3f1f4dfb'],
   ['../smartinput/smartinput.css', '74cbd35536fe121d746f3447f5498bf26e426689ef92cdc9c302a64ecf3da4fc'],
-  ['../smartinput/smartinput.js', 'dfe178b358e3929c29149cafa0fa9816a002acd602c3eb3ce0d5cf6b790d2801']
+  ['../smartinput/smartinput.js', 'ddad9431226f4c33b56fc1a8bcfdd97fd92728f37a9ab86dfff624b41424234d']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline for estimate information changes, match-dictionary persistence, and voucher upload sorting, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline for estimate information changes, fast estimate loading, linked deletion propagation, match-dictionary persistence, and voucher upload sorting, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 
@@ -196,5 +196,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-information-rematch-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-and-order-shipment-pipeline'
 }, null, 2));

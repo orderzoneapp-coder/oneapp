@@ -22,7 +22,7 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /smartinput\.css\?v=0\.9\.14/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
-assert.match(html, /smartinput\.js\?v=0\.11\.41/);
+assert.match(html, /smartinput\.js\?v=0\.11\.42/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -57,11 +57,13 @@ assert.match(read('smartinput/smartinput.css'), /row-sequence-select-cell > inpu
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
   'autosave must never write through to linked estimate originals');
-assert.match(appSource, /commitEstimateBundle\(\{ upserts: bundle, expectedPreimages \}\)/, 'explicit Save must atomically persist the selected linked estimate bundle with optimistic pre-images');
+assert.match(appSource, /commitEstimateBundle\(\{ upserts: bundle, deletes: deletedEstimateIds, expectedPreimages \}\)/, 'explicit Save must atomically persist linked updates and empty-source deletions with optimistic pre-images');
 assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before explicit source selection');
 assert.match(appSource, /showLinkedEstimateSourceEditDialog\(evidence\)/, 'linked edits must pass through the operator source-selection dialog');
 assert.match(linkedSourceEditSource, /LINKED_ESTIMATE_SOURCE_SELECTION_REQUIRED/, 'multiple linked sources must fail closed without an explicit selection');
 assert.match(linkedSourceEditSource, /LINKED_ESTIMATE_NEW_ROW_SOURCE_REQUIRED/, 'new linked rows must fail closed without an explicit target estimate');
+assert.match(linkedSourceEditSource, /operation === 'DELETE'[\s\S]*targets: row\.sources\.map/, 'linked row deletion must retain every source row as an explicit deletion target');
+assert.match(linkedSourceEditSource, /deletedSourceIds[\s\S]*deletes: \[\.\.\.deletedSourceIds\]/, 'source estimates with zero remaining products must join the atomic delete bundle');
 assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
@@ -113,6 +115,10 @@ for (const dependency of ['source-parser', 'order-event-detector', 'order-line-p
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
 assert.match(appSource, /renderMode\(\);[\s\S]*?(?:void\s+)?hydrateReferences\(\)/, 'local shell must render before optional references');
+assert.match(appSource, /void hydrateEstimateLibrary\(\);[\s\S]*void hydrateReferences\(\)/, 'the estimate library fast path must start independently from optional reference hydration');
+assert.match(appSource, /loadSmartInputData\(\{ includeEstimates: false \}\)/, 'optional settings and reference hydration must not gate the estimate library');
+assert.match(appSource, /세무거래처는 선택사항입니다/, 'customer relationship save must describe tax customer assignment as optional');
+assert.doesNotMatch(appSource, /if \(!selectedTaxCustomerId\)\s*\{[\s\S]{0,160}세무거래처를 정확히 1곳 지정하세요/, 'customer relationship save must not require a tax customer');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 
 for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList', 'linkedEstimateList']) {
@@ -133,6 +139,8 @@ for (const store of ['settings', 'customerLinkGroups', 'temporaryCustomers', 'cu
 }
 assert.match(storeSource, /saveLatestAutosave[\s\S]*key: 'current'/);
 assert.match(storeSource, /loadLatestAutosave[\s\S]*get\(DATA_STORES\.AUTOSAVE, 'current'\)/);
+assert.match(storeSource, /export async function loadEstimateLibrary\(\)/, 'the estimate list must have an isolated local-data fast path');
+assert.match(storeSource, /request\.onblocked[\s\S]*SMARTINPUT_DB_UPGRADE_BLOCKED/, 'blocked IndexedDB upgrades must fail with an actionable reason instead of hanging');
 assert.doesNotMatch(storeSource, /deleteDatabase|\.clear\s*\(/, 'rollback must not erase user data');
 
 const contractSource = read('smartinput/smartinput-contract.js');

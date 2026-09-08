@@ -5,6 +5,7 @@ import {
   inspectLinkedEstimateSourceEdits,
   inspectLinkedEstimateSourceWorkingCopyConflicts,
   numericInputState,
+  removeLinkedEstimateSources,
   restoreLinkedEstimateWorkingRowEdits
 } from '../smartinput/linked-estimate-source-edit.js';
 
@@ -261,6 +262,77 @@ const added = applyLinkedEstimateSourceEditPlan({ plan: newPlan, linkedRecord: w
 assert.equal(added.upserts.find(record => record.estimateId === 'EST-A').draft.rows.length, 2);
 assert.equal(added.upserts.find(record => record.estimateId === 'EST-B'), undefined);
 assert.equal(added.linkedRecord.draft.rows[0].linkedSourceRefs[0].estimateId, 'EST-A');
+
+const appleA = sourceRow('ROW-DELETE-A', 1, 1000);
+const appleB = sourceRow('ROW-DELETE-B', 2, 1100);
+const pearA = sourceRow('ROW-KEEP-A', 3, 2000, { productId: 'PRODUCT-0008', masterProductId: 'MASTER-0008', itemCode: '0008', itemName: '배' });
+const deleteSourceA = sourceRecord('EST-DELETE-A', '삭제 원본 A', [appleA, pearA]);
+const deleteSourceB = sourceRecord('EST-DELETE-B', '삭제 원본 B', [appleB]);
+const deleteLinkedApple = sourceRow('LINKED-DELETE-APPLE', 1, 1000, {
+  linkedSourceEstimateId: 'EST-DELETE-A',
+  linkedSourceEstimateName: '2개 견적서',
+  linkedSourceRowId: 'ROW-DELETE-A',
+  linkedSourceEstimateIds: ['EST-DELETE-A', 'EST-DELETE-B'],
+  linkedSourceRefs: [
+    { estimateId: 'EST-DELETE-A', estimateName: '삭제 원본 A', rowId: 'ROW-DELETE-A' },
+    { estimateId: 'EST-DELETE-B', estimateName: '삭제 원본 B', rowId: 'ROW-DELETE-B' }
+  ]
+});
+const deleteLinkedPear = sourceRow('LINKED-DELETE-PEAR', 3, 2000, {
+  productId: 'PRODUCT-0008', masterProductId: 'MASTER-0008', itemCode: '0008', itemName: '배',
+  linkedSourceEstimateId: 'EST-DELETE-A',
+  linkedSourceEstimateName: '삭제 원본 A',
+  linkedSourceRowId: 'ROW-KEEP-A',
+  linkedSourceEstimateIds: ['EST-DELETE-A'],
+  linkedSourceRefs: [{ estimateId: 'EST-DELETE-A', estimateName: '삭제 원본 A', rowId: 'ROW-KEEP-A' }]
+});
+const deleteLinkedRecord = {
+  estimateId: 'LINKED-DELETE',
+  catalogName: '삭제 연동 견적',
+  estimateKind: 'LINKED_GROUP',
+  linkedEstimateSources: [
+    { estimateId: 'EST-DELETE-A', catalogName: '삭제 원본 A' },
+    { estimateId: 'EST-DELETE-B', catalogName: '삭제 원본 B' }
+  ],
+  draft: { rows: [deleteLinkedApple, deleteLinkedPear] }
+};
+const deleteEvidence = inspectLinkedEstimateSourceEdits({
+  linkedRecord: { ...deleteLinkedRecord, draft: { ...deleteLinkedRecord.draft, rows: [deleteLinkedPear] } },
+  baselineLinkedRecord: deleteLinkedRecord,
+  currentDraft: { ...deleteLinkedRecord.draft, rows: [deleteLinkedPear] },
+  sourceRecords: [deleteSourceA, deleteSourceB]
+});
+assert.equal(deleteEvidence.issues.length, 0);
+assert.equal(deleteEvidence.rows.length, 1);
+assert.equal(deleteEvidence.rows[0].operation, 'DELETE');
+assert.deepEqual(deleteEvidence.rows[0].sources.map(source => source.estimateId), ['EST-DELETE-A', 'EST-DELETE-B']);
+const deletePlan = createLinkedEstimateSourceEditPlan({
+  evidence: deleteEvidence,
+  selections: {},
+  actor: 'TESTER',
+  occurredAt: '2026-09-03T20:04:00+09:00',
+  planId: 'PLAN-DELETE'
+});
+assert.equal(deletePlan.operations[0].targets.length, 2, '연동행 삭제는 연결된 모든 원본 행을 대상으로 확정해야 한다.');
+const deleteApplied = applyLinkedEstimateSourceEditPlan({
+  plan: deletePlan,
+  linkedRecord: { ...deleteLinkedRecord, draft: { ...deleteLinkedRecord.draft, rows: [deleteLinkedPear] } },
+  sourceRecords: [deleteSourceA, deleteSourceB]
+});
+assert.deepEqual(deleteApplied.deletes, ['EST-DELETE-B'], '마지막 품목이 삭제된 원본 견적서는 삭제 묶음으로 반환해야 한다.');
+assert.equal(deleteApplied.upserts.find(record => record.estimateId === 'EST-DELETE-A').draft.rows.length, 1);
+assert.equal(deleteApplied.upserts.find(record => record.estimateId === 'EST-DELETE-A').draft.rows[0].itemCode, '0008');
+assert.deepEqual(deleteApplied.linkedRecord.linkedEstimateSources.map(source => source.estimateId), ['EST-DELETE-A']);
+assert.deepEqual(deleteApplied.linkedRecord.draft.rows.map(row => row.itemCode), ['0008']);
+
+const directSourceRemoval = removeLinkedEstimateSources({
+  linkedRecord: deleteLinkedRecord,
+  sourceRecords: [deleteSourceB],
+  removedEstimateIds: ['EST-DELETE-A'],
+  occurredAt: '2026-09-03T20:05:00+09:00'
+});
+assert.deepEqual(directSourceRemoval.linkedEstimateSources.map(source => source.estimateId), ['EST-DELETE-B']);
+assert.deepEqual(directSourceRemoval.draft.rows.map(row => row.itemCode), ['0007'], '원본 견적서 삭제는 연동견적서에서 그 원본만 제거하고 남은 원본 품목을 유지해야 한다.');
 
 assert.equal(numericInputState(''), 'BLANK');
 assert.equal(numericInputState(null), 'BLANK');

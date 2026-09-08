@@ -41,6 +41,7 @@ function openDatabase() {
   if (!globalThis.indexedDB) return Promise.resolve(null);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(DATA_STORES.SETTINGS)) db.createObjectStore(DATA_STORES.SETTINGS, { keyPath: 'key' });
@@ -111,8 +112,28 @@ function openDatabase() {
         store.createIndex('byIdempotencyKey', 'idempotencyKey', { unique: false });
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('스마트입력 저장소를 열지 못했습니다.'));
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      if (settled) {
+        db.close();
+        return;
+      }
+      settled = true;
+      resolve(db);
+    };
+    request.onblocked = () => {
+      if (settled) return;
+      settled = true;
+      const error = new Error('다른 화면이 스마트입력 저장소 갱신을 막고 있습니다. 열려 있는 스마트입력 화면을 닫고 다시 시도하세요.');
+      error.code = 'SMARTINPUT_DB_UPGRADE_BLOCKED';
+      reject(error);
+    };
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(request.error || new Error('스마트입력 저장소를 열지 못했습니다.'));
+    };
   });
 }
 
@@ -154,6 +175,28 @@ async function getAll(storeName) {
   const rows = await requestResult(transaction.objectStore(storeName).getAll());
   db.close();
   return rows;
+}
+
+async function getAllStores(storeNames = []) {
+  const names = [...new Set(storeNames.filter(Boolean))];
+  if (!names.length) return {};
+  const db = await openDatabase();
+  if (!db) {
+    const fallback = readFallback();
+    return Object.fromEntries(names.map(storeName => [storeName, Object.values(fallback[storeName] || {})]));
+  }
+  const transaction = db.transaction(names, 'readonly');
+  const completed = transactionDone(transaction);
+  try {
+    const rows = await Promise.all(names.map(storeName => requestResult(transaction.objectStore(storeName).getAll())));
+    await completed;
+    return Object.fromEntries(names.map((storeName, index) => [storeName, rows[index]]));
+  } catch (error) {
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
 }
 
 async function get(storeName, key) {
@@ -210,15 +253,36 @@ export function createRecordId(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export async function loadSmartInputData() {
-  const [settingsRows, linkGroups, temporaryCustomers, aliasMappings, estimates, sourceImages] = await Promise.all([
-    getAll(DATA_STORES.SETTINGS),
-    getAll(DATA_STORES.LINK_GROUPS),
-    getAll(DATA_STORES.TEMPORARY_CUSTOMERS),
-    getAll(DATA_STORES.ALIAS_MAPPINGS),
-    getAll(DATA_STORES.ESTIMATES),
-    getAll(DATA_STORES.SOURCE_IMAGES)
-  ]);
+function sortedEstimates(estimates = []) {
+  return estimates.sort((left, right) => {
+    const leftOrder = Number(left.sortOrder);
+    const rightOrder = Number(right.sortOrder);
+    if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
+    if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
+    return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
+  });
+}
+
+export async function loadEstimateLibrary() {
+  return sortedEstimates(await getAll(DATA_STORES.ESTIMATES));
+}
+
+export async function loadSmartInputData({ includeEstimates = true } = {}) {
+  const storeNames = [
+    DATA_STORES.SETTINGS,
+    DATA_STORES.LINK_GROUPS,
+    DATA_STORES.TEMPORARY_CUSTOMERS,
+    DATA_STORES.ALIAS_MAPPINGS,
+    ...(includeEstimates ? [DATA_STORES.ESTIMATES] : []),
+    DATA_STORES.SOURCE_IMAGES
+  ];
+  const rowsByStore = await getAllStores(storeNames);
+  const settingsRows = rowsByStore[DATA_STORES.SETTINGS] || [];
+  const linkGroups = rowsByStore[DATA_STORES.LINK_GROUPS] || [];
+  const temporaryCustomers = rowsByStore[DATA_STORES.TEMPORARY_CUSTOMERS] || [];
+  const aliasMappings = rowsByStore[DATA_STORES.ALIAS_MAPPINGS] || [];
+  const estimates = rowsByStore[DATA_STORES.ESTIMATES] || [];
+  const sourceImages = rowsByStore[DATA_STORES.SOURCE_IMAGES] || [];
   return {
     settings: settingsRows.find(row => row.key === 'app')?.value || null,
     inputTemplates: Array.isArray(settingsRows.find(row => row.key === INPUT_TEMPLATES_KEY)?.value)
@@ -231,13 +295,7 @@ export async function loadSmartInputData() {
     linkGroups,
     temporaryCustomers,
     aliasMappings,
-    estimates: estimates.sort((left, right) => {
-      const leftOrder = Number(left.sortOrder);
-      const rightOrder = Number(right.sortOrder);
-      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) return leftOrder - rightOrder;
-      if (Number.isFinite(leftOrder) !== Number.isFinite(rightOrder)) return Number.isFinite(leftOrder) ? -1 : 1;
-      return String(left.createdAt || left.updatedAt || '').localeCompare(String(right.createdAt || right.updatedAt || ''));
-    }),
+    estimates: sortedEstimates(estimates),
     sourceImages
   };
 }
