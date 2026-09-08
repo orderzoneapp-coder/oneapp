@@ -1151,6 +1151,7 @@
       "workspaceSchemaVersion": "shipping-workspace/v2",
       "localRecoverySchemaVersion": "shipping-local-recovery/v1",
       "substitutionHistorySchemaVersion": "shipping-substitution-history/v1",
+      "systemHistorySchemaVersion": "shipping-system-history/v1",
       "resources": {
         "indexedDb": {
           "database": "ONEAPPShippingRecoveryDB",

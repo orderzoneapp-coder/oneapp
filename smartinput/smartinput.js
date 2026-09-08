@@ -5118,6 +5118,11 @@ function syncRowSelectionControls() {
     selectAll.indeterminate = selectedCount > 0 && selectedCount < rowIds.length;
     selectAll.disabled = !rowIds.length;
   }
+  document.querySelectorAll('#inputRows tr[data-row-id], #mappingInputRows tr[data-mapping-row-id]').forEach(tr => {
+    const rowId = tr.dataset.rowId || tr.dataset.mappingRowId || '';
+    tr.classList.toggle('is-row-selected', state.selectedRowIds.has(rowId));
+    tr.classList.toggle('is-grid-active', Boolean(rowId && rowId === state.draft.ui.selectedRowId));
+  });
   $('deleteSelectedRows').disabled = !selectedCount;
   $('bulkUnitPriceInput').disabled = sourceTableViewActive();
   $('applyBulkUnitPriceButton').disabled = !selectedCount || sourceTableViewActive();
@@ -5266,7 +5271,7 @@ function renderMappingRows() {
   const tableWidth = 58 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
   table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
   $('mappingTableColumns').innerHTML = `<col style="width:58px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
-  $('mappingTableHeaders').innerHTML = `<th class="sequence-column sequence-select-column" scope="col"><span>No.</span><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"></th>${visibleColumns.map(columnIndex => {
+  $('mappingTableHeaders').innerHTML = `<th class="sequence-column sequence-select-column" scope="col"><label class="sequence-checkbox sequence-checkbox--all"><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"><span>No.</span></label></th>${visibleColumns.map(columnIndex => {
     const mapping = session.mappings[columnIndex];
     const sourceHeader = session.headers[columnIndex] || `(빈 필드명 · ${columnIndex + 1}열)`;
     const validation = state.mappingValidation?.signature === session.signature ? state.mappingValidation : null;
@@ -5284,7 +5289,7 @@ function renderMappingRows() {
     const isDefault = row.rowId === MAPPING_DEFAULT_ROW_ID;
     const sequence = isDefault ? (session.workingRows || []).length + 1 : Math.max(1, (session.workingRows || []).findIndex(item => item.rowId === row.rowId) + 1);
     return `<tr data-mapping-row-id="${esc(row.rowId)}" ${isDefault ? 'data-mapping-default-row="true" class="mapping-blank-row"' : ''}>
-      <td class="row-sequence-cell row-sequence-select-cell"><span class="row-sequence-number">${sequence}</span><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+      <td class="row-sequence-cell row-sequence-select-cell"><label class="sequence-checkbox"><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}><span class="row-sequence-number">${sequence}</span></label></td>
       ${visibleColumns.map(columnIndex => {
         const mapping = session.mappings[columnIndex];
         const unmapped = mapping?.state === MAPPING_DECISION.UNMAPPED;
@@ -5809,8 +5814,13 @@ function renderRows({ restoreFocus = true } = {}) {
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
-    return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${row.duplicatePossible ? 'is-duplicate' : ''}">
-      <td class="row-sequence-cell row-sequence-select-cell"><span class="row-sequence-number">${sequence}</span><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}></td>
+    const rowClasses = [
+      row.duplicatePossible ? 'is-duplicate' : '',
+      state.selectedRowIds.has(row.rowId) ? 'is-row-selected' : '',
+      state.draft.ui.selectedRowId === row.rowId ? 'is-grid-active' : ''
+    ].filter(Boolean).join(' ');
+    return `<tr data-row-id="${esc(row.rowId)}" ${isDefault ? 'data-default-row="true"' : ''} data-status="${esc(row.matchStatus)}" class="${rowClasses}">
+      <td class="row-sequence-cell row-sequence-select-cell"><label class="sequence-checkbox"><input type="checkbox" data-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}><span class="row-sequence-number">${sequence}</span></label></td>
       <td data-column="itemCode" class="product-code-search-cell product-search-cell"><input data-field="itemCode" type="text" enterkeyhint="search" value="${esc(row.unregisteredProductQuery || rowFieldDisplayValue(row, 'itemCode', row.itemCode))}" placeholder="코드·품명·검색어" aria-label="품목코드 및 상품 검색" title="품목코드, 품명, 규격 또는 검색어 입력 후 Enter"></td>
       <td data-column="itemName"><input data-field="itemName" type="text" enterkeyhint="search" value="${esc(rowFieldDisplayValue(row, 'itemName', row.itemName))}" aria-label="품목명" title="입력 후 Enter로 상품 검색"></td>
       <td data-column="specification"><input data-field="specification" value="${esc(rowFieldDisplayValue(row, 'specification', row.specification))}" aria-label="규격"></td>
@@ -10399,6 +10409,8 @@ inputRows.addEventListener('focusin', event => {
   });
   modeUi().activeCellId = `${tr.dataset.rowId}|${gridFieldId(input)}`;
   state.draft.ui.selectedRowId = tr.dataset.rowId;
+  inputRows.querySelectorAll('tr.is-grid-active').forEach(rowElement => rowElement.classList.remove('is-grid-active'));
+  tr.classList.add('is-grid-active');
   const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
   if (modeDraft().activeMethod === 'photo') showPhotoRegion(row?.sourceRegion || null);
 });
@@ -10443,6 +10455,11 @@ inputRows.addEventListener('click', event => {
   }
   const tr = event.target.closest('[data-row-id]');
   const editableInput = event.target.closest('[data-field], [data-custom-row-field]');
+  if (tr) {
+    state.draft.ui.selectedRowId = tr.dataset.rowId;
+    inputRows.querySelectorAll('tr.is-grid-active').forEach(rowElement => rowElement.classList.remove('is-grid-active'));
+    tr.classList.add('is-grid-active');
+  }
   if (tr && !editableInput && modeDraft().activeMethod === 'photo') {
     const row = modeDraft().rows.find(item => item.rowId === tr.dataset.rowId);
     state.draft.ui.selectedRowId = tr.dataset.rowId;

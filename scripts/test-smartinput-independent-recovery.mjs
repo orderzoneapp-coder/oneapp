@@ -20,9 +20,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
-assert.match(html, /smartinput\.css\?v=0\.9\.14/);
+assert.match(html, /smartinput\.css\?v=0\.9\.15/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
-assert.match(html, /smartinput\.js\?v=0\.11\.43/);
+assert.match(html, /smartinput\.js\?v=0\.11\.44/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -38,7 +38,7 @@ assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCre
 assert.match(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
-assert.match(html, /<th class="sequence-column sequence-select-column"[^>]*>[\s\S]*No\.[\s\S]*id="selectAllRows"/, 'row number and select-all must share one table heading');
+assert.match(html, /<th class="sequence-column sequence-select-column"[^>]*>[\s\S]*class="sequence-checkbox sequence-checkbox--all"[\s\S]*id="selectAllRows"[\s\S]*<span>No\.<\/span>/, 'select-all must render No. inside the checkbox control');
 assert.doesNotMatch(html, /class="col-select"|class="select-column"/, 'the standalone selection column must stay removed');
 assert.doesNotMatch(html, /data-column="productSearch"|class="col-product-search"|>상품 검색<\/th>/,
   'the worktable must not restore a standalone product-search column');
@@ -52,8 +52,10 @@ assert.doesNotMatch(appSource, /\bisLinkedRow\s*\(/,
   'product selection and linked-row edits must use the existing canonical linked-source helper');
 assert.match(appSource, /rowHasLinkedSource\(liveRow\)[\s\S]*rowHasLinkedSource\(liveRow\)/,
   'product candidate selection must preserve linked-row sync and save behavior');
-assert.match(appSource, /row-sequence-number[\s\S]*data-select-row=/, 'each row must render its number and checkbox in one cell');
-assert.match(read('smartinput/smartinput.css'), /row-sequence-select-cell > input \{ width: 21px; height: 21px;/, 'row selection checkboxes must remain enlarged');
+assert.match(appSource, /class="sequence-checkbox"[\s\S]*data-select-row=[\s\S]*class="row-sequence-number">\$\{sequence\}/, 'each row number must render inside its checkbox control');
+assert.match(read('smartinput/smartinput.css'), /\.sequence-checkbox > span \{ width: 29px; height: 29px;/, 'numbered row-selection controls must remain touch sized');
+assert.match(read('smartinput/smartinput.css'), /#voucherInputTable tbody tr\.is-grid-active[\s\S]*outline: 2px solid var\(--focus\)/, 'the active SmartInput row must keep a visible border');
+assert.match(appSource, /tr\.classList\.toggle\('is-row-selected',[\s\S]*tr\.classList\.toggle\('is-grid-active'/, 'selection and active-row borders must be synchronized after rerenders');
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
   'autosave must never write through to linked estimate originals');

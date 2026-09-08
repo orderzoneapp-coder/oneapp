@@ -7,10 +7,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.0";
+  const ENGINE_VERSION = "3.20.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
+  const SYSTEM_HISTORY_SCHEMA_VERSION = "shipping-system-history/v1";
   const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
   const HEADER_SCAN_LIMIT = 30;
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
@@ -1399,6 +1400,82 @@
     return workspace.substitutionHistory;
   }
 
+  function ensureSystemHistory(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const existing = workspace.systemHistory;
+    if (
+      !existing ||
+      existing.schemaVersion !== SYSTEM_HISTORY_SCHEMA_VERSION ||
+      !Array.isArray(existing.events)
+    ) {
+      workspace.systemHistory = {
+        schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION,
+        events: [],
+      };
+    }
+    return workspace.systemHistory;
+  }
+
+  function comparableHistoryValue(value) {
+    if (value === null || value === undefined) return "";
+    return String(value);
+  }
+
+  function displayHistoryValue(value) {
+    const text = comparableHistoryValue(value);
+    return text === "" ? "빈값" : text;
+  }
+
+  function appendSystemEditEvent(workspace, detail, options = {}) {
+    if (options.recordHistory !== true) return null;
+    const previousValue = comparableHistoryValue(detail.previousValue);
+    const nextValue = comparableHistoryValue(detail.nextValue);
+    if (previousValue === nextValue) return null;
+    const history = ensureSystemHistory(workspace);
+    const occurredAt = substitutionEventTime(options.occurredAt);
+    const productCode = normalizeProductCode(detail.productCode);
+    const field = cleanText(detail.field);
+    const event = {
+      eventId: `cell-edit-${stableTextHash([
+        occurredAt,
+        history.events.length + 1,
+        productCode,
+        field,
+        previousValue,
+        nextValue,
+      ].join("|"))}`,
+      kind: "CELL_EDITED",
+      occurredAt,
+      actor: cleanText(options.actor) || "사용자",
+      productCode,
+      sourceRowNumber: Number(detail.sourceRowNumber) || 0,
+      field,
+      fieldLabel: cleanText(detail.fieldLabel) || field || "정보",
+      previousValue,
+      nextValue,
+    };
+    history.events.push(event);
+    return event;
+  }
+
+  function getSystemEditMessages(workspace, productCode) {
+    const code = normalizeProductCode(productCode);
+    if (!code) return [];
+    return ensureSystemHistory(workspace).events
+      .filter((event) => event?.kind === "CELL_EDITED" && normalizeProductCode(event?.productCode) === code)
+      .slice()
+      .reverse()
+      .map((event) => ({
+        eventId: cleanText(event?.eventId),
+        kind: "CELL_EDITED",
+        occurredAt: cleanText(event?.occurredAt),
+        actor: cleanText(event?.actor) || "사용자",
+        message: `[정보수정] ${cleanText(event?.fieldLabel) || "정보"} · ${displayHistoryValue(event?.previousValue)} → ${displayHistoryValue(event?.nextValue)}`,
+      }));
+  }
+
   function productSnapshot(row) {
     return {
       productCode: normalizeProductCode(row?.productCode),
@@ -1450,6 +1527,17 @@
       });
   }
 
+  function getSystemMessages(workspace, productCode) {
+    return [
+      ...getSubstitutionMessages(workspace, productCode),
+      ...getSystemEditMessages(workspace, productCode),
+    ].sort((left, right) => {
+      const leftTime = Date.parse(left.occurredAt) || 0;
+      const rightTime = Date.parse(right.occurredAt) || 0;
+      return rightTime - leftTime;
+    });
+  }
+
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const columns = getInventoryColumnDescriptors(workspace);
@@ -1481,7 +1569,7 @@
     const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
-      const systemMessages = getSubstitutionMessages(workspace, productCode);
+      const systemMessages = getSystemMessages(workspace, productCode);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
       const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
@@ -1514,7 +1602,7 @@
     });
     orderProducts.forEach((product, productCode) => {
       if (inventoryCodes.has(productCode)) return;
-      const systemMessages = getSubstitutionMessages(workspace, productCode);
+      const systemMessages = getSystemMessages(workspace, productCode);
       const inventory = {
         productCode,
         productName: product.productName,
@@ -1768,7 +1856,7 @@
     return { columns, headers: columns.map((column) => column.header), rows };
   }
 
-  function setInventoryOverride(workspace, productCode, columnKey, value) {
+  function setInventoryOverride(workspace, productCode, columnKey, value, options = {}) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
@@ -1776,19 +1864,33 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const column = columns.find((candidate) => candidate.key === String(columnKey || ""));
     if (!code || !column?.editable) throw new Error("수정할 수 없는 재고 셀입니다.");
-    if (![
+    const source = [
       ...(Array.isArray(workspace.inventory) ? workspace.inventory : []),
       ...(Array.isArray(workspace.orders) ? workspace.orders : []),
-    ].some((row) => normalizeProductCode(row?.productCode) === code)) {
+    ].find((row) => normalizeProductCode(row?.productCode) === code);
+    if (!source) {
       throw new Error("수정할 재고 품목을 찾지 못했습니다.");
     }
     const normalized = normalizeInventoryOverrideValue(column, value);
     if (!normalized.ok) throw new Error(`${column.header} 값은 숫자 또는 빈칸이어야 합니다.`);
+    const previousValue = getEffectiveInventoryCell(
+      workspace,
+      source,
+      column,
+      getInventoryOverrideMap(workspace, columns),
+    );
     const store = createInventoryOverrideStore(workspace);
     store.cells = store.cells.filter((cell) =>
       !(normalizeProductCode(cell?.productCode) === code && cell?.columnKey === column.key),
     );
     store.cells.push({ productCode: code, columnKey: column.key, value: normalized.value });
+    appendSystemEditEvent(workspace, {
+      productCode: code,
+      field: `inventory:${column.key}`,
+      fieldLabel: column.header,
+      previousValue,
+      nextValue: normalized.value,
+    }, options);
     getInventoryViewRows(workspace);
     return normalized.value;
   }
@@ -1824,6 +1926,7 @@
     ));
     const orderOpsInputs = JSON.parse(JSON.stringify(workspace.orderOpsInputs || null));
     const substitutionHistory = JSON.parse(JSON.stringify(ensureSubstitutionHistory(workspace)));
+    const systemHistory = JSON.parse(JSON.stringify(ensureSystemHistory(workspace)));
     const acknowledgedIds = [...ensureNoticeState(workspace).acknowledgedIds];
     const orderSource = workspace.sourceFiles?.orders || {};
     const inventorySource = workspace.sourceFiles?.inventory || {};
@@ -1869,6 +1972,7 @@
     });
     rebuilt.inventoryOverrides = inventoryOverrides;
     rebuilt.substitutionHistory = substitutionHistory;
+    rebuilt.systemHistory = systemHistory;
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
@@ -2029,14 +2133,29 @@
     return undoEvent;
   }
 
-  function setOrderValue(workspace, sourceRowNumber, field, value) {
+  function setOrderValue(workspace, sourceRowNumber, field, value, options = {}) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     const rowNumber = Number(sourceRowNumber);
     const order = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
     if (!order) throw new Error("수정할 주문행을 찾지 못했습니다.");
-    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value);
+    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value, options);
+    const fieldLabels = {
+      warehouse: "창고",
+      customer: "거래처",
+      group: "그룹",
+      manager: "담당자",
+      quantity: "주문수량",
+      unitPrice: "단가",
+      deliveryNotice: "전달사항",
+      note: "적요",
+      note1: "적요1",
+    };
+    const previousValue = field === "deliveryNotice"
+      ? [order.noteOriginal ?? order.note, order.note1Original ?? order.note1]
+        .map((entry) => originalText(entry)).filter((entry) => entry !== "").join("\n")
+      : order[field];
     if (field === "quantity") {
       const parsed = parseNumericCell(value);
       if (!parsed.ok || parsed.blank) throw new Error("주문수량은 빈값이 아닌 숫자여야 합니다.");
@@ -2047,9 +2166,19 @@
       order.unitPrice = parsed.blank ? null : parsed.value;
     } else if (field === "warehouse") {
       order.warehouse = cleanText(value);
+    } else if (["customer", "group", "manager"].includes(field)) {
+      order[field] = cleanText(value);
+    } else if (field === "deliveryNotice") {
+      order.noteOriginal = originalText(value);
+      order.note = cleanText(value);
+      order.note1Original = "";
+      order.note1 = "";
     } else if (field === "note") {
       order.noteOriginal = originalText(value);
       order.note = cleanText(value);
+    } else if (field === "note1") {
+      order.note1Original = originalText(value);
+      order.note1 = cleanText(value);
     } else {
       throw new Error("수정할 수 없는 주문 항목입니다.");
     }
@@ -2058,6 +2187,15 @@
         ? roundQuantity(order.quantity * order.unitPrice)
         : null;
     }
+    const nextValue = field === "deliveryNotice" ? order.note : order[field];
+    appendSystemEditEvent(workspace, {
+      productCode: order.productCode,
+      sourceRowNumber: rowNumber,
+      field,
+      fieldLabel: fieldLabels[field] || field,
+      previousValue,
+      nextValue,
+    }, options);
     return rebuildWorkspaceFromOrders(workspace);
   }
 
@@ -2504,6 +2642,10 @@
         schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION,
         events: [],
       },
+      systemHistory: {
+        schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION,
+        events: [],
+      },
       inputValidation,
       orders: ordersParsed.rows,
       inventory: inventoryParsed.rows,
@@ -2545,13 +2687,19 @@
     };
   }
 
-  function setPurchaseValue(workspace, productCode, value) {
+  function setPurchaseValue(workspace, productCode, value, options = {}) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     ensureInventoryPurchaseRows(workspace);
     const code = normalizeProductCode(productCode);
     const purchase = value === undefined || value === null ? "" : String(value);
+    const existingPurchase = (workspace.purchaseManagement || []).find(
+      (row) => row.rowType === "main" && normalizeProductCode(row.productCode) === code,
+    );
+    const previousValue = Object.prototype.hasOwnProperty.call(options, "previousValue")
+      ? options.previousValue
+      : existingPurchase?.purchase;
     [workspace.allocations, workspace.productSummaries].forEach((rows) => {
       (rows || []).forEach((row) => {
         if (row.productCode === code) row.purchase = purchase;
@@ -2560,6 +2708,13 @@
     (workspace.purchaseManagement || []).forEach((row) => {
       if (row.rowType === "main" && row.productCode === code) row.purchase = purchase;
     });
+    appendSystemEditEvent(workspace, {
+      productCode: code,
+      field: "purchase",
+      fieldLabel: "구매처",
+      previousValue,
+      nextValue: purchase,
+    }, options);
     return purchase;
   }
 
@@ -2622,6 +2777,7 @@
     WORKSPACE_SCHEMA_VERSION,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,
+    SYSTEM_HISTORY_SCHEMA_VERSION,
     SUBSTITUTION_ORDER_SCHEMA_VERSION,
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
@@ -2660,6 +2816,8 @@
     getInventoryViewRows,
     ensureSubstitutionHistory,
     getSubstitutionMessages,
+    ensureSystemHistory,
+    getSystemMessages,
     substituteOrderProduct,
     undoLastSubstitution,
     getShortageCategoryContext,
