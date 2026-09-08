@@ -13,6 +13,17 @@ const ESTIMATE_UPLOAD_HEADERS = Object.freeze([
   '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '참조', '담당자',
   '품목코드', '품목명', '규격', '수량', '단가', 'B단가', 'A판매', 'B판매', '적요', '지시사항', '적요2'
 ]);
+const MERCHOPS_DEFAULT_MARGIN_RULES = Object.freeze([
+  Object.freeze({ id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' }),
+  Object.freeze({ id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }),
+  Object.freeze({ id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' }),
+  Object.freeze({ id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }),
+  Object.freeze({ id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' }),
+  Object.freeze({ id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' }),
+  Object.freeze({ id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' }),
+  Object.freeze({ id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }),
+  Object.freeze({ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' })
+]);
 export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
 
 export function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
@@ -74,6 +85,19 @@ function explicitDirectValue(row = {}, keys = []) {
     if (!row.editedFields?.[key] || !own(row, key)) continue;
     const value = row[key];
     return { found: true, value: value === null || value === undefined ? '' : value };
+  }
+  return { found: false, value: '' };
+}
+
+function presentOutputValue(row = {}, aliases = [], directKeys = []) {
+  const explicit = explicitDirectValue(row, directKeys);
+  if (explicit.found) return explicit;
+  const source = sourceFieldEntry(row, aliases);
+  if (source) return { found: true, value: source.currentDisplayValue ?? source.displayValue ?? '' };
+  for (const key of directKeys) {
+    if (!own(row, key)) continue;
+    if (row.estimateF8SourceOnly === true && !row.editedFields?.[key]) continue;
+    return { found: true, value: row[key] ?? '' };
   }
   return { found: false, value: '' };
 }
@@ -371,6 +395,120 @@ function catalogText(product = {}, keys = []) {
   return '';
 }
 
+function catalogValue(product = {}, keys = []) {
+  for (const key of keys) {
+    if (own(product, key)) return product[key];
+    if (own(product?.raw, key)) return product.raw[key];
+  }
+  return '';
+}
+
+function normalizeMerchWarehouse(value) {
+  const raw = text(value);
+  if (!raw || raw === '*') return raw;
+  return /^\d+$/.test(raw) ? String(Number(raw)).padStart(2, '0') : raw;
+}
+
+function merchUnitCandidates(value) {
+  const raw = text(value).toLowerCase();
+  if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
+  const normalized = raw.replace(/\s/g, '');
+  return normalized ? [normalized] : [];
+}
+
+function isDefaultMarginRule(rule = {}) {
+  return text(rule.whCode) === '*' && text(rule.unit) === '*';
+}
+
+function sanitizedMarginRules(rules = []) {
+  const provided = Array.isArray(rules) ? rules.filter(rule => rule && typeof rule === 'object') : [];
+  const legacyDefaultOnly = provided.length === 1
+    && text(provided[0]?.whCode ?? '*') === '*'
+    && text(provided[0]?.unit ?? '*') === '*'
+    && (numeric(provided[0]?.rate) || 0) === 20;
+  const source = provided.length && !legacyDefaultOnly ? provided : MERCHOPS_DEFAULT_MARGIN_RULES;
+  const cleaned = source.map((rule, index) => ({
+    id: text(rule.id) || `rule_${index + 1}`,
+    whCode: text(rule.whCode),
+    unit: text(rule.unit),
+    rate: numeric(rule.rate) || 0,
+    type: rule.type === 'multiply' ? 'multiply' : 'divide'
+  }));
+  let defaultSeen = false;
+  const uniqueDefault = cleaned.filter(rule => {
+    if (!isDefaultMarginRule(rule)) return true;
+    if (defaultSeen) return false;
+    defaultSeen = true;
+    return true;
+  });
+  if (!defaultSeen) uniqueDefault.push({ ...MERCHOPS_DEFAULT_MARGIN_RULES[MERCHOPS_DEFAULT_MARGIN_RULES.length - 1] });
+  return uniqueDefault;
+}
+
+function matchesMarginWarehouse(ruleWarehouse, warehouse) {
+  const target = normalizeMerchWarehouse(warehouse);
+  if (!target || text(ruleWarehouse) === '*') return false;
+  return text(ruleWarehouse).split(/[,./|\s]+/).map(normalizeMerchWarehouse).filter(Boolean).includes(target);
+}
+
+function matchesMarginUnit(ruleUnit, unit) {
+  const target = merchUnitCandidates(unit);
+  if (!target.length || text(ruleUnit) === '*') return false;
+  return text(ruleUnit).split(/[,./|\s]+/).flatMap(merchUnitCandidates).some(candidate => target.includes(candidate));
+}
+
+function selectedMarginRule(rules = [], warehouse = '', unit = '') {
+  const safeRules = sanitizedMarginRules(rules);
+  return safeRules.find(rule => !isDefaultMarginRule(rule)
+    && matchesMarginWarehouse(rule.whCode, warehouse)
+    && matchesMarginUnit(rule.unit, unit))
+    || safeRules.find(isDefaultMarginRule)
+    || MERCHOPS_DEFAULT_MARGIN_RULES[MERCHOPS_DEFAULT_MARGIN_RULES.length - 1];
+}
+
+function pricingNumber(row, aliases, directKeys, product, productKeys) {
+  const current = presentOutputValue(row, aliases, directKeys);
+  if (current.found && text(current.value) !== '') return numeric(current.value) || 0;
+  return numeric(catalogValue(product, productKeys)) || 0;
+}
+
+function calculatedMerchOutPrice(row = {}, product = {}, marginRules = []) {
+  const explicitOutPrice = explicitDirectValue(row, ['outPrice']);
+  if (explicitOutPrice.found) return explicitOutPrice.value === '' ? '' : sourceNumber(explicitOutPrice.value);
+  const sourceOutPrice = outputNumber(row, ['출고가', '판매가'], ['outPrice']);
+  // MerchOps의 "불러오기 시 출고가 자동적용"과 같은 범위만 재계산한다.
+  // 수기 견적과 불러온 뒤 사용자가 직접 수정한 출고가는 그대로 유지한다.
+  if (row.estimateF8SourceOnly !== true) return sourceOutPrice;
+  const inboundPrice = numeric(outputNumber(row, ['입고가'], ['inboundPrice']));
+  if (!(inboundPrice > 0)) return sourceOutPrice;
+  const outsourcing = pricingNumber(
+    row, ['외주비'], ['outsourcingStandardCost', 'outsourcingUnitPrice'], product,
+    ['outsourcingStandardCost', 'outsourcingUnitPrice', '외주비']
+  );
+  const labor = pricingNumber(
+    row, ['노무비'], ['laborStandardCost', 'laborUnitPrice'], product,
+    ['laborStandardCost', 'laborUnitPrice', '노무비']
+  );
+  const warehouseState = presentOutputValue(row, ['창고', '창고코드'], ['rowWarehouseCode', 'warehouseCode']);
+  const unitState = presentOutputValue(row, ['단위'], ['unit', 'finalUnit']);
+  const warehouse = warehouseState.found ? warehouseState.value : catalogValue(product, ['warehouseCode', 'warehouse', '창고']);
+  const unit = unitState.found ? unitState.value : catalogValue(product, ['finalUnit', 'unit', '단위']);
+  const rule = selectedMarginRule(marginRules, warehouse, unit);
+  const totalCost = inboundPrice + outsourcing + labor;
+  const rate = numeric(rule.rate) || 0;
+  const raw = rule.type === 'multiply'
+    ? totalCost * (1 + (rate / 100))
+    : totalCost / (1 - (rate / 100));
+  return Math.round(raw / 100) * 100;
+}
+
+function estimateMappingOwnsField(estimateMappings = {}, field = '') {
+  const mappings = estimateMappings?.estimate && typeof estimateMappings.estimate === 'object'
+    ? estimateMappings.estimate
+    : estimateMappings;
+  return Boolean(mappings && typeof mappings === 'object' && text(mappings[field]));
+}
+
 function roundSubdivisionSalePrice(value) {
   const amount = Number(value) || 0;
   if (amount <= 0) return 0;
@@ -378,15 +516,18 @@ function roundSubdivisionSalePrice(value) {
   return Math.round(amount / unit) * unit;
 }
 
-function subdivisionCandidate(row = {}) {
+function subdivisionCandidate(row = {}, effectiveOutPrice = '', estimateMappings = {}) {
   const code = outputCode(row);
   const subCode = normalizedCodeValue(outputText(row, ['1종코드'], ['type1Code']));
   const division = numeric(outputNumber(row, ['1종연산'], ['type1Operation']));
   if (!subCode || ['0', '00', '-'].includes(subCode) || !(division > 0)) return null;
   const inboundPrice = numeric(outputNumber(row, ['입고가'], ['inboundPrice'])) || 0;
-  const outPrice = numeric(outputNumber(row, ['출고가', '판매가'], ['outPrice'])) || 0;
+  const outPrice = numeric(effectiveOutPrice) || 0;
   const outsourcing = numeric(outputNumber(row, ['외주비'], ['outsourcingStandardCost', 'outsourcingUnitPrice'])) || 0;
-  const expense = numeric(outputNumber(row, ['경비'], ['expenseStandardCost'])) || 0;
+  // MerchOps QuickF8은 견적 source가 실제로 소유한 경비만 소분가에 더한다.
+  const expense = row.estimateF8SourceOnly !== true || estimateMappingOwnsField(estimateMappings, '경비')
+    ? (numeric(outputNumber(row, ['경비'], ['expenseStandardCost'])) || 0)
+    : 0;
   const subInbound = inboundPrice > 0 ? Math.round(((inboundPrice + outsourcing) / division) / 100) * 100 : 0;
   const subSale = outPrice > 0 ? roundSubdivisionSalePrice((outPrice / division) + expense) : 0;
   if (subInbound <= 0 || subSale <= 0) return null;
@@ -424,7 +565,7 @@ export function sortEstimateUploadRows(rows = []) {
     .map(entry => entry.row);
 }
 
-export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
+export function buildEstimateF8Data(rows = [], { productCatalog = [], marginRules = [], estimateMappings = {} } = {}) {
   const validation = validateEstimateRows(rows);
   const errors = [...validation.errors];
   const shopData = [[...SHOP_HEADERS]];
@@ -433,11 +574,13 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
   const confirmData = [[...CONFIRM_HEADERS], ...warnings];
   const estimateUploadData = [[...ESTIMATE_UPLOAD_HEADERS]];
   const subdivisionByCode = new Map();
+  const catalog = productCatalogIndex(productCatalog);
 
   validation.entries.forEach(({ row }) => {
     const code = outputCode(row);
+    const product = catalog.get(code) || {};
     const inboundPrice = outputNumber(row, ['입고가'], ['inboundPrice']);
-    const outPrice = outputNumber(row, ['출고가', '판매가'], ['outPrice']);
+    const outPrice = calculatedMerchOutPrice(row, product, marginRules);
     const promoPrice = outputNumber(row, ['행사가'], ['promoPrice']);
     const shopSalePrice = (numeric(promoPrice) || 0) > 0 ? promoPrice : outPrice;
     const purchasePriceB = outputNumber(row, ['입고B'], ['purchasePriceB']);
@@ -489,7 +632,7 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
       ...themes,
       outputText(row, ['검색어등록', '상품태그'], ['searchInfo', 'productTags'])
     ]);
-    const subdivision = subdivisionCandidate(row);
+    const subdivision = subdivisionCandidate(row, outPrice, estimateMappings);
     if (subdivision) subdivisionByCode.set(subdivision.code, [...(subdivisionByCode.get(subdivision.code) || []), subdivision]);
   });
   estimateUploadData.splice(1, estimateUploadData.length - 1, ...sortEstimateUploadRows(estimateUploadData.slice(1)));
@@ -510,7 +653,6 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [] } = {}) {
     if (byParent.size === 1) selectedSubdivisions.set(subCode, [...byParent.values()][0]);
   });
 
-  const catalog = productCatalogIndex(productCatalog);
   selectedSubdivisions.forEach(subdivision => {
     const shopIndexes = shopData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);
     const erpIndexes = erpData.map((row, index) => index > 0 && text(row[0]) === subdivision.code ? index : -1).filter(index => index > 0);

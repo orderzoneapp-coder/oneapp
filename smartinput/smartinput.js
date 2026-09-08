@@ -79,7 +79,7 @@ import {
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.3';
+} from './estimate-output.js?v=0.2.4';
 import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
@@ -122,6 +122,7 @@ import {
   submitRegistrationChangeRequest
 } from './reference-data-controller.js?v=0.1.1';
 import { readVoucherActivity } from '../orderq/voucher-activity-read-adapter.js?v=0.2.0';
+import { getMerchOpsSettingsSnapshotResult } from '../reference-data/merchops-settings-read-adapter.js?v=0.1.0';
 import { coreFieldByProjection } from './field-definition-contract.js?v=0.1.0';
 import {
   ensureFieldCatalogSeed,
@@ -7797,6 +7798,19 @@ function estimateF8FailureDetail(errors = []) {
     : (first?.message || '출력 대상을 확인하세요.');
 }
 
+function merchOpsEstimateOutputConfig() {
+  const result = getMerchOpsSettingsSnapshotResult();
+  const values = result?.snapshot?.values;
+  if (result?.status !== 'READY' || !values) {
+    console.warn('[SmartInput 견적 보고서] 머치옵스 설정을 읽지 못해 기본 마진룰을 사용합니다.', result?.error || 'SETTINGS_READ_FAILED');
+    return { marginRules: [], estimateMappings: {} };
+  }
+  return {
+    marginRules: Array.isArray(values.marginRules) ? values.marginRules : [],
+    estimateMappings: values.mappings && typeof values.mappings === 'object' ? values.mappings : {}
+  };
+}
+
 async function exportEstimateExcel() {
   if (estimateF8ExportInFlight) {
     toast('견적 F8 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
@@ -7831,7 +7845,10 @@ async function exportEstimateExcel() {
     }
 
     const sourceRows = buildEstimateF8RowsFromPlan(plan);
-    const output = buildEstimateF8Data(sourceRows, { productCatalog: state.products });
+    const output = buildEstimateF8Data(sourceRows, {
+      productCatalog: state.products,
+      ...merchOpsEstimateOutputConfig()
+    });
     if (!output.ok) {
       const detail = estimateF8FailureDetail(output.errors);
       setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');

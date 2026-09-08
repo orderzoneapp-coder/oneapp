@@ -499,7 +499,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create order, purchase, sale, and estimate work through one automatically updated local recovery state while consuming owner-issued product and customer Snapshots, recognizing the exact shopping-order 17-column source, and requesting shopping-order plus official purchase/sale changes through ORDER Q owner command boundaries without direct writes to ORDER Q raw stores.",
+      "purpose": "Create order, purchase, sale, and estimate work through one automatically updated local recovery state while consuming owner-issued product, customer, pricing-rule, and mapping Snapshots, recognizing the exact shopping-order 17-column source, and requesting shopping-order plus official purchase/sale changes through ORDER Q owner command boundaries without direct writes to owner stores.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -515,6 +515,7 @@
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog",
+        "MerchOps-compatible estimate report pricing from Settings-owned margin rules and mappings",
         "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
         "company-partitioned background official-voucher synchronization"
       ],
@@ -532,7 +533,9 @@
         "orderq-official-voucher-core",
         "orderq-official-sync",
         "orderq-vnext-sync",
-        "orderq-shopping-order-import"
+        "orderq-shopping-order-import",
+        "pricing-rules",
+        "mapping-config"
       ],
       "dependencyMode": {
         "localAutosaveAndEstimate": "LOCAL_OPERATION",
@@ -541,6 +544,7 @@
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "LOCAL_OPERATION",
         "shoppingOrderActualLedgerDedupe": "LOCAL_OPERATION through ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1; candidate inspection is advisory and every save rechecks the actual ORDER Q count in the owner transaction",
+        "estimateReportPricing": "LOCAL_OPERATION through ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1; SmartInput reads current margin rules and estimate mappings without writing Settings-owned keys",
         "officialVoucherRemoteSync": "BACKGROUND_SYNC through ONEAPP_ORDERQ_OFFICIAL_SYNC_V1; unsupported or unavailable server keeps WAITING_SERVER_CONTRACT without blocking local finalize"
       },
       "offlinePolicy": "Render the application and preserve the latest local work state and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",
@@ -556,7 +560,9 @@
         "orderq-official-voucher-core",
         "orderq-official-sync",
         "orderq-vnext-sync",
-        "orderq-shopping-order-import"
+        "orderq-shopping-order-import",
+        "pricing-rules",
+        "mapping-config"
       ]
     },
     {
@@ -1496,10 +1502,11 @@
       "consumers": [
         "settings.html",
         "MerchOps.html",
-        "SmartParser.html"
+        "SmartParser.html",
+        "smartinput/index.html"
       ],
       "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
-      "consumerPolicy": "MerchOps reads the owner value into memory and never seeds, persists, resets, restores, or cloud-synchronizes it.",
+      "consumerPolicy": "MerchOps and SmartInput read the owner value into memory and never seed, persist, reset, restore, or cloud-synchronize it. SmartInput uses it only while generating the estimate report.",
       "resources": {
         "readAdapterAsset": "reference-data/merchops-settings-read-adapter.js",
         "localStorage": [
@@ -1513,10 +1520,11 @@
       "owner": "settings",
       "consumers": [
         "settings.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "smartinput/index.html"
       ],
       "readAdapter": "ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1",
-      "consumerPolicy": "MerchOps reads mappings and links into work memory and does not persist owner configuration.",
+      "consumerPolicy": "MerchOps reads mappings and links into work memory and SmartInput reads the estimate mapping only for report parity; neither consumer persists owner configuration.",
       "resources": {
         "localStorage": [
           "merchMappings_v870",

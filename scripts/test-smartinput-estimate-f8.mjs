@@ -153,7 +153,7 @@ const compositionShopB = compositionOutput.shopData.find(row => row[0] === 'SOUR
 const compositionErpA = compositionOutput.erpData.find(row => row[0] === 'SOURCE-A');
 const compositionErpB = compositionOutput.erpData.find(row => row[0] === 'SOURCE-B');
 assert.equal(compositionShopA?.[1], '최신원본상품-A', '파생 출력은 조합 작업표의 오래된 값이 아니라 최신 원본값을 사용해야 한다.');
-assert.equal(compositionShopB?.[3], 4200, '명시적으로 수정하지 않은 가격은 최신 개별 원본값을 반영해야 한다.');
+assert.equal(compositionShopB?.[3], 1500, '명시적으로 수정하지 않은 원본 가격은 머치옵스 마진룰로 다시 계산해야 한다.');
 assert.equal(compositionShopA?.[3], 7300, 'currentDraft에서 editedFields로 명시한 수정만 최신 원본 위에 반영해야 한다.');
 assert.equal(compositionShopA?.[5], 7400, '원본에 없더라도 editedFields로 명시한 시중가 수정은 반영해야 한다.');
 assert.equal(compositionShopA?.[12], '원본견적-사용자브랜드-A',
@@ -244,7 +244,7 @@ assert.deepEqual(savedLinkedPlan.entries[0].sourceDrafts, [individualDraftA, ind
   '저장된 LINKED_GROUP도 stale record.draft 대신 최신 개별 원본 작업본 전체를 사용해야 한다.');
 const savedLinkedOutput = buildEstimateF8Data(buildEstimateF8RowsFromPlan(savedLinkedPlan));
 assert.equal(savedLinkedOutput.shopData.find(row => row[0] === 'SOURCE-A')?.[1], '최신원본상품-A');
-assert.equal(savedLinkedOutput.shopData.find(row => row[0] === 'SOURCE-B')?.[3], 4200);
+assert.equal(savedLinkedOutput.shopData.find(row => row[0] === 'SOURCE-B')?.[3], 1500);
 
 const missingLinkedSourcePlan = buildEstimateF8DraftPlan({
   selectedRecords: [{
@@ -485,6 +485,49 @@ const mappedRows = buildEstimateF8RowsFromDraft(mappedDraft);
 const mappedOutput = buildEstimateF8Data(mappedRows, {
   productCatalog: [{ itemCode: '000101', itemName: '마스터상품명', brand: '마스터브랜드', marketPrice: 999999 }]
 });
+const merchMarginRules = [
+  { id: 'warehouse-02-box', whCode: '02', unit: 'BOX', rate: 15, type: 'divide' },
+  { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+];
+const merchParityDraft = buildMappedDraft([
+  ['2026-09-02', '02', '거래처A', 'EA 가격상품', 'EA', 'PRICE-EA', 13000, 15900, '', '', '', '', '', '', '', 300, 100, 200, '', '', '', '', ''],
+  ['2026-09-02', '02', '거래처A', 'BOX 가격상품', 'BOX', 'PRICE-BOX', 30000, 38900, '', '', '', '', '', '', '', 1000, 500, 2000, '', '', '', '', ''],
+  ['2026-09-02', '02', '거래처A', '행사 가격상품', 'EA', 'PRICE-PROMO', 2800, 3600, '', '', '', 3300, '', '', '', 100, 100, 100, '', '', '', '', ''],
+  ['2026-09-02', '02', '거래처A', '소분 원물', 'BOX', 'PRICE-PARENT', 14000, 19500, '', '', '', '', '', '', 5, 2000, 500, 500, '', '소분', 'PRICE-SUB', '', '']
+]);
+const merchParityOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft(merchParityDraft), {
+  marginRules: merchMarginRules,
+  productCatalog: [
+    { itemCode: 'PRICE-EA', finalUnit: 'EA' },
+    { itemCode: 'PRICE-BOX', finalUnit: 'BOX' },
+    { itemCode: 'PRICE-PROMO', finalUnit: 'EA' },
+    { itemCode: 'PRICE-PARENT', finalUnit: 'EA' },
+    { itemCode: 'PRICE-SUB', itemName: '소분상품', specification: '소분' }
+  ]
+});
+assert.equal(merchParityOutput.erpData.find(row => row[0] === 'PRICE-EA')?.[3], 16900,
+  '견적 원본 출고가는 입고가+외주비+노무비에 머치옵스 기본 마진룰을 적용해 다시 계산해야 한다.');
+assert.equal(merchParityOutput.erpData.find(row => row[0] === 'PRICE-BOX')?.[3], 38800,
+  '견적 규격명이 아니라 상품 기준단위로 저장된 창고·단위별 마진룰을 선택해야 한다.');
+assert.equal(merchParityOutput.erpData.find(row => row[0] === 'PRICE-PROMO')?.[3], 3800);
+assert.equal(merchParityOutput.shopData.find(row => row[0] === 'PRICE-PROMO')?.[3], 3300,
+  'ERP 출고가는 재계산하되 쇼핑몰 출고가는 양수 행사가를 우선해야 한다.');
+assert.equal(merchParityOutput.erpData.find(row => row[0] === 'PRICE-SUB')?.[1], 3200);
+assert.equal(merchParityOutput.erpData.find(row => row[0] === 'PRICE-SUB')?.[3], 4100,
+  '기본 견적 매핑에 없는 경비는 소분 판매가에 임의로 더하지 않아야 한다.');
+const mappedExpenseOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft(merchParityDraft), {
+  marginRules: merchMarginRules,
+  estimateMappings: { estimate: { 경비: '경비' } },
+  productCatalog: [
+    { itemCode: 'PRICE-EA', finalUnit: 'EA' },
+    { itemCode: 'PRICE-BOX', finalUnit: 'BOX' },
+    { itemCode: 'PRICE-PROMO', finalUnit: 'EA' },
+    { itemCode: 'PRICE-PARENT', finalUnit: 'EA' },
+    { itemCode: 'PRICE-SUB', itemName: '소분상품', specification: '소분' }
+  ]
+});
+assert.equal(mappedExpenseOutput.erpData.find(row => row[0] === 'PRICE-SUB')?.[3], 4600,
+  '머치옵스 견적 매핑에서 경비를 명시한 경우에는 소분 판매가에 반영해야 한다.');
 const sortedEstimateUploadOutput = buildEstimateF8Data([
   { rowCustomerName: '나 거래처', itemCode: 'N-2', itemName: '나 상품' },
   { rowCustomerName: '가 거래처', itemCode: 'C-10', itemName: '가 상품 10' },
