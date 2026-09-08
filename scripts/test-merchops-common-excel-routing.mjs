@@ -180,7 +180,7 @@ assert.equal("기준일자" in registrationProduct, false, "business date must r
 assert.match(toolbar.slice(registrationToolsAt), /data-merch-registration-apply[\s\S]*?owner-command[\s\S]*?onClick: handleRegisterUnregisteredItems[\s\S]*?"선택 상품 등록"/,
   "the registration sub-toolbar must expose actual owner-command product registration");
 
-const versions = [...html.matchAll(/v2\.1\.195_ProductRegistration/g)].length;
-assert.ok(versions >= 2, "all visible MerchOps version labels must use v2.1.195");
+const versions = [...html.matchAll(/v2\.1\.196_F8ShopSaleStock/g)].length;
+assert.ok(versions >= 2, "all visible MerchOps version labels must use v2.1.196");
 
 console.log("MerchOps common Excel routing, toolbar grouping, template aggregation, and registration sub-toolbar contracts passed.");

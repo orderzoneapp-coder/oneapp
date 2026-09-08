@@ -260,7 +260,7 @@ try {
   assert.equal(directDiagnostics.order.orderMatches, false);
   Object.values(directDiagnostics).forEach((result) => assert.equal(result.ok, false));
 
-  // 견적·구매는 기존 소분 가격행 및 재고복사 동작을 유지한다.
+  // 견적 소분은 새 판매·재고 규칙을 따르고, 구매는 기존 재고복사 동작을 유지한다.
   const estimateRow = makeRow({
     code: "20010001",
     role: "estimate",
@@ -280,9 +280,45 @@ try {
   const estimateShop = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true });
   const estimateErp = estimateResult.context.XLSX.utils.sheet_to_json(estimateResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
   assert.equal(estimateShop.length - 1, 2, "estimate F8 subdivision row must remain");
+  assert.equal(estimateShop[1][14], "1", "positive estimate outbound price must enable sales");
+  assert.equal(estimateShop[1][15], 999, "estimate F8 stock must be fixed at 999");
   assert.equal(estimateShop[2][0], "20010002");
-  assert.equal(estimateShop[2][15], 0);
+  assert.equal(estimateShop[2][14], "1", "estimate subdivision must inherit the outbound-price sale decision");
+  assert.equal(estimateShop[2][15], 999, "estimate subdivision stock must be fixed at 999");
   assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
+
+  const existingSubdivisionResult = await runF8Scenario({
+    name: "estimate-existing-subdivision-sale-stock-policy",
+    rows: [
+      estimateRow,
+      makeRow({ code: "20010002", role: "estimate", source: { 품목명: "기존 견적 소분상품", 출고가: 0, 판매여부: 0, 재고수량: 2 } }),
+    ],
+  });
+  const existingSubdivisionShop = existingSubdivisionResult.context.XLSX.utils.sheet_to_json(existingSubdivisionResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.equal(existingSubdivisionShop.length - 1, 2, "an existing subdivision must remain a single output row");
+  assert.equal(existingSubdivisionShop[2][14], "1", "an existing estimate subdivision must use its positive calculated outbound price");
+  assert.equal(existingSubdivisionShop[2][15], 999, "an existing estimate subdivision stock must be fixed at 999");
+
+  const outboundPricePolicyResult = await runF8Scenario({
+    name: "estimate-outbound-price-sale-stock-policy",
+    rows: [
+      makeRow({ code: "OUT-POSITIVE", role: "estimate", source: { 품목명: "출고가 양수", 출고가: 13000, 판매여부: 0, 재고수량: 3 } }),
+      makeRow({ code: "OUT-ZERO", role: "estimate", source: { 품목명: "출고가 0", 출고가: 0, 행사가: 12000, 판매여부: 1, 재고수량: 4 } }),
+      makeRow({ code: "OUT-BLANK", role: "estimate", source: { 품목명: "출고가 공란", 출고가: "", 행사가: 12000, 판매여부: 1, 재고수량: 5 } }),
+      makeRow({ code: "OUT-MISSING", role: "estimate", source: { 품목명: "출고가 누락", 행사가: 12000, 판매여부: 1, 재고수량: 6 } }),
+    ],
+  });
+  const outboundPricePolicyShop = outboundPricePolicyResult.context.XLSX.utils.sheet_to_json(outboundPricePolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
+  assert.deepEqual(
+    Array.from(outboundPricePolicyShop.slice(1), (row) => row[14]),
+    ["1", "0", "0", "0"],
+    "estimate sale status must depend only on whether outbound price is positive",
+  );
+  assert.deepEqual(
+    Array.from(outboundPricePolicyShop.slice(1), (row) => row[15]),
+    [999, 999, 999, 999],
+    "estimate stock must always be 999 regardless of source stock",
+  );
 
   const noInboundPolicyRows = [
     makeRow({
@@ -301,7 +337,7 @@ try {
   });
   const stopPolicyShop = stopPolicyResult.context.XLSX.utils.sheet_to_json(stopPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
   const stopPolicyErp = stopPolicyResult.context.XLSX.utils.sheet_to_json(stopPolicyResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
-  assert.deepEqual([stopPolicyShop[1][14], stopPolicyShop[2][14]], ["1", "0"], "stop selection must output sale 1 for normal rows and 0 for queued no-inbound rows without F7");
+  assert.deepEqual([stopPolicyShop[1][14], stopPolicyShop[2][14]], ["1", "1"], "stop selection must not override the positive outbound-price sale decision");
   assert.deepEqual([stopPolicyShop[1][15], stopPolicyShop[2][15]], [999, 999], "stop selection must output stock 999 for every estimate row");
   assert.deepEqual([stopPolicyShop[1][17], stopPolicyShop[2][17]], ["1", "1"], "stop selection must force theme2 for every estimate row");
   assert.deepEqual([stopPolicyErp[1][0], stopPolicyErp[2][0]], ["POLICY-NORMAL", "POLICY-NO-INBOUND"], "the no-inbound shop policy must not change ERP output rows");
@@ -313,7 +349,7 @@ try {
   });
   const spotPolicyShop = spotPolicyResult.context.XLSX.utils.sheet_to_json(spotPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
   assert.deepEqual([spotPolicyShop[1][14], spotPolicyShop[2][14]], ["1", "1"], "spot selection must output sale 1 for every estimate row without F7");
-  assert.deepEqual([spotPolicyShop[1][15], spotPolicyShop[2][15]], [999, 0], "spot selection must output stock 0 only for queued no-inbound rows");
+  assert.deepEqual([spotPolicyShop[1][15], spotPolicyShop[2][15]], [999, 999], "spot selection must not override estimate stock 999");
   assert.deepEqual([spotPolicyShop[1][17], spotPolicyShop[2][17]], ["1", "1"], "spot selection must force theme2 for every estimate row");
 
   const committedStopPolicyResult = await runF8Scenario({
@@ -328,7 +364,7 @@ try {
     ],
   });
   const committedStopPolicyShop = committedStopPolicyResult.context.XLSX.utils.sheet_to_json(committedStopPolicyResult.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true, defval: "" });
-  assert.deepEqual([committedStopPolicyShop[1][14], committedStopPolicyShop[2][14]], ["1", "0"], "the committed marker must preserve the same F8 stop policy after F7 clears the queue");
+  assert.deepEqual([committedStopPolicyShop[1][14], committedStopPolicyShop[2][14]], ["1", "1"], "the committed no-inbound marker must not override the outbound-price sale decision");
   assert.deepEqual([committedStopPolicyShop[1][15], committedStopPolicyShop[2][15]], [999, 999]);
   assert.deepEqual([committedStopPolicyShop[1][17], committedStopPolicyShop[2][17]], ["1", "1"]);
 
