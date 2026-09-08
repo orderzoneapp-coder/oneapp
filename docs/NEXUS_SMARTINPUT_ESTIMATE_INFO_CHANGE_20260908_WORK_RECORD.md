@@ -1,7 +1,7 @@
 # NEXUS SmartInput 견적서 정보 변경 작업기록
 
 - 작업 ID: `NEXUS-SMARTINPUT-ESTIMATE-INFO-CHANGE-20260908-01`
-- 상태: 구현·로컬 검증 완료, 병합·배포 전
+- 상태: 구현·검증·병합·운영 배포 완료
 - 개발 분류: 일반 개발(견적서 로컬 저장정보 변경 회귀 집중 검증)
 - 사용자 목적: 견적서 목록에서 선택한 개별 견적서의 거래처를 다시 매칭하여, 목록 재선택 및 거래처별 업데이트에서 거래처명이 비는 오류를 해소한다.
 
@@ -92,3 +92,26 @@
 - 판정: 통과
 - 근거: 사용자가 요청한 정보 변경과 거래처 재매칭, 저장 일관성, 재선택 복원, 거래처별 업데이트 회귀가 모두 확인됐다.
 - 데이터 스키마·공통 계약·다른 앱 변경은 없다.
+
+## Git·병합·배포
+
+- 기능 commit: `e15c067cfa09f9b2680faff8b8540c5811a9df19`
+- 기능 PR: `https://github.com/orderzoneapp-coder/oneapp/pull/548`
+- 병합 commit: `ef3b2a31d8dc2a1f36aed48201b145d14a8e4327`
+- 원격 CI: `34243245814`
+  - `Validate Phase 6B approved-base UI`: 통과(20초)
+  - `Validate repository contracts`: 통과(3분 20초)
+- GitHub Pages 배포: `34243654887`, build·report·deploy 모두 통과
+- 운영 주소: `https://oneapp.orderz.co.kr/smartinput/`
+- 운영 기술 확인:
+  - HTTP 200
+  - `정보 변경` 버튼 제공
+  - `smartinput.js?v=0.11.41`, `smartinput.css?v=0.9.14` 제공
+  - 운영 JS에 정보 변경 창과 거래처 재매칭 동작 포함
+
+## 종료 상태
+
+- 목적과 완료조건: 충족
+- 남은 기능 미완료: 없음
+- 운영 데이터 Migration: 없음
+- 롤백: 병합 commit 이전 SmartInput HTML/CSS/JS와 승인 UI hash를 되돌리면 되며 견적서 Store schema나 기존 레코드 삭제는 발생하지 않는다.
