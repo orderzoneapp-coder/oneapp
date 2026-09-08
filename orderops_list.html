@@ -3764,8 +3764,13 @@
           if (setting.excludeZero === true) next.excludeZero = true;
           if (Array.isArray(setting.allowedValues)) {
             next.allowedValues = normalizeStringList(setting.allowedValues, 500);
+          } else if (Array.isArray(setting.excludedValues)) {
+            const excludedValues = normalizeStringList(setting.excludedValues, 500);
+            if (excludedValues.length > 0) next.excludedValues = excludedValues;
           }
-          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues)) filters[columnKey] = next;
+          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues) || next.excludedValues?.length > 0) {
+            filters[columnKey] = next;
+          }
         });
         return filters;
       }
@@ -5325,7 +5330,8 @@
       }
 
       function columnFilterIsActive(setting) {
-        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues));
+        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues) ||
+          setting?.excludedValues?.length > 0);
       }
 
       function hasColumnFilters(previewId) {
@@ -5359,6 +5365,7 @@
             key,
             label: isBlankCell(value) ? "(공백)" : String(value),
             blank: isBlankCell(value),
+            zero: numericColumn && isZeroCell(value),
           });
         });
         return [...unique.values()].sort((left, right) => {
@@ -5379,6 +5386,7 @@
           if (setting?.excludeBlank && isBlankCell(value)) return false;
           if (setting?.excludeZero && isZeroCell(value)) return false;
           if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(textFilterValueKey(value))) return false;
+          if (Array.isArray(setting?.excludedValues) && setting.excludedValues.includes(textFilterValueKey(value))) return false;
           return true;
         });
       }
@@ -5511,10 +5519,13 @@
         elements.columnSortMenu.querySelector("[data-text-filter-section]").classList.remove("hidden");
         context.textOptions = columnTextValueOptions(preview, context.columnKey);
         if (!(context.textSelection instanceof Set)) {
-          const selected = Array.isArray(filter?.allowedValues)
-            ? filter.allowedValues
-            : context.textOptions.map((option) => option.key);
+          const inclusionMode = Array.isArray(filter?.allowedValues);
+          const excludedValues = new Set(Array.isArray(filter?.excludedValues) ? filter.excludedValues : []);
+          const selected = inclusionMode ? filter.allowedValues : context.textOptions
+            .filter((option) => !(filter?.excludeZero && option.zero) && !excludedValues.has(option.key))
+            .map((option) => option.key);
           context.textSelection = new Set(selected);
+          context.textSelectionMode = inclusionMode ? "INCLUDE" : "EXCLUDE";
         }
         const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
         searchInput.value = context.textSearch || "";
@@ -5552,7 +5563,13 @@
         const columnKey = trigger.dataset.sortColumnKey;
         if (!previewDefinitionById(previewId)?.columns?.some((column) => column.key === columnKey)) return;
         closeColumnSortMenu();
-        state.activeColumnMenu = { previewId, columnKey, textSearch: "", textSelection: null };
+        state.activeColumnMenu = {
+          previewId,
+          columnKey,
+          textSearch: "",
+          textSelection: null,
+          textSelectionMode: "EXCLUDE",
+        };
         trigger.setAttribute("aria-expanded", "true");
         refreshColumnSortMenu();
         elements.columnSortMenu.classList.remove("hidden");
@@ -5572,6 +5589,7 @@
         if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
         const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
         delete next.allowedValues;
+        delete next.excludedValues;
         if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
@@ -5586,9 +5604,25 @@
         if (!state.columnFilters[context.previewId]) state.columnFilters[context.previewId] = Object.create(null);
         const allKeys = context.textOptions.map((option) => option.key);
         const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
+        const zeroKeys = new Set(context.textOptions.filter((option) => option.zero).map((option) => option.key));
+        const allExceptZeroSelected = zeroKeys.size > 0 && allKeys.every((key) =>
+          zeroKeys.has(key) ? !context.textSelection.has(key) : context.textSelection.has(key));
         const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
-        if (selectedKeys.length === allKeys.length) delete next.allowedValues;
-        else next.allowedValues = selectedKeys;
+        if (allExceptZeroSelected) {
+          next.excludeZero = true;
+          delete next.allowedValues;
+          delete next.excludedValues;
+        } else {
+          delete next.allowedValues;
+          delete next.excludedValues;
+          if (selectedKeys.length !== allKeys.length) {
+            if (context.textSelectionMode === "EXCLUDE") {
+              next.excludedValues = allKeys.filter((key) => !context.textSelection.has(key));
+            } else {
+              next.allowedValues = selectedKeys;
+            }
+          }
+        }
         if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
         else delete state.columnFilters[context.previewId][context.columnKey];
         if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
@@ -7341,6 +7375,9 @@
             if (selectAll.checked) context.textSelection.add(key);
             else context.textSelection.delete(key);
           });
+          if (!String(context.textSearch || "").trim()) {
+            context.textSelectionMode = selectAll.checked ? "EXCLUDE" : "INCLUDE";
+          }
           renderColumnTextValueOptions();
           return;
         }

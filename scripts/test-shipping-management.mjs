@@ -164,6 +164,7 @@ for (const requiredInteractionContract of [
   'function columnTextValueOptions',
   'function applyColumnTextFilter',
   'Array.isArray(setting?.allowedValues)',
+  'Array.isArray(setting?.excludedValues)',
   'function rowMatchesColumnFilters',
   'function comparePreviewPairs',
   'function layeredColumnSortSettings',
@@ -218,6 +219,12 @@ assert.match(publicApplyColumnFilterSource,
   "confirming Excel-style cell values must start from the active numeric conditions");
 assert.doesNotMatch(publicApplyColumnFilterSource, /delete next\.exclude(?:Blank|Zero)/,
   "confirming the value list must preserve 공백 제외 and 0 제외 conditions");
+assert.match(publicApplyColumnFilterSource,
+  /context\.textSelectionMode === "EXCLUDE"[\s\S]*next\.excludedValues = allKeys\.filter/,
+  "a select-all filter with unchecked exceptions must persist exclusions instead of a closed allow-list");
+assert.match(orderOpsHtml,
+  /context\.textSelectionMode = selectAll\.checked \? "EXCLUDE" : "INCLUDE"/,
+  "the public global select-all checkbox must switch between open exclusion and closed inclusion modes");
 const publicHeaderSource = orderOpsHtml.slice(
   orderOpsHtml.indexOf('<header class="global-header">'),
   orderOpsHtml.indexOf('</header>'),
@@ -1961,6 +1968,7 @@ for (const requiredInteractionContract of [
   'function columnTextValueOptions',
   'function applyColumnTextFilter',
   'Array.isArray(setting?.allowedValues)',
+  'Array.isArray(setting?.excludedValues)',
   'state.sortSettings = Object.create(null)',
   'state.columnFilters = Object.create(null)',
   'function layeredColumnSortSettings',
@@ -2006,6 +2014,9 @@ const canonicalApplyViewPresetSource = html.slice(
 );
 assert.doesNotMatch(canonicalApplyViewPresetSource, /state\.(?:warehouse|manager)ColorSettings\s*=/,
   "canonical saved view presets must not overwrite persistent warehouse or manager colors");
+assert.match(html,
+  /context\.textSelectionMode = selectAll\.checked \? "EXCLUDE" : "INCLUDE"/,
+  "the canonical global select-all checkbox must switch between open exclusion and closed inclusion modes");
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
   "canonical OrderOps filter options must remain separate from color assignment");
 const canonicalViewControls = html.slice(
@@ -2328,6 +2339,7 @@ vm.runInNewContext(`const TABLE_WIDTH_MIN = 32;
       sortSetting: { columnKey: "shipping:allocations:7:주문", direction: "desc" },
       columnFilters: {
         "shipping:allocations:7:주문": { excludeBlank: true, excludeZero: true, allowedValues: ["[\\\"value\\\",\\\"2\\\"]"] },
+        "shipping:inventory:0:상품코드": { excludedValues: ["[\\\"value\\\",\\\"제외상품\\\"]"] },
         "__proto__": { excludeBlank: true }
       },
       layoutCaptured: true,
@@ -2344,6 +2356,9 @@ assert.equal(presetContext.normalizedPreset.previewId, "inventory");
 assert.equal(presetContext.normalizedPreset.isDefault, true);
 assert.deepEqual(Array.from(presetContext.normalizedPreset.view.specificationFilters), ["BOX"]);
 assert.equal(presetContext.normalizedPreset.view.sortSetting.direction, "desc");
+assert.deepEqual(Array.from(
+  presetContext.normalizedPreset.view.columnFilters["shipping:inventory:0:상품코드"].excludedValues,
+), ['["value","제외상품"]']);
 assert.equal(presetContext.normalizedPreset.view.columnWidths["shipping:inventory:1:품명"], 245);
 assert.deepEqual(Array.from(presetContext.normalizedPreset.view.columnOrder), [
   "shipping:inventory:1:품명", "shipping:inventory:0:상품코드",
@@ -2358,6 +2373,72 @@ assert.equal(Object.prototype.hasOwnProperty.call(presetContext.normalizedPreset
   "saved view presets must reject unsafe manager color keys");
 assert.equal(Object.prototype.hasOwnProperty.call(presetContext.normalizedPreset.view.columnFilters, "__proto__"), false,
   "saved view presets must reject unsafe filter keys");
+
+const columnFilterHelperStart = html.indexOf("function columnFilterIsActive");
+const columnFilterHelperEnd = html.indexOf("function compareColumnValues", columnFilterHelperStart);
+const applyColumnFilterStart = html.indexOf("function applyColumnTextFilter");
+const applyColumnFilterEnd = html.indexOf("function visibleColumnEntries", applyColumnFilterStart);
+assert.ok(columnFilterHelperStart >= 0 && columnFilterHelperEnd > columnFilterHelperStart &&
+  applyColumnFilterStart >= 0 && applyColumnFilterEnd > applyColumnFilterStart,
+  "column value-filter helpers must remain directly testable");
+const columnFilterContext = {
+  state: {
+    columnFilters: {
+      inventory: {
+        "shipping:inventory:0:상품코드": { excludeBlank: true },
+      },
+    },
+    activeColumnMenu: null,
+  },
+};
+vm.runInNewContext(`
+  ${html.slice(columnFilterHelperStart, columnFilterHelperEnd)}
+  ${html.slice(applyColumnFilterStart, applyColumnFilterEnd)}
+  const columnKey = "shipping:inventory:0:상품코드";
+  const keepKey = textFilterValueKey("기존상품");
+  const excludedKey = textFilterValueKey("제외상품");
+  state.activeColumnMenu = {
+    previewId: "inventory",
+    columnKey,
+    textOptions: [
+      { key: keepKey, label: "기존상품", zero: false },
+      { key: excludedKey, label: "제외상품", zero: false },
+    ],
+    textSelection: new Set([keepKey]),
+    textSelectionMode: "EXCLUDE",
+  };
+  applyColumnTextFilter();
+  this.savedAllExcept = state.columnFilters.inventory[columnKey];
+  const preview = { columns: [{ key: columnKey }] };
+  this.keepsExisting = rowMatchesColumnFilters("inventory", { row: ["기존상품"] }, preview);
+  this.excludesUnchecked = rowMatchesColumnFilters("inventory", { row: ["제외상품"] }, preview);
+  this.includesFuture = rowMatchesColumnFilters("inventory", { row: ["새로추가된상품"] }, preview);
+
+  state.activeColumnMenu = {
+    previewId: "inventory",
+    columnKey,
+    textOptions: [
+      { key: keepKey, label: "기존상품", zero: false },
+      { key: excludedKey, label: "제외상품", zero: false },
+    ],
+    textSelection: new Set([keepKey]),
+    textSelectionMode: "INCLUDE",
+  };
+  applyColumnTextFilter();
+  this.savedSelectedOnly = state.columnFilters.inventory[columnKey];
+  this.selectedOnlyRejectsFuture = rowMatchesColumnFilters("inventory", { row: ["새로추가된상품"] }, preview);
+`, columnFilterContext);
+assert.deepEqual(Array.from(columnFilterContext.savedAllExcept.excludedValues), ['["value","제외상품"]']);
+assert.equal(Object.prototype.hasOwnProperty.call(columnFilterContext.savedAllExcept, "allowedValues"), false);
+assert.equal(columnFilterContext.savedAllExcept.excludeBlank, true,
+  "value-list confirmation must preserve active blank exclusion");
+assert.equal(columnFilterContext.keepsExisting, true);
+assert.equal(columnFilterContext.excludesUnchecked, false);
+assert.equal(columnFilterContext.includesFuture, true,
+  "a future product value must pass an all-except saved preset");
+assert.deepEqual(Array.from(columnFilterContext.savedSelectedOnly.allowedValues), ['["value","기존상품"]']);
+assert.equal(columnFilterContext.selectedOnlyRejectsFuture, false,
+  "an explicit selected-only filter must retain closed allow-list behavior");
 
 const managerColorHelperStart = html.indexOf("function loadManagerColorSettings");
 const managerColorHelperEnd = html.indexOf("function warehouseColumns", managerColorHelperStart);
