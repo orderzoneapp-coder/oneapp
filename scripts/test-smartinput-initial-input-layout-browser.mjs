@@ -179,7 +179,7 @@ const rowSnapshot = client => evaluate(client, `(() => {
     if(value.header.deliveryPolicySnapshot)delete value.header.deliveryPolicySnapshot.evaluatedAt;
   }
   return Object.fromEntries(Object.entries(draft.modes).map(([mode,value])=>[mode,{
-    header:value.header, rows:value.rows, delivery:value.delivery, sourceText:value.sourceText
+    header:value.header, rows:value.rows, delivery:value.delivery, sourceText:value.sourceText, batches:value.batches
   }]));
 })()`);
 const visibleLabels = client => evaluate(client, `[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(element=>element.querySelector('.column-header-label')?.textContent.trim()||element.textContent.trim())`);
@@ -266,6 +266,15 @@ try {
         memo:'적요 원문',memo2:'두 번째 적요',promoPrice:90,description:'직원 원문',
         customValues:{'custom.text.01':'사용자 값 유지'},noticePrice:150,sourceType:'MANUAL'})];
       current.sourceText='원본 텍스트 '+mode;
+      current.header.rawOrdererName=current.sourceText;
+      // Represent an already-processed draft. A source with no matching live batch
+      // legitimately starts the app's independent automatic parser after render.
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(current.sourceText));
+      const contentHash=[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      const batch=contract.createBatch({batchId:'PRESERVE-BATCH-'+mode,method:'text',
+        sourceType:'GENERAL_TEXT',sourceRole:'LIVE_SOURCE',rawText:current.sourceText,contentHash});
+      current.batches=[batch];
+      current.rows[0].batchId=batch.batchId;
     }
     localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(draft));
     await store.saveLatestAutosave(draft);
