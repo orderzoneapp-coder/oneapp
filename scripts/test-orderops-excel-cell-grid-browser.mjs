@@ -306,10 +306,9 @@ try {
     };
   })()`);
   assert.equal(beforeNoop.selected, 1, "Ctrl+row or non-target cell must not execute substitution");
-  assert.equal(beforeNoop.history, 2, "the system column should show the latest two successful cell changes");
-  assert.match(beforeNoop.historyTitle, /\[정보수정\] 거래처 · 거래처A → 거래처A 수정/);
-  assert.match(beforeNoop.historyTitle, /\[정보수정\] 1창고 · 20 → 18/);
-  assert.match(beforeNoop.historyTitle, /\[정보수정\] 구매처 · 빈값 → 구매처X/);
+  assert.equal(beforeNoop.history, 0,
+    "successful cell changes must not appear in the unresolved-review-only system column");
+  assert.equal(beforeNoop.historyTitle, "");
   assert.deepEqual(beforeNoop.products, ["GRID-001", "GRID-002"], "product rows must stay fixed by product code");
 
   await evaluate(client, `(()=>{
@@ -329,7 +328,7 @@ try {
           products:[...table.querySelectorAll('tbody tr[data-product-code]')].map(node=>node.dataset.productCode),
         };
       })()`);
-      return value.history.some((message) => message.includes("대체")) ? value : null;
+      return value.selected === 0 && value.targetInfo.includes("거래처A 수정") ? value : null;
     }, "successful target-cell substitution");
   } catch (error) {
     console.error("ORDER Q substitution diagnostic", await evaluate(client, `({
@@ -342,6 +341,8 @@ try {
     throw error;
   }
   assert.equal(substitutionResult.selected, 0);
+  assert.deepEqual(substitutionResult.history, [],
+    "successful substitution history must not appear in the unresolved-review-only system column");
   assert.match(substitutionResult.targetInfo, /거래처A 수정/);
   assert.deepEqual(substitutionResult.products, ["GRID-001", "GRID-002"]);
 

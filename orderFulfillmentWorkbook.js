@@ -66,6 +66,22 @@
     }
   }
 
+  function assertExcelOutputAllowed(workspace) {
+    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const review = engine.getOrderReviewState(workspace);
+    if (review.hasQuantityErrors) {
+      const error = new Error(
+        `주문수량 입력 오류 ${review.quantityErrorCount}행을 수정한 뒤 Excel을 출력하세요.`,
+      );
+      error.code = "ORDER_QUANTITY_REVIEW_REQUIRED";
+      error.review = review;
+      throw error;
+    }
+    return review;
+  }
+
   function safeValue(value) {
     return value === undefined || value === null ? "" : value;
   }
@@ -1285,6 +1301,7 @@
   }
 
   function buildPurchaseUploadWorkbook(workspace, XLSX) {
+    assertExcelOutputAllowed(workspace);
     const sheet = buildPurchaseUploadSheet(workspace, XLSX);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
@@ -1324,10 +1341,8 @@
   }
 
   function buildWorkbook(workspace, XLSX) {
+    assertExcelOutputAllowed(workspace);
     requireXlsx(XLSX);
-    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
 
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
@@ -1400,6 +1415,7 @@
     PURCHASE_UPLOAD_HEADERS,
     SALES_UPLOAD_SCHEMA_VERSION,
     SALES_UPLOAD_HEADERS,
+    assertExcelOutputAllowed,
     isPurchaseUploadReady,
     getOutputFileName,
     getPurchaseUploadRows,

@@ -8,8 +8,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260910-excel-grid"></script>
-  <script src="orderFulfillmentWorkbook.js?v=20260904-substitute-message"></script>
+  <script src="orderFulfillmentEngine.js?v=20260910-system-message-review"></script>
+  <script src="orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
       color-scheme: light;
@@ -4930,30 +4930,18 @@
         }).join("")}</span>`;
       }
 
-      function formatSystemMessageTime(value) {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return "시각 없음";
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        const hour = String(date.getHours()).padStart(2, "0");
-        const minute = String(date.getMinutes()).padStart(2, "0");
-        return `${month}/${day} ${hour}:${minute}`;
+      function getCurrentOrderReview() {
+        return engine.getOrderReviewState(state.workspace || {});
       }
 
       function renderSystemMessageHistory(sourceRow) {
         const messages = Array.isArray(sourceRow?.systemMessages) ? sourceRow.systemMessages : [];
         if (messages.length === 0) return "";
-        const visible = messages.slice(0, 2);
-        const fullTitle = messages.map((message) =>
-          `${message.message} · ${message.actor || "사용자"} · ${formatSystemMessageTime(message.occurredAt)}`)
-          .join("\n");
-        return `<span class="system-history-list" title="${escapeHtml(fullTitle)}">${visible.map((message) => `
-          <span class="system-history-message ${message.kind === "SUBSTITUTION_UNDONE" ? "is-undo" : ""}">
+        const fullTitle = messages.map((message) => message.message).join("\n");
+        return `<span class="system-history-list" title="${escapeHtml(fullTitle)}">${messages.map((message) => `
+          <span class="system-history-message">
             <span class="system-history-main">${escapeHtml(message.message)}</span>
-            <span class="system-history-meta">${escapeHtml(message.actor || "사용자")} · ${escapeHtml(formatSystemMessageTime(message.occurredAt))}</span>
-          </span>`).join("")}${messages.length > visible.length
-            ? `<span class="system-history-more">이전 이력 +${formatNumber(messages.length - visible.length)}건</span>`
-            : ""}</span>`;
+          </span>`).join("")}</span>`;
       }
 
       function isQuantityColumn(column) {
@@ -6135,9 +6123,12 @@
       function renderResults() {
         engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
+        const orderReview = getCurrentOrderReview();
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
         const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
+          { label: "중복 확인", value: orderReview.duplicateOrderCount, tone: orderReview.hasDuplicateOrders ? "warn" : "" },
+          { label: "수량 오류", value: orderReview.quantityErrorCount, tone: orderReview.hasQuantityErrors ? "bad" : "" },
           { label: "0 수량", value: stats.zeroOrderQuantityCount || 0, tone: stats.zeroOrderQuantityCount > 0 ? "warn" : "" },
           { label: "음수 수량", value: stats.negativeOrderQuantityCount || 0, tone: stats.negativeOrderQuantityCount > 0 ? "warn" : "" },
           { label: "상품", value: stats.productCount },
@@ -6171,11 +6162,13 @@
         void refreshShipmentExecution();
         elements.resultsPanel.classList.remove("hidden");
         elements.printButton.disabled = false;
-        elements.downloadButton.disabled = false;
-        const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+        elements.downloadButton.disabled = orderReview.hasQuantityErrors;
+        const cloudSaveDisabled = orderReview.hasQuantityErrors || !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
         elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
-        setSystemMessage(`분석 완료 · 주문 ${formatNumber(stats.orderRowCount)}행·상품 ${formatNumber(stats.productCount)}개 · 결과 확인 후 저장(F8)하세요`);
+        setSystemMessage(orderReview.hasQuantityErrors
+          ? `분석 완료 · 수량 입력 오류 ${formatNumber(orderReview.quantityErrorCount)}행 수정 전 저장·Excel 출력 불가`
+          : `분석 완료 · 주문 ${formatNumber(stats.orderRowCount)}행·상품 ${formatNumber(stats.productCount)}개 · 결과 확인 후 저장(F8)하세요`);
       }
 
       function resetResultViewFilters() {
@@ -6278,7 +6271,14 @@
       }
 
       function downloadResult() {
-        if (!state.workspace || !window.XLSX || elements.downloadButton.disabled) return;
+        if (!state.workspace || !window.XLSX) return;
+        const orderReview = getCurrentOrderReview();
+        if (orderReview.hasQuantityErrors) {
+          setSystemMessage(`엑셀출력 차단 · 수량 입력 오류 ${formatNumber(orderReview.quantityErrorCount)}행을 수정하세요`);
+          showToast("수량 입력 오류를 모두 수정한 뒤 Excel을 출력하세요.", true);
+          return;
+        }
+        if (elements.downloadButton.disabled) return;
         try {
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
           const workbook = workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
@@ -6299,6 +6299,10 @@
       }
 
       async function buildCloudEnvelope() {
+        const orderReview = getCurrentOrderReview();
+        if (orderReview.hasQuantityErrors) {
+          throw new Error(`주문수량 입력 오류 ${orderReview.quantityErrorCount}행을 수정한 뒤 Cloud 저장하세요.`);
+        }
         if (!state.workspace?.planId || state.workspace.basisDateStatus !== "valid") {
           throw new Error("단일 기준일과 source fingerprint가 확인된 발주계획만 Cloud 저장할 수 있습니다.");
         }
@@ -6419,7 +6423,9 @@
           setSystemMessage("완료본 저장 실패 · 이전 확정 revision은 유지됩니다");
           showToast(error.message || "Cloud 저장에 실패했습니다.", true);
         } finally {
-          const cloudSaveDisabled = !state.workspace?.planId || state.workspace?.basisDateStatus !== "valid";
+          const cloudSaveDisabled = getCurrentOrderReview().hasQuantityErrors
+            || !state.workspace?.planId
+            || state.workspace?.basisDateStatus !== "valid";
           elements.cloudSaveButton.disabled = cloudSaveDisabled;
           elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         }

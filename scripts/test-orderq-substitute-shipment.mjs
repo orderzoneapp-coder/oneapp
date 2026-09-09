@@ -86,17 +86,19 @@ assert.equal(afterInventory.get("P-B").orderQuantity, 2);
 assert.equal(afterInventory.get("P-B").remainingQuantity, 8);
 assert.equal(workspace.stats.totalOrderQuantity, 2);
 assert.equal(workspace.stats.totalPurchaseNeed, 0);
-assert.match(afterInventory.get("P-A").systemMessage, /\[대체됨\].*거래처A\(2\).*대체상품 BOX/);
-assert.match(afterInventory.get("P-B").systemMessage, /\[대체받음\].*거래처A\(2\).*원상품 BOX/);
+assert.equal(afterInventory.get("P-A").systemMessage, "");
+assert.equal(afterInventory.get("P-B").systemMessage, "");
+assert.equal(workspace.substitutionHistory.events.length, 1,
+  "대체출고 이력은 보존하되 시스템 메시지 열에는 표시하지 않아야 합니다.");
 
 const recoveryPayload = engine.buildLocalRecoveryPayload(workspace, { activePreview: "inventory" }, {}, "2026-09-04T01:24:00.000Z");
 const restoredWorkspace = JSON.parse(JSON.stringify(recoveryPayload.workspace));
 assert.equal(restoredWorkspace.substitutionHistory.schemaVersion, engine.SUBSTITUTION_HISTORY_SCHEMA_VERSION);
 assert.equal(restoredWorkspace.substitutionHistory.events.length, 1);
-assert.match(
+assert.equal(
   engine.getInventoryViewRows(restoredWorkspace).rows.find((row) => row.productCode === "P-B").systemMessage,
-  /대체받음/,
-  "JSON round-trip 후에도 시스템 메시지를 재구성해야 합니다.",
+  "",
+  "JSON round-trip 후에도 과거 대체 이력을 시스템 메시지 열에 투영하지 않아야 합니다.",
 );
 
 const undo = engine.undoLastSubstitution(workspace, {
@@ -113,8 +115,8 @@ const undoneInventory = new Map(engine.getInventoryViewRows(workspace).rows.map(
 assert.equal(undoneInventory.get("P-A").orderQuantity, 2);
 assert.equal(undoneInventory.get("P-A").remainingQuantity, -1);
 assert.equal(undoneInventory.get("P-B").orderQuantity, 0);
-assert.match(undoneInventory.get("P-A").systemMessage, /\[복원됨\]/);
-assert.match(undoneInventory.get("P-B").systemMessage, /\[대체취소\]/);
+assert.equal(undoneInventory.get("P-A").systemMessage, "");
+assert.equal(undoneInventory.get("P-B").systemMessage, "");
 assert.throws(() => engine.undoLastSubstitution(workspace), /취소할 대체출고 작업이 없습니다/);
 
 for (const relativePath of ["orderops/list.html", "orderops_list.html"]) {
