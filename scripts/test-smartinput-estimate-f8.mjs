@@ -7,8 +7,10 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import {
   buildEstimateF8Data,
+  buildEstimateDuplicateGroups,
   buildEstimateF8RowsFromPlan,
   buildEstimateF8RowsFromDraft,
+  calculateEstimateResolvedPrice,
   ESTIMATE_F8_HEADERS
 } from '../smartinput/estimate-output.js';
 import { buildEstimateF8DraftPlan } from '../smartinput/estimate-f8-source-plan.js';
@@ -160,8 +162,8 @@ assert.equal(compositionShopA?.[12], '원본견적-사용자브랜드-A',
   '개별 원본의 명시 편집은 파생 작업표에서 다른 필드를 편집해도 소실되면 안 된다.');
 assert.deepEqual(
   [compositionShopB?.[5], compositionShopB?.[12], compositionShopB?.[21]],
-  ['', '', ''],
-  '원본에 없는 시중가·브랜드·상품태그는 작업표나 마스터성 직접값에서 유출되면 안 된다.'
+  [1500, '', ''],
+  '시중가는 입고가 기준으로 생성하되 브랜드·상품태그는 작업표나 마스터성 직접값에서 유출되면 안 된다.'
 );
 assert.equal(compositionShopA?.[21], '', 'editedFields로 명시하지 않은 파생 작업표 값은 출력에 반영하면 안 된다.');
 
@@ -556,7 +558,8 @@ assert.equal(mappedOutput.erpData[1].length, 11);
 assert.equal(mappedOutput.shopData[1][0], '000101', '문자 품목코드와 선행 0을 보존해야 한다.');
 assert.equal(mappedOutput.shopData[1][1], '원본상품A', '기준상품 마스터값으로 원본 상품명을 덮어쓰면 안 된다.');
 assert.equal(mappedOutput.shopData[1][3], 2000, '행사가가 있으면 쇼핑몰 출고가에 우선 적용해야 한다.');
-assert.equal(mappedOutput.shopData[1][5], '', '원본에 없는 시중가는 직접값이나 마스터값으로 보강하면 안 된다.');
+assert.equal(mappedOutput.shopData[1][5], 1300,
+  '불러온 견적서의 시중가도 원본·마스터값이 아니라 입고가 기준 계산 출고가와 같이 생성해야 한다.');
 assert.equal(mappedOutput.shopData[1][6], '', '원본에 없는 B판매가는 직접값으로 보강하면 안 된다.');
 assert.deepEqual(mappedOutput.shopData[1].slice(8, 12), [0, 0, 0, 0],
   'C/D 판매가·도매가는 원본이나 직접값과 무관하게 숫자 0으로 출력해야 한다.');
@@ -570,7 +573,8 @@ assert.equal(mappedOutput.erpData[1][5], 0, '입고B의 명시적 0을 보존해
 assert.equal(mappedOutput.erpData[2][1], '', '원본 입고가 공란은 직접값이나 마스터값으로 보강하면 안 된다.');
 assert.equal(mappedOutput.estimateUploadData[1].length, 19);
 assert.deepEqual(mappedOutput.estimateUploadData[1].slice(0, 6), ['2026-09-05', '', '', '거래처A', '02', '']);
-assert.deepEqual(mappedOutput.estimateUploadData[1].slice(8, 16), ['000101', '원본상품A', '1kg', '', 2500, 0, 900, 800]);
+assert.deepEqual(mappedOutput.estimateUploadData[1].slice(8, 16), ['000101', '원본상품A', '1kg', '', 1300, 0, 900, 800],
+  '불러온 견적서의 업로드 단가도 원본 출고가가 아니라 입고가(견적단가) 기준 계산값이어야 한다.');
 assert.deepEqual(mappedOutput.estimateUploadData[1].slice(16), ['', '원본설명A', '']);
 assert.equal(mappedOutput.confirmData.length, 3, '입고가보다 낮은 도매A/도매B 두 건만 확인요청에 포함해야 한다.');
 const manualUploadOutput = buildEstimateF8Data(buildEstimateF8RowsFromDraft({
@@ -679,9 +683,34 @@ const normalizedDuplicate = buildEstimateF8Data([
 ]);
 assert.equal(normalizedDuplicate.ok, false);
 assert.deepEqual([...new Set(normalizedDuplicate.errors
-  .filter(error => error.code === 'DUPLICATE_ITEM_CODE')
+  .filter(error => error.code === 'DUPLICATE_RESOLUTION_REQUIRED')
   .map(error => error.originalValue))], ['CODE1'],
-  'MerchOps와 같이 코드 공백을 제거한 뒤 중복을 차단해야 한다.');
+  'MerchOps와 같이 코드 공백을 제거한 뒤 중복 선택을 요구해야 한다.');
+const normalizedDuplicateRows = [
+  { itemCode: 'CODE 1', itemName: '공백 코드', rowCustomerName: '거래처A', inboundPrice: 1000, outPrice: 9000 },
+  { itemCode: 'CODE1', itemName: '공백 없는 코드', rowCustomerName: '거래처B', inboundPrice: 2000, outPrice: 8000 }
+];
+const normalizedDuplicateGroups = buildEstimateDuplicateGroups(normalizedDuplicateRows);
+assert.equal(normalizedDuplicateGroups.length, 1);
+assert.deepEqual(normalizedDuplicateGroups[0].candidates.map(candidate => candidate.customerName), ['거래처A', '거래처B'],
+  '같은 품목코드의 거래처별 원본은 한 그룹에 모아 보여야 한다.');
+assert.deepEqual(normalizedDuplicateGroups[0].candidates.map(candidate => candidate.calculatedOutPrice), [1300, 2500],
+  '중복 후보 미리보기부터 기존 출고가가 아니라 각 행의 입고가를 기준으로 계산해야 한다.');
+assert.equal(calculateEstimateResolvedPrice(normalizedDuplicateRows[1], 3000).outPrice, 3800,
+  '직접 수정한 입고가도 머치옵스 기본 마진 규칙으로 즉시 재계산해야 한다.');
+const resolvedNormalizedDuplicate = buildEstimateF8Data(normalizedDuplicateRows, {
+  duplicateResolutions: new Map([['CODE1', { rowIndex: 1, inboundPrice: 3000 }]])
+});
+assert.equal(resolvedNormalizedDuplicate.ok, true);
+assert.equal(resolvedNormalizedDuplicate.shopData.length, 2,
+  '쇼핑몰·ERP용 상품 마스터에는 선택한 대표 품목 한 행만 생성해야 한다.');
+assert.deepEqual(resolvedNormalizedDuplicate.erpData[1].slice(0, 4), ['CODE1', 3000, '0', 3800]);
+assert.deepEqual(resolvedNormalizedDuplicate.shopData[1].slice(3, 6), [3800, '', 3800],
+  '직접 수정한 입고가의 계산 출고가를 쇼핑몰 출고가·시중가에 함께 사용해야 한다.');
+assert.equal(resolvedNormalizedDuplicate.estimateUploadData.length, 3,
+  '견적서 업로드에는 거래처별 원본 거래 행을 모두 유지해야 한다.');
+assert.equal(resolvedNormalizedDuplicate.estimateUploadData.find(row => row[3] === '거래처B')?.[12], 3800,
+  '대표 행에서 직접 수정한 입고가의 계산 단가는 해당 견적서 업로드 거래행에도 반영해야 한다.');
 
 const decimalSuffixCodes = buildEstimateF8Data([
   { itemCode: 'CODE1.0', itemName: '소수점 접미 코드' },
@@ -700,10 +729,17 @@ erp277Rows.push(...[0, 1, 2, 3].map(index => ({ ...erp277Rows[index], customerNa
 assert.equal(erp277Rows.length, 277);
 assert.equal(new Set(erp277Rows.map(row => row.customerName)).size, 10);
 const duplicateOutput = buildEstimateF8Data(erp277Rows);
-assert.equal(duplicateOutput.ok, false, 'ERP 전체 277행의 중복코드 네 건은 F8 파일 생성을 차단해야 한다.');
+assert.equal(duplicateOutput.ok, false, 'ERP 전체 277행의 중복코드 네 건은 대표 입고가 확정 전까지만 생성을 보류해야 한다.');
 assert.deepEqual([...new Set(duplicateOutput.errors
-  .filter(error => error.code === 'DUPLICATE_ITEM_CODE')
+  .filter(error => error.code === 'DUPLICATE_RESOLUTION_REQUIRED')
   .map(error => error.originalValue))].sort(), erp277Rows.slice(0, 4).map(row => row.itemCode).sort());
+const duplicateResolutions = new Map(erp277Rows.slice(0, 4).map((row, rowIndex) => [
+  row.itemCode, { rowIndex, inboundPrice: 1000 + rowIndex * 100 }
+]));
+const resolvedDuplicateOutput = buildEstimateF8Data(erp277Rows, { duplicateResolutions });
+assert.equal(resolvedDuplicateOutput.ok, true, '모든 중복코드의 대표 입고가를 확정하면 F8 파일을 생성해야 한다.');
+assert.equal(resolvedDuplicateOutput.shopData.length, 274, '상품 마스터 시트는 273개 고유코드만 포함해야 한다.');
+assert.equal(resolvedDuplicateOutput.estimateUploadData.length, 278, '견적서 업로드 시트는 원본 277개 거래 행을 보존해야 한다.');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const xlsxSource = fs.readFileSync(path.join(root, 'customer-master/vendor/xlsx.full.min.js'), 'utf8');

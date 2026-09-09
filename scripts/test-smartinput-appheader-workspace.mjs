@@ -19,12 +19,12 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
-assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.15"/, 'the numbered row-selection CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.46"/, 'the numbered row-selection route must use the next cache-bust version');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.16"/, 'the duplicate-review CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.47"/, 'the duplicate-review route must use the next cache-bust version');
 assert.match(js, /getMerchOpsSettingsSnapshotResult[\s\S]*function merchOpsEstimateOutputConfig\(\)[\s\S]*marginRules[\s\S]*estimateMappings/,
   'the estimate report must consume Settings-owned MerchOps pricing configuration through the read adapter');
-assert.match(js, /buildEstimateF8Data\(sourceRows,\s*\{[\s\S]*productCatalog:\s*state\.products,[\s\S]*\.\.\.merchOpsEstimateOutputConfig\(\)/,
-  'the estimate report must combine the current Product Snapshot with the read-only MerchOps pricing configuration');
+assert.match(js, /const outputConfig\s*=\s*\{[\s\S]*productCatalog:\s*state\.products,[\s\S]*\.\.\.merchOpsEstimateOutputConfig\(\)[\s\S]*buildEstimateF8Data\(sourceRows,\s*\{\s*\.\.\.outputConfig,\s*duplicateResolutions\s*\}\)/,
+  'the estimate report must combine the current Product Snapshot, read-only MerchOps pricing configuration, and explicit duplicate resolutions');
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>정보 변경<\/button>/, 'the estimate library footer must expose only deletion and information change');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
