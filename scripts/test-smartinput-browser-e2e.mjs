@@ -1054,11 +1054,39 @@ try {
   assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /다중 선택 · 2개 선택 · 미리보기/, 'multiselect status must distinguish selected sources and preview');
   assert.equal(await evaluate(client, `!/중복 제거|상품 미리보기/.test(document.querySelector('#toast').textContent)`), true, 'estimate selection must not create a redundant lower coachmark');
   assert.equal(await evaluate(client, `document.querySelector('#estimateCreateButton').textContent.trim()`), '연동견적서 생성', 'linked creation belongs in the main table footer');
-  await evaluate(client, `window.__estimateBlockedWrites=0;window.XLSX={utils:{book_new:()=>({}),aoa_to_sheet:data=>data,book_append_sheet:()=>{}},writeFile:()=>{window.__estimateBlockedWrites+=1;}};true`);
+  await evaluate(client, `window.__estimateBlockedWrites=0;window.__estimateWrittenWorkbook=null;window.XLSX={utils:{book_new:()=>({sheets:[]}),aoa_to_sheet:data=>({data}),book_append_sheet:(workbook,sheet,name)=>workbook.sheets.push({name,data:sheet.data})},writeFile:workbook=>{window.__estimateBlockedWrites+=1;window.__estimateWrittenWorkbook=workbook;}};true`);
   await click(client, '#estimateExcelButton');
-  await expr(client, `document.querySelector('#appStatus').textContent.includes('중복 품목코드 EST-1')`, 'raw selected estimate duplicate export block');
+  await expr(client, `Boolean(document.querySelector('.estimate-duplicate-dialog[open]'))`, 'duplicate item review dialog');
   assert.equal(await evaluate(client, `window.__estimateBlockedWrites`), 0,
-    'F8 must validate the selected source drafts before the composition preview removes duplicate codes');
+    'F8 must wait for a duplicate price decision before creating the workbook');
+  assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-duplicate-group').length`), 1,
+    'the same item code must be collected into one review group');
+  assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-duplicate-candidate').length`), 2,
+    'the review group must expose every source estimate candidate');
+  assert.equal(await evaluate(client, `document.querySelector('[data-duplicate-confirm]').disabled`), true,
+    'workbook creation must remain fail-closed until a representative candidate is selected');
+  for (const theme of ['light', 'dark']) {
+    await evaluate(client, `window.ONEAPP_NEXUS_UI_THEME.apply(${JSON.stringify(theme)},{persist:false,emit:true});true`);
+    await wait(100);
+    assert.equal(await evaluate(client, `(() => {const box=document.querySelector('.estimate-duplicate-dialog').getBoundingClientRect();return box.left>=0&&box.top>=0&&box.right<=innerWidth&&box.bottom<=innerHeight;})()`), true,
+      `${theme} duplicate review dialog must fit the viewport`);
+  }
+  await evaluate(client, `(() => {const field=document.querySelector('.estimate-duplicate-candidate [data-duplicate-inbound]');field.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'1000');field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await expr(client, `Boolean(document.querySelector('.estimate-duplicate-candidate input[type="radio"]:checked'))&&!document.querySelector('[data-duplicate-confirm]').disabled`, 'direct inbound-price edit selects candidate');
+  assert.match(await evaluate(client, `document.querySelector('.estimate-duplicate-candidate [data-duplicate-out]').textContent`), /1,300/,
+    'the duplicate dialog must preview the inbound-price-based output price');
+  await capture(client, 'smartinput-estimate-f8-duplicate-review-dark.png');
+  await evaluate(client, `window.ONEAPP_NEXUS_UI_THEME.apply('light',{persist:false,emit:true});true`);
+  await click(client, '[data-duplicate-confirm]');
+  await expr(client, `window.__estimateBlockedWrites===1`, 'resolved duplicate report workbook');
+  assert.deepEqual(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.map(sheet=>sheet.name)`),
+    ['쇼핑몰업로드', 'ERP업데이트', '견적서 업로드'], 'resolved F8 workbook must contain the three normal output sheets');
+  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='쇼핑몰업로드').data.slice(1).filter(row=>row[0]==='EST-1').length`), 1,
+    'product-master output must contain one representative row for the duplicate code');
+  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='견적서 업로드').data.slice(1).filter(row=>row[8]==='EST-1').length`), 2,
+    'estimate upload output must preserve both customer transaction rows');
+  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='견적서 업로드').data.slice(1).filter(row=>row[8]==='EST-1').some(row=>row[12]===1300)`), true,
+    'the directly edited inbound price must update the selected transaction output price');
   await evaluate(client, `delete window.XLSX;true`);
   await click(client, '#estimateCreateButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');

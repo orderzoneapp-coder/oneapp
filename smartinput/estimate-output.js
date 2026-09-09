@@ -172,20 +172,32 @@ export function buildEstimateF8RowsFromDraft(draft = {}) {
     && ((Array.isArray(draft.inputMapping.headers) && draft.inputMapping.headers.length)
       || (Array.isArray(draft.inputMapping.sourceMatrix) && draft.inputMapping.sourceMatrix.length))
   );
-  return rows.map(row => ({
-    ...row,
-    rowVoucherDate: row?.rowVoucherDate || header.voucherDate || header.deliveryDate || header.orderDate || '',
-    rowCustomerCode: row?.rowCustomerCode || header.customerCode || '',
-    rowCustomerName: row?.rowCustomerName || header.customerName || '',
-    rowWarehouseCode: row?.rowWarehouseCode || header.warehouseCode || header.warehouseName || '',
-    rowTransactionType: row?.rowTransactionType || header.transactionType || '',
-    reference: row?.reference || header.reference || '',
-    manager: row?.manager || header.managerName || header.manager || '',
-    estimateF8SourceOnly: mappingBacked || row?.estimateF8SourceOnly === true,
-    estimateF8SourceFields: mappingBacked
-      ? mappingSourceFields(row, draft?.inputMapping)
-      : (row?.estimateF8SourceFields && typeof row.estimateF8SourceFields === 'object' ? row.estimateF8SourceFields : {})
-  }));
+  const workingRowsById = mappingBacked
+    ? new Map((draft.inputMapping.workingRows || []).map(row => [text(row?.rowId), row]))
+    : new Map();
+  return rows.map((row, rowIndex) => {
+    const workingRow = mappingBacked
+      ? workingRowsById.get(text(row?.rowId))
+      : null;
+    const sourceMatrixIndex = Number(workingRow?.sourceRowIndex);
+    return {
+      ...row,
+      rowVoucherDate: row?.rowVoucherDate || header.voucherDate || header.deliveryDate || header.orderDate || '',
+      rowCustomerCode: row?.rowCustomerCode || header.customerCode || '',
+      rowCustomerName: row?.rowCustomerName || header.customerName || '',
+      rowWarehouseCode: row?.rowWarehouseCode || header.warehouseCode || header.warehouseName || '',
+      rowTransactionType: row?.rowTransactionType || header.transactionType || '',
+      reference: row?.reference || header.reference || '',
+      manager: row?.manager || header.managerName || header.manager || '',
+      estimateF8SourceOnly: mappingBacked || row?.estimateF8SourceOnly === true,
+      estimateF8SourceRowNumber: Number.isInteger(sourceMatrixIndex) && sourceMatrixIndex >= 0
+        ? sourceMatrixIndex + 1
+        : (row?.estimateF8SourceRowNumber || rowIndex + 1),
+      estimateF8SourceFields: mappingBacked
+        ? mappingSourceFields(row, draft?.inputMapping)
+        : (row?.estimateF8SourceFields && typeof row.estimateF8SourceFields === 'object' ? row.estimateF8SourceFields : {})
+    };
+  });
 }
 
 function linkedRefSignature(row = {}) {
@@ -335,10 +347,120 @@ export function validateEstimateRows(rows = []) {
     const code = outputCode(row);
     if (code && codeCounts.get(code) > 1) errors.push(estimateIssue(
       'DUPLICATE_ITEM_CODE', row, rowIndex, '품목코드', code, `품목코드 ${code}가 중복되었습니다.`,
-      'MerchOps F8과 동일하게 중복 품목코드를 정리한 뒤 다시 출력하세요.'
+      '중복 품목 모아보기에서 대표 행과 입고가를 확정하세요.'
     ));
   });
   return { ok: errors.length === 0, errors, entries: candidates, rows: candidates.map(({ row }) => row) };
+}
+
+function resolutionForCode(resolutions, code) {
+  if (resolutions instanceof Map) return resolutions.get(code) || null;
+  return resolutions && typeof resolutions === 'object' ? resolutions[code] || null : null;
+}
+
+function duplicateCandidate(row, rowIndex, product, marginRules) {
+  return {
+    candidateId: `${outputCode(row)}:${rowIndex}`,
+    rowIndex,
+    sourceRowNumber: Number(row?.estimateF8SourceRowNumber) || rowIndex + 1,
+    customerName: outputText(row, ['거래처명', '거래처'], ['rowCustomerName', 'customerName']),
+    warehouseCode: outputText(row, ['출하창고', '창고', '창고코드'], ['rowWarehouseCode', 'warehouseCode']),
+    itemName: outputText(row, ['품목명', '상품명'], ['itemName']),
+    specification: outputText(row, ['규격', '단위'], ['specification', 'unit']),
+    inboundPrice: outputNumber(row, ['입고가'], ['inboundPrice']),
+    calculatedOutPrice: calculatedMerchOutPrice({ ...row, estimateF8InboundBasis: true }, product, marginRules),
+    pricingProduct: product,
+    row
+  };
+}
+
+export function buildEstimateDuplicateGroups(rows = [], { productCatalog = [], marginRules = [] } = {}) {
+  const catalog = productCatalogIndex(productCatalog);
+  const grouped = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row, rowIndex) => {
+    const code = outputCode(row);
+    if (!code) return;
+    const entries = grouped.get(code) || [];
+    entries.push(duplicateCandidate(row, rowIndex, catalog.get(code) || {}, marginRules));
+    grouped.set(code, entries);
+  });
+  return [...grouped.entries()]
+    .filter(([, candidates]) => candidates.length > 1)
+    .map(([code, candidates]) => ({ code, candidates }));
+}
+
+export function calculateEstimateResolvedPrice(row = {}, inboundPrice = '', {
+  productCatalog = [], marginRules = [], pricingProduct = null
+} = {}) {
+  const code = outputCode(row);
+  const product = pricingProduct && typeof pricingProduct === 'object'
+    ? pricingProduct
+    : (productCatalogIndex(productCatalog).get(code) || {});
+  const parsedInbound = text(inboundPrice) === '' ? '' : numeric(inboundPrice);
+  const resolvedRow = {
+    ...row,
+    inboundPrice: parsedInbound === null ? inboundPrice : parsedInbound,
+    estimateF8InboundBasis: true,
+    editedFields: { ...(row?.editedFields || {}), inboundPrice: true, outPrice: false }
+  };
+  return {
+    inboundPrice: parsedInbound,
+    outPrice: calculatedMerchOutPrice(resolvedRow, product, marginRules)
+  };
+}
+
+export function resolveEstimateDuplicateRows(rows = [], resolutions = new Map()) {
+  const source = Array.isArray(rows) ? rows : [];
+  const grouped = new Map();
+  source.forEach((row, rowIndex) => {
+    const code = outputCode(row);
+    if (!code) return;
+    const entries = grouped.get(code) || [];
+    entries.push({ row, rowIndex });
+    grouped.set(code, entries);
+  });
+
+  const duplicateCodes = new Set([...grouped.entries()].filter(([, entries]) => entries.length > 1).map(([code]) => code));
+  const selectedByCode = new Map();
+  const unresolvedCodes = [];
+  duplicateCodes.forEach(code => {
+    const resolution = resolutionForCode(resolutions, code);
+    const entries = grouped.get(code) || [];
+    const selected = entries.find(entry => entry.rowIndex === Number(resolution?.rowIndex));
+    const rawInbound = resolution && Object.prototype.hasOwnProperty.call(resolution, 'inboundPrice')
+      ? resolution.inboundPrice
+      : (selected ? outputNumber(selected.row, ['입고가'], ['inboundPrice']) : '');
+    const parsedInbound = text(rawInbound) === '' ? '' : numeric(rawInbound);
+    if (!selected || (text(rawInbound) !== '' && (parsedInbound === null || parsedInbound < 0))) {
+      unresolvedCodes.push(code);
+      return;
+    }
+    selectedByCode.set(code, {
+      rowIndex: selected.rowIndex,
+      row: {
+        ...selected.row,
+        inboundPrice: parsedInbound,
+        estimateF8InboundBasis: true,
+        editedFields: { ...(selected.row?.editedFields || {}), inboundPrice: true, outPrice: false }
+      }
+    });
+  });
+
+  const resolvedRows = [];
+  const selectedRowsByIndex = new Map();
+  source.forEach((row, rowIndex) => {
+    const code = outputCode(row);
+    if (!duplicateCodes.has(code)) {
+      resolvedRows.push(row);
+      return;
+    }
+    const selected = selectedByCode.get(code);
+    if (selected?.rowIndex === rowIndex) {
+      resolvedRows.push(selected.row);
+      selectedRowsByIndex.set(rowIndex, selected.row);
+    }
+  });
+  return { rows: resolvedRows, selectedRowsByIndex, unresolvedCodes, duplicateCodes: [...duplicateCodes] };
 }
 
 function saleCodeFromOutPrice(value) {
@@ -473,14 +595,15 @@ function pricingNumber(row, aliases, directKeys, product, productKeys) {
 }
 
 function calculatedMerchOutPrice(row = {}, product = {}, marginRules = []) {
+  const forceInboundBasis = row.estimateF8InboundBasis === true;
   const explicitOutPrice = explicitDirectValue(row, ['outPrice']);
-  if (explicitOutPrice.found) return explicitOutPrice.value === '' ? '' : sourceNumber(explicitOutPrice.value);
+  if (!forceInboundBasis && explicitOutPrice.found) return explicitOutPrice.value === '' ? '' : sourceNumber(explicitOutPrice.value);
   const sourceOutPrice = outputNumber(row, ['출고가', '판매가'], ['outPrice']);
   // MerchOps의 "불러오기 시 출고가 자동적용"과 같은 범위만 재계산한다.
   // 수기 견적과 불러온 뒤 사용자가 직접 수정한 출고가는 그대로 유지한다.
-  if (row.estimateF8SourceOnly !== true) return sourceOutPrice;
+  if (!forceInboundBasis && row.estimateF8SourceOnly !== true) return sourceOutPrice;
   const inboundPrice = numeric(outputNumber(row, ['입고가'], ['inboundPrice']));
-  if (!(inboundPrice > 0)) return sourceOutPrice;
+  if (!(inboundPrice > 0)) return forceInboundBasis ? '' : sourceOutPrice;
   const outsourcing = pricingNumber(
     row, ['외주비'], ['outsourcingStandardCost', 'outsourcingUnitPrice'], product,
     ['outsourcingStandardCost', 'outsourcingUnitPrice', '외주비']
@@ -565,29 +688,33 @@ export function sortEstimateUploadRows(rows = []) {
     .map(entry => entry.row);
 }
 
-export function buildEstimateF8Data(rows = [], { productCatalog = [], marginRules = [], estimateMappings = {} } = {}) {
+export function buildEstimateF8Data(rows = [], {
+  productCatalog = [], marginRules = [], estimateMappings = {}, duplicateResolutions = new Map()
+} = {}) {
   const validation = validateEstimateRows(rows);
-  const errors = [...validation.errors];
+  const errors = validation.errors.filter(error => error.code !== 'DUPLICATE_ITEM_CODE');
+  const duplicateResolution = resolveEstimateDuplicateRows(rows, duplicateResolutions);
+  duplicateResolution.unresolvedCodes.forEach(code => errors.push({
+    code: 'DUPLICATE_RESOLUTION_REQUIRED', item: code, field: '품목코드', originalValue: code,
+    message: `품목코드 ${code}의 기준 입고가를 선택하거나 직접 입력하세요.`,
+    guide: '중복 품목 모아보기에서 대표 행과 입고가를 확정하세요.'
+  }));
   const shopData = [[...SHOP_HEADERS]];
   const erpData = [[...ERP_HEADERS]];
-  const warnings = collectWholesaleWarnings(validation.rows);
+  const warnings = collectWholesaleWarnings(duplicateResolution.rows);
   const confirmData = [[...CONFIRM_HEADERS], ...warnings];
   const estimateUploadData = [[...ESTIMATE_UPLOAD_HEADERS]];
   const subdivisionByCode = new Map();
   const catalog = productCatalogIndex(productCatalog);
 
-  validation.entries.forEach(({ row }) => {
+  validation.entries.forEach(({ row: originalRow, rowIndex }) => {
+    const row = duplicateResolution.selectedRowsByIndex.get(rowIndex) || originalRow;
     const code = outputCode(row);
     const product = catalog.get(code) || {};
-    const inboundPrice = outputNumber(row, ['입고가'], ['inboundPrice']);
     const outPrice = calculatedMerchOutPrice(row, product, marginRules);
-    const promoPrice = outputNumber(row, ['행사가'], ['promoPrice']);
-    const shopSalePrice = (numeric(promoPrice) || 0) > 0 ? promoPrice : outPrice;
     const purchasePriceB = outputNumber(row, ['입고B'], ['purchasePriceB']);
     const wholesaleA = outputNumber(row, ['도매A', 'A판매', 'A판매가'], ['wholesaleA']);
     const wholesaleB = outputNumber(row, ['도매B', 'B도매', 'B도매가'], ['wholesaleB']);
-    const marketPrice = outputNumber(row, ['시중가', '시중단가'], ['marketPrice']);
-    const themes = themeFlags(row);
     estimateUploadData.push([
       outputText(row, ['일자', '날짜', '견적일자'], ['rowVoucherDate']),
       outputText(row, ['순번', 'No.', '번호'], ['sequence']),
@@ -601,7 +728,9 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [], marginRule
       outputText(row, ['품목명', '상품명'], ['itemName']),
       outputText(row, ['규격', '단위'], ['specification', 'unit']),
       outputNumber(row, ['수량'], ['quantity']),
-      outputNumber(row, ['단가', '출고가', '판매가'], ['unitPrice', 'outPrice']),
+      row.estimateF8SourceOnly === true || row.estimateF8InboundBasis === true
+        ? outPrice
+        : outputNumber(row, ['단가', '출고가', '판매가'], ['unitPrice', 'outPrice']),
       purchasePriceB,
       wholesaleA,
       wholesaleB,
@@ -609,6 +738,26 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [], marginRule
       outputText(row, ['지시사항', '간단설명'], ['description']),
       outputText(row, ['적요2'], ['memo2'])
     ]);
+  });
+  estimateUploadData.splice(1, estimateUploadData.length - 1, ...sortEstimateUploadRows(estimateUploadData.slice(1)));
+
+  duplicateResolution.rows.forEach(row => {
+    const code = outputCode(row);
+    const product = catalog.get(code) || {};
+    const inboundPrice = outputNumber(row, ['입고가'], ['inboundPrice']);
+    const outPrice = calculatedMerchOutPrice(row, product, marginRules);
+    const promoPrice = outputNumber(row, ['행사가'], ['promoPrice']);
+    const shopSalePrice = (numeric(promoPrice) || 0) > 0 ? promoPrice : outPrice;
+    const purchasePriceB = outputNumber(row, ['입고B'], ['purchasePriceB']);
+    const wholesaleA = outputNumber(row, ['도매A', 'A판매', 'A판매가'], ['wholesaleA']);
+    const wholesaleB = outputNumber(row, ['도매B', 'B도매', 'B도매가'], ['wholesaleB']);
+    // MerchOps 가격 엔진은 입고가에서 계산한 출고가와 시중가를 같은 결과값으로 생성한다.
+    // 불러온 견적서와 중복 해결행은 원본 시중가를 재사용하지 않고 동일 계산값을 출력한다.
+    const marketPrice = (row.estimateF8SourceOnly === true || row.estimateF8InboundBasis === true)
+      && !explicitDirectValue(row, ['marketPrice']).found
+      ? outPrice
+      : outputNumber(row, ['시중가', '시중단가'], ['marketPrice']);
+    const themes = themeFlags(row);
     erpData.push([
       code, inboundPrice, '0', outPrice, '0', purchasePriceB, 'n', wholesaleA, 'n', wholesaleB, 'n'
     ]);
@@ -635,7 +784,6 @@ export function buildEstimateF8Data(rows = [], { productCatalog = [], marginRule
     const subdivision = subdivisionCandidate(row, outPrice, estimateMappings);
     if (subdivision) subdivisionByCode.set(subdivision.code, [...(subdivisionByCode.get(subdivision.code) || []), subdivision]);
   });
-  estimateUploadData.splice(1, estimateUploadData.length - 1, ...sortEstimateUploadRows(estimateUploadData.slice(1)));
 
   const selectedSubdivisions = new Map();
   subdivisionByCode.forEach((candidates, subCode) => {

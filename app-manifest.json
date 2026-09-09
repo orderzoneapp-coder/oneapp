@@ -515,7 +515,7 @@
         "editable local work table",
         "latest-work autosave recovery",
         "local estimate catalog",
-        "MerchOps-compatible estimate report pricing from Settings-owned margin rules and mappings",
+        "MerchOps-compatible estimate report pricing from Settings-owned margin rules and mappings, including grouped duplicate-code price resolution",
         "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
         "company-partitioned background official-voucher synchronization"
       ],
@@ -544,7 +544,7 @@
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "LOCAL_OPERATION",
         "shoppingOrderActualLedgerDedupe": "LOCAL_OPERATION through ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1; candidate inspection is advisory and every save rechecks the actual ORDER Q count in the owner transaction",
-        "estimateReportPricing": "LOCAL_OPERATION through ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1; SmartInput reads current margin rules and estimate mappings without writing Settings-owned keys",
+        "estimateReportPricing": "LOCAL_OPERATION through ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1; SmartInput reads current margin rules and estimate mappings without writing Settings-owned keys, groups duplicate product codes for an explicit representative inbound-price decision, and preserves every customer transaction row in the estimate-upload sheet",
         "officialVoucherRemoteSync": "BACKGROUND_SYNC through ONEAPP_ORDERQ_OFFICIAL_SYNC_V1; unsupported or unavailable server keeps WAITING_SERVER_CONTRACT without blocking local finalize"
       },
       "offlinePolicy": "Render the application and preserve the latest local work state and work-table edits without waiting for authentication, server, reference data, or optional Excel, OCR, and speech dependencies.",

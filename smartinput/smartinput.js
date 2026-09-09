@@ -74,12 +74,14 @@ import {
   priceSnapshotsEqual,
   buildKakaoNoticeRows,
   buildEstimateF8Data,
+  buildEstimateDuplicateGroups,
   buildEstimateF8RowsFromDraft,
   buildEstimateF8RowsFromPlan,
+  calculateEstimateResolvedPrice,
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.4';
+} from './estimate-output.js?v=0.2.5';
 import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
@@ -7854,13 +7856,107 @@ let estimateF8ExportInFlight = false;
 
 function estimateF8FailureDetail(errors = []) {
   const duplicateCodes = [...new Set(errors
-    .filter(error => ['DUPLICATE_ITEM_CODE', 'DUPLICATE_OUTPUT_CODE'].includes(error.code))
+    .filter(error => ['DUPLICATE_ITEM_CODE', 'DUPLICATE_OUTPUT_CODE', 'DUPLICATE_RESOLUTION_REQUIRED'].includes(error.code))
     .map(error => String(error.originalValue ?? '').trim())
     .filter(Boolean))];
   const first = errors[0];
   return duplicateCodes.length
     ? `중복 품목코드 ${duplicateCodes.slice(0, 8).join(', ')}${duplicateCodes.length > 8 ? ` 외 ${duplicateCodes.length - 8}건` : ''}`
     : (first?.message || '출력 대상을 확인하세요.');
+}
+
+function showEstimateDuplicateResolutionDialog(groups = [], outputConfig = {}) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'smart-dialog estimate-duplicate-dialog';
+    dialog.innerHTML = `<div class="smart-dialog__shell">
+      <header><div><small>F8 DUPLICATE REVIEW</small><h2>중복 품목 모아보기</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+      <p class="smart-dialog__message">품목코드별 대표 행을 선택하세요. 입고가(견적단가)를 수정하면 이번 보고서의 출고가를 다시 계산합니다. 원본 견적서는 변경하지 않습니다.</p>
+      <div class="estimate-duplicate-summary"><strong>중복코드 ${groups.length}개</strong><span>영향 행 ${groups.reduce((sum, group) => sum + group.candidates.length, 0)}개</span></div>
+      <div class="estimate-duplicate-groups">${groups.map((group, groupIndex) => `<section class="estimate-duplicate-group" data-duplicate-group="${groupIndex}">
+        <header><strong>품목코드 ${esc(group.code)}</strong><span>${group.candidates.length}개 행 중 선택</span></header>
+        <div class="estimate-duplicate-candidates">${group.candidates.map((candidate, candidateIndex) => `<label class="estimate-duplicate-candidate" data-duplicate-candidate="${candidateIndex}">
+          <input type="radio" name="duplicate-${groupIndex}" value="${candidate.rowIndex}" aria-label="${esc(group.code)} ${candidateIndex + 1}번째 행 선택">
+          <span class="estimate-duplicate-source"><strong>${esc(candidate.customerName || '거래처 없음')}</strong><small>원본 ${candidate.sourceRowNumber}행 · 창고 ${esc(candidate.warehouseCode || '-')}</small></span>
+          <span class="estimate-duplicate-item"><strong>${esc(candidate.itemName || '품명 없음')}</strong><small>${esc(candidate.specification || '규격 없음')}</small></span>
+          <span class="estimate-duplicate-price"><small>입고가(견적단가)</small><input type="text" inputmode="decimal" data-duplicate-inbound value="${esc(candidate.inboundPrice)}" aria-label="${esc(group.code)} 입고가"></span>
+          <span class="estimate-duplicate-result"><small>계산 출고가</small><strong data-duplicate-out>${candidate.calculatedOutPrice === '' ? '공란' : Number(candidate.calculatedOutPrice || 0).toLocaleString('ko-KR')}</strong></span>
+        </label>`).join('')}</div>
+      </section>`).join('')}</div>
+      <footer><small data-duplicate-progress>0/${groups.length}개 기준 선택</small><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-duplicate-confirm disabled>선택한 입고가로 Excel 생성</button></footer>
+    </div>`;
+    document.body.append(dialog);
+    let finished = false;
+    const finish = result => {
+      if (finished) return;
+      finished = true;
+      dialog.close();
+      dialog.remove();
+      resolve(result);
+    };
+    const updateProgress = () => {
+      const selectedCount = groups.filter((_, groupIndex) => Boolean(dialog.querySelector(`input[name="duplicate-${groupIndex}"]:checked`))).length;
+      dialog.querySelector('[data-duplicate-progress]').textContent = `${selectedCount}/${groups.length}개 기준 선택`;
+      dialog.querySelector('[data-duplicate-confirm]').disabled = selectedCount !== groups.length;
+      dialog.querySelectorAll('[data-duplicate-candidate]').forEach(candidate => {
+        candidate.classList.toggle('is-selected', Boolean(candidate.querySelector('input[type="radio"]:checked')));
+      });
+    };
+    const updatePricePreview = input => {
+      const groupElement = input.closest('[data-duplicate-group]');
+      const candidateElement = input.closest('[data-duplicate-candidate]');
+      const groupIndex = Number(groupElement?.dataset.duplicateGroup);
+      const candidateIndex = Number(candidateElement?.dataset.duplicateCandidate);
+      const candidate = groups[groupIndex]?.candidates?.[candidateIndex];
+      if (!candidate) return;
+      const raw = input.value.trim();
+      const normalized = raw.replace(/[,원₩\s]/g, '');
+      const valid = raw === '' || (Number.isFinite(Number(normalized)) && Number(normalized) >= 0);
+      input.setAttribute('aria-invalid', String(!valid));
+      const result = valid
+        ? calculateEstimateResolvedPrice(candidate.row, raw === '' ? '' : Number(normalized), {
+          marginRules: outputConfig.marginRules,
+          pricingProduct: candidate.pricingProduct
+        })
+        : { outPrice: '' };
+      candidateElement.querySelector('[data-duplicate-out]').textContent = !valid
+        ? '입력 확인'
+        : (result.outPrice === '' ? '공란' : Number(result.outPrice || 0).toLocaleString('ko-KR'));
+      if (document.activeElement === input) candidateElement.querySelector('input[type="radio"]').checked = true;
+      updateProgress();
+    };
+    dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => finish(null)));
+    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+    dialog.addEventListener('change', event => {
+      if (event.target.matches('input[type="radio"]')) updateProgress();
+    });
+    dialog.addEventListener('input', event => {
+      if (event.target.matches('[data-duplicate-inbound]')) updatePricePreview(event.target);
+    });
+    dialog.querySelector('[data-duplicate-confirm]').addEventListener('click', () => {
+      const resolutions = new Map();
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const selected = dialog.querySelector(`input[name="duplicate-${groupIndex}"]:checked`);
+        const candidateElement = selected?.closest('[data-duplicate-candidate]');
+        const input = candidateElement?.querySelector('[data-duplicate-inbound]');
+        const raw = input?.value.trim() ?? '';
+        const normalized = raw.replace(/[,원₩\s]/g, '');
+        if (!selected || (raw !== '' && (!Number.isFinite(Number(normalized)) || Number(normalized) < 0))) {
+          input?.focus();
+          input?.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        resolutions.set(groups[groupIndex].code, {
+          rowIndex: Number(selected.value),
+          inboundPrice: raw === '' ? '' : Number(normalized)
+        });
+      }
+      finish(resolutions);
+    });
+    updateProgress();
+    dialog.showModal();
+    dialog.querySelector('input[type="radio"]')?.focus();
+  });
 }
 
 function merchOpsEstimateOutputConfig() {
@@ -7900,20 +7996,33 @@ async function exportEstimateExcel() {
       return;
     }
 
-    // 연동견적/조합은 병합 전 개별 원본을 펼쳐 first-wins로 숨은 중복까지 먼저 차단한다.
-    const rawValidation = validateEstimateRows(plan.validationDrafts.flatMap(draft => buildEstimateF8RowsFromDraft(draft)));
-    if (!rawValidation.ok) {
-      const detail = estimateF8FailureDetail(rawValidation.errors);
+    // 연동견적/조합도 병합 전 개별 원본을 펼친다. 중복은 모아서 대표 입고가를 확정하고,
+    // 품목코드 누락 등 중복 이외의 원본 오류는 기존처럼 출력 전에 차단한다.
+    const sourceRows = buildEstimateF8RowsFromPlan(plan);
+    const rawValidation = validateEstimateRows(sourceRows);
+    const rawErrors = rawValidation.errors.filter(error => error.code !== 'DUPLICATE_ITEM_CODE');
+    if (rawErrors.length) {
+      const detail = estimateF8FailureDetail(rawErrors);
       setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');
       toast(`F8 Excel을 생성하지 않았습니다. ${detail}`, 'error');
       return;
     }
 
-    const sourceRows = buildEstimateF8RowsFromPlan(plan);
-    const output = buildEstimateF8Data(sourceRows, {
+    const outputConfig = {
       productCatalog: state.products,
       ...merchOpsEstimateOutputConfig()
-    });
+    };
+    const duplicateGroups = buildEstimateDuplicateGroups(sourceRows, outputConfig);
+    let duplicateResolutions = new Map();
+    if (duplicateGroups.length) {
+      setAppStatus(`견적 F8 중복 확인 · ${duplicateGroups.length}개 품목의 기준 입고가를 선택하세요.`, 'warn');
+      duplicateResolutions = await showEstimateDuplicateResolutionDialog(duplicateGroups, outputConfig);
+      if (!duplicateResolutions) {
+        setAppStatus(`견적 F8 출력 취소 · 중복 ${duplicateGroups.length}개 품목 미확정`, 'warn');
+        return;
+      }
+    }
+    const output = buildEstimateF8Data(sourceRows, { ...outputConfig, duplicateResolutions });
     if (!output.ok) {
       const detail = estimateF8FailureDetail(output.errors);
       setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');
