@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '1f7a814f404f82fc461a73e8fa4495c60d61369a9bf7f4278308859a315af172'],
+  ['../smartinput/index.html', '5973c5ec44bf4f06986ae25c56ff79f5c46c8d80dd913fd56f60d557d8ec9eff'],
   ['../smartinput/smartinput.css', '37e1d1e8ed88e52417f2fa590991c8f6db11c81a6033d0629ec3083e49b05d83'],
-  ['../smartinput/smartinput.js', 'd92d017efa137e536590d4b2190dca5dfdc52764e80007d44c93194f89cb4883']
+  ['../smartinput/smartinput.js', '845d1b03ef163f5818c8b3b4c839556315dccf97d51270c8e24c6b9632e424f3']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,7 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline including numbered row selection and active-row focus, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the shared theme cache token`);
 }
 assert.deepEqual(mutations, []);
 

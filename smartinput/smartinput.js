@@ -343,7 +343,8 @@ const MEANINGFUL_ROW_FIELDS = Object.freeze([
   'unregisteredProductQuery', 'specification', 'boxQuantity', 'quantity', 'unit', 'unitPrice',
   'sourceUnitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice',
   'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
-  'memo', 'description', 'rowCustomerCode', 'rowCustomerId', 'rowCustomerName',
+  'memo', 'memo2', 'description', 'rowCustomerCode', 'rowCustomerId', 'rowCustomerName',
+  'saleAmount1', 'saleAmount2', 'saleMemo3',
   'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName', 'billingCustomerId',
   'billingCustomerCode', 'billingCustomerName', 'supplierCustomerId', 'supplierCustomerCode',
   'supplierCustomerName', 'salesCustomerId', 'salesCustomerCode', 'salesCustomerName',
@@ -854,7 +855,8 @@ function renderSourceAnalysis() {
 }
 
 function customFieldsFor(scope) {
-  return (state.settings.customFields || []).filter(field => field.scope === scope);
+  return (state.settings.customFields || []).filter(field => field.scope === scope)
+    .map(field => scope === 'voucher' ? contract.fieldDefinitionForMode(field, state.draft.activeMode) : field);
 }
 
 function headerFieldsForMode(mode = state.draft.activeMode) {
@@ -877,10 +879,12 @@ function optionalProductFields() {
   const modeFields = new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]));
   return contract.PRODUCT_FIELD_DEFINITIONS
     .filter(field => !baseIds.has(field.id) && selectedIds.has(field.id))
+    .filter(field => !field.voucherModes || field.voucherModes.includes(state.draft.activeMode))
     .map(field => modeFields.has(field.id) ? {
       ...field,
       inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
-    } : field);
+    } : field)
+    .map(field => contract.fieldDefinitionForMode(field, state.draft.activeMode));
 }
 
 function layoutDefinitions(scope, customFields = state.settings.customFields || [], mode = state.draft.activeMode) {
@@ -889,7 +893,7 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
     ? new Map(structuredFieldsForMode(mode, []).map(field => [field.id, field]))
     : new Map();
   return [
-    ...builtIn.map(field => modeFields.has(field.id) ? {
+    ...builtIn.filter(field => !field.voucherModes || field.voucherModes.includes(mode)).map(field => modeFields.has(field.id) ? {
       ...field,
       inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
     } : field),
@@ -899,7 +903,7 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
       custom: true,
       required: false
     }))
-  ];
+  ].map(field => scope === 'voucher' ? contract.fieldDefinitionForMode(field, mode) : field);
 }
 
 function availableRegistryFields(scope, mode = state.draft.activeMode, customFields = state.settings.customFields || []) {
@@ -1188,12 +1192,20 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
     aliases: [...new Set([...(field.inputAliases || []), ...(field.masterAliases || [])])]
   }));
   const voucherTargets = layoutDefinitions('voucher', state.settings.customFields || [], mode).filter(field => !enabledOnly || enabledVoucherIds.has(field.id)).map(field => {
-    const canonical = coreFieldByProjection(mode, field.id);
+    const canonical = coreFieldByProjection(mode, field.id)
+      || (mode === 'estimate' && field.id === 'memo2'
+        ? { fieldId: 'erp.estimate.current_line.line.memo_2', projectionFieldId: 'memo2' }
+        : null);
+    const mappingLabel = field.initialLabel || canonical?.displayLabel || field.label;
+    const mappingAliases = contract.fieldDefinitionForMode({
+      ...field,
+      inputAliases: [...(field.inputAliases || []), ...(canonical?.aliases || []), field.label]
+    }, mode);
     const semanticScope = canonical?.scope === 'HEADER' || stageHeaderIds.has(field.id) ? 'header' : 'voucher';
     const sectionLabel = semanticScope === 'header' ? '상단 정보' : '하단 정보';
     return {
       id: canonical?.fieldId || field.id,
-      label: canonical?.displayLabel || field.label,
+      label: mappingLabel,
       scope: semanticScope,
       group: field.group || 'ADDITIONAL',
       valueType: field.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
@@ -1202,11 +1214,10 @@ function inputMappingTargets(mode = state.draft.activeMode, { enabledOnly = true
       recommendable: enabledVoucherIds.has(field.id),
       advancedLabel: field.custom
         ? `${contract.MODES[mode]?.label || mode} > 사용자지정 > ${sectionLabel} > ${field.label}`
-        : `${contract.MODES[mode]?.label || mode} > ${sectionLabel} > ${canonical?.displayLabel || field.label}`,
+        : `${contract.MODES[mode]?.label || mode} > ${sectionLabel} > ${mappingLabel}`,
       aliases: [...new Set([
-        ...(field.inputAliases || []),
-        ...(field.masterAliases || []),
-        ...(canonical?.aliases || []),
+        ...(mappingAliases.inputAliases || []),
+        ...(mappingAliases.masterAliases || []),
         field.label
       ])]
     };
@@ -1594,6 +1605,18 @@ function renderCustomLayoutFields() {
     td.dataset.column = field.id;
     td.dataset.customColumn = field.id;
     actionFoot.before(td);
+  });
+  const fieldsById = new Map(layoutDefinitions('voucher').map(field => [field.id, field]));
+  table.querySelectorAll('thead th[data-column]').forEach(th => {
+    const field = fieldsById.get(th.dataset.column);
+    if (!field) return;
+    const labelNode = [...th.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+    if (labelNode) labelNode.textContent = field.label;
+    th.querySelector('.column-resize-handle')?.setAttribute('aria-label', `${field.label} 열 너비 조정`);
+  });
+  table.querySelectorAll('tbody input[data-field]').forEach(input => {
+    const field = fieldsById.get(input.dataset.field);
+    if (field && input.dataset.field !== 'itemCode') input.setAttribute('aria-label', field.label);
   });
   ensureColumnResizeHandles();
 }
@@ -3411,6 +3434,7 @@ async function openSettingsDialog() {
         <summary><span><strong>전표별 표시 열</strong><small>전표마다 노출 항목과 Enter 입력 순서를 별도 저장</small></span><i aria-hidden="true"></i></summary>
         <div class="settings-group__body settings-group__body--single settings-voucher-editor">
           <div class="settings-group__actions settings-voucher-editor__heading"><span><b data-settings-layout-label="voucher">${esc(contract.MODES[settingsLayoutMode].label)}</b> 선택 항목만 표시합니다. 화면 순서는 업무상 고정이며 작업테이블 열 순서와 별개입니다.</span><button type="button" class="button button--quiet button--small" data-toggle-voucher-explorer aria-expanded="false">항목 추가</button></div>
+          <div class="settings-group__actions"><button type="button" class="button button--quiet button--small" data-restore-initial-input>초기 입력 모드로 변경</button><small data-initial-input-hint></small></div>
           <div class="settings-voucher-summary"><strong data-voucher-selection-count></strong><span data-enter-order-preview></span><small>입력 순서 0은 화면에만 노출하고 Enter 이동에서 제외합니다.</small></div>
           <div class="settings-voucher-selected" data-layout-fields="voucher" aria-live="polite"></div>
           <section class="settings-voucher-explorer" data-voucher-field-explorer hidden aria-label="전체 표시 열 탐색">
@@ -3575,6 +3599,11 @@ async function openSettingsDialog() {
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-pressed', String(active));
     });
+    const initialLayout = contract.getInitialInputLayout(settingsLayoutMode);
+    dialog.querySelector('[data-restore-initial-input]').disabled = !initialLayout;
+    dialog.querySelector('[data-initial-input-hint]').textContent = initialLayout
+      ? '항목과 입력 순서를 초기 구성으로 변경합니다. 설정 저장 시 적용됩니다.'
+      : '해당 전표의 초기 구성이 없습니다.';
     renderHeaderLayout();
     renderVoucherSelected();
   };
@@ -3619,6 +3648,32 @@ async function openSettingsDialog() {
     settingsLayoutMode = mode;
     renderSettingsMode();
   }));
+  dialog.querySelector('[data-restore-initial-input]').addEventListener('click', () => {
+    if (!contract.getInitialInputLayout(settingsLayoutMode)) return;
+    captureHeaderLayoutSelection();
+    let restored;
+    try {
+      restored = contract.restoreInitialInputSettings({
+        ...state.settings,
+        customFields: workingCustomFields,
+        voucherColumnsByMode: workingVoucherColumnsByMode,
+        inputOrderByMode: workingInputOrderByMode
+      }, settingsLayoutMode);
+    } catch (error) {
+      message.textContent = error.message;
+      return;
+    }
+    workingCustomFields = restored.customFields.map(field => ({ ...field }));
+    workingVoucherColumnsByMode[settingsLayoutMode] = [...restored.voucherColumnsByMode[settingsLayoutMode]];
+    workingInputOrderByMode[settingsLayoutMode] = { ...restored.inputOrderByMode[settingsLayoutMode] };
+    workingInputOrderDraftValuesByMode[settingsLayoutMode] = Object.fromEntries(
+      Object.entries(workingInputOrderByMode[settingsLayoutMode]).map(([fieldId, order]) => [fieldId, String(order)])
+    );
+    invalidInputOrderByMode[settingsLayoutMode].clear();
+    markDirty();
+    renderSettingsMode();
+    message.textContent = `${contract.MODES[settingsLayoutMode].label} 초기 구성을 선택했습니다. 설정 저장 시 적용됩니다.`;
+  });
   dialog.querySelector('[data-add-layout-field="header"]').addEventListener('click', () => {
     captureHeaderLayoutSelection();
     openLayoutFieldDialog('header', workingCustomFields, field => {
