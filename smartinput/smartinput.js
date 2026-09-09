@@ -309,6 +309,7 @@ const state = {
   gridPasteUndo: null,
   applyingGridPaste: false,
   estimateLibraryKind: earlyUi?.estimateLibraryKind === 'linked' ? 'linked' : 'individual',
+  estimateLibrarySelections: { individual: [], linked: [] },
   estimateMultiSelectKind: '',
   estimateWorkingCopies: new Map(),
   estimateWorkingCopyBaselines: new Map(),
@@ -4396,6 +4397,63 @@ function estimateCardMarkup(record) {
   </article>`;
 }
 
+function rememberEstimateLibrarySelection(kind = state.estimateLibraryKind) {
+  if (!['individual', 'linked'].includes(kind)) return;
+  const availableIds = new Set(estimateRecordsForKind(kind).map(record => record.estimateId));
+  state.estimateLibrarySelections[kind] = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
+}
+
+function restoreEstimateLibrarySelection(kind = state.estimateLibraryKind) {
+  const availableIds = new Set(estimateRecordsForKind(kind).map(record => record.estimateId));
+  state.noticeEstimateIds = (state.estimateLibrarySelections[kind] || []).filter(estimateId => availableIds.has(estimateId));
+}
+
+function syncEstimateLibraryCardSelection() {
+  const selections = {
+    individual: new Set(state.estimateLibrarySelections.individual || []),
+    linked: new Set(state.estimateLibrarySelections.linked || [])
+  };
+  selections[state.estimateLibraryKind] = new Set(state.noticeEstimateIds);
+  document.querySelectorAll('.estimate-card[data-estimate-id]').forEach(card => {
+    const kind = card.dataset.estimateKind === 'LINKED_GROUP' ? 'linked' : 'individual';
+    const selected = selections[kind].has(card.dataset.estimateId);
+    card.classList.toggle('is-selected', selected);
+    card.querySelector('[data-select-estimate-card]')?.setAttribute('aria-pressed', String(selected));
+    card.querySelector('.estimate-card__selection-order')?.remove();
+  });
+}
+
+function syncEstimateLibraryActionState() {
+  const creation = estimateCreation();
+  const selectedCount = state.noticeEstimateIds.length;
+  const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
+  const impactCount = estimateSaveImpact(currentRecord);
+  const lastSave = state.lastEstimateSave?.estimateId === currentRecord?.estimateId ? state.lastEstimateSave : null;
+  $('estimateSelectionSummary').textContent = creation
+    ? `다중 선택 · ${selectedCount.toLocaleString('ko-KR')}개 선택${modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? ` · 미리보기 ${modeDraft().rows.filter(rowHasMeaningfulInput).length}품목` : ''}`
+    : (selectedCount
+      ? `${selectedCount.toLocaleString('ko-KR')}개 열림${lastSave ? ` · 저장 완료 · 연결 ${lastSave.linkCount}개${lastSave.affectedCount ? ` · 반영 ${lastSave.affectedCount}건` : ''}` : (impactCount ? ` · 저장하면 연결된 ${impactCount}개 견적서에 반영` : '')}`
+      : '견적서를 선택하세요.');
+  const deleteButton = $('selectedEstimateDeleteButton');
+  deleteButton.disabled = state.busy || selectedCount < 1;
+  deleteButton.textContent = '선택 삭제';
+  deleteButton.classList.add('button--danger');
+  deleteButton.classList.remove('button--quiet');
+  $('estimateRenameButton').disabled = state.busy || selectedCount !== 1;
+  const createButton = $('estimateCreateButton');
+  createButton.disabled = state.busy || !creation || selectedCount < 2;
+  createButton.textContent = '연동견적서 생성';
+  createButton.title = creation ? `${selectedCount}개 선택` : '먼저 + 버튼이나 Ctrl+클릭으로 견적서를 다중 선택하세요.';
+  $('estimateNoticeButton').textContent = '카톡 공유';
+  $('estimateExcelButton').textContent = '보고서';
+}
+
+function syncEstimateLibraryView() {
+  renderEstimateWorkspace();
+  syncEstimateLibraryCardSelection();
+  syncEstimateLibraryActionState();
+}
+
 function renderCatalogControls() {
   const visible = state.draft.activeMode === 'estimate';
   const catalogList = $('catalogPickerList');
@@ -4442,29 +4500,10 @@ function renderCatalogControls() {
   const linkedRecords = linkedEstimateRecords();
   const availableIds = new Set((creation ? records : estimateRecordsForKind()).map(record => record.estimateId));
   state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
-  const selectedCount = state.noticeEstimateIds.length;
+  rememberEstimateLibrarySelection();
   catalogList.innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다. 입력표를 작성하고 저장하면 자동 생성됩니다.</div>';
   linkedList.innerHTML = linkedRecords.length ? linkedRecords.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
-  const currentRecord = state.estimates.find(record => record.estimateId === modeDraft().catalogRecordId);
-  const impactCount = estimateSaveImpact(currentRecord);
-  const lastSave = state.lastEstimateSave?.estimateId === currentRecord?.estimateId ? state.lastEstimateSave : null;
-  $('estimateSelectionSummary').textContent = creation
-    ? `다중 선택 · ${selectedCount.toLocaleString('ko-KR')}개 선택${modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? ` · 미리보기 ${modeDraft().rows.filter(rowHasMeaningfulInput).length}품목` : ''}`
-    : (selectedCount
-      ? `${selectedCount.toLocaleString('ko-KR')}개 열림${lastSave ? ` · 저장 완료 · 연결 ${lastSave.linkCount}개${lastSave.affectedCount ? ` · 반영 ${lastSave.affectedCount}건` : ''}` : (impactCount ? ` · 저장하면 연결된 ${impactCount}개 견적서에 반영` : '')}`
-      : '견적서를 선택하세요.');
-  const deleteButton = $('selectedEstimateDeleteButton');
-  deleteButton.disabled = state.busy || selectedCount < 1;
-  deleteButton.textContent = '선택 삭제';
-  deleteButton.classList.add('button--danger');
-  deleteButton.classList.remove('button--quiet');
-  $('estimateRenameButton').disabled = state.busy || selectedCount !== 1;
-  const createButton = $('estimateCreateButton');
-  createButton.disabled = state.busy || !creation || selectedCount < 2;
-  createButton.textContent = '연동견적서 생성';
-  createButton.title = creation ? `${selectedCount}개 선택` : '먼저 + 버튼이나 Ctrl+클릭으로 견적서를 다중 선택하세요.';
-  $('estimateNoticeButton').textContent = '카톡 공유';
-  $('estimateExcelButton').textContent = '보고서';
+  syncEstimateLibraryActionState();
   renderEstimateWorkspace();
 }
 
@@ -4510,7 +4549,7 @@ function startEstimateCreation(kind, { deferPreview = false, initialSelectedIds 
   setAppStatus('견적서를 여러 개 선택한 뒤 연동견적서를 생성할 수 있습니다.');
 }
 
-function cancelEstimateCreation({ silent = false } = {}) {
+function cancelEstimateCreation({ silent = false, persist = true, render = true } = {}) {
   const creation = estimateCreation();
   if (!creation) return false;
   const returnDraft = creation.returnDraft || state.estimateSelectionReturnDraft;
@@ -4523,8 +4562,8 @@ function cancelEstimateCreation({ silent = false } = {}) {
   state.estimateMultiSelectKind = '';
   setEstimateCreation(null);
   state.selectedRowIds.clear();
-  saveDraftNow();
-  renderMode();
+  if (persist) saveDraftNow();
+  if (render) renderMode();
   if (!silent) toast('견적서 생성 선택을 취소했습니다.', 'success');
   return true;
 }
@@ -6043,7 +6082,7 @@ function renderDelivery() {
   renderInlineValidation();
 }
 
-function renderMode() {
+function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
   const selected = contract.MODES[state.draft.activeMode];
   tabs.forEach(tab => {
     const active = tab.dataset.mode === selected.id;
@@ -6079,7 +6118,7 @@ function renderMode() {
   hydrateHeader();
   renderEstimateHeaderFields();
   renderInputListSearch();
-  if (!inputMappingSession() && removeParserArtifactRows(modeDraft())) scheduleSave();
+  if (!inputMappingSession() && removeParserArtifactRows(modeDraft()) && persistCleanup) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
   state.photoView.detailColumns = Boolean(modeUi().detailColumns);
   updateMethod(modeDraft().activeMethod, { persist: false });
@@ -6100,7 +6139,7 @@ function renderMode() {
       ? '주문서 입력을 시작할 수 있습니다.'
       : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 원본은 견적서 생성 전까지 변경되지 않습니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
-  if (sourceTextInput.value.trim() && !inputMappingSession() && !shoppingOrderImport()) scheduleAutoAnalysis(650);
+  if (scheduleAnalysis && sourceTextInput.value.trim() && !inputMappingSession() && !shoppingOrderImport()) scheduleAutoAnalysis(650);
 }
 
 function setMode(mode) {
@@ -10270,23 +10309,65 @@ $('estimateMultiSelectButton').addEventListener('click', () => {
   if (estimateMultiSelectActive()) cancelEstimateMultiSelect();
   else beginEstimateMultiSelect();
 });
-function selectEstimateLibraryKind(kind) {
-  if (!['individual', 'linked'].includes(kind)) return;
-  const multiSelect = estimateMultiSelectActive();
-  if (!multiSelect && state.estimateLibraryKind === kind) return;
-  if (multiSelect) cancelEstimateMultiSelect();
-  if (state.estimateLibraryKind === kind) return;
-  rememberActiveEstimateWork();
-  const returnDraft = state.estimateSelectionReturnDraft;
-  state.noticeEstimateIds = [];
-  state.estimateSelectionReturnDraft = null;
-  if (returnDraft) state.draft.modes.estimate = contract.normalizeModeDraft('estimate', returnDraft);
-  state.estimateLibraryKind = kind;
-  saveDraftNow();
-  renderMode();
+
+let estimateLibrarySwitchFocus = null;
+
+function captureEstimateLibrarySwitchFocus() {
+  const element = document.activeElement;
+  if (!element || !$('tableScroll').contains(element)) return null;
+  return {
+    element,
+    selectionStart: typeof element.selectionStart === 'number' ? element.selectionStart : null,
+    selectionEnd: typeof element.selectionEnd === 'number' ? element.selectionEnd : null,
+    selectionDirection: typeof element.selectionDirection === 'string' ? element.selectionDirection : undefined
+  };
 }
-$('estimateLibraryIndividualButton').addEventListener('click', () => selectEstimateLibraryKind('individual'));
-$('estimateLibraryLinkedButton').addEventListener('click', () => selectEstimateLibraryKind('linked'));
+
+function restoreEstimateLibrarySwitchFocus(snapshot) {
+  if (!snapshot?.element?.isConnected) return;
+  snapshot.element.focus({ preventScroll: true });
+  if (snapshot.selectionStart === null || typeof snapshot.element.setSelectionRange !== 'function') return;
+  snapshot.element.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd ?? snapshot.selectionStart, snapshot.selectionDirection);
+}
+
+function selectEstimateLibraryKind(kind, { focusSnapshot = null } = {}) {
+  if (!['individual', 'linked'].includes(kind)) return;
+  const previousKind = state.estimateLibraryKind;
+  const multiSelect = estimateMultiSelectActive();
+  if (!multiSelect && previousKind === kind) {
+    restoreEstimateLibrarySwitchFocus(focusSnapshot);
+    return;
+  }
+  let restoredPreview = false;
+  if (estimateCreationActive()) {
+    cancelEstimateCreation({ silent: true, persist: false, render: false });
+    restoredPreview = true;
+  } else if (multiSelect) {
+    state.noticeEstimateIds = [];
+    state.estimateMultiSelectKind = '';
+  }
+  rememberEstimateLibrarySelection(previousKind);
+  state.estimateLibraryKind = kind;
+  restoreEstimateLibrarySelection(kind);
+  if (restoredPreview) renderMode({ persistCleanup: false, scheduleAnalysis: false });
+  else syncEstimateLibraryView();
+  restoreEstimateLibrarySwitchFocus(focusSnapshot);
+}
+const estimateLibraryIndividualButton = $('estimateLibraryIndividualButton');
+const estimateLibraryLinkedButton = $('estimateLibraryLinkedButton');
+[estimateLibraryIndividualButton, estimateLibraryLinkedButton].forEach(button => {
+  button.addEventListener('pointerdown', () => { estimateLibrarySwitchFocus = captureEstimateLibrarySwitchFocus(); });
+});
+estimateLibraryIndividualButton.addEventListener('click', () => {
+  const focusSnapshot = estimateLibrarySwitchFocus;
+  estimateLibrarySwitchFocus = null;
+  selectEstimateLibraryKind('individual', { focusSnapshot });
+});
+estimateLibraryLinkedButton.addEventListener('click', () => {
+  const focusSnapshot = estimateLibrarySwitchFocus;
+  estimateLibrarySwitchFocus = null;
+  selectEstimateLibraryKind('linked', { focusSnapshot });
+});
 
 function handleEstimateCardSelection(event) {
   if (state.estimateDragSuppressed) return;
