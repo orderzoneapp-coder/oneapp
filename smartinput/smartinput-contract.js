@@ -37,6 +37,7 @@
     required: options.required === true,
     valueType: options.valueType === 'NUMBER' ? 'NUMBER' : 'TEXT',
     editable: options.editable !== false,
+    ...(options.voucherModes ? { voucherModes: Object.freeze([...options.voucherModes]) } : {}),
     masterAliases: Object.freeze([...(options.masterAliases || [])]),
     inputAliases: Object.freeze([...(options.inputAliases || [])])
   });
@@ -105,6 +106,8 @@
     productField('priceH', '단가H', 'PRICE', { valueType: 'NUMBER', masterAliases: ['priceH', '단가H'] }),
     productField('priceI', '단가I', 'PRICE', { valueType: 'NUMBER', masterAliases: ['priceI', '단가I'] }),
     productField('promoPrice', '행사가', 'PRICE', { valueType: 'NUMBER', masterAliases: ['promoPrice', '행사가', '특가'] }),
+    productField('saleAmount1', '금액1(판매)', 'PRICE', { valueType: 'NUMBER', voucherModes: ['sale'], inputAliases: ['금액1', '금액 1(판매)'] }),
+    productField('saleAmount2', '금액2(판매)', 'PRICE', { valueType: 'NUMBER', voucherModes: ['sale'], inputAliases: ['금액2', '금액 2(판매)'] }),
     voucherField('noticePrice'),
 
     productField('outsourcingUnitPrice', '외주비단가', 'COST', { valueType: 'NUMBER', masterAliases: ['outsourcingUnitPrice', '외주비단가', '외주비'] }),
@@ -181,6 +184,7 @@
     productField('manualSplitKey', '전표분리키', 'ADDITIONAL'),
     voucherField('memo'),
     productField('memo2', '적요2', 'ADDITIONAL', { inputAliases: ['적요 2'] }),
+    productField('saleMemo3', '적요3(판매)', 'ADDITIONAL', { voucherModes: ['sale'], inputAliases: ['적요3', '적요 3(판매)'] }),
     voucherField('description')
   ]);
   const ROW_FIELDS = Object.freeze(PRODUCT_FIELD_DEFINITIONS.filter(field => field.editable !== false).map(field => field.id));
@@ -201,7 +205,7 @@
     MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_HEADER_FIELDS])])
   ));
   // These approved baselines are independent of each browser's saved layout.
-  // Sale remains on its existing defaults until its field meanings are confirmed.
+  // The logical sale date resolves to an available user text field per settings.
   const INITIAL_INPUT_PRESETS = Object.freeze(Object.fromEntries(Object.entries({
     estimate: [
       ['itemCode', '품목코드'], ['itemName', '품목명'], ['specification', '규격'],
@@ -214,14 +218,21 @@
       ['quantity', '수량'], ['unitPrice', '단가'], ['supplyAmount', '공급가액'],
       ['memo', '메모'], ['description', '적요(직원)'], ['noticePrice', '공지단가']
     ],
-    purchase: DEFAULT_VOUCHER_COLUMNS.map(id => [id, PRODUCT_FIELD_DEFINITIONS.find(field => field.id === id).label])
+    purchase: DEFAULT_VOUCHER_COLUMNS.map(id => [id, PRODUCT_FIELD_DEFINITIONS.find(field => field.id === id).label]),
+    sale: [
+      ['itemCode', '품목코드'], ['itemName', '품목명'], ['specification', '규격'],
+      ['quantity', '수량'], ['unitPrice', '단가'], ['supplyAmount', '공급가액'],
+      ['memo', '적요'], ['erp.sale.current.line.unmapped_3396a63d', '출고지시'], ['saleAmount1', '공지'],
+      ['saleMemo3', '구매처'], ['initial.sale.date', '날짜'], ['saleAmount2', '구매']
+    ]
   }).map(([mode, fields]) => [mode, Object.freeze({
     version: '20260909-v1',
     columns: Object.freeze(fields.map(([id]) => id)),
-    labels: Object.freeze({ ...Object.fromEntries(fields), ...(mode === 'estimate' ? { description: '지시사항' } : {}) })
+    labels: Object.freeze({ ...Object.fromEntries(fields), ...(mode === 'estimate' ? { description: '지시사항' } : {}),
+      ...(mode === 'sale' ? { supplier: '구매처(상품정보)' } : {}) })
   })])));
   const DEFAULT_VOUCHER_COLUMNS_BY_MODE = Object.freeze(Object.fromEntries(
-    MODE_ORDER.map(mode => [mode, INITIAL_INPUT_PRESETS[mode]?.columns || Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
+    MODE_ORDER.map(mode => [mode, Object.freeze(getInitialInputLayout(mode)?.voucherColumns || [...DEFAULT_VOUCHER_COLUMNS])])
   ));
   const DEFAULT_INPUT_ORDER = Object.freeze(Object.fromEntries((() => {
     let editableOrder = 0;
@@ -253,7 +264,9 @@
     voucherColumnsByMode: DEFAULT_VOUCHER_COLUMNS_BY_MODE,
     inputOrderByMode: DEFAULT_INPUT_ORDER_BY_MODE,
     estimateNoticePriceFields: DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS,
-    customFields: Object.freeze([]),
+    customFields: Object.freeze(getInitialInputLayout('sale').customFields.map(field => Object.freeze({
+      ...field, relationshipPath: Object.freeze([...field.relationshipPath])
+    }))),
     columnWidths: Object.freeze({}),
     columnWidthsByMode: Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [mode, Object.freeze({})])))
   });
@@ -288,13 +301,55 @@
     return [...new Set(source.map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b);
   }
 
-  function getInitialInputLayout(mode) {
+  function resolveInitialSaleDate(settings = {}) {
+    const customFields = (Array.isArray(settings.customFields) ? settings.customFields : []).map(field => ({
+      ...field, ...(Array.isArray(field.relationshipPath) ? { relationshipPath: [...field.relationshipPath] } : {})
+    }));
+    const dispatchId = 'erp.sale.current.line.unmapped_3396a63d';
+    const existingDispatch = customFields.find(field => field.id === dispatchId);
+    if (existingDispatch && (existingDispatch.scope !== 'voucher' || text(existingDispatch.valueType || 'TEXT').toUpperCase() !== 'TEXT')) {
+      throw new Error('출고지시의 기존 필드 연결을 확인해 주세요.');
+    }
+    if (!existingDispatch) customFields.push({ id: dispatchId, label: '출고지시', scope: 'voucher', category: 'PRODUCT',
+      sourceField: dispatchId, valueType: 'TEXT', registryField: true, editable: true, advancedLabel: '',
+      ownerDomain: 'SMARTINPUT_VOUCHER', relationshipPath: ['SALE', 'CURRENT_VOUCHER', 'LINE', '판매'] });
+    const isTextField = field => field.scope === 'voucher'
+      && text(field.category || 'CUSTOM').toUpperCase() === 'CUSTOM'
+      && text(field.valueType || 'TEXT').toUpperCase() === 'TEXT';
+    const marked = customFields.filter(field => field.initialInputRole === 'sale.date');
+    if (marked.length > 1 || marked.some(field => !isTextField(field))) {
+      throw new Error('판매 날짜에 연결된 사용자 지정 문자 항목을 하나로 확인해 주세요.');
+    }
+    const dates = marked.length ? marked : customFields.filter(field => isTextField(field) && text(field.label) === '날짜');
+    if (dates.length > 1) throw new Error('날짜라는 사용자 지정 문자 항목이 여러 개입니다. 판매 날짜로 사용할 항목을 확인해 주세요.');
+    if (dates.length === 1) {
+      dates[0].initialInputRole = 'sale.date';
+      return { dateFieldId: dates[0].id, customFields };
+    }
+    const textCount = customFields.filter(field => text(field.category || 'CUSTOM').toUpperCase() === 'CUSTOM'
+      && text(field.valueType || 'TEXT').toUpperCase() === 'TEXT').length;
+    const usedIds = new Set(customFields.map(field => text(field.id)));
+    const dateFieldId = Array.from({ length: 10 }, (_, index) => `custom.text.${String(index + 1).padStart(2, '0')}`)
+      .find(id => !usedIds.has(id));
+    if (textCount >= 10 || !dateFieldId) {
+      throw new Error('사용자 지정 문자 항목 10개를 모두 사용 중입니다. 날짜 항목을 추가할 빈자리를 확보해 주세요.');
+    }
+    customFields.push({ id: dateFieldId, label: '날짜', scope: 'voucher', category: 'CUSTOM', sourceField: '',
+      valueType: 'TEXT', registryField: false, editable: true, advancedLabel: '', ownerDomain: '', relationshipPath: [],
+      initialInputRole: 'sale.date' });
+    return { dateFieldId, customFields };
+  }
+
+  function getInitialInputLayout(mode, settings = {}) {
     const preset = Object.prototype.hasOwnProperty.call(INITIAL_INPUT_PRESETS, mode) ? INITIAL_INPUT_PRESETS[mode] : null;
     if (!preset) return null;
+    const saleDate = mode === 'sale' ? resolveInitialSaleDate(settings) : null;
+    const columns = preset.columns.map(id => id === 'initial.sale.date' ? saleDate.dateFieldId : id);
     let editableOrder = 0;
     return {
-      voucherColumns: [...preset.columns],
-      inputOrder: Object.fromEntries(preset.columns.map(fieldId => {
+      voucherColumns: columns,
+      ...(saleDate ? { customFields: saleDate.customFields } : {}),
+      inputOrder: Object.fromEntries(columns.map(fieldId => {
         const field = PRODUCT_FIELD_DEFINITIONS.find(definition => definition.id === fieldId);
         return [fieldId, field?.editable === false ? 0 : ++editableOrder];
       }))
@@ -307,10 +362,10 @@
       : field;
     if (!definition) return null;
     const labels = INITIAL_INPUT_PRESETS[mode]?.labels || {};
-    const initialLabel = labels[definition.id];
+    const initialLabel = mode === 'sale' && definition.initialInputRole === 'sale.date' ? labels['initial.sale.date'] : labels[definition.id];
     const aliasKey = value => text(value).toLowerCase().replace(/[\s_()[\]{}.,/·:\-]/g, '');
     const conflicts = new Set(Object.entries(labels)
-      .filter(([id]) => id !== definition.id)
+      .filter(([id]) => id !== definition.id && !(id === 'initial.sale.date' && definition.initialInputRole === 'sale.date'))
       .map(([, label]) => aliasKey(label)));
     const aliases = values => [...new Set(values.map(text).filter(value => value && !conflicts.has(aliasKey(value))))];
     return {
@@ -323,11 +378,12 @@
   }
 
   function restoreInitialInputSettings(settings, mode) {
-    const layout = getInitialInputLayout(mode);
-    if (!layout) throw new Error('해당 전표의 초기 입력 구성이 아직 확정되지 않았습니다.');
     const normalized = normalizeSettings(settings);
+    const layout = getInitialInputLayout(mode, normalized);
+    if (!layout) throw new Error('해당 전표의 초기 입력 구성이 아직 확정되지 않았습니다.');
     return normalizeSettings({
       ...normalized,
+      ...(layout.customFields ? { customFields: layout.customFields } : {}),
       voucherColumnsByMode: { ...normalized.voucherColumnsByMode, [mode]: layout.voucherColumns },
       inputOrderByMode: { ...normalized.inputOrderByMode, [mode]: layout.inputOrder }
     });
@@ -358,9 +414,20 @@
         editable: field?.editable !== false,
         advancedLabel: text(field?.advancedLabel),
         ownerDomain: text(field?.ownerDomain),
-        relationshipPath: Array.isArray(field?.relationshipPath) ? field.relationshipPath.map(text) : []
+        relationshipPath: Array.isArray(field?.relationshipPath) ? field.relationshipPath.map(text) : [],
+        ...(field?.initialInputRole === 'sale.date' ? { initialInputRole: 'sale.date' } : {})
       };
     }).filter(Boolean).filter((field, index, rows) => rows.findIndex(other => other.id === field.id) === index);
+    let initialSaleLayout = null;
+    if (!Array.isArray(value.voucherColumnsByMode?.sale) && !Array.isArray(value.voucherColumns)) {
+      try {
+        initialSaleLayout = getInitialInputLayout('sale', { customFields });
+        customFields.splice(0, customFields.length, ...initialSaleLayout.customFields);
+      } catch {
+        // Existing user fields remain usable when no safe date slot can be resolved.
+        // Explicit sale restoration reports the actionable conflict instead.
+      }
+    }
     const deliveryCustomerWeekdays = {};
     const sourceMap = value.deliveryCustomerWeekdays && typeof value.deliveryCustomerWeekdays === 'object'
       ? value.deliveryCustomerWeekdays
@@ -413,7 +480,8 @@
     const voucherColumnsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
       mode,
       normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS,
-        Array.isArray(value.voucherColumns) ? legacyVoucherColumns : DEFAULT_VOUCHER_COLUMNS_BY_MODE[mode], 'voucher')
+        Array.isArray(value.voucherColumns) ? legacyVoucherColumns
+          : (mode === 'sale' ? (initialSaleLayout?.voucherColumns || DEFAULT_VOUCHER_COLUMNS) : DEFAULT_VOUCHER_COLUMNS_BY_MODE[mode]), 'voucher')
     ]));
     const inputOrderSource = value.inputOrderByMode && typeof value.inputOrderByMode === 'object'
       ? value.inputOrderByMode
@@ -425,7 +493,7 @@
       const useInitialOrder = Boolean(INITIAL_INPUT_PRESETS[mode]) && !Array.isArray(sourceVoucherColumnsByMode[mode]) && !Array.isArray(value.voucherColumns);
       const source = inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object'
         ? inputOrderSource[mode]
-        : (useInitialOrder ? DEFAULT_INPUT_ORDER_BY_MODE[mode] : {});
+        : (useInitialOrder ? (mode === 'sale' ? (initialSaleLayout?.inputOrder || DEFAULT_INPUT_ORDER) : DEFAULT_INPUT_ORDER_BY_MODE[mode]) : {});
       const order = {};
       allowedColumnIds.forEach(fieldId => {
         const configured = Number(source[fieldId]);

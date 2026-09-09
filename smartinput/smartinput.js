@@ -344,6 +344,7 @@ const MEANINGFUL_ROW_FIELDS = Object.freeze([
   'sourceUnitPrice', 'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice',
   'promoPrice', 'purchasePriceB', 'priceD', 'lastPurchasePrice', 'priceH', 'priceI',
   'memo', 'memo2', 'description', 'rowCustomerCode', 'rowCustomerId', 'rowCustomerName',
+  'saleAmount1', 'saleAmount2', 'saleMemo3',
   'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName', 'billingCustomerId',
   'billingCustomerCode', 'billingCustomerName', 'supplierCustomerId', 'supplierCustomerCode',
   'supplierCustomerName', 'salesCustomerId', 'salesCustomerCode', 'salesCustomerName',
@@ -854,7 +855,8 @@ function renderSourceAnalysis() {
 }
 
 function customFieldsFor(scope) {
-  return (state.settings.customFields || []).filter(field => field.scope === scope);
+  return (state.settings.customFields || []).filter(field => field.scope === scope)
+    .map(field => scope === 'voucher' ? contract.fieldDefinitionForMode(field, state.draft.activeMode) : field);
 }
 
 function headerFieldsForMode(mode = state.draft.activeMode) {
@@ -877,6 +879,7 @@ function optionalProductFields() {
   const modeFields = new Map(structuredFieldsForMode(state.draft.activeMode, []).map(field => [field.id, field]));
   return contract.PRODUCT_FIELD_DEFINITIONS
     .filter(field => !baseIds.has(field.id) && selectedIds.has(field.id))
+    .filter(field => !field.voucherModes || field.voucherModes.includes(state.draft.activeMode))
     .map(field => modeFields.has(field.id) ? {
       ...field,
       inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
@@ -890,7 +893,7 @@ function layoutDefinitions(scope, customFields = state.settings.customFields || 
     ? new Map(structuredFieldsForMode(mode, []).map(field => [field.id, field]))
     : new Map();
   return [
-    ...builtIn.map(field => modeFields.has(field.id) ? {
+    ...builtIn.filter(field => !field.voucherModes || field.voucherModes.includes(mode)).map(field => modeFields.has(field.id) ? {
       ...field,
       inputAliases: [...new Set([...(field.inputAliases || []), modeFields.get(field.id).label, ...(modeFields.get(field.id).inputAliases || [])])]
     } : field),
@@ -3600,7 +3603,7 @@ async function openSettingsDialog() {
     dialog.querySelector('[data-restore-initial-input]').disabled = !initialLayout;
     dialog.querySelector('[data-initial-input-hint]').textContent = initialLayout
       ? '항목과 입력 순서를 초기 구성으로 변경합니다. 설정 저장 시 적용됩니다.'
-      : '판매 초기 구성은 항목 매칭 확인 후 제공됩니다.';
+      : '해당 전표의 초기 구성이 없습니다.';
     renderHeaderLayout();
     renderVoucherSelected();
   };
@@ -3648,12 +3651,19 @@ async function openSettingsDialog() {
   dialog.querySelector('[data-restore-initial-input]').addEventListener('click', () => {
     if (!contract.getInitialInputLayout(settingsLayoutMode)) return;
     captureHeaderLayoutSelection();
-    const restored = contract.restoreInitialInputSettings({
-      ...state.settings,
-      customFields: workingCustomFields,
-      voucherColumnsByMode: workingVoucherColumnsByMode,
-      inputOrderByMode: workingInputOrderByMode
-    }, settingsLayoutMode);
+    let restored;
+    try {
+      restored = contract.restoreInitialInputSettings({
+        ...state.settings,
+        customFields: workingCustomFields,
+        voucherColumnsByMode: workingVoucherColumnsByMode,
+        inputOrderByMode: workingInputOrderByMode
+      }, settingsLayoutMode);
+    } catch (error) {
+      message.textContent = error.message;
+      return;
+    }
+    workingCustomFields = restored.customFields.map(field => ({ ...field }));
     workingVoucherColumnsByMode[settingsLayoutMode] = [...restored.voucherColumnsByMode[settingsLayoutMode]];
     workingInputOrderByMode[settingsLayoutMode] = { ...restored.inputOrderByMode[settingsLayoutMode] };
     workingInputOrderDraftValuesByMode[settingsLayoutMode] = Object.fromEntries(

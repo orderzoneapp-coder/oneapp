@@ -135,6 +135,7 @@ const visibleWorktableColumns = client => evaluate(client, `[...document.querySe
 const storedSettings = client => evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?settings-read='+Date.now());return (await store.loadSmartInputData()).settings;})()`);
 
 // Isolated browser profile and loopback server only. No production app or DB is used.
+const saleDispatchField = 'erp.sale.current.line.unmapped_3396a63d';
 const presets = {
   order: {
     fields: ['itemCode', 'itemName', 'specification', 'quantity', 'unitPrice', 'supplyAmount', 'memo', 'description', 'noticePrice'],
@@ -143,6 +144,10 @@ const presets = {
   purchase: {
     fields: ['itemCode', 'itemName', 'specification', 'quantity', 'unitPrice', 'supplyAmount', 'productDescription', 'memo', 'noticePrice', 'rowVoucherNo'],
     labels: ['코드', '품명', '규격(기본)', '수량', '단가', '공급가', '간단설명(품위)', '지시사항', '출고가 (공지)', '판매no.']
+  },
+  sale: {
+    fields: ['itemCode', 'itemName', 'specification', 'quantity', 'unitPrice', 'supplyAmount', 'memo', saleDispatchField, 'saleAmount1', 'saleMemo3', 'custom.text.01', 'saleAmount2'],
+    labels: ['품목코드', '품목명', '규격', '수량', '단가', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜', '구매']
   },
   estimate: {
     fields: ['itemCode', 'itemName', 'specification', 'quantity', 'unitPrice', 'purchasePriceB', 'wholesaleA', 'wholesaleB', 'memo', 'promoPrice', 'memo2'],
@@ -166,12 +171,23 @@ const seededSettings = {
     sale: { itemCode: 1, memo: 2, 'custom.text.01': 3 },
     estimate: { itemCode: 1, memo: 2, 'custom.text.01': 3 }
   },
-  customFields: [{ id: 'custom.text.01', label: '사용자 보존 항목', valueType: 'TEXT', scope: 'voucher' }]
+  customFields: [
+    { id: 'custom.text.01', label: '사용자 보존 항목', valueType: 'TEXT', scope: 'voucher' },
+    { id: saleDispatchField, label: '출고지시', valueType: 'TEXT', scope: 'voucher', category: 'PRODUCT',
+      registryField: true, sourceField: saleDispatchField, owner: 'SMARTINPUT_VOUCHER',
+      relationshipPath: ['SALE', 'CURRENT_VOUCHER', 'LINE', '판매'] }
+  ]
 };
 const coreSettings = settings => Object.fromEntries([
   'orderCutoffTime', 'allowSameDayDelivery', 'defaultDeliveryWeekdays', 'holidayWeekdays',
-  'holidayDates', 'deliveryCustomerWeekdays', 'customFields'
+  'holidayDates', 'deliveryCustomerWeekdays'
 ].map(key => [key, settings[key]]));
+const assertExistingCustomFieldsPreserved = (settings, original) => {
+  for (const field of original.customFields) {
+    assert.deepEqual(settings.customFields.find(current => current.id === field.id), field,
+      `existing custom definition ${field.id} must retain its name, type and identity`);
+  }
+};
 const rowSnapshot = client => evaluate(client, `(() => {
   const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));
   for(const value of Object.values(draft.modes)){
@@ -187,7 +203,12 @@ const expectedInputOrder = preset => {
   let next = 0;
   return Object.fromEntries(preset.fields.map(id => [id, id === 'supplyAmount' ? 0 : ++next]));
 };
-const selectedInputOrder = (settings, mode) => Object.fromEntries(presets[mode].fields.map(id => [id, settings.inputOrderByMode[mode][id]]));
+const selectedInputOrder = (settings, mode, preset = presets[mode]) => Object.fromEntries(preset.fields.map(id => [id, settings.inputOrderByMode[mode][id]]));
+const assertOtherInputOrderPreserved = (current, previous, message) => {
+  assert.deepEqual(Object.fromEntries(Object.keys(previous).map(id => [id, current[id]])), previous, message);
+  assert.ok(Object.entries(current).filter(([id]) => !(id in previous)).every(([, order]) => order === 0),
+    `${message}: newly registered unselected fields must have no Enter position`);
+};
 const waitForSettingsHydration = client => expr(client, `['product','customer'].every(domain=>{
   const status=document.getElementById(domain+'ReferenceStatus')?.dataset.status;
   return Boolean(status)&&status!=='LOADING';
@@ -264,7 +285,9 @@ try {
       current.rows=[contract.normalizeRow({rowId:'PRESERVE-'+mode,itemCode:'0007',itemName:'검증 상품 '+mode,
         specification:'1kg',quantity:2,unitPrice:100,purchasePriceB:0,wholesaleA:120,wholesaleB:130,
         memo:'적요 원문',memo2:'두 번째 적요',promoPrice:90,description:'직원 원문',
-        customValues:{'custom.text.01':'사용자 값 유지'},noticePrice:150,sourceType:'MANUAL'})];
+        saleAmount1:0,saleMemo3:'판매 적요3 구매처',saleAmount2:-125,
+        supplier:'기준정보 공급처',
+        customValues:{'custom.text.01':'사용자 값 유지',${JSON.stringify(saleDispatchField)}:'냉장 출고 지시'},noticePrice:150,sourceType:'MANUAL'})];
       current.sourceText='원본 텍스트 '+mode;
       current.header.rawOrdererName=current.sourceText;
       // Represent an already-processed draft. A source with no matching live batch
@@ -286,7 +309,11 @@ try {
   await expr(client, `JSON.stringify([...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(element=>element.dataset.column))===${JSON.stringify(JSON.stringify(seededSettings.voucherColumnsByMode.order))}`, 'seeded saved column order applied');
   assert.deepEqual(await visibleWorktableColumns(client), seededSettings.voucherColumnsByMode.order,
     'existing saved layout must never be silently replaced by the new initial layout');
-  for(const mode of ['purchase', 'sale', 'estimate', 'order']) await selectMode(client, mode);
+  for(const mode of ['purchase', 'sale', 'estimate', 'order']) {
+    await selectMode(client, mode);
+    assert.deepEqual(await visibleWorktableColumns(client), seededSettings.voucherColumnsByMode[mode],
+      `${mode}: opening an existing voucher must retain its saved input layout`);
+  }
   const originalStored = await storedSettings(client);
   let expectedRows = await rowSnapshot(client);
   const originalActive = await visibleWorktableColumns(client);
@@ -329,21 +356,51 @@ try {
   assert.deepEqual(await storedSettings(client), originalStored, 'Cancel must discard restored settings');
   assert.deepEqual(await rowSnapshot(client), expectedRows, 'Cancel must preserve all voucher data');
 
+  // The first custom text field is already owned by the user. Sale's date must
+  // occupy a separate text field without relabeling or overwriting that field.
+  const restoredPresets = structuredClone(presets);
+  restoredPresets.sale.fields = restoredPresets.sale.fields.map(id => id === 'custom.text.01' ? 'custom.text.02' : id);
+  await openSettings(client);
+  await click(client, '[data-settings-layout-mode="sale"]');
+  assert.equal(await evaluate(client, `document.querySelector('[data-restore-initial-input]').disabled`), false);
+  await click(client, '[data-restore-initial-input]');
+  assert.deepEqual(await evaluate(client, `Object.fromEntries([...document.querySelectorAll('[data-input-order-field]')].map(input=>[input.dataset.inputOrderField,Number(input.value)]))`),
+    expectedInputOrder(restoredPresets.sale), 'sale restoration must stage the approved order and allocate a free custom date');
+  assert.deepEqual(await storedSettings(client), originalStored, 'staging sale must not persist its new custom date definition');
+  await click(client, '.smart-settings-dialog footer [data-close]');
+  await expr(client, `!document.querySelector('.smart-settings-dialog')`, 'cancelled sale restoration');
+  assert.deepEqual(await storedSettings(client), originalStored, 'Cancel must discard the newly staged sale date field');
+  assert.deepEqual(await rowSnapshot(client), expectedRows, 'cancelling sale restoration must preserve every voucher');
   const previousByMode = structuredClone(seededSettings.voucherColumnsByMode);
-  for (const [mode, preset] of Object.entries(presets)) {
+  for (const [mode, preset] of Object.entries(restoredPresets)) {
     const previousStored = await storedSettings(client);
     await openSettings(client);
     await click(client, `[data-settings-layout-mode="${mode}"]`);
+    assert.equal(await evaluate(client, `document.querySelector('[data-restore-initial-input]').disabled`), false,
+      `${mode}: the approved initial layout must be available in settings`);
     await click(client, '[data-restore-initial-input]');
     await saveSettings(client);
     previousByMode[mode] = preset.fields;
     const stored = await storedSettings(client);
     assert.deepEqual(stored.voucherColumnsByMode, previousByMode, `${mode}: restoration must affect only the selected voucher`);
-    assert.deepEqual(selectedInputOrder(stored, mode), expectedInputOrder(preset), `${mode}: restored Enter order`);
+    assert.deepEqual(selectedInputOrder(stored, mode, preset), expectedInputOrder(preset), `${mode}: restored Enter order`);
     for (const other of Object.keys(previousByMode).filter(id => id !== mode)) {
-      assert.deepEqual(stored.inputOrderByMode[other], previousStored.inputOrderByMode[other], `${mode}: must preserve ${other} Enter order`);
+      assertOtherInputOrderPreserved(stored.inputOrderByMode[other], previousStored.inputOrderByMode[other], `${mode}: must preserve ${other} Enter order`);
     }
-    assert.deepEqual(coreSettings(stored), coreSettings(originalStored), 'restoration must preserve delivery policy and custom field definitions');
+    assert.deepEqual(coreSettings(stored), coreSettings(originalStored), 'restoration must preserve delivery policy');
+    assertExistingCustomFieldsPreserved(stored, originalStored);
+    if (mode === 'sale') {
+      const date = stored.customFields.find(field => field.id === 'custom.text.02');
+      assert.ok(date, 'sale date must use the first free custom text field');
+      assert.equal(date.label, '날짜');
+      assert.equal(date.valueType, 'TEXT', 'date is user-defined text and must not be converted to a system date');
+      assert.equal(date.initialInputRole, 'sale.date');
+      assert.equal(stored.customFields.length, previousStored.customFields.length + 1,
+        'restoring sale must add only the missing date field');
+    } else {
+      assert.deepEqual(stored.customFields, previousStored.customFields,
+        `${mode}: restoration must not modify custom field definitions`);
+    }
     assert.deepEqual(await rowSnapshot(client), expectedRows, 'restoration must preserve all rows, custom values, header and delivery data');
     await selectMode(client, mode);
     assert.deepEqual(await visibleWorktableColumns(client), preset.fields);
@@ -383,15 +440,66 @@ try {
   await saveSettings(client);
   assert.deepEqual(selectedInputOrder(await storedSettings(client), 'estimate'), expectedInputOrder(presets.estimate), 'initial layout must remain available after user changes');
 
+  await selectMode(client, 'sale');
+  const saleValues = await evaluate(client, `Object.fromEntries(['memo',${JSON.stringify(saleDispatchField)},'saleAmount1','saleMemo3','saleAmount2'].map(id=>[id,document.querySelector('#inputRows [data-row-id="PRESERVE-sale"] [data-field="'+id+'"], #inputRows [data-row-id="PRESERVE-sale"] [data-custom-row-field="'+id+'"]').value]))`);
+  assert.deepEqual(saleValues, { memo: '적요 원문', [saleDispatchField]: '냉장 출고 지시', saleAmount1: '0', saleMemo3: '판매 적요3 구매처', saleAmount2: '-125' },
+    'sale fields must address their independent values, preserving zero and negative amounts');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-row-id="PRESERVE-sale"] [data-custom-row-field="custom.text.02"]').type`), 'text',
+    'the requested sale date must remain an unrestricted custom text input');
+  await evaluate(client, `document.querySelector('#inputRows [data-row-id="PRESERVE-sale"] [data-field="unitPrice"]').focus();true`);
+  for (const field of ['memo', saleDispatchField, 'saleAmount1', 'saleMemo3', 'custom.text.02', 'saleAmount2']) {
+    await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    assert.equal(await evaluate(client, `document.activeElement?.dataset.field||document.activeElement?.dataset.customRowField`), field,
+      `sale Enter must follow the approved order to ${field} and skip calculated supply amount`);
+  }
+  await input(client, '#inputRows [data-row-id="PRESERVE-sale"] [data-custom-row-field="custom.text.02"]', '09/10 오전 (미정)');
+  await input(client, '#inputRows [data-row-id="PRESERVE-sale"] [data-field="saleMemo3"]', '수정한 판매 구매처');
+  await input(client, '#inputRows [data-row-id="PRESERVE-sale"] [data-field="saleAmount1"]', '-27.5');
+  await input(client, '#inputRows [data-row-id="PRESERVE-sale"] [data-field="saleAmount2"]', '0');
+  await expr(client, `(() => {const row=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).modes.sale.rows[0];return row.customValues['custom.text.02']==='09/10 오전 (미정)'&&row.saleMemo3==='수정한 판매 구매처'&&row.saleAmount1===-27.5&&row.saleAmount2===0;})()`,
+    'sale custom text, independent memo and both edited numeric amounts saved');
+  const saleEditedRows = await rowSnapshot(client);
+  for (const mode of ['order', 'purchase', 'estimate']) assert.deepEqual(saleEditedRows[mode], expectedRows[mode],
+    `sale field edits must preserve the complete ${mode} draft`);
+  for (const key of ['header', 'delivery', 'sourceText', 'batches']) assert.deepEqual(saleEditedRows.sale[key], expectedRows.sale[key],
+    `sale field edits must preserve ${key}`);
+  for (const field of ['memo', 'description', 'supplier']) assert.deepEqual(saleEditedRows.sale.rows[0][field], expectedRows.sale.rows[0][field],
+    `editing sale purchase-place must not overwrite ${field}`);
+  assert.equal(saleEditedRows.sale.rows[0].customValues[saleDispatchField], '냉장 출고 지시',
+    'the restored dispatch instruction must keep its existing ERP custom-field storage identity');
+  assert.equal(saleEditedRows.sale.rows[0].customValues['custom.text.01'], '사용자 값 유지',
+    'sale date must never overwrite a previously occupied custom field');
+  expectedRows = saleEditedRows;
+  screenshots.push(await capture(client, 'smartinput-sale-initial-layout.png'));
+
   await openSettings(client);
-  await click(client, '[data-settings-layout-mode="sale"]');
-  assert.equal(await evaluate(client, `document.querySelector('[data-restore-initial-input]').disabled`), true,
-    'Sale restoration must remain disabled until the user confirms its ambiguous mappings');
-  await click(client, '.smart-settings-dialog footer [data-close]');
-  await expr(client, `!document.querySelector('.smart-settings-dialog')`, 'closed sale settings');
+  await input(client, '[data-input-order-field="saleAmount2"]', '8');
+  await saveSettings(client);
+  await navigate('/smartinput/');
+  await expr(client, `Boolean(document.querySelector('#inputRows [data-row-id="PRESERVE-sale"]'))`, 'reloaded sale');
+  await waitForSettingsHydration(client);
+  assert.deepEqual(await visibleWorktableColumns(client), restoredPresets.sale.fields, 'sale layout must survive reload');
+  assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('#inputRows [data-row-id="PRESERVE-sale"]');return {
+    amount1:row.querySelector('[data-field="saleAmount1"]').value,
+    amount2:row.querySelector('[data-field="saleAmount2"]').value,
+    purchasePlace:row.querySelector('[data-field="saleMemo3"]').value,
+    date:row.querySelector('[data-custom-row-field="custom.text.02"]').value
+  };})()`), { amount1: '-27.5', amount2: '0', purchasePlace: '수정한 판매 구매처', date: '09/10 오전 (미정)' },
+  'sale numeric zero, negative amount, independent purchase-place and verbatim date must survive reload');
+  assert.equal((await storedSettings(client)).inputOrderByMode.sale.saleAmount2, 8,
+    'user-edited sale Enter order must survive reload');
+  await openSettings(client);
+  assert.equal(await evaluate(client, `document.querySelector('[data-input-order-field="saleAmount2"]').value`), '8');
+  await click(client, '[data-restore-initial-input]');
+  await saveSettings(client);
   const finalSettings = await storedSettings(client);
-  assert.deepEqual(finalSettings.voucherColumnsByMode.sale, seededSettings.voucherColumnsByMode.sale);
-  assert.deepEqual(finalSettings.inputOrderByMode.sale, originalStored.inputOrderByMode.sale);
+  assert.deepEqual(finalSettings.voucherColumnsByMode.sale, restoredPresets.sale.fields);
+  assert.deepEqual(selectedInputOrder(finalSettings, 'sale', restoredPresets.sale), expectedInputOrder(restoredPresets.sale),
+    'sale initial layout must remain available after user changes');
+  assert.equal(finalSettings.customFields.length, originalStored.customFields.length + 1,
+    'repeated sale restoration must reuse its date field without duplicating it');
+  assertExistingCustomFieldsPreserved(finalSettings, originalStored);
   assert.deepEqual(coreSettings(finalSettings), coreSettings(originalStored));
   assert.deepEqual(await rowSnapshot(client), expectedRows);
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
@@ -401,7 +509,9 @@ try {
     firstUse: true, preservedExistingLayout: true, restoreCancel: true,
     restoredOnlySelectedMode: true, userChangesSurviveReload: true,
     rowsCustomFieldsDeliveryPreserved: true, estimateIndependentValues: estimateValues,
-    estimateEnterNavigation: true, saleRestoreDisabled: true,
+    estimateEnterNavigation: true, saleRestoreEnabled: true,
+    saleIndependentValues: saleValues, saleEnterNavigation: true,
+    saleCustomTextDatePreserved: true, saleOccupiedCustomFieldPreserved: true,
     runtimeExceptions: exceptions.length, settingsViewports, screenshots: screenshots.map(file => basename(file))
   };
   if (evidenceFile) writeFileSync(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`);

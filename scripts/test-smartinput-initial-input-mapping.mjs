@@ -64,8 +64,21 @@ const expected = {
     ['단가', 'unitPrice', 10000], ['공급가', 'supplyAmount', -15000],
     ['간단설명(품위)', 'productDescription', '특품'], ['지시사항', 'memo', '분리 보관'],
     ['출고가 (공지)', 'noticePrice', 12500], ['판매no.', 'rowVoucherNo', 'S-0003']
+  ],
+  sale: [
+    ['품목코드', 'itemCode', '004'], ['품목명', 'itemName', '오이'],
+    ['규격', 'specification', '10kg'], ['수량', 'quantity', 2],
+    ['단가', 'unitPrice', 3000], ['공급가액', 'supplyAmount', 6000],
+    ['적요', 'memo', '판매 적요'], ['출고지시', 'erp.sale.current.line.unmapped_3396a63d', '오후 출고'],
+    ['공지', 'saleAmount1', 0], ['구매처', 'saleMemo3', '직접 기재한 구매처'],
+    ['날짜', 'custom.text.01', '0909 예정'], ['구매', 'saleAmount2', -2500]
   ]
 };
+
+function mappedValue(row, projection, targets) {
+  const target = targets.find(field => field.projectionFieldId === projection && !field.registryField);
+  return target?.custom ? row.customValues[target.id] : row[projection];
+}
 
 function approvedSession(mode, fields, targets, templates = []) {
   const matrix = [
@@ -98,7 +111,7 @@ for (const [mode, fields] of Object.entries(expected)) {
   const rows = projectMappedRows(session, targets);
   assert.equal(rows.length, 1);
   for (const [label, projection, value] of fields) {
-    assert.equal(rows[0][projection], value, `${mode} ${label}: numeric/text values must reach the correct field`);
+    assert.equal(mappedValue(rows[0], projection, targets), value, `${mode} ${label}: numeric/text values must reach the correct field`);
     const expectedTargetId = coreFieldByProjection(mode, projection)?.fieldId
       || (mode === 'estimate' && projection === 'memo2' ? 'erp.estimate.current_line.line.memo_2' : projection);
     assert.equal(targets.find(target => target.projectionFieldId === projection && !target.registryField).id,
@@ -117,7 +130,7 @@ for (const [mode, fields] of Object.entries(expected)) {
     `${mode}: changing display order must not invalidate a saved mapping template`);
   assert.deepEqual(reapplied.mappings.map(mapping => mapping.targetFieldId), savedIds);
   const reloaded = projectMappedRows(reapplied, reorderedTargets)[0];
-  for (const [label, projection, value] of fields) assert.equal(reloaded[projection], value, `${mode} ${label}: saved mapping roundtrip`);
+  for (const [label, projection, value] of fields) assert.equal(mappedValue(reloaded, projection, reorderedTargets), value, `${mode} ${label}: saved mapping roundtrip`);
   context.state.settings = previousSettings;
 }
 
@@ -143,5 +156,18 @@ assert.equal(memo2Targets.length, 1, 'the existing ERP memo2 ID must not appear 
 assert.equal(memo2Targets[0].projectionFieldId, 'memo2');
 assert.equal(memo2Targets[0].custom, false,
   'newly entered memo2 values must use the row property read by the existing estimate exporter');
+
+context.state.settings = contract.normalizeSettings();
+context.state.settings.voucherColumnsByMode.sale.push('supplier');
+const saleTargets = plain(context.inputMappingTargets('sale', { includeRegistry: true }));
+const saleById = new Map(saleTargets.map(field => [field.id, field]));
+const saleMappings = recommendMappings(['공지', '금액1(판매)', '구매처', '적요3(판매)', '구매', '금액2(판매)', '날짜'], saleTargets);
+assert.deepEqual(saleMappings.map(mapping => mapping.state), Array(7).fill(DECISION.RECOMMENDED));
+assert.deepEqual(saleMappings.map(mapping => saleById.get(mapping.targetFieldId).projectionFieldId),
+  ['saleAmount1', 'saleAmount1', 'saleMemo3', 'saleMemo3', 'saleAmount2', 'saleAmount2', 'custom.text.01'],
+  'sale aliases must map to the user-confirmed fields even when master supplier is also enabled');
+assert.equal(saleTargets.filter(field => field.id === 'erp.sale.current.line.unmapped_3396a63d').length, 1,
+  'sale dispatch instructions must reuse the existing editable line identity without a duplicate registry target');
+assert.equal(saleById.get('custom.text.01').valueType, 'TEXT', 'the requested date must remain custom text');
 
 console.log('SmartInput actual mapping targets: approved labels, distinct price/note projections, source preservation, registry deduplication and saved template identities PASS');
