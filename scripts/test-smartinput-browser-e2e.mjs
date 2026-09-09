@@ -249,8 +249,8 @@ try {
     { method: 'voice', label: '음성' }
   ]);
   assert.deepEqual(domBaseline.tableColumns.map(column => column.label), [
-    'No.', '코드', '품명', '규격(기본)', '수량', '단가', '공급가', '간단설명(품위)', '지시사항', '출고가 (공지)', '판매no.'
-  ]);
+    'No.', '품목코드', '품목명', '규격', '수량', '단가', '공급가액', '메모', '적요(직원)', '공지단가'
+  ], 'first-use order mode must show its approved initial field labels and order');
   assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton']);
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
   assert.deepEqual({ fixedColumns: mergedSelectionColumn.fixedColumns, headerHasSelectAll: mergedSelectionColumn.headerHasSelectAll, rowNumber: mergedSelectionColumn.rowNumber, sameCell: mergedSelectionColumn.sameCell }, { fixedColumns: 1, headerHasSelectAll: true, rowNumber: '1', sameCell: true }, 'No. and selection must share one fixed column');

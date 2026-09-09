@@ -150,7 +150,7 @@ try {
   assert.deepEqual(initial.sourceHeader, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(initial.headers, ['품목코드', '품목명', '수량', '원본 메모']);
   assert.deepEqual(initial.states, ['RECOMMENDED', 'RECOMMENDED', 'RECOMMENDED', 'UNDECIDED']);
-  assert.deepEqual(initial.mappingLabels.slice(0, 3), ['하단 정보 > 품목코드', '하단 정보 > 품목명', '하단 정보 > 주문수량'],
+  assert.deepEqual(initial.mappingLabels.slice(0, 3), ['하단 정보 > 품목코드', '하단 정보 > 품목명', '하단 정보 > 수량'],
     'recommended worktable headers must show top/bottom business context instead of the word recommendation');
   assert.equal(initial.mappingLabels.some(label => label.includes('추천')), false);
   assert.equal(initial.sourceBlank, '', 'blank source cells must remain visibly blank');
@@ -161,7 +161,7 @@ try {
   await click(client, '[data-table-view="input"]');
   await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#mappingWorktable').hidden`, 'configured input-column view');
   const inputColumnView = await evaluate(client, `(() => ({headers:[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(node=>node.textContent.trim()),rows:[...document.querySelectorAll('#inputRows tr:not([data-default-row])')].map(row=>({id:row.dataset.rowId,quantity:row.querySelector('[data-field="quantity"]')?.value}))}))()`);
-  assert.ok(inputColumnView.headers.indexOf('규격(기본)') < inputColumnView.headers.indexOf('수량'),
+  assert.ok(inputColumnView.headers.indexOf('규격') >= 0 && inputColumnView.headers.indexOf('규격') < inputColumnView.headers.indexOf('수량'),
     'input view must use configured SmartInput order even when the source puts quantity before specification');
   assert.deepEqual(inputColumnView.rows.map(row => row.quantity), ['0', '-1.5'], 'input view must retain zero and negative values');
   await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
@@ -296,7 +296,7 @@ try {
 
   await click(client, '[data-open-field-mapping="3"]');
   await expr(client, `Boolean(document.querySelector('.field-mapping-dialog[open] [data-mapping-search]'))`, 'applied template direct remapping');
-  await input(client, '.field-mapping-dialog [data-mapping-search]', '적요');
+  await input(client, '.field-mapping-dialog [data-mapping-search]', '메모');
   await click(client, '.field-mapping-dialog [data-mapping-target="voucher.order.line.memo"]');
   assert.equal(await evaluate(client, `document.querySelector('#inputTemplateSaveButton').textContent`), '양식 변경 저장');
   await click(client, '#inputTemplateSaveButton');
@@ -307,7 +307,7 @@ try {
     'a wrong applied mapping must be directly editable and persist as the next template revision');
   const reportByTemplate = await evaluate(client, `(async()=>{window.__templateReport=null;window.XLSX={utils:{book_new:()=>({SheetNames:[],Sheets:{}}),aoa_to_sheet:matrix=>({matrix}),book_append_sheet:(book,sheet,name)=>{book.SheetNames.push(name);book.Sheets[name]=sheet;}},writeFile:(book,fileName)=>{window.__templateReport={matrix:book.Sheets[book.SheetNames[0]].matrix,fileName};}};document.querySelector('#estimateExcelButton').click();await new Promise(resolve=>setTimeout(resolve,50));return window.__templateReport;})()`);
   assert.match(reportByTemplate.fileName, /행사발주 공식 양식/);
-  assert.equal(reportByTemplate.matrix[4].includes('적요'), true,
+  assert.equal(reportByTemplate.matrix[4].includes('메모'), true,
     'the report columns must come from the applied template mapping instead of the common screen-column settings');
 
   await input(client, '[data-mapping-row-id="source-2"] [data-mapping-column="2"] input', '-2.5');

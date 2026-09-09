@@ -275,7 +275,7 @@ try {
   await input(client, '[data-input-order-field="quantity"]', '2');
   const duplicateInsertion = await evaluate(client, `Object.fromEntries(['itemCode','quantity','itemName','specification','unit','brand'].map(id=>[id,document.querySelector('[data-input-order-field="'+id+'"]').value]))`);
   assert.deepEqual(duplicateInsertion, { itemCode: '1', quantity: '2', itemName: '3', specification: '4', unit: '0', brand: '0' });
-  assert.match(await evaluate(client, `document.querySelector('[data-enter-order-preview]').textContent.replace(/\s+/g,' ').trim()`), /1 코드.*2 (?:주문)?수량.*3 품명.*4 규격\(기본\)/);
+  assert.match(await evaluate(client, `document.querySelector('[data-enter-order-preview]').textContent.replace(/\s+/g,' ').trim()`), /1 품목코드.*2 수량.*3 품목명.*4 규격/);
 
   await input(client, '[data-input-order-field="itemName"]', '');
   await click(client, '.smart-settings-dialog [data-save]');

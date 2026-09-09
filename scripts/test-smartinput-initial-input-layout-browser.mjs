@@ -188,6 +188,10 @@ const expectedInputOrder = preset => {
   return Object.fromEntries(preset.fields.map(id => [id, id === 'supplyAmount' ? 0 : ++next]));
 };
 const selectedInputOrder = (settings, mode) => Object.fromEntries(presets[mode].fields.map(id => [id, settings.inputOrderByMode[mode][id]]));
+const waitForSettingsHydration = client => expr(client, `['product','customer'].every(domain=>{
+  const status=document.getElementById(domain+'ReferenceStatus')?.dataset.status;
+  return Boolean(status)&&status!=='LOADING';
+})`, 'settings hydration before completed reference status');
 const selectMode = async (client, mode) => {
   await click(client, `[data-mode="${mode}"]`);
   await expr(client, `document.querySelector('.mode-tab.is-active')?.dataset.mode===${JSON.stringify(mode)}`, `${mode} active`);
@@ -240,6 +244,9 @@ try {
 
   await navigate('/smartinput/');
   await expr(client, `Boolean(document.querySelector('#inputRows tr'))`, 'new empty input table');
+  // Initial rows render synchronously, whereas stored settings hydrate asynchronously.
+  // Reference loading follows that hydration; use its visible state, never a fixed delay.
+  await waitForSettingsHydration(client);
   for (const [mode, preset] of Object.entries(presets)) {
     await selectMode(client, mode);
     assert.deepEqual(await visibleWorktableColumns(client), preset.fields, `${mode}: first use must apply the approved initial column order`);
@@ -266,6 +273,8 @@ try {
   })()`);
   await navigate('/smartinput/');
   await expr(client, `Boolean(document.querySelector('#inputRows [data-row-id="PRESERVE-order"]'))`, 'seeded draft');
+  await waitForSettingsHydration(client);
+  await expr(client, `JSON.stringify([...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(element=>element.dataset.column))===${JSON.stringify(JSON.stringify(seededSettings.voucherColumnsByMode.order))}`, 'seeded saved column order applied');
   assert.deepEqual(await visibleWorktableColumns(client), seededSettings.voucherColumnsByMode.order,
     'existing saved layout must never be silently replaced by the new initial layout');
   for(const mode of ['purchase', 'sale', 'estimate', 'order']) await selectMode(client, mode);
@@ -356,9 +365,11 @@ try {
   assert.equal(changed.inputOrderByMode.estimate.memo2, 6);
   await navigate('/smartinput/');
   await expr(client, `Boolean(document.querySelector('#inputRows [data-row-id="PRESERVE-estimate"]'))`, 'reloaded estimate');
+  await waitForSettingsHydration(client);
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-row-id="PRESERVE-estimate"] [data-field="memo2"]').value`), '수정한 두 번째 적요', 'memo2 edits must survive reload');
   assert.equal((await storedSettings(client)).inputOrderByMode.estimate.memo2, 6, 'user changes must persist across reload');
   await openSettings(client);
+  assert.equal(await evaluate(client, `document.querySelector('[data-input-order-field="memo2"]').value`), '6', 'reloaded user Enter order must be active in the settings UI');
   await click(client, '[data-restore-initial-input]');
   await saveSettings(client);
   assert.deepEqual(selectedInputOrder(await storedSettings(client), 'estimate'), expectedInputOrder(presets.estimate), 'initial layout must remain available after user changes');
