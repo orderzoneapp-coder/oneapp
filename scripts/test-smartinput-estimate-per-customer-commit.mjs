@@ -40,6 +40,7 @@ distribution.forEach((count, customerIndex) => {
     rows.push({
       rowId,
       sourceRowNo: sourceIndex + 1,
+      rowCustomerCode: `CUST-${customerIndex + 1}`,
       rowCustomerName: customerName,
       masterProductId: `PRODUCT-${customerIndex + 1}-${itemIndex + 1}`,
       itemCode,
@@ -93,7 +94,7 @@ const session = {
 const troubledRows = structuredClone(rows);
 troubledRows.find(row => row.rowCustomerName === '거래처 2').matchStatus = 'SIMILAR';
 troubledRows.find(row => row.rowCustomerName === '거래처 3').reviewStatus = 'PENDING';
-troubledRows.push({ rowId: 'customer-only-4', sourceRowNo: 999, rowCustomerName: '거래처 4' });
+troubledRows.push({ rowId: 'customer-only-4', sourceRowNo: 999, rowCustomerCode: 'CUST-4', rowCustomerName: '거래처 4' });
 troubledRows.push({ rowId: 'item-only', sourceRowNo: 1000, masterProductId: 'ORPHAN-PRODUCT', itemCode: 'ORPHAN', itemName: '거래처 없는 품목', matchStatus: 'MATCHED', reviewStatus: 'CONFIRMED', productIdentityStatus: 'MASTER_LINKED' });
 
 const classified = classifyEstimateBulkRows(troubledRows);
@@ -110,6 +111,7 @@ assert.ok(classified.groups.find(group => group.groupType === 'UNASSIGNED').issu
 const estimates = distribution.map((unused, index) => ({
   estimateId: `EST-${index + 1}`,
   estimateKind: 'INDIVIDUAL',
+  customerCode: `CUST-${index + 1}`,
   customerName: `거래처 ${index + 1}`,
   catalogName: `기존 견적 ${index + 1}`,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -212,12 +214,13 @@ assert.equal(created.draft.delivery.status, 'SAVED');
 
 const appSource = readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');
 const sequentialBoundary = appSource.slice(appSource.indexOf('async function applyEstimatePerCustomerUpdates'), appSource.indexOf('function showEstimateBulkUpdateDialog'));
-assert.match(sequentialBoundary, /for \(const entry of plan\.entries\)/, '정상 전표는 거래처별로 순차 처리해야 한다.');
-assert.match(sequentialBoundary, /commitEstimateBundle\(\{ upserts: \[record\], expectedPreimages \}\)/, '한 commit에는 한 거래처 record와 그 preimage만 들어가야 한다.');
-assert.match(sequentialBoundary, /catch \(error\)[\s\S]*results\.push\(\{ groupId: entry\.groupId, status: 'FAILED'/, '한 거래처 실패를 기록하고 다음 거래처 처리를 계속해야 한다.');
+assert.match(sequentialBoundary, /createEstimateBulkConnectedComponents/, '연동 원본을 공유하는 전표는 연결 묶음으로 계획해야 한다.');
+assert.match(sequentialBoundary, /for \(const component of components\)/, '연결 묶음은 순차 처리해 관계없는 묶음을 계속 진행해야 한다.');
+assert.match(sequentialBoundary, /commitEstimateLinkBundle\(\{[\s\S]*estimateUpserts:[\s\S]*aliasUpserts/, '견적서·연동견적서·매칭사전은 같은 commit으로 저장해야 한다.');
+assert.match(sequentialBoundary, /component\.forEach\(entry => \{[\s\S]*status: 'FAILED'/, '한 연결 묶음 실패를 기록하고 다음 묶음을 계속해야 한다.');
 assert.doesNotMatch(sequentialBoundary, /모든 대상 견적서|하나의 트랜잭션/, '폐기된 전체 묶음 성공·실패 표현이 남으면 안 된다.');
-assert.match(appSource, /rememberEstimateBulkTargetMatches\(currentPlan, applied\.results\)/,
-  '성공한 거래처별 대상은 다음 파일에서 재사용할 매칭사전으로 저장해야 한다.');
+assert.match(sequentialBoundary, /createEstimateBulkTargetMatch\(entry, target, timestamp\)/,
+  '성공한 거래처별 대상 매핑은 같은 연결 묶음 저장에 포함해야 한다.');
 assert.match(appSource, /mapping\.mappingType !== ESTIMATE_BULK_TARGET_MATCH_TYPE/,
   '견적서 매칭사전은 일반 주문 거래처 별칭 해석에서 제외해야 한다.');
 

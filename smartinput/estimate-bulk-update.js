@@ -1,4 +1,4 @@
-import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-edit.js?v=0.1.1';
+import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-edit.js?v=0.1.2';
 
 const text = value => String(value ?? '').trim();
 const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
@@ -155,8 +155,7 @@ function estimateIdentity(record = {}) {
 function autoTargetCandidates(group, records) {
   const stages = [
     ['CUSTOMER_ID', group.customerId, record => estimateIdentity(record).customerId],
-    ['CUSTOMER_CODE', group.customerCode, record => estimateIdentity(record).customerCode],
-    ['CUSTOMER_NAME', group.normalizedCustomerName, record => normalizeEstimateBulkCustomerName(estimateIdentity(record).customerName)]
+    ['CUSTOMER_CODE', group.customerCode, record => estimateIdentity(record).customerCode]
   ];
   for (const [method, sourceValue, valueForRecord] of stages) {
     if (!sourceValue) continue;
@@ -166,32 +165,43 @@ function autoTargetCandidates(group, records) {
   return { method: '', candidates: [] };
 }
 
+function normalizedNameTargetCandidates(group, records) {
+  const sourceValue = normalizeEstimateBulkMatchName(group.customerName);
+  if (!sourceValue) return [];
+  return records.filter(record => normalizeEstimateBulkMatchName(estimateIdentity(record).customerName) === sourceValue);
+}
+
 function rememberedTargetCandidates(group, records, matchMappings, companyId) {
   const contextKey = estimateBulkTargetMatchContextKey(companyId);
-  if (!contextKey) return { method: '', candidates: [], ambiguous: false };
+  if (!contextKey) return { method: '', candidates: [], ambiguous: false, missingTargetIds: [] };
   const recordsById = new Map(records.map(record => [text(record.estimateId), record]));
   const scoped = (Array.isArray(matchMappings) ? matchMappings : [])
     .filter(mapping => mapping?.mappingType === ESTIMATE_BULK_TARGET_MATCH_TYPE)
-    .filter(mapping => mapping.status === 'CONFIRMED' && mapping.contextKey === contextKey)
-    .filter(mapping => recordsById.has(text(mapping.targetEstimateId)));
+    .filter(mapping => mapping.status === 'CONFIRMED' && mapping.contextKey === contextKey);
+  const confirmedNameMapping = mapping => {
+    const identityType = text(mapping.sourceIdentityType).toUpperCase();
+    if (identityType && identityType !== 'NORMALIZED_NAME') return false;
+    return Boolean(text(mapping.confirmedBy) && text(mapping.confirmedAt));
+  };
   const stages = [
-    ['MATCH_DICTIONARY_CUSTOMER_ID', group.customerId, mapping => text(mapping.sourceCustomerId)],
-    ['MATCH_DICTIONARY_CUSTOMER_CODE', group.customerCode, mapping => text(mapping.sourceCustomerCode)],
-    ['MATCH_DICTIONARY_NAME', normalizeEstimateBulkMatchName(group.customerName), mapping => normalizeEstimateBulkMatchName(mapping.normalizedName || mapping.sourceCustomerName || mapping.rawOrdererName)],
-    ['MATCH_DICTIONARY_GROUP', group.groupId, mapping => text(mapping.matchKey)]
+    ['MATCH_DICTIONARY_CUSTOMER_ID', group.customerId, mapping => text(mapping.sourceCustomerId), () => true],
+    ['MATCH_DICTIONARY_CUSTOMER_CODE', group.customerCode, mapping => text(mapping.sourceCustomerCode), () => true],
+    ['MATCH_DICTIONARY_NAME', group.customerId || group.customerCode ? '' : normalizeEstimateBulkMatchName(group.customerName), mapping => normalizeEstimateBulkMatchName(mapping.normalizedName || mapping.sourceCustomerName || mapping.rawOrdererName), confirmedNameMapping]
   ];
-  for (const [method, sourceValue, valueForMapping] of stages) {
+  for (const [method, sourceValue, valueForMapping, eligible] of stages) {
     if (!sourceValue) continue;
-    const targetIds = [...new Set(scoped.filter(mapping => valueForMapping(mapping) === sourceValue)
+    const targetIds = [...new Set(scoped.filter(mapping => eligible(mapping) && valueForMapping(mapping) === sourceValue)
       .map(mapping => text(mapping.targetEstimateId)).filter(Boolean))];
     if (!targetIds.length) continue;
+    const missingTargetIds = targetIds.filter(targetId => !recordsById.has(targetId));
     return {
       method,
       candidates: targetIds.map(targetId => recordsById.get(targetId)).filter(Boolean),
-      ambiguous: targetIds.length > 1
+      ambiguous: targetIds.length > 1,
+      missingTargetIds
     };
   }
-  return { method: '', candidates: [], ambiguous: false };
+  return { method: '', candidates: [], ambiguous: false, missingTargetIds: [] };
 }
 
 export function resolveEstimateBulkTargets({ groups = [], estimates = [], selections = {}, matchMappings = [], companyId = '' } = {}) {
@@ -203,6 +213,7 @@ export function resolveEstimateBulkTargets({ groups = [], estimates = [], select
     const hasManualSelection = Object.prototype.hasOwnProperty.call(selections || {}, group.groupId);
     const remembered = rememberedTargetCandidates(group, individualRecords, matchMappings, companyId);
     const auto = autoTargetCandidates(group, individualRecords);
+    const nameCandidates = normalizedNameTargetCandidates(group, individualRecords);
     let targetEstimateId = '';
     let matchMethod = remembered.method || auto.method;
     if (hasManualSelection) {
@@ -223,8 +234,15 @@ export function resolveEstimateBulkTargets({ groups = [], estimates = [], select
         issues.push({ code: 'ESTIMATE_BULK_LINKED_TARGET_FORBIDDEN', groupId: group.groupId, targetEstimateId, message: '연동견적서는 일괄 업데이트 대상으로 선택할 수 없습니다.' });
         targetEstimateId = '';
       }
-    } else if (remembered.candidates.length === 1 && !remembered.ambiguous) {
+    } else if (remembered.candidates.length === 1 && !remembered.ambiguous && !remembered.missingTargetIds.length) {
       targetEstimateId = text(remembered.candidates[0].estimateId);
+    } else if (remembered.missingTargetIds.length) {
+      issues.push({
+        code: 'ESTIMATE_BULK_MATCH_TARGET_MISSING',
+        groupId: group.groupId,
+        targetEstimateIds: remembered.missingTargetIds,
+        message: `${group.customerName || group.customerCode || group.customerId}의 기존 매핑 대상 견적서가 삭제되었습니다.`
+      });
     } else if (remembered.ambiguous) {
       issues.push({
         code: 'ESTIMATE_BULK_MATCH_DICTIONARY_AMBIGUOUS',
@@ -243,9 +261,12 @@ export function resolveEstimateBulkTargets({ groups = [], estimates = [], select
       });
     } else {
       issues.push({
-        code: 'ESTIMATE_BULK_TARGET_UNRESOLVED',
+        code: nameCandidates.length ? 'ESTIMATE_BULK_NAME_CONFIRMATION_REQUIRED' : 'ESTIMATE_BULK_TARGET_UNRESOLVED',
         groupId: group.groupId,
-        message: `${group.customerName || group.customerCode || group.customerId}에 정확히 일치하는 기존 견적서가 없습니다.`
+        candidateEstimateIds: nameCandidates.map(record => text(record.estimateId)),
+        message: nameCandidates.length
+          ? `${group.customerName || group.customerCode || group.customerId}와 이름이 같은 견적서를 확인하세요.`
+          : `${group.customerName || group.customerCode || group.customerId}에 정확히 일치하는 기존 견적서가 없습니다.`
       });
     }
     return {
@@ -254,7 +275,7 @@ export function resolveEstimateBulkTargets({ groups = [], estimates = [], select
       targetEstimateId,
       target: targetEstimateId ? recordsById.get(targetEstimateId) || null : null,
       matchMethod,
-      candidateEstimateIds: auto.candidates.map(record => text(record.estimateId))
+      candidateEstimateIds: [...new Set([...auto.candidates, ...nameCandidates].map(record => text(record.estimateId)))]
     };
   });
   const assignmentsByTarget = new Map();
@@ -369,6 +390,176 @@ export function splitEstimateBulkInputMapping({ session, rows = [] } = {}) {
   return { session: nextSession, rows: mappedRows, rowIdMap: Object.fromEntries(rowIdMap) };
 }
 
+function normalizeItemIdentity(value) {
+  return text(value).normalize('NFKC').toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
+}
+
+function itemIdentityKey(row, kind) {
+  if (kind === 'MASTER_PRODUCT') {
+    const value = normalizeItemIdentity(row?.masterProductId || row?.productId);
+    return value ? `MASTER:${value}` : '';
+  }
+  if (kind === 'ITEM_CODE') {
+    const value = normalizeItemIdentity(row?.itemCode);
+    return value ? `CODE:${value}` : '';
+  }
+  const name = normalizeItemIdentity(row?.itemName);
+  if (!name) return '';
+  return `NAME:${name}|${normalizeItemIdentity(row?.specification)}|${normalizeItemIdentity(row?.unit)}`;
+}
+
+function higherItemIdentitiesCompatible(incoming, existing, kind) {
+  if (kind === 'MASTER_PRODUCT') return true;
+  const incomingMaster = itemIdentityKey(incoming, 'MASTER_PRODUCT');
+  const existingMaster = itemIdentityKey(existing, 'MASTER_PRODUCT');
+  if (incomingMaster && existingMaster && incomingMaster !== existingMaster) return false;
+  if (kind === 'ITEM_CODE') return true;
+  const incomingCode = itemIdentityKey(incoming, 'ITEM_CODE');
+  const existingCode = itemIdentityKey(existing, 'ITEM_CODE');
+  return !(incomingCode && existingCode && incomingCode !== existingCode);
+}
+
+function remapSplitRowIds(split, nextIdsByOldId) {
+  const next = clone(split);
+  next.rows = next.rows.map(row => ({ ...row, rowId: nextIdsByOldId.get(text(row.rowId)) || text(row.rowId) }));
+  next.session.workingRows = (next.session.workingRows || []).map(row => ({
+    ...row,
+    rowId: nextIdsByOldId.get(text(row.rowId)) || text(row.rowId)
+  }));
+  next.session.manualRows = (next.session.manualRows || []).map(row => ({
+    ...row,
+    rowId: nextIdsByOldId.get(text(row.rowId)) || text(row.rowId)
+  }));
+  next.rowIdMap = Object.fromEntries([
+    ...Object.entries(next.rowIdMap || {}).map(([sourceId, splitId]) => [sourceId, nextIdsByOldId.get(text(splitId)) || text(splitId)])
+  ]);
+  return next;
+}
+
+export function reconcileEstimateBulkRows({ targetRows = [], split, groupId = '' } = {}) {
+  if (!split?.session || !Array.isArray(split?.rows)) throw new Error('ESTIMATE_BULK_RECONCILE_SPLIT_REQUIRED');
+  const incoming = split.rows.map(row => clone(row));
+  const existing = (Array.isArray(targetRows) ? targetRows : []).map(row => clone(row));
+  const matchedIncoming = new Map();
+  const matchedExisting = new Set();
+  const blockedIncoming = new Set();
+  const issues = [];
+  const matchMethods = new Map();
+
+  for (const kind of ['MASTER_PRODUCT', 'ITEM_CODE', 'NAME_SPEC_UNIT']) {
+    const incomingBuckets = new Map();
+    const existingBuckets = new Map();
+    incoming.forEach((row, index) => {
+      if (matchedIncoming.has(index) || blockedIncoming.has(index)) return;
+      const key = itemIdentityKey(row, kind);
+      if (key) incomingBuckets.set(key, [...(incomingBuckets.get(key) || []), index]);
+    });
+    existing.forEach((row, index) => {
+      if (matchedExisting.has(index)) return;
+      const key = itemIdentityKey(row, kind);
+      if (key) existingBuckets.set(key, [...(existingBuckets.get(key) || []), index]);
+    });
+    incomingBuckets.forEach((incomingIndexes, key) => {
+      const existingIndexes = existingBuckets.get(key) || [];
+      if (!existingIndexes.length) return;
+      const candidateMap = new Map(incomingIndexes.map(incomingIndex => [incomingIndex,
+        existingIndexes.filter(existingIndex => higherItemIdentitiesCompatible(incoming[incomingIndex], existing[existingIndex], kind))
+      ]));
+      const candidateUseCount = new Map();
+      candidateMap.forEach(candidates => candidates.forEach(existingIndex =>
+        candidateUseCount.set(existingIndex, Number(candidateUseCount.get(existingIndex) || 0) + 1)));
+      incomingIndexes.forEach(incomingIndex => {
+        const candidates = candidateMap.get(incomingIndex) || [];
+        if (!candidates.length) return;
+        if (candidates.length === 1 && candidateUseCount.get(candidates[0]) === 1) {
+          matchedIncoming.set(incomingIndex, candidates[0]);
+          matchedExisting.add(candidates[0]);
+          matchMethods.set(incomingIndex, kind);
+          return;
+        }
+        blockedIncoming.add(incomingIndex);
+        issues.push({
+          code: 'ESTIMATE_BULK_ROW_MATCH_AMBIGUOUS',
+          groupId: text(groupId),
+          matchMethod: kind,
+          sourceRowIds: [text(incoming[incomingIndex].rowId)],
+          candidateRowIds: candidates.map(index => text(existing[index].rowId)),
+          message: `${incoming[incomingIndex]?.itemName || incoming[incomingIndex]?.itemCode || '품목'}의 기존 행이 여러 개이거나 1:1로 연결되지 않습니다.`
+        });
+      });
+    });
+  }
+
+  incoming.forEach((row, index) => {
+    if (matchedIncoming.has(index) || blockedIncoming.has(index)) return;
+    const identified = ['MASTER_PRODUCT', 'ITEM_CODE', 'NAME_SPEC_UNIT'].some(kind => itemIdentityKey(row, kind));
+    if (identified) return;
+    blockedIncoming.add(index);
+    issues.push({
+      code: 'ESTIMATE_BULK_ITEM_IDENTITY_REQUIRED',
+      groupId: text(groupId),
+      rowId: text(row.rowId),
+      message: '신규 품목을 자동 추가하려면 상품 ID, 품목코드 또는 품명·규격·단위 식별값이 필요합니다.'
+    });
+  });
+
+  const oldIds = new Set(existing.map(row => text(row.rowId)).filter(Boolean));
+  const usedIds = new Set();
+  const nextIdsByOldId = new Map();
+  incoming.forEach((row, index) => {
+    const splitRowId = text(row.rowId);
+    const existingIndex = matchedIncoming.get(index);
+    if (existingIndex !== undefined) {
+      const retainedId = text(existing[existingIndex].rowId);
+      if (!retainedId || usedIds.has(retainedId)) {
+        blockedIncoming.add(index);
+        issues.push({
+          code: 'ESTIMATE_BULK_ROW_ID_COLLISION',
+          groupId: text(groupId),
+          rowId: splitRowId,
+          message: `${row.itemName || row.itemCode || '품목'}의 기존 행 ID를 안전하게 유지할 수 없습니다.`
+        });
+        return;
+      }
+      usedIds.add(retainedId);
+      nextIdsByOldId.set(splitRowId, retainedId);
+      return;
+    }
+    if (blockedIncoming.has(index)) return;
+    const seed = stableFingerprint('SIROW-BULK', {
+      groupId: text(groupId),
+      sourceRowId: splitRowId,
+      productId: text(row.masterProductId || row.productId),
+      itemCode: text(row.itemCode),
+      itemName: text(row.itemName),
+      specification: text(row.specification),
+      unit: text(row.unit)
+    });
+    let nextId = seed;
+    let suffix = 2;
+    while (oldIds.has(nextId) || usedIds.has(nextId)) {
+      nextId = `${seed}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(nextId);
+    nextIdsByOldId.set(splitRowId, nextId);
+  });
+
+  const reconciled = remapSplitRowIds(split, nextIdsByOldId);
+  return {
+    split: reconciled,
+    issues,
+    retainedRowCount: matchedIncoming.size,
+    addedRowCount: incoming.length - matchedIncoming.size - blockedIncoming.size,
+    removedRowIds: existing.filter((unused, index) => !matchedExisting.has(index)).map(row => text(row.rowId)).filter(Boolean),
+    rowMatches: incoming.flatMap((row, index) => matchedIncoming.has(index) ? [{
+      sourceRowId: text(row.rowId),
+      targetRowId: text(existing[matchedIncoming.get(index)].rowId),
+      matchMethod: matchMethods.get(index)
+    }] : [])
+  };
+}
+
 export function createEstimateBulkReplacementRecord({
   target,
   replacementDraft,
@@ -439,6 +630,42 @@ export function inspectEstimateBulkWorkingCopyConflicts({ targetEstimateIds = []
     }
     return [];
   });
+}
+
+export function createEstimateBulkConnectedComponents({ entries = [], estimates = [] } = {}) {
+  const candidates = (entries || []).filter(entry => entry?.groupId);
+  const parent = new Map(candidates.map(entry => [entry.groupId, entry.groupId]));
+  const find = value => {
+    let root = value;
+    while (parent.get(root) !== root) root = parent.get(root);
+    let cursor = value;
+    while (parent.get(cursor) !== cursor) {
+      const next = parent.get(cursor);
+      parent.set(cursor, root);
+      cursor = next;
+    }
+    return root;
+  };
+  const union = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
+  };
+  const entryByTarget = new Map(candidates
+    .filter(entry => text(entry.targetEstimateId))
+    .map(entry => [text(entry.targetEstimateId), entry]));
+  (estimates || []).filter(record => record?.estimateKind === 'LINKED_GROUP').forEach(linked => {
+    const connected = (linked.linkedEstimateSources || [])
+      .map(source => entryByTarget.get(text(source.estimateId)))
+      .filter(Boolean);
+    connected.slice(1).forEach(entry => union(connected[0].groupId, entry.groupId));
+  });
+  const groups = new Map();
+  candidates.forEach(entry => {
+    const root = find(entry.groupId);
+    groups.set(root, [...(groups.get(root) || []), entry]);
+  });
+  return [...groups.values()];
 }
 
 export const ESTIMATE_BULK_GROUP_STATUS = Object.freeze({
@@ -532,12 +759,22 @@ function normalizeDecision(selection, previousEntry, group, individualRecords, m
   }
   if (group.groupType === 'UNASSIGNED') return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: '' };
   const remembered = rememberedTargetCandidates(group, individualRecords, matchMappings, companyId);
-  if (remembered.candidates.length === 1 && !remembered.ambiguous) {
+  if (remembered.candidates.length === 1 && !remembered.ambiguous && !remembered.missingTargetIds.length) {
     return { action: 'UPDATE', targetEstimateId: text(remembered.candidates[0].estimateId), catalogName: '', matchMethod: remembered.method };
   }
   const auto = autoTargetCandidates(group, individualRecords);
-  if (!remembered.ambiguous && auto.candidates.length === 1) return { action: 'UPDATE', targetEstimateId: text(auto.candidates[0].estimateId), catalogName: '', matchMethod: auto.method };
-  return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: remembered.method, auto, remembered };
+  if (!remembered.ambiguous && !remembered.missingTargetIds.length && auto.candidates.length === 1) {
+    return { action: 'UPDATE', targetEstimateId: text(auto.candidates[0].estimateId), catalogName: '', matchMethod: auto.method };
+  }
+  return {
+    action: 'NONE',
+    targetEstimateId: '',
+    catalogName: '',
+    matchMethod: remembered.method,
+    auto,
+    remembered,
+    nameCandidates: normalizedNameTargetCandidates(group, individualRecords)
+  };
 }
 
 function decisionFingerprint(decision) {
@@ -628,8 +865,26 @@ function issueForDecision(decision, group, recordsById, individualRecords) {
     return decision.catalogName ? [] : [{ code: 'ESTIMATE_BULK_CREATE_NAME_REQUIRED', groupId: group.groupId, message: `${label}의 새 견적서 이름을 입력하세요.` }];
   }
   if (decision.action !== 'UPDATE') {
+    if (decision.remembered?.missingTargetIds?.length) return [{
+      code: 'ESTIMATE_BULK_MATCH_TARGET_MISSING',
+      groupId: group.groupId,
+      targetEstimateIds: decision.remembered.missingTargetIds,
+      message: `${label}의 기존 매핑 대상 견적서가 삭제되었습니다.`
+    }];
+    if (decision.remembered?.ambiguous) return [{
+      code: 'ESTIMATE_BULK_MATCH_DICTIONARY_AMBIGUOUS',
+      groupId: group.groupId,
+      candidateEstimateIds: decision.remembered.candidates.map(record => text(record.estimateId)),
+      message: `${label}의 매칭사전에 서로 다른 대상이 있습니다.`
+    }];
     const auto = decision.auto || autoTargetCandidates(group, individualRecords);
     if (auto.candidates.length > 1) return [{ code: 'ESTIMATE_BULK_TARGET_AMBIGUOUS', groupId: group.groupId, candidateEstimateIds: auto.candidates.map(record => text(record.estimateId)), message: `${label}에 정확히 일치하는 견적서가 여러 개입니다.` }];
+    if (decision.nameCandidates?.length) return [{
+      code: 'ESTIMATE_BULK_NAME_CONFIRMATION_REQUIRED',
+      groupId: group.groupId,
+      candidateEstimateIds: decision.nameCandidates.map(record => text(record.estimateId)),
+      message: `${label}와 이름이 같은 견적서를 확인하세요. 한 번 확인하면 다음 업데이트부터 자동 연결됩니다.`
+    }];
     return [{ code: 'ESTIMATE_BULK_TARGET_UNRESOLVED', groupId: group.groupId, message: `${label}의 기존 견적서를 선택하거나 새 견적서를 명시적으로 등록하세요.` }];
   }
   const target = recordsById.get(decision.targetEstimateId);
@@ -670,9 +925,23 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
     const previousEntry = previousGroups[group.groupId]?.groupFingerprint === fingerprint ? previousGroups[group.groupId] : null;
     const selection = Object.prototype.hasOwnProperty.call(selections || {}, group.groupId) ? selections[group.groupId] : undefined;
     const decision = normalizeDecision(selection, previousEntry, group, individualRecords, matchMappings, companyId);
-    const issues = [...groupReviewIssues(group), ...issueForDecision(decision, group, recordsById, individualRecords)];
+    const target = decision.action === 'UPDATE' ? recordsById.get(decision.targetEstimateId) || null : null;
+    let rowReconciliation = null;
+    if (target && split) {
+      rowReconciliation = reconcileEstimateBulkRows({
+        targetRows: target.draft?.rows || [],
+        split,
+        groupId: group.groupId
+      });
+      split = rowReconciliation.split;
+    }
+    const issues = [
+      ...groupReviewIssues(group),
+      ...issueForDecision(decision, group, recordsById, individualRecords),
+      ...(rowReconciliation?.issues || [])
+    ];
     if (splitIssue) issues.push(splitIssue);
-    return { group, groupId: group.groupId, split, groupFingerprint: fingerprint, previousEntry, decision, issues };
+    return { group, groupId: group.groupId, split, rowReconciliation, groupFingerprint: fingerprint, previousEntry, decision, issues };
   });
 
   const targetGroups = new Map();
@@ -735,6 +1004,26 @@ export function createEstimatePerCustomerPlan({ classification, estimates = [], 
       status,
       candidate
     };
+  });
+  createEstimateBulkConnectedComponents({ entries, estimates: allRecords }).forEach((component, componentIndex) => {
+    const componentId = `COMPONENT-${componentIndex + 1}`;
+    component.forEach(entry => { entry.connectedComponentId = componentId; });
+    if (component.length < 2) return;
+    const blocker = component.find(entry => [ESTIMATE_BULK_GROUP_STATUS.PENDING, ESTIMATE_BULK_GROUP_STATUS.FAILED].includes(entry.status));
+    if (!blocker) return;
+    component.forEach(entry => {
+      if (![ESTIMATE_BULK_GROUP_STATUS.READY, ESTIMATE_BULK_GROUP_STATUS.FAILED].includes(entry.status) || entry.groupId === blocker.groupId) return;
+      const issue = {
+        code: 'ESTIMATE_BULK_CONNECTED_COMPONENT_PENDING',
+        groupId: entry.groupId,
+        blockingGroupId: blocker.groupId,
+        message: `${blocker.group?.customerName || '연결된 견적서'} 확인이 끝나면 이 연결 묶음도 함께 처리됩니다.`
+      };
+      entry.issues.push(issue);
+      entry.firstIssue = issue;
+      entry.status = ESTIMATE_BULK_GROUP_STATUS.PENDING;
+      entry.candidate = null;
+    });
   });
   return { schemaVersion: PROGRESS_SCHEMA_VERSION, fileFingerprint, entries, summary: planSummary(entries) };
 }

@@ -450,6 +450,56 @@ export function restoreLinkedEstimateWorkingRowEdits({ materializedRows = [], wo
   });
 }
 
+export function rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord } = {}) {
+  if (!baselineDraft || !workingDraft || rebuiltRecord?.estimateKind !== 'LINKED_GROUP' || !rebuiltRecord.draft) {
+    throw new Error('LINKED_ESTIMATE_WORKING_REBASE_INPUT_REQUIRED');
+  }
+  const baselineByRefs = new Map((baselineDraft.rows || []).map(row => [linkedRefSignature(row), row]).filter(([signature]) => signature));
+  const rebuiltByRefs = new Map((rebuiltRecord.draft.rows || []).map(row => [linkedRefSignature(row), row]).filter(([signature]) => signature));
+  const conflicts = [];
+  (workingDraft.rows || []).forEach(workingRow => {
+    const signature = linkedRefSignature(workingRow);
+    if (!signature) return;
+    const baselineRow = baselineByRefs.get(signature);
+    const rebuiltRow = rebuiltByRefs.get(signature);
+    if (!baselineRow || !rebuiltRow) return;
+    const editedFields = [...new Set([
+      ...Object.entries(workingRow.editedFields || {}).filter(([, edited]) => edited).map(([field]) => field),
+      ...(workingRow.linkedSyncFields || [])
+    ])].filter(field => LINKED_ESTIMATE_SOURCE_EDIT_FIELDS.includes(field));
+    editedFields.forEach(field => {
+      const workingChanged = !same(workingRow[field], baselineRow[field]);
+      const sourceChanged = !same(rebuiltRow[field], baselineRow[field]);
+      const converged = same(workingRow[field], rebuiltRow[field]);
+      if (workingChanged && sourceChanged && !converged) {
+        conflicts.push({
+          code: 'LINKED_ESTIMATE_WORKING_REBASE_CONFLICT',
+          rowId: text(workingRow.rowId),
+          field,
+          sourceRefs: normalizedSourceRefs(workingRow),
+          baselineValue: clone(baselineRow[field]),
+          workingValue: clone(workingRow[field]),
+          sourceValue: clone(rebuiltRow[field]),
+          message: `${workingRow.itemName || workingRow.itemCode || '품목'}의 ${LINKED_ESTIMATE_FIELD_LABELS[field] || field} 값이 원본과 작업본에서 모두 변경되었습니다.`
+        });
+      }
+    });
+  });
+  if (conflicts.length) return { draft: null, conflicts };
+  const draft = clone(rebuiltRecord.draft);
+  draft.rows = restoreLinkedEstimateWorkingRowEdits({
+    materializedRows: draft.rows || [],
+    workingRows: workingDraft.rows || []
+  });
+  const manualById = new Map((workingDraft.rows || [])
+    .filter(row => !linkedRefSignature(row) && meaningfulRow(row))
+    .map(row => [text(row.rowId), clone(row)]));
+  draft.rows = draft.rows.map(row => manualById.get(text(row.rowId)) || row);
+  const presentIds = new Set(draft.rows.map(row => text(row.rowId)));
+  manualById.forEach((row, rowId) => { if (!presentIds.has(rowId)) draft.rows.push(row); });
+  return { draft, conflicts: [] };
+}
+
 function updateTrackedField(row, field, workingRow) {
   const suffixByField = {
     itemCode: '.line.productCode', itemName: '.line.productName', specification: '.line.specification',
@@ -558,6 +608,48 @@ export function removeLinkedEstimateSources({ linkedRecord, sourceRecords = [], 
   const timestamp = text(occurredAt) || new Date().toISOString();
   target.updatedAt = timestamp;
   target.draft.updatedAt = timestamp;
+  updateSummary(target);
+  return target;
+}
+
+export function rebuildLinkedEstimateRecord({ linkedRecord, sourceRecords = [], occurredAt, operationId = '' } = {}) {
+  if (linkedRecord?.estimateKind !== 'LINKED_GROUP') throw new Error('LINKED_ESTIMATE_RECORD_REQUIRED');
+  const timestamp = text(occurredAt) || new Date().toISOString();
+  const recordsById = new Map((sourceRecords || [])
+    .filter(record => record?.estimateId && record.estimateKind !== 'LINKED_GROUP')
+    .map(record => [text(record.estimateId), record]));
+  const missingSourceIds = (linkedRecord.linkedEstimateSources || [])
+    .map(source => text(source.estimateId))
+    .filter(estimateId => estimateId && !recordsById.has(estimateId));
+  if (missingSourceIds.length) {
+    const error = new Error(`연동견적서 원본 ${missingSourceIds.length}개를 찾을 수 없습니다.`);
+    error.code = 'LINKED_ESTIMATE_SOURCE_MISSING';
+    error.missingSourceIds = missingSourceIds;
+    throw error;
+  }
+  const target = clone(linkedRecord);
+  target.linkedEstimateSources = (target.linkedEstimateSources || []).map(source => {
+    const record = recordsById.get(text(source.estimateId));
+    return {
+      ...source,
+      catalogName: recordTitle(record),
+      updatedAt: text(record.updatedAt)
+    };
+  });
+  target.draft ||= { rows: [] };
+  target.draft.linkedEstimateSources = target.linkedEstimateSources.map(clone);
+  target.draft.rows = materializeLinkedRows(target, recordsById);
+  target.updatedAt = timestamp;
+  target.draft.updatedAt = timestamp;
+  const audit = {
+    schemaVersion: 'ONEAPP_SMARTINPUT_ESTIMATE_LINK_SYNC_V1',
+    operationId: text(operationId),
+    action: 'AUTO_REBUILD_FROM_SOURCES',
+    sourceEstimateIds: target.linkedEstimateSources.map(source => text(source.estimateId)),
+    occurredAt: timestamp
+  };
+  target.estimateLinkHistory = [...(target.estimateLinkHistory || []), audit];
+  target.draft.estimateLinkHistory = [...(target.draft.estimateLinkHistory || []), clone(audit)];
   updateSummary(target);
   return target;
 }

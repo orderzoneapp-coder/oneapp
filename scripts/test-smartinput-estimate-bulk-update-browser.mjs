@@ -144,10 +144,10 @@ try {
     const template={schemaVersion:'ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2',templateId:'BULK-TEMPLATE',companyId:'ONEAPP',voucherMode:'estimate',templateName:'견적서 현황',revision:1,signature,headerSignature,headers,fieldCount:headers.length,mappings,createdAt:'2026-09-01T00:00:00.000Z',updatedAt:'2026-09-01T00:00:00.000Z',status:'ACTIVE'};
     const makeField=(address,value)=>({currentDisplayValue:String(value??''),sourceDisplayValue:String(value??''),parsedValue:value,edited:false,evidence:{address,rowIndex:Number(address.match(/\d+/)[0])-1,columnIndex:letters.indexOf(address[0]),displayValue:String(value??''),signature:'CELL-EVIDENCE'}});
     const currentRows=[
-      contract.normalizeRow({rowId:'source-2',sourceRowNo:3,rowVoucherDate:'2026-09-04',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'A 상품 0',quantity:0,unitPrice:100,memo:'',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C3','SHARED'),'voucher.estimate.line.quantity':makeField('E3',0)}}),
-      contract.normalizeRow({rowId:'source-3',sourceRowNo:4,rowVoucherDate:'2026-09-04',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-A2',productId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',quantity:2,unitPrice:500,memo:'내부 빈 셀 보존',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C4','A-2')}}),
-      contract.normalizeRow({rowId:'source-4',sourceRowNo:5,rowVoucherDate:'2026-09-04',rowCustomerName:'거래처 B',itemCode:'B-CHECK',itemName:'B 확인 품목',quantity:-2,unitPrice:300,memo:'확인 필요',matchStatus:'SIMILAR',reviewStatus:'PENDING',productIdentityStatus:'UNRESOLVED',fieldValues:{'voucher.estimate.line.productCode':makeField('C5','B-CHECK'),'voucher.estimate.line.quantity':makeField('E5',-2)}}),
-      contract.normalizeRow({rowId:'source-5',sourceRowNo:6,rowVoucherDate:'2026-09-04',rowCustomerName:'거래처 C',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'C 정상 품목',quantity:1,unitPrice:700,memo:'정상',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C6','SHARED')}}),
+      contract.normalizeRow({rowId:'source-2',sourceRowNo:3,rowVoucherDate:'2026-09-04',rowCustomerCode:'A001',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'A 상품 0',quantity:0,unitPrice:100,memo:'',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C3','SHARED'),'voucher.estimate.line.quantity':makeField('E3',0)}}),
+      contract.normalizeRow({rowId:'source-3',sourceRowNo:4,rowVoucherDate:'2026-09-04',rowCustomerCode:'A001',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-A2',productId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',quantity:2,unitPrice:500,memo:'내부 빈 셀 보존',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C4','A-2')}}),
+      contract.normalizeRow({rowId:'source-4',sourceRowNo:5,rowVoucherDate:'2026-09-04',rowCustomerCode:'B001',rowCustomerName:'거래처 B',itemCode:'B-CHECK',itemName:'B 확인 품목',quantity:-2,unitPrice:300,memo:'확인 필요',matchStatus:'SIMILAR',reviewStatus:'PENDING',productIdentityStatus:'UNRESOLVED',fieldValues:{'voucher.estimate.line.productCode':makeField('C5','B-CHECK'),'voucher.estimate.line.quantity':makeField('E5',-2)}}),
+      contract.normalizeRow({rowId:'source-5',sourceRowNo:6,rowVoucherDate:'2026-09-04',rowCustomerCode:'C001',rowCustomerName:'거래처 C',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'C 정상 품목',quantity:1,unitPrice:700,memo:'정상',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C6','SHARED')}}),
       contract.normalizeRow({rowId:'source-6',sourceRowNo:7,rowVoucherDate:'2026-09-04 14:30:00'})
     ];
     const targetDraft=(customerId,customerCode,customerName,rowId,itemCode,quantity,unitPrice)=>contract.normalizeModeDraft('estimate',{...contract.createDraft().modes.estimate,header:{...contract.createDraft().modes.estimate.header,customerId,customerCode,customerName,customValues:{preserve:'yes'}},rows:[contract.normalizeRow({rowId,itemCode,itemName:'기존 상품',quantity,unitPrice,noticePrice:unitPrice})]});
@@ -156,7 +156,8 @@ try {
     const targetB={estimateId:'EST-BULK-B',catalogName:'B 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-B',customerCode:'B001',customerName:'거래처 B',rowCount:1,amount:80,previousPrices:{},sortOrder:2,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-B','B001','거래처 B','OLD-B','OLD-B',1,80)};
     const targetC={estimateId:'EST-BULK-C',catalogName:'C 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-C',customerCode:'C001',customerName:'거래처 C',rowCount:1,amount:70,previousPrices:{},sortOrder:3,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-C','C001','거래처 C','OLD-C','OLD-C',1,70)};
     const untouched={estimateId:'EST-UNTOUCHED',catalogName:'미대상 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-X',customerName:'미대상',rowCount:1,amount:90,sortOrder:4,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-X','X001','미대상','OLD-X','OLD-X',1,90)};
-    const linked={estimateId:'EST-LINKED',catalogName:'연동 견적',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A',catalogName:'A 기존 견적'},{estimateId:'EST-BULK-B',catalogName:'B 기존 견적'},{estimateId:'EST-BULK-C',catalogName:'C 기존 견적'}],rowCount:0,amount:0,sortOrder:5,createdAt:timestamp,updatedAt:timestamp,draft:contract.normalizeModeDraft('estimate',{...contract.createDraft().modes.estimate,estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-BULK-B'},{estimateId:'EST-BULK-C'}],rows:[]})};
+    const linked={estimateId:'EST-LINKED',catalogName:'연동 견적',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A',catalogName:'A 기존 견적'},{estimateId:'EST-UNTOUCHED',catalogName:'미대상 견적'}],rowCount:0,amount:0,sortOrder:5,createdAt:timestamp,updatedAt:timestamp,draft:contract.normalizeModeDraft('estimate',{...contract.createDraft().modes.estimate,estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-UNTOUCHED'}],rows:[]})};
+    const linkedSecond={...structuredClone(linked),estimateId:'EST-LINKED-2',catalogName:'두 번째 연동 견적',sortOrder:6};
     localStorage.setItem('merchMaster_v870',JSON.stringify([
       {productId:'PRODUCT-SHARED',masterProductId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'공용 상품',outPrice:100,status:'ACTIVE',active:true},
       {productId:'PRODUCT-A2',masterProductId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',outPrice:500,status:'ACTIVE',active:true}
@@ -167,9 +168,10 @@ try {
       {productId:'PRODUCT-A2',masterProductId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',outPrice:500,priceOptions:[{key:'outPrice',label:'출고가',value:500}],status:'ACTIVE',active:true,source:'PRODUCT_MASTER_SNAPSHOT',revision:1}
     ];
     const productSnapshot={cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',domain:'product',ownerAppId:'master-lookup',schemaVersion:'ONEAPP_PRODUCT_SNAPSHOT_V1',adapterVersion:'BULK-E2E',status:'READY',source:'BULK_E2E_FIXTURE',fallback:false,count:productRows.length,revision:'BULK-E2E-1',snapshotId:'PRODUCT-BULK-E2E-1',contentHash:'BULK-E2E-HASH',snapshotCreatedAt:timestamp,checkedAt:timestamp,rows:productRows};
-    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction(['estimates','inputTemplatesV2','settings'],'readwrite');tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve()};[targetA,targetB,targetC,untouched,linked].forEach(record=>tx.objectStore('estimates').put(record));tx.objectStore('inputTemplatesV2').put(template);tx.objectStore('settings').put({key:'reference:product',value:{cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',applied:productSnapshot,pending:null,updatedAt:timestamp},updatedAt:timestamp});};});
+    const aliasFor=(suffix,name,targetEstimateId)=>({aliasMappingId:'SIEMATCH-'+suffix,schemaVersion:'ONEAPP_SMARTINPUT_ESTIMATE_BULK_TARGET_MATCH_V1',mappingType:'ESTIMATE_BULK_TARGET',companyId:'ONEAPP',contextKey:'ESTIMATE_BULK_TARGET:ONEAPP',matchKey:'NAME:'+name.toLocaleLowerCase('ko-KR'),sourceCustomerId:'',sourceCustomerCode:'',sourceCustomerName:name,normalizedName:name.toLocaleLowerCase('ko-KR'),sourceIdentityType:'NORMALIZED_NAME',targetEstimateId,status:'CONFIRMED',confirmedBy:'ADMIN',confirmedAt:timestamp,updatedAt:timestamp});
+    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction(['estimates','customerAliasMappings','inputTemplatesV2','settings'],'readwrite');tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve()};[targetA,targetB,targetC,untouched,linked,linkedSecond].forEach(record=>tx.objectStore('estimates').put(record));[aliasFor('A','거래처 A','EST-BULK-A'),aliasFor('B','거래처 B','EST-BULK-B'),aliasFor('C','거래처 C','EST-BULK-C')].forEach(record=>tx.objectStore('customerAliasMappings').put(record));tx.objectStore('inputTemplatesV2').put(template);tx.objectStore('settings').put({key:'reference:product',value:{cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',applied:productSnapshot,pending:null,updatedAt:timestamp},updatedAt:timestamp});};});
     base.activeMode='estimate';
-    base.modes.estimate={...base.modes.estimate,activeMethod:'excel',catalogRecordId:'EST-LINKED',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-BULK-B'},{estimateId:'EST-BULK-C'}],inputMapping:session,rows:currentRows,sourceText:sourceMatrix.map(row=>row.join('\t')).join('\n')};
+    base.modes.estimate={...base.modes.estimate,activeMethod:'excel',catalogRecordId:'EST-LINKED',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-UNTOUCHED'}],inputMapping:session,rows:currentRows,sourceText:sourceMatrix.map(row=>row.join('\t')).join('\n')};
     localStorage.setItem(contract.DRAFT_STORAGE_KEY,JSON.stringify(base));
     return true;
   })()`);
@@ -231,7 +233,7 @@ try {
         && button.left >= 0 && button.right <= geometry.viewportWidth
         && button.top >= geometry.footerTop && button.bottom <= geometry.footerBottom + 1),
       `${viewport.width}px ${theme} 하단 버튼명과 전체 버튼 영역이 viewport 안에 보여야 한다.`);
-      assert.match(geometry.text, /정상 전표만 거래처별로 독립 저장/);
+      assert.match(geometry.text, /정확히 연결된 전표는 자동 처리/);
       assert.match(geometry.text, /전체 3/);
       assert.match(geometry.text, /확인 필요 1/);
       matrix.push({ viewport: viewport.width, theme, width: geometry.width, height: geometry.height, bodyScrollHeight: geometry.bodyScrollHeight, bodyClientHeight: geometry.bodyClientHeight });
@@ -352,7 +354,16 @@ try {
   assert.deepEqual(targetA.previousPrices, { 'CODE:OLD-A': 50 });
   assert.equal(targetA.draft.catalogBaselinePrices['MASTER:PRODUCT-SHARED'], 100);
   assert.deepEqual(after.find(record => record.estimateId === 'EST-UNTOUCHED'), before.find(record => record.estimateId === 'EST-UNTOUCHED'));
-  assert.deepEqual(after.find(record => record.estimateId === 'EST-LINKED'), before.find(record => record.estimateId === 'EST-LINKED'));
+  const rebuiltLinked = after.find(record => record.estimateId === 'EST-LINKED');
+  assert.notEqual(rebuiltLinked.updatedAt, before.find(record => record.estimateId === 'EST-LINKED').updatedAt,
+    '원본 A 업데이트는 관련 연동견적서를 같은 연결 묶음에서 자동 재구성해야 한다.');
+  assert.deepEqual(rebuiltLinked.draft.rows.map(row => row.itemCode), ['SHARED', 'A-2', 'OLD-X']);
+  assert.deepEqual(rebuiltLinked.draft.rows[0].linkedSourceRefs.map(ref => [ref.estimateId, ref.rowId]),
+    [['EST-BULK-A', targetA.draft.rows[0].rowId]]);
+  const rebuiltLinkedSecond = after.find(record => record.estimateId === 'EST-LINKED-2');
+  assert.notEqual(rebuiltLinkedSecond.updatedAt, before.find(record => record.estimateId === 'EST-LINKED-2').updatedAt,
+    '같은 원본을 참조하는 여러 연동견적서를 모두 자동 재구성해야 한다.');
+  assert.deepEqual(rebuiltLinkedSecond.draft.rows.map(row => row.itemCode), ['SHARED', 'A-2', 'OLD-X']);
   const rememberedTargets = (await readAliasMappings(client))
     .filter(mapping => mapping.mappingType === 'ESTIMATE_BULK_TARGET' && mapping.status === 'CONFIRMED')
     .sort((left, right) => left.sourceCustomerName.localeCompare(right.sourceCustomerName, 'ko'));

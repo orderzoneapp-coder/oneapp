@@ -1206,8 +1206,8 @@ try {
   await wait(500);
   await click(client, '#completeButton');
   await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')`, 'individual estimate explicit save completion');
-  assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /저장 완료.*연결 1개/, 'fixed estimate status must report linked usage without rewriting stored linked estimates');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.includes('반영 1건')`), false, 'individual save must not bypass the linked-source owner boundary');
+  assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /저장 완료.*연결 1개.*반영 1건/, '개별 견적서 저장은 연결 사용량과 자동 재구성 건수를 함께 보고해야 한다.');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.includes('반영 1건')`), true, '개별 견적서 저장은 관련 연동견적서를 같은 저장 묶음에서 자동 재구성해야 한다.');
   await click(client, '#estimateLibraryLinkedButton');
   await expr(client, `!document.querySelector('#linkedEstimateList').hidden&&Boolean(document.querySelector('#linkedEstimateList [data-select-estimate-card]'))`, 'linked estimate list');
   await click(client, '#linkedEstimateList [data-select-estimate-card]');
