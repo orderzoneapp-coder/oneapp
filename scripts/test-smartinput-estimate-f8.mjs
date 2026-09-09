@@ -14,6 +14,11 @@ import {
   ESTIMATE_F8_HEADERS
 } from '../smartinput/estimate-output.js';
 import { buildEstimateF8DraftPlan } from '../smartinput/estimate-f8-source-plan.js';
+import {
+  applyEstimateF8PartialRecovery,
+  createEstimateF8IndependentCopy,
+  inspectEstimateF8Integrity
+} from '../smartinput/estimate-f8-recovery.js';
 import { splitEstimateBulkInputMapping } from '../smartinput/estimate-bulk-update.js';
 
 const ERP_SOURCE_HEADERS = [
@@ -266,6 +271,100 @@ assert.equal(missingLinkedSourcePlan.ok, false, '연결 개별 원본이 하나�
 assert.match(missingLinkedSourcePlan.error, /EST-MISSING/);
 assert.deepEqual(missingLinkedSourcePlan.entries, []);
 assert.deepEqual(missingLinkedSourcePlan.validationDrafts, []);
+
+const missingLinkedRecord = missingLinkedSourcePlan.ok ? null : {
+  estimateId: 'LINKED-MISSING',
+  catalogName: '누락 연결 견적서',
+  estimateKind: 'LINKED_GROUP',
+  linkedEstimateSources: [{ estimateId: 'EST-A', catalogName: '원본 A' }, { estimateId: 'EST-MISSING', catalogName: '삭제 원본' }],
+  amount: 2200,
+  updatedAt: '2026-09-10T01:00:00.000Z',
+  draft: {
+    catalogRecordId: 'LINKED-MISSING',
+    estimateKind: 'LINKED_GROUP',
+    linkedEstimateSources: [{ estimateId: 'EST-A', catalogName: '원본 A' }, { estimateId: 'EST-MISSING', catalogName: '삭제 원본' }],
+    rows: [
+      linkedWorkingRow('EST-A'),
+      linkedWorkingRow('EST-MISSING'),
+      { rowId: 'MANUAL-1', itemCode: 'MANUAL', itemName: '수기 보존 품목', quantity: 1, unitPrice: 900, inputOwnership: 'USER' }
+    ]
+  }
+};
+const partialIntegrity = inspectEstimateF8Integrity({ record: missingLinkedRecord, allRecords: individualRecords });
+assert.equal(partialIntegrity.status, 'PARTIAL_MISSING');
+assert.deepEqual(partialIntegrity.missingSourceIds, ['EST-MISSING']);
+assert.equal(partialIntegrity.removedRows.length, 1);
+assert.equal(partialIntegrity.manualRows.length, 1);
+assert.match(partialIntegrity.impactFingerprint, /^F8I-/);
+
+const partialRecovered = applyEstimateF8PartialRecovery({
+  linkedRecord: missingLinkedRecord,
+  allRecords: individualRecords,
+  diagnosis: partialIntegrity,
+  operationId: 'SIF8REC-1',
+  actorId: 'ADMIN',
+  occurredAt: '2026-09-10T02:00:00.000Z'
+});
+assert.deepEqual(partialRecovered.linkedEstimateSources.map(source => source.estimateId), ['EST-A']);
+assert.equal(partialRecovered.draft.rows.some(row => row.itemCode === 'MANUAL'), true,
+  '일부 누락 자동 정리는 원본 참조가 없는 수기 행을 보존해야 한다.');
+assert.equal(partialRecovered.draft.rows.some(row => row.linkedSourceEstimateId === 'EST-MISSING'), false);
+assert.equal(partialRecovered.estimateAutomationHistory.at(-1).operationId, 'SIF8REC-1');
+assert.equal(inspectEstimateF8Integrity({
+  record: partialRecovered,
+  allRecords: [partialRecovered, ...individualRecords]
+}).status, 'READY', '일부 누락 정리 postimage는 F8 재검사에서 READY여야 한다.');
+
+const rowMissingRecord = structuredClone(linkedRecord);
+rowMissingRecord.estimateId = 'LINKED-ROW-MISSING';
+rowMissingRecord.catalogName = '행 누락 연동';
+rowMissingRecord.draft.catalogRecordId = rowMissingRecord.estimateId;
+rowMissingRecord.draft.rows[0].linkedSourceRowId = 'DELETED-ROW';
+rowMissingRecord.draft.rows[0].linkedSourceRefs = [{ estimateId: 'EST-A', rowId: 'DELETED-ROW' }];
+const rowMissingIntegrity = inspectEstimateF8Integrity({ record: rowMissingRecord, allRecords: individualRecords });
+assert.equal(rowMissingIntegrity.status, 'PARTIAL_MISSING', '원본 레코드가 있어도 참조 행이 사라지면 일부 누락이어야 한다.');
+assert.deepEqual(rowMissingIntegrity.missingSourceIds, []);
+assert.equal(rowMissingIntegrity.missingRowRefs[0].rowId, 'DELETED-ROW');
+
+const allMissingRecord = structuredClone(missingLinkedRecord);
+allMissingRecord.estimateId = 'LINKED-ALL-MISSING';
+allMissingRecord.catalogName = '전체 누락 연동';
+allMissingRecord.linkedEstimateSources = [{ estimateId: 'GONE-A', catalogName: '삭제 A' }, { estimateId: 'GONE-B', catalogName: '삭제 B' }];
+allMissingRecord.draft.catalogRecordId = allMissingRecord.estimateId;
+allMissingRecord.draft.linkedEstimateSources = structuredClone(allMissingRecord.linkedEstimateSources);
+allMissingRecord.draft.rows = [
+  { ...linkedWorkingRow('GONE-A'), rowId: 'LINKED:GONE-A:ERP-1' },
+  { ...linkedWorkingRow('GONE-B'), rowId: 'LINKED:GONE-B:ERP-1' }
+];
+const allMissingIntegrity = inspectEstimateF8Integrity({ record: allMissingRecord, allRecords: [] });
+assert.equal(allMissingIntegrity.status, 'ALL_MISSING');
+assert.deepEqual(allMissingIntegrity.missingSourceIds, ['GONE-A', 'GONE-B']);
+const independentCopy = createEstimateF8IndependentCopy({
+  linkedRecord: allMissingRecord,
+  diagnosis: allMissingIntegrity,
+  estimateId: 'SIEST-RECOVERED',
+  catalogName: '전체 누락 연동 독립 복구 사본',
+  sortOrder: 9,
+  operationId: 'SIF8REC-2',
+  actorId: 'ADMIN',
+  occurredAt: '2026-09-10T03:00:00.000Z'
+});
+assert.equal(independentCopy.estimateKind, 'INDIVIDUAL');
+assert.equal(independentCopy.draft.estimateKind, 'INDIVIDUAL');
+assert.deepEqual(independentCopy.linkedEstimateSources, []);
+assert.equal(independentCopy.draft.rows.every(row => !('linkedSourceRefs' in row) && !('linkedSourceEstimateId' in row)), true);
+assert.equal(independentCopy.recoveryOrigin.type, 'LINKED_SNAPSHOT_WITHOUT_SOURCES');
+assert.equal(independentCopy.recoveryOrigin.sourceLinkedEstimateId, 'LINKED-ALL-MISSING');
+assert.equal(independentCopy.estimateAutomationHistory.at(-1).operationId, 'SIF8REC-2');
+assert.equal(allMissingRecord.estimateKind, 'LINKED_GROUP', '독립 사본 생성은 원본 stale 연동견적서를 변경하면 안 된다.');
+const independentPlan = buildEstimateF8DraftPlan({ selectedRecords: [independentCopy], individualRecords: [independentCopy] });
+assert.equal(independentPlan.ok, true, '독립 복구 사본은 저장 직후 DIRECT F8 출력이 가능해야 한다.');
+
+const changedAvailableSource = structuredClone(individualRecords[0]);
+changedAvailableSource.draft.rows[0].itemName = '동시 변경된 최신 품목';
+const changedImpact = inspectEstimateF8Integrity({ record: missingLinkedRecord, allRecords: [changedAvailableSource] });
+assert.notEqual(changedImpact.impactFingerprint, partialIntegrity.impactFingerprint,
+  '확인 뒤 유지될 원본 값이 달라지면 기존 관리자 확인 지문을 재사용하면 안 된다.');
 
 const compositionMismatchPlan = buildEstimateF8DraftPlan({
   creation: { selectedIds: ['EST-A', 'EST-B'] },

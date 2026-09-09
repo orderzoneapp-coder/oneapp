@@ -85,6 +85,11 @@ import {
 import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
+  applyEstimateF8PartialRecovery,
+  createEstimateF8IndependentCopy,
+  inspectEstimateF8Integrity
+} from './estimate-f8-recovery.js?v=0.1.0';
+import {
   chooseEstimateWorkbookCandidate,
   inspectEstimateWorkbookCandidate,
   isEstimateWorkbookItemRow
@@ -4012,6 +4017,11 @@ function estimateSaveImpact(record) {
     : individualEstimateLinkCount(record.estimateId);
 }
 
+function estimateF8Integrity(record, records = state.estimates) {
+  if (record?.estimateKind !== 'LINKED_GROUP') return null;
+  return inspectEstimateF8Integrity({ record, allRecords: records });
+}
+
 function estimateRecordsForKind(kind = state.estimateLibraryKind) {
   return kind === 'linked' ? linkedEstimateRecords() : individualEstimateRecords();
 }
@@ -4395,8 +4405,14 @@ function estimateCardMarkup(record) {
   const linked = record.estimateKind === 'LINKED_GROUP';
   const linkedCount = linked ? (record.linkedEstimateSources?.length || 0) : individualEstimateLinkCount(record.estimateId);
   const linkedBadge = linkedCount ? `<em class="linked-estimate-badge">연동 ${linkedCount}</em>` : '';
-  return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="${linked ? 'LINKED_GROUP' : 'INDIVIDUAL'}" data-estimate-id="${esc(record.estimateId)}">
-    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(estimateTitle(record))} · ${estimateMultiSelectActive() ? (selected ? '다중 선택 해제' : '다중 선택') : '견적서 열기'}">${selectionOrder >= 0 ? `<b class="estimate-card__selection-order" aria-label="${selectionOrder + 1}번째 선택">${selectionOrder + 1}</b>` : ''}<strong>${esc(estimateTitle(record))}${linkedBadge}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+  const integrity = linked ? estimateF8Integrity(record) : null;
+  const missingCount = (integrity?.missingSourceIds?.length || 0) + (integrity?.missingRowRefs?.length || 0);
+  const integrityBadge = ['PARTIAL_MISSING', 'ALL_MISSING'].includes(integrity?.status)
+    ? `<em class="linked-estimate-integrity-badge">${integrity.missingSourceIds.length ? `원본 ${integrity.missingSourceIds.length}개 누락` : `행 연결 ${missingCount}건 누락`}</em>`
+    : '';
+  const cardTitle = `${estimateTitle(record)} · ${integrityBadge ? '연결 확인 필요 · ' : ''}${estimateMultiSelectActive() ? (selected ? '다중 선택 해제' : '다중 선택') : '견적서 열기'}`;
+  return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="${linked ? 'LINKED_GROUP' : 'INDIVIDUAL'}" data-estimate-id="${esc(record.estimateId)}" data-integrity-status="${esc(integrity?.status || 'READY')}">
+    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(cardTitle)}">${selectionOrder >= 0 ? `<b class="estimate-card__selection-order" aria-label="${selectionOrder + 1}번째 선택">${selectionOrder + 1}</b>` : ''}<strong>${esc(estimateTitle(record))}${linkedBadge}${integrityBadge}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
     <button class="estimate-card__drag-handle" type="button" draggable="true" data-estimate-drag-handle aria-label="${esc(estimateTitle(record))} 순서 이동" title="끌어서 순서 이동"><span aria-hidden="true">⠿</span></button>
   </article>`;
 }
@@ -5032,7 +5048,10 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
   saveDraftNow();
   renderMode();
   if (record.estimateKind === 'LINKED_GROUP') {
-    $('customerHint').textContent = '연동견적서는 각 개별 견적서의 거래처를 유지합니다.';
+    const integrity = estimateF8Integrity(record);
+    $('customerHint').textContent = ['PARTIAL_MISSING', 'ALL_MISSING'].includes(integrity?.status)
+      ? `연결된 원본 일부를 확인할 수 없습니다. 보고서 출력 전에 영향 확인 후 자동 정리할 수 있습니다. (${integrity.missingSourceIds.length}개 원본 · ${integrity.missingRowRefs.length}개 행 참조)`
+      : '연동견적서는 각 개별 견적서의 거래처를 유지합니다.';
   } else if (catalogDraft.header.customerId) {
     $('customerHint').textContent = '견적서에 연결된 배송 거래처가 자동 지정되었습니다.';
   }
@@ -8015,6 +8034,289 @@ function merchOpsEstimateOutputConfig() {
   };
 }
 
+function estimateF8RecoveryTargets(selectedRecords = selectedEstimateRecords(), currentDraft = modeDraft()) {
+  if (selectedRecords.length) return selectedRecords;
+  const currentId = String(currentDraft?.catalogRecordId || '').trim();
+  const record = currentId ? state.estimates.find(item => item.estimateId === currentId) : null;
+  return record ? [record] : [];
+}
+
+function estimateF8RecoveryRowLabel(row = {}) {
+  return String(row.itemName || row.itemCode || row.rowId || '품목').trim();
+}
+
+function estimateF8RecoveryList(items = [], renderItem, emptyText) {
+  if (!items.length) return `<li class="is-empty">${esc(emptyText)}</li>`;
+  const visible = items.slice(0, 8);
+  return `${visible.map(renderItem).join('')}${items.length > visible.length ? `<li>외 ${items.length - visible.length}건</li>` : ''}`;
+}
+
+function estimateF8RecoveryIssueMarkup(diagnosis, index, total) {
+  const allMissing = diagnosis.status === 'ALL_MISSING';
+  const sourceCounts = estimateF8RecoveryList(
+    diagnosis.sourceReferenceCounts,
+    source => `<li><strong>${esc(source.estimateName || source.estimateId)}</strong><span>${esc(source.estimateId)} · 참조 행 ${Number(source.referencedRowCount || 0)}개${source.customerName ? ` · ${esc(source.customerName)}` : ''}</span></li>`,
+    '저장된 원본 참조가 없습니다.'
+  );
+  const removedRows = estimateF8RecoveryList(
+    diagnosis.removedRows,
+    row => `<li><strong>${esc(estimateF8RecoveryRowLabel(row))}</strong><span>${esc(row.itemCode || '')}</span></li>`,
+    '완전히 제거되는 저장 행은 없습니다.'
+  );
+  return `<div class="estimate-f8-recovery-progress"><strong>확인 필요 ${index + 1}/${total}</strong><span>${esc(diagnosis.targetEstimateName || diagnosis.targetEstimateId)}</span></div>
+    <div class="estimate-f8-recovery-body" data-recovery-mode="${allMissing ? 'ALL_MISSING' : 'PARTIAL_MISSING'}">
+      <section class="estimate-f8-recovery-alert">
+        <strong>${allMissing ? '연결된 원본을 모두 찾을 수 없습니다.' : '끊어진 연결을 자동 정리할 수 있습니다.'}</strong>
+        <p>${esc(diagnosis.message)}</p>
+        <code>${esc(diagnosis.missingSourceIds.join(', ') || diagnosis.missingRowRefs.map(ref => `${ref.estimateId}:${ref.rowId}`).join(', '))}</code>
+      </section>
+      ${allMissing ? `<section class="estimate-f8-recovery-warning"><strong>독립 복구 사본 안내</strong><p>중복 품목은 저장 당시 대표값만 남아 원본별 값은 복원되지 않을 수 있습니다.</p></section>` : ''}
+      <div class="estimate-f8-recovery-metrics">
+        <span><small>누락 원본</small><strong>${diagnosis.missingSourceIds.length}개</strong></span>
+        <span><small>누락 행 참조</small><strong>${diagnosis.missingRowRefs.length}건</strong></span>
+        <span><small>${allMissing ? '저장 Snapshot' : '정리 후 품목'}</small><strong>${allMissing ? diagnosis.snapshotRowCount : diagnosis.keptRows.length}개</strong></span>
+        <span><small>보존 수기 행</small><strong>${diagnosis.manualRows.length}개</strong></span>
+      </div>
+      <div class="estimate-f8-recovery-columns">
+        <section><h3>${allMissing ? '원본별 Snapshot 참조' : '누락 연결로 제거될 품목'}</h3><ul>${allMissing ? sourceCounts : removedRows}</ul></section>
+        <section><h3>${allMissing ? '저장 정보' : '자동 처리 결과'}</h3><ul>
+          ${allMissing
+            ? `<li><strong>품목 ${diagnosis.snapshotRowCount}개</strong><span>금액 ${Number(diagnosis.snapshotAmount || 0).toLocaleString('ko-KR')}원</span></li><li><strong>마지막 저장</strong><span>${esc(formatEstimateDate(diagnosis.snapshotUpdatedAt))}</span></li>`
+            : `<li><strong>정상 원본 ${diagnosis.availableSourceIds.length}개 유지</strong><span>최신 저장값으로 다시 구성</span></li><li><strong>수기 행 ${diagnosis.manualRows.length}개 유지</strong><span>저장된 연동 편집값은 재적용하지 않음</span></li>`}
+        </ul></section>
+      </div>
+    </div>`;
+}
+
+function showEstimateF8RecoveryDialog(diagnoses = []) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'smart-dialog estimate-f8-recovery-dialog';
+    dialog.innerHTML = `<div class="smart-dialog__shell">
+      <header><div><small>F8 INTEGRITY REVIEW</small><h2>연결 무결성 확인</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
+      <p class="smart-dialog__message">정상 견적서는 그대로 처리했습니다. 결과가 달라질 수 있는 연동견적서만 한 번씩 확인하면 저장과 F8 출력을 자동으로 이어갑니다.</p>
+      <div data-recovery-issue></div>
+      <footer><small data-recovery-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-recovery-confirm></button></footer>
+    </div>`;
+    document.body.appendChild(dialog);
+    let index = 0;
+    const decisions = [];
+    const finish = value => {
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+    const renderIssue = () => {
+      const diagnosis = diagnoses[index];
+      dialog.querySelector('[data-recovery-issue]').innerHTML = estimateF8RecoveryIssueMarkup(diagnosis, index, diagnoses.length);
+      dialog.querySelector('[data-recovery-status]').textContent = `${diagnoses.length}건 중 ${index + 1}건 확인`;
+      const primary = dialog.querySelector('[data-recovery-confirm]');
+      const last = index === diagnoses.length - 1;
+      primary.textContent = diagnosis.status === 'ALL_MISSING'
+        ? `독립 복구 사본으로 저장${last ? '·출력' : ' 후 다음'}`
+        : `자동 정리${last ? ' 후 F8 계속' : ' 후 다음'}`;
+      window.setTimeout(() => primary.focus({ preventScroll: true }), 0);
+    };
+    dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => finish(null)));
+    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+    dialog.querySelector('[data-recovery-confirm]').addEventListener('click', () => {
+      const diagnosis = diagnoses[index];
+      decisions.push({
+        targetEstimateId: diagnosis.targetEstimateId,
+        action: diagnosis.status === 'ALL_MISSING' ? 'CREATE_INDEPENDENT_COPY' : 'REMOVE_MISSING_LINKS_AND_REBUILD',
+        impactFingerprint: diagnosis.impactFingerprint
+      });
+      index += 1;
+      if (index >= diagnoses.length) finish(decisions);
+      else renderIssue();
+    });
+    renderIssue();
+    dialog.showModal();
+  });
+}
+
+function estimateF8IndependentCopyName(record, records = []) {
+  const base = `${estimateTitle(record)} 독립 복구 사본`;
+  const names = new Set(records.map(item => estimateTitle(item)));
+  if (!names.has(base)) return base;
+  let suffix = 2;
+  while (names.has(`${base} ${suffix}`)) suffix += 1;
+  return `${base} ${suffix}`;
+}
+
+function estimateF8MissingDiagnoses(records, allRecords) {
+  return records
+    .filter(record => record?.estimateKind === 'LINKED_GROUP')
+    .map(record => inspectEstimateF8Integrity({ record, allRecords }))
+    .filter(diagnosis => ['PARTIAL_MISSING', 'ALL_MISSING', 'INVALID'].includes(diagnosis.status));
+}
+
+function estimateF8WorkingRebase(updatedRecord) {
+  const workingDraft = state.estimateWorkingCopies.get(updatedRecord.estimateId);
+  if (!workingDraft) return null;
+  const storedRecord = state.estimates.find(item => item.estimateId === updatedRecord.estimateId);
+  const baselineDraft = state.estimateWorkingCopyBaselines.get(updatedRecord.estimateId) || storedRecord?.draft;
+  if (!baselineDraft || linkedEstimateWorkingDraftsEquivalent(baselineDraft, workingDraft)) return null;
+  const rebuiltRefs = new Set((updatedRecord.draft?.rows || []).flatMap(row => (row.linkedSourceRefs || [])
+    .map(ref => `${String(ref?.estimateId || '').trim()}:${String(ref?.rowId || '').trim()}`)));
+  const removedEditedRow = (workingDraft.rows || []).find(row => {
+    const edited = Object.values(row.editedFields || {}).some(Boolean) || (row.linkedSyncFields || []).length;
+    if (!edited) return false;
+    const refs = (row.linkedSourceRefs || []).length
+      ? row.linkedSourceRefs
+      : (row.linkedSourceEstimateId && row.linkedSourceRowId ? [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }] : []);
+    return refs.length && refs.every(ref => !rebuiltRefs.has(`${String(ref?.estimateId || '').trim()}:${String(ref?.rowId || '').trim()}`));
+  });
+  if (removedEditedRow) {
+    const error = new Error(`${estimateTitle(storedRecord)}의 제거 대상 품목에 저장하지 않은 편집이 있습니다. 해당 품목을 먼저 확인하세요.`);
+    error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
+    throw error;
+  }
+  const rebased = rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord: updatedRecord });
+  if (rebased.conflicts.length) {
+    const error = new Error(rebased.conflicts[0].message || '새 원본과 저장하지 않은 작업본이 같은 값을 다르게 변경했습니다.');
+    error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
+    throw error;
+  }
+  return rebased.draft;
+}
+
+async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}) {
+  const targets = estimateF8RecoveryTargets(selectedRecords, currentDraft);
+  const targetIds = targets.map(record => record.estimateId);
+  let diagnoses = estimateF8MissingDiagnoses(targets, state.estimates);
+  if (!diagnoses.length) return { status: 'NOT_APPLICABLE' };
+  const invalid = diagnoses.find(diagnosis => diagnosis.status === 'INVALID');
+  if (invalid) return { status: 'FAILED', error: invalid.message };
+  rememberActiveEstimateWork();
+  setAppStatus(`견적 F8 연결 확인 · ${diagnoses.length}건의 영향만 확인하세요.`, 'warn');
+  let decisions = await showEstimateF8RecoveryDialog(diagnoses);
+  if (!decisions) return { status: 'CANCELLED' };
+
+  const copyIds = new Map();
+  let reconfirmCount = 0;
+  let staleRetryCount = 0;
+  while (staleRetryCount <= 2) {
+    const latest = await loadEstimateLibrary();
+    const latestById = new Map(latest.map(record => [record.estimateId, record]));
+    const latestTargets = targetIds.map(estimateId => latestById.get(estimateId)).filter(Boolean);
+    if (latestTargets.length !== targetIds.length) {
+      return { status: 'FAILED', error: 'F8 확인 중 대상 견적서가 변경되거나 삭제되었습니다.' };
+    }
+    const freshDiagnoses = estimateF8MissingDiagnoses(latestTargets, latest);
+    const freshInvalid = freshDiagnoses.find(diagnosis => diagnosis.status === 'INVALID');
+    if (freshInvalid) return { status: 'FAILED', error: freshInvalid.message };
+    const decisionById = new Map(decisions.map(decision => [decision.targetEstimateId, decision]));
+    const changed = freshDiagnoses.some(diagnosis => {
+      const prior = decisionById.get(diagnosis.targetEstimateId);
+      return !prior || prior.impactFingerprint !== diagnosis.impactFingerprint;
+    }) || decisions.some(decision => !freshDiagnoses.some(diagnosis => diagnosis.targetEstimateId === decision.targetEstimateId));
+    if (changed) {
+      if (!freshDiagnoses.length) {
+        state.estimates = latest;
+        return { status: 'RECOVERED', outputRecordIds: targetIds, recoveredCount: 0 };
+      }
+      if (reconfirmCount >= 1) {
+        return { status: 'FAILED', error: '다른 작업에서 연결 대상이 계속 변경 중입니다. 변경이 끝난 뒤 다시 실행하세요.' };
+      }
+      setAppStatus('F8 영향 범위가 변경되어 최신 내용으로 한 번 더 확인해야 합니다.', 'warn');
+      decisions = await showEstimateF8RecoveryDialog(freshDiagnoses);
+      if (!decisions) return { status: 'CANCELLED' };
+      diagnoses = freshDiagnoses;
+      reconfirmCount += 1;
+      continue;
+    }
+
+    const operationId = createRecordId('SIF8REC');
+    const occurredAt = new Date().toISOString();
+    const actorId = resolveSmartInputActor();
+    const estimateUpserts = [];
+    const expectedEstimatePreimages = [];
+    const expectedMissingEstimateIds = [];
+    const outputRecordIds = [...targetIds];
+    const rebasedWorkingDrafts = new Map();
+    freshDiagnoses.forEach(diagnosis => {
+      const linkedRecord = latestById.get(diagnosis.targetEstimateId);
+      const decision = decisionById.get(diagnosis.targetEstimateId);
+      if (diagnosis.status === 'PARTIAL_MISSING' && decision?.action === 'REMOVE_MISSING_LINKS_AND_REBUILD') {
+        const updated = applyEstimateF8PartialRecovery({
+          linkedRecord,
+          allRecords: latest,
+          diagnosis,
+          operationId,
+          actorId,
+          occurredAt
+        });
+        const postDiagnosis = inspectEstimateF8Integrity({
+          record: updated,
+          allRecords: latest.map(record => record.estimateId === updated.estimateId ? updated : record)
+        });
+        if (postDiagnosis.status !== 'READY') throw new Error('ESTIMATE_F8_RECOVERY_POSTIMAGE_INVALID');
+        const rebased = estimateF8WorkingRebase(updated);
+        if (rebased) rebasedWorkingDrafts.set(updated.estimateId, rebased);
+        estimateUpserts.push(updated);
+        expectedEstimatePreimages.push(linkedRecord);
+        return;
+      }
+      if (diagnosis.status === 'ALL_MISSING' && decision?.action === 'CREATE_INDEPENDENT_COPY') {
+        const copyId = copyIds.get(diagnosis.targetEstimateId) || createRecordId('SIEST');
+        copyIds.set(diagnosis.targetEstimateId, copyId);
+        const copy = createEstimateF8IndependentCopy({
+          linkedRecord,
+          diagnosis,
+          estimateId: copyId,
+          catalogName: estimateF8IndependentCopyName(linkedRecord, [...latest, ...estimateUpserts]),
+          sortOrder: latest.length + estimateUpserts.length + 1,
+          operationId,
+          actorId,
+          occurredAt
+        });
+        estimateUpserts.push(copy);
+        expectedMissingEstimateIds.push(copyId);
+        const outputIndex = outputRecordIds.indexOf(linkedRecord.estimateId);
+        if (outputIndex >= 0) outputRecordIds[outputIndex] = copyId;
+      }
+    });
+
+    try {
+      await commitEstimateLinkBundle({
+        estimateUpserts,
+        expectedEstimatePreimages,
+        expectedMissingIds: { estimates: expectedMissingEstimateIds }
+      });
+    } catch (error) {
+      if (['SMARTINPUT_ESTIMATE_LINK_BUNDLE_STALE', 'SMARTINPUT_ESTIMATE_BUNDLE_STALE'].includes(error?.message)) {
+        staleRetryCount += 1;
+        continue;
+      }
+      return { status: 'FAILED', error: error?.message || 'F8 연결 복구 저장에 실패했습니다.' };
+    }
+
+    const persisted = normalizeEstimateOrder(await loadEstimateLibrary());
+    const persistedById = new Map(persisted.map(record => [record.estimateId, record]));
+    const invalidPostimage = freshDiagnoses
+      .filter(diagnosis => diagnosis.status === 'PARTIAL_MISSING')
+      .map(diagnosis => inspectEstimateF8Integrity({ record: persistedById.get(diagnosis.targetEstimateId), allRecords: persisted }))
+      .find(diagnosis => diagnosis.status !== 'READY');
+    if (invalidPostimage) return { status: 'FAILED', error: '저장 후 연결 무결성 재검사에 실패했습니다.' };
+    state.estimates = persisted;
+    estimateUpserts.forEach(record => {
+      if (rebasedWorkingDrafts.has(record.estimateId)) {
+        state.estimateWorkingCopies.set(record.estimateId, rebasedWorkingDrafts.get(record.estimateId));
+        state.estimateWorkingCopyBaselines.set(record.estimateId, cloneGridValue(record.draft));
+      } else {
+        state.estimateWorkingCopies.delete(record.estimateId);
+        state.estimateWorkingCopyBaselines.delete(record.estimateId);
+      }
+    });
+    const openRecovered = estimateUpserts.find(record => record.estimateId === modeDraft().catalogRecordId);
+    if (openRecovered) loadCatalogRecord(persistedById.get(openRecovered.estimateId), { preserveSelection: true });
+    else renderCatalogControls();
+    return { status: 'RECOVERED', outputRecordIds, recoveredCount: freshDiagnoses.length };
+  }
+  return { status: 'FAILED', error: '다른 작업에서 연결 대상이 계속 변경 중입니다. 변경이 끝난 뒤 다시 실행하세요.' };
+}
+
 async function exportEstimateExcel() {
   if (estimateF8ExportInFlight) {
     toast('견적 F8 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
@@ -8023,9 +8325,9 @@ async function exportEstimateExcel() {
   estimateF8ExportInFlight = true;
   try {
     const creation = estimateCreation();
-    const selectedRecords = selectedEstimateRecords();
-    const currentDraft = modeDraft();
-    const plan = buildEstimateF8DraftPlan({
+    let selectedRecords = selectedEstimateRecords();
+    let currentDraft = modeDraft();
+    let plan = buildEstimateF8DraftPlan({
       creation,
       selectedRecords,
       currentDraft,
@@ -8034,9 +8336,44 @@ async function exportEstimateExcel() {
       workingDrafts: state.estimateWorkingCopies
     });
     if (!plan.ok) {
-      setAppStatus(`견적 F8 출력 차단 · ${plan.error}`, 'error');
-      toast(`F8 Excel을 생성하지 않았습니다. ${plan.error}`, 'error');
-      return;
+      let recovery;
+      try {
+        recovery = await recoverEstimateF8Integrity({ selectedRecords, currentDraft });
+      } catch (error) {
+        recovery = { status: 'FAILED', error: error?.message || 'F8 연결 복구에 실패했습니다.' };
+      }
+      if (recovery.status === 'CANCELLED') {
+        setAppStatus('견적 F8 연결 정리 취소 · 저장 내용은 변경하지 않았습니다.', 'warn');
+        toast('연결 정리를 취소했습니다. 견적서와 Excel은 변경되지 않았습니다.', 'warn');
+        return;
+      }
+      if (recovery.status === 'FAILED') {
+        setAppStatus(`견적 F8 출력 보류 · ${recovery.error}`, 'error');
+        toast(`F8 Excel을 생성하지 않았습니다. ${recovery.error}`, 'error');
+        return;
+      }
+      if (recovery.status !== 'RECOVERED') {
+        setAppStatus(`견적 F8 출력 차단 · ${plan.error}`, 'error');
+        toast(`F8 Excel을 생성하지 않았습니다. ${plan.error}`, 'error');
+        return;
+      }
+      const recordsById = new Map(state.estimates.map(record => [record.estimateId, record]));
+      selectedRecords = recovery.outputRecordIds.map(estimateId => recordsById.get(estimateId)).filter(Boolean);
+      currentDraft = modeDraft();
+      plan = buildEstimateF8DraftPlan({
+        creation: null,
+        selectedRecords,
+        currentDraft,
+        individualRecords: individualEstimateRecords(),
+        allRecords: availableCatalogs(),
+        workingDrafts: state.estimateWorkingCopies
+      });
+      if (!plan.ok) {
+        setAppStatus(`견적 F8 복구 후 출력 보류 · ${plan.error}`, 'error');
+        toast(`연결 정리는 저장했지만 Excel을 생성하지 않았습니다. ${plan.error}`, 'error');
+        return;
+      }
+      setAppStatus(`견적 F8 연결 정리 완료 · ${recovery.recoveredCount}건 · Excel 생성을 계속합니다.`);
     }
 
     // 연동견적/조합도 병합 전 개별 원본을 펼친다. 중복은 모아서 대표 입고가를 확정하고,
