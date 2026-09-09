@@ -131,14 +131,17 @@ try {
     const allSources=[{estimateId:'GONE-A',catalogName:'삭제 A'},{estimateId:'GONE-B',catalogName:'삭제 B'}];
     const allRows=[row('LINKED:GONE-A:ROW-1','SNAP-A','Snapshot 품목 A','GONE-A'),row('LINKED:GONE-B:ROW-1','SNAP-B','Snapshot 품목 B','GONE-B')];
     const allMissing={estimateId:'LINKED-ALL',catalogName:'전체 누락 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,rowCount:2,amount:2000,sortOrder:6,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-ALL',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,header:{},rows:allRows,updatedAt:timestamp}};
-    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');const store=tx.objectStore('estimates');store.clear();[source,partial,partialFail,partialSame,partialChange,allMissing].forEach(record=>store.put(record));tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve();};};});
+    const retrySources=[{estimateId:'GONE-C',catalogName:'삭제 C'},{estimateId:'GONE-D',catalogName:'삭제 D'}];
+    const retryRows=[row('LINKED:GONE-C:ROW-1','SNAP-C','Snapshot 품목 C','GONE-C'),row('LINKED:GONE-D:ROW-1','SNAP-D','Snapshot 품목 D','GONE-D')];
+    const outputRetry={estimateId:'LINKED-OUTPUT-RETRY',catalogName:'출력 재시도 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,rowCount:2,amount:2000,sortOrder:7,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-OUTPUT-RETRY',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,header:{},rows:retryRows,updatedAt:timestamp}};
+    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');const store=tx.objectStore('estimates');store.clear();[source,partial,partialFail,partialSame,partialChange,allMissing,outputRetry].forEach(record=>store.put(record));tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve();};};});
     return true;
   })()`);
   let reload = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await reload;
   await click(client, '[data-mode="estimate"]');
-  await expr(client, `document.querySelectorAll('.linked-estimate-integrity-badge').length===5`, 'missing-source badges');
+  await expr(client, `document.querySelectorAll('.linked-estimate-integrity-badge').length===6`, 'missing-source badges');
   assert.equal(await evaluate(client, `document.querySelector('[data-estimate-id="LINKED-PARTIAL"]')?.dataset.integrityStatus`), 'PARTIAL_MISSING');
   assert.equal(await evaluate(client, `document.querySelector('[data-estimate-id="LINKED-ALL"]')?.dataset.integrityStatus`), 'ALL_MISSING');
 
@@ -195,6 +198,21 @@ try {
   assert.match(recovered?.catalogName || '', /독립 복구 사본/);
   assert.equal(recovered?.draft?.rows.every(row => !('linkedSourceRefs' in row) && !('linkedSourceEstimateId' in row)), true);
   assert.equal(recovered?.estimateAutomationHistory.at(-1).operationId, recovered?.recoveryOrigin.operationId);
+
+  await click(client, '[data-estimate-id="LINKED-OUTPUT-RETRY"] [data-select-estimate-card]');
+  await evaluate(client, `window.__f8OutputAttempts=0;window.XLSX.writeFile=()=>{window.__f8OutputAttempts+=1;if(window.__f8OutputAttempts===1)throw new Error('Injected Excel output failure');window.__f8Writes+=1;};window.__f8Writes=0;true`);
+  await click(client, '#estimateExcelButton');
+  await expr(client, `Boolean(document.querySelector('.estimate-f8-recovery-dialog[open]'))`, 'independent copy output failure dialog');
+  await click(client, '.estimate-f8-recovery-dialog [data-recovery-confirm]');
+  await expr(client, `document.querySelector('#appStatus')?.textContent.includes('Excel 생성 실패')`, 'independent copy output failure status');
+  const afterOutputFailure = await readEstimates(client);
+  assert.equal(afterOutputFailure.filter(record => record.recoveryOrigin?.sourceLinkedEstimateId === 'LINKED-OUTPUT-RETRY').length, 1,
+    '첫 Excel 실패 전 독립 복구 사본은 한 건만 저장해야 한다.');
+  await click(client, '#estimateExcelButton');
+  await expr(client, `window.__f8OutputAttempts===2&&window.__f8Writes===1&&!document.querySelector('.estimate-f8-recovery-dialog')`, 'confirmed independent copy automatic Excel retry');
+  const afterOutputRetry = await readEstimates(client);
+  assert.equal(afterOutputRetry.filter(record => record.recoveryOrigin?.sourceLinkedEstimateId === 'LINKED-OUTPUT-RETRY').length, 1,
+    'Excel 재시도는 영향 지문이 같은 기존 독립 사본을 재사용해야 한다.');
 
   await click(client, '[data-estimate-id="LINKED-FAIL"] [data-select-estimate-card]');
   await evaluate(client, `window.__f8Writes=0;window.__f8PutOriginal=IDBObjectStore.prototype.put;window.__f8PutFailed=false;IDBObjectStore.prototype.put=function(...args){if(this.name==='estimates'&&!window.__f8PutFailed){window.__f8PutFailed=true;throw new DOMException('Injected F8 recovery write failure','AbortError');}return window.__f8PutOriginal.apply(this,args);};true`);

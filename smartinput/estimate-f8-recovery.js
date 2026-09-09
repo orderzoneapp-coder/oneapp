@@ -145,8 +145,10 @@ export function inspectEstimateF8Integrity({ record = null, allRecords = [] } = 
   const sourceIds = unique((record.linkedEstimateSources || []).map(source => source?.estimateId));
   if (!sourceIds.length) return invalidResult(record, '연동견적서의 원본 견적서 구성을 확인할 수 없습니다.');
   const recordsById = new Map((allRecords || []).map(item => [text(item?.estimateId), item]));
-  const availableRecords = sourceIds.map(estimateId => recordsById.get(estimateId)).filter(Boolean);
-  const missingSourceIds = sourceIds.filter(estimateId => !recordsById.has(estimateId));
+  const availableRecords = sourceIds.map(estimateId => recordsById.get(estimateId))
+    .filter(record => record?.draft && Array.isArray(record.draft.rows));
+  const availableIds = new Set(availableRecords.map(record => text(record.estimateId)));
+  const missingSourceIds = sourceIds.filter(estimateId => !availableIds.has(estimateId));
 
   const snapshotError = validateLinkedSnapshot(record, sourceIds);
   if (snapshotError) return invalidResult(record, snapshotError);
@@ -337,6 +339,7 @@ export function createEstimateF8IndependentCopy({
     type: 'LINKED_SNAPSHOT_WITHOUT_SOURCES',
     sourceLinkedEstimateId: text(linkedRecord.estimateId),
     missingSourceIds: clone(diagnosis.missingSourceIds || []),
+    impactFingerprint: text(diagnosis.impactFingerprint),
     confirmedBy: text(actorId),
     confirmedAt: timestamp,
     operationId: text(operationId)

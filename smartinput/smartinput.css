@@ -640,6 +640,9 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
 .estimate-bulk-row__result strong { color: var(--accent-strong); font-size: 10px; }
 .estimate-bulk-row__result small { max-width: 100%; overflow: hidden; color: var(--text-faint); font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .estimate-bulk-row.is-blocked .estimate-bulk-row__result strong { color: var(--warning); }
+.estimate-bulk-row__reviews { grid-column: 2 / -1; display: grid; gap: 7px; }
+.estimate-bulk-row-review { padding: 8px; border: 1px solid color-mix(in srgb, var(--warning) 58%, var(--border)); border-radius: 7px; background: color-mix(in srgb, var(--warning) 7%, var(--surface)); }
+.estimate-bulk-row-review > span { line-height: 1.45; }
 .estimate-bulk-update-dialog footer { position: sticky; bottom: 0; z-index: 2; flex-wrap: wrap; }
 .estimate-bulk-update-dialog footer .button { min-height: 38px; white-space: nowrap; }
 .estimate-bulk-update-dialog footer > small { margin-right: auto; color: var(--text-soft); font-size: 10px; font-weight: 800; }
@@ -975,6 +978,7 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
   .estimate-bulk-row__target { grid-template-columns: minmax(0, 1fr); }
   .estimate-bulk-row__result { grid-template-columns: auto 1fr; justify-items: start; gap: 8px; }
   .estimate-bulk-row__result small { grid-column: 1 / -1; text-align: left; white-space: normal; }
+  .estimate-bulk-row__reviews { grid-column: 1; }
   .estimate-bulk-update-dialog footer > small { width: 100%; }
   .estimate-duplicate-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 12px; }
   .estimate-duplicate-candidate { grid-template-columns: 24px minmax(110px, .8fr) minmax(170px, 1.1fr) minmax(120px, .7fr) minmax(90px, .55fr); }

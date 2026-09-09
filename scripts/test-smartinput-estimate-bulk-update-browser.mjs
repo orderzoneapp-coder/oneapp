@@ -146,14 +146,16 @@ try {
     const currentRows=[
       contract.normalizeRow({rowId:'source-2',sourceRowNo:3,rowVoucherDate:'2026-09-04',rowCustomerCode:'A001',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'A 상품 0',quantity:0,unitPrice:100,memo:'',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C3','SHARED'),'voucher.estimate.line.quantity':makeField('E3',0)}}),
       contract.normalizeRow({rowId:'source-3',sourceRowNo:4,rowVoucherDate:'2026-09-04',rowCustomerCode:'A001',rowCustomerName:'거래처 A',masterProductId:'PRODUCT-A2',productId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',quantity:2,unitPrice:500,memo:'내부 빈 셀 보존',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C4','A-2')}}),
-      contract.normalizeRow({rowId:'source-4',sourceRowNo:5,rowVoucherDate:'2026-09-04',rowCustomerCode:'B001',rowCustomerName:'거래처 B',itemCode:'B-CHECK',itemName:'B 확인 품목',quantity:-2,unitPrice:300,memo:'확인 필요',matchStatus:'SIMILAR',reviewStatus:'PENDING',productIdentityStatus:'UNRESOLVED',fieldValues:{'voucher.estimate.line.productCode':makeField('C5','B-CHECK'),'voucher.estimate.line.quantity':makeField('E5',-2)}}),
+      contract.normalizeRow({rowId:'source-4',sourceRowNo:5,rowVoucherDate:'2026-09-04',rowCustomerCode:'B001',rowCustomerName:'거래처 B',masterProductId:'PRODUCT-B1',productId:'PRODUCT-B1',itemCode:'B-CHECK',itemName:'B 확인 품목',quantity:-2,unitPrice:300,memo:'확인 필요',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C5','B-CHECK'),'voucher.estimate.line.quantity':makeField('E5',-2)}}),
       contract.normalizeRow({rowId:'source-5',sourceRowNo:6,rowVoucherDate:'2026-09-04',rowCustomerCode:'C001',rowCustomerName:'거래처 C',masterProductId:'PRODUCT-SHARED',productId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'C 정상 품목',quantity:1,unitPrice:700,memo:'정상',matchStatus:'MATCHED',reviewStatus:'CONFIRMED',productIdentityStatus:'MASTER_LINKED',fieldValues:{'voucher.estimate.line.productCode':makeField('C6','SHARED')}}),
       contract.normalizeRow({rowId:'source-6',sourceRowNo:7,rowVoucherDate:'2026-09-04 14:30:00'})
     ];
     const targetDraft=(customerId,customerCode,customerName,rowId,itemCode,quantity,unitPrice)=>contract.normalizeModeDraft('estimate',{...contract.createDraft().modes.estimate,header:{...contract.createDraft().modes.estimate.header,customerId,customerCode,customerName,customValues:{preserve:'yes'}},rows:[contract.normalizeRow({rowId,itemCode,itemName:'기존 상품',quantity,unitPrice,noticePrice:unitPrice})]});
     const timestamp='2026-09-01T00:00:00.000Z';
     const targetA={estimateId:'EST-BULK-A',catalogName:'A 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-A',customerCode:'A001',customerName:'거래처 A',rowCount:1,amount:50,previousPrices:{},sortOrder:1,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-A','A001','거래처 A','OLD-A','OLD-A',1,50)};
-    const targetB={estimateId:'EST-BULK-B',catalogName:'B 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-B',customerCode:'B001',customerName:'거래처 B',rowCount:1,amount:80,previousPrices:{},sortOrder:2,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-B','B001','거래처 B','OLD-B','OLD-B',1,80)};
+    const targetB={estimateId:'EST-BULK-B',catalogName:'B 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-B',customerCode:'B001',customerName:'거래처 B',rowCount:2,amount:160,previousPrices:{},sortOrder:2,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-B','B001','거래처 B','B-DUP-1','B-CHECK',1,80)};
+    targetB.draft.rows[0].masterProductId='PRODUCT-B1';targetB.draft.rows[0].productId='PRODUCT-B1';
+    targetB.draft.rows.push(contract.normalizeRow({rowId:'B-DUP-2',masterProductId:'PRODUCT-B1',productId:'PRODUCT-B1',itemCode:'B-CHECK',itemName:'B 기존 중복 상품',quantity:1,unitPrice:80,noticePrice:80}));
     const targetC={estimateId:'EST-BULK-C',catalogName:'C 기존 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-C',customerCode:'C001',customerName:'거래처 C',rowCount:1,amount:70,previousPrices:{},sortOrder:3,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-C','C001','거래처 C','OLD-C','OLD-C',1,70)};
     const untouched={estimateId:'EST-UNTOUCHED',catalogName:'미대상 견적',estimateKind:'INDIVIDUAL',customerId:'CUS-X',customerName:'미대상',rowCount:1,amount:90,sortOrder:4,createdAt:timestamp,updatedAt:timestamp,draft:targetDraft('CUS-X','X001','미대상','OLD-X','OLD-X',1,90)};
     const linked={estimateId:'EST-LINKED',catalogName:'연동 견적',estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A',catalogName:'A 기존 견적'},{estimateId:'EST-UNTOUCHED',catalogName:'미대상 견적'}],rowCount:0,amount:0,sortOrder:5,createdAt:timestamp,updatedAt:timestamp,draft:contract.normalizeModeDraft('estimate',{...contract.createDraft().modes.estimate,estimateKind:'LINKED_GROUP',linkedEstimateSources:[{estimateId:'EST-BULK-A'},{estimateId:'EST-UNTOUCHED'}],rows:[]})};
@@ -161,11 +163,13 @@ try {
     localStorage.setItem('merchMaster_v870',JSON.stringify([
       {productId:'PRODUCT-SHARED',masterProductId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'공용 상품',outPrice:100,status:'ACTIVE',active:true},
       {productId:'PRODUCT-A2',masterProductId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',outPrice:500,status:'ACTIVE',active:true}
+      ,{productId:'PRODUCT-B1',masterProductId:'PRODUCT-B1',itemCode:'B-CHECK',itemName:'B 확인 품목',outPrice:300,status:'ACTIVE',active:true}
     ]));
     localStorage.setItem('merchMaster_revision_v870','BULK-E2E-1');
     const productRows=[
       {productId:'PRODUCT-SHARED',masterProductId:'PRODUCT-SHARED',itemCode:'SHARED',itemName:'공용 상품',outPrice:100,priceOptions:[{key:'outPrice',label:'출고가',value:100}],status:'ACTIVE',active:true,source:'PRODUCT_MASTER_SNAPSHOT',revision:1},
       {productId:'PRODUCT-A2',masterProductId:'PRODUCT-A2',itemCode:'A-2',itemName:'A 상품',outPrice:500,priceOptions:[{key:'outPrice',label:'출고가',value:500}],status:'ACTIVE',active:true,source:'PRODUCT_MASTER_SNAPSHOT',revision:1}
+      ,{productId:'PRODUCT-B1',masterProductId:'PRODUCT-B1',itemCode:'B-CHECK',itemName:'B 확인 품목',outPrice:300,priceOptions:[{key:'outPrice',label:'출고가',value:300}],status:'ACTIVE',active:true,source:'PRODUCT_MASTER_SNAPSHOT',revision:1}
     ];
     const productSnapshot={cacheSchemaVersion:'ONEAPP_SMARTINPUT_REFERENCE_CACHE_V1',domain:'product',ownerAppId:'master-lookup',schemaVersion:'ONEAPP_PRODUCT_SNAPSHOT_V1',adapterVersion:'BULK-E2E',status:'READY',source:'BULK_E2E_FIXTURE',fallback:false,count:productRows.length,revision:'BULK-E2E-1',snapshotId:'PRODUCT-BULK-E2E-1',contentHash:'BULK-E2E-HASH',snapshotCreatedAt:timestamp,checkedAt:timestamp,rows:productRows};
     const aliasFor=(suffix,name,targetEstimateId)=>({aliasMappingId:'SIEMATCH-'+suffix,schemaVersion:'ONEAPP_SMARTINPUT_ESTIMATE_BULK_TARGET_MATCH_V1',mappingType:'ESTIMATE_BULK_TARGET',companyId:'ONEAPP',contextKey:'ESTIMATE_BULK_TARGET:ONEAPP',matchKey:'NAME:'+name.toLocaleLowerCase('ko-KR'),sourceCustomerId:'',sourceCustomerCode:'',sourceCustomerName:name,normalizedName:name.toLocaleLowerCase('ko-KR'),sourceIdentityType:'NORMALIZED_NAME',targetEstimateId,status:'CONFIRMED',confirmedBy:'ADMIN',confirmedAt:timestamp,updatedAt:timestamp});
@@ -192,13 +196,12 @@ try {
   assert.match(await evaluate(client, `document.querySelector('#sourceSheetMeta')?.textContent||''`), /견적서현황내역 · 거래처 10곳 · 품목 277개/,
     'ERP 견적서현황 원본을 선택하면 시트명·거래처 수·품목 수를 화면에 명시해야 한다.');
   const before = await readEstimates(client);
-  const beforeJson = JSON.stringify(before);
-
   await click(client, '#estimateLibraryLinkedButton');
 
   const matrix = [];
   const viewports = [{ width: 1920, height: 1080, mobile: false }, { width: 1840, height: 864, mobile: false }, { width: 1440, height: 900, mobile: false }, { width: 390, height: 844, mobile: true }];
   let representativeScreenshot = '';
+  let automaticBaselineJson = '';
   for (const viewport of viewports) {
     await client.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1 });
     await click(client, '#completeButton');
@@ -211,7 +214,13 @@ try {
     assert.equal(await evaluate(client, `document.activeElement?.matches('.estimate-bulk-update-dialog [data-bulk-action]')`), true, 'dialog must focus the first problem or target selector');
     assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-bulk-row').length`), 3);
     const initialDialogState = await evaluate(client, `({disabled:document.querySelector('.estimate-bulk-update-dialog [data-confirm-bulk]').disabled,states:[...document.querySelectorAll('.estimate-bulk-row')].map(row=>({name:row.querySelector('.estimate-bulk-row__source strong').textContent,status:row.dataset.bulkStateValue,reason:row.querySelector('[data-bulk-reason]').textContent,selected:row.querySelector('[data-bulk-select]').checked})),rows:JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.estimate.rows.map(row=>({customer:row.rowCustomerName,code:row.itemCode,master:row.masterProductId,product:row.productId,match:row.matchStatus,review:row.reviewStatus,identity:row.productIdentityStatus})),summary:document.querySelector('[data-bulk-summary]').textContent})`);
-    assert.equal(initialDialogState.disabled, false, JSON.stringify(initialDialogState));
+    assert.equal(initialDialogState.disabled, true, JSON.stringify(initialDialogState));
+    assert.deepEqual(initialDialogState.states.map(row => [row.name, row.status]), [
+      ['거래처 A', 'COMPLETED'], ['거래처 B', 'PENDING'], ['거래처 C', 'COMPLETED']
+    ], '정확한 A/C는 확인 없이 먼저 자동 저장하고 문제 B만 대기해야 한다.');
+    const currentAutomaticJson = JSON.stringify(await readEstimates(client));
+    if (!automaticBaselineJson) automaticBaselineJson = currentAutomaticJson;
+    else assert.equal(currentAutomaticJson, automaticBaselineJson, '완료된 자동 연결을 다시 열 때 중복 저장하면 안 된다.');
     await evaluate(client, `(() => {const body=document.querySelector('.estimate-bulk-update-dialog .estimate-bulk-body');const seed=body.querySelector('.estimate-bulk-row');for(let index=3;index<10;index+=1){const clone=seed.cloneNode(true);clone.dataset.bulkGroup='GEOMETRY-'+index;clone.querySelector('.estimate-bulk-row__source strong').textContent='가시성 검증 '+(index+1);body.append(clone);}return body.children.length;})()`);
     assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-bulk-row').length`), 10,
       '실제 첨부파일의 거래처 10곳처럼 본문이 넘치는 상태에서 footer를 검증해야 한다.');
@@ -245,78 +254,33 @@ try {
     }
     await escape(client);
     await expr(client, `!document.querySelector('.estimate-bulk-update-dialog')`, `${viewport.width}px Escape close`);
-    assert.equal(JSON.stringify(await readEstimates(client)), beforeJson, `${viewport.width}px Escape must perform zero writes`);
+    assert.equal(JSON.stringify(await readEstimates(client)), automaticBaselineJson, `${viewport.width}px Escape must perform zero additional writes`);
   }
+
+  const automaticRecords = JSON.parse(automaticBaselineJson);
+  assert.equal(automaticRecords.find(record => record.estimateId === 'EST-BULK-A').draft.rows[0].itemCode, 'SHARED');
+  assert.equal(automaticRecords.find(record => record.estimateId === 'EST-BULK-B').draft.rows.length, 2, '모호한 B는 자동 저장하지 않아야 한다.');
+  assert.equal(automaticRecords.find(record => record.estimateId === 'EST-BULK-C').draft.rows[0].itemCode, 'SHARED');
+  const firstCUpdatedAt = automaticRecords.find(record => record.estimateId === 'EST-BULK-C').updatedAt;
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, mobile: false, deviceScaleFactor: 1 });
   await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.estimate-bulk-update-dialog[open]'))`, 'target change dialog');
-  const selectors = await evaluate(client, `[...document.querySelectorAll('.estimate-bulk-row [data-bulk-action]')].map(select=>select.value)`);
-  assert.deepEqual(selectors, ['UPDATE:EST-BULK-A', 'UPDATE:EST-BULK-B', 'UPDATE:EST-BULK-C']);
-  await select(client, '.estimate-bulk-row:first-child [data-bulk-action]', 'UPDATE:EST-BULK-B');
-  assert.equal(await evaluate(client, `document.querySelector('[data-confirm-bulk]').disabled`), false, 'duplicate groups must be held while another ready group remains executable');
-  assert.match(await evaluate(client, `document.querySelector('[data-bulk-issues]').textContent`), /중복/);
-  assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-bulk-row[data-bulk-state-value="PENDING"]').length`), 2);
-  await select(client, '.estimate-bulk-row:first-child [data-bulk-action]', '');
-  assert.equal(await evaluate(client, `document.querySelector('[data-confirm-bulk]').disabled`), false, 'one unresolved group must not block another ready group');
-  await select(client, '.estimate-bulk-row:first-child [data-bulk-action]', 'CREATE');
-  assert.equal(await evaluate(client, `document.querySelector('.estimate-bulk-row:first-child').dataset.bulkStateValue`), 'PENDING', 'explicit create requires a confirmed name');
-  await evaluate(client, `(() => {const input=document.querySelector('.estimate-bulk-row:first-child [data-bulk-create-name]');input.value='A 명시 신규';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
-  assert.equal(await evaluate(client, `document.querySelector('.estimate-bulk-row:first-child').dataset.bulkStateValue`), 'READY', 'named explicit create must revalidate only that group');
-  await select(client, '.estimate-bulk-row:first-child [data-bulk-action]', 'EXCLUDE');
-  assert.equal(await evaluate(client, `document.querySelector('.estimate-bulk-row:first-child').dataset.bulkStateValue`), 'EXCLUDED');
-  await select(client, '.estimate-bulk-row:first-child [data-bulk-action]', 'UPDATE:EST-BULK-A');
-  assert.equal(await evaluate(client, `document.querySelector('[data-confirm-bulk]').disabled`), false);
-
-  await evaluate(client, `(async()=>{const records=${beforeJson};const stale={...records.find(record=>record.estimateId==='EST-BULK-A'),updatedAt:'2026-09-04T09:00:00.000Z'};await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');tx.objectStore('estimates').put(stale);tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>reject(tx.error);};});return true;})()`);
-  await click(client, '[data-confirm-bulk]');
-  await expr(client, `document.querySelector('.estimate-bulk-update-dialog[open]')&&document.querySelector('#appStatus').textContent.includes('저장 완료 1개')&&document.querySelector('#appStatus').textContent.includes('확인 필요 2개')`, 'per-customer stale continuation');
-  const afterStale = await readEstimates(client);
-  assert.equal(afterStale.find(record => record.estimateId === 'EST-BULK-A').draft.rows[0].itemCode, 'OLD-A', 'stale group must remain unchanged');
-  assert.equal(afterStale.find(record => record.estimateId === 'EST-BULK-B').draft.rows[0].itemCode, 'OLD-B', 'problem group must perform zero writes');
-  assert.equal(afterStale.find(record => record.estimateId === 'EST-BULK-C').draft.rows[0].itemCode, 'SHARED', 'another normal group must continue after stale failure');
-  const firstCUpdatedAt = afterStale.find(record => record.estimateId === 'EST-BULK-C').updatedAt;
-  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 a"]').dataset.bulkStateValue`), 'FAILED');
-  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]').dataset.bulkStateValue`), 'PENDING');
-  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 c"]').dataset.bulkStateValue`), 'COMPLETED');
-  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 c"]').hidden`), true, 'problem-focused view must fold completed vouchers');
-  await click(client, '[data-bulk-view="all"]');
-  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 c"]').hidden`), false, 'full view must reveal completed vouchers without changing source rows');
-  await click(client, '[data-bulk-view="review"]');
-  await evaluate(client, `(async()=>{const original=${beforeJson}.find(record=>record.estimateId==='EST-BULK-A');await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');tx.objectStore('estimates').put(original);tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>reject(tx.error);};});return true;})()`);
-
-  await click(client, '[data-confirm-bulk]');
-  await expr(client, `document.querySelector('#appStatus').textContent.includes('저장 완료 2개')&&document.querySelector('#appStatus').textContent.includes('확인 필요 1개')`, 'retry only failed group');
-  const afterARetry = await readEstimates(client);
-  assert.equal(afterARetry.find(record => record.estimateId === 'EST-BULK-C').updatedAt, firstCUpdatedAt, 'completed C must not be saved again while retrying A');
-
-  await click(client, '.estimate-bulk-update-dialog [data-close]');
-  await expr(client, `!document.querySelector('.estimate-bulk-update-dialog')`, 'close before correcting problem row');
-  await evaluate(client, String.raw`(async()=>{
-    const key=window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY;
-    const draft=JSON.parse(localStorage.getItem(key));
-    const row=draft.modes.estimate.rows.find(candidate=>candidate.rowCustomerName==='거래처 B');
-    row.masterProductId='PRODUCT-B1';row.productId='PRODUCT-B1';row.matchStatus='MATCHED';row.reviewStatus='CONFIRMED';row.productIdentityStatus='MASTER_LINKED';
-    draft.updatedAt=new Date().toISOString();draft.modes.estimate.updatedAt=draft.updatedAt;
-    localStorage.setItem(key,JSON.stringify(draft));
-    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readwrite');tx.objectStore('autosave').put({key:'current',schemaVersion:'ONEAPP_SMART_INPUT_AUTOSAVE_V1',updatedAt:draft.updatedAt,draft});tx.oncomplete=()=>{db.close();resolve()};tx.onerror=()=>reject(tx.error);};});
-    return true;
-  })()`);
-  loaded = client.once('Page.loadEventFired');
-  await client.send('Page.reload', { ignoreCache: true });
-  await loaded;
-  await expr(client, `document.querySelector('#productReferenceStatus').dataset.status!=='LOADING'&&document.querySelector('#customerReferenceStatus').dataset.status!=='LOADING'`, 'corrected reference initialization', 60_000);
-  await expr(client, `document.querySelector('#completeButton')&&!document.querySelector('#completeButton').disabled`, 'corrected fixture ready', 60_000);
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.estimate-bulk-update-dialog[open]'))`, 'corrected group dialog');
-  const correctedDialogState = await evaluate(client, `[...document.querySelectorAll('.estimate-bulk-row')].map(row=>({name:row.querySelector('.estimate-bulk-row__source strong').textContent,status:row.dataset.bulkStateValue,reason:row.querySelector('[data-bulk-reason]').textContent,action:row.querySelector('[data-bulk-action]').value,checked:row.querySelector('[data-bulk-select]').checked}))`);
-  assert.deepEqual(correctedDialogState.map(row => [row.name, row.status]), [['거래처 A','COMPLETED'],['거래처 B','READY'],['거래처 C','COMPLETED']], `only corrected B must become ready after reload: ${JSON.stringify(correctedDialogState)}`);
-
+  await expr(client, `Boolean(document.querySelector('.estimate-bulk-update-dialog[open]'))`, 'ambiguous row review dialog');
+  const rowResolutionOptions = await evaluate(client, `[...document.querySelector('[data-bulk-group="NAME:거래처 b"] [data-bulk-row-resolution]').options].map(option=>option.value)`);
+  assert.deepEqual(rowResolutionOptions, ['', 'USE_EXISTING:B-DUP-1', 'USE_EXISTING:B-DUP-2', 'ADD_NEW', 'EXCLUDE']);
+  await select(client, '[data-bulk-group="NAME:거래처 b"] [data-bulk-row-resolution]', 'ADD_NEW');
+  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]').dataset.bulkStateValue`), 'READY');
+  await select(client, '[data-bulk-group="NAME:거래처 b"] [data-bulk-action]', 'UPDATE:EST-BULK-B');
+  await select(client, '[data-bulk-group="NAME:거래처 b"] [data-bulk-row-resolution]', 'EXCLUDE');
+  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]').dataset.bulkStateValue`), 'READY');
+  await select(client, '[data-bulk-group="NAME:거래처 b"] [data-bulk-action]', 'UPDATE:EST-BULK-B');
+  await select(client, '[data-bulk-group="NAME:거래처 b"] [data-bulk-row-resolution]', 'USE_EXISTING:B-DUP-2');
+  assert.equal(await evaluate(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]').dataset.bulkStateValue`), 'READY');
   await evaluate(client, `(() => {window.__bulkPutOriginal=IDBObjectStore.prototype.put;window.__bulkFailed=false;IDBObjectStore.prototype.put=function(...args){if(this.name==='estimates'&&!window.__bulkFailed){window.__bulkFailed=true;throw new DOMException('Injected per-customer write failure','AbortError');}return window.__bulkPutOriginal.apply(this,args);};return true;})()`);
   await click(client, '[data-confirm-bulk]');
   await expr(client, `document.querySelector('[data-bulk-group="NAME:거래처 b"]').dataset.bulkStateValue==='FAILED'`, 'per-customer put failure');
   const afterBFailure = await readEstimates(client);
-  assert.equal(afterBFailure.find(record => record.estimateId === 'EST-BULK-B').draft.rows[0].itemCode, 'OLD-B', 'failed B transaction must be zero-write');
+  assert.deepEqual(afterBFailure.find(record => record.estimateId === 'EST-BULK-B').draft.rows.map(row => row.rowId), ['B-DUP-1', 'B-DUP-2'], 'failed B transaction must be zero-write');
   assert.equal(afterBFailure.find(record => record.estimateId === 'EST-BULK-C').updatedAt, firstCUpdatedAt, 'B failure must not rewrite completed C');
   await evaluate(client, `IDBObjectStore.prototype.put=window.__bulkPutOriginal;delete window.__bulkPutOriginal;true`);
   const retryReady = await evaluate(client, `(() => {const row=document.querySelector('[data-bulk-group="NAME:거래처 b"]');const button=document.querySelector('[data-confirm-bulk]');return {rowStatus:row?.dataset.bulkStateValue,checked:row?.querySelector('[data-bulk-select]')?.checked,checkboxDisabled:row?.querySelector('[data-bulk-select]')?.disabled,buttonDisabled:button?.disabled,appStatus:document.querySelector('#appStatus')?.textContent,footer:document.querySelector('[data-bulk-status]')?.textContent};})()`);
@@ -338,6 +302,7 @@ try {
   const targetC = after.find(record => record.estimateId === 'EST-BULK-C');
   assert.deepEqual(targetA.draft.rows.map(row => [row.itemCode, row.quantity]), [['SHARED', 0], ['A-2', 2]]);
   assert.deepEqual(targetB.draft.rows.map(row => [row.itemCode, row.quantity]), [['B-CHECK', -2]]);
+  assert.equal(targetB.draft.rows[0].rowId, 'B-DUP-2', '관리자가 선택한 기존 B 행 ID를 유지해야 한다.');
   assert.deepEqual(targetC.draft.rows.map(row => [row.itemCode, row.quantity]), [['SHARED', 1]]);
   assert.equal(targetA.catalogName, 'A 기존 견적');
   assert.equal(targetA.createdAt, '2026-09-01T00:00:00.000Z');
@@ -372,7 +337,19 @@ try {
   ], '성공한 거래처별 대상은 기존 customerAliasMappings 저장소에 다음 파일용 매칭사전으로 남아야 한다.');
   assert.ok(rememberedTargets.every(mapping => mapping.schemaVersion === 'ONEAPP_SMARTINPUT_ESTIMATE_BULK_TARGET_MATCH_V1'
     && mapping.contextKey === 'ESTIMATE_BULK_TARGET:ONEAPP'));
+  await click(client, '.estimate-bulk-update-dialog [data-close]');
+  await expr(client, `!document.querySelector('.estimate-bulk-update-dialog')`, 'close completed review');
   await click(client, '[data-table-view="source"]');
+  await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'source edit table');
+  await evaluate(client, `(()=>{const input=document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-cell][data-mapping-column="4"]');if(!input)throw new Error('normal automatic retry quantity input missing');input.value='9';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
+  await expr(client, `JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.estimate.rows.some(row=>row.rowCustomerName==='거래처 A'&&row.itemCode==='SHARED'&&Number(row.quantity)===9)`, 'project edited quantity');
+  await click(client, '#completeButton');
+  await waitFor(async () => Number((await readEstimates(client)).find(record => record.estimateId === 'EST-BULK-A')?.draft?.rows?.find(row => row.itemCode === 'SHARED')?.quantity) === 9 || null,
+    'normal automatic update without confirmation');
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('.estimate-bulk-update-dialog'))`), false,
+    '모든 연결이 정확하면 정상 전표 업데이트 확인창을 열지 않아야 한다.');
+  assert.equal(Number((await readEstimates(client)).find(record => record.estimateId === 'EST-LINKED').draft.rows.find(row => row.itemCode === 'SHARED').quantity), 9,
+    '확인 없는 정상 업데이트도 관련 연동견적서를 자동 재구성해야 한다.');
   await expr(client, `!document.querySelector('#mappingWorktable').hidden`, 'full upload source view');
   assert.equal(await evaluate(client, `[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='A-2')&&[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='B-CHECK')&&[...document.querySelectorAll('#mappingInputRows input')].some(input=>input.value==='SHARED')`), true, 'successful per-customer updates must retain the full upload view');
   const progressStatuses = await evaluate(client, `Object.values(JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.estimate.estimateBulkProgress.groups).map(entry=>entry.status).sort()`);
@@ -380,7 +357,7 @@ try {
 
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
-  console.log(JSON.stringify({ matrix, representativeScreenshot, rollback: ['per-customer-stale', 'per-customer-put-failure'], updated: { estimates: 3, items: 4 }, productionWrites: 0 }, null, 2));
+  console.log(JSON.stringify({ matrix, representativeScreenshot, rollback: ['per-customer-put-failure'], automaticWithoutConfirmation: true, updated: { estimates: 3, items: 4 }, productionWrites: 0 }, null, 2));
   console.log('SmartInput per-customer estimate update focused browser E2E PASS');
 } finally {
   client?.close();

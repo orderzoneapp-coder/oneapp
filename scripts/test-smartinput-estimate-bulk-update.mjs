@@ -3,6 +3,7 @@ import {
   ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
   ESTIMATE_BULK_TARGET_MATCH_TYPE,
   classifyEstimateBulkRows,
+  collectEstimateBulkReadPreimages,
   createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
   createEstimateBulkConnectedComponents,
@@ -128,6 +129,13 @@ assert.equal(autoResolved.assignments[1].targetEstimateId, 'EST-CODE');
 assert.equal(autoResolved.assignments[1].matchMethod, 'CUSTOMER_CODE');
 assert.equal(autoResolved.assignments[2].targetEstimateId, '', '이름만 같은 최초 후보는 관리자 확인 없이 자동 선택하면 안 된다.');
 assert.ok(autoResolved.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_UNRESOLVED'));
+const idCodeConflict = resolveEstimateBulkTargets({
+  groups: [{ ...identityGroups[0], customerCode: 'C-2' }],
+  estimates
+});
+assert.equal(idCodeConflict.assignments[0].targetEstimateId, '', '거래처 ID와 코드가 다른 견적서를 가리키면 ID 우선 자동선택을 하면 안 된다.');
+assert.equal(idCodeConflict.issues[0].code, 'ESTIMATE_BULK_TARGET_ID_CODE_CONFLICT');
+assert.deepEqual(idCodeConflict.issues[0].candidateEstimateIds.sort(), ['EST-CODE', 'EST-ID']);
 assert.equal(autoResolved.assignments[3].targetEstimateId, '', 'fuzzy 이름과 연동그룹은 자동 대상이 되면 안 된다.');
 assert.ok(autoResolved.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_UNRESOLVED'));
 const rememberedMapping = {
@@ -232,6 +240,41 @@ const ambiguousRows = reconcileEstimateBulkRows({
   ]
 });
 assert.equal(ambiguousRows.issues[0].code, 'ESTIMATE_BULK_ROW_MATCH_AMBIGUOUS');
+const ambiguousUseExisting = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 1) }),
+  targetRows: [
+    { rowId: 'DUP-1', itemCode: 'SHARED-CODE', itemName: '중복 1' },
+    { rowId: 'DUP-2', itemCode: 'SHARED-CODE', itemName: '중복 2' }
+  ],
+  resolutions: { 'source-1': { action: 'USE_EXISTING', targetRowId: 'DUP-2' } }
+});
+assert.equal(ambiguousUseExisting.issues.length, 0);
+assert.equal(ambiguousUseExisting.split.rows[0].rowId, 'DUP-2', '관리자가 선택한 기존 행 ID를 유지해야 한다.');
+const ambiguousAddNew = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 1) }),
+  targetRows: [
+    { rowId: 'DUP-1', itemCode: 'SHARED-CODE', itemName: '중복 1' },
+    { rowId: 'DUP-2', itemCode: 'SHARED-CODE', itemName: '중복 2' }
+  ],
+  resolutions: { 'source-1': { action: 'ADD_NEW' } }
+});
+assert.equal(ambiguousAddNew.issues.length, 0);
+assert.equal(ambiguousAddNew.split.rows.some(row => row.rowId.startsWith('SIROW-BULK-')), true, '신규 행 결정은 새 ID를 생성해야 한다.');
+assert.deepEqual(ambiguousAddNew.split.rows.filter(row => row.rowId.startsWith('DUP-')).map(row => row.rowId), ['DUP-1', 'DUP-2'], '신규 추가 시 기존 모호 후보는 보존해야 한다.');
+const ambiguousExclude = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 1) }),
+  targetRows: [
+    { rowId: 'DUP-1', itemCode: 'SHARED-CODE', itemName: '중복 1' },
+    { rowId: 'DUP-2', itemCode: 'SHARED-CODE', itemName: '중복 2' }
+  ],
+  resolutions: { 'source-1': { action: 'EXCLUDE' } }
+});
+assert.equal(ambiguousExclude.issues.length, 0);
+assert.deepEqual(ambiguousExclude.split.rows.map(row => row.rowId), ['DUP-1', 'DUP-2'], '이번 품목 제외는 입력행만 제외하고 기존 후보를 보존해야 한다.');
+assert.equal(ambiguousExclude.split.session.sourceMatrix.length, 1, '제외한 입력행은 저장 증적에서도 제거해야 한다.');
 
 const components = createEstimateBulkConnectedComponents({
   entries: [
@@ -247,6 +290,18 @@ const components = createEstimateBulkConnectedComponents({
 });
 assert.deepEqual(components.map(component => component.map(entry => entry.groupId).sort()).sort((a, b) => a[0].localeCompare(b[0])), [['G-A', 'G-B'], ['G-C']],
   '같은 연동견적서가 참조하는 업데이트 대상은 하나의 저장 연결 묶음이어야 한다.');
+const readPreimages = collectEstimateBulkReadPreimages({
+  estimates: [
+    { estimateId: 'EST-A', revision: 1 },
+    { estimateId: 'EST-B', revision: 2 },
+    { estimateId: 'LINK-A-B', estimateKind: 'LINKED_GROUP', revision: 3 },
+    { estimateId: 'UNRELATED', revision: 4 }
+  ],
+  changedEstimateIds: ['EST-A', 'LINK-A-B'],
+  linkedRecords: [{ estimateId: 'LINK-A-B', linkedEstimateSources: [{ estimateId: 'EST-A' }, { estimateId: 'EST-B' }] }]
+});
+assert.deepEqual(readPreimages.map(record => record.estimateId), ['EST-A', 'EST-B', 'LINK-A-B'],
+  '연동견적서 재구성에 읽은 변경 없는 EST-B도 같은 트랜잭션 preimage 검증에 포함해야 한다.');
 
 const rebuiltLinked = rebuildLinkedEstimateRecord({
   linkedRecord: {
