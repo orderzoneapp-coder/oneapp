@@ -56,8 +56,8 @@ assert.match(css, /\.estimate-library-kind-button,\s*\.estimate-multi-select-but
   'all estimate-library header controls must expose reliable 44px touch targets');
 assert.match(js, /individualButton\.disabled\s*=\s*state\.busy;[\s\S]*linkedButton\.disabled\s*=\s*state\.busy;/,
   'estimate-list kind controls must remain actionable during multi-select');
-assert.match(js, /function selectEstimateLibraryKind\(kind\)\s*\{[\s\S]*const multiSelect = estimateMultiSelectActive\(\);[\s\S]*if \(multiSelect\) cancelEstimateMultiSelect\(\);[\s\S]*state\.estimateLibraryKind = kind;/,
-  'switching estimate-list kind must safely cancel multi-select before navigation');
+assert.match(js, /function selectEstimateLibraryKind\(kind,[\s\S]*const multiSelect = estimateMultiSelectActive\(\);[\s\S]*if \(estimateCreationActive\(\)\)[\s\S]*cancelEstimateCreation\(\{ silent: true, persist: false, render: false \}\);[\s\S]*else if \(multiSelect\)[\s\S]*state\.estimateMultiSelectKind = '';[\s\S]*state\.estimateLibraryKind = kind;/,
+  'switching estimate-list kind must safely cancel multi-select without persisting the navigation state');
 assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
   'the right-panel footer must stay at or below 44px with two horizontal actions');
 assert.match(css, /\.estimate-info-customer__value\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
