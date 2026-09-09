@@ -841,6 +841,8 @@
       rowWarehouseCode: text(input.rowWarehouseCode),
       rowVoucherNo: text(input.rowVoucherNo),
       unitPrice: numberOrNull(input.unitPrice ?? input.price),
+      saleAmount1: numberOrNull(input.saleAmount1),
+      saleAmount2: numberOrNull(input.saleAmount2),
       sourceUnitPrice: sourceValue(
         Object.prototype.hasOwnProperty.call(input, 'sourceUnitPrice') && input.sourceUnitPrice !== null
           ? input.sourceUnitPrice

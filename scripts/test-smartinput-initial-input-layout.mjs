@@ -172,13 +172,22 @@ const saleRow = contract.normalizeRow({ itemCode: '001', saleAmount1: 0, saleAmo
   customValues: { 'custom.text.01': '001234', 'erp.sale.current.line.unmapped_3396a63d': '선출고' } });
 const saleLoaded = contract.normalizeRow(plain(saleRow));
 assert.equal(saleLoaded.saleAmount1, 0);
-assert.equal(saleLoaded.saleAmount2, '');
+assert.equal(saleLoaded.saleAmount2, null);
 assert.equal(saleLoaded.saleMemo3, '001 구매처');
 assert.equal(saleLoaded.customValues['erp.sale.current.line.unmapped_3396a63d'], '선출고');
 assert.equal(saleLoaded.customValues['custom.text.01'], '001234', 'date is user text; leading zeroes must survive');
 assert.equal(contract.normalizeRow({ saleAmount1: -1200.5 }).saleAmount1, -1200.5);
 assert.equal(contract.markUserEdit(saleRow, 'saleMemo3', '새 구매처').saleMemo3, '새 구매처');
 assert.equal(contract.markUserEdit(saleRow, 'saleAmount2', 0).saleAmount2, 0);
+for (const fieldId of ['saleAmount1', 'saleAmount2']) {
+  for (const [input, expectedValue] of [['-27.5', -27.5], ['0', 0], ['', null]]) {
+    const editedSale = contract.markProductEdit(saleRow, fieldId, input);
+    assert.equal(editedSale[fieldId], expectedValue, `${fieldId}: typed input must use numeric values and retain blanks separately from zero`);
+    assert.equal(editedSale.editedFields[fieldId], true);
+    assert.equal(contract.normalizeRow(plain(editedSale))[fieldId], expectedValue,
+      `${fieldId}: edited numeric values and blanks must survive draft persistence`);
+  }
+}
 
 const occupiedSettings = contract.normalizeSettings({ ...plain(settings), customFields: [
   { id: 'custom.text.01', label: '고객 보존 문자', scope: 'voucher', category: 'CUSTOM', valueType: 'TEXT' }
