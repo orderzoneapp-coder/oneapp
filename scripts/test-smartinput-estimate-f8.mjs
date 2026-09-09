@@ -326,6 +326,36 @@ assert.equal(rowMissingIntegrity.status, 'PARTIAL_MISSING', '원본 레코드가
 assert.deepEqual(rowMissingIntegrity.missingSourceIds, []);
 assert.equal(rowMissingIntegrity.missingRowRefs[0].rowId, 'DELETED-ROW');
 
+const draftlessSourceRecord = structuredClone(missingLinkedRecord);
+draftlessSourceRecord.estimateId = 'LINKED-DRAFTLESS-SOURCE';
+draftlessSourceRecord.linkedEstimateSources = [
+  { estimateId: 'EST-A', catalogName: 'A 견적' },
+  { estimateId: 'EST-DRAFTLESS', catalogName: '작업본 없는 원본' }
+];
+draftlessSourceRecord.draft.catalogRecordId = draftlessSourceRecord.estimateId;
+draftlessSourceRecord.draft.linkedEstimateSources = structuredClone(draftlessSourceRecord.linkedEstimateSources);
+draftlessSourceRecord.draft.rows[1] = {
+  ...draftlessSourceRecord.draft.rows[1],
+  linkedSourceEstimateId: 'EST-DRAFTLESS',
+  linkedSourceEstimateIds: ['EST-DRAFTLESS'],
+  linkedSourceRefs: [{ estimateId: 'EST-DRAFTLESS', rowId: 'ROW-DRAFTLESS' }]
+};
+const draftlessSourceIntegrity = inspectEstimateF8Integrity({
+  record: draftlessSourceRecord,
+  allRecords: [...individualRecords, { estimateId: 'EST-DRAFTLESS', estimateKind: 'INDIVIDUAL', catalogName: '작업본 없는 원본' }]
+});
+assert.equal(draftlessSourceIntegrity.status, 'PARTIAL_MISSING', '레코드만 있고 draft가 없는 원본은 정리 가능한 누락으로 분류해야 한다.');
+assert.deepEqual(draftlessSourceIntegrity.missingSourceIds, ['EST-DRAFTLESS']);
+const draftlessRecovered = applyEstimateF8PartialRecovery({
+  linkedRecord: draftlessSourceRecord,
+  allRecords: individualRecords,
+  diagnosis: draftlessSourceIntegrity,
+  operationId: 'SIF8REC-DRAFTLESS',
+  actorId: 'ADMIN',
+  occurredAt: '2026-09-10T02:00:00.000Z'
+});
+assert.equal(inspectEstimateF8Integrity({ record: draftlessRecovered, allRecords: [draftlessRecovered, ...individualRecords] }).status, 'READY');
+
 const allMissingRecord = structuredClone(missingLinkedRecord);
 allMissingRecord.estimateId = 'LINKED-ALL-MISSING';
 allMissingRecord.catalogName = '전체 누락 연동';
@@ -354,6 +384,8 @@ assert.equal(independentCopy.draft.estimateKind, 'INDIVIDUAL');
 assert.deepEqual(independentCopy.linkedEstimateSources, []);
 assert.equal(independentCopy.draft.rows.every(row => !('linkedSourceRefs' in row) && !('linkedSourceEstimateId' in row)), true);
 assert.equal(independentCopy.recoveryOrigin.type, 'LINKED_SNAPSHOT_WITHOUT_SOURCES');
+assert.equal(independentCopy.recoveryOrigin.impactFingerprint, allMissingIntegrity.impactFingerprint,
+  'Excel 재시도에서 같은 독립 복구 사본을 찾을 수 있도록 영향 지문을 저장해야 한다.');
 assert.equal(independentCopy.recoveryOrigin.sourceLinkedEstimateId, 'LINKED-ALL-MISSING');
 assert.equal(independentCopy.estimateAutomationHistory.at(-1).operationId, 'SIF8REC-2');
 assert.equal(allMissingRecord.estimateKind, 'LINKED_GROUP', '독립 사본 생성은 원본 stale 연동견적서를 변경하면 안 된다.');

@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', 'cd93dcc67872e87eef56f5a3f733eb058d9e4f627e4a1ef9645f31b2e6c73eec'],
-  ['../smartinput/smartinput.css', '485353de30c79c1c3db2f0f94ee419080d8b70edbdb9e824d6d8a40b89caa825'],
-  ['../smartinput/smartinput.js', '33db4813c99fecdf040e036b0b17aa7fb7a2a06a862c004d0c2785fda46e0f38']
+  ['../smartinput/index.html', 'f7d1fac487ccbd4d283160ec81a9ca2010fabd26e97ea4de4d4df7e127dd16d5'],
+  ['../smartinput/smartinput.css', 'c838e5d167975f5577ae072f27834f28875cf24b8a907019d18643a98f27bc31'],
+  ['../smartinput/smartinput.js', '3761901e625ee2338b0b5451e768ddc3b18ef384ab6b5c88edec3b18c66731da']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -196,5 +196,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-and-active-row-focus'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-and-estimate-automation-hardening'
 }, null, 2));

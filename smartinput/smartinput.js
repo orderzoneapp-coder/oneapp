@@ -88,7 +88,7 @@ import {
   applyEstimateF8PartialRecovery,
   createEstimateF8IndependentCopy,
   inspectEstimateF8Integrity
-} from './estimate-f8-recovery.js?v=0.1.0';
+} from './estimate-f8-recovery.js?v=0.1.1';
 import {
   chooseEstimateWorkbookCandidate,
   inspectEstimateWorkbookCandidate,
@@ -163,6 +163,7 @@ import {
   ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
   ESTIMATE_BULK_TARGET_MATCH_TYPE,
   classifyEstimateBulkRows,
+  collectEstimateBulkReadPreimages,
   createEstimateBulkNewRecord,
   createEstimateBulkProgress,
   createEstimateBulkReplacementRecord,
@@ -170,7 +171,7 @@ import {
   createEstimatePerCustomerPlan,
   estimateBulkTargetMatchContextKey,
   estimateBulkDraftsEquivalent
-} from './estimate-bulk-update.js?v=0.3.0';
+} from './estimate-bulk-update.js?v=0.3.1';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -8151,6 +8152,15 @@ function estimateF8MissingDiagnoses(records, allRecords) {
     .filter(diagnosis => ['PARTIAL_MISSING', 'ALL_MISSING', 'INVALID'].includes(diagnosis.status));
 }
 
+function estimateF8ReusableIndependentCopy(diagnosis, records = state.estimates) {
+  if (diagnosis?.status !== 'ALL_MISSING') return null;
+  return records.find(record => record?.estimateKind !== 'LINKED_GROUP'
+    && record?.draft && Array.isArray(record.draft.rows)
+    && record?.recoveryOrigin?.type === 'LINKED_SNAPSHOT_WITHOUT_SOURCES'
+    && record.recoveryOrigin.sourceLinkedEstimateId === diagnosis.targetEstimateId
+    && record.recoveryOrigin.impactFingerprint === diagnosis.impactFingerprint) || null;
+}
+
 function estimateF8WorkingRebase(updatedRecord) {
   const workingDraft = state.estimateWorkingCopies.get(updatedRecord.estimateId);
   if (!workingDraft) return null;
@@ -8188,6 +8198,15 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
   if (!diagnoses.length) return { status: 'NOT_APPLICABLE' };
   const invalid = diagnoses.find(diagnosis => diagnosis.status === 'INVALID');
   if (invalid) return { status: 'FAILED', error: invalid.message };
+  const reusableCopies = diagnoses.map(diagnosis => estimateF8ReusableIndependentCopy(diagnosis));
+  if (reusableCopies.every(Boolean)) {
+    const copyBySourceId = new Map(reusableCopies.map(copy => [copy.recoveryOrigin.sourceLinkedEstimateId, copy.estimateId]));
+    return {
+      status: 'RECOVERED',
+      outputRecordIds: targetIds.map(estimateId => copyBySourceId.get(estimateId) || estimateId),
+      recoveredCount: 0
+    };
+  }
   rememberActiveEstimateWork();
   setAppStatus(`견적 F8 연결 확인 · ${diagnoses.length}건의 영향만 확인하세요.`, 'warn');
   let decisions = await showEstimateF8RecoveryDialog(diagnoses);
@@ -8231,13 +8250,18 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
     const occurredAt = new Date().toISOString();
     const actorId = resolveSmartInputActor();
     const estimateUpserts = [];
-    const expectedEstimatePreimages = [];
+    const expectedEstimatePreimages = new Map();
     const expectedMissingEstimateIds = [];
     const outputRecordIds = [...targetIds];
     const rebasedWorkingDrafts = new Map();
     freshDiagnoses.forEach(diagnosis => {
       const linkedRecord = latestById.get(diagnosis.targetEstimateId);
       const decision = decisionById.get(diagnosis.targetEstimateId);
+      expectedEstimatePreimages.set(linkedRecord.estimateId, cloneGridValue(linkedRecord));
+      (linkedRecord.linkedEstimateSources || []).forEach(source => {
+        const sourceRecord = latestById.get(source.estimateId);
+        if (sourceRecord) expectedEstimatePreimages.set(sourceRecord.estimateId, cloneGridValue(sourceRecord));
+      });
       if (diagnosis.status === 'PARTIAL_MISSING' && decision?.action === 'REMOVE_MISSING_LINKS_AND_REBUILD') {
         const updated = applyEstimateF8PartialRecovery({
           linkedRecord,
@@ -8255,10 +8279,17 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
         const rebased = estimateF8WorkingRebase(updated);
         if (rebased) rebasedWorkingDrafts.set(updated.estimateId, rebased);
         estimateUpserts.push(updated);
-        expectedEstimatePreimages.push(linkedRecord);
         return;
       }
       if (diagnosis.status === 'ALL_MISSING' && decision?.action === 'CREATE_INDEPENDENT_COPY') {
+        const reusableCopy = estimateF8ReusableIndependentCopy(diagnosis, latest);
+        if (reusableCopy) {
+          expectedEstimatePreimages.set(reusableCopy.estimateId, cloneGridValue(reusableCopy));
+          copyIds.set(diagnosis.targetEstimateId, reusableCopy.estimateId);
+          const outputIndex = outputRecordIds.indexOf(linkedRecord.estimateId);
+          if (outputIndex >= 0) outputRecordIds[outputIndex] = reusableCopy.estimateId;
+          return;
+        }
         const copyId = copyIds.get(diagnosis.targetEstimateId) || createRecordId('SIEST');
         copyIds.set(diagnosis.targetEstimateId, copyId);
         const copy = createEstimateF8IndependentCopy({
@@ -8281,7 +8312,7 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
     try {
       await commitEstimateLinkBundle({
         estimateUpserts,
-        expectedEstimatePreimages,
+        expectedEstimatePreimages: [...expectedEstimatePreimages.values()],
         expectedMissingIds: { estimates: expectedMissingEstimateIds }
       });
     } catch (error) {
@@ -8422,7 +8453,14 @@ async function exportEstimateExcel() {
       .map(wch => ({ wch }));
     window.XLSX.utils.book_append_sheet(workbook, estimateUploadSheet, '견적서 업로드');
     const dateStamp = new Date().toLocaleDateString('sv-SE');
-    window.XLSX.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
+    try {
+      window.XLSX.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
+    } catch (error) {
+      const detail = error?.message || '브라우저 파일 저장을 완료하지 못했습니다.';
+      setAppStatus(`견적 F8 Excel 생성 실패 · ${detail}`, 'error');
+      toast('복구된 견적서는 저장됐지만 Excel 파일은 생성되지 않았습니다. F8을 다시 실행하면 같은 사본으로 재시도합니다.', 'error');
+      return;
+    }
     setAppStatus(`견적 F8 Excel 생성 완료 · ${plan.selectionCount}개 견적 · ${output.outputRowCount}품목 · 확인 ${output.confirmData.length - 1}건`);
     toast(plan.selectionCount > 1 ? '현재 테이블 미리보기와 같은 상품을 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
   } finally {
@@ -8897,6 +8935,25 @@ function estimateBulkSelectionFromValue(value, catalogName = '') {
   return { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: 'MANUAL' };
 }
 
+function estimateBulkRowReviewHtml(entry = {}) {
+  const targetRows = entry.target?.draft?.rows || [];
+  return (entry.issues || [])
+    .filter(issue => issue.code === 'ESTIMATE_BULK_ROW_MATCH_AMBIGUOUS')
+    .map(issue => {
+      const sourceRowId = issue.sourceRowId || issue.sourceRowIds?.[0] || '';
+      const current = entry.decision?.rowResolutions?.[sourceRowId];
+      const value = current?.action === 'USE_EXISTING'
+        ? `USE_EXISTING:${current.targetRowId}`
+        : (current?.action || '');
+      const candidateOptions = (issue.candidateRowIds || []).map(rowId => {
+        const row = targetRows.find(candidate => String(candidate.rowId || '') === String(rowId)) || {};
+        const label = row.itemName || row.itemCode || rowId;
+        return `<option value="USE_EXISTING:${esc(rowId)}"${value === `USE_EXISTING:${rowId}` ? ' selected' : ''}>기존 행 · ${esc(label)}</option>`;
+      }).join('');
+      return `<label class="estimate-bulk-row-review"><span>${esc(issue.message)}</span><select data-bulk-row-resolution data-source-row-id="${esc(sourceRowId)}" aria-label="${esc(issue.message)}"><option value="">처리 방법을 선택하세요</option>${candidateOptions}<option value="ADD_NEW"${value === 'ADD_NEW' ? ' selected' : ''}>신규 행 추가</option><option value="EXCLUDE"${value === 'EXCLUDE' ? ' selected' : ''}>이번 품목 제외</option></select></label>`;
+    }).join('');
+}
+
 function createEstimatePerCustomerPlanForCurrent(classification, selections = {}, activeEstimateId = modeDraft().catalogRecordId) {
   const current = modeDraft();
   return createEstimatePerCustomerPlan({
@@ -9085,9 +9142,11 @@ async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgres
         const mapping = createEstimateBulkTargetMatch(entry, target, timestamp);
         return mapping ? [mapping] : [];
       });
-      const expectedEstimatePreimages = state.estimates
-        .filter(record => changedById.has(record.estimateId))
-        .map(cloneGridValue);
+      const expectedEstimatePreimages = collectEstimateBulkReadPreimages({
+        estimates: state.estimates,
+        changedEstimateIds: [...changedById.keys()],
+        linkedRecords: linkedUpserts
+      });
       const existingEstimateIds = new Set(expectedEstimatePreimages.map(record => record.estimateId));
       const expectedAliasPreimages = state.aliasMappings
         .filter(mapping => aliasUpserts.some(record => record.aliasMappingId === mapping.aliasMappingId))
@@ -9165,7 +9224,8 @@ function showEstimateBulkUpdateDialog(classification) {
     action: entry.action,
     targetEstimateId: entry.targetEstimateId,
     catalogName: entry.catalogName,
-    matchMethod: entry.matchMethod
+    matchMethod: entry.matchMethod,
+    rowResolutions: cloneGridValue(entry.decision?.rowResolutions || {})
   }]));
   const selectedGroupIds = new Set(currentPlan.entries.filter(entry => ['READY', 'FAILED'].includes(entry.status)).map(entry => entry.groupId));
   const selectionTouched = new Set();
@@ -9182,6 +9242,7 @@ function showEstimateBulkUpdateDialog(classification) {
         <div class="estimate-bulk-row__source"><small>원본 거래처</small><strong title="${esc(estimateBulkCustomerLabel(entry.group))}">${esc(estimateBulkCustomerLabel(entry.group))}</strong><span>${entry.group.itemCount.toLocaleString('ko-KR')}품목</span></div>
         <div class="estimate-bulk-row__target"><label><span>처리 대상</span><select data-bulk-action aria-label="${esc(estimateBulkCustomerLabel(entry.group))} 처리 대상">${estimateBulkTargetOptions(entry)}</select></label><label data-bulk-create-name-wrap${entry.action === 'CREATE' ? '' : ' hidden'}><span>새 견적서명</span><input type="text" maxlength="80" data-bulk-create-name value="${esc(entry.catalogName)}" placeholder="견적서명을 입력하세요" aria-label="${esc(estimateBulkCustomerLabel(entry.group))} 새 견적서명"></label></div>
         <div class="estimate-bulk-row__result"><span data-bulk-count>— → ${entry.group.itemCount.toLocaleString('ko-KR')}품목</span><strong data-bulk-state>${esc(estimateBulkStatusLabel(entry.status))}</strong><small data-bulk-reason></small></div>
+        <div class="estimate-bulk-row__reviews" data-bulk-row-reviews></div>
       </section>`
     ).join('')}</div>
     <footer><small data-bulk-status aria-live="polite"></small><button type="button" class="button button--quiet" data-close>닫기</button><button type="button" class="button button--primary" data-confirm-bulk>정상 전표 업데이트</button></footer>
@@ -9189,7 +9250,7 @@ function showEstimateBulkUpdateDialog(classification) {
   document.body.append(dialog);
   let settled = false;
   let applying = false;
-  let view = 'all';
+  let view = currentPlan.entries.some(entry => ['PENDING', 'FAILED'].includes(entry.status)) ? 'review' : 'all';
   const finish = () => {
     if (settled || applying) return;
     settled = true;
@@ -9211,6 +9272,7 @@ function showEstimateBulkUpdateDialog(classification) {
       section.querySelector('[data-bulk-state]').textContent = estimateBulkStatusLabel(entry.status);
       section.querySelector('[data-bulk-reason]').textContent = entry.firstIssue?.message || entry.previousEntry?.errorMessage
         || (String(entry.matchMethod || '').startsWith('MATCH_DICTIONARY') ? '매칭사전 자동 적용' : '');
+      section.querySelector('[data-bulk-row-reviews]').innerHTML = estimateBulkRowReviewHtml(entry);
       section.querySelector('[data-bulk-action]').value = estimateBulkSelectionValue(entry);
       const createNameInput = section.querySelector('[data-bulk-create-name]');
       if (document.activeElement !== createNameInput && createNameInput.value !== entry.catalogName) createNameInput.value = entry.catalogName;
@@ -9257,6 +9319,21 @@ function showEstimateBulkUpdateDialog(classification) {
     selectionTouched.delete(section.dataset.bulkGroup);
     sync();
   }));
+  dialog.addEventListener('change', event => {
+    const select = event.target.closest?.('[data-bulk-row-resolution]');
+    if (!select) return;
+    const section = select.closest('[data-bulk-group]');
+    const groupId = section.dataset.bulkGroup;
+    const sourceRowId = select.dataset.sourceRowId;
+    const base = selections[groupId] || { action: 'NONE', targetEstimateId: '', catalogName: '', matchMethod: 'MANUAL' };
+    const rowResolutions = cloneGridValue(base.rowResolutions || {});
+    if (!select.value) delete rowResolutions[sourceRowId];
+    else if (select.value.startsWith('USE_EXISTING:')) rowResolutions[sourceRowId] = { action: 'USE_EXISTING', targetRowId: select.value.slice(13) };
+    else rowResolutions[sourceRowId] = { action: select.value, targetRowId: '' };
+    selections[groupId] = { ...base, rowResolutions, matchMethod: 'MANUAL' };
+    selectionTouched.delete(groupId);
+    sync();
+  });
   dialog.querySelectorAll('[data-bulk-select]').forEach(input => input.addEventListener('change', () => {
     const groupId = input.closest('[data-bulk-group]').dataset.bulkGroup;
     selectionTouched.add(groupId);
@@ -9288,7 +9365,13 @@ function showEstimateBulkUpdateDialog(classification) {
         dialog.querySelector('[data-bulk-status]').textContent = `처리 중 · 저장 완료 ${completed}개${failed ? ` · 저장 실패 ${failed}개` : ''}`;
       });
       applied.results.filter(result => result.targetEstimateId).forEach(result => {
-        selections[result.groupId] = { action: 'UPDATE', targetEstimateId: result.targetEstimateId, catalogName: '', matchMethod: 'MATCH_DICTIONARY_SAVED' };
+        selections[result.groupId] = {
+          action: 'UPDATE',
+          targetEstimateId: result.targetEstimateId,
+          catalogName: '',
+          matchMethod: 'MATCH_DICTIONARY_SAVED',
+          rowResolutions: cloneGridValue(selections[result.groupId]?.rowResolutions || {})
+        };
       });
       applying = false;
       view = applied.results.some(result => result.status === 'FAILED') || currentPlan.summary.pending ? 'review' : 'all';
@@ -9313,6 +9396,36 @@ function showEstimateBulkUpdateDialog(classification) {
     ? dialog.querySelector(`[data-bulk-group="${CSS.escape(firstPending.groupId)}"] [data-bulk-action]`)
     : dialog.querySelector('[data-bulk-action]');
   (firstControl || dialog.querySelector('[data-close]'))?.focus({ preventScroll: true });
+}
+
+async function runAutomaticEstimateBulkUpdates(classification) {
+  let plan = createEstimatePerCustomerPlanForCurrent(classification);
+  const executableIds = new Set(plan.entries
+    .filter(entry => ['READY', 'FAILED'].includes(entry.status) && entry.candidate)
+    .map(entry => entry.groupId));
+  if (executableIds.size) {
+    state.busy = true;
+    renderDelivery();
+    setAppStatus(`정확히 연결된 견적서 ${executableIds.size.toLocaleString('ko-KR')}건을 자동 업데이트하고 있습니다.`);
+    try {
+      await applyEstimatePerCustomerUpdates(plan, executableIds);
+    } finally {
+      state.busy = false;
+      renderDelivery();
+    }
+    plan = createEstimatePerCustomerPlanForCurrent(classification);
+  }
+  const attention = plan.entries.filter(entry => ['PENDING', 'FAILED'].includes(entry.status));
+  if (attention.length) {
+    setAppStatus(`자동 처리 완료 · 확인이 필요한 연결 ${attention.length.toLocaleString('ko-KR')}건`, 'warn');
+    showEstimateBulkUpdateDialog(classification);
+    return;
+  }
+  const completed = plan.summary.completed;
+  const unchanged = plan.summary.unchanged;
+  const message = `견적서 자동 업데이트 완료 · 저장 ${completed.toLocaleString('ko-KR')}건 · 변경 없음 ${unchanged.toLocaleString('ko-KR')}건`;
+  setAppStatus(message);
+  toast(message, 'success');
 }
 
 function openEstimateSaveDialog({ saveAs = false } = {}) {
@@ -9684,7 +9797,7 @@ async function completeOrder() {
       ? classifyEstimateBulkRows(current.rows)
       : null;
     if (!creation && estimateBulk?.groups.length > 1) {
-      showEstimateBulkUpdateDialog(estimateBulk);
+      await runAutomaticEstimateBulkUpdates(estimateBulk);
       return;
     }
     if (!validateEstimateDocument()) return;
