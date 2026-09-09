@@ -7,12 +7,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.20.0";
+  const ENGINE_VERSION = "3.21.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
   const SYSTEM_HISTORY_SCHEMA_VERSION = "shipping-system-history/v1";
   const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
+  const DUPLICATE_ORDER_REVIEW_MESSAGE = "주문서 중복 여부 확인";
+  const QUANTITY_INPUT_REVIEW_MESSAGE = "수량 입력 오류 확인";
   const HEADER_SCAN_LIMIT = 30;
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
     "품목코드",
@@ -187,6 +189,81 @@
       ok: true,
       value: roundQuantity(negative ? -parsed : parsed),
       blank: false,
+    };
+  }
+
+  function orderReviewSource(input = {}) {
+    const rows = Array.isArray(input?.orders)
+      ? input.orders
+      : Array.isArray(input?.rows)
+        ? input.rows
+        : [];
+    const source = input?.sourceFiles?.orders || input || {};
+    return { rows, source };
+  }
+
+  function orderOriginalIdentityKey(row, source = {}) {
+    const orderId = cleanText(row?.orderId || source?.orderId);
+    const sourceDocumentKey = cleanText(row?.sourceDocumentKey || source?.sourceDocumentKey);
+    const orderItemId = cleanText(row?.orderItemId);
+    const sourceLineKey = cleanText(row?.sourceLineKey);
+    const rowNumber = Number(row?.sourceRowNumber) > 0 ? String(Number(row.sourceRowNumber)) : "";
+    const lineIdentity = orderItemId || sourceLineKey || rowNumber;
+
+    if (orderId && lineIdentity) return `order-id:${orderId}\u001fline:${lineIdentity}`;
+    if (sourceDocumentKey && lineIdentity) {
+      return `source-document:${sourceDocumentKey}\u001fline:${lineIdentity}`;
+    }
+
+    const orderNumber = cleanText(row?.orderNumber || source?.orderNo);
+    const sourceFingerprint = cleanText(
+      row?.sourceFingerprint || source?.orderSnapshotHash || source?.sha256 || source?.fileHash,
+    );
+    const originalLocation = sourceLineKey || rowNumber;
+    if (orderNumber && sourceFingerprint && originalLocation) {
+      return `order-number:${orderNumber}\u001ffingerprint:${sourceFingerprint}\u001fline:${originalLocation}`;
+    }
+    return "";
+  }
+
+  function getOrderReviewState(input = {}) {
+    const { rows, source } = orderReviewSource(input);
+    const identityRows = new Map();
+    const quantityIssues = [];
+
+    rows.forEach((row, index) => {
+      const parsedQuantity = parseNumericCell(row?.quantity);
+      if (!parsedQuantity.ok || parsedQuantity.blank) {
+        quantityIssues.push({
+          sourceRowNumber: Number(row?.sourceRowNumber) || index + 1,
+          productCode: normalizeProductCode(row?.productCode),
+          value: row?.quantity,
+        });
+      }
+      const identityKey = orderOriginalIdentityKey(row, source);
+      if (!identityKey) return;
+      if (!identityRows.has(identityKey)) identityRows.set(identityKey, []);
+      identityRows.get(identityKey).push({
+        sourceRowNumber: Number(row?.sourceRowNumber) || index + 1,
+        productCode: normalizeProductCode(row?.productCode),
+        identityKey,
+      });
+    });
+
+    const duplicateGroups = [...identityRows.entries()]
+      .filter(([, occurrences]) => occurrences.length > 1)
+      .map(([identityKey, occurrences]) => ({ identityKey, occurrences }));
+    const duplicateRows = duplicateGroups.flatMap((group) => group.occurrences);
+    return {
+      hasDuplicateOrders: duplicateGroups.length > 0,
+      hasQuantityErrors: quantityIssues.length > 0,
+      duplicateOrderCount: duplicateGroups.length,
+      quantityErrorCount: quantityIssues.length,
+      duplicateGroups,
+      duplicateRows,
+      quantityIssues,
+      duplicateProductCodes: [...new Set(duplicateRows.map((row) => row.productCode).filter(Boolean))],
+      quantityErrorProductCodes: [...new Set(quantityIssues.map((row) => row.productCode).filter(Boolean))],
     };
   }
 
@@ -558,14 +635,13 @@
         const quantityCell = getField(row, columnMap, "수량");
         const quantity = parseNumericCell(quantityCell);
         if (!quantity.ok || quantity.blank) {
-          errors.push(
+          warnings.push(
             createIssue(
               "ORDER_QUANTITY_INVALID",
-              `${rowIndex + 1}행 주문수량은 빈값이 아닌 유한한 숫자여야 합니다.`,
+              `${rowIndex + 1}행 주문수량은 공란이 아니고 유한한 숫자여야 합니다. 계산에서 제외되며 수정 전까지 저장·Excel 출력이 차단됩니다.`,
               { rowNumber: rowIndex + 1, productCode: code, value: quantityCell },
             ),
           );
-          continue;
         }
 
         const price = parseNumericCell(getField(row, columnMap, "단가"));
@@ -605,7 +681,7 @@
           productCode: code,
           productName: cleanText(getField(row, columnMap, "품목명")),
           specification: cleanText(getField(row, columnMap, "규격")),
-          quantity: quantity.value,
+          quantity: quantity.ok && !quantity.blank ? quantity.value : originalText(quantityCell),
           sourceStock: getField(row, columnMap, "재고"),
           unitPrice: price.ok && !price.blank ? price.value : null,
           supplyAmount: isBlank(supplyAmountCell)
@@ -634,6 +710,10 @@
     const memoCount = rows.filter((row) => row.note || row.note1).length;
     const zeroQuantityCount = rows.filter((row) => row.quantity === 0).length;
     const negativeQuantityCount = rows.filter((row) => row.quantity < 0).length;
+    const invalidQuantityCount = rows.filter((row) => {
+      const parsed = parseNumericCell(row.quantity);
+      return !parsed.ok || parsed.blank;
+    }).length;
     if (zeroQuantityCount > 0 || negativeQuantityCount > 0) {
       warnings.push(
         createIssue(
@@ -660,6 +740,7 @@
       memoCount,
       zeroQuantityCount,
       negativeQuantityCount,
+      invalidQuantityCount,
       errors,
       warnings,
       headerMapping: {
@@ -1094,6 +1175,21 @@
     ];
     const notices = collectNotices(ordersParsed?.rows || []);
     const duplicateCodes = inventoryParsed?.duplicateCodes || [];
+    const orderReview = getOrderReviewState(ordersParsed || {});
+    if (orderReview.hasDuplicateOrders) {
+      warnings.push(createIssue(
+        "ORDER_DUPLICATE_REVIEW_REQUIRED",
+        `${orderReview.duplicateOrderCount}건의 주문 원본 식별정보가 중복되었습니다. 주문서 중복 여부를 확인하세요.`,
+        { duplicateGroups: orderReview.duplicateGroups },
+      ));
+    }
+    if (orderReview.hasQuantityErrors && !warnings.some((issue) => issue.code === "ORDER_QUANTITY_INVALID")) {
+      warnings.push(createIssue(
+        "ORDER_QUANTITY_INVALID",
+        `${orderReview.quantityErrorCount}행의 주문수량 입력 오류가 있습니다. 계산에서 제외되며 수정 전까지 저장·Excel 출력이 차단됩니다.`,
+        { quantityIssues: orderReview.quantityIssues },
+      ));
+    }
 
     return {
       canAnalyze: Boolean(ordersParsed && inventoryParsed && errors.length === 0),
@@ -1104,6 +1200,10 @@
       unmatchedCount: unmatchedCodes.length,
       duplicateCodes,
       duplicateCount: duplicateCodes.length,
+      duplicateOrderCount: orderReview.duplicateOrderCount,
+      quantityErrorCount: orderReview.quantityErrorCount,
+      hasDuplicateOrders: orderReview.hasDuplicateOrders,
+      hasQuantityErrors: orderReview.hasQuantityErrors,
       notices,
       noticeCount: notices.length,
       memoIssues: notices,
@@ -1527,15 +1627,20 @@
       });
   }
 
-  function getSystemMessages(workspace, productCode) {
-    return [
-      ...getSubstitutionMessages(workspace, productCode),
-      ...getSystemEditMessages(workspace, productCode),
-    ].sort((left, right) => {
-      const leftTime = Date.parse(left.occurredAt) || 0;
-      const rightTime = Date.parse(right.occurredAt) || 0;
-      return rightTime - leftTime;
-    });
+  function getSystemMessages(workspace, productCode, reviewState = null) {
+    const code = normalizeProductCode(productCode);
+    if (!code) return [];
+    const review = reviewState || getOrderReviewState(workspace);
+    const duplicateCodes = new Set(review.duplicateProductCodes || []);
+    const quantityErrorCodes = new Set(review.quantityErrorProductCodes || []);
+    const messages = [];
+    if (duplicateCodes.has(code)) {
+      messages.push({ kind: "ORDER_DUPLICATE_REVIEW", message: DUPLICATE_ORDER_REVIEW_MESSAGE });
+    }
+    if (quantityErrorCodes.has(code)) {
+      messages.push({ kind: "ORDER_QUANTITY_REVIEW", message: QUANTITY_INPUT_REVIEW_MESSAGE });
+    }
+    return messages;
   }
 
   function getInventoryViewRows(workspace) {
@@ -1544,6 +1649,7 @@
     const overrideMap = getInventoryOverrideMap(workspace, columns);
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryAliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
+    const orderReview = getOrderReviewState(workspace);
     const orderProducts = new Map();
     (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((order) => {
       const productCode = normalizeProductCode(order?.productCode);
@@ -1563,13 +1669,13 @@
       if (!product.unit) product.unit = cleanText(order?.sourceUnit);
       const parsed = parseNumericCell(order?.quantity);
       product.orderQuantity = roundQuantity(
-        product.orderQuantity + (parsed.ok ? parsed.value : 0),
+        product.orderQuantity + (parsed.ok && !parsed.blank ? parsed.value : 0),
       );
     });
     const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
-      const systemMessages = getSystemMessages(workspace, productCode);
+      const systemMessages = getSystemMessages(workspace, productCode, orderReview);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
       const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
@@ -1602,7 +1708,7 @@
     });
     orderProducts.forEach((product, productCode) => {
       if (inventoryCodes.has(productCode)) return;
-      const systemMessages = getSystemMessages(workspace, productCode);
+      const systemMessages = getSystemMessages(workspace, productCode, orderReview);
       const inventory = {
         productCode,
         productName: product.productName,
@@ -2158,8 +2264,7 @@
       : order[field];
     if (field === "quantity") {
       const parsed = parseNumericCell(value);
-      if (!parsed.ok || parsed.blank) throw new Error("주문수량은 빈값이 아닌 숫자여야 합니다.");
-      order.quantity = parsed.value;
+      order.quantity = parsed.ok && !parsed.blank ? parsed.value : originalText(value);
     } else if (field === "unitPrice") {
       const parsed = parseNumericCell(value);
       if (!parsed.ok) throw new Error("단가는 숫자 또는 빈칸이어야 합니다.");
@@ -2183,8 +2288,9 @@
       throw new Error("수정할 수 없는 주문 항목입니다.");
     }
     if (["quantity", "unitPrice"].includes(field)) {
-      order.supplyAmount = typeof order.unitPrice === "number"
-        ? roundQuantity(order.quantity * order.unitPrice)
+      const parsedQuantity = parseNumericCell(order.quantity);
+      order.supplyAmount = typeof order.unitPrice === "number" && parsedQuantity.ok && !parsedQuantity.blank
+        ? roundQuantity(parsedQuantity.value * order.unitPrice)
         : null;
     }
     const nextValue = field === "deliveryNotice" ? order.note : order[field];
@@ -2228,6 +2334,9 @@
     for (const order of ordersParsed.rows) {
       const inventory = inventoryByCode.get(order.productCode);
       const matched = Boolean(inventory);
+      const parsedOrderQuantity = parseNumericCell(order.quantity);
+      const quantityInputValid = parsedOrderQuantity.ok && !parsedOrderQuantity.blank;
+      const calculationQuantity = quantityInputValid ? parsedOrderQuantity.value : 0;
       let wholeAllocation = 0;
       let seoulAllocation = 0;
       let purchaseNeed = null;
@@ -2236,14 +2345,14 @@
 
       if (matched) {
         const state = poolState.get(order.productCode);
-        wholeAllocation = roundQuantity(Math.min(order.quantity, state.wholeRemaining));
+        wholeAllocation = roundQuantity(Math.min(calculationQuantity, state.wholeRemaining));
         state.wholeRemaining = roundQuantity(state.wholeRemaining - wholeAllocation);
-        const afterWhole = roundQuantity(order.quantity - wholeAllocation);
+        const afterWhole = roundQuantity(calculationQuantity - wholeAllocation);
         seoulAllocation = roundQuantity(Math.min(afterWhole, state.seoulRemaining));
         state.seoulRemaining = roundQuantity(state.seoulRemaining - seoulAllocation);
         purchaseNeed = Math.max(
           0,
-          roundQuantity(order.quantity - wholeAllocation - seoulAllocation),
+          roundQuantity(calculationQuantity - wholeAllocation - seoulAllocation),
         );
         wholeRemaining = state.wholeRemaining;
         seoulRemaining = state.seoulRemaining;
@@ -2251,11 +2360,13 @@
 
       const reconciliationDifference = matched
         ? roundQuantity(
-            order.quantity - wholeAllocation - seoulAllocation - purchaseNeed,
+            calculationQuantity - wholeAllocation - seoulAllocation - purchaseNeed,
           )
         : null;
       allocations.push({
         ...order,
+        calculationQuantity,
+        quantityInputValid,
         noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
         inventoryProductName: inventory?.productName || "",
@@ -2313,7 +2424,7 @@
       }
       const summary = summaryByCode.get(allocation.productCode);
       summary.totalOrderQuantity = roundQuantity(
-        summary.totalOrderQuantity + allocation.quantity,
+        summary.totalOrderQuantity + allocation.calculationQuantity,
       );
       summary.wholeAllocation = roundQuantity(
         summary.wholeAllocation + allocation.wholeAllocation,
@@ -2445,11 +2556,11 @@
     });
 
     const totalOrderQuantity = roundQuantity(
-      allocations.reduce((sum, row) => sum + row.quantity, 0),
+      allocations.reduce((sum, row) => sum + row.calculationQuantity, 0),
     );
     const totalMatchedOrderQuantity = roundQuantity(
       allocations.reduce(
-        (sum, row) => sum + (row.inventoryMatched ? row.quantity : 0),
+        (sum, row) => sum + (row.inventoryMatched ? row.calculationQuantity : 0),
         0,
       ),
     );
@@ -2480,8 +2591,12 @@
     const negativePurchaseCount = allocations.filter(
       (row) => typeof row.purchaseNeed === "number" && row.purchaseNeed < 0,
     ).length;
-    const zeroOrderQuantityCount = allocations.filter((row) => row.quantity === 0).length;
-    const negativeOrderQuantityCount = allocations.filter((row) => row.quantity < 0).length;
+    const zeroOrderQuantityCount = allocations.filter(
+      (row) => row.quantityInputValid && row.calculationQuantity === 0,
+    ).length;
+    const negativeOrderQuantityCount = allocations.filter(
+      (row) => row.quantityInputValid && row.calculationQuantity < 0,
+    ).length;
     const reconciliationErrorCount = allocations.filter(
       (row) =>
         row.inventoryMatched &&
@@ -2541,6 +2656,20 @@
         expected: 0,
         status: inputValidation.duplicateCount === 0 ? "정상" : "오류",
         description: "중복은 분석 전 차단",
+      },
+      {
+        item: "주문서 중복 의심",
+        result: inputValidation.duplicateOrderCount,
+        expected: 0,
+        status: inputValidation.duplicateOrderCount === 0 ? "정상" : "확인 필요",
+        description: "동일한 주문 원본 식별정보와 행 식별정보의 중복 건수",
+      },
+      {
+        item: "주문수량 입력 오류",
+        result: inputValidation.quantityErrorCount,
+        expected: 0,
+        status: inputValidation.quantityErrorCount === 0 ? "정상" : "확인 필요",
+        description: "계산 제외 및 수정 전 저장·Excel 출력 차단 대상 행 수",
       },
       {
         item: "상품별 주문수량 대사 차이",
@@ -2667,6 +2796,8 @@
         totalPurchaseNeed,
         unmatchedCount: inputValidation.unmatchedCount,
         duplicateCount: inputValidation.duplicateCount,
+        duplicateOrderCount: inputValidation.duplicateOrderCount,
+        quantityErrorCount: inputValidation.quantityErrorCount,
         noticeCount: notices.length,
         memoCount: notices.length,
         allocationDifference,
@@ -2779,6 +2910,8 @@
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,
     SYSTEM_HISTORY_SCHEMA_VERSION,
     SUBSTITUTION_ORDER_SCHEMA_VERSION,
+    DUPLICATE_ORDER_REVIEW_MESSAGE,
+    QUANTITY_INPUT_REVIEW_MESSAGE,
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
     ORDER_DATE_COLUMNS,
@@ -2798,6 +2931,7 @@
     buildPlanId,
     isPurchaseUploadExcluded,
     parseNumericCell,
+    getOrderReviewState,
     findHeaderRow,
     parseOrderWorkbook,
     parseInventoryWorkbook,

@@ -206,9 +206,10 @@ jobs:
       - name: Test OrderOps allocation and workbook contracts
         run: node scripts/test-shipping-management.mjs
 
-      - name: Test OrderOps substitute shipment and system-message history
+      - name: Test OrderOps substitute shipment and unresolved system-message review
         run: |
           node scripts/test-orderq-substitute-shipment.mjs
+          node scripts/test-orderq-system-message-review.mjs
           node scripts/test-orderops-excel-cell-grid-browser.mjs
 
       - name: Test ORDER Q to OrderOps shipment pipeline and operator recovery

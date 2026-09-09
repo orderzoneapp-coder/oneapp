@@ -1,6 +1,6 @@
 # Shipping Management 개발 가이드
 
-- 문서 버전: 3.5.0
+- 문서 버전: 3.6.0
 - 대상 진입점: `orderops/list.html`, 호환 mirror `orderops_list.html`
 - 현재 단계: 주문 자동연동·출고결과·구매계획·로컬 복구 Pilot
 - 업무 소유자: 배송·발주 운영 관리자
@@ -45,7 +45,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
   - `창고별 재고`
   - `검증결과`
   - `주문원본`
-- 내부 작업공간은 `shipping-workspace/v2` JSON 계약으로 직렬화 가능하게 유지하고, `shipping-inventory-overrides/v1`과 append-only `shipping-substitution-history/v1`을 선택적 additive 필드로만 포함한다.
+- 내부 작업공간은 `shipping-workspace/v2` JSON 계약으로 직렬화 가능하게 유지하고, `shipping-inventory-overrides/v1`, append-only `shipping-substitution-history/v1`, `shipping-system-history/v1`을 선택적 additive 필드로만 포함한다.
 - 창고별 재고의 동적 창고수량·기본·전송·창고단가·구매는 편집 가능하고 자동 `수량`은 읽기 전용이다. 편집값은 sourceIndex+정규화 머리글 안정키로 원본 matrix와 분리해 저장한다.
 - 분석 workspace와 구매·재고 override는 IndexedDB에 자동저장하며, localStorage에는 복구 포인터와 메타데이터만 저장한다.
 - 그리드 안에서 Enter/Shift+Enter와 방향키로 이동하고 Esc로 미확정 값을 취소한다. Tab/Shift+Tab은 현재 필터에 표시된 실제 부족상품의 구매 입력만 순환하며 다음 행을 화면 세로 중앙에 놓고 입력값을 전체선택한다. 표 밖 Tab은 브라우저 기본 동작을 유지한다.
@@ -69,13 +69,16 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 수량은 공란을 공란으로, 0을 흐린 회색으로, 양수를 기본색으로, 음수를 빨강으로 표시한다. 정확한 `EA`·`소분` 행의 품명·규격·수량 문맥은 보통 굵기의 빨간색으로, 정확한 `BOX` 행의 품명과 규격은 함께 굵은 검정색으로 표시한다. 창고별 색은 자동 부여하지 않고 사용자가 명시적으로 저장한 배색만 적용한다.
 - `정보`의 주문 단가는 `거래처(수량)1,000`처럼 천 단위 콤마를 적용한다. 화면과 통합 Excel 표시만 바꾸며 원본 숫자값은 변경하지 않는다.
 
-### 대체출고와 시스템 메시지
+### 대체출고 이력과 시스템 메시지
 
 - 창고별재고의 `정보` 거래처 칩을 클릭한 뒤 `Ctrl+대상 상품 행 클릭`으로 해당 주문의 실제 출고상품을 변경한다. 드래그앤드롭과 정상 건 확인창은 사용하지 않는다.
 - 대체출고는 거래처·주문수량·단가를 유지하고 실제 출고 상품코드·품명·규격·단위만 대상 상품으로 변경한 뒤 기존 배정·잔량·구매필요를 즉시 다시 계산한다.
 - 원 주문상품은 주문행의 요청상품 Snapshot과 원본 Excel matrix에 보존한다. 화면 이동처럼 보이더라도 원 주문을 덮어쓰거나 원본 matrix를 수정하지 않는다.
-- 창고별재고 맨 오른쪽 `시스템 메시지` 열은 원상품에 `[대체됨]`, 대상 상품에 `[대체받음]` 이력을 작업자·시각과 함께 표시한다. JSON 저장값은 `shipping-substitution-history/v1`의 append-only 이벤트다.
-- `Ctrl+Z`는 마지막 유효 대체출고를 복원하고 `[복원됨]`·`[대체취소]` 이벤트를 추가한다. 기존 변경 이력은 삭제하지 않는다.
+- 대체출고·복원은 `shipping-substitution-history/v1`, 일반 셀 수정은 `shipping-system-history/v1` append-only 이벤트로 로컬 복구와 명시적 Cloud revision에 계속 보존한다. 이 과거 이력과 작업자·시각은 `시스템 메시지` 열에 투영하지 않는다.
+- 창고별재고 맨 오른쪽 `시스템 메시지` 열은 현재 미해결 검토 상태만 표시한다. 허용 문구는 `주문서 중복 여부 확인`, `수량 입력 오류 확인` 두 가지이며 둘 다 있으면 이 순서로 표시하고 해결 상태에서는 빈칸이다.
+- 주문서 중복은 동일한 강한 원 주문 identity와 원본 행 identity가 반복될 때만 의심한다. 같은 거래처·상품·날짜·수량 또는 한 주문의 정상 다품목·동일상품 반복행만으로 중복 처리하지 않으며 자동 병합·삭제·보정하지 않는다.
+- 주문수량은 공란 또는 비유한 값만 오류다. 오류 원문과 행은 보존하되 계산에서 제외하고, 수정 전까지 명시적 Cloud 저장과 모든 Excel 출력을 차단한다. 분석·편집·인쇄·로컬 복구는 유지하며 `0`, 음수, 소수, 괄호 음수는 정상 수량이다.
+- `Ctrl+Z`는 마지막 유효 대체출고를 복원하고 취소 이벤트를 추가한다. 기존 변경 이력은 삭제하지 않는다.
 - 같은 상품, 존재하지 않는 상품과 존재하지 않는 주문행은 작업본을 변경하지 않고 오류로 반환한다. 부분수량 분할과 단위 환산은 현재 범위에 포함하지 않는다.
 
 ### 주문 Revision과 출고 확정 충돌
@@ -195,7 +198,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - `orderq/shipment-order-read-adapter.js`는 ORDER Q 주문 Store의 유일한 출고후보 읽기 경계이고 `orderops/orderq-order-source-adapter.js`는 Snapshot을 기존 분석행으로만 변환한다.
 - 출고결과는 `orderops/shipment-result-command-adapter.js`를 통해서만 `ONEAPPShippingResultDB`에 쓰며, ORDER Q가 필요할 때는 출고결과 Read Adapter만 소비한다.
 - 재고 override는 `shipping-workspace/v2` 안의 선택 필드이므로 기존 workspace·Cloud revision은 그대로 읽힌다. schema·품목코드·안정 열키·값 타입 검증에 실패한 override만 무시하고 해당 원본 셀로 fallback한다.
-- 대체출고 이력은 `shipping-workspace/v2` 안의 `shipping-substitution-history/v1` 선택 필드이며 로컬 복구와 명시적 Cloud 저장에 함께 포함한다. 이전 workspace는 빈 이력으로 읽고 기존 계산을 유지한다.
+- 대체출고 이력과 셀 수정 이력은 `shipping-workspace/v2` 안의 `shipping-substitution-history/v1`, `shipping-system-history/v1` 선택 필드이며 로컬 복구와 명시적 Cloud 저장에 함께 포함한다. 이전 workspace는 빈 이력으로 읽고 기존 계산을 유지하며, 두 이력은 미해결 검토 전용 `시스템 메시지` 표시와 분리한다.
 - 탭별 열폭은 Shipping 전용 localStorage `oneapp.shipping.table-widths.v1`에 UI preference로만 저장하며 workspace, IndexedDB 복구, cloud plan, 구매업로드에는 포함하지 않는다. 화면 인쇄와 일반 workbook 열폭도 이 preference를 사용하지 않는다.
 - 탭별 숨김 열은 별도 additive localStorage `oneapp.shipping.hidden-columns.v1`에 안정 열키 배열로만 저장한다. workspace, IndexedDB 복구, cloud plan, 일반 Excel, 구매업로드에는 포함하지 않으며 새 동적 창고 열은 기본 표시한다.
 - cloud 계획은 `ShippingPlanStaging`, append-only `ShippingPlanHistory`, 확정 `ShippingPlanIndex`를 사용한다. index가 유일한 조회 경계다.
@@ -230,7 +233,7 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 
 ### 검증 규칙
 
-- 차단 검증을 통과하기 전에는 분석 버튼을 활성화하지 않는다.
+- 필수 열·재고 중복 등 구조 차단 검증을 통과하기 전에는 분석 버튼을 활성화하지 않는다. 주문수량 오류는 분석·편집을 허용하고 명시적 Cloud 저장·Excel 출력만 실패 폐쇄형으로 차단한다.
 - 미매칭·메모는 분석을 차단하지 않으며 System.IO 업무 상태와 검증결과에서 확인한다.
 - 재고 중복 상품코드는 차단한다.
 - 창고별재고는 품목코드당 한 행인 집계형 양식만 허용한다. `품목코드`·`품목명`·`규격`·`수량`과 하나 이상의 창고별 수량 열이 필요하며, 각 행의 `수량`은 창고별 수량의 부호 포함 합계와 일치해야 한다.
@@ -243,7 +246,8 @@ Shipping Management는 관리자가 주문현황과 창고별재고 Excel을 수
 - 실제 기준 파일과 엣지 케이스 자동 테스트를 모두 실행한다.
 - 브라우저에서 파일 선택, 분석, 탭 전환, 다운로드 버튼 상태, 반응형 레이아웃을 확인한다.
 - 브라우저에서 재고부족 모아보기의 주문행 제외, 6자리 대체후보 묶음, 음수 수량의 부호 유지와 포인트 배색, 상태 배지, 정보 단가 콤마와 Tab 중앙 이동을 확인한다.
-- 브라우저에서 거래처 칩 선택, Ctrl+다른 상품 행 클릭, 즉시 재계산, 양쪽 상품 시스템 메시지, Ctrl+Z 복원과 로컬 복구 후 이력 유지를 확인한다.
+- 브라우저에서 거래처 칩 선택, Ctrl+다른 상품 행 클릭, 즉시 재계산, Ctrl+Z 복원과 로컬 복구 후 이력 유지를 확인하고 대체·수정 이력이 `시스템 메시지` 열에는 나타나지 않는지 확인한다.
+- 강한 원본 identity 중복, 정상 다품목·동일상품 반복, 공란·비유한 수량, `0`·음수·소수·괄호 음수, 두 메시지 동시 순서, 유효 수량 수정 후 즉시 해제·재계산, 수량 오류의 Cloud·Excel 차단과 인쇄 허용을 확인한다.
 - 주문현황에서 검색·규격·담당자·열 필터와 필터 내부 정렬을 조합해 이름 있는 양식으로 저장한 뒤 재선택하여 같은 조건이 복원되는지 확인한다. 양식은 현재 브라우저의 보기 설정이며 분석자료와 Cloud 완료본에는 포함하지 않는다.
 - 주문 자동연동의 orderId·orderItemId·sourceLineKey·revision·snapshotHash 보존, 주문 미존재/빈 주문/오류 상태, 수동 주문 Excel 대체를 확인한다.
 - 출고 명령의 같은 commandId 재시도 멱등성, 다른 payload 충돌, 확정 직전 Revision 변경 차단, 확정 뒤 변경의 `REVIEW_REQUIRED`, 중복 역분개 차단과 역분개 후 순출고수량을 확인한다.

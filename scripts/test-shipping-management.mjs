@@ -328,12 +328,12 @@ assert.doesNotMatch(orderOpsHtml, /background:\s*#fff200/,
   "quantity and purchase states must not use the former noisy saturated yellow fill");
 assert.match(orderOpsHtml, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/,
   "the single Excel output must use the integrated workbook");
-assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
-  "integrated output must remain available when only ERP upload dates need confirmation");
+assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = orderReview\.hasQuantityErrors;/,
+  "integrated output must be blocked only by unresolved quantity errors");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260910-excel-grid") &&
-  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260904-substitute-message"),
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260910-system-message-review") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260910-system-message-review"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
@@ -732,7 +732,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.20.0");
+assert.equal(engine.ENGINE_VERSION, "3.21.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -810,10 +810,13 @@ assert.deepEqual([signedOrders.zeroQuantityCount, signedOrders.negativeQuantityC
 for (const invalidQuantity of ["", "not-a-number", Number.POSITIVE_INFINITY, Number.NaN]) {
   const invalidOrders = parseOrders(buildOrderMatrix([{ code: "INVALID-QTY", quantity: invalidQuantity }]));
   assert.equal(
-    invalidOrders.errors.some((issue) => issue.code === "ORDER_QUANTITY_INVALID"),
+    invalidOrders.warnings.some((issue) => issue.code === "ORDER_QUANTITY_INVALID"),
     true,
-    `invalid quantity must be blocked: ${String(invalidQuantity)}`,
+    `invalid quantity must require review: ${String(invalidQuantity)}`,
   );
+  assert.equal(invalidOrders.errors.length, 0, "quantity review must not block analysis");
+  assert.equal(invalidOrders.rows.length, 1, "invalid quantity rows must remain editable");
+  assert.equal(invalidOrders.rows[0].quantity, String(invalidQuantity), "invalid raw quantity must be preserved");
 }
 const signedWorkspace = engine.analyze(
   signedOrders,
@@ -1121,10 +1124,10 @@ const auditCountBeforeNoop = editAuditEvents.length;
 engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "변경 담당자", editAuditOptions);
 assert.equal(editableWorkspace.systemHistory.events.length, auditCountBeforeNoop,
   "confirming an unchanged cell must not append system history");
-assert.ok(
-  engine.getInventoryViewRows(editableWorkspace).rows[0].systemMessages.some((message) =>
-    message.message.includes("[정보수정] 거래처") && message.actor === "검증작업자"),
-  "successful business-cell edits must project actor and before/after values into system messages",
+assert.equal(
+  engine.getInventoryViewRows(editableWorkspace).rows[0].systemMessages.length,
+  0,
+  "successful business-cell edit history must be preserved without appearing in the review-only system-message column",
 );
 const editableWarehouseColumn = engine.getInventoryColumnDescriptors(editableWorkspace)
   .find((column) => column.role === "warehouseQuantity");
