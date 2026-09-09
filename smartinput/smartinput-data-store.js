@@ -177,6 +177,23 @@ async function getAll(storeName) {
   return rows;
 }
 
+function assertAliasPreimages(currentRecords, expectedPreimages = []) {
+  for (const expected of expectedPreimages) {
+    if (!expected?.aliasMappingId) throw new Error('SMARTINPUT_ESTIMATE_LINK_ALIAS_PREIMAGE_INVALID');
+    const current = currentRecords[expected.aliasMappingId] || null;
+    if (canonicalRecord(current) !== canonicalRecord(expected)) {
+      throw new Error('SMARTINPUT_ESTIMATE_LINK_BUNDLE_STALE');
+    }
+  }
+}
+
+function assertExpectedMissing(currentRecords, expectedMissingIds = [], code) {
+  for (const id of expectedMissingIds) {
+    if (!id) throw new Error('SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING_INVALID');
+    if (currentRecords[id]) throw new Error(code);
+  }
+}
+
 async function getAllStores(storeNames = []) {
   const names = [...new Set(storeNames.filter(Boolean))];
   if (!names.length) return {};
@@ -580,6 +597,84 @@ export async function commitEstimateBundle({ upserts = [], deletes = [], expecte
     ids.forEach(estimateId => store.delete(estimateId));
     await completed;
     return { upserts: records, deletes: ids };
+  } catch (error) {
+    try { transaction.abort(); } catch (_) {}
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
+export async function commitEstimateLinkBundle({
+  estimateUpserts = [],
+  estimateDeletes = [],
+  aliasUpserts = [],
+  aliasDeletes = [],
+  expectedEstimatePreimages = [],
+  expectedAliasPreimages = [],
+  expectedMissingIds = {}
+} = {}) {
+  const estimates = estimateUpserts.filter(record => record?.estimateId);
+  const deletedEstimateIds = [...new Set(estimateDeletes.filter(Boolean))];
+  const aliases = aliasUpserts.filter(record => record?.aliasMappingId);
+  const deletedAliasIds = [...new Set(aliasDeletes.filter(Boolean))];
+  const missingEstimateIds = [...new Set((expectedMissingIds.estimates || []).filter(Boolean))];
+  const missingAliasIds = [...new Set((expectedMissingIds.aliasMappings || []).filter(Boolean))];
+  if (!estimates.length && !deletedEstimateIds.length && !aliases.length && !deletedAliasIds.length) {
+    return { estimateUpserts: [], estimateDeletes: [], aliasUpserts: [], aliasDeletes: [] };
+  }
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    value[DATA_STORES.ESTIMATES] ||= {};
+    value[DATA_STORES.ALIAS_MAPPINGS] ||= {};
+    assertEstimatePreimages(value[DATA_STORES.ESTIMATES], expectedEstimatePreimages);
+    assertAliasPreimages(value[DATA_STORES.ALIAS_MAPPINGS], expectedAliasPreimages);
+    assertExpectedMissing(value[DATA_STORES.ESTIMATES], missingEstimateIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
+    assertExpectedMissing(value[DATA_STORES.ALIAS_MAPPINGS], missingAliasIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
+    estimates.forEach(record => { value[DATA_STORES.ESTIMATES][record.estimateId] = record; });
+    deletedEstimateIds.forEach(estimateId => { delete value[DATA_STORES.ESTIMATES][estimateId]; });
+    aliases.forEach(record => { value[DATA_STORES.ALIAS_MAPPINGS][record.aliasMappingId] = record; });
+    deletedAliasIds.forEach(aliasMappingId => { delete value[DATA_STORES.ALIAS_MAPPINGS][aliasMappingId]; });
+    writeFallback(value);
+    return {
+      estimateUpserts: estimates,
+      estimateDeletes: deletedEstimateIds,
+      aliasUpserts: aliases,
+      aliasDeletes: deletedAliasIds
+    };
+  }
+  const transaction = db.transaction([DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS], 'readwrite');
+  const estimateStore = transaction.objectStore(DATA_STORES.ESTIMATES);
+  const aliasStore = transaction.objectStore(DATA_STORES.ALIAS_MAPPINGS);
+  const completed = transactionDone(transaction);
+  try {
+    const estimatePreimageRequests = expectedEstimatePreimages.map(expected => requestResult(estimateStore.get(expected.estimateId)));
+    const aliasPreimageRequests = expectedAliasPreimages.map(expected => requestResult(aliasStore.get(expected.aliasMappingId)));
+    const missingEstimateRequests = missingEstimateIds.map(estimateId => requestResult(estimateStore.get(estimateId)));
+    const missingAliasRequests = missingAliasIds.map(aliasMappingId => requestResult(aliasStore.get(aliasMappingId)));
+    const [currentEstimates, currentAliases, currentMissingEstimates, currentMissingAliases] = await Promise.all([
+      Promise.all(estimatePreimageRequests),
+      Promise.all(aliasPreimageRequests),
+      Promise.all(missingEstimateRequests),
+      Promise.all(missingAliasRequests)
+    ]);
+    assertEstimatePreimages(Object.fromEntries(expectedEstimatePreimages.map((expected, index) => [expected.estimateId, currentEstimates[index] || null])), expectedEstimatePreimages);
+    assertAliasPreimages(Object.fromEntries(expectedAliasPreimages.map((expected, index) => [expected.aliasMappingId, currentAliases[index] || null])), expectedAliasPreimages);
+    assertExpectedMissing(Object.fromEntries(missingEstimateIds.map((estimateId, index) => [estimateId, currentMissingEstimates[index] || null])), missingEstimateIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
+    assertExpectedMissing(Object.fromEntries(missingAliasIds.map((aliasMappingId, index) => [aliasMappingId, currentMissingAliases[index] || null])), missingAliasIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
+    estimates.forEach(record => estimateStore.put(record));
+    deletedEstimateIds.forEach(estimateId => estimateStore.delete(estimateId));
+    aliases.forEach(record => aliasStore.put(record));
+    deletedAliasIds.forEach(aliasMappingId => aliasStore.delete(aliasMappingId));
+    await completed;
+    return {
+      estimateUpserts: estimates,
+      estimateDeletes: deletedEstimateIds,
+      aliasUpserts: aliases,
+      aliasDeletes: deletedAliasIds
+    };
   } catch (error) {
     try { transaction.abort(); } catch (_) {}
     await completed.catch(() => {});

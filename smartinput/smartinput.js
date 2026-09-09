@@ -92,6 +92,7 @@ import {
 import {
   createRecordId,
   commitEstimateBundle,
+  commitEstimateLinkBundle,
   loadEstimateLibrary,
   loadSmartInputData,
   normalizeAliasName,
@@ -107,7 +108,7 @@ import {
   loadInputTemplates,
   saveInputTemplates,
   saveMappingSessionV2
-} from './smartinput-data-store.js?v=0.6.1';
+} from './smartinput-data-store.js?v=0.6.2';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -148,9 +149,11 @@ import {
   inspectLinkedEstimateSourceEdits,
   inspectLinkedEstimateSourceWorkingCopyConflicts,
   linkedEstimateWorkingDraftsEquivalent,
+  rebaseLinkedEstimateWorkingDraft,
+  rebuildLinkedEstimateRecord,
   removeLinkedEstimateSources,
   restoreLinkedEstimateWorkingRowEdits
-} from './linked-estimate-source-edit.js?v=0.1.1';
+} from './linked-estimate-source-edit.js?v=0.1.2';
 import {
   ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
   ESTIMATE_BULK_TARGET_MATCH_TYPE,
@@ -158,10 +161,11 @@ import {
   createEstimateBulkNewRecord,
   createEstimateBulkProgress,
   createEstimateBulkReplacementRecord,
+  createEstimateBulkConnectedComponents,
   createEstimatePerCustomerPlan,
   estimateBulkTargetMatchContextKey,
   estimateBulkDraftsEquivalent
-} from './estimate-bulk-update.js?v=0.2.2';
+} from './estimate-bulk-update.js?v=0.3.0';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -8571,7 +8575,7 @@ function createEstimatePerCustomerPlanForCurrent(classification, selections = {}
   });
 }
 
-function createEstimateBulkRecord(entry, timestamp) {
+function createEstimateBulkRecord(entry, timestamp, operationId = createRecordId('SILINK')) {
   const current = modeDraft();
   if (!entry?.candidate?.split) throw new Error(`${estimateBulkCustomerLabel(entry?.group)}의 원본 증적을 확인할 수 없습니다.`);
   const action = entry.candidate.action;
@@ -8596,18 +8600,30 @@ function createEstimateBulkRecord(entry, timestamp) {
   replacementDraft.catalogPreviousPrices = { ...previousPrices };
   replacementDraft.catalogBaselinePrices = { ...baselinePrices };
   const summary = contract.summarizeRows(replacementDraft.rows);
-  if (target) {
-    return createEstimateBulkReplacementRecord({ target, replacementDraft, previousPrices, baselinePrices, summary, timestamp });
-  }
-  return createEstimateBulkNewRecord({
-    estimateId,
-    catalogName: entry.candidate.catalogName,
-    group: entry.group,
-    replacementDraft,
-    summary,
-    timestamp,
-    sortOrder: state.estimates.length + 1
-  });
+  const record = target
+    ? createEstimateBulkReplacementRecord({ target, replacementDraft, previousPrices, baselinePrices, summary, timestamp })
+    : createEstimateBulkNewRecord({
+      estimateId,
+      catalogName: entry.candidate.catalogName,
+      group: entry.group,
+      replacementDraft,
+      summary,
+      timestamp,
+      sortOrder: state.estimates.length + 1
+    });
+  const audit = {
+    schemaVersion: 'ONEAPP_SMARTINPUT_ESTIMATE_LINK_SYNC_V1',
+    operationId,
+    action: target ? 'AUTO_UPDATE_EXISTING_ESTIMATE' : 'AUTO_CREATE_ESTIMATE',
+    matchMethod: entry.matchMethod || entry.candidate.matchMethod || '',
+    retainedRowCount: Number(entry.rowReconciliation?.retainedRowCount || 0),
+    addedRowCount: Number(entry.rowReconciliation?.addedRowCount || replacementDraft.rows.length),
+    removedRowIds: cloneGridValue(entry.rowReconciliation?.removedRowIds || []),
+    occurredAt: timestamp
+  };
+  record.estimateLinkHistory = [...(record.estimateLinkHistory || []), audit];
+  record.draft.estimateLinkHistory = [...(record.draft.estimateLinkHistory || []), cloneGridValue(audit)];
+  return record;
 }
 
 function persistEstimateBulkProgress(plan, statusOverrides = {}) {
@@ -8639,6 +8655,9 @@ function createEstimateBulkTargetMatch(entry, target, timestamp) {
   const group = entry.group;
   const normalizedName = normalizeAliasName(group.customerName);
   const existing = estimateBulkExistingTargetMatch(group, contextKey);
+  const sourceIdentityType = group.customerId ? 'CUSTOMER_ID' : (group.customerCode ? 'CUSTOMER_CODE' : 'NORMALIZED_NAME');
+  const manuallyConfirmed = entry.matchMethod === 'MANUAL' || entry.candidate?.matchMethod === 'MANUAL';
+  if (sourceIdentityType === 'NORMALIZED_NAME' && !manuallyConfirmed && !(existing?.confirmedBy && existing?.confirmedAt)) return null;
   return {
     aliasMappingId: existing?.aliasMappingId || createRecordId('SIEMATCH'),
     schemaVersion: ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
@@ -8651,11 +8670,13 @@ function createEstimateBulkTargetMatch(entry, target, timestamp) {
     sourceCustomerName: String(group.customerName || '').trim(),
     rawOrdererName: String(group.customerName || '').trim(),
     normalizedName,
+    sourceIdentityType,
     targetEstimateId: target.estimateId,
     targetEstimateName: estimateTitle(target),
     status: 'CONFIRMED',
-    confirmedBy: state.actorId || 'SMART_INPUT_ADMIN',
+    confirmedBy: existing?.confirmedBy || (manuallyConfirmed ? (state.actorId || 'SMART_INPUT_ADMIN') : 'SMART_INPUT_AUTO'),
     confirmedAt: existing?.confirmedAt || timestamp,
+    confirmationSource: existing?.confirmationSource || (manuallyConfirmed ? 'ADMIN_SELECTION' : 'STABLE_IDENTITY'),
     useCount: Number(existing?.useCount || 0) + 1,
     lastUsedAt: timestamp,
     updatedAt: timestamp
@@ -8672,8 +8693,13 @@ async function rememberEstimateBulkTargetMatches(plan, results) {
     const timestamp = new Date().toISOString();
     const mapping = createEstimateBulkTargetMatch(entry, target, timestamp);
     if (!mapping) continue;
-    await saveAliasMapping(mapping);
     const index = state.aliasMappings.findIndex(item => item.aliasMappingId === mapping.aliasMappingId);
+    const expectedAliasPreimages = index >= 0 ? [cloneGridValue(state.aliasMappings[index])] : [];
+    await commitEstimateLinkBundle({
+      aliasUpserts: [mapping],
+      expectedAliasPreimages,
+      expectedMissingIds: { aliasMappings: index >= 0 ? [] : [mapping.aliasMappingId] }
+    });
     if (index >= 0) state.aliasMappings[index] = mapping;
     else state.aliasMappings.push(mapping);
     savedCount += 1;
@@ -8684,37 +8710,99 @@ async function rememberEstimateBulkTargetMatches(plan, results) {
 async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgress) {
   const statusOverrides = {};
   const results = [];
-  for (const entry of plan.entries) {
-    if (!selectedGroupIds.has(entry.groupId) || !['READY', 'FAILED'].includes(entry.status) || !entry.candidate) continue;
+  const executableEntries = plan.entries.filter(entry => selectedGroupIds.has(entry.groupId)
+    && ['READY', 'FAILED'].includes(entry.status) && entry.candidate);
+  const components = createEstimateBulkConnectedComponents({ entries: executableEntries, estimates: state.estimates });
+  for (const component of components) {
     const timestamp = new Date().toISOString();
+    const operationId = createRecordId('SILINK');
     try {
-      const record = createEstimateBulkRecord(entry, timestamp);
-      if (entry.candidate.target && estimateBulkDraftsEquivalent(entry.candidate.target.draft, record.draft)) {
-        statusOverrides[entry.groupId] = { status: 'UNCHANGED', targetEstimateId: record.estimateId, updatedAt: timestamp };
-        results.push({ groupId: entry.groupId, status: 'UNCHANGED', record: null, targetEstimateId: record.estimateId });
-      } else {
-        const expectedPreimages = entry.candidate.target ? [cloneGridValue(entry.candidate.target)] : [];
-        await commitEstimateBundle({ upserts: [record], expectedPreimages });
-        acceptEstimateBulkRecord(record);
-        statusOverrides[entry.groupId] = { status: 'COMPLETED', action: 'UPDATE', targetEstimateId: record.estimateId, catalogName: record.catalogName, updatedAt: timestamp };
-        results.push({ groupId: entry.groupId, status: 'COMPLETED', record, targetEstimateId: record.estimateId });
-      }
+      const createdByGroup = new Map(component.map(entry => [entry.groupId, createEstimateBulkRecord(entry, timestamp, operationId)]));
+      const changedById = new Map();
+      component.forEach(entry => {
+        const record = createdByGroup.get(entry.groupId);
+        const unchanged = entry.candidate.target && estimateBulkDraftsEquivalent(entry.candidate.target.draft, record.draft);
+        if (!unchanged) changedById.set(record.estimateId, record);
+      });
+      const changedSourceIds = new Set([...changedById.keys()]);
+      const postimageIndividuals = state.estimates
+        .filter(record => record.estimateKind !== 'LINKED_GROUP')
+        .map(record => changedById.get(record.estimateId) || record);
+      changedById.forEach(record => {
+        if (!postimageIndividuals.some(item => item.estimateId === record.estimateId)) postimageIndividuals.push(record);
+      });
+      const linkedUpserts = state.estimates
+        .filter(record => record.estimateKind === 'LINKED_GROUP'
+          && (record.linkedEstimateSources || []).some(source => changedSourceIds.has(source.estimateId)))
+        .map(record => rebuildLinkedEstimateRecord({
+          linkedRecord: record,
+          sourceRecords: postimageIndividuals,
+          occurredAt: timestamp,
+          operationId
+        }));
+      linkedUpserts.forEach(record => changedById.set(record.estimateId, record));
+
+      const aliasUpserts = component.flatMap(entry => {
+        const record = createdByGroup.get(entry.groupId);
+        const target = changedById.get(record.estimateId) || state.estimates.find(item => item.estimateId === record.estimateId) || record;
+        const mapping = createEstimateBulkTargetMatch(entry, target, timestamp);
+        return mapping ? [mapping] : [];
+      });
+      const expectedEstimatePreimages = state.estimates
+        .filter(record => changedById.has(record.estimateId))
+        .map(cloneGridValue);
+      const existingEstimateIds = new Set(expectedEstimatePreimages.map(record => record.estimateId));
+      const expectedAliasPreimages = state.aliasMappings
+        .filter(mapping => aliasUpserts.some(record => record.aliasMappingId === mapping.aliasMappingId))
+        .map(cloneGridValue);
+      const existingAliasIds = new Set(expectedAliasPreimages.map(mapping => mapping.aliasMappingId));
+      await commitEstimateLinkBundle({
+        estimateUpserts: [...changedById.values()],
+        aliasUpserts,
+        expectedEstimatePreimages,
+        expectedAliasPreimages,
+        expectedMissingIds: {
+          estimates: [...changedById.keys()].filter(estimateId => !existingEstimateIds.has(estimateId)),
+          aliasMappings: aliasUpserts.map(mapping => mapping.aliasMappingId).filter(aliasMappingId => !existingAliasIds.has(aliasMappingId))
+        }
+      });
+      changedById.forEach(record => acceptEstimateBulkRecord(record));
+      aliasUpserts.forEach(mapping => {
+        const index = state.aliasMappings.findIndex(item => item.aliasMappingId === mapping.aliasMappingId);
+        if (index >= 0) state.aliasMappings[index] = mapping;
+        else state.aliasMappings.push(mapping);
+      });
+      component.forEach(entry => {
+        const record = createdByGroup.get(entry.groupId);
+        const changed = changedById.has(record.estimateId);
+        const status = changed ? 'COMPLETED' : 'UNCHANGED';
+        statusOverrides[entry.groupId] = {
+          status,
+          action: 'UPDATE',
+          targetEstimateId: record.estimateId,
+          catalogName: record.catalogName,
+          updatedAt: timestamp
+        };
+        results.push({ groupId: entry.groupId, status, record: changed ? record : null, targetEstimateId: record.estimateId });
+      });
     } catch (error) {
-      const stale = String(error?.message || '').includes('SMARTINPUT_ESTIMATE_BUNDLE_STALE');
+      const stale = String(error?.message || '').includes('STALE') || String(error?.message || '').includes('EXPECTED_MISSING');
       const message = stale
-        ? '확인 후 기존 견적서가 변경되었습니다. 이 거래처 전표를 다시 확인하세요.'
-        : (error?.message || '이 거래처 견적서를 저장하지 못했습니다.');
-      statusOverrides[entry.groupId] = {
-        status: 'FAILED',
-        errorCode: stale ? 'ESTIMATE_BULK_GROUP_STALE' : (error?.code || 'ESTIMATE_BULK_GROUP_COMMIT_FAILED'),
-        errorMessage: message,
-        firstIssue: { code: stale ? 'ESTIMATE_BULK_GROUP_STALE' : 'ESTIMATE_BULK_GROUP_COMMIT_FAILED', groupId: entry.groupId, message },
-        updatedAt: timestamp
-      };
-      results.push({ groupId: entry.groupId, status: 'FAILED', error });
+        ? '확인 후 연결 묶음이 변경되었습니다. 이 묶음을 다시 확인하세요.'
+        : (error?.message || '이 연결 묶음을 저장하지 못했습니다.');
+      component.forEach(entry => {
+        statusOverrides[entry.groupId] = {
+          status: 'FAILED',
+          errorCode: stale ? 'ESTIMATE_BULK_COMPONENT_STALE' : (error?.code || 'ESTIMATE_BULK_COMPONENT_COMMIT_FAILED'),
+          errorMessage: message,
+          firstIssue: { code: stale ? 'ESTIMATE_BULK_COMPONENT_STALE' : 'ESTIMATE_BULK_COMPONENT_COMMIT_FAILED', groupId: entry.groupId, message },
+          updatedAt: timestamp
+        };
+        results.push({ groupId: entry.groupId, status: 'FAILED', error });
+      });
     }
     persistEstimateBulkProgress(plan, statusOverrides);
-    onProgress?.({ entry, statusOverrides, results });
+    onProgress?.({ entry: component[0], component, statusOverrides, results });
   }
   const completed = results.filter(result => result.status === 'COMPLETED').length;
   if (completed) {
@@ -8748,7 +8836,7 @@ function showEstimateBulkUpdateDialog(classification) {
   dialog.className = 'smart-dialog estimate-bulk-update-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>Per-customer estimate update</small><h2>거래처별 견적서 업데이트</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <p class="smart-dialog__message">정상 전표만 거래처별로 독립 저장합니다. 문제가 있는 거래처는 품목 일부도 저장하지 않고 확인 필요로 유지하며, 업로드에 없는 견적서는 변경하지 않습니다.</p>
+    <p class="smart-dialog__message">정확히 연결된 전표는 자동 처리하고, 같은 연동견적서를 공유하는 대상은 한 묶음으로 저장합니다. 여러 결과가 가능한 거래처·품목만 확인 필요로 유지합니다.</p>
     <div class="estimate-bulk-summary" data-bulk-summary role="status" aria-live="polite"></div>
     <div class="estimate-bulk-view" role="group" aria-label="전표 표시 범위"><button type="button" class="button button--quiet" data-bulk-view="review" aria-pressed="false">확인 필요</button><button type="button" class="button button--quiet" data-bulk-view="all" aria-pressed="true">전체 보기</button></div>
     <div class="estimate-bulk-issues" data-bulk-issues aria-live="polite"></div>
@@ -8804,7 +8892,7 @@ function showEstimateBulkUpdateDialog(classification) {
       ? `<strong>${esc(attention[0].firstIssue?.message || attention[0].previousEntry?.errorMessage || `${estimateBulkCustomerLabel(attention[0].group)} 전표를 확인하세요.`)}</strong>${attention.length > 1 ? `<span>외 ${attention.length - 1}개 전표를 확인하세요.</span>` : ''}`
       : '';
     dialog.querySelector('[data-bulk-status]').textContent = selectedReady.length
-      ? `선택한 저장 가능 전표 ${selectedReady.length.toLocaleString('ko-KR')}개를 거래처별로 순차 저장합니다.`
+      ? `선택한 저장 가능 전표 ${selectedReady.length.toLocaleString('ko-KR')}개를 연결 묶음별로 저장합니다.`
       : '저장할 정상 전표를 선택하세요. 확인 필요 전표는 저장되지 않습니다.';
     dialog.querySelector('[data-confirm-bulk]').disabled = !selectedReady.length || applying;
     dialog.querySelectorAll('[data-bulk-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.bulkView === view)));
@@ -8853,7 +8941,7 @@ function showEstimateBulkUpdateDialog(classification) {
     if (!executableIds.size) return;
     applying = true;
     dialog.querySelectorAll('button, select, input').forEach(control => { control.disabled = true; });
-    dialog.querySelector('[data-bulk-status]').textContent = '정상 전표를 거래처별로 독립 저장하고 있습니다.';
+    dialog.querySelector('[data-bulk-status]').textContent = '정상 전표와 관련 연동견적서·매칭사전을 연결 묶음별로 저장하고 있습니다.';
     state.busy = true;
     renderDelivery();
     try {
@@ -8865,18 +8953,12 @@ function showEstimateBulkUpdateDialog(classification) {
       applied.results.filter(result => result.targetEstimateId).forEach(result => {
         selections[result.groupId] = { action: 'UPDATE', targetEstimateId: result.targetEstimateId, catalogName: '', matchMethod: 'MATCH_DICTIONARY_SAVED' };
       });
-      let matchSaveError = null;
-      try {
-        await rememberEstimateBulkTargetMatches(currentPlan, applied.results);
-      } catch (error) {
-        matchSaveError = error;
-      }
       applying = false;
       view = applied.results.some(result => result.status === 'FAILED') || currentPlan.summary.pending ? 'review' : 'all';
       sync();
       const summary = currentPlan.summary;
-      const message = `저장 완료 ${summary.completed}개 · 확인 필요 ${summary.pending + summary.failed}개 · 변경 없음 ${summary.unchanged}개${matchSaveError ? ' · 매칭사전 저장 실패' : ''}`;
-      const warning = summary.failed || matchSaveError;
+      const message = `저장 완료 ${summary.completed}개 · 확인 필요 ${summary.pending + summary.failed}개 · 변경 없음 ${summary.unchanged}개`;
+      const warning = summary.failed;
       setAppStatus(message, warning ? 'warn' : undefined);
       toast(message, warning ? 'warn' : 'success');
     } finally {
@@ -9028,6 +9110,7 @@ async function saveEstimateDocument(catalogName) {
     let bundle = [record];
     let deletedEstimateIds = [];
     let cascadedLinkedUpdates = new Map();
+    let rebasedLinkedWorkingCopies = new Map();
     if (record.estimateKind === 'LINKED_GROUP') {
       const evidence = inspectLinkedEstimateSourceEdits({
         linkedRecord: record,
@@ -9095,6 +9178,34 @@ async function saveEstimateDocument(catalogName) {
         nextCurrent.linkedEstimateSources = record.linkedEstimateSources.map(source => ({ ...source }));
         nextCurrent.catalogBaselinePrices = buildCatalogPriceSnapshot(nextCurrent.rows);
       }
+    } else if (updateExistingRecord) {
+      const affectedLinkedRecords = linkedEstimateRecords().filter(item =>
+        (item.linkedEstimateSources || []).some(source => source.estimateId === record.estimateId));
+      if (affectedLinkedRecords.length) {
+        const postimageSources = individualEstimateRecords().map(item => item.estimateId === record.estimateId ? record : item);
+        const operationId = createRecordId('SILINK');
+        const linkedUpdates = affectedLinkedRecords.map(item => rebuildLinkedEstimateRecord({
+          linkedRecord: item,
+          sourceRecords: postimageSources,
+          occurredAt: timestamp,
+          operationId
+        }));
+        linkedUpdates.forEach(linkedUpdate => {
+          const workingDraft = state.estimateWorkingCopies.get(linkedUpdate.estimateId);
+          const storedRecord = state.estimates.find(item => item.estimateId === linkedUpdate.estimateId);
+          if (!workingDraft || !storedRecord?.draft || linkedEstimateWorkingDraftsEquivalent(storedRecord.draft, workingDraft)) return;
+          const baselineDraft = state.estimateWorkingCopyBaselines.get(linkedUpdate.estimateId) || storedRecord.draft;
+          const rebased = rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord: linkedUpdate });
+          if (rebased.conflicts.length) {
+            const error = new Error(`${estimateTitle(storedRecord)} 작업본과 새 원본이 같은 값을 다르게 변경했습니다. 해당 연동견적서를 확인하세요.`);
+            error.code = 'ESTIMATE_LINKED_WORKING_COPY_CONFLICT';
+            error.conflicts = rebased.conflicts;
+            throw error;
+          }
+          rebasedLinkedWorkingCopies.set(linkedUpdate.estimateId, rebased.draft);
+        });
+        bundle = [record, ...linkedUpdates];
+      }
     }
     const bundleIds = new Set([...bundle.map(item => item.estimateId), ...deletedEstimateIds]);
     const expectedPreimages = state.estimates
@@ -9109,7 +9220,12 @@ async function saveEstimateDocument(catalogName) {
       : [...state.estimates.filter(item => !deletedIds.has(item.estimateId)).map(item => bundleById.get(item.estimateId) || item), savedRecord]);
     state.draft.modes.estimate = nextCurrent;
     bundle.forEach(item => {
-      if (!cascadedLinkedUpdates.has(item.estimateId)) state.estimateWorkingCopies.delete(item.estimateId);
+      if (rebasedLinkedWorkingCopies.has(item.estimateId)) {
+        state.estimateWorkingCopies.set(item.estimateId, rebasedLinkedWorkingCopies.get(item.estimateId));
+        state.estimateWorkingCopyBaselines.set(item.estimateId, cloneGridValue(item.draft));
+      } else if (!cascadedLinkedUpdates.has(item.estimateId)) {
+        state.estimateWorkingCopies.delete(item.estimateId);
+      }
     });
     deletedEstimateIds.forEach(deletedId => {
       state.estimateWorkingCopies.delete(deletedId);

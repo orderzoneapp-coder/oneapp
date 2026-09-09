@@ -5,10 +5,13 @@ import {
   classifyEstimateBulkRows,
   createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
+  createEstimateBulkConnectedComponents,
   inspectEstimateBulkWorkingCopyConflicts,
+  reconcileEstimateBulkRows,
   resolveEstimateBulkTargets,
   splitEstimateBulkInputMapping
 } from '../smartinput/estimate-bulk-update.js';
+import { rebuildLinkedEstimateRecord, rebaseLinkedEstimateWorkingDraft } from '../smartinput/linked-estimate-source-edit.js';
 
 const distribution = [72, 51, 32, 25, 22, 20, 18, 18, 12, 7];
 const headers = ['거래처명', '품목코드', '품목명', '수량', '출고가', '적요'];
@@ -123,8 +126,8 @@ assert.equal(autoResolved.assignments[0].targetEstimateId, 'EST-ID');
 assert.equal(autoResolved.assignments[0].matchMethod, 'CUSTOMER_ID');
 assert.equal(autoResolved.assignments[1].targetEstimateId, 'EST-CODE');
 assert.equal(autoResolved.assignments[1].matchMethod, 'CUSTOMER_CODE');
-assert.equal(autoResolved.assignments[2].targetEstimateId, 'EST-NAME');
-assert.equal(autoResolved.assignments[2].matchMethod, 'CUSTOMER_NAME');
+assert.equal(autoResolved.assignments[2].targetEstimateId, '', '이름만 같은 최초 후보는 관리자 확인 없이 자동 선택하면 안 된다.');
+assert.ok(autoResolved.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_UNRESOLVED'));
 assert.equal(autoResolved.assignments[3].targetEstimateId, '', 'fuzzy 이름과 연동그룹은 자동 대상이 되면 안 된다.');
 assert.ok(autoResolved.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_UNRESOLVED'));
 const rememberedMapping = {
@@ -139,7 +142,10 @@ const rememberedMapping = {
   sourceCustomerName: '비슷 상호',
   normalizedName: '비슷 상호',
   targetEstimateId: 'EST-FUZZY',
-  status: 'CONFIRMED'
+  status: 'CONFIRMED',
+  sourceIdentityType: 'NORMALIZED_NAME',
+  confirmedBy: 'ADMIN',
+  confirmedAt: '2026-09-01T00:00:00.000Z'
 };
 const rememberedResolved = resolveEstimateBulkTargets({
   groups: [identityGroups[3]], estimates, matchMappings: [rememberedMapping], companyId: 'COMPANY'
@@ -164,7 +170,7 @@ const ambiguous = resolveEstimateBulkTargets({
   estimates: [...estimates, { ...estimates[2], estimateId: 'EST-NAME-2', catalogName: '같은 이름의 두 번째 대상' }]
 });
 assert.equal(ambiguous.assignments[0].targetEstimateId, '', '정확한 이름이 복수여도 첫 후보를 자동선택하면 안 된다.');
-assert.ok(ambiguous.issues.some(issue => issue.code === 'ESTIMATE_BULK_TARGET_AMBIGUOUS'));
+assert.ok(ambiguous.issues.some(issue => issue.code === 'ESTIMATE_BULK_NAME_CONFIRMATION_REQUIRED'));
 const explicitlyCleared = resolveEstimateBulkTargets({
   groups: [identityGroups[0]], estimates, selections: { [identityGroups[0].groupId]: '' }
 });
@@ -174,7 +180,7 @@ assert.ok(explicitlyCleared.issues.some(issue => issue.code === 'ESTIMATE_BULK_T
 const manualResolved = resolveEstimateBulkTargets({
   groups: identityGroups,
   estimates,
-  selections: { [identityGroups[3].groupId]: 'EST-NAME' }
+  selections: { [identityGroups[2].groupId]: 'EST-NAME', [identityGroups[3].groupId]: 'EST-NAME' }
 });
 assert.equal(manualResolved.assignments[3].targetEstimateId, 'EST-NAME');
 assert.equal(manualResolved.assignments[3].matchMethod, 'MANUAL');
@@ -198,6 +204,101 @@ assert.equal(split.rows[0].fieldValues['voucher.estimate.line.itemCode'].evidenc
 assert.equal(split.session.sourceCellMatrix[1][0].address, 'A3');
 assert.ok(!JSON.stringify(split.session.sourceMatrix).includes('거래처 2'), '분할 draft에 다른 거래처 원본 데이터가 있으면 안 된다.');
 assert.equal(split.session.editJournal['1:5'], '수정 메모', '편집 journal은 압축된 원본 행 위치로 안전하게 이동해야 한다.');
+
+const threeRowSplit = splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 3) });
+const reconciled = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: threeRowSplit,
+  targetRows: [
+    { rowId: 'KEEP-CODE-2', itemCode: 'C1-2', itemName: '이전 이름' },
+    { rowId: 'KEEP-SHARED', itemCode: 'SHARED-CODE', itemName: '이전 공유 품목' }
+  ]
+});
+assert.deepEqual(reconciled.split.rows.map(row => row.rowId).slice(0, 2), ['KEEP-SHARED', 'KEEP-CODE-2'],
+  '행 순서가 바뀌어도 품목코드 1:1 일치 행 ID는 반드시 유지해야 한다.');
+assert.match(reconciled.split.rows[2].rowId, /^SIROW-BULK-/, '기존에 없는 식별 확정 품목은 확인 없이 새 행 ID로 자동 추가해야 한다.');
+assert.equal(reconciled.retainedRowCount, 2);
+assert.equal(reconciled.addedRowCount, 1);
+assert.equal(reconciled.issues.length, 0);
+assert.deepEqual(reconciled.split.session.workingRows.map(row => row.rowId), reconciled.split.rows.map(row => row.rowId),
+  '작업행과 저장행의 rowId가 함께 갱신되어야 한다.');
+
+const ambiguousRows = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 1) }),
+  targetRows: [
+    { rowId: 'DUP-1', itemCode: 'SHARED-CODE', itemName: '중복 1' },
+    { rowId: 'DUP-2', itemCode: 'SHARED-CODE', itemName: '중복 2' }
+  ]
+});
+assert.equal(ambiguousRows.issues[0].code, 'ESTIMATE_BULK_ROW_MATCH_AMBIGUOUS');
+
+const components = createEstimateBulkConnectedComponents({
+  entries: [
+    { groupId: 'G-A', targetEstimateId: 'EST-A' },
+    { groupId: 'G-B', targetEstimateId: 'EST-B' },
+    { groupId: 'G-C', targetEstimateId: 'EST-C' }
+  ],
+  estimates: [{
+    estimateId: 'LINK-A-B',
+    estimateKind: 'LINKED_GROUP',
+    linkedEstimateSources: [{ estimateId: 'EST-A' }, { estimateId: 'EST-B' }]
+  }]
+});
+assert.deepEqual(components.map(component => component.map(entry => entry.groupId).sort()).sort((a, b) => a[0].localeCompare(b[0])), [['G-A', 'G-B'], ['G-C']],
+  '같은 연동견적서가 참조하는 업데이트 대상은 하나의 저장 연결 묶음이어야 한다.');
+
+const rebuiltLinked = rebuildLinkedEstimateRecord({
+  linkedRecord: {
+    estimateId: 'LINK-A-B',
+    catalogName: '연동 A+B',
+    estimateKind: 'LINKED_GROUP',
+    linkedEstimateSources: [{ estimateId: 'EST-A' }, { estimateId: 'EST-B' }],
+    draft: {
+      rows: [
+        { rowId: 'LINKED:EST-A:OLD-A', itemCode: 'A', itemName: '저장 당시 대표값', quantity: 99, linkedSourceRefs: [{ estimateId: 'EST-A', rowId: 'OLD-A' }] },
+        { rowId: 'MANUAL-KEEP', itemCode: 'MANUAL', itemName: '수기 행', quantity: 3, inputOwnership: 'USER', linkedSourceRefs: [] }
+      ]
+    }
+  },
+  sourceRecords: [
+    { estimateId: 'EST-A', estimateKind: 'INDIVIDUAL', catalogName: '원본 A', updatedAt: '2026-09-10T01:00:00.000Z', draft: { rows: [{ rowId: 'KEEP-A', itemCode: 'A', itemName: '최신 A', quantity: 1 }] } },
+    { estimateId: 'EST-B', estimateKind: 'INDIVIDUAL', catalogName: '원본 B', updatedAt: '2026-09-10T01:00:00.000Z', draft: { rows: [{ rowId: 'KEEP-B', itemCode: 'B', itemName: '최신 B', quantity: 2 }] } }
+  ],
+  occurredAt: '2026-09-10T01:01:00.000Z',
+  operationId: 'OP-1'
+});
+assert.deepEqual(rebuiltLinked.draft.rows.map(row => [row.rowId, row.quantity]), [
+  ['LINKED:EST-A:KEEP-A', 1],
+  ['LINKED:EST-B:KEEP-B', 2],
+  ['MANUAL-KEEP', 3]
+], '연동견적서는 최신 원본 대표값으로 재구성하고 수기 행만 보존해야 한다.');
+assert.equal(rebuiltLinked.estimateLinkHistory.at(-1).operationId, 'OP-1');
+
+const baselineLinkedDraft = {
+  rows: [{ rowId: 'LINKED:EST-A:KEEP-A', itemCode: 'A', itemName: '최신 A', quantity: 1, memo: '', linkedSourceRefs: [{ estimateId: 'EST-A', rowId: 'KEEP-A' }] }]
+};
+const workingLinkedDraft = structuredClone(baselineLinkedDraft);
+workingLinkedDraft.rows[0].quantity = 9;
+workingLinkedDraft.rows[0].editedFields = { quantity: true };
+const sourceMemoUpdate = structuredClone(rebuiltLinked);
+sourceMemoUpdate.draft.rows = [{ ...structuredClone(baselineLinkedDraft.rows[0]), memo: '원본 메모 변경' }];
+const nonOverlapRebase = rebaseLinkedEstimateWorkingDraft({
+  baselineDraft: baselineLinkedDraft,
+  workingDraft: workingLinkedDraft,
+  rebuiltRecord: sourceMemoUpdate
+});
+assert.equal(nonOverlapRebase.conflicts.length, 0);
+assert.equal(nonOverlapRebase.draft.rows[0].quantity, 9, '원본과 겹치지 않는 미저장 연동 편집은 자동 재배치해야 한다.');
+assert.equal(nonOverlapRebase.draft.rows[0].memo, '원본 메모 변경');
+const sourceQuantityUpdate = structuredClone(sourceMemoUpdate);
+sourceQuantityUpdate.draft.rows[0].quantity = 2;
+assert.equal(rebaseLinkedEstimateWorkingDraft({
+  baselineDraft: baselineLinkedDraft,
+  workingDraft: workingLinkedDraft,
+  rebuiltRecord: sourceQuantityUpdate
+}).conflicts[0].code, 'LINKED_ESTIMATE_WORKING_REBASE_CONFLICT',
+'원본과 미저장 작업본이 같은 필드를 다르게 바꾸면 해당 연결만 확인해야 한다.');
 
 const rememberedPlanTarget = {
   estimateId: 'EST-REMEMBERED-PLAN', estimateKind: 'INDIVIDUAL', customerName: '현재 이름과 다름',
