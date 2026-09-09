@@ -180,6 +180,7 @@
     productField('sourceVoucherIndex', '원본전표순번', 'ADDITIONAL', { valueType: 'NUMBER' }),
     productField('manualSplitKey', '전표분리키', 'ADDITIONAL'),
     voucherField('memo'),
+    productField('memo2', '적요2', 'ADDITIONAL', { inputAliases: ['적요 2'] }),
     voucherField('description')
   ]);
   const ROW_FIELDS = Object.freeze(PRODUCT_FIELD_DEFINITIONS.filter(field => field.editable !== false).map(field => field.id));
@@ -199,8 +200,28 @@
   const DEFAULT_HEADER_FIELDS_BY_MODE = Object.freeze(Object.fromEntries(
     MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_HEADER_FIELDS])])
   ));
+  // These approved baselines are independent of each browser's saved layout.
+  // Sale remains on its existing defaults until its field meanings are confirmed.
+  const INITIAL_INPUT_PRESETS = Object.freeze(Object.fromEntries(Object.entries({
+    estimate: [
+      ['itemCode', '품목코드'], ['itemName', '품목명'], ['specification', '규격'],
+      ['quantity', '수량'], ['unitPrice', '단가'], ['purchasePriceB', 'B단가'],
+      ['wholesaleA', 'A판매'], ['wholesaleB', 'B판매'], ['memo', '적요'],
+      ['promoPrice', '행사가'], ['memo2', '적요2']
+    ],
+    order: [
+      ['itemCode', '품목코드'], ['itemName', '품목명'], ['specification', '규격'],
+      ['quantity', '수량'], ['unitPrice', '단가'], ['supplyAmount', '공급가액'],
+      ['memo', '메모'], ['description', '적요(직원)'], ['noticePrice', '공지단가']
+    ],
+    purchase: DEFAULT_VOUCHER_COLUMNS.map(id => [id, PRODUCT_FIELD_DEFINITIONS.find(field => field.id === id).label])
+  }).map(([mode, fields]) => [mode, Object.freeze({
+    version: '20260909-v1',
+    columns: Object.freeze(fields.map(([id]) => id)),
+    labels: Object.freeze({ ...Object.fromEntries(fields), ...(mode === 'estimate' ? { description: '지시사항' } : {}) })
+  })])));
   const DEFAULT_VOUCHER_COLUMNS_BY_MODE = Object.freeze(Object.fromEntries(
-    MODE_ORDER.map(mode => [mode, Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
+    MODE_ORDER.map(mode => [mode, INITIAL_INPUT_PRESETS[mode]?.columns || Object.freeze([...DEFAULT_VOUCHER_COLUMNS])])
   ));
   const DEFAULT_INPUT_ORDER = Object.freeze(Object.fromEntries((() => {
     let editableOrder = 0;
@@ -211,7 +232,7 @@
   })()));
   const DEFAULT_INPUT_ORDER_BY_MODE = Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [
     mode,
-    DEFAULT_INPUT_ORDER
+    INITIAL_INPUT_PRESETS[mode] ? Object.freeze(getInitialInputLayout(mode).inputOrder) : DEFAULT_INPUT_ORDER
   ])));
   const ESTIMATE_NOTICE_PRICE_FIELD_IDS = Object.freeze([
     'noticePrice', 'unitPrice', 'wholesaleA', 'wholesaleB', 'outPrice',
@@ -265,6 +286,51 @@
   function normalizeWeekdays(value, fallback = []) {
     const source = Array.isArray(value) ? value : fallback;
     return [...new Set(source.map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b);
+  }
+
+  function getInitialInputLayout(mode) {
+    const preset = Object.prototype.hasOwnProperty.call(INITIAL_INPUT_PRESETS, mode) ? INITIAL_INPUT_PRESETS[mode] : null;
+    if (!preset) return null;
+    let editableOrder = 0;
+    return {
+      voucherColumns: [...preset.columns],
+      inputOrder: Object.fromEntries(preset.columns.map(fieldId => {
+        const field = PRODUCT_FIELD_DEFINITIONS.find(definition => definition.id === fieldId);
+        return [fieldId, field?.editable === false ? 0 : ++editableOrder];
+      }))
+    };
+  }
+
+  function fieldDefinitionForMode(field, mode) {
+    const definition = typeof field === 'string'
+      ? PRODUCT_FIELD_DEFINITIONS.find(candidate => candidate.id === field)
+      : field;
+    if (!definition) return null;
+    const labels = INITIAL_INPUT_PRESETS[mode]?.labels || {};
+    const initialLabel = labels[definition.id];
+    const aliasKey = value => text(value).toLowerCase().replace(/[\s_()[\]{}.,/·:\-]/g, '');
+    const conflicts = new Set(Object.entries(labels)
+      .filter(([id]) => id !== definition.id)
+      .map(([, label]) => aliasKey(label)));
+    const aliases = values => [...new Set(values.map(text).filter(value => value && !conflicts.has(aliasKey(value))))];
+    return {
+      ...definition,
+      label: initialLabel || definition.label,
+      ...(initialLabel ? { initialLabel } : {}),
+      masterAliases: aliases([...(definition.masterAliases || []), definition.label]),
+      inputAliases: aliases([...(definition.inputAliases || []), definition.label])
+    };
+  }
+
+  function restoreInitialInputSettings(settings, mode) {
+    const layout = getInitialInputLayout(mode);
+    if (!layout) throw new Error('해당 전표의 초기 입력 구성이 아직 확정되지 않았습니다.');
+    const normalized = normalizeSettings(settings);
+    return normalizeSettings({
+      ...normalized,
+      voucherColumnsByMode: { ...normalized.voucherColumnsByMode, [mode]: layout.voucherColumns },
+      inputOrderByMode: { ...normalized.inputOrderByMode, [mode]: layout.inputOrder }
+    });
   }
 
   function normalizeSettings(value = {}) {
@@ -346,7 +412,8 @@
     if (!headerFieldsByMode.order.includes('assignee')) headerFieldsByMode.order.push('assignee');
     const voucherColumnsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
       mode,
-      normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS, legacyVoucherColumns, 'voucher')
+      normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS,
+        Array.isArray(value.voucherColumns) ? legacyVoucherColumns : DEFAULT_VOUCHER_COLUMNS_BY_MODE[mode], 'voucher')
     ]));
     const inputOrderSource = value.inputOrderByMode && typeof value.inputOrderByMode === 'object'
       ? value.inputOrderByMode
@@ -355,7 +422,10 @@
     const inputOrderByMode = Object.fromEntries(MODE_ORDER.map(mode => {
       const selected = voucherColumnsByMode[mode];
       const selectedIndex = new Map(selected.map((fieldId, index) => [fieldId, index]));
-      const source = inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object' ? inputOrderSource[mode] : {};
+      const useInitialOrder = Boolean(INITIAL_INPUT_PRESETS[mode]) && !Array.isArray(sourceVoucherColumnsByMode[mode]) && !Array.isArray(value.voucherColumns);
+      const source = inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object'
+        ? inputOrderSource[mode]
+        : (useInitialOrder ? DEFAULT_INPUT_ORDER_BY_MODE[mode] : {});
       const order = {};
       allowedColumnIds.forEach(fieldId => {
         const configured = Number(source[fieldId]);
@@ -720,6 +790,7 @@
       priceH: numberOrNull(input.priceH),
       priceI: numberOrNull(input.priceI),
       memo: text(input.memo),
+      memo2: text(input.memo2),
       description: text(input.description),
       noticePrice: numberOrNull(input.noticePrice) ?? 0,
       unitPriceReviewStatus: input.unitPriceReviewStatus === 'PENDING' ? 'PENDING' : 'CONFIRMED',
@@ -962,6 +1033,7 @@
     HEADER_FIELD_DEFINITIONS,
     VOUCHER_COLUMN_DEFINITIONS,
     PRODUCT_FIELD_DEFINITIONS,
+    INITIAL_INPUT_PRESETS,
     ESTIMATE_NOTICE_PRICE_FIELD_IDS,
     DEFAULT_SETTINGS,
     WEEKDAY_LABELS,
@@ -971,6 +1043,9 @@
     todayLocal,
     businessDate,
     normalizeSettings,
+    getInitialInputLayout,
+    fieldDefinitionForMode,
+    restoreInitialInputSettings,
     effectiveDeliveryWeekdays,
     validateDeliveryDate,
     nextDeliveryDate,

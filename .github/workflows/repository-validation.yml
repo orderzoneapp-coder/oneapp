@@ -42,6 +42,8 @@ jobs:
           node scripts/test-smartinput-independent-recovery.mjs
           node scripts/test-smartinput-appheader-workspace.mjs
           node scripts/test-smartinput-settings-ux.mjs
+          node scripts/test-smartinput-initial-input-layout.mjs
+          node scripts/test-smartinput-initial-input-mapping.mjs
 
       - name: Test SmartInput clipboard and parsers
         run: |
@@ -255,3 +257,28 @@ jobs:
         run: |
           node scripts/test-smartinput-v2-unresolved-review-ui.mjs
           node scripts/test-smartinput-v2-unresolved-review-ui-browser.mjs
+
+  validate-initial-input-layout:
+    name: Validate SmartInput initial input layout
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify initial input layout in Chrome
+        env:
+          SMARTINPUT_INITIAL_LAYOUT_SCREENSHOT_DIR: test-artifacts/initial-input-layout/screenshots
+          SMARTINPUT_INITIAL_LAYOUT_EVIDENCE_FILE: test-artifacts/initial-input-layout/result.json
+        run: node scripts/test-smartinput-initial-input-layout-browser.mjs
+      - name: Upload initial input layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartinput-initial-input-layout
+          path: test-artifacts/initial-input-layout
+          if-no-files-found: ignore
+          retention-days: 7

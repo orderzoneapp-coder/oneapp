@@ -139,7 +139,7 @@ assert.deepEqual(
   'the default SmartInput field labels must match the requested worker-facing names'
 );
 assert.deepEqual(
-  Object.fromEntries(requestedDefaultFields.map(([fieldId]) => [fieldId, contract.DEFAULT_SETTINGS.inputOrderByMode.order[fieldId]])),
+  Object.fromEntries(requestedDefaultFields.map(([fieldId]) => [fieldId, contract.DEFAULT_SETTINGS.inputOrderByMode.purchase[fieldId]])),
   { itemCode: 1, itemName: 2, specification: 3, quantity: 4, unitPrice: 5, supplyAmount: 0, productDescription: 6, memo: 7, noticePrice: 8, rowVoucherNo: 9 },
   'Enter order must follow the requested default field order while skipping the calculated supply amount'
 );
@@ -165,8 +165,8 @@ assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
 assert.match(html, /nexus-ui\.js\?v=1\.5\.1/);
 assert.match(html, /smartinput\.css\?v=0\.9\.15/);
-assert.match(html, /smartinput-contract\.js\?v=0\.6\.2/);
-assert.match(html, /smartinput\.js\?v=0\.11\.44/);
+assert.match(html, /smartinput-contract\.js\?v=0\.6\.3/);
+assert.match(html, /smartinput\.js\?v=0\.11\.45/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);
