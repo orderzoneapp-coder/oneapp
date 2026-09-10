@@ -137,6 +137,7 @@ assert.deepEqual([...allowedWriterFiles].sort(), [
   'masterAddUpdate.js',
 ].sort());
 assert.equal(productContract.stopCommandException.asset, 'smartparser/stop-management-command-adapter.js');
+assert.equal(productContract.catalogApplyCommandException.asset, 'smartparser/catalog-apply-command-adapter.js');
 assert.equal(productContract.readAdapterVersion, 'ONEAPP_PRODUCT_MASTER_READ_ADAPTER_V1');
 assert.equal(productContract.commandAdapter, 'ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1');
 assert.equal(productContract.commandSchemaVersion, 'MERCHOPS_REVIEWED_WORK_APPLY_V1');
@@ -167,6 +168,13 @@ for (const path of await sourceFiles()) {
   }
 }
 for (const path of detectedWriters) {
+  if (path === productContract.catalogApplyCommandException.asset) {
+    const catalogApplySource = await readFile(join(root, path), 'utf8');
+    assert.match(catalogApplySource, /ONEAPP_SMARTPARSER_CATALOG_APPLY_COMMAND_V1/);
+    assert.match(catalogApplySource, /commitMasterStateOrThrow/);
+    assert.match(catalogApplySource, /CATALOG_REMOVAL_SCOPE_INVALID/);
+    continue;
+  }
   if (path === productContract.stopCommandException.asset) {
     const stopSource = await readFile(join(root, path), 'utf8');
     assert.match(stopSource, /ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1/);
