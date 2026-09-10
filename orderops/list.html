@@ -8573,10 +8573,7 @@
           setOrderQSourceNotice(`초기 주문 연결을 완료하지 못했습니다. 목록 새로고침 또는 주문현황 Excel을 사용하세요. · ${error.message || error}`, true);
         });
       }
-    })();
-  </script>
-  <script>
-    (() => {
+
       const storageKey = 'nexus:orderops:right-panel:v1';
       const workspace = document.querySelector('[data-nexus-workspace="orderops"]');
       const rail = document.getElementById('orderOpsResultRail');
