@@ -277,6 +277,32 @@ try {
   await navigate('/fixture.html');
   await evaluate(client, `(async()=>{
     await import('/smartinput/smartinput-contract.js');
+    const store=await import('/smartinput/smartinput-data-store.js?legacy-settings='+Date.now());
+    const settings=window.SMART_INPUT_CONTRACT.normalizeSettings({
+      initialInputLayoutMigrationVersion:window.SMART_INPUT_CONTRACT.INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
+      voucherColumns:${JSON.stringify(presets.purchase.fields)}
+    });
+    delete settings.initialInputLayoutMigrationVersion;
+    await store.saveSettings(settings);
+    return true;
+  })()`);
+  await navigate('/smartinput/');
+  await waitForSettingsHydration(client);
+  for (const [mode, preset] of Object.entries(presets)) {
+    await selectMode(client, mode);
+    assert.deepEqual(await visibleWorktableColumns(client), preset.fields,
+      `${mode}: the legacy common default must not replace the initial per-voucher layout after hydration`);
+  }
+  const migratedLegacySettings = await storedSettings(client);
+  assert.equal(migratedLegacySettings.initialInputLayoutMigrationVersion, '20260911-v1');
+  for (const [mode, preset] of Object.entries(presets)) {
+    assert.deepEqual(migratedLegacySettings.voucherColumnsByMode[mode], preset.fields,
+      `${mode}: the hydrated legacy default must persist its one-time per-voucher migration`);
+  }
+
+  await navigate('/fixture.html');
+  await evaluate(client, `(async()=>{
+    await import('/smartinput/smartinput-contract.js');
     const contract=window.SMART_INPUT_CONTRACT;
     const store=await import('/smartinput/smartinput-data-store.js');
     await store.saveSettings(contract.normalizeSettings(${JSON.stringify(seededSettings)}));
@@ -506,7 +532,7 @@ try {
   const evidence = {
     schemaVersion: 'SMARTINPUT_INITIAL_INPUT_LAYOUT_BROWSER_V1',
     recordedAt: new Date().toISOString(), modes: Object.keys(presets),
-    firstUse: true, preservedExistingLayout: true, restoreCancel: true,
+    firstUse: true, legacyDefaultAutoMigration: true, preservedExistingLayout: true, restoreCancel: true,
     restoredOnlySelectedMode: true, userChangesSurviveReload: true,
     rowsCustomFieldsDeliveryPreserved: true, estimateIndependentValues: estimateValues,
     estimateEnterNavigation: true, saleRestoreEnabled: true,
