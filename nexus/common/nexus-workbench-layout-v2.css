@@ -1,0 +1,284 @@
+:root {
+  --nexus-workbench-resizer: #94a3b8;
+  --nexus-workbench-resizer-active: #2563eb;
+}
+
+[data-nexus-resizable-workspace="true"] {
+  --nexus-left-pane-width: 250px;
+  --nexus-right-pane-width: 270px;
+  --nexus-center-pane-min: 620px;
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: var(--nexus-left-pane-width) minmax(var(--nexus-center-pane-min), 1fr) var(--nexus-right-pane-width) !important;
+  align-items: stretch !important;
+  gap: 12px !important;
+  min-width: 0;
+}
+
+[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+  grid-template-columns: var(--nexus-left-pane-width) minmax(var(--nexus-center-pane-min), 1fr) !important;
+}
+
+[data-nexus-resizable-workspace="true"] > [data-nexus-pane="reference"] {
+  grid-column: 1 !important;
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column;
+  overflow: auto;
+}
+
+[data-nexus-resizable-workspace="true"] > [data-nexus-pane="work"] {
+  grid-column: 2 !important;
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  min-width: 0 !important;
+}
+
+[data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"] {
+  grid-column: 3 !important;
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column;
+}
+
+[data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"][hidden],
+[data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"][aria-hidden="true"] {
+  display: none !important;
+}
+
+[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] > [data-nexus-pane="result"] {
+  display: none !important;
+}
+
+[data-nexus-resizable-workspace="true"] > :is([data-nexus-result-reopen], .related-panel-toggle) {
+  position: fixed !important;
+  z-index: 90;
+}
+
+.nexus-pane-resizer-v2 {
+  position: fixed;
+  z-index: 95;
+  width: 18px;
+  min-width: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.nexus-pane-resizer-v2::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: min(76px, 38%);
+  border-radius: 999px;
+  background: var(--nexus-workbench-resizer);
+  transform: translate(-50%, -50%);
+  transition: width 120ms ease, background-color 120ms ease;
+}
+
+.nexus-pane-resizer-v2:hover::after,
+.nexus-pane-resizer-v2:focus-visible::after,
+.nexus-pane-resizer-v2[data-resizing="true"]::after {
+  width: 5px;
+  background: var(--nexus-workbench-resizer-active);
+}
+
+.nexus-pane-resizer-v2:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nexus-workbench-resizer-active) 38%, transparent);
+  outline-offset: -3px;
+}
+
+body.nexus-pane-resizing-v2 {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+[data-nexus-selection-reference] {
+  display: grid;
+  gap: 7px;
+}
+
+[data-nexus-selection-reference] > p {
+  color: var(--nexus-ui-muted, #64748b) !important;
+  border-color: var(--nexus-ui-border, #e2e8f0) !important;
+  background: var(--nexus-ui-panel-subtle, #f8fafc) !important;
+}
+
+.smart-input-reference-pane {
+  padding: 12px;
+  border: 1px solid var(--line, #dbe2ea);
+  border-radius: var(--radius-lg, 14px);
+  background: var(--panel, #fff);
+  box-shadow: var(--shadow-card, 0 1px 2px rgba(15, 23, 42, .06));
+}
+
+.smart-input-reference-pane > small {
+  color: var(--primary, #4f46e5);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.smart-input-reference-pane > h2 {
+  margin: 4px 0 12px;
+  color: var(--ink, #0f172a);
+  font-size: 13px;
+}
+
+.smart-input-reference-pane [data-nexus-selection-reference] > p {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line, #dbe2ea);
+  border-radius: 8px;
+  color: var(--nexus-ui-muted, var(--muted, #64748b));
+  background: var(--nexus-ui-panel-subtle, var(--panel-soft, #f8fafc));
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+[data-nexus-workspace="smart-parser"] {
+  min-height: 620px;
+}
+
+.nexus-selection-reference__empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--nexus-ui-border-strong, #cbd5e1);
+  border-radius: 8px;
+  color: var(--nexus-ui-muted, #64748b);
+  background: var(--nexus-ui-panel-subtle, #f8fafc);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.nexus-selection-reference__item {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--nexus-ui-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--nexus-ui-panel-subtle, #f8fafc);
+}
+
+.nexus-selection-reference__item dt {
+  color: var(--nexus-ui-muted, #64748b);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.nexus-selection-reference__item dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--nexus-ui-text, #0f172a);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+/* 스마트입력의 원본 입력과 입력표는 모두 중앙의 한 업무 흐름이다. */
+[data-nexus-workspace="smart-input"] > .smart-input-main-flow {
+  display: grid !important;
+  grid-template-rows: minmax(220px, 0.72fr) minmax(390px, 1.28fr);
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+[data-nexus-workspace="smart-input"] > .smart-input-main-flow > :is(.parser-card, .workbench) {
+  position: relative !important;
+  top: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  grid-column: 1 !important;
+}
+
+[data-nexus-workspace="smart-input"] > .smart-input-main-flow > .photo-resizer,
+[data-nexus-workspace="smart-input"] .related-panel-resizer {
+  display: none !important;
+}
+
+[data-nexus-workspace="dataops"] > [data-nexus-pane="work"] {
+  overflow: hidden !important;
+}
+
+[data-nexus-workspace="dataops"] > [data-nexus-pane="work"] > div:first-child {
+  min-width: 0 !important;
+  width: 100%;
+}
+
+/* 앱헤더 폭이 부족하면 전표 조건을 다음 줄로 보내 겹침을 막는다. */
+@media (max-width: 1760px) and (min-width: 961px) {
+  [data-nexus-app-header="smart-input"].app-bar__inner {
+    flex-wrap: wrap;
+    padding-block: 7px;
+  }
+  [data-nexus-app-header="smart-input"] > .brand { order: 1; }
+  [data-nexus-app-header="smart-input"] > .app-bar__primary { order: 2; flex: 1 1 320px; }
+  [data-nexus-app-header="smart-input"] > .app-bar__actions { order: 3; min-width: max-content; }
+  [data-nexus-app-header="smart-input"] > .header-customer-group { order: 4; flex: 0 1 360px; }
+  [data-nexus-app-header="smart-input"] > .header-fields { order: 5; flex: 1 1 540px; margin-left: 0; }
+  [data-nexus-app-header="smart-input"] > .app-status { order: 6; flex: 1 1 180px; }
+}
+
+@media (max-width: 960px) {
+  [data-nexus-resizable-workspace="true"],
+  [data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+    display: flex !important;
+    flex-direction: column;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  [data-nexus-resizable-workspace="true"] > [data-nexus-pane] {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 180px;
+    position: static !important;
+  }
+  [data-nexus-resizable-workspace="true"] > [data-nexus-pane="reference"] { order: 1; }
+  [data-nexus-resizable-workspace="true"] > [data-nexus-pane="work"] { order: 2; min-height: 520px; }
+  [data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"] { order: 3; }
+  .nexus-pane-resizer-v2 { display: none !important; }
+  [data-nexus-workspace="smart-input"] > .smart-input-main-flow {
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+  [data-nexus-app-header="smart-input"].app-bar__inner {
+    width: min(100% - 20px, var(--app-max));
+    padding-block: 7px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  [data-nexus-app-header="smart-input"] > * {
+    min-width: 0 !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+}
+
+html[data-nexus-ui-theme="dark"] {
+  --nexus-workbench-resizer: #64748b;
+  --nexus-workbench-resizer-active: #60a5fa;
+}
