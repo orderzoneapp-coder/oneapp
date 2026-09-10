@@ -35,6 +35,7 @@ const expected = {
 };
 
 const fresh = contract.normalizeSettings();
+assert.equal(fresh.initialInputLayoutMigrationVersion, contract.INITIAL_INPUT_LAYOUT_MIGRATION_VERSION);
 const fieldForMode = (id, mode) => contract.fieldDefinitionForMode(
   fresh.customFields.find(field => field.id === id) || id, mode);
 for (const [mode, fields] of Object.entries(expected)) {
@@ -74,8 +75,63 @@ for (const mode of Object.keys(contract.MODES)) {
     'saved legacy common layouts must migrate without silently replacing their columns');
 }
 const oldCommonDefaults = contract.normalizeSettings({ voucherColumns: expected.purchase.map(([id]) => id) });
-assert.deepEqual(plain(oldCommonDefaults.voucherColumnsByMode.estimate), expected.purchase.map(([id]) => id),
-  'an explicitly saved old default is still a saved layout');
+for (const [mode, fields] of Object.entries(expected)) {
+  assert.deepEqual(plain(oldCommonDefaults.voucherColumnsByMode[mode]), fields.map(([id]) => id),
+    `${mode}: the unmodified legacy common default must migrate to the approved per-voucher layout`);
+}
+assert.deepEqual(plain(contract.initialInputLayoutMigrationModes({ voucherColumns: expected.purchase.map(([id]) => id) })),
+  Object.keys(contract.MODES), 'the exact legacy common default is eligible for all-mode migration');
+
+const hydratedLegacyShape = plain(contract.normalizeSettings({
+  initialInputLayoutMigrationVersion: contract.INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
+  voucherColumns: expected.purchase.map(([id]) => id)
+}));
+delete hydratedLegacyShape.initialInputLayoutMigrationVersion;
+const previouslyHydratedOldDefaults = contract.normalizeSettings(hydratedLegacyShape);
+for (const [mode, fields] of Object.entries(expected)) {
+  assert.deepEqual(plain(previouslyHydratedOldDefaults.voucherColumnsByMode[mode]), fields.map(([id]) => id),
+    `${mode}: a previously hydrated all-default legacy layout must also migrate`);
+}
+
+const customizedLegacyOrder = contract.normalizeSettings({
+  voucherColumns: expected.purchase.map(([id]) => id),
+  inputOrderByMode: { estimate: { itemCode: 2, itemName: 1 } }
+});
+assert.deepEqual(plain(customizedLegacyOrder.voucherColumnsByMode.estimate), expected.purchase.map(([id]) => id),
+  'a legacy mode with a user-modified Enter order must retain its saved columns');
+assert.equal(customizedLegacyOrder.inputOrderByMode.estimate.itemCode, 2);
+assert.equal(customizedLegacyOrder.inputOrderByMode.estimate.itemName, 1);
+for (const mode of ['order', 'purchase', 'sale']) {
+  assert.deepEqual(plain(customizedLegacyOrder.voucherColumnsByMode[mode]), expected[mode].map(([id]) => id),
+    `${mode}: untouched legacy modes may migrate independently from a customized mode`);
+}
+
+const hydratedPartlyCustomized = plain(contract.normalizeSettings({
+  initialInputLayoutMigrationVersion: contract.INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
+  voucherColumns: expected.purchase.map(([id]) => id)
+}));
+delete hydratedPartlyCustomized.initialInputLayoutMigrationVersion;
+hydratedPartlyCustomized.inputOrderByMode.estimate.itemCode = 2;
+hydratedPartlyCustomized.inputOrderByMode.estimate.itemName = 1;
+const migratedPartlyCustomized = contract.normalizeSettings(hydratedPartlyCustomized);
+assert.deepEqual(plain(migratedPartlyCustomized.voucherColumnsByMode.estimate), expected.purchase.map(([id]) => id),
+  'a previously hydrated mode with a user-modified Enter order must retain its saved columns');
+assert.equal(migratedPartlyCustomized.inputOrderByMode.estimate.itemCode, 2);
+assert.equal(migratedPartlyCustomized.inputOrderByMode.estimate.itemName, 1);
+for (const mode of ['order', 'purchase', 'sale']) {
+  assert.deepEqual(plain(migratedPartlyCustomized.voucherColumnsByMode[mode]), expected[mode].map(([id]) => id),
+    `${mode}: previously hydrated untouched modes must migrate independently from a customized mode`);
+}
+
+const versionedOldDefaults = contract.normalizeSettings({
+  initialInputLayoutMigrationVersion: contract.INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
+  voucherColumns: expected.purchase.map(([id]) => id),
+  voucherColumnsByMode: Object.fromEntries(Object.keys(contract.MODES).map(mode => [mode, expected.purchase.map(([id]) => id)]))
+});
+for (const mode of Object.keys(contract.MODES)) {
+  assert.deepEqual(plain(versionedOldDefaults.voucherColumnsByMode[mode]), expected.purchase.map(([id]) => id),
+    `${mode}: the migration marker must preserve a later explicit user choice of the former layout`);
+}
 
 const settings = contract.normalizeSettings({
   voucherColumnsByMode: {

@@ -20,7 +20,7 @@ assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
 assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.18"/, 'the estimate automation hardening UI CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.50"/, 'the estimate automation hardening route must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.51"/, 'the hydrated initial-layout migration must use the next cache-bust version');
 assert.match(js, /getMerchOpsSettingsSnapshotResult[\s\S]*function merchOpsEstimateOutputConfig\(\)[\s\S]*marginRules[\s\S]*estimateMappings/,
   'the estimate report must consume Settings-owned MerchOps pricing configuration through the read adapter');
 assert.match(js, /const outputConfig\s*=\s*\{[\s\S]*productCatalog:\s*state\.products,[\s\S]*\.\.\.merchOpsEstimateOutputConfig\(\)[\s\S]*buildEstimateF8Data\(sourceRows,\s*\{\s*\.\.\.outputConfig,\s*duplicateResolutions\s*\}\)/,

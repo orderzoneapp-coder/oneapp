@@ -10357,7 +10357,16 @@ async function hydrateReferences() {
   state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
   if (smartDataResult[0].status === 'fulfilled') {
     const data = smartDataResult[0].value;
+    const migratedInitialInputModes = contract.initialInputLayoutMigrationModes(data.settings || {});
     state.settings = contract.normalizeSettings(data.settings || {});
+    let settingsMigrationError = null;
+    if (migratedInitialInputModes.length) {
+      try {
+        await saveSettings(state.settings);
+      } catch (error) {
+        settingsMigrationError = error || new Error('전표별 입력 구성 자동 전환 저장 실패');
+      }
+    }
     state.linkGroups = data.linkGroups || [];
     state.temporaryCustomers = data.temporaryCustomers || [];
     state.aliasMappings = data.aliasMappings || [];
@@ -10365,7 +10374,7 @@ async function hydrateReferences() {
     Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
     restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
-    state.smartAuxiliaryDataError = null;
+    state.smartAuxiliaryDataError = settingsMigrationError;
     restoreInputMappingSession({ applyLatestTemplate: false });
     renderMode();
   } else {
