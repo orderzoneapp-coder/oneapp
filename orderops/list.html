@@ -6,7 +6,11 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.11">
-    <script defer src="../nexus/common/nexus-ui.js?v=1.6.0"></script>
+  <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.1.0">
+  <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
+  <script defer src="../nexus/common/nexus-ui.js?v=1.6.0"></script>
+  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.1.0"></script>
+  <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
@@ -1985,6 +1989,142 @@
     @media (max-width: 1100px) {
       .input-panel { grid-template-columns: minmax(0, 1fr) 210px; }
       .search-field { flex-basis: 170px; }
+    }
+
+    .orderops-results-workspace {
+      min-width: 0;
+      min-height: 500px;
+      margin-top: 8px;
+      padding: 0 8px 8px;
+      background: #f5f6f7;
+    }
+    .orderops-results-workspace > [data-nexus-pane] {
+      min-width: 0;
+      border: 1px solid var(--slate-300);
+      border-radius: 7px;
+      background: #fff;
+    }
+    .orderops-results-workspace > [data-nexus-pane="work"] {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .orderops-side-panel__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px;
+      border-bottom: 1px solid var(--slate-300);
+      background: #e5e7eb;
+    }
+    .orderops-side-panel__head h3 { margin: 0; color: #1f2937; font-size: 12px; font-weight: 950; }
+    .orderops-side-panel__head p { margin: 3px 0 0; color: #4b5563; font-size: 10px; line-height: 1.45; }
+    .orderops-panel-close,
+    .orderops-panel-reopen {
+      min-height: 28px;
+      border: 1px solid var(--slate-300);
+      border-radius: 5px;
+      color: var(--slate-700);
+      background: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .orderops-panel-reopen { margin-left: auto; }
+    .orderops-delivery-distribution {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--slate-200);
+      background: #f8fafc;
+    }
+    .orderops-distribution-chip {
+      padding: 3px 6px;
+      border: 1px solid #99f6e4;
+      border-radius: 999px;
+      color: #115e59;
+      background: #f0fdfa;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .orderops-side-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    .orderops-side-table { width: 100%; min-width: 560px; border-collapse: separate; border-spacing: 0; font-size: 10px; }
+    .orderops-inventory-table { min-width: 0; }
+    .orderops-side-table th,
+    .orderops-side-table td { padding: 6px 7px; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; color: #1f2937; text-align: left; vertical-align: top; }
+    .orderops-side-table th { position: sticky; top: 0; z-index: 2; color: #1f2937; background: #e5e7eb; font-weight: 900; }
+    .orderops-side-table tbody tr:nth-child(even) td { background: #f5f6f7; }
+    .orderops-side-table td.number { text-align: right; font-variant-numeric: tabular-nums; }
+    .orderops-side-table .empty-table-cell { padding: 18px 10px; color: #64748b; text-align: center; }
+    .orderops-manager-input {
+      width: 100%;
+      min-width: 94px;
+      height: 28px;
+      padding: 3px 6px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      color: #0f172a;
+      background: #fff;
+      font-size: 10px;
+    }
+    .orderops-manager-input:focus { border-color: #0f766e; outline: 2px solid rgba(15,118,110,.18); }
+    .orderops-customer-key-warning { display: block; margin-top: 3px; color: #b45309; font-size: 9px; font-weight: 800; }
+    .orderops-inventory-identity { padding: 10px; border-bottom: 1px solid var(--slate-200); }
+    .orderops-inventory-identity strong { display: block; color: #0f172a; font-size: 12px; }
+    .orderops-inventory-identity span { display: block; margin-top: 3px; color: #64748b; font-size: 10px; overflow-wrap: anywhere; }
+    .orderops-inventory-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 10px; }
+    .orderops-inventory-metric { padding: 7px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; }
+    .orderops-inventory-metric span { display: block; color: #64748b; font-size: 9px; }
+    .orderops-inventory-metric strong { display: block; margin-top: 2px; color: #111827; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+    .orderops-inventory-metric--expected { border-color: #99f6e4; background: #f0fdfa; }
+    .orderops-inventory-metric--actual { border-color: #bfdbfe; background: #eff6ff; }
+    .orderops-inventory-caption { margin: 0; padding: 8px 10px; color: #4b5563; font-size: 9px; line-height: 1.5; }
+    .orderops-central-table-wrap { flex: 1 1 auto; min-height: 280px; }
+    .orderops-selected-product-row > td { box-shadow: inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
+    .orderops-selected-product-row > td:first-child { box-shadow: inset 2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
+
+    html[data-nexus-ui-theme="dark"] .orderops-results-workspace { background: #15181d; }
+    html[data-nexus-ui-theme="dark"] .orderops-results-workspace > [data-nexus-pane] { border-color: #334155; background: #111827; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-panel__head { border-color: #475569; background: #1f2937; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-panel__head h3,
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-identity strong,
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-metric strong { color: #f8fafc; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-panel__head p,
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-identity span,
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-caption { color: #cbd5e1; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-table :is(th, td) { border-color: #475569; color: #e5e7eb; background: #111827; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-table th { background: #1f2937; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-table tbody tr:nth-child(even) td { background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-distribution { border-color: #334155; background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-identity { border-color: #334155; }
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-metric { border-color: #475569; background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--expected { border-color: #0f766e; background: #12302f; }
+    html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--actual { border-color: #2563eb; background: #172554; }
+
+    @media (max-width: 960px) {
+      .orderops-results-workspace { padding: 0; background: transparent; }
+      .orderops-side-panel__head { position: sticky; top: 0; z-index: 3; }
+      .orderops-side-table-wrap { max-height: 320px; }
+    }
+
+    @media print {
+      html, body, main, .page-shell, .results-panel, .print-area,
+      .print-area table, .print-area thead, .print-area tbody,
+      .print-area tr, .print-area th, .print-area td {
+        background: #fff !important;
+      }
+      .print-area tr:hover td,
+      .print-area tr[aria-selected="true"] td,
+      .print-area .orderops-selected-product-row td { background: #fff !important; box-shadow: none !important; }
+      body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        background: var(--manager-print-color, var(--manager-color)) !important;
+      }
+    }
+    @media (max-width: 1100px) {
       .view-controls .preview-tabs { flex-basis: auto; }
       .view-controls .tab-button { padding: 0 8px; }
     }
@@ -2174,6 +2314,21 @@
         <div class="shipment-result-history" id="shipmentResultHistory"></div>
       </section>
 
+      <div class="orderops-results-workspace" data-nexus-workspace="orderops" aria-label="출고관리 요약·작업·재고 조회">
+        <aside class="orderops-side-panel" data-nexus-pane="reference" aria-label="배송 배정 요약">
+          <div class="orderops-side-panel__head">
+            <div><h3>배송 배정 요약</h3><p id="deliverySummaryCount">고객·배송 단위 0건</p></div>
+          </div>
+          <div class="orderops-delivery-distribution" id="deliveryDistribution" aria-label="담당자별 배송 건수"></div>
+          <div class="orderops-side-table-wrap">
+            <table class="orderops-side-table" aria-label="고객 배송 배정 요약">
+              <thead><tr><th>창고</th><th>담당자</th><th>지역</th><th>거래처/주문</th><th>적요(직원)</th></tr></thead>
+              <tbody id="deliverySummaryBody"><tr><td colspan="5" class="empty-table-cell">분석 후 배송 단위가 표시됩니다.</td></tr></tbody>
+            </table>
+          </div>
+        </aside>
+
+        <section class="orderops-central-work" data-nexus-pane="work" aria-label="출고 중앙 작업표">
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <label class="search-field">
           <span>통합 검색 F3</span>
@@ -2218,6 +2373,8 @@
           aria-expanded="false" aria-controls="warehouseColorBar">창고필터</button>
         <button class="filter-toggle-button" id="managerFilterToggle" type="button"
           aria-expanded="false" aria-controls="warehouseColorBar">담당자필터</button>
+        <button class="orderops-panel-reopen hidden" id="inventoryInspectorReopen" type="button"
+          aria-controls="inventoryInspector" aria-expanded="false">재고조회 열기</button>
       </div>
 
       <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="선택한 필터 및 배색">
@@ -2241,7 +2398,26 @@
         <button class="warehouse-color-reset" id="warehouseColorResetButton" type="button">전체 다시보기</button>
       </div>
 
-      <div class="table-wrap" id="previewTable" role="tabpanel"></div>
+      <div class="table-wrap orderops-central-table-wrap" id="previewTable" role="tabpanel"></div>
+        </section>
+
+        <aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="선택 상품 창고 재고 조회">
+          <div class="orderops-side-panel__head">
+            <div><h3>선택 상품 재고 조회</h3><p>현재 적재된 창고재고 기준</p></div>
+            <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-controls="inventoryInspector">닫기</button>
+          </div>
+          <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>상품을 선택하세요</strong><span>중앙 표의 상품행을 선택하면 표시됩니다.</span></div>
+          <div class="orderops-inventory-metrics" id="inventoryInspectorMetrics"></div>
+          <div class="orderops-side-table-wrap">
+            <table class="orderops-side-table orderops-inventory-table" aria-label="선택 상품 창고별 재고">
+              <thead><tr><th>창고</th><th>현재 수량</th></tr></thead>
+              <tbody id="inventoryInspectorBody"><tr><td colspan="2" class="empty-table-cell">선택 상품이 없습니다.</td></tr></tbody>
+            </table>
+          </div>
+          <p class="orderops-inventory-caption">예상 잔량은 현재 재고−주문수량의 화면 계산값입니다. 실제 출고 확정 및 DataOps 재고를 변경하지 않습니다.</p>
+        </aside>
+      </div>
+      <datalist id="orderOpsManagerOptions"></datalist>
     </section>
 
     <footer class="page-footer">
@@ -2449,6 +2625,7 @@
         shipmentSourceChanged: false,
         shipmentKeepWorkAcknowledged: false,
         shipmentDraft: Object.create(null),
+        selectedProductCode: "",
         inventory: null,
         purchases: null,
         sales: null,
@@ -2577,6 +2754,16 @@
         managerFilterPanel: document.getElementById("managerFilterPanel"),
         warehouseColorOptions: document.getElementById("warehouseColorOptions"),
         managerColorOptions: document.getElementById("managerColorOptions"),
+        deliverySummaryCount: document.getElementById("deliverySummaryCount"),
+        deliveryDistribution: document.getElementById("deliveryDistribution"),
+        deliverySummaryBody: document.getElementById("deliverySummaryBody"),
+        inventoryInspector: document.getElementById("inventoryInspector"),
+        inventoryInspectorClose: document.getElementById("inventoryInspectorClose"),
+        inventoryInspectorReopen: document.getElementById("inventoryInspectorReopen"),
+        inventoryInspectorIdentity: document.getElementById("inventoryInspectorIdentity"),
+        inventoryInspectorMetrics: document.getElementById("inventoryInspectorMetrics"),
+        inventoryInspectorBody: document.getElementById("inventoryInspectorBody"),
+        orderOpsManagerOptions: document.getElementById("orderOpsManagerOptions"),
         colorAssignmentPanel: document.getElementById("colorAssignmentPanel"),
         colorTargetSelect: document.getElementById("colorTargetSelect"),
         pastelColorPalette: document.getElementById("pastelColorPalette"),
@@ -5621,6 +5808,151 @@
         return definitions;
       }
 
+      function orderCustomerKey(row) {
+        return typeof engine.customerWorkKey === "function"
+          ? engine.customerWorkKey(row)
+          : String(row?.customerKey || row?.customerCode || row?.customer || row?.sourceRowNumber || "");
+      }
+
+      function deliverySummaryRows() {
+        const groups = new Map();
+        (state.workspace?.orders || []).forEach((row) => {
+          const customerKey = orderCustomerKey(row);
+          const deliveryKey = JSON.stringify([
+            customerKey,
+            String(row?.warehouse || "").trim(),
+            String(row?.orderNumber || row?.group || "").trim(),
+          ]);
+          if (!groups.has(deliveryKey)) {
+            groups.set(deliveryKey, {
+              customerKey,
+              stableCustomerIdentity: Boolean(row?.customerId || row?.customerCode),
+              warehouse: String(row?.warehouse || "").trim(),
+              region: String(row?.region || "").trim(),
+              customer: String(row?.customer || "").trim(),
+              order: String(row?.orderNumber || row?.group || "").trim(),
+              managers: new Set(),
+              employeeNotes: new Set(),
+            });
+          }
+          const group = groups.get(deliveryKey);
+          const manager = String(row?.manager || "").trim();
+          const employeeNote = String(row?.note1Original ?? row?.note1 ?? "").trim();
+          if (manager) group.managers.add(manager);
+          if (employeeNote) group.employeeNotes.add(employeeNote);
+          if (!group.region && row?.region) group.region = String(row.region).trim();
+        });
+        return [...groups.values()].map((row) => {
+          const managers = [...row.managers];
+          return {
+            ...row,
+            manager: managers.length > 1 ? `혼합(${managers.join(", ")})` : managers[0] || "",
+            mixed: managers.length > 1,
+            employeeNote: [...row.employeeNotes].join(" / "),
+          };
+        });
+      }
+
+      function renderDeliverySummary() {
+        if (!elements.deliverySummaryBody) return;
+        const rows = deliverySummaryRows();
+        elements.deliverySummaryCount.textContent = `고객·배송 단위 ${formatNumber(rows.length)}건`;
+        const distribution = rows.reduce((counts, row) => {
+          const key = row.mixed ? "혼합" : row.manager || "미지정";
+          counts[key] = (counts[key] || 0) + 1;
+          return counts;
+        }, Object.create(null));
+        elements.deliveryDistribution.innerHTML = Object.entries(distribution).length
+          ? Object.entries(distribution).sort(([a], [b]) => a.localeCompare(b, "ko")).map(([manager, count]) =>
+              `<span class="orderops-distribution-chip">${escapeHtml(manager)} ${formatNumber(count)}건</span>`).join("")
+          : '<span class="orderops-distribution-chip">배송 0건</span>';
+        elements.orderOpsManagerOptions.innerHTML = [...new Set((state.workspace?.orders || [])
+          .map((row) => String(row?.manager || "").trim()).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "ko"))
+          .map((manager) => `<option value="${escapeHtml(manager)}"></option>`).join("");
+        elements.deliverySummaryBody.innerHTML = rows.length ? rows.map((row) => `
+          <tr data-delivery-customer-key="${escapeHtml(row.customerKey)}">
+            <td>${escapeHtml(row.warehouse || "미지정")}</td>
+            <td><input class="orderops-manager-input" type="text" list="orderOpsManagerOptions"
+              data-summary-manager data-customer-key="${escapeHtml(row.customerKey)}"
+              value="${escapeHtml(row.mixed ? "" : row.manager)}" placeholder="${row.mixed ? escapeHtml(row.manager) : "담당자"}"
+              aria-label="${escapeHtml(row.customer || "거래처")} 담당자 변경"></td>
+            <td>${escapeHtml(row.region || "미지정")}</td>
+            <td><strong>${escapeHtml(row.customer || "거래처 미지정")}</strong><br>${escapeHtml(row.order || "주문번호 미지정")}
+              ${row.stableCustomerIdentity ? "" : '<span class="orderops-customer-key-warning">고객 코드 없음 · 이 배송 단위만 변경</span>'}</td>
+            <td>${escapeHtml(row.employeeNote || "-")}</td>
+          </tr>`).join("")
+          : '<tr><td colspan="5" class="empty-table-cell">분석 후 배송 단위가 표시됩니다.</td></tr>';
+      }
+
+      function confirmedQuantityForProduct(productCode) {
+        const net = state.shipmentResults?.netByOrderItem;
+        if (!net || typeof net !== "object") return null;
+        return (state.workspace?.orders || []).reduce((sum, row) =>
+          engine.normalizeProductCode(row?.productCode) === productCode
+            ? sum + Number(net[row?.orderItemId] || 0)
+            : sum, 0);
+      }
+
+      function renderInventoryInspector() {
+        if (!elements.inventoryInspectorBody) return;
+        const inventoryView = state.workspace && typeof engine.getInventoryViewRows === "function"
+          ? engine.getInventoryViewRows(state.workspace) : null;
+        const availableCodes = new Set((inventoryView?.rows || []).map((row) => engine.normalizeProductCode(row?.productCode)).filter(Boolean));
+        let productCode = engine.normalizeProductCode(state.selectedProductCode);
+        if (!availableCodes.has(productCode)) productCode = [...availableCodes][0] || "";
+        state.selectedProductCode = productCode;
+        const inventoryRow = inventoryView?.rows?.find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
+        const allocation = (state.workspace?.allocations || []).find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
+        if (!productCode || !inventoryRow) {
+          elements.inventoryInspectorIdentity.innerHTML = '<strong>상품을 선택하세요</strong><span>중앙 표의 상품행을 선택하면 표시됩니다.</span>';
+          elements.inventoryInspectorMetrics.replaceChildren();
+          elements.inventoryInspectorBody.innerHTML = '<tr><td colspan="2" class="empty-table-cell">선택 상품이 없습니다.</td></tr>';
+          return;
+        }
+        elements.inventoryInspectorIdentity.innerHTML = `<strong>${escapeHtml(inventoryRow.productName || allocation?.productName || productCode)}</strong>
+          <span>${escapeHtml(productCode)} · ${escapeHtml(inventoryRow.specification || allocation?.specification || "규격 미지정")}</span>`;
+        const confirmed = confirmedQuantityForProduct(productCode);
+        const metrics = [
+          ["현재 재고", inventoryRow.stockTotal, ""],
+          ["주문수량", inventoryRow.orderQuantity, ""],
+          ["예상 잔량", inventoryRow.remainingQuantity, "orderops-inventory-metric--expected"],
+          ["실제 출고 확정", confirmed, "orderops-inventory-metric--actual"],
+        ];
+        elements.inventoryInspectorMetrics.innerHTML = metrics.map(([label, value, className]) => `
+          <div class="orderops-inventory-metric ${className}"><span>${label}</span><strong>${value === null ? "—" : escapeHtml(formatNumber(value))}</strong></div>`).join("");
+        const warehouseRows = (inventoryView.columns || []).map((column, index) => ({ column, value: inventoryRow.values?.[index] }))
+          .filter(({ column }) => column.role === "warehouseQuantity");
+        elements.inventoryInspectorBody.innerHTML = warehouseRows.length ? warehouseRows.map(({ column, value }) => `
+          <tr><td>${escapeHtml(column.header || "창고")}</td><td class="number">${escapeHtml(formatNumber(value ?? ""))}</td></tr>`).join("")
+          : '<tr><td colspan="2" class="empty-table-cell">현재 적재된 창고별 재고가 없습니다.</td></tr>';
+      }
+
+      function renderOrderOpsSidePanels() {
+        if (!state.workspace) return;
+        renderDeliverySummary();
+        renderInventoryInspector();
+      }
+
+      const INVENTORY_INSPECTOR_OPEN_KEY = "oneapp.orderops.inventory-inspector-open.v1";
+      function setInventoryInspectorOpen(open, { persist = true } = {}) {
+        const nextOpen = Boolean(open);
+        elements.inventoryInspector.hidden = !nextOpen;
+        elements.inventoryInspector.setAttribute("aria-hidden", String(!nextOpen));
+        elements.inventoryInspectorReopen.classList.toggle("hidden", nextOpen);
+        elements.inventoryInspectorReopen.setAttribute("aria-expanded", String(nextOpen));
+        if (persist) {
+          try { localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY, nextOpen ? "1" : "0"); } catch (_) {}
+        }
+        window.dispatchEvent(new Event("resize"));
+      }
+
+      function restoreInventoryInspectorOpen() {
+        let open = true;
+        try { open = localStorage.getItem(INVENTORY_INSPECTOR_OPEN_KEY) !== "0"; } catch (_) {}
+        setInventoryInspectorOpen(open, { persist: false });
+      }
+
       function statusTone(value) {
         const text = String(value || "");
         if (text.includes("오류") || text.includes("재고정보") || text.includes("추가 구매") || text.includes("발주 필요")) return "bad";
@@ -6136,6 +6468,7 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
+                engine.normalizeProductCode(sourceRow?.productCode) === engine.normalizeProductCode(state.selectedProductCode) ? "orderops-selected-product-row" : "",
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
                 exactBoxUnit(sourceRow) ? "box-unit-row" : "",
                 previewId === "inventory" && Number(state.selectedSubstitutionOrderRow) > 0 &&
@@ -6256,6 +6589,7 @@
                             data-order-field="${escapeHtml(column.orderField)}"
                             data-grid-column="${escapeHtml(column.key)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
+                            ${column.orderField === "manager" ? 'list="orderOpsManagerOptions"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
                       : noticeLink
@@ -6617,6 +6951,7 @@
         }
         updateSubstitutionTargetMode(state.substitutionCtrlActive);
         updateColumnWidthToolbar();
+        renderOrderOpsSidePanels();
       }
 
       function fullSortedPreviewPairs(previewId, preview) {
@@ -6856,8 +7191,10 @@
         const stats = state.workspace.stats;
         const orderReview = getCurrentOrderReview();
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
+        const deliveryCount = deliverySummaryRows().length;
         const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
+          { label: "배송건", value: deliveryCount },
           { label: "중복 확인", value: orderReview.duplicateOrderCount, tone: orderReview.hasDuplicateOrders ? "warn" : "" },
           { label: "수량 오류", value: orderReview.quantityErrorCount, tone: orderReview.hasQuantityErrors ? "bad" : "" },
           { label: "0 수량", value: stats.zeroOrderQuantityCount || 0, tone: stats.zeroOrderQuantityCount > 0 ? "warn" : "" },
@@ -7411,13 +7748,21 @@
       function commitOrderInput(input, { render = true } = {}) {
         if (!input || !state.workspace || state.activePreview !== "allocations") return false;
         try {
-          engine.setOrderValue(
-            state.workspace,
-            input.dataset.orderRow,
-            input.dataset.orderField,
-            input.value,
-            { actor: substitutionActor(), recordHistory: true },
-          );
+          if (input.dataset.orderField === "manager" && typeof engine.setCustomerManager === "function") {
+            const sourceRow = (state.workspace.orders || []).find((row) =>
+              Number(row?.sourceRowNumber) === Number(input.dataset.orderRow));
+            engine.setCustomerManager(state.workspace, orderCustomerKey(sourceRow), input.value, {
+              actor: substitutionActor(), recordHistory: true,
+            });
+          } else {
+            engine.setOrderValue(
+              state.workspace,
+              input.dataset.orderRow,
+              input.dataset.orderField,
+              input.value,
+              { actor: substitutionActor(), recordHistory: true },
+            );
+          }
           if (render) renderResults();
           scheduleLocalSave();
           return true;
@@ -7937,6 +8282,30 @@
       });
       elements.orderQCandidateRefreshButton.addEventListener("click", () => { void refreshOrderQCandidateList(); });
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
+      elements.inventoryInspectorClose.addEventListener("click", () => setInventoryInspectorOpen(false));
+      elements.inventoryInspectorReopen.addEventListener("click", () => setInventoryInspectorOpen(true));
+      elements.deliverySummaryBody.addEventListener("change", (event) => {
+        const input = event.target.closest("[data-summary-manager][data-customer-key]");
+        if (!input || !state.workspace) return;
+        try {
+          const result = engine.setCustomerManager(state.workspace, input.dataset.customerKey, input.value, {
+            actor: substitutionActor(), recordHistory: true,
+          });
+          renderResults();
+          scheduleLocalSave();
+          showToast(`담당자를 고객 단위로 ${formatNumber(result.affectedRowCount)}개 상품행에 반영했습니다.`);
+        } catch (error) {
+          showToast(error.message || "담당자를 반영하지 못했습니다.", true);
+          renderDeliverySummary();
+        }
+      });
+      elements.deliverySummaryBody.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing) return;
+        const input = event.target.closest("[data-summary-manager]");
+        if (!input) return;
+        event.preventDefault();
+        input.blur();
+      });
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
@@ -8204,6 +8573,16 @@
             state.activeColumnMenu?.columnKey === trigger.dataset.sortColumnKey;
           if (sameMenu) closeColumnSortMenu();
           else openColumnSortMenu(trigger);
+          return;
+        }
+        const productRow = event.target.closest("tr[data-product-code]");
+        const productCode = engine.normalizeProductCode(productRow?.dataset.productCode);
+        if (productCode && productCode !== engine.normalizeProductCode(state.selectedProductCode)) {
+          state.selectedProductCode = productCode;
+          elements.previewTable.querySelectorAll(".orderops-selected-product-row")
+            .forEach((row) => row.classList.remove("orderops-selected-product-row"));
+          productRow.classList.add("orderops-selected-product-row");
+          renderInventoryInspector();
         }
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
@@ -8429,6 +8808,7 @@
       bindLedgerViewCard();
       bindIntegratedFileCard();
       bindBundleDropSurface();
+      restoreInventoryInspectorOpen();
 
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";

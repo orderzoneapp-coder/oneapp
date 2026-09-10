@@ -1,0 +1,283 @@
+:root {
+  --nexus-table-surround: #f5f6f7;
+  --nexus-table-cell: #ffffff;
+  --nexus-table-alt: #f5f6f7;
+  --nexus-table-head: #e5e7eb;
+  --nexus-table-text: #1f2937;
+  --nexus-table-muted: #4b5563;
+  --nexus-table-border: #d1d5db;
+  --nexus-table-selected: #e0f2f1;
+  --nexus-table-selected-edge: #0f766e;
+}
+
+.nexus-table-ux {
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--nexus-table-text);
+  background: var(--nexus-table-cell);
+}
+
+.nexus-table-ux :is(th, td) {
+  border-color: var(--nexus-table-border);
+}
+
+.nexus-table-ux thead th {
+  position: sticky;
+  top: var(--nexus-table-sticky-top, 0);
+  z-index: 3;
+  color: var(--nexus-table-text);
+  background: var(--nexus-table-head);
+}
+
+.nexus-table-ux tbody tr[aria-selected="true"] > td {
+  background: var(--nexus-table-selected) !important;
+  box-shadow: inset 0 1px 0 var(--nexus-table-selected-edge), inset 0 -1px 0 var(--nexus-table-selected-edge);
+}
+
+.nexus-table-ux tbody tr[aria-selected="true"] > td:first-child {
+  box-shadow: inset 2px 0 0 var(--nexus-table-selected-edge), inset 0 1px 0 var(--nexus-table-selected-edge), inset 0 -1px 0 var(--nexus-table-selected-edge);
+}
+
+.nexus-table-ux :is(td.number, td.num, td[data-type="number"], td[data-value-type="number"]) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nexus-table-ux td.nexus-table-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nexus-table-ux tbody tr.nexus-table-filtered-out { display: none !important; }
+
+.nexus-table-ux.nexus-table-no-results::after {
+  content: "검색·필터 조건에 맞는 결과가 없습니다.";
+  display: table-caption;
+  caption-side: bottom;
+  padding: 14px;
+  border: 1px solid var(--nexus-table-border);
+  border-top: 0;
+  color: var(--nexus-table-muted);
+  background: var(--nexus-table-cell);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nexus-table-column-tool {
+  float: right;
+  width: 23px;
+  min-width: 23px;
+  height: 23px;
+  margin: -2px 0 -2px 5px;
+  padding: 0;
+  border: 1px solid #9ca3af;
+  border-radius: 4px;
+  color: #374151;
+  background: #f9fafb;
+  font: 900 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.nexus-table-column-tool::before { content: "⌕"; }
+
+.nexus-table-column-tool:hover,
+.nexus-table-column-tool:focus-visible,
+.nexus-table-column-tool[aria-expanded="true"],
+.nexus-table-column-tool[data-active="true"] {
+  border-color: var(--nexus-table-selected-edge);
+  color: #ffffff;
+  background: var(--nexus-table-selected-edge);
+  outline: 0;
+}
+
+.nexus-table-popover {
+  position: fixed;
+  z-index: 100000;
+  width: min(330px, calc(100vw - 24px));
+  max-height: min(620px, calc(100vh - 24px));
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid #9ca3af;
+  border-radius: 8px;
+  color: #1f2937;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, .24);
+  font: 12px/1.4 Pretendard, "Noto Sans KR", system-ui, sans-serif;
+}
+
+.nexus-table-popover[hidden] { display: none !important; }
+.nexus-table-popover h2 { margin: 0 0 3px; font-size: 14px; }
+.nexus-table-popover p { margin: 0 0 10px; color: #4b5563; }
+.nexus-table-popover label { display: block; margin: 8px 0 4px; color: #374151; font-weight: 800; }
+.nexus-table-popover input[type="search"] {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #9ca3af;
+  border-radius: 5px;
+  color: #111827;
+  background: #ffffff;
+}
+.nexus-table-popover input[type="search"]:focus {
+  border-color: var(--nexus-table-selected-edge);
+  outline: 2px solid rgba(15, 118, 110, .2);
+}
+.nexus-table-popover__sort,
+.nexus-table-popover__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.nexus-table-popover button {
+  min-height: 31px;
+  padding: 5px 9px;
+  border: 1px solid #9ca3af;
+  border-radius: 5px;
+  color: #374151;
+  background: #f9fafb;
+  font-weight: 800;
+  cursor: pointer;
+}
+.nexus-table-popover button:hover,
+.nexus-table-popover button:focus-visible,
+.nexus-table-popover button[aria-pressed="true"] {
+  border-color: var(--nexus-table-selected-edge);
+  color: #ffffff;
+  background: var(--nexus-table-selected-edge);
+  outline: 0;
+}
+.nexus-table-popover__values {
+  display: grid;
+  gap: 2px;
+  max-height: 190px;
+  margin: 4px 0 10px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  background: #f9fafb;
+}
+.nexus-table-popover__values label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 27px;
+  margin: 0;
+  padding: 3px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.nexus-table-popover__values label:hover { background: #e5e7eb; }
+.nexus-table-popover__values input { margin: 0; accent-color: var(--nexus-table-selected-edge); }
+.nexus-table-popover__actions { justify-content: flex-end; margin-top: 10px; }
+.nexus-table-popover__status { color: #4b5563; font-variant-numeric: tabular-nums; }
+
+.nexus-common-column-resize {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  z-index: 8;
+  width: 10px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.nexus-common-column-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 4px;
+  width: 1px;
+  background: #94a3b8;
+}
+
+.nexus-common-column-resize:hover::after,
+.nexus-common-column-resize:focus-visible::after,
+.nexus-common-column-resize[data-resizing="true"]::after {
+  width: 2px;
+  background: var(--nexus-table-selected-edge);
+}
+
+.nexus-common-column-resize:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, .35);
+  outline-offset: -2px;
+}
+
+.nexus-table-common-widths {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+
+.nexus-table-common-widths thead th { position: sticky; }
+
+html[data-nexus-ui-theme="dark"] .nexus-table-ux tbody tr[aria-selected="true"] > td {
+  background: color-mix(in srgb, #0f766e 34%, #111827) !important;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-table-column-tool {
+  border-color: #64748b;
+  color: #e5e7eb;
+  background: #1f2937;
+}
+
+html[data-nexus-ui-theme="dark"] .nexus-table-popover {
+  border-color: #64748b;
+  color: #f8fafc;
+  background: #111827;
+}
+html[data-nexus-ui-theme="dark"] .nexus-table-popover p,
+html[data-nexus-ui-theme="dark"] .nexus-table-popover label,
+html[data-nexus-ui-theme="dark"] .nexus-table-popover__status { color: #cbd5e1; }
+html[data-nexus-ui-theme="dark"] .nexus-table-popover input[type="search"] {
+  border-color: #64748b;
+  color: #f8fafc;
+  background: #020617;
+}
+html[data-nexus-ui-theme="dark"] .nexus-table-popover button {
+  border-color: #64748b;
+  color: #e5e7eb;
+  background: #1f2937;
+}
+html[data-nexus-ui-theme="dark"] .nexus-table-popover__values {
+  border-color: #475569;
+  background: #172033;
+}
+html[data-nexus-ui-theme="dark"] .nexus-table-popover__values label:hover { background: #334155; }
+
+@media print {
+  html[data-nexus-ui-app],
+  html[data-nexus-ui-app] body,
+  html[data-nexus-ui-app] main,
+  html[data-nexus-ui-app] .nexus-table-ux,
+  html[data-nexus-ui-app] .nexus-table-ux :is(thead, tbody, tr, th, td) {
+    color: #111827 !important;
+    background: #ffffff !important;
+  }
+
+  html[data-nexus-ui-app] .nexus-table-ux :is(th, td) {
+    border-color: #9ca3af !important;
+  }
+
+  html[data-nexus-ui-app] .nexus-table-ux tbody tr[aria-selected="true"] > td,
+  html[data-nexus-ui-app] .nexus-table-ux tbody tr:hover > td,
+  html[data-nexus-ui-app] .nexus-table-ux :focus {
+    background: #ffffff !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+
+  /* OrderOps manager colours are an approved business print signal, not UI selection paint. */
+  html[data-nexus-ui-app="orderops"] body.printing-table .print-area .nexus-table-ux tbody tr.manager-color-row[style*="--manager-color"] > td {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: var(--manager-print-color, var(--manager-color)) !important;
+  }
+
+  .nexus-common-column-resize { display: none !important; }
+  .nexus-table-column-tool,
+  .nexus-table-popover { display: none !important; }
+  .nexus-table-ux tbody tr.nexus-table-filtered-out { display: none !important; }
+  .nexus-table-ux.nexus-table-no-results::after { color: #111827 !important; background: #ffffff !important; }
+}
