@@ -189,8 +189,8 @@ try {
   const metrics = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return {title:document.title,global:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),resizer:q('#photoResizer'),workbench:q('.workbench'),grid:q('.grid-card'),related:q('.related-panel'),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
   console.log('SmartInput desktop metrics', metrics);
   assert.equal(metrics.title, '스마트입력 - NEXUS');
-  assert.ok(metrics.parser.width > 0 && Math.abs(metrics.workbench.width - metrics.parser.width) <= 2 && metrics.workbench.y > metrics.parser.y + metrics.parser.height, 'desktop must keep source input above the table in one central work flow');
-  assert.ok(metrics.resizer.width === 0 && metrics.related.width >= 220, 'desktop must replace the former parser split handle while preserving the right estimate library');
+  assert.ok(metrics.parser.width >= 330 && metrics.workbench.width > metrics.parser.width, 'desktop must preserve the independent parser and larger work table');
+  assert.ok(metrics.resizer.width > 0 && metrics.related.width >= 220, 'desktop must preserve the parser resizer and right estimate library');
   assert.ok(Math.abs(metrics.grid.width - metrics.workbench.width) <= 2, 'search/edit controls and the grid must share the center work card');
   assert.ok(metrics.app.height >= 55 && metrics.app.height <= 58, 'desktop app header must follow the 56px common AppHeader contract');
   await evaluate(client, `document.querySelector('.workspace').classList.add('has-photo-source');true`);
@@ -199,8 +199,8 @@ try {
     await wait(80);
     const responsive = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return {width:innerWidth,mobile:matchMedia('(max-width: 820px)').matches,parser:q('.parser-card'),resizer:q('#photoResizer'),workbench:q('.workbench'),table:q('#tableScroll'),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
     assert.equal(responsive.mobile, false, `${width}px desktop must not activate mobile rules`);
-    assert.ok(responsive.parser.width > 0 && responsive.resizer.width === 0, `${width}px desktop must keep the central parser visible without the former internal split handle`);
-    assert.ok(Math.abs(responsive.workbench.x - responsive.parser.x) <= 2 && Math.abs(responsive.workbench.width - responsive.parser.width) <= 2 && responsive.workbench.y > responsive.parser.y + responsive.parser.height, `${width}px desktop must keep parser and table in one vertical central work flow`);
+    assert.ok(responsive.parser.width >= 330 && responsive.resizer.width > 0, `${width}px desktop must keep the parser and resizer visible`);
+    assert.ok(responsive.workbench.x > responsive.parser.right && Math.abs(responsive.workbench.y - responsive.parser.y) <= 2, `${width}px desktop must keep parser and table side by side`);
     assert.ok(responsive.table.width > 0 && responsive.table.height > 0, `${width}px desktop must keep the Excel table visible`);
   }
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
@@ -265,17 +265,26 @@ try {
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark theme');
   const darkShot = await capture(client, 'smartinput-0a-1920-dark.png');
 
-  const beforeResize = await evaluate(client, `document.querySelector('[data-nexus-pane="reference"]').getBoundingClientRect().width`);
-  await evaluate(client, `(() => {const h=document.querySelector('[data-nexus-pane-resize="left"]');h.focus();for(let index=0;index<7;index+=1)h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
-  const afterResize = await expr(client, `Math.abs(document.querySelector('[data-nexus-pane="reference"]').getBoundingClientRect().width-${beforeResize})>20&&document.querySelector('[data-nexus-pane="reference"]').getBoundingClientRect().width`, 'left reference resize');
-  assert.ok(afterResize > beforeResize, 'desktop left reference width control must remain interactive');
+  const beforeResize = await evaluate(client, `document.querySelector('.parser-card').getBoundingClientRect().width`);
+  await evaluate(client, `(() => {const h=document.querySelector('#photoResizer');h.focus();for(let index=0;index<7;index+=1)h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
+  const afterResize = await expr(client, `Math.abs(document.querySelector('.parser-card').getBoundingClientRect().width-${beforeResize})>20&&document.querySelector('.parser-card').getBoundingClientRect().width`, 'parser resize');
+  assert.ok(afterResize > beforeResize, 'desktop parser width control must remain interactive');
   const beforeRelatedResize = await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`);
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('.nexus-pane-resizer-v2')].filter((node)=>!node.hidden).map((node)=>node.dataset.nexusPaneResize)`), ['left','right'], 'common left and right separators must replace both former app-specific handles');
+  assert.equal(await evaluate(client, `(() => {const parser=getComputedStyle(document.querySelector('#photoResizer span'));const related=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return parser.height===related.height&&related.backgroundColor===parser.backgroundColor;})()`), true, 'right resize handle must be as visible as the left parser handle');
   const relatedCloseIdle = await evaluate(client, `(() => {const close=document.querySelector('#relatedPanelCloseButton');return {text:close.textContent.trim(),label:close.getAttribute('aria-label'),opacity:getComputedStyle(document.querySelector('.related-panel-chrome')).opacity,hoverNone:matchMedia('(hover: none)').matches};})()`);
   assert.deepEqual({ text: relatedCloseIdle.text, label: relatedCloseIdle.label }, { text: '×', label: '우측 패널 닫기' }, 'desktop close must be an accessible X without a top labeled button');
   assert.equal(relatedCloseIdle.opacity, relatedCloseIdle.hoverNone ? '1' : '0', 'the X must stay touch-visible and otherwise wait for pointer hover');
-  assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer')).display==='none'&&getComputedStyle(document.querySelector('#photoResizer')).display==='none'`), true, 'legacy SmartInput split handles must stay hidden after common separator adoption');
-  await evaluate(client, `(() => {const handle=document.querySelector('[data-nexus-pane-resize="right"]');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
+  if (!relatedCloseIdle.hoverNone) {
+    const relatedHandlePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelResizer').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedHandlePoint });
+    await wait(250);
+    assert.equal(await evaluate(client, `(() => {const close=getComputedStyle(document.querySelector('#relatedPanelCloseButton'));const handle=getComputedStyle(document.querySelector('#relatedPanelResizer span'));return getComputedStyle(document.querySelector('.related-panel-chrome')).opacity==='1'&&close.color==='rgb(255, 255, 255)'&&handle.height==='76px';})()`), true, 'resizer hover must reveal and highlight both the handle and X');
+    const relatedClosePoint = await evaluate(client, `(() => {const rect=document.querySelector('#relatedPanelCloseButton').getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...relatedClosePoint });
+    await wait(250);
+    assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer span')).height`), '76px', 'X hover must also highlight the left resize handle');
+  }
+  await evaluate(client, `(() => {const handle=document.querySelector('#relatedPanelResizer');handle.focus();handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
   assert.ok(await evaluate(client, `document.querySelector('.related-panel').getBoundingClientRect().width`) > beforeRelatedResize, 'desktop right panel width must be keyboard adjustable');
   await click(client, '#relatedPanelCloseButton');
   await expr(client, `!document.querySelector('.related-panel').classList.contains('is-open')&&document.querySelector('#relatedPanelToggle').getAttribute('aria-expanded')==='false'`, 'right panel slide close');

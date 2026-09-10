@@ -125,38 +125,6 @@ body.nexus-pane-resizing-v2 {
   background: var(--nexus-ui-panel-subtle, #f8fafc) !important;
 }
 
-.smart-input-reference-pane {
-  padding: 12px;
-  border: 1px solid var(--line, #dbe2ea);
-  border-radius: var(--radius-lg, 14px);
-  background: var(--panel, #fff);
-  box-shadow: var(--shadow-card, 0 1px 2px rgba(15, 23, 42, .06));
-}
-
-.smart-input-reference-pane > small {
-  color: var(--primary, #4f46e5);
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: .16em;
-}
-
-.smart-input-reference-pane > h2 {
-  margin: 4px 0 12px;
-  color: var(--ink, #0f172a);
-  font-size: 13px;
-}
-
-.smart-input-reference-pane [data-nexus-selection-reference] > p {
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--line, #dbe2ea);
-  border-radius: 8px;
-  color: var(--nexus-ui-muted, var(--muted, #64748b));
-  background: var(--nexus-ui-panel-subtle, var(--panel-soft, #f8fafc));
-  font-size: 11px;
-  line-height: 1.55;
-}
-
 [data-nexus-workspace="smart-parser"] {
   min-height: 620px;
 }
@@ -195,30 +163,6 @@ body.nexus-pane-resizing-v2 {
   line-height: 1.45;
 }
 
-/* 스마트입력의 원본 입력과 입력표는 모두 중앙의 한 업무 흐름이다. */
-[data-nexus-workspace="smart-input"] > .smart-input-main-flow {
-  display: grid !important;
-  grid-template-rows: minmax(220px, 0.72fr) minmax(390px, 1.28fr);
-  gap: 10px;
-  min-height: 0;
-  overflow: auto;
-}
-
-[data-nexus-workspace="smart-input"] > .smart-input-main-flow > :is(.parser-card, .workbench) {
-  position: relative !important;
-  top: auto !important;
-  width: 100% !important;
-  height: auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  grid-column: 1 !important;
-}
-
-[data-nexus-workspace="smart-input"] > .smart-input-main-flow > .photo-resizer,
-[data-nexus-workspace="smart-input"] .related-panel-resizer {
-  display: none !important;
-}
-
 [data-nexus-workspace="dataops"] > [data-nexus-pane="work"] {
   overflow: hidden !important;
 }
@@ -226,20 +170,6 @@ body.nexus-pane-resizing-v2 {
 [data-nexus-workspace="dataops"] > [data-nexus-pane="work"] > div:first-child {
   min-width: 0 !important;
   width: 100%;
-}
-
-/* 앱헤더 폭이 부족하면 전표 조건을 다음 줄로 보내 겹침을 막는다. */
-@media (max-width: 1760px) and (min-width: 961px) {
-  [data-nexus-app-header="smart-input"].app-bar__inner {
-    flex-wrap: wrap;
-    padding-block: 7px;
-  }
-  [data-nexus-app-header="smart-input"] > .brand { order: 1; }
-  [data-nexus-app-header="smart-input"] > .app-bar__primary { order: 2; flex: 1 1 320px; }
-  [data-nexus-app-header="smart-input"] > .app-bar__actions { order: 3; min-width: max-content; }
-  [data-nexus-app-header="smart-input"] > .header-customer-group { order: 4; flex: 0 1 360px; }
-  [data-nexus-app-header="smart-input"] > .header-fields { order: 5; flex: 1 1 540px; margin-left: 0; }
-  [data-nexus-app-header="smart-input"] > .app-status { order: 6; flex: 1 1 180px; }
 }
 
 @media (max-width: 960px) {
@@ -260,22 +190,6 @@ body.nexus-pane-resizing-v2 {
   [data-nexus-resizable-workspace="true"] > [data-nexus-pane="work"] { order: 2; min-height: 520px; }
   [data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"] { order: 3; }
   .nexus-pane-resizer-v2 { display: none !important; }
-  [data-nexus-workspace="smart-input"] > .smart-input-main-flow {
-    grid-template-rows: auto auto;
-    overflow: visible;
-  }
-  [data-nexus-app-header="smart-input"].app-bar__inner {
-    width: min(100% - 20px, var(--app-max));
-    padding-block: 7px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
-  [data-nexus-app-header="smart-input"] > * {
-    min-width: 0 !important;
-    width: 100% !important;
-    margin-left: 0 !important;
-  }
 }
 
 html[data-nexus-ui-theme="dark"] {
