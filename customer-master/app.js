@@ -50,6 +50,7 @@ const state = {
   legacyInspection: null,
   restoreSnapshot: null,
   changeRequestInbox: { status: 'IDLE', requests: [], error: null },
+  selectedCustomerId: '',
   toastTimer: null,
 };
 
@@ -178,11 +179,12 @@ function statusBadge(customer) {
 
 function renderCustomerList() {
   const rows = visibleCustomers();
-  $('#customerTableBody').innerHTML = rows.map((customer) => {
+  if (state.selectedCustomerId && !rows.some((customer) => customer.customerId === state.selectedCustomerId)) state.selectedCustomerId = '';
+  $('#customerTableBody').innerHTML = rows.map((customer, rowIndex) => {
     const address = [customer.address, customer.addressDetail].map(clean).filter(Boolean).join(' ');
     const contact = [customer.mobile || customer.phone, address].map(clean).filter(Boolean).join(' · ');
-    return `<tr data-customer-id="${escapeHtml(customer.customerId)}">
-      <td>${escapeHtml(customer.customerId || '-')}</td>
+    return `<tr data-customer-id="${escapeHtml(customer.customerId)}" class="${state.selectedCustomerId === customer.customerId ? 'is-selected' : ''}">
+      <td>${rowIndex + 1}</td><td>${escapeHtml(customer.customerId || '-')}</td>
       <td><strong>${escapeHtml(customer.customerName || '(상호 미입력)')}</strong><small>Rev.${Number(customer.revision || 1)}</small></td>
       <td>${escapeHtml(contact || '-')}</td><td>${escapeHtml(customer.group1Name || '-')}</td><td>${escapeHtml(customer.group2Name || '-')}</td>
       <td>${escapeHtml(customer.contactName || '-')}</td><td>${statusBadge(customer)}</td>
@@ -191,6 +193,24 @@ function renderCustomerList() {
   }).join('');
   $('#customerEmpty').hidden = rows.length !== 0;
   $('#customerListNote').textContent = rows.length >= 500 ? '검색 결과가 많아 상위 500건만 표시합니다.' : `${rows.length.toLocaleString()}건 표시`;
+  renderCustomerResult();
+}
+
+function renderCustomerResult() {
+  const body = $('#customerResultBody');
+  if (!body) return;
+  const customer = operationalCustomers().find((row) => row.customerId === state.selectedCustomerId);
+  if (!customer) {
+    body.innerHTML = '<p>중앙 목록에서 거래처를 선택하면 상세 결과가 표시됩니다.</p>';
+    return;
+  }
+  const address = [customer.address, customer.addressDetail].map(clean).filter(Boolean).join(' ') || '-';
+  body.innerHTML = `
+    <div class="cm-result-card"><small>거래처</small><strong>${escapeHtml(customer.customerName || '(상호 미입력)')}</strong><span>${escapeHtml(customer.customerId)}</span></div>
+    <div class="cm-result-card"><small>연락처</small><strong>${escapeHtml(customer.mobile || customer.phone || '-')}</strong><span>${escapeHtml(address)}</span></div>
+    <div class="cm-result-card"><small>분류·담당</small><strong>${escapeHtml([customer.group1Name, customer.group2Name].map(clean).filter(Boolean).join(' / ') || '-')}</strong><span>${escapeHtml(customer.contactName || '담당자 미지정')}</span></div>
+    <div class="cm-result-card"><small>상태</small><strong>${customer.status === CUSTOMER_STATUS.ACTIVE ? '사용중' : '거래중단'} · Rev.${Number(customer.revision || 1)}</strong></div>
+    <button type="button" class="cm-button cm-button--primary" data-result-edit-customer="${escapeHtml(customer.customerId)}">선택 거래처 수정</button>`;
 }
 
 function renderCompleteness() {
@@ -702,9 +722,32 @@ function bindEvents() {
   $('#customerTableBody').addEventListener('click', (event) => {
     const edit = event.target.closest('[data-edit-customer]');
     const status = event.target.closest('[data-toggle-status]');
+    const row = event.target.closest('[data-customer-id]');
+    if (row) {
+      state.selectedCustomerId = row.dataset.customerId;
+      $$('#customerTableBody tr').forEach((element) => element.classList.toggle('is-selected', element.dataset.customerId === state.selectedCustomerId));
+      renderCustomerResult();
+    }
     if (edit) openCustomerDialog(edit.dataset.editCustomer).catch((error) => toast(error.message, 'error'));
     if (status) toggleCustomerStatus(status.dataset.toggleStatus).catch(() => {});
   });
+  $('#customerResultBody').addEventListener('click', (event) => {
+    const edit = event.target.closest('[data-result-edit-customer]');
+    if (edit) openCustomerDialog(edit.dataset.resultEditCustomer).catch((error) => toast(error.message, 'error'));
+  });
+  $$('[data-go-tab]').forEach((button) => button.addEventListener('click', () => activateTab(button.dataset.goTab)));
+  const workspace = $('#customerWorkspace');
+  const resultPane = workspace.querySelector('[data-nexus-pane="result"]');
+  const reopen = $('#openCustomerResult');
+  const setResultPaneOpen = (open) => {
+    workspace.classList.toggle('is-result-collapsed', !open);
+    resultPane.hidden = !open;
+    reopen.hidden = open;
+    try { sessionStorage.setItem('nexus:customer-master:right-panel:v1', open ? 'open' : 'closed'); } catch {}
+  };
+  $('#closeCustomerResult').addEventListener('click', () => setResultPaneOpen(false));
+  reopen.addEventListener('click', () => setResultPaneOpen(true));
+  try { setResultPaneOpen(sessionStorage.getItem('nexus:customer-master:right-panel:v1') !== 'closed'); } catch { setResultPaneOpen(true); }
   $('#customerForm').addEventListener('submit', (event) => submitCustomer(event).catch(() => {}));
   $$('[data-close-dialog]').forEach((button) => button.addEventListener('click', () => $('#customerDialog').close()));
   $('#completenessBody').addEventListener('input', handleCompletenessInput);

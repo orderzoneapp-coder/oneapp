@@ -113,6 +113,7 @@ try {
   await client.connect();
   await client.send('Page.enable');
   await client.send('Runtime.enable');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
   const runtimeErrors = [];
   client.on('Runtime.exceptionThrown', (event) => runtimeErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'runtime exception'));
   const origin = `http://127.0.0.1:${address.port}`;
@@ -133,6 +134,12 @@ try {
   })()`);
   await navigate(client, `${origin}/SmartParser.html`);
   await waitFor(() => evaluate(client, `window.__SMART_PARSER_RENDERED__ === true && document.body.textContent.includes('Product Snapshot READY')`), 'ready product snapshot');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="smart-parser"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
+  assert.equal(await evaluate(client, `document.querySelector('[data-nexus-app-header="smart-parser"]')?.offsetHeight >= 56`), true);
+  await evaluate(client, `document.querySelector('[data-nexus-pane="result"] button[aria-label="결과 패널 닫기"]').click()`);
+  assert.deepEqual(await evaluate(client, `({closed:!document.querySelector('[data-nexus-pane="result"]'), reopen:!!document.querySelector('[data-nexus-result-reopen="smart-parser"]'), catalog:document.body.textContent.includes('현재 카탈로그')})`), { closed:true, reopen:true, catalog:true });
+  await evaluate(client, `document.querySelector('[data-nexus-result-reopen="smart-parser"]').click()`);
+  assert.equal(await evaluate(client, `!!document.querySelector('[data-nexus-pane="result"]')`), true);
 
   const modalState = await evaluate(client, `(async () => {
     const host = document.createElement('div');

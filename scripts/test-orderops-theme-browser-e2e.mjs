@@ -161,6 +161,11 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/orderops/list.html` });
   await loaded;
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))`), 'common header');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="orderops"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
+  await click(client, '#orderOpsResultClose');
+  assert.deepEqual(await evaluate(client, `({closed:document.querySelector('[data-nexus-workspace="orderops"]').dataset.resultClosed, reopen:!document.querySelector('#orderOpsResultReopen').classList.contains('hidden')})`), { closed:'true', reopen:true });
+  await click(client, '#orderOpsResultReopen');
+  assert.equal(await evaluate(client, `document.querySelector('[data-nexus-workspace="orderops"]').dataset.resultClosed`), 'false');
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');
     host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value warning-value"><span class="manager-name">김담당</span></td><td class="information-value ordered-context-cell"><span class="order-information-badges"><span class="order-information-badge manager-color-badge" style="--manager-color:#dbeafe">우리식당(1)8,900</span><span class="order-information-badge manager-color-badge" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number ledger-negative-cell">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr><tr class="manager-color-row box-unit-row" style="--manager-color:#dcfce7"><td class="box-unit-cell">BOX 상품</td><td>이담당</td><td>박스 정보</td><td class="number">2,300</td></tr></tbody></table>';
@@ -259,6 +264,12 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/DataOps.html` });
   await dataOpsLoaded;
   await waitFor(() => evaluate(client, `document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]').length === 3 && Boolean(document.querySelector('[data-nexus-ui-theme-toggle]'))`), 'DataOps theme surfaces');
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-nexus-workspace="dataops"]'))`), 'DataOps three-pane workspace');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="dataops"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
+  await click(client, '[data-nexus-pane="result"] button[aria-label="결과 패널 닫기"]');
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-nexus-result-reopen="dataops"]'))`), true);
+  await click(client, '[data-nexus-result-reopen="dataops"]');
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-nexus-pane="result"]'))`), true);
 
   await click(client, '[data-nexus-ui-theme-set="light"]');
   await wait(100);

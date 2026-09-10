@@ -9,6 +9,14 @@
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
   const siteRoot = new URL('../../', scriptUrl);
   const asset = (path) => new URL(path, siteRoot).href;
+  const installWorkbenchStyles = () => {
+    if (!document.head || document.getElementById('nexusWorkbenchStyles')) return;
+    const link = document.createElement('link');
+    link.id = 'nexusWorkbenchStyles';
+    link.rel = 'stylesheet';
+    link.href = asset('nexus/common/nexus-workbench.css?v=1.0.0');
+    document.head.appendChild(link);
+  };
   const GLOBAL_HEADER_APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', path: 'Master.html' }),
     Object.freeze({ id: 'customer-master', label: '거래처관리', path: 'customer-master/index.html' }),
@@ -160,7 +168,9 @@
   };
 
   const mount = () => {
-    if (!document.body || document.getElementById('nexusUiHeader')) return;
+    if (!document.body) return;
+    installWorkbenchStyles();
+    if (document.getElementById('nexusUiHeader')) return;
     const bodyStyle = getComputedStyle(document.body);
     document.body.style.setProperty('--nexus-ui-original-padding-top', bodyStyle.paddingTop || '0px');
     document.body.classList.add('nexus-ui-mounted');

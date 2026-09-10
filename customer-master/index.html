@@ -20,6 +20,15 @@
           <h1>거래처관리</h1>
           <p>거래처 기준정보와 외부코드 매핑을 독립적으로 관리합니다.</p>
         </div>
+        <nav class="cm-tabs" aria-label="거래처관리 기능">
+          <button type="button" class="cm-tab is-active" data-tab="customers">거래처 목록</button>
+          <button type="button" class="cm-tab" data-tab="completeness">정보 보완</button>
+          <button type="button" class="cm-tab" data-tab="excel">Excel 등록·수정</button>
+          <button type="button" class="cm-tab" data-tab="mapping">매핑사전</button>
+          <button type="button" class="cm-tab" data-tab="history">변경이력</button>
+          <button type="button" class="cm-tab" data-tab="requests">변경요청</button>
+          <button type="button" class="cm-tab" data-tab="data">데이터 이전·복원</button>
+        </nav>
         <div class="cm-app-status" id="appStatus" data-state="ready">
           <span class="cm-status-dot" aria-hidden="true"></span>
           <span id="appStatusText">로컬 저장소 준비 중</span>
@@ -27,43 +36,47 @@
       </div>
     </header>
 
-    <nav class="cm-tabs" aria-label="거래처관리 기능">
-      <button type="button" class="cm-tab is-active" data-tab="customers">거래처 목록</button>
-      <button type="button" class="cm-tab" data-tab="completeness">정보 보완</button>
-      <button type="button" class="cm-tab" data-tab="excel">Excel 등록·수정</button>
-      <button type="button" class="cm-tab" data-tab="mapping">매핑사전</button>
-      <button type="button" class="cm-tab" data-tab="history">변경이력</button>
-      <button type="button" class="cm-tab" data-tab="requests">변경요청</button>
-      <button type="button" class="cm-tab" data-tab="data">데이터 이전·복원</button>
-    </nav>
-
     <main class="cm-main">
       <section class="cm-view is-active" data-view="customers">
-        <div class="cm-summary" aria-label="거래처 현황">
-          <button type="button" class="cm-stat is-active" data-summary-filter="ALL"><span>전체 거래처</span><strong id="totalCount">0</strong></button>
-          <button type="button" class="cm-stat" data-summary-filter="COMPLETE"><span>정보 완료</span><strong id="completeCount">0</strong></button>
-          <button type="button" class="cm-stat" data-summary-filter="INCOMPLETE"><span>정보 보완</span><strong id="incompleteCount">0</strong></button>
-          <button type="button" class="cm-stat" data-summary-filter="DUPLICATE_CANDIDATE"><span>중복 확인</span><strong id="duplicateCount">0</strong></button>
-        </div>
+        <div class="cm-workspace" id="customerWorkspace" data-nexus-workspace="customer-master">
+          <aside class="cm-workspace-pane cm-reference-pane" data-nexus-pane="reference" aria-label="거래처 검색·분류 참조">
+            <div class="cm-pane-heading"><small>REFERENCE</small><h2>검색·분류</h2></div>
+            <div class="cm-summary" aria-label="거래처 현황">
+              <button type="button" class="cm-stat is-active" data-summary-filter="ALL"><span>전체 거래처</span><strong id="totalCount">0</strong></button>
+              <button type="button" class="cm-stat" data-summary-filter="COMPLETE"><span>정보 완료</span><strong id="completeCount">0</strong></button>
+              <button type="button" class="cm-stat" data-summary-filter="INCOMPLETE"><span>정보 보완</span><strong id="incompleteCount">0</strong></button>
+              <button type="button" class="cm-stat" data-summary-filter="DUPLICATE_CANDIDATE"><span>중복 확인</span><strong id="duplicateCount">0</strong></button>
+            </div>
+            <div class="cm-filter-stack">
+              <label>사용 상태<select id="statusFilter" aria-label="사용 상태"><option value="ALL">사용 상태 전체</option><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select></label>
+              <label>그룹1<select id="group1Filter" aria-label="그룹1"><option value="ALL">그룹1 전체</option></select></label>
+              <label>그룹2<select id="group2Filter" aria-label="그룹2"><option value="ALL">그룹2 전체</option></select></label>
+              <label>담당자<select id="managerFilter" aria-label="담당자"><option value="ALL">담당자 전체</option></select></label>
+            </div>
+          </aside>
 
-        <section class="cm-panel">
-          <div class="cm-toolbar">
-            <label class="cm-search-wrap"><span class="sr-only">거래처 검색</span><input id="customerSearch" type="search" placeholder="거래처명·코드·전화·주소·외부코드 검색"></label>
-            <select id="statusFilter" aria-label="사용 상태"><option value="ALL">사용 상태 전체</option><option value="ACTIVE">사용중</option><option value="INACTIVE">거래중단</option></select>
-            <select id="group1Filter" aria-label="그룹1"><option value="ALL">그룹1 전체</option></select>
-            <select id="group2Filter" aria-label="그룹2"><option value="ALL">그룹2 전체</option></select>
-            <select id="managerFilter" aria-label="담당자"><option value="ALL">담당자 전체</option></select>
-            <button class="cm-button cm-button--primary" id="newCustomerButton" type="button">거래처 등록</button>
-          </div>
-          <div class="cm-table-wrap cm-customer-table-wrap">
-            <table class="cm-table cm-customer-table">
-              <thead><tr><th>NEXUS 거래처코드</th><th>거래처명</th><th>연락처·주소</th><th>그룹1</th><th>그룹2</th><th>담당자</th><th>상태</th><th>작업</th></tr></thead>
-              <tbody id="customerTableBody"></tbody>
-            </table>
-          </div>
-          <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
-          <p class="cm-list-note" id="customerListNote"></p>
-        </section>
+          <section class="cm-workspace-pane cm-work-pane" data-nexus-pane="work" aria-label="거래처 목록 작업표">
+            <div class="cm-toolbar">
+              <label class="cm-search-wrap"><span class="sr-only">거래처 검색</span><input id="customerSearch" type="search" placeholder="거래처명·코드·전화·주소·외부코드 검색"></label>
+              <button class="cm-button cm-button--primary" id="newCustomerButton" type="button">거래처 등록</button>
+            </div>
+            <div class="cm-table-wrap cm-customer-table-wrap">
+              <table class="cm-table cm-customer-table" aria-label="거래처 Excel형 목록">
+                <thead><tr><th>행</th><th>NEXUS 거래처코드</th><th>거래처명</th><th>연락처·주소</th><th>그룹1</th><th>그룹2</th><th>담당자</th><th>상태</th><th>작업</th></tr></thead>
+                <tbody id="customerTableBody"></tbody>
+              </table>
+            </div>
+            <div class="cm-empty" id="customerEmpty" hidden>조건에 맞는 거래처가 없습니다.</div>
+            <p class="cm-list-note" id="customerListNote"></p>
+          </section>
+
+          <aside class="cm-workspace-pane cm-result-pane" data-nexus-pane="result" aria-label="선택 거래처 결과">
+            <div class="cm-pane-heading cm-pane-heading--actions"><div><small>RESULT</small><h2>선택 거래처</h2></div><button type="button" class="cm-icon-button cm-pane-close" id="closeCustomerResult" aria-label="선택 거래처 결과 닫기">×</button></div>
+            <div class="cm-result-body" id="customerResultBody"><p>중앙 목록에서 거래처를 선택하면 상세 결과가 표시됩니다.</p></div>
+            <div class="cm-result-links"><button class="cm-button" type="button" data-go-tab="history">변경이력</button><button class="cm-button" type="button" data-go-tab="excel">Excel 등록·수정</button></div>
+          </aside>
+          <button type="button" class="cm-result-reopen" id="openCustomerResult" hidden>선택 거래처 결과 열기</button>
+        </div>
       </section>
 
       <section class="cm-view" data-view="completeness" hidden>

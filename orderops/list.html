@@ -169,6 +169,45 @@
       margin: 0 auto;
       padding: 22px 0 28px;
     }
+    .nexus-orderops-workspace {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 230px;
+      align-items: start;
+      gap: 12px;
+    }
+    .nexus-orderops-workspace > [data-nexus-pane] { min-width: 0; }
+    .nexus-orderops-workspace > [data-nexus-pane="reference"],
+    .nexus-orderops-workspace > [data-nexus-pane="result"] {
+      position: sticky;
+      top: calc(var(--nexus-ui-header-height, 52px) + 12px);
+      max-height: calc(100vh - var(--nexus-ui-header-height, 52px) - 24px);
+      overflow: auto;
+    }
+    .orderops-result-rail {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      background: var(--white);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .orderops-result-rail__head { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--slate-200); background: var(--slate-100); }
+    .orderops-result-rail__head strong { font-size: 12px; }
+    .orderops-result-rail__body { display: grid; gap: 8px; padding: 12px; }
+    .orderops-result-rail__body .header-link { width: 100%; }
+    .orderops-result-close { width: 28px; height: 28px; border: 1px solid var(--slate-300); border-radius: 5px; background: var(--white); }
+    .orderops-result-reopen { position: fixed; right: 12px; bottom: 72px; z-index: 80; padding: 9px 12px; border: 0; border-radius: 999px; color: #fff; background: var(--slate-900); box-shadow: 0 10px 24px rgba(15,23,42,.25); font-size: 11px; font-weight: 900; }
+    .orderops-completion-bar { position: sticky; bottom: 0; z-index: 30; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 11px 12px; border-top: 2px solid var(--slate-300); background: rgba(255,255,255,.96); box-shadow: 0 -8px 18px rgba(15,23,42,.08); }
+    .nexus-orderops-workspace > .page-footer { grid-column: 1 / -1; }
+    .nexus-orderops-workspace[data-result-closed="true"] { grid-template-columns: 300px minmax(0, 1fr); }
+    .nexus-orderops-workspace[data-result-closed="true"] > [data-nexus-pane="result"] { display: none; }
+    @media (max-width: 1180px) {
+      .nexus-orderops-workspace { grid-template-columns: 260px minmax(0, 1fr); }
+      .nexus-orderops-workspace > [data-nexus-pane="result"] { display: none; }
+    }
+    @media (max-width: 820px) {
+      .nexus-orderops-workspace { display: block; }
+      .nexus-orderops-workspace > [data-nexus-pane] { position: static; max-height: none; margin-bottom: 12px; }
+    }
     .panel { background: var(--white); }
     .orderq-source-picker {
       display: grid;
@@ -2040,10 +2079,26 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
+    @media (min-width: 821px) {
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .system-topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+        gap: 7px;
+      }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] :is(.system-console, .validation-box, .system-mode) { min-width: 0; width: 100%; }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .orderq-source-picker { grid-template-columns: minmax(0, 1fr); }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .orderq-source-picker__controls { grid-template-columns: minmax(0, 1fr); }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .orderq-source-picker__notice { grid-column: 1; }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .input-panel { display: block; }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .source-selector { display: block; }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .upload-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 7px; }
+      .nexus-orderops-workspace > [data-nexus-pane="reference"] .execution-panel { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr); }
+    }
   </style>
 </head>
 <body>
-  <header class="global-header">
+  <header class="global-header" data-nexus-app-header="orderops">
     <div class="brand" aria-label="ONEAPP ORDER Q 출고관리">
       <div class="brand-mark">ONEAPP</div>
       <div class="brand-divider" aria-hidden="true"></div>
@@ -2056,31 +2111,11 @@
         aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
         <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
       </a>
-      <button class="header-link header-output-button" id="printButton" type="button"
-        aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled>
-        <span aria-hidden="true">▣</span><span>화면인쇄 F9</span>
-      </button>
-      <button class="header-link header-output-button" id="downloadButton" type="button"
-        aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled>
-        <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
-      </button>
-      <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
-        <span aria-hidden="true">⇩</span><span>불러오기</span>
-      </button>
-      <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F8" aria-keyshortcuts="F8" disabled>
-        <span aria-hidden="true">✓</span><span>저장 F8</span>
-      </button>
-      <button class="header-link" id="headerRestoreButton" type="button" aria-label="최신 정상 임시저장 바로 복구">
-        <span aria-hidden="true">↻</span><span>이전복구</span>
-      </button>
-      <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="settingsModal">
-        <span aria-hidden="true">⚙</span><span>환경설정</span>
-      </button>
     </div>
   </header>
 
-  <main class="page-shell">
-    <section class="system-workbench" aria-label="주문관리 파일 작업영역">
+  <main class="page-shell nexus-orderops-workspace" data-nexus-workspace="orderops">
+    <section class="system-workbench" aria-label="주문관리 파일 작업영역" data-nexus-pane="reference">
       <div class="system-topbar">
         <div class="system-name">System.IO</div>
         <div class="system-console" role="status" aria-live="polite">
@@ -2194,9 +2229,15 @@
         </div>
       </section>
 
+      <div style="padding:10px 12px;border-top:1px solid var(--slate-200);background:var(--white)">
+        <button class="header-link" id="headerRestoreButton" type="button" aria-label="최신 정상 임시저장 바로 복구" style="width:100%">
+          <span aria-hidden="true">↻</span><span>이전복구</span>
+        </button>
+      </div>
+
     </section>
 
-    <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
+    <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세" data-nexus-pane="work">
       <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
       <p class="hidden" id="resultSubtitle"></p>
       <div class="hidden" id="summaryGrid"></div>
@@ -2286,7 +2327,29 @@
       </div>
 
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
+      <div class="orderops-completion-bar" data-nexus-completion-bar="orderops">
+        <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F8" aria-keyshortcuts="F8" disabled>
+          <span aria-hidden="true">✓</span><span>저장 F8</span>
+        </button>
+        <button class="header-link header-output-button" id="printButton" type="button" aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled>
+          <span aria-hidden="true">▣</span><span>화면인쇄 F9</span>
+        </button>
+        <button class="header-link header-output-button" id="downloadButton" type="button" aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled>
+          <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
+        </button>
+      </div>
     </section>
+
+    <aside class="orderops-result-rail" id="orderOpsResultRail" data-nexus-pane="result" aria-label="출고 결과와 이동">
+      <div class="orderops-result-rail__head"><strong>결과 · 이동</strong><button class="orderops-result-close" id="orderOpsResultClose" type="button" aria-label="결과 패널 닫기">×</button></div>
+      <div class="orderops-result-rail__body">
+        <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기"><span aria-hidden="true">⇩</span><span>확정본 불러오기</span></button>
+        <button class="header-link" id="headerSettingsButton" type="button" aria-expanded="false" aria-controls="settingsModal"><span aria-hidden="true">⚙</span><span>환경설정</span></button>
+        <a class="header-link" href="../history_viewer.html?returnApp=orderops">변경이력</a>
+        <a class="header-link" href="../export_center.html?returnApp=orderops">출력센터</a>
+      </div>
+    </aside>
+    <button class="orderops-result-reopen hidden" id="orderOpsResultReopen" type="button" data-nexus-result-reopen="orderops">결과 패널 열기</button>
 
     <footer class="page-footer">
       <span>ORDER Q v1.56 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
@@ -8510,6 +8573,26 @@
           setOrderQSourceNotice(`초기 주문 연결을 완료하지 못했습니다. 목록 새로고침 또는 주문현황 Excel을 사용하세요. · ${error.message || error}`, true);
         });
       }
+    })();
+  </script>
+  <script>
+    (() => {
+      const storageKey = 'nexus:orderops:right-panel:v1';
+      const workspace = document.querySelector('[data-nexus-workspace="orderops"]');
+      const rail = document.getElementById('orderOpsResultRail');
+      const closeButton = document.getElementById('orderOpsResultClose');
+      const reopenButton = document.getElementById('orderOpsResultReopen');
+      if (!workspace || !rail || !closeButton || !reopenButton) return;
+      const setOpen = (open) => {
+        workspace.dataset.resultClosed = String(!open);
+        reopenButton.classList.toggle('hidden', open);
+        try { sessionStorage.setItem(storageKey, open ? 'open' : 'closed'); } catch (error) {}
+      };
+      let open = true;
+      try { open = sessionStorage.getItem(storageKey) !== 'closed'; } catch (error) {}
+      setOpen(open);
+      closeButton.addEventListener('click', () => setOpen(false));
+      reopenButton.addEventListener('click', () => setOpen(true));
     })();
   </script>
 </body>

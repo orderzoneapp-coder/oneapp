@@ -92,7 +92,7 @@
 </head>
 <body>
   <header class="app-bar">
-    <div class="app-bar__inner">
+    <div class="app-bar__inner" data-nexus-app-header="smart-input">
       <a class="brand" href="./" aria-label="스마트입력 처음으로">
         <img class="brand__logo brand__logo--light" src="../nexus/assets/brand/apps/smart-input/logo-light.png" alt="" width="2172" height="724" decoding="async">
         <img class="brand__logo brand__logo--dark" src="../nexus/assets/brand/apps/smart-input/logo-dark.png" alt="" width="2201" height="714" decoding="async">
@@ -159,8 +159,8 @@
 
   <main class="app-shell">
     <h1 class="sr-only">스마트입력</h1>
-    <div class="workspace" id="smartInputWorkspace">
-      <section class="parser-card" id="sourceInputPanel" aria-label="원본입력뷰">
+    <div class="workspace" id="smartInputWorkspace" data-nexus-workspace="smart-input">
+      <section class="parser-card" id="sourceInputPanel" aria-label="원본입력뷰" data-nexus-pane="reference">
         <div class="parser-toolbar" role="toolbar" aria-label="원본입력뷰 작업">
           <button class="button button--quiet button--small parser-file-button" id="sourceFileButton" type="button" data-method="excel"><span aria-hidden="true">＋</span> Excel 파일</button>
           <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
@@ -229,7 +229,7 @@
 
       <button class="photo-resizer" id="photoResizer" type="button" aria-label="파서 입력창과 입력표 폭 조절"><span></span></button>
 
-      <section class="workbench" aria-label="스마트입력 본문">
+      <section class="workbench" aria-label="스마트입력 본문" data-nexus-pane="work">
         <div class="estimate-editor-view" id="estimateEditorView">
         <section class="grid-card" aria-label="입력표">
         <div class="document-fields work-action-bar" role="toolbar" aria-label="입력표 검색 및 편집">
@@ -303,7 +303,7 @@
               <tfoot><tr id="mappingTableTotals"></tr></tfoot>
             </table>
           </div>
-          <footer class="voucher-footer-actions" aria-label="전표 작업">
+          <footer class="voucher-footer-actions" aria-label="전표 작업" data-nexus-completion-bar="smart-input">
             <div class="voucher-footer-actions__primary">
               <button class="button button--primary" id="completeButton" type="button">저장</button>
               <div class="delivery-card delivery-card--compact" hidden>
@@ -326,7 +326,7 @@
       </section>
 
       <button class="related-panel-toggle" id="relatedPanelToggle" type="button" aria-controls="estimateLibraryView" aria-expanded="false"><span aria-hidden="true">‹</span><strong id="relatedPanelToggleLabel">우측 패널</strong></button>
-      <aside class="related-panel estimate-library-view" id="estimateLibraryView" aria-label="견적서 목록">
+      <aside class="related-panel estimate-library-view" id="estimateLibraryView" aria-label="견적서 목록" data-nexus-pane="result">
         <button class="related-panel-resizer" id="relatedPanelResizer" type="button" aria-label="우측 패널 폭 조절" title="끌거나 방향키로 폭 조절"><span></span></button>
         <div class="related-panel-chrome">
           <button class="related-panel-close" id="relatedPanelCloseButton" type="button" aria-label="우측 패널 닫기" title="우측 패널 닫기"><span aria-hidden="true">×</span></button>

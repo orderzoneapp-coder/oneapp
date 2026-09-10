@@ -2284,6 +2284,34 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
                         React.createElement("i", { className: "fas fa-save mr-1.5" }),
                         isSubmitting ? " 저장·검증 중..." : " 관리자 확정 즉시 저장"))))));
 };
+const SmartParserWorkspaceShell = ({ children, resultPanelOpen, onResultPanelOpen, currentTag, productSnapshotStatus, catalogCount, matchedCount, similarCount, unmatchedCount, duplicateCount, missingCount, pendingCount, isProcessing, onReview, onApply }) => (React.createElement("div", { className: `flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_244px] gap-3 p-3 bg-slate-100 overflow-hidden ${resultPanelOpen ? '' : 'xl:grid-cols-[220px_minmax(0,1fr)]'}`, "data-nexus-workspace": "smart-parser" },
+    React.createElement("aside", { className: "hidden xl:flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "reference", "aria-label": "스마트파서 기준 자료" },
+        React.createElement("div", { className: "px-4 py-3 bg-slate-900 text-white" },
+            React.createElement("div", { className: "text-[10px] font-bold text-slate-400 uppercase tracking-wider" }, "Reference"),
+            React.createElement("div", { className: "mt-1 text-sm font-black" }, "카탈로그 기준")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px] overflow-auto" },
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" },
+                React.createElement("div", { className: "font-black text-slate-700" }, "현재 카탈로그"),
+                React.createElement("div", { className: "mt-1 break-words text-indigo-700 font-black" }, currentTag || '미지정')),
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" },
+                React.createElement("div", { className: "font-black text-slate-700" }, "상품 Snapshot"),
+                React.createElement("div", { className: `mt-1 font-black ${productSnapshotStatus === 'READY' ? 'text-emerald-700' : productSnapshotStatus === 'ERROR' ? 'text-rose-700' : 'text-slate-500'}` }, productSnapshotStatus || 'LOADING')),
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between" }, React.createElement("span", { className: "font-bold text-slate-600" }, "등록 카탈로그"), React.createElement("strong", { className: "text-slate-900" }, Number(catalogCount || 0).toLocaleString())),
+            React.createElement("a", { href: "guide_Merch.html#part2-2", target: "_blank", rel: "noopener noreferrer", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "사용 가이드"))),
+    React.createElement("section", { className: "min-w-0 min-h-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "work", "aria-label": "스마트파서 작업 테이블" },
+        React.createElement("div", { className: "flex-1 min-h-0 overflow-auto bg-slate-100" }, children),
+        React.createElement("div", { className: "shrink-0 flex flex-wrap items-center justify-center gap-2 border-t-2 border-slate-300 bg-white px-4 py-3 shadow-[0_-8px_18px_rgba(15,23,42,0.08)]", "data-nexus-completion-bar": "smart-parser" },
+            React.createElement("button", { type: "button", onClick: onReview, disabled: isProcessing || pendingCount === 0, className: "h-9 px-4 rounded-lg border border-slate-800 bg-slate-800 text-[11px] font-black text-white hover:bg-slate-700 disabled:opacity-40" }, "분석결과 검토 F7"),
+            React.createElement("button", { type: "button", onClick: onApply, disabled: isProcessing || pendingCount === 0, className: "h-9 px-4 rounded-lg border border-indigo-700 bg-indigo-600 text-[11px] font-black text-white hover:bg-indigo-700 disabled:opacity-40" }, "관리자 확정 저장 F8"))),
+    resultPanelOpen ? React.createElement("aside", { className: "hidden xl:flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "result", "aria-label": "스마트파서 처리 결과" },
+        React.createElement("div", { className: "flex items-center justify-between px-4 py-3 bg-slate-100 border-b border-slate-200" },
+            React.createElement("div", null, React.createElement("div", { className: "text-[10px] font-bold text-slate-500 uppercase tracking-wider" }, "Result"), React.createElement("div", { className: "text-sm font-black text-slate-800" }, "검토 결과 · 이동")),
+            React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(false), className: "w-8 h-8 rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50", "aria-label": "결과 패널 닫기" }, "×")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px] overflow-auto" },
+            [['일치', matchedCount, 'emerald'], ['유사', similarCount, 'amber'], ['불일치', unmatchedCount, 'rose'], ['중복', duplicateCount, 'orange'], ['누락', missingCount, 'slate']].map(([label, count, tone]) => React.createElement("div", { key: label, className: `flex items-center justify-between rounded-lg border border-${tone}-200 bg-${tone}-50 px-3 py-2` }, React.createElement("span", { className: `font-bold text-${tone}-700` }, label), React.createElement("strong", { className: `text-${tone}-900` }, Number(count || 0).toLocaleString()))),
+            React.createElement("a", { href: "history_viewer.html?returnApp=smart-parser", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "변경이력 보기"),
+            React.createElement("a", { href: "trend_report.html", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "트렌드 리포트"),
+            React.createElement("a", { href: "settings.html?returnApp=smart-parser", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "환경설정"))) : React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(true), className: "fixed right-3 bottom-20 z-[80] px-3 py-2 rounded-full bg-slate-900 text-white text-[11px] font-black shadow-xl", "data-nexus-result-reopen": "smart-parser" }, "결과 패널 열기")));
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
@@ -2339,6 +2367,15 @@ const ParserApp = () => {
     }, [missingRows, appState.missingSearch]);
     const pendingApplyRows = useMemo(() => matchedRows.filter(r => r._apply && r._matchCode), [matchedRows]);
     const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + duplicateRows.length + (currentTag ? missingRows.length : 0);
+    const [resultPanelOpen, setResultPanelOpen] = useState(() => {
+        try { return sessionStorage.getItem('nexus:smart-parser:right-panel:v1') !== 'closed'; }
+        catch (error) { return true; }
+    });
+    const handleResultPanelOpen = useCallback((open) => {
+        setResultPanelOpen(open);
+        try { sessionStorage.setItem('nexus:smart-parser:right-panel:v1', open ? 'open' : 'closed'); }
+        catch (error) { /* sessionStorage 사용 불가 환경에서는 현재 화면 상태만 유지 */ }
+    }, []);
     const [autoCompletionShown, setAutoCompletionShown] = useState(false);
     useEffect(() => {
         const workDone = parserBuffer.length > 0 && pendingApplyRows.length > 0 && unresolvedQueueCount === 0;
@@ -2468,10 +2505,10 @@ const ParserApp = () => {
         toastMsg && React.createElement("div", { className: "fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700" },
             React.createElement("i", { className: "fas fa-check-circle text-emerald-400" }),
             toastMsg),
-        React.createElement("div", { className: "w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto" },
+        React.createElement("div", { className: "w-full h-full flex flex-col bg-slate-50 overflow-hidden" },
             React.createElement("div", { className: "shrink-0 flex flex-col bg-white border-b border-slate-200 z-40" },
-                React.createElement("div", { className: "p-5 pb-0 pt-6" },
-                    React.createElement("div", { className: "bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden" },
+                React.createElement("div", { className: "p-0" },
+                    React.createElement("div", { className: "nexus-app-header min-h-[56px] w-full bg-[#0f172a] shadow-lg border-b border-slate-800 flex flex-col overflow-hidden", "data-nexus-app-header": "smart-parser" },
                         React.createElement("div", { className: "px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4" },
                             React.createElement("div", { className: "flex items-center group shrink-0" },
                                 React.createElement("span", { className: "text-xl font-black text-emerald-400 mr-3" }, "ONEAPP"),
@@ -2526,10 +2563,6 @@ const ParserApp = () => {
                             duplicateRows.length > 0 && React.createElement("span", { className: "bg-orange-100 text-orange-700 px-1.5 rounded text-[10px]" }, duplicateRows.length))),
                     React.createElement("div", { className: "flex-1 min-w-[10px]" }),
                     React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
-                        activeTab === 'matched' && React.createElement("button", { onClick: actions.openAnalysisReview, disabled: parserBuffer.length === 0, className: `h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`, title: "\uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0 (F7)" },
-                            React.createElement("i", { className: "fas fa-check-circle mr-1.5 text-[13px]" }),
-                            " \uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0/\uC694\uCCAD ",
-                            React.createElement("span", { className: "ml-1.5 text-[9px] text-slate-400 font-normal" }, "F7")),
                         activeTab === 'missing' && React.createElement("button", { onClick: actions.handleRemoveMissingTags, className: `h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600' : 'bg-white text-slate-400 border border-slate-200'}` },
                             React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[13px]" }),
                             " \uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678"),
@@ -2567,8 +2600,8 @@ const ParserApp = () => {
                         lastExcludedCount > 0 ? ` · 이번파싱 제외숨김 ${lastExcludedCount}건` : '',
                         analysisResult ? ` · ${analysisResult.schemaVersion}` : '',
                         analysisRequestResults.length > 0 ? ` · 마지막 저장 ${analysisRequestResults.filter(item => item.completed).length}/${analysisRequestResults.length}` : ''),
-                    pendingApplyRows.length > 0 && React.createElement("button", { onClick: actions.openAnalysisReview, className: "px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700" }, "\uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0/\uC800\uC7A5"))),
-            React.createElement("div", { className: "flex-1 overflow-auto p-5 pt-0 bg-slate-100" }, !currentTag && parserBuffer.length === 0 ? (React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400" },
+                    pendingApplyRows.length > 0 && React.createElement("span", { className: "px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-[11px] font-black" }, "하단에서 검토·저장"))),
+            React.createElement(SmartParserWorkspaceShell, { resultPanelOpen: resultPanelOpen, onResultPanelOpen: handleResultPanelOpen, currentTag: currentTag, productSnapshotStatus: productSnapshotStatus, catalogCount: availableTags.length, matchedCount: matchedRows.length, similarCount: combinedSimilarRows.length, unmatchedCount: unmatchedRows.length, duplicateCount: duplicateRows.length, missingCount: missingRows.length, pendingCount: pendingApplyRows.length, isProcessing: isProcessing, onReview: actions.openAnalysisReview, onApply: actions.handleApplyMatched }, !currentTag && parserBuffer.length === 0 ? (React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400" },
                 React.createElement("i", { className: "fas fa-robot text-6xl text-slate-300 mb-4" }),
                 React.createElement("h2", { className: "text-xl font-black text-slate-600 mb-2" }, "Smart Parser \uB300\uAE30\uC911"),
                 React.createElement("p", { className: "text-[13px] font-bold" }, productSnapshotStatus === 'ERROR' ? `Product Snapshot ERROR: ${productSnapshotError || '상품관리 기준정보를 읽을 수 없습니다.'}` : "\uC0C1\uB2E8 [\uC0C8 \uD14D\uC2A4\uD2B8 \uD30C\uC2F1] \uBC84\uD2BC\uC744 \uB20C\uB7EC \uC791\uC5C5\uC744 \uC2DC\uC791\uD558\uC138\uC694."))) : activeTab === 'matched' ? (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in" },
@@ -2576,7 +2609,8 @@ const ParserApp = () => {
                     React.createElement("table", { className: "w-full text-left text-[12px] whitespace-nowrap" },
                         React.createElement("thead", { className: "bg-[#f5f4f0] text-[#5c554d] font-bold sticky top-0 z-10 border-b border-[#e8e4db]" },
                             React.createElement("tr", null,
-                                React.createElement("th", { className: "py-2.5 px-4 w-12 text-center" },
+                                React.createElement("th", { className: "py-2.5 px-4 w-20 text-center" },
+                                    React.createElement("span", { className: "mr-2 text-[10px] text-slate-500" }, "행"),
                                     React.createElement("input", { type: "checkbox", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode && !duplicateIds.has(r._id) ? { ...r, _apply: !all } : r)); } })),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uC0C1\uD488\uCF54\uB4DC"),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uB9C8\uC2A4\uD130 \uD488\uBAA9\uBA85 (\uADDC\uACA9)"),
@@ -2585,7 +2619,7 @@ const ParserApp = () => {
                                 React.createElement("th", { className: "py-2.5 px-3 text-right text-emerald-700 bg-emerald-50/50" }, "\uC0C8 \uC785\uACE0\uAC00"),
                                 React.createElement("th", { className: "py-2.5 px-3 text-center" }, "관리"))),
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedRows.length === 0 ? React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
+                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map((row, rowIndex) => {
                             const mItem = masterProducts[row._matchCode] || {};
                             const rowWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
                             const rowRuleMatch = getParserPriceSelection(rowWarehouse, row['단위'], marginRules);
@@ -2596,6 +2630,7 @@ const ParserApp = () => {
                             const isDiff = mIn > 0 && mIn !== pIn;
                             return (React.createElement("tr", { key: row._id, className: "hover:bg-slate-50 transition-colors" },
                                 React.createElement("td", { className: "py-2 px-4 text-center" },
+                                    React.createElement("span", { className: "mr-2 text-[10px] font-black text-slate-500" }, rowIndex + 1),
                                     React.createElement("input", { type: "checkbox", className: "rounded text-emerald-600 focus:ring-emerald-500", checked: row._apply, onChange: () => appState.setParserBuffer(p => p.map(r => r._id === row._id ? { ...r, _apply: !r._apply } : r)) })),
                                 React.createElement("td", { className: "py-2 px-3 font-mono text-[11px] text-slate-500" }, row._matchCode),
                                 React.createElement("td", { className: "py-2 px-3" },

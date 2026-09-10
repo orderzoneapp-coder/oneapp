@@ -245,7 +245,7 @@ assert.doesNotMatch(html, /구매업로드 Excel|미출고현황 Excel|id="purch
 assert.match(html, /@page\s*\{\s*size:\s*A4 portrait;\s*margin:\s*8mm;/);
 assert.match(html, /\.print-area thead\s*\{\s*display:\s*table-header-group;/);
 assert.match(html, /page-break-inside:\s*avoid/);
-assert.match(html, /\["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"\]/);
+assert.match(html, /\["Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"\]/);
 assert.match(html, /event\.isComposing \|\| event\.keyCode === 229 \|\| input\.dataset\.composing === "true"/);
 assert.match(html, /typeof sourceRow\?\.displayRemainingQuantity === "number" && sourceRow\.displayRemainingQuantity < 0/);
 assert.doesNotMatch(html, /negativeBalance[\s\S]{0,240}preview\.inventory/);
