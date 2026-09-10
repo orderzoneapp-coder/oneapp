@@ -6,7 +6,6 @@
     'customer-master': { left: 240, right: 270, leftMin: 210, leftMax: 390, rightMin: 220, rightMax: 420, centerMin: 620 },
     'smart-parser': { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 700 },
     merchops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
-    'smart-input': { left: 250, right: 300, leftMin: 220, leftMax: 430, rightMin: 240, rightMax: 480, centerMin: 720 },
     dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 }
   });
   const layouts = new WeakMap();

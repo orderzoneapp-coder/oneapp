@@ -10,15 +10,19 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-workbench-layout-'));
-const sixAppPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','smartinput/index.html','DataOps.html'];
-sixAppPaths.forEach((path) => {
+const fiveAppPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','DataOps.html'];
+fiveAppPaths.forEach((path) => {
   const html = readFileSync(join(root, path), 'utf8');
-  assert.match(html, /nexus-workbench-layout-v2\.css/, `${path} must consume the six-app layout stylesheet`);
-  assert.match(html, /nexus-workbench-layout-v2\.js/, `${path} must consume the six-app layout controller`);
+  assert.match(html, /nexus-workbench-layout-v2\.css/, `${path} must consume the five-app layout stylesheet`);
+  assert.match(html, /nexus-workbench-layout-v2\.js/, `${path} must consume the five-app layout controller`);
 });
-assert.doesNotMatch(readFileSync(join(root, 'orderops/list.html'), 'utf8'), /nexus-workbench-layout-v2/, 'OrderOps must remain outside the six-app layout module');
+const rolledBackPaths = ['smartinput/index.html', 'orderops/list.html'];
+rolledBackPaths.forEach((path) => assert.doesNotMatch(readFileSync(join(root, path), 'utf8'), /nexus-workbench-layout-v2/, `${path} must remain outside the five-app layout module`));
+const smartInputHtml = readFileSync(join(root, 'smartinput/index.html'), 'utf8');
+assert.match(smartInputHtml, /class="parser-card"[^>]*data-nexus-pane="reference"[\s\S]*id="photoResizer"[\s\S]*class="workbench"[^>]*data-nexus-pane="work"/, 'SmartInput must keep its approved parser/table split layout');
+assert.doesNotMatch(smartInputHtml, /smart-input-reference-pane|smart-input-main-flow/, 'SmartInput must not retain the rebuilt reference/central wrappers');
 assert.doesNotMatch(readFileSync(join(root, 'DataOps.html'), 'utf8'), /min-w-\[1000px\]/, 'DataOps must not restore the clipped forced-width wrapper');
-assert.doesNotMatch(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /['"]orderops['"]\s*:/, 'the common layout allowlist must exclude OrderOps');
+assert.doesNotMatch(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /['"](?:orderops|smart-input)['"]\s*:/, 'the common layout allowlist must exclude OrderOps and SmartInput');
 const mime = { '.css':'text/css; charset=utf-8', '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.svg':'image/svg+xml' };
 const server = createServer((request, response) => {
   try {
@@ -200,16 +204,6 @@ try {
   await click(client, '[data-nexus-result-reopen="merchops"]');
   assert.ok(await evaluate(client, `Boolean(document.querySelector('[data-nexus-pane="result"]'))`));
 
-  await navigate('smartinput/index.html', 'smart-input');
-  assert.ok(await evaluate(client, `Boolean(document.querySelector('[data-nexus-completion-bar="smart-input"]'))`));
-  const smartInputPanelBefore = await evaluate(client, `(() => { const workspace=document.querySelector('[data-nexus-workspace="smart-input"]'); return {work:workspace.querySelector(':scope > [data-nexus-pane="work"]').getBoundingClientRect().width,right:workspace.querySelector(':scope > [data-nexus-pane="result"]').getBoundingClientRect().width,saved:JSON.parse(localStorage.getItem('nexus:workbench-layout:smart-input:v2')||'null')?.right||300}; })()`);
-  await click(client, '#relatedPanelCloseButton');
-  await waitFor(() => evaluate(client, `document.querySelector('[data-nexus-workspace="smart-input"]').dataset.nexusRightOpen==='false'`), 'SmartInput common result collapse');
-  const smartInputPanelClosed = await evaluate(client, `(() => { const workspace=document.querySelector('[data-nexus-workspace="smart-input"]'); return {work:workspace.querySelector(':scope > [data-nexus-pane="work"]').getBoundingClientRect().width,right:workspace.querySelector(':scope > [data-nexus-pane="result"]').getBoundingClientRect().width}; })()`);
-  assert.ok(smartInputPanelClosed.work > smartInputPanelBefore.work && smartInputPanelClosed.right === 0, 'closing SmartInput result must return its space to the center');
-  await click(client, '#relatedPanelToggle');
-  await waitFor(() => evaluate(client, `document.querySelector('[data-nexus-workspace="smart-input"]').dataset.nexusRightOpen==='true'`), 'SmartInput common result reopen');
-  assert.ok(Math.abs(await evaluate(client, `document.querySelector('[data-nexus-workspace="smart-input"] > [data-nexus-pane="result"]').getBoundingClientRect().width`) - smartInputPanelBefore.right) < 1, 'reopening SmartInput result must restore its saved width');
   await navigate('customer-master/index.html', 'customer-master');
   await navigate('SmartParser.html', 'smart-parser');
   assert.ok(await evaluate(client, `document.querySelector('[data-nexus-completion-bar="smart-parser"]')?.getBoundingClientRect().bottom <= innerHeight`), 'SmartParser F7/F8 completion bar must remain in the viewport');
@@ -231,7 +225,7 @@ try {
   await loaded;
   assert.equal(await evaluate(client, `location.pathname.endsWith('/DataOps.html')`), true, 'History Viewer must return to its validated calling app');
   assert.deepEqual(runtimeExceptions, [], `workbench pages must not throw runtime exceptions: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS six-app workbench browser E2E: seven tabs, three-pane roles, independent persisted keyboard resize, state preservation, close/reopen, small-screen access, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
+  console.log('PASS NEXUS five-app workbench browser E2E: seven tabs, three-pane roles, independent persisted keyboard resize, state preservation, close/reopen, small-screen access, SmartInput and OrderOps rollback exclusions, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
 } finally {
   client?.close();
   await new Promise((resolveClose) => server.close(resolveClose));

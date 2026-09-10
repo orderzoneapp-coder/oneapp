@@ -16,3 +16,11 @@
 - 앱 회귀: SmartParser 8/8, MerchOps 16/16, DataOps 24/24 전체 계약 통과. SmartInput 보호 화면·전체 브라우저 흐름, CustomerMaster 독립/브라우저 흐름, History Viewer owner·복귀 경계 통과.
 - 결함 재현·수정: SmartParser의 글로벌 헤더 아래 `100vh` 중복으로 F7·F8 완료 바가 잘리던 문제와 DataOps 중앙의 강제 `1000px` 숨김 폭을 제거했다.
 - 범위 검증: `orderops/list.html` 및 출고관리 소스 변경 0개, 신규 공통 모듈 allowlist에도 `orderops` 없음.
+
+## 후속 스마트입력 롤백
+
+- 2026-09-11 사용자 지시에 따라 `smartinput/index.html`은 이 재구축 적용 전 승인 레이아웃으로 복귀했다.
+- 스마트입력은 공통 폭조절 모듈의 적용 대상과 allowlist에서 제외했다. 자체 원본입력뷰·입력표·우측 견적서 목록 구조와 자체 폭조절 동작을 사용한다.
+- 7개 글로벌헤더와 스마트입력 업무 기능, 저장·이력·오류 복구 계약은 유지한다.
+- 현재 공통 재구축 적용 대상은 상품관리·거래처관리·스마트파서·MerchOps·DataOps 5개 앱이다.
+- 상세 검증과 배포 기록은 `SMARTINPUT_WORKBENCH_ROLLBACK_20260911_WORK_RECORD.md`에 분리했다.
