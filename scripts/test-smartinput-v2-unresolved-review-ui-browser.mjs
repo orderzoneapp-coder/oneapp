@@ -306,29 +306,10 @@ try {
   await navigate(client, `${origin}/orderops/list.html`);
   await prepareWorkspace(client);
   const current = await normalMetrics(client);
-  const approvedResultRailButtonIds = ['orderOpsResultClose', 'orderOpsResultReopen'];
-  assert.deepEqual(
-    current.existingButtonIds.filter(id => !approvedResultRailButtonIds.includes(id)),
-    baseline.existingButtonIds,
-    'all pre-existing button IDs must remain unchanged'
-  );
-  for (const id of approvedResultRailButtonIds) {
-    assert.ok(current.existingButtonIds.includes(id), `${id} must expose the approved result-rail control`);
-  }
+  assert.deepEqual(current.existingButtonIds, baseline.existingButtonIds, 'all existing button IDs must remain unchanged');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
-  assert.ok(current.regions.sourceSelector.x < current.regions.resultsPanel.x,
-    'the approved three-pane layout must keep source controls left of the work result');
-  assert.ok(current.regions.sourceSelector.width >= 250 && current.regions.resultsPanel.width >= 700,
-    `the approved source/work panes must remain usable: ${JSON.stringify(current.regions)}`);
-  assert.ok(current.regions.previewTable.x >= current.regions.resultsPanel.x
-    && current.regions.previewTable.width <= current.regions.resultsPanel.width,
-  'the preview table must remain contained in the work pane');
-  assert.deepEqual(
-    await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="orderops"] > [data-nexus-pane]')].map(node=>node.dataset.nexusPane)`),
-    ['reference', 'work', 'result'],
-    'the approved OrderOps workspace must expose reference, work, and result panes'
-  );
+  assert.deepEqual(current.regions, baseline.regions, 'normal desktop layout regions must remain unchanged');
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
@@ -479,7 +460,7 @@ try {
 
   const evidence = {
     taskId: 'NEXUS-SI-V2-06B', baselineSha: BASE_SHA, status: 'PASS',
-    domAndLayout: { baseline, current, unchangedExistingButtons: true, unchangedSourceTabs: true, unchangedShortcuts: true, approvedThreePaneLayout: true },
+    domAndLayout: { baseline, current, unchangedExistingButtons: true, unchangedSourceTabs: true, unchangedShortcuts: true, unchangedNormalRegions: true },
     clickContract: { normalFlowBefore: 3, normalFlowAfter: 3, unresolvedListEntry: 1, listToImpactPreview: 2 },
     review: { listEvidence, detailBeforeSelection, impactEvidence, paginationEvidence, errorDistinctFromEmpty: true, companyIsolation: true },
     statePreservation: { before: hostBefore, after: hostAfter },

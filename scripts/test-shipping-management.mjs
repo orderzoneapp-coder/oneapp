@@ -2188,14 +2188,14 @@ assert.match(combinedCss, /\.integrated-compact-slot\s*\{[^}]*display:\s*inline-
 assert.doesNotMatch(combinedCss, /\.integrated-uploader\s*\{/,
   "canonical large integrated uploader styling must be removed");
 const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header"'), html.indexOf('</header>'));
-assert.match(canonicalHeaderSource, /id="smartInputButton"/,
-  "canonical Smart input F4 must remain in the OrderOps app header");
-assert.doesNotMatch(canonicalHeaderSource, /id="(?:headerCloudSaveButton|printButton|downloadButton)"/,
-  "save and output actions must stay out of the app header");
-const completionBarSource = html.slice(html.indexOf('<div class="orderops-completion-bar"'), html.indexOf('</div>', html.indexOf('<div class="orderops-completion-bar"')));
-assert.ok(completionBarSource.indexOf('id="headerCloudSaveButton"') < completionBarSource.indexOf('id="printButton"')
-  && completionBarSource.indexOf('id="printButton"') < completionBarSource.indexOf('id="downloadButton"'),
-"the centered completion bar must keep save, screen print, and Excel output in order");
+assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
+  "canonical Smart input F4 must remain before screen print in the restored global header");
+for (const restoredHeaderControl of ["printButton", "downloadButton", "headerCloudLoadButton", "headerCloudSaveButton", "headerRestoreButton", "headerSettingsButton"]) {
+  assert.match(canonicalHeaderSource, new RegExp(`id="${restoredHeaderControl}"`),
+    `${restoredHeaderControl} must be restored to the OrderOps header`);
+}
+assert.doesNotMatch(html, /nexus-orderops-workspace|orderOpsResultRail|data-nexus-completion-bar="orderops"/,
+  "the rolled-back OrderOps layout must not retain the three-pane rail or bottom completion bar");
 for (const transactionViewContract of [
   'function buildTransactionPreview(workspace, kind)',
   'purchases: buildTransactionPreview(workspace, "purchases")',
