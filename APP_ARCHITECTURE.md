@@ -1,13 +1,13 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.2.8
+- Architecture document version: 2.2.9
 - Previous detailed review: 2026-09-04
 - Documentation updated: 2026-09-11
 - Previous detailed source baseline: `d44bbda357268289269574aa8f7b36333e013be5`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더, 5개 업무 앱의 중앙·좌측·우측 작업영역과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력과 출고관리 레이아웃은 사용자 승인 롤백 상태 유지
-- Runtime verification: 5개 앱의 독립 폭조절·상태보존·반응형·일반/다크 브라우저 검증과 SmartParser·MerchOps·DataOps·CustomerMaster 관련 업무 회귀, SmartInput 승인 레이아웃 회귀 통과. 운영 배포 버전은 CI와 Pages에서 별도 대조
+- Review scope: NEXUS 7개 글로벌헤더, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 5개 업무 앱의 중앙·좌측·우측 작업영역과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력과 출고관리 본문 레이아웃은 사용자 승인 롤백 상태 유지
+- Runtime verification: 7개 앱의 1600·1280·390px 일반/다크 브라우저에서 글로벌·앱헤더 색상 일치, 56px 높이, 좌측 정렬, 버튼 대비·무겹침과 SmartParser·OrderOps 로고 제거 검증. 기존 작업영역·SmartInput·OrderOps 업무 회귀를 함께 확인하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -290,7 +290,7 @@ Production files must not be reorganized into folders without first updating and
 | 데스크톱 헤더 | 높이 64px, 탭 그룹 높이 44px, 탭 96×38px, 간격 4px, 모서리 8px, 글자 13px/600, 전환 150ms를 유지한다. 헤더와 탭은 화면모드와 무관하게 기존 다크 스타일을 사용한다. |
 | 모바일 헤더 | 높이 104px, 탭 96×44px와 최소 44px 터치 영역을 유지한다. 로고와 테마 스위치는 겹치지 않고 탭 이동은 가로 사용이 가능해야 한다. |
 | 선택·포커스 | 선택 탭은 밝은 글자와 얇은 민트 하단선으로 구분하고 넓은 강조 배경을 사용하지 않는다. 키보드 포커스는 공통 포커스 토큰으로 명확히 표시한다. |
-| 앱헤더 | `Master.html`의 56px 단일 행 `AppHeader`를 구조 기준으로 사용한다. 왼쪽은 앱 식별·한 줄 목적, 오른쪽은 상태와 해당 앱의 주요 작업을 배치하고 글로벌 앱 이동·NEXUS 로고·화면 모드를 중복하지 않는다. |
+| 앱헤더 | 모든 업무 앱은 본문 화면모드와 무관하게 글로벌헤더와 같은 `#0b1021` 다크 배경의 정확한 56px 단일 행을 사용한다. 앱 식별의 시작선은 데스크톱 24px·700px 이하 10px이며, 오른쪽 상태·주요 작업은 줄바꿈이나 겹침 없이 가로 접근을 보존한다. 글로벌 앱 이동·NEXUS 로고·화면 모드를 중복하지 않으며 SmartParser와 OrderOps는 ONEAPP·ORDER Q 로고/버전 배지 없이 각각 `스마트파서`, `출고관리` 명칭만 표시한다. |
 | 폭 계층 | 글로벌헤더와 앱헤더의 배경·구분선은 viewport 전체 폭을 사용한다. 섹션헤더, 업무 패널과 작업테이블은 정보 밀도와 집중도를 근거로 앱별 제한 폭·가로 스크롤을 사용할 수 있다. |
 | 화면 모드 | `일반모드`와 `다크모드`만 제공한다. 화면 모드 선택은 공통헤더에서 수행하며 앱별 환경설정에 중복 컨트롤을 만들지 않는다. |
 | 다크 화면 | `--nexus-ui-page-bg: #15181d`를 body와 빈 영역의 기준으로 사용하고 패널·표 머리글·표 행·입력을 저채도 의미 계층으로 분리한다. |

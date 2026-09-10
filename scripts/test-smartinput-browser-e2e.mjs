@@ -216,9 +216,9 @@ try {
   assert.equal(visualZones.searchDivider, '2px', 'product lookup must have an explicit boundary before the Excel grid');
   assert.equal(visualZones.logoComplete, true, 'transparent Smart X Input logo must load');
   assert.ok(visualZones.logoWidth >= 2000 && visualZones.brandHeight <= 40, 'header logo must use the supplied high-resolution asset inside the compact app identity slot');
-  assert.ok(visualZones.brandLeftGap <= 1, 'SmartInput logo must occupy the far-left edge of the app header');
+  assert.ok(Math.abs(visualZones.brandLeftGap - 24) <= 1, 'SmartInput identity must use the shared 24px desktop app-header inset');
   assert.equal(visualZones.customerInHeader, true, 'customer entry must live in the app header');
-  assert.ok(visualZones.voucherCustomerGap >= 8 && visualZones.customerHeaderGap >= 8, 'voucher, customer and operational header groups must remain visually separated');
+  assert.ok(visualZones.voucherCustomerGap >= 8 && visualZones.customerHeaderGap >= 8, `voucher, customer and operational header groups must remain visually separated: ${JSON.stringify(visualZones)}`);
   assert.equal(visualZones.headerDivider, '1px', 'customer and operational header groups must use an explicit divider');
   assert.equal(visualZones.headerHasReferenceCounts, false, 'product and customer counts must not remain as an app-header annotation');
   assert.equal(visualZones.coachmark, false, 'reference status must not use a coachmark or outlined annotation surface');
@@ -1325,10 +1325,11 @@ try {
   const mobile = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};const tabs=[...document.querySelectorAll('.mode-tab')].map(tab=>q('.mode-tab[data-mode="'+tab.dataset.mode+'"]'));const headerFields=document.querySelector('.header-fields');return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,header:q('.nexus-ui-header'),app:q('.app-bar'),appInner:q('.app-bar__inner'),brand:q('.brand'),tabs,headerFields:q('.header-fields'),headerDivider:getComputedStyle(headerFields).borderTopWidth,actions:q('.app-bar__actions'),parser:q('.parser-card'),workbench:q('.workbench')};})()`);
   console.log('SmartInput mobile metrics', mobile);
   assert.ok(mobile.header.height >= 100 && mobile.parser.width <= 390 && mobile.workbench.width <= 390, 'mobile header and stacked workspace must fit viewport');
-  assert.ok(mobile.app.height <= 300 && mobile.brand.height <= 36, 'mobile app header and logo must remain compact while preserving customer and operational groups');
-  assert.ok(Math.abs(mobile.appInner.x - mobile.brand.x) <= 1, 'mobile SmartInput logo must remain at the app-header far left');
+  assert.ok(Math.abs(mobile.app.height - 56) <= 1 && mobile.brand.height <= 36, 'mobile app header must use the shared 56px row while keeping the logo compact');
+  assert.ok(Math.abs(mobile.brand.x - 10) <= 1, 'mobile SmartInput identity must use the shared 10px app-header inset');
   assert.equal(new Set(mobile.tabs.map(tab => Math.round(tab.y))).size, 1, 'all four voucher tabs must remain on one mobile row');
-  assert.ok(mobile.headerFields.y >= Math.max(...mobile.tabs.map(tab => tab.bottom)) + 7, 'mobile header fields must be spaced below the voucher buttons');
+  assert.ok(mobile.headerFields.y >= mobile.app.y - 1 && mobile.headerFields.bottom <= mobile.app.bottom + 1, 'mobile header fields must remain inside the shared 56px app-header row');
+  assert.ok(mobile.actions.y >= mobile.app.y - 1 && mobile.actions.bottom <= mobile.app.bottom + 1, 'mobile app actions must remain inside the shared 56px app-header row');
   assert.equal(mobile.headerDivider, '1px', 'mobile header fields must retain a horizontal group divider');
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });

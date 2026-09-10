@@ -1109,6 +1109,267 @@ html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-ro
   ) !important;
 }
 
+/*
+ * NEXUS persistent app-header contract.
+ * The global header and every marked app header use one dark palette regardless
+ * of the light/dark work-area theme. App headers remain one 56px row; dense
+ * controls scroll horizontally instead of wrapping or overlapping.
+ */
+html[data-nexus-ui-app][data-nexus-ui-theme] body [data-nexus-app-header][data-nexus-app-header] {
+  --nexus-app-header-height: 56px;
+  --nexus-app-header-bg: var(--nexus-ui-header-bg, #0b1021);
+  --nexus-app-header-panel: #151c2c;
+  --nexus-app-header-panel-hover: #202a3d;
+  --nexus-app-header-panel-active: #123a3c;
+  --nexus-app-header-border: rgb(255 255 255 / 14%);
+  --nexus-app-header-text: #f7f9ff;
+  --nexus-app-header-muted: #aab2c6;
+  --nexus-app-header-accent: #5eead4;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: var(--nexus-app-header-height) !important;
+  min-height: var(--nexus-app-header-height) !important;
+  max-height: var(--nexus-app-header-height) !important;
+  border-color: var(--nexus-ui-header-border, rgb(255 255 255 / 10%)) !important;
+  background: var(--nexus-app-header-bg) !important;
+  background-color: var(--nexus-app-header-bg) !important;
+  box-shadow: inset 0 -1px 0 var(--nexus-ui-header-border, rgb(255 255 255 / 10%)) !important;
+  color: var(--nexus-app-header-text) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header]::-webkit-scrollbar,
+html[data-nexus-ui-app="smart-input"] body .app-bar::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-nexus-ui-app="smart-input"] body .app-bar {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  border-color: var(--nexus-ui-header-border, rgb(255 255 255 / 10%)) !important;
+  background: var(--nexus-ui-header-bg, #0b1021) !important;
+  box-shadow: inset 0 -1px 0 var(--nexus-ui-header-border, rgb(255 255 255 / 10%)) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(
+  h1,
+  [data-nexus-app-title],
+  .brand-product,
+  .text-slate-800,
+  .text-slate-700,
+  .text-slate-600
+) {
+  color: var(--nexus-app-header-text) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(
+  p,
+  .cm-app-heading p,
+  .cm-app-status,
+  .app-status,
+  .text-slate-500,
+  .text-slate-400,
+  .text-slate-300
+) {
+  color: var(--nexus-app-header-muted) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(
+  .bg-white,
+  .bg-slate-50,
+  .bg-slate-100,
+  .bg-indigo-50,
+  .cm-tabs,
+  .cm-app-status
+) {
+  background-color: var(--nexus-app-header-panel) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(
+  .border-slate-100,
+  .border-slate-200,
+  .border-slate-300,
+  .border-indigo-100,
+  .cm-tabs,
+  .cm-app-status
+) {
+  border-color: var(--nexus-app-header-border) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(button, a):not([data-nexus-app-title]),
+html[data-nexus-ui-app] body [data-nexus-app-header] .reference-overview > summary {
+  border-color: var(--nexus-app-header-border) !important;
+  background: var(--nexus-app-header-panel) !important;
+  box-shadow: none !important;
+  color: #dce3f1 !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(button, a):not([data-nexus-app-title]) > * {
+  color: inherit !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(button, a):not([data-nexus-app-title]):hover,
+html[data-nexus-ui-app] body [data-nexus-app-header] .reference-overview > summary:hover {
+  border-color: rgb(94 234 212 / 46%) !important;
+  background: var(--nexus-app-header-panel-hover) !important;
+  color: #ffffff !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(
+  button.is-active,
+  a.is-active,
+  button[aria-selected="true"],
+  a[aria-selected="true"],
+  button[aria-pressed="true"],
+  a[aria-pressed="true"]
+) {
+  border-color: rgb(94 234 212 / 62%) !important;
+  background: var(--nexus-app-header-panel-active) !important;
+  box-shadow: inset 0 -2px 0 var(--nexus-ui-teal, #05ae94) !important;
+  color: #ffffff !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(button, a):disabled,
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(button, a)[aria-disabled="true"] {
+  opacity: .48 !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(input, select) {
+  border-color: var(--nexus-app-header-border) !important;
+  background: #101827 !important;
+  color: var(--nexus-app-header-text) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] :is(input, select)::placeholder {
+  color: var(--nexus-app-header-muted) !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] [data-nexus-app-identity] {
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: 0 0 auto !important;
+}
+
+html[data-nexus-ui-app] body [data-nexus-app-header] [data-nexus-app-title] {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body [data-nexus-app-header="smart-input"] .brand__logo--light {
+  display: none !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body [data-nexus-app-header="smart-input"] .brand__logo--dark {
+  display: block !important;
+}
+
+html[data-nexus-ui-app] body :is(
+  [data-nexus-app-header="master-lookup"] > header,
+  [data-nexus-app-header="smart-parser"] > div,
+  [data-nexus-app-header="dataops"] > div,
+  [data-nexus-app-header="customer-master"] > .cm-app-header__inner
+) {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  max-height: 56px !important;
+  padding-block: 0 !important;
+  padding-inline: 24px !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+
+html[data-nexus-ui-app="customer-master"] body [data-nexus-app-header="customer-master"] > .cm-app-header__inner {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 14px !important;
+}
+
+html[data-nexus-ui-app="customer-master"] body [data-nexus-app-header="customer-master"] .cm-tabs {
+  grid-column: auto !important;
+  grid-row: auto !important;
+  flex: 1 1 auto !important;
+}
+
+html[data-nexus-ui-app="customer-master"] body [data-nexus-app-header="customer-master"] .cm-app-status {
+  flex: 0 0 auto !important;
+}
+
+html[data-nexus-ui-app] body :is(
+  [data-nexus-app-header="merchops"],
+  [data-nexus-app-header="orderops"],
+  [data-nexus-app-header="smart-input"]
+) {
+  padding-block: 0 !important;
+  padding-inline: 24px !important;
+  flex-wrap: nowrap !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body [data-nexus-app-header="smart-input"] {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body [data-nexus-app-header="smart-input"] :is(
+  .app-bar__primary,
+  .header-customer-group,
+  .header-fields
+) {
+  flex-shrink: 0 !important;
+}
+
+html[data-nexus-ui-app="smart-input"] body [data-nexus-app-header="smart-input"] .header-customer-group {
+  flex-grow: 0 !important;
+}
+
+html[data-nexus-ui-app="orderops"] body [data-nexus-app-header="orderops"] .brand-product {
+  display: inline-flex !important;
+}
+
+html[data-nexus-ui-app="orderops"] body [data-nexus-app-header="orderops"] .header-actions {
+  min-width: max-content !important;
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  overflow: visible !important;
+}
+
+html[data-nexus-ui-app="orderops"] body [data-nexus-app-header="orderops"] .header-actions > * {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 700px) {
+  html[data-nexus-ui-app] body :is(
+    [data-nexus-app-header="master-lookup"] > header,
+    [data-nexus-app-header="smart-parser"] > div,
+    [data-nexus-app-header="dataops"] > div,
+    [data-nexus-app-header="customer-master"] > .cm-app-header__inner,
+    [data-nexus-app-header="merchops"],
+    [data-nexus-app-header="orderops"],
+    [data-nexus-app-header="smart-input"]
+  ) {
+    padding-inline: 10px !important;
+  }
+}
+
 html[data-nexus-ui-app="orderops"] body .results-panel tbody tr.manager-color-row[style*="--manager-color"]:hover > td {
   background-color: color-mix(
     in srgb,
