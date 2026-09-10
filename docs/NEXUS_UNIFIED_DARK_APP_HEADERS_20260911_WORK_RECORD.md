@@ -30,6 +30,7 @@
 - `test-nexus-header-navigation-contract.mjs`: 7개 글로벌 앱과 F01~F10 이동 계약 검증.
 - `test-nexus-workbench-layout-browser-e2e.mjs`: 5개 작업영역과 SmartInput·OrderOps 롤백 제외 계약 검증.
 - SmartInput 승인 UI·작업영역·브라우저 E2E와 OrderOps 표준 업무 회귀를 함께 실행한다.
+- OrderOps 승인 기준 UI는 기존 52px 기준본과 비교할 때 앱헤더 높이 차이 4px만 정규화하고, 헤더 아래 모든 영역의 상대 위치·폭과 기존 버튼·단축키가 동일함을 검증한다.
 
 ## 배포·운영 확인
 
