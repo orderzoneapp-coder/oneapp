@@ -13059,7 +13059,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
     return (React.createElement("td", { className: `px-1 py-1 border-r border-slate-200 ${extraClass} ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`, style: cellStyle },
         React.createElement("div", { className: "flex flex-col justify-center h-full" },
             React.createElement("div", { className: `flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}` },
-                React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, placeholder: mVal || '', onChange: (e) => { userEditedRef.current = true; setLocalVal(e.target.value); }, onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
+                React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, onChange: (e) => { userEditedRef.current = true; setLocalVal(e.target.value); }, onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
 });
 const EMPTY_MERCH_MASTER_ITEM = Object.freeze({});
 const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
