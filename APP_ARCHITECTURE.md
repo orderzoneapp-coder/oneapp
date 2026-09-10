@@ -1,13 +1,13 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.2.6
+- Architecture document version: 2.2.7
 - Previous detailed review: 2026-09-04
-- Documentation updated: 2026-09-10
+- Documentation updated: 2026-09-11
 - Previous detailed source baseline: `d44bbda357268289269574aa8f7b36333e013be5`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더·앱 간 이동과 SmartParser 관리자 확정 즉시 적용·연속 연결 계약
-- Runtime verification: 공통 UI/F01~F10 회귀와 SmartParser 적용·충돌·멱등·rollback 단위검사 수행, 실제 브라우저 검증은 배포 전 수행
+- Review scope: NEXUS 7개 글로벌헤더, 6개 업무 앱의 중앙·좌측·우측 작업영역과 SmartParser 즉시 적용·연속 연결 계약. 출고관리 레이아웃은 사용자 승인 롤백 상태 유지
+- Runtime verification: 6개 앱의 독립 폭조절·상태보존·반응형·일반/다크 브라우저 검증과 SmartParser·MerchOps·DataOps·SmartInput·CustomerMaster 관련 업무 회귀 통과. 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -297,6 +297,15 @@ Production files must not be reorganized into folders without first updating and
 | 일반 화면 | 본문·패널·표·입력은 흰색 위주의 배색 대신 저채도 아이보리 종이 톤의 공통 Light 토큰을 사용하고 다크 전용 계산값을 남기지 않는다. 공통헤더는 다크 스타일을 유지한다. |
 | 접근성 | 일반·다크 모두 일반 본문과 주요 상태 텍스트 대비를 WCAG 4.5:1 이상으로 유지하고 색상만으로 상태를 전달하지 않는다. |
 | 출력 경계 | 인쇄와 Excel·ERP·이미지·카카오 등 업무 출력물의 승인된 밝은 배경과 기존 형식을 유지한다. 화면 테마가 출력 데이터나 출력 렌더링 계약을 바꾸지 않는다. |
+
+**6개 업무 앱 작업영역 계약**
+
+- `Master.html`, `customer-master/index.html`, `SmartParser.html`, `MerchOps.html`, `smartinput/index.html`, `DataOps.html`은 좌측 보조·중앙 핵심·우측 결과의 세 영역을 사용한다. 중앙은 조회·입력·편집·검토·저장·출력까지 시작과 완료가 이어지는 핵심 업무를 소유한다.
+- 좌측은 현재 선택 행과 판단에 필요한 기준정보를 항상 표시하는 보조 영역이다. 사용자가 닫을 수 없고, 검색·필터·저장·복구 같은 핵심 작업을 좌측에만 두지 않는다.
+- 우측은 처리 결과, 검산, 이력과 다음 단계 진입을 제공한다. 닫기와 다시 열기를 허용하고 닫을 때 확보된 폭은 중앙으로 돌려주되, 저장된 우측 폭은 다음 열기 때 복원한다.
+- 좌측과 우측 폭은 서로 독립적으로 마우스·포인터와 키보드로 조절한다. 폭 변경은 앱별 로컬 UI 설정만 갱신하며 업무 저장·재계산·네트워크 요청을 실행하지 않고 검색, 필터, 선택, 포커스와 스크롤을 보존한다. 중앙 최소 폭을 먼저 보호한다.
+- 960px 이하에서도 세 영역을 단순 제거하지 않고 좌측·중앙·우측 순으로 접근 가능하게 쌓는다. 닫힌 우측은 사용자가 다시 열 수 있어야 한다.
+- `orderops/list.html` 출고관리 레이아웃은 이 6개 앱 공통 작업영역 모듈의 적용 대상이 아니다. 2026-09-11 사용자 승인 롤백 상태를 유지하며, 향후 변경은 별도 승인·구현·검증으로만 수행한다.
 
 테마 값의 단일 권위는 `nexus-ui-theme-init.js`가 제공하는 `ONEAPP_NEXUS_UI_THEME` 컨트롤러와 `oneapp.nexus.ui.theme.v1` 저장키다. 문서 루트의 `data-nexus-ui-theme="light|dark"`가 공통 UI 소비 기준이며 기존 `data-nexus-theme`는 호환 alias로만 유지한다. 변경 알림은 `nexus-ui:theme-change`를 사용한다. 테마 전환은 재조회·새로고침·전체 재렌더링 없이 적용하며 검색, 필터, 선택, 입력, 편집, 스크롤과 동기화 상태를 보존한다.
 
