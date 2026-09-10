@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.5.0';
+  const VERSION = '1.6.0';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -9,35 +9,34 @@
   const scriptUrl = new URL(document.currentScript?.src || '/nexus/common/nexus-ui.js', location.href);
   const siteRoot = new URL('../../', scriptUrl);
   const asset = (path) => new URL(path, siteRoot).href;
-  const APPS = Object.freeze([
+  const GLOBAL_HEADER_APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', path: 'Master.html' }),
     Object.freeze({ id: 'customer-master', label: '거래처관리', path: 'customer-master/index.html' }),
-    Object.freeze({ id: 'merchops', label: '가격·시세', path: 'MerchOps.html' }),
+    Object.freeze({ id: 'smart-parser', label: '스마트파서', path: 'SmartParser.html' }),
+    Object.freeze({ id: 'merchops', label: 'MerchOps', path: 'MerchOps.html' }),
     Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
     Object.freeze({ id: 'orderops', label: '출고관리', path: 'orderops/list.html' }),
-    Object.freeze({ id: 'dataops', label: '재고·정산', path: 'DataOps.html' }),
-    Object.freeze({ id: 'smart-parser', label: '문서분석', path: 'SmartParser.html' }),
-    Object.freeze({ id: 'export-center', label: '출력검증', path: 'export_center.html' }),
-    Object.freeze({ id: 'settings', label: '환경설정', path: 'settings.html' }),
-    Object.freeze({ id: 'history-viewer', label: '변경이력', path: 'history_viewer.html' }),
-    Object.freeze({ id: 'orderq-vnext', label: '주문조회', path: 'orderq/index.html' }),
+    Object.freeze({ id: 'dataops', label: 'DataOps', path: 'DataOps.html' }),
+  ]);
+  const KNOWN_VISIBILITY_APP_IDS = new Set([
+    'master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops',
+    'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext',
   ]);
   const CURRENT_APP_ALIASES = Object.freeze({ 'item-manager': 'master-lookup' });
-  const HIDDEN_COMPATIBILITY_APP_IDS = new Set(['item-manager']);
 
   const visibleApps = () => {
     try {
       const projection = JSON.parse(window.sessionStorage.getItem(VISIBILITY_STORAGE_KEY) || 'null');
-      if (!projection || projection.schemaVersion !== VISIBILITY_SCHEMA || projection.configured !== true) return APPS;
-      if (!Array.isArray(projection.visibleAppIds)) return APPS;
+      if (!projection || projection.schemaVersion !== VISIBILITY_SCHEMA || projection.configured !== true) return GLOBAL_HEADER_APPS;
+      if (!Array.isArray(projection.visibleAppIds)) return GLOBAL_HEADER_APPS;
       const ids = projection.visibleAppIds;
       const valid = ids.every((id, index) => typeof id === 'string'
-        && (APPS.some((app) => app.id === id) || HIDDEN_COMPATIBILITY_APP_IDS.has(id))
+        && KNOWN_VISIBILITY_APP_IDS.has(id)
         && ids.indexOf(id) === index);
       const visibleIds = new Set(ids.map((id) => CURRENT_APP_ALIASES[id] || id));
-      return valid ? APPS.filter((app) => visibleIds.has(app.id)) : APPS;
+      return valid ? GLOBAL_HEADER_APPS.filter((app) => visibleIds.has(app.id)) : GLOBAL_HEADER_APPS;
     } catch {
-      return APPS;
+      return GLOBAL_HEADER_APPS;
     }
   };
 
@@ -92,7 +91,7 @@
   const buildHeader = () => {
     const rawCurrentAppId = String(root.dataset.nexusUiApp || '').trim();
     const currentAppId = CURRENT_APP_ALIASES[rawCurrentAppId] || rawCurrentAppId;
-    const currentApp = APPS.find((app) => app.id === currentAppId);
+    const currentApp = GLOBAL_HEADER_APPS.find((app) => app.id === currentAppId);
     const header = element('header', 'nexus-ui-header');
     header.id = 'nexusUiHeader';
     header.dataset.nexusUiVersion = VERSION;

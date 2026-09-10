@@ -15,7 +15,7 @@
     Object.freeze({ id: 'smart-parser', label: '문서분석' }),
     Object.freeze({ id: 'export-center', label: '출력검증' }),
     Object.freeze({ id: 'settings', label: '환경설정' }),
-    Object.freeze({ id: 'item-manager', label: '상품등록' }),
+    Object.freeze({ id: 'item-manager', label: 'SKU 관리' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문조회' }),
   ]);

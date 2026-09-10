@@ -42,7 +42,7 @@ for (const [file, appId, base, title] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.5`;
   const appCss = `${base}nexus-ui-app-themes.css?v=${file === 'orderops/list.html' ? '1.3.10' : '1.3.9'}`;
-  const runtime = `${base}nexus-ui.js?v=1.5.1`;
+  const runtime = `${base}nexus-ui.js?v=1.6.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -117,17 +117,17 @@ assert.match(uiSource, /NEXUS_UI_VISIBILITY_V1/, 'common UI visibility projectio
 assert.match(uiSource, /sessionStorage\.getItem/, 'common UI must synchronously read the same-tab visibility projection');
 assert.doesNotMatch(uiSource, /sessionStorage\.setItem/, 'common UI must never write the visibility projection');
 assert.doesNotMatch(uiSource, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app common UI must not expose or load user-session information');
-for (const label of ['가격·시세', '재고·정산', '문서분석', '출력검증', '환경설정', '상품관리', '거래처관리', '변경이력', '출고관리', '주문조회', '스마트입력']) {
+for (const label of ['상품관리', '거래처관리', '스마트파서', 'MerchOps', '스마트입력', '출고관리', 'DataOps']) {
   assert.match(uiSource, new RegExp(`label: '${label}'`), `common header requires the Korean label ${label}`);
 }
 assert.doesNotMatch(uiSource, /label: '상품등록'/, 'SKU management must not be a separate common-header tab');
 assert.match(uiSource, /'item-manager': 'master-lookup'/, 'SKU management direct URL must resolve to the product-management tab');
 assert.match(
   uiSource,
-  /id:\s*'master-lookup'[\s\S]*?id:\s*'customer-master'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
-  'rollback-era primary apps must lead the global header so SmartInput remains directly visible',
+  /id:\s*'master-lookup'[\s\S]*?id:\s*'customer-master'[\s\S]*?id:\s*'smart-parser'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
+  'the seven global apps must keep the approved canonical order',
 );
-assert.doesNotMatch(uiSource, /label:\s*'(?:MerchOps|DataOps|Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'common header tab labels must not fall back to English product names');
+assert.doesNotMatch(uiSource, /label:\s*'(?:Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'unapproved English aliases must not enter the common header');
 assert.match(uiCss, /overflow-x:\s*auto/, 'mobile/compact navigation must remain horizontally usable');
 assert.match(uiCss, /min-height:\s*44px/, 'interactive navigation must retain a touch-sized target');
 assert.match(uiCss, /\.nexus-ui-theme__icon\s*\{[^}]*width:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s, 'theme icons must expose a 44px touch target');

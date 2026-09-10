@@ -6,7 +6,7 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.10">
-    <script defer src="../nexus/common/nexus-ui.js?v=1.5.1"></script>
+    <script defer src="../nexus/common/nexus-ui.js?v=1.6.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
@@ -2052,7 +2052,7 @@
       <span class="brand-product">출고관리</span>
     </div>
     <div class="header-actions">
-      <a class="header-link header-smart-input" id="smartInputButton" href="input.html"
+      <a class="header-link header-smart-input" id="smartInputButton" href="../smartinput/index.html"
         aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
         <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
       </a>
@@ -4045,6 +4045,23 @@
         history.replaceState(null, "", `${route.pathname}${route.search}${route.hash}`);
       }
 
+      function orderQReturnHref(orderId = "") {
+        const route = new URL(location.href);
+        const requestedReturn = route.searchParams.get("returnTo") || "";
+        let target = null;
+        try {
+          const candidate = new URL(requestedReturn, location.href);
+          const sameOrigin = location.protocol === "file:" || candidate.origin === location.origin;
+          if (sameOrigin && /\/orderq\/(?:index\.html)?$/i.test(candidate.pathname)) target = candidate;
+        } catch (_) {}
+        if (!target) target = new URL("../orderq/index.html", location.href);
+        target.searchParams.set("view", "query");
+        target.searchParams.delete("orderId");
+        if (orderId) target.searchParams.set("focus", orderId);
+        else target.searchParams.delete("focus");
+        return target.href;
+      }
+
       function disconnectOrderQSource() {
         state.orderQSource = null;
         state.shipmentResults = null;
@@ -4053,7 +4070,7 @@
         state.shipmentSourceChanged = false;
         state.shipmentKeepWorkAcknowledged = false;
         updateOrderQRoute("");
-        elements.orderQReturnLink.href = "../orderq/index.html?view=query";
+        elements.orderQReturnLink.href = orderQReturnHref();
       }
 
       function orderQReadFailureMessage(result) {
@@ -4083,7 +4100,7 @@
             const message = orderQReadFailureMessage(result);
             setSystemMessage(`ORDER Q 주문 연결 보류 · ${message}`);
             setOrderQSourceNotice(`${message} 기존 화면 작업은 변경되지 않았습니다.`, true);
-            elements.orderQReturnLink.href = `../orderq/index.html?view=query&focus=${encodeURIComponent(requestedOrderId)}`;
+            elements.orderQReturnLink.href = orderQReturnHref(requestedOrderId);
             showToast(message, true);
             return false;
           }
@@ -4113,7 +4130,7 @@
           }
           await renderOrderQCandidateOptions();
           elements.orderQCandidateSelect.value = result.snapshot.orderId;
-          elements.orderQReturnLink.href = `../orderq/index.html?view=query&focus=${encodeURIComponent(result.snapshot.orderId)}`;
+          elements.orderQReturnLink.href = orderQReturnHref(result.snapshot.orderId);
           if (nextWorkspace) {
             state.workspace = nextWorkspace;
             state.activePreview = previousPreview;

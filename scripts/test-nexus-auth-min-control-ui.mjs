@@ -15,7 +15,9 @@ const officialApps = [
   'master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops',
   'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext',
 ];
-const commonHeaderApps = officialApps.filter(appId => appId !== 'item-manager');
+const commonHeaderApps = [
+  'master-lookup', 'customer-master', 'smart-parser', 'merchops', 'smart-input', 'orderops', 'dataops',
+];
 
 assert.match(homeHtml, /id="activationForm"[^>]+hidden/, 'first activation form must be opt-in');
 assert.match(homeHtml, /id="adminLink"[^>]+href="\/nexus\/admin\/"[^>]+hidden/, 'admin entry must be hidden until OWNER_MASTER is known');
@@ -71,7 +73,7 @@ const directPages = [
 ];
 for (const page of directPages) {
   const html = await readFile(page, 'utf8');
-  assert.match(html, /nexus-ui\.js\?v=1\.5\.1/, `${page}: visibility-only header is required`);
+  assert.match(html, /nexus-ui\.js\?v=1\.6\.0/, `${page}: visibility-only header is required`);
   assert.doesNotMatch(html, /http-equiv=["']refresh|location\.(?:href|replace)[^\n]+\/nexus\//i, `${page}: direct entry must not redirect to login`);
 }
 

@@ -1,13 +1,13 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.2.4
+- Architecture document version: 2.2.5
 - Previous detailed review: 2026-09-04
 - Documentation updated: 2026-09-10
 - Previous detailed source baseline: `d44bbda357268289269574aa8f7b36333e013be5`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: ORDER Q 시스템 메시지 미해결 검토 전용화와 저장·출력 경계
-- Runtime verification: 엔진·워크북·실제 기준파일·브라우저 회귀검사 수행
+- Review scope: NEXUS 7개 글로벌헤더와 앱 간 이동·복귀·회사 범위 계약
+- Runtime verification: 공통 UI 동적 투영 및 F01~F10 정적 회귀검사 수행, 실제 브라우저 검증은 배포 전 수행
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -262,7 +262,9 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 투영 부재·오류는 전체 탭 표시로 복구하고 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
+현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 글로벌헤더 후보는 `상품관리 · 거래처관리 · 스마트파서 · MerchOps · 스마트입력 · 출고관리 · DataOps` 7개이며 이 순서가 정규 순서다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 정상 투영은 선택된 후보만 정규 순서로 표시하고 정상 빈 배열은 탭 0개로 표시한다. 투영 부재·schema 오류·JSON 오류·알 수 없는 ID·중복 ID는 7개 전체 표시로 복구한다. 12개 공식 노출 ID는 계속 검증하며 `item-manager`는 활성 탭과 노출 계산에서 `master-lookup`으로 정규화한다. 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
+
+하위 화면은 글로벌 탭 후보에서 빠져도 소유 앱의 검증된 내부 링크로 접근할 수 있다. Settings는 허용된 `returnApp` 또는 같은 Origin의 검증된 진입 앱만 복귀 대상으로 사용하며 iframe 모드에서는 부모에게 전용 닫기 메시지를 보내고 최상위 문서를 직접 이동하지 않는다. Export Center는 현재 진입에 포함된 검증된 MerchOps `returnTo`만 복원하고 과거 저장 URL이나 `history.back()`을 복귀 근거로 사용하지 않는다. ORDER Q가 OrderOps를 열 때는 현재 `from`, `to`, `q`, `view`, `focus`를 포함한 검증 가능 `returnTo`를 전달하고 OrderOps는 같은 Origin의 공식 ORDER Q 경로만 복원한다.
 
 `nexus/index.html`과 `nexus/nexus.js`는 기본 로그인 홈 경계다. 로그인 전·후 모두 하단에 `원앱 | NEXUS 사내 업무 시스템`을 고정 표시하며, 이 문구는 서버 조회·Session Token·사용자 정보·revision을 사용하지 않는다. 로그인 성공 시 NEXUS 홈에서만 사용자명과 `MASTER` 또는 `위임 사용자` 구분을 표시한다. 서버가 제공한 `visibleAppsConfigured`와 검증된 12개 `visibleAppIds`를 식별정보 없이 `NEXUS_UI_VISIBILITY_V1`으로 같은 탭에 투영해 홈 카드와 공통헤더 탭에만 적용하며, 직접 URL과 앱 실행권한에는 사용하지 않는다. 유효기간이 남은 탭 Session은 홈을 즉시 표시하는 데 사용하며 서버 최신 상태는 백그라운드에서 확인한다. 같은 브라우저에서 이미 로그인된 NEXUS 홈 창이 살아 있으면 `/nexus/` 범위의 `session-bridge.js`가 메모리에 있는 동일 Session을 새 NEXUS 창에 전달한다. 페이지는 활성 Bridge 등록을 우선 사용하고 최초 활성화 지연은 제한 시간 안에서 기다리며, 실패한 준비 상태를 고정하지 않고 다음 호출에서 재시도한다. 새 창 Session 요청도 제한된 횟수만 재시도해 백그라운드 창의 늦은 응답을 수용한다. Bridge는 페이지 요청을 가로채거나 Token을 Cookie·`localStorage`·IndexedDB에 저장하지 않고, `/nexus/` 밖의 클라이언트 요청을 거부한다. 로그아웃·만료는 같은 Session을 사용하는 모든 NEXUS 창에 전파하며, 로그인된 NEXUS 창이 하나도 없고 Bridge 메모리도 종료된 경우에는 다시 로그인한다. 로그인 서버 장애가 업무 앱의 직접 진입·화면 표시·로컬 기본 작업으로 확산되어서는 안 된다. 앱별 권한, 연동 허용, 업무이력 Adapter와 Gateway 정책은 별도 확정 전 구현하지 않는다.
 
@@ -284,7 +286,7 @@ Production files must not be reorganized into folders without first updating and
 | 항목 | 계약 |
 |---|---|
 | 브라우저 식별 | NEXUS 파비콘과 `업무명 - NEXUS` 제목 형식을 사용한다. |
-| 앱 명칭 | 공통 정적 앱 목록의 한글 명칭을 헤더와 브라우저 제목의 단일 매핑으로 사용한다. |
+| 앱 명칭 | 공통 정적 앱 목록의 승인된 명칭을 사용한다. 글로벌 탭은 상품관리·거래처관리·스마트파서·MerchOps·스마트입력·출고관리·DataOps로 고정하고, 하위 화면 제목은 `업무명 - NEXUS` 형식을 유지한다. |
 | 데스크톱 헤더 | 높이 64px, 탭 그룹 높이 44px, 탭 96×38px, 간격 4px, 모서리 8px, 글자 13px/600, 전환 150ms를 유지한다. 헤더와 탭은 화면모드와 무관하게 기존 다크 스타일을 사용한다. |
 | 모바일 헤더 | 높이 104px, 탭 96×44px와 최소 44px 터치 영역을 유지한다. 로고와 테마 스위치는 겹치지 않고 탭 이동은 가로 사용이 가능해야 한다. |
 | 선택·포커스 | 선택 탭은 밝은 글자와 얇은 민트 하단선으로 구분하고 넓은 강조 배경을 사용하지 않는다. 키보드 포커스는 공통 포커스 토큰으로 명확히 표시한다. |
@@ -352,7 +354,7 @@ Important contracts include:
 | ORDER Q vNext local ledger | IndexedDB `oneapp-orderq-pre-m1-v6` v7 | ORDER Q vNext only; operational orders, historical source batches, sales/purchase/ledger/inventory facts, fulfillment links, parser evidence, and sync queue |
 | ORDER Q shipment candidate Read Model | `ONEAPP_ORDERQ_SHIPMENT_CANDIDATE_V1`; `orderq/shipment-order-read-adapter.js` | ORDER Q owns the order Stores and emits immutable, source-line-preserving candidates. OrderOps uses point reads or a bounded list only and cannot write ORDER Q Stores. |
 | OrderOps shipment result | IndexedDB `ONEAPPShippingResultDB` v1; `shipmentDocuments`, `shipmentLines`, `shipmentEvents`, `shipmentCommandReceipts`; `ONEAPP_SHIPPING_RESULT_V1` | OrderOps owns confirm, hold, reversal, idempotency receipts, and review state. ORDER Q may read through the result Adapter only. Result commit and ORDER Q order update are intentionally not represented as one cross-database transaction. |
-| Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput owns estimate records and exposes them through its estimate Read Adapter. Related-voucher import copies a read-only source snapshot into the target draft; `EMPTY` and `ERROR` remain distinct and no path modifies the source voucher. |
+| Voucher activity Snapshot | `ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1` / `ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1` | ORDER Q owns order, purchase, and sale documents. SmartInput owns estimate records and exposes them through its estimate Read Adapter. 조회는 NEXUS Session에서 해석한 앱 회사 컨텍스트를 Adapter에 필수 전달하고 링크의 회사 ID가 있으면 컨텍스트 일치 여부를 먼저 검사한다. 불일치 시 전체회사나 0건 성공으로 전환하지 않는다. Related-voucher import copies a read-only source snapshot into the target draft; `EMPTY` and `ERROR` remain distinct and no path modifies the source voucher. |
 | ORDER Q official voucher command | `ONEAPP_ORDERQ_OFFICIAL_COMMAND_ADAPTER_V1`; `ONEAPP_ORDERQ_OFFICIAL_COMMAND_GATEWAY_V1`; `VOUCHER_CORE_V1` | SmartInput purchase/sale Finalize Services use the ORDER Q command Adapter, which delegates owner operations through the OfficialCommandGateway to `official-voucher-repository.js`. ORDER Q owns documents, lines, commands, Revisions, inventory/pending effects, matched-customer base payable/receivable effects and the official local queue. Cloud replay remains a recorded direct-Repository follow-up path. |
 | ORDER Q unresolved review Read Model | `ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_ADAPTER_V1`; `ONEAPP_ORDERQ_UNRESOLVED_REVIEW_READ_MODEL_V1`; `ONEAPP_ORDERQ_UNRESOLVED_REMATCH_IMPACT_PREVIEW_V1` | ORDER Q alone reads its existing DB v7 stores and returns a company-scoped, deterministic, read-only review result. Official inventory remains `미반영` with `officialQuantity=null`, pending signed quantity stays separate, missing links remain explicit review issues, candidate rows never auto-confirm, and the pure preview reuses the Phase 5 checkpoint classifier without writing. After UI Gate U1 A approval, `orderops` consumes only the Adapter in its existing result-area state; removing that consumer leaves the owner data and contract intact. |
 | ORDER Q official voucher sync | `ONEAPP_ORDERQ_OFFICIAL_SYNC_V1` | Company-partitioned background transport for immutable official commands and product resolutions. Local finalize remains authoritative; Cloud activation and deployment acceptance are separate work. |
