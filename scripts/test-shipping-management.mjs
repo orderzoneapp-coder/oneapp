@@ -1896,9 +1896,10 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.56</, "canonical ORDER Q visible version must be v1.56");
-assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
-  "the canonical header must use the shared ORDER Q logo asset");
+assert.match(html, /data-nexus-app-identity[^>]*>[\s\S]*?data-nexus-app-title>출고관리<\/span>/,
+  "the canonical header must expose only the left-aligned 출고관리 app identity");
+assert.doesNotMatch(html, /brand-(?:badge|logo|logo-frame)|class="brand-mark"/,
+  "the canonical app header must not retain the ONEAPP/ORDER Q logo or version badge");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
   "the settings title must use the ORDER Q brand");
 assert.match(

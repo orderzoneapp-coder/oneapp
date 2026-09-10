@@ -223,6 +223,7 @@ const prepareWorkspace = async client => {
 const normalMetrics = client => evaluate(client, `(() => {
   const rect = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width)};};
   return {
+    appHeaderHeight:Math.round(document.querySelector('.global-header').getBoundingClientRect().height),
     existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>!['unresolvedReviewToggle','shipmentConfirmButton','shipmentHoldButton'].includes(id)).sort(),
     sourceTabs:[...document.querySelectorAll('#sourceSelector [role="tab"]')].map(node=>({id:node.id,label:node.getAttribute('aria-label')})),
     shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
@@ -309,7 +310,9 @@ try {
   assert.deepEqual(current.existingButtonIds, baseline.existingButtonIds, 'all existing button IDs must remain unchanged');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
-  assert.deepEqual(current.regions, baseline.regions, 'normal desktop layout regions must remain unchanged');
+  const regionsBelowAppHeader = metrics => Object.fromEntries(Object.entries(metrics.regions).map(([key, value]) => [key, { ...value, y:value.y-metrics.appHeaderHeight }]));
+  assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
+  assert.deepEqual(regionsBelowAppHeader(current), regionsBelowAppHeader(baseline), 'normal desktop layout regions below the app header must remain unchanged');
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);

@@ -19,7 +19,7 @@ const manifest = JSON.parse(read('app-manifest.json'));
 
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
-assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.9/);
+assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
 assert.match(html, /smartinput\.css\?v=0\.9\.18/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
 assert.match(html, /smartinput\.js\?v=0\.11\.51/);

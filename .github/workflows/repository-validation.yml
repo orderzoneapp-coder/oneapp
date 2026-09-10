@@ -90,6 +90,9 @@ jobs:
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
+      - name: Test NEXUS unified dark app headers
+        run: node scripts/test-nexus-unified-dark-app-headers-browser-e2e.mjs
+
       - name: Test NEXUS five-app resizable workbench and rollback exclusions
         run: node scripts/test-nexus-workbench-layout-browser-e2e.mjs
 
