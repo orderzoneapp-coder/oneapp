@@ -195,6 +195,13 @@ assert.throws(
 assert.equal(compileClassicInlineScripts('settings.html'), 1);
 assert.equal(compileClassicInlineScripts('export_center.html'), 1);
 compileHistoryModule();
+const historyViewerHtml = read('history_viewer.html');
+assert.match(historyViewerHtml, /const RETURN_APPS=Object\.freeze\(\{[\s\S]*'master-lookup':[\s\S]*'customer-master':[\s\S]*'smart-parser':[\s\S]*merchops:[\s\S]*'smart-input':[\s\S]*dataops:/,
+  'History Viewer return routing must use the six-app allowlist');
+assert.match(historyViewerHtml, /const returnApp=RETURN_APPS\[returnAppId\]\|\|RETURN_APPS\.merchops;[\s\S]*new URL\(returnApp\.path,document\.baseURI\)\.href/,
+  'History Viewer must fall back safely and navigate only to the selected allowlisted app path');
+assert.doesNotMatch(historyViewerHtml, /document\.referrer|history\.back\(/,
+  'History Viewer must not infer its return path from referrer or browser history');
 
 const historySource = read('history_viewer.html');
 assert.match(historySource, /change-history-read-adapter\.js/);

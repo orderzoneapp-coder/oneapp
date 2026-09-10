@@ -31,7 +31,7 @@
         <button id="btnCloud" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-black"><i class="fas fa-cloud-arrow-down mr-2"></i>클라우드 조회</button>
         <button id="btnJson" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black"><i class="fas fa-download mr-2"></i>JSON</button>
         <button id="btnCsv" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black"><i class="fas fa-file-csv mr-2"></i>CSV</button>
-        <button id="btnBack" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-black"><i class="fas fa-arrow-left mr-2"></i>MerchOps</button>
+        <button id="btnBack" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-black"><i class="fas fa-arrow-left mr-2"></i><span id="btnBackLabel">MerchOps</span></button>
       </div>
     </header>
 
@@ -79,6 +79,14 @@ import { getProductSnapshotResult } from './reference-data/product-master-read-a
 (function(){
   'use strict';
   const CLOUD_KEYS=['oneapp_cloud_sync_url_v1','merchCloudUrl_v870'];
+  const RETURN_APPS=Object.freeze({
+    'master-lookup':{label:'상품관리',path:'Master.html'},
+    'customer-master':{label:'거래처관리',path:'customer-master/index.html'},
+    'smart-parser':{label:'스마트파서',path:'SmartParser.html'},
+    merchops:{label:'MerchOps',path:'MerchOps.html'},
+    'smart-input':{label:'스마트입력',path:'smartinput/index.html'},
+    dataops:{label:'DataOps',path:'DataOps.html'}
+  });
   const $=id=>document.getElementById(id);
   const safeStr=v=>v===undefined||v===null?'':String(v);
   const parseNum=v=>{const n=Number(String(v??'').replace(/,/g,'').replace(/[^\d.-]/g,''));return Number.isFinite(n)?n:0;};
@@ -180,7 +188,10 @@ import { getProductSnapshotResult } from './reference-data/product-master-read-a
   async function loadCloudHistory(){const url=getCloudUrl(); if(!url){$('statusLine').textContent='클라우드 URL이 없습니다. Settings에서 주소를 먼저 설정하세요.';return;} const field=$('analysisField').value||''; const params=new URLSearchParams({action:'history_query',limit:'5000',days:'365'}); if(selectedCode)params.set('code',selectedCode); if(field)params.set('field',field); const requestUrl=url+(url.includes('?')?'&':'?')+params.toString(); $('statusLine').textContent='클라우드 변경이력 조회 중...'; try{const res=await fetch(requestUrl,{method:'GET'}); if(!res.ok)throw new Error(`HTTP_${res.status}`); const json=await res.json(); if(!json||json.status!=='success')throw new Error(json?.message||'HISTORY_QUERY_FAILED'); const logs=json.data?.history||json.data?.logs||json.history; if(!Array.isArray(logs))throw new Error('CLOUD_HISTORY_SCHEMA_INVALID'); remoteSnapshot=await buildChangeHistorySnapshot(logs,{source:'CLOUD_QUERY'}); await renderSnapshotView(`클라우드 ${logs.length.toLocaleString('ko-KR')}건을 메모리 화면에 병합했습니다. 로컬 변경이력은 수정하지 않았습니다.`);}catch(e){console.error(e); $('statusLine').textContent='클라우드 조회 실패: '+e.message;}}
   function download(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
   function toCsv(rows){const cols=['timestamp','sourceRole','source','action','code','name','spec','field','path','oldVal','newVal','diff','diffRate']; return [cols.join(','),...rows.map(r=>cols.map(c=>'"'+safeStr(r[c]).replace(/"/g,'""')+'"').join(','))].join('\n');}
-  function navigateBack(){try{const ref=document.referrer||''; if(ref&&/MerchOps(?:\.html)?/i.test(ref)&&history.length>1){history.back();return;}}catch(e){} try{location.href=(location.origin&&location.origin.includes('oneapp.orderz.co.kr'))?location.origin+'/MerchOps.html':'MerchOps.html';}catch(e){location.href='MerchOps.html';}}
+  const returnAppId=new URLSearchParams(location.search).get('returnApp')||'merchops';
+  const returnApp=RETURN_APPS[returnAppId]||RETURN_APPS.merchops;
+  $('btnBackLabel').textContent=returnApp.label;
+  function navigateBack(){location.href=new URL(returnApp.path,document.baseURI).href;}
   $('btnReload').onclick=refresh; $('btnCloud').onclick=loadCloudHistory; $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(filteredRows.map(row=>row.raw),null,2),'application/json'); $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(filteredRows),'text/csv;charset=utf-8'); $('btnBack').onclick=navigateBack; $('btnClearSelection').onclick=()=>{selectedCode=''; selectedName=''; apply();};
   ['searchInput','sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('input',apply)); ['sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('change',apply)); refresh();
 })();

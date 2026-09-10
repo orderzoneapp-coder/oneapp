@@ -5,12 +5,14 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile('smartinput/index.html', 'utf8');
 const css = await readFile('smartinput/smartinput.css', 'utf8');
+const workbenchCss = await readFile('nexus/common/nexus-workbench-layout-v2.css', 'utf8');
 const js = await readFile('smartinput/smartinput.js', 'utf8');
 
 assert.match(html, /<header class="app-bar">/, '0a SmartInput app bar must be restored');
 assert.match(html, /<div class="workspace" id="smartInputWorkspace"[^>]*>/, 'the protected desktop workspace must remain');
 assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must be raised into the app header');
 assert.match(html, /class="parser-card"[^>]*id="sourceInputPanel"/, 'the independent source parser must remain');
+assert.match(html, /data-nexus-pane="reference"[\s\S]*data-nexus-selection-reference[\s\S]*class="smart-input-main-flow" data-nexus-pane="work"[\s\S]*id="sourceInputPanel"[\s\S]*class="workbench"/, 'selected-row reference must stay left while parser and input table form one central work flow');
 assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser must not be hidden by a work-table toggle');
 assert.match(html, /class="workbench"/, 'the work table must remain');
 assert.match(html, /class="related-panel estimate-library-view"[^>]*id="estimateLibraryView"/, 'the right estimate library must remain a workspace sibling');
@@ -71,6 +73,8 @@ assert.match(css, /\.toast\s*\{[^}]*bottom:\s*74px/s, 'desktop notifications mus
 assert.match(css, /@media \(max-width:\s*820px\)[\s\S]*\.toast\s*\{[^}]*bottom:\s*72px/s, 'mobile notifications must clear the lower action bar');
 assert.match(html, /id="relatedPanelToggle"[\s\S]*id="relatedPanelResizer"[\s\S]*id="relatedPanelCloseButton"/,
   'the right activity panel must expose slide toggle, resize handle, and close control');
+assert.match(workbenchCss, /\.smart-input-main-flow[\s\S]*grid-template-rows:[\s\S]*\.related-panel-resizer[\s\S]*display:\s*none\s*!important/s,
+  'the six-app workbench must stack source and table centrally and replace the legacy right resizer with the common separator');
 assert.match(html, /id="relatedPanelCloseButton"[^>]*aria-label="우측 패널 닫기"[^>]*>[\s\S]*×/,
   'the right-panel close control must use a centered edge X with an accessible name');
 assert.doesNotMatch(html, /id="relatedPanelCloseButton"[^>]*>[\s\S]*<strong>닫기<\/strong>/,

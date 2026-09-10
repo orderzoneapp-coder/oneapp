@@ -90,6 +90,9 @@ jobs:
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
+      - name: Test NEXUS six-app resizable workbench
+        run: node scripts/test-nexus-workbench-layout-browser-e2e.mjs
+
       - name: Test NEXUS basic login and home contracts
         run: |
           node scripts/test-nexus-basic-login-home.mjs
