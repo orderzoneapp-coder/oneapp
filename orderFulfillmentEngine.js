@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.21.0";
+  const ENGINE_VERSION = "3.22.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -39,6 +39,8 @@
     "재고",
     "단가",
     "공급가액",
+    "거래처코드",
+    "지역",
   ]);
 
   const ORDER_CANONICAL_ALIASES = Object.freeze({
@@ -56,8 +58,10 @@
     "단가": Object.freeze(["단가", "판매단가", "출고단가"]),
     "공급가액": Object.freeze(["공급가액", "금액", "합계금액"]),
     "적요": Object.freeze(["적요", "메모", "비고"]),
-    "적요1": Object.freeze(["적요1"]),
+    "적요1": Object.freeze(["적요1", "적요(직원)", "직원적요"]),
     "거래처": Object.freeze(["거래처", "거래처명", "고객명"]),
+    "거래처코드": Object.freeze(["거래처코드", "고객코드", "거래처ID", "고객ID"]),
+    "지역": Object.freeze(["지역", "배송지역", "배송권역", "권역"]),
     "그룹": Object.freeze(["그룹"]),
   });
 
@@ -129,6 +133,18 @@
       return Number.isInteger(value) ? String(value) : String(value).replace(/\.0+$/, "");
     }
     return String(value).trim();
+  }
+
+  function customerWorkKey(row = {}) {
+    const suppliedKey = cleanText(row.customerKey);
+    if (suppliedKey) return suppliedKey;
+    const ownerId = cleanText(row.customerId || row.customerCode);
+    if (ownerId) return `CUSTOMER:${ownerId}`;
+    const customer = normalizeOrderHeader(row.customer);
+    const deliveryUnit = normalizeOrderHeader(row.orderNumber || row.group);
+    if (customer && deliveryUnit) return `DELIVERY:${customer}:${deliveryUnit}`;
+    const sourceRowNumber = Number(row.sourceRowNumber);
+    return sourceRowNumber > 0 ? `SOURCE_ROW:${sourceRowNumber}` : "";
   }
 
   function normalizeCategoryCode(value) {
@@ -668,10 +684,21 @@
             : rowBasisDates.length === 1
               ? "valid"
               : "missing";
+        const customerCode = cleanText(getField(row, columnMap, "거래처코드"));
+        const customer = cleanText(getField(row, columnMap, "거래처"));
+        const group = cleanText(getField(row, columnMap, "그룹"));
+        const orderNumber = cleanText(orderNumberValue);
+        const customerIdentity = {
+          customerCode,
+          customer,
+          group,
+          orderNumber,
+          sourceRowNumber: rowIndex + 1,
+        };
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
-          orderNumber: cleanText(orderNumberValue),
+          orderNumber,
           basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
           basisDateStatus: rowBasisDateStatus,
           basisDateCandidates,
@@ -693,8 +720,11 @@
           note1: cleanText(getField(row, columnMap, "적요1")),
           noteOriginal: originalText(getField(row, columnMap, "적요")),
           note1Original: originalText(getField(row, columnMap, "적요1")),
-          customer: cleanText(getField(row, columnMap, "거래처")),
-          group: cleanText(getField(row, columnMap, "그룹")),
+          customer,
+          customerCode,
+          customerKey: customerWorkKey(customerIdentity),
+          region: cleanText(getField(row, columnMap, "지역")),
+          group,
         });
       }
     }
@@ -2305,6 +2335,34 @@
     return rebuildWorkspaceFromOrders(workspace);
   }
 
+  function setCustomerManager(workspace, customerKey, value, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const stableKey = cleanText(customerKey);
+    if (!stableKey) throw new Error("담당자를 변경할 거래처 식별값이 없습니다.");
+    const nextValue = cleanText(value);
+    const targets = (workspace.orders || []).filter((row) => customerWorkKey(row) === stableKey);
+    if (!targets.length) throw new Error("담당자를 변경할 거래처 주문을 찾지 못했습니다.");
+    targets.forEach((order) => {
+      const previousValue = cleanText(order.manager);
+      if (previousValue === nextValue) return;
+      order.customerKey = stableKey;
+      order.manager = nextValue;
+      appendSystemEditEvent(workspace, {
+        productCode: order.productCode,
+        sourceRowNumber: Number(order.sourceRowNumber) || 0,
+        customerKey: stableKey,
+        field: "manager",
+        fieldLabel: "담당자(거래처 단위)",
+        previousValue,
+        nextValue,
+      }, options);
+    });
+    rebuildWorkspaceFromOrders(workspace);
+    return { customerKey: stableKey, manager: nextValue, affectedRowCount: targets.length };
+  }
+
   function analyze(ordersParsed, inventoryParsed, options = {}) {
     const inputValidation = validateInputs(ordersParsed, inventoryParsed);
     if (!inputValidation.canAnalyze) {
@@ -2920,6 +2978,7 @@
     INVENTORY_OPTIONAL_COLUMNS,
     normalizeProductCode,
     normalizeOrderHeader,
+    customerWorkKey,
     normalizeCategoryCode,
     canonicalStringify,
     containsCloudTokenKey,
@@ -2957,6 +3016,7 @@
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
+    setCustomerManager,
     setInventoryOverride,
     getAllocationInventoryView,
   });

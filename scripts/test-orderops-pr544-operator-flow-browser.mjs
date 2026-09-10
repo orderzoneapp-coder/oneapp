@@ -68,6 +68,7 @@ try {
   const debugPort = await waitFor(() => existsSync(portFile) ? readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0] : '', 'browser debug port');
   const target = await waitFor(async () => { const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`); return response.ok ? (await response.json()).find(item => item.type === 'page') : null; }, 'browser target');
   client = new Cdp(target.webSocketDebuggerUrl); await client.connect(); await client.send('Page.enable'); await client.send('Runtime.enable');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
   const origin = `http://127.0.0.1:${address.port}`;
 
   await navigate(client, `${origin}/orderq/index.html?view=query`);
@@ -95,6 +96,35 @@ try {
   await analyze(client);
   await evaluate(client, `document.querySelector('#ordersDrop').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'worktable actual shipment input');
+  await waitFor(() => evaluate(client, `[...document.querySelectorAll('.nexus-pane-resizer-v2')].filter(node=>!node.hidden).length===2`), 'OrderOps desktop panel handles');
+  const workbench = await evaluate(client, `(()=>({
+    panes:[...document.querySelectorAll('[data-nexus-workspace="orderops"] > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),
+    enhanced:document.querySelector('[data-nexus-workspace="orderops"]')?.dataset.nexusResizableWorkspace,
+    handles:[...document.querySelectorAll('.nexus-pane-resizer-v2')].filter(node=>!node.hidden).map(node=>node.dataset.nexusPaneResize),
+    deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-customer-key]').length,
+    distribution:document.querySelector('#deliveryDistribution').textContent,
+    manager:document.querySelector('[data-summary-manager]')?.value,
+    inventory:document.querySelector('#inventoryInspectorIdentity').textContent,
+    metrics:document.querySelector('#inventoryInspectorMetrics').textContent
+  }))()`);
+  assert.deepEqual(workbench.panes, ['reference', 'work', 'result']);
+  assert.equal(workbench.enhanced, 'true');
+  assert.deepEqual(workbench.handles, ['left', 'right']);
+  assert.equal(workbench.deliveries, 1, '배송 건수는 상품행이 아닌 고객·주문 배송 단위여야 한다.');
+  assert.match(workbench.distribution, /작업자 1건/);
+  assert.equal(workbench.manager, '작업자');
+  assert.match(workbench.inventory, /부분출고 상품/);
+  assert.match(workbench.metrics, /현재 재고[\s\S]*주문수량[\s\S]*예상 잔량[\s\S]*실제 출고 확정/);
+  const resizePreservation = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const draft=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');draft.value='7';draft.focus();document.querySelector('#previewTable').scrollLeft=18;const before={left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width};document.querySelector('[data-nexus-pane-resize="left"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return {before,after:{left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width},draft:draft.value,focused:document.activeElement===draft,scrollLeft:document.querySelector('#previewTable').scrollLeft}})()`);
+  assert.ok(resizePreservation.after.left > resizePreservation.before.left);
+  assert.ok(Math.abs(resizePreservation.after.right - resizePreservation.before.right) < 1);
+  assert.equal(resizePreservation.draft, '7');
+  assert.equal(resizePreservation.focused, true);
+  await evaluate(client, `(()=>{const input=document.querySelector('[data-summary-manager]');input.value='재배정';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+  await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="manager"]')?.value==='재배정'`), 'customer-unit manager synchronization');
+  assert.match(await evaluate(client, `document.querySelector('#deliveryDistribution').textContent`), /재배정 1건/);
+  const panelRestore = await evaluate(client, `(()=>{const before=document.querySelector('#inventoryInspectorIdentity').textContent;document.querySelector('#inventoryInspectorClose').click();const closed=document.querySelector('#inventoryInspector').hidden&&localStorage.getItem('oneapp.orderops.inventory-inspector-open.v1')==='0';document.querySelector('#inventoryInspectorReopen').click();return {closed,open:!document.querySelector('#inventoryInspector').hidden,restored:document.querySelector('#inventoryInspectorIdentity').textContent===before}})()`);
+  assert.deepEqual(panelRestore, { closed: true, open: true, restored: true });
   const handoff = await evaluate(client, `(()=>{const work=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');work.value='6';work.dispatchEvent(new Event('change',{bubbles:true}));const confirm=document.querySelector('[data-shipment-line="OI-PARTIAL"]');confirm.querySelector('[data-shipment-reason]').value='부분 출고';confirm.querySelector('[data-shipment-reason]').dispatchEvent(new Event('change',{bubbles:true}));return {work:work.value,confirm:confirm.querySelector('[data-shipped-quantity]').value,headers:[...document.querySelectorAll('.shipment-execution__table th')].map(node=>node.textContent.trim())}})()`);
   assert.equal(handoff.work, '6');
   assert.equal(handoff.confirm, '6', '작업표 실제 출고수량이 확정표에 전달되어야 한다.');

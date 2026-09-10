@@ -116,6 +116,10 @@ export function mapOrderQSnapshotToParsedOrders(snapshot) {
     noteOriginal: line.memo,
     note1Original: line.description,
     customer: snapshot.customerName,
+    customerId: snapshot.customerId,
+    customerCode: snapshot.customerId,
+    customerKey: snapshot.customerId ? `CUSTOMER:${snapshot.customerId}` : '',
+    region: snapshot.deliveryRegion || snapshot.region || '',
     group: snapshot.orderNo
   }));
   return {
