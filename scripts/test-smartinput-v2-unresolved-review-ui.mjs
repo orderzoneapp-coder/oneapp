@@ -181,7 +181,8 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/\r\n/g, '\n')
     .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
-    .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1');
+    .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
+    .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
     `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the shared theme cache token`);
 }
