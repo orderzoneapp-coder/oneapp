@@ -115,7 +115,7 @@ export async function readVoucherActivity({ mode, date, companyId = '' }) {
         })),
         detailHref: mode === 'order'
           ? `../orderq/index.html?view=query&focus=${encodeURIComponent(id)}`
-          : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&focus=${encodeURIComponent(id)}`
+          : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&companyId=${encodeURIComponent(companyId || document.companyId || 'ONEAPP')}&focus=${encodeURIComponent(id)}`
       };
     }).sort((left, right) => String(right.savedAt || '').localeCompare(String(left.savedAt || '')));
     return {

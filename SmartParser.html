@@ -6,10 +6,10 @@
     <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-parser"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="nexus/common/nexus-ui.js?v=1.5.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.6.0"></script>
     <meta name="google" content="notranslate">
     <title>문서분석 - NEXUS</title>
-    <meta name="application-version" content="ONEAPP MerchOps - Smart Parser [v3.3.0 AnalysisResultOwnerBoundary]">
+    <meta name="application-version" content="ONEAPP MerchOps - Smart Parser [v3.4.0 ImmediateCatalogApply]">
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -706,7 +706,7 @@ const loadSmartParserBoundaryAdapters = (() => {
             promise = Promise.allSettled([
                 import('./smartparser/analysis-result-contract.js'),
                 import('./reference-data/product-master-read-adapter.js'),
-                import('./reference-data/product-change-request-adapter.js')
+                import('./smartparser/catalog-apply-command-adapter.js')
             ]).then(results => {
                 const values = results.map(result => result.status === 'fulfilled' ? result.value : null);
                 const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
@@ -714,7 +714,7 @@ const loadSmartParserBoundaryAdapters = (() => {
                     ok: true,
                     analysisModule: values[0],
                     productReadModule: values[1],
-                    requestModule: values[2],
+                    catalogApplyModule: values[2],
                     error: failures[0] || null,
                     errors: failures
                 };
@@ -758,7 +758,9 @@ const buildSmartParserAnalysisPlan = ({ masterProducts = {}, rows = [], catalogL
         const editedTextFields = row._editedTextFields || {};
         const hasExplicitUnitEdit = Object.prototype.hasOwnProperty.call(editedTextFields, '단위');
         const parsedUnit = hasExplicitUnitEdit ? editedTextFields['단위'] : (row['단위'] || '');
-        const finalUnit = String((hasExplicitUnitEdit || (updateTextData && parsedUnit)) ? parsedUnit : (oldItem['단위'] || '')).trim();
+        const finalUnit = String(isNewProduct
+            ? parsedUnit
+            : (updateTextData ? ((hasExplicitUnitEdit || parsedUnit) ? parsedUnit : (oldItem['단위'] || '')) : (oldItem['단위'] || ''))).trim();
         const hasInPrice = hasParserRowInPrice(row);
         const newInPrice = hasInPrice ? getParserRowInPrice(row) : null;
         const oldInValue = Object.prototype.hasOwnProperty.call(oldItem, '입고가') ? oldItem['입고가'] : '';
@@ -778,8 +780,8 @@ const buildSmartParserAnalysisPlan = ({ masterProducts = {}, rows = [], catalogL
             pushProposal('단위', '', finalUnit, '분석 문서의 검토된 단위');
         } else {
             ['품목명', '규격', '단위'].forEach(field => {
+                if (!updateTextData) return;
                 const hasExplicitEdit = Object.prototype.hasOwnProperty.call(editedTextFields, field);
-                if (!hasExplicitEdit && !updateTextData) return;
                 const proposedValue = hasExplicitEdit ? editedTextFields[field] : (field === '단위' ? finalUnit : (row[field] || ''));
                 if (hasExplicitEdit || String(proposedValue).trim()) pushProposal(field, oldItem[field] ?? '', proposedValue, `SmartParser 분석에서 검토한 ${field}`);
             });
@@ -882,7 +884,7 @@ const buildSmartParserCatalogRemovalAnalysisPlan = ({ masterProducts = {}, codes
             ruleEvidence: {},
             issues: { LARGE_CHANGE: false, NO_OLD_PRICE: false, ZERO_PRICE: false, SPEC_DIFFERENCE: false, SOLD_OUT: true, DUPLICATE: false },
             stopRecommendation: false,
-            proposedChanges: [{ field: '카탈로그', beforeValue: oldCatalog, proposedValue: proposedCatalog, reason: `공급중단 검토로 [${catalog}] 카탈로그 태그 삭제 요청` }],
+            proposedChanges: [{ field: '카탈로그', beforeValue: oldCatalog, proposedValue: proposedCatalog, reason: `관리자 확정으로 [${catalog}] 카탈로그 태그 즉시 제외` }],
             decision: { selected: true, excluded: false, blocked: false }
         });
     });
@@ -1023,7 +1025,7 @@ const useParserApp = () => {
                 localStorage.setItem('parserDict_v870', JSON.stringify(safeData));
             }
             catch (retryErr) {
-                console.warn("파서 매핑사전 재시도 실패 - owner 변경요청 접수와 분리하여 학습저장만 건너뜀", retryErr);
+                console.warn("파서 매핑사전 재시도 실패 - 확정 상품 저장과 분리하여 학습저장만 건너뜀", retryErr);
             }
         }
     };
@@ -1074,7 +1076,41 @@ const useParserApp = () => {
     return { masterProducts, setMasterProducts, productSnapshot, setProductSnapshot, productSnapshotStatus, productSnapshotError, productSnapshotStale, setProductSnapshotStale, stopCommandRevision, setStopCommandRevision, analysisResult, setAnalysisResult, analysisRequestResults, setAnalysisRequestResults, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, saveCatalogWarehouse, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, setMasterProducts, productSnapshot, setProductSnapshot, setProductSnapshotStale, stopCommandRevision, setStopCommandRevision, analysisResult, setAnalysisResult, setAnalysisRequestResults, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, catalogWarehouseMap, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, setShowReviewModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const { masterProducts, setMasterProducts, productSnapshot, setProductSnapshot, setProductSnapshotStale, stopCommandRevision, setStopCommandRevision, analysisResult, setAnalysisResult, setAnalysisRequestResults, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, stoppedProducts, setStoppedProducts, catalogUpdatedAt, setCatalogUpdatedAt, catalogWarehouseMap, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, setShowReviewModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const catalogApplyAttemptsRef = useRef(new Map());
+    const refreshAfterCatalogApply = useCallback(async (productReadModule, command) => {
+        if (!productReadModule?.getProductSnapshotResult) return false;
+        const snapshotResult = await productReadModule.getProductSnapshotResult();
+        if (snapshotResult.status === 'ERROR' || !snapshotResult.snapshot) return false;
+        const products = snapshotResult.snapshot.data?.products || [];
+        const byCode = new Map(products.map(item => [normalizeSharedProductCode(item?.코드 || item?.품목코드), item]));
+        const fieldsVerified = command.items.every(item => {
+            const saved = byCode.get(normalizeSharedProductCode(item.normalizedCode || item.code));
+            return !!saved && item.changes.every(change => JSON.stringify(saved?.[change.field] ?? '') === JSON.stringify(change.afterValue ?? ''));
+        });
+        const stoppedState = mergeSmartParserStoppedProductsWithLegacy(safeParseJson(localStorage.getItem('merchStoppedProducts_v2'), {}));
+        const stopVerified = command.stop?.enabled !== true || command.items.every(item => {
+            const code = normalizeSharedProductCode(item.normalizedCode || item.code);
+            return Number(byCode.get(code)?.판매여부) === 0 && String(stoppedState[code]?.reason || '') === String(command.stop.reason || '');
+        });
+        if (!fieldsVerified || !stopVerified) return false;
+        const nextMaster = {};
+        products.forEach(item => {
+            const code = String(item?.코드 || item?.품목코드 || '').trim();
+            if (code) nextMaster[code] = item;
+        });
+        setMasterProducts(nextMaster);
+        setProductSnapshot(snapshotResult.snapshot);
+        setStopCommandRevision(snapshotResult.snapshot.revision ?? undefined);
+        setStoppedProducts(stoppedState);
+        setProductSnapshotStale(false);
+        return true;
+    }, [setMasterProducts, setProductSnapshot, setProductSnapshotStale, setStopCommandRevision, setStoppedProducts]);
+    const rememberCatalogApply = useCallback((catalog, timestamp) => {
+        const next = { ...(catalogUpdatedAt || {}), [catalog]: timestamp };
+        setCatalogUpdatedAt(next);
+        setIDB(CATALOG_UPDATED_AT_KEY, next).catch(error => console.warn('카탈로그 업데이트 시각 저장 실패 - 확정 이력에서 복구됩니다.', error));
+    }, [catalogUpdatedAt, setCatalogUpdatedAt]);
     const executeParser = useCallback((rawText, tag, forceManual = false, explicitCatalogWarehouse = undefined) => {
         const catalogWarehouse = String(explicitCatalogWarehouse ?? catalogWarehouseMap?.[normalizeParserCatalogName(tag)] ?? '').trim();
         setShowInputModal(false);
@@ -1197,52 +1233,68 @@ const useParserActions = (appState) => {
             const { result, plan, adapters, toApply, catalogLabel, catalogWarehouse } = prepared;
             const zeroCount = result.summary.issueCounts.ZERO_PRICE || 0;
             const proposalCount = result.summary.proposalCount || 0;
-            const confirmMessage = `분석결과 ${result.summary.selectedCount}건을 [${catalogLabel}] · 창고 [${catalogWarehouse || '공란'}] 기준으로 상품 owner에게 PENDING 변경요청으로 접수할까요?\n\n검토 field ${proposalCount}건 · 창고+단위 정확 룰 ${plan.priceRuleExactCount}건 · */* 기본 룰 ${plan.priceRuleDefaultCount}건 · 0원/품절 정지 권고 ${zeroCount}건\n※ 접수는 마스터 반영 완료가 아니며 상품관리 owner의 검토 전까지 PENDING입니다.\n※ 분석의 0원은 issue/판매정지 권고만 만들고 판매정지를 자동 실행하지 않습니다.\n※ 일부 접수 실패 시 현재 분석결과와 선택을 보존합니다.`;
+            const confirmMessage = `분석결과 ${result.summary.selectedCount}건을 [${catalogLabel}] · 창고 [${catalogWarehouse || '공란'}] 기준으로 즉시 저장할까요?\n\n검토 field ${proposalCount}건 · 창고+단위 정확 룰 ${plan.priceRuleExactCount}건 · */* 기본 룰 ${plan.priceRuleDefaultCount}건 · 0원/품절 정지 권고 ${zeroCount}건\n※ 관리자가 확정하면 상품 마스터와 변경이력을 한 성공 단위로 즉시 반영합니다.\n※ 하단 체크박스를 해제하면 연결된 기존 마스터의 상품명·규격·단위는 유지합니다.\n※ 분석의 0원은 issue/판매정지 권고만 만들고 판매정지를 자동 실행하지 않습니다.\n※ 실제 저장 검증 실패 시 분석결과와 선택을 보존합니다.`;
             if (!window.confirm(confirmMessage)) return false;
-            setProcessMsg('상품관리 owner에 PENDING 변경요청 접수 중...');
-            if (!adapters.requestModule?.productMasterChangeRequestAdapter) {
-                setAnalysisRequestResults([{ rowId: '', status: 'NOT_AVAILABLE', accepted: false, error: { code: 'PRODUCT_OWNER_ADAPTER_NOT_AVAILABLE' } }]);
-                showToast('❌ 상품 변경요청 Adapter를 사용할 수 없습니다. 분석결과는 보존했습니다. 상품관리에서 다시 시도하세요.');
+            setProcessMsg('관리자 확정 카탈로그 업데이트를 즉시 저장·검증 중...');
+            if (!adapters.catalogApplyModule?.commitSmartParserCatalogApply || !adapters.catalogApplyModule?.createSmartParserCatalogApplyCommand) {
+                setAnalysisRequestResults([{ rowId: '', status: 'NOT_AVAILABLE', accepted: false, completed: false, error: { code: 'CATALOG_APPLY_ADAPTER_NOT_AVAILABLE' } }]);
+                showToast('❌ 카탈로그 즉시 적용 Adapter를 사용할 수 없습니다. 분석결과와 선택을 보존했습니다.');
                 return false;
             }
-            const requests = adapters.analysisModule.createProductChangeRequestsFromAnalysis(result, {
-                requestedAt: getNowISO(),
-                actor: { actorState: 'UNVERIFIED_LOCAL' }
-            });
-            const requestResults = [];
-            for (const request of requests) {
-                const response = await adapters.requestModule.submitProductChangeRequest(request);
-                requestResults.push({ rowId: request.source.rowId, requestId: request.requestId, ...response });
+            const signature = `${result.idempotencyKey}|APPLY_ANALYSIS|${updateTextData ? 'TEXT' : 'KEEP_TEXT'}`;
+            let attempt = catalogApplyAttemptsRef.current.get(signature);
+            if (!attempt) {
+                attempt = { operationId: generateUUID(), requestedAt: getNowISO() };
+                catalogApplyAttemptsRef.current.set(signature, attempt);
             }
-            setAnalysisRequestResults(requestResults);
-            const acceptedStatuses = new Set(['PENDING', 'DUPLICATE']);
-            const acceptedRowIds = new Set(requestResults.filter(item => item.accepted && acceptedStatuses.has(item.status)).map(item => item.rowId));
-            const failed = requestResults.filter(item => !item.accepted || !acceptedStatuses.has(item.status));
+            const command = adapters.catalogApplyModule.createSmartParserCatalogApplyCommand(result, {
+                action: 'APPLY_ANALYSIS',
+                operationId: attempt.operationId,
+                requestedAt: attempt.requestedAt,
+                actor: { actorState: 'UNVERIFIED_LOCAL' },
+            });
+            const response = await adapters.catalogApplyModule.commitSmartParserCatalogApply(command);
+            if (!['APPLIED', 'DUPLICATE'].includes(response.status)) {
+                setAnalysisRequestResults([{ rowId: '', ...response, completed: false }]);
+                const rollbackText = response.rollback?.attempted
+                    ? (response.rollback.restored ? ' · 이전 상태 복구 완료' : response.rollback.staleSkipped ? ' · 최신 성공 상태 보호로 rollback 생략' : ' · rollback 확인 필요')
+                    : '';
+                showToast(`❌ 즉시 적용 ${response.status}: ${response.error?.code || 'UNKNOWN'}${rollbackText}. 분석결과와 선택을 보존했습니다.`);
+                return false;
+            }
+            const verified = await refreshAfterCatalogApply(adapters.productReadModule, command);
+            if (!verified) {
+                setAnalysisRequestResults([{ rowId: '', ...response, accepted: false, completed: false, status: 'VERIFY_FAILED', commandStatus: response.status }]);
+                setProductSnapshotStale(true);
+                showToast('⚠️ 저장 명령은 처리됐지만 최신 상품 Snapshot에서 실제 반영을 확인하지 못했습니다. 현재 분석결과와 선택을 보존했으니 다시 확인하세요.');
+                return false;
+            }
+            setAnalysisRequestResults([{ rowId: '', ...response, accepted: true, completed: true }]);
+            catalogApplyAttemptsRef.current.delete(signature);
+            const acceptedRowIds = new Set(command.items.map(item => String(item.rowId)));
             const newDict = { ...parserDict };
             plan.dictionaryEntries.filter(entry => acceptedRowIds.has(entry.rowId)).forEach(entry => { newDict[entry.key] = entry.code; });
             saveDict(newDict);
             const newlyProcessed = new Set(processedCodes);
             toApply.filter(row => acceptedRowIds.has(String(row._id))).forEach(row => newlyProcessed.add(String(row._matchCode || row.코드 || '')));
             setProcessedCodes(newlyProcessed);
-            if (failed.length === 0) {
-                setParserBuffer(prev => prev.filter(row => !acceptedRowIds.has(String(row._id))));
-                showToast(`✅ ${acceptedRowIds.size}건 PENDING 변경요청 접수 · owner 적용 전 마스터/히스토리 변경 0건`);
-                return true;
-            }
-            const statusSummary = failed.reduce((acc, item) => { acc[item.status || 'ERROR'] = (acc[item.status || 'ERROR'] || 0) + 1; return acc; }, {});
-            showToast(`⚠️ PENDING/중복 ${acceptedRowIds.size}건 · 미접수 ${failed.length}건(${Object.entries(statusSummary).map(([key, count]) => `${key} ${count}`).join(', ')}). 분석결과와 선택을 보존했습니다.`);
-            return false;
+            setParserBuffer(prev => prev.filter(row => !acceptedRowIds.has(String(row._id))));
+            rememberCatalogApply(catalogLabel, response.appliedAt || attempt.requestedAt);
+            showToast(response.status === 'DUPLICATE'
+                ? `✅ 동일 카탈로그 업데이트가 이미 저장·검증되었습니다(${acceptedRowIds.size}건).`
+                : `✅ ${acceptedRowIds.size}건 즉시 저장 완료 · 상품 마스터 ${proposalCount}개 field 및 변경이력 ${response.historyCount || proposalCount}건 반영`);
+            return true;
         }
         catch (error) {
-            console.error('SmartParser analysis request failed', error);
-            showToast(`❌ 변경요청 접수 실패: ${error?.message || '분석결과와 선택을 보존했습니다.'}`);
+            console.error('SmartParser immediate catalog apply failed', error);
+            showToast(`❌ 즉시 저장 실패: ${error?.message || '분석결과와 선택을 보존했습니다.'}`);
             return false;
         }
         finally {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [prepareAnalysisForReview, parserDict, saveDict, processedCodes, setAnalysisRequestResults, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
+    }, [prepareAnalysisForReview, parserDict, saveDict, processedCodes, refreshAfterCatalogApply, rememberCatalogApply, setAnalysisRequestResults, setProcessedCodes, setParserBuffer, setProductSnapshotStale, setIsProcessing, setProcessMsg, showToast]);
     const handleConfirmMapping = useCallback(async (masterCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
@@ -1250,6 +1302,11 @@ const useParserActions = (appState) => {
         if (!row)
             return;
         try {
+            const normalizedMasterCode = normalizeSharedProductCode(masterCode);
+            if (parserBuffer.some(item => item && item._id !== targetId && normalizeSharedProductCode(item._matchCode) === normalizedMasterCode)) {
+                return showToast(`⚠️ 같은 마스터 코드 [${masterCode}]가 이번 연결 목록에 이미 사용 중입니다.`);
+            }
+            const scrollPositions = Array.from(document.querySelectorAll('[data-parser-link-scroll]')).map(element => ({ element, top: element.scrollTop, left: element.scrollLeft }));
             let mItem = masterProducts[masterCode] || { 코드: masterCode };
             const hasInPrice = hasParserRowInPrice(row);
             const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
@@ -1257,17 +1314,18 @@ const useParserActions = (appState) => {
             const ruleMatch = getParserPriceSelection(catalogWarehouse, row['단위'], marginRules);
             const recalculatedFinal = hasInPrice ? calculateParserCatalogPrices(pInNum, mItem, row.finalData || {}, { catalogWarehouse, unit: row['단위'], marginRules }) : {};
             const nextRows = parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _duplicateType: '', _duplicateCandidates: [], _apply: true, finalData: recalculatedFinal, _catalogWarehouse: catalogWarehouse, _catalogPriceRule: ruleMatch.rule, _catalogPriceRuleStatus: ruleMatch.matchType, _catalogPriceRuleReason: ruleMatch.matchType === 'exact' ? '창고+단위 정확 일치' : '*/* 기본 룰' } : r);
-            const reconciledRows = reconcileSmartParserDuplicateRows(nextRows, masterProducts);
-            setParserBuffer(reconciledRows);
-            if (getSmartParserDuplicateSummary(reconciledRows).rows.length === 0) setActiveTab('matched');
+            setParserBuffer(nextRows);
             setTargetId(null);
-            setGlobalSearch('');
-            showToast(`✅ 수동 연결 완료. 아직 분석 제안 상태입니다. [분석결과 검토/요청]에서 owner PENDING 요청을 접수하세요.`);
+            requestAnimationFrame(() => scrollPositions.forEach(({ element, top, left }) => { element.scrollTop = top; element.scrollLeft = left; }));
+            const remainingCount = nextRows.filter(item => item && (!item._matchCode || item._duplicateType)).length;
+            showToast(remainingCount === 0
+                ? '✅ 모든 미연결 항목의 연결이 완료되었습니다. 화면 이동은 원하는 탭을 직접 선택하세요.'
+                : `✅ 현재 항목만 연결했습니다. 현재 탭·검색조건을 유지합니다 · 남은 미연결 ${remainingCount}건`);
         }
         catch (error) {
             showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
         }
-    }, [targetId, parserBuffer, masterProducts, catalogWarehouseMap, marginRules, currentTag, setParserBuffer, setTargetId, setGlobalSearch, setActiveTab, showToast]);
+    }, [targetId, parserBuffer, masterProducts, catalogWarehouseMap, marginRules, currentTag, setParserBuffer, setTargetId, showToast]);
     const handleCancelMapping = useCallback((rowId) => {
         setParserBuffer(prev => reconcileSmartParserDuplicateRows(prev.map(r => r._id === rowId ? { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _duplicateType: '', _duplicateCandidates: [], _apply: false } : r), masterProducts));
         setActiveTab('unmatched');
@@ -1296,7 +1354,7 @@ const useParserActions = (appState) => {
         if (!catalogLabel)
             return showToast("⚠️ 신규 등록 전 기준 카탈로그를 선택하세요.");
         setIsProcessing(true);
-        setProcessMsg("신규 상품 PENDING 제안 준비 중...");
+        setProcessMsg("신규 상품 즉시 저장 제안 준비 중...");
         try {
             const hasInPrice = hasParserRowInPrice(row);
             const pInNum = hasInPrice ? getParserRowInPrice(row) : null;
@@ -1311,7 +1369,7 @@ const useParserActions = (appState) => {
             setTargetId(null);
             setGlobalSearch('');
             setShowErpModal(false);
-            showToast(`✅ [${newCode}] 신규 상품 제안이 준비되었습니다. [분석결과 검토/요청]에서 owner PENDING 요청으로 접수됩니다.`);
+            showToast(`✅ [${newCode}] 신규 상품 제안이 준비되었습니다. [분석결과 검토/저장]에서 관리자 확정 시 즉시 반영됩니다.`);
         }
         catch (error) {
             showToast("❌ 신규 등록 처리 중 오류가 발생했습니다.");
@@ -1388,11 +1446,21 @@ const useParserActions = (appState) => {
         saveParserExcludeDict(nextDict);
         showToast(`✅ 매핑제외 ${targetEntries.length}건을 삭제했습니다.`);
     }, [parserExcludeDict, saveParserExcludeDict, currentTag, showToast]);
-    const executeExclusion = useCallback(async (codesToProcess) => {
+    const executeExclusion = useCallback(async (codesToProcess, options = {}) => {
         setIsProcessing(true);
-        setProcessMsg('카탈로그 공급중단 PENDING 변경요청 생성 중...');
+        setProcessMsg('카탈로그 제외와 선택 판매정지를 원자 반영 중...');
         try {
             const catalogLabel = normalizeParserCatalogName(currentTag);
+            const cleanCodes = Array.from(new Set((Array.isArray(codesToProcess) ? codesToProcess : []).map(normalizeSharedProductCode).filter(Boolean))).sort();
+            const applyStop = options.applyStop === true;
+            const stopReason = String(options.stopReason || '').trim();
+            const signature = `${productSnapshot?.snapshotId || ''}|${String(productSnapshot?.revision ?? '')}|EXCLUDE_CATALOG|${catalogLabel}|${cleanCodes.join(',')}|${applyStop ? stopReason : 'NO_STOP'}`;
+            let attempt = catalogApplyAttemptsRef.current.get(signature);
+            if (!attempt) {
+                const operationId = generateUUID();
+                attempt = { operationId, requestedAt: getNowISO(), analysisId: generateUUID(), idempotencyKey: `smart-parser-catalog-exclude:${operationId}` };
+                catalogApplyAttemptsRef.current.set(signature, attempt);
+            }
             const prepared = await createSmartParserFinalAnalysis({
                 productSnapshot,
                 masterProducts,
@@ -1400,50 +1468,64 @@ const useParserActions = (appState) => {
                 catalogWarehouse: String(catalogWarehouseMap?.[catalogLabel] ?? '').trim(),
                 marginRules,
                 workflow: 'CATALOG_SUPPLY_STOP_REVIEW',
-                catalogRemovalCodes: codesToProcess
+                catalogRemovalCodes: cleanCodes,
+                identity: attempt
             });
             setAnalysisResult(prepared.result);
             if (!prepared.result.validation.valid || prepared.result.summary.proposalCount === 0) {
-                showToast('⚠️ 접수할 카탈로그 태그 변경요청이 없습니다.');
+                showToast('⚠️ 즉시 제외할 카탈로그 태그 변경이 없습니다.');
                 return false;
             }
-            const requests = prepared.adapters.analysisModule.createProductChangeRequestsFromAnalysis(prepared.result, {
-                requestedAt: getNowISO(),
-                actor: { actorState: 'UNVERIFIED_LOCAL' }
+            if (!prepared.adapters.catalogApplyModule?.commitSmartParserCatalogApply || !prepared.adapters.catalogApplyModule?.createSmartParserCatalogApplyCommand) {
+                setAnalysisRequestResults([{ status: 'NOT_AVAILABLE', accepted: false, completed: false, error: { code: 'CATALOG_APPLY_ADAPTER_NOT_AVAILABLE' } }]);
+                showToast('❌ 카탈로그 즉시 적용 Adapter를 사용할 수 없습니다. 제외 분석결과와 선택을 보존했습니다.');
+                return false;
+            }
+            const command = prepared.adapters.catalogApplyModule.createSmartParserCatalogApplyCommand(prepared.result, {
+                action: 'EXCLUDE_CATALOG',
+                operationId: attempt.operationId,
+                requestedAt: attempt.requestedAt,
+                actor: { actorState: 'UNVERIFIED_LOCAL' },
+                applyStop,
+                stopReason
             });
-            if (!prepared.adapters.requestModule?.submitProductChangeRequest) {
-                setAnalysisRequestResults([{ status: 'NOT_AVAILABLE', accepted: false, error: { code: 'PRODUCT_OWNER_ADAPTER_NOT_AVAILABLE' } }]);
-                showToast('❌ 상품 owner Adapter를 사용할 수 없습니다. 공급중단 분석결과를 보존했습니다.');
+            const response = await prepared.adapters.catalogApplyModule.commitSmartParserCatalogApply(command);
+            if (!['APPLIED', 'DUPLICATE'].includes(response.status)) {
+                setAnalysisRequestResults([{ rowId: '', ...response, completed: false }]);
+                const rollbackText = response.rollback?.attempted
+                    ? (response.rollback.restored ? ' · 이전 상태 복구 완료' : response.rollback.staleSkipped ? ' · 최신 성공 상태 보호로 rollback 생략' : ' · rollback 확인 필요')
+                    : '';
+                showToast(`❌ 카탈로그 제외 ${response.status}: ${response.error?.code || 'UNKNOWN'}${rollbackText}. 분석결과와 선택을 보존했습니다.`);
                 return false;
             }
-            const results = [];
-            for (const request of requests) {
-                const response = await prepared.adapters.requestModule.submitProductChangeRequest(request);
-                results.push({ rowId: request.source.rowId, requestId: request.requestId, ...response });
+            const verified = await refreshAfterCatalogApply(prepared.adapters.productReadModule, command);
+            if (!verified) {
+                setAnalysisRequestResults([{ rowId: '', ...response, accepted: false, completed: false, status: 'VERIFY_FAILED', commandStatus: response.status }]);
+                setProductSnapshotStale(true);
+                showToast('⚠️ 저장 명령은 처리됐지만 최신 Snapshot에서 카탈로그 제외·판매여부·정지 사유를 모두 확인하지 못했습니다. 선택을 보존했습니다.');
+                return false;
             }
-            setAnalysisRequestResults(results);
-            const accepted = results.filter(item => item.accepted && ['PENDING', 'DUPLICATE'].includes(item.status));
-            const failed = results.filter(item => !item.accepted || !['PENDING', 'DUPLICATE'].includes(item.status));
-            if (failed.length === 0) {
-                setSelectedMissingCodes(new Set());
-                setShowExcludeModal(false);
-                setExcludeTarget(null);
-                showToast(`✅ ${accepted.length}건 카탈로그 태그 삭제 PENDING 요청 접수 · 마스터/확정 이력 변경 0건`);
-                return true;
-            }
-            showToast(`⚠️ 공급중단 요청 접수 ${accepted.length}건 · 미접수 ${failed.length}건. 분석결과와 선택을 보존했습니다.`);
-            return false;
+            setAnalysisRequestResults([{ rowId: '', ...response, accepted: true, completed: true }]);
+            catalogApplyAttemptsRef.current.delete(signature);
+            setSelectedMissingCodes(new Set());
+            setShowExcludeModal(false);
+            setExcludeTarget(null);
+            rememberCatalogApply(catalogLabel, response.appliedAt || attempt.requestedAt);
+            showToast(response.status === 'DUPLICATE'
+                ? `✅ 동일 카탈로그 제외가 이미 저장·검증되었습니다(${response.processedCodes?.length || cleanCodes.length}건).`
+                : `✅ ${response.processedCodes?.length || cleanCodes.length}건 카탈로그 제외 즉시 반영${applyStop ? ` · 판매정지/사유 [${stopReason}] 함께 적용` : ' · 판매여부 유지'} · 변경이력 ${response.historyCount || 0}건`);
+            return true;
         }
         catch (error) {
-            console.error('SmartParser catalog removal request failed', error);
-            showToast(`❌ 카탈로그 변경요청 접수 실패: ${error?.message || '분석결과를 보존했습니다.'}`);
+            console.error('SmartParser catalog immediate exclusion failed', error);
+            showToast(`❌ 카탈로그 즉시 제외 실패: ${error?.message || '분석결과와 선택을 보존했습니다.'}`);
             return false;
         }
         finally {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [productSnapshot, masterProducts, currentTag, catalogWarehouseMap, marginRules, setAnalysisResult, setAnalysisRequestResults, setSelectedMissingCodes, setIsProcessing, setProcessMsg, showToast, setShowExcludeModal, setExcludeTarget]);
+    }, [productSnapshot, masterProducts, currentTag, catalogWarehouseMap, marginRules, refreshAfterCatalogApply, rememberCatalogApply, setAnalysisResult, setAnalysisRequestResults, setSelectedMissingCodes, setProductSnapshotStale, setIsProcessing, setProcessMsg, showToast, setShowExcludeModal, setExcludeTarget]);
     const handleRemoveMissingTags = useCallback(() => {
         if (selectedMissingCodes.size === 0)
             return showToast("⚠️ 제외할 상품을 선택하세요.");
@@ -1610,8 +1692,8 @@ const ErpCodeInputModal = ({ onClose, onSubmit, targetItem }) => {
                         targetItem['품목명'],
                         "]"),
                     " \uC0C1\uD488\uC758 ",
-                    React.createElement("strong", { className: "text-rose-500" }, "\uC2E0\uADDC \uB4F1\uB85D PENDING \uC81C\uC548"),
-                    "\uC744 \uC900\uBE44\uD569\uB2C8\uB2E4. \uC774 \uD654\uBA74\uC5D0\uC11C \uB9C8\uC2A4\uD130 DB\uB97C \uC9C1\uC811 \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+                    React.createElement("strong", { className: "text-rose-500" }, "\uC2E0\uADDC \uB4F1\uB85D \uAC80\uD1A0 \uC81C\uC548"),
+                    "\uC744 \uC900\uBE44\uD569\uB2C8\uB2E4. \uC774 \uB2E8\uACC4\uC5D0\uC11C\uB294 \uB9C8\uC2A4\uD130\uB97C \uBCC0\uACBD\uD558\uC9C0 \uC54A\uACE0, \uD6C4\uC18D \uBD84\uC11D\uACB0\uACFC\uB97C \uAD00\uB9AC\uC790\uAC00 \uD655\uC815\uD560 \uB54C \uC989\uC2DC \uC800\uC7A5\uD569\uB2C8\uB2E4.",
                     React.createElement("br", null),
                     "\uBA3C\uC800 ERP \uC2DC\uC2A4\uD15C\uC5D0\uC11C \uD574\uB2F9 \uC0C1\uD488\uC744 \uC0DD\uC131\uD558\uC2E0 \uD6C4, ",
                     React.createElement("strong", { className: "text-indigo-900" }, "\uBC1C\uAE09\uB41C \uD488\uBAA9\uCF54\uB4DC(SKU)"),
@@ -1623,26 +1705,49 @@ const ErpCodeInputModal = ({ onClose, onSubmit, targetItem }) => {
                     React.createElement("button", { onClick: () => code.trim() && onSubmit(code), disabled: !code.trim(), className: `flex-1 font-bold py-3 rounded-xl transition-all text-[13px] ${code.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}` }, "\uC81C\uC548 \uC900\uBE44 \uBC0F \uC5F0\uACB0"))))));
 };
 const ExcludeOptionModal = ({ onClose, onConfirm, count }) => {
-    return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in", onClick: onClose },
+    const [applyStop, setApplyStop] = useState(false);
+    const [stopReason, setStopReason] = useState('공급중단');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const handleConfirm = async () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            await onConfirm({ applyStop, stopReason: applyStop ? stopReason : '' });
+        }
+        finally {
+            setIsSubmitting(false);
+        }
+    };
+    return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in", onClick: isSubmitting ? undefined : onClose },
         React.createElement("div", { className: "bg-white w-[480px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200", onClick: (e) => e.stopPropagation() },
             React.createElement("div", { className: "px-5 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50" },
                 React.createElement("h2", { className: "font-bold text-slate-800 text-[15px]" },
                     React.createElement("i", { className: "fas fa-eraser text-rose-500 mr-2" }),
                     "\uCE74\uD0C8\uB85C\uADF8 \uACF5\uAE09\uC911\uB2E8 \uCC98\uB9AC"),
-                React.createElement("button", { onClick: onClose, className: "text-slate-400 hover:text-slate-600" },
+                React.createElement("button", { onClick: onClose, disabled: isSubmitting, className: "text-slate-400 hover:text-slate-600 disabled:opacity-50" },
                     React.createElement("i", { className: "fas fa-times" }))),
             React.createElement("div", { className: "p-6 space-y-4" },
                 React.createElement("div", { className: "bg-rose-50/50 border border-rose-100 rounded-lg p-4 text-[13px] text-rose-800 leading-relaxed shadow-inner" },
                     "\uCD1D ",
                     React.createElement("strong", { className: "font-black text-rose-600" }, count),
-                    "\uAC1C\uC758 \uC0C1\uD488\uC744 \uD604\uC7AC \uCE74\uD0C8\uB85C\uADF8\uC5D0\uC11C \uC81C\uC678\uD558\uB294 owner PENDING \uC694\uCCAD\uC744 \uC811\uC218\uD569\uB2C8\uB2E4.",
+                    "\uAC1C\uC758 \uC0C1\uD488\uC744 \uD604\uC7AC \uCE74\uD0C8\uB85C\uADF8\uC5D0\uC11C \uAD00\uB9AC\uC790 \uD655\uC815\uACFC \uD568\uAED8 \uC989\uC2DC \uC81C\uC678\uD569\uB2C8\uB2E4.",
                     React.createElement("br", null),
-                    "\uD574\uB2F9 \uCE74\uD0C8\uB85C\uADF8 \uD0DC\uADF8 \uC0AD\uC81C\uB9CC \uC81C\uC548\uD558\uBA70, owner \uC801\uC6A9 \uC804\uC5D0\uB294 \uD655\uC815 \uC774\uB825\uC774 \uB0A8\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+                    "\uD574\uB2F9 \uCE74\uD0C8\uB85C\uADF8 \uD0DC\uADF8\uB9CC \uC81C\uAC70\uD558\uBA70 \uB2E4\uB978 \uCE74\uD0C8\uB85C\uADF8\uB294 \uC720\uC9C0\uD558\uACE0, \uC2E4\uC81C \uC800\uC7A5\uACFC \uBCC0\uACBD\uC774\uB825 \uAC80\uC99D \uC131\uACF5 \uD6C4\uC5D0\uB9CC \uC644\uB8CC\uB85C \uD45C\uC2DC\uD569\uB2C8\uB2E4.",
                     React.createElement("br", null),
-                    React.createElement("strong", null, "\uD310\uB9E4\uC5EC\uBD80, \uB2E4\uB978 \uCE74\uD0C8\uB85C\uADF8 \uD0DC\uADF8, \uC815\uC9C0\uAD00\uB9AC\uB97C \uBCC0\uACBD\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")),
+                    React.createElement("strong", null, applyStop ? `판매여부 0과 정지 사유 [${stopReason}]를 같은 성공 단위로 반영합니다.` : "판매여부와 정지관리는 변경하지 않습니다.")),
+                React.createElement("div", { className: "rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3" },
+                    React.createElement("label", { className: "flex items-center gap-2 cursor-pointer text-[13px] font-black text-slate-800" },
+                        React.createElement("input", { type: "checkbox", checked: applyStop, onChange: e => setApplyStop(e.target.checked), disabled: isSubmitting, className: "rounded border-slate-300 text-rose-600 focus:ring-rose-500" }),
+                        "판매정지 함께 적용"),
+                    React.createElement("div", { className: "flex items-center gap-3" },
+                        React.createElement("label", { className: "text-[12px] font-bold text-slate-600 shrink-0" }, "정지 사유"),
+                        React.createElement("select", { value: stopReason, onChange: e => setStopReason(e.target.value), disabled: !applyStop || isSubmitting, className: `flex-1 rounded-lg border px-3 py-2 text-[12px] font-bold ${applyStop ? 'border-rose-200 bg-white text-rose-800' : 'border-slate-200 bg-slate-100 text-slate-400'}` },
+                            React.createElement("option", { value: "품절" }, "품절"),
+                            React.createElement("option", { value: "공급중단" }, "공급중단"),
+                            React.createElement("option", { value: "판매종료" }, "판매종료")))),
                 React.createElement("div", { className: "flex gap-2 pt-2" },
-                    React.createElement("button", { onClick: onClose, className: "flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 text-[13px]" }, "\uCDE8\uC18C"),
-                    React.createElement("button", { onClick: onConfirm, className: "flex-1 font-bold py-3 rounded-xl transition-all text-[13px] bg-rose-600 text-white hover:bg-rose-700 shadow-sm" }, "PENDING \uD0DC\uADF8 \uC0AD\uC81C \uC694\uCCAD"))))));
+                    React.createElement("button", { onClick: onClose, disabled: isSubmitting, className: "flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 text-[13px] disabled:opacity-50" }, "\uCDE8\uC18C"),
+                    React.createElement("button", { onClick: handleConfirm, disabled: isSubmitting, className: "flex-1 font-bold py-3 rounded-xl transition-all text-[13px] bg-rose-600 text-white hover:bg-rose-700 shadow-sm disabled:opacity-60" }, isSubmitting ? "저장·검증 중..." : "카탈로그 제외 즉시 적용"))))));
 };
 const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, onClear }) => {
     const [keyword, setKeyword] = useState('');
@@ -1857,7 +1962,7 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
                         React.createElement("label", { className: "text-[14px] font-black text-slate-800 flex items-center" },
                             React.createElement("i", { className: "fas fa-folder text-emerald-500 mr-2" }),
                             "\uAE30\uC900 \uCE74\uD0C8\uB85C\uADF8 \uC124\uC815 ",
-                            React.createElement("span", { className: "ml-2 bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded font-bold" }, "owner PENDING \uC694\uCCAD \uAE30\uC900")),
+                            React.createElement("span", { className: "ml-2 bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded font-bold" }, "관리자 확정 즉시 적용 기준")),
                         React.createElement("div", { className: "flex bg-slate-100 p-1 rounded-lg border border-slate-200" },
                             React.createElement("button", { onClick: () => setCatalogMode('select'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'select' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` }, "\uAE30\uC874 \uCE74\uD0C8\uB85C\uADF8"),
                             React.createElement("button", { onClick: () => setCatalogMode('input'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'input' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` }, "\uC0C8\uB85C \uB9CC\uB4E4\uAE30"))),
@@ -1917,12 +2022,36 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
     const [priceFilter, setPriceFilter] = useState('all');
     const [issueFilter, setIssueFilter] = useState('all');
     const [updateText, setUpdateText] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const { parserBuffer, masterProducts, currentTag, catalogWarehouseMap, marginRules, analysisResult } = state;
+    const handleImmediateSave = useCallback(async () => {
+        if (isSubmitting) return false;
+        setIsSubmitting(true);
+        try {
+            const completed = await onConfirm(updateText);
+            if (completed) onClose();
+            return completed;
+        }
+        finally {
+            setIsSubmitting(false);
+        }
+    }, [isSubmitting, onConfirm, onClose, updateText]);
     useEffect(() => {
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         return () => { document.body.style.overflow = previousOverflow; };
     }, []);
+    useEffect(() => {
+        const handleReviewShortcut = event => {
+            if (event.key !== 'F8') return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            handleImmediateSave();
+        };
+        document.addEventListener('keydown', handleReviewShortcut, true);
+        return () => document.removeEventListener('keydown', handleReviewShortcut, true);
+    }, [handleImmediateSave]);
     const targetRows = useMemo(() => parserBuffer.filter(r => r._apply && r._matchCode), [parserBuffer]);
     useEffect(() => { if (targetRows.length === 0)
         onClose(); }, [targetRows.length, onClose]);
@@ -1933,9 +2062,11 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
         targetRows.forEach(row => {
             const mItem = masterProducts[row._matchCode] || {};
             const hasExplicitUnitEdit = Object.prototype.hasOwnProperty.call(row?._editedTextFields || {}, '단위');
-            const finalUnit = String(hasExplicitUnitEdit
-                ? row._editedTextFields['단위']
-                : ((updateText && String(row['단위'] ?? '').trim()) ? row['단위'] : (mItem['단위'] ?? ''))).trim();
+            const finalUnit = String(row._isNewProduct
+                ? (hasExplicitUnitEdit ? row._editedTextFields['단위'] : (row['단위'] ?? ''))
+                : (updateText
+                    ? (hasExplicitUnitEdit ? row._editedTextFields['단위'] : (String(row['단위'] ?? '').trim() ? row['단위'] : (mItem['단위'] ?? '')))
+                    : (mItem['단위'] ?? ''))).trim();
             const ruleMatch = getParserPriceSelection(catalogWarehouse, finalUnit, marginRules);
             const oldP = parseNum(mItem['입고가']);
             const newP = hasParserRowInPrice(row) ? getParserRowInPrice(row) : oldP;
@@ -2008,14 +2139,14 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
         return list;
     }, [analysis.priceList, priceFilter, issueFilter, issueIdSets]);
     const activeFilterLabel = `${priceFilter === 'all' ? '전체 단가' : (priceFilter === 'up' ? '인상' : priceFilter === 'down' ? '인하' : '동결/기타')}${issueFilter !== 'all' ? ' · ' + issueFilterLabels[issueFilter] : ''}`;
-    return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center overflow-hidden backdrop-blur-sm fade-in", onClick: onClose },
+    return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center overflow-hidden backdrop-blur-sm fade-in", onClick: isSubmitting ? undefined : onClose },
         React.createElement("div", { className: "bg-white w-[900px] h-[85vh] max-h-[85vh] min-h-0 rounded-2xl shadow-2xl flex flex-col overflow-hidden", onClick: (e) => e.stopPropagation() },
             React.createElement("div", { className: "bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700" },
                 React.createElement("h2", { className: "font-black text-[16px]" },
                     React.createElement("i", { className: "fas fa-clipboard-check text-indigo-400 mr-2" }),
-                    "\uBD88\uBCC0 \uBD84\uC11D\uACB0\uACFC \u00B7 PENDING \uBCC0\uACBD\uC694\uCCAD \uAC80\uD1A0",
+                    "\uBD88\uBCC0 \uBD84\uC11D\uACB0\uACFC \u00B7 \uAD00\uB9AC\uC790 \uC989\uC2DC \uC800\uC7A5 \uAC80\uD1A0",
                     analysisResult?.schemaVersion && React.createElement("span", { className: "ml-2 text-[9px] text-indigo-300 font-mono" }, analysisResult.schemaVersion)),
-                React.createElement("button", { onClick: onClose },
+                React.createElement("button", { onClick: onClose, disabled: isSubmitting, className: "disabled:opacity-50" },
                     React.createElement("i", { className: "fas fa-times text-slate-400 hover:text-white" }))),
             React.createElement("div", { className: "flex bg-slate-100 border-b border-slate-200 shrink-0 p-2 gap-2" },
                 React.createElement("button", { onClick: () => setViewMode('price'), className: `flex-1 py-2.5 rounded-lg font-black text-[13px] ${viewMode === 'price' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}` },
@@ -2145,14 +2276,42 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
                                 item.차액.toLocaleString()) : item.차액 < 0 ? React.createElement("span", { className: "text-blue-500" }, item.차액.toLocaleString()) : React.createElement("span", { className: "text-slate-300" }, "-")))))))))),
             React.createElement("div", { className: "bg-white p-4 border-t flex justify-between items-center shrink-0" },
                 React.createElement("label", { className: "flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold" },
-                    React.createElement("input", { type: "checkbox", className: "rounded text-indigo-600", checked: updateText, onChange: e => setUpdateText(e.target.checked) }),
-                    " \uD488\uBAA9\uBA85/\uADDC\uACA9/\uB2E8\uC704\uB3C4 \uAC80\uD1A0\uB41C \uC81C\uC548 field\uC5D0 \uD3EC\uD568"),
+                    React.createElement("input", { type: "checkbox", className: "rounded text-indigo-600", checked: updateText, disabled: isSubmitting, onChange: e => setUpdateText(e.target.checked) }),
+                    " 체크 시 검토된 상품명/규격/단위를 연결 마스터에 즉시 저장 · 해제 시 기존 값 유지"),
                 React.createElement("div", { className: "flex gap-2" },
-                    React.createElement("button", { onClick: onClose, className: "px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200" }, "\uB2EB\uAE30"),
-                    React.createElement("button", { onClick: () => { onConfirm(updateText); onClose(); }, className: "px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm" },
-                        React.createElement("i", { className: "fas fa-paper-plane mr-1.5" }),
-                        " PENDING \uBCC0\uACBD\uC694\uCCAD \uC811\uC218"))))));
+                    React.createElement("button", { onClick: onClose, disabled: isSubmitting, className: "px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200 disabled:opacity-50" }, "\uB2EB\uAE30"),
+                    React.createElement("button", { onClick: handleImmediateSave, disabled: isSubmitting, className: "px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm disabled:opacity-60" },
+                        React.createElement("i", { className: "fas fa-save mr-1.5" }),
+                        isSubmitting ? " 저장·검증 중..." : " 관리자 확정 즉시 저장"))))));
 };
+const SmartParserWorkspaceShell = ({ children, resultPanelOpen, onResultPanelOpen, currentTag, productSnapshotStatus, catalogCount, matchedCount, similarCount, unmatchedCount, duplicateCount, missingCount, pendingCount, isProcessing, onReview, onApply }) => (React.createElement("div", { className: `flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_244px] gap-3 p-3 bg-slate-100 overflow-hidden ${resultPanelOpen ? '' : 'xl:grid-cols-[220px_minmax(0,1fr)]'}`, "data-nexus-workspace": "smart-parser" },
+    React.createElement("aside", { className: "hidden xl:flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "reference", "aria-label": "스마트파서 기준 자료" },
+        React.createElement("div", { className: "px-4 py-3 bg-slate-900 text-white" },
+            React.createElement("div", { className: "text-[10px] font-bold text-slate-400 uppercase tracking-wider" }, "Reference"),
+            React.createElement("div", { className: "mt-1 text-sm font-black" }, "카탈로그 기준")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px] overflow-auto" },
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" },
+                React.createElement("div", { className: "font-black text-slate-700" }, "현재 카탈로그"),
+                React.createElement("div", { className: "mt-1 break-words text-indigo-700 font-black" }, currentTag || '미지정')),
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" },
+                React.createElement("div", { className: "font-black text-slate-700" }, "상품 Snapshot"),
+                React.createElement("div", { className: `mt-1 font-black ${productSnapshotStatus === 'READY' ? 'text-emerald-700' : productSnapshotStatus === 'ERROR' ? 'text-rose-700' : 'text-slate-500'}` }, productSnapshotStatus || 'LOADING')),
+            React.createElement("div", { className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 flex items-center justify-between" }, React.createElement("span", { className: "font-bold text-slate-600" }, "등록 카탈로그"), React.createElement("strong", { className: "text-slate-900" }, Number(catalogCount || 0).toLocaleString())),
+            React.createElement("a", { href: "guide_Merch.html#part2-2", target: "_blank", rel: "noopener noreferrer", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "사용 가이드"))),
+    React.createElement("section", { className: "min-w-0 min-h-0 flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "work", "aria-label": "스마트파서 작업 테이블" },
+        React.createElement("div", { className: "flex-1 min-h-0 overflow-auto bg-slate-100" }, children),
+        React.createElement("div", { className: "shrink-0 flex flex-wrap items-center justify-center gap-2 border-t-2 border-slate-300 bg-white px-4 py-3 shadow-[0_-8px_18px_rgba(15,23,42,0.08)]", "data-nexus-completion-bar": "smart-parser" },
+            React.createElement("button", { type: "button", onClick: onReview, disabled: isProcessing || pendingCount === 0, className: "h-9 px-4 rounded-lg border border-slate-800 bg-slate-800 text-[11px] font-black text-white hover:bg-slate-700 disabled:opacity-40" }, "분석결과 검토 F7"),
+            React.createElement("button", { type: "button", onClick: onApply, disabled: isProcessing || pendingCount === 0, className: "h-9 px-4 rounded-lg border border-indigo-700 bg-indigo-600 text-[11px] font-black text-white hover:bg-indigo-700 disabled:opacity-40" }, "관리자 확정 저장 F8"))),
+    resultPanelOpen ? React.createElement("aside", { className: "hidden xl:flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "result", "aria-label": "스마트파서 처리 결과" },
+        React.createElement("div", { className: "flex items-center justify-between px-4 py-3 bg-slate-100 border-b border-slate-200" },
+            React.createElement("div", null, React.createElement("div", { className: "text-[10px] font-bold text-slate-500 uppercase tracking-wider" }, "Result"), React.createElement("div", { className: "text-sm font-black text-slate-800" }, "검토 결과 · 이동")),
+            React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(false), className: "w-8 h-8 rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50", "aria-label": "결과 패널 닫기" }, "×")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px] overflow-auto" },
+            [['일치', matchedCount, 'emerald'], ['유사', similarCount, 'amber'], ['불일치', unmatchedCount, 'rose'], ['중복', duplicateCount, 'orange'], ['누락', missingCount, 'slate']].map(([label, count, tone]) => React.createElement("div", { key: label, className: `flex items-center justify-between rounded-lg border border-${tone}-200 bg-${tone}-50 px-3 py-2` }, React.createElement("span", { className: `font-bold text-${tone}-700` }, label), React.createElement("strong", { className: `text-${tone}-900` }, Number(count || 0).toLocaleString()))),
+            React.createElement("a", { href: "history_viewer.html?returnApp=smart-parser", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "변경이력 보기"),
+            React.createElement("a", { href: "trend_report.html", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "트렌드 리포트"),
+            React.createElement("a", { href: "settings.html?returnApp=smart-parser", className: "block rounded-lg border border-slate-300 bg-white px-3 py-2 text-center font-black text-slate-700 hover:bg-slate-50" }, "환경설정"))) : React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(true), className: "fixed right-3 bottom-20 z-[80] px-3 py-2 rounded-full bg-slate-900 text-white text-[11px] font-black shadow-xl", "data-nexus-result-reopen": "smart-parser" }, "결과 패널 열기")));
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
@@ -2195,17 +2354,11 @@ const ParserApp = () => {
             return null;
         return displayUnmatchedRows.find(r => r && r._id === targetId) || null;
     }, [activeTab, targetId, displayUnmatchedRows]);
-    // [자동 탭 이동 로직]
+    // 카탈로그 누락 목록만 비었을 때 복귀한다. 연결 화면은 관리자가 직접 탭을 선택할 때까지 유지한다.
     useEffect(() => {
-        if (activeTab === 'unmatched' && unmatchedRows.length === 0 && parserBuffer.length > 0)
+        if (activeTab === 'missing' && currentTag && missingRows.length === 0 && matchedRows.length > 0)
             setActiveTab('matched');
-        else if (activeTab === 'similar' && combinedSimilarRows.length === 0 && parserBuffer.length > 0)
-            setActiveTab('matched');
-        else if (activeTab === 'missing' && currentTag && missingRows.length === 0 && matchedRows.length > 0)
-            setActiveTab('matched');
-        else if (activeTab === 'duplicate' && duplicateRows.length === 0 && parserBuffer.length > 0)
-            setActiveTab('matched');
-    }, [activeTab, unmatchedRows.length, combinedSimilarRows.length, duplicateRows.length, missingRows.length, parserBuffer.length, currentTag, matchedRows.length, setActiveTab]);
+    }, [activeTab, missingRows.length, currentTag, matchedRows.length, setActiveTab]);
     const filteredMissingRows = useMemo(() => {
         if (!appState.missingSearch.trim())
             return missingRows;
@@ -2214,17 +2367,25 @@ const ParserApp = () => {
     }, [missingRows, appState.missingSearch]);
     const pendingApplyRows = useMemo(() => matchedRows.filter(r => r._apply && r._matchCode), [matchedRows]);
     const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + duplicateRows.length + (currentTag ? missingRows.length : 0);
+    const [resultPanelOpen, setResultPanelOpen] = useState(() => {
+        try { return sessionStorage.getItem('nexus:smart-parser:right-panel:v1') !== 'closed'; }
+        catch (error) { return true; }
+    });
+    const handleResultPanelOpen = useCallback((open) => {
+        setResultPanelOpen(open);
+        try { sessionStorage.setItem('nexus:smart-parser:right-panel:v1', open ? 'open' : 'closed'); }
+        catch (error) { /* sessionStorage 사용 불가 환경에서는 현재 화면 상태만 유지 */ }
+    }, []);
     const [autoCompletionShown, setAutoCompletionShown] = useState(false);
     useEffect(() => {
         const workDone = parserBuffer.length > 0 && pendingApplyRows.length > 0 && unresolvedQueueCount === 0;
         if (workDone && !autoCompletionShown && !showReviewModal && !isProcessing) {
             setAutoCompletionShown(true);
-            showToast(`✅ 매핑 작업이 완료되었습니다. 분석결과 계약을 검토하고 PENDING 변경요청을 접수하세요.`);
-            actions.openAnalysisReview();
+            showToast(`✅ 매핑 작업이 완료되었습니다. 화면은 유지됩니다. 필요할 때 [분석결과 검토/저장]을 직접 선택하세요.`);
         }
         if (parserBuffer.length === 0 && autoCompletionShown)
             setAutoCompletionShown(false);
-    }, [parserBuffer.length, pendingApplyRows.length, unresolvedQueueCount, autoCompletionShown, showReviewModal, isProcessing, showToast, actions]);
+    }, [parserBuffer.length, pendingApplyRows.length, unresolvedQueueCount, autoCompletionShown, showReviewModal, isProcessing, showToast]);
     const handleUpdateMatchedPrice = useCallback((rowId, newVal) => {
         const priceText = String(newVal ?? '').trim();
         if (priceText && !/^\d+(?:,\d{3})*(?:\.\d+)?$/.test(priceText)) {
@@ -2270,10 +2431,10 @@ const ParserApp = () => {
     const safeGoToMain = async () => {
         const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
         if (toApply.length > 0) {
-            const go = window.confirm(`아직 owner 변경요청으로 접수하지 않은 분석 제안 ${toApply.length}건이 있습니다.
-메인으로 이동해도 로컬 session은 보존되지만 상품 마스터에는 반영되지 않습니다.
+            const go = window.confirm(`아직 관리자 확정으로 저장하지 않은 분석 제안 ${toApply.length}건이 있습니다.
+메인으로 이동해도 로컬 session은 보존되지만 상품 마스터와 변경이력에는 반영되지 않습니다.
 
-[확인] 요청하지 않고 메인으로 이동
+[확인] 저장하지 않고 메인으로 이동
 [취소] 현재 화면 유지`);
             if (!go)
                 return;
@@ -2333,7 +2494,7 @@ const ParserApp = () => {
                     actions.handleApplyMatched();
                 }
                 else if (appState.parserBuffer.length === 0)
-                    actions.showToast("⚠️ [F8] 접수할 분석 제안이 없습니다.");
+                    actions.showToast("⚠️ [F8] 저장할 분석 제안이 없습니다.");
             }
         };
         window.addEventListener('keydown', handleGlobalKeyDown);
@@ -2344,18 +2505,18 @@ const ParserApp = () => {
         toastMsg && React.createElement("div", { className: "fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700" },
             React.createElement("i", { className: "fas fa-check-circle text-emerald-400" }),
             toastMsg),
-        React.createElement("div", { className: "w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto" },
+        React.createElement("div", { className: "w-full h-full flex flex-col bg-slate-50 overflow-hidden" },
             React.createElement("div", { className: "shrink-0 flex flex-col bg-white border-b border-slate-200 z-40" },
-                React.createElement("div", { className: "p-5 pb-0 pt-6" },
-                    React.createElement("div", { className: "bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden" },
+                React.createElement("div", { className: "p-0" },
+                    React.createElement("div", { className: "nexus-app-header min-h-[56px] w-full bg-[#0f172a] shadow-lg border-b border-slate-800 flex flex-col overflow-hidden", "data-nexus-app-header": "smart-parser" },
                         React.createElement("div", { className: "px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4" },
                             React.createElement("div", { className: "flex items-center group shrink-0" },
                                 React.createElement("span", { className: "text-xl font-black text-emerald-400 mr-3" }, "ONEAPP"),
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.3.0 AnalysisResultOwnerBoundary")),
-                                    React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & OWNER REQUEST"),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.4.0 ImmediateCatalogApply")),
+                                    React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & VERIFIED APPLY"),
                                     React.createElement("span", { className: `text-[9px] font-black mt-0.5 ${productSnapshotStatus === 'READY' ? (productSnapshotStale ? 'text-amber-300' : 'text-sky-300') : productSnapshotStatus === 'LOADING' ? 'text-slate-400' : 'text-rose-300'}`, title: productSnapshotError || '' }, `Product Snapshot ${productSnapshotStatus}${productSnapshotStale ? ' · STALE' : ''}`))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
@@ -2368,12 +2529,12 @@ const ParserApp = () => {
                                     "\uAE30\uC900 \uBBF8\uC9C0\uC815: \uB9C8\uC2A4\uD130 \uC801\uC6A9 \uBD88\uAC00"))
                                     : React.createElement("div", { className: "w-full bg-slate-700 text-slate-300 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate" }, "\uD14D\uC2A4\uD2B8 \uD30C\uC11C\uB97C \uC2E4\uD589\uD558\uC5EC \uC791\uC5C5\uC744 \uC2DC\uC791\uD558\uC138\uC694.")),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
-                                React.createElement("a", { href: "guide.html", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "MerchOps \uC0AC\uC6A9 \uAC00\uC774\uB4DC" }, "GUIDE"),
+                                React.createElement("a", { href: "guide_Merch.html#part2-2", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uC2A4\uB9C8\uD2B8\uD30C\uC11C \uC0AC\uC6A9 \uAC00\uC774\uB4DC" }, "GUIDE"),
                                 React.createElement("a", { href: "trend_report.html", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uD2B8\uB80C\uB4DC \uB9AC\uD3EC\uD2B8" }, "REPORT"),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
                                 React.createElement("button", { onClick: () => window.location.href = 'history_viewer.html', className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400", title: "\uC791\uC5C5 \uD788\uC2A4\uD1A0\uB9AC \uBCF4\uAE30" },
                                     React.createElement("i", { className: "fas fa-history text-[13px]" })),
-                                React.createElement("button", { onClick: () => window.location.href = 'settings.html', className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white", title: "\uD658\uACBD\uC124\uC815" },
+                                React.createElement("button", { onClick: () => window.location.href = 'settings.html?returnApp=smart-parser', className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white", title: "\uD658\uACBD\uC124\uC815" },
                                     React.createElement("i", { className: "fas fa-cogs text-[13px]" })),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
                                 React.createElement("button", { onClick: safeGoToMain, className: "h-8 px-3 rounded flex items-center justify-center shadow-sm border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white font-bold text-[11px]" },
@@ -2402,10 +2563,6 @@ const ParserApp = () => {
                             duplicateRows.length > 0 && React.createElement("span", { className: "bg-orange-100 text-orange-700 px-1.5 rounded text-[10px]" }, duplicateRows.length))),
                     React.createElement("div", { className: "flex-1 min-w-[10px]" }),
                     React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
-                        activeTab === 'matched' && React.createElement("button", { onClick: actions.openAnalysisReview, disabled: parserBuffer.length === 0, className: `h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`, title: "\uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0 (F7)" },
-                            React.createElement("i", { className: "fas fa-check-circle mr-1.5 text-[13px]" }),
-                            " \uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0/\uC694\uCCAD ",
-                            React.createElement("span", { className: "ml-1.5 text-[9px] text-slate-400 font-normal" }, "F7")),
                         activeTab === 'missing' && React.createElement("button", { onClick: actions.handleRemoveMissingTags, className: `h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600' : 'bg-white text-slate-400 border border-slate-200'}` },
                             React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[13px]" }),
                             " \uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678"),
@@ -2434,7 +2591,7 @@ const ParserApp = () => {
                         pendingApplyRows.length > 0 ? '분석 제안 검토 전' : '제안 대기 없음',
                         " \u00B7 \uB9E4\uD551\uC644\uB8CC ",
                         matchedRows.length,
-                        "\uAC74 \u00B7 owner \uC694\uCCAD \uB300\uAE30 ",
+                        "\uAC74 \u00B7 \uC989\uC2DC \uC800\uC7A5 \uB300\uAE30 ",
                         pendingApplyRows.length,
                         "\uAC74 \u00B7 \uD655\uC778\uD544\uC694 ",
                         unresolvedQueueCount,
@@ -2442,9 +2599,9 @@ const ParserApp = () => {
                         mappingExcludeCount > 0 ? ` · 매핑제외목록 ${mappingExcludeCount}건` : '',
                         lastExcludedCount > 0 ? ` · 이번파싱 제외숨김 ${lastExcludedCount}건` : '',
                         analysisResult ? ` · ${analysisResult.schemaVersion}` : '',
-                        analysisRequestResults.length > 0 ? ` · 마지막 접수 ${analysisRequestResults.filter(item => item.accepted).length}/${analysisRequestResults.length}` : ''),
-                    pendingApplyRows.length > 0 && React.createElement("button", { onClick: actions.openAnalysisReview, className: "px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700" }, "\uBD84\uC11D\uACB0\uACFC \uAC80\uD1A0/\uC694\uCCAD"))),
-            React.createElement("div", { className: "flex-1 overflow-auto p-5 pt-0 bg-slate-100" }, !currentTag && parserBuffer.length === 0 ? (React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400" },
+                        analysisRequestResults.length > 0 ? ` · 마지막 저장 ${analysisRequestResults.filter(item => item.completed).length}/${analysisRequestResults.length}` : ''),
+                    pendingApplyRows.length > 0 && React.createElement("span", { className: "px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-[11px] font-black" }, "하단에서 검토·저장"))),
+            React.createElement(SmartParserWorkspaceShell, { resultPanelOpen: resultPanelOpen, onResultPanelOpen: handleResultPanelOpen, currentTag: currentTag, productSnapshotStatus: productSnapshotStatus, catalogCount: availableTags.length, matchedCount: matchedRows.length, similarCount: combinedSimilarRows.length, unmatchedCount: unmatchedRows.length, duplicateCount: duplicateRows.length, missingCount: missingRows.length, pendingCount: pendingApplyRows.length, isProcessing: isProcessing, onReview: actions.openAnalysisReview, onApply: actions.handleApplyMatched }, !currentTag && parserBuffer.length === 0 ? (React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400" },
                 React.createElement("i", { className: "fas fa-robot text-6xl text-slate-300 mb-4" }),
                 React.createElement("h2", { className: "text-xl font-black text-slate-600 mb-2" }, "Smart Parser \uB300\uAE30\uC911"),
                 React.createElement("p", { className: "text-[13px] font-bold" }, productSnapshotStatus === 'ERROR' ? `Product Snapshot ERROR: ${productSnapshotError || '상품관리 기준정보를 읽을 수 없습니다.'}` : "\uC0C1\uB2E8 [\uC0C8 \uD14D\uC2A4\uD2B8 \uD30C\uC2F1] \uBC84\uD2BC\uC744 \uB20C\uB7EC \uC791\uC5C5\uC744 \uC2DC\uC791\uD558\uC138\uC694."))) : activeTab === 'matched' ? (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in" },
@@ -2452,7 +2609,8 @@ const ParserApp = () => {
                     React.createElement("table", { className: "w-full text-left text-[12px] whitespace-nowrap" },
                         React.createElement("thead", { className: "bg-[#f5f4f0] text-[#5c554d] font-bold sticky top-0 z-10 border-b border-[#e8e4db]" },
                             React.createElement("tr", null,
-                                React.createElement("th", { className: "py-2.5 px-4 w-12 text-center" },
+                                React.createElement("th", { className: "py-2.5 px-4 w-20 text-center" },
+                                    React.createElement("span", { className: "mr-2 text-[10px] text-slate-500" }, "행"),
                                     React.createElement("input", { type: "checkbox", className: "rounded", checked: matchedRows.length > 0 && matchedRows.every(r => r._apply), onChange: () => { const all = matchedRows.every(r => r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode && !duplicateIds.has(r._id) ? { ...r, _apply: !all } : r)); } })),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uC0C1\uD488\uCF54\uB4DC"),
                                 React.createElement("th", { className: "py-2.5 px-3" }, "\uB9C8\uC2A4\uD130 \uD488\uBAA9\uBA85 (\uADDC\uACA9)"),
@@ -2461,7 +2619,7 @@ const ParserApp = () => {
                                 React.createElement("th", { className: "py-2.5 px-3 text-right text-emerald-700 bg-emerald-50/50" }, "\uC0C8 \uC785\uACE0\uAC00"),
                                 React.createElement("th", { className: "py-2.5 px-3 text-center" }, "관리"))),
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, matchedRows.length === 0 ? React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map(row => {
+                            React.createElement("td", { colSpan: "7", className: "p-10 text-center text-slate-400" }, "\uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : matchedRows.map((row, rowIndex) => {
                             const mItem = masterProducts[row._matchCode] || {};
                             const rowWarehouse = String(catalogWarehouseMap?.[normalizeParserCatalogName(currentTag)] ?? '').trim();
                             const rowRuleMatch = getParserPriceSelection(rowWarehouse, row['단위'], marginRules);
@@ -2472,6 +2630,7 @@ const ParserApp = () => {
                             const isDiff = mIn > 0 && mIn !== pIn;
                             return (React.createElement("tr", { key: row._id, className: "hover:bg-slate-50 transition-colors" },
                                 React.createElement("td", { className: "py-2 px-4 text-center" },
+                                    React.createElement("span", { className: "mr-2 text-[10px] font-black text-slate-500" }, rowIndex + 1),
                                     React.createElement("input", { type: "checkbox", className: "rounded text-emerald-600 focus:ring-emerald-500", checked: row._apply, onChange: () => appState.setParserBuffer(p => p.map(r => r._id === row._id ? { ...r, _apply: !r._apply } : r)) })),
                                 React.createElement("td", { className: "py-2 px-3 font-mono text-[11px] text-slate-500" }, row._matchCode),
                                 React.createElement("td", { className: "py-2 px-3" },
@@ -2555,7 +2714,7 @@ const ParserApp = () => {
                         React.createElement("button", { onClick: () => actions.openErpModal(), className: "px-3 py-1.5 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded text-[11px] font-bold" },
                             React.createElement("i", { className: "fas fa-plus mr-1" }),
                             " ERP \uCF54\uB4DC\uB85C \uB4F1\uB85D")),
-                    React.createElement("div", { className: "flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30" }, !targetId && !globalSearch ? React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400 p-10 text-center" },
+                    React.createElement("div", { className: "flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30", "data-parser-link-scroll": "master-results" }, !targetId && !globalSearch ? React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400 p-10 text-center" },
                         React.createElement("i", { className: "fas fa-hand-point-right text-4xl mb-4 text-slate-300" }),
                         React.createElement("p", { className: "text-[13px] font-bold text-slate-500 mb-1" },
                             "\uC6B0\uCE21\uC5D0\uC11C \uB9E4\uD551\uD560 ",
@@ -2606,7 +2765,7 @@ const ParserApp = () => {
                             "\uCD1D ",
                             displayUnmatchedRows.length,
                             "\uAC74")),
-                    React.createElement("div", { className: "flex-1 overflow-y-auto custom-scrollbar" },
+                    React.createElement("div", { className: "flex-1 overflow-y-auto custom-scrollbar", "data-parser-link-scroll": "unmatched-items" },
                         React.createElement("table", { className: "w-full text-left text-[12px] whitespace-nowrap" },
                             React.createElement("thead", { className: "bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm" },
                                 React.createElement("tr", null,
@@ -2648,7 +2807,7 @@ const ParserApp = () => {
         showErpModal && React.createElement(ErpCodeInputModal, { onClose: () => setShowErpModal(false), onSubmit: actions.handleCreateNewMasterItem, targetItem: parserBuffer.find(r => r._id === targetId) }),
         appState.showMappingExcludeModal && React.createElement(MappingExcludeListModal, { onClose: () => appState.setShowMappingExcludeModal(false), excludeDict: parserExcludeDict, currentTag: currentTag, onRestore: actions.handleRestoreParserExcluded, onClear: actions.handleClearParserExclusions }),
         showStopManager && React.createElement(SmartParserStopManager, { onClose: () => setShowStopManager(false), products: stoppedProducts, masterProducts, onStop: actions.handleStopProducts, onResume: actions.handleResumeStoppedProducts, onUpdate: actions.handleUpdateStoppedProducts }),
-        appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: () => { actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget]); }, count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
+        appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: options => actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget], options), count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
 };
 
 (function bootSmartParser() {

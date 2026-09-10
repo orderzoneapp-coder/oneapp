@@ -6,7 +6,7 @@
     <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="dataops"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="nexus/common/nexus-ui.js?v=1.5.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.6.0"></script>
     <meta name="google" content="notranslate">
     <title>재고·정산 - NEXUS</title>
     <meta name="application-version" content="V1.a22.112_EvidenceReportPreflight · 2026-08-12 KST">
@@ -8535,6 +8535,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             React.createElement("div", { className: "flex items-center justify-between w-full" },
                 React.createElement("div", { className: "flex flex-col justify-center flex-1 pr-3 overflow-hidden max-w-[280px]" },
                     React.createElement("div", { className: "font-semibold text-slate-800 text-[13px] flex items-start gap-1 mb-0.5" },
+                        React.createElement("span", { className: "shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-black text-slate-500", title: `${idx + 1}행` }, idx + 1),
                         isLinked && React.createElement("i", { className: "fas fa-link text-blue-500 mr-1 mt-0.5 animate-pulse" }),
                         isActiveMulti && React.createElement("i", { className: "fas fa-tags text-blue-500 mr-1 mt-0.5" }),
                         React.createElement("span", { title: item.품명, className: "truncate leading-tight text-slate-900" }, item.품명),
@@ -8678,6 +8679,37 @@ const createInventoryMasterDraft = (overrides = {}) => ({
     registration: { 품목코드: '', 품목명: '', 규격: '', 단위: '' },
     ...overrides
 });
+const DataOpsWorkspaceShell = ({ children, resultPanelOpen, onResultPanelOpen, files, productCount, filteredCount, analysisMeta, isProcessing, outputBlocked, onSave, onRestoreManual, onRestoreAutosave, onExcel, onPrint, onGuide, onSettings }) => (React.createElement("div", { className: `grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_244px] gap-3 items-start min-h-full p-3 bg-slate-50 ${resultPanelOpen ? '' : 'xl:grid-cols-[220px_minmax(0,1fr)]'}`, "data-nexus-workspace": "dataops" },
+    React.createElement("aside", { className: "xl:sticky xl:top-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "reference", "aria-label": "DataOps 기준 자료" },
+        React.createElement("div", { className: "px-4 py-3 bg-slate-900 text-white" },
+            React.createElement("div", { className: "text-[10px] font-bold text-slate-400 uppercase tracking-wider" }, "Reference"),
+            React.createElement("div", { className: "mt-1 text-sm font-black" }, "기준 자료 · 복구")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px]" },
+            [['기초재고', files.prev], ['매입자료', files.in], ['매출자료', files.out], ['실사/마감', files.end]].map(([label, file]) => React.createElement("div", { key: label, className: "rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" },
+                React.createElement("div", { className: "font-black text-slate-700" }, label),
+                React.createElement("div", { className: `mt-0.5 truncate ${file ? 'text-blue-700 font-bold' : 'text-slate-400'}`, title: file && file.name || '' }, file ? file.name : '미선택'))),
+            React.createElement("button", { type: "button", onClick: onRestoreManual, disabled: isProcessing, className: "w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-black hover:bg-slate-50 disabled:opacity-40" }, "직접 저장 복구"),
+            React.createElement("button", { type: "button", onClick: onRestoreAutosave, disabled: isProcessing, className: "w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-black hover:bg-slate-50 disabled:opacity-40" }, "자동저장 복구"))),
+    React.createElement("section", { className: "min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "work", "aria-label": "DataOps 작업 테이블" },
+        React.createElement("div", { className: "min-w-[1000px] flex flex-col min-h-full" }, children),
+        productCount > 0 && React.createElement("div", { className: "sticky bottom-0 z-[70] flex flex-wrap items-center justify-center gap-2 border-t-2 border-slate-300 bg-white/95 px-4 py-3 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] backdrop-blur", "data-nexus-completion-bar": "dataops" },
+            React.createElement("button", { type: "button", onClick: onSave, disabled: isProcessing, className: "h-9 px-4 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-40" }, "작업 저장"),
+            React.createElement("button", { type: "button", onClick: onExcel, disabled: outputBlocked, className: "h-9 px-4 rounded-lg border border-emerald-700 bg-emerald-600 text-[11px] font-black text-white hover:bg-emerald-700 disabled:opacity-40" }, "Excel 다운로드 F9"),
+            React.createElement("button", { type: "button", onClick: onPrint, disabled: outputBlocked, className: "h-9 px-4 rounded-lg border border-slate-900 bg-slate-800 text-[11px] font-black text-white hover:bg-slate-900 disabled:opacity-40" }, "프린터 F10"))),
+    resultPanelOpen ? React.createElement("aside", { className: "xl:sticky xl:top-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden", "data-nexus-pane": "result", "aria-label": "DataOps 처리 결과" },
+        React.createElement("div", { className: "flex items-center justify-between px-4 py-3 bg-slate-100 border-b border-slate-200" },
+            React.createElement("div", null,
+                React.createElement("div", { className: "text-[10px] font-bold text-slate-500 uppercase tracking-wider" }, "Result"),
+                React.createElement("div", { className: "text-sm font-black text-slate-800" }, "처리 결과 · 이동")),
+            React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(false), className: "w-8 h-8 rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50", "aria-label": "결과 패널 닫기" }, "×")),
+        React.createElement("div", { className: "p-3 space-y-2 text-[11px]" },
+            React.createElement("div", { className: "grid grid-cols-2 gap-2" },
+                React.createElement("div", { className: "rounded-lg bg-slate-50 border border-slate-200 p-3 text-center" }, React.createElement("div", { className: "text-slate-500 font-bold" }, "전체"), React.createElement("strong", { className: "block mt-1 text-lg text-slate-900" }, Number(productCount || 0).toLocaleString())),
+                React.createElement("div", { className: "rounded-lg bg-blue-50 border border-blue-200 p-3 text-center" }, React.createElement("div", { className: "text-blue-700 font-bold" }, "현재 표시"), React.createElement("strong", { className: "block mt-1 text-lg text-blue-900" }, Number(filteredCount || 0).toLocaleString()))),
+            React.createElement("div", { className: "rounded-lg border border-slate-200 px-3 py-2" }, React.createElement("div", { className: "font-black text-slate-700" }, "분석 상태"), React.createElement("div", { className: "mt-1 text-slate-500 break-words" }, `${analysisMeta.status || 'idle'}${analysisMeta.analyzedAt ? ` · ${analysisMeta.analyzedAt}` : ''}`)),
+            React.createElement("button", { type: "button", onClick: onGuide, className: "w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-black hover:bg-slate-50" }, "이슈 가이드"),
+            React.createElement("button", { type: "button", onClick: onSettings, className: "w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-black hover:bg-slate-50" }, "매핑설정"),
+            React.createElement("a", { href: "history_viewer.html?returnApp=dataops", className: "block w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-center text-slate-700 font-black hover:bg-slate-50" }, "변경이력 보기"))) : React.createElement("button", { type: "button", onClick: () => onResultPanelOpen(true), className: "fixed right-3 bottom-20 z-[80] px-3 py-2 rounded-full bg-slate-900 text-white text-[11px] font-black shadow-xl", "data-nexus-result-reopen": "dataops" }, "결과 패널 열기")));
 function App() {
     const [appStep, setAppStep] = useState('closing');
     const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
@@ -8702,6 +8734,15 @@ function App() {
     const [officialProductSnapshotResult, setOfficialProductSnapshotResult] = useState({ status: 'LOADING', snapshot: null, error: null });
     const [inventoryResumeRetryCount, setInventoryResumeRetryCount] = useState(() => DATAOPS_INVENTORY_MASTER_ADD_MODULE.getRetryCodes(DATAOPS_INVENTORY_MASTER_ADD_MODULE.readRetryRecords()).length);
     const [systemUiCollapsed, setSystemUiCollapsed] = useState(false);
+    const [resultPanelOpen, setResultPanelOpen] = useState(() => {
+        try { return sessionStorage.getItem('nexus:dataops:right-panel:v1') !== 'closed'; }
+        catch (error) { return true; }
+    });
+    const handleResultPanelOpen = useCallback((open) => {
+        setResultPanelOpen(open);
+        try { sessionStorage.setItem('nexus:dataops:right-panel:v1', open ? 'open' : 'closed'); }
+        catch (error) { /* sessionStorage 사용 불가 환경에서는 현재 화면 상태만 유지 */ }
+    }, []);
     // 🌟 렌더링 안정성 강화: React 앱이 완전히 켜진 직후에만 초기 로딩 화면을 제거하도록 수정
     useEffect(() => {
         const loader = document.getElementById('initial-loader');
@@ -12701,22 +12742,7 @@ ${balanceText}
                             React.createElement("i", { className: "fas fa-plus mr-1.5 text-blue-600" }),
                             "목록 외 상품 ",
                             React.createElement("span", { className: "ml-1 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 font-black" }, "F6")),
-                        inventoryResumeRetryCount > 0 && React.createElement("button", { onClick: handleRetryInventoryMasterSalesResume, disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-black transition flex items-center border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 disabled:opacity-40" }, `판매재개 재시도 ${inventoryResumeRetryCount}`),
-                        React.createElement("button", { onClick: () => saveWorkState(), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "관리자 수정·완료·대체/치환 상태를 브라우저 로컬 작업공간에 저장" }, "작업 저장"),
-                        React.createElement("button", { onClick: () => handleRestoreSavedWork('manual'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "내가 직접 저장한 시점의 작업화면 복구" }, "직접 저장 복구"),
-                        React.createElement("button", { onClick: () => handleRestoreSavedWork('autosave'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "가장 최근 자동저장 시점의 작업화면 복구" }, "자동저장 복구"),
-                        React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
-                        React.createElement("button", { onClick: handleCombinedExport, disabled: isClosingOutputBlocked, className: `h-9 px-3 rounded-lg text-[11px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
-                            React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
-                            "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC",
-                            React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F9")),
-                        React.createElement("button", { onClick: handlePrintOutput, disabled: isClosingOutputBlocked, className: `h-9 px-3 rounded-lg text-[11px] font-bold shadow-sm transition items-center border hidden md:flex ${isClosingOutputBlocked ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300'}` },
-                            React.createElement("i", { className: "fas fa-print mr-1.5 text-slate-600" }),
-                            "\uD504\uB9B0\uD130",
-                            React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F10")))),
-                    productData.length === 0 && React.createElement(React.Fragment, null,
-                        React.createElement("button", { onClick: () => handleRestoreSavedWork('manual'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "내가 직접 저장한 시점의 작업화면 복구" }, "직접 저장 복구"),
-                        React.createElement("button", { onClick: () => handleRestoreSavedWork('autosave'), disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed", title: "가장 최근 자동저장 시점의 작업화면 복구" }, "자동저장 복구")),
+                        inventoryResumeRetryCount > 0 && React.createElement("button", { onClick: handleRetryInventoryMasterSalesResume, disabled: isProcessing, className: "h-9 px-3 rounded-lg text-[11px] font-black transition flex items-center border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 disabled:opacity-40" }, `판매재개 재시도 ${inventoryResumeRetryCount}`))),
                     React.createElement("button", { onClick: () => setShowSettings(!showSettings), className: "h-9 px-3 bg-white border border-slate-300 text-slate-700 rounded-lg text-[11px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0" }, "\uB9E4\uD551\uC124\uC815")))),
         showSettings && (React.createElement("div", { className: "fixed top-[60px] bottom-0 left-0 right-0 z-50 flex justify-center items-start animate-[fadeIn_0.3s_ease-out] bg-slate-900/10 px-3 pb-4 overflow-y-auto" },
             React.createElement("div", { className: "bg-white border-2 border-blue-200 p-5 md:p-6 rounded-xl shadow-xl relative overflow-y-auto w-full max-w-7xl mx-0 md:mx-4 mt-3 mb-6 max-h-[calc(100vh-84px)]" },
@@ -12754,7 +12780,7 @@ ${balanceText}
                             React.createElement("div", { className: "text-[11px] text-emerald-700 mt-1.5 font-bold truncate", title: cloudStatusMsg || '' },
                                 React.createElement("i", { className: "fas fa-circle-info mr-1" }),
                                 cloudStatusMsg || "URL 변경은 Settings에서 수행하세요. 이 화면에서는 읽기·연결 테스트만 가능합니다."),
-                            React.createElement("a", { href: "settings.html", className: "text-[11px] text-blue-700 font-black mt-1.5 hover:underline self-start" }, "Settings에서 공식 URL 관리")),
+                            React.createElement("a", { href: "settings.html?returnApp=dataops", className: "text-[11px] text-blue-700 font-black mt-1.5 hover:underline self-start" }, "Settings에서 공식 URL 관리")),
                         React.createElement("div", { className: "flex flex-wrap lg:justify-end gap-2" },
                             React.createElement("button", { type: "button", onClick: handleTestCloudConnection, disabled: isProcessing, className: "px-3 py-2 rounded-md bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 disabled:opacity-50" }, "\uC5F0\uACB0 \uD14C\uC2A4\uD2B8"),
                             React.createElement("button", { type: "button", onClick: handlePullMerchMaster, disabled: isProcessing, className: "px-3 py-2 rounded-md bg-slate-900 text-white text-xs font-black hover:bg-slate-950 disabled:opacity-50" }, "MerchOps \uB9C8\uC2A4\uD130 \uBD88\uB7EC\uC624\uAE30")))),
@@ -12964,7 +12990,7 @@ ${balanceText}
                     React.createElement("i", { className: "fas fa-chevron-down" }),
                     "system.IO 펼치기"),
                 React.createElement("div", { id: "main-scroll-container", className: "flex-1 overflow-auto w-full relative" },
-                    React.createElement("div", { className: "w-full min-w-[1000px] flex flex-col min-h-full" },
+                    React.createElement(DataOpsWorkspaceShell, { resultPanelOpen: resultPanelOpen, onResultPanelOpen: handleResultPanelOpen, files: files, productCount: productData.length, filteredCount: filteredProductData.length, analysisMeta: analysisMeta, isProcessing: isProcessing, outputBlocked: isClosingOutputBlocked, onSave: () => saveWorkState(), onRestoreManual: () => handleRestoreSavedWork('manual'), onRestoreAutosave: () => handleRestoreSavedWork('autosave'), onExcel: handleCombinedExport, onPrint: handlePrintOutput, onGuide: () => setGuideModalOpen(true), onSettings: () => setShowSettings(true) },
                         React.createElement("div", { ref: systemPanelRef, className: `px-4 md:px-6 pt-0 pb-1 max-w-7xl mx-auto w-full shrink-0 transition-all duration-200 sticky top-0 z-[65] ${systemUiCollapsed ? 'max-h-0 opacity-0 overflow-hidden py-0 pointer-events-none' : 'max-h-[900px] opacity-100'}` },
                             React.createElement("div", { className: "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden fade-in" },
                                 React.createElement("div", { className: "bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner" },

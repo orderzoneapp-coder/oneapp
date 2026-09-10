@@ -8,6 +8,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tests = [
   'scripts/test-smartparser-analysis-result.mjs',
   'scripts/test-smartparser-product-request-boundary.mjs',
+  'scripts/test-smartparser-catalog-apply-command-adapter.mjs',
   'scripts/test-smartparser-stop-command-adapter.mjs',
   'scripts/test-smartparser-supplier-stop-20260804-01.mjs',
   'scripts/test-oneapp-parser-wh-20260802-01.mjs',

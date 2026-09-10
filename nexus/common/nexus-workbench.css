@@ -1,0 +1,62 @@
+:root {
+  --nexus-grid-line: #d9dee7;
+  --nexus-grid-line-strong: #b8c0cd;
+  --nexus-grid-head: #f3f5f8;
+  --nexus-grid-cell: #ffffff;
+  --nexus-grid-hover: #eef6ff;
+  --nexus-grid-focus: #2563eb;
+  --nexus-panel-bg: #ffffff;
+}
+
+html[data-nexus-ui-theme="dark"] {
+  --nexus-grid-line: #334155;
+  --nexus-grid-line-strong: #526174;
+  --nexus-grid-head: #172033;
+  --nexus-grid-cell: #0f172a;
+  --nexus-grid-hover: #172554;
+  --nexus-grid-focus: #60a5fa;
+  --nexus-panel-bg: #0f172a;
+}
+
+/* 모든 NEXUS 표에 동일한 Excel형 셀 경계와 선택 피드백을 낮은 우선순위로 제공한다. */
+:where(html[data-nexus-ui-app] table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+:where(html[data-nexus-ui-app] table th) {
+  background: var(--nexus-grid-head);
+  box-shadow: inset -1px -1px 0 var(--nexus-grid-line-strong);
+  white-space: nowrap;
+}
+
+:where(html[data-nexus-ui-app] table td) {
+  background-color: var(--nexus-grid-cell);
+  box-shadow: inset -1px -1px 0 var(--nexus-grid-line);
+}
+
+:where(html[data-nexus-ui-app] table tbody tr:hover td) {
+  background-color: var(--nexus-grid-hover);
+}
+
+:where(html[data-nexus-ui-app] table input, html[data-nexus-ui-app] table select, html[data-nexus-ui-app] table textarea):focus {
+  outline: 2px solid var(--nexus-grid-focus);
+  outline-offset: -1px;
+}
+
+html[data-nexus-ui-theme="dark"] :where([data-nexus-workspace] [data-nexus-pane]) {
+  color: #e2e8f0;
+  border-color: #334155 !important;
+}
+
+html[data-nexus-ui-theme="dark"] :where([data-nexus-workspace] [data-nexus-pane="reference"], [data-nexus-workspace] [data-nexus-pane="result"]) {
+  background: var(--nexus-panel-bg) !important;
+}
+
+@media (max-width: 1279px) {
+  :where(html[data-nexus-ui-app] [data-nexus-workspace]) {
+    overflow: auto;
+  }
+}

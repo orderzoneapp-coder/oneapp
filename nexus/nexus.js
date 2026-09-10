@@ -35,7 +35,7 @@
     Object.freeze({ id: 'smart-parser', label: '문서분석', detail: '외부 문서 분석', path: '/SmartParser.html' }),
     Object.freeze({ id: 'export-center', label: '출력검증', detail: '업무 자료 출력', path: '/export_center.html' }),
     Object.freeze({ id: 'settings', label: '환경설정', detail: '앱 공통 설정', path: '/settings.html' }),
-    Object.freeze({ id: 'item-manager', label: '상품등록', detail: '상품 등록 및 수정', path: '/Item_manager.html' }),
+    Object.freeze({ id: 'item-manager', label: 'SKU 관리', detail: 'SKU 후보 검토 및 상품 등록 요청', path: '/Item_manager.html' }),
     Object.freeze({ id: 'history-viewer', label: '변경이력', detail: '변경 내역 확인', path: '/history_viewer.html' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문조회', detail: '주문 조회·검증·정정', path: '/orderq/' }),
   ]);

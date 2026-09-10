@@ -160,6 +160,7 @@ try {
   await client.send('Page.enable');
   await client.send('Runtime.enable');
   await client.send('DOM.enable');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   const runtimeErrors = [];
   const consoleErrors = [];
   client.on('Runtime.exceptionThrown', (event) => runtimeErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'Runtime exception'));
@@ -178,6 +179,8 @@ try {
   console.log('CustomerMaster E2E · independent app ready');
   assert.equal(await evaluate(client, 'document.title'), '거래처관리 - NEXUS');
   assert.equal(await evaluate(client, `document.querySelector('[data-nexus-app-header="customer-master"]')?.offsetHeight >= 56`), true);
+  assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('[data-nexus-workspace="customer-master"]')).gridTemplateColumns.split(' ').length`), 3, 'customer workspace must expose reference, work, and result columns');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="customer-master"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('.cm-tab')].map(element=>element.textContent.trim())`), ['거래처 목록', '정보 보완', 'Excel 등록·수정', '매핑사전', '변경이력', '변경요청', '데이터 이전·복원']);
 
   await click(client, '.cm-tab[data-tab="data"]');
@@ -201,6 +204,14 @@ try {
   await click(client, '#saveCustomerButton');
   await waitFor(() => evaluate(client, `document.querySelector('#totalCount').textContent==='2' && !document.querySelector('#customerDialog').open`), 'first customer save');
   assert.equal(await evaluate(client, `document.querySelector('#customerTableBody').innerText.includes('테스트 거래처')`), true);
+  await evaluate(client, `(() => { const row=[...document.querySelectorAll('#customerTableBody tr')].find(element=>element.textContent.includes('테스트 거래처')); row.click(); const wrap=document.querySelector('.cm-customer-table-wrap'); wrap.scrollLeft=37; return true; })()`);
+  assert.equal(await evaluate(client, `document.querySelector('#customerResultBody').textContent.includes('테스트 거래처')`), true, 'row selection must render the result panel');
+  await input(client, '#customerSearch', '테스트');
+  await click(client, '#closeCustomerResult');
+  assert.deepEqual(await evaluate(client, `({search:document.querySelector('#customerSearch').value, selected:document.querySelector('#customerResultBody').textContent.includes('테스트 거래처'), closed:document.querySelector('[data-nexus-pane="result"]').hidden, reopen:!document.querySelector('#openCustomerResult').hidden})`), { search:'테스트', selected:true, closed:true, reopen:true }, 'closing the result pane must preserve filters and selection');
+  await click(client, '#openCustomerResult');
+  assert.equal(await evaluate(client, `!document.querySelector('[data-nexus-pane="result"]').hidden && document.querySelector('#customerResultBody').textContent.includes('테스트 거래처')`), true, 'reopening the result pane must preserve the selected customer');
+  await input(client, '#customerSearch', '');
 
   const documentNode = await client.send('DOM.getDocument', { depth: -1, pierce: true });
   const fileNode = await client.send('DOM.querySelector', { nodeId: documentNode.root.nodeId, selector: '#customerFileInput' });

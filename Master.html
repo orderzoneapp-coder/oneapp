@@ -6,7 +6,7 @@
     <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="master-lookup"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.9">
-    <script defer src="nexus/common/nexus-ui.js?v=1.5.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.6.0"></script>
     <meta name="google" content="notranslate">
     <title>상품관리 - NEXUS</title>
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
@@ -552,7 +552,7 @@
         // ==========================================
         // Master 앱 작업헤더: 앱 이동은 NEXUS 공통헤더가 전담한다.
         // ==========================================
-        const AppHeader = ({ itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull }) => (
+        const AppHeader = ({ itemCount, isProcessing, processMsg, onOpenSettings }) => (
             <div className="nexus-app-header shrink-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm" data-nexus-app-header="master-lookup">
                 <header className="min-h-[56px] w-full px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0 flex items-center gap-3">
@@ -575,8 +575,6 @@
                                 : <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>}
                             <span className="text-[11px] font-mono font-bold text-slate-600">{itemCount.toLocaleString()}건</span>
                         </div>
-                        <button type="button" onClick={onPull} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-indigo-600" title="데이터 불러오기" aria-label="데이터 불러오기"><SafeIcon name="cloud-download" size={16} /></button>
-                        <button type="button" onClick={onPush} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-indigo-600" title="데이터 백업하기" aria-label="데이터 백업하기"><SafeIcon name="cloud-upload" size={16} /></button>
                         <button type="button" onClick={onOpenSettings} className="w-9 h-9 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center border border-slate-300 text-slate-600" title="환경설정 열기" aria-label="환경설정 열기"><SafeIcon name="settings" size={16} /></button>
                     </div>
                 </header>
@@ -608,7 +606,7 @@
                                     <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
                                 </div>
                             </div>
-                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
+                            <iframe src="settings.html?mode=iframe&returnApp=master-lookup" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
                         </div>
                     </div>
                 </div>
@@ -1393,6 +1391,10 @@
             const [legacyState, setLegacyState] = useState({ status: 'checking', exists: false, masterMap: {}, rawItems: [], revision: null });
             const [changeRequestInbox, setChangeRequestInbox] = useState({ status: 'LOADING', requests: [], error: null });
             const [selectedChangeRequest, setSelectedChangeRequest] = useState(null);
+            const [selectedProductCode, setSelectedProductCode] = useState('');
+            const [productResultOpen, setProductResultOpen] = useState(() => {
+                try { return sessionStorage.getItem('nexus:master:right-panel:v1') !== 'closed'; } catch { return true; }
+            });
             const productTableScrollRef = useRef(null);
 
             const [activeC1, setActiveC1] = useState('');
@@ -1438,7 +1440,8 @@
                 refreshChangeRequestInbox();
 
                 const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
+                    const sameOrigin = e.origin === window.location.origin || (window.location.origin === 'null' && e.origin === 'null');
+                    if (sameOrigin && e.source !== window && e.data && e.data.type === 'ONEAPP_SETTINGS_PANEL_CLOSE_V1') {
                         setShowSettingsModal(false);
                         loadMasterLocal().then(data => {
                             if (data && typeof data === 'object') setMasterProducts(data);
@@ -2066,6 +2069,14 @@
                 }
                 return [];
             }, [masterProducts, globalSearch, activeC1, activeC2, activeC3]);
+            const selectedProduct = useMemo(() => {
+                if (!selectedProductCode) return null;
+                return Object.values(masterProducts || {}).find(item => safeStr(item?.코드 || item?.품목코드) === selectedProductCode) || null;
+            }, [masterProducts, selectedProductCode]);
+            const setProductResultVisibility = useCallback((open) => {
+                setProductResultOpen(open);
+                try { sessionStorage.setItem('nexus:master:right-panel:v1', open ? 'open' : 'closed'); } catch {}
+            }, []);
 
             return (
                 <div className="w-full flex flex-col font-sans overflow-hidden bg-slate-100 relative select-none" style={{ height: 'calc(100vh - var(--nexus-ui-header-height, 64px))' }}>
@@ -2074,8 +2085,6 @@
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
                         onOpenSettings={() => setShowSettingsModal(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
                     />
                     
                     {toastMsg && (
@@ -2250,7 +2259,8 @@
                             </div>
                         </div>
 
-                        <div className="flex-1 flex overflow-hidden">
+                        <div className="flex-1 flex overflow-hidden relative" data-nexus-workspace="master-lookup">
+                            <aside className="w-[380px] flex shrink-0 overflow-hidden border-r border-slate-200" data-nexus-pane="reference" aria-label="상품 분류·검색 참조">
                             <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
                                 {c2List.map(c2 => (
                                     <button key={c2.code} onClick={() => { setActiveC2(c2.code); setActiveC3(''); setGlobalSearch(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all border-l-4 ${activeC2 === c2.code ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
@@ -2271,9 +2281,13 @@
                                         </button>
                                     ))}
                                 </div>
+                                <div className="p-2 border-t border-slate-200 bg-white shrink-0">
+                                    <button type="button" onClick={handlePull} className="w-full h-9 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[11px] font-black hover:bg-indigo-100"><SafeIcon name="cloud-download" size={12} className="mr-1" /> 데이터 불러오기</button>
+                                </div>
                             </div>
+                            </aside>
 
-                            <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
+                            <section className="flex-1 min-w-0 bg-white flex flex-col overflow-hidden relative z-0" data-nexus-pane="work" aria-label="상품 목록 작업표">
                                 {globalSearch ? (
                                     <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
                                         <i className="fas fa-search mr-2 text-amber-500"></i> 전체 검색 결과입니다.
@@ -2289,9 +2303,10 @@
                                     </div>
                                 )}
                                 <div ref={productTableScrollRef} className="flex-1 overflow-auto custom-scrollbar relative">
-                                    <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                    <table className="w-max min-w-full text-left text-[11px] whitespace-nowrap border-separate border-spacing-0" aria-label="상품관리 Excel형 목록">
                                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                                             <tr>
+                                                <th className="sticky left-0 z-20 py-2 px-2 w-12 min-w-[48px] text-center text-slate-500 bg-slate-100 border-r border-b border-slate-200">행</th>
                                                 <th className="py-2.5 px-4 w-20 text-slate-600">코드</th>
                                                 <th className="py-2.5 px-4 text-slate-600">품목명</th>
                                                 <th className="py-2.5 px-3 text-slate-600">규격</th>
@@ -2303,7 +2318,8 @@
                                             {displayRows.length > 0 ? displayRows.map((row, idx) => {
                                                 const code = safeStr(row['코드'] || row['품목코드'], `key-${idx}`);
                                                 return (
-                                                    <tr key={code} className="hover:bg-slate-50 transition-colors">
+                                                    <tr key={code} onClick={() => setSelectedProductCode(code)} className={`cursor-pointer transition-colors ${selectedProductCode === code ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                                                        <td className="sticky left-0 z-[1] py-2 px-2 text-center text-slate-500 bg-slate-50 border-r border-b border-slate-200">{idx + 1}</td>
                                                         <td className="py-2 px-4 font-mono text-slate-400">{safeStr(row['코드'] || row['품목코드'], '-')}</td>
                                                         <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '-')}</td>
                                                         <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '-')}</td>
@@ -2317,13 +2333,36 @@
                                                 );
                                             }) : (
                                                 <tr>
-                                                    <td colSpan={visMasterCols.length + 4} className="py-20 text-center text-slate-400">{Object.keys(masterProducts).length === 0 ? '상품 DB가 비어 있습니다. 상단의 Excel 최초 등록 또는 상품 등록을 사용하세요.' : '해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.'}</td>
+                                                    <td colSpan={visMasterCols.length + 5} className="py-20 text-center text-slate-400">{Object.keys(masterProducts).length === 0 ? '상품 DB가 비어 있습니다. 상단의 Excel 최초 등록 또는 상품 등록을 사용하세요.' : '해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.'}</td>
                                                 </tr>
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                            </div>
+                                <div className="shrink-0 flex items-center justify-center gap-2 px-4 py-3 border-t-2 border-slate-300 bg-white shadow-[0_-8px_18px_rgba(15,23,42,0.08)]" data-nexus-completion-bar="master-lookup">
+                                    <button type="button" onClick={handlePush} disabled={isProcessing || Object.keys(masterProducts).length === 0} className="h-9 px-4 rounded-lg bg-indigo-600 text-white text-[11px] font-black hover:bg-indigo-700 disabled:opacity-40"><SafeIcon name="cloud-upload" size={12} className="mr-1" /> 데이터 백업</button>
+                                </div>
+                            </section>
+                            {productResultOpen ? (
+                                <aside className="hidden xl:flex w-[248px] shrink-0 bg-white border-l border-slate-200 flex-col overflow-hidden" data-nexus-pane="result" aria-label="선택 상품 결과">
+                                    <div className="h-11 px-3 flex items-center justify-between border-b border-slate-200 bg-slate-50 shrink-0">
+                                        <div><span className="block text-[9px] font-black tracking-widest text-indigo-600">RESULT</span><strong className="block text-[12px] text-slate-800">선택 상품</strong></div>
+                                        <button type="button" onClick={() => setProductResultVisibility(false)} className="w-7 h-7 rounded-md border border-slate-300 bg-white text-slate-500" aria-label="선택 상품 결과 닫기">×</button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-3 space-y-2 text-[11px]">
+                                        {selectedProduct ? <>
+                                            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50"><span className="block text-[9px] font-bold text-slate-400 mb-1">상품</span><strong className="block text-[13px] text-slate-800 break-words">{safeStr(selectedProduct['품목명'], '-')}</strong><span className="font-mono text-slate-500">{safeStr(selectedProduct['코드'] || selectedProduct['품목코드'], '-')}</span></div>
+                                            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50"><span className="block text-[9px] font-bold text-slate-400 mb-1">규격·단위</span><strong>{safeStr(selectedProduct['규격'], '-')} · {safeStr(selectedProduct['단위'], '-')}</strong></div>
+                                            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50"><span className="block text-[9px] font-bold text-slate-400 mb-1">단가</span><strong>입고 {Number(selectedProduct['입고가'] || 0).toLocaleString()} · 출고 {Number(selectedProduct['출고가'] || 0).toLocaleString()}</strong></div>
+                                            <button type="button" onClick={() => setEditingProduct(selectedProduct)} className="w-full h-9 rounded-lg bg-indigo-600 text-white font-black">선택 상품 수정</button>
+                                            <button type="button" onClick={() => window.location.href = `history_viewer.html?code=${encodeURIComponent(safeStr(selectedProduct['코드'] || selectedProduct['품목코드']))}&returnApp=master-lookup`} className="w-full h-9 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold">변경이력 보기</button>
+                                        </> : <div className="p-4 text-center text-slate-400 leading-relaxed">중앙 목록에서 상품을 선택하면 상세 결과가 표시됩니다.</div>}
+                                    </div>
+                                    <div className="p-3 border-t border-slate-200"><button type="button" onClick={openSkuManagement} className="w-full h-9 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 font-black">SKU 관리</button></div>
+                                </aside>
+                            ) : (
+                                <button type="button" onClick={() => setProductResultVisibility(true)} className="absolute right-3 top-3 z-20 h-9 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-700 shadow-lg" data-nexus-result-reopen="master-lookup">선택 상품 결과 열기</button>
+                            )}
                         </div>
                     </main>
 

@@ -609,6 +609,7 @@ const files = Object.fromEntries(
     "coreEngine.js",
     "masterAddUpdate.js",
     "smartparser/stop-management-command-adapter.js",
+    "smartparser/catalog-apply-command-adapter.js",
     "app-manifest.json",
     "APP_ARCHITECTURE.md",
   ]
@@ -649,8 +650,13 @@ assert.deepEqual(
 assert.ok(dataOpsCacheValues.has("dataops_master_sync_trigger"));
 
 const smartParserStopAdapter = files["smartparser/stop-management-command-adapter.js"];
+const smartParserCatalogApplyAdapter = files["smartparser/catalog-apply-command-adapter.js"];
 assert.doesNotMatch(files["SmartParser.html"], /commitSmartParserMaster|commitMasterStateOrThrow/);
+assert.match(files["SmartParser.html"], /commitSmartParserCatalogApply\(command\)/);
 assert.match(files["SmartParser.html"], /commitSmartParserStopManagement\(command\)/);
+assert.match(smartParserCatalogApplyAdapter, /commitMasterStateOrThrow\(master, \{/);
+assert.match(smartParserCatalogApplyAdapter, /restoreLocalStorage\(previousLocal\)/);
+assert.match(smartParserCatalogApplyAdapter, /PRODUCT_SNAPSHOT_CONFLICT/);
 assert.match(smartParserStopAdapter, /commitMasterStateOrThrow\(master, \{/);
 assert.match(smartParserStopAdapter, /afterVerified: \(\) => \{/);
 assert.match(smartParserStopAdapter, /restoreLocalStorage\(previousLocal\)/);
@@ -668,7 +674,8 @@ for (const name of [
 }
 assert.doesNotMatch(files["export_center.html"], /<script src="coreEngine\.js"><\/script>/, "Export Center must remain output-only and must not load master writers");
 assert.match(files["SmartParser.html"], /ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1/);
-assert.match(files["SmartParser.html"], /submitProductChangeRequest/);
+assert.match(files["SmartParser.html"], /commitSmartParserCatalogApply\(command\)/);
+assert.doesNotMatch(files["SmartParser.html"], /submitProductChangeRequest/);
 assert.match(files["settings.html"], /OWNER_ROUTED: 상품 원본 작업은 상품관리에서 실행하세요/);
 assert.match(files["settings.html"], /navigateToOwner\('Master\.html'\)/);
 assert.doesNotMatch(files["settings.html"], /commitMasterStateOrThrow\(newMaster/);

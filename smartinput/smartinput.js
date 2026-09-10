@@ -129,7 +129,7 @@ import {
   searchProductMatchIndex,
   submitRegistrationChangeRequest
 } from './reference-data-controller.js?v=0.1.1';
-import { readVoucherActivity } from '../orderq/voucher-activity-read-adapter.js?v=0.2.0';
+import { readVoucherActivity } from '../orderq/voucher-activity-read-adapter.js?v=0.3.0';
 import { getMerchOpsSettingsSnapshotResult } from '../reference-data/merchops-settings-read-adapter.js?v=0.1.0';
 import { coreFieldByProjection } from './field-definition-contract.js?v=0.1.0';
 import {
@@ -4281,8 +4281,8 @@ function renderVoucherActivitySnapshot() {
   $('voucherContextEyebrow').textContent = 'VOUCHER ACTIVITY';
   $('voucherContextTitle').textContent = mode === 'estimate' ? '저장 견적서' : voucherActivityTitle(mode, date);
   $('voucherActivityOpenAll').dataset.href = mode === 'order'
-    ? `../orderq/index.html?view=query&from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`
-    : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}`;
+    ? `../orderq/index.html?view=query&from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}&companyId=${encodeURIComponent(state.companyId)}`
+    : `../orderq/voucher-query.html?mode=${encodeURIComponent(mode)}&date=${encodeURIComponent(date)}&companyId=${encodeURIComponent(state.companyId)}`;
   $('voucherActivityOpenAll').hidden = mode === 'estimate';
   if (activity.status === 'LOADING') {
     $('voucherContextSummary').textContent = `${date} 전표를 불러오는 중입니다.`;

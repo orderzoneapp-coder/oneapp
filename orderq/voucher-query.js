@@ -1,4 +1,4 @@
-import { readVoucherActivity } from './voucher-activity-read-adapter.js?v=0.2.0';
+import { readVoucherActivity } from './voucher-activity-read-adapter.js?v=0.3.0';
 
 const params = new URLSearchParams(location.search);
 const modeInput = document.getElementById('modeInput');
@@ -7,6 +7,16 @@ const status = document.getElementById('queryStatus');
 const list = document.getElementById('voucherList');
 const orderQueryEntry = document.getElementById('orderQueryEntry');
 const focusId = params.get('focus') || '';
+const companyId = (() => {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem('oneapp.nexus.home.session.v1') || 'null');
+    return String(stored?.session?.companyId || stored?.session?.user?.companyId || 'ONEAPP').trim() || 'ONEAPP';
+  } catch {
+    return 'ONEAPP';
+  }
+})();
+const linkedCompanyId = String(params.get('companyId') || '').trim();
+const companyContextMismatch = Boolean(linkedCompanyId && linkedCompanyId !== companyId);
 modeInput.value = ['order', 'purchase', 'sale'].includes(params.get('mode')) ? params.get('mode') : 'order';
 dateInput.value = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : new Date().toLocaleDateString('sv-SE');
 
@@ -26,7 +36,7 @@ function updateOrderQueryEntry() {
 function card(row) {
   const items = row.items || [];
   return `<article class="voucher-query-card ${row.id === focusId ? 'is-focused' : ''}" id="voucher-${esc(row.id)}">
-    <header><div><h2>${esc(row.customerName)}</h2><span>${esc(row.voucherNo)} · ${esc(row.status)}</span></div><strong>${won(row.totalAmount)}</strong>${row.detailHref ? `<a class="voucher-query-card__open" href="${esc(row.detailHref)}">${row.voucherMode === 'order' ? '주문현황에서 열기' : '전표 상세 열기'}</a>` : ''}</header>
+    <header><div><h2>${esc(row.customerName)}</h2><span>${esc(row.voucherNo)} · ${esc(row.status)}</span></div><strong>${won(row.totalAmount)}</strong>${row.voucherMode === 'order' && row.detailHref ? `<a class="voucher-query-card__open" href="${esc(row.detailHref)}">주문현황에서 열기</a>` : ''}</header>
     <div class="table-wrap"><table><thead><tr><th>No.</th><th>품목코드</th><th>품목명</th><th>규격</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th></tr></thead><tbody>${items.map((item, index) => `<tr><td class="center">${index + 1}</td><td>${esc(item.code)}</td><td>${esc(item.name)}</td><td>${esc(item.specification)}</td><td class="num">${esc(item.quantity)}</td><td>${esc(item.unit)}</td><td class="num">${item.unitPrice === '' ? '' : Number(item.unitPrice).toLocaleString('ko-KR')}</td><td class="num">${item.amount === '' ? '' : Number(item.amount).toLocaleString('ko-KR')}</td></tr>`).join('')}</tbody></table></div>
   </article>`;
 }
@@ -35,7 +45,12 @@ async function load() {
   updateOrderQueryEntry();
   status.textContent = '불러오는 중…';
   list.innerHTML = '<div class="voucher-query-state">전표를 불러오는 중입니다.</div>';
-  const snapshot = await readVoucherActivity({ mode: modeInput.value, date: dateInput.value });
+  if (companyContextMismatch) {
+    status.textContent = 'ERROR';
+    list.innerHTML = '<div class="voucher-query-state"><strong>회사 범위 불일치</strong><span>현재 앱의 회사 범위와 링크의 회사 정보가 달라 조회하지 않았습니다.</span></div>';
+    return;
+  }
+  const snapshot = await readVoucherActivity({ mode: modeInput.value, date: dateInput.value, companyId });
   if (snapshot.status === 'ERROR') {
     status.textContent = 'ERROR';
     list.innerHTML = `<div class="voucher-query-state"><strong>조회 실패</strong><span>${esc(snapshot.error?.message || '')}</span></div>`;
@@ -47,7 +62,7 @@ async function load() {
 }
 
 function updateQuery() {
-  const query = new URLSearchParams({ mode: modeInput.value, date: dateInput.value });
+  const query = new URLSearchParams({ mode: modeInput.value, date: dateInput.value, companyId });
   history.replaceState(null, '', `${location.pathname}?${query}`);
   void load();
 }

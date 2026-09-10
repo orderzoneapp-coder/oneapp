@@ -2187,9 +2187,15 @@ assert.match(combinedCss, /\.integrated-compact-slot\s*\{[^}]*display:\s*inline-
   "canonical integrated workbook control must be a compact data-source picker");
 assert.doesNotMatch(combinedCss, /\.integrated-uploader\s*\{/,
   "canonical large integrated uploader styling must be removed");
-const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>'));
-assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
-  "canonical Smart input F4 must move before screen print in the global header");
+const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header"'), html.indexOf('</header>'));
+assert.match(canonicalHeaderSource, /id="smartInputButton"/,
+  "canonical Smart input F4 must remain in the OrderOps app header");
+assert.doesNotMatch(canonicalHeaderSource, /id="(?:headerCloudSaveButton|printButton|downloadButton)"/,
+  "save and output actions must stay out of the app header");
+const completionBarSource = html.slice(html.indexOf('<div class="orderops-completion-bar"'), html.indexOf('</div>', html.indexOf('<div class="orderops-completion-bar"')));
+assert.ok(completionBarSource.indexOf('id="headerCloudSaveButton"') < completionBarSource.indexOf('id="printButton"')
+  && completionBarSource.indexOf('id="printButton"') < completionBarSource.indexOf('id="downloadButton"'),
+"the centered completion bar must keep save, screen print, and Excel output in order");
 for (const transactionViewContract of [
   'function buildTransactionPreview(workspace, kind)',
   'purchases: buildTransactionPreview(workspace, "purchases")',

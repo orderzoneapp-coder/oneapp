@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.13",
-  "updatedAt": "2026-09-07",
+  "schemaVersion": "1.3.14",
+  "updatedAt": "2026-09-10",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -194,7 +194,7 @@
       "path": "SmartParser.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Parse external documents locally into immutable analysis results, match against Product Snapshots, submit reviewed product proposals as PENDING owner requests, and own supplier exclusions plus explicit atomic stop/resume commands.",
+      "purpose": "Parse external documents locally into immutable analysis results, match against Product Snapshots, immediately apply administrator-confirmed catalog/product changes through a versioned atomic command, and own supplier exclusions plus explicit stop/resume commands.",
       "navigatesTo": [
         "merchops",
         "settings",
@@ -202,8 +202,8 @@
       ],
       "sharedContracts": [
         "product-master",
-        "product-reference-change-request",
         "smartparser-analysis-result",
+        "smartparser-catalog-apply",
         "parser-dictionary",
         "pricing-rules",
         "parser-supplier-exclusions",
@@ -1296,7 +1296,21 @@
         "기본",
         "과세"
       ],
-      "writerPolicy": "master-lookup is the official owner. SmartParser reads immutable Product Snapshots and submits product proposals only through PENDING owner requests; its page has no raw product writer. The sole SmartParser exception is the versioned stop-management command adapter, limited to explicit STOP/RESUME/UPDATE_METADATA with expected Snapshot/revision and atomic sale-status/linked-state/history/mirror/notification handling. MerchOps may change existing product fields only through its reviewed F7 command and may create operator-selected missing products only through MERCHOPS_PRODUCT_REGISTRATION_V1; quantity and business date remain work values. Legacy globals and all other workflows fail closed with OWNER_ROUTED.",
+      "writerPolicy": "master-lookup is the official owner. SmartParser reads immutable Product Snapshots and its page has no raw product writer. Administrator-confirmed analysis updates and catalog exclusions use the versioned catalog-apply command exception with expected Snapshot/revision, idempotency, allowed fields, actual history and rollback; exclusion may atomically include one approved stop reason. General STOP/RESUME/UPDATE_METADATA remains limited to the versioned stop-management exception. MerchOps may change existing product fields only through its reviewed F7 command and may create operator-selected missing products only through MERCHOPS_PRODUCT_REGISTRATION_V1; quantity and business date remain work values. Legacy globals and all other workflows fail closed with OWNER_ROUTED.",
+      "catalogApplyCommandException": {
+        "adapter": "ONEAPP_SMARTPARSER_CATALOG_APPLY_COMMAND_ADAPTER_V1",
+        "schemaVersion": "ONEAPP_SMARTPARSER_CATALOG_APPLY_COMMAND_V1",
+        "asset": "smartparser/catalog-apply-command-adapter.js",
+        "allowedActions": [
+          "APPLY_ANALYSIS",
+          "EXCLUDE_CATALOG"
+        ],
+        "allowedStopReasons": [
+          "품절",
+          "공급중단",
+          "판매종료"
+        ]
+      },
       "stopCommandException": {
         "adapter": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1",
         "schemaVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1",
@@ -1339,8 +1353,7 @@
       "owner": "master-lookup",
       "consumers": [
         "item-manager",
-        "smart-input",
-        "smart-parser"
+        "smart-input"
       ],
       "schemaVersion": "ONEAPP_REFERENCE_CHANGE_REQUEST_V1",
       "receiverAdapter": "ONEAPP_PRODUCT_MASTER_CHANGE_REQUEST_ADAPTER",
@@ -1360,9 +1373,33 @@
         "SmartParser.html"
       ],
       "schemaVersion": "ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1",
-      "writerPolicy": "Pure local create/normalize/validate/clone/freeze contract. It stores no product master, history, stop state, server queue, raw source document, or credentials. Product proposals are submitted separately through the product owner PENDING request adapter.",
+      "writerPolicy": "Pure local create/normalize/validate/clone/freeze contract. It stores no product master, history, stop state, server queue, raw source document, or credentials. Administrator-confirmed proposals are passed separately to the versioned SmartParser catalog-apply command adapter.",
       "resources": {
         "contractAsset": "smartparser/analysis-result-contract.js"
+      }
+    },
+    {
+      "id": "smartparser-catalog-apply",
+      "owner": "master-lookup",
+      "consumers": [
+        "smart-parser"
+      ],
+      "adapterVersion": "ONEAPP_SMARTPARSER_CATALOG_APPLY_COMMAND_ADAPTER_V1",
+      "commandSchemaVersion": "ONEAPP_SMARTPARSER_CATALOG_APPLY_COMMAND_V1",
+      "writerPolicy": "Only administrator-confirmed APPLY_ANALYSIS and EXCLUDE_CATALOG commands are accepted. The adapter validates immutable analysis fields, expected Product Snapshot/revision, normalized unique codes and operation idempotency, then commits product master, actual change history and notifications as one verified unit. EXCLUDE_CATALOG removes only the selected catalog and may atomically set sale status to stopped with exactly one approved reason while preserving all other catalogs. PENDING product-owner reapproval is not used.",
+      "resources": {
+        "adapterAsset": "smartparser/catalog-apply-command-adapter.js",
+        "historyLocalStorage": "merchHistory_v870",
+        "masterNotificationLocalStorage": "merchMaster_sync_trigger",
+        "optionalStopIndexedDbKeys": [
+          "merchStoppedProducts_v2",
+          "pending_shop_status"
+        ],
+        "optionalStopLocalStorage": [
+          "merchStoppedProducts_v2",
+          "pendingShopStatus",
+          "merchStopManager_sync_trigger"
+        ]
       }
     },
     {
@@ -1480,7 +1517,7 @@
       ],
       "adapterVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_ADAPTER_V1",
       "commandSchemaVersion": "ONEAPP_SMARTPARSER_STOP_MANAGEMENT_COMMAND_V1",
-      "writerPolicy": "SmartParser owns explicit general STOP/RESUME/UPDATE_METADATA only through its versioned command adapter, with normalized unique codes, expected Product Snapshot/revision, operation idempotency, atomic product sale status, stopped list, pending status, actual history, local mirrors and notifications, plus stale-safe rollback. Analysis results and PENDING product requests never invoke this command automatically. DataOps retains its existing post-close resume-only masterAddUpdate.js boundary.",
+      "writerPolicy": "SmartParser owns explicit general STOP/RESUME/UPDATE_METADATA only through its versioned command adapter, with normalized unique codes, expected Product Snapshot/revision, operation idempotency, atomic product sale status, stopped list, pending shop status, actual history, local mirrors and notifications, plus stale-safe rollback. Zero-price and sold-out analysis recommendations never invoke this command automatically. Administrator-selected '판매정지 함께 적용' during catalog exclusion is handled atomically by the separate catalog-apply command with one approved reason. DataOps retains its existing post-close resume-only masterAddUpdate.js boundary.",
       "resources": {
         "adapterAsset": "smartparser/stop-management-command-adapter.js",
         "indexedDb": {

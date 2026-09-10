@@ -8,7 +8,7 @@ const css = await readFile('smartinput/smartinput.css', 'utf8');
 const js = await readFile('smartinput/smartinput.js', 'utf8');
 
 assert.match(html, /<header class="app-bar">/, '0a SmartInput app bar must be restored');
-assert.match(html, /<div class="workspace" id="smartInputWorkspace">/, 'the protected desktop workspace must remain');
+assert.match(html, /<div class="workspace" id="smartInputWorkspace"[^>]*>/, 'the protected desktop workspace must remain');
 assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must be raised into the app header');
 assert.match(html, /class="parser-card"[^>]*id="sourceInputPanel"/, 'the independent source parser must remain');
 assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser must not be hidden by a work-table toggle');

@@ -886,13 +886,17 @@ await scenario("25. MerchOps F7 회귀검사", () => {
   assert.match(merchOps, /expectedRevision/);
 });
 
-await scenario("26. SmartParser owner 요청·stop command 경로 회귀검사", () => {
+await scenario("26. SmartParser 즉시 catalog apply·stop command 경로 회귀검사", () => {
   const smartParser = fs.readFileSync(path.join(ROOT, "SmartParser.html"), "utf8");
+  const catalogApplyAdapter = fs.readFileSync(path.join(ROOT, "smartparser/catalog-apply-command-adapter.js"), "utf8");
   const stopAdapter = fs.readFileSync(path.join(ROOT, "smartparser/stop-management-command-adapter.js"), "utf8");
-  assert.match(smartParser, /createProductChangeRequestsFromAnalysis/);
-  assert.match(smartParser, /submitProductChangeRequest/);
+  assert.match(smartParser, /createSmartParserCatalogApplyCommand/);
+  assert.match(smartParser, /commitSmartParserCatalogApply\(command\)/);
+  assert.doesNotMatch(smartParser, /submitProductChangeRequest/);
   assert.match(smartParser, /commitSmartParserStopManagement\(command\)/);
   assert.doesNotMatch(smartParser, /commitSmartParserMaster|commitMasterStateOrThrow/);
+  assert.match(catalogApplyAdapter, /commitMasterStateOrThrow\(master,\s*\{/);
+  assert.match(catalogApplyAdapter, /afterVerifiedError: 'SmartParser catalog apply linked-state verification failed'/);
   assert.match(stopAdapter, /commitMasterStateOrThrow\(master,\s*\{/);
   assert.match(stopAdapter, /afterVerifiedError: 'SmartParser stop-management linked-state verification failed'/);
 });
