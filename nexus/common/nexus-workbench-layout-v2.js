@@ -6,7 +6,8 @@
     'customer-master': { left: 240, right: 270, leftMin: 210, leftMax: 390, rightMin: 220, rightMax: 420, centerMin: 620 },
     'smart-parser': { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 700 },
     merchops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
-    dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 }
+    dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
+    orderops: { left: 286, right: 300, leftMin: 240, leftMax: 460, rightMin: 250, rightMax: 460, centerMin: 720 }
   });
   const layouts = new WeakMap();
   const safeNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;

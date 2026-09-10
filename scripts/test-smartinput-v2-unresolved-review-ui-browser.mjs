@@ -307,12 +307,21 @@ try {
   await navigate(client, `${origin}/orderops/list.html`);
   await prepareWorkspace(client);
   const current = await normalMetrics(client);
-  assert.deepEqual(current.existingButtonIds, baseline.existingButtonIds, 'all existing button IDs must remain unchanged');
+  assert.equal(baseline.existingButtonIds.every(id => current.existingButtonIds.includes(id)), true,
+    'all existing button IDs must remain available after the approved OrderOps workbench addition');
+  assert.deepEqual(current.existingButtonIds.filter(id => !baseline.existingButtonIds.includes(id)),
+    ['inventoryInspectorClose', 'inventoryInspectorReopen'],
+    'only the approved inventory inspector close/reopen buttons may extend the former button baseline');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
   const regionsBelowAppHeader = metrics => Object.fromEntries(Object.entries(metrics.regions).map(([key, value]) => [key, { ...value, y:value.y-metrics.appHeaderHeight }]));
   assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
-  assert.deepEqual(regionsBelowAppHeader(current), regionsBelowAppHeader(baseline), 'normal desktop layout regions below the app header must remain unchanged');
+  assert.deepEqual(
+    regionsBelowAppHeader({ ...current, regions:{ sourceSelector:current.regions.sourceSelector, resultsPanel:current.regions.resultsPanel } }),
+    regionsBelowAppHeader({ ...baseline, regions:{ sourceSelector:baseline.regions.sourceSelector, resultsPanel:baseline.regions.resultsPanel } }),
+    'the source selector and outer results region must remain unchanged around the approved inner three-pane workbench');
+  assert.ok(current.regions.previewTable.x > current.regions.resultsPanel.x && current.regions.previewTable.width < current.regions.resultsPanel.width,
+    'the central preview table must remain inside the approved OrderOps left/center/right workbench');
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);

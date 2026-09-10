@@ -10,19 +10,20 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-workbench-layout-'));
-const fiveAppPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','DataOps.html'];
-fiveAppPaths.forEach((path) => {
+const workbenchPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','DataOps.html','orderops/list.html'];
+workbenchPaths.forEach((path) => {
   const html = readFileSync(join(root, path), 'utf8');
-  assert.match(html, /nexus-workbench-layout-v2\.css/, `${path} must consume the five-app layout stylesheet`);
-  assert.match(html, /nexus-workbench-layout-v2\.js/, `${path} must consume the five-app layout controller`);
+  assert.match(html, /nexus-workbench-layout-v2\.css/, `${path} must consume the approved layout stylesheet`);
+  assert.match(html, /nexus-workbench-layout-v2\.js/, `${path} must consume the approved layout controller`);
 });
-const rolledBackPaths = ['smartinput/index.html', 'orderops/list.html'];
-rolledBackPaths.forEach((path) => assert.doesNotMatch(readFileSync(join(root, path), 'utf8'), /nexus-workbench-layout-v2/, `${path} must remain outside the five-app layout module`));
+const rolledBackPaths = ['smartinput/index.html'];
+rolledBackPaths.forEach((path) => assert.doesNotMatch(readFileSync(join(root, path), 'utf8'), /nexus-workbench-layout-v2/, `${path} must retain its restored layout outside the common layout module`));
 const smartInputHtml = readFileSync(join(root, 'smartinput/index.html'), 'utf8');
 assert.match(smartInputHtml, /class="parser-card"[^>]*data-nexus-pane="reference"[\s\S]*id="photoResizer"[\s\S]*class="workbench"[^>]*data-nexus-pane="work"/, 'SmartInput must keep its approved parser/table split layout');
 assert.doesNotMatch(smartInputHtml, /smart-input-reference-pane|smart-input-main-flow/, 'SmartInput must not retain the rebuilt reference/central wrappers');
 assert.doesNotMatch(readFileSync(join(root, 'DataOps.html'), 'utf8'), /min-w-\[1000px\]/, 'DataOps must not restore the clipped forced-width wrapper');
-assert.doesNotMatch(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /['"](?:orderops|smart-input)['"]\s*:/, 'the common layout allowlist must exclude OrderOps and SmartInput');
+assert.match(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /orderops:\s*\{/, 'the separately approved OrderOps workbench must be resizable');
+assert.doesNotMatch(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /['"]smart-input['"]\s*:/, 'the common layout allowlist must continue to exclude SmartInput');
 const mime = { '.css':'text/css; charset=utf-8', '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.svg':'image/svg+xml' };
 const server = createServer((request, response) => {
   try {
@@ -187,6 +188,32 @@ try {
   assert.equal(resizeState.scrollLeft, 17);
   assert.match(resizeState.reference, /P-001/);
   assert.match(resizeState.reference, /선택 참고 상품/);
+  await evaluate(client, `(()=>{const host=document.querySelector('[data-nexus-workspace="master-lookup"] > [data-nexus-pane="work"]');const probe=document.createElement('div');probe.id='nexusCommonTableProbe';probe.innerHTML='<div style="overflow:auto"><table aria-label="공통 표 검증" data-nexus-common-tools="on"><thead><tr><th>코드</th><th>수량</th><th>상태</th></tr></thead><tbody><tr data-row-id="P-001"><td>000123</td><td class="number">-1.5</td><td>검토</td></tr><tr data-row-id="P-002"><td>000124</td><td>10</td><td>정상</td></tr><tr data-row-id="P-003"><td>000125</td><td>10</td><td>검토</td></tr><tr data-row-id="P-004"><td>000126</td><td>0</td><td>정상</td></tr></tbody></table></div>';host.prepend(probe);return true})()`);
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#nexusCommonTableProbe .nexus-common-column-resize')) && document.querySelectorAll('#nexusCommonTableProbe .nexus-table-column-tool').length===3`), 'common table enhancement');
+  const commonTable = await evaluate(client, `(()=>{const table=document.querySelector('#nexusCommonTableProbe table');const handle=table.querySelector('.nexus-common-column-resize');const before=Number(handle.getAttribute('aria-valuenow'));handle.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));table.querySelector('tbody tr').click();return {before,after:Number(handle.getAttribute('aria-valuenow')),selected:table.querySelector('tbody tr').getAttribute('aria-selected'),code:table.querySelector('tbody td').textContent,numberAlign:getComputedStyle(table.querySelector('td.number')).textAlign,stored:Object.keys(localStorage).some(key=>key.startsWith('nexus:table-widths:master-lookup:'))}})()`);
+  assert.equal(commonTable.after, commonTable.before + 12);
+  assert.equal(commonTable.selected, 'true');
+  assert.equal(commonTable.code, '000123');
+  assert.equal(commonTable.numberAlign, 'right');
+  assert.equal(commonTable.stored, true);
+  await click(client, '#nexusCommonTableProbe th:nth-child(2) .nexus-table-column-tool');
+  assert.equal(await evaluate(client, `document.querySelector('.nexus-table-popover__scope').textContent`), '공통 표 검증 · 수량');
+  await evaluate(client, `(()=>{const input=document.querySelector('#nexusTableGlobalSearch');input.value='000124';input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true})()`);
+  assert.deepEqual(await evaluate(client, `(()=>{const table=document.querySelector('#nexusCommonTableProbe table');return {visible:table.dataset.nexusVisibleRows,total:table.dataset.nexusTotalRows,rows:[...table.querySelectorAll('tbody tr')].filter(row=>!row.classList.contains('nexus-table-filtered-out')).map(row=>row.cells[0].textContent)}})()`), { visible:'1', total:'4', rows:['000124'] }, 'common search must be display-only and retain all source rows');
+  await click(client, '.nexus-table-popover [data-reset-all]');
+  await click(client, '.nexus-table-popover [data-sort="desc"]');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#nexusCommonTableProbe tbody tr')].map(row=>row.cells[1].textContent)`), ['10','10','0','-1.5'], 'numeric sort must use numeric values and stable ties');
+  await evaluate(client, `(()=>{const checks=[...document.querySelectorAll('.nexus-table-popover__values input')];checks.forEach(input=>input.checked=input.nextElementSibling.textContent==='10');document.querySelector('.nexus-table-popover [data-apply-values]').click();return true})()`);
+  assert.deepEqual(await evaluate(client, `(()=>{const table=document.querySelector('#nexusCommonTableProbe table');return {visible:table.dataset.nexusVisibleRows,rows:[...table.querySelectorAll('tbody tr')].filter(row=>!row.classList.contains('nexus-table-filtered-out')).map(row=>row.cells[0].textContent)}})()`), { visible:'2', rows:['000124','000125'] }, 'same-column checked values must use OR filtering');
+  await click(client, '#nexusCommonTableProbe th:nth-child(3) .nexus-table-column-tool');
+  await evaluate(client, `(()=>{const checks=[...document.querySelectorAll('.nexus-table-popover__values input')];checks.forEach(input=>input.checked=input.nextElementSibling.textContent==='정상');document.querySelector('.nexus-table-popover [data-apply-values]').click();return true})()`);
+  assert.deepEqual(await evaluate(client, `(()=>{const table=document.querySelector('#nexusCommonTableProbe table');return {visible:table.dataset.nexusVisibleRows,rows:[...table.querySelectorAll('tbody tr')].filter(row=>!row.classList.contains('nexus-table-filtered-out')).map(row=>row.cells[0].textContent)}})()`), { visible:'1', rows:['000124'] }, 'different-column filters must combine with AND');
+  await click(client, '.nexus-table-popover [data-reset-all]');
+  assert.equal(await evaluate(client, `document.querySelector('#nexusCommonTableProbe tbody tr:last-child td:nth-child(2)').textContent`), '0', 'filter reset must preserve numeric zero source values');
+  await client.send('Emulation.setEmulatedMedia', { media:'print' });
+  assert.match(await evaluate(client, `getComputedStyle(document.querySelector('#nexusCommonTableProbe tbody td')).backgroundColor`), /rgb\(255, 255, 255\)/, 'print table cells must be pure white');
+  await client.send('Emulation.setEmulatedMedia', { media:'screen' });
+  await evaluate(client, `document.querySelector('#nexusCommonTableProbe').remove()`);
   const pointerResize = await evaluate(client, `(() => { const pane=document.querySelector('[data-nexus-workspace="master-lookup"] > [data-nexus-pane="reference"]'); const handle=document.querySelector('[data-nexus-pane-resize="left"]'); const rect=handle.getBoundingClientRect(); return {before:pane.getBoundingClientRect().width,x:rect.left+rect.width/2,y:rect.top+Math.min(rect.height/2,120)}; })()`);
   await client.send('Input.dispatchMouseEvent', { type:'mousePressed', x:pointerResize.x, y:pointerResize.y, button:'left', buttons:1, clickCount:1 });
   await client.send('Input.dispatchMouseEvent', { type:'mouseMoved', x:pointerResize.x + 24, y:pointerResize.y, button:'left', buttons:1 });
@@ -225,7 +252,7 @@ try {
   await loaded;
   assert.equal(await evaluate(client, `location.pathname.endsWith('/DataOps.html')`), true, 'History Viewer must return to its validated calling app');
   assert.deepEqual(runtimeExceptions, [], `workbench pages must not throw runtime exceptions: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS five-app workbench browser E2E: seven tabs, three-pane roles, independent persisted keyboard resize, state preservation, close/reopen, small-screen access, SmartInput and OrderOps rollback exclusions, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
+  console.log('PASS NEXUS workbench browser E2E: seven tabs, six approved resizable workbenches including OrderOps, independent persisted resize, state preservation, close/reopen, small-screen access, SmartInput restored-layout exclusion, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
 } finally {
   client?.close();
   await new Promise((resolveClose) => server.close(resolveClose));

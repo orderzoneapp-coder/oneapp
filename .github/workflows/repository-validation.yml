@@ -93,8 +93,10 @@ jobs:
       - name: Test NEXUS unified dark app headers
         run: node scripts/test-nexus-unified-dark-app-headers-browser-e2e.mjs
 
-      - name: Test NEXUS five-app resizable workbench and rollback exclusions
-        run: node scripts/test-nexus-workbench-layout-browser-e2e.mjs
+      - name: Test NEXUS table UX and approved resizable workbenches
+        run: |
+          node scripts/test-nexus-table-ux-contract.mjs
+          node scripts/test-nexus-workbench-layout-browser-e2e.mjs
 
       - name: Test NEXUS basic login and home contracts
         run: |
@@ -210,7 +212,9 @@ jobs:
         run: node scripts/test-itemmaster-browser-e2e.mjs
 
       - name: Test OrderOps allocation and workbook contracts
-        run: node scripts/test-shipping-management.mjs
+        run: |
+          node scripts/test-shipping-management.mjs
+          node scripts/test-orderops-dispatch-workbench.mjs
 
       - name: Test OrderOps substitute shipment and unresolved system-message review
         run: |
