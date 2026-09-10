@@ -1,13 +1,13 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.2.9
+- Architecture document version: 2.3.1
 - Previous detailed review: 2026-09-04
 - Documentation updated: 2026-09-11
 - Previous detailed source baseline: `d44bbda357268289269574aa8f7b36333e013be5`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 5개 업무 앱의 중앙·좌측·우측 작업영역과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력과 출고관리 본문 레이아웃은 사용자 승인 롤백 상태 유지
-- Runtime verification: 7개 앱의 1600·1280·390px 일반/다크 브라우저에서 글로벌·앱헤더 색상 일치, 56px 높이, 좌측 정렬, 버튼 대비·무겹침과 SmartParser·OrderOps 로고 제거 검증. 기존 작업영역·SmartInput·OrderOps 업무 회귀를 함께 확인하며 운영 배포 버전은 CI와 Pages에서 별도 대조
+- Review scope: NEXUS 7개 글로벌헤더, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
+- Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 고객 배송 단위 집계·담당자 동기화·선택 상품 재고 조회를 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적
@@ -298,14 +298,22 @@ Production files must not be reorganized into folders without first updating and
 | 접근성 | 일반·다크 모두 일반 본문과 주요 상태 텍스트 대비를 WCAG 4.5:1 이상으로 유지하고 색상만으로 상태를 전달하지 않는다. |
 | 출력 경계 | 인쇄와 Excel·ERP·이미지·카카오 등 업무 출력물의 승인된 밝은 배경과 기존 형식을 유지한다. 화면 테마가 출력 데이터나 출력 렌더링 계약을 바꾸지 않는다. |
 
-**5개 업무 앱 작업영역 계약**
+**6개 업무 앱 작업영역 계약**
 
-- `Master.html`, `customer-master/index.html`, `SmartParser.html`, `MerchOps.html`, `DataOps.html`은 좌측 보조·중앙 핵심·우측 결과의 세 영역을 사용한다. 중앙은 조회·입력·편집·검토·저장·출력까지 시작과 완료가 이어지는 핵심 업무를 소유한다.
+- `Master.html`, `customer-master/index.html`, `SmartParser.html`, `MerchOps.html`, `DataOps.html`, `orderops/list.html`은 좌측 보조·중앙 핵심·우측 결과의 세 영역을 사용한다. 중앙은 조회·입력·편집·검토·저장·출력까지 시작과 완료가 이어지는 핵심 업무를 소유한다.
 - 좌측은 현재 선택 행과 판단에 필요한 기준정보를 항상 표시하는 보조 영역이다. 사용자가 닫을 수 없고, 검색·필터·저장·복구 같은 핵심 작업을 좌측에만 두지 않는다.
 - 우측은 처리 결과, 검산, 이력과 다음 단계 진입을 제공한다. 닫기와 다시 열기를 허용하고 닫을 때 확보된 폭은 중앙으로 돌려주되, 저장된 우측 폭은 다음 열기 때 복원한다.
 - 좌측과 우측 폭은 서로 독립적으로 마우스·포인터와 키보드로 조절한다. 폭 변경은 앱별 로컬 UI 설정만 갱신하며 업무 저장·재계산·네트워크 요청을 실행하지 않고 검색, 필터, 선택, 포커스와 스크롤을 보존한다. 중앙 최소 폭을 먼저 보호한다.
 - 960px 이하에서도 세 영역을 단순 제거하지 않고 좌측·중앙·우측 순으로 접근 가능하게 쌓는다. 닫힌 우측은 사용자가 다시 열 수 있어야 한다.
-- `smartinput/index.html` 스마트입력과 `orderops/list.html` 출고관리 레이아웃은 이 5개 앱 공통 작업영역 모듈의 적용 대상이 아니다. 두 화면은 2026-09-11 사용자 승인 롤백 상태를 유지하며, 향후 변경은 별도 승인·구현·검증으로만 수행한다. 스마트입력의 7개 글로벌헤더와 기존 입력·저장·이력 기능은 유지한다.
+- `smartinput/index.html` 스마트입력은 이 공통 작업영역 모듈의 적용 대상이 아니며 2026-09-11 사용자 승인 복원 레이아웃, 7개 글로벌헤더와 기존 입력·저장·이력 기능을 유지한다. `orderops/list.html`은 후속 사용자 승인에 따라 왼쪽 고객·배송 단위 배정 요약, 기존 중앙 작업표, 오른쪽 선택 상품 재고 조회만 공통 폭 조절 계약에 편입했다.
+
+**공통 표·인쇄 계약**
+
+- 7개 업무 앱은 `nexus-table-ux.css/js`를 사용해 표의 머리글 고정, 행 선택·복사·키보드 이동, 실제 자료형 정렬, 열별 값 OR·열간 AND 필터, 표 검색, 숫자 정렬과 접근 가능한 열폭 조절의 공통 계약을 적용한다. 공통 조작은 현재 DOM 표시 계층에만 적용하고 각 행의 안정 ID·입력 요소·원본 배열을 바꾸지 않는다. OrderOps처럼 앱이 이미 같은 열 메뉴를 소유한 표와 React가 행 생명주기를 소유한 표에는 중복 DOM 메뉴를 만들지 않고 앱 소유 검색·필터·정렬·열 설정을 유지한다. React 소유 표를 공통 메뉴로 강제 재정렬하면 연결·편집 상태가 어긋날 수 있으므로 해당 표의 DOM 내부 변형은 금지한다.
+- 검색·필터·정렬·열 숨김은 화면 상태만 바꾸고 업무 자료를 변경하지 않는다. 편집·붙여넣기·행 추가·삭제는 각 앱의 기존 writable 계약과 안정 행 ID를 계속 따른다. 공란, 숫자 0, 음수, 소수와 선행 0 텍스트를 같은 값으로 합치지 않는다.
+- 일반/흰색 모드의 브라우저 인쇄와 앱 인쇄는 본문·표·셀 배경을 `#FFFFFF`로 강제하고 선택·hover·편집 focus 배경을 제거한다. 인쇄 취소는 테마, 입력, 선택, 검색·필터·정렬, 스크롤과 저장 폭을 바꾸지 않는다.
+- OrderOps 배송건은 상품행 수가 아니라 안정 거래처 ID/코드와 주문·창고 배송 단위로 계산한다. 같은 상호의 다른 거래처 코드를 합치지 않으며, 코드가 없는 원본은 자동 병합하지 않고 해당 배송 단위로 제한한다. `적요(직원)`은 Excel `적요1|적요(직원)|직원적요` 또는 ORDER Q line `description`만 사용한다. 일반 `적요`/배송지시는 대체값이 아니다.
+- OrderOps 담당자 변경은 현 작업공간의 동일 거래처 키 전체 주문행에 적용하고 기존 system history와 로컬 복구 경계에 기록한다. 오른쪽 예상 잔량은 현재 적재 창고재고 합계에서 주문수량을 뺀 표시 계산이며 실제 출고 확정이나 DataOps 재고 쓰기를 수행하지 않는다.
 
 테마 값의 단일 권위는 `nexus-ui-theme-init.js`가 제공하는 `ONEAPP_NEXUS_UI_THEME` 컨트롤러와 `oneapp.nexus.ui.theme.v1` 저장키다. 문서 루트의 `data-nexus-ui-theme="light|dark"`가 공통 UI 소비 기준이며 기존 `data-nexus-theme`는 호환 alias로만 유지한다. 변경 알림은 `nexus-ui:theme-change`를 사용한다. 테마 전환은 재조회·새로고침·전체 재렌더링 없이 적용하며 검색, 필터, 선택, 입력, 편집, 스크롤과 동기화 상태를 보존한다.
 

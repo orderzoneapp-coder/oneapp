@@ -133,7 +133,7 @@ try {
     return true;
   })()`);
   await navigate(client, `${origin}/SmartParser.html`);
-  await waitFor(() => evaluate(client, `window.__SMART_PARSER_RENDERED__ === true && document.body.textContent.includes('Product Snapshot READY')`), 'ready product snapshot');
+  await waitFor(() => evaluate(client, `window.__SMART_PARSER_RENDERED__ === true && [...document.querySelectorAll('[data-nexus-pane="reference"] div')].some(node => node.textContent.trim()==='상품 Snapshot' && node.nextElementSibling?.textContent.trim()==='READY')`), 'ready product snapshot');
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="smart-parser"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
   assert.equal(await evaluate(client, `document.querySelector('[data-nexus-app-header="smart-parser"]')?.offsetHeight >= 56`), true);
   await evaluate(client, `document.querySelector('[data-nexus-pane="result"] button[aria-label="결과 패널 닫기"]').click()`);
