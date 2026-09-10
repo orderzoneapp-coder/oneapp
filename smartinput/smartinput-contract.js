@@ -6,6 +6,7 @@
   const DRAFT_LIST_STORAGE_KEY = 'oneapp.smartinput.drafts.v1';
   const DELIVERY_HISTORY_KEY = 'oneapp.smartinput.delivery-history.v1';
   const SETTINGS_STORAGE_KEY = 'oneapp.smartinput.settings.v1';
+  const INITIAL_INPUT_LAYOUT_MIGRATION_VERSION = '20260911-v1';
   const APP_ID = 'smart-input';
   const MODE_ORDER = ['order', 'purchase', 'sale', 'estimate'];
   const MODES = Object.freeze({
@@ -241,6 +242,10 @@
       return [fieldId, field?.editable === false ? 0 : ++editableOrder];
     });
   })()));
+  const LEGACY_DEFAULT_INPUT_ORDER = Object.freeze(Object.fromEntries(DEFAULT_VOUCHER_COLUMNS.map((fieldId, index) => {
+    const field = PRODUCT_FIELD_DEFINITIONS.find(definition => definition.id === fieldId);
+    return [fieldId, field?.editable === false ? 0 : index + 1];
+  })));
   const DEFAULT_INPUT_ORDER_BY_MODE = Object.freeze(Object.fromEntries(MODE_ORDER.map(mode => [
     mode,
     INITIAL_INPUT_PRESETS[mode] ? Object.freeze(getInitialInputLayout(mode).inputOrder) : DEFAULT_INPUT_ORDER
@@ -251,6 +256,7 @@
   ]);
   const DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS = Object.freeze(['noticePrice']);
   const DEFAULT_SETTINGS = Object.freeze({
+    initialInputLayoutMigrationVersion: INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
     orderCutoffTime: '',
     allowSameDayDelivery: true,
     defaultDeliveryWeekdays: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
@@ -274,6 +280,43 @@
 
   function text(value) {
     return String(value ?? '').normalize('NFKC').trim();
+  }
+
+  function sameFieldSequence(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((fieldId, index) => text(fieldId) === text(right[index]));
+  }
+
+  function initialInputLayoutMigrationModes(value = {}) {
+    if (!value || typeof value !== 'object'
+      || text(value.initialInputLayoutMigrationVersion) === INITIAL_INPUT_LAYOUT_MIGRATION_VERSION) return [];
+    const sourceByMode = value.voucherColumnsByMode && typeof value.voucherColumnsByMode === 'object'
+      ? value.voucherColumnsByMode
+      : {};
+    const inputOrderByMode = value.inputOrderByMode && typeof value.inputOrderByMode === 'object'
+      ? value.inputOrderByMode
+      : {};
+    const inputOrderIsDefault = mode => {
+      const source = inputOrderByMode[mode];
+      if (!source || typeof source !== 'object') return true;
+      return DEFAULT_VOUCHER_COLUMNS.every(fieldId => !Object.prototype.hasOwnProperty.call(source, fieldId)
+        || Number(source[fieldId]) === Number(DEFAULT_INPUT_ORDER[fieldId])
+        || Number(source[fieldId]) === Number(LEGACY_DEFAULT_INPUT_ORDER[fieldId]));
+    };
+    const explicitModes = MODE_ORDER.filter(mode => Array.isArray(sourceByMode[mode]));
+    const legacyCommonIsDefault = sameFieldSequence(value.voucherColumns, DEFAULT_VOUCHER_COLUMNS);
+    const customizedModes = MODE_ORDER.filter(mode => (Array.isArray(sourceByMode[mode])
+      && !sameFieldSequence(sourceByMode[mode], DEFAULT_VOUCHER_COLUMNS)) || !inputOrderIsDefault(mode));
+    const everyExplicitModeIsDefault = explicitModes.every(mode => sameFieldSequence(sourceByMode[mode], DEFAULT_VOUCHER_COLUMNS)
+      && inputOrderIsDefault(mode));
+    if (legacyCommonIsDefault && !customizedModes.length) return [...MODE_ORDER];
+    if (!Array.isArray(value.voucherColumns) && explicitModes.length === MODE_ORDER.length
+      && everyExplicitModeIsDefault && !customizedModes.length) {
+      return [...MODE_ORDER];
+    }
+    if (legacyCommonIsDefault) return MODE_ORDER.filter(mode => (!Array.isArray(sourceByMode[mode])
+      || sameFieldSequence(sourceByMode[mode], DEFAULT_VOUCHER_COLUMNS)) && inputOrderIsDefault(mode));
+    return [];
   }
 
   function numberOrNull(value) {
@@ -418,14 +461,19 @@
         ...(field?.initialInputRole === 'sale.date' ? { initialInputRole: 'sale.date' } : {})
       };
     }).filter(Boolean).filter((field, index, rows) => rows.findIndex(other => other.id === field.id) === index);
+    const sourceVoucherColumnsByMode = value.voucherColumnsByMode && typeof value.voucherColumnsByMode === 'object'
+      ? value.voucherColumnsByMode
+      : {};
+    let migrationModes = initialInputLayoutMigrationModes(value);
     let initialSaleLayout = null;
-    if (!Array.isArray(value.voucherColumnsByMode?.sale) && !Array.isArray(value.voucherColumns)) {
+    if (migrationModes.includes('sale') || (!Array.isArray(sourceVoucherColumnsByMode.sale) && !Array.isArray(value.voucherColumns))) {
       try {
         initialSaleLayout = getInitialInputLayout('sale', { customFields });
         customFields.splice(0, customFields.length, ...initialSaleLayout.customFields);
       } catch {
         // Existing user fields remain usable when no safe date slot can be resolved.
         // Explicit sale restoration reports the actionable conflict instead.
+        migrationModes = migrationModes.filter(mode => mode !== 'sale');
       }
     }
     const deliveryCustomerWeekdays = {};
@@ -469,9 +517,6 @@
     const sourceHeaderFieldsByMode = value.headerFieldsByMode && typeof value.headerFieldsByMode === 'object'
       ? value.headerFieldsByMode
       : {};
-    const sourceVoucherColumnsByMode = value.voucherColumnsByMode && typeof value.voucherColumnsByMode === 'object'
-      ? value.voucherColumnsByMode
-      : {};
     const headerFieldsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
       mode,
       normalizeLayout(sourceHeaderFieldsByMode[mode], HEADER_FIELD_DEFINITIONS, legacyHeaderFields, 'header')
@@ -479,7 +524,9 @@
     if (!headerFieldsByMode.order.includes('assignee')) headerFieldsByMode.order.push('assignee');
     const voucherColumnsByMode = Object.fromEntries(MODE_ORDER.map(mode => [
       mode,
-      normalizeLayout(sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS,
+      normalizeLayout(migrationModes.includes(mode)
+        ? (mode === 'sale' ? initialSaleLayout?.voucherColumns : getInitialInputLayout(mode, { customFields })?.voucherColumns)
+        : sourceVoucherColumnsByMode[mode], PRODUCT_FIELD_DEFINITIONS,
         Array.isArray(value.voucherColumns) ? legacyVoucherColumns
           : (mode === 'sale' ? (initialSaleLayout?.voucherColumns || DEFAULT_VOUCHER_COLUMNS) : DEFAULT_VOUCHER_COLUMNS_BY_MODE[mode]), 'voucher')
     ]));
@@ -490,10 +537,13 @@
     const inputOrderByMode = Object.fromEntries(MODE_ORDER.map(mode => {
       const selected = voucherColumnsByMode[mode];
       const selectedIndex = new Map(selected.map((fieldId, index) => [fieldId, index]));
-      const useInitialOrder = Boolean(INITIAL_INPUT_PRESETS[mode]) && !Array.isArray(sourceVoucherColumnsByMode[mode]) && !Array.isArray(value.voucherColumns);
-      const source = inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object'
-        ? inputOrderSource[mode]
-        : (useInitialOrder ? (mode === 'sale' ? (initialSaleLayout?.inputOrder || DEFAULT_INPUT_ORDER) : DEFAULT_INPUT_ORDER_BY_MODE[mode]) : {});
+      const useInitialOrder = migrationModes.includes(mode)
+        || (Boolean(INITIAL_INPUT_PRESETS[mode]) && !Array.isArray(sourceVoucherColumnsByMode[mode])
+          && !Array.isArray(value.voucherColumns)
+          && !(inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object'));
+      const source = useInitialOrder
+        ? (mode === 'sale' ? (initialSaleLayout?.inputOrder || DEFAULT_INPUT_ORDER) : DEFAULT_INPUT_ORDER_BY_MODE[mode])
+        : (inputOrderSource[mode] && typeof inputOrderSource[mode] === 'object' ? inputOrderSource[mode] : {});
       const order = {};
       allowedColumnIds.forEach(fieldId => {
         const configured = Number(source[fieldId]);
@@ -516,6 +566,7 @@
     if (!estimateNoticePriceFields.length) estimateNoticePriceFields.push(...DEFAULT_ESTIMATE_NOTICE_PRICE_FIELDS);
     return {
       ...value,
+      initialInputLayoutMigrationVersion: INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
       orderCutoffTime: /^\d{2}:\d{2}$/.test(text(value.orderCutoffTime)) ? text(value.orderCutoffTime) : '',
       allowSameDayDelivery: value.allowSameDayDelivery !== false,
       defaultDeliveryWeekdays: normalizeWeekdays(value.defaultDeliveryWeekdays, DEFAULT_SETTINGS.defaultDeliveryWeekdays),
@@ -1094,6 +1145,7 @@
     DRAFT_LIST_STORAGE_KEY,
     DELIVERY_HISTORY_KEY,
     SETTINGS_STORAGE_KEY,
+    INITIAL_INPUT_LAYOUT_MIGRATION_VERSION,
     APP_ID,
     MODES,
     INPUT_METHODS,
@@ -1113,6 +1165,7 @@
     todayLocal,
     businessDate,
     normalizeSettings,
+    initialInputLayoutMigrationModes,
     getInitialInputLayout,
     fieldDefinitionForMode,
     restoreInitialInputSettings,
