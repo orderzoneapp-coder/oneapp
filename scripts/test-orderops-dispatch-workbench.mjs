@@ -73,7 +73,7 @@ for (const contract of [
   '적요(직원)',
   '현재 재고−주문수량의 화면 계산값',
 ]) assert.ok(html.includes(contract), `출고관리 추가 레이아웃 계약 누락: ${contract}`);
-assert.doesNotMatch(html, /employeeNote\s*=\s*String\(row\?\.noteOriginal|employeeNote\s*=\s*String\(row\?\.note\s/, 
+assert.doesNotMatch(html, /employeeNote\s*=\s*String\(row\?\.noteOriginal|employeeNote\s*=\s*String\(row\?\.note\s/,
   '왼쪽 배송 메모는 일반 적요를 적요(직원) 대신 사용하면 안 된다');
 
 console.log('OrderOps dispatch workbench tests passed.');
