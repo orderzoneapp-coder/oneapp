@@ -42,7 +42,7 @@ for (const [file, appId, base, title] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
   const uiCss = `${base}nexus-ui.css?v=1.3.5`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
-  const runtime = `${base}nexus-ui.js?v=1.6.0`;
+  const runtime = `${base}nexus-ui.js?v=1.6.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -124,7 +124,7 @@ assert.doesNotMatch(uiSource, /label: '상품등록'/, 'SKU management must not 
 assert.match(uiSource, /'item-manager': 'master-lookup'/, 'SKU management direct URL must resolve to the product-management tab');
 assert.match(
   uiSource,
-  /id:\s*'master-lookup'[\s\S]*?id:\s*'customer-master'[\s\S]*?id:\s*'smart-parser'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
+  /id:\s*'master-lookup'[\s\S]*?id:\s*'customer-master'[\s\S]*?id:\s*'smart-input'[\s\S]*?id:\s*'smart-parser'[\s\S]*?id:\s*'merchops'[\s\S]*?id:\s*'orderops'[\s\S]*?id:\s*'dataops'/,
   'the seven global apps must keep the approved canonical order',
 );
 assert.doesNotMatch(uiSource, /label:\s*'(?:Smart Parser|Export|Master|ORDER Q|ORDER Q vNext|SmartInput)'/, 'unapproved English aliases must not enter the common header');

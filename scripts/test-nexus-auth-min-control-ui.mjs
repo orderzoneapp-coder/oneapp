@@ -16,7 +16,7 @@ const officialApps = [
   'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext',
 ];
 const commonHeaderApps = [
-  'master-lookup', 'customer-master', 'smart-parser', 'merchops', 'smart-input', 'orderops', 'dataops',
+  'master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops',
 ];
 
 assert.match(homeHtml, /id="activationForm"[^>]+hidden/, 'first activation form must be opt-in');
@@ -73,7 +73,7 @@ const directPages = [
 ];
 for (const page of directPages) {
   const html = await readFile(page, 'utf8');
-  assert.match(html, /nexus-ui\.js\?v=1\.6\.0/, `${page}: visibility-only header is required`);
+  assert.match(html, /nexus-ui\.js\?v=1\.6\.1/, `${page}: visibility-only header is required`);
   assert.doesNotMatch(html, /http-equiv=["']refresh|location\.(?:href|replace)[^\n]+\/nexus\//i, `${page}: direct entry must not redirect to login`);
 }
 

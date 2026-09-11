@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.6.0';
+  const VERSION = '1.6.1';
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -20,9 +20,9 @@
   const GLOBAL_HEADER_APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', path: 'Master.html' }),
     Object.freeze({ id: 'customer-master', label: '거래처관리', path: 'customer-master/index.html' }),
+    Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
     Object.freeze({ id: 'smart-parser', label: '스마트파서', path: 'SmartParser.html' }),
     Object.freeze({ id: 'merchops', label: 'MerchOps', path: 'MerchOps.html' }),
-    Object.freeze({ id: 'smart-input', label: '스마트입력', path: 'smartinput/index.html' }),
     Object.freeze({ id: 'orderops', label: '출고관리', path: 'orderops/list.html' }),
     Object.freeze({ id: 'dataops', label: 'DataOps', path: 'DataOps.html' }),
   ]);
