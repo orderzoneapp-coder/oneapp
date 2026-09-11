@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.26.0";
+  const ENGINE_VERSION = "3.27.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
@@ -172,8 +172,11 @@
           quantityGroups: new Map(),
           amountTotal: 0,
           amountValueCount: 0,
+          calculatedAmountTotal: 0,
+          calculatedAmountValueCount: 0,
           amountBlankCount: 0,
           amountInvalidCount: 0,
+          amountUnknownCount: 0,
         });
       }
       const group = groups.get(deliveryKey);
@@ -205,7 +208,19 @@
 
       const amount = parseNumericCell(row?.supplyAmount);
       if (!amount.ok) group.amountInvalidCount += 1;
-      else if (amount.blank) group.amountBlankCount += 1;
+      else if (amount.blank) {
+        group.amountBlankCount += 1;
+        const quantity = parseNumericCell(row?.quantity);
+        const unitPrice = parseNumericCell(row?.unitPrice);
+        if (quantity.ok && !quantity.blank && unitPrice.ok && !unitPrice.blank) {
+          group.calculatedAmountTotal = roundQuantity(
+            group.calculatedAmountTotal + roundQuantity(quantity.value * unitPrice.value),
+          );
+          group.calculatedAmountValueCount += 1;
+        } else {
+          group.amountUnknownCount += 1;
+        }
+      }
       else {
         group.amountTotal = roundQuantity(group.amountTotal + amount.value);
         group.amountValueCount += 1;
@@ -243,13 +258,17 @@
         employeeNote: [...group.employeeNotes].join(" / "),
         sourceRowNumbers: group.sourceRowNumbers,
         representativeItem: group.items[0] || null,
+        items: group.items,
         additionalItemCount: Math.max(0, group.items.length - 1),
         itemCount: group.items.length,
         quantityGroups: [...group.quantityGroups.values()],
         amountTotal: group.amountValueCount > 0 ? group.amountTotal : null,
         amountValueCount: group.amountValueCount,
+        calculatedAmountTotal: group.calculatedAmountValueCount > 0 ? group.calculatedAmountTotal : null,
+        calculatedAmountValueCount: group.calculatedAmountValueCount,
         amountBlankCount: group.amountBlankCount,
         amountInvalidCount: group.amountInvalidCount,
+        amountUnknownCount: group.amountUnknownCount,
       };
     });
   }
