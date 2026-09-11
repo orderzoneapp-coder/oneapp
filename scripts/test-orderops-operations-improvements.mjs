@@ -15,10 +15,10 @@ const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<
 assert.ok(inlineScripts.length > 0, "OrderOps inline script를 찾을 수 없습니다.");
 inlineScripts.forEach((match, index) => new vm.Script(match[1], { filename: `orderops/list.html:inline-${index + 1}` }));
 
-const REQUIRED_ORDER_HEADERS = ["담당", "품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"];
+const REQUIRED_ORDER_HEADERS = ["담당", "단위", "품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"];
 const INVENTORY_MATRIX = [
-  ["품목코드", "품목명", "규격", "수량", "1창고", "3서울", "4전송"],
-  ["DATE-001", "날짜 상품", "EA", 0, 0, 0, 0],
+  ["품목코드", "품목명", "규격", "단위", "수량", "1창고", "3서울", "4전송"],
+  ["DATE-001", "날짜 상품", "EA", "EA", 0, 0, 0, 0],
 ];
 
 function parseOrders(dateHeaders, rows) {
@@ -28,6 +28,7 @@ function parseOrders(dateHeaders, rows) {
     ...rows.map((row, index) => [
       ...dateHeaders.map((header) => row[header] ?? ""),
       row.manager ?? `담당${index + 1}`,
+      row.unit ?? "EA",
       row.productCode ?? "DATE-001",
       row.productName ?? "날짜 상품",
       row.specification ?? "EA",

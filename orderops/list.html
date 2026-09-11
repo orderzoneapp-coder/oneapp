@@ -9,14 +9,14 @@
   <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
   <script defer src="../nexus/common/nexus-ui.js?v=1.6.1"></script>
-  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.3.0"></script>
+  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.4.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-pr574-remediation"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-orderops-v1-2"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2359,6 +2359,218 @@
       .orderq-source-picker { grid-template-columns: 1fr; }
       .orderq-source-picker__notice { grid-column: 1; }
     }
+    /* OrderOps v1.59: operator controls, stable mobile panes and verified status */
+    .orderops-header-primary {
+      display: flex;
+      align-items: center;
+      flex: 1 1 auto;
+      gap: 5px;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .orderops-header-primary > :is(button, .orderops-header-menu) { flex: 0 0 auto; }
+    .orderops-header-primary .header-link,
+    .orderops-header-menu > button {
+      min-height: 34px;
+      padding: 0 9px;
+      border: 1px solid rgb(255 255 255 / 20%);
+      border-radius: 5px;
+      color: #e2e8f0;
+      background: #151c2c;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .orderops-header-menu { position: relative; }
+    .orderops-header-menu__items {
+      position: fixed;
+      z-index: 130;
+      display: grid;
+      gap: 5px;
+      min-width: 190px;
+      padding: 7px;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      background: #0f172a;
+      box-shadow: 0 14px 34px rgb(2 6 23 / 35%);
+    }
+    .orderops-header-menu__items[hidden] { display: none; }
+    .orderops-header-menu__items :is(button, a) {
+      justify-content: flex-start;
+      min-height: 32px;
+      width: 100%;
+      border-color: #475569;
+      color: #e2e8f0;
+      background: #1e293b;
+    }
+    .orderops-source-runtime { display: none !important; }
+    .orderops-header-file-status {
+      max-width: 150px;
+      overflow: hidden;
+      color: #94a3b8;
+      font-size: 9px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .orderops-pane-shortcuts { display: none; }
+    .orderops-header-source-statuses { display: flex; gap: 6px; min-width: 0; }
+    .orderops-table-settings { position: relative; flex: 0 0 auto; }
+    .orderops-table-settings__menu {
+      position: fixed;
+      z-index: 125;
+      display: grid;
+      gap: 7px;
+      width: min(560px, calc(100% - 16px));
+      padding: 8px;
+      border: 1px solid #94a3b8;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 14px 34px rgb(15 23 42 / 22%);
+    }
+    .orderops-table-settings__menu[hidden] { display: none; }
+    .orderops-table-settings__menu .table-view-tools { display: flex; flex-wrap: wrap; gap: 5px; }
+    .orderops-table-settings__menu > .filter-toggle-button { justify-self: start; }
+    .orderops-status-bar .system-name,
+    .orderops-status-bar .system-cursor { display: none !important; }
+    .orderops-status-bar .system-console {
+      width: min(760px, 100%);
+      border: 0;
+      color: #334155;
+      background: transparent;
+      font-family: inherit;
+    }
+    .orderops-bottom-workbar {
+      position: sticky;
+      z-index: 20;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      flex: 0 0 auto;
+      gap: 6px;
+      min-height: 44px;
+      padding: 5px 8px;
+      overflow-x: auto;
+      border-top: 1px solid #cbd5e1;
+      background: rgb(255 255 255 / 96%);
+      box-shadow: 0 -3px 10px rgb(15 23 42 / 8%);
+      white-space: nowrap;
+    }
+    .orderops-bottom-workbar .header-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 9px;
+      border: 1px solid #94a3b8;
+      border-radius: 5px;
+      color: #1e293b;
+      background: #fff;
+      font-size: 10px;
+      font-weight: 900;
+      text-decoration: none;
+    }
+    .orderops-bottom-workbar .system-mode {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: auto;
+      color: #475569;
+    }
+    .orderops-manager-assignment {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(90px, .7fr) auto;
+      align-items: end;
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid #cbd5e1;
+      background: #f8fafc;
+    }
+    .orderops-manager-assignment > div { display: grid; gap: 2px; min-width: 0; }
+    .orderops-manager-assignment strong { color: #0f172a; font-size: 10px; }
+    .orderops-manager-assignment span { overflow: hidden; color: #64748b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .orderops-manager-assignment label { display: grid; gap: 2px; color: #475569; font-size: 9px; font-weight: 900; }
+    .orderops-manager-assignment :is(input, button) { min-width: 0; height: 28px; border: 1px solid #94a3b8; border-radius: 4px; }
+    .orderops-manager-assignment button { padding: 0 8px; color: #fff; background: #0f766e; font-size: 10px; font-weight: 900; }
+    .warehouse-column-dialog { width: min(760px, calc(100% - 24px)); border: 0; border-radius: 8px; padding: 0; }
+    .warehouse-column-dialog::backdrop { background: rgb(15 23 42 / 58%); }
+    .warehouse-column-dialog form { display: grid; gap: 12px; padding: 18px; }
+    .warehouse-column-dialog h3, .warehouse-column-dialog p { margin: 0; }
+    .warehouse-column-candidate { display: grid; grid-template-columns: auto minmax(110px, .45fr) 1fr; gap: 8px; padding: 9px; border: 1px solid #cbd5e1; border-radius: 5px; }
+    .warehouse-column-candidate small { overflow-wrap: anywhere; color: #64748b; }
+    .warehouse-column-conflicts { max-height: 150px; overflow: auto; padding: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 10px; }
+    .warehouse-column-remember { font-size: 11px; font-weight: 800; }
+    html[data-nexus-ui-theme="dark"] .orderops-bottom-workbar,
+    html[data-nexus-ui-theme="dark"] .orderops-manager-assignment { border-color: #475569; color: #e2e8f0; background: #111827; }
+    html[data-nexus-ui-theme="dark"] .orderops-manager-assignment strong { color: #f8fafc; }
+    @media print {
+      .orderops-bottom-workbar, .orderops-header-menu__items { display: none !important; }
+    }
+    @media (max-width: 1099px) and (min-width: 640px) {
+      .orderops-pane-shortcuts {
+        display: flex;
+        gap: 6px;
+        padding: 4px 8px;
+        overflow-x: auto;
+        background: var(--nexus-ui-panel-bg, #f8fafc);
+      }
+      .orderops-pane-shortcuts a { color: var(--nexus-ui-text, #1e293b); font-size: 10px; font-weight: 900; }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"],
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+        grid-template-columns: var(--nexus-left-pane-width) minmax(320px, 1fr) !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"] {
+        position: fixed !important;
+        inset: calc(var(--nexus-ui-header-height, 64px) + var(--nexus-app-header-height, 56px) + 8px) 8px 8px auto !important;
+        z-index: 88;
+        grid-column: auto !important;
+        width: min(var(--nexus-right-pane-width), calc(100% - 16px)) !important;
+        min-width: min(180px, calc(100% - 16px)) !important;
+        max-width: min(420px, calc(100% - 16px)) !important;
+        box-shadow: 0 18px 44px rgb(15 23 42 / 28%);
+      }
+    }
+    @media (max-width: 639px) {
+      html, body { max-width: 100%; overflow-x: hidden; }
+      .orderops-pane-shortcuts {
+        display: flex;
+        gap: 10px;
+        padding: 5px 8px;
+        background: var(--nexus-ui-panel-bg, #f8fafc);
+      }
+      .orderops-pane-shortcuts a { color: var(--nexus-ui-text, #1e293b); font-size: 11px; font-weight: 900; }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"],
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: auto minmax(420px, 1fr) !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane="reference"] {
+        grid-column: 1 !important;
+        grid-row: 1 !important;
+        width: 100% !important;
+        max-height: 38dvh;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane="work"] {
+        grid-column: 1 !important;
+        grid-row: 2 !important;
+        width: 100% !important;
+        min-height: 420px !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane="result"] {
+        position: fixed !important;
+        inset: calc(var(--nexus-ui-header-height, 104px) + var(--nexus-app-header-height, 56px) + 8px) 8px 8px auto !important;
+        z-index: 88;
+        grid-column: auto !important;
+        width: min(320px, calc(100% - 16px)) !important;
+        max-width: calc(100% - 16px) !important;
+        box-shadow: 0 18px 44px rgb(15 23 42 / 28%);
+      }
+      .nexus-pane-resizer-v2[data-nexus-pane-resize-app="orderops"] { display: none !important; }
+      .orderops-manager-assignment { grid-template-columns: 1fr auto; }
+      .orderops-manager-assignment > div { grid-column: 1 / -1; }
+    }
   </style>
 </head>
 <body>
@@ -2397,10 +2609,8 @@
   <main class="page-shell">
     <section class="system-workbench" aria-label="주문관리 파일 작업영역">
       <div class="system-topbar">
-        <div class="system-name">System.IO</div>
         <div class="system-console" role="status" aria-live="polite">
           <span class="system-message" id="systemMessage">필수 파일 대기 · 주문현황과 창고재고를 선택하세요</span>
-          <span class="system-cursor" aria-hidden="true"></span>
         </div>
         <div class="validation-box" id="validationBox" role="status" aria-live="polite">
           <p class="validation-title"><span aria-hidden="true">○</span>필수 파일 선택 대기</p>
@@ -2558,16 +2768,24 @@
               <tbody id="deliverySummaryBody"><tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
             </table>
           </div>
+          <section class="orderops-manager-assignment" aria-label="선택 거래처 담당 변경">
+            <div><strong>선택 거래처 담당 변경</strong><span id="deliveryManagerAssignmentSummary">주문서를 선택하세요.</span></div>
+            <label>담당
+              <input id="deliveryManagerAssignmentInput" type="text" list="orderOpsManagerOptions" autocomplete="off" disabled>
+            </label>
+            <button id="deliveryManagerAssignmentApply" type="button" disabled>적용</button>
+          </section>
         </aside>
 
         <section class="orderops-central-work" data-nexus-pane="work" aria-label="출고 중앙 작업표">
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <div class="view-controls-scroll" tabindex="0" aria-label="검색·필터·열 설정 도구">
         <label class="search-field">
-          <span>통합 검색 F3</span>
+          <span>검색</span>
           <input id="tableSearchInput" type="search" autocomplete="off"
-            aria-label="통합 검색 F3" placeholder="통합검색 F3 · 상품코드·상품명·규격·적요·담당·거래처">
+            aria-label="검색 F3" placeholder="상품코드·상품명·규격·적요·담당·거래처">
         </label>
+        <button class="table-tool-button" id="tableSearchClearButton" type="button">검색 해제</button>
         <button class="table-tool-button result-filter-reset-button" id="resultFilterResetButton" type="button"
           aria-label="검색어와 보기 필터 초기화 F2" aria-keyshortcuts="F2">필터초기화 F2</button>
         <div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div>
@@ -2762,6 +2980,18 @@
       </div>
     </form>
   </dialog>
+  <dialog class="warehouse-column-dialog" id="warehouseColumnDialog" aria-labelledby="warehouseColumnDialogTitle">
+    <form method="dialog">
+      <h3 id="warehouseColumnDialogTitle">창고 원본 열 선택</h3>
+      <p>원본의 <strong>창고</strong>와 <strong>창고코드</strong> 값이 다릅니다. 이번 주문 파일에서 사용할 열을 선택한 뒤 재검증하세요.</p>
+      <div id="warehouseColumnCandidates"></div>
+      <label class="warehouse-column-remember"><input id="warehouseColumnRemember" type="checkbox"> 같은 원본 열 구성의 다음 주문 파일에도 사용</label>
+      <div class="view-preset-dialog-actions">
+        <button type="button" id="warehouseColumnCancel">취소</button>
+        <button type="button" id="warehouseColumnApply">선택 열로 재검증</button>
+      </div>
+    </form>
+  </dialog>
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
@@ -2786,12 +3016,75 @@
         const rightPane = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="result"]');
         if (!appHeader || !pageShell || !resultsPanel || !leftPane || !centralWork || !rightPane) return;
 
-        const headerSources = document.createElement("div");
-        headerSources.className = "orderops-header-sources";
-        headerSources.setAttribute("aria-label", "출고관리 자료 업로드와 분석 실행");
-        if (sourceSelector) headerSources.append(sourceSelector);
-        if (executionPanel) headerSources.append(executionPanel);
-        appHeader.querySelector(":scope > .header-actions")?.before(headerSources);
+        const headerActions = appHeader.querySelector(":scope > .header-actions");
+        const primaryActions = document.createElement("div");
+        primaryActions.className = "orderops-header-primary";
+        primaryActions.setAttribute("aria-label", "출고관리 자료 업로드와 분석 실행");
+        const integratedButton = document.getElementById("integratedFileButton");
+        const ordersButton = document.getElementById("ordersFileButton");
+        const inventoryButton = document.getElementById("inventoryFileButton");
+        const purchasesButton = document.getElementById("purchasesFileButton");
+        const salesButton = document.getElementById("salesFileButton");
+        const refreshButton = document.getElementById("refreshButton");
+        const analyzeButton = document.getElementById("analyzeButton");
+        const cloudLoadButton = document.getElementById("headerCloudLoadButton");
+
+        const prepareHeaderButton = (button, label) => {
+          if (!button) return null;
+          button.classList.add("header-link");
+          button.textContent = label;
+          return button;
+        };
+        primaryActions.append(
+          prepareHeaderButton(integratedButton, "통합 불러오기"),
+          prepareHeaderButton(inventoryButton, "창고재고 불러오기"),
+        );
+
+        const ordersMenu = document.createElement("div");
+        ordersMenu.className = "orderops-header-menu";
+        ordersMenu.innerHTML = `<button id="orderOpsHeaderOrdersButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderOrdersMenu" aria-expanded="false">주문서 불러오기</button>
+          <div class="orderops-header-menu__items" id="orderOpsHeaderOrdersMenu" role="menu" aria-label="주문서 불러오기 경로" hidden></div>`;
+        const ordersMenuItems = ordersMenu.querySelector(".orderops-header-menu__items");
+        ordersMenuItems.append(prepareHeaderButton(ordersButton, "주문 Excel 선택"));
+        const orderQButton = document.createElement("button");
+        orderQButton.id = "orderOpsHeaderOrderQButton";
+        orderQButton.type = "button";
+        orderQButton.textContent = "ORDER Q 저장 주문 선택";
+        ordersMenuItems.append(orderQButton);
+        primaryActions.insertBefore(ordersMenu, inventoryButton || null);
+        if (analyzeButton) {
+          analyzeButton.classList.add("header-link");
+          primaryActions.append(analyzeButton);
+        }
+
+        const moreMenu = document.createElement("div");
+        moreMenu.className = "orderops-header-menu";
+        moreMenu.innerHTML = `<button id="orderOpsHeaderMoreButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderMoreMenu" aria-expanded="false">더보기</button>
+          <div class="orderops-header-menu__items" id="orderOpsHeaderMoreMenu" role="menu" aria-label="출고관리 더보기" hidden></div>`;
+        const moreMenuItems = moreMenu.querySelector(".orderops-header-menu__items");
+        moreMenuItems.append(
+          prepareHeaderButton(purchasesButton, "구매 참고자료 불러오기"),
+          prepareHeaderButton(salesButton, "판매 참고자료 불러오기"),
+          prepareHeaderButton(refreshButton, "현재 자료 새로고침"),
+          prepareHeaderButton(cloudLoadButton, "Cloud 완료본 불러오기"),
+        );
+        primaryActions.append(moreMenu);
+        const settingsButton = document.getElementById("headerSettingsButton");
+        const compactHeaderMedia = window.matchMedia("(max-width: 639px)");
+        const syncCompactHeaderActions = () => {
+          if (!settingsButton) return;
+          if (compactHeaderMedia.matches) moreMenuItems.append(settingsButton);
+          else headerActions?.append(settingsButton);
+        };
+        syncCompactHeaderActions();
+        compactHeaderMedia.addEventListener?.("change", syncCompactHeaderActions);
+        const sourceStatuses = document.createElement("div");
+        sourceStatuses.className = "orderops-header-source-statuses";
+        sourceStatuses.setAttribute("aria-live", "polite");
+        sourceStatuses.innerHTML = `<span class="orderops-header-file-status" data-orderops-file-status="orders">주문 미등록</span>
+          <span class="orderops-header-file-status" data-orderops-file-status="inventory">재고 미등록</span>`;
+        primaryActions.append(sourceStatuses);
+        headerActions?.before(primaryActions);
 
         const outerWorkspace = document.createElement("div");
         outerWorkspace.className = "orderops-results-workspace";
@@ -2803,13 +3096,55 @@
         resultsPanel.classList.add("orderops-central-work");
         const centralChildren = [...centralWork.children];
         centralChildren.forEach((node) => resultsPanel.append(node));
+        const viewControlsScroll = resultsPanel.querySelector(".view-controls-scroll");
+        const tableViewTools = viewControlsScroll?.querySelector(":scope > .table-view-tools");
+        const warehouseFilterToggle = viewControlsScroll?.querySelector(":scope > #warehouseFilterToggle");
+        const managerFilterToggle = viewControlsScroll?.querySelector(":scope > #managerFilterToggle");
+        const previewCount = viewControlsScroll?.querySelector(":scope > #previewCount");
+        if (viewControlsScroll && tableViewTools && warehouseFilterToggle && managerFilterToggle) {
+          const tableSettings = document.createElement("div");
+          tableSettings.className = "orderops-table-settings";
+          tableSettings.innerHTML = `<button class="table-tool-button" id="tableSettingsButton" type="button" aria-haspopup="menu" aria-controls="tableSettingsMenu" aria-expanded="false">표 설정</button>
+            <div class="orderops-table-settings__menu" id="tableSettingsMenu" role="menu" aria-label="표 설정" hidden></div>`;
+          const menu = tableSettings.querySelector(".orderops-table-settings__menu");
+          menu.append(tableViewTools, warehouseFilterToggle, managerFilterToggle);
+          viewControlsScroll.insertBefore(tableSettings, previewCount || null);
+        }
 
         const systemTopbar = systemWorkbench?.querySelector(":scope > .system-topbar");
         const orderQPicker = systemWorkbench?.querySelector(":scope > .orderq-source-picker");
+        if (sourceSelector) {
+          sourceSelector.classList.add("orderops-source-runtime");
+          resultsPanel.prepend(sourceSelector);
+        }
         if (orderQPicker) resultsPanel.prepend(orderQPicker);
-        if (systemTopbar) resultsPanel.prepend(systemTopbar);
+        if (systemTopbar) {
+          systemTopbar.classList.add("orderops-status-bar");
+          systemTopbar.querySelector(".system-name")?.remove();
+          systemTopbar.querySelector(".system-cursor")?.remove();
+          resultsPanel.prepend(systemTopbar);
+        }
+
+        const bottomWorkbar = document.createElement("div");
+        bottomWorkbar.className = "orderops-bottom-workbar";
+        bottomWorkbar.setAttribute("aria-label", "출고관리 저장·출력 작업바");
+        ["smartInputButton", "headerCloudSaveButton", "printButton", "downloadButton", "headerRestoreButton"]
+          .map((id) => document.getElementById(id))
+          .filter(Boolean)
+          .forEach((control) => bottomWorkbar.append(control));
+        const storageStatus = systemTopbar?.querySelector(".system-mode");
+        if (storageStatus) bottomWorkbar.append(storageStatus);
+        resultsPanel.append(bottomWorkbar);
 
         outerWorkspace.append(leftPane, resultsPanel, rightPane);
+        leftPane.id ||= "orderOpsOrderListPane";
+        leftPane.tabIndex = -1;
+        resultsPanel.tabIndex = -1;
+        const paneShortcuts = document.createElement("nav");
+        paneShortcuts.className = "orderops-pane-shortcuts";
+        paneShortcuts.setAttribute("aria-label", "출고관리 패널 바로가기");
+        paneShortcuts.innerHTML = `<a href="#${leftPane.id}">주문 목록</a><a href="#${resultsPanel.id}">분석표</a>`;
+        pageShell.insertBefore(paneShortcuts, footer || null);
         pageShell.insertBefore(outerWorkspace, footer || null);
         nestedWorkspace.remove();
         centralWork.remove();
@@ -2953,6 +3288,8 @@
         activeColumnDrag: null,
         suppressHeaderClick: false,
         excelMappings: null,
+        warehouseColumnSelections: Object.create(null),
+        pendingWarehouseColumnResolution: null,
         purchaseHistory: [],
         orderViewPresets: [],
         selectedOrderViewPresetId: "",
@@ -3031,6 +3368,7 @@
         orderQSourceNotice: document.getElementById("orderQSourceNotice"),
         orderQReturnLink: document.getElementById("orderQReturnLink"),
         tableSearchInput: document.getElementById("tableSearchInput"),
+        tableSearchClearButton: document.getElementById("tableSearchClearButton"),
         resultFilterResetButton: document.getElementById("resultFilterResetButton"),
         shortageFocusButton: document.getElementById("shortageFocusButton"),
         unresolvedReviewToggle: document.getElementById("unresolvedReviewToggle"),
@@ -3049,6 +3387,9 @@
         deliveryManagerFilter: document.getElementById("deliveryManagerFilter"),
         deliveryRegionFilter: document.getElementById("deliveryRegionFilter"),
         deliveryFilterReset: document.getElementById("deliveryFilterReset"),
+        deliveryManagerAssignmentSummary: document.getElementById("deliveryManagerAssignmentSummary"),
+        deliveryManagerAssignmentInput: document.getElementById("deliveryManagerAssignmentInput"),
+        deliveryManagerAssignmentApply: document.getElementById("deliveryManagerAssignmentApply"),
         inventoryInspector: document.getElementById("inventoryInspector"),
         inventoryInspectorClose: document.getElementById("inventoryInspectorClose"),
         inventoryInspectorReopen: document.getElementById("inventoryInspectorReopen"),
@@ -3063,6 +3404,8 @@
         vividColorToggle: document.getElementById("vividColorToggle"),
         warehouseColorResetButton: document.getElementById("warehouseColorResetButton"),
         columnVisibilityButton: document.getElementById("columnVisibilityButton"),
+        tableSettingsButton: document.getElementById("tableSettingsButton"),
+        tableSettingsMenu: document.getElementById("tableSettingsMenu"),
         columnVisibilityMenu: document.getElementById("columnVisibilityMenu"),
         columnWidthSaveButton: document.getElementById("columnWidthSaveButton"),
         columnWidthResetButton: document.getElementById("columnWidthResetButton"),
@@ -3110,11 +3453,21 @@
         sheetAliasWarning: document.getElementById("sheetAliasWarning"),
         mappingSaveButton: document.getElementById("mappingSaveButton"),
         mappingResetButton: document.getElementById("mappingResetButton"),
+        warehouseColumnDialog: document.getElementById("warehouseColumnDialog"),
+        warehouseColumnCandidates: document.getElementById("warehouseColumnCandidates"),
+        warehouseColumnRemember: document.getElementById("warehouseColumnRemember"),
+        warehouseColumnApply: document.getElementById("warehouseColumnApply"),
+        warehouseColumnCancel: document.getElementById("warehouseColumnCancel"),
         workspaceStorage: document.getElementById("workspaceStorage"),
         headerCloudLoadButton: document.getElementById("headerCloudLoadButton"),
         headerCloudSaveButton: document.getElementById("headerCloudSaveButton"),
         headerRestoreButton: document.getElementById("headerRestoreButton"),
         headerSettingsButton: document.getElementById("headerSettingsButton"),
+        orderOpsHeaderOrdersButton: document.getElementById("orderOpsHeaderOrdersButton"),
+        orderOpsHeaderOrdersMenu: document.getElementById("orderOpsHeaderOrdersMenu"),
+        orderOpsHeaderOrderQButton: document.getElementById("orderOpsHeaderOrderQButton"),
+        orderOpsHeaderMoreButton: document.getElementById("orderOpsHeaderMoreButton"),
+        orderOpsHeaderMoreMenu: document.getElementById("orderOpsHeaderMoreMenu"),
         toast: document.getElementById("toast"),
       };
 
@@ -3206,6 +3559,34 @@
             ? normalizeExcelMappingRecord(parsed.types)
             : normalizeExcelMappingRecord(null);
         } catch (error) { return normalizeExcelMappingRecord(null); }
+      }
+
+      function loadWarehouseColumnSelections() {
+        const selections = Object.create(null);
+        try {
+          const parsed = JSON.parse(localStorage.getItem(EXCEL_MAPPING_KEY) || "null");
+          Object.entries(parsed?.warehouseColumnSelections || {}).forEach(([signature, selection]) => {
+            if (!signature.startsWith("orders:") || !isPlainRecord(selection)) return;
+            const columnIndex = Number(selection.columnIndex);
+            if (selection.canonical !== "창고" || !String(selection.header || "").trim() || !Number.isInteger(columnIndex) || columnIndex < 0) return;
+            selections[signature] = {
+              canonical: "창고",
+              header: String(selection.header).trim(),
+              columnIndex,
+              sourceHeaderSignature: signature,
+            };
+          });
+        } catch (_) {}
+        return selections;
+      }
+
+      function persistExcelMappingState() {
+        localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify({
+          schemaVersion: EXCEL_MAPPING_SCHEMA,
+          updatedAt: new Date().toISOString(),
+          types: state.excelMappings,
+          warehouseColumnSelections: state.warehouseColumnSelections,
+        }));
       }
 
       function serializeColumnAliases(columns) {
@@ -3308,7 +3689,7 @@
           return false;
         }
         state.excelMappings = normalizeExcelMappingRecord(types);
-        localStorage.setItem(EXCEL_MAPPING_KEY, JSON.stringify({ schemaVersion: EXCEL_MAPPING_SCHEMA, updatedAt: new Date().toISOString(), types: state.excelMappings }));
+        persistExcelMappingState();
         renderExcelMappingEditor();
         showToast("Excel 별칭 매핑을 저장했습니다. 선택된 파일은 다시 올리면 새 매핑으로 판별됩니다.");
         return true;
@@ -4031,13 +4412,102 @@
           });
           const orderDisplayMatrix = kind === "orders" ? normalizeOrderDateMatrix(displayMatrix) : displayMatrix;
           const headerAliases = state.excelMappings?.[kind]?.columns || {};
-          const parsed = kind === "orders"
+          let parsed = kind === "orders"
             ? engine.parseOrderWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix: orderDisplayMatrix, headerAliases })
             : engine.parseInventoryWorkbook({ fileName: file.name, sheetName, rawMatrix, displayMatrix, headerAliases });
+          if (kind === "orders") {
+            const signature = parsed.headerMapping?.sourceHeaderSignature || "";
+            const savedSelection = state.warehouseColumnSelections[signature];
+            if (savedSelection && parsed.errors?.some((issue) => issue.code === "ORDER_WAREHOUSE_COLUMN_CONFLICT")) {
+              parsed = engine.parseOrderWorkbook({
+                fileName: file.name,
+                sheetName,
+                rawMatrix,
+                displayMatrix: orderDisplayMatrix,
+                headerAliases,
+                sourceColumnSelection: savedSelection,
+              });
+            }
+          }
           if (!best || parsedScore(parsed) < parsedScore(best)) best = parsed;
         });
         best.fileHash = fileHash;
         return best;
+      }
+
+      function warehouseColumnConflict(parsed) {
+        return parsed?.headerMapping?.warehouseColumnConflict ||
+          parsed?.errors?.find((issue) => issue.code === "ORDER_WAREHOUSE_COLUMN_CONFLICT")?.conflict || null;
+      }
+
+      function openWarehouseColumnResolution(parsed) {
+        const conflict = warehouseColumnConflict(parsed);
+        if (!conflict) return false;
+        state.pendingWarehouseColumnResolution = parsed;
+        elements.warehouseColumnRemember.checked = false;
+        const rows = (conflict.conflictingRows || []).slice(0, 8);
+        elements.warehouseColumnCandidates.innerHTML = `
+          <div>${(conflict.columns || []).map((column) => `
+            <label class="warehouse-column-candidate">
+              <input type="radio" name="warehouseSourceColumn" value="${column.columnIndex}">
+              <strong>${escapeHtml(column.header)} · ${column.columnNumber}열</strong>
+              <small>비공란 ${formatNumber(column.nonblankCount)}건 · 예: ${escapeHtml((column.uniqueValueExamples || []).join(", ") || "공란")}</small>
+            </label>`).join("")}</div>
+          <div class="warehouse-column-conflicts"><strong>충돌 행 값</strong>${rows.length
+            ? rows.map((row) => `<div>${formatNumber(row.rowNumber)}행 · ${(row.values || []).map((value) => `${escapeHtml(value.header)}=${escapeHtml(value.value || "공란")}`).join(" · ")}</div>`).join("")
+            : "<div>표시할 충돌 행이 없습니다.</div>"}</div>`;
+        if (typeof elements.warehouseColumnDialog.showModal === "function") elements.warehouseColumnDialog.showModal();
+        else elements.warehouseColumnDialog.setAttribute("open", "");
+        setSystemMessage("창고 원본 열 선택 필요 · 선택 뒤 원본을 다시 검증합니다");
+        return true;
+      }
+
+      function closeWarehouseColumnResolution() {
+        if (elements.warehouseColumnDialog.open) elements.warehouseColumnDialog.close();
+      }
+
+      function applyWarehouseColumnResolution() {
+        const parsed = state.pendingWarehouseColumnResolution;
+        const conflict = warehouseColumnConflict(parsed);
+        const selectedIndex = Number(elements.warehouseColumnCandidates.querySelector('input[name="warehouseSourceColumn"]:checked')?.value);
+        const selected = conflict?.columns?.find((column) => column.columnIndex === selectedIndex);
+        if (!parsed || !selected) {
+          showToast("사용할 창고 원본 열을 선택하세요.", true);
+          return false;
+        }
+        const sourceHeaderSignature = parsed.headerMapping?.sourceHeaderSignature || "";
+        const sourceColumnSelection = {
+          canonical: "창고",
+          header: selected.header,
+          columnIndex: selected.columnIndex,
+          sourceHeaderSignature,
+        };
+        const reparsed = engine.parseOrderWorkbook({
+          fileName: parsed.fileName,
+          sheetName: parsed.sheetName,
+          fileHash: parsed.fileHash,
+          rawMatrix: parsed.sourceMatrix,
+          displayMatrix: normalizeOrderDateMatrix(parsed.sourceMatrix),
+          headerAliases: state.excelMappings?.orders?.columns || {},
+          sourceColumnSelection,
+        });
+        reparsed.fileHash = parsed.fileHash;
+        if (warehouseColumnConflict(reparsed) || reparsed.errors?.length) {
+          showToast(reparsed.errors?.map((issue) => issue.message).join(" · ") || "선택한 열로 재검증하지 못했습니다.", true);
+          return false;
+        }
+        if (elements.warehouseColumnRemember.checked) {
+          state.warehouseColumnSelections[sourceHeaderSignature] = sourceColumnSelection;
+          persistExcelMappingState();
+        }
+        state.orders = reparsed;
+        state.pendingWarehouseColumnResolution = null;
+        disconnectOrderQSource();
+        closeWarehouseColumnResolution();
+        refreshInputState();
+        setSystemMessage(`창고 원본 열 ${selected.header} 적용 · 주문 ${formatNumber(reparsed.rowCount)}행 재검증 완료`);
+        showToast(`${selected.header} 열을 이번 주문의 창고로 적용했습니다.`);
+        return true;
       }
 
       function normalizeMappingText(value) {
@@ -4124,24 +4594,36 @@
           header: 1, raw: false, defval: "", blankrows: true,
         });
         const headerAliases = state.excelMappings?.[kind]?.columns || {};
-        const parsed = kind === "orders"
+        let parsed = kind === "orders"
           ? engine.parseOrderWorkbook({
               fileName, sheetName, rawMatrix,
               displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases,
             })
           : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases });
+        if (kind === "orders") {
+          const savedSelection = state.warehouseColumnSelections[parsed.headerMapping?.sourceHeaderSignature || ""];
+          if (savedSelection && warehouseColumnConflict(parsed)) {
+            parsed = engine.parseOrderWorkbook({
+              fileName, sheetName, rawMatrix,
+              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases,
+              sourceColumnSelection: savedSelection,
+            });
+          }
+        }
         parsed.fileHash = fileHash;
         return parsed;
       }
 
       function integratedCandidateScore(kind, parsed) {
-        if (!parsed || (parsed.missingColumns?.length || 0) > 0 || (parsed.rowCount || 0) < 1) return 0;
+        if (!parsed || (parsed.missingColumns?.length || 0) > 0) return 0;
         if (kind === "orders") {
           const mapped = new Set((parsed.headerMapping?.columns || [])
             .map((column) => String(column.canonical || "").trim()));
           const signature = ["품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"];
-          return signature.every((field) => mapped.has(field)) ? 1008 : 0;
+          const structurallyValid = signature.every((field) => mapped.has(field));
+          return structurallyValid && ((parsed.rowCount || 0) > 0 || warehouseColumnConflict(parsed)) ? 1008 : 0;
         }
+        if ((parsed.rowCount || 0) < 1) return 0;
         if (kind === "inventory") {
           const warehouseCount = (parsed.columns || []).filter((column) => column?.role === "warehouseQuantity").length;
           return warehouseCount > 0 ? 1000 + warehouseCount : 0;
@@ -4270,6 +4752,7 @@
           byKind.forEach((parsed, kind) => { state[kind] = parsed; });
           if (byKind.has("orders")) disconnectOrderQSource();
           refreshInputState();
+          if (byKind.has("orders")) openWarehouseColumnResolution(byKind.get("orders"));
 
           if (state.validation?.canAnalyze) {
             setAnalysisEnterReady(true);
@@ -4357,12 +4840,14 @@
         }
 
         resetResults({ preserveView: true });
+        let needsWarehouseResolution = false;
         setLoading(kind, true);
         try {
           state[kind] = ["orders", "inventory"].includes(kind)
             ? await parseExcelFile(file, kind)
             : await parseGenericExcelFile(file, kind);
           if (kind === "orders") disconnectOrderQSource();
+          needsWarehouseResolution = kind === "orders" && Boolean(warehouseColumnConflict(state.orders));
           showToast(`${file.name} 파일을 읽었습니다.`);
         } catch (error) {
           state[kind] = null;
@@ -4370,6 +4855,7 @@
         } finally {
           setLoading(kind, false);
           refreshInputState();
+          if (needsWarehouseResolution) openWarehouseColumnResolution(state.orders);
         }
       }
 
@@ -4408,6 +4894,7 @@
             : "";
           setSystemMessage(`통합파일 적용 · ${appliedLabels.join("·")} 교체${failureText}`);
           showToast(`${file.name}: ${appliedLabels.join("·")} 시트를 적용했습니다.${failureText}`);
+          if (result.applied.has("orders")) openWarehouseColumnResolution(result.applied.get("orders"));
         } catch (error) {
           state.analysisEnterLocked = false;
           refreshInputState();
@@ -4430,10 +4917,17 @@
 
         if (!parsed) {
           name.textContent = "파일을 선택하세요";
+          const headerStatus = document.querySelector(`[data-orderops-file-status="${kind}"]`);
+          if (headerStatus) headerStatus.textContent = `${FILE_KIND_LABELS[kind]} 미등록`;
           return;
         }
 
         name.textContent = parsed.sourceLabel || parsed.fileName;
+        const headerStatus = document.querySelector(`[data-orderops-file-status="${kind}"]`);
+        if (headerStatus) {
+          headerStatus.textContent = `${parsed.sourceLabel || parsed.fileName} · ${formatNumber(parsed.rowCount)}행${parsed.errors?.length ? ` · 오류 ${formatNumber(parsed.errors.length)}` : ""}`;
+          headerStatus.title = headerStatus.textContent;
+        }
       }
 
       function renderIntegratedFileCard() {
@@ -4789,6 +5283,40 @@
         return [...new Set(value.filter(isSafeColumnKey))];
       }
 
+      const READINESS_ROLE_BY_HEADER = Object.freeze({
+        "거래처": "customer", "상품": "productName", "주문수량": "orderQuantity", "직원 적요": "deliveryNotice",
+        "재고": "stockQuantity", "잔량": "calculatedQuantity", "상품별 주문합계": "productAggregateQuantity",
+        "주문단위": "orderUnit", "재고단위": "inventoryUnit", "비교상태": "comparisonStatus", "상품코드": "productCode",
+        "규격": "specification", "담당자": "manager", "창고": "warehouse", "일반 적요": "note",
+      });
+
+      function stableReadinessColumnKey(role) {
+        return role ? `shipping:readiness:${role}` : "";
+      }
+
+      function migrateReadinessColumnKey(key) {
+        const text = String(key || "");
+        if (/^shipping:readiness:[a-z][A-Za-z]+$/.test(text)) return text;
+        const match = text.match(/^shipping:readiness:\d+:(.*)$/);
+        if (!match) return text;
+        let header = match[1];
+        try { header = decodeURIComponent(header); } catch (_) {}
+        return stableReadinessColumnKey(READINESS_ROLE_BY_HEADER[String(header || "").trim()]) || text;
+      }
+
+      function migrateReadinessKeyList(value) {
+        return [...new Set(normalizeStoredColumnOrder(value).map(migrateReadinessColumnKey))];
+      }
+
+      function migrateReadinessKeyedRecord(value) {
+        const migrated = Object.create(null);
+        Object.entries(value || {}).forEach(([key, item]) => {
+          const nextKey = migrateReadinessColumnKey(key);
+          if (!Object.prototype.hasOwnProperty.call(migrated, nextKey)) migrated[nextKey] = item;
+        });
+        return migrated;
+      }
+
       function normalizeStoredColorMap(value, keyValidator) {
         const colors = Object.create(null);
         if (!isPlainRecord(value) || typeof keyValidator !== "function") return colors;
@@ -4804,11 +5332,22 @@
         const name = String(value.name || "").trim().slice(0, 40);
         if (!/^[a-z0-9._:-]{1,80}$/i.test(id) || !name) return null;
         const previewId = VIEW_PRESET_TABS.has(value.previewId) ? value.previewId : "allocations";
-        const sortSetting = isPlainRecord(value.view.sortSetting) &&
+        let sortSetting = isPlainRecord(value.view.sortSetting) &&
           isSafeColumnKey(value.view.sortSetting.columnKey) &&
           ["asc", "desc"].includes(value.view.sortSetting.direction)
           ? { columnKey: value.view.sortSetting.columnKey, direction: value.view.sortSetting.direction }
           : null;
+        if (previewId === "readiness" && sortSetting) sortSetting.columnKey = migrateReadinessColumnKey(sortSetting.columnKey);
+        let columnFilters = normalizeStoredColumnFilters(value.view.columnFilters);
+        let columnWidths = normalizeStoredColumnWidths(value.view.columnWidths);
+        let columnOrder = normalizeStoredColumnOrder(value.view.columnOrder);
+        let hiddenColumns = normalizeStoredColumnOrder(value.view.hiddenColumns);
+        if (previewId === "readiness") {
+          columnFilters = migrateReadinessKeyedRecord(columnFilters);
+          columnWidths = migrateReadinessKeyedRecord(columnWidths);
+          columnOrder = migrateReadinessKeyList(columnOrder);
+          hiddenColumns = migrateReadinessKeyList(hiddenColumns);
+        }
         return {
           id,
           name,
@@ -4822,12 +5361,12 @@
             warehouseFilters: normalizeStringList(value.view.warehouseFilters, 100),
             managerFilters: normalizeStringList(value.view.managerFilters, 100),
             sortSetting,
-            columnFilters: normalizeStoredColumnFilters(value.view.columnFilters),
+            columnFilters,
             layoutCaptured: value.view.layoutCaptured === true ||
               isPlainRecord(value.view.columnWidths) || Array.isArray(value.view.columnOrder),
-            columnWidths: normalizeStoredColumnWidths(value.view.columnWidths),
-            columnOrder: normalizeStoredColumnOrder(value.view.columnOrder),
-            hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns),
+            columnWidths,
+            columnOrder,
+            hiddenColumns,
             colorSettingsCaptured: value.view.colorSettingsCaptured === true ||
               isPlainRecord(value.view.warehouseColors) || isPlainRecord(value.view.managerColors),
             warehouseColors: normalizeStoredColorMap(value.view.warehouseColors, isSafeColumnKey),
@@ -5312,7 +5851,8 @@
             Object.entries(widths).forEach(([columnKey, width]) => {
               if (!isSafeColumnKey(columnKey) || !Number.isFinite(width)) return;
               if (width < TABLE_WIDTH_MIN || width > TABLE_WIDTH_MAX) return;
-              safeWidths[columnKey] = Math.round(width);
+              const normalizedKey = tabId === "readiness" ? migrateReadinessColumnKey(columnKey) : columnKey;
+              if (!Object.prototype.hasOwnProperty.call(safeWidths, normalizedKey)) safeWidths[normalizedKey] = Math.round(width);
             });
             if (Object.keys(safeWidths).length > 0) tabs[tabId] = safeWidths;
           });
@@ -5445,7 +5985,9 @@
           const tabs = Object.create(null);
           Object.entries(parsed.tabs).forEach(([tabId, keys]) => {
             if (!TABLE_WIDTH_TABS.has(tabId) || !Array.isArray(keys)) return;
-            tabs[tabId] = [...new Set(keys.filter(isSafeColumnKey))];
+            tabs[tabId] = tabId === "readiness"
+              ? migrateReadinessKeyList(keys)
+              : [...new Set(keys.filter(isSafeColumnKey))];
           });
           return { schemaVersion: HIDDEN_COLUMNS_SCHEMA, tabs };
         } catch (error) {
@@ -5475,7 +6017,9 @@
           const tabs = Object.create(null);
           Object.entries(parsed.tabs).forEach(([tabId, keys]) => {
             if (!COLUMN_ORDER_TABS.has(tabId) || !Array.isArray(keys)) return;
-            tabs[tabId] = [...new Set(keys.filter(isSafeColumnKey))];
+            tabs[tabId] = tabId === "readiness"
+              ? migrateReadinessKeyList(keys)
+              : [...new Set(keys.filter(isSafeColumnKey))];
           });
           return { schemaVersion: COLUMN_ORDER_SCHEMA, tabs };
         } catch (error) {
@@ -6026,7 +6570,7 @@
               row.inventoryMatched
                 ? (typeof row.stockTotal === "number" ? row.stockTotal : "확인")
                 : "미등록",
-              row.remainingQuantity ?? (row.status === "단위 환산 필요" ? "단위 확인" : "비교 불가"),
+              row.remainingQuantity ?? (row.status === "단위 확인" ? "단위 확인" : "비교 불가"),
             ] : []),
             row.totalOrderQuantityDisplay || (row.totalOrderQuantity ?? ""),
             row.orderUnit || row.sourceUnit || "",
@@ -6053,6 +6597,8 @@
           : [148, 190, 92, 190, 132, 84, 84, 112, 110, 100, 100, 86, 170];
         preview.columns.forEach((column, index) => {
           column.role = roleAndField[index]?.[0] || "";
+          column.legacyKey = column.key;
+          column.key = stableReadinessColumnKey(column.role);
           if (roleAndField[index]?.[1]) column.orderField = roleAndField[index][1];
           column.defaultWidth = widths[index] || 120;
         });
@@ -6069,10 +6615,16 @@
 
       function buildInventorySourcePreview(workspace) {
         const sourceRows = workspace.inventory || [];
+        const inventorySource = workspace.sourceFiles?.inventory || {};
+        const sourceMatrix = Array.isArray(inventorySource.matrix) ? inventorySource.matrix : [];
+        const warehouseColumns = (inventorySource.columns || [])
+          .filter((column) => column?.role === "warehouseQuantity" && Number.isInteger(column.sourceIndex));
+        const headers = ["상품코드", "상품", "규격", "단위", ...warehouseColumns.map((column) => column.header), "재고 합계"];
+        const totalIndex = headers.length - 1;
         const preview = {
           label: "창고재고 · 읽기용",
-          headers: ["상품코드", "상품", "규격", "단위", "재고"],
-          numeric: [4],
+          headers,
+          numeric: Array.from({ length: warehouseColumns.length + 1 }, (_, index) => index + 4),
           inventory: [],
           purchase: -1,
           purchaseEditable: false,
@@ -6083,20 +6635,27 @@
             row.productName || "",
             row.specification || "",
             row.unit || "",
+            ...warehouseColumns.map((column) => sourceMatrix[Number(row.sourceRowNumber) - 1]?.[column.sourceIndex] ?? ""),
             typeof row.inventoryTotal === "number" ? row.inventoryTotal : row.sourceInventoryTotal ?? "",
           ]),
           sortByProductCode: true,
           shortageCount: 0,
         };
         preview.columns = createPreviewColumns("inventory-source", preview.headers, preview.numeric);
-        [110, 200, 100, 80, 100].forEach((width, index) => {
+        [110, 200, 100, 80, ...warehouseColumns.map(() => 90), 100].forEach((width, index) => {
           if (preview.columns[index]) preview.columns[index].defaultWidth = width;
         });
         preview.columns[0].role = "productCode";
         preview.columns[1].role = "productName";
         preview.columns[2].role = "specification";
         preview.columns[3].role = "unit";
-        preview.columns[4].role = "stockQuantity";
+        warehouseColumns.forEach((sourceColumn, index) => {
+          const column = preview.columns[index + 4];
+          column.key = sourceColumn.key;
+          column.role = "warehouseQuantity";
+          column.inventoryColumnKey = sourceColumn.key;
+        });
+        preview.columns[totalIndex].role = "stockQuantity";
         return preview;
       }
 
@@ -6401,6 +6960,24 @@
         });
       }
 
+      function managerCountScopeRows(rows = deliverySummaryRows()) {
+        return rows.filter((row) => {
+          const warehouseMatches = !state.deliveryWarehouseFilter || (
+            state.deliveryWarehouseFilter === DELIVERY_UNASSIGNED_FILTER
+              ? !row.warehouse
+              : row.warehouse === state.deliveryWarehouseFilter
+          );
+          const regionMatches = !state.deliveryRegionFilter || (
+            state.deliveryRegionFilter === DELIVERY_MIXED_FILTER
+              ? row.regionMixed
+              : state.deliveryRegionFilter === DELIVERY_UNASSIGNED_FILTER
+                ? row.regionUnassigned
+                : row.regionValues.includes(state.deliveryRegionFilter)
+          );
+          return warehouseMatches && regionMatches;
+        });
+      }
+
       function deliveryQuantityText(row) {
         const parts = (row.quantityGroups || []).flatMap((quantity) => {
           const labels = [];
@@ -6477,7 +7054,7 @@
         elements.deliverySummaryCount.textContent = filtered
           ? `현재 작업 ${formatNumber(allRows.length)}건 · 조회 ${formatNumber(rows.length)}건`
           : `현재 작업 ${formatNumber(allRows.length)}건`;
-        const distribution = allRows.reduce((counts, row) => {
+        const distribution = managerCountScopeRows(allRows).reduce((counts, row) => {
           const value = row.managerMixed ? DELIVERY_MIXED_FILTER : row.manager || DELIVERY_UNASSIGNED_FILTER;
           const label = row.managerMixed ? "혼합" : row.manager || "미지정";
           if (!counts[value]) counts[value] = { label, count: 0 };
@@ -6502,6 +7079,48 @@
             <td class="orderops-summary-note" title="${escapeHtml(row.employeeNote || "")}">${escapeHtml(row.employeeNote || "-")}</td>
           </tr>`).join("")
           : `<tr><td colspan="4" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
+        const selectedSummary = allRows.find((row) => row.deliveryKey === state.selectedDeliveryKey) || null;
+        elements.deliveryManagerAssignmentInput.disabled = !selectedSummary;
+        elements.deliveryManagerAssignmentApply.disabled = !selectedSummary;
+        elements.deliveryManagerAssignmentInput.value = selectedSummary?.managerMixed ? "" : selectedSummary?.manager || "";
+        elements.deliveryManagerAssignmentSummary.textContent = selectedSummary
+          ? `${selectedSummary.customer || "거래처 미지정"} · 현재 ${selectedSummary.managerLabel} · 예상 ${formatNumber(
+              (state.workspace?.orders || []).filter((row) => orderCustomerKey(row) === selectedSummary.customerKey).length,
+            )}행`
+          : "주문서를 선택하세요.";
+      }
+
+      function applySelectedDeliveryManager() {
+        const summary = deliverySummaryRows().find((row) => row.deliveryKey === state.selectedDeliveryKey);
+        if (!summary) {
+          showToast("담당자를 변경할 주문서를 먼저 선택하세요.", true);
+          return false;
+        }
+        const previewScroll = { left: elements.previewTable.scrollLeft, top: elements.previewTable.scrollTop };
+        const sideScroll = elements.deliverySummaryBody.closest(".orderops-side-table-wrap")?.scrollTop || 0;
+        try {
+          const result = engine.setCustomerManager(
+            state.workspace,
+            summary.customerKey,
+            elements.deliveryManagerAssignmentInput.value,
+            { actor: "orderops-left-assignment" },
+          );
+          renderResults();
+          scheduleLocalSave();
+          window.requestAnimationFrame(() => {
+            elements.previewTable.scrollLeft = previewScroll.left;
+            elements.previewTable.scrollTop = previewScroll.top;
+            const side = elements.deliverySummaryBody.closest(".orderops-side-table-wrap");
+            if (side) side.scrollTop = sideScroll;
+          });
+          setSystemMessage(`담당 변경 · ${summary.customer || "거래처 미지정"} ${formatNumber(result.changedRowCount)}행 반영 · 임시저장 대기`);
+          showToast(`선택 거래처 담당을 ${elements.deliveryManagerAssignmentInput.value.trim() || "미지정"}(으)로 변경했습니다.`);
+          return true;
+        } catch (error) {
+          setSystemMessage("담당 변경 실패 · 현재 입력과 조회 조건은 유지됩니다");
+          showToast(error.message || "담당자를 변경하지 못했습니다.", true);
+          return false;
+        }
       }
 
       function focusDeliveryInCentral(deliveryKey) {
@@ -7241,7 +7860,7 @@
                   }).join("")}
                 </tr>`;
             }).join("")
-          : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">표시할 항목이 없습니다.</td></tr>`;
+          : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">${escapeHtml(options.emptyMessage || "표시할 항목이 없습니다.")}</td></tr>`;
 
         return `
           <table class="preview-${previewId} column-width-managed" data-width-source="${options.widthSource || "draft"}"
@@ -7565,7 +8184,18 @@
 
         elements.specFilterGroup.disabled = ["readiness", "validation", "notices"].includes(state.activePreview);
         renderColumnVisibilityMenu(preview);
-        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        const activeColumnFilterCount = Object.values(state.columnFilters[state.activePreview] || {})
+          .filter(columnFilterIsActive).length;
+        const hasNonSearchFilter = activeColumnFilterCount > 0 || state.specificationFilters.size > 0 ||
+          state.warehouseFilters.size > 0 || state.managerFilters.size > 0 || state.shortageFocus;
+        const emptyMessage = state.searchQuery.trim()
+          ? "검색 결과 0건 · 검색 해제를 사용하세요."
+          : hasNonSearchFilter
+            ? "조회 결과 0건 · 적용 중인 조건을 확인하거나 필터초기화 F2를 사용하세요."
+            : preview.rows.length === 0
+              ? "읽은 자료 0건 · 원본 파일을 확인하거나 교체하세요."
+              : "표시할 항목이 없습니다.";
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true, emptyMessage });
         if (state.activePreview === "validation") {
           const noticePreview = preview.noticesPreview;
           const noticePairs = filteredSortedPreviewPairs("notices", noticePreview);
@@ -8373,8 +9003,9 @@
       elements.mappingResetButton.addEventListener("click", () => {
         localStorage.removeItem(EXCEL_MAPPING_KEY);
         state.excelMappings = normalizeExcelMappingRecord(null);
+        state.warehouseColumnSelections = Object.create(null);
         renderExcelMappingEditor();
-        showToast("Excel 별칭 매핑을 기본값으로 되돌렸습니다.");
+        showToast("Excel 별칭과 기억한 창고 원본 열을 기본값으로 되돌렸습니다.");
       });
       elements.headerRestoreButton.addEventListener("click", async () => {
         const candidate = state.recoveryRecords.find((item) =>
@@ -8946,7 +9577,46 @@
         showToast("현재 선택 파일과 화면 분석 결과를 초기화했습니다.");
       }
 
+      function closeHeaderMenus() {
+        [
+          [elements.orderOpsHeaderOrdersButton, elements.orderOpsHeaderOrdersMenu],
+          [elements.orderOpsHeaderMoreButton, elements.orderOpsHeaderMoreMenu],
+        ].forEach(([button, menu]) => {
+          menu.hidden = true;
+          button.setAttribute("aria-expanded", "false");
+        });
+      }
+
+      function toggleHeaderMenu(button, menu) {
+        const willOpen = menu.hidden;
+        closeHeaderMenus();
+        if (!willOpen) return;
+        const rect = button.getBoundingClientRect();
+        menu.hidden = false;
+        menu.style.top = `${Math.min(innerHeight - menu.offsetHeight - 8, rect.bottom + 4)}px`;
+        menu.style.left = `${Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, rect.left))}px`;
+        button.setAttribute("aria-expanded", "true");
+        menu.querySelector("button, a")?.focus({ preventScroll: true });
+      }
+
+      function closeTableSettingsMenu() {
+        elements.tableSettingsMenu.hidden = true;
+        elements.tableSettingsButton.setAttribute("aria-expanded", "false");
+      }
+
+      function toggleTableSettingsMenu() {
+        const willOpen = elements.tableSettingsMenu.hidden;
+        closeTableSettingsMenu();
+        if (!willOpen) return;
+        const rect = elements.tableSettingsButton.getBoundingClientRect();
+        elements.tableSettingsMenu.hidden = false;
+        elements.tableSettingsMenu.style.top = `${Math.min(innerHeight - elements.tableSettingsMenu.offsetHeight - 8, rect.bottom + 4)}px`;
+        elements.tableSettingsMenu.style.left = `${Math.max(8, Math.min(innerWidth - elements.tableSettingsMenu.offsetWidth - 8, rect.left))}px`;
+        elements.tableSettingsButton.setAttribute("aria-expanded", "true");
+      }
+
       state.excelMappings = loadExcelMappings();
+      state.warehouseColumnSelections = loadWarehouseColumnSelections();
       state.purchaseHistory = loadPurchaseHistory();
       renderExcelMappingEditor();
       state.columnWidthSettings = loadColumnWidthSettings();
@@ -9021,9 +9691,32 @@
         const row = event.target.closest("tr[data-delivery-key]");
         if (row) focusDeliveryInCentral(row.dataset.deliveryKey);
       });
+      elements.deliveryManagerAssignmentApply.addEventListener("click", applySelectedDeliveryManager);
+      elements.deliveryManagerAssignmentInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.isComposing) return;
+        event.preventDefault();
+        applySelectedDeliveryManager();
+      });
+      elements.orderOpsHeaderOrdersButton.addEventListener("click", () =>
+        toggleHeaderMenu(elements.orderOpsHeaderOrdersButton, elements.orderOpsHeaderOrdersMenu));
+      elements.orderOpsHeaderMoreButton.addEventListener("click", () =>
+        toggleHeaderMenu(elements.orderOpsHeaderMoreButton, elements.orderOpsHeaderMoreMenu));
+      [elements.orderOpsHeaderOrdersMenu, elements.orderOpsHeaderMoreMenu].forEach((menu) => {
+        menu.addEventListener("click", (event) => {
+          if (event.target.closest("button, a")) closeHeaderMenus();
+        });
+      });
+      elements.orderOpsHeaderOrderQButton.addEventListener("click", () => {
+        closeHeaderMenus();
+        elements.orderQSourcePicker.hidden = false;
+        elements.orderQCandidateSearch.focus({ preventScroll: true });
+      });
+      elements.warehouseColumnApply.addEventListener("click", applyWarehouseColumnResolution);
+      elements.warehouseColumnCancel.addEventListener("click", closeWarehouseColumnResolution);
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
+      elements.tableSettingsButton.addEventListener("click", toggleTableSettingsMenu);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
       elements.viewPresetSelect.addEventListener("change", () => {
         if (elements.viewPresetSelect.value) applyOrderViewPreset(elements.viewPresetSelect.value);
@@ -9061,6 +9754,13 @@
         state.searchQuery = elements.tableSearchInput.value;
         if (!state.unresolvedReview.active) markOrderViewPresetCustom();
         if (state.workspace) renderPreview();
+      });
+      elements.tableSearchClearButton.addEventListener("click", () => {
+        state.searchQuery = "";
+        elements.tableSearchInput.value = "";
+        if (!state.unresolvedReview.active) markOrderViewPresetCustom();
+        if (state.workspace) renderPreview();
+        elements.tableSearchInput.focus({ preventScroll: true });
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
@@ -9175,12 +9875,16 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "true");
       });
       document.addEventListener("click", (event) => {
+        if (!event.target.closest(".orderops-header-menu")) closeHeaderMenus();
+        if (!event.target.closest(".orderops-table-settings")) closeTableSettingsMenu();
         if (event.target.closest(".column-visibility")) return;
         elements.columnVisibilityMenu.classList.add("hidden");
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
+        closeHeaderMenus();
+        closeTableSettingsMenu();
         elements.columnVisibilityMenu.classList.add("hidden");
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });

@@ -7,7 +7,7 @@
     'smart-parser': { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 700 },
     merchops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
     dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
-    orderops: { left: 380, right: 280, leftMin: 320, leftMax: 520, rightMin: 250, rightMax: 420, centerMin: 620 }
+    orderops: { left: 380, right: 280, leftMin: 220, leftMax: 520, rightMin: 180, rightMax: 420, centerMin: 320 }
   });
   const layouts = new WeakMap();
   const safeNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -49,14 +49,13 @@
     const { workspace, config, preference } = layout;
     const width = workspace.getBoundingClientRect().width;
     const gap = 24;
-    if (layout.appId === 'orderops' && width < config.leftMin + config.rightMin + config.centerMin + gap) {
-      const minimum = side === 'left'
-        ? Math.max(220, Math.floor(width * 0.27))
-        : Math.max(180, Math.floor(width * 0.21));
-      const maximum = side === 'left'
-        ? Math.min(config.leftMax, Math.floor(width * 0.38))
-        : Math.min(config.rightMax, Math.floor(width * 0.30));
-      return { minimum, maximum: Math.max(minimum, maximum) };
+    if (layout.appId === 'orderops' && width >= 640 && width < 1100) {
+      const minimum = side === 'left' ? config.leftMin : config.rightMin;
+      const availableMax = side === 'left'
+        ? width - config.centerMin - gap
+        : width - 16;
+      const configuredMax = side === 'left' ? config.leftMax : config.rightMax;
+      return { minimum, maximum: Math.max(minimum, Math.min(configuredMax, availableMax)) };
     }
     const rightOpen = isPaneRequestedOpen(layout.rightPane);
     const other = side === 'left' ? (rightOpen ? preference.right : 0) : preference.left;
@@ -88,7 +87,9 @@
 
   function positionHandles(layout) {
     const { workspace, leftPane, rightPane, leftHandle, rightHandle } = layout;
-    if (!workspace.isConnected || !isVisible(workspace) || (layout.appId !== 'orderops' && matchMedia('(max-width: 960px)').matches)) {
+    const compactOrderOps = layout.appId === 'orderops' && matchMedia('(max-width: 639px)').matches;
+    const compactOtherApp = layout.appId !== 'orderops' && matchMedia('(max-width: 960px)').matches;
+    if (!workspace.isConnected || !isVisible(workspace) || compactOrderOps || compactOtherApp) {
       leftHandle.hidden = true;
       rightHandle.hidden = true;
       return;

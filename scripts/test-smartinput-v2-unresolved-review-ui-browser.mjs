@@ -310,14 +310,19 @@ try {
   assert.equal(baseline.existingButtonIds.every(id => current.existingButtonIds.includes(id)), true,
     'all existing button IDs must remain available after the approved OrderOps workbench addition');
   assert.deepEqual(current.existingButtonIds.filter(id => !baseline.existingButtonIds.includes(id)),
-    ['deliveryFilterReset', 'inventoryInspectorClose', 'inventoryInspectorReopen'],
-    'only the approved delivery-filter reset and inventory inspector close/reopen buttons may extend the former button baseline');
+    [
+      'deliveryFilterReset', 'deliveryManagerAssignmentApply',
+      'inventoryInspectorClose', 'inventoryInspectorReopen',
+      'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
+      'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',
+    ],
+    'only the approved OrderOps workbench, source-menu, search, table-setting, manager, and warehouse-resolution controls may extend the former button baseline');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
   assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
-  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const sourceRect=source.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsSource:source.closest('[data-nexus-app-header="orderops"]')===header,sourceInside:sourceRect.top>=headerRect.top&&sourceRect.bottom<=headerRect.bottom,resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
-  assert.equal(rebuiltPlacement.headerOwnsSource && rebuiltPlacement.sourceInside && rebuiltPlacement.resultsBelow && rebuiltPlacement.resultsWidth > 0, true,
-    'the approved OrderOps rebuild must place source tools inside the app header and the center pane below it');
+  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsLoaders:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header.contains(document.getElementById(id))),sourceRuntimeHidden:getComputedStyle(source).display==='none',resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
+  assert.equal(rebuiltPlacement.headerOwnsLoaders && rebuiltPlacement.sourceRuntimeHidden && rebuiltPlacement.resultsBelow && rebuiltPlacement.resultsWidth > 0, true,
+    'the approved OrderOps rebuild must place the active source actions inside the app header, hide the legacy source strip, and keep the center pane below it');
   const rebuiltPanes = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');return [...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane)})()`);
   assert.deepEqual(rebuiltPanes, ['reference', 'work', 'result'],
     'the rebuilt OrderOps panes must be direct children of the same workspace');
@@ -326,10 +331,21 @@ try {
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
-  const currentMobileShell = await evaluate(client, `({viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width)})`);
+  const currentMobileShell = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const primary=header.querySelector('.orderops-header-primary');const settings=document.querySelector('#headerSettingsButton');const moreMenu=document.querySelector('#orderOpsHeaderMoreMenu');const rect=node=>{const value=node.getBoundingClientRect();return {left:value.left,right:value.right,top:value.top,bottom:value.bottom,width:value.width,height:value.height}};const visibleHeaderControls=[...primary.querySelectorAll(':scope > button,:scope > .orderops-header-menu > button')].filter(node=>{const value=rect(node);const style=getComputedStyle(node);return style.display!=='none'&&value.width>0&&value.height>0});const overlaps=visibleHeaderControls.some((node,index)=>visibleHeaderControls.slice(index+1).some(other=>{const a=rect(node);const b=rect(other);return Math.min(a.right,b.right)>Math.max(a.left,b.left)&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)}));return {viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width),appHeaderHeight:Math.round(rect(header).height),settingsInMore:settings.parentElement===moreMenu,settingsMenuCollapsed:moreMenu.hidden,primarySingleRow:visibleHeaderControls.every(node=>Math.abs(rect(node).top-rect(visibleHeaderControls[0]).top)<1),overlaps}})()`);
   assert.ok(currentMobileShell.documentScrollWidth <= baselineMobileShell.documentScrollWidth,
     `inactive 6B controls must not increase document overflow: ${JSON.stringify({ baselineMobileShell, currentMobileShell })}`);
+  assert.deepEqual({
+    appHeaderHeight: currentMobileShell.appHeaderHeight,
+    settingsInMore: currentMobileShell.settingsInMore,
+    settingsMenuCollapsed: currentMobileShell.settingsMenuCollapsed,
+    primarySingleRow: currentMobileShell.primarySingleRow,
+    overlaps: currentMobileShell.overlaps,
+  }, { appHeaderHeight: 56, settingsInMore: true, settingsMenuCollapsed: true, primarySingleRow: true, overlaps: false },
+  '390px OrderOps app header must remain one 56px row without overlap and move settings into More');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await wait(150);
+  assert.equal(await evaluate(client, `document.querySelector('#headerSettingsButton').parentElement===document.querySelector('[data-nexus-app-header="orderops"] > .header-actions')`), true,
+    'returning to desktop must restore the same settings button to the app-header action position');
 
   await click(client, '#inventoryDrop');
   await input(client, '#tableSearchInput', '정상상품');
