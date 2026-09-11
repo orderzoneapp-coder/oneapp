@@ -464,7 +464,7 @@ export function resolveEstimateDuplicateRows(rows = [], resolutions = new Map())
 }
 
 function saleCodeFromOutPrice(value) {
-  return (numeric(value) || 0) > 0 ? 1 : 0;
+  return (numeric(value) || 0) > 0 ? '1' : '0';
 }
 
 function themeFlags(row = {}) {
@@ -661,7 +661,7 @@ function subdivisionCandidate(row = {}, effectiveOutPrice = '', estimateMappings
     subInbound,
     subSale,
     specification: outputText(row, ['1종규격'], ['type1Specification']),
-    saleCode: 1,
+    saleCode: '1',
     stock: 999,
     themes: themeFlags(row)
   };

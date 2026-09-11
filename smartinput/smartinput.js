@@ -81,7 +81,7 @@ import {
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.5';
+} from './estimate-output.js?v=0.2.6';
 import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.0';
 import {
