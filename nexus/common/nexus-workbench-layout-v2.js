@@ -49,6 +49,15 @@
     const { workspace, config, preference } = layout;
     const width = workspace.getBoundingClientRect().width;
     const gap = 24;
+    if (layout.appId === 'orderops' && width < config.leftMin + config.rightMin + config.centerMin + gap) {
+      const minimum = side === 'left'
+        ? Math.max(220, Math.floor(width * 0.27))
+        : Math.max(180, Math.floor(width * 0.21));
+      const maximum = side === 'left'
+        ? Math.min(config.leftMax, Math.floor(width * 0.38))
+        : Math.min(config.rightMax, Math.floor(width * 0.30));
+      return { minimum, maximum: Math.max(minimum, maximum) };
+    }
     const rightOpen = isPaneRequestedOpen(layout.rightPane);
     const other = side === 'left' ? (rightOpen ? preference.right : 0) : preference.left;
     const minimum = side === 'left' ? config.leftMin : config.rightMin;
@@ -113,12 +122,18 @@
     if (persist) savePreference(layout);
   }
 
+  function renderedWidth(layout, side) {
+    const pane = side === 'left' ? layout.leftPane : layout.rightPane;
+    const width = pane?.getBoundingClientRect().width;
+    return Number.isFinite(width) && width > 0 ? width : layout.preference[side];
+  }
+
   function bindHandle(layout, handle, side) {
     handle.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
       const startX = event.clientX;
-      const startWidth = layout.preference[side];
+      const startWidth = renderedWidth(layout, side);
       handle.setPointerCapture(event.pointerId);
       handle.dataset.resizing = 'true';
       document.body.classList.add('nexus-pane-resizing-v2');
@@ -146,7 +161,7 @@
       if (event.key === 'End') return setWidth(layout, side, limits.maximum, true);
       const direction = event.key === 'ArrowRight' ? 1 : -1;
       const change = side === 'left' ? direction * 12 : direction * -12;
-      setWidth(layout, side, layout.preference[side] + change, true);
+      setWidth(layout, side, renderedWidth(layout, side) + change, true);
     });
   }
 

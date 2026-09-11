@@ -184,9 +184,10 @@ try {
   await waitFor(() => evaluate(client, `
     document.querySelector('#analyzeButton').textContent.includes('출고분석 Enter') &&
     !document.querySelector('#analyzeButton').disabled &&
-    document.querySelector('#validationBox').textContent.includes('검증 완료')
+    document.querySelector('#validationBox').textContent.includes('검증 완료') &&
+    Boolean(document.querySelector('[data-preview="allocations"]'))
   `), "completed analysis and order result tab");
-  await evaluate(client, `document.querySelector('#ordersDrop').click()`);
+  await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   try {
     await waitFor(() => evaluate(client, `document.querySelectorAll('#previewTable table.preview-allocations tbody tr[data-grid-row-key]').length===2`), "allocation cell grid");
   } catch (error) {

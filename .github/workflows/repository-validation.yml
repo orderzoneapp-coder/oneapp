@@ -215,6 +215,7 @@ jobs:
         run: |
           node scripts/test-shipping-management.mjs
           node scripts/test-orderops-dispatch-workbench.mjs
+          node scripts/test-orderops-three-section-preview.mjs
 
       - name: Test OrderOps substitute shipment and unresolved system-message review
         run: |
