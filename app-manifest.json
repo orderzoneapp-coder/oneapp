@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.14",
-  "updatedAt": "2026-09-10",
+  "schemaVersion": "1.3.15",
+  "updatedAt": "2026-09-12",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -20,9 +20,10 @@
       "path": "nexus/index.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, show the fixed ONEAPP ownership Footer, and launch independent work apps without gating their local execution or depending on the company service.",
+      "purpose": "Identify the master or delegated user, record login and logout through the deployed authentication service, show the fixed ONEAPP ownership Footer, launch the seven global apps through the protected NEXUS workspace, and preserve direct entry for auxiliary and independent fallback routes without gating local execution or depending on the company service.",
       "productionWrites": true,
       "navigatesTo": [
+        "nexus-workspace-host",
         "master-lookup",
         "customer-master",
         "merchops",
@@ -42,7 +43,8 @@
         "first-use delegated-user activation",
         "master or delegated-user identification",
         "per-user home-card and global-tab visibility projection without access gating",
-        "independent work-app launcher",
+        "protected workspace launcher for the seven global apps with official direct fallback",
+        "direct launcher for auxiliary apps",
         "fixed ownership Footer without server or identity dependencies"
       ],
       "dependencyMode": {
@@ -59,6 +61,39 @@
       "sharedContracts": [
         "nexus-auth"
       ]
+    },
+    {
+      "id": "nexus-workspace-host",
+      "name": "NEXUS Workspace Host",
+      "path": "nexus/workspace.html",
+      "kind": "web-shell",
+      "status": "production",
+      "purpose": "Keep one global header and one active same-origin app iframe, validate app routes and message sources, preserve parent history, and request app-owned save verification before navigation without reading or writing business data.",
+      "productionWrites": false,
+      "navigatesTo": [
+        "master-lookup",
+        "customer-master",
+        "smart-input",
+        "smart-parser",
+        "merchops",
+        "orderops",
+        "dataops",
+        "nexus-home"
+      ],
+      "coreCapabilities": [
+        "persistent global header with one active iframe",
+        "same-origin route and source-window validation",
+        "parent URL and browser-history synchronization",
+        "app-owned before-leave save and operation-result handshake",
+        "theme and print delegation",
+        "official direct-app fallback"
+      ],
+      "dependencyMode": {
+        "routeValidation": "LOCAL_OPERATION",
+        "appLifecycleHandshake": "LOCAL_OPERATION",
+        "businessDataAccess": "NOT_ALLOWED"
+      },
+      "offlinePolicy": "The host does not call authentication, company, cloud, or business-data services. A host failure leaves every official direct app URL available and does not alter app storage, revisions, or recovery records."
     },
     {
       "id": "nexus-admin",

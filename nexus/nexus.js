@@ -25,6 +25,15 @@
     CLEAR: 'NEXUS_SESSION_CLEAR',
     CLEARED: 'NEXUS_SESSION_CLEARED',
   });
+  const WORKSPACE_APP_IDS = new Set([
+    'master-lookup',
+    'customer-master',
+    'smart-input',
+    'smart-parser',
+    'merchops',
+    'orderops',
+    'dataops',
+  ]);
   const APPS = Object.freeze([
     Object.freeze({ id: 'master-lookup', label: '상품관리', detail: '상품 기준정보 조회·관리', path: '/Master.html' }),
     Object.freeze({ id: 'customer-master', label: '거래처관리', detail: '거래처 기준정보 조회·관리', path: '/customer-master/' }),
@@ -39,6 +48,14 @@
     Object.freeze({ id: 'history-viewer', label: '변경이력', detail: '변경 내역 확인', path: '/history_viewer.html' }),
     Object.freeze({ id: 'orderq-vnext', label: '주문조회', detail: '주문 조회·검증·정정', path: '/orderq/' }),
   ]);
+  const homeEntryPath = (app) => {
+    if (!WORKSPACE_APP_IDS.has(app.id)) return app.path;
+    const query = new URLSearchParams({
+      app: app.id,
+      route: String(app.path || '').replace(/^\/+/, ''),
+    });
+    return `/nexus/workspace.html?${query.toString()}`;
+  };
   const SESSION_ERRORS = new Set([
     'NEXUS_AUTH_SESSION_REQUIRED',
     'NEXUS_AUTH_SESSION_EXPIRED',
@@ -429,7 +446,7 @@
       const name = document.createElement('strong');
       const detail = document.createElement('span');
       link.className = 'nexus-app-card';
-      link.href = app.path;
+      link.href = homeEntryPath(app);
       name.textContent = app.label;
       detail.textContent = app.detail;
       link.append(name, detail);
