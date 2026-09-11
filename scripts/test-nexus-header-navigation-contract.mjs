@@ -104,7 +104,7 @@ function renderHeader(rawProjection, appId = 'master-lookup') {
 
 const schema = 'NEXUS_UI_VISIBILITY_V1';
 const projection = visibleAppIds => JSON.stringify({ schemaVersion: schema, configured: true, visibleAppIds });
-const canonical = ['master-lookup', 'customer-master', 'smart-parser', 'merchops', 'smart-input', 'orderops', 'dataops'];
+const canonical = ['master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops'];
 const allKnown = ['master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops', 'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext'];
 
 assert.deepEqual(renderHeader(null).map(app => app.id), canonical, 'missing projection must recover to all seven global apps');

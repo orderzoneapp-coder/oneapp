@@ -147,7 +147,7 @@ try {
     assert.match(state.layoutStyleHref, /nexus-workbench-layout-v2\.css/);
     assert.equal(state.selectionReference, true, `${appId} must expose selected-row reference content`);
     assert.deepEqual(state.handles, desktop ? ['left','right'] : [], `${appId} separator visibility must match the viewport mode`);
-    assert.deepEqual(state.tabs, ['상품관리','거래처관리','스마트파서','MerchOps','스마트입력','출고관리','DataOps']);
+    assert.deepEqual(state.tabs, ['상품관리','거래처관리','스마트입력','스마트파서','MerchOps','출고관리','DataOps']);
     const themeBefore = await evaluate(client, `document.documentElement.dataset.nexusUiTheme`);
     await click(client, '[data-nexus-ui-theme-toggle]');
     const themeAfter = themeBefore === 'dark' ? 'light' : 'dark';
