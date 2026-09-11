@@ -70,7 +70,7 @@ const mixedUnitOrders = {
 const mixedUnits = engine.createPreviewWorkspace(mixedUnitOrders, inventory);
 assert.equal(mixedUnits.productSummaries[0].totalOrderQuantity, null, "mixed units must not be added into one product total");
 assert.equal(mixedUnits.productSummaries[0].totalOrderQuantityDisplay, "10 EA / 2 BOX");
-assert.ok(mixedUnits.allocations.every((row) => row.remainingQuantity === null && row.status === "단위 환산 필요"),
+assert.ok(mixedUnits.allocations.every((row) => row.remainingQuantity === null && row.status === "단위 확인"),
   "mixed units must not calculate a stock balance without a conversion rule");
 assert.equal(mixedUnits.stats.mixedUnitProductCount, 1);
 const analyzedMixedUnits = engine.analyze(
@@ -92,7 +92,7 @@ for (const contract of [
   'workspaceMode === engine.PREVIEW_WORKSPACE_MODE',
   '"거래처", "상품", "주문수량", "직원 적요"',
   'hasInventory ? ["재고", "잔량"]',
-  "orderops-header-sources",
+  "orderops-header-primary",
   'id="deliveryWarehouseFilter"',
   '<th>거래처</th><th>수량</th><th>금액</th><th>적요</th>',
   "data-delivery-manager-filter",

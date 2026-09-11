@@ -332,7 +332,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = orderReview\.ha
   "integrated output must be blocked only by unresolved quantity errors");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260912-pr574-remediation") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260912-orderops-v1-2") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260910-system-message-review"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -589,6 +589,80 @@ assert.match(
   "duplicate canonical errors must identify the standard field and source positions",
 );
 assert.equal(duplicateCanonicalOrders.rows.length, 0, "ambiguous canonical mappings must block row import");
+const equivalentDuplicateProductMatrix = buildCanonicalOrderMatrix({ extraHeaders: ["상품코드"] });
+equivalentDuplicateProductMatrix[2][equivalentDuplicateProductMatrix[1].indexOf("상품코드")] = "ALIAS-001";
+const equivalentDuplicateProductOrders = parseOrders(equivalentDuplicateProductMatrix);
+assert.equal(equivalentDuplicateProductOrders.errors.some((issue) => issue.code === "ORDER_DUPLICATE_CANONICAL_HEADERS"), true,
+  "equivalent duplicate headers outside the warehouse source choice must remain blocking");
+
+function buildWarehouseCandidateMatrix({ warehouse = "88", warehouseCode = "01" } = {}) {
+  const headers = [...CANONICAL_ORDER_HEADERS, "창고", "창고코드"];
+  const values = headers.map((header) => {
+    if (header === "창고") return warehouse;
+    if (header === "창고코드") return warehouseCode;
+    return CANONICAL_ORDER_VALUES[header];
+  });
+  return [["창고 원본 열 선택"], headers, values];
+}
+
+const warehouseCodeOnlyMatrix = buildCanonicalOrderMatrix({ extraHeaders: ["창고코드"] });
+warehouseCodeOnlyMatrix[2][warehouseCodeOnlyMatrix[1].indexOf("창고코드")] = "01";
+const warehouseCodeOnlyOrders = parseOrders(warehouseCodeOnlyMatrix);
+assert.equal(warehouseCodeOnlyOrders.errors.length, 0, "창고코드 must be an additive warehouse alias");
+assert.equal(warehouseCodeOnlyOrders.rows[0].warehouse, "01", "warehouse codes must preserve leading zeroes");
+
+const equivalentWarehouseOrders = parseOrders(buildWarehouseCandidateMatrix({ warehouse: "88", warehouseCode: "88" }));
+assert.equal(equivalentWarehouseOrders.errors.length, 0,
+  "equivalent warehouse candidate values may select the populated source without administrator intervention");
+assert.equal(equivalentWarehouseOrders.headerMapping.selectedSourceColumns[0].selectionMode, "EQUIVALENT_VALUES");
+
+const conflictingWarehouseMatrix = buildWarehouseCandidateMatrix();
+const conflictingWarehouseOrders = parseOrders(conflictingWarehouseMatrix);
+const warehouseConflictIssue = conflictingWarehouseOrders.errors.find(
+  (issue) => issue.code === "ORDER_WAREHOUSE_COLUMN_CONFLICT",
+);
+assert.ok(warehouseConflictIssue, "different 창고 and 창고코드 values must block import until an administrator selects one");
+assert.equal(conflictingWarehouseOrders.rows.length, 0);
+assert.deepEqual(
+  warehouseConflictIssue.conflict.columns.map((column) => [column.header, column.nonblankCount, column.uniqueValueExamples]),
+  [["창고", 1, ["88"]], ["창고코드", 1, ["01"]]],
+  "the conflict must expose each candidate header, nonblank count, and value examples",
+);
+assert.deepEqual(
+  warehouseConflictIssue.conflict.conflictingRows[0].values.map((value) => [value.header, value.value]),
+  [["창고", "88"], ["창고코드", "01"]],
+  "the conflict must expose both source values side by side",
+);
+const warehouseCodeCandidate = warehouseConflictIssue.conflict.columns.find((column) => column.header === "창고코드");
+const selectedWarehouseOrders = engine.parseOrderWorkbook({
+  fileName: "주문현황.xlsx",
+  sheetName: "미판매현황",
+  rawMatrix: conflictingWarehouseMatrix,
+  displayMatrix: conflictingWarehouseMatrix,
+  sourceColumnSelection: {
+    canonical: "창고",
+    header: warehouseCodeCandidate.header,
+    columnIndex: warehouseCodeCandidate.columnIndex,
+    sourceHeaderSignature: warehouseConflictIssue.sourceHeaderSignature,
+  },
+});
+assert.equal(selectedWarehouseOrders.errors.length, 0, "an exact-source administrator selection must revalidate successfully");
+assert.equal(selectedWarehouseOrders.rows[0].warehouse, "01");
+assert.equal(selectedWarehouseOrders.headerMapping.selectedSourceColumns[0].selectionMode, "ADMIN_SELECTED");
+const wrongSignatureWarehouseOrders = engine.parseOrderWorkbook({
+  fileName: "주문현황.xlsx",
+  sheetName: "미판매현황",
+  rawMatrix: conflictingWarehouseMatrix,
+  displayMatrix: conflictingWarehouseMatrix,
+  sourceColumnSelection: {
+    canonical: "창고",
+    header: warehouseCodeCandidate.header,
+    columnIndex: warehouseCodeCandidate.columnIndex,
+    sourceHeaderSignature: `${warehouseConflictIssue.sourceHeaderSignature}:different-file`,
+  },
+});
+assert.equal(wrongSignatureWarehouseOrders.errors.some((issue) => issue.code === "ORDER_WAREHOUSE_COLUMN_CONFLICT"), true,
+  "a selection from a different source-header signature must never be reused");
 
 const missingCanonicalOrders = parseOrders(buildCanonicalOrderMatrix({
   headerOrder: CANONICAL_ORDER_HEADERS.filter((header) => header !== "규격"),
@@ -732,7 +806,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.25.0");
+assert.equal(engine.ENGINE_VERSION, "3.26.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -1047,7 +1121,9 @@ assert.deepEqual(dynamicView.headers, [
 assert.deepEqual(dynamicView.columns.map((column) => column.sourceIndex), [0, 1, 2, null, 3, 4, 6, 7, 8, 9, 10]);
 assert.equal(new Set(dynamicView.columns.map((column) => column.key)).size, dynamicView.columns.length);
 assert.notEqual(dynamicView.columns[8].key, dynamicView.columns[9].key, "duplicate labels must remain isolated by source index");
-assert.deepEqual(dynamicView.rows[0].values, ["000010", "동적상품", "EA", 3, -10, 0, 0, 0, -130, "00123", "A동"]);
+assert.deepEqual(dynamicView.rows[0].values, ["000010", "동적상품", "EA", 3, null, 0, 0, 0, -130, "00123", "A동"]);
+assert.equal(dynamicView.rows[0].unitUnspecified, true,
+  "inventory rows without an explicit unit must not produce a misleading remaining quantity");
 assert.equal(dynamicView.rows[0].values.includes("숨김값"), false, "interior blank-header data must not shift into visible columns");
 assert.equal(dynamicView.rows[0].inventoryTotal, -7, "all dynamic warehouse columns must retain signs in the arithmetic total");
 assert.equal(dynamicView.rows[1].inventoryTotal, 5, "numeric text warehouse values must participate without changing source display");
@@ -1062,7 +1138,7 @@ dynamicWorkspace.orderOpsInputs = {
 };
 const dynamicLedger = engine.getStockLedgerView(dynamicWorkspace);
 assert.deepEqual(dynamicLedger.headers, ["품목코드", "품목명", "규격", "단위", "재고", "입고", "주문", "출고", "잔량", "단가", "구매처", "정보"]);
-assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, -10, "", "구매처A", "거래처 1(2)1,000\n반복거래처(1)1,000"]);
+assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", "", -7, 5, 3, 4, null, "", "구매처A", "거래처 1(2)1,000\n반복거래처(1)1,000"]);
 const salesOnlyLedgerRow = dynamicLedger.rows.find((row) => row.productCode === "SALE-ONLY");
 assert.deepEqual(
   salesOnlyLedgerRow?.values,
@@ -1160,16 +1236,17 @@ assert.deepEqual(
 );
 assert.deepEqual(
   engine.getPurchaseUploadSelection(dynamicWorkspace).included.map((row) => [row.productCode, row.purchaseNeed]),
-  [["000010", 10]],
-  "negative order-aware remainder must become a positive purchase-upload quantity",
+  [],
+  "inventory rows without an explicit unit must not create an ungrounded purchase-upload quantity",
 );
 assert.deepEqual(
   engine.getPurchaseUploadSelection(baseDynamicWorkspace).included.map((row) => [row.productCode, row.purchaseNeed]),
-  [["000010", 3]],
-  "orders must create a purchase need when the base warehouse stock is insufficient",
+  [],
+  "blank inventory units must block purchase need even when the base warehouse stock is insufficient",
 );
-assert.equal(dynamicWorkspace.stats.inventoryNegativeCount, 1);
-assert.equal(baseDynamicWorkspace.stats.inventoryNegativeCount, 1);
+assert.equal(dynamicWorkspace.stats.inventoryNegativeCount, 0,
+  "blank inventory units must not be classified from an ungrounded negative remainder");
+assert.equal(baseDynamicWorkspace.stats.inventoryNegativeCount, 0);
 const dynamicAllocationView = engine.getAllocationInventoryView(dynamicWorkspace);
 assert.deepEqual(
   dynamicAllocationView.columns.map((column) => column.header),
@@ -1316,9 +1393,10 @@ assert.equal(dynamicInventorySheet["B1"].v, "품목명");
 assert.equal(dynamicInventorySheet["I1"].v, "신규창고");
 assert.equal(dynamicInventorySheet["J1"].v, "신규창고");
 assert.deepEqual([dynamicInventorySheet["D2"].t, dynamicInventorySheet["D2"].v], ["n", 3]);
-assert.deepEqual([dynamicInventorySheet["E2"].t, dynamicInventorySheet["E2"].v], ["n", -10]);
+assert.deepEqual([dynamicInventorySheet["E2"].t, dynamicInventorySheet["E2"].v], ["s", ""],
+  "Excel must keep an ungrounded remaining quantity blank when the inventory unit is absent");
 assert.deepEqual([dynamicInventorySheet["I2"].t, dynamicInventorySheet["I2"].v], ["n", -130]);
-assert.equal(dynamicInventorySheet["E2"].s.fill.fgColor.rgb, "FFF200");
+assert.notEqual(dynamicInventorySheet["E2"].s.fill.fgColor.rgb, "FFF200");
 assert.equal(dynamicInventorySheet["I2"].s.fill.fgColor.rgb, "FFF200");
 assert.deepEqual([dynamicInventorySheet["J2"].t, dynamicInventorySheet["J2"].v], ["s", "00123"]);
 assert.equal(dynamicInventorySheet["J2"].s.numFmt, "@");
@@ -2049,9 +2127,9 @@ for (const requiredInteractionContract of [
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
   'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"])',
-  'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
-  'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
-  'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
+  'columnWidths = migrateReadinessKeyedRecord(columnWidths)',
+  'columnOrder = migrateReadinessKeyList(columnOrder)',
+  'hiddenColumns = migrateReadinessKeyList(hiddenColumns)',
   'warehouseColors: normalizeStoredColorMap(value.view.warehouseColors, isSafeColumnKey)',
   'managerColors: normalizeStoredColorMap(value.view.managerColors, isSafeManagerName)',
   'function persistSelectedOrderViewPresetColors',
@@ -2133,7 +2211,7 @@ for (const requiredText of [
   "주문현황",
   "창고재고",
   "엑셀출력 F10",
-  "통합 검색",
+  "검색",
   "화면인쇄 F9",
   "스마트입력",
   "구매현황",
@@ -2161,6 +2239,7 @@ for (const requiredText of [
 
 for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
+  "tableSearchClearButton", "tableSettingsButton", "tableSettingsMenu",
   "ordersFileButton", "inventoryFileButton", "purchasesFileButton", "salesFileButton", "ledgerCard", "ledgerDrop", "ledgerStatus",
   "integratedCard", "integratedFileButton", "integratedInput",
   "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
@@ -2171,10 +2250,17 @@ for (const id of [
   "downloadButton", "printButton",
   "headerCloudLoadButton", "headerCloudSaveButton",
   "headerRestoreButton", "headerSettingsButton", "settingsModal", "workspaceStorage",
+  "deliveryManagerAssignmentSummary", "deliveryManagerAssignmentInput", "deliveryManagerAssignmentApply",
+  "warehouseColumnDialog", "warehouseColumnCandidates", "warehouseColumnRemember", "warehouseColumnApply", "warehouseColumnCancel",
+  "orderOpsHeaderOrdersButton", "orderOpsHeaderOrdersMenu", "orderOpsHeaderMoreButton", "orderOpsHeaderMoreMenu",
   "excelMappingEditor", "sheetAliasWarning", "mappingSaveButton", "mappingResetButton",
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
+assert.ok(html.includes('orderQButton.id = "orderOpsHeaderOrderQButton"'),
+  "the Order Q saved-order path must be created exactly once inside the order-source menu");
+assert.doesNotMatch(html, /<div class="system-name">System\.IO<\/div>|class="system-cursor"/,
+  "the visible OrderOps status area must not retain the System.IO console name or blinking cursor");
 assert.doesNotMatch(html, /id="bundleInput"|id="bundleDrop"/,
   "the auto-routing drop surface must reuse the visible five-card strip");
 for (const kind of ["orders", "inventory", "purchases", "sales"]) {
@@ -2248,9 +2334,9 @@ assert.ok(html.includes('column.role === "rowState"') &&
   html.includes('? ""') && !html.includes("renderRowStateBadges"),
   "the 구분 column must keep filter values in row data without rendering any state chips");
 assert.ok(html.includes('elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)') &&
-  html.includes('columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)') &&
-  html.includes('columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)'),
-  "all five result screens must save their filters, widths, and column positions as one layout");
+  html.includes('let columnWidths = normalizeStoredColumnWidths(value.view.columnWidths)') &&
+  html.includes('let columnOrder = normalizeStoredColumnOrder(value.view.columnOrder)'),
+  "all six result screens must save their filters, widths, and column positions as one layout");
 assert.ok(html.includes('isDefault: value.isDefault === true') &&
   html.includes('preset.isDefault ? "★ " : ""') &&
   html.includes('candidate.previewId === previewId && candidate.isDefault === true') &&

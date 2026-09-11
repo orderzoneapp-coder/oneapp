@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.25.0";
+  const ENGINE_VERSION = "3.26.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
@@ -49,7 +49,7 @@
     "일자": Object.freeze(["일자"]),
     "주문일자": Object.freeze(["주문일자"]),
     "담당": Object.freeze(["담당"]),
-    "창고": Object.freeze(["창고", "출고창고"]),
+    "창고": Object.freeze(["창고", "출고창고", "창고코드"]),
     "단위": Object.freeze(["단위"]),
     "품목코드": Object.freeze(["품목코드", "상품코드", "코드"]),
     "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
@@ -557,6 +557,55 @@
     };
   }
 
+  function orderSourceHeaderSignature(headerRow) {
+    return `orders:${(Array.isArray(headerRow) ? headerRow : [])
+      .map((header) => normalizeOrderHeader(header))
+      .join("\u001f")}`;
+  }
+
+  function describeOrderColumnConflict(conflict, matrix, headerRowIndex) {
+    const columns = (conflict?.columns || []).map((column) => {
+      const values = [];
+      let nonblankCount = 0;
+      for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+        const value = originalText(matrix[rowIndex]?.[column.columnIndex]);
+        if (!cleanText(value)) continue;
+        nonblankCount += 1;
+        if (!values.includes(value) && values.length < 5) values.push(value);
+      }
+      return { ...column, nonblankCount, uniqueValueExamples: values };
+    });
+    const conflictingRows = [];
+    for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
+      const values = columns.map((column) => originalText(matrix[rowIndex]?.[column.columnIndex]));
+      if (new Set(values.map(cleanText)).size <= 1) continue;
+      conflictingRows.push({
+        rowNumber: rowIndex + 1,
+        values: columns.map((column, index) => ({
+          header: column.header,
+          columnIndex: column.columnIndex,
+          value: values[index],
+        })),
+      });
+      if (conflictingRows.length >= 20) break;
+    }
+    return {
+      canonical: conflict.canonical,
+      columns,
+      conflictingRows,
+      valuesEquivalent: conflictingRows.length === 0,
+    };
+  }
+
+  function resolveSelectedOrderColumn(conflict, selection, sourceHeaderSignature) {
+    if (!selection || selection.canonical !== conflict.canonical) return null;
+    if (cleanText(selection.sourceHeaderSignature) !== sourceHeaderSignature) return null;
+    const selectedIndex = Number(selection.columnIndex);
+    return conflict.columns.find((column) =>
+      column.columnIndex === selectedIndex && cleanText(column.header) === cleanText(selection.header),
+    ) || null;
+  }
+
   function resolveInventoryHeaders(headerRow, headerAliases = {}) {
     const lookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
     const columnMap = Object.create(null);
@@ -683,6 +732,34 @@
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveOrderHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
+    const sourceHeaderSignature = orderSourceHeaderSignature(headerRow);
+    const columnConflicts = headerResolution.duplicateCanonicalFields.map((conflict) =>
+      describeOrderColumnConflict(conflict, displayMatrix, headerRowIndex));
+    const selectedSourceColumns = [];
+    const unresolvedCanonicalFields = [];
+    headerResolution.duplicateCanonicalFields.forEach((conflict, conflictIndex) => {
+      const described = columnConflicts[conflictIndex];
+      const explicit = conflict.canonical === "창고" ? resolveSelectedOrderColumn(
+        conflict,
+        input.sourceColumnSelection,
+        sourceHeaderSignature,
+      ) : null;
+      const selected = explicit || (conflict.canonical === "창고" && described.valuesEquivalent
+        ? [...described.columns].sort((left, right) => right.nonblankCount - left.nonblankCount)[0]
+        : null);
+      if (!selected) {
+        unresolvedCanonicalFields.push(described);
+        return;
+      }
+      columnMap[normalizeHeader(conflict.canonical)] = selected.columnIndex;
+      selectedSourceColumns.push({
+        canonical: conflict.canonical,
+        header: selected.header,
+        columnIndex: selected.columnIndex,
+        sourceHeaderSignature,
+        selectionMode: explicit ? "ADMIN_SELECTED" : "EQUIVALENT_VALUES",
+      });
+    });
     const missingColumns = ORDER_REQUIRED_COLUMNS.filter(
       (column) => !Array.isArray(headerResolution.matches[column]) || headerResolution.matches[column].length === 0,
     );
@@ -699,15 +776,27 @@
       );
     }
 
-    if (headerResolution.duplicateCanonicalFields.length > 0) {
-      const conflictText = headerResolution.duplicateCanonicalFields.map(({ canonical, columns }) =>
+    const warehouseColumnConflict = unresolvedCanonicalFields.find(({ canonical }) => canonical === "창고") || null;
+    if (warehouseColumnConflict) {
+      errors.push(
+        createIssue(
+          "ORDER_WAREHOUSE_COLUMN_CONFLICT",
+          "주문현황의 창고 원본 열이 둘 이상이며 값이 다릅니다. 사용할 원본 열을 선택하고 재검증하세요.",
+          { conflict: warehouseColumnConflict, sourceHeaderSignature },
+        ),
+      );
+    }
+
+    const otherUnresolvedCanonicalFields = unresolvedCanonicalFields.filter(({ canonical }) => canonical !== "창고");
+    if (otherUnresolvedCanonicalFields.length > 0) {
+      const conflictText = otherUnresolvedCanonicalFields.map(({ canonical, columns }) =>
         `${canonical}: ${columns.map((column) => `${column.header}(${column.columnNumber}열)`).join(", ")}`,
       ).join(" / ");
       errors.push(
         createIssue(
           "ORDER_DUPLICATE_CANONICAL_HEADERS",
           `주문현황 표준 항목에 둘 이상의 원본 열이 매칭되었습니다: ${conflictText}`,
-          { conflicts: headerResolution.duplicateCanonicalFields },
+          { conflicts: otherUnresolvedCanonicalFields },
         ),
       );
     }
@@ -726,7 +815,7 @@
 
     const rows = [];
     const canonicalMappingIsValid = missingColumns.length === 0 &&
-      headerResolution.duplicateCanonicalFields.length === 0;
+      unresolvedCanonicalFields.length === 0;
     if (headerRowIndex >= 0 && canonicalMappingIsValid) {
       for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
@@ -885,8 +974,12 @@
       headerMapping: {
         schemaVersion: "shipping-order-header-mapping/v1",
         normalization: "unicode-letters-numbers-case-insensitive/v1",
+        sourceHeaderSignature,
         columns: headerResolution.mappedColumns,
         duplicateCanonicalFields: headerResolution.duplicateCanonicalFields,
+        columnConflicts,
+        warehouseColumnConflict,
+        selectedSourceColumns,
         unmatchedHeaders: headerResolution.unmatchedHeaders,
       },
       sourceMatrix: prepareSourceMatrix(
@@ -1833,7 +1926,9 @@
         ? productUnitComparison(orderProduct.unitGroups, inventory)
         : {
             orderUnit: "", inventoryUnit: cleanText(inventory?.unit), mixedOrderUnits: false,
-            unitUnspecified: false, inventoryUnitMismatch: false,
+            orderUnitUnspecified: false,
+            inventoryUnitUnspecified: !normalizedUnit(inventory?.unit),
+            unitUnspecified: !normalizedUnit(inventory?.unit), inventoryUnitMismatch: false,
             orderQuantityComparable: true, quantityComparable: true,
           };
       const orderQuantity = orderProduct
@@ -1913,7 +2008,9 @@
         quantityComparable: false,
         orderQuantityComparable: product.unitGroups.size === 1 && Boolean(normalizedUnit(product.unit)),
         mixedOrderUnits: product.unitGroups.size > 1,
-        unitUnspecified: product.unitGroups.size !== 1 || !normalizedUnit(product.unit),
+        orderUnitUnspecified: product.unitGroups.size !== 1 || !normalizedUnit(product.unit),
+        inventoryUnitUnspecified: true,
+        unitUnspecified: true,
         inventoryUnitMismatch: false,
         orderUnit: product.unit,
         inventoryUnit: "",
@@ -2272,7 +2369,9 @@
     const orderUnit = orderUnits.length === 1 ? cleanText(orderUnits[0].unit) : "";
     const inventoryUnit = cleanText(inventory?.unit);
     const mixedOrderUnits = orderUnits.length > 1;
-    const unitUnspecified = orderUnits.length !== 1 || !normalizedUnit(orderUnit);
+    const orderUnitUnspecified = orderUnits.length !== 1 || !normalizedUnit(orderUnit);
+    const inventoryUnitUnspecified = !normalizedUnit(inventoryUnit);
+    const unitUnspecified = orderUnitUnspecified || inventoryUnitUnspecified;
     const inventoryUnitMismatch = Boolean(
       orderUnits.length === 1 && orderUnit && inventoryUnit && normalizedUnit(orderUnit) !== normalizedUnit(inventoryUnit),
     );
@@ -2281,10 +2380,15 @@
       orderUnit,
       inventoryUnit,
       mixedOrderUnits,
+      orderUnitUnspecified,
+      inventoryUnitUnspecified,
       unitUnspecified,
       inventoryUnitMismatch,
       orderQuantityComparable,
-      quantityComparable: Boolean(inventory && orderQuantityComparable && !unitUnspecified && !inventoryUnitMismatch),
+      quantityComparable: Boolean(
+        inventory && orderQuantityComparable && !orderUnitUnspecified &&
+        !inventoryUnitUnspecified && !inventoryUnitMismatch
+      ),
     };
   }
 
@@ -2322,7 +2426,10 @@
       const totalForProduct = totalsByCode.get(code);
       const unitGroups = unitsByCode.get(code) || new Map();
       const unitComparison = productUnitComparison(unitGroups, inventory);
-      const { orderUnit, inventoryUnit, mixedOrderUnits, unitUnspecified, inventoryUnitMismatch } = unitComparison;
+      const {
+        orderUnit, inventoryUnit, mixedOrderUnits, orderUnitUnspecified,
+        inventoryUnitUnspecified, unitUnspecified, inventoryUnitMismatch,
+      } = unitComparison;
       const quantityComparable = Boolean(totalForProduct !== undefined && unitComparison.quantityComparable);
       return {
         ...row,
@@ -2336,6 +2443,8 @@
         orderUnit: cleanText(row?.sourceUnit),
         inventoryUnit,
         mixedOrderUnits,
+        orderUnitUnspecified,
+        inventoryUnitUnspecified,
         unitUnspecified,
         inventoryUnitMismatch,
         quantityComparable,
@@ -2344,7 +2453,7 @@
           : !inventory
             ? "재고 미등록"
             : mixedOrderUnits || unitUnspecified || inventoryUnitMismatch
-              ? "단위 환산 필요"
+              ? "단위 확인"
               : "재고 비교 준비",
         parsedQuantity: quantity.ok && !quantity.blank ? quantity.value : null,
       };
