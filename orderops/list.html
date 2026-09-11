@@ -6,17 +6,17 @@
   <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.11">
-  <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.1.0">
+  <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
   <script defer src="../nexus/common/nexus-ui.js?v=1.6.1"></script>
-  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.1.0"></script>
+  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.2.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260911-worker-workflow"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260911-pr572-followup"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2004,6 +2004,7 @@
       border-radius: 7px;
       background: #fff;
     }
+    .orderops-results-workspace > [data-nexus-pane="reference"] { container-type: inline-size; }
     .orderops-results-workspace > [data-nexus-pane="work"] {
       display: flex;
       flex-direction: column;
@@ -2071,11 +2072,17 @@
     }
     .orderops-delivery-filter-reset { align-self: end; padding-inline: 8px; }
     .orderops-side-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    .orderops-side-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; font-size: 10px; }
+    .orderops-side-table { width: 100%; min-width: 992px; border-collapse: separate; border-spacing: 0; font-size: 10px; table-layout: fixed; }
     .orderops-inventory-table { min-width: 0; }
     .orderops-side-table th,
     .orderops-side-table td { padding: 6px 7px; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; color: #1f2937; text-align: left; vertical-align: top; }
     .orderops-side-table th { position: sticky; top: 0; z-index: 2; color: #1f2937; background: #e5e7eb; font-weight: 900; }
+    .orderops-delivery-table :is(th, td):nth-child(1) { position: sticky; left: 0; z-index: 1; }
+    .orderops-delivery-table :is(th, td):nth-child(3) { position: sticky; left: 110px; z-index: 1; }
+    .orderops-delivery-table th:nth-child(1),
+    .orderops-delivery-table th:nth-child(3) { z-index: 3; }
+    .orderops-delivery-table tbody :is(td:nth-child(1), td:nth-child(3)) { background: #fff; }
+    .orderops-delivery-table tbody tr:nth-child(even) :is(td:nth-child(1), td:nth-child(3)) { background: #f5f6f7; }
     .orderops-side-table tbody tr:nth-child(even) td { background: #f5f6f7; }
     .orderops-side-table tbody tr[data-delivery-key] { cursor: pointer; }
     .orderops-side-table tbody tr[data-delivery-key]:hover td { background: #ecfeff; }
@@ -2139,6 +2146,11 @@
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric { border-color: #475569; background: #172033; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--expected { border-color: #0f766e; background: #12302f; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--actual { border-color: #2563eb; background: #172554; }
+
+    @container (max-width: 419px) {
+      .orderops-delivery-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .orderops-delivery-filter-reset { grid-column: 1 / -1; width: 100%; }
+    }
 
     @media (max-width: 960px) {
       .orderops-results-workspace { padding: 0; background: transparent; }
@@ -2368,7 +2380,8 @@
             <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button">전체</button>
           </div>
           <div class="orderops-side-table-wrap">
-            <table class="orderops-side-table" aria-label="주문서별 배송 배정 요약">
+            <table class="orderops-side-table orderops-delivery-table" aria-label="주문서별 배송 배정 요약">
+              <colgroup><col style="width:110px"><col style="width:68px"><col style="width:106px"><col style="width:70px"><col style="width:120px"><col style="width:170px"><col style="width:90px"><col style="width:98px"><col style="width:160px"></colgroup>
               <thead><tr><th>주문번호</th><th>창고</th><th>담당자</th><th>지역</th><th>거래처</th><th>품목</th><th>수량</th><th>금액</th><th>적요(직원)</th></tr></thead>
               <tbody id="deliverySummaryBody"><tr><td colspan="9" class="empty-table-cell">분석 후 주문서가 표시됩니다.</td></tr></tbody>
             </table>
@@ -5544,6 +5557,10 @@
         return values.join("\n");
       }
 
+      function formatEmployeeDeliveryNotice(row) {
+        return String(row?.note1Original ?? row?.note1 ?? "");
+      }
+
       function orderInformationOrders(sourceRow) {
         const productCode = engine.normalizeProductCode(sourceRow?.productCode);
         if (!productCode) return [];
@@ -5743,7 +5760,7 @@
             ...(directOrderQShipment ? [row.actualShipmentQuantity] : []),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
             ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
-            formatDeliveryNotice(row),
+            formatEmployeeDeliveryNotice(row),
             row.purchase || "",
           ]),
           sortByProductCode: true,

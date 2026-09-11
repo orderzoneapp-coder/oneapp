@@ -7,7 +7,7 @@
     'smart-parser': { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 700 },
     merchops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
     dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
-    orderops: { left: 286, right: 300, leftMin: 240, leftMax: 460, rightMin: 250, rightMax: 460, centerMin: 720 }
+    orderops: { left: 380, right: 280, leftMin: 320, leftMax: 520, rightMin: 250, rightMax: 420, centerMin: 620 }
   });
   const layouts = new WeakMap();
   const safeNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -39,11 +39,17 @@
     return style.display !== 'none' && style.visibility !== 'hidden';
   }
 
+  function isPaneRequestedOpen(element) {
+    if (!element || !element.isConnected || element.hidden || element.getAttribute('aria-hidden') === 'true') return false;
+    if (element.matches('.related-panel')) return element.classList.contains('is-open');
+    return true;
+  }
+
   function currentLimits(layout, side) {
     const { workspace, config, preference } = layout;
     const width = workspace.getBoundingClientRect().width;
     const gap = 24;
-    const rightOpen = isVisible(layout.rightPane);
+    const rightOpen = isPaneRequestedOpen(layout.rightPane);
     const other = side === 'left' ? (rightOpen ? preference.right : 0) : preference.left;
     const minimum = side === 'left' ? config.leftMin : config.rightMin;
     const configuredMax = side === 'left' ? config.leftMax : config.rightMax;
@@ -81,7 +87,7 @@
     applyPreference(layout);
     const workspaceRect = workspace.getBoundingClientRect();
     const leftRect = leftPane.getBoundingClientRect();
-    const rightOpen = isVisible(rightPane);
+    const rightOpen = isPaneRequestedOpen(rightPane);
     workspace.dataset.nexusRightOpen = String(rightOpen);
     const top = Math.max(workspaceRect.top, 0);
     const bottom = Math.min(workspaceRect.bottom, innerHeight);

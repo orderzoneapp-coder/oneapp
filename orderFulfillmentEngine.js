@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.23.0";
+  const ENGINE_VERSION = "3.23.1";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -2398,13 +2398,12 @@
       manager: "담당자",
       quantity: "주문수량",
       unitPrice: "단가",
-      deliveryNotice: "전달사항",
+      deliveryNotice: "전달사항(직원)",
       note: "적요",
       note1: "적요1",
     };
     const previousValue = field === "deliveryNotice"
-      ? [order.noteOriginal ?? order.note, order.note1Original ?? order.note1]
-        .map((entry) => originalText(entry)).filter((entry) => entry !== "").join("\n")
+      ? originalText(order.note1Original ?? order.note1)
       : order[field];
     if (field === "quantity") {
       const parsed = parseNumericCell(value);
@@ -2418,10 +2417,8 @@
     } else if (["customer", "group", "manager"].includes(field)) {
       order[field] = cleanText(value);
     } else if (field === "deliveryNotice") {
-      order.noteOriginal = originalText(value);
-      order.note = cleanText(value);
-      order.note1Original = "";
-      order.note1 = "";
+      order.note1Original = originalText(value);
+      order.note1 = cleanText(value);
     } else if (field === "note") {
       order.noteOriginal = originalText(value);
       order.note = cleanText(value);
@@ -2437,7 +2434,7 @@
         ? roundQuantity(parsedQuantity.value * order.unitPrice)
         : null;
     }
-    const nextValue = field === "deliveryNotice" ? order.note : order[field];
+    const nextValue = field === "deliveryNotice" ? order.note1 : order[field];
     appendSystemEditEvent(workspace, {
       productCode: order.productCode,
       sourceRowNumber: rowNumber,
