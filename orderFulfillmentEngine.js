@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.24.0";
+  const ENGINE_VERSION = "3.25.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
@@ -1804,6 +1804,7 @@
           specification: cleanText(order?.specification),
           unit: cleanText(order?.sourceUnit),
           orderQuantity: 0,
+          unitGroups: new Map(),
         });
       }
       const product = orderProducts.get(productCode);
@@ -1811,9 +1812,15 @@
       if (!product.specification) product.specification = cleanText(order?.specification);
       if (!product.unit) product.unit = cleanText(order?.sourceUnit);
       const parsed = parseNumericCell(order?.quantity);
-      product.orderQuantity = roundQuantity(
-        product.orderQuantity + (parsed.ok && !parsed.blank ? parsed.value : 0),
-      );
+      if (parsed.ok && !parsed.blank) {
+        product.orderQuantity = roundQuantity(product.orderQuantity + parsed.value);
+        const unit = cleanText(order?.sourceUnit);
+        const unitKey = normalizedUnit(unit) || "__UNIT_UNSPECIFIED__";
+        const group = product.unitGroups.get(unitKey) || { key: unitKey, unit, quantity: 0, rowCount: 0 };
+        group.quantity = roundQuantity(group.quantity + parsed.value);
+        group.rowCount += 1;
+        product.unitGroups.set(unitKey, group);
+      }
     });
     const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
@@ -1821,8 +1828,20 @@
       const systemMessages = getSystemMessages(workspace, productCode, orderReview);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
-      const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
-      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
+      const orderProduct = orderProducts.get(productCode);
+      const unitComparison = orderProduct
+        ? productUnitComparison(orderProduct.unitGroups, inventory)
+        : {
+            orderUnit: "", inventoryUnit: cleanText(inventory?.unit), mixedOrderUnits: false,
+            unitUnspecified: false, inventoryUnitMismatch: false,
+            orderQuantityComparable: true, quantityComparable: true,
+          };
+      const orderQuantity = orderProduct
+        ? (unitComparison.orderQuantityComparable ? orderProduct.orderQuantity : null)
+        : 0;
+      const remainingQuantity = unitComparison.quantityComparable
+        ? roundQuantity(stockTotal - orderQuantity)
+        : null;
       const values = columns.map((column) => {
         if (column.role === "orderQuantity") return orderQuantity;
         if (column.role === "calculatedQuantity") {
@@ -1840,7 +1859,11 @@
         stockTotal,
         orderQuantity,
         remainingQuantity,
-        purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
+        purchaseNeed: typeof remainingQuantity === "number" && remainingQuantity < 0
+          ? roundQuantity(Math.abs(remainingQuantity))
+          : unitComparison.quantityComparable ? 0 : null,
+        ...unitComparison,
+        totalOrderQuantityDisplay: unitGroupDisplay(orderProduct?.unitGroups),
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1887,6 +1910,14 @@
         orderQuantity,
         remainingQuantity,
         purchaseNeed: null,
+        quantityComparable: false,
+        orderQuantityComparable: product.unitGroups.size === 1 && Boolean(normalizedUnit(product.unit)),
+        mixedOrderUnits: product.unitGroups.size > 1,
+        unitUnspecified: product.unitGroups.size !== 1 || !normalizedUnit(product.unit),
+        inventoryUnitMismatch: false,
+        orderUnit: product.unit,
+        inventoryUnit: "",
+        totalOrderQuantityDisplay: unitGroupDisplay(product.unitGroups),
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -1896,7 +1927,7 @@
         inventoryMissing: true,
       });
     });
-    const negativeCount = rows.filter((row) => row.remainingQuantity < 0).length;
+    const negativeCount = rows.filter((row) => typeof row.remainingQuantity === "number" && row.remainingQuantity < 0).length;
     if (workspace.stats && typeof workspace.stats === "object") {
       workspace.stats.inventoryNegativeCount = negativeCount;
     }
@@ -2193,11 +2224,76 @@
     };
   }
 
+  function previewSourceFingerprint(ordersParsed, inventoryParsed, options = {}) {
+    const supplied = cleanText(options.sourceFingerprint).toLowerCase();
+    if (/^[a-f0-9]{64}$/.test(supplied)) return supplied;
+    const candidates = [
+      ordersParsed?.fileHash,
+      ordersParsed?.orderSnapshotHash,
+      inventoryParsed?.fileHash,
+      options.purchases?.fileHash,
+      options.sales?.fileHash,
+    ];
+    return candidates
+      .map((value) => cleanText(value).toLowerCase())
+      .find((value) => /^[a-f0-9]{64}$/.test(value)) || "";
+  }
+
+  function normalizedUnit(value) {
+    return cleanText(value).replace(/\s+/g, "").toLocaleUpperCase("ko-KR");
+  }
+
+  function orderUnitSummary(rows) {
+    const groupsByCode = new Map();
+    (rows || []).forEach((row) => {
+      const productCode = normalizeProductCode(row?.productCode);
+      const parsed = parseNumericCell(row?.quantity);
+      if (!productCode || !parsed.ok || parsed.blank) return;
+      if (!groupsByCode.has(productCode)) groupsByCode.set(productCode, new Map());
+      const groups = groupsByCode.get(productCode);
+      const label = cleanText(row?.sourceUnit);
+      const key = normalizedUnit(label) || "__UNIT_UNSPECIFIED__";
+      const current = groups.get(key) || { key, unit: label, quantity: 0, rowCount: 0 };
+      current.quantity = roundQuantity(current.quantity + parsed.value);
+      current.rowCount += 1;
+      groups.set(key, current);
+    });
+    return groupsByCode;
+  }
+
+  function unitGroupDisplay(groups) {
+    return [...(groups?.values?.() || [])]
+      .map((group) => `${group.quantity}${group.unit ? ` ${group.unit}` : " (단위 미지정)"}`)
+      .join(" / ");
+  }
+
+  function productUnitComparison(groups, inventory) {
+    const orderUnits = [...(groups?.values?.() || [])];
+    const orderUnit = orderUnits.length === 1 ? cleanText(orderUnits[0].unit) : "";
+    const inventoryUnit = cleanText(inventory?.unit);
+    const mixedOrderUnits = orderUnits.length > 1;
+    const unitUnspecified = orderUnits.length !== 1 || !normalizedUnit(orderUnit);
+    const inventoryUnitMismatch = Boolean(
+      orderUnits.length === 1 && orderUnit && inventoryUnit && normalizedUnit(orderUnit) !== normalizedUnit(inventoryUnit),
+    );
+    const orderQuantityComparable = Boolean(orderUnits.length === 1 && normalizedUnit(orderUnit));
+    return {
+      orderUnit,
+      inventoryUnit,
+      mixedOrderUnits,
+      unitUnspecified,
+      inventoryUnitMismatch,
+      orderQuantityComparable,
+      quantityComparable: Boolean(inventory && orderQuantityComparable && !unitUnspecified && !inventoryUnitMismatch),
+    };
+  }
+
   function rebuildPreviewWorkspaceFromOrders(workspace) {
     const inventoryByCode = new Map(
       (workspace.inventory || []).map((row) => [normalizeProductCode(row?.productCode), row]),
     );
     const totalsByCode = new Map();
+    const unitsByCode = orderUnitSummary(workspace.orders || []);
     let totalOrderQuantity = 0;
     let zeroOrderQuantityCount = 0;
     let negativeOrderQuantityCount = 0;
@@ -2224,23 +2320,40 @@
           ? inventory.sourceInventoryTotal
           : null;
       const totalForProduct = totalsByCode.get(code);
+      const unitGroups = unitsByCode.get(code) || new Map();
+      const unitComparison = productUnitComparison(unitGroups, inventory);
+      const { orderUnit, inventoryUnit, mixedOrderUnits, unitUnspecified, inventoryUnitMismatch } = unitComparison;
+      const quantityComparable = Boolean(totalForProduct !== undefined && unitComparison.quantityComparable);
       return {
         ...row,
         inventoryMatched: Boolean(inventory),
         stockTotal,
-        remainingQuantity: stockTotal === null || totalForProduct === undefined
+        remainingQuantity: stockTotal === null || !quantityComparable
           ? null
           : roundQuantity(stockTotal - totalForProduct),
-        totalOrderQuantity: totalForProduct ?? null,
+        totalOrderQuantity: unitComparison.orderQuantityComparable ? totalForProduct ?? null : null,
+        totalOrderQuantityDisplay: unitGroupDisplay(unitGroups),
+        orderUnit: cleanText(row?.sourceUnit),
+        inventoryUnit,
+        mixedOrderUnits,
+        unitUnspecified,
+        inventoryUnitMismatch,
+        quantityComparable,
         status: !workspace.previewDataState.inventory
           ? "재고자료 없음"
-          : inventory ? "재고 비교 준비" : "재고 미등록",
+          : !inventory
+            ? "재고 미등록"
+            : mixedOrderUnits || unitUnspecified || inventoryUnitMismatch
+              ? "단위 환산 필요"
+              : "재고 비교 준비",
         parsedQuantity: quantity.ok && !quantity.blank ? quantity.value : null,
       };
     });
     workspace.productSummaries = [...totalsByCode.entries()].map(([productCode, total]) => ({
       productCode,
-      totalOrderQuantity: total,
+      totalOrderQuantity: productUnitComparison(unitsByCode.get(productCode), inventoryByCode.get(productCode)).orderQuantityComparable ? total : null,
+      totalOrderQuantityDisplay: unitGroupDisplay(unitsByCode.get(productCode)),
+      unitGroups: [...(unitsByCode.get(productCode)?.values?.() || [])],
       inventoryMatched: inventoryByCode.has(productCode),
     }));
     workspace.notices = collectNotices(workspace.orders || []);
@@ -2277,6 +2390,7 @@
       memoCount: workspace.notices.length,
       zeroOrderQuantityCount,
       negativeOrderQuantityCount,
+      mixedUnitProductCount: [...unitsByCode.values()].filter((groups) => groups.size > 1).length,
     };
     return workspace;
   }
@@ -2287,7 +2401,7 @@
       engineVersion: ENGINE_VERSION,
       workspaceMode: PREVIEW_WORKSPACE_MODE,
       createdAt: options.createdAt || new Date().toISOString(),
-      sourceFingerprint: "",
+      sourceFingerprint: previewSourceFingerprint(ordersParsed, inventoryParsed, options),
       planId: "",
       basisDate: "",
       basisDateStatus: "missing",
@@ -2652,6 +2766,7 @@
     const inventoryByCode = new Map(
       inventoryParsed.rows.map((row) => [row.productCode, row]),
     );
+    const unitsByCode = orderUnitSummary(ordersParsed.rows);
     const poolState = new Map(
       inventoryParsed.rows.map((row) => [
         row.productCode,
@@ -2666,6 +2781,8 @@
     for (const order of ordersParsed.rows) {
       const inventory = inventoryByCode.get(order.productCode);
       const matched = Boolean(inventory);
+      const unitGroups = unitsByCode.get(order.productCode) || new Map();
+      const unitComparison = productUnitComparison(unitGroups, inventory);
       const parsedOrderQuantity = parseNumericCell(order.quantity);
       const quantityInputValid = parsedOrderQuantity.ok && !parsedOrderQuantity.blank;
       const calculationQuantity = quantityInputValid ? parsedOrderQuantity.value : 0;
@@ -2675,7 +2792,7 @@
       let wholeRemaining = null;
       let seoulRemaining = null;
 
-      if (matched) {
+      if (matched && unitComparison.quantityComparable) {
         const state = poolState.get(order.productCode);
         wholeAllocation = roundQuantity(Math.min(calculationQuantity, state.wholeRemaining));
         state.wholeRemaining = roundQuantity(state.wholeRemaining - wholeAllocation);
@@ -2690,7 +2807,7 @@
         seoulRemaining = state.seoulRemaining;
       }
 
-      const reconciliationDifference = matched
+      const reconciliationDifference = matched && unitComparison.quantityComparable
         ? roundQuantity(
             calculationQuantity - wholeAllocation - seoulAllocation - purchaseNeed,
           )
@@ -2701,6 +2818,8 @@
         quantityInputValid,
         noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
+        ...unitComparison,
+        totalOrderQuantityDisplay: unitGroupDisplay(unitGroups),
         inventoryProductName: inventory?.productName || "",
         wholeStockRaw: matched ? inventory.wholeStockRaw : null,
         wholeStockAvailable: matched ? inventory.wholeStockAvailable : null,
@@ -2714,14 +2833,13 @@
         purchaseNeed,
         wholeRemaining,
         seoulRemaining,
-        status: classifyAllocation(
-          wholeAllocation,
-          seoulAllocation,
-          purchaseNeed,
-          matched,
-        ),
+        status: matched && !unitComparison.quantityComparable
+          ? "단위 확인"
+          : classifyAllocation(wholeAllocation, seoulAllocation, purchaseNeed, matched),
         reconciliationDifference,
-        matchStatus: matched ? "매칭완료" : "재고정보 없음",
+        matchStatus: matched
+          ? (unitComparison.quantityComparable ? "매칭완료" : "단위 확인")
+          : "재고정보 없음",
         purchase: "",
         supplierDisplay: uniqueSupplierPairs([order])[0]?.display || "",
       });
@@ -2752,22 +2870,37 @@
           managers: [],
           notes: [],
           notes1: [],
+          quantityComparable: allocation.quantityComparable,
+          orderQuantityComparable: allocation.orderQuantityComparable,
+          totalOrderQuantityDisplay: allocation.totalOrderQuantityDisplay,
+          orderUnit: allocation.orderUnit,
+          inventoryUnit: allocation.inventoryUnit,
+          mixedOrderUnits: allocation.mixedOrderUnits,
+          unitUnspecified: allocation.unitUnspecified,
+          inventoryUnitMismatch: allocation.inventoryUnitMismatch,
         });
       }
       const summary = summaryByCode.get(allocation.productCode);
-      summary.totalOrderQuantity = roundQuantity(
-        summary.totalOrderQuantity + allocation.calculationQuantity,
-      );
+      if (summary.orderQuantityComparable && allocation.orderQuantityComparable) {
+        summary.totalOrderQuantity = roundQuantity(
+          summary.totalOrderQuantity + allocation.calculationQuantity,
+        );
+      } else {
+        summary.orderQuantityComparable = false;
+        summary.totalOrderQuantity = null;
+      }
       summary.wholeAllocation = roundQuantity(
         summary.wholeAllocation + allocation.wholeAllocation,
       );
       summary.seoulAllocation = roundQuantity(
         summary.seoulAllocation + allocation.seoulAllocation,
       );
-      if (summary.inventoryMatched) {
+      if (summary.inventoryMatched && summary.quantityComparable) {
         summary.purchaseNeed = roundQuantity(
           summary.purchaseNeed + allocation.purchaseNeed,
         );
+      } else if (!summary.quantityComparable) {
+        summary.purchaseNeed = null;
       }
       summary.orderCount += 1;
       summary.customers.push(allocation.customer);
@@ -2779,7 +2912,7 @@
     }
 
     const productSummaries = [...summaryByCode.values()].map((summary) => {
-      const reconciliationDifference = summary.inventoryMatched
+      const reconciliationDifference = summary.inventoryMatched && summary.quantityComparable
         ? roundQuantity(
             summary.totalOrderQuantity -
               summary.wholeAllocation -
@@ -2806,12 +2939,9 @@
         supplierPairs,
         suppliers: supplierPairs.map((pair) => pair.display).join("\n"),
         purchase: "",
-        status: classifyAllocation(
-          summary.wholeAllocation,
-          summary.seoulAllocation,
-          summary.purchaseNeed,
-          summary.inventoryMatched,
-        ),
+        status: summary.inventoryMatched && !summary.quantityComparable
+          ? "단위 확인"
+          : classifyAllocation(summary.wholeAllocation, summary.seoulAllocation, summary.purchaseNeed, summary.inventoryMatched),
         reconciliationDifference,
       };
     });
@@ -2892,7 +3022,7 @@
     );
     const totalMatchedOrderQuantity = roundQuantity(
       allocations.reduce(
-        (sum, row) => sum + (row.inventoryMatched ? row.calculationQuantity : 0),
+        (sum, row) => sum + (row.inventoryMatched && row.quantityComparable ? row.calculationQuantity : 0),
         0,
       ),
     );
@@ -2913,9 +3043,12 @@
         0,
       ),
     );
+    const comparableOrderQuantity = roundQuantity(
+      allocations.reduce((sum, row) => sum + (row.orderQuantityComparable ? row.calculationQuantity : 0), 0),
+    );
     const productQuantityDifference = roundQuantity(
-      totalOrderQuantity -
-        productSummaries.reduce((sum, row) => sum + row.totalOrderQuantity, 0),
+      comparableOrderQuantity -
+        productSummaries.reduce((sum, row) => sum + (typeof row.totalOrderQuantity === "number" ? row.totalOrderQuantity : 0), 0),
     );
     const allocationDifference = roundQuantity(
       totalMatchedOrderQuantity - totalAllocatedAndPurchase,
@@ -2931,7 +3064,7 @@
     ).length;
     const reconciliationErrorCount = allocations.filter(
       (row) =>
-        row.inventoryMatched &&
+        row.inventoryMatched && row.quantityComparable &&
         Math.abs(row.reconciliationDifference || 0) > 1e-9,
     ).length;
     const statusCounts = allocations.reduce((result, row) => {
@@ -3002,6 +3135,13 @@
         expected: 0,
         status: inputValidation.quantityErrorCount === 0 ? "정상" : "확인 필요",
         description: "계산 제외 및 수정 전 저장·Excel 출력 차단 대상 행 수",
+      },
+      {
+        item: "상품 단위 환산 기준",
+        result: productSummaries.filter((row) => row.inventoryMatched && !row.quantityComparable).length,
+        expected: 0,
+        status: productSummaries.some((row) => row.inventoryMatched && !row.quantityComparable) ? "확인 필요" : "정상",
+        description: "같은 상품코드의 주문단위와 재고단위를 직접 비교할 수 없는 상품 수",
       },
       {
         item: "상품별 주문수량 대사 차이",
@@ -3142,6 +3282,8 @@
         inventoryNegativeCount: inventoryParsed.rows.filter(
           (row) => typeof row.inventoryTotal === "number" && row.inventoryTotal < 0,
         ).length,
+        mixedUnitProductCount: productSummaries.filter((row) => row.mixedOrderUnits).length,
+        unitCheckProductCount: productSummaries.filter((row) => row.inventoryMatched && !row.quantityComparable).length,
         purchaseManagementMainCount: purchaseManagement.filter(
           (row) => row.rowType === "main" && row.inventoryShadow !== true,
         ).length,
@@ -3214,6 +3356,10 @@
     (workspace.purchaseManagement || []).forEach((row) => {
       if (row.rowType === "reference") {
         excluded.push({ productCode: row.productCode, reason: "카테고리 대체 참고행" });
+        return;
+      }
+      if (row.inventoryShadow === true) {
+        excluded.push({ productCode: row.productCode, reason: "주문 없는 전체 재고 참고행" });
         return;
       }
       const productCode = normalizeProductCode(row.productCode);

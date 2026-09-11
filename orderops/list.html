@@ -16,7 +16,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260911-three-sections"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-pr574-remediation"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2008,7 +2008,7 @@
     .orderops-results-workspace > [data-nexus-pane="work"] {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow: clip;
     }
     .orderops-side-panel__head {
       display: flex;
@@ -2033,6 +2033,29 @@
       white-space: nowrap;
     }
     .orderops-panel-reopen { margin-left: auto; }
+    .view-controls {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      overflow: hidden !important;
+    }
+    .view-controls-scroll {
+      display: flex;
+      align-items: center;
+      flex: 1 1 auto;
+      gap: 4px;
+      min-width: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-inline: contain;
+      scrollbar-gutter: stable;
+    }
+    .view-controls > .orderops-panel-reopen {
+      position: relative;
+      z-index: 2;
+      flex: 0 0 auto;
+      margin-left: 4px;
+    }
     .orderops-delivery-distribution {
       display: flex;
       flex-wrap: wrap;
@@ -2042,6 +2065,7 @@
       background: #f8fafc;
     }
     .orderops-distribution-chip {
+      appearance: none;
       padding: 3px 6px;
       border: 1px solid #99f6e4;
       border-radius: 999px;
@@ -2049,10 +2073,14 @@
       background: #f0fdfa;
       font-size: 10px;
       font-weight: 900;
+      cursor: pointer;
     }
+    .orderops-distribution-chip:hover,
+    .orderops-distribution-chip:focus-visible { border-color: #0f766e; outline: 2px solid rgba(15,118,110,.2); }
+    .orderops-distribution-chip[aria-pressed="true"] { border-color: #0f766e; color: #fff; background: #0f766e; }
     .orderops-delivery-filters {
       display: grid;
-      grid-template-columns: minmax(112px, 1fr) minmax(112px, 1fr) auto;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 6px;
       padding: 8px 10px;
       border-bottom: 1px solid var(--slate-200);
@@ -2070,19 +2098,14 @@
       font-size: 10px;
       font-weight: 800;
     }
-    .orderops-delivery-filter-reset { align-self: end; padding-inline: 8px; }
+    .orderops-delivery-filter-reset { grid-column: 1 / -1; align-self: end; padding-inline: 8px; }
     .orderops-side-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
     .orderops-side-table { width: 100%; min-width: 992px; border-collapse: separate; border-spacing: 0; font-size: 10px; table-layout: fixed; }
     .orderops-inventory-table { min-width: 0; }
     .orderops-side-table th,
     .orderops-side-table td { padding: 6px 7px; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; color: #1f2937; text-align: left; vertical-align: top; }
     .orderops-side-table th { position: sticky; top: 0; z-index: 2; color: #1f2937; background: #e5e7eb; font-weight: 900; }
-    .orderops-delivery-table :is(th, td):nth-child(1) { position: sticky; left: 0; z-index: 1; }
-    .orderops-delivery-table :is(th, td):nth-child(3) { position: sticky; left: 110px; z-index: 1; }
-    .orderops-delivery-table th:nth-child(1),
-    .orderops-delivery-table th:nth-child(3) { z-index: 3; }
-    .orderops-delivery-table tbody :is(td:nth-child(1), td:nth-child(3)) { background: #fff; }
-    .orderops-delivery-table tbody tr:nth-child(even) :is(td:nth-child(1), td:nth-child(3)) { background: #f5f6f7; }
+    .orderops-delivery-table { min-width: 0; }
     .orderops-side-table tbody tr:nth-child(even) td { background: #f5f6f7; }
     .orderops-side-table tbody tr[data-delivery-key] { cursor: pointer; }
     .orderops-side-table tbody tr[data-delivery-key]:hover td { background: #ecfeff; }
@@ -2090,21 +2113,8 @@
     .orderops-side-table tbody tr.orderops-selected-delivery-row td:first-child { box-shadow: inset 2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
     .orderops-side-table tbody tr.orderops-selected-delivery-row td:last-child { box-shadow: inset -2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
     .orderops-side-table td.number { text-align: right; font-variant-numeric: tabular-nums; }
-    .orderops-side-table .orderops-summary-item,
-    .orderops-side-table .orderops-summary-note { min-width: 160px; white-space: normal; overflow-wrap: anywhere; }
+    .orderops-side-table .orderops-summary-note { white-space: normal; overflow-wrap: anywhere; }
     .orderops-side-table .empty-table-cell { padding: 18px 10px; color: #64748b; text-align: center; }
-    .orderops-manager-input {
-      width: 100%;
-      min-width: 94px;
-      height: 28px;
-      padding: 3px 6px;
-      border: 1px solid #94a3b8;
-      border-radius: 4px;
-      color: #0f172a;
-      background: #fff;
-      font-size: 10px;
-    }
-    .orderops-manager-input:focus { border-color: #0f766e; outline: 2px solid rgba(15,118,110,.18); }
     .orderops-customer-key-warning { display: block; margin-top: 3px; color: #b45309; font-size: 9px; font-weight: 800; }
     .orderops-inventory-identity { padding: 10px; border-bottom: 1px solid var(--slate-200); }
     .orderops-inventory-identity strong { display: block; color: #0f172a; font-size: 12px; }
@@ -2140,16 +2150,14 @@
     html[data-nexus-ui-theme="dark"] .orderops-delivery-filters { border-color: #334155; background: #111827; }
     html[data-nexus-ui-theme="dark"] .orderops-delivery-filter { color: #cbd5e1; }
     html[data-nexus-ui-theme="dark"] .orderops-delivery-filter :is(select),
-    html[data-nexus-ui-theme="dark"] .orderops-delivery-filter-reset,
-    html[data-nexus-ui-theme="dark"] .orderops-manager-input { border-color: #64748b; color: #f8fafc; background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-filter-reset { border-color: #64748b; color: #f8fafc; background: #172033; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-identity { border-color: #334155; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric { border-color: #475569; background: #172033; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--expected { border-color: #0f766e; background: #12302f; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--actual { border-color: #2563eb; background: #172554; }
 
     @container (max-width: 419px) {
-      .orderops-delivery-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .orderops-delivery-filter-reset { grid-column: 1 / -1; width: 100%; }
+      .orderops-delivery-filter-reset { width: 100%; }
     }
 
     @media (max-width: 960px) {
@@ -2191,7 +2199,7 @@
       .view-controls .preview-tabs { display: flex; }
     }
 
-    /* ORDER Q v1.57: app-header tools and direct same-parent three-pane workbench */
+    /* ORDER Q v1.58: resilient three-pane workbench and analysis-ready source views */
     [data-nexus-app-header="orderops"] {
       justify-content: flex-start;
       gap: 10px;
@@ -2333,10 +2341,10 @@
         overflow: hidden !important;
       }
       .orderops-results-workspace[data-nexus-resizable-workspace="true"] {
-        grid-template-columns: min(var(--nexus-left-pane-width), 38vw) minmax(0, 1fr) min(var(--nexus-right-pane-width), 30vw) !important;
+        grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) var(--nexus-right-pane-width) !important;
       }
       .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
-        grid-template-columns: min(var(--nexus-left-pane-width), 42vw) minmax(0, 1fr) !important;
+        grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) !important;
       }
       .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane] {
         width: auto !important;
@@ -2532,25 +2540,29 @@
           </div>
           <div class="orderops-delivery-distribution" id="deliveryDistribution" aria-label="담당자별 배송 건수"></div>
           <div class="orderops-delivery-filters" aria-label="주문서 조회 필터">
-            <label class="orderops-delivery-filter">담당자별 조회
+            <label class="orderops-delivery-filter">창고
+              <select id="deliveryWarehouseFilter" aria-label="좌측 주문서 창고 조회"><option value="">전체 창고</option></select>
+            </label>
+            <label class="orderops-delivery-filter">담당
               <select id="deliveryManagerFilter" aria-label="좌측 주문서 담당자별 조회"><option value="">전체 담당자</option></select>
             </label>
-            <label class="orderops-delivery-filter">지역 조회
+            <label class="orderops-delivery-filter">지역
               <select id="deliveryRegionFilter" aria-label="좌측 주문서 지역 조회"><option value="">전체 지역</option></select>
             </label>
             <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button">전체</button>
           </div>
           <div class="orderops-side-table-wrap">
             <table class="orderops-side-table orderops-delivery-table" aria-label="주문서별 배송 배정 요약">
-              <colgroup><col style="width:110px"><col style="width:68px"><col style="width:106px"><col style="width:70px"><col style="width:120px"><col style="width:170px"><col style="width:90px"><col style="width:98px"><col style="width:160px"></colgroup>
-              <thead><tr><th>주문번호</th><th>창고</th><th>담당자</th><th>지역</th><th>거래처</th><th>품목</th><th>수량</th><th>금액</th><th>적요(직원)</th></tr></thead>
-              <tbody id="deliverySummaryBody"><tr><td colspan="9" class="empty-table-cell">분석 후 주문서가 표시됩니다.</td></tr></tbody>
+              <colgroup><col style="width:38%"><col style="width:18%"><col style="width:20%"><col style="width:24%"></colgroup>
+              <thead><tr><th>거래처</th><th>수량</th><th>금액</th><th>적요</th></tr></thead>
+              <tbody id="deliverySummaryBody"><tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
             </table>
           </div>
         </aside>
 
         <section class="orderops-central-work" data-nexus-pane="work" aria-label="출고 중앙 작업표">
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
+        <div class="view-controls-scroll" tabindex="0" aria-label="검색·필터·열 설정 도구">
         <label class="search-field">
           <span>통합 검색 F3</span>
           <input id="tableSearchInput" type="search" autocomplete="off"
@@ -2594,6 +2606,7 @@
           aria-expanded="false" aria-controls="warehouseColorBar">창고필터</button>
         <button class="filter-toggle-button" id="managerFilterToggle" type="button"
           aria-expanded="false" aria-controls="warehouseColorBar">담당자필터</button>
+        </div>
         <button class="orderops-panel-reopen hidden" id="inventoryInspectorReopen" type="button"
           aria-controls="inventoryInspector" aria-expanded="false">우측 열기</button>
       </div>
@@ -2627,22 +2640,22 @@
             <div><h3>우측 보조 섹션</h3><p>위치·표시·너비 설정</p></div>
             <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-controls="inventoryInspector">닫기</button>
           </div>
-          <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 내용은 별도 승인 전입니다.</strong><span>처리결과·이력·후속 작업은 이번 개발 범위에 포함하지 않습니다.</span></div>
+          <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 패널</strong><span>필요할 때 닫거나 다시 열고 너비를 조절할 수 있습니다.</span></div>
           <div class="orderops-inventory-metrics" id="inventoryInspectorMetrics"></div>
           <div class="orderops-side-table-wrap">
             <table class="orderops-side-table orderops-inventory-table" aria-label="우측 보조 섹션 범위 안내">
               <thead><tr><th>항목</th><th>상태</th></tr></thead>
-              <tbody id="inventoryInspectorBody"><tr><td>내용 구성</td><td>권고안·미확정</td></tr></tbody>
+              <tbody id="inventoryInspectorBody"><tr><td>표시 상태</td><td>열림</td></tr></tbody>
             </table>
           </div>
-          <p class="orderops-inventory-caption">닫기·재열기·독립 너비·상태 보존만 제공합니다.</p>
+          <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
         </aside>
       </div>
       <datalist id="orderOpsManagerOptions"></datalist>
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.57 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.58 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2854,7 +2867,7 @@
       ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
-      const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
+      const FILE_KIND_PREVIEWS = Object.freeze({ orders: "readiness", inventory: "inventory", purchases: "purchases", sales: "sales" });
       const SOURCE_VIEW_CARDS = Object.freeze({ readiness: "orders", allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
@@ -2897,6 +2910,7 @@
         selectedProductCode: "",
         selectedDeliveryKey: "",
         selectedDeliverySourceRows: new Set(),
+        deliveryWarehouseFilter: "",
         deliveryManagerFilter: "",
         deliveryRegionFilter: "",
         inventory: null,
@@ -3031,6 +3045,7 @@
         deliverySummaryCount: document.getElementById("deliverySummaryCount"),
         deliveryDistribution: document.getElementById("deliveryDistribution"),
         deliverySummaryBody: document.getElementById("deliverySummaryBody"),
+        deliveryWarehouseFilter: document.getElementById("deliveryWarehouseFilter"),
         deliveryManagerFilter: document.getElementById("deliveryManagerFilter"),
         deliveryRegionFilter: document.getElementById("deliveryRegionFilter"),
         deliveryFilterReset: document.getElementById("deliveryFilterReset"),
@@ -3413,6 +3428,7 @@
 
       async function buildRecoveryRecord(workspace, options = {}) {
         const updatedAt = options.updatedAt || new Date().toISOString();
+        persistOrderQSourceToWorkspace(workspace);
         const payload = engine.buildLocalRecoveryPayload(
           workspace,
           {
@@ -3668,8 +3684,15 @@
         const candidates = await Promise.all(records.map(verifyRecoveryRecord));
         const valid = candidates.filter((candidate) => candidate.valid)
           .sort((left, right) => recoveryTimestamp(right) - recoveryTimestamp(left));
+        const latestCompleted = valid.find((candidate) =>
+          candidate.record?.payload?.workspace?.workspaceMode !== engine.PREVIEW_WORKSPACE_MODE);
         const retained = valid.slice(0, LOCAL_RECOVERY_LIMIT);
-        const excess = valid.slice(LOCAL_RECOVERY_LIMIT);
+        if (latestCompleted && !retained.some((candidate) =>
+          candidate.record.recordId === latestCompleted.record.recordId)) {
+          retained.splice(Math.max(0, retained.length - 1), 1, latestCompleted);
+        }
+        const retainedIds = new Set(retained.map((candidate) => candidate.record.recordId));
+        const excess = valid.filter((candidate) => !retainedIds.has(candidate.record.recordId));
         const excessIds = excess
           .map((candidate) => candidate.record.recordId)
           .filter((recordId) => recordId !== activeRecordId);
@@ -3719,7 +3742,11 @@
       }
 
       async function persistLocalWorkspace(workspace = state.workspace, options = {}) {
-        if (!state.db || !workspace?.sourceFingerprint) return null;
+        if (!state.db) return null;
+        if (!workspace?.sourceFingerprint) {
+          elements.localSaveStatus.textContent = "임시저장 · 원본 식별정보 없음";
+          return null;
+        }
         const previousMeta = localStorage.getItem(LOCAL_META_KEY);
         const record = await buildRecoveryRecord(workspace, options);
         await engine.commitVerifiedRecoveryRecord(record, {
@@ -3774,12 +3801,66 @@
         }, 180);
       }
 
+      function restorePreviewInputState(workspace) {
+        const ordersSource = workspace?.sourceFiles?.orders;
+        const inventorySource = workspace?.sourceFiles?.inventory;
+        state.orders = ordersSource ? {
+          kind: "orders",
+          fileName: ordersSource.fileName,
+          sheetName: ordersSource.sheetName,
+          fileHash: ordersSource.sha256,
+          headerRowIndex: ordersSource.headerRowIndex,
+          rowCount: workspace.orders?.length || 0,
+          rows: workspace.orders || [],
+          errors: [], warnings: [], missingColumns: [],
+          sourceMatrix: ordersSource.matrix,
+          productCodeColumnIndex: ordersSource.productCodeColumnIndex,
+          headerMapping: ordersSource.headerMapping,
+          sourceKind: ordersSource.sourceKind,
+          sourceSchemaVersion: ordersSource.sourceSchemaVersion,
+          orderId: ordersSource.orderId,
+          orderNo: ordersSource.orderNo,
+          orderRevision: ordersSource.orderRevision,
+          orderSnapshotHash: ordersSource.orderSnapshotHash,
+          orderUpdatedAt: ordersSource.orderUpdatedAt,
+        } : null;
+        state.inventory = inventorySource ? {
+          kind: "inventory",
+          fileName: inventorySource.fileName,
+          sheetName: inventorySource.sheetName,
+          fileHash: inventorySource.sha256,
+          headerRowIndex: inventorySource.headerRowIndex,
+          rowCount: workspace.inventory?.length || 0,
+          rows: workspace.inventory || [],
+          errors: [], warnings: [], missingColumns: [], duplicateCodes: [],
+          sourceMatrix: inventorySource.matrix,
+          productCodeColumnIndex: inventorySource.productCodeColumnIndex,
+          columns: inventorySource.columns || [],
+        } : null;
+        state.purchases = workspace?.orderOpsInputs?.purchases || null;
+        state.sales = workspace?.orderOpsInputs?.sales || null;
+        state.validation = state.orders && state.inventory
+          ? engine.validateInputs(state.orders, state.inventory)
+          : null;
+        state.pendingSystemHistory = workspace?.systemHistory || null;
+        elements.orderQSourcePicker.hidden = Boolean(state.orders);
+        FILE_KINDS.forEach(renderFileCard);
+        renderIntegratedFileCard();
+        renderValidation();
+        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+        elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
+      }
+
       async function restoreLocalRecord(record) {
         const verification = await verifyRecoveryRecord(record);
         if (!verification.valid) throw new Error(`복구자료가 차단되었습니다: ${verification.reason}`);
         const payload = verification.record.payload;
         clearSubstitutionSelection();
         state.workspace = payload.workspace;
+        if (state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
+          restorePreviewInputState(state.workspace);
+        }
+        restoreOrderQSourceFromWorkspace(state.workspace);
         hydrateShipmentDraftFromWorkspace(state.workspace);
         engine.ensureNoticeState(state.workspace);
         engine.ensureSubstitutionHistory(state.workspace);
@@ -3789,6 +3870,7 @@
         const selectedDelivery = engine.getDeliverySummaryRows(state.workspace)
           .find((row) => row.deliveryKey === state.selectedDeliveryKey);
         state.selectedDeliverySourceRows = new Set(selectedDelivery?.sourceRowNumbers || []);
+        state.deliveryWarehouseFilter = "";
         state.deliveryManagerFilter = "";
         state.deliveryRegionFilter = "";
         state.searchQuery = "";
@@ -3810,6 +3892,7 @@
         localStorage.setItem(LOCAL_POINTER_KEY, record.recordId);
         state.selectedRecoveryId = record.recordId;
         renderResults();
+        if (state.orderQSource?.snapshot) await refreshShipmentExecution();
         showToast("바로 이전 정상 임시저장 파일을 복구했습니다.");
       }
 
@@ -3875,6 +3958,7 @@
         state.selectedProductCode = "";
         state.selectedDeliveryKey = "";
         state.selectedDeliverySourceRows.clear();
+        state.deliveryWarehouseFilter = "";
         state.deliveryManagerFilter = "";
         state.deliveryRegionFilter = "";
         resetResultViewFilters();
@@ -4247,6 +4331,7 @@
           state.selectedProductCode = "";
           state.selectedDeliveryKey = "";
           state.selectedDeliverySourceRows.clear();
+          state.deliveryWarehouseFilter = "";
           state.deliveryManagerFilter = "";
           state.deliveryRegionFilter = "";
         }
@@ -4409,24 +4494,34 @@
         renderValidation();
         elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
-        if (state.orders && (!state.workspace || state.workspace.workspaceMode === engine.PREVIEW_WORKSPACE_MODE)) {
+        const hasAnySource = FILE_KINDS.some((kind) => Boolean(state[kind]));
+        if (hasAnySource && (!state.workspace || state.workspace.workspaceMode === engine.PREVIEW_WORKSPACE_MODE)) {
           state.workspace = engine.createPreviewWorkspace(state.orders, state.inventory, {
             purchases: state.purchases,
             sales: state.sales,
             systemHistory: state.pendingSystemHistory,
           });
           state.pendingSystemHistory = state.workspace.systemHistory;
-          if (!state.activePreview || state.activePreview === "validation") state.activePreview = "readiness";
+          const availablePreview = state.orders
+            ? "readiness"
+            : state.inventory
+              ? "inventory"
+              : state.purchases
+                ? "purchases"
+                : "sales";
+          const definitions = getPreviewDefinitions(state.workspace);
+          if (!definitions[state.activePreview]) state.activePreview = availablePreview;
           renderResults();
-        } else if (!state.orders) {
-          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="9" class="empty-table-cell">주문서를 선택하면 분석 전에도 표시됩니다.</td></tr>';
+          scheduleLocalSave();
+        } else if (!hasAnySource) {
+          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr>';
           elements.deliverySummaryCount.textContent = "현재 작업 0건";
-          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>주문서를 선택하세요.</strong><span>주문서만 있어도 좌측 주문 목록과 중앙 기본 분석표가 바로 표시됩니다.</span></div>';
+          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>자료를 선택하세요.</strong><span>주문·재고·구매·판매 자료는 불러온 즉시 읽기용 표로 확인할 수 있습니다.</span></div>';
         }
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
         if (!bothSelected) {
-          setSystemMessage(`파일 선택 중 · ${selectedCount}/4 선택 · 주문현황·창고재고 필수`);
+          setSystemMessage(`자료 확인 중 · ${selectedCount}/4 선택 · 출고분석에는 주문현황·창고재고가 필요합니다`);
         } else if (state.validation?.canAnalyze) {
           setSystemMessage("분석 준비 완료 · Enter 또는 출고분석 버튼을 누르세요");
         } else {
@@ -5883,15 +5978,38 @@
       }
 
       function buildReadinessPreview(workspace) {
-        const hasInventory = Boolean(workspace.previewDataState?.inventory);
+        const hasInventory = Boolean(
+          workspace.previewDataState?.inventory || workspace.sourceFiles?.inventory,
+        );
+        const comparisonWorkspace = workspace.workspaceMode === engine.PREVIEW_WORKSPACE_MODE
+          ? workspace
+          : engine.createPreviewWorkspace(
+              {
+                ...(workspace.sourceFiles?.orders || {}),
+                fileHash: workspace.sourceFiles?.orders?.sha256,
+                rows: workspace.orders || [],
+                rowCount: workspace.orders?.length || 0,
+              },
+              hasInventory ? {
+                ...(workspace.sourceFiles?.inventory || {}),
+                fileHash: workspace.sourceFiles?.inventory?.sha256,
+                rows: workspace.inventory || [],
+                rowCount: workspace.inventory?.length || 0,
+              } : null,
+              { systemHistory: workspace.systemHistory },
+            );
         const headers = [
           "거래처", "상품", "주문수량", "직원 적요",
           ...(hasInventory ? ["재고", "잔량"] : []),
+          "상품별 주문합계", "주문단위", "재고단위", "비교상태",
           "상품코드", "규격", "담당자", "창고", "일반 적요",
         ];
-        const sourceRows = workspace.allocations || [];
+        const sourceRows = (workspace.allocations || workspace.orders || []).map((row, index) => ({
+          ...row,
+          ...(comparisonWorkspace.allocations?.[index] || {}),
+        }));
         const preview = {
-          label: hasInventory ? "기본 분석표 · 재고 비교 전" : "기본 분석표 · 분석 전",
+          label: hasInventory ? "기본 분석표 · 재고 비교" : "기본 분석표 · 주문 확인",
           headers,
           numeric: hasInventory ? [2, 4, 5] : [2],
           inventory: [],
@@ -5904,7 +6022,16 @@
             row.productName || row.productCode || "",
             row.quantity,
             formatEmployeeDeliveryNotice(row),
-            ...(hasInventory ? [row.stockTotal ?? "", row.remainingQuantity ?? ""] : []),
+            ...(hasInventory ? [
+              row.inventoryMatched
+                ? (typeof row.stockTotal === "number" ? row.stockTotal : "확인")
+                : "미등록",
+              row.remainingQuantity ?? (row.status === "단위 환산 필요" ? "단위 확인" : "비교 불가"),
+            ] : []),
+            row.totalOrderQuantityDisplay || (row.totalOrderQuantity ?? ""),
+            row.orderUnit || row.sourceUnit || "",
+            row.inventoryUnit || "",
+            row.status || "",
             row.productCode || "",
             row.specification || row.spec || "",
             row.manager || "",
@@ -5918,11 +6045,12 @@
         const roleAndField = [
           ["customer", "customer"], ["productName", ""], ["orderQuantity", "quantity"], ["deliveryNotice", "deliveryNotice"],
           ...(hasInventory ? [["stockQuantity", ""], ["calculatedQuantity", ""]] : []),
+          ["productAggregateQuantity", ""], ["orderUnit", ""], ["inventoryUnit", ""], ["comparisonStatus", ""],
           ["productCode", ""], ["specification", ""], ["manager", "manager"], ["warehouse", "warehouse"], ["note", "note"],
         ];
         const widths = hasInventory
-          ? [148, 190, 92, 190, 92, 92, 110, 100, 100, 86, 170]
-          : [148, 190, 92, 190, 110, 100, 100, 86, 170];
+          ? [148, 190, 92, 190, 92, 92, 132, 84, 84, 112, 110, 100, 100, 86, 170]
+          : [148, 190, 92, 190, 132, 84, 84, 112, 110, 100, 100, 86, 170];
         preview.columns.forEach((column, index) => {
           column.role = roleAndField[index]?.[0] || "";
           if (roleAndField[index]?.[1]) column.orderField = roleAndField[index][1];
@@ -5930,15 +6058,53 @@
         });
         if (!Object.prototype.hasOwnProperty.call(state.hiddenColumnSettings.tabs, "readiness")) {
           state.hiddenColumnSettings.tabs.readiness = preview.columns
-            .filter((column) => ["productCode", "specification", "manager", "warehouse", "note"].includes(column.role))
+            .filter((column) => [
+              "productAggregateQuantity", "orderUnit", "inventoryUnit", "comparisonStatus",
+              "productCode", "specification", "manager", "warehouse", "note",
+            ].includes(column.role))
             .map((column) => column.key);
         }
         return preview;
       }
 
+      function buildInventorySourcePreview(workspace) {
+        const sourceRows = workspace.inventory || [];
+        const preview = {
+          label: "창고재고 · 읽기용",
+          headers: ["상품코드", "상품", "규격", "단위", "재고"],
+          numeric: [4],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: -1,
+          sourceRows,
+          rows: sourceRows.map((row) => [
+            row.productCode || "",
+            row.productName || "",
+            row.specification || "",
+            row.unit || "",
+            typeof row.inventoryTotal === "number" ? row.inventoryTotal : row.sourceInventoryTotal ?? "",
+          ]),
+          sortByProductCode: true,
+          shortageCount: 0,
+        };
+        preview.columns = createPreviewColumns("inventory-source", preview.headers, preview.numeric);
+        [110, 200, 100, 80, 100].forEach((width, index) => {
+          if (preview.columns[index]) preview.columns[index].defaultWidth = width;
+        });
+        preview.columns[0].role = "productCode";
+        preview.columns[1].role = "productName";
+        preview.columns[2].role = "specification";
+        preview.columns[3].role = "unit";
+        preview.columns[4].role = "stockQuantity";
+        return preview;
+      }
+
       function getPreviewDefinitions(workspace) {
         if (workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
-          const definitions = { readiness: buildReadinessPreview(workspace) };
+          const definitions = {};
+          if (workspace.previewDataState?.orders) definitions.readiness = buildReadinessPreview(workspace);
+          if (workspace.previewDataState?.inventory) definitions.inventory = buildInventorySourcePreview(workspace);
           if (workspace.orderOpsInputs?.purchases) definitions.purchases = buildTransactionPreview(workspace, "purchases");
           if (workspace.orderOpsInputs?.sales) definitions.sales = buildTransactionPreview(workspace, "sales");
           return definitions;
@@ -6135,6 +6301,7 @@
 
         validation.noticesPreview = notices;
         const definitions = {
+          readiness: buildReadinessPreview(workspace),
           validation,
           allocations,
           purchases: buildTransactionPreview(workspace, "purchases"),
@@ -6211,6 +6378,11 @@
 
       function filteredDeliverySummaryRows(rows = deliverySummaryRows()) {
         return rows.filter((row) => {
+          const warehouseMatches = !state.deliveryWarehouseFilter || (
+            state.deliveryWarehouseFilter === DELIVERY_UNASSIGNED_FILTER
+              ? !row.warehouse
+              : row.warehouse === state.deliveryWarehouseFilter
+          );
           const managerMatches = !state.deliveryManagerFilter || (
             state.deliveryManagerFilter === DELIVERY_MIXED_FILTER
               ? row.managerMixed
@@ -6225,7 +6397,7 @@
                 ? row.regionUnassigned
                 : row.regionValues.includes(state.deliveryRegionFilter)
           );
-          return managerMatches && regionMatches;
+          return warehouseMatches && managerMatches && regionMatches;
         });
       }
 
@@ -6246,13 +6418,6 @@
         if (row.amountBlankCount > 0) parts.push(`공란 ${formatNumber(row.amountBlankCount)}건`);
         if (row.amountInvalidCount > 0) parts.push(`오류 ${formatNumber(row.amountInvalidCount)}건`);
         return parts.join(" / ") || "공란";
-      }
-
-      function deliveryItemText(row) {
-        const item = row.representativeItem || {};
-        const identity = item.productName || item.productCode || "품목 미지정";
-        const detail = [item.specification, item.unit].filter(Boolean).join(" · ");
-        return `${identity}${detail ? ` (${detail})` : ""}${row.additionalItemCount > 0 ? ` 외 ${formatNumber(row.additionalItemCount)}건` : ""}`;
       }
 
       function renderDeliveryFilterOptions(select, currentValue, allLabel, namedValues, { mixed, unassigned } = {}) {
@@ -6282,8 +6447,17 @@
         }
         const namedManagers = [...new Set(allRows.flatMap((row) => row.managerValues).filter(Boolean))]
           .sort((a, b) => a.localeCompare(b, "ko"));
+        const namedWarehouses = [...new Set(allRows.map((row) => row.warehouse).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "ko"));
         const namedRegions = [...new Set(allRows.flatMap((row) => row.regionValues).filter(Boolean))]
           .sort((a, b) => a.localeCompare(b, "ko"));
+        state.deliveryWarehouseFilter = renderDeliveryFilterOptions(
+          elements.deliveryWarehouseFilter,
+          state.deliveryWarehouseFilter,
+          "전체 창고",
+          namedWarehouses,
+          { unassigned: allRows.some((row) => !row.warehouse) },
+        );
         state.deliveryManagerFilter = renderDeliveryFilterOptions(
           elements.deliveryManagerFilter,
           state.deliveryManagerFilter,
@@ -6299,18 +6473,21 @@
           { mixed: allRows.some((row) => row.regionMixed), unassigned: allRows.some((row) => row.regionUnassigned) },
         );
         const rows = filteredDeliverySummaryRows(allRows);
-        const filtered = Boolean(state.deliveryManagerFilter || state.deliveryRegionFilter);
+        const filtered = Boolean(state.deliveryWarehouseFilter || state.deliveryManagerFilter || state.deliveryRegionFilter);
         elements.deliverySummaryCount.textContent = filtered
           ? `현재 작업 ${formatNumber(allRows.length)}건 · 조회 ${formatNumber(rows.length)}건`
           : `현재 작업 ${formatNumber(allRows.length)}건`;
         const distribution = allRows.reduce((counts, row) => {
-          const key = row.managerMixed ? "혼합" : row.manager || "미지정";
-          counts[key] = (counts[key] || 0) + 1;
+          const value = row.managerMixed ? DELIVERY_MIXED_FILTER : row.manager || DELIVERY_UNASSIGNED_FILTER;
+          const label = row.managerMixed ? "혼합" : row.manager || "미지정";
+          if (!counts[value]) counts[value] = { label, count: 0 };
+          counts[value].count += 1;
           return counts;
         }, Object.create(null));
         elements.deliveryDistribution.innerHTML = Object.entries(distribution).length
-          ? Object.entries(distribution).sort(([a], [b]) => a.localeCompare(b, "ko")).map(([manager, count]) =>
-              `<span class="orderops-distribution-chip">${escapeHtml(manager)} ${formatNumber(count)}건</span>`).join("")
+          ? Object.entries(distribution).sort(([, a], [, b]) => a.label.localeCompare(b.label, "ko")).map(([value, item]) =>
+              `<button type="button" class="orderops-distribution-chip" data-delivery-manager-filter="${escapeHtml(value)}"
+                aria-pressed="${state.deliveryManagerFilter === value}">${escapeHtml(item.label)} ${formatNumber(item.count)}건</button>`).join("")
           : '<span class="orderops-distribution-chip">배송 0건</span>';
         elements.orderOpsManagerOptions.innerHTML = namedManagers
           .map((manager) => `<option value="${escapeHtml(manager)}"></option>`).join("");
@@ -6318,22 +6495,13 @@
           <tr class="${row.deliveryKey === state.selectedDeliveryKey ? "orderops-selected-delivery-row" : ""}"
             data-delivery-key="${escapeHtml(row.deliveryKey)}" data-delivery-customer-key="${escapeHtml(row.customerKey)}"
             aria-selected="${row.deliveryKey === state.selectedDeliveryKey}">
-            <td><strong>${escapeHtml(row.orderNumber || "주문번호 미지정")}</strong></td>
-            <td>${escapeHtml(row.warehouse || "미지정")}</td>
-            <td><input class="orderops-manager-input" type="text" list="orderOpsManagerOptions"
-              data-summary-manager data-customer-key="${escapeHtml(row.customerKey)}"
-              data-delivery-key="${escapeHtml(row.deliveryKey)}"
-              value="${escapeHtml(row.managerMixed ? "" : row.manager)}" placeholder="${escapeHtml(row.managerLabel)}"
-              aria-label="${escapeHtml(row.customer || "거래처")} 담당자 변경"></td>
-            <td title="${escapeHtml(row.regionLabel)}">${escapeHtml(row.regionLabel)}</td>
-            <td><strong>${escapeHtml(row.customer || "거래처 미지정")}</strong>
+            <td title="${escapeHtml([row.orderNumber, row.warehouse, row.managerLabel, row.regionLabel].filter(Boolean).join(" · "))}"><strong>${escapeHtml(row.customer || "거래처 미지정")}</strong>
               ${row.stableCustomerIdentity ? "" : '<span class="orderops-customer-key-warning">고객 코드 없음 · 이 주문·창고 단위만 변경</span>'}</td>
-            <td class="orderops-summary-item" title="${escapeHtml(deliveryItemText(row))}">${escapeHtml(deliveryItemText(row))}</td>
             <td class="number">${escapeHtml(deliveryQuantityText(row))}</td>
             <td class="number">${escapeHtml(deliveryAmountText(row))}</td>
             <td class="orderops-summary-note" title="${escapeHtml(row.employeeNote || "")}">${escapeHtml(row.employeeNote || "-")}</td>
           </tr>`).join("")
-          : `<tr><td colspan="9" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "분석 후 주문서가 표시됩니다."}</td></tr>`;
+          : `<tr><td colspan="4" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
       }
 
       function focusDeliveryInCentral(deliveryKey) {
@@ -6341,7 +6509,7 @@
         if (!summary) return;
         state.selectedDeliveryKey = summary.deliveryKey;
         state.selectedDeliverySourceRows = new Set(summary.sourceRowNumbers || []);
-        const orderPreview = state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "allocations";
+        const orderPreview = "readiness";
         if (state.activePreview !== orderPreview) activatePreview(orderPreview);
         else {
           renderPreview();
@@ -6372,9 +6540,9 @@
 
       function renderInventoryInspector() {
         if (!elements.inventoryInspectorBody) return;
-        elements.inventoryInspectorIdentity.innerHTML = '<strong>보조 내용은 별도 승인 전입니다.</strong><span>처리결과·이력·후속 작업은 권고안으로만 남깁니다.</span>';
+        elements.inventoryInspectorIdentity.innerHTML = '<strong>보조 패널</strong><span>필요할 때 닫거나 다시 열고 너비를 조절할 수 있습니다.</span>';
         elements.inventoryInspectorMetrics.replaceChildren();
-        elements.inventoryInspectorBody.innerHTML = '<tr><td>내용 구성</td><td>권고안·미확정</td></tr>';
+        elements.inventoryInspectorBody.innerHTML = '<tr><td>표시 상태</td><td>열림</td></tr>';
       }
 
       function renderOrderOpsSidePanels() {
@@ -6393,6 +6561,8 @@
         if (persist) {
           try { localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY, nextOpen ? "1" : "0"); } catch (_) {}
         }
+        elements.resultsPanel.scrollLeft = 0;
+        window.requestAnimationFrame(() => { elements.resultsPanel.scrollLeft = 0; });
         window.dispatchEvent(new Event("resize"));
       }
 
@@ -7323,6 +7493,14 @@
         });
       }
 
+      function defaultPreviewForWorkspace(workspace, definitions) {
+        if (definitions.readiness) return "readiness";
+        if (definitions.inventory) return "inventory";
+        if (definitions.purchases) return "purchases";
+        if (definitions.sales) return "sales";
+        return definitions.validation ? "validation" : Object.keys(definitions)[0] || "";
+      }
+
       function renderPreview() {
         if (state.unresolvedReview.active) {
           renderUnresolvedReview();
@@ -7331,14 +7509,24 @@
         setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
         const definitions = getPreviewDefinitions(state.workspace);
-        const defaultPreview = state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "validation";
+        const defaultPreview = defaultPreviewForWorkspace(state.workspace, definitions);
         if (!definitions[state.activePreview]) state.activePreview = defaultPreview;
         const primaryDefinition = definitions[defaultPreview];
+        if (!primaryDefinition) {
+          elements.previewTabs.replaceChildren();
+          elements.previewCount.textContent = "0행";
+          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>표시할 자료가 없습니다.</strong><span>주문·재고·구매·판매 자료를 선택하세요.</span></div>';
+          return;
+        }
+        const detailTab = definitions.allocations && defaultPreview === "readiness"
+          ? `<button class="tab-button ${state.activePreview === "allocations" ? "active" : ""}" type="button" role="tab"
+              aria-selected="${state.activePreview === "allocations"}" data-preview="allocations">주문 상세 F5</button>`
+          : "";
         elements.previewTabs.innerHTML = `
           <button class="tab-button ${state.activePreview === defaultPreview ? "active" : ""}" type="button" role="tab"
             aria-selected="${state.activePreview === defaultPreview}" data-preview="${escapeHtml(defaultPreview)}">
             ${escapeHtml(primaryDefinition.label)}
-          </button>`;
+          </button>${detailTab}`;
         renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
@@ -7444,6 +7632,32 @@
       function shipmentCommandId(kind) {
         const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         return `${kind}:${randomId}`;
+      }
+
+      function persistOrderQSourceToWorkspace(workspace = state.workspace) {
+        if (!workspace || workspace?.sourceFiles?.orders?.sourceKind !== "ORDERQ_READ_MODEL") return;
+        const snapshot = state.orderQSource?.snapshot;
+        if (!snapshot?.orderId || !Array.isArray(snapshot.candidateLines)) return;
+        workspace.orderQSourceRecovery = {
+          schemaVersion: "orderops-orderq-source-recovery/v1",
+          snapshot: JSON.parse(JSON.stringify(snapshot)),
+        };
+      }
+
+      function restoreOrderQSourceFromWorkspace(workspace = state.workspace) {
+        const record = workspace?.orderQSourceRecovery;
+        const snapshot = record?.schemaVersion === "orderops-orderq-source-recovery/v1" ? record.snapshot : null;
+        if (workspace?.sourceFiles?.orders?.sourceKind !== "ORDERQ_READ_MODEL" || !snapshot?.orderId || !Array.isArray(snapshot.candidateLines)) {
+          state.orderQSource = null;
+          return false;
+        }
+        state.orderQSource = {
+          status: snapshot.candidateLines.length ? "READY" : "EMPTY",
+          orderId: snapshot.orderId,
+          snapshot: JSON.parse(JSON.stringify(snapshot)),
+          parsedOrders: state.orders || null,
+        };
+        return true;
       }
 
       function persistShipmentDraftToWorkspace() {
@@ -7645,15 +7859,19 @@
           renderPreview();
           elements.resultsPanel.classList.remove("hidden");
           elements.shipmentExecution.hidden = true;
-          elements.printButton.disabled = !(stats.orderRowCount > 0);
+          const sourceRowCount = stats.orderRowCount + stats.inventoryRowCount +
+            (state.workspace.orderOpsInputs?.purchases?.rows?.length || 0) +
+            (state.workspace.orderOpsInputs?.sales?.rows?.length || 0);
+          elements.printButton.disabled = !(sourceRowCount > 0);
           elements.downloadButton.disabled = true;
           elements.cloudSaveButton.disabled = true;
           elements.headerCloudSaveButton.disabled = true;
-          const inventoryText = state.workspace.previewDataState?.inventory
-            ? "재고자료 포함 · 출고분석 실행 전"
-            : "재고자료 없음 · 주문 우선 표시";
-          elements.resultSubtitle.textContent = inventoryText;
-          setSystemMessage(`분석 전 주문 표시 · 주문 ${formatNumber(stats.orderRowCount)}행 · ${inventoryText}`);
+          const sourceLabels = FILE_KINDS
+            .filter((kind) => state.workspace.previewDataState?.[kind])
+            .map((kind) => FILE_KIND_LABELS[kind]);
+          const sourceText = `${sourceLabels.join("·") || "자료"} 읽기용 보기`;
+          elements.resultSubtitle.textContent = sourceText;
+          setSystemMessage(`자료 표시 · 주문 ${formatNumber(stats.orderRowCount)}행·재고 ${formatNumber(stats.inventoryRowCount)}행 · ${sourceText}`);
           return;
         }
         engine.ensureNoticeState(state.workspace);
@@ -7815,7 +8033,7 @@
           await new Promise((resolve) => window.setTimeout(resolve, 20));
           state.workspace = await analyzeCurrentInputs();
           state.pendingSystemHistory = state.workspace.systemHistory;
-          state.activePreview = "allocations";
+          state.activePreview = "readiness";
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -8052,6 +8270,7 @@
           const selectedDelivery = engine.getDeliverySummaryRows(state.workspace)
             .find((row) => row.deliveryKey === state.selectedDeliveryKey);
           state.selectedDeliverySourceRows = new Set(selectedDelivery?.sourceRowNumbers || []);
+          state.deliveryWarehouseFilter = "";
           state.deliveryManagerFilter = "";
           state.deliveryRegionFilter = "";
           state.searchQuery = "";
@@ -8768,6 +8987,15 @@
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.inventoryInspectorClose.addEventListener("click", () => setInventoryInspectorOpen(false));
       elements.inventoryInspectorReopen.addEventListener("click", () => setInventoryInspectorOpen(true));
+      elements.inventoryInspectorReopen.addEventListener("keydown", (event) => {
+        if (!['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        setInventoryInspectorOpen(true);
+      });
+      elements.deliveryWarehouseFilter.addEventListener("change", () => {
+        state.deliveryWarehouseFilter = elements.deliveryWarehouseFilter.value;
+        renderDeliverySummary();
+      });
       elements.deliveryManagerFilter.addEventListener("change", () => {
         state.deliveryManagerFilter = elements.deliveryManagerFilter.value;
         renderDeliverySummary();
@@ -8777,59 +9005,21 @@
         renderDeliverySummary();
       });
       elements.deliveryFilterReset.addEventListener("click", () => {
+        state.deliveryWarehouseFilter = "";
         state.deliveryManagerFilter = "";
         state.deliveryRegionFilter = "";
         renderDeliverySummary();
       });
+      elements.deliveryDistribution.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-delivery-manager-filter]");
+        if (!button) return;
+        const manager = button.dataset.deliveryManagerFilter;
+        state.deliveryManagerFilter = state.deliveryManagerFilter === manager ? "" : manager;
+        renderDeliverySummary();
+      });
       elements.deliverySummaryBody.addEventListener("click", (event) => {
-        if (event.target.closest("[data-summary-manager]")) return;
         const row = event.target.closest("tr[data-delivery-key]");
         if (row) focusDeliveryInCentral(row.dataset.deliveryKey);
-      });
-      elements.deliverySummaryBody.addEventListener("change", (event) => {
-        const input = event.target.closest("[data-summary-manager][data-customer-key]");
-        if (!input || !state.workspace) return;
-        const inputs = [...elements.deliverySummaryBody.querySelectorAll("[data-summary-manager]")];
-        const inputIndex = Math.max(0, inputs.indexOf(input));
-        const scroller = input.closest(".orderops-side-table-wrap");
-        const scrollTop = scroller?.scrollTop || 0;
-        const scrollLeft = scroller?.scrollLeft || 0;
-        try {
-          const result = engine.setCustomerManager(state.workspace, input.dataset.customerKey, input.value, {
-            actor: substitutionActor(), recordHistory: true,
-          });
-          if (result.changedRowCount > 0) {
-            renderResults();
-            scheduleLocalSave();
-            showToast(`담당자를 현재 작업의 ${formatNumber(result.changedRowCount)}개 상품행에 반영했습니다.`);
-          } else {
-            renderDeliverySummary();
-            showToast("이미 같은 담당자로 배정되어 변경하지 않았습니다.");
-          }
-          window.requestAnimationFrame(() => {
-            const nextScroller = elements.deliverySummaryBody.closest(".orderops-side-table-wrap");
-            if (nextScroller) {
-              nextScroller.scrollTop = scrollTop;
-              nextScroller.scrollLeft = scrollLeft;
-            }
-            const nextInputs = [...elements.deliverySummaryBody.querySelectorAll("[data-summary-manager]")];
-            const nextInput = nextInputs[Math.min(inputIndex, Math.max(0, nextInputs.length - 1))];
-            if (nextInput) {
-              nextInput.focus({ preventScroll: true });
-              nextInput.select();
-            }
-          });
-        } catch (error) {
-          showToast(error.message || "담당자를 반영하지 못했습니다.", true);
-          renderDeliverySummary();
-        }
-      });
-      elements.deliverySummaryBody.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" || event.isComposing) return;
-        const input = event.target.closest("[data-summary-manager]");
-        if (!input) return;
-        event.preventDefault();
-        input.blur();
       });
       elements.downloadButton.addEventListener("click", downloadResult);
       elements.printButton.addEventListener("click", printActiveTable);
