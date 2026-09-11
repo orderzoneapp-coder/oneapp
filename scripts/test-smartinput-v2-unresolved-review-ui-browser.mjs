@@ -311,7 +311,7 @@ try {
     'all existing button IDs must remain available after the approved OrderOps workbench addition');
   assert.deepEqual(current.existingButtonIds.filter(id => !baseline.existingButtonIds.includes(id)),
     [
-      'deliveryFilterReset', 'deliveryManagerAssignmentApply',
+      'deliveryFilterReset', 'deliveryManagerAssignmentApply', 'deliverySelectionOpenReadiness',
       'inventoryInspectorClose', 'inventoryInspectorReopen',
       'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
       'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',

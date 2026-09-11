@@ -190,9 +190,33 @@ try {
   assert.deepEqual(analyzedReadiness.keys, withInventoryBeforeAnalysis.keys, '분석 뒤에도 중앙 6열 role key가 바뀌면 안 된다.');
   assert.equal(analyzedReadiness.detailTab, true, '분석 뒤 상세 주문현황은 별도 선택 화면으로 남아야 한다.');
   assert.match(await evaluate(client, `document.querySelector('#columnVisibilityMenu').textContent`), /상품별 주문합계/);
+  const columnMenuPortal = await evaluate(client, `(()=>{document.querySelector('#tableSettingsButton').click();const button=document.querySelector('#columnVisibilityButton');button.click();const menu=document.querySelector('#columnVisibilityMenu');const rect=menu.getBoundingClientRect();const point=document.elementFromPoint(rect.left+12,rect.top+Math.min(42,rect.height-8));return {parent:menu.parentElement===document.body,visible:!menu.classList.contains('hidden'),expanded:button.getAttribute('aria-expanded'),inside:rect.left>=0&&rect.top>=0&&rect.right<=innerWidth&&rect.bottom<=innerHeight,hit:menu.contains(point)}})()`);
+  assert.deepEqual(columnMenuPortal, { parent:true, visible:true, expanded:'true', inside:true, hit:true },
+    '열 표시 메뉴는 앱 body 최상단 layer에서 화면 안에 렌더링되고 실제 클릭을 받아야 한다.');
+  const columnMenuInteraction = await evaluate(client, `(()=>{const menu=document.querySelector('#columnVisibilityMenu');const input=menu.querySelector('input[data-column-visible]');const key=input.dataset.columnVisible;input.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch'}));input.click();const reopened=!menu.classList.contains('hidden');const changed=menu.querySelector('input[data-column-visible="'+CSS.escape(key)+'"]')?.checked===false;return {reopened,changed,parent:menu.parentElement===document.body,key}})()`);
+  assert.deepEqual({ reopened:columnMenuInteraction.reopened, changed:columnMenuInteraction.changed, parent:columnMenuInteraction.parent }, { reopened:true, changed:true, parent:true },
+    '터치·클릭으로 열을 바꿔도 메뉴가 잘리거나 닫히지 않아야 한다.');
+  await waitFor(() => evaluate(client, `document.activeElement?.dataset?.columnVisible===${JSON.stringify(columnMenuInteraction.key)}`), 'column-menu focus after rerender');
+  const scrolledColumnMenu = await evaluate(client, `(()=>{const toolbar=document.querySelector('.view-controls-scroll');toolbar.scrollLeft=toolbar.scrollWidth;toolbar.dispatchEvent(new Event('scroll'));const rect=document.querySelector('#columnVisibilityMenu').getBoundingClientRect();return {inside:rect.left>=0&&rect.top>=0&&rect.right<=innerWidth&&rect.bottom<=innerHeight,hit:document.querySelector('#columnVisibilityMenu').contains(document.elementFromPoint(rect.left+12,rect.top+Math.min(42,rect.height-8)))}})()`);
+  assert.deepEqual(scrolledColumnMenu, { inside:true, hit:true }, '도구막대 가로 스크롤 뒤에도 열 메뉴를 화면 안에서 조작할 수 있어야 한다.');
+  await evaluate(client, `document.body.dispatchEvent(new MouseEvent('click',{bubbles:true}))`);
+  assert.equal(await evaluate(client, `document.querySelector('#columnVisibilityMenu').classList.contains('hidden')`), true,
+    '열 표시 메뉴 밖을 누르면 메뉴가 닫혀야 한다.');
+  await evaluate(client, `(()=>{const settings=document.querySelector('#tableSettingsButton');if(settings.getAttribute('aria-expanded')!=='true')settings.click();document.querySelector('#columnVisibilityButton').click();return true})()`);
+  await client.send('Input.dispatchKeyEvent', { type:'keyDown', key:'Escape', code:'Escape', windowsVirtualKeyCode:27, nativeVirtualKeyCode:27 });
+  await client.send('Input.dispatchKeyEvent', { type:'keyUp', key:'Escape', code:'Escape', windowsVirtualKeyCode:27, nativeVirtualKeyCode:27 });
+  assert.deepEqual(await evaluate(client, `(()=>({hidden:document.querySelector('#columnVisibilityMenu').classList.contains('hidden'),expanded:document.querySelector('#columnVisibilityButton').getAttribute('aria-expanded'),focused:document.activeElement===document.querySelector('#columnVisibilityButton')}))()`),
+    { hidden:true, expanded:'false', focused:true }, 'Escape는 열 메뉴를 닫고 열 표시 버튼으로 초점을 돌려야 한다.');
+  await evaluate(client, `(()=>{const settings=document.querySelector('#tableSettingsButton');if(settings.getAttribute('aria-expanded')==='true')settings.click();return true})()`);
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   assert.ok(await waitFor(() => evaluate(client, `document.querySelectorAll('#previewTable table.preview-allocations thead th').length>=15`), 'detailed allocation columns'));
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'worktable actual shipment input');
+  const initiallyClosedRight = await waitFor(async () => {
+    const value = await evaluate(client, `(()=>{const panel=document.querySelector('#inventoryInspector');const reopen=document.querySelector('#inventoryInspectorReopen');const handle=document.querySelector('[data-nexus-pane-resize="right"]');return {hidden:panel.hidden,reopen:!reopen.classList.contains('hidden'),handleHidden:handle.hidden,stored:localStorage.getItem('oneapp.orderops.inventory-inspector-open.v1')}})()`);
+    return value.hidden && value.reopen && value.handleHidden ? value : null;
+  }, 'first-time closed right pane');
+  assert.equal(initiallyClosedRight.stored, null, '최초 빈 우측 패널 상태를 사용자 설정으로 강제 저장하면 안 된다.');
+  await evaluate(client, `document.querySelector('#inventoryInspectorReopen').click()`);
   await waitFor(() => evaluate(client, `[...document.querySelectorAll('.nexus-pane-resizer-v2')].filter(node=>!node.hidden).length===2`), 'OrderOps desktop panel handles');
   const workbench = await evaluate(client, `(()=>({
     panes:[...document.querySelectorAll('[data-nexus-workspace="orderops"] > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),
@@ -203,8 +227,11 @@ try {
     filters:[...document.querySelectorAll('.orderops-delivery-filters select')].map(node=>node.id),
     summaryHeaders:[...document.querySelectorAll('.orderops-delivery-table thead th')].map(node=>node.textContent.trim()),
     summaryText:document.querySelector('#deliverySummaryBody').textContent,
+    workload:document.querySelector('#deliveryWorkloadSummary').textContent,
+    sourceScope:document.querySelector('#deliverySourceScope').textContent,
     inventory:document.querySelector('#inventoryInspectorIdentity').textContent,
-    metrics:document.querySelector('#inventoryInspectorMetrics').textContent
+    metrics:document.querySelector('#inventoryInspectorMetrics').textContent,
+    inventoryBody:document.querySelector('#inventoryInspectorBody').textContent
   }))()`);
   assert.deepEqual(workbench.panes, ['reference', 'work', 'result']);
   assert.equal(workbench.enhanced, 'true');
@@ -215,16 +242,45 @@ try {
   assert.deepEqual(workbench.summaryHeaders, ['거래처','수량','금액','적요']);
   assert.match(workbench.summaryText, /부분상사[\s\S]*10 BOX[\s\S]*분석전 수정/);
   assert.doesNotMatch(workbench.summaryText, /20260908-001|본창고|작업자|남부|부분출고 상품/);
+  assert.match(workbench.workload, /조회 요약[\s\S]*주문서 1건[\s\S]*BOX 10[\s\S]*금액 자료 없음 1행/);
+  assert.match(workbench.sourceScope, /주문 기간 2026-09-08[\s\S]*재고 기준일 미확인[\s\S]*불러온 시각/);
   assert.match(workbench.inventory, /보조 패널/, '우측은 위치·표시·너비 설정만 제공해야 한다.');
   assert.equal(workbench.metrics, '');
+  assert.equal(workbench.inventoryBody, '', '승인되지 않은 우측 업무 표를 임의로 표시하면 안 된다.');
+  const allocationVisibilityBeforeSearch = await evaluate(client, `localStorage.getItem('oneapp.orderops.hidden-columns.v1')`);
+  await evaluate(client, `(()=>{const search=document.querySelector('#tableSearchInput');search.value='leechel';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+  const persistentSearchViews = [];
+  for (const [control, className] of [['#inventoryDrop','preview-inventory'], ['#ledgerDrop','preview-ledger'], ['[data-preview="readiness"]','preview-readiness']]) {
+    await evaluate(client, `document.querySelector(${JSON.stringify(control)}).click()`);
+    persistentSearchViews.push(await waitFor(async () => {
+      const value = await evaluate(client, `(()=>({query:document.querySelector('#tableSearchInput').value,count:document.querySelector('#previewCount').textContent,note:document.querySelector('#systemViewNote').textContent,body:document.querySelector('#previewTable').textContent,table:document.querySelector('#previewTable table')?.className||''}))()`);
+      return value.query === 'leechel' && value.table.includes(className) ? value : null;
+    }, `shared search on ${className}`));
+  }
+  persistentSearchViews.forEach((view) => {
+    assert.match(view.count, /^0\/\d+행$/);
+    assert.match(view.note, /공통 검색 "leechel"/);
+    assert.match(view.body, /검색 결과 0건 \/ 전체 \d+행[\s\S]*공통 검색 "leechel"/);
+  });
+  await evaluate(client, `(()=>{document.querySelector('#tableSettingsButton').click();document.querySelector('#columnVisibilityButton').click();return true})()`);
+  assert.equal(await evaluate(client, `(()=>{const menu=document.querySelector('#columnVisibilityMenu');const rect=menu.getBoundingClientRect();return !menu.classList.contains('hidden')&&rect.left>=0&&rect.top>=0&&rect.right<=innerWidth&&rect.bottom<=innerHeight})()`), true,
+    '검색 결과 0건 상태에서도 열 표시 메뉴는 실제 화면에 보여야 한다.');
+  await evaluate(client, `document.body.dispatchEvent(new MouseEvent('click',{bubbles:true}))`);
+  await evaluate(client, `document.querySelector('#tableSearchClearButton').click()`);
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-readiness tbody tr[data-grid-row-key]'))`), 'shared search clear restores readiness rows');
+  assert.equal(await evaluate(client, `localStorage.getItem('oneapp.orderops.hidden-columns.v1')`), allocationVisibilityBeforeSearch,
+    '검색 해제와 보기 전환은 저장된 열 표시 설정을 바꾸면 안 된다.');
+  await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'allocation view after persistent-search verification');
   await evaluate(client, `document.querySelector('#previewTable tr[data-product-code="P-1"]').click()`);
   assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent`), /보조 패널/);
   assert.equal(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), '');
+  assert.match(await evaluate(client, `document.querySelector('#productComparisonContext').textContent`), /부분출고 상품 \(P-1\)[\s\S]*전체 주문 10 BOX[\s\S]*전체 재고 20 BOX[\s\S]*비교잔량 10 BOX/);
   const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth}})()`);
   assert.ok(defaultLayout.leftWidth >= 370, `기본 좌측 패널 폭이 핵심 판단에 부족합니다: ${defaultLayout.leftWidth}`);
   assert.ok(defaultLayout.centerWidth > defaultLayout.leftWidth, '중앙 작업표는 기본 배치에서 좌측보다 넓어야 한다.');
   assert.ok(defaultLayout.resetRight <= defaultLayout.leftRight && defaultLayout.resetWidth > 100, '전체 버튼은 좁은 좌측 패널에서도 잘리지 않고 한 행을 사용해야 한다.');
-  assert.equal(defaultLayout.fontSize, '10px', '좌측 접근성 개선을 위해 글자를 더 줄이면 안 된다.');
+  assert.equal(defaultLayout.fontSize, '12px', '좌측 표는 12px 가독성 기준을 유지해야 한다.');
   assert.ok(defaultLayout.tableWidth <= defaultLayout.leftWidth + 2, `좌측 4열 표는 패널 안에 맞아야 한다: ${defaultLayout.tableWidth}`);
   const resizePreservation = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const draft=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');draft.value='7';draft.focus();document.querySelector('#previewTable').scrollLeft=18;const before={left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width};document.querySelector('[data-nexus-pane-resize="left"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return {before,after:{left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width},draft:draft.value,focused:document.activeElement===draft,scrollLeft:document.querySelector('#previewTable').scrollLeft}})()`);
   assert.ok(resizePreservation.after.left > resizePreservation.before.left);
@@ -233,13 +289,16 @@ try {
   assert.equal(resizePreservation.focused, true);
   await evaluate(client, `document.querySelector('#deliverySummaryBody tr[data-delivery-key]').click()`);
   const deliveryFocus = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>{const row=document.querySelector('#previewTable [data-grid-row-key="order:2"]');return {selected:row?.classList.contains('orderops-selected-delivery-row'),focused:document.activeElement===row}})()`);
+    const value = await evaluate(client, `(()=>{const row=document.querySelector('#previewTable [data-grid-row-key="order:2"]');return {active:document.querySelector('#previewTable table')?.className||'',selected:row?.classList.contains('orderops-selected-delivery-row'),focused:document.activeElement===row,context:document.querySelector('#deliverySelectionText').textContent}})()`);
     return value.selected && value.focused ? value : null;
   }, 'left-order central focus');
-  assert.deepEqual(deliveryFocus, { selected: true, focused: true });
+  assert.match(deliveryFocus.active, /preview-allocations/, '좌측 주문 선택은 현재 연결 화면을 다른 탭으로 자동 전환하면 안 된다.');
+  assert.equal(deliveryFocus.selected, true);
+  assert.equal(deliveryFocus.focused, true);
+  assert.match(deliveryFocus.context, /주문현황.*연관 행 표시 중/);
   const leftAssignmentReady = await evaluate(client, `(()=>({disabled:document.querySelector('#deliveryManagerAssignmentApply').disabled,summary:document.querySelector('#deliveryManagerAssignmentSummary').textContent,input:document.querySelector('#deliveryManagerAssignmentInput').value}))()`);
   assert.equal(leftAssignmentReady.disabled, false);
-  assert.match(leftAssignmentReady.summary, /부분상사/);
+  assert.match(leftAssignmentReady.summary, /부분상사[\s\S]*적용 범위: 거래처 코드로 연결된 1행/);
   await evaluate(client, `(()=>{const input=document.querySelector('#deliveryManagerAssignmentInput');input.value='좌측재배정';document.querySelector('#deliveryManagerAssignmentApply').click();return true})()`);
   await waitFor(() => evaluate(client, `document.querySelector('#deliveryDistribution').textContent.includes('좌측재배정 1건')`), 'left manager assignment');
   assert.match(await evaluate(client, `document.querySelector('#systemMessage').textContent`), /담당 변경.*1행 반영/);
@@ -368,7 +427,7 @@ try {
   }, 'missing inventory product identity preservation');
   assert.equal(missingInventory.selected, 'P-X');
   assert.match(missingInventory.identity, /보조 패널/);
-  assert.match(missingInventory.body, /표시 상태[\s\S]*열림/);
+  assert.equal(missingInventory.body, '', '승인되지 않은 상태 표를 재고 미등록 화면에도 표시하면 안 된다.');
   assert.equal(missingInventory.metrics, '');
   assert.match(missingInventory.region, /북부/, 'ORDER Q 배송지역이 좌측 주문서 목록까지 전달되어야 한다.');
 
