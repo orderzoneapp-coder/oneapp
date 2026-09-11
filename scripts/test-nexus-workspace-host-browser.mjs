@@ -249,6 +249,7 @@ try {
     && document.querySelector('#nexusWorkspaceLoading').hidden`), 'parent history forward');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(client, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
   const compactExpected = await evaluate(client, `(() => {
     const nav=document.querySelector('.nexus-ui-nav');
     nav.scrollLeft=0;
@@ -258,7 +259,12 @@ try {
     document.querySelector('[data-nexus-ui-app-target="dataops"]').click();
     return Math.max(0,targetRect.right-navRect.right);
   })()`);
-  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'`), 'hidden-tab transition');
+  await waitFor(() => evaluate(client, `(() => {
+    const nav=document.querySelector('.nexus-ui-nav').getBoundingClientRect();
+    const active=document.querySelector('[data-nexus-ui-app-target="dataops"]').getBoundingClientRect();
+    return new URL(location.href).searchParams.get('app') === 'dataops'
+      && active.left >= nav.left - 1 && active.right <= nav.right + 1;
+  })()`), 'hidden-tab transition and minimum reveal');
   const compactScroll = await evaluate(client, `document.querySelector('.nexus-ui-nav').scrollLeft`);
   assert.ok(compactScroll > 0, 'a hidden current tab must move only enough to reveal itself');
   assert.ok(Math.abs(compactScroll - compactExpected) <= 1, `a hidden tab must move by the minimum reveal distance: ${compactScroll} vs ${compactExpected}`);
