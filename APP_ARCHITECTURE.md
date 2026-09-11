@@ -1,12 +1,12 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.3.3
+- Architecture document version: 2.3.4
 - Previous detailed review: 2026-09-04
 - Documentation updated: 2026-09-12
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더와 비기본 단일 iframe 호스트 골격, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
+- Review scope: NEXUS 7개 글로벌헤더와 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
 - Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 창고/담당/지역 조회·담당 건수 선택·단위 안전·우측 키보드 재열기를 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
@@ -94,7 +94,7 @@ NEXUS는 각 앱이 기본 업무를 독립적으로 수행하고 필요한 정�
 - 각 매칭 행은 회사+상품코드(기존 checkpoint의 숨은 `productId` 호환)+창고 범위에서 최신 확정 checkpoint를 판정한다. `businessDate`가 checkpoint 일자보다 뒤면 정상이고, 앞이면 결정이 필요하며, 같은 날은 양쪽의 신뢰 가능한 업무시각과 timezone으로 전표가 뒤임을 증명할 때만 정상이다. 팝업은 충돌 행을 순차 확인해 행마다 독립된 포함/미포함 선택과 timezone이 있는 완전한 ISO `judgedAt`을 수집한다. 모든 그룹의 모든 행 선택과 재검증이 끝난 뒤에만 첫 쓰기를 시작하며 중간 취소는 선택을 폐기한다. 포함 결정은 원 효과를 `ABSORBED_BY_CHECKPOINT`로 연결해 현재고에 중복 반영하지 않고, 미포함 결정은 `APPLIED_AS_LATE_ADJUSTMENT` 연결조정을 결정적 ID로 정확히 한 번 추가한다. 취소는 Finalize 쓰기 전 반환하며 작업본·선택·스크롤을 보존한다.
 - 구매·판매 V2 Gate와 재매칭 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud Push/Pull 운영 활성화, 미매칭 재해결 제품 UI·대량 처리, 수정·취소 기능과 Draft V2는 후속 단계다. 단계 5의 순수 checkpoint 판정 계약은 단계 6C 명령 계획기가 재사용하며, 이름·유사도 기반 자동확정과 기존 조용한 누락 경로는 활성화하지 않는다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
-- `nexus/workspace.html`은 홈의 기본 진입을 바꾸지 않은 비기본 통합 호스트 골격이다. 같은 문서의 공통헤더를 유지하고 활성 iframe 하나만 사용하며 등록 앱의 정확한 same-origin 진입 경로, 부모 이력, `nexus-workspace-message/v1`의 Origin·source window·transition 검증과 독립 앱 fallback만 소유한다. 업무 저장소·앱 준비 판정·확정 처리는 소유하지 않으며 앱별 lifecycle 연결 전에는 기존 직접 URL이 공식 실행 경로다.
+- `nexus/workspace.html`은 NEXUS 홈에서 7개 글로벌 앱을 여는 기본 통합 호스트다. 같은 문서의 공통헤더를 유지하고 활성 iframe 하나만 사용하며 등록 앱의 정확한 same-origin 진입 경로, 부모 이력, `nexus-workspace-message/v1`의 Origin·source window·transition 검증과 공식 직접 앱 fallback만 소유한다. 각 앱 lifecycle adapter가 예약 저장 취소, 진행 중 작업 결과 확인, 최신 입력 저장과 재검산을 마친 뒤에만 전환을 승인하며 호스트 자체는 업무 저장소·확정 처리를 소유하지 않는다. `export-center`, `settings`, `item-manager`, `history-viewer`, `orderq-vnext` 홈 카드는 기존 직접 경로를 유지하고 7개 앱의 공식 직접 URL도 독립 실행·즉시 롤백 경계로 보존한다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
 - 운영 NEXUS Gateway v24에서 읽기 전용으로 확보한 정확한 서버 기준본은 `nexus/server/nexus-auth-gateway.gs`와 같은 폴더의 Apps Script manifest에 보존한다. 최소 사용자 통제 변경은 이 기준본 위에서만 수행하며 회사정보·업무 Gateway 레지스트리를 삭제하거나 과거 과잉 소스로 교체하지 않는다.

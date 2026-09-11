@@ -11,7 +11,7 @@ assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login 
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
 assert.match(html, /nexus\.css\?v=1\.3\.3/, 'NEXUS home must load the fixed-header ivory theme CSS revision');
-assert.match(html, /nexus\.js\?v=1\.3\.3/, 'NEXUS home must load the touch-enabled theme runtime revision');
+assert.match(html, /nexus\.js\?v=1\.3\.4/, 'NEXUS home must load the workspace-entry runtime revision');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="light"[^>]+aria-label="일반모드 적용"[^>]*>☼<\/button>/, 'home light icon must be an accessible direct-action button');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="dark"[^>]+aria-label="다크모드 적용"[^>]*>☾<\/button>/, 'home dark icon must be an accessible direct-action button');
 assert.match(html, /id="homeThemeToggle"[^>]+role="switch"/, 'home must expose an accessible screen-mode switch');
@@ -64,6 +64,12 @@ assert.match(runtime, /themeController\.apply\(next, \{ persist: true, emit: tru
 assert.match(runtime, /homeThemeButtons\.forEach[\s\S]*button\.addEventListener\('click'/, 'home theme icons must respond to click and touch activation');
 assert.match(runtime, /NEXUS_UI_VISIBILITY_V1/, 'home visibility projection must be schema-versioned');
 assert.match(runtime, /renderApps\(visibility\.visibleAppIds\)/, 'home cards must follow the UI visibility projection');
+assert.match(runtime, /const WORKSPACE_APP_IDS = new Set\(\[[\s\S]*'master-lookup'[\s\S]*'customer-master'[\s\S]*'smart-input'[\s\S]*'smart-parser'[\s\S]*'merchops'[\s\S]*'orderops'[\s\S]*'dataops'[\s\S]*\]\);/, 'the seven global apps must use the integrated workspace entry');
+assert.match(runtime, /const homeEntryPath = \(app\) => \{[\s\S]*if \(!WORKSPACE_APP_IDS\.has\(app\.id\)\) return app\.path;[\s\S]*\/nexus\/workspace\.html\?\$\{query\.toString\(\)\}/, 'non-global home cards must keep their direct paths while the seven global apps use validated workspace queries');
+assert.match(runtime, /link\.href = homeEntryPath\(app\)/, 'home cards must resolve their launch target through the workspace-entry policy');
+for (const directPath of ['/export_center.html', '/settings.html', '/Item_manager.html', '/history_viewer.html', '/orderq/']) {
+  assert.match(runtime, new RegExp(`path: ['"]${directPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`), `${directPath} must remain an official direct home target`);
+}
 assert.doesNotMatch(runtime, /company-transport|callCompanyGateway|company\.profile_read|refreshCompany|COMPANY_SNAPSHOT|revision/i, 'home startup must not call or depend on the company service');
 assert.match(commonUi, /logoFrame\.href = asset\('nexus\/'\)/, 'work-app logo must return to the NEXUS home');
 assert.doesNotMatch(commonUi, /displayName|loginId|userId|sessionToken|contextToken|nexus[-_ ]auth/i, 'work-app header must not expose user information or auth tokens');
