@@ -97,9 +97,28 @@ try {
   assert.equal(initial.analyzeDisabled, true, '창고재고 Excel 없이는 분석할 수 없어야 한다.');
   assert.equal(initial.title, '저장 주문 선택');
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-001')`), 'selected saved order source');
+  const beforeAnalysis = await waitFor(async () => {
+    const value = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const table=document.querySelector('#previewTable table.preview-readiness');return {headerOwnsSources:document.querySelector('[data-nexus-app-header="orderops"] > .orderops-header-sources #sourceSelector')!==null,panes:[...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,headers:[...table?.querySelectorAll('thead th')||[]].map(node=>node.textContent.replace('필터','').trim()),inputValues:[...table?.querySelectorAll('tbody input')||[]].map(node=>node.value),rowText:table?.querySelector('tbody tr')?.textContent||'',stockText:table?.textContent||'',printDisabled:document.querySelector('#printButton').disabled}})()`);
+    return value.deliveries === 1 && value.inputValues.includes('부분상사') ? value : null;
+  }, 'orders displayed before inventory and analysis');
+  assert.equal(beforeAnalysis.headerOwnsSources, true, '업로더와 분석 실행은 앱헤더 안에 있어야 한다.');
+  assert.deepEqual(beforeAnalysis.panes, ['reference', 'work', 'result'], '앱헤더 아래 세 섹션은 동일 부모의 직접 자식이어야 한다.');
+  assert.deepEqual(beforeAnalysis.headers, ['거래처', '상품', '주문수량', '직원 적요']);
+  assert.deepEqual(beforeAnalysis.inputValues, ['부분상사', '10', '현관 앞 전달']);
+  assert.doesNotMatch(beforeAnalysis.stockText, /재고|잔량/, '재고자료가 없을 때 0 재고 열을 만들어서는 안 된다.');
+  assert.equal(beforeAnalysis.printDisabled, false, '분석 전 기본 분석표도 인쇄할 수 있어야 한다.');
+  const previewEdit = await evaluate(client, `(()=>{const input=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]');input.value='분석전 수정';input.dispatchEvent(new Event('change',{bubbles:true}));window.__orderopsPrintCalled=0;window.print=()=>{window.__orderopsPrintCalled+=1};document.querySelector('#printButton').click();return {value:document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value,printCalled:window.__orderopsPrintCalled,printing:document.body.classList.contains('printing-table')}})()`);
+  assert.deepEqual(previewEdit, { value: '분석전 수정', printCalled: 1, printing: true });
   assert.equal(await evaluate(client, `document.querySelector('#orderQSourcePicker').hidden`), true, '저장 주문 연결 뒤에는 선택기를 접어 기존 작업 화면 배치를 유지해야 한다.');
   assert.equal(await evaluate(client, `document.querySelector('#analyzeButton').disabled`), true, '저장 주문을 선택해도 창고재고 Excel은 필수다.');
   await uploadInventory(client);
+  const withInventoryBeforeAnalysis = await waitFor(async () => {
+    const value = await evaluate(client, `(()=>({headers:[...document.querySelectorAll('#previewTable table.preview-readiness thead th')].map(node=>node.textContent.replace('필터','').trim()),employeeNote:document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value||'',row:document.querySelector('#previewTable table.preview-readiness tbody tr')?.textContent||''}))()`);
+    return value.headers.includes('재고') ? value : null;
+  }, 'inventory columns before analysis');
+  assert.ok(withInventoryBeforeAnalysis.headers.includes('잔량'));
+  assert.equal(withInventoryBeforeAnalysis.employeeNote, '분석전 수정', '재고 추가 갱신에도 분석 전 입력값을 보존해야 한다.');
+  assert.match(withInventoryBeforeAnalysis.row, /20[\s\S]*10/, '실제 재고자료가 있을 때만 재고·잔량을 표시해야 한다.');
   await analyze(client);
   await evaluate(client, `document.querySelector('#ordersDrop').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'worktable actual shipment input');
@@ -123,12 +142,12 @@ try {
   assert.match(workbench.distribution, /작업자 1건/);
   assert.equal(workbench.manager, '작업자');
   assert.deepEqual(workbench.summaryHeaders, ['주문번호','창고','담당자','지역','거래처','품목','수량','금액','적요(직원)']);
-  assert.match(workbench.summaryText, /20260908-001[\s\S]*남부[\s\S]*부분상사[\s\S]*부분출고 상품[\s\S]*10 BOX[\s\S]*현관 앞 전달/);
-  assert.match(workbench.inventory, /상품을 선택하세요/, '초기 무선택 상태는 첫 재고상품을 자동 선택하면 안 된다.');
+  assert.match(workbench.summaryText, /20260908-001[\s\S]*남부[\s\S]*부분상사[\s\S]*부분출고 상품[\s\S]*10 BOX[\s\S]*분석전 수정/);
+  assert.match(workbench.inventory, /보조 내용은 별도 승인 전/, '우측 업무 내용은 승인 전 권고안으로 유지해야 한다.');
   assert.equal(workbench.metrics, '');
   await evaluate(client, `document.querySelector('#previewTable tr[data-product-code="P-1"]').click()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent.includes('부분출고 상품')`), 'selected-product inventory inspector');
-  assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), /현재 재고[\s\S]*주문수량[\s\S]*예상 잔량[\s\S]*실제 출고 확정/);
+  assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent`), /보조 내용은 별도 승인 전/);
+  assert.equal(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), '');
   const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth}})()`);
   assert.ok(defaultLayout.leftWidth >= 370, `기본 좌측 패널 폭이 핵심 판단에 부족합니다: ${defaultLayout.leftWidth}`);
   assert.ok(defaultLayout.centerWidth > defaultLayout.leftWidth, '중앙 작업표는 기본 배치에서 좌측보다 넓어야 한다.');
@@ -173,6 +192,18 @@ try {
   assert.ok(Math.abs(panelReopened.width - panelBefore.width) < 1, '재열기 뒤 이전 우측 패널 폭을 유지해야 한다.');
   assert.equal(panelReopened.identity, panelBefore.identity, '재열기 뒤 선택 상품과 재고 내용을 유지해야 한다.');
   assert.equal(panelReopened.draft, panelBefore.draft, '재열기 뒤 중앙 입력값을 유지해야 한다.');
+  await evaluate(client, `document.querySelector('.order-edit-input[data-order-field="manager"]')?.dispatchEvent(new Event('change',{bubbles:true}))`);
+  assert.equal(await evaluate(client, `document.querySelector('#inventoryInspector').hidden`), false, '사용자가 우측을 다시 연 뒤 화면 갱신만으로 닫히면 안 된다.');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 819, height: 720, deviceScaleFactor: 1.25, mobile: false });
+  await wait(250);
+  const zoomedLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const scroller=document.querySelector('#previewTable');return {viewport:document.documentElement.clientWidth,documentWidth:document.documentElement.scrollWidth,leftDisplay:getComputedStyle(left).display,leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,rightWidth:right.getBoundingClientRect().width,internalHorizontal:scroller.scrollWidth>scroller.clientWidth,handles:[...document.querySelectorAll('.nexus-pane-resizer-v2[data-nexus-pane-resize-app="orderops"]')].filter(node=>!node.hidden).length}})()`);
+  assert.ok(zoomedLayout.viewport <= 819, `1024px·125% 상당 CSS 폭이어야 한다: ${zoomedLayout.viewport}`);
+  assert.equal(zoomedLayout.documentWidth, zoomedLayout.viewport, '1024px·125% 상당 화면에서 페이지 전체 가로 넘침이 없어야 한다.');
+  assert.equal(zoomedLayout.leftDisplay, 'flex');
+  assert.ok(zoomedLayout.leftWidth > 0 && zoomedLayout.centerWidth > 0 && zoomedLayout.rightWidth > 0);
+  assert.equal(zoomedLayout.internalHorizontal, true, '작은 화면의 가로 이동은 중앙 표 내부에서 처리해야 한다.');
+  assert.equal(zoomedLayout.handles, 2, '작은 화면에서도 좌우 폭을 독립 조절할 수 있어야 한다.');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
   const handoff = await evaluate(client, `(()=>{const work=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');work.value='6';work.dispatchEvent(new Event('change',{bubbles:true}));const confirm=document.querySelector('[data-shipment-line="OI-PARTIAL"]');confirm.querySelector('[data-shipment-reason]').value='부분 출고';confirm.querySelector('[data-shipment-reason]').dispatchEvent(new Event('change',{bubbles:true}));return {work:work.value,confirm:confirm.querySelector('[data-shipped-quantity]').value,headers:[...document.querySelectorAll('.shipment-execution__table th')].map(node=>node.textContent.trim())}})()`);
   assert.equal(handoff.work, '6');
   assert.equal(handoff.confirm, '6', '작업표 실제 출고수량이 확정표에 전달되어야 한다.');
@@ -212,13 +243,12 @@ try {
   await evaluate(client, `document.querySelector('#previewTable tr[data-product-code="P-X"]').click()`);
   const missingInventory = await waitFor(async () => {
     const value = await evaluate(client, `(()=>({selected:document.querySelector('#previewTable tr.orderops-selected-product-row')?.dataset.productCode,identity:document.querySelector('#inventoryInspectorIdentity').textContent,body:document.querySelector('#inventoryInspectorBody').textContent,metrics:document.querySelector('#inventoryInspectorMetrics').textContent,region:document.querySelector('#deliverySummaryBody').textContent}))()`);
-    return value.identity.includes('재고자료 없음') ? value : null;
+    return value.selected === 'P-X' ? value : null;
   }, 'missing inventory product identity preservation');
   assert.equal(missingInventory.selected, 'P-X');
-  assert.match(missingInventory.identity, /재고없는 상품[\s\S]*P-X[\s\S]*재고자료 없음/);
-  assert.doesNotMatch(missingInventory.identity, /부분출고 상품|복구 상품/);
-  assert.match(missingInventory.body, /선택한 상품의 창고별 재고자료가 없습니다/);
-  assert.match(missingInventory.metrics, /현재 재고\s*—[\s\S]*주문수량\s*3[\s\S]*예상 잔량\s*—/);
+  assert.match(missingInventory.identity, /보조 내용은 별도 승인 전/);
+  assert.match(missingInventory.body, /권고안·미확정/);
+  assert.equal(missingInventory.metrics, '');
   assert.match(missingInventory.region, /북부/, 'ORDER Q 배송지역이 좌측 주문서 목록까지 전달되어야 한다.');
 
   await navigate(client, `${origin}/orderops/list.html`);
@@ -260,7 +290,7 @@ try {
   assert.match(notFound.href, /orderq\/index\.html\?view=query&focus=DOES-NOT-EXIST/);
   assert.equal(notFound.orders, '파일을 선택하세요');
 
-  console.log('OrderOps browser acceptance: rendered panel reopen, employee-note recovery, accessible dispatch layout, 10→6→4 partial shipment, query status, and changed-order recovery passed.');
+  console.log('PASS OrderOps browser acceptance: app-header uploaders, pre-analysis orders, direct three panes, right reopen persistence, 1024px·125% equivalent layout, print/input preservation, employee-note recovery, partial shipment, and conflict recovery.');
 } finally {
   client?.close();
   browserProcess?.kill();
