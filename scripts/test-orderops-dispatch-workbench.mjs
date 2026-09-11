@@ -61,6 +61,22 @@ assert.deepEqual(JSON.parse(JSON.stringify(deliveryRows[0].quantityGroups)), [
 assert.equal(deliveryRows[0].amountTotal, 8000);
 assert.equal(deliveryRows[0].employeeNote, '직원 메모 A / 직원 메모 B');
 assert.doesNotMatch(deliveryRows[0].employeeNote, /일반 지시/, '일반 적요를 직원 적요에 합치면 안 된다');
+const editedSourceRow = workspace.orders[0].sourceRowNumber;
+engine.setOrderValue(workspace, editedSourceRow, 'deliveryNotice', '직원 메모 A 수정', {
+  actor: '테스트 관리자', recordHistory: true,
+});
+assert.deepEqual(
+  [workspace.orders[0].note, workspace.orders[0].noteOriginal, workspace.orders[0].note1, workspace.orders[0].note1Original],
+  ['일반 지시', '일반 지시', '직원 메모 A 수정', '직원 메모 A 수정'],
+  '중앙 전달사항 편집은 직원 적요만 바꾸고 일반 적요 원본을 보존해야 한다',
+);
+assert.equal(engine.getDeliverySummaryRows(workspace)[0].employeeNote, '직원 메모 A 수정 / 직원 메모 B');
+const recoveredWorkspace = JSON.parse(JSON.stringify(workspace));
+assert.deepEqual(
+  [recoveredWorkspace.orders[0].noteOriginal, recoveredWorkspace.orders[0].note1Original],
+  ['일반 지시', '직원 메모 A 수정'],
+  '임시저장 payload 왕복에서도 일반 적요와 직원 적요를 분리 보존해야 한다',
+);
 
 const partialUnassigned = engine.getDeliverySummaryRows({ orders: [
   { sourceRowNumber: 10, orderNumber: 'ORD-MIXED', warehouse: '본창고', customer: '부분상사', customerCode: 'C-MIXED', manager: '담당A', region: '남부', productCode: 'A', productName: '상품A', sourceUnit: 'EA', quantity: 0, supplyAmount: 0 },
@@ -99,6 +115,7 @@ assert.equal(workspace.systemHistory.events.filter((event) => event.field === 'm
   '같은 담당자 재선택은 중복 변경이력을 만들면 안 된다');
 
 const html = fs.readFileSync(path.join(root, 'orderops', 'list.html'), 'utf8');
+const layoutController = fs.readFileSync(path.join(root, 'nexus', 'common', 'nexus-workbench-layout-v2.js'), 'utf8');
 for (const contract of [
   'data-nexus-workspace="orderops"',
   'id="deliverySummaryBody"',
@@ -112,9 +129,16 @@ for (const contract of [
   '적요(직원)',
   '현재 재고−주문수량의 화면 계산값',
   '재고자료 없음 · 선택 상품을 유지합니다.',
+  'function formatEmployeeDeliveryNotice(row)',
+  'orderops-side-table orderops-delivery-table',
+  '@container (max-width: 419px)',
   '<th>주문번호</th><th>창고</th><th>담당자</th><th>지역</th><th>거래처</th><th>품목</th><th>수량</th><th>금액</th><th>적요(직원)</th>',
 ]) assert.ok(html.includes(contract), `출고관리 추가 레이아웃 계약 누락: ${contract}`);
 assert.doesNotMatch(html, /employeeNote\s*=\s*String\(row\?\.noteOriginal|employeeNote\s*=\s*String\(row\?\.note\s/,
   '왼쪽 배송 메모는 일반 적요를 적요(직원) 대신 사용하면 안 된다');
+assert.match(layoutController, /function isPaneRequestedOpen\(element\)/,
+  '우측 패널 열림 상태는 닫힘 CSS의 계산 결과와 분리해야 한다');
+assert.doesNotMatch(layoutController, /rightOpen\s*=\s*isVisible\(rightPane\)/,
+  'CSS로 숨겨진 계산 스타일을 우측 패널 재열림 판정에 다시 사용하면 안 된다');
 
 console.log('OrderOps dispatch workbench tests passed.');

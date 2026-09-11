@@ -332,7 +332,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = orderReview\.ha
   "integrated output must be blocked only by unresolved quantity errors");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260911-worker-workflow") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260911-pr572-followup") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260910-system-message-review"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -732,7 +732,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.23.0");
+assert.equal(engine.ENGINE_VERSION, "3.23.1");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -1093,11 +1093,13 @@ engine.setOrderValue(editableWorkspace, editableOrderRow, "purchase", "구매처
 assert.deepEqual(
   [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].quantity,
     editableWorkspace.orders[0].unitPrice, editableWorkspace.orders[0].supplyAmount,
-    editableWorkspace.orders[0].note, editableWorkspace.orders[0].note1, editableWorkspace.orders[0].customer,
+    editableWorkspace.orders[0].note, editableWorkspace.orders[0].note1,
+    editableWorkspace.orders[0].noteOriginal, editableWorkspace.orders[0].note1Original,
+    editableWorkspace.orders[0].customer,
     editableWorkspace.orders[0].group, editableWorkspace.orders[0].manager,
     editableWorkspace.allocations[0].purchase],
-  ["1창고", 7, 1200, 8400, "변경 전달", "", "변경 거래처", "변경 그룹", "변경 담당자", "구매처B"],
-  "editable order values must survive the workspace recalculation",
+  ["1창고", 7, 1200, 8400, "기존 전달", "변경 전달", "기존 전달", "변경 전달", "변경 거래처", "변경 그룹", "변경 담당자", "구매처B"],
+  "the employee delivery notice edit must survive recalculation without moving or overwriting the general note",
 );
 assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].remainingQuantity, -2);
 assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 2);
@@ -1119,7 +1121,8 @@ assert.throws(
 const editAuditEvents = editableWorkspace.systemHistory.events;
 assert.equal(editableWorkspace.systemHistory.schemaVersion, engine.SYSTEM_HISTORY_SCHEMA_VERSION);
 assert.ok(editAuditEvents.some((event) => event.field === "customer" && event.previousValue !== event.nextValue));
-assert.ok(editAuditEvents.some((event) => event.field === "deliveryNotice" && event.nextValue === "변경 전달"));
+assert.ok(editAuditEvents.some((event) => event.field === "deliveryNotice"
+  && event.previousValue === "기존 적요1" && event.nextValue === "변경 전달"));
 const auditCountBeforeNoop = editAuditEvents.length;
 engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "변경 담당자", editAuditOptions);
 assert.equal(editableWorkspace.systemHistory.events.length, auditCountBeforeNoop,
