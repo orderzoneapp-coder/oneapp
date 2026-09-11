@@ -20,8 +20,10 @@
         '/DataOps.html': 'dataops',
       };
       const appId = pathToApp[location.pathname] || '';
+      const bootCount = Number(sessionStorage.getItem('nexusWorkspaceFixtureBootCount') || 0) + 1;
+      sessionStorage.setItem('nexusWorkspaceFixtureBootCount', String(bootCount));
       let transitionId = '';
-      window.fixtureState = { appId, leaveResult: 'READY', leaveDelay: 0, printCount: 0, themeCount: 0 };
+      window.fixtureState = { appId, bootCount, hostReadyCount: 0, leaveResult: 'READY', leaveDelay: 0, printCount: 0, themeCount: 0 };
 
       const send = (type, extra = {}) => parent.postMessage(Object.assign({
         schemaVersion,
@@ -37,6 +39,7 @@
         if (!data || data.schemaVersion !== schemaVersion || data.appId !== appId) return;
         if (data.type === 'NEXUS_WORKSPACE_HOST_READY_V1') {
           transitionId = data.transitionId;
+          window.fixtureState.hostReadyCount += 1;
           document.documentElement.dataset.fixtureReady = 'true';
           send('NEXUS_WORKSPACE_APP_READY_V1');
         } else if (data.type === 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1') {

@@ -26,11 +26,19 @@ const mime = {
   '.svg': 'image/svg+xml',
 };
 const requests = [];
+const failNext = new Map();
 const server = createServer((request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
     requests.push(pathname);
     if (officialPaths.has(pathname)) {
+      const remainingFailures = failNext.get(pathname) || 0;
+      if (remainingFailures > 0) {
+        failNext.set(pathname, remainingFailures - 1);
+        response.writeHead(404, { 'Cache-Control': 'no-store', 'Content-Type': mime['.html'] });
+        response.end('<!doctype html><title>fixture 404</title><h1>Not found</h1>');
+        return;
+      }
       response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime['.html'] });
       response.end(fixture);
       return;
@@ -200,6 +208,12 @@ try {
   await evaluate(client, `document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureRouteChanged('customer-master/index.html?accepted=1')`);
   await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('route') === 'customer-master/index.html?accepted=1'`), 'accepted route replacement');
 
+  const reloadBoot = await evaluate(client, `document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureState.bootCount`);
+  await evaluate(client, `document.querySelector('#nexusWorkspaceFrame').contentWindow.location.reload()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.bootCount > ${reloadBoot}
+    && document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureState.hostReadyCount === 1
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'child reload re-handshake');
+
   await evaluate(client, `document.querySelector('[data-nexus-ui-theme-set="dark"]').click()`);
   await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceFrame').contentDocument.documentElement.dataset.nexusUiTheme === 'dark'`), 'theme propagation');
   await evaluate(client, `document.querySelector('.nexus-ui-brand__current').focus(); window.dispatchEvent(new KeyboardEvent('keydown',{key:'p',ctrlKey:true,bubbles:true,cancelable:true}))`);
@@ -258,6 +272,71 @@ try {
   assert.equal(geometry.headerCount, 1);
   assert.equal(geometry.frameCount, 1);
 
+  const recoveryPhaseLoaded = client.once('Page.loadEventFired');
+  await evaluate(client, `location.replace(${JSON.stringify(`${origin}/nexus/workspace.html?app=dataops&route=DataOps.html`)})`);
+  await recoveryPhaseLoaded;
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'isolated history recovery phase');
+
+  failNext.set('/smartinput/index.html', 1);
+  const beforePushFailure = await evaluate(client, `({href:location.href,length:history.length,app:document.querySelector('[data-nexus-ui-app-target][aria-current="page"]').dataset.nexusUiAppTarget})`);
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="smart-input"]').click()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceError')?.hidden === false`), '404 handshake timeout', 12_000);
+  const pushFailure = await evaluate(client, `({href:location.href,length:history.length,app:document.querySelector('[data-nexus-ui-app-target][aria-current="page"]').dataset.nexusUiAppTarget,message:document.querySelector('#nexusWorkspaceErrorMessage').textContent})`);
+  assert.equal(pushFailure.href, beforePushFailure.href, 'a failed pushed load must keep the previous parent URL');
+  assert.equal(pushFailure.length, beforePushFailure.length, 'a failed pushed load must not create a parent history entry');
+  assert.equal(pushFailure.app, beforePushFailure.app, 'a failed pushed load must restore the previous active header');
+  assert.match(pushFailure.message, /연결 신호/);
+  await evaluate(client, `document.querySelector('#nexusWorkspaceRetry').click()`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'smart-input'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'smart-input'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'pushed retry success');
+  assert.equal(await evaluate(client, 'history.length'), beforePushFailure.length + 1, 'retry must retain the original push history mode');
+  await evaluate(client, 'history.back()');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'retry push history back');
+  await evaluate(client, 'history.forward()');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'smart-input'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'smart-input'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'retry push history forward');
+  await evaluate(client, 'history.back()');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'retry push history back again');
+
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="merchops"]').click()`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'merchops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'merchops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'popstate-failure source');
+  const beforePopFailure = await evaluate(client, `({href:location.href,length:history.length})`);
+  failNext.set('/DataOps.html', 1);
+  await evaluate(client, 'history.back()');
+  await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceError')?.hidden === false && location.href === ${JSON.stringify(beforePopFailure.href)}`), 'popstate load failure and index restoration', 12_000);
+  const popFailure = await evaluate(client, `({href:location.href,length:history.length,app:document.querySelector('[data-nexus-ui-app-target][aria-current="page"]').dataset.nexusUiAppTarget})`);
+  assert.equal(popFailure.href, beforePopFailure.href, 'a failed popstate load must restore the previous parent URL');
+  assert.equal(popFailure.length, beforePopFailure.length, 'popstate failure restoration must not add history');
+  assert.equal(popFailure.app, 'merchops');
+  await evaluate(client, `document.querySelector('#nexusWorkspaceRetry').click()`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'popstate retry success');
+  assert.equal(await evaluate(client, 'history.length'), beforePopFailure.length, 'popstate retry must retain no-new-entry history mode');
+  await evaluate(client, 'history.forward()');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'merchops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'merchops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'restored popstate forward meaning');
+  await evaluate(client, 'history.back()');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'restored popstate back meaning');
+
+  await evaluate(client, `document.querySelector('#nexusWorkspaceFrame').contentWindow.location.href='/DataOps.html?fullNavigation=1'`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('route') === 'DataOps.html?fullNavigation=1'
+    && document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureState.hostReadyCount === 1
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'child full-navigation re-handshake');
+
   const invalidLoaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `${origin}/nexus/workspace.html?app=master-lookup&route=${encodeURIComponent('https://attacker.test/Master.html')}` });
   await invalidLoaded;
@@ -270,14 +349,15 @@ try {
   await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'master-lookup' && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'master-lookup'`), 'safe retry fallback');
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: persistent header, one iframe, route/history security, theme/print, leave blocking, rapid navigation, compact reveal.');
+  console.log('PASS NEXUS workspace browser: persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
-  await new Promise((resolveClose) => server.close(resolveClose));
   if (browser && !browser.killed) {
     const exited = new Promise((resolveExit) => browser.once('exit', resolveExit));
     browser.kill();
     await Promise.race([exited, wait(1500)]);
   }
+  server.closeAllConnections?.();
+  await new Promise((resolveClose) => server.close(resolveClose));
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch (_) {}
 }

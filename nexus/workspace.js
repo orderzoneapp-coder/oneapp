@@ -129,6 +129,7 @@
       this.currentTarget = null;
       this.loadingTarget = null;
       this.retryTarget = null;
+      this.failedLoad = null;
       this.loadTransitionId = '';
       this.frameReady = false;
       this.frameDocumentLoaded = false;
@@ -136,6 +137,11 @@
       this.queuedNavigation = null;
       this.pendingLeave = null;
       this.pendingLoad = null;
+      this.historyIndex = Number.isInteger(windowObject.history.state?.nexusWorkspaceIndex)
+        ? windowObject.history.state.nexusWorkspaceIndex
+        : 0;
+      this.historyRestore = null;
+      this.historyRetry = null;
       this.noticeTimer = 0;
     }
 
@@ -143,7 +149,7 @@
       if (!this.frame || !this.loading || !this.error || !this.retry || !this.standalone || !this.notice) return;
       this.document.addEventListener('click', (event) => this.onDocumentClick(event), true);
       this.window.addEventListener('message', (event) => this.onMessage(event));
-      this.window.addEventListener('popstate', () => this.onPopState());
+      this.window.addEventListener('popstate', (event) => this.onPopState(event));
       this.window.addEventListener('nexus-ui:theme-change', (event) => this.sendTheme(event.detail?.theme));
       this.window.addEventListener('keydown', (event) => this.onKeyDown(event), true);
       this.frame.addEventListener('load', () => this.onFrameLoad());
@@ -154,6 +160,7 @@
       if (!initial.ok) {
         const fallback = validateRoute(initial.fallbackApp?.id || APPS[0].id, '', this.siteRoot, this.origin);
         this.loading.hidden = true;
+        if (fallback.ok) this.failedLoad = { target: fallback, historyMode: 'replace', restoreTarget: null };
         this.showLoadError(initial.message, fallback.ok ? fallback : null);
         return;
       }
@@ -182,13 +189,56 @@
     }
 
     onFrameLoad() {
-      if (!this.loadingTarget) return;
+      if (!this.loadingTarget) {
+        if (this.historyRetry) return;
+        this.reconnectUnexpectedFrameLoad();
+        return;
+      }
       this.frameDocumentLoaded = true;
       this.frame.classList.add('is-document-loaded');
       this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, this.loadingTarget, {
         theme: this.theme(),
         hostVersion: VERSION,
       });
+    }
+
+    reconnectUnexpectedFrameLoad() {
+      if (!this.currentTarget) return;
+      let actualHref = '';
+      try {
+        actualHref = this.frame.contentWindow.location.href;
+      } catch {
+        this.failUnexpectedFrameLoad('앱이 검증할 수 없는 주소로 이동해 통합 연결을 중단했습니다.');
+        return;
+      }
+      const target = validateRoute(this.currentTarget.app.id, actualHref, this.siteRoot, this.origin);
+      if (!target.ok) {
+        this.failUnexpectedFrameLoad('앱이 허용되지 않은 주소로 이동해 통합 연결을 중단했습니다.');
+        return;
+      }
+      this.beginHandshake(target, {
+        historyMode: 'replace',
+        restoreTarget: this.currentTarget,
+        preserveFailedLoad: this.failedLoad,
+      });
+      this.frameDocumentLoaded = true;
+      this.frame.classList.add('is-document-loaded');
+      this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, target, {
+        theme: this.theme(),
+        hostVersion: VERSION,
+      });
+    }
+
+    failUnexpectedFrameLoad(message) {
+      const restoreTarget = this.currentTarget;
+      this.frameReady = false;
+      this.loadingTarget = null;
+      this.failedLoad = restoreTarget
+        ? { target: restoreTarget, historyMode: 'replace', restoreTarget }
+        : null;
+      this.restoreCurrentTarget(restoreTarget);
+      this.loading.hidden = true;
+      this.showLoadError(message, restoreTarget);
     }
 
     onMessage(event) {
@@ -257,15 +307,48 @@
       this.post(MESSAGE_TYPES.PRINT, this.loadTransitionId, this.currentTarget);
     }
 
-    onPopState() {
+    onPopState(event) {
+      const targetIndex = Number.isInteger(event?.state?.nexusWorkspaceIndex)
+        ? event.state.nexusWorkspaceIndex
+        : null;
+      if (this.historyRestore) {
+        const restore = this.historyRestore;
+        if (targetIndex === restore.expectedIndex) {
+          this.window.clearTimeout(restore.timer);
+          this.historyRestore = null;
+          this.historyIndex = targetIndex;
+          this.restoreCurrentTarget(restore.target);
+        }
+        return;
+      }
+      if (this.historyRetry) {
+        const recovery = this.historyRetry;
+        this.historyRetry = null;
+        if (targetIndex !== recovery.popstate?.toIndex) {
+          this.transitionRunning = false;
+          this.showNotice('이동할 브라우저 이력을 확인하지 못해 재시도를 취소했습니다.');
+          return;
+        }
+        this.loadTarget(recovery.target, {
+          historyMode: 'none',
+          restoreTarget: recovery.restoreTarget,
+          popstate: recovery.popstate,
+        }).finally(() => { this.transitionRunning = false; });
+        return;
+      }
       const next = parseHostRequest(this.window.location.search, this.window.location.href);
       if (!next.ok) {
         if (this.currentTarget) this.commitHistory(this.currentTarget, 'replace');
         this.showNotice(next.message);
         return;
       }
-      if (this.currentTarget?.url === next.url) return;
-      this.requestNavigation(next, 'none');
+      if (this.currentTarget?.url === next.url) {
+        if (targetIndex != null) this.historyIndex = targetIndex;
+        return;
+      }
+      this.requestNavigation(next, 'none', {
+        popstate: targetIndex == null ? null : { fromIndex: this.historyIndex, toIndex: targetIndex },
+      });
     }
 
     async requestExit(href) {
@@ -276,16 +359,21 @@
       if (leave.result === 'READY') {
         this.window.location.assign(href);
       } else {
+        this.loading.hidden = true;
         this.showNotice(leave.message || '현재 작업을 보존하지 못해 화면 이동을 취소했습니다.');
       }
     }
 
-    async requestNavigation(target, historyMode) {
+    async requestNavigation(target, historyMode, navigationOptions = {}) {
+      if (this.historyRestore || this.historyRetry) {
+        this.showNotice('브라우저 이력을 복구하고 있습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
       if (this.currentTarget?.url === target.url && this.frameReady) {
         this.frame.focus();
         return;
       }
-      this.queuedNavigation = { target, historyMode };
+      this.queuedNavigation = { target, historyMode, navigationOptions };
       if (this.transitionRunning) return;
       this.transitionRunning = true;
 
@@ -293,7 +381,10 @@
       if (leave.result !== 'READY') {
         this.transitionRunning = false;
         this.queuedNavigation = null;
-        if (historyMode === 'none' && this.currentTarget) this.commitHistory(this.currentTarget, 'replace');
+        this.loading.hidden = true;
+        if (historyMode === 'none' && this.currentTarget) {
+          if (!this.restorePopState(navigationOptions.popstate, this.currentTarget)) this.commitHistory(this.currentTarget, 'replace');
+        }
         this.showNotice(leave.message || (leave.result === 'BLOCKED'
           ? '현재 작업이 완료되지 않아 화면 이동을 취소했습니다.'
           : '현재 작업을 저장하지 못해 화면 이동을 취소했습니다.'));
@@ -307,28 +398,34 @@
         return;
       }
       try {
-        await this.loadTarget(queued.target, { historyMode: queued.historyMode });
+        await this.loadTarget(queued.target, {
+          historyMode: queued.historyMode,
+          popstate: queued.navigationOptions?.popstate || null,
+        });
       } finally {
         this.transitionRunning = false;
       }
       if (this.queuedNavigation) {
         const final = this.queuedNavigation;
         this.queuedNavigation = null;
-        this.requestNavigation(final.target, final.historyMode);
+        this.requestNavigation(final.target, final.historyMode, final.navigationOptions);
       }
     }
 
     beforeLeave() {
       if (!this.currentTarget) return Promise.resolve({ result: 'READY' });
+      if (this.failedLoad) return Promise.resolve({ result: 'READY' });
       if (!this.frameReady) return Promise.resolve({ result: 'ERROR', message: '현재 앱의 저장 연결을 확인할 수 없습니다.' });
       const id = createTransitionId(this.window.crypto);
       return new Promise((resolve) => {
         const timer = this.window.setTimeout(() => {
           if (this.pendingLeave?.id !== id) return;
           this.pendingLeave = null;
+          this.loading.hidden = true;
           resolve({ result: 'ERROR', message: '저장 확인 시간이 초과되어 화면 이동을 취소했습니다.' });
         }, LEAVE_TIMEOUT_MS);
         this.pendingLeave = { id, timer, resolve };
+        this.loading.hidden = false;
         this.loadingText.textContent = '현재 입력을 저장하고 검산하고 있습니다.';
         this.post(MESSAGE_TYPES.BEFORE_LEAVE, id, this.currentTarget);
       });
@@ -342,17 +439,18 @@
       pending.resolve(result);
     }
 
-    loadTarget(target, options = {}) {
+    beginHandshake(target, options = {}) {
       if (this.pendingLoad?.timer) this.window.clearTimeout(this.pendingLoad.timer);
       this.loadingTarget = target;
       this.retryTarget = target;
+      this.failedLoad = null;
       this.loadTransitionId = createTransitionId(this.window.crypto);
       this.frameReady = false;
       this.frameDocumentLoaded = false;
       this.frame.classList.remove('is-document-loaded');
       this.loading.hidden = false;
       this.loadingText.textContent = `${target.app.label} 앱을 준비하고 있습니다.`;
-      this.error.hidden = true;
+      if (!options.preserveFailedLoad) this.error.hidden = true;
       this.notice.hidden = true;
       this.updateStandalone(target);
       this.document.documentElement.dataset.nexusUiApp = target.app.id;
@@ -361,22 +459,28 @@
       return new Promise((resolve) => {
         const timer = this.window.setTimeout(() => {
           if (this.pendingLoad?.transitionId !== this.loadTransitionId) return;
-          this.pendingLoad = null;
           this.failLoad('앱 연결 신호를 받지 못했습니다. 현재 앱은 독립 주소로 열 수 있습니다.');
-          resolve(false);
         }, HANDSHAKE_TIMEOUT_MS);
         this.pendingLoad = {
           transitionId: this.loadTransitionId,
           historyMode: options.historyMode || 'push',
+          restoreTarget: options.restoreTarget === undefined ? this.currentTarget : options.restoreTarget,
+          popstate: options.popstate || null,
+          preserveFailedLoad: options.preserveFailedLoad || null,
           timer,
           resolve,
         };
+      });
+    }
+
+    loadTarget(target, options = {}) {
+      const handshake = this.beginHandshake(target, options);
       if (this.frame.hasAttribute('src') && this.frame.contentWindow) {
         this.frame.contentWindow.location.replace(target.url);
       } else {
         this.frame.src = target.url;
       }
-      });
+      return handshake;
     }
 
     completeLoad() {
@@ -386,12 +490,16 @@
       this.currentTarget = this.loadingTarget;
       this.loadingTarget = null;
       this.retryTarget = this.currentTarget;
+      this.failedLoad = pending.preserveFailedLoad;
       this.frameReady = true;
       this.loading.hidden = true;
-      this.error.hidden = true;
+      if (!this.failedLoad) this.error.hidden = true;
       this.setActiveHeader(this.currentTarget);
       this.commitHistory(this.currentTarget, pending.historyMode);
-      this.updateStandalone(this.currentTarget);
+      if (pending.historyMode === 'none' && pending.popstate?.toIndex != null) {
+        this.historyIndex = pending.popstate.toIndex;
+      }
+      this.updateStandalone(this.failedLoad?.target || this.currentTarget);
       this.post(MESSAGE_TYPES.THEME, this.loadTransitionId, this.currentTarget, { theme: this.theme() });
       this.pendingLoad = null;
       pending.resolve(true);
@@ -401,17 +509,49 @@
     failLoad(message) {
       if (this.pendingLoad?.timer) this.window.clearTimeout(this.pendingLoad.timer);
       const pending = this.pendingLoad;
+      const failedTarget = this.loadingTarget || this.currentTarget;
+      const restoreTarget = pending?.restoreTarget || this.currentTarget;
       this.pendingLoad = null;
+      this.loadingTarget = null;
+      this.frameReady = false;
+      this.failedLoad = failedTarget ? {
+        target: failedTarget,
+        historyMode: pending?.historyMode || 'replace',
+        restoreTarget: restoreTarget || null,
+        popstate: pending?.popstate || null,
+      } : null;
+      if (pending?.historyMode === 'none' && restoreTarget) {
+        if (!this.restorePopState(pending.popstate, restoreTarget)) this.commitHistory(restoreTarget, 'replace');
+      }
+      this.restoreCurrentTarget(restoreTarget);
       this.loading.hidden = true;
-      this.showLoadError(message, this.loadingTarget || this.currentTarget);
+      this.showLoadError(message, failedTarget);
       pending?.resolve?.(false);
     }
 
     retryCurrentTarget() {
-      const target = this.retryTarget || this.loadingTarget || this.currentTarget;
-      if (!target) return;
+      if (this.transitionRunning) return;
+      const recovery = this.failedLoad || (this.currentTarget ? {
+        target: this.currentTarget,
+        historyMode: 'replace',
+        restoreTarget: this.currentTarget,
+      } : null);
+      if (!recovery?.target) return;
+      if (recovery.historyMode === 'none' && recovery.popstate) {
+        const delta = recovery.popstate.toIndex - this.historyIndex;
+        if (delta !== 0) {
+          this.transitionRunning = true;
+          this.historyRetry = recovery;
+          this.window.history.go(delta);
+          return;
+        }
+      }
       this.transitionRunning = true;
-      this.loadTarget(target, { historyMode: this.currentTarget ? 'replace' : 'replace' })
+      this.loadTarget(recovery.target, {
+        historyMode: recovery.historyMode,
+        restoreTarget: recovery.restoreTarget,
+        popstate: recovery.popstate || null,
+      })
         .finally(() => { this.transitionRunning = false; });
     }
 
@@ -424,9 +564,29 @@
     commitHistory(target, mode) {
       if (mode === 'none') return;
       const href = workspaceUrlFor(target, this.workspaceHref);
-      const state = { nexusWorkspace: true, appId: target.app.id, route: target.route };
+      if (mode === 'push') this.historyIndex += 1;
+      const state = { nexusWorkspace: true, nexusWorkspaceIndex: this.historyIndex, appId: target.app.id, route: target.route };
       if (mode === 'replace') this.window.history.replaceState(state, '', href);
       else this.window.history.pushState(state, '', href);
+    }
+
+    restorePopState(popstate, target) {
+      if (!popstate || !Number.isInteger(popstate.fromIndex) || !Number.isInteger(popstate.toIndex)) return false;
+      const delta = popstate.fromIndex - popstate.toIndex;
+      if (delta === 0) return false;
+      const restore = {
+        expectedIndex: popstate.fromIndex,
+        target,
+        timer: 0,
+      };
+      restore.timer = this.window.setTimeout(() => {
+        if (this.historyRestore !== restore) return;
+        this.historyRestore = null;
+        this.commitHistory(target, 'replace');
+      }, 1500);
+      this.historyRestore = restore;
+      this.window.history.go(delta);
+      return true;
     }
 
     setActiveHeader(target) {
@@ -452,6 +612,14 @@
 
     updateStandalone(target) {
       if (target?.url) this.standalone.href = target.url;
+    }
+
+    restoreCurrentTarget(target) {
+      if (!target) return;
+      this.document.documentElement.dataset.nexusUiApp = target.app.id;
+      this.document.documentElement.dataset.nexusApp = target.app.id;
+      this.setActiveHeader(target);
+      this.updateStandalone(this.failedLoad?.target || target);
     }
 
     showLoadError(message, target) {
