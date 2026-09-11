@@ -1,4 +1,4 @@
-import { readShipmentOrderCandidate } from '../orderq/shipment-order-read-adapter.js?v=0.8.0';
+import { readShipmentOrderCandidate } from '../orderq/shipment-order-read-adapter.js?v=0.8.1';
 import { listShipmentDocumentsByOrder } from './shipment-result-repository.js?v=1.0.0';
 import {
   deriveShipmentProgress,

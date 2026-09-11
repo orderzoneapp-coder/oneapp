@@ -1,5 +1,5 @@
 import { getOrder, listOrders } from './order-intake-engine.js?v=0.8.0';
-import { createShipmentOrderSnapshot, shipmentSnapshotMatches } from './shipment-order-read-model.js?v=0.8.0';
+import { createShipmentOrderSnapshot, shipmentSnapshotMatches } from './shipment-order-read-model.js?v=0.8.1';
 
 export const SHIPMENT_ORDER_READ_STATUS = Object.freeze({
   READY: 'READY',

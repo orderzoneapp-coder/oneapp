@@ -271,7 +271,7 @@
     async function refreshShipmentStatuses(orders) {
       shipmentStatusCache.clear();
       try {
-        const { readShipmentResultsByOrder } = await import('../orderops/shipment-result-read-adapter.js?v=1.0.0');
+        const { readShipmentResultsByOrder } = await import('../orderops/shipment-result-read-adapter.js?v=1.0.1');
         const results = await Promise.all(orders.slice(0, 200).map(order => readShipmentResultsByOrder(order.orderId)));
         results.forEach(result => shipmentStatusCache.set(result.orderId, result));
       } catch (_) {}

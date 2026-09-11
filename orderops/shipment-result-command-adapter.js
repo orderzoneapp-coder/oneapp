@@ -1,7 +1,7 @@
-import { readShipmentOrderCandidate } from '../orderq/shipment-order-read-adapter.js?v=0.8.0';
+import { readShipmentOrderCandidate } from '../orderq/shipment-order-read-adapter.js?v=0.8.1';
 import { buildShipmentResult, buildShipmentReversal, SHIPMENT_STATUS } from './shipment-result-core.js?v=1.0.0';
 import { commitShipmentBundle, listShipmentDocumentsByOrder, readShipmentDocument } from './shipment-result-repository.js?v=1.0.0';
-import { readShipmentResultsByOrder } from './shipment-result-read-adapter.js?v=1.0.0';
+import { readShipmentResultsByOrder } from './shipment-result-read-adapter.js?v=1.0.1';
 
 export class ShipmentOrderConflictError extends Error {
   constructor(result) {
