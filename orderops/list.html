@@ -3069,6 +3069,15 @@
           prepareHeaderButton(cloudLoadButton, "Cloud 완료본 불러오기"),
         );
         primaryActions.append(moreMenu);
+        const settingsButton = document.getElementById("headerSettingsButton");
+        const compactHeaderMedia = window.matchMedia("(max-width: 639px)");
+        const syncCompactHeaderActions = () => {
+          if (!settingsButton) return;
+          if (compactHeaderMedia.matches) moreMenuItems.append(settingsButton);
+          else headerActions?.append(settingsButton);
+        };
+        syncCompactHeaderActions();
+        compactHeaderMedia.addEventListener?.("change", syncCompactHeaderActions);
         const sourceStatuses = document.createElement("div");
         sourceStatuses.className = "orderops-header-source-statuses";
         sourceStatuses.setAttribute("aria-live", "polite");
