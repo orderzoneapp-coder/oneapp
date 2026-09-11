@@ -314,14 +314,15 @@ try {
     'only the approved delivery-filter reset and inventory inspector close/reopen buttons may extend the former button baseline');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
-  const regionsBelowAppHeader = metrics => Object.fromEntries(Object.entries(metrics.regions).map(([key, value]) => [key, { ...value, y:value.y-metrics.appHeaderHeight }]));
   assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
-  assert.deepEqual(
-    regionsBelowAppHeader({ ...current, regions:{ sourceSelector:current.regions.sourceSelector, resultsPanel:current.regions.resultsPanel } }),
-    regionsBelowAppHeader({ ...baseline, regions:{ sourceSelector:baseline.regions.sourceSelector, resultsPanel:baseline.regions.resultsPanel } }),
-    'the source selector and outer results region must remain unchanged around the approved inner three-pane workbench');
-  assert.ok(current.regions.previewTable.x > current.regions.resultsPanel.x && current.regions.previewTable.width < current.regions.resultsPanel.width,
-    'the central preview table must remain inside the approved OrderOps left/center/right workbench');
+  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const sourceRect=source.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsSource:source.closest('[data-nexus-app-header="orderops"]')===header,sourceInside:sourceRect.top>=headerRect.top&&sourceRect.bottom<=headerRect.bottom,resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
+  assert.equal(rebuiltPlacement.headerOwnsSource && rebuiltPlacement.sourceInside && rebuiltPlacement.resultsBelow && rebuiltPlacement.resultsWidth > 0, true,
+    'the approved OrderOps rebuild must place source tools inside the app header and the center pane below it');
+  const rebuiltPanes = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');return [...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane)})()`);
+  assert.deepEqual(rebuiltPanes, ['reference', 'work', 'result'],
+    'the rebuilt OrderOps panes must be direct children of the same workspace');
+  assert.ok(current.regions.previewTable.x >= current.regions.resultsPanel.x && current.regions.previewTable.width <= current.regions.resultsPanel.width,
+    'the central preview table must remain within the rebuilt center pane');
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
