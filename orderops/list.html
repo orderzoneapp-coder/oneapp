@@ -16,7 +16,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260910-system-message-review"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260911-worker-workflow"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2049,14 +2049,42 @@
       font-size: 10px;
       font-weight: 900;
     }
+    .orderops-delivery-filters {
+      display: grid;
+      grid-template-columns: minmax(112px, 1fr) minmax(112px, 1fr) auto;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--slate-200);
+      background: #fff;
+    }
+    .orderops-delivery-filter { display: grid; gap: 3px; color: #475569; font-size: 9px; font-weight: 900; }
+    .orderops-delivery-filter select,
+    .orderops-delivery-filter-reset {
+      min-width: 0;
+      height: 28px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      color: #0f172a;
+      background: #fff;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .orderops-delivery-filter-reset { align-self: end; padding-inline: 8px; }
     .orderops-side-table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    .orderops-side-table { width: 100%; min-width: 560px; border-collapse: separate; border-spacing: 0; font-size: 10px; }
+    .orderops-side-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; font-size: 10px; }
     .orderops-inventory-table { min-width: 0; }
     .orderops-side-table th,
     .orderops-side-table td { padding: 6px 7px; border-right: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; color: #1f2937; text-align: left; vertical-align: top; }
     .orderops-side-table th { position: sticky; top: 0; z-index: 2; color: #1f2937; background: #e5e7eb; font-weight: 900; }
     .orderops-side-table tbody tr:nth-child(even) td { background: #f5f6f7; }
+    .orderops-side-table tbody tr[data-delivery-key] { cursor: pointer; }
+    .orderops-side-table tbody tr[data-delivery-key]:hover td { background: #ecfeff; }
+    .orderops-side-table tbody tr.orderops-selected-delivery-row td { background: #ccfbf1; box-shadow: inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
+    .orderops-side-table tbody tr.orderops-selected-delivery-row td:first-child { box-shadow: inset 2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
+    .orderops-side-table tbody tr.orderops-selected-delivery-row td:last-child { box-shadow: inset -2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
     .orderops-side-table td.number { text-align: right; font-variant-numeric: tabular-nums; }
+    .orderops-side-table .orderops-summary-item,
+    .orderops-side-table .orderops-summary-note { min-width: 160px; white-space: normal; overflow-wrap: anywhere; }
     .orderops-side-table .empty-table-cell { padding: 18px 10px; color: #64748b; text-align: center; }
     .orderops-manager-input {
       width: 100%;
@@ -2084,6 +2112,7 @@
     .orderops-central-table-wrap { flex: 1 1 auto; min-height: 280px; }
     .orderops-selected-product-row > td { box-shadow: inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
     .orderops-selected-product-row > td:first-child { box-shadow: inset 2px 0 0 #0f766e, inset 0 2px 0 #0f766e, inset 0 -2px 0 #0f766e; }
+    .orderops-selected-delivery-row > td { background: #ecfeff; }
 
     html[data-nexus-ui-theme="dark"] .orderops-results-workspace { background: #15181d; }
     html[data-nexus-ui-theme="dark"] .orderops-results-workspace > [data-nexus-pane] { border-color: #334155; background: #111827; }
@@ -2097,7 +2126,15 @@
     html[data-nexus-ui-theme="dark"] .orderops-side-table :is(th, td) { border-color: #475569; color: #e5e7eb; background: #111827; }
     html[data-nexus-ui-theme="dark"] .orderops-side-table th { background: #1f2937; }
     html[data-nexus-ui-theme="dark"] .orderops-side-table tbody tr:nth-child(even) td { background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-side-table tbody tr[data-delivery-key]:hover td,
+    html[data-nexus-ui-theme="dark"] .orderops-side-table tbody tr.orderops-selected-delivery-row td,
+    html[data-nexus-ui-theme="dark"] .orderops-selected-delivery-row > td { background: #12302f; }
     html[data-nexus-ui-theme="dark"] .orderops-delivery-distribution { border-color: #334155; background: #172033; }
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-filters { border-color: #334155; background: #111827; }
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-filter { color: #cbd5e1; }
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-filter :is(select),
+    html[data-nexus-ui-theme="dark"] .orderops-delivery-filter-reset,
+    html[data-nexus-ui-theme="dark"] .orderops-manager-input { border-color: #64748b; color: #f8fafc; background: #172033; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-identity { border-color: #334155; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric { border-color: #475569; background: #172033; }
     html[data-nexus-ui-theme="dark"] .orderops-inventory-metric--expected { border-color: #0f766e; background: #12302f; }
@@ -2117,7 +2154,8 @@
       }
       .print-area tr:hover td,
       .print-area tr[aria-selected="true"] td,
-      .print-area .orderops-selected-product-row td { background: #fff !important; box-shadow: none !important; }
+      .print-area .orderops-selected-product-row td,
+      .print-area .orderops-selected-delivery-row td { background: #fff !important; box-shadow: none !important; }
       body.printing-table .print-area tbody tr.manager-color-row[style*="--manager-color"] > td {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
@@ -2317,13 +2355,22 @@
       <div class="orderops-results-workspace" data-nexus-workspace="orderops" aria-label="출고관리 요약·작업·재고 조회">
         <aside class="orderops-side-panel" data-nexus-pane="reference" aria-label="배송 배정 요약">
           <div class="orderops-side-panel__head">
-            <div><h3>배송 배정 요약</h3><p id="deliverySummaryCount">고객·배송 단위 0건</p></div>
+            <div><h3>주문서별 배송 배정</h3><p id="deliverySummaryCount">현재 작업 0건</p></div>
           </div>
           <div class="orderops-delivery-distribution" id="deliveryDistribution" aria-label="담당자별 배송 건수"></div>
+          <div class="orderops-delivery-filters" aria-label="주문서 조회 필터">
+            <label class="orderops-delivery-filter">담당자별 조회
+              <select id="deliveryManagerFilter" aria-label="좌측 주문서 담당자별 조회"><option value="">전체 담당자</option></select>
+            </label>
+            <label class="orderops-delivery-filter">지역 조회
+              <select id="deliveryRegionFilter" aria-label="좌측 주문서 지역 조회"><option value="">전체 지역</option></select>
+            </label>
+            <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button">전체</button>
+          </div>
           <div class="orderops-side-table-wrap">
-            <table class="orderops-side-table" aria-label="고객 배송 배정 요약">
-              <thead><tr><th>창고</th><th>담당자</th><th>지역</th><th>거래처/주문</th><th>적요(직원)</th></tr></thead>
-              <tbody id="deliverySummaryBody"><tr><td colspan="5" class="empty-table-cell">분석 후 배송 단위가 표시됩니다.</td></tr></tbody>
+            <table class="orderops-side-table" aria-label="주문서별 배송 배정 요약">
+              <thead><tr><th>주문번호</th><th>창고</th><th>담당자</th><th>지역</th><th>거래처</th><th>품목</th><th>수량</th><th>금액</th><th>적요(직원)</th></tr></thead>
+              <tbody id="deliverySummaryBody"><tr><td colspan="9" class="empty-table-cell">분석 후 주문서가 표시됩니다.</td></tr></tbody>
             </table>
           </div>
         </aside>
@@ -2626,6 +2673,10 @@
         shipmentKeepWorkAcknowledged: false,
         shipmentDraft: Object.create(null),
         selectedProductCode: "",
+        selectedDeliveryKey: "",
+        selectedDeliverySourceRows: new Set(),
+        deliveryManagerFilter: "",
+        deliveryRegionFilter: "",
         inventory: null,
         purchases: null,
         sales: null,
@@ -2757,6 +2808,9 @@
         deliverySummaryCount: document.getElementById("deliverySummaryCount"),
         deliveryDistribution: document.getElementById("deliveryDistribution"),
         deliverySummaryBody: document.getElementById("deliverySummaryBody"),
+        deliveryManagerFilter: document.getElementById("deliveryManagerFilter"),
+        deliveryRegionFilter: document.getElementById("deliveryRegionFilter"),
+        deliveryFilterReset: document.getElementById("deliveryFilterReset"),
         inventoryInspector: document.getElementById("inventoryInspector"),
         inventoryInspectorClose: document.getElementById("inventoryInspectorClose"),
         inventoryInspectorReopen: document.getElementById("inventoryInspectorReopen"),
@@ -3138,7 +3192,11 @@
         const updatedAt = options.updatedAt || new Date().toISOString();
         const payload = engine.buildLocalRecoveryPayload(
           workspace,
-          { activePreview: options.activePreview || state.activePreview },
+          {
+            activePreview: options.activePreview || state.activePreview,
+            selectedProductCode: options.selectedProductCode ?? state.selectedProductCode,
+            selectedDeliveryKey: options.selectedDeliveryKey ?? state.selectedDeliveryKey,
+          },
           {
             cloudUrl: options.cloudUrl ?? elements.cloudUrlInput.value,
             savedBy: options.savedBy ?? elements.cloudSavedByInput.value,
@@ -3503,6 +3561,13 @@
         engine.ensureNoticeState(state.workspace);
         engine.ensureSubstitutionHistory(state.workspace);
         state.activePreview = payload.ui?.activePreview || "validation";
+        state.selectedProductCode = engine.normalizeProductCode(payload.ui?.selectedProductCode);
+        state.selectedDeliveryKey = String(payload.ui?.selectedDeliveryKey || "");
+        const selectedDelivery = engine.getDeliverySummaryRows(state.workspace)
+          .find((row) => row.deliveryKey === state.selectedDeliveryKey);
+        state.selectedDeliverySourceRows = new Set(selectedDelivery?.sourceRowNumbers || []);
+        state.deliveryManagerFilter = "";
+        state.deliveryRegionFilter = "";
         state.searchQuery = "";
         state.shortageFocus = false;
         state.specificationFilters.clear();
@@ -3576,10 +3641,19 @@
           throw new Error("교체할 주문현황·창고별재고 파일을 먼저 선택하세요.");
         }
         const candidateWorkspace = await analyzeCurrentInputs();
-        await persistLocalWorkspace(candidateWorkspace, { activePreview: "validation" });
+        await persistLocalWorkspace(candidateWorkspace, {
+          activePreview: "validation",
+          selectedProductCode: "",
+          selectedDeliveryKey: "",
+        });
         clearSubstitutionSelection();
         state.workspace = candidateWorkspace;
         state.activePreview = "validation";
+        state.selectedProductCode = "";
+        state.selectedDeliveryKey = "";
+        state.selectedDeliverySourceRows.clear();
+        state.deliveryManagerFilter = "";
+        state.deliveryRegionFilter = "";
         resetResultViewFilters();
         renderResults();
         showToast("새 분석·저장·재읽기·SHA-256 검산 후 복구 포인터를 안전하게 교체했습니다.");
@@ -3942,6 +4016,11 @@
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
         clearSubstitutionSelection();
+        state.selectedProductCode = "";
+        state.selectedDeliveryKey = "";
+        state.selectedDeliverySourceRows.clear();
+        state.deliveryManagerFilter = "";
+        state.deliveryRegionFilter = "";
         state.workspace = null;
         renderSourceViewCards();
         elements.resultsPanel.classList.add("hidden");
@@ -4117,7 +4196,7 @@
 
       function orderQSourceAdapter() {
         if (!orderQSourceAdapterPromise) {
-          orderQSourceAdapterPromise = import("./orderq-order-source-adapter.js?v=1.1.0");
+          orderQSourceAdapterPromise = import("./orderq-order-source-adapter.js?v=1.2.0");
         }
         return orderQSourceAdapterPromise;
       }
@@ -5815,50 +5894,110 @@
       }
 
       function deliverySummaryRows() {
-        const groups = new Map();
-        (state.workspace?.orders || []).forEach((row) => {
-          const customerKey = orderCustomerKey(row);
-          const deliveryKey = JSON.stringify([
-            customerKey,
-            String(row?.warehouse || "").trim(),
-            String(row?.orderNumber || row?.group || "").trim(),
-          ]);
-          if (!groups.has(deliveryKey)) {
-            groups.set(deliveryKey, {
-              customerKey,
-              stableCustomerIdentity: Boolean(row?.customerId || row?.customerCode),
-              warehouse: String(row?.warehouse || "").trim(),
-              region: String(row?.region || "").trim(),
-              customer: String(row?.customer || "").trim(),
-              order: String(row?.orderNumber || row?.group || "").trim(),
-              managers: new Set(),
-              employeeNotes: new Set(),
-            });
-          }
-          const group = groups.get(deliveryKey);
-          const manager = String(row?.manager || "").trim();
-          const employeeNote = String(row?.note1Original ?? row?.note1 ?? "").trim();
-          if (manager) group.managers.add(manager);
-          if (employeeNote) group.employeeNotes.add(employeeNote);
-          if (!group.region && row?.region) group.region = String(row.region).trim();
+        return typeof engine.getDeliverySummaryRows === "function"
+          ? engine.getDeliverySummaryRows(state.workspace)
+          : [];
+      }
+
+      const DELIVERY_MIXED_FILTER = "__ORDEROPS_MIXED__";
+      const DELIVERY_UNASSIGNED_FILTER = "__ORDEROPS_UNASSIGNED__";
+
+      function filteredDeliverySummaryRows(rows = deliverySummaryRows()) {
+        return rows.filter((row) => {
+          const managerMatches = !state.deliveryManagerFilter || (
+            state.deliveryManagerFilter === DELIVERY_MIXED_FILTER
+              ? row.managerMixed
+              : state.deliveryManagerFilter === DELIVERY_UNASSIGNED_FILTER
+                ? row.managerUnassigned
+                : row.managerValues.includes(state.deliveryManagerFilter)
+          );
+          const regionMatches = !state.deliveryRegionFilter || (
+            state.deliveryRegionFilter === DELIVERY_MIXED_FILTER
+              ? row.regionMixed
+              : state.deliveryRegionFilter === DELIVERY_UNASSIGNED_FILTER
+                ? row.regionUnassigned
+                : row.regionValues.includes(state.deliveryRegionFilter)
+          );
+          return managerMatches && regionMatches;
         });
-        return [...groups.values()].map((row) => {
-          const managers = [...row.managers];
-          return {
-            ...row,
-            manager: managers.length > 1 ? `혼합(${managers.join(", ")})` : managers[0] || "",
-            mixed: managers.length > 1,
-            employeeNote: [...row.employeeNotes].join(" / "),
-          };
+      }
+
+      function deliveryQuantityText(row) {
+        const parts = (row.quantityGroups || []).flatMap((quantity) => {
+          const labels = [];
+          if (quantity.valueCount > 0) labels.push(`${formatNumber(quantity.total)}${quantity.unit ? ` ${quantity.unit}` : " (단위 미지정)"}`);
+          if (quantity.blankCount > 0) labels.push(`공란 ${formatNumber(quantity.blankCount)}건${quantity.unit ? ` (${quantity.unit})` : ""}`);
+          if (quantity.invalidCount > 0) labels.push(`오류 ${formatNumber(quantity.invalidCount)}건${quantity.unit ? ` (${quantity.unit})` : ""}`);
+          return labels;
         });
+        return parts.join(" / ") || "공란";
+      }
+
+      function deliveryAmountText(row) {
+        const parts = [];
+        if (row.amountValueCount > 0) parts.push(`${formatNumber(row.amountTotal)}원`);
+        if (row.amountBlankCount > 0) parts.push(`공란 ${formatNumber(row.amountBlankCount)}건`);
+        if (row.amountInvalidCount > 0) parts.push(`오류 ${formatNumber(row.amountInvalidCount)}건`);
+        return parts.join(" / ") || "공란";
+      }
+
+      function deliveryItemText(row) {
+        const item = row.representativeItem || {};
+        const identity = item.productName || item.productCode || "품목 미지정";
+        const detail = [item.specification, item.unit].filter(Boolean).join(" · ");
+        return `${identity}${detail ? ` (${detail})` : ""}${row.additionalItemCount > 0 ? ` 외 ${formatNumber(row.additionalItemCount)}건` : ""}`;
+      }
+
+      function renderDeliveryFilterOptions(select, currentValue, allLabel, namedValues, { mixed, unassigned } = {}) {
+        if (!select) return "";
+        const retainedNamedValues = currentValue && ![DELIVERY_MIXED_FILTER, DELIVERY_UNASSIGNED_FILTER].includes(currentValue) &&
+          !namedValues.includes(currentValue)
+          ? [...namedValues, currentValue].sort((a, b) => a.localeCompare(b, "ko"))
+          : namedValues;
+        const options = [
+          ["", allLabel],
+          ...(mixed || currentValue === DELIVERY_MIXED_FILTER ? [[DELIVERY_MIXED_FILTER, "혼합"]] : []),
+          ...(unassigned || currentValue === DELIVERY_UNASSIGNED_FILTER ? [[DELIVERY_UNASSIGNED_FILTER, "미지정"]] : []),
+          ...retainedNamedValues.map((value) => [value, value]),
+        ];
+        const validValue = options.some(([value]) => value === currentValue) ? currentValue : "";
+        select.innerHTML = options.map(([value, label]) =>
+          `<option value="${escapeHtml(value)}" ${value === validValue ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+        return validValue;
       }
 
       function renderDeliverySummary() {
         if (!elements.deliverySummaryBody) return;
-        const rows = deliverySummaryRows();
-        elements.deliverySummaryCount.textContent = `고객·배송 단위 ${formatNumber(rows.length)}건`;
-        const distribution = rows.reduce((counts, row) => {
-          const key = row.mixed ? "혼합" : row.manager || "미지정";
+        const allRows = deliverySummaryRows();
+        if (state.selectedDeliveryKey && !allRows.some((row) => row.deliveryKey === state.selectedDeliveryKey)) {
+          state.selectedDeliveryKey = "";
+          state.selectedDeliverySourceRows.clear();
+        }
+        const namedManagers = [...new Set(allRows.flatMap((row) => row.managerValues).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "ko"));
+        const namedRegions = [...new Set(allRows.flatMap((row) => row.regionValues).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, "ko"));
+        state.deliveryManagerFilter = renderDeliveryFilterOptions(
+          elements.deliveryManagerFilter,
+          state.deliveryManagerFilter,
+          "전체 담당자",
+          namedManagers,
+          { mixed: allRows.some((row) => row.managerMixed), unassigned: allRows.some((row) => row.managerUnassigned) },
+        );
+        state.deliveryRegionFilter = renderDeliveryFilterOptions(
+          elements.deliveryRegionFilter,
+          state.deliveryRegionFilter,
+          "전체 지역",
+          namedRegions,
+          { mixed: allRows.some((row) => row.regionMixed), unassigned: allRows.some((row) => row.regionUnassigned) },
+        );
+        const rows = filteredDeliverySummaryRows(allRows);
+        const filtered = Boolean(state.deliveryManagerFilter || state.deliveryRegionFilter);
+        elements.deliverySummaryCount.textContent = filtered
+          ? `현재 작업 ${formatNumber(allRows.length)}건 · 조회 ${formatNumber(rows.length)}건`
+          : `현재 작업 ${formatNumber(allRows.length)}건`;
+        const distribution = allRows.reduce((counts, row) => {
+          const key = row.managerMixed ? "혼합" : row.manager || "미지정";
           counts[key] = (counts[key] || 0) + 1;
           return counts;
         }, Object.create(null));
@@ -5866,23 +6005,52 @@
           ? Object.entries(distribution).sort(([a], [b]) => a.localeCompare(b, "ko")).map(([manager, count]) =>
               `<span class="orderops-distribution-chip">${escapeHtml(manager)} ${formatNumber(count)}건</span>`).join("")
           : '<span class="orderops-distribution-chip">배송 0건</span>';
-        elements.orderOpsManagerOptions.innerHTML = [...new Set((state.workspace?.orders || [])
-          .map((row) => String(row?.manager || "").trim()).filter(Boolean))]
-          .sort((a, b) => a.localeCompare(b, "ko"))
+        elements.orderOpsManagerOptions.innerHTML = namedManagers
           .map((manager) => `<option value="${escapeHtml(manager)}"></option>`).join("");
         elements.deliverySummaryBody.innerHTML = rows.length ? rows.map((row) => `
-          <tr data-delivery-customer-key="${escapeHtml(row.customerKey)}">
+          <tr class="${row.deliveryKey === state.selectedDeliveryKey ? "orderops-selected-delivery-row" : ""}"
+            data-delivery-key="${escapeHtml(row.deliveryKey)}" data-delivery-customer-key="${escapeHtml(row.customerKey)}"
+            aria-selected="${row.deliveryKey === state.selectedDeliveryKey}">
+            <td><strong>${escapeHtml(row.orderNumber || "주문번호 미지정")}</strong></td>
             <td>${escapeHtml(row.warehouse || "미지정")}</td>
             <td><input class="orderops-manager-input" type="text" list="orderOpsManagerOptions"
               data-summary-manager data-customer-key="${escapeHtml(row.customerKey)}"
-              value="${escapeHtml(row.mixed ? "" : row.manager)}" placeholder="${row.mixed ? escapeHtml(row.manager) : "담당자"}"
+              data-delivery-key="${escapeHtml(row.deliveryKey)}"
+              value="${escapeHtml(row.managerMixed ? "" : row.manager)}" placeholder="${escapeHtml(row.managerLabel)}"
               aria-label="${escapeHtml(row.customer || "거래처")} 담당자 변경"></td>
-            <td>${escapeHtml(row.region || "미지정")}</td>
-            <td><strong>${escapeHtml(row.customer || "거래처 미지정")}</strong><br>${escapeHtml(row.order || "주문번호 미지정")}
-              ${row.stableCustomerIdentity ? "" : '<span class="orderops-customer-key-warning">고객 코드 없음 · 이 배송 단위만 변경</span>'}</td>
-            <td>${escapeHtml(row.employeeNote || "-")}</td>
+            <td title="${escapeHtml(row.regionLabel)}">${escapeHtml(row.regionLabel)}</td>
+            <td><strong>${escapeHtml(row.customer || "거래처 미지정")}</strong>
+              ${row.stableCustomerIdentity ? "" : '<span class="orderops-customer-key-warning">고객 코드 없음 · 이 주문·창고 단위만 변경</span>'}</td>
+            <td class="orderops-summary-item" title="${escapeHtml(deliveryItemText(row))}">${escapeHtml(deliveryItemText(row))}</td>
+            <td class="number">${escapeHtml(deliveryQuantityText(row))}</td>
+            <td class="number">${escapeHtml(deliveryAmountText(row))}</td>
+            <td class="orderops-summary-note" title="${escapeHtml(row.employeeNote || "")}">${escapeHtml(row.employeeNote || "-")}</td>
           </tr>`).join("")
-          : '<tr><td colspan="5" class="empty-table-cell">분석 후 배송 단위가 표시됩니다.</td></tr>';
+          : `<tr><td colspan="9" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "분석 후 주문서가 표시됩니다."}</td></tr>`;
+      }
+
+      function focusDeliveryInCentral(deliveryKey) {
+        const summary = deliverySummaryRows().find((row) => row.deliveryKey === deliveryKey);
+        if (!summary) return;
+        state.selectedDeliveryKey = summary.deliveryKey;
+        state.selectedDeliverySourceRows = new Set(summary.sourceRowNumbers || []);
+        if (state.activePreview !== "allocations") activatePreview("allocations");
+        else {
+          renderPreview();
+          scheduleLocalSave();
+        }
+        window.requestAnimationFrame(() => {
+          const target = [...state.selectedDeliverySourceRows]
+            .map((sourceRowNumber) => elements.previewTable.querySelector(`[data-grid-row-key="order:${sourceRowNumber}"]`))
+            .find(Boolean);
+          if (!target) {
+            showToast("선택한 주문서는 중앙의 현재 검색·필터에서 숨겨져 있습니다.", true);
+            return;
+          }
+          target.scrollIntoView({ block: "center", inline: "nearest" });
+          target.setAttribute("tabindex", "-1");
+          target.focus({ preventScroll: true });
+        });
       }
 
       function confirmedQuantityForProduct(productCode) {
@@ -5898,29 +6066,41 @@
         if (!elements.inventoryInspectorBody) return;
         const inventoryView = state.workspace && typeof engine.getInventoryViewRows === "function"
           ? engine.getInventoryViewRows(state.workspace) : null;
-        const availableCodes = new Set((inventoryView?.rows || []).map((row) => engine.normalizeProductCode(row?.productCode)).filter(Boolean));
-        let productCode = engine.normalizeProductCode(state.selectedProductCode);
-        if (!availableCodes.has(productCode)) productCode = [...availableCodes][0] || "";
-        state.selectedProductCode = productCode;
+        const productCode = engine.normalizeProductCode(state.selectedProductCode);
         const inventoryRow = inventoryView?.rows?.find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
         const allocation = (state.workspace?.allocations || []).find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
-        if (!productCode || !inventoryRow) {
+        const order = (state.workspace?.orders || []).find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
+        if (!productCode) {
           elements.inventoryInspectorIdentity.innerHTML = '<strong>상품을 선택하세요</strong><span>중앙 표의 상품행을 선택하면 표시됩니다.</span>';
           elements.inventoryInspectorMetrics.replaceChildren();
           elements.inventoryInspectorBody.innerHTML = '<tr><td colspan="2" class="empty-table-cell">선택 상품이 없습니다.</td></tr>';
           return;
         }
-        elements.inventoryInspectorIdentity.innerHTML = `<strong>${escapeHtml(inventoryRow.productName || allocation?.productName || productCode)}</strong>
-          <span>${escapeHtml(productCode)} · ${escapeHtml(inventoryRow.specification || allocation?.specification || "규격 미지정")}</span>`;
+        const productName = inventoryRow?.productName || allocation?.productName || order?.productName || productCode;
+        const specification = inventoryRow?.specification || allocation?.specification || order?.specification || "규격 미지정";
+        const unit = inventoryRow?.unit || allocation?.sourceUnit || order?.sourceUnit || "단위 미지정";
+        const inventoryMissing = !inventoryRow || inventoryRow.inventoryMissing === true;
+        elements.inventoryInspectorIdentity.innerHTML = `<strong>${escapeHtml(productName)}</strong>
+          <span>${escapeHtml(productCode)} · ${escapeHtml(specification)} · ${escapeHtml(unit)}</span>
+          ${inventoryMissing ? '<span class="orderops-customer-key-warning">재고자료 없음 · 선택 상품을 유지합니다.</span>' : ""}`;
         const confirmed = confirmedQuantityForProduct(productCode);
+        const selectedOrderQuantity = inventoryRow?.orderQuantity ?? (state.workspace?.orders || []).reduce((sum, row) => {
+          if (engine.normalizeProductCode(row?.productCode) !== productCode) return sum;
+          const parsed = engine.parseNumericCell(row?.quantity);
+          return parsed.ok && !parsed.blank ? sum + parsed.value : sum;
+        }, 0);
         const metrics = [
-          ["현재 재고", inventoryRow.stockTotal, ""],
-          ["주문수량", inventoryRow.orderQuantity, ""],
-          ["예상 잔량", inventoryRow.remainingQuantity, "orderops-inventory-metric--expected"],
+          ["현재 재고", inventoryMissing ? null : inventoryRow.stockTotal, ""],
+          ["주문수량", selectedOrderQuantity, ""],
+          ["예상 잔량", inventoryMissing ? null : inventoryRow.remainingQuantity, "orderops-inventory-metric--expected"],
           ["실제 출고 확정", confirmed, "orderops-inventory-metric--actual"],
         ];
         elements.inventoryInspectorMetrics.innerHTML = metrics.map(([label, value, className]) => `
           <div class="orderops-inventory-metric ${className}"><span>${label}</span><strong>${value === null ? "—" : escapeHtml(formatNumber(value))}</strong></div>`).join("");
+        if (inventoryMissing) {
+          elements.inventoryInspectorBody.innerHTML = '<tr><td colspan="2" class="empty-table-cell">선택한 상품의 창고별 재고자료가 없습니다.</td></tr>';
+          return;
+        }
         const warehouseRows = (inventoryView.columns || []).map((column, index) => ({ column, value: inventoryRow.values?.[index] }))
           .filter(({ column }) => column.role === "warehouseQuantity");
         elements.inventoryInspectorBody.innerHTML = warehouseRows.length ? warehouseRows.map(({ column, value }) => `
@@ -6459,6 +6639,8 @@
               const managerPrintColorStyle = options.printOutput === true && managerColor
                 ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
               const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
+              const selectedDelivery = Number(sourceRow?.sourceRowNumber) > 0 &&
+                state.selectedDeliverySourceRows.has(Number(sourceRow.sourceRowNumber));
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 previewId === "unresolved" && sourceRow?.integrity?.status !== "READY" ? "unresolved-review-required-row" : "",
@@ -6468,6 +6650,7 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
+                selectedDelivery ? "orderops-selected-delivery-row" : "",
                 engine.normalizeProductCode(sourceRow?.productCode) === engine.normalizeProductCode(state.selectedProductCode) ? "orderops-selected-product-row" : "",
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
                 exactBoxUnit(sourceRow) ? "box-unit-row" : "",
@@ -7087,7 +7270,7 @@
           return;
         }
         try {
-          const { readShipmentResultsByOrder } = await import("./shipment-result-read-adapter.js?v=1.0.0");
+          const { readShipmentResultsByOrder } = await import("./shipment-result-read-adapter.js?v=1.0.1");
           state.shipmentResults = await readShipmentResultsByOrder(snapshot.orderId);
           const currentSnapshot = state.shipmentResults?.currentSnapshot;
           if (currentSnapshot && (
@@ -7139,7 +7322,7 @@
         state.shipmentCommandError = "";
         renderShipmentExecution();
         try {
-          const commands = await import("./shipment-result-command-adapter.js?v=1.0.0");
+          const commands = await import("./shipment-result-command-adapter.js?v=1.0.1");
           const common = {
             commandId: shipmentCommandId(intent),
             orderId: snapshot.orderId,
@@ -7175,7 +7358,7 @@
         const reason = window.prompt("출고 취소 사유를 입력하세요.", "주문 변경으로 출고 재검토");
         if (!reason || !window.confirm("확정 출고를 취소 이력으로 기록하시겠습니까?")) return;
         try {
-          const { reverseShipment } = await import("./shipment-result-command-adapter.js?v=1.0.0");
+          const { reverseShipment } = await import("./shipment-result-command-adapter.js?v=1.0.1");
           await reverseShipment({ shipmentDocumentId, commandId: shipmentCommandId("REVERSE"), actor: state.orderQSource?.snapshot?.assigneeName || "LOCAL_USER", reason });
           state.shipmentDraft = Object.create(null);
           elements.shipmentExecutionRows.replaceChildren();
@@ -7341,6 +7524,11 @@
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
           clearSubstitutionSelection();
+          state.selectedProductCode = "";
+          state.selectedDeliveryKey = "";
+          state.selectedDeliverySourceRows.clear();
+          state.deliveryManagerFilter = "";
+          state.deliveryRegionFilter = "";
           state.workspace = await analyzeCurrentInputs();
           state.activePreview = "validation";
           resetResultViewFilters();
@@ -7422,6 +7610,8 @@
           purchaseUploadRowCount: purchaseSelection.included.length,
           purchaseInputs: engine.getPurchaseInputs(state.workspace),
           activePreview: state.activePreview,
+          selectedProductCode: state.selectedProductCode,
+          selectedDeliveryKey: state.selectedDeliveryKey,
           workspace: state.workspace,
         };
         if (engine.containsCloudTokenKey(canonical)) {
@@ -7573,6 +7763,13 @@
           engine.ensureSubstitutionHistory(state.workspace);
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
           state.activePreview = plan.activePreview || "validation";
+          state.selectedProductCode = engine.normalizeProductCode(plan.selectedProductCode);
+          state.selectedDeliveryKey = String(plan.selectedDeliveryKey || "");
+          const selectedDelivery = engine.getDeliverySummaryRows(state.workspace)
+            .find((row) => row.deliveryKey === state.selectedDeliveryKey);
+          state.selectedDeliverySourceRows = new Set(selectedDelivery?.sourceRowNumbers || []);
+          state.deliveryManagerFilter = "";
+          state.deliveryRegionFilter = "";
           state.searchQuery = "";
           state.shortageFocus = false;
           state.specificationFilters.clear();
@@ -8284,16 +8481,57 @@
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.inventoryInspectorClose.addEventListener("click", () => setInventoryInspectorOpen(false));
       elements.inventoryInspectorReopen.addEventListener("click", () => setInventoryInspectorOpen(true));
+      elements.deliveryManagerFilter.addEventListener("change", () => {
+        state.deliveryManagerFilter = elements.deliveryManagerFilter.value;
+        renderDeliverySummary();
+      });
+      elements.deliveryRegionFilter.addEventListener("change", () => {
+        state.deliveryRegionFilter = elements.deliveryRegionFilter.value;
+        renderDeliverySummary();
+      });
+      elements.deliveryFilterReset.addEventListener("click", () => {
+        state.deliveryManagerFilter = "";
+        state.deliveryRegionFilter = "";
+        renderDeliverySummary();
+      });
+      elements.deliverySummaryBody.addEventListener("click", (event) => {
+        if (event.target.closest("[data-summary-manager]")) return;
+        const row = event.target.closest("tr[data-delivery-key]");
+        if (row) focusDeliveryInCentral(row.dataset.deliveryKey);
+      });
       elements.deliverySummaryBody.addEventListener("change", (event) => {
         const input = event.target.closest("[data-summary-manager][data-customer-key]");
         if (!input || !state.workspace) return;
+        const inputs = [...elements.deliverySummaryBody.querySelectorAll("[data-summary-manager]")];
+        const inputIndex = Math.max(0, inputs.indexOf(input));
+        const scroller = input.closest(".orderops-side-table-wrap");
+        const scrollTop = scroller?.scrollTop || 0;
+        const scrollLeft = scroller?.scrollLeft || 0;
         try {
           const result = engine.setCustomerManager(state.workspace, input.dataset.customerKey, input.value, {
             actor: substitutionActor(), recordHistory: true,
           });
-          renderResults();
-          scheduleLocalSave();
-          showToast(`담당자를 고객 단위로 ${formatNumber(result.affectedRowCount)}개 상품행에 반영했습니다.`);
+          if (result.changedRowCount > 0) {
+            renderResults();
+            scheduleLocalSave();
+            showToast(`담당자를 현재 작업의 ${formatNumber(result.changedRowCount)}개 상품행에 반영했습니다.`);
+          } else {
+            renderDeliverySummary();
+            showToast("이미 같은 담당자로 배정되어 변경하지 않았습니다.");
+          }
+          window.requestAnimationFrame(() => {
+            const nextScroller = elements.deliverySummaryBody.closest(".orderops-side-table-wrap");
+            if (nextScroller) {
+              nextScroller.scrollTop = scrollTop;
+              nextScroller.scrollLeft = scrollLeft;
+            }
+            const nextInputs = [...elements.deliverySummaryBody.querySelectorAll("[data-summary-manager]")];
+            const nextInput = nextInputs[Math.min(inputIndex, Math.max(0, nextInputs.length - 1))];
+            if (nextInput) {
+              nextInput.focus({ preventScroll: true });
+              nextInput.select();
+            }
+          });
         } catch (error) {
           showToast(error.message || "담당자를 반영하지 못했습니다.", true);
           renderDeliverySummary();
@@ -8583,6 +8821,7 @@
             .forEach((row) => row.classList.remove("orderops-selected-product-row"));
           productRow.classList.add("orderops-selected-product-row");
           renderInventoryInspector();
+          scheduleLocalSave();
         }
       });
       elements.columnSortMenu.addEventListener("click", (event) => {

@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.22.0";
+  const ENGINE_VERSION = "3.23.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -137,14 +137,120 @@
 
   function customerWorkKey(row = {}) {
     const suppliedKey = cleanText(row.customerKey);
-    if (suppliedKey) return suppliedKey;
     const ownerId = cleanText(row.customerId || row.customerCode);
+    if (suppliedKey && (ownerId || !suppliedKey.startsWith("DELIVERY:"))) return suppliedKey;
     if (ownerId) return `CUSTOMER:${ownerId}`;
     const customer = normalizeOrderHeader(row.customer);
     const deliveryUnit = normalizeOrderHeader(row.orderNumber || row.group);
-    if (customer && deliveryUnit) return `DELIVERY:${customer}:${deliveryUnit}`;
+    const warehouse = normalizeOrderHeader(row.warehouse);
+    if (customer && deliveryUnit) return `DELIVERY:${customer}:${deliveryUnit}:${warehouse || "warehouse-unassigned"}`;
     const sourceRowNumber = Number(row.sourceRowNumber);
     return sourceRowNumber > 0 ? `SOURCE_ROW:${sourceRowNumber}` : "";
+  }
+
+  function getDeliverySummaryRows(workspace) {
+    const groups = new Map();
+    (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((row) => {
+      const customerKey = customerWorkKey(row);
+      const warehouse = cleanText(row?.warehouse);
+      const orderNumber = cleanText(row?.orderNumber || row?.group);
+      const deliveryKey = canonicalStringify([customerKey, warehouse, orderNumber]);
+      if (!groups.has(deliveryKey)) {
+        groups.set(deliveryKey, {
+          deliveryKey,
+          customerKey,
+          stableCustomerIdentity: Boolean(cleanText(row?.customerId || row?.customerCode)),
+          warehouse,
+          customer: cleanText(row?.customer),
+          orderNumber,
+          managers: new Set(),
+          regions: new Set(),
+          employeeNotes: new Set(),
+          sourceRowNumbers: [],
+          items: [],
+          quantityGroups: new Map(),
+          amountTotal: 0,
+          amountValueCount: 0,
+          amountBlankCount: 0,
+          amountInvalidCount: 0,
+        });
+      }
+      const group = groups.get(deliveryKey);
+      group.managers.add(cleanText(row?.manager));
+      group.regions.add(cleanText(row?.region));
+      const employeeNote = originalText(row?.note1Original ?? row?.note1).trim();
+      if (employeeNote) group.employeeNotes.add(employeeNote);
+      const sourceRowNumber = Number(row?.sourceRowNumber);
+      if (sourceRowNumber > 0) group.sourceRowNumbers.push(sourceRowNumber);
+      group.items.push({
+        productCode: normalizeProductCode(row?.productCode),
+        productName: cleanText(row?.productName),
+        specification: cleanText(row?.specification),
+        unit: cleanText(row?.sourceUnit),
+      });
+
+      const unit = cleanText(row?.sourceUnit);
+      if (!group.quantityGroups.has(unit)) {
+        group.quantityGroups.set(unit, { unit, total: 0, valueCount: 0, blankCount: 0, invalidCount: 0 });
+      }
+      const quantityGroup = group.quantityGroups.get(unit);
+      const quantity = parseNumericCell(row?.quantity);
+      if (!quantity.ok) quantityGroup.invalidCount += 1;
+      else if (quantity.blank) quantityGroup.blankCount += 1;
+      else {
+        quantityGroup.total = roundQuantity(quantityGroup.total + quantity.value);
+        quantityGroup.valueCount += 1;
+      }
+
+      const amount = parseNumericCell(row?.supplyAmount);
+      if (!amount.ok) group.amountInvalidCount += 1;
+      else if (amount.blank) group.amountBlankCount += 1;
+      else {
+        group.amountTotal = roundQuantity(group.amountTotal + amount.value);
+        group.amountValueCount += 1;
+      }
+    });
+
+    return [...groups.values()].map((group) => {
+      const managerValues = [...group.managers];
+      const namedManagers = managerValues.filter(Boolean);
+      const managerUnassigned = managerValues.includes("");
+      const managerMixed = managerValues.length > 1;
+      const managerParts = [...namedManagers, ...(managerUnassigned ? ["미지정"] : [])];
+      const regionValues = [...group.regions];
+      const namedRegions = regionValues.filter(Boolean);
+      const regionUnassigned = regionValues.includes("");
+      const regionMixed = regionValues.length > 1;
+      const regionParts = [...namedRegions, ...(regionUnassigned ? ["미지정"] : [])];
+      return {
+        deliveryKey: group.deliveryKey,
+        customerKey: group.customerKey,
+        stableCustomerIdentity: group.stableCustomerIdentity,
+        warehouse: group.warehouse,
+        customer: group.customer,
+        orderNumber: group.orderNumber,
+        manager: managerMixed ? "" : namedManagers[0] || "",
+        managerLabel: managerMixed ? `혼합(${managerParts.join(", ")})` : namedManagers[0] || "미지정",
+        managerValues,
+        managerMixed,
+        managerUnassigned,
+        region: regionMixed ? "" : namedRegions[0] || "",
+        regionLabel: regionMixed ? `혼합(${regionParts.join(", ")})` : namedRegions[0] || "미지정",
+        regionValues,
+        regionMixed,
+        regionUnassigned,
+        employeeNote: [...group.employeeNotes].join(" / "),
+        sourceRowNumbers: group.sourceRowNumbers,
+        representativeItem: group.items[0] || null,
+        additionalItemCount: Math.max(0, group.items.length - 1),
+        itemCount: group.items.length,
+        quantityGroups: [...group.quantityGroups.values()],
+        amountTotal: group.amountValueCount > 0 ? group.amountTotal : null,
+        amountValueCount: group.amountValueCount,
+        amountBlankCount: group.amountBlankCount,
+        amountInvalidCount: group.amountInvalidCount,
+      };
+    });
   }
 
   function normalizeCategoryCode(value) {
@@ -688,11 +794,13 @@
         const customer = cleanText(getField(row, columnMap, "거래처"));
         const group = cleanText(getField(row, columnMap, "그룹"));
         const orderNumber = cleanText(orderNumberValue);
+        const warehouse = cleanText(getField(row, columnMap, "창고"));
         const customerIdentity = {
           customerCode,
           customer,
           group,
           orderNumber,
+          warehouse,
           sourceRowNumber: rowIndex + 1,
         };
         rows.push({
@@ -703,7 +811,7 @@
           basisDateStatus: rowBasisDateStatus,
           basisDateCandidates,
           manager: cleanText(getField(row, columnMap, "담당")),
-          warehouse: cleanText(getField(row, columnMap, "창고")),
+          warehouse,
           sourceUnit: cleanText(getField(row, columnMap, "단위")),
           productCode: code,
           productName: cleanText(getField(row, columnMap, "품목명")),
@@ -1058,7 +1166,11 @@
       workspaceSchemaVersion: workspace.schemaVersion,
       updatedAt: cleanText(updatedAt) || new Date().toISOString(),
       workspace,
-      ui: { activePreview: cleanText(ui.activePreview) || "validation" },
+      ui: {
+        activePreview: cleanText(ui.activePreview) || "validation",
+        selectedProductCode: normalizeProductCode(ui.selectedProductCode),
+        selectedDeliveryKey: cleanText(ui.selectedDeliveryKey),
+      },
       settings: {
         cloudUrl: cleanText(settings.cloudUrl),
         savedBy: cleanText(settings.savedBy),
@@ -1721,6 +1833,7 @@
         productCode,
         productName: cleanText(inventory.productName),
         specification: cleanText(inventory.specification),
+        unit: cleanText(inventory.unit),
         values,
         inventoryTotal: stockTotal,
         stockTotal,
@@ -1766,6 +1879,7 @@
         productCode,
         productName: product.productName,
         specification: product.specification,
+        unit: product.unit,
         values,
         inventoryTotal: stockTotal,
         stockTotal,
@@ -2344,9 +2458,11 @@
     const nextValue = cleanText(value);
     const targets = (workspace.orders || []).filter((row) => customerWorkKey(row) === stableKey);
     if (!targets.length) throw new Error("담당자를 변경할 거래처 주문을 찾지 못했습니다.");
+    let changedRowCount = 0;
     targets.forEach((order) => {
       const previousValue = cleanText(order.manager);
       if (previousValue === nextValue) return;
+      changedRowCount += 1;
       order.customerKey = stableKey;
       order.manager = nextValue;
       appendSystemEditEvent(workspace, {
@@ -2359,8 +2475,13 @@
         nextValue,
       }, options);
     });
-    rebuildWorkspaceFromOrders(workspace);
-    return { customerKey: stableKey, manager: nextValue, affectedRowCount: targets.length };
+    if (changedRowCount > 0) rebuildWorkspaceFromOrders(workspace);
+    return {
+      customerKey: stableKey,
+      manager: nextValue,
+      affectedRowCount: targets.length,
+      changedRowCount,
+    };
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
@@ -2979,6 +3100,7 @@
     normalizeProductCode,
     normalizeOrderHeader,
     customerWorkKey,
+    getDeliverySummaryRows,
     normalizeCategoryCode,
     canonicalStringify,
     containsCloudTokenKey,

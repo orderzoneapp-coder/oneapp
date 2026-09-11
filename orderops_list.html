@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260910-system-message-review"></script>
+  <script src="orderFulfillmentEngine.js?v=20260911-worker-workflow"></script>
   <script src="orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -3707,7 +3707,7 @@
         if (!orderId) return;
         setSystemMessage("ORDER Q 주문 확인 중 · 주문 Revision과 출고대상을 읽고 있습니다");
         try {
-          const { loadOrderQOrderSource } = await import("./orderops/orderq-order-source-adapter.js?v=1.0.0");
+          const { loadOrderQOrderSource } = await import("./orderops/orderq-order-source-adapter.js?v=1.2.0");
           const result = await loadOrderQOrderSource(orderId);
           state.orderQSource = result;
           if (result.status !== "READY") {
@@ -6051,7 +6051,7 @@
           return;
         }
         try {
-          const { readShipmentResultsByOrder } = await import("./orderops/shipment-result-read-adapter.js?v=1.0.0");
+          const { readShipmentResultsByOrder } = await import("./orderops/shipment-result-read-adapter.js?v=1.0.1");
           state.shipmentResults = await readShipmentResultsByOrder(snapshot.orderId);
         } catch (error) {
           state.shipmentResults = { status: "ERROR", results: [], netByOrderItem: {}, reviewRequired: false, error: { message: error.message || String(error) } };
@@ -6074,7 +6074,7 @@
         state.shipmentCommandError = "";
         renderShipmentExecution();
         try {
-          const commands = await import("./orderops/shipment-result-command-adapter.js?v=1.0.0");
+          const commands = await import("./orderops/shipment-result-command-adapter.js?v=1.0.1");
           const common = {
             commandId: shipmentCommandId(intent),
             orderId: snapshot.orderId,
@@ -6109,7 +6109,7 @@
         const reason = window.prompt("출고 취소 사유를 입력하세요.", "주문 변경으로 출고 재검토");
         if (!reason || !window.confirm("확정 출고를 취소 이력으로 기록하시겠습니까?")) return;
         try {
-          const { reverseShipment } = await import("./orderops/shipment-result-command-adapter.js?v=1.0.0");
+          const { reverseShipment } = await import("./orderops/shipment-result-command-adapter.js?v=1.0.1");
           await reverseShipment({ shipmentDocumentId, commandId: shipmentCommandId("REVERSE"), actor: state.orderQSource?.snapshot?.assigneeName || "LOCAL_USER", reason });
           state.shipmentDraft = Object.create(null);
           elements.shipmentExecutionRows.replaceChildren();
