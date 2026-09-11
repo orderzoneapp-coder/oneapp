@@ -9,7 +9,7 @@ const commonUi = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
 assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login form');
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
-assert.match(html, /nexus-ui-theme-init\.js\?v=1\.1\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
+assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
 assert.match(html, /nexus\.css\?v=1\.3\.3/, 'NEXUS home must load the fixed-header ivory theme CSS revision');
 assert.match(html, /nexus\.js\?v=1\.3\.3/, 'NEXUS home must load the touch-enabled theme runtime revision');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="light"[^>]+aria-label="일반모드 적용"[^>]*>☼<\/button>/, 'home light icon must be an accessible direct-action button');
@@ -104,7 +104,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.6\.1/, `${file}: updated common header runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.7\.0/, `${file}: updated common header runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 

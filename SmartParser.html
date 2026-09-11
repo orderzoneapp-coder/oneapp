@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="smart-parser"></script>
-    <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
+    <script src="nexus/common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="smart-parser"></script>
+    <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.4.0">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.11">
     <link rel="stylesheet" href="nexus/common/nexus-workbench-layout-v2.css?v=1.0.0">
     <link rel="stylesheet" href="nexus/common/nexus-table-ux.css?v=1.1.0">
-    <script defer src="nexus/common/nexus-ui.js?v=1.6.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.7.0"></script>
     <script defer src="nexus/common/nexus-workbench-layout-v2.js?v=1.2.0"></script>
     <script defer src="nexus/common/nexus-table-ux.js?v=1.1.0"></script>
     <meta name="google" content="notranslate">
@@ -2319,6 +2319,8 @@ const SmartParserWorkspaceShell = ({ children, resultPanelOpen, onResultPanelOpe
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
+    const workspaceSessionSaveRef = useRef(Promise.resolve());
+    const workspaceStateRef = useRef(null);
     const { masterProducts, productSnapshotStatus, productSnapshotError, productSnapshotStale, analysisResult, analysisRequestResults, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, stoppedProducts, showStopManager, setShowStopManager, catalogUpdatedAt, catalogWarehouseMap, marginRules, lastExcludedCount } = appState;
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
         counts[r] = (counts[r] || 0) + 1; })); Object.keys(catalogWarehouseMap || {}).forEach(tag => { if (!Object.prototype.hasOwnProperty.call(counts, tag)) counts[tag] = 0; }); return Object.keys(counts)
@@ -2443,9 +2445,17 @@ const ParserApp = () => {
             if (!go)
                 return;
         }
-        window.location.href = 'MerchOps.html';
+        window.ONEAPP_NEXUS_NAVIGATE_ROUTE('MerchOps.html', 'merchops');
     };
     const memoizedState = useMemo(() => ({ masterProducts, parserBuffer, currentTag, catalogWarehouseMap, marginRules, analysisResult, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg }), [masterProducts, parserBuffer, currentTag, catalogWarehouseMap, marginRules, analysisResult, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
+    workspaceStateRef.current = {
+        parserBuffer: appState.parserBuffer,
+        currentTag: appState.currentTag,
+        analysisResult: appState.analysisResult,
+        isProcessing: appState.isProcessing,
+        processMsg: appState.processMsg,
+        toastMsg: appState.toastMsg
+    };
     const memoizedActions = useMemo(() => ({ ...actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch }), [actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch]);
     // [1순위] 작업 데이터 세션 자동 저장 및 복원 (Auto-Save)
     useEffect(() => {
@@ -2475,8 +2485,44 @@ const ParserApp = () => {
             currentTag: appState.currentTag,
             analysisResult: appState.analysisResult
         };
-        setIDB('parser_session', stateToSave).catch(e => console.warn("세션 저장 실패", e));
+        const write = workspaceSessionSaveRef.current.catch(() => undefined).then(() => setIDB('parser_session', stateToSave));
+        workspaceSessionSaveRef.current = write;
+        write.catch(e => console.warn("세션 저장 실패", e));
     }, [appState.parserBuffer, appState.currentTag, appState.analysisResult]);
+    useEffect(() => {
+        const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+        if (!bridge?.registerAdapter) return undefined;
+        return bridge.registerAdapter({
+            beforeLeave: async () => {
+                const wasProcessing = Boolean(workspaceStateRef.current?.isProcessing);
+                document.activeElement?.blur?.();
+                const startedAt = Date.now();
+                while (workspaceStateRef.current?.isProcessing) {
+                    if (Date.now() - startedAt >= 10000) throw new Error('진행 중인 스마트파서 확정 작업의 결과 확인 시간이 초과되었습니다.');
+                    await new Promise(resolve => window.setTimeout(resolve, 50));
+                }
+                if (wasProcessing && /실패|오류|❌/.test(`${workspaceStateRef.current?.processMsg || ''} ${workspaceStateRef.current?.toastMsg || ''}`)) {
+                    throw new Error('스마트파서 작업이 실패하여 현재 화면을 유지합니다.');
+                }
+                await workspaceSessionSaveRef.current;
+                await new Promise(resolve => window.setTimeout(resolve, 0));
+                const latest = workspaceStateRef.current || {};
+                const expected = {
+                    schemaVersion: 'smartparser-session/v2',
+                    parserBuffer: latest.parserBuffer || [],
+                    currentTag: latest.currentTag || '',
+                    analysisResult: latest.analysisResult || null
+                };
+                const write = setIDB('parser_session', expected);
+                workspaceSessionSaveRef.current = write;
+                await write;
+                const saved = await getIDB('parser_session');
+                if (JSON.stringify(saved) !== JSON.stringify(expected)) throw new Error('스마트파서 세션 저장 검산 결과가 일치하지 않습니다.');
+                return { result: 'READY' };
+            },
+            print: () => window.print()
+        });
+    }, []);
     // ⭐ 단축키 연동: 체크 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
     useEffect(() => {
         const handleGlobalKeyDown = (e) => {
@@ -2530,9 +2576,9 @@ const ParserApp = () => {
                                 React.createElement("a", { href: "guide_Merch.html#part2-2", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uC2A4\uB9C8\uD2B8\uD30C\uC11C \uC0AC\uC6A9 \uAC00\uC774\uB4DC" }, "GUIDE"),
                                 React.createElement("a", { href: "trend_report.html", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uD2B8\uB80C\uB4DC \uB9AC\uD3EC\uD2B8" }, "REPORT"),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
-                                React.createElement("button", { onClick: () => window.location.href = 'history_viewer.html?returnApp=smart-parser', className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400", title: "\uC791\uC5C5 \uD788\uC2A4\uD1A0\uB9AC \uBCF4\uAE30" },
+                                React.createElement("button", { onClick: () => window.ONEAPP_NEXUS_NAVIGATE_ROUTE('history_viewer.html?returnApp=smart-parser', 'smart-parser'), className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400", title: "\uC791\uC5C5 \uD788\uC2A4\uD1A0\uB9AC \uBCF4\uAE30" },
                                     React.createElement("i", { className: "fas fa-history text-[13px]" })),
-                                React.createElement("button", { onClick: () => window.location.href = 'settings.html?returnApp=smart-parser', className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white", title: "\uD658\uACBD\uC124\uC815" },
+                                React.createElement("button", { onClick: () => window.ONEAPP_NEXUS_NAVIGATE_ROUTE('settings.html?returnApp=smart-parser', 'smart-parser'), className: "w-8 h-8 rounded flex items-center justify-center shadow-sm border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white", title: "\uD658\uACBD\uC124\uC815" },
                                     React.createElement("i", { className: "fas fa-cogs text-[13px]" })),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
                                 React.createElement("button", { onClick: safeGoToMain, className: "h-8 px-3 rounded flex items-center justify-center shadow-sm border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white font-bold text-[11px]" },

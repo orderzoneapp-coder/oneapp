@@ -39,10 +39,10 @@ const pages = [
 
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
-  const init = `${base}nexus-ui-theme-init.js?v=1.1.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.3.5`;
+  const init = `${base}nexus-ui-theme-init.js?v=1.2.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.4.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
-  const runtime = `${base}nexus-ui.js?v=1.6.1`;
+  const runtime = `${base}nexus-ui.js?v=1.7.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -84,8 +84,6 @@ for (const forbidden of [
   /google\.script/,
   /gateway/i,
   /authorization/i,
-  /app[-_ ]ready/i,
-  /runtime[-_ ]ready/i,
 ]) {
   assert.doesNotMatch(combinedRuntime, forbidden, `common UI must not include ${forbidden}`);
 }
@@ -113,6 +111,11 @@ assert.match(uiSource, /element\('a', 'nexus-ui-brand__logo'\)/, 'the NEXUS logo
 assert.match(uiSource, /logoFrame\.href = asset\('nexus\/'\)/, 'the NEXUS logo must link to the NEXUS home');
 assert.match(uiSource, /logoFrame\.setAttribute\('aria-label', 'NEXUS 홈'\)/, 'the NEXUS home link must have an accessible name');
 assert.match(uiSource, /oneapp\.nexus\.ui\.visibility\.v1/, 'common UI must read only the dedicated visibility projection');
+assert.match(uiSource, /nexus-workspace-message\/v1/, 'embedded apps must use the versioned workspace bridge');
+assert.match(uiSource, /event\.origin !== location\.origin/, 'workspace bridge must reject foreign origins');
+assert.match(uiSource, /event\.source !== window\.parent/, 'workspace bridge must reject foreign parent windows');
+assert.match(uiSource, /NEXUS_WORKSPACE_BEFORE_LEAVE_V1/, 'workspace bridge must require a before-leave result before navigation');
+assert.match(uiSource, /NEXUS_WORKSPACE_APP_READY_V1/, 'workspace bridge must announce application readiness');
 assert.match(uiSource, /NEXUS_UI_VISIBILITY_V1/, 'common UI visibility projection must be schema-versioned');
 assert.match(uiSource, /sessionStorage\.getItem/, 'common UI must synchronously read the same-tab visibility projection');
 assert.doesNotMatch(uiSource, /sessionStorage\.setItem/, 'common UI must never write the visibility projection');

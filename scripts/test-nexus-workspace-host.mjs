@@ -9,7 +9,7 @@ const host = require('../nexus/workspace.js');
 const workspaceHref = 'https://example.test/nexus/workspace.html';
 const siteRoot = 'https://example.test/';
 
-assert.equal(host.VERSION, '1.0.0');
+assert.equal(host.VERSION, '1.1.0');
 assert.equal(host.SCHEMA_VERSION, 'nexus-workspace-message/v1');
 assert.deepEqual(host.APPS.map(({ id, label, path }) => ({ id, label, path })), [
   { id: 'master-lookup', label: '상품관리', path: 'Master.html' },
@@ -30,6 +30,19 @@ assert.equal(order.ok, true);
 assert.equal(order.url, 'https://example.test/orderops/list.html?orderId=ORDER-1&focus=note');
 assert.equal(order.route, 'orderops/list.html?orderId=ORDER-1&focus=note');
 
+for (const [appId, route] of [
+  ['master-lookup', 'Item_manager.html?itemId=SKU-1'],
+  ['customer-master', 'history_viewer.html?scope=customer'],
+  ['smart-input', 'orderq/index.html?focus=ORDER-1'],
+  ['smart-parser', 'settings.html?tab=parser'],
+  ['merchops', 'export_center.html?source=merchops'],
+  ['orderops', 'orderq/index.html?orderId=ORDER-1'],
+  ['dataops', 'export_center.html?source=dataops'],
+]) {
+  const result = host.validateRoute(appId, route, siteRoot, 'https://example.test');
+  assert.equal(result.ok, true, `${appId}/${route} must be approved`);
+}
+
 for (const [appId, route, code] of [
   ['unknown', 'Master.html', 'UNKNOWN_APP'],
   ['master-lookup', 'https://attacker.test/Master.html', 'ROUTE_NOT_ALLOWED'],
@@ -37,6 +50,8 @@ for (const [appId, route, code] of [
   ['master-lookup', 'data:text/html,hello', 'ROUTE_NOT_ALLOWED'],
   ['master-lookup', 'customer-master/index.html', 'ROUTE_NOT_ALLOWED'],
   ['master-lookup', 'nexus/../customer-master/index.html', 'ROUTE_NOT_ALLOWED'],
+  ['dataops', 'MerchOps.html', 'ROUTE_NOT_ALLOWED'],
+  ['orderops', 'history_viewer.html', 'ROUTE_NOT_ALLOWED'],
 ]) {
   const result = appId === 'unknown'
     ? host.parseHostRequest(`?app=${appId}&route=${encodeURIComponent(route)}`, workspaceHref)
@@ -83,8 +98,8 @@ const [html, css, js, commonUi, architecture] = await Promise.all([
 ]);
 
 assert.match(html, /id="nexusWorkspaceFrame"/);
-assert.match(html, /common\/nexus-ui-theme-init\.js\?v=1\.1\.0/);
-assert.match(html, /common\/nexus-ui\.js\?v=1\.6\.1/);
+assert.match(html, /common\/nexus-ui-theme-init\.js\?v=1\.2\.0/);
+assert.match(html, /common\/nexus-ui\.js\?v=1\.7\.0/);
 assert.equal((html.match(/<iframe\b/g) || []).length, 1, 'the host must own exactly one iframe');
 assert.match(html, /독립 앱으로 열기/);
 assert.match(html, /다시 시도/);

@@ -161,9 +161,9 @@ assert.deepEqual(Array.from(normalized.voucherColumnsByMode.estimate), ['itemCod
 const html = read('smartinput/index.html');
 const app = read('smartinput/smartinput.js');
 const css = read('smartinput/smartinput.css');
-assert.match(html, /nexus-ui\.css\?v=1\.3\.5/);
+assert.match(html, /nexus-ui\.css\?v=1\.4\.0/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
-assert.match(html, /nexus-ui\.js\?v=1\.6\.1/);
+assert.match(html, /nexus-ui\.js\?v=1\.7\.0/);
 assert.match(html, /smartinput\.css\?v=0\.9\.18/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
 assert.match(html, /smartinput\.js\?v=0\.11\.52/);

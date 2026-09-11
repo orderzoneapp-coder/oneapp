@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="dataops"></script>
-    <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.3.5">
+    <script src="nexus/common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="dataops"></script>
+    <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.4.0">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.11">
     <link rel="stylesheet" href="nexus/common/nexus-workbench-layout-v2.css?v=1.0.0">
     <link rel="stylesheet" href="nexus/common/nexus-table-ux.css?v=1.1.0">
-    <script defer src="nexus/common/nexus-ui.js?v=1.6.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.7.0"></script>
     <script defer src="nexus/common/nexus-workbench-layout-v2.js?v=1.2.0"></script>
     <script defer src="nexus/common/nexus-table-ux.js?v=1.1.0"></script>
     <meta name="google" content="notranslate">
@@ -5049,6 +5049,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     const [substHistory, setSubstHistory] = useState([]);
     const [ackMultiCodes, setAckMultiCodes] = useState(new Set());
     const [workStateHydrated, setWorkStateHydrated] = useState(false);
+    const workspaceAutosaveTimerRef = useRef(0);
+    const workspacePayloadRef = useRef(null);
     const buildWorkStatePayload = useCallback(() => ({
         productData,
         substHistory,
@@ -5057,6 +5059,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         targetDateStr,
         screenState: typeof getWorkScreenState === 'function' ? getWorkScreenState() : {}
     }), [productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, getWorkScreenState]);
+    workspacePayloadRef.current = buildWorkStatePayload();
     const restoreWorkState = useCallback(async (type = 'autosave', { silent = false } = {}) => {
         try {
             const snapshotType = DATAOPS_WORK_STATE_MODULE.normalizeType(type);
@@ -5121,8 +5124,28 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             DATAOPS_WORK_STATE_MODULE.save('autosave', buildWorkStatePayload())
                 .catch(error => console.warn('DataOps 작업 자동저장 실패', error));
         }, 600);
-        return () => clearTimeout(timer);
+        workspaceAutosaveTimerRef.current = timer;
+        return () => {
+            clearTimeout(timer);
+            if (workspaceAutosaveTimerRef.current === timer) workspaceAutosaveTimerRef.current = 0;
+        };
     }, [workStateHydrated, productData, substHistory, ackMultiCodes, analysisPeriod, targetDateStr, buildWorkStatePayload]);
+    const flushWorkspaceAutosave = useCallback(async () => {
+        if (workspaceAutosaveTimerRef.current) {
+            clearTimeout(workspaceAutosaveTimerRef.current);
+            workspaceAutosaveTimerRef.current = 0;
+        }
+        await dataOpsWorkStateWriteQueue;
+        const expected = workspacePayloadRef.current || {};
+        if (!Array.isArray(expected.productData) || expected.productData.length === 0) return true;
+        const saved = await DATAOPS_WORK_STATE_MODULE.save('autosave', expected);
+        const reread = await DATAOPS_WORK_STATE_MODULE.load('autosave');
+        const fields = ['productData', 'substHistory', 'ackMultiCodes', 'analysisPeriod', 'targetDateStr', 'screenState'];
+        if (!saved?.savedAt || fields.some(field => JSON.stringify(reread?.[field]) !== JSON.stringify(expected[field]))) {
+            throw new Error('DataOps 최신 자동저장 검산 결과가 일치하지 않습니다.');
+        }
+        return true;
+    }, []);
     const saveWorkState = useCallback(async () => {
         if (productData.length === 0) {
             setAlertMsg('저장할 DataOps 작업이 없습니다. 파일 분석 후 다시 저장하세요.');
@@ -8012,7 +8035,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
     }, [mappings, setAlertMsg, setIsProcessing, setAppStep]);
     return {
         productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
-        resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
+        resetEngine, saveWorkState, restoreWorkState, flushWorkspaceAutosave, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
     };
 };
 /* =======================================================================
@@ -9031,7 +9054,7 @@ function App() {
         }, 120);
     }, []);
     // 비즈니스 로직 엔진 연결
-    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, getWorkScreenState, onRestoreWorkScreenState: restoreWorkScreenState });
+    const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, saveWorkState, restoreWorkState, flushWorkspaceAutosave, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, getWorkScreenState, onRestoreWorkScreenState: restoreWorkScreenState });
     const productDataRef = useRef(productData);
     productDataRef.current = productData;
     const readOfficialProductSnapshot = useCallback(async () => {
@@ -12420,9 +12443,45 @@ ${balanceText}
     }, [handleManualStockChange, handleBaseDataChange, productData]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
     const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleOpenInventoryMasterAdd, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
+    const workspaceLifecycleStateRef = useRef(null);
+    workspaceLifecycleStateRef.current = { isProcessing, analysisStatus: analysisMeta.status, alertMsg, error, confirmOpen: confirmModal.isOpen };
     useEffect(() => {
         latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleOpenInventoryMasterAdd, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate };
     });
+    useEffect(() => {
+        let unregister = null;
+        const register = () => {
+            const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+            if (!bridge?.registerAdapter || unregister) return;
+            unregister = bridge.registerAdapter({
+                beforeLeave: async () => {
+                    if (workspaceLifecycleStateRef.current?.confirmOpen) {
+                        return { result: 'BLOCKED', message: '확인 대화상자를 완료하거나 취소한 뒤 앱을 이동해 주세요.' };
+                    }
+                    const wasProcessing = Boolean(workspaceLifecycleStateRef.current?.isProcessing || workspaceLifecycleStateRef.current?.analysisStatus === 'processing');
+                    const startedAt = Date.now();
+                    while (workspaceLifecycleStateRef.current?.isProcessing || workspaceLifecycleStateRef.current?.analysisStatus === 'processing') {
+                        if (Date.now() - startedAt >= 10000) throw new Error('진행 중인 DataOps 작업의 결과 확인 시간이 초과되었습니다.');
+                        await new Promise(resolve => window.setTimeout(resolve, 50));
+                    }
+                    if (wasProcessing && /실패|오류|❌/.test(`${workspaceLifecycleStateRef.current?.alertMsg || ''} ${workspaceLifecycleStateRef.current?.error || ''}`)) {
+                        throw new Error('DataOps 작업이 실패하여 현재 화면을 유지합니다.');
+                    }
+                    latestHandlers.current?.flushFocusedTableEdit?.();
+                    await new Promise(resolve => window.setTimeout(resolve, 0));
+                    await flushWorkspaceAutosave();
+                    return { result: 'READY' };
+                },
+                print: () => latestHandlers.current?.handlePrintOutput?.()
+            });
+        };
+        register();
+        window.addEventListener('nexus-ui:ready', register);
+        return () => {
+            window.removeEventListener('nexus-ui:ready', register);
+            unregister?.();
+        };
+    }, [flushWorkspaceAutosave]);
     useEffect(() => {
         const handleGlobalEnter = (e) => {
             if (e.key === 'Enter') {

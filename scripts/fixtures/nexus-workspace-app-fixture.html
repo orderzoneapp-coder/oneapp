@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <title>NEXUS workspace fixture</title>
+  <script src="/nexus/common/nexus-ui-theme-init.js?v=1.2.0"></script>
+  <script defer src="/nexus/common/nexus-ui.js?v=1.7.0"></script>
 </head>
 <body>
   <main id="fixtureApp">fixture</main>
@@ -25,14 +27,6 @@
       let transitionId = '';
       window.fixtureState = { appId, bootCount, hostReadyCount: 0, leaveResult: 'READY', leaveDelay: 0, printCount: 0, themeCount: 0 };
 
-      const send = (type, extra = {}) => parent.postMessage(Object.assign({
-        schemaVersion,
-        type,
-        transitionId,
-        appId,
-        route: `${location.pathname.replace(/^\//, '')}${location.search}${location.hash}`,
-      }, extra), location.origin);
-
       window.addEventListener('message', (event) => {
         if (event.origin !== location.origin || event.source !== parent) return;
         const data = event.data;
@@ -40,22 +34,29 @@
         if (data.type === 'NEXUS_WORKSPACE_HOST_READY_V1') {
           transitionId = data.transitionId;
           window.fixtureState.hostReadyCount += 1;
-          document.documentElement.dataset.fixtureReady = 'true';
-          send('NEXUS_WORKSPACE_APP_READY_V1');
-        } else if (data.type === 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1') {
-          const result = window.fixtureState.leaveResult;
-          setTimeout(() => send('NEXUS_WORKSPACE_LEAVE_RESULT_V1', {
-            transitionId: data.transitionId,
-            result,
-            message: result === 'READY' ? '' : 'fixture blocked the transition',
-          }), window.fixtureState.leaveDelay);
-        } else if (data.type === 'NEXUS_WORKSPACE_THEME_V1') {
-          document.documentElement.dataset.nexusUiTheme = data.theme;
-          window.fixtureState.themeCount += 1;
-        } else if (data.type === 'NEXUS_WORKSPACE_PRINT_V1') {
-          window.fixtureState.printCount += 1;
         }
       });
+
+      window.addEventListener('nexus-ui:theme-change', () => { window.fixtureState.themeCount += 1; });
+
+      const connect = () => {
+        const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+        if (!bridge?.registerAdapter) return false;
+        bridge.registerAdapter({
+          beforeLeave: () => new Promise((resolve) => setTimeout(() => {
+            const result = window.fixtureState.leaveResult;
+            resolve({ result, message: result === 'READY' ? '' : 'fixture blocked the transition' });
+          }, window.fixtureState.leaveDelay)),
+          print: () => { window.fixtureState.printCount += 1; },
+        });
+        const readyTimer = setInterval(() => {
+          if (!bridge.connected) return;
+          clearInterval(readyTimer);
+          document.documentElement.dataset.fixtureReady = 'true';
+        }, 10);
+        return true;
+      };
+      if (!connect()) window.addEventListener('nexus-ui:ready', connect, { once: true });
 
       window.fixtureRouteChanged = (route, overrideTransitionId = transitionId) => parent.postMessage({
         schemaVersion,

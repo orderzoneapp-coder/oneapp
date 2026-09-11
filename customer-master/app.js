@@ -98,18 +98,50 @@ function toast(message, tone = 'info') {
   state.toastTimer = setTimeout(() => { element.hidden = true; }, tone === 'error' ? 6500 : 3500);
 }
 
+let activeCustomerOperation = null;
+
 async function withBusy(message, task) {
   setStatus(message, 'busy');
+  const operation = (async () => {
+    try {
+      const result = await task();
+      setStatus(`로컬 DB · 거래처 ${operationalCustomers().length.toLocaleString()}건`, 'ready');
+      return result;
+    } catch (error) {
+      console.error(error);
+      setStatus('작업 오류', 'error');
+      toast(String(error?.message || error), 'error');
+      throw error;
+    }
+  })();
+  activeCustomerOperation = operation;
   try {
-    const result = await task();
-    setStatus(`로컬 DB · 거래처 ${operationalCustomers().length.toLocaleString()}건`, 'ready');
-    return result;
-  } catch (error) {
-    console.error(error);
-    setStatus('작업 오류', 'error');
-    toast(String(error?.message || error), 'error');
-    throw error;
+    return await operation;
+  } catch {
+    return undefined;
+  } finally {
+    if (activeCustomerOperation === operation) activeCustomerOperation = null;
   }
+}
+
+function registerCustomerWorkspaceAdapter() {
+  const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+  if (!bridge?.registerAdapter || registerCustomerWorkspaceAdapter.registered) return false;
+  registerCustomerWorkspaceAdapter.registered = true;
+  bridge.registerAdapter({
+    beforeLeave: async () => {
+      if (activeCustomerOperation) await activeCustomerOperation;
+      if (state.issueChanges.size > 0) {
+        return { result: 'BLOCKED', message: '저장하지 않은 거래처 정보 보완값이 있습니다. 저장하거나 취소한 뒤 이동해 주세요.' };
+      }
+      if ($('#customerDialog')?.open) {
+        return { result: 'BLOCKED', message: '열려 있는 거래처 편집창을 저장하거나 닫은 뒤 이동해 주세요.' };
+      }
+      return { result: 'READY' };
+    },
+    print: () => window.print(),
+  });
+  return true;
 }
 
 function activateTab(tabName) {
@@ -807,6 +839,9 @@ async function initialize() {
     renderChangeRequests,
   });
   document.documentElement.dataset.customerMasterReady = 'true';
+  if (!registerCustomerWorkspaceAdapter()) {
+    window.addEventListener('nexus-ui:ready', registerCustomerWorkspaceAdapter, { once: true });
+  }
 }
 
 initialize().catch((error) => {

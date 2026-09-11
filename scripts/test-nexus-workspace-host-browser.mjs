@@ -27,11 +27,12 @@ const mime = {
 };
 const requests = [];
 const failNext = new Map();
+let serveRealApps = false;
 const server = createServer((request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
     requests.push(pathname);
-    if (officialPaths.has(pathname)) {
+    if (officialPaths.has(pathname) && !serveRealApps) {
       const remainingFailures = failNext.get(pathname) || 0;
       if (remainingFailures > 0) {
         failNext.set(pathname, remainingFailures - 1);
@@ -348,8 +349,56 @@ try {
   await evaluate(client, `document.querySelector('#nexusWorkspaceRetry').click()`);
   await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'master-lookup' && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'master-lookup'`), 'safe retry fallback');
 
+  const appIds = ['master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops'];
+  let directedTransitions = 0;
+  for (const sourceAppId of appIds) {
+    for (const targetAppId of appIds) {
+      if (sourceAppId === targetAppId) continue;
+      if (await evaluate(client, `new URL(location.href).searchParams.get('app')`) !== sourceAppId) {
+        await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="${sourceAppId}"]').click()`);
+        await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === '${sourceAppId}'
+          && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === '${sourceAppId}'
+          && document.querySelector('#nexusWorkspaceLoading').hidden`), `42-direction source ${sourceAppId}`);
+      }
+      await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="${targetAppId}"]').click()`);
+      await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === '${targetAppId}'
+        && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === '${targetAppId}'
+        && document.querySelector('#nexusWorkspaceLoading').hidden`), `42-direction ${sourceAppId} to ${targetAppId}`);
+      directedTransitions += 1;
+    }
+  }
+  assert.equal(directedTransitions, 42, 'all seven apps must complete all 42 directed transitions');
+
+  serveRealApps = true;
+  const realAppsLoaded = client.once('Page.loadEventFired');
+  await evaluate(client, `location.replace(${JSON.stringify(`${origin}/nexus/workspace.html?app=master-lookup&route=Master.html`)})`);
+  await realAppsLoaded;
+  for (const realAppId of appIds) {
+    if (await evaluate(client, `new URL(location.href).searchParams.get('app')`) !== realAppId) {
+      await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="${realAppId}"]').click()`);
+    }
+    await waitFor(() => evaluate(client, `(() => {
+      const frame=document.querySelector('#nexusWorkspaceFrame');
+      const child=frame?.contentWindow;
+      return new URL(location.href).searchParams.get('app') === '${realAppId}'
+        && document.querySelector('#nexusWorkspaceLoading').hidden
+        && child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.connected === true
+        && child.document.documentElement.dataset.nexusWorkspaceEmbedded === 'true'
+        && Boolean(child.document.querySelector('[data-nexus-app-header="${realAppId}"]'));
+    })()`), `real integrated app ${realAppId}`, 60_000);
+    const chromeState = await evaluate(client, `(() => {
+      const frame=document.querySelector('#nexusWorkspaceFrame');
+      return {
+        hostHeaders:document.querySelectorAll('.nexus-ui-header').length,
+        childHeaders:frame.contentDocument.querySelectorAll('.nexus-ui-header').length,
+        frameCount:document.querySelectorAll('#nexusWorkspaceFrame').length
+      };
+    })()`);
+    assert.deepEqual(chromeState, { hostHeaders: 1, childHeaders: 0, frameCount: 1 }, `${realAppId} must keep only the persistent host header`);
+  }
+
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
+  console.log('PASS NEXUS workspace browser: seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
   if (browser && !browser.killed) {

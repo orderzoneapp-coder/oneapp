@@ -99,6 +99,18 @@ body.nexus-ui-mounted {
   padding-top: calc(var(--nexus-ui-original-padding-top, 0px) + var(--nexus-ui-header-height)) !important;
 }
 
+html[data-nexus-workspace-embedded="true"] {
+  --nexus-ui-header-height: 0px;
+}
+
+html[data-nexus-workspace-embedded="true"] body.nexus-ui-mounted {
+  padding-top: var(--nexus-ui-original-padding-top, 0px) !important;
+}
+
+html[data-nexus-workspace-embedded="true"] .nexus-ui-header {
+  display: none !important;
+}
+
 .nexus-ui-header,
 .nexus-ui-header * {
   box-sizing: border-box;
