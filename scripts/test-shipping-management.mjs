@@ -332,7 +332,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = orderReview\.ha
   "integrated output must be blocked only by unresolved quantity errors");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260911-pr572-followup") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260911-three-sections") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260910-system-message-review"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -732,7 +732,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.23.1");
+assert.equal(engine.ENGINE_VERSION, "3.24.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -2048,7 +2048,7 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.order-view-presets.v1',
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
-  'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
+  'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
   'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
@@ -2654,7 +2654,7 @@ const individualSource = html.slice(individualStart, individualEnd);
 for (const requiredSource of [
   "isSupportedFile(file)",
   "file.size > MAX_FILE_SIZE",
-  "resetResults();",
+  "resetResults({ preserveView: true });",
   "setLoading(kind, true);",
   '["orders", "inventory"].includes(kind)',
   "await parseGenericExcelFile(file, kind)",

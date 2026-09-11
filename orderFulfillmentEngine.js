@@ -7,8 +7,9 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.23.1";
+  const ENGINE_VERSION = "3.24.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
+  const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
   const SYSTEM_HISTORY_SCHEMA_VERSION = "shipping-system-history/v1";
@@ -2169,6 +2170,156 @@
     return { columns: warehouseColumns, rows };
   }
 
+  function previewSourceFile(parsed, kind) {
+    if (!parsed) return null;
+    return {
+      fileName: parsed.fileName,
+      sheetName: parsed.sheetName,
+      headerRowIndex: parsed.headerRowIndex,
+      rowCount: parsed.rowCount,
+      sha256: parsed.fileHash,
+      matrix: parsed.sourceMatrix,
+      productCodeColumnIndex: parsed.productCodeColumnIndex,
+      headerMapping: parsed.headerMapping,
+      columns: parsed.columns,
+      sourceKind: cleanText(parsed.sourceKind),
+      sourceSchemaVersion: cleanText(parsed.sourceSchemaVersion),
+      orderId: cleanText(parsed.orderId),
+      orderNo: cleanText(parsed.orderNo),
+      orderRevision: Number(parsed.orderRevision) || 0,
+      orderSnapshotHash: cleanText(parsed.orderSnapshotHash),
+      orderUpdatedAt: cleanText(parsed.orderUpdatedAt),
+      kind,
+    };
+  }
+
+  function rebuildPreviewWorkspaceFromOrders(workspace) {
+    const inventoryByCode = new Map(
+      (workspace.inventory || []).map((row) => [normalizeProductCode(row?.productCode), row]),
+    );
+    const totalsByCode = new Map();
+    let totalOrderQuantity = 0;
+    let zeroOrderQuantityCount = 0;
+    let negativeOrderQuantityCount = 0;
+    (workspace.orders || []).forEach((row) => {
+      const parsed = parseNumericCell(row?.quantity);
+      const quantity = parsed.ok && !parsed.blank ? parsed.value : null;
+      if (quantity !== null) {
+        totalOrderQuantity = roundQuantity(totalOrderQuantity + quantity);
+        if (quantity === 0) zeroOrderQuantityCount += 1;
+        if (quantity < 0) negativeOrderQuantityCount += 1;
+      }
+      const code = normalizeProductCode(row?.productCode);
+      if (code && quantity !== null) {
+        totalsByCode.set(code, roundQuantity((totalsByCode.get(code) || 0) + quantity));
+      }
+    });
+    workspace.allocations = (workspace.orders || []).map((row) => {
+      const code = normalizeProductCode(row?.productCode);
+      const inventory = inventoryByCode.get(code);
+      const quantity = parseNumericCell(row?.quantity);
+      const stockTotal = inventory && typeof inventory.inventoryTotal === "number"
+        ? inventory.inventoryTotal
+        : inventory && typeof inventory.sourceInventoryTotal === "number"
+          ? inventory.sourceInventoryTotal
+          : null;
+      const totalForProduct = totalsByCode.get(code);
+      return {
+        ...row,
+        inventoryMatched: Boolean(inventory),
+        stockTotal,
+        remainingQuantity: stockTotal === null || totalForProduct === undefined
+          ? null
+          : roundQuantity(stockTotal - totalForProduct),
+        totalOrderQuantity: totalForProduct ?? null,
+        status: !workspace.previewDataState.inventory
+          ? "재고자료 없음"
+          : inventory ? "재고 비교 준비" : "재고 미등록",
+        parsedQuantity: quantity.ok && !quantity.blank ? quantity.value : null,
+      };
+    });
+    workspace.productSummaries = [...totalsByCode.entries()].map(([productCode, total]) => ({
+      productCode,
+      totalOrderQuantity: total,
+      inventoryMatched: inventoryByCode.has(productCode),
+    }));
+    workspace.notices = collectNotices(workspace.orders || []);
+    workspace.memoIssues = workspace.notices;
+    ensureNoticeState(workspace);
+    const orderReview = getOrderReviewState({
+      rows: workspace.orders || [],
+      source: workspace.sourceFiles?.orders || {},
+    });
+    workspace.inputValidation = {
+      canAnalyze: Boolean(workspace.previewDataState.orders && workspace.previewDataState.inventory && !orderReview.hasQuantityErrors),
+      blockingCount: orderReview.quantityErrorCount,
+      errors: [], warnings: [], unmatchedCodes: [], unmatchedCount: 0, duplicateCodes: [], duplicateCount: 0,
+      duplicateOrderCount: orderReview.duplicateOrderCount,
+      quantityErrorCount: orderReview.quantityErrorCount,
+      hasDuplicateOrders: orderReview.hasDuplicateOrders,
+      hasQuantityErrors: orderReview.hasQuantityErrors,
+      notices: workspace.notices,
+      noticeCount: workspace.notices.length,
+      memoIssues: workspace.notices,
+      memoCount: workspace.notices.length,
+    };
+    workspace.stats = {
+      orderRowCount: workspace.orders.length,
+      productCount: totalsByCode.size,
+      inventoryRowCount: workspace.inventory.length,
+      totalOrderQuantity,
+      totalPurchaseNeed: 0,
+      unmatchedCount: 0,
+      duplicateCount: 0,
+      duplicateOrderCount: orderReview.duplicateOrderCount,
+      quantityErrorCount: orderReview.quantityErrorCount,
+      noticeCount: workspace.notices.length,
+      memoCount: workspace.notices.length,
+      zeroOrderQuantityCount,
+      negativeOrderQuantityCount,
+    };
+    return workspace;
+  }
+
+  function createPreviewWorkspace(ordersParsed = null, inventoryParsed = null, options = {}) {
+    const workspace = {
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
+      engineVersion: ENGINE_VERSION,
+      workspaceMode: PREVIEW_WORKSPACE_MODE,
+      createdAt: options.createdAt || new Date().toISOString(),
+      sourceFingerprint: "",
+      planId: "",
+      basisDate: "",
+      basisDateStatus: "missing",
+      sourceFiles: {
+        orders: previewSourceFile(ordersParsed, "orders"),
+        inventory: previewSourceFile(inventoryParsed, "inventory"),
+      },
+      previewDataState: {
+        orders: Boolean(ordersParsed?.rows),
+        inventory: Boolean(inventoryParsed?.rows),
+        purchases: Boolean(options.purchases?.rows),
+        sales: Boolean(options.sales?.rows),
+      },
+      orders: ordersParsed?.rows || [],
+      inventory: inventoryParsed?.rows || [],
+      inventoryOverrides: { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
+      substitutionHistory: { schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION, events: [] },
+      systemHistory: options.systemHistory && Array.isArray(options.systemHistory.events)
+        ? JSON.parse(JSON.stringify(options.systemHistory))
+        : { schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION, events: [] },
+      noticeAcknowledgements: { schemaVersion: "shipping-notice-acknowledgements/v1", acknowledgedIds: [] },
+      orderOpsInputs: {
+        schemaVersion: "orderops-analysis-inputs/v1",
+        purchases: options.purchases || null,
+        sales: options.sales || null,
+      },
+      purchaseManagement: [],
+      validationResults: [],
+    };
+    return rebuildPreviewWorkspaceFromOrders(workspace);
+  }
+
   function rebuildWorkspaceFromOrders(workspace) {
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
@@ -2443,7 +2594,9 @@
       previousValue,
       nextValue,
     }, options);
-    return rebuildWorkspaceFromOrders(workspace);
+    return workspace.workspaceMode === PREVIEW_WORKSPACE_MODE
+      ? rebuildPreviewWorkspaceFromOrders(workspace)
+      : rebuildWorkspaceFromOrders(workspace);
   }
 
   function setCustomerManager(workspace, customerKey, value, options = {}) {
@@ -2472,7 +2625,10 @@
         nextValue,
       }, options);
     });
-    if (changedRowCount > 0) rebuildWorkspaceFromOrders(workspace);
+    if (changedRowCount > 0) {
+      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
+      else rebuildWorkspaceFromOrders(workspace);
+    }
     return {
       customerKey: stableKey,
       manager: nextValue,
@@ -3082,6 +3238,7 @@
   return Object.freeze({
     ENGINE_VERSION,
     WORKSPACE_SCHEMA_VERSION,
+    PREVIEW_WORKSPACE_MODE,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,
     SYSTEM_HISTORY_SCHEMA_VERSION,
@@ -3119,6 +3276,7 @@
     isNoticeAcknowledged,
     setNoticeAcknowledged,
     analyze,
+    createPreviewWorkspace,
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,

@@ -9,14 +9,14 @@
   <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
   <script defer src="../nexus/common/nexus-ui.js?v=1.6.1"></script>
-  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.2.0"></script>
+  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.3.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260911-pr572-followup"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260911-three-sections"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2190,6 +2190,167 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
+
+    /* ORDER Q v1.57: app-header tools and direct same-parent three-pane workbench */
+    [data-nexus-app-header="orderops"] {
+      justify-content: flex-start;
+      gap: 10px;
+    }
+    .orderops-header-sources {
+      display: flex;
+      align-items: center;
+      flex: 1 1 auto;
+      gap: 6px;
+      min-width: 600px;
+      height: 46px;
+    }
+    .orderops-header-sources .source-selector {
+      display: flex;
+      align-items: center;
+      flex-wrap: nowrap;
+      flex: 1 1 auto;
+      gap: 4px;
+      min-width: 0;
+      height: 42px;
+    }
+    .orderops-header-sources .data-source-label {
+      flex: 0 0 auto;
+      width: auto;
+      min-height: 36px;
+      padding: 0;
+    }
+    .orderops-header-sources .data-source-label > :not(.integrated-compact-slot) { display: none; }
+    .orderops-header-sources .upload-grid {
+      display: flex;
+      flex: 1 1 auto;
+      gap: 4px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .orderops-header-sources .upload-card {
+      display: grid;
+      grid-template-columns: minmax(42px, 1fr) 26px;
+      flex: 1 1 70px;
+      min-width: 70px;
+      min-height: 36px;
+      height: 36px;
+      border-color: rgb(255 255 255 / 16%);
+      background: #151c2c;
+    }
+    .orderops-header-sources .upload-card .drop-zone {
+      display: block;
+      min-height: 34px;
+      height: 34px;
+      padding: 0 6px;
+      text-align: center;
+    }
+    .orderops-header-sources .upload-card .file-icon,
+    .orderops-header-sources .upload-card .drop-help { display: none; }
+    .orderops-header-sources .upload-card .drop-title {
+      overflow: hidden;
+      color: #e2e8f0;
+      font-size: 9px;
+      line-height: 34px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .orderops-header-sources .file-select-button,
+    .orderops-header-sources .derived-view-label {
+      min-width: 22px;
+      min-height: 26px;
+      margin: 4px 3px 4px 0;
+      padding: 0 3px;
+      font-size: 8px;
+    }
+    .orderops-header-sources .execution-panel {
+      display: grid;
+      grid-template-columns: 105px 70px;
+      flex: 0 0 auto;
+      gap: 4px;
+      min-width: 179px;
+      min-height: 36px;
+      height: 36px;
+    }
+    .orderops-header-sources .execution-button {
+      min-height: 34px;
+      height: 34px;
+      padding: 0 6px;
+      font-size: 9px;
+    }
+    [data-nexus-app-header="orderops"] .header-actions { gap: 4px; }
+    [data-nexus-app-header="orderops"] .header-link {
+      min-height: 34px;
+      padding-inline: 8px;
+      font-size: 10px;
+    }
+
+    .page-shell {
+      width: calc(100% - 16px);
+      max-width: none;
+      padding: 0 0 12px;
+    }
+    .orderops-results-workspace {
+      min-height: calc(100dvh - var(--nexus-ui-header-height, 64px) - var(--nexus-app-header-height, 56px) - 34px);
+      margin-top: 8px;
+      padding: 0;
+    }
+    .orderops-results-workspace[data-nexus-resizable-workspace="true"] {
+      grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) var(--nexus-right-pane-width) !important;
+    }
+    .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+      grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) !important;
+    }
+    .orderops-results-workspace > [data-nexus-pane="work"] {
+      margin: 0;
+      min-width: 0 !important;
+      max-width: 100%;
+    }
+    .orderops-results-workspace .system-topbar { min-height: 40px; padding: 5px 9px; }
+    .orderops-results-workspace .orderq-source-picker { flex: 0 0 auto; }
+    .orderops-central-table-wrap {
+      width: 100%;
+      max-width: 100%;
+      overflow: auto !important;
+      overscroll-behavior-inline: contain;
+    }
+    .orderops-empty-workspace {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 5px;
+      min-height: 280px;
+      padding: 24px;
+      color: #64748b;
+      text-align: center;
+    }
+    .orderops-empty-workspace strong { color: #334155; font-size: 14px; }
+
+    @media (max-width: 960px) {
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"],
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+        display: grid !important;
+        flex-direction: initial !important;
+        overflow: hidden !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] {
+        grid-template-columns: min(var(--nexus-left-pane-width), 38vw) minmax(0, 1fr) min(var(--nexus-right-pane-width), 30vw) !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"][data-nexus-right-open="false"] {
+        grid-template-columns: min(var(--nexus-left-pane-width), 42vw) minmax(0, 1fr) !important;
+      }
+      .orderops-results-workspace[data-nexus-resizable-workspace="true"] > [data-nexus-pane] {
+        width: auto !important;
+        min-height: 0;
+      }
+      .orderops-results-workspace > [data-nexus-pane="reference"] { order: initial; display: flex !important; }
+      .orderops-results-workspace > [data-nexus-pane="work"] { order: initial; min-height: 520px; }
+      .orderops-results-workspace > [data-nexus-pane="result"] { order: initial; }
+      .nexus-pane-resizer-v2[data-nexus-pane-resize-app="orderops"]:not([hidden]) { display: block !important; }
+      .nexus-pane-resizer-v2[data-nexus-pane-resize-app="orderops"][hidden] { display: none !important; }
+      .orderops-side-table-wrap { max-height: none; }
+      .orderq-source-picker { grid-template-columns: 1fr; }
+      .orderq-source-picker__notice { grid-column: 1; }
+    }
   </style>
 </head>
 <body>
@@ -2342,7 +2503,7 @@
 
     </section>
 
-    <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
+    <section class="panel results-panel" id="resultsPanel" aria-label="출고 중앙 작업표">
       <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
       <p class="hidden" id="resultSubtitle"></p>
       <div class="hidden" id="summaryGrid"></div>
@@ -2434,7 +2595,7 @@
         <button class="filter-toggle-button" id="managerFilterToggle" type="button"
           aria-expanded="false" aria-controls="warehouseColorBar">담당자필터</button>
         <button class="orderops-panel-reopen hidden" id="inventoryInspectorReopen" type="button"
-          aria-controls="inventoryInspector" aria-expanded="false">재고조회 열기</button>
+          aria-controls="inventoryInspector" aria-expanded="false">우측 열기</button>
       </div>
 
       <div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="선택한 필터 및 배색">
@@ -2461,27 +2622,27 @@
       <div class="table-wrap orderops-central-table-wrap" id="previewTable" role="tabpanel"></div>
         </section>
 
-        <aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="선택 상품 창고 재고 조회">
+        <aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="출고관리 우측 보조 섹션">
           <div class="orderops-side-panel__head">
-            <div><h3>선택 상품 재고 조회</h3><p>현재 적재된 창고재고 기준</p></div>
+            <div><h3>우측 보조 섹션</h3><p>위치·표시·너비 설정</p></div>
             <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-controls="inventoryInspector">닫기</button>
           </div>
-          <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>상품을 선택하세요</strong><span>중앙 표의 상품행을 선택하면 표시됩니다.</span></div>
+          <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 내용은 별도 승인 전입니다.</strong><span>처리결과·이력·후속 작업은 이번 개발 범위에 포함하지 않습니다.</span></div>
           <div class="orderops-inventory-metrics" id="inventoryInspectorMetrics"></div>
           <div class="orderops-side-table-wrap">
-            <table class="orderops-side-table orderops-inventory-table" aria-label="선택 상품 창고별 재고">
-              <thead><tr><th>창고</th><th>현재 수량</th></tr></thead>
-              <tbody id="inventoryInspectorBody"><tr><td colspan="2" class="empty-table-cell">선택 상품이 없습니다.</td></tr></tbody>
+            <table class="orderops-side-table orderops-inventory-table" aria-label="우측 보조 섹션 범위 안내">
+              <thead><tr><th>항목</th><th>상태</th></tr></thead>
+              <tbody id="inventoryInspectorBody"><tr><td>내용 구성</td><td>권고안·미확정</td></tr></tbody>
             </table>
           </div>
-          <p class="orderops-inventory-caption">예상 잔량은 현재 재고−주문수량의 화면 계산값입니다. 실제 출고 확정 및 DataOps 재고를 변경하지 않습니다.</p>
+          <p class="orderops-inventory-caption">닫기·재열기·독립 너비·상태 보존만 제공합니다.</p>
         </aside>
       </div>
       <datalist id="orderOpsManagerOptions"></datalist>
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.56 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.57 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -2597,6 +2758,54 @@
     (function () {
       "use strict";
 
+      function normalizeOrderOpsWorkspaceDom() {
+        const appHeader = document.querySelector('[data-nexus-app-header="orderops"]');
+        const pageShell = document.querySelector("main.page-shell");
+        const footer = pageShell?.querySelector(":scope > .page-footer");
+        const systemWorkbench = pageShell?.querySelector(":scope > .system-workbench");
+        const inputPanel = systemWorkbench?.querySelector(":scope > .input-panel");
+        const sourceSelector = inputPanel?.querySelector(":scope > #sourceSelector");
+        const executionPanel = inputPanel?.querySelector(":scope > .execution-panel");
+        const resultsPanel = pageShell?.querySelector(":scope > #resultsPanel");
+        const nestedWorkspace = resultsPanel?.querySelector(":scope > .orderops-results-workspace");
+        const leftPane = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="reference"]');
+        const centralWork = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="work"]');
+        const rightPane = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="result"]');
+        if (!appHeader || !pageShell || !resultsPanel || !leftPane || !centralWork || !rightPane) return;
+
+        const headerSources = document.createElement("div");
+        headerSources.className = "orderops-header-sources";
+        headerSources.setAttribute("aria-label", "출고관리 자료 업로드와 분석 실행");
+        if (sourceSelector) headerSources.append(sourceSelector);
+        if (executionPanel) headerSources.append(executionPanel);
+        appHeader.querySelector(":scope > .header-actions")?.before(headerSources);
+
+        const outerWorkspace = document.createElement("div");
+        outerWorkspace.className = "orderops-results-workspace";
+        outerWorkspace.dataset.nexusWorkspace = "orderops";
+        outerWorkspace.setAttribute("aria-label", "출고관리 좌측·중앙·우측 작업영역");
+        leftPane.remove();
+        rightPane.remove();
+        resultsPanel.dataset.nexusPane = "work";
+        resultsPanel.classList.add("orderops-central-work");
+        const centralChildren = [...centralWork.children];
+        centralChildren.forEach((node) => resultsPanel.append(node));
+
+        const systemTopbar = systemWorkbench?.querySelector(":scope > .system-topbar");
+        const orderQPicker = systemWorkbench?.querySelector(":scope > .orderq-source-picker");
+        if (orderQPicker) resultsPanel.prepend(orderQPicker);
+        if (systemTopbar) resultsPanel.prepend(systemTopbar);
+
+        outerWorkspace.append(leftPane, resultsPanel, rightPane);
+        pageShell.insertBefore(outerWorkspace, footer || null);
+        nestedWorkspace.remove();
+        centralWork.remove();
+        inputPanel?.remove();
+        systemWorkbench?.remove();
+      }
+
+      normalizeOrderOpsWorkspaceDom();
+
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -2617,7 +2826,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger", "purchases", "sales"]);
+      const COLUMN_ORDER_TABS = new Set(["readiness", "inventory", "allocations", "ledger", "purchases", "sales"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -2634,9 +2843,9 @@
       const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
       const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
-      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
+      const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
-        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
+        readiness: "기본 분석표", allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
         purchases: "구매현황", sales: "판매현황",
       });
       const SHORTAGE_CATEGORY_COLORS = Object.freeze([
@@ -2646,7 +2855,7 @@
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
-      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
+      const SOURCE_VIEW_CARDS = Object.freeze({ readiness: "orders", allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
         inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고"], columns: {} },
@@ -2671,7 +2880,7 @@
       const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
+      const TABLE_WIDTH_TABS = new Set(["readiness", "validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -2695,6 +2904,7 @@
         sales: null,
         validation: null,
         workspace: null,
+        pendingSystemHistory: null,
         activePreview: "validation",
         searchQuery: "",
         shortageFocus: false,
@@ -3960,7 +4170,7 @@
           return;
         }
 
-        resetResults();
+        resetResults({ preserveView: true });
         state.analysisEnterLocked = true;
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         elements.analyzeButton.disabled = true;
@@ -4024,19 +4234,24 @@
         }
       }
 
-      function resetResults() {
+      function resetResults({ preserveView = false } = {}) {
         leaveUnresolvedReview({ render: false });
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
         clearSubstitutionSelection();
-        state.selectedProductCode = "";
-        state.selectedDeliveryKey = "";
-        state.selectedDeliverySourceRows.clear();
-        state.deliveryManagerFilter = "";
-        state.deliveryRegionFilter = "";
+        if (preserveView && state.workspace?.systemHistory) {
+          state.pendingSystemHistory = JSON.parse(JSON.stringify(state.workspace.systemHistory));
+        }
+        if (!preserveView) {
+          state.pendingSystemHistory = null;
+          state.selectedProductCode = "";
+          state.selectedDeliveryKey = "";
+          state.selectedDeliverySourceRows.clear();
+          state.deliveryManagerFilter = "";
+          state.deliveryRegionFilter = "";
+        }
         state.workspace = null;
         renderSourceViewCards();
-        elements.resultsPanel.classList.add("hidden");
         elements.shipmentExecution.hidden = true;
         elements.shipmentExecutionRows.replaceChildren();
         elements.printButton.disabled = true;
@@ -4056,7 +4271,7 @@
           return;
         }
 
-        resetResults();
+        resetResults({ preserveView: true });
         setLoading(kind, true);
         try {
           state[kind] = ["orders", "inventory"].includes(kind)
@@ -4094,7 +4309,7 @@
             state.integratedFile = result;
             throw new Error("적용 가능한 시트가 없습니다. 환경설정의 시트명 별칭과 필수 열을 확인하세요.");
           }
-          resetResults();
+          resetResults({ preserveView: true });
           result.applied.forEach((parsed, kind) => {
             state[kind] = parsed;
             if (kind === "orders") disconnectOrderQSource();
@@ -4194,6 +4409,20 @@
         renderValidation();
         elements.analyzeButton.disabled = !state.validation?.canAnalyze;
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
+        if (state.orders && (!state.workspace || state.workspace.workspaceMode === engine.PREVIEW_WORKSPACE_MODE)) {
+          state.workspace = engine.createPreviewWorkspace(state.orders, state.inventory, {
+            purchases: state.purchases,
+            sales: state.sales,
+            systemHistory: state.pendingSystemHistory,
+          });
+          state.pendingSystemHistory = state.workspace.systemHistory;
+          if (!state.activePreview || state.activePreview === "validation") state.activePreview = "readiness";
+          renderResults();
+        } else if (!state.orders) {
+          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="9" class="empty-table-cell">주문서를 선택하면 분석 전에도 표시됩니다.</td></tr>';
+          elements.deliverySummaryCount.textContent = "현재 작업 0건";
+          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>주문서를 선택하세요.</strong><span>주문서만 있어도 좌측 주문 목록과 중앙 기본 분석표가 바로 표시됩니다.</span></div>';
+        }
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
         if (!bothSelected) {
@@ -4344,14 +4573,14 @@
             ? reconcileShipmentDraft(previousSnapshot, result.snapshot, state.shipmentDraft)
             : { draft: Object.create(null), retainedOrderItemIds: [], removedOrderItemIds: [], addedOrderItemIds: [] };
           let nextWorkspace = null;
-          if (state.workspace && state.inventory && result.parsedOrders?.rows?.length) {
+          if (state.workspace && state.workspace.workspaceMode !== engine.PREVIEW_WORKSPACE_MODE && state.inventory && result.parsedOrders?.rows?.length) {
             const validation = engine.validateInputs(result.parsedOrders, state.inventory);
             if (!validation.canAnalyze) throw new Error(validation.errors?.map(issue => issue.message).join(" · ") || "최신 주문을 현재 창고재고와 분석할 수 없습니다.");
             nextWorkspace = await analyzeCurrentInputs({ orders: result.parsedOrders, inventory: state.inventory });
           }
 
           const previousPreview = state.activePreview;
-          resetResults();
+          resetResults({ preserveView: true });
           state.orderQSource = result;
           state.orders = result.parsedOrders;
           state.shipmentDraft = reconciliation.draft;
@@ -5133,7 +5362,7 @@
         const tabs = {};
         TABLE_WIDTH_TABS.forEach((tabId) => {
           const keys = state.hiddenColumnSettings.tabs?.[tabId];
-          if (Array.isArray(keys) && keys.length > 0) tabs[tabId] = [...keys];
+          if (Array.isArray(keys) && (keys.length > 0 || tabId === "readiness")) tabs[tabId] = [...keys];
         });
         localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify({
           schemaVersion: HIDDEN_COLUMNS_SCHEMA,
@@ -5220,7 +5449,8 @@
 
       function showAllColumns() {
         if (!TABLE_WIDTH_TABS.has(state.activePreview)) return;
-        delete state.hiddenColumnSettings.tabs[state.activePreview];
+        if (state.activePreview === "readiness") state.hiddenColumnSettings.tabs.readiness = [];
+        else delete state.hiddenColumnSettings.tabs[state.activePreview];
         saveHiddenColumnSettings();
         markOrderViewPresetCustom();
         renderPreview();
@@ -5652,7 +5882,67 @@
         return preview;
       }
 
+      function buildReadinessPreview(workspace) {
+        const hasInventory = Boolean(workspace.previewDataState?.inventory);
+        const headers = [
+          "거래처", "상품", "주문수량", "직원 적요",
+          ...(hasInventory ? ["재고", "잔량"] : []),
+          "상품코드", "규격", "담당자", "창고", "일반 적요",
+        ];
+        const sourceRows = workspace.allocations || [];
+        const preview = {
+          label: hasInventory ? "기본 분석표 · 재고 비교 전" : "기본 분석표 · 분석 전",
+          headers,
+          numeric: hasInventory ? [2, 4, 5] : [2],
+          inventory: [],
+          purchase: -1,
+          purchaseEditable: false,
+          status: -1,
+          sourceRows,
+          rows: sourceRows.map((row) => [
+            row.customer || "",
+            row.productName || row.productCode || "",
+            row.quantity,
+            formatEmployeeDeliveryNotice(row),
+            ...(hasInventory ? [row.stockTotal ?? "", row.remainingQuantity ?? ""] : []),
+            row.productCode || "",
+            row.specification || row.spec || "",
+            row.manager || "",
+            row.warehouse || "",
+            String(row.noteOriginal ?? row.note ?? ""),
+          ]),
+          sortByProductCode: false,
+          shortageCount: 0,
+        };
+        preview.columns = createPreviewColumns("readiness", preview.headers, preview.numeric);
+        const roleAndField = [
+          ["customer", "customer"], ["productName", ""], ["orderQuantity", "quantity"], ["deliveryNotice", "deliveryNotice"],
+          ...(hasInventory ? [["stockQuantity", ""], ["calculatedQuantity", ""]] : []),
+          ["productCode", ""], ["specification", ""], ["manager", "manager"], ["warehouse", "warehouse"], ["note", "note"],
+        ];
+        const widths = hasInventory
+          ? [148, 190, 92, 190, 92, 92, 110, 100, 100, 86, 170]
+          : [148, 190, 92, 190, 110, 100, 100, 86, 170];
+        preview.columns.forEach((column, index) => {
+          column.role = roleAndField[index]?.[0] || "";
+          if (roleAndField[index]?.[1]) column.orderField = roleAndField[index][1];
+          column.defaultWidth = widths[index] || 120;
+        });
+        if (!Object.prototype.hasOwnProperty.call(state.hiddenColumnSettings.tabs, "readiness")) {
+          state.hiddenColumnSettings.tabs.readiness = preview.columns
+            .filter((column) => ["productCode", "specification", "manager", "warehouse", "note"].includes(column.role))
+            .map((column) => column.key);
+        }
+        return preview;
+      }
+
       function getPreviewDefinitions(workspace) {
+        if (workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
+          const definitions = { readiness: buildReadinessPreview(workspace) };
+          if (workspace.orderOpsInputs?.purchases) definitions.purchases = buildTransactionPreview(workspace, "purchases");
+          if (workspace.orderOpsInputs?.sales) definitions.sales = buildTransactionPreview(workspace, "sales");
+          return definitions;
+        }
         const acknowledgementState = engine.ensureNoticeState(workspace);
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
         const shortageContext = typeof engine.getShortageCategoryContext === "function"
@@ -6051,7 +6341,8 @@
         if (!summary) return;
         state.selectedDeliveryKey = summary.deliveryKey;
         state.selectedDeliverySourceRows = new Set(summary.sourceRowNumbers || []);
-        if (state.activePreview !== "allocations") activatePreview("allocations");
+        const orderPreview = state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "allocations";
+        if (state.activePreview !== orderPreview) activatePreview(orderPreview);
         else {
           renderPreview();
           scheduleLocalSave();
@@ -6081,48 +6372,9 @@
 
       function renderInventoryInspector() {
         if (!elements.inventoryInspectorBody) return;
-        const inventoryView = state.workspace && typeof engine.getInventoryViewRows === "function"
-          ? engine.getInventoryViewRows(state.workspace) : null;
-        const productCode = engine.normalizeProductCode(state.selectedProductCode);
-        const inventoryRow = inventoryView?.rows?.find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
-        const allocation = (state.workspace?.allocations || []).find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
-        const order = (state.workspace?.orders || []).find((row) => engine.normalizeProductCode(row?.productCode) === productCode);
-        if (!productCode) {
-          elements.inventoryInspectorIdentity.innerHTML = '<strong>상품을 선택하세요</strong><span>중앙 표의 상품행을 선택하면 표시됩니다.</span>';
-          elements.inventoryInspectorMetrics.replaceChildren();
-          elements.inventoryInspectorBody.innerHTML = '<tr><td colspan="2" class="empty-table-cell">선택 상품이 없습니다.</td></tr>';
-          return;
-        }
-        const productName = inventoryRow?.productName || allocation?.productName || order?.productName || productCode;
-        const specification = inventoryRow?.specification || allocation?.specification || order?.specification || "규격 미지정";
-        const unit = inventoryRow?.unit || allocation?.sourceUnit || order?.sourceUnit || "단위 미지정";
-        const inventoryMissing = !inventoryRow || inventoryRow.inventoryMissing === true;
-        elements.inventoryInspectorIdentity.innerHTML = `<strong>${escapeHtml(productName)}</strong>
-          <span>${escapeHtml(productCode)} · ${escapeHtml(specification)} · ${escapeHtml(unit)}</span>
-          ${inventoryMissing ? '<span class="orderops-customer-key-warning">재고자료 없음 · 선택 상품을 유지합니다.</span>' : ""}`;
-        const confirmed = confirmedQuantityForProduct(productCode);
-        const selectedOrderQuantity = inventoryRow?.orderQuantity ?? (state.workspace?.orders || []).reduce((sum, row) => {
-          if (engine.normalizeProductCode(row?.productCode) !== productCode) return sum;
-          const parsed = engine.parseNumericCell(row?.quantity);
-          return parsed.ok && !parsed.blank ? sum + parsed.value : sum;
-        }, 0);
-        const metrics = [
-          ["현재 재고", inventoryMissing ? null : inventoryRow.stockTotal, ""],
-          ["주문수량", selectedOrderQuantity, ""],
-          ["예상 잔량", inventoryMissing ? null : inventoryRow.remainingQuantity, "orderops-inventory-metric--expected"],
-          ["실제 출고 확정", confirmed, "orderops-inventory-metric--actual"],
-        ];
-        elements.inventoryInspectorMetrics.innerHTML = metrics.map(([label, value, className]) => `
-          <div class="orderops-inventory-metric ${className}"><span>${label}</span><strong>${value === null ? "—" : escapeHtml(formatNumber(value))}</strong></div>`).join("");
-        if (inventoryMissing) {
-          elements.inventoryInspectorBody.innerHTML = '<tr><td colspan="2" class="empty-table-cell">선택한 상품의 창고별 재고자료가 없습니다.</td></tr>';
-          return;
-        }
-        const warehouseRows = (inventoryView.columns || []).map((column, index) => ({ column, value: inventoryRow.values?.[index] }))
-          .filter(({ column }) => column.role === "warehouseQuantity");
-        elements.inventoryInspectorBody.innerHTML = warehouseRows.length ? warehouseRows.map(({ column, value }) => `
-          <tr><td>${escapeHtml(column.header || "창고")}</td><td class="number">${escapeHtml(formatNumber(value ?? ""))}</td></tr>`).join("")
-          : '<tr><td colspan="2" class="empty-table-cell">현재 적재된 창고별 재고가 없습니다.</td></tr>';
+        elements.inventoryInspectorIdentity.innerHTML = '<strong>보조 내용은 별도 승인 전입니다.</strong><span>처리결과·이력·후속 작업은 권고안으로만 남깁니다.</span>';
+        elements.inventoryInspectorMetrics.replaceChildren();
+        elements.inventoryInspectorBody.innerHTML = '<tr><td>내용 구성</td><td>권고안·미확정</td></tr>';
       }
 
       function renderOrderOpsSidePanels() {
@@ -6756,7 +7008,7 @@
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
                     const editableShipmentDraft = editable && previewId === "allocations" && column.shipmentDraft && sourceRow?.orderItemId;
-                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
+                    const editableOrder = editable && ["readiness", "allocations"].includes(previewId) && column.orderField && sourceRow?.sourceRowNumber;
                     const unresolvedReviewAction = previewId === "unresolved" && column.role === "unresolvedReviewAction";
                     const unresolvedOfficialInventory = previewId === "unresolved" && column.role === "unresolvedOfficialInventory";
                     const unresolvedIntegrity = previewId === "unresolved" && column.role === "unresolvedIntegrity";
@@ -7079,12 +7331,13 @@
         setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
         const definitions = getPreviewDefinitions(state.workspace);
-        if (!definitions[state.activePreview]) state.activePreview = "validation";
-        const validationDefinition = definitions.validation;
+        const defaultPreview = state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "validation";
+        if (!definitions[state.activePreview]) state.activePreview = defaultPreview;
+        const primaryDefinition = definitions[defaultPreview];
         elements.previewTabs.innerHTML = `
-          <button class="tab-button ${state.activePreview === "validation" ? "active" : ""}" type="button" role="tab"
-            aria-selected="${state.activePreview === "validation"}" data-preview="validation">
-            ${escapeHtml(validationDefinition.label)}
+          <button class="tab-button ${state.activePreview === defaultPreview ? "active" : ""}" type="button" role="tab"
+            aria-selected="${state.activePreview === defaultPreview}" data-preview="${escapeHtml(defaultPreview)}">
+            ${escapeHtml(primaryDefinition.label)}
           </button>`;
         renderSourceViewCards(definitions);
 
@@ -7122,7 +7375,7 @@
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
-        elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
+        elements.specFilterGroup.disabled = ["readiness", "validation", "notices"].includes(state.activePreview);
         renderColumnVisibilityMenu(preview);
         const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
@@ -7387,6 +7640,22 @@
       }
 
       function renderResults() {
+        if (state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
+          const stats = state.workspace.stats;
+          renderPreview();
+          elements.resultsPanel.classList.remove("hidden");
+          elements.shipmentExecution.hidden = true;
+          elements.printButton.disabled = !(stats.orderRowCount > 0);
+          elements.downloadButton.disabled = true;
+          elements.cloudSaveButton.disabled = true;
+          elements.headerCloudSaveButton.disabled = true;
+          const inventoryText = state.workspace.previewDataState?.inventory
+            ? "재고자료 포함 · 출고분석 실행 전"
+            : "재고자료 없음 · 주문 우선 표시";
+          elements.resultSubtitle.textContent = inventoryText;
+          setSystemMessage(`분석 전 주문 표시 · 주문 ${formatNumber(stats.orderRowCount)}행 · ${inventoryText}`);
+          return;
+        }
         engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
         const orderReview = getCurrentOrderReview();
@@ -7513,6 +7782,10 @@
           } : null,
         }));
         const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
+        const priorSystemHistory = state.workspace?.systemHistory || state.pendingSystemHistory;
+        if (priorSystemHistory?.schemaVersion === engine.SYSTEM_HISTORY_SCHEMA_VERSION && Array.isArray(priorSystemHistory.events)) {
+          workspace.systemHistory = JSON.parse(JSON.stringify(priorSystemHistory));
+        }
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
           purchases: purchases ? {
@@ -7540,15 +7813,9 @@
         setSystemMessage("출고분석 중 · 주문·재고·발주수량을 계산합니다");
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
-          clearSubstitutionSelection();
-          state.selectedProductCode = "";
-          state.selectedDeliveryKey = "";
-          state.selectedDeliverySourceRows.clear();
-          state.deliveryManagerFilter = "";
-          state.deliveryRegionFilter = "";
           state.workspace = await analyzeCurrentInputs();
-          state.activePreview = "validation";
-          resetResultViewFilters();
+          state.pendingSystemHistory = state.workspace.systemHistory;
+          state.activePreview = "allocations";
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -7815,7 +8082,10 @@
         const input = elements[kind + "Input"];
         const fileButton = elements[kind + "FileButton"];
         drop.addEventListener("click", () => {
-          if (activatePreview(FILE_KIND_PREVIEWS[kind])) return;
+          const previewId = kind === "orders" && state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE
+            ? "readiness"
+            : FILE_KIND_PREVIEWS[kind];
+          if (activatePreview(previewId)) return;
           showToast("출고분석을 완료하면 이 카드에서 해당 화면을 볼 수 있습니다.");
         });
         fileButton.addEventListener("click", () => input.click());
@@ -7931,7 +8201,7 @@
             target instanceof HTMLSelectElement ||
             target instanceof HTMLButtonElement ||
             target?.isContentEditable) return;
-        if (!state.validation?.canAnalyze || state.workspace || elements.analyzeButton.disabled) return;
+        if (!state.validation?.canAnalyze || (state.workspace && state.workspace.workspaceMode !== engine.PREVIEW_WORKSPACE_MODE) || elements.analyzeButton.disabled) return;
         event.preventDefault();
         runAnalysis();
       }, true);
@@ -7960,7 +8230,7 @@
       }
 
       function commitOrderInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || state.activePreview !== "allocations") return false;
+        if (!input || !state.workspace || !["readiness", "allocations"].includes(state.activePreview)) return false;
         try {
           if (input.dataset.orderField === "manager" && typeof engine.setCustomerManager === "function") {
             const sourceRow = (state.workspace.orders || []).find((row) =>
@@ -8752,7 +9022,7 @@
           return;
         }
         if (event.key === "F5") {
-          activatePreview("allocations");
+          activatePreview(state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "allocations");
           return;
         }
         if (event.key === "F3") {

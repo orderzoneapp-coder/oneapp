@@ -79,7 +79,7 @@
 
   function positionHandles(layout) {
     const { workspace, leftPane, rightPane, leftHandle, rightHandle } = layout;
-    if (!workspace.isConnected || !isVisible(workspace) || matchMedia('(max-width: 960px)').matches) {
+    if (!workspace.isConnected || !isVisible(workspace) || (layout.appId !== 'orderops' && matchMedia('(max-width: 960px)').matches)) {
       leftHandle.hidden = true;
       rightHandle.hidden = true;
       return;
@@ -155,6 +155,7 @@
     handle.type = 'button';
     handle.className = 'nexus-pane-resizer-v2';
     handle.dataset.nexusPaneResize = side;
+    handle.dataset.nexusPaneResizeApp = layout.appId;
     handle.setAttribute('role', 'separator');
     handle.setAttribute('aria-orientation', 'vertical');
     handle.setAttribute('aria-label', `${side === 'left' ? '좌측 보조' : '우측 다음 단계'} 패널 폭 조절`);
