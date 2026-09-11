@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>NEXUS workspace fixture</title>
+</head>
+<body>
+  <main id="fixtureApp">fixture</main>
+  <script>
+    (() => {
+      'use strict';
+      const schemaVersion = 'nexus-workspace-message/v1';
+      const pathToApp = {
+        '/Master.html': 'master-lookup',
+        '/customer-master/index.html': 'customer-master',
+        '/smartinput/index.html': 'smart-input',
+        '/SmartParser.html': 'smart-parser',
+        '/MerchOps.html': 'merchops',
+        '/orderops/list.html': 'orderops',
+        '/DataOps.html': 'dataops',
+      };
+      const appId = pathToApp[location.pathname] || '';
+      let transitionId = '';
+      window.fixtureState = { appId, leaveResult: 'READY', leaveDelay: 0, printCount: 0, themeCount: 0 };
+
+      const send = (type, extra = {}) => parent.postMessage(Object.assign({
+        schemaVersion,
+        type,
+        transitionId,
+        appId,
+        route: `${location.pathname.replace(/^\//, '')}${location.search}${location.hash}`,
+      }, extra), location.origin);
+
+      window.addEventListener('message', (event) => {
+        if (event.origin !== location.origin || event.source !== parent) return;
+        const data = event.data;
+        if (!data || data.schemaVersion !== schemaVersion || data.appId !== appId) return;
+        if (data.type === 'NEXUS_WORKSPACE_HOST_READY_V1') {
+          transitionId = data.transitionId;
+          document.documentElement.dataset.fixtureReady = 'true';
+          send('NEXUS_WORKSPACE_APP_READY_V1');
+        } else if (data.type === 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1') {
+          const result = window.fixtureState.leaveResult;
+          setTimeout(() => send('NEXUS_WORKSPACE_LEAVE_RESULT_V1', {
+            transitionId: data.transitionId,
+            result,
+            message: result === 'READY' ? '' : 'fixture blocked the transition',
+          }), window.fixtureState.leaveDelay);
+        } else if (data.type === 'NEXUS_WORKSPACE_THEME_V1') {
+          document.documentElement.dataset.nexusUiTheme = data.theme;
+          window.fixtureState.themeCount += 1;
+        } else if (data.type === 'NEXUS_WORKSPACE_PRINT_V1') {
+          window.fixtureState.printCount += 1;
+        }
+      });
+
+      window.fixtureRouteChanged = (route, overrideTransitionId = transitionId) => parent.postMessage({
+        schemaVersion,
+        type: 'NEXUS_WORKSPACE_ROUTE_CHANGED_V1',
+        transitionId: overrideTransitionId,
+        appId,
+        route,
+      }, location.origin);
+    })();
+  </script>
+</body>
+</html>

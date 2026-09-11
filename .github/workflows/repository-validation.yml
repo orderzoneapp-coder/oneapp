@@ -90,6 +90,11 @@ jobs:
       - name: Test NEXUS common UI recovery contracts
         run: node scripts/test-nexus-common-ui-recovery.mjs
 
+      - name: Test NEXUS persistent workspace host
+        run: |
+          node scripts/test-nexus-workspace-host.mjs
+          node scripts/test-nexus-workspace-host-browser.mjs
+
       - name: Test NEXUS unified dark app headers
         run: node scripts/test-nexus-unified-dark-app-headers-browser-e2e.mjs
 

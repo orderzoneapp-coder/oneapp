@@ -1,0 +1,198 @@
+:root {
+  --nexus-workspace-bg: var(--nexus-ui-page-bg, #f3efe6);
+  --nexus-workspace-panel: var(--nexus-ui-panel-bg, #faf7f0);
+  --nexus-workspace-border: var(--nexus-ui-border, #ddd5c8);
+  --nexus-workspace-text: var(--nexus-ui-text, #292b2f);
+  --nexus-workspace-muted: var(--nexus-ui-muted, #66675f);
+  --nexus-workspace-danger: var(--nexus-ui-danger, #755055);
+  --nexus-workspace-danger-bg: var(--nexus-ui-danger-bg, #f6eff0);
+  --nexus-workspace-danger-border: var(--nexus-ui-danger-border, #b9a0a4);
+}
+
+html,
+body.nexus-workspace {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--nexus-workspace-bg);
+}
+
+body.nexus-workspace {
+  color: var(--nexus-workspace-text);
+  font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.nexus-workspace__main {
+  position: relative;
+  width: 100%;
+  height: calc(100dvh - var(--nexus-ui-header-height, 64px));
+  min-height: 240px;
+  overflow: hidden;
+  background: var(--nexus-workspace-bg);
+}
+
+.nexus-workspace__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--nexus-workspace-bg);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.nexus-workspace__frame.is-document-loaded {
+  opacity: 1;
+}
+
+.nexus-workspace__loading,
+.nexus-workspace__error {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--nexus-workspace-bg);
+  color: var(--nexus-workspace-muted);
+  font-size: 14px;
+}
+
+.nexus-workspace__loading[hidden],
+.nexus-workspace__error[hidden],
+.nexus-workspace__notice[hidden] {
+  display: none;
+}
+
+.nexus-workspace__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--nexus-workspace-border);
+  border-top-color: #05ae94;
+  border-radius: 50%;
+  animation: nexus-workspace-spin 700ms linear infinite;
+}
+
+.nexus-workspace__error-card {
+  width: min(100%, 520px);
+  padding: 28px;
+  border: 1px solid var(--nexus-workspace-border);
+  border-radius: 14px;
+  background: var(--nexus-workspace-panel);
+}
+
+.nexus-workspace__eyebrow {
+  margin: 0 0 8px;
+  color: var(--nexus-workspace-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.nexus-workspace__error h1 {
+  margin: 0 0 10px;
+  color: var(--nexus-workspace-text);
+  font-size: 21px;
+}
+
+.nexus-workspace__error p:not(.nexus-workspace__eyebrow) {
+  margin: 0;
+  color: var(--nexus-workspace-muted);
+  line-height: 1.6;
+}
+
+.nexus-workspace__error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.nexus-workspace__error-actions button,
+.nexus-workspace__error-actions a {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--nexus-workspace-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nexus-workspace-text);
+  font: inherit;
+  font-weight: 700;
+  line-height: 22px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nexus-workspace__error-actions button {
+  border-color: #087f6d;
+  background: #087f6d;
+  color: #fff;
+}
+
+.nexus-workspace__error-actions button:focus-visible,
+.nexus-workspace__error-actions a:focus-visible {
+  outline: 2px solid var(--nexus-ui-focus, #91e8d5);
+  outline-offset: 2px;
+}
+
+.nexus-workspace__notice {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 50%;
+  max-width: min(720px, calc(100% - 24px));
+  margin: 0;
+  padding: 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--nexus-workspace-danger-border);
+  border-radius: 8px;
+  background: var(--nexus-workspace-danger-bg);
+  color: var(--nexus-workspace-danger);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 16%);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@keyframes nexus-workspace-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .nexus-workspace__main {
+    height: calc(100dvh - var(--nexus-ui-header-height, 104px));
+  }
+
+  .nexus-workspace__error,
+  .nexus-workspace__loading {
+    padding: 14px;
+  }
+
+  .nexus-workspace__error-card {
+    padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-workspace__frame { transition: none; }
+  .nexus-workspace__spinner { animation: none; }
+}
+
+@media print {
+  .nexus-ui-header,
+  .nexus-workspace__loading,
+  .nexus-workspace__error,
+  .nexus-workspace__notice {
+    display: none !important;
+  }
+
+  body.nexus-workspace {
+    padding: 0 !important;
+  }
+
+  .nexus-workspace__main {
+    height: auto;
+  }
+}
