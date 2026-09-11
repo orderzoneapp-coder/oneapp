@@ -592,6 +592,46 @@ async function restoreLatestAutosave() {
   }
 }
 
+async function waitForSmartInputIdle(timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while (state.busy) {
+    if (Date.now() - startedAt >= timeoutMs) throw new Error('진행 중인 스마트입력 작업의 결과 확인 시간이 초과되었습니다.');
+    await new Promise(resolve => window.setTimeout(resolve, 50));
+  }
+  await state.estimateSelectionQueue;
+}
+
+async function flushSmartInputBeforeWorkspaceLeave() {
+  clearTimeout(state.saveTimer);
+  await autosaveWriteQueue;
+  await waitForSmartInputIdle();
+  clearTimeout(state.saveTimer);
+  const compatibilitySaved = saveDraftNow({ writeAutosave: false });
+  if (!compatibilitySaved) throw new Error('최신 입력을 호환 저장소에 기록하지 못했습니다.');
+  const expected = JSON.parse(JSON.stringify(state.draft));
+  await queueAutosaveSnapshot(expected);
+  const saved = await loadLatestAutosave();
+  if (!saved?.draft
+    || saved.draft.updatedAt !== expected.updatedAt
+    || JSON.stringify(saved.draft) !== JSON.stringify(expected)) {
+    throw new Error('최신 스마트입력 자동저장 검산 결과가 일치하지 않습니다.');
+  }
+  state.draftDirty = false;
+  return { result: 'READY' };
+}
+
+function registerSmartInputWorkspaceAdapter() {
+  const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+  if (!bridge?.registerAdapter || registerSmartInputWorkspaceAdapter.registered) return false;
+  registerSmartInputWorkspaceAdapter.registered = true;
+  bridge.registerAdapter({ beforeLeave: flushSmartInputBeforeWorkspaceLeave, print: () => window.print() });
+  return true;
+}
+
+if (!registerSmartInputWorkspaceAdapter()) {
+  window.addEventListener('nexus-ui:ready', registerSmartInputWorkspaceAdapter, { once: true });
+}
+
 function referencesReady() {
   return state.referenceStatus === REFERENCE_DOMAIN_STATUS.READY;
 }
@@ -11012,7 +11052,7 @@ $('voucherContextList').addEventListener('click', event => {
 });
 $('voucherActivityOpenAll').addEventListener('click', event => {
   const href = event.currentTarget.dataset.href;
-  if (href) window.location.href = href;
+  if (href) window.ONEAPP_NEXUS_NAVIGATE_ROUTE(href, 'smart-input');
 });
 $('relatedCollapseButton').addEventListener('click', event => {
   setRelatedPanelOpen(!state.draft.ui.relatedOpen);

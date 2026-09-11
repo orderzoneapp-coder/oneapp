@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="../nexus/common/nexus-ui-theme-init.js?v=1.1.0" data-nexus-app-id="orderops"></script>
-  <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.3.5">
+  <script src="../nexus/common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="orderops"></script>
+  <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.4.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.11">
   <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
-  <script defer src="../nexus/common/nexus-ui.js?v=1.6.1"></script>
+  <script defer src="../nexus/common/nexus-ui.js?v=1.7.0"></script>
   <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.4.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
@@ -4170,11 +4170,25 @@
         return record;
       }
 
+      let localWorkspaceSaveQueue = Promise.resolve();
+      let activeLocalWorkspaceSave = null;
+
+      function queueLocalWorkspaceSave(workspace = state.workspace, options = {}) {
+        const write = () => persistLocalWorkspace(workspace, options);
+        const queued = localWorkspaceSaveQueue.then(write, write);
+        activeLocalWorkspaceSave = queued;
+        localWorkspaceSaveQueue = queued.catch(() => undefined);
+        queued.finally(() => {
+          if (activeLocalWorkspaceSave === queued) activeLocalWorkspaceSave = null;
+        }).catch(() => undefined);
+        return queued;
+      }
+
       function scheduleLocalSave() {
         window.clearTimeout(scheduleLocalSave.timer);
         if (state.workspace) elements.localSaveStatus.textContent = "임시저장 · 저장 대기";
         scheduleLocalSave.timer = window.setTimeout(() => {
-          persistLocalWorkspace().catch((error) => {
+          queueLocalWorkspaceSave().catch((error) => {
             elements.localSaveStatus.textContent = "임시저장 · 실패";
             setSystemMessage("임시저장 실패 · 현재 화면 작업은 유지됩니다");
             showToast(error.message || "임시저장에 실패했습니다.", true);
@@ -8429,9 +8443,11 @@
         }));
       }
 
-      async function executeShipmentCommand(intent) {
+      let activeShipmentOperation = null;
+
+      async function runShipmentCommand(intent) {
         const snapshot = state.orderQSource?.snapshot;
-        if (!snapshot || state.shipmentCommandBusy) return;
+        if (!snapshot || state.shipmentCommandBusy) return { ok: false, message: "출고 작업을 시작할 수 없습니다." };
         state.shipmentCommandBusy = true;
         state.shipmentCommandError = "";
         renderShipmentExecution();
@@ -8455,6 +8471,7 @@
             showToast(`주문 ${snapshot.orderNo} 출고를 보류했습니다.`);
           }
           await refreshShipmentExecution();
+          return { ok: true };
         } catch (error) {
           const conflict = error?.code === "SHIPMENT_ORDER_REVISION_CONFLICT";
           if (conflict) state.shipmentSourceChanged = true;
@@ -8462,10 +8479,20 @@
             ? "주문이 변경되어 확정하지 않았습니다. 입력값을 유지한 채 최신 주문을 다시 확인하세요."
             : `출고 처리 실패 · ${error.message || error}`;
           showToast(error.message || "출고결과를 저장하지 못했습니다.", true);
+          return { ok: false, message: error.message || "출고결과를 저장하지 못했습니다." };
         } finally {
           state.shipmentCommandBusy = false;
           renderShipmentExecution();
         }
+      }
+
+      function executeShipmentCommand(intent) {
+        const operation = runShipmentCommand(intent);
+        activeShipmentOperation = operation;
+        operation.finally(() => {
+          if (activeShipmentOperation === operation) activeShipmentOperation = null;
+        }).catch(() => undefined);
+        return operation;
       }
 
       async function executeShipmentReversal(shipmentDocumentId) {
@@ -8652,7 +8679,9 @@
         return workspace;
       }
 
-      async function runAnalysis() {
+      let activeOrderOpsAnalysis = null;
+
+      async function performAnalysis() {
         if (!state.validation?.canAnalyze) return;
         state.analysisEnterLocked = false;
         setAnalysisEnterReady(false);
@@ -8668,9 +8697,11 @@
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
           showToast("출고 배정과 검증이 완료되었습니다.");
+          return { ok: true };
         } catch (error) {
           setSystemMessage("분석 실패 · 오류 안내를 확인하세요");
           showToast(error.message || "분석 중 오류가 발생했습니다.", true);
+          return { ok: false, message: error.message || "출고분석에 실패했습니다." };
         } finally {
           elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span><span>출고분석 Enter</span>';
           elements.analyzeButton.disabled = !state.validation?.canAnalyze;
@@ -8808,7 +8839,9 @@
         }
       }
 
-      async function saveCloudPlan() {
+      let activeCloudSaveOperation = null;
+
+      async function runCloudPlanSave() {
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
         setSystemMessage("완료본 저장 중 · 변경 불가 revision을 생성합니다");
@@ -8828,9 +8861,11 @@
           elements.cloudStatus.textContent = `완료본 저장 · revision ${saved.revision}`;
           showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
           await listCloudPlans();
+          return { ok: true, revision: saved.revision };
         } catch (error) {
           setSystemMessage("완료본 저장 실패 · 이전 확정 revision은 유지됩니다");
           showToast(error.message || "Cloud 저장에 실패했습니다.", true);
+          return { ok: false, message: error.message || "Cloud 저장에 실패했습니다." };
         } finally {
           const cloudSaveDisabled = getCurrentOrderReview().hasQuantityErrors
             || !state.workspace?.planId
@@ -8838,6 +8873,25 @@
           elements.cloudSaveButton.disabled = cloudSaveDisabled;
           elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         }
+      }
+
+      function runAnalysis() {
+        if (activeOrderOpsAnalysis) return activeOrderOpsAnalysis;
+        const operation = performAnalysis();
+        activeOrderOpsAnalysis = operation;
+        operation.finally(() => {
+          if (activeOrderOpsAnalysis === operation) activeOrderOpsAnalysis = null;
+        }).catch(() => undefined);
+        return operation;
+      }
+
+      function saveCloudPlan() {
+        const operation = runCloudPlanSave();
+        activeCloudSaveOperation = operation;
+        operation.finally(() => {
+          if (activeCloudSaveOperation === operation) activeCloudSaveOperation = null;
+        }).catch(() => undefined);
+        return operation;
       }
 
       function ensureCloudConfiguration() {
@@ -10249,6 +10303,70 @@
           if (event.data?.orderId === state.orderQSource?.snapshot?.orderId) void refreshShipmentExecution();
         });
         window.addEventListener("pagehide", () => { orderChanges.close(); shipmentChanges.close(); }, { once: true });
+      }
+
+      async function waitForOrderOpsIdle(timeoutMs = 10000) {
+        const startedAt = Date.now();
+        while (Object.values(state.loading).some(Boolean)
+          || state.orderQCandidateLoading
+          || state.unresolvedReview.loading
+          || state.unresolvedReview.impact.loading) {
+          if (Date.now() - startedAt >= timeoutMs) {
+            throw new Error("진행 중인 출고관리 작업의 결과 확인 시간이 초과되었습니다.");
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+      }
+
+      async function flushOrderOpsBeforeWorkspaceLeave() {
+        window.clearTimeout(scheduleLocalSave.timer);
+
+        if (activeShipmentOperation) {
+          const shipment = await activeShipmentOperation;
+          if (!shipment?.ok) throw new Error(shipment?.message || "출고확정 결과를 확인하지 못했습니다.");
+        }
+        if (activeCloudSaveOperation) {
+          const cloud = await activeCloudSaveOperation;
+          if (!cloud?.ok) throw new Error(cloud?.message || "Cloud 저장 결과를 확인하지 못했습니다.");
+        }
+        if (activeOrderOpsAnalysis) {
+          const analysis = await activeOrderOpsAnalysis;
+          if (!analysis?.ok) throw new Error(analysis?.message || "출고분석 결과를 확인하지 못했습니다.");
+        }
+
+        await waitForOrderOpsIdle();
+        await localWorkspaceSaveQueue;
+        window.clearTimeout(scheduleLocalSave.timer);
+
+        const activeInput = document.activeElement;
+        if (activeInput instanceof HTMLInputElement || activeInput instanceof HTMLSelectElement || activeInput instanceof HTMLTextAreaElement) {
+          commitExcelGridInput(activeInput);
+        }
+        captureShipmentDraftInputs();
+        persistShipmentDraftToWorkspace();
+
+        if (state.workspace) {
+          if (!state.db || !state.workspace.sourceFingerprint) {
+            throw new Error("최신 출고 작업을 검산할 수 있는 원본 식별정보와 복구 저장소가 준비되지 않았습니다.");
+          }
+          const saved = await queueLocalWorkspaceSave();
+          if (!saved?.recordId || saved.sourceFingerprint !== state.workspace.sourceFingerprint) {
+            throw new Error("최신 출고 작업 임시저장 검산 결과가 일치하지 않습니다.");
+          }
+        }
+        return { result: "READY" };
+      }
+
+      function registerOrderOpsWorkspaceAdapter() {
+        const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+        if (!bridge?.registerAdapter || registerOrderOpsWorkspaceAdapter.registered) return false;
+        registerOrderOpsWorkspaceAdapter.registered = true;
+        bridge.registerAdapter({ beforeLeave: flushOrderOpsBeforeWorkspaceLeave, print: printActiveTable });
+        return true;
+      }
+
+      if (!registerOrderOpsWorkspaceAdapter()) {
+        window.addEventListener("nexus-ui:ready", registerOrderOpsWorkspaceAdapter, { once: true });
       }
 
       if (!engine || !workbookTools || !window.XLSX) {

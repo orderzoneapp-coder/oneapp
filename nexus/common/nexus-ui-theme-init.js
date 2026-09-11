@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const STORAGE_KEY = 'oneapp.nexus.ui.theme.v1';
   const LEGACY_KEYS = Object.freeze([
     'oneapp.nexus.v1.colorMode',
@@ -9,6 +9,21 @@
   ]);
   const root = document.documentElement;
   const startedAt = typeof performance !== 'undefined' ? performance.now() : 0;
+
+  const workspaceEmbedded = (() => {
+    if (typeof window !== 'object' || window.parent === window) return false;
+    try {
+      const parentUrl = new URL(window.parent.location.href);
+      if (parentUrl.origin === window.location.origin && /\/nexus\/workspace\.html$/.test(parentUrl.pathname)) return true;
+    } catch {}
+    try {
+      const referrer = new URL(document.referrer || '', window.location.href);
+      return referrer.origin === window.location.origin && /\/nexus\/workspace\.html$/.test(referrer.pathname);
+    } catch {
+      return false;
+    }
+  })();
+  if (workspaceEmbedded) root.dataset.nexusWorkspaceEmbedded = 'true';
 
   const parseStored = (raw) => {
     if (raw == null) return '';

@@ -12,7 +12,7 @@
 })(typeof window === 'object' ? window : globalThis, () => {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const HANDSHAKE_TIMEOUT_MS = 8000;
   const LEAVE_TIMEOUT_MS = 12000;
@@ -42,6 +42,16 @@
     Object.freeze({ id: 'dataops', label: 'DataOps', path: 'DataOps.html' }),
   ]);
   const APP_BY_ID = new Map(APPS.map((app) => [app.id, app]));
+  const APP_PATHS = Object.freeze({
+    'master-lookup': Object.freeze(['Master.html', 'Item_manager.html', 'history_viewer.html', 'settings.html']),
+    'customer-master': Object.freeze(['customer-master/index.html', 'history_viewer.html', 'settings.html']),
+    'smart-input': Object.freeze(['smartinput/index.html', 'history_viewer.html', 'settings.html', 'orderq/index.html']),
+    'smart-parser': Object.freeze(['SmartParser.html', 'history_viewer.html', 'settings.html']),
+    merchops: Object.freeze(['MerchOps.html', 'history_viewer.html', 'settings.html', 'export_center.html']),
+    orderops: Object.freeze(['orderops/list.html', 'orderq/index.html']),
+    dataops: Object.freeze(['DataOps.html', 'history_viewer.html', 'settings.html', 'export_center.html']),
+  });
+  const APP_BY_DEFAULT_PATH = new Map(APPS.map((app) => [app.path, app]));
 
   const appForId = (value) => APP_BY_ID.get(String(value || '').trim()) || null;
   const routeText = (url, siteRoot) => `${url.pathname.slice(siteRoot.pathname.length)}${url.search}${url.hash}`;
@@ -61,8 +71,16 @@
       return Object.freeze({ ok: false, code: 'INVALID_ROUTE', message: '앱 주소 형식이 올바르지 않습니다.' });
     }
 
-    const allowed = new URL(app.path, siteRoot);
-    if (target.origin !== origin || target.username || target.password || target.pathname !== allowed.pathname) {
+    const relativePath = target.pathname.startsWith(siteRoot.pathname)
+      ? target.pathname.slice(siteRoot.pathname.length)
+      : '';
+    const directOwner = APP_BY_DEFAULT_PATH.get(relativePath);
+    if (target.origin !== origin
+      || target.username
+      || target.password
+      || !relativePath
+      || !APP_PATHS[app.id]?.includes(relativePath)
+      || (directOwner && directOwner.id !== app.id)) {
       return Object.freeze({ ok: false, code: 'ROUTE_NOT_ALLOWED', message: '허용되지 않은 앱 주소입니다.' });
     }
 
@@ -211,7 +229,18 @@
         this.failUnexpectedFrameLoad('앱이 검증할 수 없는 주소로 이동해 통합 연결을 중단했습니다.');
         return;
       }
-      const target = validateRoute(this.currentTarget.app.id, actualHref, this.siteRoot, this.origin);
+      let target = validateRoute(this.currentTarget.app.id, actualHref, this.siteRoot, this.origin);
+      if (!target.ok) {
+        let parsed;
+        try {
+          const url = new URL(actualHref);
+          const path = url.pathname.startsWith(this.siteRoot.pathname)
+            ? url.pathname.slice(this.siteRoot.pathname.length)
+            : '';
+          const owner = APP_BY_DEFAULT_PATH.get(path);
+          if (owner) target = validateRoute(owner.id, actualHref, this.siteRoot, this.origin);
+        } catch {}
+      }
       if (!target.ok) {
         this.failUnexpectedFrameLoad('앱이 허용되지 않은 주소로 이동해 통합 연결을 중단했습니다.');
         return;
@@ -656,6 +685,7 @@
     SCHEMA_VERSION,
     MESSAGE_TYPES,
     APPS,
+    APP_PATHS,
     validateRoute,
     parseHostRequest,
     workspaceUrlFor,

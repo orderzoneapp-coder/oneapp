@@ -1,7 +1,18 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.6.1';
+  const VERSION = '1.7.0';
+  const WORKSPACE_SCHEMA_VERSION = 'nexus-workspace-message/v1';
+  const WORKSPACE_MESSAGE_TYPES = Object.freeze({
+    HOST_READY: 'NEXUS_WORKSPACE_HOST_READY_V1',
+    APP_READY: 'NEXUS_WORKSPACE_APP_READY_V1',
+    NAVIGATE: 'NEXUS_WORKSPACE_NAVIGATE_V1',
+    ROUTE_CHANGED: 'NEXUS_WORKSPACE_ROUTE_CHANGED_V1',
+    BEFORE_LEAVE: 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1',
+    LEAVE_RESULT: 'NEXUS_WORKSPACE_LEAVE_RESULT_V1',
+    THEME: 'NEXUS_WORKSPACE_THEME_V1',
+    PRINT: 'NEXUS_WORKSPACE_PRINT_V1',
+  });
   const VISIBILITY_STORAGE_KEY = 'oneapp.nexus.ui.visibility.v1';
   const VISIBILITY_SCHEMA = 'NEXUS_UI_VISIBILITY_V1';
   const root = document.documentElement;
@@ -31,6 +42,212 @@
     'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext',
   ]);
   const CURRENT_APP_ALIASES = Object.freeze({ 'item-manager': 'master-lookup' });
+  const WORKSPACE_APP_PATHS = Object.freeze({
+    'master-lookup': Object.freeze(['Master.html', 'Item_manager.html', 'history_viewer.html', 'settings.html']),
+    'customer-master': Object.freeze(['customer-master/index.html', 'history_viewer.html', 'settings.html']),
+    'smart-input': Object.freeze(['smartinput/index.html', 'history_viewer.html', 'settings.html', 'orderq/index.html']),
+    'smart-parser': Object.freeze(['SmartParser.html', 'history_viewer.html', 'settings.html']),
+    merchops: Object.freeze(['MerchOps.html', 'history_viewer.html', 'settings.html', 'export_center.html']),
+    orderops: Object.freeze(['orderops/list.html', 'orderq/index.html']),
+    dataops: Object.freeze(['DataOps.html', 'history_viewer.html', 'settings.html', 'export_center.html']),
+  });
+  const DEFAULT_APP_BY_PATH = new Map(GLOBAL_HEADER_APPS.map((app) => [app.path, app.id]));
+
+  const workspaceEmbedded = (() => {
+    if (root.dataset.nexusWorkspaceEmbedded === 'true') return true;
+    if (window.parent === window) return false;
+    try {
+      const parentUrl = new URL(window.parent.location.href);
+      if (parentUrl.origin === window.location.origin && /\/nexus\/workspace\.html$/.test(parentUrl.pathname)) return true;
+    } catch {}
+    try {
+      const referrer = new URL(document.referrer || '', window.location.href);
+      return referrer.origin === window.location.origin && /\/nexus\/workspace\.html$/.test(referrer.pathname);
+    } catch {
+      return false;
+    }
+  })();
+  if (workspaceEmbedded) root.dataset.nexusWorkspaceEmbedded = 'true';
+
+  const routeFromUrl = (value) => {
+    const target = value instanceof URL ? value : new URL(value, siteRoot);
+    if (target.origin !== location.origin || !target.pathname.startsWith(siteRoot.pathname)) return '';
+    return `${target.pathname.slice(siteRoot.pathname.length)}${target.search}${target.hash}`;
+  };
+
+  const appForWorkspaceRoute = (route, currentAppId = '') => {
+    let target;
+    try { target = new URL(route, siteRoot); } catch { return ''; }
+    if (target.origin !== location.origin || !target.pathname.startsWith(siteRoot.pathname)) return '';
+    const path = target.pathname.slice(siteRoot.pathname.length);
+    const directOwner = DEFAULT_APP_BY_PATH.get(path);
+    if (directOwner) return directOwner;
+    const current = CURRENT_APP_ALIASES[currentAppId] || currentAppId;
+    return WORKSPACE_APP_PATHS[current]?.includes(path) ? current : '';
+  };
+
+  const createWorkspaceChildBridge = () => {
+    let hostState = null;
+    let adapter = null;
+    let leaveSequence = Promise.resolve();
+
+    const normalizeLeaveResult = (value) => {
+      if (value === false) return { result: 'BLOCKED', message: '현재 앱의 미저장 작업을 먼저 완료해 주세요.' };
+      if (typeof value === 'string') return { result: 'BLOCKED', message: value.slice(0, 500) };
+      const result = value?.result;
+      if (['READY', 'BLOCKED', 'ERROR'].includes(result)) {
+        return { result, message: String(value?.message || '').slice(0, 500) };
+      }
+      return { result: 'READY', message: '' };
+    };
+
+    const post = (type, transitionId, appId, route, extra = {}) => {
+      if (!workspaceEmbedded || window.parent === window) return false;
+      window.parent.postMessage(Object.assign({
+        schemaVersion: WORKSPACE_SCHEMA_VERSION,
+        type,
+        transitionId,
+        appId,
+        route,
+      }, extra), location.origin);
+      return true;
+    };
+
+    const currentRoute = () => routeFromUrl(location.href);
+
+    const applyHostTheme = (value) => {
+      const theme = value === 'dark' ? 'dark' : 'light';
+      if (controller?.apply) controller.apply(theme, { persist: false, emit: true, source: 'workspace-host' });
+      else {
+        root.dataset.nexusUiTheme = theme;
+        root.dataset.nexusTheme = theme;
+        root.style.colorScheme = theme;
+      }
+    };
+
+    const sendReady = async (message) => {
+      try {
+        if (typeof adapter?.ready === 'function') await adapter.ready();
+        post(WORKSPACE_MESSAGE_TYPES.APP_READY, message.transitionId, message.appId, currentRoute());
+      } catch (error) {
+        root.dataset.nexusWorkspaceReadyError = String(error?.message || error || '앱 준비에 실패했습니다.').slice(0, 500);
+      }
+    };
+
+    const handleBeforeLeave = (message) => {
+      const request = async () => {
+        try {
+          const value = typeof adapter?.beforeLeave === 'function'
+            ? await adapter.beforeLeave({ appId: message.appId, route: currentRoute() })
+            : { result: 'READY' };
+          return normalizeLeaveResult(value);
+        } catch (error) {
+          return { result: 'ERROR', message: String(error?.message || error || '현재 작업을 저장하지 못했습니다.').slice(0, 500) };
+        }
+      };
+      const queued = leaveSequence.then(request, request);
+      leaveSequence = queued.catch(() => undefined);
+      queued.then((result) => {
+        post(WORKSPACE_MESSAGE_TYPES.LEAVE_RESULT, message.transitionId, message.appId, currentRoute(), result);
+      });
+    };
+
+    const onMessage = (event) => {
+      if (!workspaceEmbedded || event.origin !== location.origin || event.source !== window.parent) return;
+      const message = event.data;
+      if (!message || typeof message !== 'object' || message.schemaVersion !== WORKSPACE_SCHEMA_VERSION) return;
+      if (!GLOBAL_HEADER_APPS.some((app) => app.id === message.appId) || typeof message.transitionId !== 'string') return;
+      if (message.type === WORKSPACE_MESSAGE_TYPES.HOST_READY) {
+        const owner = appForWorkspaceRoute(currentRoute(), message.appId);
+        if (!owner || owner !== message.appId) return;
+        hostState = { transitionId: message.transitionId, appId: message.appId };
+        root.dataset.nexusWorkspaceHostApp = message.appId;
+        applyHostTheme(message.theme);
+        void sendReady(message);
+        return;
+      }
+      if (!hostState || message.appId !== hostState.appId) return;
+      if (message.type === WORKSPACE_MESSAGE_TYPES.BEFORE_LEAVE) {
+        handleBeforeLeave(message);
+      } else if (message.type === WORKSPACE_MESSAGE_TYPES.THEME) {
+        if (message.transitionId !== hostState.transitionId) return;
+        applyHostTheme(message.theme);
+      } else if (message.type === WORKSPACE_MESSAGE_TYPES.PRINT) {
+        if (message.transitionId !== hostState.transitionId) return;
+        if (typeof adapter?.print === 'function') adapter.print();
+        else window.print();
+      }
+    };
+
+    const navigate = (appId, route) => {
+      const canonicalAppId = CURRENT_APP_ALIASES[String(appId || '')] || String(appId || '');
+      const targetRoute = routeFromUrl(route || GLOBAL_HEADER_APPS.find((app) => app.id === canonicalAppId)?.path || '');
+      if (!canonicalAppId || !targetRoute || appForWorkspaceRoute(targetRoute, canonicalAppId) !== canonicalAppId) return false;
+      if (workspaceEmbedded && hostState) {
+        return post(WORKSPACE_MESSAGE_TYPES.NAVIGATE, hostState.transitionId, canonicalAppId, targetRoute);
+      }
+      location.assign(new URL(targetRoute, siteRoot).href);
+      return true;
+    };
+
+    const notifyRouteChanged = () => {
+      if (!workspaceEmbedded || !hostState) return false;
+      const route = currentRoute();
+      if (!appForWorkspaceRoute(route, hostState.appId)) return false;
+      return post(WORKSPACE_MESSAGE_TYPES.ROUTE_CHANGED, hostState.transitionId, hostState.appId, route);
+    };
+
+    const navigateRoute = (route, appId = '') => {
+      const targetRoute = routeFromUrl(route);
+      const requestedAppId = CURRENT_APP_ALIASES[String(appId || '')] || String(appId || '');
+      const owner = requestedAppId || appForWorkspaceRoute(targetRoute, hostState?.appId || root.dataset.nexusUiApp || '');
+      return Boolean(owner && navigate(owner, targetRoute));
+    };
+
+    const registerAdapter = (value = {}) => {
+      adapter = value && typeof value === 'object' ? value : null;
+      return () => { if (adapter === value) adapter = null; };
+    };
+
+    window.addEventListener('message', onMessage);
+    window.addEventListener('popstate', notifyRouteChanged);
+    window.addEventListener('hashchange', notifyRouteChanged);
+    document.addEventListener('click', (event) => {
+      if (!workspaceEmbedded || !hostState || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target?.closest?.('a[href]');
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      let target;
+      try { target = new URL(anchor.href, location.href); } catch { return; }
+      if (target.origin !== location.origin) return;
+      if (target.pathname === location.pathname && target.search === location.search && target.hash !== location.hash) return;
+      const route = routeFromUrl(target);
+      const targetAppId = appForWorkspaceRoute(route, hostState.appId);
+      if (!targetAppId) return;
+      event.preventDefault();
+      navigate(targetAppId, route);
+    }, true);
+
+    return Object.freeze({
+      VERSION: '1.0.0',
+      schemaVersion: WORKSPACE_SCHEMA_VERSION,
+      isEmbedded: workspaceEmbedded,
+      registerAdapter,
+      navigate,
+      navigateRoute,
+      notifyRouteChanged,
+      currentRoute,
+      get appId() { return hostState?.appId || ''; },
+      get connected() { return Boolean(hostState); },
+    });
+  };
+
+  window.ONEAPP_NEXUS_WORKSPACE_CHILD = createWorkspaceChildBridge();
+  window.ONEAPP_NEXUS_NAVIGATE_ROUTE = (route, appId = '') => {
+    if (window.ONEAPP_NEXUS_WORKSPACE_CHILD.navigateRoute(route, appId)) return true;
+    try { location.assign(new URL(route, siteRoot).href); }
+    catch { location.assign(String(route || '')); }
+    return true;
+  };
 
   const visibleApps = () => {
     try {
@@ -174,6 +391,18 @@
     const bodyStyle = getComputedStyle(document.body);
     document.body.style.setProperty('--nexus-ui-original-padding-top', bodyStyle.paddingTop || '0px');
     document.body.classList.add('nexus-ui-mounted');
+    if (workspaceEmbedded) {
+      const startedAt = Number(root.dataset.nexusUiInitStartedAt || 0);
+      const readyMs = startedAt > 0 && typeof performance !== 'undefined'
+        ? Math.max(0, performance.now() - startedAt)
+        : 0;
+      root.dataset.nexusUiReady = 'true';
+      root.dataset.nexusUiReadyMs = readyMs.toFixed(2);
+      window.dispatchEvent(new CustomEvent('nexus-ui:ready', {
+        detail: Object.freeze({ appId: root.dataset.nexusUiApp || '', readyMs, embedded: true }),
+      }));
+      return;
+    }
     const header = buildHeader();
     document.body.prepend(header);
     revealCurrentApp(header);

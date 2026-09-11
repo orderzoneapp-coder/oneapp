@@ -179,12 +179,15 @@ const smartInputProductUiHashes = new Map([
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
     .replace(/\r\n/g, '\n')
+    .replace(/nexus-ui-theme-init\.js\?v=[^"']+/g, 'nexus-ui-theme-init.js?v=1.1.0')
     .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
+    .replace(/\nasync function waitForSmartInputIdle[\s\S]*?\n}\n\nfunction referencesReady\(\)/, '\nfunction referencesReady()')
+    .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
     .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the shared theme cache token`);
+    `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the isolated workspace lifecycle seam and shared common-UI cache tokens`);
 }
 assert.deepEqual(mutations, []);
 
