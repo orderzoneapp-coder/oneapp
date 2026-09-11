@@ -310,8 +310,8 @@ try {
   assert.equal(baseline.existingButtonIds.every(id => current.existingButtonIds.includes(id)), true,
     'all existing button IDs must remain available after the approved OrderOps workbench addition');
   assert.deepEqual(current.existingButtonIds.filter(id => !baseline.existingButtonIds.includes(id)),
-    ['inventoryInspectorClose', 'inventoryInspectorReopen'],
-    'only the approved inventory inspector close/reopen buttons may extend the former button baseline');
+    ['deliveryFilterReset', 'inventoryInspectorClose', 'inventoryInspectorReopen'],
+    'only the approved delivery-filter reset and inventory inspector close/reopen buttons may extend the former button baseline');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
   const regionsBelowAppHeader = metrics => Object.fromEntries(Object.entries(metrics.regions).map(([key, value]) => [key, { ...value, y:value.y-metrics.appHeaderHeight }]));

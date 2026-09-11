@@ -332,7 +332,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = orderReview\.ha
   "integrated output must be blocked only by unresolved quantity errors");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260910-system-message-review") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260911-worker-workflow") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260910-system-message-review"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -732,7 +732,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.22.0");
+assert.equal(engine.ENGINE_VERSION, "3.23.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");

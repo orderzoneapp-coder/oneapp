@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createShipmentOrderSnapshot } from '../orderq/shipment-order-read-model.js';
-import { mapOrderQSnapshotToParsedOrders } from '../orderops/orderq-order-source-adapter.js';
+import { mapOrderQSnapshotToParsedOrders, orderQCandidateMatches } from '../orderops/orderq-order-source-adapter.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -14,12 +14,12 @@ const snapshot = createShipmentOrderSnapshot({
   order: {
     orderId: 'ORD-Q-1', orderNo: '20260907-001', revision: 7, updatedAt: '2026-09-07T01:00:00.000Z',
     orderDate: '2026-09-07', customerId: 'CUS-1', customerName: '테스트상사', assigneeName: '김작업',
-    warehouseId: 'WH-1', warehouseCode: '88', warehouseName: '본창고', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE'
+    warehouseId: 'WH-1', warehouseCode: '88', warehouseName: '본창고', deliveryRegion: '남부', orderStatus: 'ORDER', adminStatus: 'CHECKED', opsStatus: 'ACTIVE'
   },
   items: [{
     orderItemId: 'OI-Q-1', sourceLineKey: 'SOURCE-LINE-1', lineNo: 1, productId: 'P-A', masterProductId: 'P-A',
     itemCode: 'P-A', itemName: '원상품', specification: 'BOX', finalQuantity: 2, finalUnit: 'BOX', price: 13000,
-    supplyAmount: 26000, matchStatus: 'MATCHED', reviewStatus: 'CONFIRMED'
+    supplyAmount: 26000, memo: '일반 적요', description: '직원 전달사항', matchStatus: 'MATCHED', reviewStatus: 'CONFIRMED'
   }]
 }, { generatedAt: '2026-09-07T01:01:00.000Z' });
 
@@ -30,6 +30,10 @@ assert.equal(parsedOrders.rows[0].orderId, 'ORD-Q-1');
 assert.equal(parsedOrders.rows[0].orderRevision, 7);
 assert.equal(parsedOrders.rows[0].orderItemId, 'OI-Q-1');
 assert.equal(parsedOrders.rows[0].sourceLineKey, 'SOURCE-LINE-1');
+assert.equal(parsedOrders.rows[0].region, '남부');
+assert.equal(parsedOrders.rows[0].note, '일반 적요');
+assert.equal(parsedOrders.rows[0].note1, '직원 전달사항', 'ORDER Q description은 적요(직원) 경로로 분리해야 한다.');
+assert.equal(orderQCandidateMatches(snapshot, '남부'), true, '저장 주문 검색에서 배송지역을 찾을 수 있어야 한다.');
 
 const inventoryMatrix = [
   ['품목코드', '품목명', '규격', '단위', '수량', '1창고', '3서울', '4전송'],
