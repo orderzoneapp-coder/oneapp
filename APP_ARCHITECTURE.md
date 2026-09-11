@@ -6,7 +6,7 @@
 - Documentation updated: 2026-09-12
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
+- Review scope: NEXUS 7개 글로벌헤더와 비기본 단일 iframe 호스트 골격, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
 - Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 창고/담당/지역 조회·담당 건수 선택·단위 안전·우측 키보드 재열기를 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
@@ -94,6 +94,7 @@ NEXUS는 각 앱이 기본 업무를 독립적으로 수행하고 필요한 정�
 - 각 매칭 행은 회사+상품코드(기존 checkpoint의 숨은 `productId` 호환)+창고 범위에서 최신 확정 checkpoint를 판정한다. `businessDate`가 checkpoint 일자보다 뒤면 정상이고, 앞이면 결정이 필요하며, 같은 날은 양쪽의 신뢰 가능한 업무시각과 timezone으로 전표가 뒤임을 증명할 때만 정상이다. 팝업은 충돌 행을 순차 확인해 행마다 독립된 포함/미포함 선택과 timezone이 있는 완전한 ISO `judgedAt`을 수집한다. 모든 그룹의 모든 행 선택과 재검증이 끝난 뒤에만 첫 쓰기를 시작하며 중간 취소는 선택을 폐기한다. 포함 결정은 원 효과를 `ABSORBED_BY_CHECKPOINT`로 연결해 현재고에 중복 반영하지 않고, 미포함 결정은 `APPLIED_AS_LATE_ADJUSTMENT` 연결조정을 결정적 ID로 정확히 한 번 추가한다. 취소는 Finalize 쓰기 전 반환하며 작업본·선택·스크롤을 보존한다.
 - 구매·판매 V2 Gate와 재매칭 Gate는 각각 기본 OFF라서 이 단계만으로 Pilot 또는 기존 공식 쓰기 경로가 활성화되지 않는다. Cloud Push/Pull 운영 활성화, 미매칭 재해결 제품 UI·대량 처리, 수정·취소 기능과 Draft V2는 후속 단계다. 단계 5의 순수 checkpoint 판정 계약은 단계 6C 명령 계획기가 재사용하며, 이름·유사도 기반 자동확정과 기존 조용한 누락 경로는 활성화하지 않는다.
 - NEXUS 기본 로그인 홈은 `nexus/index.html`에서 운영한다. 배포된 `NEXUS_AUTH_V2` 서비스로 사용자 식별, 최초 활성화와 로그인·로그아웃 기록을 처리하며, 저장된 홈 Session은 즉시 표시한 뒤 서버 상태를 백그라운드에서 확인한다. `OWNER_MASTER`의 최소 사용자 관리는 `nexus/admin/index.html`에 한정하고 사용자 삭제·기능권한·서비스 연결·승인 UI를 두지 않는다.
+- `nexus/workspace.html`은 홈의 기본 진입을 바꾸지 않은 비기본 통합 호스트 골격이다. 같은 문서의 공통헤더를 유지하고 활성 iframe 하나만 사용하며 등록 앱의 정확한 same-origin 진입 경로, 부모 이력, `nexus-workspace-message/v1`의 Origin·source window·transition 검증과 독립 앱 fallback만 소유한다. 업무 저장소·앱 준비 판정·확정 처리는 소유하지 않으며 앱별 lifecycle 연결 전에는 기존 직접 URL이 공식 실행 경로다.
 - NEXUS 홈은 회사정보 카드·상태·Snapshot·Gateway 조회 없이 하단에 `원앱 | NEXUS 사내 업무 시스템`이라는 고정 소유 표시만 렌더링한다. 이 Footer는 Session Token·사용자 식별·회사정보 revision·서버 상태에 의존하지 않으며, 회사정보 장애가 홈 초기 표시와 앱 카드에 영향을 주지 않는다.
 - `nexus/company.html`은 서버 권위 회사정보의 관리자 조회·수정 화면이다. `OWNER_MASTER`와 `admin.company`, 앱 컨텍스트, `expectedRevision`은 서버 Gateway가 최종 강제하며 성공한 쓰기는 revision과 감사이력을 남긴 뒤 재조회한다.
 - 운영 NEXUS Gateway v24에서 읽기 전용으로 확보한 정확한 서버 기준본은 `nexus/server/nexus-auth-gateway.gs`와 같은 폴더의 Apps Script manifest에 보존한다. 최소 사용자 통제 변경은 이 기준본 위에서만 수행하며 회사정보·업무 Gateway 레지스트리를 삭제하거나 과거 과잉 소스로 교체하지 않는다.
@@ -262,7 +263,7 @@ Production files must not be reorganized into folders without first updating and
 - navigation regression tests;
 - external bookmarks or operational links where applicable.
 
-현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 글로벌헤더 후보는 `상품관리 · 거래처관리 · 스마트파서 · MerchOps · 스마트입력 · 출고관리 · DataOps` 7개이며 이 순서가 정규 순서다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 정상 투영은 선택된 후보만 정규 순서로 표시하고 정상 빈 배열은 탭 0개로 표시한다. 투영 부재·schema 오류·JSON 오류·알 수 없는 ID·중복 ID는 7개 전체 표시로 복구한다. 12개 공식 노출 ID는 계속 검증하며 `item-manager`는 활성 탭과 노출 계산에서 `master-lookup`으로 정규화한다. 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
+현재 `nexus/common/nexus-ui.js`와 관련 정적 자산은 앱 이동·NEXUS 홈 이동·현재 앱 표시·테마와 비권위 앱 탭 노출만 제공한다. 글로벌헤더 후보는 `상품관리 · 거래처관리 · 스마트입력 · 스마트파서 · MerchOps · 출고관리 · DataOps` 7개이며 이 순서가 정규 순서다. 사용자명·계정 유형·Session 상태는 업무 앱 공통헤더에 표시하지 않는다. 공통 UI는 `oneapp.nexus.ui.visibility.v1`의 `schemaVersion`, `configured`, `visibleAppIds`만 동기식으로 읽고 수정하지 않으며, 실행 중 manifest, 인증 서버, Gateway 또는 업무 저장소를 조회하지 않는다. 정상 투영은 선택된 후보만 정규 순서로 표시하고 정상 빈 배열은 탭 0개로 표시한다. 투영 부재·schema 오류·JSON 오류·알 수 없는 ID·중복 ID는 7개 전체 표시로 복구한다. 12개 공식 노출 ID는 계속 검증하며 `item-manager`는 활성 탭과 노출 계산에서 `master-lookup`으로 정규화한다. 공통 UI 로드 실패가 각 앱의 업무 스크립트 실행을 차단해서는 안 된다.
 
 하위 화면은 글로벌 탭 후보에서 빠져도 소유 앱의 검증된 내부 링크로 접근할 수 있다. Settings는 허용된 `returnApp` 또는 같은 Origin의 검증된 진입 앱만 복귀 대상으로 사용하며 iframe 모드에서는 부모에게 전용 닫기 메시지를 보내고 최상위 문서를 직접 이동하지 않는다. Export Center는 현재 진입에 포함된 검증된 MerchOps `returnTo`만 복원하고 과거 저장 URL이나 `history.back()`을 복귀 근거로 사용하지 않는다. ORDER Q가 OrderOps를 열 때는 현재 `from`, `to`, `q`, `view`, `focus`를 포함한 검증 가능 `returnTo`를 전달하고 OrderOps는 같은 Origin의 공식 ORDER Q 경로만 복원한다.
 
@@ -286,7 +287,7 @@ Production files must not be reorganized into folders without first updating and
 | 항목 | 계약 |
 |---|---|
 | 브라우저 식별 | NEXUS 파비콘과 `업무명 - NEXUS` 제목 형식을 사용한다. |
-| 앱 명칭 | 공통 정적 앱 목록의 승인된 명칭을 사용한다. 글로벌 탭은 상품관리·거래처관리·스마트파서·MerchOps·스마트입력·출고관리·DataOps로 고정하고, 하위 화면 제목은 `업무명 - NEXUS` 형식을 유지한다. |
+| 앱 명칭 | 공통 정적 앱 목록의 승인된 명칭을 사용한다. 글로벌 탭은 상품관리·거래처관리·스마트입력·스마트파서·MerchOps·출고관리·DataOps로 고정하고, 하위 화면 제목은 `업무명 - NEXUS` 형식을 유지한다. |
 | 데스크톱 헤더 | 높이 64px, 탭 그룹 높이 44px, 탭 96×38px, 간격 4px, 모서리 8px, 글자 13px/600, 전환 150ms를 유지한다. 헤더와 탭은 화면모드와 무관하게 기존 다크 스타일을 사용한다. |
 | 모바일 헤더 | 높이 104px, 탭 96×44px와 최소 44px 터치 영역을 유지한다. 로고와 테마 스위치는 겹치지 않고 탭 이동은 가로 사용이 가능해야 한다. |
 | 선택·포커스 | 선택 탭은 밝은 글자와 얇은 민트 하단선으로 구분하고 넓은 강조 배경을 사용하지 않는다. 키보드 포커스는 공통 포커스 토큰으로 명확히 표시한다. |
