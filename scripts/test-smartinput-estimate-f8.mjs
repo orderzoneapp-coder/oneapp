@@ -695,8 +695,8 @@ assert.equal(mappedOutput.shopData[1][6], '', '원본에 없는 B판매가는 �
 assert.deepEqual(mappedOutput.shopData[1].slice(8, 12), [0, 0, 0, 0],
   'C/D 판매가·도매가는 원본이나 직접값과 무관하게 숫자 0으로 출력해야 한다.');
 assert.equal(mappedOutput.shopData[1][12], '', '원본에 없는 브랜드를 직접값이나 마스터값으로 보강하면 안 된다.');
-assert.equal(mappedOutput.shopData[1][14], 1, '원본 출고가가 있으면 판매여부는 숫자 1이어야 한다.');
-assert.equal(mappedOutput.shopData[2][14], 0, '원본 출고가가 공란이면 판매여부는 숫자 0이어야 한다.');
+assert.equal(mappedOutput.shopData[1][14], '1', '원본 출고가가 있으면 판매여부는 문자 1이어야 한다.');
+assert.equal(mappedOutput.shopData[2][14], '0', '원본 출고가가 공란이면 판매여부는 문자 0이어야 한다.');
 assert.equal(mappedOutput.shopData[1][15], 999, '모든 쇼핑몰 출력행의 재고수량은 숫자 999여야 한다.');
 assert.equal(mappedOutput.shopData[1][21], '', '원본에 없는 상품태그를 직접값이나 마스터값으로 보강하면 안 된다.');
 assert.equal(mappedOutput.erpData[1][1], 1000, '입고가는 단가(unitPrice)가 아니라 원본 입고가를 사용해야 한다.');
@@ -763,22 +763,33 @@ const saleFromOutPriceOutput = buildEstimateF8Data([
   { itemCode: 'SALE-NUMERIC-1', itemName: '출고가 양수', outPrice: 1, saleAvailability: '판매불가' }
 ]);
 assert.equal(saleFromOutPriceOutput.ok, true);
-assert.deepEqual(saleFromOutPriceOutput.shopData.slice(1).map(row => row[14]), [1, 0, 0, 1],
+assert.deepEqual(saleFromOutPriceOutput.shopData.slice(1).map(row => row[14]), ['1', '0', '0', '1'],
   '판매여부는 판매상태가 아니라 원본 출고가 양수 여부로만 결정해야 한다.');
 assert.ok(saleFromOutPriceOutput.shopData.slice(1).every(row => row[15] === 999),
   '판매여부와 무관하게 모든 행의 재고수량은 숫자 999여야 한다.');
+
+const themeTextOutput = buildEstimateF8Data([
+  { itemCode: 'THEME-NUMBER', itemName: '숫자 테마', outPrice: 1000, theme2: 1 },
+  { itemCode: 'THEME-TEXT', itemName: '문자 테마', outPrice: 1000, theme2: '1' },
+  { itemCode: 'THEME-EVENT', itemName: '행사 테마', outPrice: 1000, eventTheme: '2' },
+  { itemCode: 'THEME-BLANK', itemName: '테마 공란', outPrice: '', theme2: '' },
+  { itemCode: 'THEME-ZERO', itemName: '테마 미선택', outPrice: 0, theme2: 0 }
+]);
+assert.equal(themeTextOutput.ok, true);
+assert.deepEqual(themeTextOutput.shopData.slice(1).map(row => row[17]), ['1', '1', '1', '', ''],
+  '테마2는 선택 여부와 공란을 보존하면서 문자로 출력해야 한다.');
 
 const subdivisionOutput = buildEstimateF8Data([
   {
     itemCode: 'PARENT-1', itemName: '원물1', inboundPrice: 10000, outPrice: 20000,
     type1Code: 'SUB-NEW', type1Operation: 2, type1Specification: '500g',
-    outsourcingStandardCost: 2000, expenseStandardCost: 500
+    outsourcingStandardCost: 2000, expenseStandardCost: 500, theme2: 1
   },
   {
     itemCode: 'PARENT-2', itemName: '원물2', inboundPrice: 8000, outPrice: 16000,
     type1Code: 'SUB-EXIST', type1Operation: 2
   },
-  { itemCode: 'SUB-EXIST', itemName: '기존 소분', inboundPrice: 1, outPrice: 1 }
+  { itemCode: 'SUB-EXIST', itemName: '기존 소분', inboundPrice: 1, outPrice: 1, theme2: '1' }
 ], {
   productCatalog: [{
     itemCode: 'SUB-NEW', itemName: '신규 소분', specification: '마스터규격', brand: '브랜드',
@@ -789,8 +800,8 @@ assert.equal(subdivisionOutput.ok, true);
 assert.equal(subdivisionOutput.shopData.filter(row => row[0] === 'SUB-NEW').length, 1);
 assert.equal(subdivisionOutput.erpData.find(row => row[0] === 'SUB-NEW')?.[1], 6000);
 assert.equal(subdivisionOutput.shopData.find(row => row[0] === 'SUB-NEW')?.[3], 10500);
-assert.deepEqual(subdivisionOutput.shopData.filter(row => ['SUB-NEW', 'SUB-EXIST'].includes(row[0])).map(row => [row[14], row[15]]), [[1, 999], [1, 999]],
-  '신규·기존 소분행도 판매여부 1과 재고수량 999를 적용해야 한다.');
+assert.deepEqual(subdivisionOutput.shopData.filter(row => ['SUB-NEW', 'SUB-EXIST'].includes(row[0])).map(row => [row[14], row[15], row[17]]), [['1', 999, '1'], ['1', 999, '1']],
+  '신규·기존 소분행도 판매여부·테마2는 문자 1, 재고수량은 숫자 999를 적용해야 한다.');
 assert.equal(subdivisionOutput.shopData.find(row => row[0] === 'SUB-EXIST')?.[3], 8000,
   '이미 기준행에 있는 소분코드는 행을 늘리지 않고 계산 단가만 갱신해야 한다.');
 
@@ -917,5 +928,22 @@ const noWarningBytes = XLSX.write(noWarningWorkbook, { type: 'array', bookType: 
 const noWarningReopened = XLSX.read(new Uint8Array(noWarningBytes), { type: 'array' });
 assert.deepEqual(Array.from(noWarningReopened.SheetNames), ['쇼핑몰업로드', 'ERP업데이트', '견적서 업로드'],
   '경고가 없는 실제 XLSX에는 확인요청 없이 견적서 업로드가 마지막이어야 한다.');
+
+for (const output of [mappedOutput, saleFromOutPriceOutput, themeTextOutput, subdivisionOutput]) {
+  const flagWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(flagWorkbook, XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
+  const flagBytes = XLSX.write(flagWorkbook, { type: 'array', bookType: 'xlsx' });
+  const flagSheet = XLSX.read(new Uint8Array(flagBytes), { type: 'array' }).Sheets['쇼핑몰업로드'];
+  output.shopData.slice(1).forEach((row, index) => {
+    for (const column of [14, 17]) {
+      const address = XLSX.utils.encode_cell({ r: index + 1, c: column });
+      assert.equal(flagSheet[address]?.t, 's', `${address}: 판매여부·테마2는 실제 XLSX 문자 셀이어야 한다.`);
+      assert.equal(flagSheet[address]?.v, row[column], `${address}: 문자 변환 후 기존 값과 공란을 보존해야 한다.`);
+    }
+    const stockAddress = XLSX.utils.encode_cell({ r: index + 1, c: 15 });
+    assert.equal(flagSheet[stockAddress]?.t, 'n', '재고수량은 실제 XLSX에서도 숫자 셀이어야 한다.');
+    assert.equal(flagSheet[stockAddress]?.v, 999);
+  });
+}
 
 console.log('SmartInput estimate F8 adapter and XLSX contract tests passed.');
