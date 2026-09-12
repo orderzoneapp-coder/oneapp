@@ -147,7 +147,7 @@ try {
 
   await click(client, '#estimateLibraryLinkedButton');
   await click(client, '[data-estimate-id="LINKED-PARTIAL"] [data-select-estimate-card]');
-  await expr(client, `document.querySelector('#customerHint')?.textContent.includes('보고서 출력 전에 영향 확인')`, 'non-blocking integrity notice');
+  await expr(client, `document.querySelector('#customerHint')?.textContent.includes('F8에서 영향을 확인')&&document.querySelector('[data-estimate-id="LINKED-PARTIAL"]')?.dataset.openStatus==='OPENED_RECOVERY_REQUIRED'`, 'non-blocking integrity notice');
   await evaluate(client, `window.__f8Writes=0;window.XLSX={utils:{book_new:()=>({sheets:[]}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>book.sheets.push(name)},writeFile:()=>{window.__f8Writes+=1;}};true`);
   const beforeCancel = await readEstimates(client);
   await click(client, '#estimateExcelButton');

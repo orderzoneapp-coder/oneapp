@@ -20,9 +20,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.4\.0/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
-assert.match(html, /smartinput\.css\?v=0\.9\.20/);
+assert.match(html, /smartinput\.css\?v=0\.9\.21/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.11\.56/);
+assert.match(html, /smartinput\.js\?v=0\.11\.57/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.7\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -82,8 +82,10 @@ assert.match(appSource, /mapping\.targetEstimateId[\s\S]*TARGET_CUSTOMER_CHANGED
   'changing an estimate customer must retire stale per-customer target mappings');
 assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreateChoiceDialog/,
   'MerchOps and redundant estimate-kind choice controls must stay removed');
-assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
-  'normal card selection must immediately switch to exactly one stored estimate');
+assert.match(appSource, /function loadCatalogRecord\([\s\S]*buildCatalogRecordCandidate\(currentRecord\)[\s\S]*applyCatalogRecordCandidate\(candidate,[\s\S]*renderCatalogRecordTrial\(\)[\s\S]*verifyCatalogRecordTrial\(candidate\)[\s\S]*finalizeCatalogRecordOpen\(currentRecord, candidate/,
+  'normal card selection must validate and render the candidate before finalizing the open');
+assert.match(appSource, /function finalizeCatalogRecordOpen\([\s\S]*state\.noticeEstimateIds = \[record\.estimateId\][\s\S]*saveDraftNow\(\)/,
+  'normal card selection must select and autosave exactly one stored estimate only after a successful open');
 assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
 assert.match(html, /id="estimateMultiSelectButton"[^>]*aria-label="견적서 다중 선택"[^>]*>[\s\S]*\+/, 'the explicit multi-select entry must be icon-only and accessible');
 assert.match(appSource, /const additive = event\.ctrlKey \|\| event\.metaKey;[\s\S]*beginEstimateMultiSelect\(\{ deferPreview: true \}\)/,

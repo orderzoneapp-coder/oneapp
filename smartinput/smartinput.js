@@ -102,7 +102,6 @@ import {
   loadSmartInputData,
   normalizeAliasName,
   saveAliasMapping,
-  saveEstimate,
   saveLinkGroup,
   saveReferenceCache,
   saveSettings,
@@ -305,6 +304,8 @@ const state = {
   autosaveAvailable: false,
   autosaveUpdatedAt: '',
   autosaveLoading: true,
+  autosaveStatusGeneration: 0,
+  autosaveWritesPending: 0,
   toastTimer: null,
   recognition: null,
   listening: false,
@@ -324,7 +325,11 @@ const state = {
   estimateWorkingCopyBaselines: new Map(),
   estimateSelectionReturnDraft: null,
   lastEstimateSave: null,
-  estimateDragSuppressed: false,
+  estimateOpenFeedback: null,
+  estimateOpenPointerSnapshot: null,
+  estimateDragSequence: 0,
+  estimateDragSession: null,
+  estimateClickSuppression: null,
   estimateTouchDrag: null,
   estimateSelectionQueue: Promise.resolve(),
   voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
@@ -478,18 +483,33 @@ function updateAutosaveButton() {
 
 let autosaveWriteQueue = Promise.resolve();
 
+function cancelScheduledSave() {
+  const scheduled = state.saveTimer !== null;
+  if (scheduled) clearTimeout(state.saveTimer);
+  state.saveTimer = null;
+  return scheduled;
+}
+
 function queueAutosaveSnapshot(draft) {
   const snapshot = JSON.parse(JSON.stringify(draft));
+  const statusGeneration = state.autosaveStatusGeneration;
   const write = () => saveLatestAutosave(snapshot);
+  state.autosaveWritesPending += 1;
   const queued = autosaveWriteQueue.then(write, write);
   autosaveWriteQueue = queued.catch(() => undefined);
+  queued.then(
+    () => { state.autosaveWritesPending = Math.max(0, state.autosaveWritesPending - 1); },
+    () => { state.autosaveWritesPending = Math.max(0, state.autosaveWritesPending - 1); }
+  );
   queued.then(record => {
+    if (statusGeneration !== state.autosaveStatusGeneration) return;
     state.autosaveLoading = false;
     state.autosaveAvailable = hasMeaningfulWorkspaceDraft(snapshot);
     state.autosaveUpdatedAt = record?.updatedAt || snapshot.updatedAt || new Date().toISOString();
     updateAutosaveButton();
     setSaveState('자동저장됨', 'saved');
   }).catch(() => {
+    if (statusGeneration !== state.autosaveStatusGeneration) return;
     state.autosaveLoading = false;
     updateAutosaveButton();
     setSaveState('자동저장 실패', 'error');
@@ -499,7 +519,7 @@ function queueAutosaveSnapshot(draft) {
 }
 
 function saveDraftNow({ writeAutosave = true } = {}) {
-  clearTimeout(state.saveTimer);
+  cancelScheduledSave();
   Object.values(state.draft.modes || {}).forEach(pruneEmptyWorkRows);
   if (state.draft.activeMode !== 'estimate') {
     modeDraft().voucherGroups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header)
@@ -528,8 +548,11 @@ function saveDraftNow({ writeAutosave = true } = {}) {
 function scheduleSave() {
   state.draftDirty = true;
   setSaveState('자동저장 중…', 'saving');
-  clearTimeout(state.saveTimer);
-  state.saveTimer = window.setTimeout(saveDraftNow, 160);
+  cancelScheduledSave();
+  state.saveTimer = window.setTimeout(() => {
+    state.saveTimer = null;
+    saveDraftNow();
+  }, 160);
 }
 
 async function initializeAutosave() {
@@ -564,7 +587,7 @@ async function restoreLatestAutosave() {
       return toast('복구할 자동저장이 없습니다.', 'error');
     }
     if (activeWorkspaceHasContent() && !window.confirm('현재 입력을 최근 자동저장 상태로 복구하시겠습니까? 현재 화면의 저장되지 않은 변경은 바뀔 수 있습니다.')) return;
-    clearTimeout(state.saveTimer);
+    cancelScheduledSave();
     state.draftDirty = false;
     state.draft = contract.normalizeDraft(record.draft);
     state.selectedRowIds.clear();
@@ -601,10 +624,10 @@ async function waitForSmartInputIdle(timeoutMs = 10000) {
 }
 
 async function flushSmartInputBeforeWorkspaceLeave() {
-  clearTimeout(state.saveTimer);
+  cancelScheduledSave();
   await autosaveWriteQueue;
   await waitForSmartInputIdle();
-  clearTimeout(state.saveTimer);
+  cancelScheduledSave();
   const compatibilitySaved = saveDraftNow({ writeAutosave: false });
   if (!compatibilitySaved) throw new Error('최신 입력을 호환 저장소에 기록하지 못했습니다.');
   const expected = JSON.parse(JSON.stringify(state.draft));
@@ -1939,13 +1962,13 @@ function applyFormLayout() {
   $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
 }
 
-function updateMethod(method, { persist = true } = {}) {
+function updateMethod(method, { persist = true, mutateState = true, deferSourceEffects = true } = {}) {
   const selected = contract.INPUT_METHODS.find(item => item.id === method) || contract.INPUT_METHODS[2];
   const changed = modeDraft().activeMethod !== selected.id;
-  modeDraft().activeMethod = selected.id;
+  if (mutateState) modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
-  renderSourceSurface();
-  if (persist && changed) scheduleSave();
+  renderSourceSurface({ mutateState, deferEffects: deferSourceEffects });
+  if (persist && mutateState && changed) scheduleSave();
   return selected;
 }
 
@@ -1999,7 +2022,7 @@ function renderPhotoTransform() {
   renderPhotoRegion();
 }
 
-function renderSourceSheet() {
+function renderSourceSheet({ restoreScroll = true } = {}) {
   const shopping = shoppingOrderImport();
   const session = inputMappingSession() || (shopping ? {
     sourceMatrix: shopping.sourceMatrix,
@@ -2031,13 +2054,13 @@ function renderSourceSheet() {
   view.querySelector('footer span').textContent = session.fixedHeader
     ? '정확한 쇼핑몰 17열 필드명과 원본 행 순서를 유지합니다.'
     : '행 번호를 누르면 해당 행을 필드명으로 사용합니다.';
-  window.requestAnimationFrame(() => {
+  if (restoreScroll) window.requestAnimationFrame(() => {
     const selected = $('sourceSheetRows').querySelector('.is-header-row');
     selected?.scrollIntoView({ block: 'nearest' });
   });
 }
 
-function renderSourceSurface() {
+function renderSourceSurface({ mutateState = true, deferEffects = true } = {}) {
   const evidence = currentSourceImage();
   const photoMode = modeDraft().activeMethod === 'photo';
   const sheetMode = modeDraft().activeMethod === 'excel' && Boolean(inputMappingSession() || shoppingOrderImport());
@@ -2058,8 +2081,8 @@ function renderSourceSurface() {
   $('photoStage').hidden = !showPhoto;
   $('photoViewerMeta').hidden = !showPhoto;
   $('analyzeButton').hidden = sheetMode || (photoMode && !showPhoto);
-  if (sheetMode) renderSourceSheet();
-  if (photoStateChanged) window.requestAnimationFrame(applyFormLayout);
+  if (sheetMode) renderSourceSheet({ restoreScroll: deferEffects });
+  if (photoStateChanged && deferEffects) window.requestAnimationFrame(applyFormLayout);
   if (!showPhoto) {
     $('photoOcrPanel').hidden = true;
     $('photoOcrToggle').setAttribute('aria-expanded', 'false');
@@ -2080,7 +2103,7 @@ function renderSourceSurface() {
   if (image.dataset.sourceImageId !== evidence.sourceImageId) {
     image.dataset.sourceImageId = evidence.sourceImageId;
     image.src = evidence.dataUrl;
-    resetPhotoView();
+    if (mutateState) resetPhotoView();
   }
   $('photoOcrPanel').hidden = !state.photoView.ocrOpen;
   $('photoOcrToggle').setAttribute('aria-expanded', String(state.photoView.ocrOpen));
@@ -2089,7 +2112,8 @@ function renderSourceSurface() {
   $('photoViewerNotice').textContent = state.photoView.activeRegion
     ? '선택한 상품의 원본 위치입니다.'
     : (evidence.notice || '원본 사진을 기준으로 입력값을 확인하세요.');
-  window.requestAnimationFrame(renderPhotoTransform);
+  if (deferEffects) window.requestAnimationFrame(renderPhotoTransform);
+  else renderPhotoTransform();
 }
 
 function showPhotoRegion(region) {
@@ -2222,15 +2246,18 @@ function customerById(customerId) {
   return state.customers.find(customer => customer.customerId === customerId) || null;
 }
 
-function applyCustomerRelationship(header = modeDraft().header) {
+function applyCustomerRelationship(header = modeDraft().header, { mutateState = true } = {}) {
   const group = groupForCustomer(header.customerId);
   const taxCustomer = group?.taxCustomerId ? customerById(group.taxCustomerId) : null;
   const deliveryCustomerIds = group?.deliveryCustomerIds?.length ? group.deliveryCustomerIds : (group?.memberCustomerIds || []);
-  header.customerLinkGroupId = group?.linkGroupId || '';
-  header.taxCustomerId = taxCustomer?.customerId || '';
-  header.taxCustomerName = customerName(taxCustomer);
-  header.isTemporaryCustomer = Boolean(temporaryMeta(header.customerId));
-  $('taxCustomerInput').value = header.taxCustomerName;
+  const relationship = {
+    customerLinkGroupId: group?.linkGroupId || '',
+    taxCustomerId: taxCustomer?.customerId || '',
+    taxCustomerName: customerName(taxCustomer),
+    isTemporaryCustomer: Boolean(temporaryMeta(header.customerId))
+  };
+  if (mutateState) Object.assign(header, relationship);
+  $('taxCustomerInput').value = relationship.taxCustomerName;
   $('customerRelationHint').textContent = group
     ? (taxCustomer ? `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 1곳` : `배송처 ${deliveryCustomerIds.length}곳 · 세무거래처 미지정`)
     : '연결되지 않은 배송 거래처입니다.';
@@ -2284,8 +2311,9 @@ async function confirmCustomerAlias(rawOrdererName, customer, sourceType = 'GENE
   return mapping;
 }
 
-function updateDeliveryPolicy({ force = false } = {}) {
-  const header = modeDraft().header;
+function updateDeliveryPolicy({ force = false, mutateState = true } = {}) {
+  const activeHeader = modeDraft().header;
+  const header = mutateState ? activeHeader : cloneGridValue(activeHeader);
   if (!header.orderDate) return;
   if (force || !header.manualDeliveryOverride || !header.deliveryDate) {
     const next = contract.nextDeliveryDate({
@@ -4363,9 +4391,9 @@ async function loadVoucherActivity({ force = false } = {}) {
   renderVoucherActivitySnapshot();
 }
 
-function renderVoucherContext() {
+function renderVoucherContext({ loadActivity = true } = {}) {
   renderVoucherActivitySnapshot();
-  void loadVoucherActivity();
+  if (loadActivity) void loadVoucherActivity();
 }
 
 function relatedPanelButtonLabel(open = false) {
@@ -4375,21 +4403,21 @@ function relatedPanelButtonLabel(open = false) {
   return `${label} ${open ? '닫기' : '열기'}`;
 }
 
-function applyRelatedPanelWidth(requestedWidth = state.draft.ui.relatedPaneWidth || 260) {
+function applyRelatedPanelWidth(requestedWidth = state.draft.ui.relatedPaneWidth || 260, { mutateState = true } = {}) {
   const maximum = Math.max(260, Math.min(440, Math.round(window.innerWidth * .36)));
   const width = Math.round(Math.max(230, Math.min(maximum, Number(requestedWidth) || 260)));
-  state.draft.ui.relatedPaneWidth = width;
+  if (mutateState) state.draft.ui.relatedPaneWidth = width;
   $('smartInputWorkspace').style.setProperty('--related-pane-width', `${width}px`);
   return width;
 }
 
-function applyRelatedPanelState() {
+function applyRelatedPanelState({ mutateState = true } = {}) {
   const open = Boolean(state.draft.ui.relatedOpen);
   const workspace = $('smartInputWorkspace');
   const panel = $('estimateLibraryView');
   const appBarBottom = Math.max(0, Math.round(document.querySelector('.app-bar')?.getBoundingClientRect().bottom || 0));
   workspace.style.setProperty('--related-panel-top', `${appBarBottom}px`);
-  applyRelatedPanelWidth();
+  applyRelatedPanelWidth(state.draft.ui.relatedPaneWidth || 260, { mutateState });
   workspace.classList.toggle('related-panel-open', open);
   panel.classList.toggle('is-open', open);
   panel.setAttribute('aria-hidden', String(!open));
@@ -4443,6 +4471,11 @@ function estimateCardMarkup(record) {
   const selected = state.noticeEstimateIds.includes(record.estimateId);
   const selectionOrder = estimateMultiSelectActive() ? state.noticeEstimateIds.indexOf(record.estimateId) : -1;
   const linked = record.estimateKind === 'LINKED_GROUP';
+  const estimateKind = linked ? 'LINKED_GROUP' : 'INDIVIDUAL';
+  const feedback = state.estimateOpenFeedback?.estimateId === record.estimateId
+    && state.estimateOpenFeedback?.estimateKind === estimateKind
+    ? state.estimateOpenFeedback
+    : null;
   const linkedCount = linked ? (record.linkedEstimateSources?.length || 0) : individualEstimateLinkCount(record.estimateId);
   const linkedBadge = linkedCount ? `<em class="linked-estimate-badge">연동 ${linkedCount}</em>` : '';
   const integrity = linked ? estimateF8Integrity(record) : null;
@@ -4450,9 +4483,10 @@ function estimateCardMarkup(record) {
   const integrityBadge = ['PARTIAL_MISSING', 'ALL_MISSING'].includes(integrity?.status)
     ? `<em class="linked-estimate-integrity-badge">${integrity.missingSourceIds.length ? `원본 ${integrity.missingSourceIds.length}개 누락` : `행 연결 ${missingCount}건 누락`}</em>`
     : '';
-  const cardTitle = `${estimateTitle(record)} · ${integrityBadge ? '연결 확인 필요 · ' : ''}${estimateMultiSelectActive() ? (selected ? '다중 선택 해제' : '다중 선택') : '견적서 열기'}`;
-  return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="${linked ? 'LINKED_GROUP' : 'INDIVIDUAL'}" data-estimate-id="${esc(record.estimateId)}" data-integrity-status="${esc(integrity?.status || 'READY')}">
-    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(cardTitle)}">${selectionOrder >= 0 ? `<b class="estimate-card__selection-order" aria-label="${selectionOrder + 1}번째 선택">${selectionOrder + 1}</b>` : ''}<strong>${esc(estimateTitle(record))}${linkedBadge}${integrityBadge}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+  const cardStatus = feedback?.message || `작성 ${formatEstimateDate(record.createdAt)} · 수정 ${formatEstimateDate(record.updatedAt)}`;
+  const cardTitle = `${estimateTitle(record)} · ${feedback?.message ? `${feedback.message} · ` : ''}${integrityBadge ? '연결 확인 필요 · ' : ''}${estimateMultiSelectActive() ? (selected ? '다중 선택 해제' : '다중 선택') : '견적서 열기'}`;
+  return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="${estimateKind}" data-estimate-id="${esc(record.estimateId)}" data-integrity-status="${esc(integrity?.status || 'READY')}"${feedback?.status ? ` data-open-status="${esc(feedback.status)}"` : ''}>
+    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${esc(cardTitle)}">${selectionOrder >= 0 ? `<b class="estimate-card__selection-order" aria-label="${selectionOrder + 1}번째 선택">${selectionOrder + 1}</b>` : ''}<strong>${esc(estimateTitle(record))}${linkedBadge}${integrityBadge}</strong><small>${esc(cardStatus)}</small></button>
     <button class="estimate-card__drag-handle" type="button" draggable="true" data-estimate-drag-handle aria-label="${esc(estimateTitle(record))} 순서 이동" title="끌어서 순서 이동"><span aria-hidden="true">⠿</span></button>
   </article>`;
 }
@@ -4514,7 +4548,7 @@ function syncEstimateLibraryView() {
   syncEstimateLibraryActionState();
 }
 
-function renderCatalogControls() {
+function renderCatalogControls({ mutateState = true } = {}) {
   const visible = state.draft.activeMode === 'estimate';
   const catalogList = $('catalogPickerList');
   const linkedList = $('linkedEstimateList');
@@ -4552,15 +4586,19 @@ function renderCatalogControls() {
     linkedList.innerHTML = '';
     return;
   }
-  state.estimates = normalizeEstimateOrder();
-  syncEstimateCreationSelection();
+  if (mutateState) {
+    state.estimates = normalizeEstimateOrder();
+    syncEstimateCreationSelection();
+  }
   const creation = estimateCreation();
-  if (creation && !state.estimateMultiSelectKind) state.estimateMultiSelectKind = 'individual';
+  if (mutateState && creation && !state.estimateMultiSelectKind) state.estimateMultiSelectKind = 'individual';
   const records = individualEstimateRecords();
   const linkedRecords = linkedEstimateRecords();
   const availableIds = new Set((creation ? records : estimateRecordsForKind()).map(record => record.estimateId));
-  state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
-  rememberEstimateLibrarySelection();
+  if (mutateState) {
+    state.noticeEstimateIds = state.noticeEstimateIds.filter(estimateId => availableIds.has(estimateId));
+    rememberEstimateLibrarySelection();
+  }
   catalogList.innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다. 입력표를 작성하고 저장하면 자동 생성됩니다.</div>';
   linkedList.innerHTML = linkedRecords.length ? linkedRecords.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">생성된 연동견적서가 없습니다.</div>';
   syncEstimateLibraryActionState();
@@ -4859,66 +4897,181 @@ function openSelectedEstimateInformationDialog() {
   window.setTimeout(focusInput, 0);
 }
 
-async function persistEstimateLibrary(records = state.estimates) {
-  state.estimates = records.map((record, index) => ({ ...record, sortOrder: index + 1 }));
-  await Promise.all(state.estimates.map(record => saveEstimate(record)));
-}
-
 function estimateCardId(card) {
   return card?.dataset.estimateId || card?.dataset.linkedEstimateId || '';
+}
+
+const ESTIMATE_CARD_DRAG_MIME = 'application/x-oneapp-smartinput-estimate-card+json';
+const ESTIMATE_CARD_CLICK_SUPPRESSION_MS = 500;
+
+function estimateCardDragKey(card) {
+  return {
+    estimateId: estimateCardId(card),
+    estimateKind: card?.dataset.estimateKind || ''
+  };
+}
+
+function sameEstimateCardKey(left, right) {
+  return Boolean(left?.estimateId && right?.estimateId
+    && left.estimateId === right.estimateId
+    && left.estimateKind === right.estimateKind);
+}
+
+function clearEstimateClickSuppression(sessionId = '') {
+  const suppression = state.estimateClickSuppression;
+  if (!suppression || (sessionId && suppression.sessionId !== sessionId)) return false;
+  clearTimeout(suppression.timer);
+  state.estimateClickSuppression = null;
+  return true;
+}
+
+function armEstimateClickSuppression(session) {
+  if (!session?.active || !session.cardKey?.estimateId) return;
+  clearEstimateClickSuppression();
+  const suppression = {
+    sessionId: session.sessionId,
+    cardKey: { ...session.cardKey },
+    expiresAt: Date.now() + ESTIMATE_CARD_CLICK_SUPPRESSION_MS,
+    timer: null
+  };
+  suppression.timer = window.setTimeout(() => clearEstimateClickSuppression(suppression.sessionId), ESTIMATE_CARD_CLICK_SUPPRESSION_MS);
+  state.estimateClickSuppression = suppression;
+}
+
+function consumeEstimateSyntheticClick(event, card) {
+  const suppression = state.estimateClickSuppression;
+  if (!suppression) return false;
+  if (Date.now() > suppression.expiresAt) {
+    clearEstimateClickSuppression(suppression.sessionId);
+    return false;
+  }
+  if (event.detail === 0) return false;
+  const matches = sameEstimateCardKey(suppression.cardKey, estimateCardDragKey(card));
+  clearEstimateClickSuppression(suppression.sessionId);
+  return matches;
+}
+
+function cleanupEstimateCardDrag(sessionId = '', { suppressSyntheticClick = false } = {}) {
+  const session = state.estimateDragSession;
+  if (!session || (sessionId && session.sessionId !== sessionId)) return false;
+  clearTimeout(session.timer);
+  if (session.card?.dataset.estimateDragSession === session.sessionId) delete session.card.dataset.estimateDragSession;
+  session.card?.removeAttribute('aria-grabbed');
+  document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
+  if (state.estimateTouchDrag?.sessionId === session.sessionId) state.estimateTouchDrag = null;
+  state.estimateDragSession = null;
+  if (suppressSyntheticClick) armEstimateClickSuppression(session);
+  return true;
+}
+
+function createEstimateCardDragSession(card, inputType) {
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
+  clearEstimateClickSuppression();
+  const cardKey = estimateCardDragKey(card);
+  if (!cardKey.estimateId || !['INDIVIDUAL', 'LINKED_GROUP'].includes(cardKey.estimateKind)) return null;
+  const session = {
+    sessionId: `ESTIMATE-CARD-DRAG-${Date.now()}-${++state.estimateDragSequence}`,
+    inputType,
+    cardKey,
+    card,
+    active: inputType === 'pointer',
+    timer: null
+  };
+  state.estimateDragSession = session;
+  card.dataset.estimateDragSession = session.sessionId;
+  return session;
+}
+
+function estimateDragTransferPayload(event) {
+  try {
+    const value = JSON.parse(event.dataTransfer?.getData(ESTIMATE_CARD_DRAG_MIME) || 'null');
+    return value && typeof value === 'object' ? value : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function beginEstimateCardDrag(event) {
   const handle = event.target.closest('[data-estimate-drag-handle]');
   const card = handle?.closest('.estimate-card');
   if (!card) return event.preventDefault();
-  const payload = { estimateId: estimateCardId(card), kind: card.dataset.estimateKind };
+  const session = createEstimateCardDragSession(card, 'pointer');
+  if (!session || !event.dataTransfer) return event.preventDefault();
+  const payload = { sessionId: session.sessionId, ...session.cardKey };
   event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('application/json', JSON.stringify(payload));
+  event.dataTransfer.setData(ESTIMATE_CARD_DRAG_MIME, JSON.stringify(payload));
+  event.dataTransfer.setData('text/plain', session.cardKey.estimateId);
   card.classList.add('is-dragging');
+  card.setAttribute('aria-grabbed', 'true');
 }
 
 function moveEstimateCardDrag(event) {
+  const session = state.estimateDragSession;
+  if (!session?.active || session.inputType !== 'pointer') return;
   const card = event.target.closest('.estimate-card');
-  if (!card || card.classList.contains('is-dragging')) return;
+  if (!card) return;
   event.preventDefault();
-  state.estimateDragSuppressed = true;
   event.dataTransfer.dropEffect = 'move';
   document.querySelectorAll('.estimate-card.is-drop-target').forEach(item => item.classList.remove('is-drop-target'));
-  card.classList.add('is-drop-target');
+  const targetKey = estimateCardDragKey(card);
+  if (targetKey.estimateKind === session.cardKey.estimateKind && !sameEstimateCardKey(targetKey, session.cardKey)) {
+    card.classList.add('is-drop-target');
+  }
 }
 
 async function finishEstimateCardDrop(event) {
+  const session = state.estimateDragSession;
+  if (!session?.active || session.inputType !== 'pointer') return false;
   const target = event.target.closest('.estimate-card');
-  if (!target) return;
   event.preventDefault();
-  let payload;
-  try { payload = JSON.parse(event.dataTransfer.getData('application/json')); } catch (_) { return; }
-  await persistEstimateCardOrder(payload, target);
+  try {
+    const payload = estimateDragTransferPayload(event);
+    if (!payload || payload.sessionId !== session.sessionId || !sameEstimateCardKey(payload, session.cardKey)) return false;
+    return await persistEstimateCardOrder(payload, target);
+  } finally {
+    cleanupEstimateCardDrag(session.sessionId, { suppressSyntheticClick: true });
+  }
 }
 
 async function persistEstimateCardOrder(payload, target) {
   const targetId = estimateCardId(target);
-  if (!payload?.estimateId || payload.estimateId === targetId || payload.kind !== target.dataset.estimateKind) return false;
-  const sourceRecords = payload.kind === 'LINKED_GROUP' ? linkedEstimateRecords() : individualEstimateRecords();
+  const estimateKind = payload?.estimateKind || payload?.kind || '';
+  if (!payload?.estimateId || payload.estimateId === targetId || estimateKind !== target?.dataset.estimateKind) return false;
+  const expectedPreimages = cloneGridValue(state.estimates);
+  const sourceRecords = estimateKind === 'LINKED_GROUP' ? linkedEstimateRecords() : individualEstimateRecords();
   const from = sourceRecords.findIndex(record => record.estimateId === payload.estimateId);
   const to = sourceRecords.findIndex(record => record.estimateId === targetId);
   if (from < 0 || to < 0) return false;
   const reordered = [...sourceRecords];
   const [moved] = reordered.splice(from, 1);
   reordered.splice(to, 0, moved);
-  const next = payload.kind === 'LINKED_GROUP'
+  const next = estimateKind === 'LINKED_GROUP'
     ? [...individualEstimateRecords(), ...reordered]
     : [...reordered, ...linkedEstimateRecords()];
-  await persistEstimateLibrary(next);
+  const nextRecords = next.map((record, index) => ({ ...record, sortOrder: index + 1 }));
+  try {
+    await commitEstimateBundle({ upserts: nextRecords, expectedPreimages });
+  } catch (error) {
+    const conflict = error?.message === 'SMARTINPUT_ESTIMATE_BUNDLE_STALE';
+    const message = conflict
+      ? '견적서 목록이 다른 화면에서 변경되었습니다. 목록을 다시 불러온 뒤 재시도하세요.'
+      : '견적서 순서를 저장하지 못했습니다. 기존 순서는 유지됩니다.';
+    setAppStatus(message, conflict ? 'warn' : 'error');
+    toast(message, conflict ? 'warn' : 'error');
+    return false;
+  }
+  state.estimates = nextRecords;
   renderCatalogControls();
   toast('견적서 카드 순서를 변경했습니다.', 'success');
   return true;
 }
 
-function clearEstimateCardDrag() {
-  document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
-  state.estimateDragSuppressed = false;
+function finishEstimateCardDrag(event) {
+  const session = state.estimateDragSession;
+  if (session?.inputType !== 'pointer') return;
+  const card = event?.target?.closest?.('.estimate-card');
+  if (!card || session.card !== card) return;
+  cleanupEstimateCardDrag(session.sessionId, { suppressSyntheticClick: true });
 }
 
 function beginEstimateTouchDrag(event) {
@@ -4927,25 +5080,21 @@ function beginEstimateTouchDrag(event) {
   const card = handle?.closest('.estimate-card');
   if (!card) return;
   const touch = event.touches[0];
-  const drag = {
-    card,
-    estimateId: estimateCardId(card),
-    kind: card.dataset.estimateKind,
+  const drag = createEstimateCardDragSession(card, 'touch');
+  if (!drag) return;
+  Object.assign(drag, {
     startX: touch.clientX,
     startY: touch.clientY,
     lastX: touch.clientX,
-    lastY: touch.clientY,
-    active: false,
-    timer: null
-  };
+    lastY: touch.clientY
+  });
+  state.estimateTouchDrag = drag;
   drag.timer = window.setTimeout(() => {
-    if (state.estimateTouchDrag !== drag) return;
+    if (state.estimateTouchDrag?.sessionId !== drag.sessionId || state.estimateDragSession?.sessionId !== drag.sessionId) return;
     drag.active = true;
-    state.estimateDragSuppressed = true;
     drag.card.classList.add('is-dragging');
     drag.card.setAttribute('aria-grabbed', 'true');
   }, 260);
-  state.estimateTouchDrag = drag;
 }
 
 function moveEstimateTouchDrag(event) {
@@ -4956,44 +5105,35 @@ function moveEstimateTouchDrag(event) {
   drag.lastY = touch.clientY;
   if (!drag.active) {
     if (Math.hypot(touch.clientX - drag.startX, touch.clientY - drag.startY) > 9) {
-      clearTimeout(drag.timer);
-      state.estimateTouchDrag = null;
+      cleanupEstimateCardDrag(drag.sessionId);
     }
     return;
   }
   event.preventDefault();
   const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.estimate-card');
   document.querySelectorAll('.estimate-card.is-drop-target').forEach(item => item.classList.remove('is-drop-target'));
-  if (target && target !== drag.card && target.dataset.estimateKind === drag.kind) target.classList.add('is-drop-target');
+  if (target && !sameEstimateCardKey(estimateCardDragKey(target), drag.cardKey)
+    && target.dataset.estimateKind === drag.cardKey.estimateKind) target.classList.add('is-drop-target');
 }
 
 async function finishEstimateTouchDrag(event) {
   const drag = state.estimateTouchDrag;
   if (!drag) return;
-  clearTimeout(drag.timer);
-  state.estimateTouchDrag = null;
-  if (!drag.active) return;
+  if (!drag.active) return cleanupEstimateCardDrag(drag.sessionId);
   event.preventDefault();
   const touch = event.changedTouches?.[0];
   const target = touch && document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.estimate-card');
   try {
-    if (target) await persistEstimateCardOrder({ estimateId: drag.estimateId, kind: drag.kind }, target);
+    if (target) await persistEstimateCardOrder({ sessionId: drag.sessionId, ...drag.cardKey }, target);
   } finally {
-    drag.card.removeAttribute('aria-grabbed');
-    document.querySelectorAll('.estimate-card.is-dragging, .estimate-card.is-drop-target').forEach(card => card.classList.remove('is-dragging', 'is-drop-target'));
-    window.setTimeout(() => { state.estimateDragSuppressed = false; }, 120);
+    cleanupEstimateCardDrag(drag.sessionId, { suppressSyntheticClick: true });
   }
 }
 
 function cancelEstimateTouchDrag() {
   const drag = state.estimateTouchDrag;
   if (!drag) return;
-  clearTimeout(drag.timer);
-  state.estimateTouchDrag = null;
-  drag.card.removeAttribute('aria-grabbed');
-  drag.card.classList.remove('is-dragging');
-  document.querySelectorAll('.estimate-card.is-drop-target').forEach(card => card.classList.remove('is-drop-target'));
-  state.estimateDragSuppressed = false;
+  cleanupEstimateCardDrag(drag.sessionId);
 }
 
 function restoreSourceImageForMode(mode) {
@@ -5034,70 +5174,725 @@ function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
   });
 }
 
-function loadCatalogRecord(record, { preserveSelection = false } = {}) {
-  if (!record?.draft) return;
-  syncSourceText();
-  state.draft.activeMode = 'estimate';
+function estimateOpenError(code, message, stage = 'VALIDATE', cause = null) {
+  const error = new Error(message);
+  error.code = code;
+  error.stage = stage;
+  if (cause) error.cause = cause;
+  return error;
+}
+
+function estimateRecordKind(record) {
+  return record?.estimateKind === 'LINKED_GROUP' ? 'LINKED_GROUP' : 'INDIVIDUAL';
+}
+
+function estimateRecordForCardKey(cardKey) {
+  return state.estimates.find(record => record.estimateId === cardKey?.estimateId
+    && estimateRecordKind(record) === cardKey?.estimateKind) || null;
+}
+
+function captureEstimateOpenFocus() {
+  const element = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  if (!element) return null;
+  let record = inputListSearchFocusRecord(element);
+  const card = element.closest('.estimate-card[data-estimate-id]');
+  if (card) {
+    const action = element.closest('[data-estimate-drag-handle]') ? '[data-estimate-drag-handle]' : '[data-select-estimate-card]';
+    record = {
+      element,
+      selector: `.estimate-card[data-estimate-kind="${CSS.escape(card.dataset.estimateKind || '')}"][data-estimate-id="${CSS.escape(card.dataset.estimateId || '')}"] ${action}`
+    };
+  }
+  return {
+    ...record,
+    selectionStart: typeof element.selectionStart === 'number' ? element.selectionStart : null,
+    selectionEnd: typeof element.selectionEnd === 'number' ? element.selectionEnd : null,
+    selectionDirection: typeof element.selectionDirection === 'string' ? element.selectionDirection : undefined
+  };
+}
+
+function captureEstimateOpenScroll() {
+  return ['tableScroll', 'catalogPickerList', 'linkedEstimateList', 'estimateLibraryView'].map(id => {
+    const element = $(id);
+    return { id, top: Number(element?.scrollTop || 0), left: Number(element?.scrollLeft || 0) };
+  }).concat({
+    id: 'sourceTextInput',
+    top: Number(sourceTextInput.scrollTop || 0),
+    left: Number(sourceTextInput.scrollLeft || 0)
+  });
+}
+
+function captureEstimateOpenRecovery(timerState) {
+  return {
+    draft: cloneGridValue(state.draft),
+    noticeEstimateIds: [...state.noticeEstimateIds],
+    estimateLibrarySelections: cloneGridValue(state.estimateLibrarySelections),
+    estimateMultiSelectKind: state.estimateMultiSelectKind,
+    estimateSelectionReturnDraft: state.estimateSelectionReturnDraft ? cloneGridValue(state.estimateSelectionReturnDraft) : null,
+    lastEstimateSave: state.lastEstimateSave ? cloneGridValue(state.lastEstimateSave) : null,
+    estimateOpenFeedback: state.estimateOpenFeedback ? { ...state.estimateOpenFeedback } : null,
+    tableViewPreferences: cloneGridValue(state.tableViewPreferences),
+    tableViewScrollPositions: cloneGridValue(state.tableViewScrollPositions),
+    inputListSearch: cloneGridValue(state.inputListSearch),
+    inputListSearchReturnFocus: state.inputListSearchReturnFocus,
+    selectedRowIds: [...state.selectedRowIds],
+    sourceImages: { ...state.sourceImages },
+    pendingImageEvidence: state.pendingImageEvidence,
+    pendingOcrReview: state.pendingOcrReview ? cloneGridValue(state.pendingOcrReview) : null,
+    pendingSourceName: state.pendingSourceName,
+    pendingStructuredImport: state.pendingStructuredImport ? cloneGridValue(state.pendingStructuredImport) : null,
+    activeActivity: state.activeActivity,
+    photoView: cloneGridValue(state.photoView),
+    mappingValidation: state.mappingValidation ? cloneGridValue(state.mappingValidation) : null,
+    gridPasteUndo: state.gridPasteUndo ? cloneGridValue(state.gridPasteUndo) : null,
+    draftDirty: state.draftDirty,
+    saveScheduled: timerState.saveScheduled,
+    autosavePending: timerState.autosavePending,
+    analysisScheduled: timerState.analysisScheduled,
+    mappingProjectionScheduled: timerState.mappingProjectionScheduled,
+    focus: captureEstimateOpenFocus(),
+    scroll: captureEstimateOpenScroll()
+  };
+}
+
+function prepareEstimateOpenRecovery(pointerSnapshot = null) {
+  const timerState = {
+    saveScheduled: state.saveTimer !== null,
+    autosavePending: state.autosaveWritesPending > 0,
+    analysisScheduled: state.autoAnalyzeTimer !== null,
+    mappingProjectionScheduled: state.mappingProjectionTimer !== null
+  };
+  const current = modeDraft();
+  if (current.sourceText !== sourceTextInput.value) {
+    if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
+    current.sourceText = sourceTextInput.value;
+    state.draftDirty = true;
+  }
+  if (timerState.mappingProjectionScheduled) {
+    clearTimeout(state.mappingProjectionTimer);
+    state.mappingProjectionTimer = null;
+    projectInputMappingToVoucherRows();
+    state.draftDirty = true;
+  }
+  rememberActiveEstimateWork();
+  const recovery = captureEstimateOpenRecovery(timerState);
+  if (pointerSnapshot) {
+    recovery.focus = pointerSnapshot.focus;
+    recovery.scroll = pointerSnapshot.scroll;
+  }
+  cancelScheduledSave();
+  cancelScheduledAutoAnalysis();
+  state.analysisRequestId += 1;
+  state.autosaveStatusGeneration += 1;
+  return recovery;
+}
+
+function validateCatalogSourceRowIds(rows = []) {
+  const rowIds = rows.map(row => String(row?.rowId || '').trim());
+  if (rowIds.some(rowId => !rowId) || new Set(rowIds).size !== rowIds.length) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_DRAFT_INVALID', '저장된 견적서의 행 식별자가 올바르지 않습니다.');
+  }
+}
+
+function normalizeCatalogCandidateRows(catalogDraft) {
+  if (!inputMappingSession(catalogDraft)) removeParserArtifactRows(catalogDraft);
+  pruneEmptyWorkRows(catalogDraft);
+  const rowIds = (catalogDraft.rows || []).map(row => String(row.rowId || '').trim());
+  if (rowIds.some(rowId => !rowId) || new Set(rowIds).size !== rowIds.length) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_DRAFT_INVALID', '저장된 견적서의 행 식별자가 올바르지 않습니다.');
+  }
+  return rowIds;
+}
+
+function catalogCandidateProjectionSession(session) {
+  return session.estimateErpSummary?.recognized
+    ? { ...session, workingRows: session.workingRows.filter(row => row.manual || isEstimateWorkbookItemRow(row.cells)) }
+    : session;
+}
+
+function catalogCandidateProjectedRows(session) {
+  return projectMappedRows(catalogCandidateProjectionSession(session), inputMappingDefinitions('estimate'));
+}
+
+function catalogCandidateProjectedRowIds(session) {
+  return catalogCandidateProjectedRows(session).map(row => String(row.rowId || '').trim());
+}
+
+function catalogCandidateMappedTargets(session) {
+  const definitions = inputMappingDefinitions('estimate');
+  const byId = new Map(definitions.map(target => [target.id, target]));
+  return (session.mappings || [])
+    .filter(mapping => [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping?.state))
+    .map(mapping => byId.get(mapping.targetFieldId))
+    .filter(Boolean);
+}
+
+function catalogCandidateMappedDisplayValue(row, target) {
+  const tracked = row?.fieldValues?.[target.id];
+  if (tracked && !tracked.edited && Object.prototype.hasOwnProperty.call(tracked, 'currentDisplayValue')) {
+    return String(tracked.currentDisplayValue ?? '');
+  }
+  return String(projectedRowValue(row, target) ?? '');
+}
+
+function catalogCandidateMappingMatches(session, catalogRows, expectedRowIds) {
+  const projectedRows = catalogCandidateProjectedRows(session);
+  const projectedRowIds = projectedRows.map(row => String(row.rowId || '').trim());
+  if (!sameOrderedIds(projectedRowIds, expectedRowIds)) return false;
+  const mappedTargets = catalogCandidateMappedTargets(session);
+  return projectedRows.every((projectedRow, index) => mappedTargets.every(target => (
+    catalogCandidateMappedDisplayValue(projectedRow, target)
+      === catalogCandidateMappedDisplayValue(catalogRows[index], target)
+  )));
+}
+
+function rebuildCatalogCandidateWorkingRows(session) {
+  if (!Array.isArray(session.headers) || !Array.isArray(session.sourceMatrix)) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식의 원본 구조를 확인할 수 없습니다.');
+  }
+  const rebuilt = createMappingSession({
+    matrix: session.sourceMatrix,
+    sourceCellMatrix: session.sourceCellMatrix,
+    headerRowIndex: session.headerRowIndex,
+    templates: [],
+    targetDefinitions: inputMappingDefinitions('estimate'),
+    fileName: session.fileName,
+    sheetName: session.sheetName,
+    fileFingerprint: session.fileFingerprint,
+    editJournal: session.editJournal,
+    manualRows: session.manualRows,
+    hiddenColumns: session.hiddenColumns,
+    companyId: session.companyId || state.companyId,
+    voucherMode: session.voucherMode || 'estimate'
+  });
+  const storedHeaders = session.headers.map(value => String(value ?? ''));
+  const rebuiltHeaders = rebuilt.headers.map(value => String(value ?? ''));
+  if (!sameOrderedIds(rebuiltHeaders, storedHeaders)) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식의 필드명과 원본 구조가 일치하지 않습니다.');
+  }
+  const deletedSourceRows = new Set((session.deletedSourceRows || []).map(Number).filter(Number.isInteger));
+  return rebuilt.workingRows.filter(row => row.manual || !deletedSourceRows.has(row.sourceRowIndex));
+}
+
+function synchronizeCatalogCandidateWorkingRows(session, catalogRows, expectedRowIds) {
+  const projectedRows = catalogCandidateProjectedRows(session);
+  const projectedRowIds = projectedRows.map(row => String(row.rowId || '').trim());
+  if (!sameOrderedIds(projectedRowIds, expectedRowIds)) return null;
+  const targetDefinitions = inputMappingDefinitions('estimate');
+  const rowIdsBySourceIndex = new Map(session.workingRows
+    .filter(row => !row.manual && Number.isInteger(Number(row.sourceRowIndex)))
+    .map(row => [Number(row.sourceRowIndex), String(row.rowId || '').trim()]));
+  let synchronized = session;
+  projectedRows.forEach((projectedRow, index) => {
+    const catalogRow = catalogRows[index];
+    const forceFieldIds = catalogCandidateMappedTargets(synchronized)
+      .filter(target => catalogCandidateMappedDisplayValue(projectedRow, target)
+        !== catalogCandidateMappedDisplayValue(catalogRow, target))
+      .map(target => target.id);
+    const displayValues = Object.fromEntries(targetDefinitions.map(target => [
+      target.id,
+      catalogCandidateMappedDisplayValue(catalogRow, target)
+    ]));
+    const updates = mappedRowMutationPlan({
+      beforeRow: projectedRow,
+      afterRow: catalogRow,
+      targetDefinitions,
+      mappings: synchronized.mappings,
+      displayValues,
+      forceFieldIds
+    });
+    if (updates.length) {
+      updates.forEach(update => {
+        synchronized = synchronizeWorkingRow(synchronized, catalogRow.rowId, [update]);
+        synchronized = {
+          ...synchronized,
+          workingRows: synchronized.workingRows.map(row => {
+            if (row.manual) return row;
+            const rowId = rowIdsBySourceIndex.get(Number(row.sourceRowIndex));
+            return rowId && rowId !== row.rowId ? { ...row, rowId } : row;
+          })
+        };
+      });
+    }
+  });
+  return synchronized;
+}
+
+function linkedCatalogRowReferenceKeys(row) {
+  const refs = Array.isArray(row?.linkedSourceRefs) && row.linkedSourceRefs.length
+    ? row.linkedSourceRefs
+    : (row?.linkedSourceEstimateId && row?.linkedSourceRowId
+      ? [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }]
+      : []);
+  return new Set(refs.map(ref => `${String(ref?.estimateId || '').trim()}\u0000${String(ref?.rowId || '').trim()}`)
+    .filter(key => !key.startsWith('\u0000') && !key.endsWith('\u0000')));
+}
+
+function catalogRecoveryRowIdAliases(snapshotRows = [], catalogRows = []) {
+  const previousRows = snapshotRows.filter(rowHasLinkedSource);
+  const currentRows = catalogRows.filter(rowHasLinkedSource);
+  const previousIds = new Set(previousRows.map(row => String(row?.rowId || '').trim()).filter(Boolean));
+  const currentIds = new Set(currentRows.map(row => String(row?.rowId || '').trim()).filter(Boolean));
+  const unmatchedPrevious = previousRows.filter(row => !currentIds.has(String(row?.rowId || '').trim()));
+  const unmatchedCurrent = currentRows.filter(row => !previousIds.has(String(row?.rowId || '').trim()));
+  const candidatesByCurrentId = new Map();
+  unmatchedCurrent.forEach(currentRow => {
+    const currentId = String(currentRow?.rowId || '').trim();
+    const currentRefs = linkedCatalogRowReferenceKeys(currentRow);
+    let candidates = unmatchedPrevious.filter(previousRow => {
+      const previousRefs = linkedCatalogRowReferenceKeys(previousRow);
+      return [...currentRefs].some(key => previousRefs.has(key));
+    });
+    candidatesByCurrentId.set(currentId, candidates
+      .map(row => String(row?.rowId || '').trim())
+      .filter(Boolean));
+  });
+  const previousUseCounts = new Map();
+  candidatesByCurrentId.forEach(candidateIds => {
+    if (candidateIds.length !== 1) return;
+    previousUseCounts.set(candidateIds[0], (previousUseCounts.get(candidateIds[0]) || 0) + 1);
+  });
+  const aliases = new Map();
+  candidatesByCurrentId.forEach((candidateIds, currentId) => {
+    if (candidateIds.length !== 1 || previousUseCounts.get(candidateIds[0]) !== 1) return;
+    aliases.set(candidateIds[0], currentId);
+  });
+  return aliases;
+}
+
+function alignCatalogCandidateRecoveryMapping(session, expectedRowIds, integrityStatus = '', rowIdAliases = new Map()) {
+  if (!['PARTIAL_MISSING', 'ALL_MISSING'].includes(integrityStatus) || !Array.isArray(session.workingRows)) return session;
+  const identifiedWorkingRows = session.workingRows
+    .map(row => [String(row?.rowId || '').trim(), row])
+    .filter(([rowId]) => rowId);
+  const workingById = new Map(identifiedWorkingRows);
+  if (workingById.size !== identifiedWorkingRows.length) return session;
+  const aliasSourcesByTarget = new Map();
+  rowIdAliases.forEach((targetId, sourceId) => {
+    if (!aliasSourcesByTarget.has(targetId)) aliasSourcesByTarget.set(targetId, []);
+    aliasSourcesByTarget.get(targetId).push(sourceId);
+  });
+  const retainedRows = [];
+  for (const rowId of expectedRowIds) {
+    if (workingById.has(rowId)) {
+      retainedRows.push(workingById.get(rowId));
+      continue;
+    }
+    const sourceIds = (aliasSourcesByTarget.get(rowId) || []).filter(sourceId => workingById.has(sourceId));
+    if (sourceIds.length !== 1) return session;
+    retainedRows.push({ ...workingById.get(sourceIds[0]), rowId });
+  }
+  const retainedIds = new Set(expectedRowIds);
+  const retainedSourceRows = new Set(retainedRows
+    .filter(row => !row.manual && Number.isInteger(Number(row.sourceRowIndex)))
+    .map(row => Number(row.sourceRowIndex)));
+  const deletedSourceRows = new Set((session.deletedSourceRows || []).map(Number).filter(Number.isInteger));
+  const recoverableSourceRows = [
+    ...session.workingRows,
+    ...rebuildCatalogCandidateWorkingRows(session)
+  ];
+  recoverableSourceRows.forEach(row => {
+    const sourceRowIndex = Number(row?.sourceRowIndex);
+    if (!row?.manual && !retainedSourceRows.has(sourceRowIndex) && Number.isInteger(sourceRowIndex)) {
+      deletedSourceRows.add(sourceRowIndex);
+    }
+  });
+  retainedSourceRows.forEach(sourceRowIndex => deletedSourceRows.delete(sourceRowIndex));
+  return {
+    ...session,
+    deletedSourceRows: [...deletedSourceRows],
+    manualRows: (session.manualRows || []).filter(row => retainedIds.has(String(row?.rowId || '').trim())),
+    workingRows: retainedRows
+  };
+}
+
+function validateCatalogCandidateMapping(catalogDraft, expectedRowIds, { integrityStatus = '', snapshotRows = [] } = {}) {
+  const storedSession = catalogDraft?.inputMapping;
+  if (!storedSession) return;
+  const session = inputMappingSession(catalogDraft);
+  if (!session || !Array.isArray(session.headers) || !Array.isArray(session.sourceMatrix)
+    || !Array.isArray(session.mappings)) throw estimateOpenError(
+    'SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH',
+    '견적서 입력 양식의 원본 구조와 열 연결을 확인할 수 없습니다.'
+  );
+  const headerRowIndex = Number(session.headerRowIndex);
+  const storedHeaders = session.headers.map(value => String(value ?? ''));
+  const sourceRowsValid = session.sourceMatrix.length > 0 && session.sourceMatrix.every(Array.isArray);
+  if (!sourceRowsValid || !Number.isInteger(headerRowIndex) || headerRowIndex < 0 || headerRowIndex >= session.sourceMatrix.length) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식의 원본 행 구조가 올바르지 않습니다.');
+  }
+  const sourceWidth = Math.max(
+    session.sourceMatrix[headerRowIndex]?.length || 0,
+    ...session.sourceMatrix.slice(headerRowIndex + 1).map(row => row.length),
+    0
+  );
+  const sourceHeaders = Array.from({ length: sourceWidth }, (_, columnIndex) => (
+    String(session.sourceMatrix[headerRowIndex]?.[columnIndex] ?? '')
+  ));
+  const companyId = String(session.companyId || '').trim();
+  const voucherMode = String(session.voucherMode || '').trim().toLowerCase();
+  const structureMatches = sameOrderedIds(storedHeaders, sourceHeaders)
+    && session.mappings.length === storedHeaders.length
+    && session.mappings.every((mapping, columnIndex) => (
+      mapping && Number(mapping.columnIndex) === columnIndex
+        && String(mapping.sourceHeader ?? '') === storedHeaders[columnIndex]
+    ))
+    && companyId === String(state.companyId || '').trim()
+    && voucherMode === 'estimate'
+    && session.headerSignature === JSON.stringify(storedHeaders)
+    && session.signature === JSON.stringify({ companyId, voucherMode, headers: storedHeaders });
+  if (!structureMatches) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식의 저장 구조가 현재 작업 문맥과 일치하지 않습니다.');
+  }
+  const targetDefinitions = inputMappingDefinitions('estimate');
+  const knownTargetIds = new Set(targetDefinitions.map(target => target.id));
+  const missingTarget = session.mappings.find(mapping => (
+    [MAPPING_DECISION.MAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping?.state)
+      && (!mapping.targetFieldId || !knownTargetIds.has(mapping.targetFieldId))
+  ));
+  if (missingTarget) throw estimateOpenError(
+    'SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH',
+    '견적서 입력 양식에 현재 사용할 수 없는 연결 대상이 있습니다.'
+  );
+  if (session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED
+    && !validateTemplateDraft(session, targetDefinitions).valid) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식의 저장된 열 연결이 올바르지 않습니다.');
+  }
+  try {
+    const rowIdAliases = catalogRecoveryRowIdAliases(snapshotRows, catalogDraft.rows || []);
+    let candidateSession = alignCatalogCandidateRecoveryMapping(session, expectedRowIds, integrityStatus, rowIdAliases);
+    if (!Array.isArray(candidateSession.workingRows)) {
+      candidateSession = alignCatalogCandidateRecoveryMapping(
+        { ...session, workingRows: rebuildCatalogCandidateWorkingRows(session) },
+        expectedRowIds,
+        integrityStatus,
+        rowIdAliases
+      );
+    }
+    if (!catalogCandidateMappingMatches(candidateSession, catalogDraft.rows, expectedRowIds)) {
+      candidateSession = synchronizeCatalogCandidateWorkingRows(candidateSession, catalogDraft.rows, expectedRowIds);
+      if (candidateSession) candidateSession = alignCatalogCandidateRecoveryMapping(
+        candidateSession,
+        expectedRowIds,
+        integrityStatus,
+        rowIdAliases
+      );
+    }
+    if (!candidateSession || !catalogCandidateMappingMatches(candidateSession, catalogDraft.rows, expectedRowIds)) {
+      candidateSession = alignCatalogCandidateRecoveryMapping({
+        ...session,
+        workingRows: rebuildCatalogCandidateWorkingRows(session)
+      }, expectedRowIds, integrityStatus, rowIdAliases);
+      candidateSession = synchronizeCatalogCandidateWorkingRows(candidateSession, catalogDraft.rows, expectedRowIds);
+      if (candidateSession) candidateSession = alignCatalogCandidateRecoveryMapping(
+        candidateSession,
+        expectedRowIds,
+        integrityStatus,
+        rowIdAliases
+      );
+    }
+    if (!candidateSession || !catalogCandidateMappingMatches(candidateSession, catalogDraft.rows, expectedRowIds)) {
+      throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서의 입력형과 원본형 작업행이 일치하지 않습니다.');
+    }
+    if (candidateSession !== session) catalogDraft.inputMapping = candidateSession;
+  } catch (error) {
+    if (error?.code === 'SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH') throw error;
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MAPPING_MISMATCH', '견적서 입력 양식을 검증하지 못했습니다.', 'VALIDATE', error);
+  }
+}
+
+function buildCatalogRecordCandidate(record) {
+  if (!record?.draft) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_DRAFT_MISSING', '저장된 견적서 작업 데이터를 확인할 수 없습니다.');
+  }
+  if (typeof record.draft !== 'object' || Array.isArray(record.draft) || !Array.isArray(record.draft.rows)) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_DRAFT_INVALID', '저장된 견적서 형식이 올바르지 않습니다.');
+  }
   const hasWorkingCopy = state.estimateWorkingCopies.has(record.estimateId);
   const recordDraft = estimateRecordDraft(record);
-  const linkedRecords = record.estimateKind === 'LINKED_GROUP'
-    ? (record.linkedEstimateSources || []).map(source => state.estimates.find(item => item.estimateId === source.estimateId)).filter(Boolean)
-    : [];
-  const materializedRows = record.estimateKind === 'LINKED_GROUP' ? materializeLinkedEstimateRows(linkedRecords) : [];
+  const integrity = record.estimateKind === 'LINKED_GROUP' ? inspectEstimateF8Integrity({ record, allRecords: state.estimates }) : null;
+  if (integrity?.status === 'INVALID') {
+    throw estimateOpenError(integrity.errorCode || 'ESTIMATE_F8_SOURCE_INVALID', integrity.message || '연동견적서의 연결 정보를 확인할 수 없습니다.');
+  }
+  let materializedRows = [];
+  try {
+    if (record.estimateKind === 'LINKED_GROUP') {
+      const linkedRecords = (record.linkedEstimateSources || [])
+        .map(source => state.estimates.find(item => item.estimateId === source.estimateId && item.estimateKind !== 'LINKED_GROUP' && item.draft))
+        .filter(Boolean);
+      materializedRows = materializeLinkedEstimateRows(linkedRecords);
+    }
+  } catch (error) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_MATERIALIZE_FAILED', '연동견적서 품목을 구성하지 못했습니다.', 'BUILD', error);
+  }
   const draftSource = record.estimateKind === 'LINKED_GROUP'
     ? { ...recordDraft, estimateKind: 'LINKED_GROUP', linkedEstimateSources: record.linkedEstimateSources || [], rows: [
       ...materializedRows,
       ...manualLinkedRows(recordDraft?.rows)
     ] }
     : recordDraft;
-  const catalogDraft = createCatalogOnlyDraft(draftSource, record.estimateId);
-  if (record.estimateKind === 'LINKED_GROUP' && hasWorkingCopy) {
-    catalogDraft.rows = restoreLinkedEstimateWorkingRowEdits({ materializedRows: catalogDraft.rows, workingRows: recordDraft?.rows || [] });
+  validateCatalogSourceRowIds(draftSource.rows || []);
+  let catalogDraft;
+  try {
+    catalogDraft = createCatalogOnlyDraft(draftSource, record.estimateId);
+    if (inputMappingSession(catalogDraft)) catalogDraft.inputMapping = cloneGridValue(catalogDraft.inputMapping);
+    if (record.estimateKind === 'LINKED_GROUP' && hasWorkingCopy) {
+      catalogDraft.rows = restoreLinkedEstimateWorkingRowEdits({ materializedRows: catalogDraft.rows, workingRows: recordDraft?.rows || [] });
+    }
+    catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
+    catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
+      ? { ...record.previousPrices }
+      : { ...(catalogDraft.catalogPreviousPrices || {}) };
+    if (record.estimateKind === 'LINKED_GROUP' || !hasWorkingCopy) {
+      const linkedCustomer = record.estimateKind === 'LINKED_GROUP' ? null : customerById(catalogCustomerId(record));
+      if (linkedCustomer) {
+        catalogDraft.header = estimateHeaderWithCustomer(catalogDraft.header, linkedCustomer, 'CATALOG');
+      } else {
+        catalogDraft.header.customerId = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record);
+        catalogDraft.header.customerCode = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerCode(record);
+        catalogDraft.header.customerName = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record);
+        catalogDraft.header.customerMappingSource = 'CATALOG';
+      }
+    } else {
+      catalogDraft.header.customerMappingSource = recordDraft?.header?.customerMappingSource || '';
+    }
+  } catch (error) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_DRAFT_INVALID', '저장된 견적서 작업본을 구성하지 못했습니다.', 'BUILD', error);
   }
-  catalogDraft.catalogBaselinePrices = buildCatalogPriceSnapshot(catalogDraft.rows);
-  catalogDraft.catalogPreviousPrices = record.previousPrices && typeof record.previousPrices === 'object'
-    ? { ...record.previousPrices }
-    : { ...(catalogDraft.catalogPreviousPrices || {}) };
-  const linkedCustomer = record.estimateKind === 'LINKED_GROUP' ? null : customerById(catalogCustomerId(record));
-  if (linkedCustomer) {
-    catalogDraft.header = estimateHeaderWithCustomer(catalogDraft.header, linkedCustomer, 'CATALOG');
-  } else {
-    catalogDraft.header.customerId = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerId(record);
-    catalogDraft.header.customerCode = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerCode(record);
-    catalogDraft.header.customerName = record.estimateKind === 'LINKED_GROUP' ? '' : catalogCustomerName(record);
-    catalogDraft.header.customerMappingSource = 'CATALOG';
-  }
-  if (!hasWorkingCopy) state.estimateWorkingCopyBaselines.set(record.estimateId, JSON.parse(JSON.stringify(catalogDraft)));
-  state.draft.modes.estimate = catalogDraft;
-  if (inputMappingSession(catalogDraft)) {
-    state.tableViewPreferences = record.estimateKind === 'LINKED_GROUP'
+  const expectedRowIds = normalizeCatalogCandidateRows(catalogDraft);
+  validateCatalogCandidateMapping(catalogDraft, expectedRowIds, {
+    integrityStatus: integrity?.status || '',
+    snapshotRows: recordDraft?.rows || []
+  });
+  return {
+    draft: catalogDraft,
+    expectedRowIds,
+    hasWorkingCopy,
+    integrity,
+    cardKey: { estimateKind: estimateRecordKind(record), estimateId: record.estimateId }
+  };
+}
+
+function applyCatalogRecordCandidate(candidate, previousCatalogRecordId) {
+  state.draft.activeMode = 'estimate';
+  state.draft.modes.estimate = candidate.draft;
+  if (inputMappingSession(candidate.draft)) {
+    state.tableViewPreferences = candidate.cardKey.estimateKind === 'LINKED_GROUP'
       ? selectTableView(state.tableViewPreferences, 'estimate', TABLE_VIEW_MODE.SOURCE, { hasSource: true })
       : resetTableViewForSource(state.tableViewPreferences, 'estimate');
   }
+  if (previousCatalogRecordId !== candidate.cardKey.estimateId) {
+    state.inputListSearch = reduceInputListSearchState(state.inputListSearch, { type: INPUT_LIST_SEARCH_ACTION.CONTEXT_CHANGE });
+    state.inputListSearchReturnFocus = null;
+  }
   state.sourceImages.estimate = null;
   state.selectedRowIds.clear();
-  if (!preserveSelection) state.noticeEstimateIds = [];
-  clearTimeout(state.autoAnalyzeTimer);
-  state.analysisRequestId += 1;
+  state.draft.ui.selectedRowId = '';
+  state.lastEstimateSave = null;
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
   state.pendingSourceName = '';
   state.pendingStructuredImport = null;
-  setActiveActivity('');
-  resetPhotoView();
-  saveDraftNow();
-  renderMode();
+  state.activeActivity = '';
+  state.photoView = {
+    ...state.photoView,
+    zoom: 1,
+    rotation: 0,
+    activeRegion: null,
+    detailColumns: Boolean(modeUi().detailColumns),
+    ocrOpen: false
+  };
+}
+
+const ESTIMATE_OPEN_TRIAL_RENDER_OPTIONS = Object.freeze({
+  persistCleanup: false,
+  scheduleAnalysis: false,
+  announce: false,
+  normalizeRows: false,
+  loadActivity: false,
+  restoreFocus: false,
+  restoreScroll: false,
+  mutateState: false,
+  renderReferences: false
+});
+
+function renderCatalogRecordTrial() {
+  renderMode(ESTIMATE_OPEN_TRIAL_RENDER_OPTIONS);
+}
+
+function sameOrderedIds(actual, expected) {
+  return actual.length === expected.length && actual.every((rowId, index) => rowId === expected[index]);
+}
+
+function verifyCatalogRecordTrial(candidate) {
+  if (state.draft.activeMode !== 'estimate' || modeDraft().catalogRecordId !== candidate.cardKey.estimateId) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_RENDER_FAILED', '견적서 작업표가 선택한 대상으로 전환되지 않았습니다.', 'RENDER');
+  }
+  const modelRowIds = (modeDraft().rows || []).map(row => String(row.rowId || ''));
+  if (!sameOrderedIds(modelRowIds, candidate.expectedRowIds)) {
+    throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_RENDER_FAILED', '견적서 작업행이 렌더 중 변경되었습니다.', 'RENDER');
+  }
+  if (sourceTableViewActive()) {
+    const expectedVisibleIds = visibleMappingRows().map(row => String(row.rowId || ''));
+    const actualVisibleIds = [...$('mappingInputRows').querySelectorAll('[data-mapping-row-id]')]
+      .map(row => row.dataset.mappingRowId)
+      .filter(rowId => rowId && rowId !== MAPPING_DEFAULT_ROW_ID);
+    if (!sameOrderedIds(actualVisibleIds, expectedVisibleIds)) {
+      throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_RENDER_FAILED', '원본형 작업행을 올바르게 표시하지 못했습니다.', 'RENDER');
+    }
+  } else {
+    const expectedVisibleIds = visibleInputListRows().map(row => String(row.rowId || ''));
+    const actualVisibleIds = [...inputRows.querySelectorAll('[data-row-id]')]
+      .map(row => row.dataset.rowId)
+      .filter(rowId => rowId && rowId !== DEFAULT_INPUT_ROW_ID);
+    if (!sameOrderedIds(actualVisibleIds, expectedVisibleIds)) {
+      throw estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_RENDER_FAILED', '입력형 작업행을 올바르게 표시하지 못했습니다.', 'RENDER');
+    }
+  }
+}
+
+function restoreEstimateOpenRecovery(recovery) {
+  state.draft = cloneGridValue(recovery.draft);
+  state.noticeEstimateIds = [...recovery.noticeEstimateIds];
+  state.estimateLibrarySelections = cloneGridValue(recovery.estimateLibrarySelections);
+  state.estimateMultiSelectKind = recovery.estimateMultiSelectKind;
+  state.estimateSelectionReturnDraft = recovery.estimateSelectionReturnDraft ? cloneGridValue(recovery.estimateSelectionReturnDraft) : null;
+  state.lastEstimateSave = recovery.lastEstimateSave ? cloneGridValue(recovery.lastEstimateSave) : null;
+  state.estimateOpenFeedback = recovery.estimateOpenFeedback ? { ...recovery.estimateOpenFeedback } : null;
+  state.tableViewPreferences = cloneGridValue(recovery.tableViewPreferences);
+  state.tableViewScrollPositions = cloneGridValue(recovery.tableViewScrollPositions);
+  state.inputListSearch = cloneGridValue(recovery.inputListSearch);
+  state.inputListSearchReturnFocus = recovery.inputListSearchReturnFocus;
+  state.selectedRowIds = new Set(recovery.selectedRowIds);
+  state.sourceImages = { ...recovery.sourceImages };
+  state.pendingImageEvidence = recovery.pendingImageEvidence;
+  state.pendingOcrReview = recovery.pendingOcrReview ? cloneGridValue(recovery.pendingOcrReview) : null;
+  state.pendingSourceName = recovery.pendingSourceName;
+  state.pendingStructuredImport = recovery.pendingStructuredImport ? cloneGridValue(recovery.pendingStructuredImport) : null;
+  state.activeActivity = recovery.activeActivity;
+  state.photoView = cloneGridValue(recovery.photoView);
+  state.mappingValidation = recovery.mappingValidation ? cloneGridValue(recovery.mappingValidation) : null;
+  state.gridPasteUndo = recovery.gridPasteUndo ? cloneGridValue(recovery.gridPasteUndo) : null;
+  state.draftDirty = recovery.draftDirty;
+  state.saveTimer = null;
+  state.autoAnalyzeTimer = null;
+  state.mappingProjectionTimer = null;
+}
+
+function restoreEstimateOpenFocusAndScroll(recovery) {
+  const restoreScroll = () => recovery.scroll.forEach(({ id, top, left }) => {
+    const element = $(id);
+    if (!element) return;
+    element.scrollTop = top;
+    element.scrollLeft = left;
+  });
+  restoreScroll();
+  const focus = recovery.focus;
+  const target = inputListSearchFocusTarget(focus);
+  if (!target) return;
+  const restoreSelection = () => {
+    if (focus?.selectionStart === null || typeof target.setSelectionRange !== 'function') return;
+    target.setSelectionRange(focus.selectionStart, focus.selectionEnd ?? focus.selectionStart, focus.selectionDirection);
+  };
+  target.focus({ preventScroll: true });
+  restoreSelection();
+  window.requestAnimationFrame(() => {
+    if (!target.isConnected || document.activeElement !== target) return;
+    restoreScroll();
+    restoreSelection();
+  });
+}
+
+function rescheduleEstimateOpenRecovery(recovery) {
+  if (recovery.analysisScheduled && sourceTextInput.value.trim() && !inputMappingSession() && !shoppingOrderImport()) {
+    scheduleAutoAnalysis();
+  }
+  if (recovery.saveScheduled || recovery.autosavePending || recovery.draftDirty || recovery.mappingProjectionScheduled) scheduleSave();
+}
+
+function renderEstimateOpenFeedback(feedback, tone = 'normal') {
+  state.estimateOpenFeedback = feedback;
+  const restoreLiveRegions = muteLiveRegions();
+  try {
+    renderCatalogControls({ mutateState: false });
+    setAppStatus(feedback.message, tone);
+  } finally {
+    restoreLiveRegions();
+  }
+  $('estimateSelectionSummary').textContent = feedback.message;
+}
+
+function reportCatalogOpenFailure(cardKey, error, { restoreView = null } = {}) {
+  const record = estimateRecordForCardKey(cardKey);
+  const name = record ? estimateTitle(record) : cardKey?.estimateId || '선택한 견적서';
+  const detail = error?.message || '견적서를 불러오지 못했습니다.';
+  const message = `${name} 불러오기 실패 · ${detail} 다시 선택해 재시도하세요.`;
+  renderEstimateOpenFeedback({ ...cardKey, status: 'OPEN_FAILED', message }, 'error');
+  if (restoreView) restoreEstimateOpenFocusAndScroll(restoreView);
+  return { status: 'OPEN_FAILED', errorCode: error?.code || 'SMARTINPUT_ESTIMATE_OPEN_RENDER_FAILED' };
+}
+
+function finalizeCatalogRecordOpen(record, candidate, { preserveSelection = false } = {}) {
+  if (!preserveSelection) state.noticeEstimateIds = [record.estimateId];
+  else if (!state.noticeEstimateIds.includes(record.estimateId)) state.noticeEstimateIds = [record.estimateId];
+  rememberEstimateLibrarySelection();
+  const recoveryRequired = ['PARTIAL_MISSING', 'ALL_MISSING'].includes(candidate.integrity?.status);
+  const empty = candidate.expectedRowIds.length === 0 && !recoveryRequired;
+  const status = recoveryRequired ? 'OPENED_RECOVERY_REQUIRED' : (empty ? 'OPENED_EMPTY' : 'OPENED');
+  const message = recoveryRequired
+    ? `${estimateTitle(record)} · 연결 확인 필요 · F8에서 복구`
+    : (empty ? `${estimateTitle(record)} · 저장된 품목이 없습니다.` : `${estimateTitle(record)} 견적서를 불러왔습니다.`);
+  renderEstimateOpenFeedback({ ...candidate.cardKey, status, message }, recoveryRequired ? 'warn' : 'normal');
+  renderDelivery();
   if (record.estimateKind === 'LINKED_GROUP') {
-    const integrity = estimateF8Integrity(record);
-    $('customerHint').textContent = ['PARTIAL_MISSING', 'ALL_MISSING'].includes(integrity?.status)
-      ? `연결된 원본 일부를 확인할 수 없습니다. 보고서 출력 전에 영향 확인 후 자동 정리할 수 있습니다. (${integrity.missingSourceIds.length}개 원본 · ${integrity.missingRowRefs.length}개 행 참조)`
+    $('customerHint').textContent = recoveryRequired
+      ? `${candidate.integrity.status === 'ALL_MISSING' ? '연결된 원본을 모두 확인할 수 없습니다. F8에서 독립 복구 사본을 만드세요.' : '연결된 원본 일부를 확인할 수 없습니다. F8에서 영향을 확인하세요.'} (${candidate.integrity.missingSourceIds.length}개 원본 · ${candidate.integrity.missingRowRefs.length}개 행 참조)`
       : '연동견적서는 각 개별 견적서의 거래처를 유지합니다.';
-  } else if (catalogDraft.header.customerId) {
+  } else if (candidate.draft.header.customerId) {
     $('customerHint').textContent = '견적서에 연결된 배송 거래처가 자동 지정되었습니다.';
   }
-  toast(record.estimateKind === 'LINKED_GROUP'
-    ? `${estimateTitle(record)} 연동견적서를 불러왔습니다.`
-    : `${estimateTitle(record)}과 배송 거래처를 불러왔습니다.`, 'success');
+  saveDraftNow();
+  if (!candidate.hasWorkingCopy) state.estimateWorkingCopyBaselines.set(record.estimateId, cloneGridValue(candidate.draft));
+  toast(message, recoveryRequired ? 'warn' : 'success');
+  return { status, integrityStatus: candidate.integrity?.status || 'READY', rowCount: candidate.expectedRowIds.length };
+}
+
+function loadCatalogRecord(record, { preserveSelection = false, pointerSnapshot = null } = {}) {
+  const cardKey = { estimateKind: estimateRecordKind(record), estimateId: record?.estimateId || '' };
+  const currentRecord = estimateRecordForCardKey(cardKey);
+  if (!currentRecord) {
+    return reportCatalogOpenFailure(
+      cardKey,
+      estimateOpenError('SMARTINPUT_ESTIMATE_OPEN_RECORD_NOT_FOUND', '선택한 견적서를 현재 목록에서 확인할 수 없습니다.', 'RESOLVE'),
+      { restoreView: pointerSnapshot }
+    );
+  }
+  let recovery;
+  try {
+    recovery = prepareEstimateOpenRecovery(pointerSnapshot);
+    const candidate = buildCatalogRecordCandidate(currentRecord);
+    applyCatalogRecordCandidate(candidate, recovery.draft.modes.estimate?.catalogRecordId || '');
+    renderCatalogRecordTrial();
+    verifyCatalogRecordTrial(candidate);
+    return finalizeCatalogRecordOpen(currentRecord, candidate, { preserveSelection });
+  } catch (error) {
+    if (!recovery) return reportCatalogOpenFailure(cardKey, error, { restoreView: pointerSnapshot });
+    try {
+      restoreEstimateOpenRecovery(recovery);
+      renderCatalogRecordTrial();
+      rescheduleEstimateOpenRecovery(recovery);
+      return reportCatalogOpenFailure(cardKey, error, { restoreView: recovery });
+    } catch (restoreError) {
+      restoreEstimateOpenRecovery(recovery);
+      rescheduleEstimateOpenRecovery(recovery);
+      return reportCatalogOpenFailure(cardKey, estimateOpenError(
+        'SMARTINPUT_ESTIMATE_OPEN_RESTORE_FAILED',
+        '견적서 열기를 취소했지만 이전 화면을 다시 표시하지 못했습니다. 현재 작업 데이터는 삭제하지 않았습니다.',
+        'RESTORE',
+        restoreError
+      ), { restoreView: recovery });
+    }
+  }
 }
 
 function startNewCatalog() {
@@ -5168,7 +5963,7 @@ function applyWarehouseMatch() {
   scheduleSave();
 }
 
-function hydrateHeader() {
+function hydrateHeader({ mutateState = true } = {}) {
   const header = modeDraft().header;
   const shopping = shoppingOrderImport();
   $('customerInput').value = header.customerName;
@@ -5180,11 +5975,11 @@ function hydrateHeader() {
   $('warehouseInput').value = header.warehouseName;
   $('transactionTypeInput').value = header.transactionType || '기타';
   $('customerHint').textContent = header.customerId ? '등록 거래처 · 마스터 연결됨' : '거래처가 인식되지 않으면 이 입력란으로 이동합니다.';
-  applyCustomerRelationship(header);
+  applyCustomerRelationship(header, { mutateState });
   if (shopping) {
     $('deliveryPolicyHint').textContent = '쇼핑몰 원본 배송일자를 주문 후보에 그대로 적용합니다.';
     $('deliveryPolicyHint').dataset.tone = '';
-  } else updateDeliveryPolicy();
+  } else updateDeliveryPolicy({ mutateState });
 }
 
 function renderEstimateHeaderFields() {
@@ -5382,7 +6177,12 @@ function renderMappingTableTotals(session = inputMappingSession(), visibleColumn
   $('mappingTableTotals').innerHTML = `<td></td>${visibleColumns.map((columnIndex, index) => `<td data-mapping-total-column="${columnIndex}">${index === 0 ? '<strong>합계</strong>' : (totals.has(columnIndex) ? totals.get(columnIndex).toLocaleString('ko-KR') : '')}</td>`).join('')}`;
 }
 
-function renderMappingRows() {
+function renderMappingRows({
+  loadActivity = true,
+  restoreScroll = true,
+  mutateState = true,
+  deferSourceEffects = true
+} = {}) {
   const session = inputMappingSession();
   if (!session) return false;
   $('voucherInputTable').hidden = true;
@@ -5438,10 +6238,10 @@ function renderMappingRows() {
   applyMappingHeaderLocks(session);
   renderTableViewSwitch();
   renderInputMappingStatus();
-  renderSourceSurface();
+  renderSourceSurface({ mutateState, deferEffects: deferSourceEffects });
   renderInlineValidation();
-  renderVoucherContext(contract.summarizeRows(modeDraft().rows));
-  restoreCurrentTableScroll();
+  renderVoucherContext({ loadActivity });
+  if (restoreScroll) restoreCurrentTableScroll();
   return true;
 }
 
@@ -5901,8 +6701,20 @@ async function completeShoppingOrderImport() {
   }
 }
 
-function renderRows({ restoreFocus = true } = {}) {
-  if (sourceTableViewActive() && renderMappingRows()) return;
+function renderRows({
+  restoreFocus = true,
+  restoreScroll = true,
+  normalizeRows = true,
+  loadActivity = true,
+  mutateState = true,
+  deferSourceEffects = true
+} = {}) {
+  if (sourceTableViewActive() && renderMappingRows({
+    loadActivity,
+    restoreScroll,
+    mutateState,
+    deferSourceEffects
+  })) return;
   applyMappingHeaderLocks(inputMappingSession());
   $('voucherInputTable').hidden = false;
   $('mappingWorktable').hidden = true;
@@ -5911,7 +6723,7 @@ function renderRows({ restoreFocus = true } = {}) {
   renderTableViewSwitch();
   renderInputMappingStatus();
   renderInputListSearch();
-  if (!inputMappingSession()) pruneEmptyWorkRows(modeDraft());
+  if (normalizeRows && !inputMappingSession()) pruneEmptyWorkRows(modeDraft());
   const rows = modeDraft().rows;
   const visibleRows = visibleInputListRows();
   const defaultRow = {
@@ -5965,21 +6777,23 @@ function renderRows({ restoreFocus = true } = {}) {
   }).join('');
   syncRowSelectionControls();
   syncGridPasteUndoButton();
-  updateSummaries();
+  updateSummaries({ loadActivity });
   applyFormLayout();
   renderSourceAnalysis();
   const selectedRow = rows.find(row => row.rowId === state.draft.ui.selectedRowId);
   if (modeDraft().activeMethod === 'photo') {
-    if (selectedRow) showPhotoRegion(selectedRow.sourceRegion || null);
+    if (selectedRow && mutateState) showPhotoRegion(selectedRow.sourceRegion || null);
     else {
-      state.photoView.activeRegion = null;
-      renderSourceSurface();
+      if (mutateState) state.photoView.activeRegion = null;
+      renderSourceSurface({ mutateState, deferEffects: deferSourceEffects });
     }
   }
-  window.requestAnimationFrame(() => {
-    const position = currentTableScrollPosition();
-    $('tableScroll').scrollTop = position.top;
-    $('tableScroll').scrollLeft = position.left;
+  if (restoreScroll || restoreFocus) window.requestAnimationFrame(() => {
+    if (restoreScroll) {
+      const position = currentTableScrollPosition();
+      $('tableScroll').scrollTop = position.top;
+      $('tableScroll').scrollLeft = position.left;
+    }
     if (!restoreFocus) return;
     const active = modeUi().activeCellId;
     if (!active) return;
@@ -5988,7 +6802,7 @@ function renderRows({ restoreFocus = true } = {}) {
   });
 }
 
-function updateSummaries() {
+function updateSummaries({ loadActivity = true } = {}) {
   const allRows = modeDraft().rows;
   const shopping = shoppingOrderImport();
   if (shopping) {
@@ -6004,7 +6818,7 @@ function updateSummaries() {
     $('totalQuantity').textContent = totals.quantity.toLocaleString('ko-KR');
     $('totalAmount').textContent = `${totals.amount.toLocaleString('ko-KR')}원`;
     renderActivityTrail();
-    renderVoucherContext();
+    renderVoucherContext({ loadActivity });
     renderInlineValidation();
     return;
   }
@@ -6025,7 +6839,7 @@ function updateSummaries() {
   $('totalQuantity').textContent = displaySummary.quantity.toLocaleString('ko-KR');
   $('totalAmount').textContent = `${displaySummary.amount.toLocaleString('ko-KR')}원`;
   renderActivityTrail();
-  renderVoucherContext(summary);
+  renderVoucherContext({ loadActivity });
   renderInlineValidation(summary);
 }
 
@@ -6054,7 +6868,7 @@ function renderInlineValidation(precomputedSummary = null) {
   $('warehouseInput').setAttribute('aria-invalid', String(warehouseInvalid));
 }
 
-function renderDelivery() {
+function renderDelivery({ loadActivity = true } = {}) {
   const isOrder = state.draft.activeMode === 'order';
   const isPurchase = state.draft.activeMode === 'purchase';
   const isSale = state.draft.activeMode === 'sale';
@@ -6109,11 +6923,43 @@ function renderDelivery() {
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
   $('estimateRenameButton').disabled = state.busy || state.noticeEstimateIds.length !== 1;
   updateAutosaveButton();
-  renderVoucherContext();
+  renderVoucherContext({ loadActivity });
   renderInlineValidation();
 }
 
-function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
+function muteLiveRegions() {
+  const regions = [...document.querySelectorAll('[aria-live], [role="status"], [role="alert"]')];
+  const snapshots = regions.map(element => ({
+    element,
+    role: element.getAttribute('role'),
+    ariaLive: element.getAttribute('aria-live')
+  }));
+  regions.forEach(element => {
+    element.setAttribute('role', 'none');
+    element.setAttribute('aria-live', 'off');
+  });
+  return () => snapshots.forEach(({ element, role, ariaLive }) => {
+    if (!element.isConnected) return;
+    if (role === null) element.removeAttribute('role');
+    else element.setAttribute('role', role);
+    if (ariaLive === null) element.removeAttribute('aria-live');
+    else element.setAttribute('aria-live', ariaLive);
+  });
+}
+
+function renderMode({
+  persistCleanup = true,
+  scheduleAnalysis = true,
+  announce = true,
+  normalizeRows = true,
+  loadActivity = true,
+  restoreFocus = true,
+  restoreScroll = true,
+  mutateState = true,
+  renderReferences = true
+} = {}) {
+  const restoreLiveRegions = announce ? null : muteLiveRegions();
+  try {
   const selected = contract.MODES[state.draft.activeMode];
   tabs.forEach(tab => {
     const active = tab.dataset.mode === selected.id;
@@ -6146,34 +6992,45 @@ function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
   $('deliveryDateInput').disabled = Boolean(shopping);
   $('addRowButton').disabled = false;
   $('addRowButton').title = '항상 유지되는 마지막 수기입력 행으로 이동합니다.';
-  hydrateHeader();
+  hydrateHeader({ mutateState });
   renderEstimateHeaderFields();
   renderInputListSearch();
-  if (!inputMappingSession() && removeParserArtifactRows(modeDraft()) && persistCleanup) scheduleSave();
+  if (persistCleanup && !inputMappingSession() && removeParserArtifactRows(modeDraft())) scheduleSave();
   sourceTextInput.value = modeDraft().sourceText;
-  state.photoView.detailColumns = Boolean(modeUi().detailColumns);
-  updateMethod(modeDraft().activeMethod, { persist: false });
-  renderRows();
+  if (mutateState) state.photoView.detailColumns = Boolean(modeUi().detailColumns);
+  updateMethod(modeDraft().activeMethod, { persist: false, mutateState, deferSourceEffects: restoreFocus || restoreScroll });
+  renderRows({
+    restoreFocus,
+    restoreScroll,
+    normalizeRows,
+    loadActivity,
+    mutateState,
+    deferSourceEffects: restoreFocus || restoreScroll
+  });
   renderShoppingOrderPanel();
-  renderCatalogControls();
+  renderCatalogControls({ mutateState });
   renderEstimateWorkspace();
-  renderDelivery();
-  renderReferenceControls();
+  renderDelivery({ loadActivity });
+  if (renderReferences) renderReferenceControls();
   resizeSource();
   renderSourceAnalysis();
   applyFormLayout();
-  applyRelatedPanelState();
-  if (!referencesReady()) {
+  applyRelatedPanelState({ mutateState });
+  if (announce && !referencesReady()) {
     setAppStatus(referenceStatusMessage(), 'warn');
-  } else {
+  } else if (announce) {
     setAppStatus(selected.id === 'order'
       ? '주문서 입력을 시작할 수 있습니다.'
       : (selected.id === 'estimate' ? (modeDraft().estimateKind === 'COMPOSITION_PREVIEW' ? '선택한 견적서를 중복 제거해 함께 표시합니다. 원본은 견적서 생성 전까지 변경되지 않습니다.' : (linkedEstimate ? '연동견적서 행은 개별 견적서와 양방향으로 반영됩니다.' : '개별 견적서를 작성하거나 연동견적서를 선택할 수 있습니다.')) : `${selected.label} 입력 화면입니다. 전달 연결은 준비 중입니다.`));
   }
   if (scheduleAnalysis && sourceTextInput.value.trim() && !inputMappingSession() && !shoppingOrderImport()) scheduleAutoAnalysis(650);
+  } finally {
+    restoreLiveRegions?.();
+  }
 }
 
 function setMode(mode) {
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
   if (!contract.MODES[mode] || mode === state.draft.activeMode) return false;
   const previousMode = state.draft.activeMode;
   if (previousMode === 'estimate' && estimateCreationActive()) {
@@ -6189,7 +7046,7 @@ function setMode(mode) {
       state.estimateMultiSelectKind = '';
     }
   }
-  clearTimeout(state.autoAnalyzeTimer);
+  cancelScheduledAutoAnalysis();
   if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
   state.gridPasteUndo = null;
@@ -6239,10 +7096,20 @@ function syncSourceText() {
   scheduleAutoAnalysis();
 }
 
+function cancelScheduledAutoAnalysis() {
+  const scheduled = state.autoAnalyzeTimer !== null;
+  if (scheduled) clearTimeout(state.autoAnalyzeTimer);
+  state.autoAnalyzeTimer = null;
+  return scheduled;
+}
+
 function scheduleAutoAnalysis(delay = 320) {
-  clearTimeout(state.autoAnalyzeTimer);
+  cancelScheduledAutoAnalysis();
   if (state.sourceComposing || !sourceTextInput.value.trim()) return;
-  state.autoAnalyzeTimer = window.setTimeout(() => analyzeSource({ automatic: true }), delay);
+  state.autoAnalyzeTimer = window.setTimeout(() => {
+    state.autoAnalyzeTimer = null;
+    void analyzeSource({ automatic: true });
+  }, delay);
 }
 
 function appendDirectRow() {
@@ -6598,7 +7465,7 @@ function clearParserWorkspace() {
     .filter(batch => batch.sourceType !== 'MANUAL')
     .map(batch => batch.batchId));
   const removedRows = (current.rows || []).filter(row => parserBatchIds.has(row.batchId)).length;
-  clearTimeout(state.autoAnalyzeTimer);
+  cancelScheduledAutoAnalysis();
   state.analysisRequestId += 1;
   state.photoCaptureSequence += 1;
   state.busy = false;
@@ -6674,7 +7541,7 @@ function fallbackLines(rawText, batch) {
 }
 
 async function analyzeSource({ automatic = false } = {}) {
-  if (!automatic) clearTimeout(state.autoAnalyzeTimer);
+  if (!automatic) cancelScheduledAutoAnalysis();
   invalidateGridPasteUndo();
   if (state.busy) {
     if (automatic) scheduleAutoAnalysis(600);
@@ -10989,6 +11856,7 @@ function restoreEstimateLibrarySwitchFocus(snapshot) {
 
 function selectEstimateLibraryKind(kind, { focusSnapshot = null } = {}) {
   if (!['individual', 'linked'].includes(kind)) return;
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
   const previousKind = state.estimateLibraryKind;
   const multiSelect = estimateMultiSelectActive();
   if (!multiSelect && previousKind === kind) {
@@ -11026,16 +11894,54 @@ estimateLibraryLinkedButton.addEventListener('click', () => {
   selectEstimateLibraryKind('linked', { focusSnapshot });
 });
 
-function handleEstimateCardSelection(event) {
-  if (state.estimateDragSuppressed) return;
+function captureEstimateCardPointerSnapshot(event) {
   if (event.target.closest('[data-estimate-drag-handle]')) return;
   const card = event.target.closest('.estimate-card[data-estimate-id]');
   if (!card) return;
-  const record = state.estimates.find(item => item.estimateId === card.dataset.estimateId);
-  if (!record) return;
+  const snapshot = {
+    cardKey: {
+      estimateKind: card.dataset.estimateKind,
+      estimateId: card.dataset.estimateId
+    },
+    focus: captureEstimateOpenFocus(),
+    scroll: captureEstimateOpenScroll()
+  };
+  state.estimateOpenPointerSnapshot = snapshot;
+  window.setTimeout(() => {
+    if (state.estimateOpenPointerSnapshot === snapshot) state.estimateOpenPointerSnapshot = null;
+  }, 1500);
+}
+
+function handleEstimateCardSelection(event) {
+  if (event.target.closest('[data-estimate-drag-handle]')) return;
+  const card = event.target.closest('.estimate-card[data-estimate-id]');
+  if (!card) return;
+  if (consumeEstimateSyntheticClick(event, card)) return;
+  const cardKey = {
+    estimateKind: card.dataset.estimateKind,
+    estimateId: card.dataset.estimateId
+  };
+  const capturedPointer = state.estimateOpenPointerSnapshot;
+  state.estimateOpenPointerSnapshot = null;
+  const pointerSnapshot = capturedPointer?.cardKey.estimateKind === cardKey.estimateKind
+    && capturedPointer?.cardKey.estimateId === cardKey.estimateId
+    ? { focus: capturedPointer.focus, scroll: capturedPointer.scroll }
+    : { focus: captureEstimateOpenFocus(), scroll: captureEstimateOpenScroll() };
   const additive = event.ctrlKey || event.metaKey;
   if (additive) event.preventDefault();
   state.estimateSelectionQueue = state.estimateSelectionQueue.then(() => {
+      const record = estimateRecordForCardKey(cardKey);
+      if (!record) {
+        return reportCatalogOpenFailure(
+          cardKey,
+          estimateOpenError(
+            'SMARTINPUT_ESTIMATE_OPEN_RECORD_NOT_FOUND',
+            '선택한 견적서를 현재 목록에서 확인할 수 없습니다.',
+            'RESOLVE'
+          ),
+          { restoreView: pointerSnapshot }
+        );
+      }
       if (additive && !estimateMultiSelectActive()) beginEstimateMultiSelect({ deferPreview: true });
       const creation = estimateCreation();
       if (creation) {
@@ -11056,22 +11962,24 @@ function handleEstimateCardSelection(event) {
         renderDelivery();
         return;
       }
-      rememberActiveEstimateWork();
-      state.lastEstimateSave = null;
-      state.noticeEstimateIds = [record.estimateId];
-      loadCatalogRecord(record, { preserveSelection: true });
+      return loadCatalogRecord(record, { pointerSnapshot });
     }).catch(error => {
-      toast(error.message || '견적서를 선택하지 못했습니다.', 'error');
+      reportCatalogOpenFailure(cardKey, error, { restoreView: pointerSnapshot });
     });
 }
 
-$('catalogPickerList').addEventListener('click', handleEstimateCardSelection);
-$('linkedEstimateList').addEventListener('click', handleEstimateCardSelection);
+[...[$('catalogPickerList'), $('linkedEstimateList')]].forEach(list => {
+  list.addEventListener('pointerdown', event => {
+    clearEstimateClickSuppression();
+    captureEstimateCardPointerSnapshot(event);
+  });
+  list.addEventListener('click', handleEstimateCardSelection);
+});
 [...[$('catalogPickerList'), $('linkedEstimateList')]].forEach(list => {
   list.addEventListener('dragstart', beginEstimateCardDrag);
   list.addEventListener('dragover', moveEstimateCardDrag);
   list.addEventListener('drop', event => { finishEstimateCardDrop(event).catch(error => toast(error.message || '견적서 순서를 변경하지 못했습니다.', 'error')); });
-  list.addEventListener('dragend', clearEstimateCardDrag);
+  list.addEventListener('dragend', finishEstimateCardDrag);
   list.addEventListener('dragleave', event => event.target.closest('.estimate-card')?.classList.remove('is-drop-target'));
   list.addEventListener('touchstart', beginEstimateTouchDrag, { passive: true });
   list.addEventListener('touchmove', moveEstimateTouchDrag, { passive: false });
@@ -11165,7 +12073,13 @@ function handleEstimateF8Shortcut(event) {
 document.addEventListener('keydown', handleInputListSearchShortcut, true);
 document.addEventListener('keydown', handleEstimateF8Shortcut, true);
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
+  if (event.key !== 'Escape') return;
+  if (state.estimateDragSession) {
+    event.preventDefault();
+    cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
+    return;
+  }
+  if (!estimateCreationActive() || document.querySelector('dialog[open]')) return;
   event.preventDefault();
   cancelEstimateCreation();
 });
@@ -11497,7 +12411,18 @@ $('tableScroll').addEventListener('scroll', event => {
   modeUi().scrollLeft = event.currentTarget.scrollLeft;
 }, { passive: true });
 
+window.addEventListener('blur', () => {
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
+  clearEstimateClickSuppression();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
+  clearEstimateClickSuppression();
+});
 window.addEventListener('pagehide', () => {
+  if (state.estimateDragSession) cleanupEstimateCardDrag(state.estimateDragSession.sessionId);
+  clearEstimateClickSuppression();
   if (state.draftDirty) saveDraftNow();
 });
 renderMode();
