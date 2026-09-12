@@ -1314,6 +1314,18 @@ try {
   assert.equal(intermediatePanel.closeText, '×', 'the top labeled close control must stay removed');
   assert.equal(intermediatePanel.legacyCollapse, 'none', 'intermediate right drawer must not expose the legacy lower close button');
 
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await wait(120);
+  await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  const desktopReference = await evaluate(client, `(() => {const overview=document.querySelector('#referenceOverview');const popup=document.querySelector('#referenceOverviewPopup');const panel=popup.getBoundingClientRect();const appBar=document.querySelector('.app-bar');const app=appBar.getBoundingClientRect();const global=document.querySelector('.nexus-ui-header').getBoundingClientRect();const reloadButton=document.querySelector('#allReferenceReload');const reload=reloadButton.getBoundingClientRect();const hit=document.elementFromPoint(reload.left+reload.width/2,reload.top+reload.height/2);return {ok:overview.open&&overview.querySelector('summary').getAttribute('aria-expanded')==='true'&&!popup.hidden&&document.activeElement===popup&&!appBar.contains(popup)&&getComputedStyle(appBar).overflowY==='hidden'&&panel.top>=Math.max(app.bottom,global.bottom)&&panel.right<=innerWidth&&panel.bottom<=innerHeight&&popup.scrollHeight<=popup.clientHeight+1&&(hit===reloadButton||reloadButton.contains(hit)),open:overview.open,expanded:overview.querySelector('summary').getAttribute('aria-expanded'),hidden:popup.hidden,focusInPopup:document.activeElement===popup,popupParent:popup.parentElement?.tagName,appContainsPopup:appBar.contains(popup),overflowY:getComputedStyle(appBar).overflowY,panel:{top:panel.top,right:panel.right,bottom:panel.bottom,height:panel.height,scrollHeight:popup.scrollHeight,clientHeight:popup.clientHeight},app:{bottom:app.bottom},global:{bottom:global.bottom},viewport:{width:innerWidth,height:innerHeight},hit:hit?.id||hit?.tagName};})()`);
+  console.log('SmartInput desktop reference popup metrics', desktopReference);
+  assert.equal(desktopReference.ok, true, 'desktop reference popup must remain fully visible and clickable outside the header overflow context');
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  assert.equal(await evaluate(client, `document.querySelector('#referenceOverviewPopup').hidden&&document.activeElement===document.querySelector('#referenceOverview > summary')`), true, 'desktop Escape must close the external reference popup and restore trigger focus');
+
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await wait(200);
   assert.equal(await evaluate(client, `getComputedStyle(document.querySelector('#relatedPanelResizer')).display`), 'none', 'mobile right panel must not expose width resizing');
@@ -1334,13 +1346,12 @@ try {
   await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
   await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-  const mobileReference = await expr(client, `(() => {const overview=document.querySelector('#referenceOverview');const panel=document.querySelector('.reference-overview__panel').getBoundingClientRect();const globalHeader=document.querySelector('.nexus-ui-header').getBoundingClientRect();return overview.open&&overview.querySelector('summary').getAttribute('aria-expanded')==='true'&&panel.top>=globalHeader.bottom&&panel.right<=innerWidth&&panel.bottom<=innerHeight;})()`, 'mobile reference keyboard panel');
-  assert.equal(mobileReference, true, 'mobile reference panel must open by keyboard below the common header');
+  const mobileReference = await expr(client, `(() => {const overview=document.querySelector('#referenceOverview');const popup=document.querySelector('#referenceOverviewPopup');const panel=popup.getBoundingClientRect();const appBar=document.querySelector('.app-bar');const app=appBar.getBoundingClientRect();const global=document.querySelector('.nexus-ui-header').getBoundingClientRect();const reload=document.querySelector('#allReferenceReload');reload.scrollIntoView({block:'nearest'});const reloadRect=reload.getBoundingClientRect();const hit=document.elementFromPoint(reloadRect.left+reloadRect.width/2,reloadRect.top+reloadRect.height/2);return overview.open&&overview.querySelector('summary').getAttribute('aria-expanded')==='true'&&!popup.hidden&&document.activeElement===popup&&!appBar.contains(popup)&&getComputedStyle(appBar).overflowY==='hidden'&&panel.top>=Math.max(app.bottom,global.bottom)&&panel.right<=innerWidth&&panel.bottom<=innerHeight&&(hit===reload||reload.contains(hit));})()`, 'mobile reference keyboard popup');
+  assert.equal(mobileReference, true, 'mobile reference popup must remain fully reachable outside the clipped header');
   const mobileReferenceShot = await capture(client, 'smartinput-reference-mobile.png');
-  await evaluate(client, `document.querySelector('#referenceOverview > summary').focus();true`);
-  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
-  assert.equal(await evaluate(client, `!document.querySelector('#referenceOverview').open&&document.activeElement===document.querySelector('#referenceOverview > summary')`), true, 'Enter must close the reference panel without losing focus');
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  assert.equal(await evaluate(client, `document.querySelector('#referenceOverviewPopup').hidden&&!document.querySelector('#referenceOverview').open&&document.activeElement===document.querySelector('#referenceOverview > summary')`), true, 'Escape must close the mobile reference popup without losing trigger focus');
   const mobileShot = await capture(client, 'smartinput-0a-mobile.png');
 
   const localOrigin = `http://127.0.0.1:${address.port}`;

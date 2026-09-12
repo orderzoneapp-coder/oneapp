@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '9340cac80f64c160a75d5176904035d279aea1f239027fdc7cd1ed0c3faa3f06'],
-  ['../smartinput/smartinput.css', '3b9a3280632aa47fb84e98ad2d98ca28a05695415095a0eba3c717adfea9f50a'],
-  ['../smartinput/smartinput.js', '5aaa9b19ea81509174bfc03f65dcd2f77f5bbf7e1c01fd9b3ac7e0b8f24d8b87']
+  ['../smartinput/index.html', '591d8989a754ef30ede03af8b8dd6f6ab3339342ce4a665609ddf583e591c407'],
+  ['../smartinput/smartinput.css', '4202651bd17f5063cb18a631a1ebfa73c32a09e0e1075e115d18825ee4dd009f'],
+  ['../smartinput/smartinput.js', '66afcbedb917dc2472319a35431eed597400e1afe6453f3340d5c1025169caba']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -201,5 +201,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, compact table toolbar, source-header search affordance, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-erp-order-assignee-preservation-and-compact-table-toolbar-source-hover-search'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-erp-order-assignee-preservation-compact-table-toolbar-source-hover-search-and-external-reference-popup'
 }, null, 2));

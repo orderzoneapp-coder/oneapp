@@ -10570,18 +10570,88 @@ $('allReferenceReload').addEventListener('click', () => { void refreshAllReferen
 $('referencePendingApply').addEventListener('click', () => { activatePendingReferences({ explicit: true }); });
 const referenceOverview = $('referenceOverview');
 const referenceOverviewSummary = referenceOverview.querySelector('summary');
+const referenceOverviewPopup = $('referenceOverviewPopup');
+let referenceOverviewPositionFrame = 0;
+let referenceOverviewFocusPopup = false;
+
+function positionReferenceOverviewPopup() {
+  referenceOverviewPositionFrame = 0;
+  if (!referenceOverview.open || referenceOverviewPopup.hidden) return;
+  const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+  const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+  const margin = 12;
+  const width = Math.min(540, Math.max(0, viewportWidth - margin * 2));
+  const triggerRect = referenceOverviewSummary.getBoundingClientRect();
+  const globalHeaderBottom = Math.max(0, Math.min(viewportHeight, document.querySelector('.nexus-ui-header')?.getBoundingClientRect().bottom || 0));
+  const appHeaderBottom = Math.max(0, Math.min(viewportHeight, document.querySelector('.app-bar')?.getBoundingClientRect().bottom || 0));
+  const top = Math.max(margin, globalHeaderBottom + 8, appHeaderBottom + 8, triggerRect.bottom + 8);
+  const left = Math.max(margin, Math.min(viewportWidth - margin - width, triggerRect.right - width));
+  referenceOverviewPopup.style.width = `${width}px`;
+  referenceOverviewPopup.style.maxHeight = `${Math.max(0, viewportHeight - top - margin)}px`;
+  referenceOverviewPopup.style.top = `${top}px`;
+  referenceOverviewPopup.style.left = `${left}px`;
+  referenceOverviewPopup.dataset.positioned = 'true';
+}
+
+function scheduleReferenceOverviewPopupPosition() {
+  if (!referenceOverview.open || referenceOverviewPopup.hidden || referenceOverviewPositionFrame) return;
+  referenceOverviewPositionFrame = requestAnimationFrame(positionReferenceOverviewPopup);
+}
+
+function syncReferenceOverviewPopup() {
+  const open = referenceOverview.open;
+  referenceOverviewSummary.setAttribute('aria-expanded', String(open));
+  referenceOverviewSummary.setAttribute('aria-label', open ? '기준정보 상태 닫기' : '기준정보 상태 열기');
+  if (!open) {
+    referenceOverviewPopup.hidden = true;
+    referenceOverviewPopup.dataset.positioned = 'false';
+    return;
+  }
+  referenceOverviewPopup.hidden = false;
+  referenceOverviewPopup.dataset.positioned = 'false';
+  positionReferenceOverviewPopup();
+  if (referenceOverviewFocusPopup) {
+    referenceOverviewFocusPopup = false;
+    referenceOverviewPopup.focus({ preventScroll: true });
+  }
+}
+
+function closeReferenceOverviewPopup({ restoreFocus = false } = {}) {
+  if (!referenceOverview.open) return;
+  referenceOverview.open = false;
+  syncReferenceOverviewPopup();
+  if (restoreFocus) referenceOverviewSummary.focus({ preventScroll: true });
+}
+
 referenceOverviewSummary.addEventListener('keydown', event => {
   if (!['Enter', ' '].includes(event.key)) return;
   event.preventDefault();
+  referenceOverviewFocusPopup = !referenceOverview.open;
   referenceOverview.open = !referenceOverview.open;
+  syncReferenceOverviewPopup();
 });
 referenceOverviewSummary.addEventListener('keyup', event => {
   if (['Enter', ' '].includes(event.key)) event.preventDefault();
 });
-referenceOverview.addEventListener('toggle', () => {
-  referenceOverviewSummary.setAttribute('aria-expanded', String(referenceOverview.open));
-  referenceOverviewSummary.setAttribute('aria-label', referenceOverview.open ? '기준정보 상태 닫기' : '기준정보 상태 열기');
+referenceOverviewSummary.addEventListener('pointerdown', () => {
+  referenceOverviewFocusPopup = !referenceOverview.open;
 });
+referenceOverview.addEventListener('toggle', syncReferenceOverviewPopup);
+document.addEventListener('pointerdown', event => {
+  if (!referenceOverview.open || referenceOverviewPopup.hidden) return;
+  if (referenceOverview.contains(event.target) || referenceOverviewPopup.contains(event.target)) return;
+  closeReferenceOverviewPopup();
+}, true);
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || !referenceOverview.open || referenceOverviewPopup.hidden) return;
+  event.preventDefault();
+  closeReferenceOverviewPopup({ restoreFocus: true });
+});
+window.addEventListener('resize', scheduleReferenceOverviewPopupPosition, { passive: true });
+document.addEventListener('scroll', scheduleReferenceOverviewPopupPosition, { capture: true, passive: true });
+window.visualViewport?.addEventListener('resize', scheduleReferenceOverviewPopupPosition, { passive: true });
+window.visualViewport?.addEventListener('scroll', scheduleReferenceOverviewPopupPosition, { passive: true });
+syncReferenceOverviewPopup();
 sourceTextInput.addEventListener('input', syncSourceText);
 sourceTextInput.addEventListener('compositionstart', () => { state.sourceComposing = true; });
 sourceTextInput.addEventListener('compositionend', () => { state.sourceComposing = false; syncSourceText(); });
