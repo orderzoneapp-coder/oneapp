@@ -95,7 +95,14 @@ try {
     await ev(`document.querySelector('#previewTable').insertAdjacentHTML('beforeend','<table id="styleContractProbe"><tbody><tr><td><input class="purchase-input excel-grid-input" data-negative-balance="true" value="경고"></td><td><input class="order-edit-input" value="0"></td><td><input class="order-edit-input" value=""></td></tr></tbody></table>');true`);
     for(const theme of ['dark','light'])for(const focused of [false,true]){
       const styles=await ev(`(()=>{document.documentElement.dataset.nexusUiTheme='${theme}';const i=document.querySelector('#styleContractProbe .purchase-input'),sheet=[...document.styleSheets].find(s=>s.href?.includes('workbench-v12.css'));${focused?'i.focus();':'i.blur();'}const read=()=>({background:getComputedStyle(i).backgroundColor,color:getComputedStyle(i).color});sheet.disabled=true;const before=read();sheet.disabled=false;return {before,after:read()};})()`);
-      report.checks.push({warningStyle:theme,focused,...styles});assert.deepEqual(styles.after,styles.before,'warning surface/color preserved');
+      report.checks.push({warningStyle:theme,focused,...styles});
+      // Approved dark-table policy supersedes the old dark warning palette;
+      // light-mode warning colors and every input value remain unchanged.
+      if(theme==='dark'){
+        assert.deepEqual(styles.after,{background:'rgba(0, 0, 0, 0)',color:'rgb(0, 0, 0)'},'dark warning input uses black on the shared gray cell');
+        assert.equal(await ev(`getComputedStyle(document.querySelector('#styleContractProbe .purchase-input').closest('td')).backgroundColor`),'rgb(209, 213, 219)','dark warning surface is readable gray');
+        assert.equal(await ev(`document.querySelector('#styleContractProbe .purchase-input').dataset.negativeBalance`),'true','warning state remains available');
+      }else assert.deepEqual(styles.after,styles.before,'light warning surface/color preserved');
     }
     check('zero/blank editor values preserved',await ev(`(()=>{const inputs=document.querySelectorAll('#styleContractProbe .order-edit-input');return inputs[0].value==='0'&&inputs[1].value==='';})()`));await ev(`document.querySelector('#styleContractProbe').remove();true`);
   }
