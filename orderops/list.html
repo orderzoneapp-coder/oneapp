@@ -9,16 +9,17 @@
   <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
   <script defer src="../nexus/common/nexus-ui.js?v=1.7.0"></script>
-  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.4.0"></script>
+  <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.5.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
   <title>출고관리 - NEXUS</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1-2"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-workbench-v12"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
+  <script src="workbench-ui.js?v=20260912-v12"></script>
+  <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
       color-scheme: light;
@@ -2702,6 +2703,7 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="./workbench-v12.css?v=1">
 </head>
 <body>
   <header class="global-header" data-nexus-app-header="orderops">
@@ -3024,7 +3026,7 @@
 
         <aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="출고관리 우측 보조 섹션">
           <div class="orderops-side-panel__head">
-            <div><h3>우측 보조 섹션</h3><p>위치·표시·너비 설정</p></div>
+            <div><h3>조회·수정</h3><p>선택 주문·재고·작업본 수정</p></div>
             <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-controls="inventoryInspector">닫기</button>
           </div>
           <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 패널</strong><span>승인된 보조 업무가 아직 없습니다.</span></div>
@@ -3319,11 +3321,76 @@
         centralWork.remove();
         inputPanel?.remove();
         systemWorkbench?.remove();
+
+        // v1.2: preserve the existing controls/handlers, but give each pane one
+        // responsibility. All three panes remain siblings below the app header.
+        outerWorkspace.classList.add("orderops-workbench-v12");
+        const preparePane = document.createElement("aside");
+        preparePane.id = "orderOpsFilePreparePane";
+        preparePane.className = "orderops-side-panel orderops-file-prepare";
+        preparePane.dataset.nexusPane = "reference";
+        preparePane.tabIndex = -1;
+        preparePane.setAttribute("aria-label", "파일 준비·매핑");
+        preparePane.innerHTML = `<div class="orderops-side-panel__head"><h3>파일 준비</h3><button type="button" id="preparePaneClose">닫기</button></div>
+          <div class="orderops-prepare-actions"><button type="button" id="prepareFilesButton">Excel 파일</button><button type="button" id="prepareRemoveButton">지우기</button><button type="button" id="prepareApplyButton">적용</button></div>
+          <input type="file" id="prepareFilesInput" accept=".xlsx,.xls" multiple hidden>
+          <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
+          <div id="prepareFileEditor"><p>파일을 선택하고 자료 유형·시트·열을 확인한 뒤 적용하세요.</p></div>
+          <p id="prepareStatus" role="status" aria-live="polite"></p>`;
+        leftPane.removeAttribute("data-nexus-pane");
+        leftPane.classList.add("orderops-query-panel");
+        leftPane.setAttribute("aria-label", "우측 주문 조회·담당 변경");
+        rightPane.querySelector(".orderops-side-panel__head h3").textContent = "조회·수정";
+        rightPane.insertBefore(leftPane, rightPane.querySelector("#inventoryInspectorIdentity"));
+        outerWorkspace.prepend(preparePane);
+        paneShortcuts.innerHTML = `<button type="button" id="preparePaneReopen" aria-controls="orderOpsFilePreparePane" aria-expanded="true">파일 준비</button>`;
+        rightPane.querySelectorAll('[aria-label^="좌측"]').forEach(node => node.setAttribute("aria-label", node.getAttribute("aria-label").replace("좌측", "우측")));
+        document.getElementById("deliveryFilterReset").textContent = "조회 초기화";
+        document.getElementById("deliverySelectionOpenReadiness").textContent = "주문현황에서 보기";
+        sourceStatuses.hidden = true;
+        const tabs = document.getElementById("previewTabs");
+        const reset = document.createElement("button");
+        reset.id = "workbenchResetButton";
+        reset.type = "button";
+        reset.textContent = "초기화";
+        primaryActions.replaceChildren(tabs, analyzeButton, reset);
+        const bottomLeft = document.createElement("div");
+        bottomLeft.className = "orderops-workbar-save";
+        bottomLeft.append(document.getElementById("headerCloudSaveButton"));
+        if (storageStatus) bottomLeft.append(storageStatus);
+        const bottomRight = document.createElement("div");
+        bottomRight.className = "orderops-workbar-next";
+        ordersMenu.querySelector("button").textContent = "자료 불러오기 ▾";
+        ordersMenuItems.append(inventoryMenuButton, cloudLoadButton, document.getElementById("headerRestoreButton"));
+        moreMenu.querySelector("button").textContent = "기타 ▾";
+        moreMenuItems.append(document.getElementById("smartInputButton"));
+        const shipmentOpen = document.createElement("button");
+        shipmentOpen.id = "shipmentOpenButton";
+        shipmentOpen.type = "button";
+        shipmentOpen.textContent = "출고확정";
+        shipmentOpen.hidden = true;
+        bottomRight.append(ordersMenu, shipmentOpen, document.getElementById("printButton"), document.getElementById("downloadButton"), moreMenu);
+        bottomWorkbar.replaceChildren(bottomLeft, bottomRight);
+        const hiddenSources = document.createElement("div");
+        hiddenSources.hidden = true;
+        hiddenSources.append(sourceSelector, integratedButton, inventoryButton, purchasesButton, salesButton, ordersButton, sourceStatuses);
+        preparePane.append(hiddenSources);
+        // Menus live outside every clipping/scrolling pane.
+        document.body.append(ordersMenuItems, moreMenuItems);
+        compactHeaderMedia.removeEventListener?.("change", syncCompactHeaderActions);
+        if (settingsButton) headerActions?.append(settingsButton);
+        const shipmentDialog = document.createElement("dialog");
+        shipmentDialog.id = "shipmentWorkbenchDialog";
+        shipmentDialog.className = "orderops-workbench-dialog";
+        shipmentDialog.innerHTML = '<form method="dialog"><button aria-label="출고 확인 닫기">닫기</button></form>';
+        shipmentDialog.append(document.getElementById("shipmentExecution"));
+        document.body.append(shipmentDialog);
       }
 
       normalizeOrderOpsWorkspaceDom();
 
       const engine = window.ShippingManagementEngine;
+      let workbench = null;
       const workbookTools = window.ShippingManagementWorkbook;
       const inventorySnapshotTools = window.OrderOpsInventorySnapshot;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -3344,7 +3411,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["readiness", "inventory", "allocations", "ledger", "purchases", "sales"]);
+      const COLUMN_ORDER_TABS = new Set(["readiness", "inventory", "allocations", "procurement", "ledger", "purchases", "sales"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -3361,10 +3428,10 @@
       const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
       const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
-      const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"]);
+      const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "procurement", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
         readiness: "기본 분석표", allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
-        purchases: "구매현황", sales: "판매현황",
+        purchases: "구매현황", sales: "판매현황", procurement: "발주현황",
       });
       const SHORTAGE_CATEGORY_COLORS = Object.freeze([
         "#fda4af", "#fdba74", "#fde047", "#86efac",
@@ -3372,7 +3439,7 @@
       ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
       const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
-      const FILE_KIND_PREVIEWS = Object.freeze({ orders: "readiness", inventory: "inventory", purchases: "purchases", sales: "sales" });
+      const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
       const SOURCE_VIEW_CARDS = Object.freeze({ readiness: "orders", allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
@@ -3398,7 +3465,7 @@
       const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["readiness", "validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
+      const TABLE_WIDTH_TABS = new Set(["readiness", "validation", "inventory", "allocations", "procurement", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -3431,7 +3498,12 @@
         validation: null,
         workspace: null,
         pendingSystemHistory: null,
-        activePreview: "validation",
+        activePreview: "allocations",
+        preparedFiles: [],
+        selectedPreparedId: "",
+        preparationBusy: false,
+        inspectorEdits: Object.create(null),
+        selectedOrderRow: "",
         searchQuery: "",
         shortageFocus: false,
         specificationFilters: new Set(),
@@ -3717,11 +3789,12 @@
           : ui.unresolvedReviewReadAdapter;
       }
 
+      const tableNumberFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 });
       function formatNumber(value) {
         if (value === null || value === undefined || value === "") return "";
         const number = Number(value);
         return Number.isFinite(number)
-          ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
+          ? tableNumberFormatter.format(number)
           : String(value);
       }
 
@@ -4072,6 +4145,15 @@
         await completed;
       }
 
+      async function commitWorkbenchRecord(record, guard) {
+        if (!guard()) throw new Error("최종 입력이 변경되어 적용을 중단했습니다.");
+        const transaction = state.db.transaction(LOCAL_STORE_NAME, "readwrite");
+        const completed = idbTransactionDone(transaction);
+        const request = transaction.objectStore(LOCAL_STORE_NAME).put(record);
+        request.onsuccess = () => { if (!guard()) transaction.abort(); };
+        await completed;
+      }
+
       async function readRecoveryRecord(recordId) {
         if (!state.db || !recordId) return null;
         return idbRequest(
@@ -4402,6 +4484,7 @@
         window.clearTimeout(scheduleLocalSave.timer);
         state.workspaceChangeVersion += 1;
         if (state.workspace) elements.localSaveStatus.textContent = "임시저장 · 저장 대기";
+        if (state.workbenchApplyBusy) return;
         scheduleLocalSave.timer = window.setTimeout(() => {
           queueLocalWorkspaceSave().catch((error) => {
             elements.localSaveStatus.textContent = "임시저장 · 실패";
@@ -4426,6 +4509,8 @@
           sourceMatrix: ordersSource.matrix,
           productCodeColumnIndex: ordersSource.productCodeColumnIndex,
           headerMapping: ordersSource.headerMapping,
+          explicitMapping: ordersSource.explicitMapping,
+          sourceEvidence: ordersSource.sourceEvidence,
           sourceKind: ordersSource.sourceKind,
           sourceSchemaVersion: ordersSource.sourceSchemaVersion,
           orderId: ordersSource.orderId,
@@ -4446,6 +4531,7 @@
           sourceMatrix: inventorySource.matrix,
           productCodeColumnIndex: inventorySource.productCodeColumnIndex,
           columns: inventorySource.columns || [],
+          explicitMapping: inventorySource.explicitMapping,
           sourceKind: inventorySource.sourceKind,
           sourceSchemaVersion: inventorySource.sourceSchemaVersion,
           sourceEvidence: inventorySource.sourceEvidence
@@ -4454,6 +4540,7 @@
         } : null;
         state.purchases = workspace?.orderOpsInputs?.purchases || null;
         state.sales = workspace?.orderOpsInputs?.sales || null;
+        workbench?.hydratePrepared();
         state.validation = state.orders && state.inventory
           ? engine.validateInputs(state.orders, state.inventory)
           : null;
@@ -4469,14 +4556,17 @@
       }
 
       async function restoreLocalRecord(record) {
+        if (state.workbenchApplyBusy || state.inventoryApplyBusy || workbench?.dirty()) throw new Error("미적용 작업을 먼저 확인하세요. 현재 입력을 유지합니다.");
+        commitCurrentWorkspaceInputs();
+        const base = state.workspace, version = state.workspaceChangeVersion;
         const verification = await verifyRecoveryRecord(record);
         if (!verification.valid) throw new Error(`복구자료가 차단되었습니다: ${verification.reason}`);
+        commitCurrentWorkspaceInputs();
+        if (state.workspace !== base || state.workspaceChangeVersion !== version) throw new Error("복구 검산 중 입력이 변경되었습니다. 최신 입력을 유지하고 복구를 중단했습니다.");
         const payload = verification.record.payload;
         clearSubstitutionSelection();
         state.workspace = payload.workspace;
-        if (state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
-          restorePreviewInputState(state.workspace);
-        }
+        restorePreviewInputState(state.workspace);
         restoreOrderQSourceFromWorkspace(state.workspace);
         hydrateShipmentDraftFromWorkspace(state.workspace);
         engine.ensureNoticeState(state.workspace);
@@ -4970,6 +5060,7 @@
       }
 
       async function handleBundleFiles(fileList) {
+        if (workbench) return workbench.prepare(fileList);
         const files = Array.from(fileList || []).filter(Boolean);
         if (files.length < 1 || files.length > 4) {
           showToast("자동분류 드롭은 1~4개 Excel 파일을 넣어주세요.", true);
@@ -5042,6 +5133,8 @@
       }
 
       function resetResults({ preserveView = false } = {}) {
+        preparedPreviewCache = null;
+        previewSurfaceCache.clear();
         leaveUnresolvedReview({ render: false });
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
@@ -5070,6 +5163,7 @@
       }
 
       async function handleFile(kind, file) {
+        if (workbench) return workbench.prepare([file], kind);
         if (!file) return;
         if (!isSupportedFile(file)) {
           showToast(".xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
@@ -5101,6 +5195,7 @@
       }
 
       async function handleIntegratedFile(file) {
+        if (workbench) return workbench.prepare([file]);
         if (!file) return;
         if (!isSupportedFile(file)) {
           showToast("통합파일은 .xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
@@ -5238,7 +5333,7 @@
           });
           state.pendingSystemHistory = state.workspace.systemHistory;
           const availablePreview = state.orders
-            ? "readiness"
+            ? "allocations"
             : state.inventory
               ? "inventory"
               : state.purchases
@@ -5379,15 +5474,19 @@
       }
 
       async function loadOrderQSource(orderId, { applyLatest = false, skipSwitchConfirm = false } = {}) {
+        if (state.workbenchApplyBusy || state.inventoryApplyBusy) return false;
+        if (workbench?.dirty()) { showToast("미적용 파일/우측 입력을 적용하거나 취소한 뒤 주문을 바꾸세요.", true); return false; }
         const requestedOrderId = String(orderId || "").trim();
         if (!requestedOrderId) return false;
         const previousSnapshot = state.orderQSource?.snapshot || null;
+        if (state.workspace && previousSnapshot?.orderId === requestedOrderId && workbench) return Boolean((await workbench.applyLatest())?.ok);
         const switchingOrder = Boolean(previousSnapshot?.orderId && previousSnapshot.orderId !== requestedOrderId);
         if (switchingOrder && state.workspace && !skipSwitchConfirm && !window.confirm("현재 출고 분석 작업을 종료하고 선택한 주문으로 전환하시겠습니까? 창고재고 파일은 유지됩니다.")) return false;
         captureShipmentDraftInputs();
         setSystemMessage("ORDER Q 주문 확인 중 · 주문 Revision과 출고대상을 읽고 있습니다");
         setOrderQSourceNotice(`주문 ${requestedOrderId}을 확인하고 있습니다. 기존 작업은 성공적으로 불러온 뒤에만 교체됩니다.`);
         try {
+          await waitForInventoryApplyBoundary();
           const { loadOrderQOrderSource, reconcileShipmentDraft } = await orderQSourceAdapter();
           const result = await loadOrderQOrderSource(requestedOrderId);
           const applicable = result.status === "READY" || (applyLatest && result.status === "EMPTY" && result.snapshot);
@@ -5456,6 +5555,11 @@
 
       async function loadOrderQSourceFromRoute() {
         const orderId = new URLSearchParams(location.search).get("orderId")?.trim() || "";
+        const accepted = state.recoveryRecord;
+        if (orderId && accepted?.payload?.workspace?.workbenchReconciliation && accepted.payload.workspace.sourceFiles?.orders?.orderId === orderId) {
+          await restoreLocalRecord(accepted);
+          return;
+        }
         if (orderId) await loadOrderQSource(orderId, { skipSwitchConfirm: true });
       }
 
@@ -6675,7 +6779,7 @@
         }));
         const rows = sourceRows.map((row) => {
           const values = Array.isArray(row?.values) ? [...row.values] : [];
-          if (state.warehouseFilters.size > 0) {
+          if (state.warehouseFilters.size > 0 && row.quantityComparable && !row.inventoryMissing) {
             const selectedStock = baseColumns.reduce((sum, column, index) => {
               if (column.role !== "warehouseQuantity" || !state.warehouseFilters.has(column.key)) return sum;
               const parsed = engine.parseNumericCell(values[index]);
@@ -6685,7 +6789,7 @@
             row.displayRemainingQuantity = selectedStock - Number(row?.orderQuantity || 0);
             if (remainingIndex >= 0) values[remainingIndex] = row.displayRemainingQuantity;
           }
-          values.splice(statusIndex, 0, row?.rowState ?? "");
+          values.splice(statusIndex, 0, row.inventoryMissing ? "재고 미확인" : row.quantityComparable === false ? "단위 확인" : row?.rowState ?? "");
           values.splice(purchaseIndex, 0, row?.purchase ?? "");
           values.push(row?.orderInformation ?? "");
           values.push(row?.orderNotes ?? "");
@@ -6952,15 +7056,51 @@
         return preview;
       }
 
+      function emptyWorkbenchPreview(id, message) {
+        const headers = ["안내"];
+        return { label: VIEW_PRESET_LABELS[id] || "현황", headers, columns: createPreviewColumns(id, headers, []), numeric: [], inventory: [], purchase: -1, status: -1, sourceRows: [{}], rows: [[message]], purchaseEditable: false };
+      }
+
+      function buildProcurementPreview(workspace) {
+        if (workspace.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) return emptyWorkbenchPreview("procurement", "미실행 · 주문과 재고를 적용하고 분석을 실행하세요.");
+        if (workspace.inventoryApplicationMode === "TOTAL_ONLY") return emptyWorkbenchPreview("procurement", "총량 비교 전용 · 구매 제안/업로드 제외");
+        const final = engine.getFinalPurchaseUploadSelection(workspace);
+        const included = new Set(final.included.map(row => engine.normalizeProductCode(row.productCode)));
+        const excluded = new Map(final.excluded.map(row => [engine.normalizeProductCode(row.productCode), row.reason]));
+        const scope = document.getElementById("procurementScope")?.value || "shortage";
+        const sourceRows = final.inventoryRows.filter(row => scope === "all" || (row.quantityComparable && row.purchaseNeed > 0))
+          .map(row => ({ ...row, rowType: "main", outputStatus: included.has(engine.normalizeProductCode(row.productCode)) ? "구매업로드 포함" : excluded.get(engine.normalizeProductCode(row.productCode)) || (row.inventoryMissing ? "재고 미확인" : row.quantityComparable ? "부족 없음" : "단위 확인") }));
+        const headers = ["상품코드", "품목명", "규격", "단위", "총주문", "전체 창고재고", "잔량", "구매 필요수량", "구매", "업로드 판정"];
+        const numeric = [4, 5, 6, 7];
+        return { label: "발주현황", headers, columns: createPreviewColumns("procurement", headers, numeric), numeric, inventory: [], purchase: 8, status: 9, purchaseEditable: true, sourceRows,
+          rows: sourceRows.map(row => [row.productCode, row.productName, row.specification, row.unit, row.orderQuantity, row.stockTotal, row.remainingQuantity, row.purchaseNeed, row.purchase, row.outputStatus]), sortByProductCode: true };
+      }
+
+      function renderWorkbenchTabs() {
+        const labels = [["allocations", "주문현황"], ["inventory", "창고재고"], ["procurement", "발주현황"], ["purchases", "구매현황"], ["sales", "판매현황"], ["ledger", "수불현황"]];
+        elements.previewTabs.innerHTML = labels.map(([id, label]) => `<button type="button" role="tab" data-preview="${id}" aria-selected="${state.activePreview === id}" class="tab-button ${state.activePreview === id ? "active" : ""}">${label}</button>`).join("");
+        const scope = document.getElementById("procurementScope");
+        if (scope) scope.hidden = state.activePreview !== "procurement";
+      }
+
+      let preparedPreviewCache = null;
+      function previewDefinitionKey(workspace) {
+        // Workspace APIs permit in-place edits. Object identity or the UI-save
+        // counter alone cannot prove freshness; compare the complete inputs.
+        return JSON.stringify([workspace, state.shipmentDraft, state.shipmentResults?.netByOrderItem,
+          state.orderQSource?.snapshot, [...state.warehouseFilters], document.getElementById("procurementScope")?.value]);
+      }
+
       function getPreviewDefinitions(workspace) {
-        if (workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
-          const definitions = {};
-          if (workspace.previewDataState?.orders) definitions.readiness = buildReadinessPreview(workspace);
-          if (workspace.previewDataState?.inventory) definitions.inventory = buildInventorySourcePreview(workspace);
-          if (workspace.orderOpsInputs?.purchases) definitions.purchases = buildTransactionPreview(workspace, "purchases");
-          if (workspace.orderOpsInputs?.sales) definitions.sales = buildTransactionPreview(workspace, "sales");
-          return definitions;
-        }
+        const key = previewDefinitionKey(workspace);
+        if (preparedPreviewCache?.workspace === workspace && preparedPreviewCache.key === key) return preparedPreviewCache.definitions;
+        const definitions = buildPreviewDefinitions(workspace);
+        preparedPreviewCache = { workspace, key: previewDefinitionKey(workspace), definitions };
+        return definitions;
+      }
+
+      function buildPreviewDefinitions(workspace) {
+        const beforeAnalysis = workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE;
         const acknowledgementState = engine.ensureNoticeState(workspace);
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
         const shortageContext = typeof engine.getShortageCategoryContext === "function"
@@ -6990,7 +7130,16 @@
         };
         validation.columns = createPreviewColumns("validation", validation.headers, validation.numeric);
 
-        const allocationInventoryView = typeof engine.getAllocationInventoryView === "function"
+        const totalOnlyComparison = workspace.inventoryApplicationMode === "TOTAL_ONLY";
+        const allocationInventoryView = totalOnlyComparison ? {
+          // Total-only data has no warehouse identity. Keep comparison visible
+          // in the normal order list without inventing editable warehouses.
+          columns: [{ header: "총재고", role: "stockQuantity" }, { header: "비교잔량", role: "calculatedQuantity" }],
+          rows: (workspace.allocations || []).map(row => {
+            const inventory = inventoryByCode.get(engine.normalizeProductCode(row.productCode));
+            return { warehouseValues: [inventory?.inventoryMissing ? "미확인" : inventory?.stockTotal ?? "미확인", inventory?.quantityComparable ? inventory.remainingQuantity : "비교 불가"] };
+          }),
+        } : typeof engine.getAllocationInventoryView === "function"
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
@@ -7067,7 +7216,7 @@
             row.quantity,
             ...(directOrderQShipment ? [row.actualShipmentQuantity] : []),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
-            ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
+            ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(value => totalOnlyComparison ? value : blankZero(value)),
             formatEmployeeDeliveryNotice(row),
             row.purchase || "",
           ]),
@@ -7107,8 +7256,8 @@
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
             column.defaultWidth = 56;
-            column.role = "warehouseQuantity";
-            column.inventoryColumnKey = allocationInventoryView.columns[index]?.key || "";
+            column.role = totalOnlyComparison ? allocationInventoryView.columns[index].role : "warehouseQuantity";
+            if (!totalOnlyComparison) column.inventoryColumnKey = allocationInventoryView.columns[index]?.key || "";
           }
         });
         [160, 90].forEach((width, index) => {
@@ -7153,13 +7302,15 @@
 
         validation.noticesPreview = notices;
         const definitions = {
-          readiness: buildReadinessPreview(workspace),
+          // Legacy view IDs resolve to the existing order list, without building
+          // a second full preview workspace on every view switch.
+          readiness: allocations,
           validation,
           allocations,
           purchases: buildTransactionPreview(workspace, "purchases"),
           sales: buildTransactionPreview(workspace, "sales"),
         };
-        if (typeof engine.getStockLedgerView === "function") {
+        if (!beforeAnalysis && typeof engine.getStockLedgerView === "function") {
           const ledgerView = engine.getStockLedgerView(workspace);
           const ledgerSourceRows = ledgerView.rows.map((row) =>
             decorateShortageRow(row, shortageSets, inventoryByCode));
@@ -7204,12 +7355,14 @@
             shortageCount: shortageContext.purchaseActionCount || shortageContext.shortageCount || 0,
           };
         }
-        const inventory = buildInventoryPreview(workspace, shortageSets, inventoryByCode);
+        const inventory = beforeAnalysis && !totalOnlyComparison ? buildInventorySourcePreview(workspace) : buildInventoryPreview(workspace, shortageSets, inventoryByCode);
         if (inventory) {
           inventory.shortcut = "F7";
           inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
           definitions.inventory = inventory;
         }
+        definitions.procurement = buildProcurementPreview(workspace);
+        if (!definitions.ledger) definitions.ledger = emptyWorkbenchPreview("ledger", "미실행 · 분석 실행 후 수불현황을 확인하세요.");
         return definitions;
       }
 
@@ -7562,6 +7715,7 @@
       }
 
       function renderInventoryInspector() {
+        if (workbench) return workbench.renderInspector();
         if (!elements.inventoryInspectorBody) return;
         elements.inventoryInspectorIdentity.innerHTML = '<strong>보조 패널</strong><span>승인된 처리결과·이력·후속 작업이 아직 없습니다.</span>';
         elements.inventoryInspectorMetrics.replaceChildren();
@@ -7603,6 +7757,7 @@
 
       const INVENTORY_INSPECTOR_OPEN_KEY = "oneapp.orderops.inventory-inspector-open.v1";
       function setInventoryInspectorOpen(open, { persist = true } = {}) {
+        if (open && innerWidth <= 639 && workbench) workbench.setLeft(false, false);
         const nextOpen = Boolean(open);
         elements.inventoryInspector.hidden = !nextOpen;
         elements.inventoryInspector.setAttribute("aria-hidden", String(!nextOpen));
@@ -7611,8 +7766,8 @@
         if (persist) {
           try { localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY, nextOpen ? "1" : "0"); } catch (_) {}
         }
-        elements.resultsPanel.scrollLeft = 0;
-        window.requestAnimationFrame(() => { elements.resultsPanel.scrollLeft = 0; });
+        if (elements.resultsPanel.scrollLeft) elements.resultsPanel.scrollLeft = 0;
+        window.requestAnimationFrame(() => { if (elements.resultsPanel.scrollLeft) elements.resultsPanel.scrollLeft = 0; });
         window.dispatchEvent(new Event("resize"));
       }
 
@@ -8159,7 +8314,7 @@
                   ? `product:${sourceRow.productCode}`
                   : `row:${pairIndex}`;
               return `
-                <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-grid-row-key="${escapeHtml(gridRowKey)}" data-shortage-category="${escapeHtml(shortageCategory)}"
+                <tr class="${rowClasses}" data-source-row-number="${escapeHtml(sourceRow?.sourceRowNumber || "")}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-grid-row-key="${escapeHtml(gridRowKey)}" data-shortage-category="${escapeHtml(shortageCategory)}"
                   style="${rowStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
@@ -8176,7 +8331,8 @@
                     const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
-                    const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
+                    const totalComparisonColumn = state.workspace?.inventoryApplicationMode === "TOTAL_ONLY" && ["stockQuantity", "calculatedQuantity"].includes(column.role);
+                    const displayValue = quantityColumn && numericQuantityValue === 0 && !totalComparisonColumn ? "" : value;
                     const negativeRemaining = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && negativeNumericValue;
                     const orderedContext = ["ledger", "inventory"].includes(previewId) &&
@@ -8302,7 +8458,7 @@
           : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">${escapeHtml(options.emptyMessage || "표시할 항목이 없습니다.")}</td></tr>`;
 
         return `
-          <table class="preview-${previewId} column-width-managed" data-width-source="${options.widthSource || "draft"}"
+          <table class="preview-${previewId} column-width-managed${options.printOutput ? "" : " nexus-table-ux"}" data-width-source="${options.widthSource || "draft"}"
             style="width:${options.fitWidth ? "100%" : `${tableWidth}px`}">
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
@@ -8552,21 +8708,44 @@
       }
 
       function defaultPreviewForWorkspace(workspace, definitions) {
-        if (definitions.readiness) return "readiness";
+        if (definitions.allocations) return "allocations";
         if (definitions.inventory) return "inventory";
         if (definitions.purchases) return "purchases";
         if (definitions.sales) return "sales";
         return definitions.validation ? "validation" : Object.keys(definitions)[0] || "";
       }
 
-      function renderPreview() {
+      // Keep at most the two last complete table DOMs. There is still only one
+      // attached table; no row is omitted and native grid/copy handlers remain.
+      const previewSurfaceCache = new Map();
+      elements.previewTable.addEventListener("input", () => previewSurfaceCache.clear());
+      function mountPreparedPreview(markup) {
+        const key = markup.replace(/class="([^"]*)"/g, (_, classes) =>
+          `class="${classes.split(/\s+/).filter(value => value && value !== "orderops-selected-product-row").join(" ")}"`);
+        const cached = previewSurfaceCache.get(state.activePreview);
+        const unchangedControls = cached && cached.nodes.every(node => !node.querySelectorAll ||
+          [...node.querySelectorAll("input,textarea")].every(input => input.value === input.defaultValue &&
+            (!["checkbox", "radio"].includes(input.type) || input.checked === input.defaultChecked)));
+        if (cached?.key === key && unchangedControls) elements.previewTable.replaceChildren(...cached.nodes);
+        else elements.previewTable.innerHTML = markup;
+        elements.previewTable.querySelectorAll("tr[data-product-code]").forEach(row => {
+          const selected = Boolean(state.selectedProductCode) && engine.normalizeProductCode(row.dataset.productCode) === engine.normalizeProductCode(state.selectedProductCode);
+          row.classList.toggle("orderops-selected-product-row", selected);
+        });
+        previewSurfaceCache.delete(state.activePreview);
+        previewSurfaceCache.set(state.activePreview, { key, nodes: [...elements.previewTable.childNodes] });
+        while (previewSurfaceCache.size > 2) previewSurfaceCache.delete(previewSurfaceCache.keys().next().value);
+      }
+
+      function renderPreview(precomputedDefinitions) {
+        if (state.activePreview === "readiness") state.activePreview = "allocations";
         if (state.unresolvedReview.active) {
           renderUnresolvedReview();
           return;
         }
         setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = precomputedDefinitions || getPreviewDefinitions(state.workspace);
         const defaultPreview = defaultPreviewForWorkspace(state.workspace, definitions);
         if (!definitions[state.activePreview]) state.activePreview = defaultPreview;
         const primaryDefinition = definitions[defaultPreview];
@@ -8576,15 +8755,7 @@
           elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>표시할 자료가 없습니다.</strong><span>주문·재고·구매·판매 자료를 선택하세요.</span></div>';
           return;
         }
-        const detailTab = definitions.allocations && defaultPreview === "readiness"
-          ? `<button class="tab-button ${state.activePreview === "allocations" ? "active" : ""}" type="button" role="tab"
-              aria-selected="${state.activePreview === "allocations"}" data-preview="allocations">주문 상세 F5</button>`
-          : "";
-        elements.previewTabs.innerHTML = `
-          <button class="tab-button ${state.activePreview === defaultPreview ? "active" : ""}" type="button" role="tab"
-            aria-selected="${state.activePreview === defaultPreview}" data-preview="${escapeHtml(defaultPreview)}">
-            ${escapeHtml(primaryDefinition.label)}
-          </button>${detailTab}`;
+        renderWorkbenchTabs();
         renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
@@ -8670,7 +8841,7 @@
             </section>
             ${previewMarkup}`;
         } else {
-          elements.previewTable.innerHTML = previewMarkup;
+          mountPreparedPreview(previewMarkup);
         }
         updateSubstitutionTargetMode(state.substitutionCtrlActive);
         updateColumnWidthToolbar();
@@ -8720,6 +8891,7 @@
         if (!workspace || workspace?.sourceFiles?.orders?.sourceKind !== "ORDERQ_READ_MODEL") return;
         const snapshot = state.orderQSource?.snapshot;
         if (!snapshot?.orderId || !Array.isArray(snapshot.candidateLines)) return;
+        if (workspace.sourceFiles.orders.orderSnapshotHash !== snapshot.snapshotHash) return;
         workspace.orderQSourceRecovery = {
           schemaVersion: "orderops-orderq-source-recovery/v1",
           snapshot: JSON.parse(JSON.stringify(snapshot)),
@@ -8767,10 +8939,15 @@
       function captureShipmentDraftInputs() {
         if (!elements.shipmentExecutionRows) return;
         [...elements.shipmentExecutionRows.querySelectorAll("[data-shipment-line]")].forEach((row) => {
-          state.shipmentDraft[row.dataset.shipmentLine] = {
-            shippedQuantity: row.querySelector("[data-shipped-quantity]")?.value ?? "",
-            reason: row.querySelector("[data-shipment-reason]")?.value ?? "",
-          };
+          for (const [field, selector] of [["shippedQuantity", "[data-shipped-quantity]"], ["reason", "[data-shipment-reason]"]]) {
+            const input = row.querySelector(selector);
+            if (input && input.value !== input.defaultValue) {
+              state.shipmentDraft[row.dataset.shipmentLine] ||= {};
+              state.shipmentDraft[row.dataset.shipmentLine][field] = input.value;
+              input.defaultValue = input.value;
+              state.workspaceChangeVersion += 1;
+            }
+          }
         });
         persistShipmentDraftToWorkspace();
       }
@@ -8779,6 +8956,7 @@
         const snapshot = state.orderQSource?.snapshot;
         const directOrderQ = state.workspace?.sourceFiles?.orders?.sourceKind === "ORDERQ_READ_MODEL";
         elements.shipmentExecution.hidden = !snapshot || !directOrderQ;
+        document.getElementById("shipmentOpenButton").hidden = !snapshot || !directOrderQ;
         if (!snapshot || !directOrderQ) return;
         if (capture) captureShipmentDraftInputs();
         const net = state.shipmentResults?.netByOrderItem || {};
@@ -8820,10 +8998,14 @@
             : "주문 변경이 감지되었습니다. 현재 작업은 보존되며 확정은 최신 주문 검증 전까지 차단됩니다.";
         }
         elements.shipmentExecutionStatus.textContent = state.shipmentCommandError || (reviewRequired
-          ? `주문 Revision 변경 감지 · 기존 출고 취소 또는 정정 필요`
+          ? `기존 확정 출고 확인 필요 · 자동 취소 없이 추가 출고 차단`
           : `${snapshot.orderNo} · 동결 Revision ${snapshot.orderRevision}${results.length ? ` · 결과 ${results.length}건` : " · 확정 전"}`);
         const totalOnlyInventory = state.workspace?.inventoryApplicationMode === "TOTAL_ONLY";
-        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired || state.shipmentSourceChanged || totalOnlyInventory;
+        const historyUnknown = !["READY", "EMPTY"].includes(state.shipmentResults?.status);
+        const originDifference = state.workspace.orders.some(row => String(row.warehouse || "").trim() !== String(snapshot.warehouseName || snapshot.warehouseCode || "").trim() || String(row.manager || "").trim() !== String(snapshot.assigneeName || "").trim());
+        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired || state.shipmentSourceChanged || totalOnlyInventory || historyUnknown || originDifference;
+        if (originDifference) elements.shipmentExecutionStatus.textContent += " · 작업 창고/담당과 공식 원본 차이 · 확정 차단";
+        if (historyUnknown) elements.shipmentExecutionStatus.textContent += " · 최신 출고 이력 조회 필요";
         elements.shipmentHoldButton.disabled = state.shipmentCommandBusy || totalOnlyInventory;
         elements.shipmentApplyLatestButton.disabled = state.shipmentCommandBusy;
         elements.shipmentKeepWorkButton.disabled = state.shipmentCommandBusy || state.shipmentKeepWorkAcknowledged;
@@ -8838,13 +9020,16 @@
         }
         try {
           const { readShipmentResultsByOrder } = await import("./shipment-result-read-adapter.js?v=1.0.1");
-          state.shipmentResults = await readShipmentResultsByOrder(snapshot.orderId);
+          const results = await readShipmentResultsByOrder(snapshot.orderId);
+          if (state.orderQSource?.snapshot !== snapshot) return;
+          state.shipmentResults = results;
           const currentSnapshot = state.shipmentResults?.currentSnapshot;
           if (currentSnapshot && (
             Number(currentSnapshot.orderRevision) !== Number(snapshot.orderRevision) ||
             currentSnapshot.snapshotHash !== snapshot.snapshotHash
           )) state.shipmentSourceChanged = true;
         } catch (error) {
+          if (state.orderQSource?.snapshot !== snapshot) return;
           state.shipmentResults = { status: "ERROR", results: [], netByOrderItem: {}, reviewRequired: false, error: { message: error.message || String(error) } };
         }
         renderShipmentExecution();
@@ -8852,6 +9037,7 @@
       }
 
       async function applyLatestOrderQSource() {
+        if (workbench) return workbench.applyLatest();
         const orderId = state.orderQSource?.snapshot?.orderId;
         if (!orderId || state.shipmentCommandBusy) return;
         state.shipmentCommandBusy = true;
@@ -8875,16 +9061,19 @@
       }
 
       function shipmentLineInputs() {
-        return [...elements.shipmentExecutionRows.querySelectorAll("[data-shipment-line]")].map((row) => ({
-          orderItemId: row.dataset.shipmentLine,
-          shippedQuantity: row.querySelector("[data-shipped-quantity]")?.value,
-          reason: row.querySelector("[data-shipment-reason]")?.value || "",
-        }));
+        captureShipmentDraftInputs();
+        return (state.orderQSource?.snapshot?.candidateLines || []).map(line => {
+          const draft = state.shipmentDraft[line.orderItemId] || {};
+          return { orderItemId: line.orderItemId,
+            shippedQuantity: Object.prototype.hasOwnProperty.call(draft, "shippedQuantity") ? draft.shippedQuantity : Math.max(0, Number(line.shippableQuantity || 0) - Number(state.shipmentResults?.netByOrderItem?.[line.orderItemId] || 0)),
+            reason: draft.reason ?? "" };
+        });
       }
 
       let activeShipmentOperation = null;
 
       async function runShipmentCommand(intent) {
+        if (state.workbenchApplyBusy) return { ok: false, message: "작업 적용 결과를 확인한 뒤 출고확정을 실행하세요." };
         const snapshot = state.orderQSource?.snapshot;
         if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 출고확정을 실행하세요." };
         if (state.workspace?.inventoryApplicationMode === "TOTAL_ONLY") return { ok: false, message: "DataOps 총량 재고는 비교 전용이며 출고확정에 사용할 수 없습니다." };
@@ -8893,7 +9082,7 @@
         state.shipmentCommandError = "";
         renderShipmentExecution();
         try {
-          const commands = await import("./shipment-result-command-adapter.js?v=1.0.1");
+          const commands = await import("./shipment-result-command-adapter.js?v=1.1.0");
           const common = {
             commandId: shipmentCommandId(intent),
             orderId: snapshot.orderId,
@@ -8937,10 +9126,10 @@
       }
 
       async function executeShipmentReversal(shipmentDocumentId) {
-        const reason = window.prompt("출고 취소 사유를 입력하세요.", "주문 변경으로 출고 재검토");
+        const reason = window.prompt("실제 출고 기록을 취소할 사유를 입력하세요. 원본 변경 후 재개를 위해 실제 출고 물량을 취소하면 안 됩니다.", "");
         if (!reason || !window.confirm("확정 출고를 취소 이력으로 기록하시겠습니까?")) return;
         try {
-          const { reverseShipment } = await import("./shipment-result-command-adapter.js?v=1.0.1");
+          const { reverseShipment } = await import("./shipment-result-command-adapter.js?v=1.1.0");
           await reverseShipment({ shipmentDocumentId, commandId: shipmentCommandId("REVERSE"), actor: state.orderQSource?.snapshot?.assigneeName || "LOCAL_USER", reason });
           state.shipmentDraft = Object.create(null);
           elements.shipmentExecutionRows.replaceChildren();
@@ -8956,7 +9145,7 @@
           const stats = state.workspace.stats;
           renderPreview();
           elements.resultsPanel.classList.remove("hidden");
-          elements.shipmentExecution.hidden = true;
+          renderShipmentExecution();
           const orderReview = getCurrentOrderReview();
           const sourceRowCount = stats.orderRowCount + stats.inventoryRowCount +
             (state.workspace.orderOpsInputs?.purchases?.rows?.length || 0) +
@@ -8969,7 +9158,7 @@
           const sourceLabels = FILE_KINDS
             .filter((kind) => state.workspace.previewDataState?.[kind])
             .map((kind) => FILE_KIND_LABELS[kind]);
-          const sourceText = `${sourceLabels.join("·") || "자료"} 읽기용 보기`;
+          const sourceText = `${sourceLabels.join("·") || "자료"} 작업표 · 분석 미실행`;
           elements.resultSubtitle.textContent = sourceText;
           setSystemMessage(`자료 표시 · 주문 ${formatNumber(stats.orderRowCount)}행·재고 ${formatNumber(stats.inventoryRowCount)}행 · ${sourceText}`);
           return;
@@ -8977,7 +9166,7 @@
         engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
         const orderReview = getCurrentOrderReview();
-        const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
+        const purchaseUpload = engine.getFinalPurchaseUploadSelection(state.workspace);
         const deliveryCount = deliverySummaryRows().length;
         const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
@@ -9106,18 +9295,8 @@
         }
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
-          purchases: purchases ? {
-            fileName: purchases.fileName,
-            sheetName: purchases.sheetName,
-            fileHash: purchases.fileHash,
-            rows: purchases.rows || [],
-          } : null,
-          sales: sales ? {
-            fileName: sales.fileName,
-            sheetName: sales.sheetName,
-            fileHash: sales.fileHash,
-            rows: sales.rows || [],
-          } : null,
+          purchases: purchases ? JSON.parse(JSON.stringify(purchases)) : null,
+          sales: sales ? JSON.parse(JSON.stringify(sales)) : null,
         };
         return workspace;
       }
@@ -9125,6 +9304,7 @@
       let activeOrderOpsAnalysis = null;
 
       async function performAnalysis() {
+        if (state.workbenchApplyBusy) return { ok: false, message: "작업 적용 결과를 먼저 확인하세요." };
         if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 출고분석을 실행하세요." };
         if (!state.validation?.canAnalyze) return;
         state.analysisEnterLocked = false;
@@ -9134,9 +9314,19 @@
         setSystemMessage("출고분석 중 · 주문·재고·발주수량을 계산합니다");
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
-          state.workspace = await analyzeCurrentInputs();
+          commitCurrentWorkspaceInputs();
+          const base = state.workspace;
+          const version = state.workspaceChangeVersion;
+          const orders = base && state.orders ? { ...state.orders, rows: JSON.parse(JSON.stringify(base.orders)) } : state.orders;
+          const candidate = await analyzeCurrentInputs({ orders });
+          if (state.workspace !== base || state.workspaceChangeVersion !== version) throw new Error("분석 중 입력이 변경되어 적용하지 않았습니다. 최신 입력은 유지됩니다.");
+          for (const key of ["systemHistory", "substitutionHistory", "inventoryOverrides", "inventorySourceReference", "inventoryApplicationMode", "orderQSourceRecovery", "shipmentExecutionDraft", "workbenchUnapplied", "workbenchReconciliation"]) {
+            if (base?.[key]) candidate[key] = JSON.parse(JSON.stringify(base[key]));
+          }
+          if (base) engine.applyPurchaseInputs(candidate, engine.getPurchaseInputs(JSON.parse(JSON.stringify(base))));
+          state.workspace = candidate;
           state.pendingSystemHistory = state.workspace.systemHistory;
-          state.activePreview = "readiness";
+          state.activePreview = "allocations";
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -9163,9 +9353,10 @@
         if (elements.downloadButton.disabled) return;
         try {
           const fileName = workbookTools.getOutputFileName(state.workspace.createdAt);
-          const workbook = workbookTools.downloadWorkbook(state.workspace, window.XLSX, fileName);
-          const selection = engine.getPurchaseUploadSelection(state.workspace);
-          const salesRows = workbookTools.getSalesUploadRows(state.workspace);
+          const outputWorkspace = JSON.parse(JSON.stringify(state.workspace));
+          const selection = engine.getFinalPurchaseUploadSelection(outputWorkspace);
+          const workbook = workbookTools.downloadWorkbook(outputWorkspace, window.XLSX, fileName);
+          const salesRows = workbookTools.getSalesUploadRows(outputWorkspace);
           const purchaseIncluded = workbook.SheetNames.includes("구매업로드");
           const uploadStatus = purchaseIncluded
             ? `구매업로드 ${selection.included.length}행·판매업로드 ${salesRows.length}행`
@@ -9181,6 +9372,7 @@
       }
 
       async function buildCloudEnvelope() {
+        commitCurrentWorkspaceInputs();
         const orderReview = getCurrentOrderReview();
         if (orderReview.hasQuantityErrors) {
           throw new Error(`주문수량 입력 오류 ${orderReview.quantityErrorCount}행을 수정한 뒤 Cloud 저장하세요.`);
@@ -9188,7 +9380,7 @@
         if (!state.workspace?.planId || state.workspace.basisDateStatus !== "valid") {
           throw new Error("단일 기준일과 source fingerprint가 확인된 발주계획만 Cloud 저장할 수 있습니다.");
         }
-        const purchaseSelection = engine.getPurchaseUploadSelection(state.workspace);
+        const purchaseSelection = engine.getFinalPurchaseUploadSelection(state.workspace);
         const sourceFileName = [state.workspace.sourceFiles.orders.fileName, state.workspace.sourceFiles.inventory.fileName]
           .filter(Boolean)
           .join(" / ");
@@ -9219,7 +9411,7 @@
           activePreview: state.activePreview,
           selectedProductCode: state.selectedProductCode,
           selectedDeliveryKey: state.selectedDeliveryKey,
-          workspace: state.workspace,
+          workspace: JSON.parse(JSON.stringify(state.workspace)),
         };
         if (engine.containsCloudTokenKey(canonical)) {
           throw new Error("Cloud revision payload에는 Cloud token을 포함할 수 없습니다.");
@@ -9581,6 +9773,7 @@
       }
 
       async function applyInventoryCandidate(loaded) {
+        if (state.workbenchApplyBusy) return { ok: false, message: "작업 적용 결과를 먼저 확인하세요." };
         if (inventoryApplyOperation) return inventoryApplyOperation;
         const operation = (async () => {
           state.inventoryApplyBusy = true;
@@ -9626,7 +9819,7 @@
                 if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
                 continue;
               }
-              const workbench = document.querySelector(".system-workbench");
+              const workbench = document.querySelector(".orderops-results-workspace[data-nexus-workspace='orderops']");
               workbench?.setAttribute("inert", "");
               workbench?.setAttribute("aria-busy", "true");
               let published;
@@ -9760,11 +9953,14 @@
       let activeCloudSaveOperation = null;
 
       async function runCloudPlanSave() {
+        if (state.workbenchApplyBusy) return { ok: false, message: "작업 적용 결과를 먼저 확인하세요." };
         if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 Cloud 저장을 실행하세요." };
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
         setSystemMessage("완료본 저장 중 · 변경 불가 revision을 생성합니다");
         try {
+          commitCurrentWorkspaceInputs();
+          const savingWorkspace = state.workspace;
           const snapshot = await buildCloudEnvelope();
           const saved = await postCloudAction("shipping_plan_save", { snapshot });
           if (
@@ -9776,11 +9972,14 @@
             throw new Error("Cloud 저장 검산 결과가 일치하지 않습니다.");
           }
           scheduleLocalSave();
-          setSystemMessage(`완료본 저장 완료 · revision ${saved.revision}`);
-          elements.cloudStatus.textContent = `완료본 저장 · revision ${saved.revision}`;
-          showToast(`Cloud revision ${saved.revision} 저장을 확정했습니다.`);
           await listCloudPlans();
-          return { ok: true, revision: saved.revision };
+          commitCurrentWorkspaceInputs();
+          const hasLaterInputs = state.workspace !== savingWorkspace || JSON.stringify(state.workspace) !== JSON.stringify(JSON.parse(snapshot.canonicalJson).workspace);
+          const savedMessage = `완료본 저장 완료 · revision ${saved.revision}${hasLaterInputs ? " · 이후 추가 입력은 Cloud 미저장" : ""}`;
+          setSystemMessage(savedMessage);
+          elements.cloudStatus.textContent = savedMessage;
+          showToast(savedMessage);
+          return { ok: true, revision: saved.revision, hasLaterInputs };
         } catch (error) {
           setSystemMessage("완료본 저장 실패 · 이전 확정 revision은 유지됩니다");
           showToast(error.message || "Cloud 저장에 실패했습니다.", true);
@@ -9805,6 +10004,7 @@
       }
 
       function saveCloudPlan() {
+        if (activeCloudSaveOperation) return activeCloudSaveOperation;
         const operation = runCloudPlanSave();
         activeCloudSaveOperation = operation;
         operation.finally(() => {
@@ -9844,12 +10044,15 @@
       }
 
       async function loadCloudPlan() {
+        if (state.workbenchApplyBusy || state.inventoryApplyBusy || workbench?.dirty()) { showToast("미적용 작업을 먼저 확인하세요. 현재 입력을 유지합니다.", true); return; }
         const selectedIndex = Number(elements.cloudRevisionSelect.value);
         const selected = state.cloudRevisions[selectedIndex];
         if (!selected) return;
         elements.cloudLoadButton.disabled = true;
         setSystemMessage("완료본 불러오는 중 · 무결성을 검증합니다");
         try {
+          await waitForInventoryApplyBoundary();
+          const base = state.workspace, version = state.workspaceChangeVersion;
           const result = await postCloudAction("shipping_plan_get", {
             planId: selected.planId,
             revision: selected.revision,
@@ -9870,11 +10073,13 @@
           ) {
             throw new Error("Cloud 발주계획 계약 또는 fingerprint가 올바르지 않습니다.");
           }
+          commitCurrentWorkspaceInputs();
+          if (state.workspace !== base || state.workspaceChangeVersion !== version) throw new Error("Cloud 조회 중 입력이 변경되었습니다. 현재 입력을 유지하고 불러오기를 중단했습니다.");
           clearSubstitutionSelection();
           state.workspace = plan.workspace;
-          if (state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
-            restorePreviewInputState(state.workspace);
-          }
+          restorePreviewInputState(state.workspace);
+          restoreOrderQSourceFromWorkspace(state.workspace);
+          hydrateShipmentDraftFromWorkspace(state.workspace);
           engine.ensureNoticeState(state.workspace);
           engine.ensureSubstitutionHistory(state.workspace);
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
@@ -10103,13 +10308,10 @@
         const quantity = value === "" ? null : Number(value);
         const alreadyShipped = Number(state.shipmentResults?.netByOrderItem?.[orderItemId] || 0);
         const remaining = Math.max(0, Number(line?.shippableQuantity || 0) - alreadyShipped);
-        if (!line || quantity === null || !Number.isFinite(quantity) || quantity < 0 || quantity > remaining) {
-          showToast(`실제 출고수량은 0부터 남은 주문수량 ${formatNumber(remaining)}까지 입력하세요.`, true);
-          renderPreview();
-          return false;
-        }
+        if (!line) return false;
+        input.setAttribute("aria-invalid", String(quantity === null || !Number.isFinite(quantity) || quantity < 0 || quantity > remaining));
         state.shipmentDraft[orderItemId] = {
-          shippedQuantity: String(Math.round((quantity + Number.EPSILON) * 1e9) / 1e9),
+          shippedQuantity: value,
           reason: String(state.shipmentDraft[orderItemId]?.reason || ""),
         };
         input.dataset.originalValue = input.value;
@@ -10413,7 +10615,7 @@
       }
 
       function commitInventoryInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return false;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return false;
         try {
           engine.setInventoryOverride(
             state.workspace,
@@ -10933,6 +11135,7 @@
         window.addEventListener("pagehide", () => columnMenuResizeObserver.disconnect(), { once: true });
       }
       function activatePreview(previewId) {
+        if (previewId === "readiness") previewId = "allocations";
         if (!state.workspace) return false;
         const leftUnresolvedReview = state.unresolvedReview.active;
         if (leftUnresolvedReview) leaveUnresolvedReview({ render: false, nextPreview: previewId });
@@ -10942,7 +11145,7 @@
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (previewId !== "inventory") clearSubstitutionSelection();
-        if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
+        if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview(definitions);
         if (leftUnresolvedReview) setActiveFilterPanel(state.activeFilterPanel);
         scheduleLocalSave();
         return true;
@@ -10960,7 +11163,7 @@
           return;
         }
         if (event.key === "F5") {
-          activatePreview(state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE ? "readiness" : "allocations");
+          activatePreview("allocations");
           return;
         }
         if (event.key === "F3") {
@@ -10994,7 +11197,13 @@
 
       elements.previewTabs.addEventListener("click", (event) => {
         const button = event.target.closest("[data-preview]");
-        if (!button || !state.workspace) return;
+        if (!button) return;
+        if (!state.workspace) {
+          state.activePreview = button.dataset.preview;
+          renderWorkbenchTabs();
+          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace">자료 미등록 · 좌측에서 파일을 준비하고 적용하세요.</div>';
+          return;
+        }
         activatePreview(button.dataset.preview);
       });
       elements.previewTable.addEventListener("click", (event) => {
@@ -11166,7 +11375,7 @@
       });
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return;
         if (input.dataset.composing !== "true") renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("compositionstart", (event) => {
@@ -11178,7 +11387,7 @@
       });
       elements.previewTable.addEventListener("compositionend", (event) => {
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return;
         input.dataset.composing = "false";
         renderPurchaseAutocomplete(input);
       });
@@ -11215,7 +11424,7 @@
           return;
         }
         const input = event.target.closest("[data-purchase-code]");
-        if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
+        if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return;
         commitPurchaseInput(input);
       });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
@@ -11276,6 +11485,40 @@
       restoreInventoryInspectorOpen();
       refreshInventoryMenuAvailability();
 
+      workbench = window.createOrderOpsWorkbench({
+        state, engine, elements, escapeHtml, setRight: setInventoryInspectorOpen,
+        parsePrimary: parsePrimaryWorkbookSheet, parseGeneric: parseGenericWorkbookSheet,
+        score: integratedCandidateScore, normalizeOrderDates: normalizeOrderDateMatrix,
+        headerAliases: kind => ({ ...DEFAULT_EXCEL_MAPPINGS[kind]?.columns, ...state.excelMappings?.[kind]?.columns }),
+        sha256Hex, showToast,
+        waitBoundary: async () => {
+          if (inventoryApplyOperation) {
+            const result = await inventoryOperationWithTimeout(inventoryApplyOperation, "재고 적용");
+            if (!result?.ok) throw new Error(result?.message || "재고 적용 결과 확인 필요");
+          }
+          await waitForInventoryApplyBoundary();
+          window.clearTimeout(scheduleLocalSave.timer);
+        },
+        captureInputs: commitCurrentWorkspaceInputs,
+        buildRecord: buildRecoveryRecord, putRecord: putRecoveryRecord, readRecord: readRecoveryRecord,
+        verifyRecord: verifyRecoveryRecord, commitRecord: commitWorkbenchRecord,
+        setRecoveryPointer: record => { try { activatePublishedInventoryCandidate(record, state.workspace); } catch (_) { setSystemMessage("작업 적용 완료 · 복구 목록에서 확정본을 선택할 수 있습니다"); } },
+        refreshRecovery: refreshRecoveryRecords, applyInventory: applyInventoryCandidate,
+        restoreInputs: restorePreviewInputState, renderResults, disconnectSource: disconnectOrderQSource,
+        reset: resetResults, refreshInputs: refreshInputState, renderTabs: renderWorkbenchTabs,
+        actor: substitutionActor, scheduleSave: scheduleLocalSave, refreshShipment: refreshShipmentExecution,
+        loadOrder: async id => (await orderQSourceAdapter()).loadOrderQOrderSource(id),
+        analyze: analyzeCurrentInputs,
+        activateOrder: result => {
+          state.orderQSource = result;
+          state.shipmentDraft = state.workspace.shipmentExecutionDraft.values;
+          state.shipmentSourceChanged = false; state.shipmentKeepWorkAcknowledged = false;
+          state.shipmentCommandError = ""; state.shipmentResults = null;
+          updateOrderQRoute(result.snapshot.orderId);
+        },
+      });
+      renderWorkbenchTabs();
+
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
       } catch (error) {}
@@ -11287,6 +11530,7 @@
           if (event.data?.orderId !== state.orderQSource?.snapshot?.orderId) return;
           captureShipmentDraftInputs();
           state.shipmentSourceChanged = true;
+          state.workspaceChangeVersion += 1;
           state.shipmentKeepWorkAcknowledged = false;
           state.shipmentCommandError = "주문 변경이 감지되었습니다. 현재 출고 입력은 유지되며 최신 주문 적용 전까지 확정하지 않습니다.";
           void refreshShipmentExecution();
@@ -11313,6 +11557,12 @@
 
       async function flushOrderOpsBeforeWorkspaceLeave() {
         window.clearTimeout(scheduleLocalSave.timer);
+
+        if (workbench?.operation) {
+          const result = await inventoryOperationWithTimeout(workbench.operation, "작업 적용");
+          if (!result?.ok) throw new Error(result?.message || "작업 적용 결과를 확인하지 못했습니다.");
+        }
+        if (workbench?.dirty()) throw new Error("미적용 파일 또는 우측 입력이 있습니다. 적용/취소 후 이동하세요. 현재 입력은 보존됩니다.");
 
         if (inventoryApplyOperation) {
           const inventoryApply = await inventoryApplyOperation;

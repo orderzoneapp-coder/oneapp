@@ -1,0 +1,66 @@
+/* OrderOps-only v1.2 layout. No global header or other app selectors. */
+body:has(.orderops-workbench-v12) { overflow: hidden; }
+body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
+.orderops-results-workspace.orderops-workbench-v12 { min-width: 0; min-height: 0 !important; height: var(--orderops-workbench-height, 70dvh); grid-template-rows: minmax(0, 1fr) !important; }
+.orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane] { min-width: 0; min-height: 0 !important; max-height: 100%; }
+.orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane][hidden] { display: none !important; }
+.orderops-workbench-v12 > [data-nexus-pane="work"] { display: flex; flex-direction: column; overflow: hidden; }
+.orderops-workbench-v12 #previewTable { min-height: 0; flex: 1 1 0; overflow: auto; }
+.orderops-workbench-v12 .orderops-bottom-workbar { flex: 0 0 auto; flex-wrap: nowrap; justify-content: space-between; overflow: hidden; min-height: 58px; }
+.orderops-workbar-save, .orderops-workbar-next { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.orderops-workbar-save { flex: 0 0 auto; }
+.orderops-workbench-v12 .system-topbar .system-console, .orderops-workbench-v12 .system-topbar .validation-box { color: #e2e8f0; }
+.orderops-file-prepare button { border: 1px solid #94a3b8; border-radius: 5px; padding: 5px 8px; color: inherit; background: transparent; }
+.orderops-file-prepare button:disabled { opacity: .5; }
+.orderops-workbar-next { overflow-x: auto; flex: 0 1 auto; }
+.orderops-workbar-next > *, .orderops-workbar-save > * { flex-shrink: 0; white-space: nowrap; }
+.orderops-header-primary > .preview-tabs { display: flex; margin: 0; flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow: visible; }
+.orderops-header-primary { flex: 0 0 auto; overflow: visible; }
+[data-nexus-app-header="orderops"] { overflow-x: auto; }
+.orderops-pane-shortcuts { display: flex; gap: 6px; padding: 3px 8px; }
+.orderops-header-primary .tab-button { white-space: nowrap; flex-shrink: 0; color: #dce6f0; background: transparent; border: 1px solid #425167; }
+.orderops-header-primary .tab-button.active { background: #164e63; color: #fff; border-color: #22d3ee; }
+.orderops-header-primary > button { flex-shrink: 0; white-space: nowrap; }
+.orderops-workbench-v12 .orderops-query-panel { border: 0; padding: 0; max-height: none; overflow: visible; }
+.orderops-workbench-v12 > [data-nexus-pane="result"] { overflow: auto; }
+.orderops-workbench-v12 .orderops-side-table-wrap { max-height: 30vh; flex: none; }
+.orderops-file-prepare { overflow: auto; }
+.orderops-file-prepare > * { flex-shrink: 0; }
+.orderops-file-prepare #prepareFileEditor { padding: 0 8px 12px; }
+.orderops-prepare-actions { display: flex; gap: 6px; padding: 8px 0; flex-wrap: wrap; }
+.orderops-prepare-file-list { display: flex; flex-direction: column; gap: 5px; max-height: 25vh; overflow: auto; }
+.orderops-prepare-file-list button { text-align: left; overflow-wrap: anywhere; }
+.orderops-prepare-file-list button[aria-pressed="true"] { outline: 2px solid #0891b2; }
+.orderops-file-prepare label, .orderops-inspector-edit label { display: grid; gap: 4px; margin: 8px 0; }
+.orderops-file-prepare input, .orderops-file-prepare select, .orderops-inspector-edit input, .orderops-inspector-edit textarea { width: 100%; min-width: 0; box-sizing: border-box; }
+.orderops-mapping-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr); align-items: center; gap: 8px; margin: 5px 0; }
+.orderops-raw-preview { max-height: 180px; overflow: auto; margin: 8px 0; }
+.orderops-raw-preview table { font-size: 11px; white-space: nowrap; border-collapse: collapse; }
+.orderops-raw-preview th, .orderops-raw-preview td { padding: 4px; border: 1px solid #94a3b8; }
+.orderops-workbench-dialog { color: inherit; background: #fff; border: 1px solid #94a3b8; border-radius: 12px; width: min(1100px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; }
+[data-nexus-ui-theme="dark"] .orderops-workbench-dialog { background: #172333; color: #e2e8f0; }
+.orderops-workbench-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.orderops-workbench-dialog form { display: grid; gap: 12px; }
+.orderops-workbench-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.orderops-inspector-edit { padding: 8px 0; }
+.orderops-inspector-edit .pending { color: #b45309; }
+.orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"] { grid-template-columns: minmax(0, 1fr) var(--nexus-right-pane-width) !important; }
+.orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="false"] { grid-template-columns: minmax(0, 1fr) !important; }
+@media (min-width: 640px) and (max-width: 1099px) {
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"] { grid-template-columns: minmax(0, 1fr) !important; }
+}
+@media (max-width: 639px) {
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-resizable-workspace="true"][data-nexus-left-open] { grid-template-columns: minmax(0, 1fr) !important; }
+  .orderops-results-workspace.orderops-workbench-v12 { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); position: relative; }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="reference"], .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="result"] { position: absolute !important; z-index: 55; inset: 0 auto 0 0 !important; width: min(360px, calc(100% - 16px)) !important; max-height: none; background: #fff; box-shadow: 0 8px 28px #0005; }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="result"] { inset: 0 0 0 auto !important; }
+  .orderops-workbench-v12 > [data-nexus-pane="reference"] { left: 0; }
+  .orderops-workbench-v12 > [data-nexus-pane="result"] { right: 0; }
+  [data-nexus-ui-theme="dark"] .orderops-workbench-v12 > [data-nexus-pane="reference"], [data-nexus-ui-theme="dark"] .orderops-workbench-v12 > [data-nexus-pane="result"] { background: #172333; }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="work"] { grid-column: 1 !important; grid-row: 1 !important; }
+  .orderops-workbar-save .system-mode { display: none; }
+}
+@media print {
+  body:has(.orderops-workbench-v12) { overflow: visible; }
+  .orderops-file-prepare, .orderops-query-panel, .orderops-inspector-edit, .orderops-workbench-dialog, .orderops-workbench-v12 .orderops-bottom-workbar { display: none !important; }
+}

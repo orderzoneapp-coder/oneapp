@@ -806,9 +806,9 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.28.1");
+assert.equal(engine.ENGINE_VERSION, "3.29.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
@@ -1432,11 +1432,10 @@ const purchaseShapeAfterOverride = XLSX.utils.sheet_to_json(
   workbookTools.buildPurchaseUploadWorkbook(purchaseContractWorkspace, XLSX).Sheets["구매입력"],
   { header: 1, raw: true, defval: null },
 );
-assert.deepEqual(
-  purchaseShapeAfterOverride,
-  purchaseShapeBeforeOverride,
-  "inventory overrides must not change the purchase-upload workbook shape or meaning",
-);
+assert.deepEqual(purchaseShapeAfterOverride.map(row=>row.filter((_,index)=>index!==11)), purchaseShapeBeforeOverride.map(row=>row.filter((_,index)=>index!==11)),
+  "approved F10 correction changes quantity only, preserving purchase form and other fields");
+assert.equal(purchaseShapeAfterOverride[1][11], engine.getFinalPurchaseUploadSelection(purchaseContractWorkspace).included[0].purchaseNeed,
+  "purchase quantity follows effective inventory overrides, not the legacy persisted quantity");
 
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
@@ -1529,7 +1528,7 @@ assert.deepEqual(
     ["s", "상품 000100"], ["s", "EA"],
   ],
 );
-assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 2]);
+assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 12], "F10 uses current total-warehouse shortage, not the fixture's stale purchase quantity 2");
 assert.deepEqual([purchaseUploadSheet.M2.t, purchaseUploadSheet.M2.v], ["n", 0]);
 assert.equal(purchaseUploadSheet.L2.s.numFmt, "#,##0");
 assert.equal(purchaseUploadSheet.M2.s.numFmt, "#,##0");
@@ -2163,7 +2162,7 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.order-view-presets.v1',
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
-  'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"])',
+  'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "procurement", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths = migrateReadinessKeyedRecord(columnWidths)',
   'columnOrder = migrateReadinessKeyList(columnOrder)',
   'hiddenColumns = migrateReadinessKeyList(hiddenColumns)',
@@ -2377,7 +2376,7 @@ assert.ok(html.includes('elements.viewPresetSaveButton.disabled = !state.workspa
 assert.ok(html.includes('isDefault: value.isDefault === true') &&
   html.includes('preset.isDefault ? "★ " : ""') &&
   html.includes('candidate.previewId === previewId && candidate.isDefault === true') &&
-  html.includes('if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();'),
+  /if \(!applyDefaultOrderViewPreset\(previewId, \{ render: true \}\)\) renderPreview\((?:definitions)?\);/.test(html),
   "one saved layout per result screen must be selectable as the automatic default");
 assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden;/,
   "filter controls must remain hidden until the pointer reaches the header");
@@ -2398,8 +2397,17 @@ assert.ok(html.includes('column.role === "salesQuantity" ? "출고"') &&
 assert.ok(html.includes('column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0') &&
   (html.match(/\? "잔량"/g) || []).length >= 2,
   "warehouse inventory must use the 잔량 header with or without a warehouse filter");
-assert.ok(html.includes('const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;'),
-  "zero quantity cells must render as blank without changing the underlying value");
+const quantityDisplayExpression = html.match(/const displayValue = ([^;]+);/)?.[1];
+const previewTableClassTemplate = html.match(/<table class="(preview-\$\{previewId\}[^\n]+)" data-width-source=/)?.[1];
+assert.ok(previewTableClassTemplate, "the preview table class template must exist");
+const previewTableClass = new Function("previewId", "options", `return \`${previewTableClassTemplate}\`;`);
+assert.ok(previewTableClass("allocations", {}).split(/\s+/).includes("nexus-table-ux"), "screen tables apply their final common style before the first layout");
+assert.equal(previewTableClass("allocations", {printOutput:true}), "preview-allocations column-width-managed", "print tables retain their original class and styling boundary");
+assert.ok(quantityDisplayExpression, "the quantity display expression must exist");
+const quantityDisplay = new Function("quantityColumn", "numericQuantityValue", "totalComparisonColumn", "value", `return ${quantityDisplayExpression};`);
+assert.equal(quantityDisplay(true, 0, false, 0), "", "ordinary zero quantity display remains blank without changing stored zero");
+assert.equal(quantityDisplay(true, 0, true, 0), 0, "TOTAL_ONLY comparison distinguishes actual zero from unknown");
+assert.equal(quantityDisplay(true, null, true, "미확인"), "미확인", "TOTAL_ONLY unknown must not become zero");
 assert.ok(html.includes('["productCode", "productName", "specification", "orderQuantity"].includes(column.role)') &&
   html.includes('orderedContext ? "ordered-context-cell"'),
   "ordered rows must share one context fill from product code through order quantity");

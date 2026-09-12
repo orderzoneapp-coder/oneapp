@@ -122,7 +122,8 @@ const evaluate = async (client, expression) => {
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
   return result.result.value;
 };
-const uploadWorkbook = (client, inputId, fileName, matrix, sheetName) => evaluate(client, `(async()=>{
+const uploadWorkbook = async (client, inputId, fileName, matrix, sheetName) => {
+  await evaluate(client, `(async()=>{
   const workbook=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),${JSON.stringify(sheetName)});
   const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});
@@ -133,6 +134,10 @@ const uploadWorkbook = (client, inputId, fileName, matrix, sheetName) => evaluat
   input.dispatchEvent(new Event('change',{bubbles:true}));
   return true;
 })()`);
+  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.textContent.includes('READY')`),'explicit file validation');
+  await evaluate(client,`window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
+  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.textContent.includes('APPLIED')`),'explicit file application');
+};
 
 const orderMatrix = [
   ["일자-No.", "담당", "창고", "단위", "품목코드", "품목명", "규격", "수량", "재고", "단가", "공급가액", "적요", "적요1", "거래처", "그룹"],

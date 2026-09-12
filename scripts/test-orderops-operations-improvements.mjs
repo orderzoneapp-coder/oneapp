@@ -251,7 +251,7 @@ assert.match(html, /event\.isComposing \|\| event\.keyCode === 229 \|\| input\.d
 assert.match(html, /typeof sourceRow\?\.displayRemainingQuantity === "number" && sourceRow\.displayRemainingQuantity < 0/);
 assert.doesNotMatch(html, /negativeBalance[\s\S]{0,240}preview\.inventory/);
 assert.match(html, /tabindex="\$\{negativeBalance \|\| previewId === "allocations" \? "0" : "-1"\}"/);
-assert.match(html, /workbookTools\.downloadWorkbook\(state\.workspace, window\.XLSX, fileName\)/);
+assert.match(html, /workbookTools\.downloadWorkbook\(outputWorkspace, window\.XLSX, fileName\)/);
 assert.doesNotMatch(html, /window\.XLSX\.writeFile/);
 assert.deepEqual(
   [...workbookSource.matchAll(/^\s+"(전달사항\(적요보기\)|주문현황|재고수불부|창고별재고|구매업로드)",?$/gm)]

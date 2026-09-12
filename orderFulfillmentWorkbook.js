@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.9.0";
+  const WORKBOOK_VERSION = "4.9.1";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -1073,15 +1073,8 @@
   }
 
   function getPurchaseUploadRows(workspace) {
-    return (workspace?.purchaseManagement || []).filter(
-      (row) =>
-        row.rowType !== "reference" &&
-        row.inventoryMatched &&
-        typeof row.purchaseNeed === "number" &&
-        row.purchaseNeed > 0 &&
-        row.purchase !== "대체" &&
-        row.purchase !== "소분",
-    );
+    if (!engine?.getFinalPurchaseUploadSelection) throw new Error("최종 구매 선정 모듈을 불러오지 못했습니다.");
+    return engine.getFinalPurchaseUploadSelection(workspace).included;
   }
 
   function getSalesUploadRows(workspace) {

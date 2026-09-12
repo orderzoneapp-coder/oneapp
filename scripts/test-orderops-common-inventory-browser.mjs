@@ -277,6 +277,7 @@ try {
     return {
       publicationState:latest.publicationState,
       inventoryApplyCommittedAt:latest.inventoryApplyCommittedAt,
+      inventoryApplyTransactionId:latest.inventoryApplyTransactionId,
       applicationMode:latest.payload.workspace.inventoryApplicationMode,
       planId:latest.payload.workspace.planId,
       purchaseRows:latest.payload.workspace.purchaseManagement.length,
@@ -299,7 +300,8 @@ try {
     };
   })()`);
   assert.equal(outcome.publicationState, "PUBLISHED");
-  assert.match(outcome.inventoryApplyCommittedAt, /^2026-|^20\d\d-/);
+  if (outcome.inventoryApplyTransactionId) assert.match(outcome.inventoryApplyCommittedAt, /^2026-|^20\d\d-/);
+  else assert.equal(outcome.inventoryApplyCommittedAt, "", "ordinary post-apply autosave is not an inventory transaction");
   assert.equal(outcome.applicationMode, "TOTAL_ONLY");
   assert.match(outcome.planId, /^SHIPPLAN-20260912-[a-f0-9]{16}$/);
   assert.equal(outcome.purchaseRows, 0);
