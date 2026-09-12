@@ -27,8 +27,35 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
 .orderops-workbench-dialog::backdrop { background: rgb(0 0 0 / 45%); }
 .orderops-workbench-dialog form { display: grid; gap: 12px; }
 .orderops-workbench-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"] { grid-template-columns: minmax(0, 1fr) var(--nexus-right-pane-width) !important; }
-.orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="false"] { grid-template-columns: minmax(0, 1fr) !important; }
+@media (min-width: 1100px) {
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="true"] {
+    grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) var(--nexus-right-pane-width) !important;
+    grid-template-areas: "left center right";
+  }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="true"] {
+    grid-template-columns: minmax(0, 1fr) var(--nexus-right-pane-width) !important;
+    grid-template-areas: "center right";
+  }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="false"] {
+    grid-template-columns: var(--nexus-left-pane-width) minmax(0, 1fr) !important;
+    grid-template-areas: "left center";
+  }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="false"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas: "center";
+  }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="reference"] { grid-area: left; justify-self: stretch; }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="work"] { grid-area: center; justify-self: stretch; }
+  .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane="result"] { grid-area: right; justify-self: stretch; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="true"] > [data-nexus-pane="reference"] { grid-column: 1 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="true"] > [data-nexus-pane="work"] { grid-column: 2 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="true"] > [data-nexus-pane="result"] { grid-column: 3 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="true"] > [data-nexus-pane="work"] { grid-column: 1 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="true"] > [data-nexus-pane="result"] { grid-column: 2 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="false"] > [data-nexus-pane="reference"] { grid-column: 1 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="true"][data-nexus-right-open="false"] > [data-nexus-pane="work"] { grid-column: 2 !important; }
+  .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"][data-nexus-right-open="false"] > [data-nexus-pane="work"] { grid-column: 1 !important; }
+}
 @media (min-width: 640px) and (max-width: 1099px) {
   .orderops-results-workspace.orderops-workbench-v12[data-nexus-left-open="false"] { grid-template-columns: minmax(0, 1fr) !important; }
 }
