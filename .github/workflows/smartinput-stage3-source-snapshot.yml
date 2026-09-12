@@ -1,0 +1,22 @@
+name: SmartInput Stage 3 continuation source
+on:
+  push:
+    branches: [codex/smartinput-stage3-independent-estimates-20260913]
+    paths: [.github/workflows/smartinput-stage3-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 17a072e16cc5a31888c41f70de91a97245ebf8a8
+          persist-credentials: false
+      - run: git archive --format=tar HEAD smartinput/independent-estimate.js smartinput/estimate-master-apply.js scripts/test-smartinput-stage3-plans.mjs scripts/test-smartinput-stage3-f8-baseline.mjs .github/workflows/smartinput-stage3-plans.yml docs/NEXUS_SMARTINPUT_STAGE3_WORK_RECORD.md > /tmp/stage3-existing.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage3-existing-17a072e1
+          path: /tmp/stage3-existing.tar
+          retention-days: 3
