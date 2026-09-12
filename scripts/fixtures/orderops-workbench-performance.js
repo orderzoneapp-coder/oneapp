@@ -7,12 +7,15 @@
   s.inventory=e.parseInventoryWorkbook({fileName:'performance-stock.xlsx',sheetName:'inventory',fileHash:'b'.repeat(64),rawMatrix:inventoryMatrix,displayMatrix:inventoryMatrix});
   s.orderQSource=null;s.shipmentDraft={};s.searchQuery='';s.activePreview='allocations';s.selectedProductCode='';s.selectedOrderRow='';
   s.workspace=e.analyze(s.orders,s.inventory,{sourceFingerprint:'c'.repeat(64)});
-  const initialStart=performance.now();renderResults();const initialSync=performance.now()-initialStart;await frame();
+  performance.mark('workbench-initial-start');
+  const initialStart=performance.now();renderResults();const initialSync=performance.now()-initialStart;performance.mark('workbench-initial-sync-end');await frame();performance.mark('workbench-initial-frame-end');
   const initialDisplay={syncMs:initialSync,displayMs:performance.now()-initialStart,phase:'first full orders render after analysis'};
+  const initialTable=document.querySelector('#previewTable').getBoundingClientRect();
+  initialDisplay.tableViewport={width:initialTable.width,height:initialTable.height,rightOpen:!document.querySelector('#inventoryInspector').hidden};
   const callsBefore=globalThis.__layoutCalls||0;await new Promise(r=>setTimeout(r,350));const idleLayoutCalls=(globalThis.__layoutCalls||0)-callsBefore;
   const data={orders:[],inventory:[],selection:[],panel:[]};
   const diagnostics=[];
-  const measure=async(key,fn,verify)=>{globalThis.__profileStages=[];const start=performance.now();fn();const syncMs=performance.now()-start;await frame();verify();const focus=document.querySelector('#tableSearchInput');focus.focus({preventScroll:true});if(document.activeElement!==focus)throw Error('input not available');data[key].push(performance.now()-start);if(__SAMPLES__<=5)diagnostics.push({key,sample:data[key].length,syncMs,stages:globalThis.__profileStages});};
+  const measure=async(key,fn,verify)=>{globalThis.__profileStages=[];const mark='workbench-'+key+'-'+(data[key].length+1);performance.mark(mark+'-start');const start=performance.now();fn();const syncMs=performance.now()-start;performance.mark(mark+'-sync-end');await frame();verify();const focus=document.querySelector('#tableSearchInput');focus.focus({preventScroll:true});if(document.activeElement!==focus)throw Error('input not available');data[key].push(performance.now()-start);performance.mark(mark+'-frame-end');if(__SAMPLES__<=5)diagnostics.push({key,sample:data[key].length,syncMs,stages:globalThis.__profileStages});};
   const view=id=>{const button=document.querySelector('#previewTabs [data-preview="'+id+'"]')||document.querySelector(id==='inventory'?'#inventoryDrop':'#ordersDrop');if(!button)throw Error('missing real view button '+id);button.click();};
   const verifyView=id=>{if(s.activePreview!==id||!document.querySelector('#previewTable table.preview-'+id))throw Error('view did not change '+id);if(document.querySelectorAll('#previewTable tbody tr[data-product-code]').length<count)throw Error('missing displayed source rows');};
   for(let i=0;i<__SAMPLES__;i++){
@@ -24,5 +27,7 @@
     await measure('panel',()=>{const button=document.querySelector(shouldOpen?'#inventoryInspectorReopen':'#inventoryInspectorClose');if(!button)throw Error('missing panel button');button.click();},()=>{const pane=document.querySelector('#inventoryInspector');if(pane.hidden===shouldOpen||(shouldOpen&&pane.getBoundingClientRect().width<=0))throw Error('requested panel state not visible');});
   }
   const summary=Object.fromEntries(Object.entries(data).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return[key,{samples:values.length,p50:sorted[Math.ceil(values.length*.5)-1],p95:sorted[Math.ceil(values.length*.95)-1],max:sorted.at(-1)}];}));
-  return {rows:count,warehouses,idleLayoutCalls,initialDisplay,summary,rawSamples:data,diagnostics,measurement:'requested DOM state + next two displayed frames + focusable search; inventory sample 1 is first exposure, later samples are repeat switches; programmatic clicks, not physical touch feedback latency'};
+  const table=document.querySelector('#previewTable');const rect=table.getBoundingClientRect();
+  const dom={documentElements:document.querySelectorAll('*').length,tableElements:table.querySelectorAll('*').length,tableRows:table.querySelectorAll('tbody tr').length,inputs:table.querySelectorAll('input,textarea,select').length,viewport:{width:innerWidth,height:innerHeight},tableViewport:{width:rect.width,height:rect.height},scrollSize:{width:table.scrollWidth,height:table.scrollHeight}};
+  return {rows:count,warehouses,idleLayoutCalls,initialDisplay,summary,rawSamples:data,diagnostics,dom,measurement:'requested DOM state + next two displayed frames + focusable search; inventory sample 1 is first exposure, later samples are repeat switches; programmatic clicks, not physical touch feedback latency'};
 })()

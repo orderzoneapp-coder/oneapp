@@ -11,10 +11,12 @@ const profile = mkdtempSync(join(tmpdir(), 'orderops-v12-'));
 const evidence = process.env.ORDEROPS_EVIDENCE_DIR;
 const performanceMode = process.env.ORDEROPS_PERFORMANCE === '1';
 const cellContainmentPair = performanceMode && process.env.ORDEROPS_CELL_CONTAINMENT_PAIR === '1';
+const predecoratedPair = performanceMode && process.env.ORDEROPS_PREDECORATED_PAIR === '1';
 const evidenceRun={startedAt:new Date().toISOString(),head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dirty:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),node:process.version,platform:process.platform,performanceMode,result:'running',logs:[],sourceHashes:Object.fromEntries(['orderops/list.html','orderops/workbench-ui.js','orderops/workbench-contract.js','orderops/workbench-v12.css','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,createHash('sha256').update(readFileSync(join(root,path))).digest('hex')]))};
 evidenceRun.performanceVerdict=performanceMode?'not-measured':'not-applicable';
+evidenceRun.predecoratedPair=predecoratedPair;
 evidenceRun.responseHashes=[];
-evidenceRun.diagnosticOptions={profile:process.env.ORDEROPS_PROFILE==='1',cellContainmentResponseOnly:process.env.ORDEROPS_CELL_CONTAINMENT==='1',cellContainmentPair,diagnosticOnly:process.env.ORDEROPS_DIAGNOSTIC==='1'||cellContainmentPair,diagnosticSamples:process.env.ORDEROPS_DIAGNOSTIC_SAMPLES||'1',gpu:performanceMode?'default':'disabled'};
+evidenceRun.diagnosticOptions={profile:process.env.ORDEROPS_PROFILE==='1',cellContainmentResponseOnly:process.env.ORDEROPS_CELL_CONTAINMENT==='1',cellContainmentPair,predecoratedPair,diagnosticOnly:process.env.ORDEROPS_DIAGNOSTIC==='1'||cellContainmentPair||predecoratedPair,diagnosticSamples:process.env.ORDEROPS_DIAGNOSTIC_SAMPLES||'1',gpu:performanceMode?'default':'disabled'};
 const log=console.log;console.log=(...args)=>{evidenceRun.logs.push(args.map(value=>typeof value==='string'?value:JSON.stringify(value)).join(' '));log(...args);};
 let baselineMode = false;
 const baselineFiles = performanceMode ? new Map(['orderops/list.html','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,execFileSync('git',['show',`a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c:${path}`],{cwd:root,encoding:'utf8'})])) : new Map();
@@ -29,6 +31,7 @@ const server = createServer((req, res) => {
   if (!file.startsWith(resolve(root) + sep) || !existsSync(file)) return res.writeHead(404).end();
   res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control':'no-store' });
   let source = baselineMode && baselineFiles.has(pathname.slice(1)) ? baselineFiles.get(pathname.slice(1)) : pathname === '/orderops/list.html' ? html : readFileSync(file);
+  if(predecoratedPair&&pathname==='/orderops/list.html'&&requestUrl.searchParams.get('predecorated')!=='1')source=String(source).replace('column-width-managed${options.printOutput ? "" : " nexus-table-ux"}', 'column-width-managed');
   const cellContainment=cellContainmentPair?requestUrl.searchParams.get('cellContainment')==='1':process.env.ORDEROPS_CELL_CONTAINMENT==='1';
   if(performanceMode&&cellContainment&&pathname==='/orderops/list.html')source=String(source).replace('mountPreparedPreview(previewMarkup);','mountPreparedPreview(previewMarkup.replace(/<input\\b[^>]*>/g, value => `<div style="content-visibility:auto;contain-intrinsic-size:auto 28px;height:28px">${value}</div>`));');
   if (performanceMode && process.env.ORDEROPS_PROFILE==='1' && pathname==='/orderops/list.html') {
@@ -80,16 +83,19 @@ try {
   if (performanceMode) {
     const reports=[];
     const profiling=process.env.ORDEROPS_PROFILE==='1';
-    const diagnostic=profiling || process.env.ORDEROPS_DIAGNOSTIC==='1' || cellContainmentPair;
-    const variants=cellContainmentPair?[{baseline:false,cell:false},{baseline:false,cell:true}]:(diagnostic?[false]:[true,false]).map(baseline=>({baseline,cell:process.env.ORDEROPS_CELL_CONTAINMENT==='1'}));
-    for(const {baseline,cell} of variants) {
-      await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')+'&cellContainment='+(cell?'1':'0')});
+    const diagnostic=profiling || process.env.ORDEROPS_DIAGNOSTIC==='1' || cellContainmentPair || predecoratedPair;
+    const variants=cellContainmentPair?[{baseline:false,cell:false},{baseline:false,cell:true}]:predecoratedPair?[{baseline:false,predecorated:false},{baseline:false,predecorated:true}]:(diagnostic?[false]:[true,false]).map(baseline=>({baseline,cell:process.env.ORDEROPS_CELL_CONTAINMENT==='1'}));
+    for(const {baseline,cell,predecorated=true} of variants) {
+      // Reset only this isolated fixture's UI preferences. Odd panel clicks
+      // must not change the next comparison's initial table viewport.
+      await ev(`localStorage.setItem('oneapp.orderops.inventory-inspector-open.v1','0');localStorage.setItem('oneapp.orderops.file-prepare-open.v1','1');localStorage.setItem('nexus:workbench-layout:orderops:v2',JSON.stringify({schemaVersion:2,left:380,right:280}));true`);
+      await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')+'&cellContainment='+(cell?'1':'0')+'&predecorated='+(predecorated?'1':'0')});
       await until(()=>ev('Boolean(globalThis.__perf?.state.db) && Boolean(globalThis.__ops)==='+String(!baseline)),'performance version initialization');
       for(const [count,warehouses] of (diagnostic?[[500,10]]:[[100,3],[500,10],[2000,10]])) {
         if(profiling){await send('Profiler.enable');await send('Profiler.start');}
         const result=await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-performance.js'),'utf8').replaceAll('__ROW_COUNT__',String(count)).replaceAll('__WAREHOUSE_COUNT__',String(warehouses)).replaceAll('__SAMPLES__',diagnostic?String(Math.max(1,Math.min(5,Number(process.env.ORDEROPS_DIAGNOSTIC_SAMPLES)||1))):'30'));
         if(profiling){const {profile:cpu}=await send('Profiler.stop');console.log('CPU',JSON.stringify(cpu.nodes.filter(n=>n.hitCount).sort((a,b)=>b.hitCount-a.hitCount).slice(0,30).map(n=>({name:n.callFrame.functionName,url:n.callFrame.url,line:n.callFrame.lineNumber,hits:n.hitCount}))));}
-        reports.push({version:baseline?'a5eeb19':'development',cellContainmentResponseOnly:cell,...result});console.log('PERFORMANCE',JSON.stringify(reports.at(-1)));
+        reports.push({version:baseline?'a5eeb19':'development',cellContainmentResponseOnly:cell,predecorated,...result});console.log('PERFORMANCE',JSON.stringify(reports.at(-1)));
         if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance-progress.json'),JSON.stringify({completed:false,reports},null,2));}
       }
     }

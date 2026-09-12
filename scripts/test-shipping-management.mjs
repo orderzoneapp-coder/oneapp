@@ -2398,6 +2398,11 @@ assert.ok(html.includes('column?.role === "calculatedQuantity" && state.warehous
   (html.match(/\? "잔량"/g) || []).length >= 2,
   "warehouse inventory must use the 잔량 header with or without a warehouse filter");
 const quantityDisplayExpression = html.match(/const displayValue = ([^;]+);/)?.[1];
+const previewTableClassTemplate = html.match(/<table class="(preview-\$\{previewId\}[^\n]+)" data-width-source=/)?.[1];
+assert.ok(previewTableClassTemplate, "the preview table class template must exist");
+const previewTableClass = new Function("previewId", "options", `return \`${previewTableClassTemplate}\`;`);
+assert.ok(previewTableClass("allocations", {}).split(/\s+/).includes("nexus-table-ux"), "screen tables apply their final common style before the first layout");
+assert.equal(previewTableClass("allocations", {printOutput:true}), "preview-allocations column-width-managed", "print tables retain their original class and styling boundary");
 assert.ok(quantityDisplayExpression, "the quantity display expression must exist");
 const quantityDisplay = new Function("quantityColumn", "numericQuantityValue", "totalComparisonColumn", "value", `return ${quantityDisplayExpression};`);
 assert.equal(quantityDisplay(true, 0, false, 0), "", "ordinary zero quantity display remains blank without changing stored zero");

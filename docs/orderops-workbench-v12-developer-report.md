@@ -2,6 +2,35 @@
 
 판정: **Draft PR #589 / PM-F08 개별 대조 통과 / U29 CI 증거 대조 통과 / 성능 미통과 / PM 최종 검증 전 / 병합·배포 금지**.
 
+### 필수 CI 단계 갱신
+
+`7573356817c3bf23308c851a69a44f22dabe2679`의 [workflow 34696022446](https://github.com/orderzoneapp-coder/oneapp/actions/runs/34696022446)은 필수 4개 job 전체 성공이다. PM도 동일 head의 CI 단계를 직접 대조해 통과로 기록했다. 이는 PR 전체 최종 승인 또는 배포 승인이 아니다. 해당 workbench artifact는 `artifacts/orderops-v12/ci-75733568`에 별도 보존했다.
+
+### 성능 증거의 조건 보정
+
+이전 `diagnostic-cell-pair-final`과 `diagnostic-predecorated-pair`는 같은 프로필에서 우측 열림 상태가 다음 variant에 남아 표 가용폭이 달랐다. 두 번째 실험에는 짧은 단위검사 실행 중첩도 있었다. 이 수치들은 당시 관찰값으로만 보존하고 **개선율·채택·동일 조건 비교의 근거에서 제외**한다. 시험용 프로필의 좌측 열림·우측 닫힘·폭만 매 variant 초기화하고 실제 시작 표 크기와 열림 상태를 기록한 `diagnostic-predecorated-fixed-panels`를 후속 비교로 사용한다. 운영 사용자 설정은 수정하지 않았다.
+
+첫 정상 Chrome trace에서는 공통 패널의 layout read 뒤에 공통 표 `decorate()`가 `nexus-table-ux` 클래스를 추가하면서 별도의 스타일 재계산(44,696요소/약1,040ms)과 layout(약331ms)을 발생시킨 호출 순서를 확인했다. 조상 style/class 변경 관찰에서는 현황 전환 중 패널 상속변수 재변경이 없었다. 상세 invalidation trace 3회는 수집 종료 timeout으로 실패해 종료했으며 제품 오류로 분류하지 않는다. 같은 실행의 실제 commandLine/SystemInfo에는 Intel UHD610/ANGLE D3D11, compositing/rasterization enabled가 기록됐다. 실사용 브라우저와 동일하다고 확대하지 않는다.
+
+### 최소 후속 후보 — 화면 표 스타일 사전 부여
+
+- 제품 수정은 `orderops/list.html`의 표 생성 한 줄이다. 화면 표만 기존 `nexus-table-ux` 클래스를 처음부터 부여하고 `printOutput`의 클래스는 원래 그대로 유지한다. 공통 `decorate()`는 class 존재 여부로 listeners/resize/tools/applyView를 건너뛰지 않으므로 기존 동작을 그대로 실행한다. 공통 파일·계산·저장·입력 DOM·출력 양식 변경 없음.
+- PM은 원인/한 줄 diff/후속 비교를 직접 대조하고 최소 후보 채택을 허용했다. 이는 전체 PR 통과나 성능 조건 면제, 배포 승인이 아니다.
+- `diagnostic-predecorated-fixed-panels`: 2026-09-12 13:29:01~13:30:06 UTC, Chrome152, 500행·10창고. 시작 양쪽 모두 중앙956×452/우측닫힘, 끝664×392. 개발자의 다른 로컬 검사 중첩 없음. runtimeErrors=[]/실행exit0, `performanceVerdict=not-met`.
+
+| 동작 | 기존 원시값(ms) | 최소 수정 원시값(ms) | 판정 |
+|---|---|---|---|
+| 최초 전체 표시 | 6459 | 5465 | 각 1회 관찰, 정식 비교 아님 |
+| 주문 전환 | 2618, 2631, 2600 | 2343, 3029, 2944 | 일관된 개선 없음·목표 미달 |
+| 재고 전환 | 3535, 3202, 2506 | 2304, 2044, 2252 | 이번 3회 개선 관찰·목표 미달 |
+| 행 선택 | 327, 718, 422 | 330, 402, 416 | 목표 미달·물리 터치 미측정 |
+| 패널 | 286, 292, 407 | 305, 204, 312 | 목표 미달·물리 터치 미측정 |
+
+- 이 증거의 `diagnosticOnly=false`는 당시 메타데이터에 predecoratedPair를 포함하지 않은 표기 오류다. 실제 실행은 각3회 **진단**이며 이후 기록 필드를 바로잡았다. 수치 재실행/정식30회 성공으로 소급 변경하지 않았다.
+- 한 줄 수정 후 실제 Chrome의 `test-orderops-excel-cell-grid-browser.mjs`(업무셀 편집·Enter/화살표·행 테두리·대상 셀만 대체) 및 `test-orderops-theme-browser-e2e.mjs`(OrderOps 테마/인쇄·DataOps 페이지/전환) PASS. U06 실제 workbook, U19/U22 pure 계약, 일반0/총량0/미확인 표시 검사 PASS. 화면/인쇄 table class의 실제 템플릿도 별도 assertion으로 보존한다.
+- 상세 추적/전송 재시도/변경 호출 계측 코드는 제품/필수 CI 하네스에서 제거하고 `artifacts/orderops-v12/diagnostic-instrumentation-75733568.patch`, `audit-layout-mutations.js`로 분리했다. 기존 trace·GPU 원본·실패 증거·최종 전후 원본은 그대로 보존한다. 시험용 paired 비교·패널 초기화·DOM 규모/시작 폭 메타데이터만 재현 가능한 하네스에 유지한다.
+- **남음: 성능 PM-F03, 안정 후보의 정식 30회 p95, 물리 터치·실제 사용자 환경, PM 최종 결과 판정 및 운영 검증.** 동일 CSS/구조 후보나 상세 추적을 추가 확대하지 않는다. 후속 검수 후보 SHA와 필수 CI는 PR/PM 제출 메시지에서 확정한다.
+
 ## 현재 제출 상태 (2026-09-12, `40c2fdb2` 이후 검사 보정)
 
 - PR: https://github.com/orderzoneapp-coder/oneapp/pull/589 (Draft 유지). 기준 원격 main은 `a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c`로 재확인했다. 공통헤더·호스트·SmartInput 제품 소스 변경 없음.
@@ -91,19 +120,19 @@ node scripts/test-orderops-operations-improvements.mjs
 
 | ID | 자체 증거/상태 |
 |---|---|
-| U01~U04 | 신규 workbench 브라우저 + 기존 operator-flow 브라우저. 3개 형제 패널·중앙 하단바·기존 full allocations·분석 전 표시/메모 분리 확인. 최근 readiness 호환 진입 보완의 최종 CI 대기 |
+| U01~U04 | 신규 workbench 브라우저 + 기존 operator-flow 브라우저. 3개 형제 패널·중앙 하단바·기존 full allocations·분석 전 표시/메모 분리 확인. 7573356 전체 CI 통과, 한 줄 후보 이후 필수 CI 별도 대조 |
 | U05 | 재고 단독 기존 회귀 및 새 준비 경로의 구매/판매 단독 원문 조회, 계산 불가 사유 확인. 신규 workbench CI 포함 |
 | U06 | 위 a~d 직접 검증. 실제 파일/메모리 worksheet/화면 안내를 구분 |
 | U07~U11 | 명시 구조/열 충돌의 pure 및 실제 파일 UI, 원셀 보존. 여러 시트/매핑 보존/같은 종류 복수 후보 차단/혼합 오류 전체 미적용과 수정 후 재적용을 신규 workbench CI에서 확인 |
 | U12~U13 | 후보 경합/실패/종료, 준비 파일 사용해제·초기화 시 복구 clear 없음·출처별 최근 확정본 보존을 실제 브라우저 확인. PM-F08의 적용 중 준비 변경 보존도 개별 PM 대조 통과 |
-| U14~U16 | 1920/1366/1024/819/640/639/390 viewport에서 pane 위치·하단바·가로 스크롤·손잡이 및 기존 operator-flow의 재열기/폭 보존 확인. 새 공통 성능 보완 후 U33 갱신 대기 |
+| U14~U16 | 1920/1366/1024/819/640/639/390 viewport에서 pane 위치·하단바·가로 스크롤·손잡이 및 기존 operator-flow의 재열기/폭 보존 확인. 공통 변경 후 7573356 전체 CI 통과 |
 | U17~U18 | 거래처 코드별 전체 담당 변경·창고/지역 범위 담당 건수·필터 유지, 우측 대상별 입력 보존 확인 |
 | U19~U22 | 위 세부 증거 및 기존 명령 adapter/브라우저. pure만 확인한 identity 변형과 실제 브라우저 사례를 구분 |
 | U23~U25 | TOTAL_ONLY 기존 common-inventory 브라우저, F8 모의 Cloud 추가 입력/복구, 출고 충돌/멱등성/실패. 실운영 Cloud 쓰기는 미검증 |
 | U26~U28 | 실제 F10 다운로드 + 기준 workbook 대조. operator-flow/theme/Excel-grid 브라우저의 F9 취소/흰색/필터·입력/스크롤·단축키 계약. 물리 프린터/실제 하드웨어 IME·터치는 미검증 |
 | U29 | 실제 host에서 미적용 준비/충돌 대기·취소의 이동 차단, 실제 DataOps 이동 후 history 복귀와 최신 입력·주문 경로 보존을 동일 CI에서 확인. PM 소스/CI 증거 대조 통과. 앱 탭의 새 기본 진입 정책 변경 없음 |
 | U30~U32 | 기존 portal 메뉴/바깥 클릭/Escape·테마 시험과 대표 viewport 화면 증거. 125%는 819 CSS px 대응(1024/1.25)이며 OS의 실제 확대 조작과 구분 |
-| U33 | SmartInput/공통헤더 제품 diff 없음. 공통 패널 변경 후 다른 다섯 앱·헤더·호스트 최종 회귀/CI 대기 |
+| U33 | SmartInput/공통헤더 제품 diff 없음. 공통 패널 변경 후 다른 다섯 앱·헤더·호스트 포함 7573356 필수 CI 통과. 실제 사용자 운영환경 미검증 |
 
 ## 성능 — 미통과
 

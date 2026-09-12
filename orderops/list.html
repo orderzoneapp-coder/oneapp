@@ -8458,7 +8458,7 @@
           : `<tr><td colspan="${Math.max(1, visibleEntries.length)}" class="empty-table-cell">${escapeHtml(options.emptyMessage || "표시할 항목이 없습니다.")}</td></tr>`;
 
         return `
-          <table class="preview-${previewId} column-width-managed" data-width-source="${options.widthSource || "draft"}"
+          <table class="preview-${previewId} column-width-managed${options.printOutput ? "" : " nexus-table-ux"}" data-width-source="${options.widthSource || "draft"}"
             style="width:${options.fitWidth ? "100%" : `${tableWidth}px`}">
             ${colgroup}
             <thead><tr>${headers}</tr></thead>
