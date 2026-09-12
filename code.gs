@@ -20,7 +20,10 @@ const SHEET_NAMES = {
   DATAOPS_B: 'DataOpsSnapshot_B',
   SHIPPING_PLAN_INDEX: 'ShippingPlanIndex',
   SHIPPING_PLAN_HISTORY: 'ShippingPlanHistory',
-  SHIPPING_PLAN_STAGING: 'ShippingPlanStaging'
+  SHIPPING_PLAN_STAGING: 'ShippingPlanStaging',
+  INVENTORY_SNAPSHOT_INDEX: 'InventorySnapshotIndex',
+  INVENTORY_SNAPSHOT_HISTORY: 'InventorySnapshotHistory',
+  INVENTORY_SNAPSHOT_STAGING: 'InventorySnapshotStaging'
 };
 
 const CONFIG_FORMAT = 'ONEAPP_CONFIG_V2';
@@ -36,6 +39,17 @@ const SHIPPING_PLAN_CHUNK_SIZE = 45000;
 const SHIPPING_PLAN_MAX_ROWS = 300000;
 const SHIPPING_PLAN_MAX_CELLS = 5000000;
 const SHIPPING_PLAN_ACCESS_TOKEN_PROPERTY = 'ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN';
+const INVENTORY_SNAPSHOT_FORMAT = 'ONEAPP_INVENTORY_SNAPSHOT_V1';
+const INVENTORY_SNAPSHOT_SOURCE_TYPE = 'ORDEROPS_ERP';
+const INVENTORY_SNAPSHOT_CHUNK_SIZE = 45000;
+const INVENTORY_SNAPSHOT_MAX_ROWS = 100000;
+const INVENTORY_SNAPSHOT_MAX_CELLS = 5000000;
+const INVENTORY_SNAPSHOT_INDEX_COLUMNS = [
+  'format', 'snapshotId', 'revision', 'sourceType', 'basisDate', 'basisDateStatus',
+  'savedAt', 'sourceFileName', 'sourceSheetName', 'warehouseScopeJson', 'hash',
+  'rowCount', 'cellCount', 'sourceMatrixRowCount', 'productCount',
+  'historyStartRow', 'chunkCount', 'charCount'
+];
 const ORDERQ_ACCESS_TOKEN_PROPERTY = 'ONEAPP_ORDERQ_ACCESS_TOKEN';
 const ONEAPP_NEXUS_GATEWAY_ACTOR = 'NEXUS_GATEWAY';
 const ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_PROPERTY = 'ONEAPP_NEXUS_GATEWAY_FOUNDATION_BINDINGS_JSON';
@@ -583,6 +597,294 @@ function getShippingPlanRevision(ss, request) {
   return { metadata, plan: validated.canonical };
 }
 
+function normalizeInventorySnapshotBasisDate(value, status) {
+  const normalizedStatus = String(status || '');
+  const basisDate = String(value || '');
+  if (normalizedStatus === 'missing' && !basisDate) return { basisDate: '', basisDateStatus: 'missing' };
+  if (normalizedStatus !== 'valid') throw new Error('INVENTORY_SNAPSHOT_BASIS_DATE_STATUS_INVALID');
+  const parsed = new Date(`${basisDate}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(basisDate) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== basisDate) {
+    throw new Error('INVENTORY_SNAPSHOT_BASIS_DATE_INVALID');
+  }
+  return { basisDate, basisDateStatus: 'valid' };
+}
+
+function validateInventorySnapshotEnvelope(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') throw new Error('INVENTORY_SNAPSHOT_REQUIRED');
+  if (snapshot.schemaVersion !== INVENTORY_SNAPSHOT_FORMAT) throw new Error('INVENTORY_SNAPSHOT_SCHEMA_INVALID');
+  if (String(snapshot.hashAlgorithm || '').toUpperCase() !== 'SHA-256') throw new Error('INVENTORY_SNAPSHOT_HASH_ALGORITHM_INVALID');
+  const canonicalJson = String(snapshot.canonicalJson || '');
+  if (!canonicalJson) throw new Error('INVENTORY_SNAPSHOT_CANONICAL_JSON_REQUIRED');
+  const actualHash = sha256Hex(canonicalJson);
+  if (!constantTimeTextEquals(actualHash, String(snapshot.hash || '').toLowerCase())) throw new Error('INVENTORY_SNAPSHOT_HASH_MISMATCH');
+  let canonical;
+  try { canonical = JSON.parse(canonicalJson); }
+  catch (error) { throw new Error('INVENTORY_SNAPSHOT_CANONICAL_JSON_INVALID'); }
+  if (!canonical || canonical.schemaVersion !== INVENTORY_SNAPSHOT_FORMAT) throw new Error('INVENTORY_SNAPSHOT_CANONICAL_SCHEMA_INVALID');
+  if (canonical.sourceType !== INVENTORY_SNAPSHOT_SOURCE_TYPE) throw new Error('INVENTORY_SNAPSHOT_SOURCE_INVALID');
+  const basis = normalizeInventorySnapshotBasisDate(canonical.basisDate, canonical.basisDateStatus);
+  const sourceFile = canonical.sourceFile;
+  if (!sourceFile || typeof sourceFile !== 'object' || !String(sourceFile.fileName || '').trim()) {
+    throw new Error('INVENTORY_SNAPSHOT_SOURCE_FILE_INVALID');
+  }
+  if (!/^[a-f0-9]{64}$/.test(String(sourceFile.sha256 || '').toLowerCase())) throw new Error('INVENTORY_SNAPSHOT_SOURCE_HASH_INVALID');
+  if (!Number.isInteger(Number(sourceFile.rowCount)) || Number(sourceFile.rowCount) < 0) throw new Error('INVENTORY_SNAPSHOT_SOURCE_ROW_COUNT_INVALID');
+  if (!canonical.parser || typeof canonical.parser !== 'object') throw new Error('INVENTORY_SNAPSHOT_PARSER_INVALID');
+  if (!Array.isArray(canonical.columns) || !Array.isArray(canonical.warehouseScope) || !Array.isArray(canonical.sourceMatrix) || !Array.isArray(canonical.normalizedRows)) {
+    throw new Error('INVENTORY_SNAPSHOT_STRUCTURE_INVALID');
+  }
+  if (canonical.normalizedRows.length > INVENTORY_SNAPSHOT_MAX_ROWS) throw new Error('INVENTORY_SNAPSHOT_ROWS_EXCEEDED');
+  const warehouseKeys = Object.create(null);
+  canonical.warehouseScope.forEach(item => {
+    const key = String(item && item.warehouseKey || '');
+    const sourceColumnIndex = Number(item && item.sourceColumnIndex);
+    if (!key || warehouseKeys[key] || !Number.isInteger(sourceColumnIndex) || sourceColumnIndex < 0 || item.role !== 'warehouseQuantity') {
+      throw new Error('INVENTORY_SNAPSHOT_WAREHOUSE_SCOPE_INVALID');
+    }
+    warehouseKeys[key] = true;
+  });
+  if (Object.keys(warehouseKeys).length < 1) throw new Error('INVENTORY_SNAPSHOT_WAREHOUSE_SCOPE_REQUIRED');
+  canonical.columns.forEach(column => {
+    const sourceIndex = Number(column && column.sourceIndex);
+    if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || !String(column.header || '').trim() || !String(column.role || '').trim()) {
+      throw new Error('INVENTORY_SNAPSHOT_COLUMN_INVALID');
+    }
+  });
+  const productCodes = Object.create(null);
+  canonical.normalizedRows.forEach((row, rowIndex) => {
+    const code = String(row && row.productCode || '').trim();
+    const sourceRowNumber = Number(row && row.sourceRowNumber);
+    const totalQuantity = Number(row && row.totalQuantity);
+    if (!code || productCodes[code]) throw new Error(`INVENTORY_SNAPSHOT_PRODUCT_CODE_INVALID:${rowIndex + 1}`);
+    if (!Number.isInteger(sourceRowNumber) || sourceRowNumber < 1 || sourceRowNumber > canonical.sourceMatrix.length) {
+      throw new Error(`INVENTORY_SNAPSHOT_SOURCE_ROW_INVALID:${rowIndex + 1}`);
+    }
+    if (!Number.isFinite(totalQuantity) || !Array.isArray(row.warehouseValues) || row.warehouseValues.length < 1) {
+      throw new Error(`INVENTORY_SNAPSHOT_ROW_INVALID:${rowIndex + 1}`);
+    }
+    const warehouseTotal = row.warehouseValues.reduce((sum, value) => {
+      const key = String(value && value.warehouseKey || '');
+      const sourceColumnIndex = Number(value && value.sourceColumnIndex);
+      const quantity = Number(value && value.quantity);
+      if (!warehouseKeys[key] || !Number.isInteger(sourceColumnIndex) || sourceColumnIndex < 0 || !Number.isFinite(quantity)) {
+        throw new Error(`INVENTORY_SNAPSHOT_WAREHOUSE_VALUE_INVALID:${rowIndex + 1}`);
+      }
+      return sum + quantity;
+    }, 0);
+    if (Math.abs(warehouseTotal - totalQuantity) > 1e-9) throw new Error(`INVENTORY_SNAPSHOT_TOTAL_MISMATCH:${rowIndex + 1}`);
+    productCodes[code] = true;
+  });
+  const rowCount = canonical.normalizedRows.length;
+  const cellCount = countShippingPlanScalarCells(canonical);
+  if (Number(sourceFile.rowCount) !== rowCount) throw new Error('INVENTORY_SNAPSHOT_SOURCE_ROW_COUNT_MISMATCH');
+  if (Number(snapshot.rowCount) !== rowCount) throw new Error('INVENTORY_SNAPSHOT_ROW_COUNT_MISMATCH');
+  if (Number(snapshot.cellCount) !== cellCount) throw new Error('INVENTORY_SNAPSHOT_CELL_COUNT_MISMATCH');
+  if (cellCount > INVENTORY_SNAPSHOT_MAX_CELLS) throw new Error('INVENTORY_SNAPSHOT_CELLS_EXCEEDED');
+  return {
+    schemaVersion: INVENTORY_SNAPSHOT_FORMAT,
+    sourceType: INVENTORY_SNAPSHOT_SOURCE_TYPE,
+    basisDate: basis.basisDate,
+    basisDateStatus: basis.basisDateStatus,
+    sourceFileName: String(sourceFile.fileName || ''),
+    sourceSheetName: String(sourceFile.sheetName || ''),
+    warehouseScope: canonical.warehouseScope,
+    hashAlgorithm: 'SHA-256',
+    hash: actualHash,
+    rowCount,
+    cellCount,
+    sourceMatrixRowCount: canonical.sourceMatrix.length,
+    productCount: Object.keys(productCodes).length,
+    canonicalJson,
+    canonical
+  };
+}
+
+function buildInventorySnapshotIdentity(hash) {
+  const normalized = String(hash || '').toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) throw new Error('INVENTORY_SNAPSHOT_HASH_INVALID');
+  return { snapshotId: `INV-${normalized.slice(0, 24)}`, revision: `INVREV-${normalized.slice(0, 32)}` };
+}
+
+function writeInventorySnapshotStaging(sheet, validated) {
+  const chunks = splitDataOpsTextBySize(validated.canonicalJson, INVENTORY_SNAPSHOT_CHUNK_SIZE);
+  const metadata = {
+    schemaVersion: validated.schemaVersion,
+    sourceType: validated.sourceType,
+    basisDate: validated.basisDate,
+    basisDateStatus: validated.basisDateStatus,
+    hashAlgorithm: validated.hashAlgorithm,
+    hash: validated.hash,
+    rowCount: validated.rowCount,
+    cellCount: validated.cellCount,
+    sourceMatrixRowCount: validated.sourceMatrixRowCount,
+    productCount: validated.productCount,
+    chunkCount: chunks.length,
+    charCount: validated.canonicalJson.length
+  };
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 2).setValues([[INVENTORY_SNAPSHOT_FORMAT, JSON.stringify(metadata)]]);
+  sheet.getRange(2, 1, chunks.length, 2).setValues(chunks.map((chunk, index) => [index + 1, chunk]));
+  return metadata;
+}
+
+function readInventorySnapshotStaging(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) throw new Error('INVENTORY_SNAPSHOT_STAGING_EMPTY');
+  if (String(sheet.getRange(1, 1).getValue() || '') !== INVENTORY_SNAPSHOT_FORMAT) throw new Error('INVENTORY_SNAPSHOT_STAGING_FORMAT_INVALID');
+  let metadata;
+  try { metadata = JSON.parse(String(sheet.getRange(1, 2).getValue() || '{}')); }
+  catch (error) { throw new Error('INVENTORY_SNAPSHOT_STAGING_METADATA_INVALID'); }
+  const chunkCount = Number(metadata.chunkCount);
+  if (!Number.isInteger(chunkCount) || chunkCount < 1) throw new Error('INVENTORY_SNAPSHOT_STAGING_CHUNK_COUNT_INVALID');
+  const rows = sheet.getRange(2, 1, chunkCount, 2).getValues().sort((a, b) => Number(a[0]) - Number(b[0]));
+  const canonicalJson = rows.map(row => String(row[1] || '')).join('');
+  if (canonicalJson.length !== Number(metadata.charCount)) throw new Error('INVENTORY_SNAPSHOT_STAGING_CHAR_COUNT_MISMATCH');
+  return validateInventorySnapshotEnvelope({ ...metadata, canonicalJson });
+}
+
+function ensureInventorySnapshotIndexHeader(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, INVENTORY_SNAPSHOT_INDEX_COLUMNS.length).setValues([INVENTORY_SNAPSHOT_INDEX_COLUMNS]);
+    return;
+  }
+  const header = sheet.getRange(1, 1, 1, INVENTORY_SNAPSHOT_INDEX_COLUMNS.length).getValues()[0];
+  if (JSON.stringify(header) !== JSON.stringify(INVENTORY_SNAPSHOT_INDEX_COLUMNS)) throw new Error('INVENTORY_SNAPSHOT_INDEX_HEADER_INVALID');
+}
+
+function inventorySnapshotIndexRowToMetadata(row, indexRow) {
+  let warehouseScope = [];
+  try { warehouseScope = JSON.parse(String(row[9] || '[]')); }
+  catch (error) { throw new Error('INVENTORY_SNAPSHOT_INDEX_WAREHOUSE_SCOPE_INVALID'); }
+  return {
+    schemaVersion: String(row[0] || ''), snapshotId: String(row[1] || ''), revision: String(row[2] || ''),
+    sourceType: String(row[3] || ''), basisDate: String(row[4] || ''), basisDateStatus: String(row[5] || ''),
+    savedAt: String(row[6] || ''), sourceFileName: String(row[7] || ''), sourceSheetName: String(row[8] || ''),
+    warehouseScope, hash: String(row[10] || ''), rowCount: Number(row[11]), cellCount: Number(row[12]),
+    sourceMatrixRowCount: Number(row[13]), productCount: Number(row[14]), historyStartRow: Number(row[15]),
+    chunkCount: Number(row[16]), charCount: Number(row[17]), indexRow: Number(indexRow) || 0
+  };
+}
+
+function inventorySnapshotMetadataForResponse(metadata, extra) {
+  const copy = { ...metadata };
+  delete copy.historyStartRow;
+  delete copy.chunkCount;
+  delete copy.charCount;
+  delete copy.indexRow;
+  return { ...copy, ...(extra || {}) };
+}
+
+function inventorySnapshotIndexItems(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  ensureInventorySnapshotIndexHeader(sheet);
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, INVENTORY_SNAPSHOT_INDEX_COLUMNS.length)
+    .getValues()
+    .map((row, index) => inventorySnapshotIndexRowToMetadata(row, index + 2));
+}
+
+function appendInventorySnapshot(ss, validated) {
+  const indexSheet = getOrCreateSheet(ss, SHEET_NAMES.INVENTORY_SNAPSHOT_INDEX);
+  ensureInventorySnapshotIndexHeader(indexSheet);
+  const existing = inventorySnapshotIndexItems(indexSheet).find(item =>
+    item.schemaVersion === INVENTORY_SNAPSHOT_FORMAT && constantTimeTextEquals(item.hash, validated.hash));
+  if (existing) return inventorySnapshotMetadataForResponse(existing, { deduplicated: true });
+  const staging = getOrCreateSheet(ss, SHEET_NAMES.INVENTORY_SNAPSHOT_STAGING);
+  writeInventorySnapshotStaging(staging, validated);
+  const verifiedStaging = readInventorySnapshotStaging(staging);
+  if (verifiedStaging.hash !== validated.hash || verifiedStaging.rowCount !== validated.rowCount || verifiedStaging.cellCount !== validated.cellCount) {
+    throw new Error('INVENTORY_SNAPSHOT_STAGING_VERIFY_FAILED');
+  }
+  const identity = buildInventorySnapshotIdentity(validated.hash);
+  const savedAt = new Date().toISOString();
+  const chunks = splitDataOpsTextBySize(validated.canonicalJson, INVENTORY_SNAPSHOT_CHUNK_SIZE);
+  const history = getOrCreateSheet(ss, SHEET_NAMES.INVENTORY_SNAPSHOT_HISTORY);
+  const historyStartRow = history.getLastRow() + 1;
+  history.getRange(historyStartRow, 1, chunks.length, 4).setValues(
+    chunks.map((chunk, index) => [identity.snapshotId, identity.revision, index + 1, chunk])
+  );
+  const written = history.getRange(historyStartRow, 1, chunks.length, 4).getValues();
+  const historyJson = written.map((row, index) => {
+    if (String(row[0]) !== identity.snapshotId || String(row[1]) !== identity.revision || Number(row[2]) !== index + 1) {
+      throw new Error('INVENTORY_SNAPSHOT_HISTORY_POINTER_INVALID');
+    }
+    return String(row[3] || '');
+  }).join('');
+  const verifiedHistory = validateInventorySnapshotEnvelope({
+    schemaVersion: INVENTORY_SNAPSHOT_FORMAT, hashAlgorithm: 'SHA-256', hash: validated.hash,
+    rowCount: validated.rowCount, cellCount: validated.cellCount, canonicalJson: historyJson
+  });
+  if (verifiedHistory.hash !== validated.hash) throw new Error('INVENTORY_SNAPSHOT_HISTORY_VERIFY_FAILED');
+  const indexRow = [
+    INVENTORY_SNAPSHOT_FORMAT, identity.snapshotId, identity.revision, validated.sourceType,
+    validated.basisDate, validated.basisDateStatus, savedAt, validated.sourceFileName,
+    validated.sourceSheetName, JSON.stringify(validated.warehouseScope), validated.hash,
+    validated.rowCount, validated.cellCount, validated.sourceMatrixRowCount, validated.productCount,
+    historyStartRow, chunks.length, validated.canonicalJson.length
+  ];
+  indexSheet.getRange(indexSheet.getLastRow() + 1, 1, 1, indexRow.length).setValues([indexRow]);
+  return inventorySnapshotMetadataForResponse(
+    inventorySnapshotIndexRowToMetadata(indexRow, indexSheet.getLastRow()), { deduplicated: false }
+  );
+}
+
+function buildInventorySnapshotCursor(metadata) {
+  return `INV1.${metadata.indexRow}.${String(metadata.hash || '').slice(0, 16)}`;
+}
+
+function listInventorySnapshots(ss, request) {
+  const sheet = ss.getSheetByName(SHEET_NAMES.INVENTORY_SNAPSHOT_INDEX);
+  if (!sheet || sheet.getLastRow() < 2) return { items: [], nextCursor: '', hasMore: false };
+  let items = inventorySnapshotIndexItems(sheet).filter(item => item.schemaVersion === INVENTORY_SNAPSHOT_FORMAT).reverse();
+  const sourceType = String(request && request.sourceType || '');
+  if (sourceType && sourceType !== INVENTORY_SNAPSHOT_SOURCE_TYPE) throw new Error('INVENTORY_SNAPSHOT_SOURCE_INVALID');
+  if (sourceType) items = items.filter(item => item.sourceType === sourceType);
+  const cursor = String(request && request.cursor || '');
+  if (cursor) {
+    const match = /^INV1\.(\d+)\.([a-f0-9]{16})$/.exec(cursor);
+    const cursorRow = match ? Number(match[1]) : 0;
+    const cursorItem = items.find(item => item.indexRow === cursorRow && item.hash.slice(0, 16) === (match && match[2]));
+    if (!cursorItem) throw new Error('INVENTORY_SNAPSHOT_CURSOR_INVALID');
+    items = items.filter(item => item.indexRow < cursorRow);
+  }
+  const limit = Math.min(100, Math.max(1, Number(request && request.limit) || 50));
+  const page = items.slice(0, limit);
+  const hasMore = items.length > page.length;
+  return {
+    items: page.map(item => inventorySnapshotMetadataForResponse(item)),
+    nextCursor: hasMore && page.length ? buildInventorySnapshotCursor(page[page.length - 1]) : '',
+    hasMore
+  };
+}
+
+function getInventorySnapshot(ss, request) {
+  const snapshotId = String(request && request.snapshotId || '');
+  const revision = String(request && request.revision || '');
+  if (!snapshotId) throw new Error('INVENTORY_SNAPSHOT_ID_REQUIRED');
+  if (!revision) throw new Error('INVENTORY_SNAPSHOT_REVISION_REQUIRED');
+  const indexSheet = ss.getSheetByName(SHEET_NAMES.INVENTORY_SNAPSHOT_INDEX);
+  const metadata = inventorySnapshotIndexItems(indexSheet).find(item =>
+    item.schemaVersion === INVENTORY_SNAPSHOT_FORMAT && item.snapshotId === snapshotId && item.revision === revision);
+  if (!metadata) throw new Error('INVENTORY_SNAPSHOT_NOT_FOUND');
+  const history = ss.getSheetByName(SHEET_NAMES.INVENTORY_SNAPSHOT_HISTORY);
+  if (!history) throw new Error('INVENTORY_SNAPSHOT_HISTORY_MISSING');
+  const rows = history.getRange(metadata.historyStartRow, 1, metadata.chunkCount, 4).getValues();
+  const canonicalJson = rows.map((row, index) => {
+    if (String(row[0]) !== metadata.snapshotId || String(row[1]) !== metadata.revision || Number(row[2]) !== index + 1) {
+      throw new Error('INVENTORY_SNAPSHOT_HISTORY_POINTER_INVALID');
+    }
+    return String(row[3] || '');
+  }).join('');
+  if (canonicalJson.length !== metadata.charCount) throw new Error('INVENTORY_SNAPSHOT_HISTORY_CHAR_COUNT_MISMATCH');
+  const snapshot = {
+    schemaVersion: INVENTORY_SNAPSHOT_FORMAT, hashAlgorithm: 'SHA-256', hash: metadata.hash,
+    rowCount: metadata.rowCount, cellCount: metadata.cellCount, canonicalJson
+  };
+  const validated = validateInventorySnapshotEnvelope(snapshot);
+  if (validated.sourceMatrixRowCount !== metadata.sourceMatrixRowCount || validated.productCount !== metadata.productCount) {
+    throw new Error('INVENTORY_SNAPSHOT_INDEX_COUNT_MISMATCH');
+  }
+  return { metadata: inventorySnapshotMetadataForResponse(metadata), snapshot };
+}
+
 function parseDataOpsPromoCell(value) {
   if (value === undefined || value === null || String(value).trim() === '') return 0;
   const numberValue = Number(String(value).replace(/,/g, '').trim());
@@ -832,6 +1134,28 @@ function doPost(e) {
         status: 'success',
         action,
         data: getShippingPlanRevision(ss, payload)
+      }));
+    }
+
+    if (action === 'inventory_snapshot_save') {
+      requireShippingPlanAccess(payload);
+      return withScriptLock(() => {
+        const validated = validateInventorySnapshotEnvelope(payload.snapshot);
+        return jsonResponse({ status: 'success', action, data: appendInventorySnapshot(ss, validated) });
+      });
+    }
+
+    if (action === 'inventory_snapshot_list') {
+      requireShippingPlanAccess(payload);
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: listInventorySnapshots(ss, payload)
+      }));
+    }
+
+    if (action === 'inventory_snapshot_get') {
+      requireShippingPlanAccess(payload);
+      return withScriptLock(() => jsonResponse({
+        status: 'success', action, data: getInventorySnapshot(ss, payload)
       }));
     }
 

@@ -312,7 +312,9 @@ try {
   assert.deepEqual(current.existingButtonIds.filter(id => !baseline.existingButtonIds.includes(id)),
     [
       'deliveryFilterReset', 'deliveryManagerAssignmentApply', 'deliverySelectionOpenReadiness',
+      'inventoryDataOpsLoadButton', 'inventoryErpApplyButton', 'inventoryErpMoreButton', 'inventoryErpRefreshButton',
       'inventoryInspectorClose', 'inventoryInspectorReopen',
+      'inventoryMenuButton', 'inventoryMenuCloseButton', 'inventoryMenuUploadButton', 'inventoryShareButton',
       'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
       'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',
     ],

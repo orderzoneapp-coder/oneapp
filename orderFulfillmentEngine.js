@@ -7,10 +7,12 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.27.0";
+  const ENGINE_VERSION = "3.28.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
+  const INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION = "shipping-inventory-source-reference/v1";
+  const INVENTORY_APPLICATION_MODES = Object.freeze(["LOCAL_FILE", "ERP_WAREHOUSE", "TOTAL_ONLY", "WAREHOUSE_MAPPED"]);
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
   const SYSTEM_HISTORY_SCHEMA_VERSION = "shipping-system-history/v1";
   const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
@@ -1331,7 +1333,10 @@
   }
 
   function selectLatestVerifiedRecovery(candidates, pointer = "") {
-    const list = Array.isArray(candidates) ? [...candidates] : [];
+    const list = (Array.isArray(candidates) ? [...candidates] : []).filter((candidate) => {
+      const publicationState = cleanText(candidate?.record?.publicationState || "PUBLISHED");
+      return publicationState === "PUBLISHED";
+    });
     const timestamp = (candidate) => {
       const parsed = Date.parse(candidate?.record?.updatedAt || "");
       return Number.isFinite(parsed) ? parsed : 0;
@@ -1575,6 +1580,10 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     if (!Array.isArray(workspace.purchaseManagement)) workspace.purchaseManagement = [];
+    if (workspace.inventoryApplicationMode === "TOTAL_ONLY") {
+      workspace.purchaseManagement = [];
+      return workspace;
+    }
     const mainCodes = new Set(
       workspace.purchaseManagement
         .filter((row) => row?.rowType === "main")
@@ -1690,6 +1699,10 @@
   }
 
   function calculateInventoryTotal(workspace, inventory, columns, overrideMap) {
+    if (workspace?.inventoryApplicationMode === "TOTAL_ONLY") {
+      const total = Number(inventory?.inventoryTotal ?? inventory?.sourceInventoryTotal);
+      return Number.isFinite(total) ? roundQuantity(total) : 0;
+    }
     return roundQuantity(
       columns
         .filter((column) => column.role === "warehouseQuantity")
@@ -2051,6 +2064,16 @@
   }
 
   function getShortageCategoryContext(workspace) {
+    if (workspace?.inventoryApplicationMode === "TOTAL_ONLY") {
+      return {
+        shortageCount: 0,
+        shortageProductCodes: [],
+        candidateProductCodes: [],
+        purchaseActionCount: 0,
+        purchaseActionProductCodes: [],
+        categories: [],
+      };
+    }
     const inventoryRows = getInventoryViewRows(workspace).rows;
     const shortageRows = inventoryRows.filter((row) =>
       row.orderQuantity > 0 && row.remainingQuantity < 0,
@@ -2560,6 +2583,116 @@
       validationResults: [],
     };
     return rebuildPreviewWorkspaceFromOrders(workspace);
+  }
+
+  function replaceWorkspaceInventory(workspace, inventoryParsed, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    if (!inventoryParsed || inventoryParsed.kind !== "inventory" || !Array.isArray(inventoryParsed.rows) || inventoryParsed.errors?.length) {
+      throw new Error("검증되지 않은 재고자료는 작업공간에 적용할 수 없습니다.");
+    }
+    const applicationMode = cleanText(options.applicationMode || "ERP_WAREHOUSE");
+    if (!INVENTORY_APPLICATION_MODES.includes(applicationMode)) throw new Error("지원하지 않는 재고 적용 모드입니다.");
+    const sourceFingerprint = cleanText(options.sourceFingerprint).toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(sourceFingerprint)) throw new Error("새 재고를 포함한 원본 식별정보가 올바르지 않습니다.");
+    const reference = JSON.parse(JSON.stringify(options.sourceReference || {}));
+    if (
+      reference.schemaVersion !== INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION ||
+      !/^[a-f0-9]{64}$/.test(cleanText(reference.hash).toLowerCase()) ||
+      !["ORDEROPS_ERP", "DATAOPS_FINALIZED"].includes(cleanText(reference.sourceType)) ||
+      (reference.applicationMode && cleanText(reference.applicationMode) !== applicationMode)
+    ) {
+      throw new Error("재고 출처 reference가 올바르지 않습니다.");
+    }
+    const previousInventory = new Map((workspace.inventory || []).map((row) => [normalizeProductCode(row?.productCode), row]));
+    const previousColumns = new Map(getInventoryColumnDescriptors(workspace).map((column) => [column.key, column]));
+    const previousOverrides = JSON.parse(JSON.stringify(
+      workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
+    ));
+    const candidate = JSON.parse(JSON.stringify(workspace));
+    const previousWorkspaceMode = candidate.inventoryPreviousWorkspaceMode ||
+      (candidate.workspaceMode === PREVIEW_WORKSPACE_MODE ? PREVIEW_WORKSPACE_MODE : "ANALYZED");
+    const orderQSourceRecovery = JSON.parse(JSON.stringify(candidate.orderQSourceRecovery || null));
+    candidate.sourceFingerprint = sourceFingerprint;
+    if (!candidate.sourceFiles || typeof candidate.sourceFiles !== "object") candidate.sourceFiles = {};
+    candidate.sourceFiles.inventory = previewSourceFile(inventoryParsed, "inventory");
+    candidate.inventory = inventoryParsed.rows.map((row) => ({ ...row }));
+    candidate.inventoryOverrides = { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] };
+    const overridePolicy = options.inventoryOverridePolicy === "PRESERVE_COMPATIBLE" ? "PRESERVE_COMPATIBLE" : "DISCARD";
+    if (overridePolicy === "PRESERVE_COMPATIBLE") {
+      const nextInventory = new Map(candidate.inventory.map((row) => [normalizeProductCode(row?.productCode), row]));
+      const nextColumns = new Map(getInventoryColumnDescriptors(candidate).map((column) => [column.key, column]));
+      candidate.inventoryOverrides.cells = (previousOverrides.cells || []).filter((cell) => {
+        const code = normalizeProductCode(cell?.productCode);
+        const previousRow = previousInventory.get(code);
+        const nextRow = nextInventory.get(code);
+        const previousColumn = previousColumns.get(String(cell?.columnKey || ""));
+        const nextColumn = nextColumns.get(String(cell?.columnKey || ""));
+        const previousUnit = normalizedUnit(previousRow?.unit);
+        const nextUnit = normalizedUnit(nextRow?.unit);
+        return Boolean(
+          previousRow && nextRow && previousUnit && previousUnit === nextUnit &&
+          previousColumn?.editable && nextColumn?.editable &&
+          previousColumn.role === nextColumn.role &&
+          previousColumn.header === nextColumn.header &&
+          previousColumn.sourceIndex === nextColumn.sourceIndex
+        );
+      });
+    }
+    candidate.inventoryOverrideDisposition = {
+      schemaVersion: "shipping-inventory-override-disposition/v1",
+      policy: overridePolicy,
+      sourceCount: (previousOverrides.cells || []).length,
+      preservedCount: candidate.inventoryOverrides.cells.length,
+      discardedCount: Math.max(0, (previousOverrides.cells || []).length - candidate.inventoryOverrides.cells.length),
+    };
+    const inventoryOverrideDisposition = candidate.inventoryOverrideDisposition;
+    candidate.inventoryApplicationMode = applicationMode;
+    candidate.inventorySourceReference = reference;
+    if (!candidate.previewDataState || typeof candidate.previewDataState !== "object") candidate.previewDataState = {};
+    candidate.previewDataState.inventory = true;
+
+    if (applicationMode === "TOTAL_ONLY") {
+      candidate.planId = "";
+      candidate.workspaceMode = PREVIEW_WORKSPACE_MODE;
+      candidate.inventoryPreviousWorkspaceMode = previousWorkspaceMode;
+      candidate.inventoryOverrides = { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] };
+      candidate.inventoryOverrideDisposition.preservedCount = 0;
+      candidate.inventoryOverrideDisposition.discardedCount = candidate.inventoryOverrideDisposition.sourceCount;
+      candidate.purchaseManagement = [];
+      candidate.validationResults = [];
+      rebuildPreviewWorkspaceFromOrders(candidate);
+      candidate.inventoryApplicationMode = applicationMode;
+      candidate.inventorySourceReference = reference;
+      candidate.purchaseManagement = [];
+      candidate.inputValidation.canAnalyze = false;
+      candidate.inputValidation.blockingCount = Math.max(1, Number(candidate.inputValidation.blockingCount) || 0);
+      candidate.inputValidation.errors = [{
+        code: "TOTAL_ONLY_NOT_ALLOCATABLE",
+        message: "총량 비교 재고는 창고별 출고배정·구매제안에 사용할 수 없습니다.",
+      }];
+      candidate.validationResults = [{
+        item: "재고 적용 모드",
+        result: "총량 비교",
+        expected: "창고별 재고",
+        status: "비교 전용",
+        description: "총재고와 총주문 비교만 제공하며 출고배정·구매제안을 만들지 않습니다.",
+      }];
+    } else if (candidate.workspaceMode === PREVIEW_WORKSPACE_MODE && previousWorkspaceMode !== "ANALYZED") {
+      rebuildPreviewWorkspaceFromOrders(candidate);
+      candidate.inventoryApplicationMode = applicationMode;
+      candidate.inventorySourceReference = reference;
+    } else {
+      delete candidate.workspaceMode;
+      rebuildWorkspaceFromOrders(candidate);
+      candidate.inventoryApplicationMode = applicationMode;
+      candidate.inventorySourceReference = reference;
+    }
+    if (applicationMode !== "TOTAL_ONLY") delete candidate.inventoryPreviousWorkspaceMode;
+    candidate.inventoryOverrideDisposition = inventoryOverrideDisposition;
+    if (orderQSourceRecovery) candidate.orderQSourceRecovery = orderQSourceRecovery;
+    return candidate;
   }
 
   function rebuildWorkspaceFromOrders(workspace) {
@@ -3514,6 +3647,8 @@
     WORKSPACE_SCHEMA_VERSION,
     PREVIEW_WORKSPACE_MODE,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
+    INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION,
+    INVENTORY_APPLICATION_MODES,
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,
     SYSTEM_HISTORY_SCHEMA_VERSION,
     SUBSTITUTION_ORDER_SCHEMA_VERSION,
@@ -3551,6 +3686,7 @@
     setNoticeAcknowledged,
     analyze,
     createPreviewWorkspace,
+    replaceWorkspaceInventory,
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,

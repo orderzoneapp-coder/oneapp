@@ -245,6 +245,58 @@ function buildDataOpsSnapshot() {
   };
 }
 
+function buildInventorySnapshot(quantity = 10, fileHash = "d".repeat(64)) {
+  const canonical = {
+    schemaVersion: "ONEAPP_INVENTORY_SNAPSHOT_V1",
+    sourceType: "ORDEROPS_ERP",
+    basisDate: "2026-08-04",
+    basisDateStatus: "valid",
+    sourceFile: {
+      fileName: "창고별재고.xlsx",
+      sheetName: "재고",
+      sha256: fileHash,
+      rowCount: 1,
+    },
+    parser: { engineVersion: "3.27.0", mappingVersion: "shipping-inventory-columns/v1" },
+    warehouseScope: [{
+      warehouseKey: "warehouse:1",
+      label: "1창고",
+      sourceColumnIndex: 5,
+      role: "warehouseQuantity",
+    }],
+    columns: [
+      { sourceIndex: 0, header: "품목코드", normalizedHeader: "품목코드", role: "productCode", warehouseKey: "" },
+      { sourceIndex: 1, header: "품목명", normalizedHeader: "품목명", role: "productName", warehouseKey: "" },
+      { sourceIndex: 2, header: "규격", normalizedHeader: "규격", role: "specification", warehouseKey: "" },
+      { sourceIndex: 3, header: "단위", normalizedHeader: "단위", role: "unit", warehouseKey: "" },
+      { sourceIndex: 4, header: "수량", normalizedHeader: "수량", role: "calculatedQuantity", warehouseKey: "" },
+      { sourceIndex: 5, header: "1창고", normalizedHeader: "1창고", role: "warehouseQuantity", warehouseKey: "warehouse:1" },
+    ],
+    sourceMatrix: [
+      ["품목코드", "품목명", "규격", "단위", "수량", "1창고"],
+      ["000100", "테스트 상품", "", "EA", quantity, quantity],
+    ],
+    normalizedRows: [{
+      sourceRowNumber: 2,
+      productCode: "000100",
+      productName: "테스트 상품",
+      specification: "",
+      unit: "EA",
+      totalQuantity: quantity,
+      warehouseValues: [{ warehouseKey: "warehouse:1", sourceColumnIndex: 5, quantity }],
+    }],
+  };
+  const canonicalJson = JSON.stringify(canonical);
+  return {
+    schemaVersion: canonical.schemaVersion,
+    hashAlgorithm: "SHA-256",
+    hash: crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex"),
+    rowCount: canonical.normalizedRows.length,
+    cellCount: countScalarCells(canonical),
+    canonicalJson,
+  };
+}
+
 const spreadsheet = new MockSpreadsheet();
 const properties = new Map([
   ["ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN", SHIPPING_TOKEN],
@@ -420,6 +472,64 @@ assert.equal(
   JSON.stringify({ list: shippingList(), history: historySheet.snapshot() }),
   shippingStateBeforeSharedActions,
   "DataOps tokenless commit/get must not mutate Shipping plan history or index",
+);
+
+const shippingBeforeInventory = JSON.stringify({
+  list: shippingList(),
+  history: historySheet.snapshot(),
+});
+const inventorySnapshot = buildInventorySnapshot();
+for (const [action, extra] of [
+  ["inventory_snapshot_save", { snapshot: inventorySnapshot }],
+  ["inventory_snapshot_list", {}],
+  ["inventory_snapshot_get", { snapshotId: "INV-missing", revision: "INVREV-missing" }],
+]) {
+  assert.equal(post({ action, ...extra }).message, "SHIPPING_PLAN_ACCESS_DENIED", `${action} must reject a missing token`);
+  assert.equal(post({ action, token: "wrong", ...extra }).message, "SHIPPING_PLAN_ACCESS_DENIED", `${action} must reject a wrong token`);
+}
+const inventorySave = shippingPost("inventory_snapshot_save", { snapshot: inventorySnapshot });
+assert.equal(inventorySave.status, "success", inventorySave.message);
+assert.equal(inventorySave.data.deduplicated, false);
+assert.equal(inventorySave.data.hash, inventorySnapshot.hash);
+assert.equal(inventorySave.data.rowCount, inventorySnapshot.rowCount);
+assert.equal(inventorySave.data.cellCount, inventorySnapshot.cellCount);
+const duplicateInventorySave = shippingPost("inventory_snapshot_save", { snapshot: inventorySnapshot });
+assert.equal(duplicateInventorySave.status, "success", duplicateInventorySave.message);
+assert.equal(duplicateInventorySave.data.deduplicated, true);
+assert.equal(duplicateInventorySave.data.snapshotId, inventorySave.data.snapshotId);
+assert.equal(duplicateInventorySave.data.revision, inventorySave.data.revision);
+
+const inventorySnapshot2 = buildInventorySnapshot(20, "e".repeat(64));
+const inventorySave2 = shippingPost("inventory_snapshot_save", { snapshot: inventorySnapshot2 });
+assert.equal(inventorySave2.status, "success", inventorySave2.message);
+const inventoryPage1 = shippingPost("inventory_snapshot_list", { limit: 1 });
+assert.equal(inventoryPage1.status, "success", inventoryPage1.message);
+assert.equal(inventoryPage1.data.items.length, 1);
+assert.equal(inventoryPage1.data.items[0].snapshotId, inventorySave2.data.snapshotId);
+assert.equal(inventoryPage1.data.hasMore, true);
+assert.ok(inventoryPage1.data.nextCursor);
+const inventoryPage2 = shippingPost("inventory_snapshot_list", { limit: 1, cursor: inventoryPage1.data.nextCursor });
+assert.equal(inventoryPage2.status, "success", inventoryPage2.message);
+assert.equal(inventoryPage2.data.items.length, 1);
+assert.equal(inventoryPage2.data.items[0].snapshotId, inventorySave.data.snapshotId);
+assert.equal(inventoryPage2.data.hasMore, false);
+assert.equal(inventoryPage2.data.nextCursor, "");
+const invalidCursor = shippingPost("inventory_snapshot_list", { cursor: "INV1.999.badbadbadbadbadb" });
+assert.equal(invalidCursor.status, "error");
+assert.match(invalidCursor.message, /INVENTORY_SNAPSHOT_CURSOR_INVALID/);
+
+const inventoryGet = shippingPost("inventory_snapshot_get", {
+  snapshotId: inventorySave.data.snapshotId,
+  revision: inventorySave.data.revision,
+});
+assert.equal(inventoryGet.status, "success", inventoryGet.message);
+assert.equal(inventoryGet.data.metadata.hash, inventorySnapshot.hash);
+assert.equal(inventoryGet.data.snapshot.hash, inventorySnapshot.hash);
+assert.equal(JSON.parse(inventoryGet.data.snapshot.canonicalJson).normalizedRows[0].totalQuantity, 10);
+assert.equal(
+  JSON.stringify({ list: shippingList(), history: historySheet.snapshot() }),
+  shippingBeforeInventory,
+  "Inventory snapshot actions must not mutate Shipping plan history or index",
 );
 for (const payload of [
   { action: "initSync" },

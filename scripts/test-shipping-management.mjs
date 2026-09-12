@@ -806,7 +806,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.27.0");
+assert.equal(engine.ENGINE_VERSION, "3.28.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -1977,6 +1977,27 @@ const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
+assert.ok(
+  html.includes("inventory-snapshot.js?v=20260912-common-inventory-v1") &&
+  html.includes('id="inventoryMenuButton"') &&
+  html.includes('id="inventoryDataOpsLoadButton"'),
+  "canonical OrderOps must expose one inventory entry with ERP and DataOps actions",
+);
+for (const action of ["inventory_snapshot_save", "inventory_snapshot_list", "inventory_snapshot_get", "dataops_snapshot_get"]) {
+  assert.ok(html.includes(`postCloudAction("${action}"`), `common inventory action must be wired: ${action}`);
+}
+assert.ok(
+  html.includes('publicationState: "STAGED"') &&
+  html.includes('publicationState: "PUBLISHED"') &&
+  html.includes("inventoryApplyTransactionId"),
+  "inventory application must stage and publish verified recovery records",
+);
+assert.ok(
+  html.includes("await waitForInventoryApplyBoundary()") &&
+  html.includes("currentDigest !== baseDigest") &&
+  html.includes("현재 화면과 입력은 유지됩니다"),
+  "inventory application must preserve the latest workspace across concurrent edits and failures",
+);
 assert.match(html, /data-nexus-app-identity[^>]*>[\s\S]*?data-nexus-app-title>출고관리<\/span>/,
   "the canonical header must expose only the left-aligned 출고관리 app identity");
 assert.doesNotMatch(html, /brand-(?:badge|logo|logo-frame)|class="brand-mark"/,
