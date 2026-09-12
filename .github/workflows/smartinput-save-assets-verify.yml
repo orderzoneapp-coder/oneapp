@@ -1,0 +1,60 @@
+name: Verify deployed SmartInput save-fix assets
+on:
+  push:
+    branches: [codex/smartinput-save-assets-20260913]
+    paths: [.github/workflows/smartinput-save-assets-verify.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'orderzoneapp-coder/oneapp' && github.ref == 'refs/heads/codex/smartinput-save-assets-20260913'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ecde8f55711ed809949854cba1dc3b7ad339c73e
+          persist-credentials: false
+      - name: Verify production HTML and JavaScript against the exact deployed commit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          commit = 'ecde8f55711ed809949854cba1dc3b7ad339c73e'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == commit
+          assets = [
+              ('smartinput/index.html', ''),
+              ('smartinput/smartinput.js', '?v=0.11.59'),
+              ('smartinput/draft-save-coordinator.js', '?v=0.1.1'),
+          ]
+          results = []
+          for name, query in assets:
+              expected = Path(name).read_bytes().replace(b'\r\n', b'\n')
+              url = 'https://oneapp.orderz.co.kr/' + name + query
+              request = Request(url, headers={'User-Agent': 'ONEAPP-asset-verification', 'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity'})
+              with urlopen(request, timeout=30) as response:
+                  status = response.status
+                  actual = response.read().replace(b'\r\n', b'\n')
+              result = {
+                  'path': name, 'url': url, 'http_status': status, 'source_commit': commit,
+                  'expected_sha256': hashlib.sha256(expected).hexdigest(),
+                  'actual_sha256': hashlib.sha256(actual).hexdigest(),
+                  'bytes': len(actual), 'match': actual == expected,
+              }
+              print(json.dumps(result, ensure_ascii=False), flush=True)
+              assert status == 200 and actual == expected, f'Production asset mismatch: {name}'
+              if name.endswith('index.html'):
+                  assert b'smartinput.js?v=0.11.59' in actual
+              if name == 'smartinput/smartinput.js':
+                  assert b'draft-save-coordinator.js?v=0.1.1' in actual
+              results.append(result)
+          print('PASS: production SmartInput 0.11.59 and all three exact assets match the verified merge commit.')
+          Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(
+              '# SmartInput 0.11.59 production assets verified\n\n'
+              + 'Source commit: `' + commit + '`\n\n'
+              + '\n'.join('- `' + item['path'] + '`: HTTP 200, SHA-256 `' + item['actual_sha256'] + '`, exact match' for item in results)
+              + '\n\nRead-only static asset verification; no operational data or business records were accessed.\n'
+          )
+          PY
