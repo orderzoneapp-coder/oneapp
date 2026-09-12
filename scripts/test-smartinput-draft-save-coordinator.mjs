@@ -90,3 +90,6 @@ assert.deepEqual(recoverAutosaveDocuments([...compactRecords.values()]).values()
   { rows: [{ rowId: '1', quantity: 3 }] });
 
 console.log('SmartInput document journal/autosave coordinator tests passed.');
+
+// Run delayed-commit and stale-ACK regressions in the existing required CI entry.
+await import('./test-smartinput-save-races.mjs');

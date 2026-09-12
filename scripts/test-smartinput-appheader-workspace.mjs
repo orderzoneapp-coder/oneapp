@@ -20,7 +20,7 @@ assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
 assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.20"/, 'the external reference-popup CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.58"/, 'the external reference-popup behavior must use the current cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.59"/, 'the external reference-popup behavior must use the current cache-bust version');
 const appBarStart = html.indexOf('<header class="app-bar">');
 const appBarEnd = html.indexOf('</header>', appBarStart);
 const referenceOverviewPopupIndex = html.indexOf('id="referenceOverviewPopup"');

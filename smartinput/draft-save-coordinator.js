@@ -195,9 +195,15 @@ export function createDraftSaveCoordinator({ commit, cleanup = async () => {}, n
     },
     async flushDocument(docKey) {
       const state = stateFor(docKey);
+      // Capture the leave boundary; edits queued later keep their own save tickets.
+      const targetVersion = state.nextVersion;
       if (state.inFlight) await state.inFlight.catch(() => undefined);
-      if (state.pending) await pump(docKey, state);
-      if (state.durableVersion < state.nextVersion) throw new Error('SMARTINPUT_AUTOSAVE_FLUSH_INCOMPLETE');
+      while (state.durableVersion < targetVersion) {
+        // Completing one write can synchronously start its successor and clear pending.
+        if (state.inFlight) await state.inFlight;
+        else if (state.pending) await pump(docKey, state);
+        else throw new Error('SMARTINPUT_AUTOSAVE_FLUSH_INCOMPLETE');
+      }
       return { docKey, durableVersion: state.durableVersion };
     },
     async flushWorkspace() {
