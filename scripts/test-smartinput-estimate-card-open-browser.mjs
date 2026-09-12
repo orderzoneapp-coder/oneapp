@@ -410,6 +410,42 @@ try {
     scroll.scrollTop=Math.min(96,Math.max(0,scroll.scrollHeight-scroll.clientHeight));
     return {scrollTop:scroll.scrollTop,selection:[input.selectionStart,input.selectionEnd]};
   })()`);
+  await evaluate(client, `(() => {
+    const selector='[data-row-id="EST-A-ROW-5"] [data-field="quantity"]';
+    const trace=[];
+    const snapshot=(type,input,extra={})=>trace.push({
+      type,
+      time:Math.round(performance.now()*10)/10,
+      connected:Boolean(input?.isConnected),
+      active:document.activeElement===input,
+      selection:[input?.selectionStart,input?.selectionEnd],
+      ...extra
+    });
+    const nativeSelect=HTMLInputElement.prototype.select;
+    HTMLInputElement.prototype.select=function(...args){
+      const tracked=this.matches(selector);
+      if(tracked)snapshot('select-before',this,{stack:String(new Error().stack||'')});
+      const result=Reflect.apply(nativeSelect,this,args);
+      if(tracked)snapshot('select-after',this);
+      return result;
+    };
+    document.addEventListener('pointerdown',event=>{
+      if(event.target.closest('[data-estimate-id="EST-B"]'))snapshot('pointerdown',document.querySelector(selector));
+    },{capture:true,once:true});
+    document.addEventListener('focusin',event=>{
+      if(event.target.matches?.(selector))snapshot('focusin',event.target);
+    },true);
+    document.addEventListener('focusout',event=>{
+      if(event.target.matches?.(selector))snapshot('focusout',event.target);
+    },true);
+    document.addEventListener('selectionchange',()=>{
+      const input=document.querySelector(selector);
+      if(input&&document.activeElement===input)snapshot('selectionchange',input);
+    });
+    snapshot('trace-start',document.querySelector(selector));
+    window.__estimateSelectionTrace={trace,nativeSelect};
+    return true;
+  })()`);
   const estimatesBeforeFailure = canonicalEstimates(await readStore(client, 'estimates'));
   await beginWriteAudit(client);
   await installOneShotRenderFailure(client);
@@ -436,15 +472,21 @@ try {
       searchHidden:document.querySelector('#inputListSearchPanel')?.hidden,
       selection:[input?.selectionStart,input?.selectionEnd],
       scrollTop:document.querySelector('#tableScroll')?.scrollTop,
-      renderFailures:window.__estimateCardRenderFailureCount
+      renderFailures:window.__estimateCardRenderFailureCount,
+      selectionTrace:window.__estimateSelectionTrace?.trace||[]
     };
+  })()`);
+  await evaluate(client, `(() => {
+    if(window.__estimateSelectionTrace?.nativeSelect)HTMLInputElement.prototype.select=window.__estimateSelectionTrace.nativeSelect;
+    return true;
   })()`);
   assert.equal(recoveryAfter.quantity, '37', 'trial-render failure must restore the previous unsaved cell edit');
   assert.equal(await evaluate(client, `document.querySelector('#customerInput')?.value`), '세션 편집 거래처',
     'trial-render failure must restore the previous unsaved customer edit');
   assert.equal(recoveryAfter.search, 'A-CODE', 'trial-render failure must restore the previous estimate search');
   assert.equal(recoveryAfter.searchHidden, false, 'trial-render failure must restore the open search panel');
-  assert.deepEqual(recoveryAfter.selection, recoveryBefore.selection, 'trial-render failure must restore the cell selection');
+  assert.deepEqual(recoveryAfter.selection, recoveryBefore.selection,
+    `trial-render failure must restore the cell selection; trace=${JSON.stringify(recoveryAfter.selectionTrace)}`);
   assert.equal(recoveryAfter.scrollTop, recoveryBefore.scrollTop, 'trial-render failure must restore table scroll');
   assert.equal(recoveryAfter.renderFailures, 1, 'the injected failure must occur in the candidate trial render exactly once');
   assert.equal(failureAudit.localDrafts.filter(draft => draft?.modes?.estimate?.catalogRecordId === 'EST-B').length, 0,
