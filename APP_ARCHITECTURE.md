@@ -301,6 +301,8 @@ Production files must not be reorganized into folders without first updating and
 
 **6개 업무 앱 작업영역 계약**
 
+- OrderOps 창고재고는 분석 전·후 같은 열 모델을 사용한다. `shipping:inventory:purchase`(구분 다음)와 `shipping:inventory:order-information`(적요 앞)을 기본 표시하고 명시 열 숨김/순서를 존중한다. 정상 재고의 구매처 입력·이력·분석 전환 보존과 주문 정보 배지를 재사용하며, 재고 미적용은 빈 상태, `TOTAL_ONLY`는 구매 입력/업로드 차단을 유지한다.
+
 - `Master.html`, `customer-master/index.html`, `SmartParser.html`, `MerchOps.html`, `DataOps.html`, `orderops/list.html`은 좌측 보조·중앙 핵심·우측 결과의 세 영역을 사용한다. 중앙은 조회·입력·편집·검토·저장·출력까지 시작과 완료가 이어지는 핵심 업무를 소유한다.
 - OrderOps 이외 다섯 앱의 좌측은 현재 선택 행과 판단에 필요한 기준정보를 항상 표시하는 보조 영역이다. 사용자가 닫을 수 없고, 검색·필터·저장·복구 같은 핵심 작업을 좌측에만 두지 않는다. OrderOps는 승인된 오더큐 UI/UX v1.2의 파일 준비·명시 적용 패널을 사용하며 닫기·재열기를 허용한다.
 - 우측은 처리 결과, 검산, 이력과 다음 단계 진입을 제공한다. 닫기와 다시 열기를 허용하고 닫을 때 확보된 폭은 중앙으로 돌려주되, 저장된 우측 폭은 다음 열기 때 복원한다. 공통 레이아웃은 사용자 지정 `hidden`·`aria-hidden` 또는 앱의 명시적 열림 class를 상태 권위로 사용하며, 닫힘 상태가 만든 `display:none` 계산 결과를 다음 열림 판정의 입력으로 사용하지 않는다.
