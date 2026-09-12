@@ -12,7 +12,7 @@ const evidence = resolve(process.env.ORDEROPS_EVIDENCE_DIR || join(tmpdir(), 'or
 const baseline = process.env.ORDEROPS_INVENTORY_BASELINE_REF;
 const source = baseline ? execFileSync('git',['show',`${baseline}:orderops/list.html`],{cwd:root,encoding:'utf8'}) : readFileSync(join(root,'orderops/list.html'),'utf8');
 // Local response-only observability; uploads, edits, analysis and DataOps loading use UI handlers.
-const html = source.replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)', 'globalThis.__inventoryColumnTest={state,renderResults}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)')
+const html = source.replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)', 'globalThis.__inventoryColumnTest={state,renderResults,getPreviewDefinitions}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)')
   .replace('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js','/customer-master/vendor/xlsx.full.min.js');
 const report = { startedAt:new Date().toISOString(), head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(), baseline:baseline||null, htmlSha256:createHash('sha256').update(source).digest('hex'), checks:[], errors:[], blocked:[], result:'running' };
 mkdirSync(evidence,{recursive:true});
@@ -48,11 +48,56 @@ try {
   async function upload(kind,matrix){const name=`columns-${kind}.xlsx`;await ev(`(()=>{const w=XLSX.utils.book_new();XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'${kind==='orders'?'주문현황':'창고별재고'}');const t=new DataTransfer();t.items.add(new File([XLSX.write(w,{type:'array',bookType:'xlsx'})],'${name}'));const input=document.querySelector('#${kind}Input');Object.defineProperty(input,'files',{configurable:true,value:t.files});input.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);await until(()=>ev(`Boolean([...document.querySelectorAll('#prepareFileList button')].find(b=>b.textContent.includes('${name}'))?.querySelector('[data-prepare-state="READY"]'))`),name+' READY');await click('#prepareApplyButton');await until(()=>ev(`Boolean([...document.querySelectorAll('#prepareFileList button')].find(b=>b.textContent.includes('${name}'))?.querySelector('[data-prepare-state="APPLIED"]'))`),name+' APPLIED');}
   const purchase='shipping:inventory:purchase', info='shipping:inventory:order-information';
   async function columns(label){const m=await ev(`(()=>{const t=document.querySelector('table.preview-inventory');return {headers:[...t.querySelectorAll('thead .column-header-label')].map(n=>n.textContent),keys:[...t.querySelectorAll('col')].map(n=>n.dataset.columnKey),information:[...t.querySelectorAll('td.information-value')].map(n=>n.textContent.trim()),editors:[...t.querySelectorAll('.purchase-input')].map(n=>({code:n.dataset.purchaseCode,value:n.value}))}})()`);assert.equal(m.keys.filter(k=>k===purchase).length,1,label+' purchase unique');assert.equal(m.keys.filter(k=>k===info).length,1,label+' info unique');assert.equal(m.headers.indexOf('구매'),m.headers.indexOf('구분')+1);assert.equal(m.headers.indexOf('정보'),m.headers.indexOf('적요')-1);report.checks.push({label,...m});return m;}
+  // Keep legacy meanings distinct: inventory has aggregate order / remaining;
+  // order lines have product aggregate (합계) / individual quantity (주문).
+  async function quantityCells(label, tab, expected) {
+    const roles = tab === 'inventory'
+      ? ['orderQuantity', 'calculatedQuantity']
+      : ['productAggregateQuantity', 'orderQuantity'];
+    const labels = tab === 'inventory' ? ['주문', '잔량'] : ['합계', '주문'];
+    const result = await ev(`(() => {
+      const {state, getPreviewDefinitions} = __inventoryColumnTest;
+      const preview = getPreviewDefinitions(state.workspace)[${JSON.stringify(tab)}];
+      const table = document.querySelector('table.preview-${tab}');
+      const keys = [...table.querySelectorAll('col')].map(n => n.dataset.columnKey);
+      const headers = [...table.querySelectorAll('thead .column-header-label')].map(n => n.textContent);
+      const columns = ${JSON.stringify(roles)}.map(role => preview.columns.filter(c => c.role === role));
+      const rows = [...table.querySelectorAll('tbody tr[data-product-code]')]
+        .filter(row => row.dataset.productCode).map(row => ({
+          code: row.dataset.productCode,
+          values: columns.map(matches => {
+            const index = keys.indexOf(matches[0]?.key);
+            const cell = index < 0 ? null : row.children[index];
+            return cell ? (cell.querySelector('input')?.value ?? cell.textContent.trim()) : null;
+          })
+        }));
+      return {keys, headers, columns, rows};
+    })()`);
+    result.columns.forEach((matches, index) => {
+      assert.equal(matches.length, 1, `${label}: one ${roles[index]} model column`);
+      const column = matches[0];
+      assert.equal(column.header, labels[index], `${label}: legacy header`);
+      assert.equal(column.numeric, true, `${label}: numeric column`);
+      assert.equal(result.keys.filter(key => key === column.key).length, 1, `${label}: visible stable key`);
+      assert.equal(result.headers.filter(header => header === labels[index]).length, 1, `${label}: unique visible header`);
+      if (tab === 'inventory' && index === 0) assert.equal(column.key, 'shipping:inventory:order-quantity');
+    });
+    // Blank aggregate cells must stay blank, not become another copy or zero.
+    const values = result.rows.map(row => [row.code, ...row.values.map(value => {
+      assert.notEqual(value, null, `${label}: rendered quantity cell exists`);
+      return value === '' ? '' : Number(String(value).replace(/,/g, ''));
+    })]);
+    assert.deepEqual(values.slice().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      expected.slice().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), `${label}: displayed quantities`);
+    report.checks.push({label, quantityColumns: result.columns, quantityRows: values});
+  }
   await upload('inventory',inventory);await click('[data-preview="inventory"]');
   const only=await columns('inventory-only before analysis');check('inventory-only information blank and purchase editable',only.information.every(s=>s==='')&&only.editors.length===3);
+  await quantityCells('inventory-only quantities', 'inventory', [['INV-001',0,4],['INV-002',0,20],['INV-003',0,8]]);
   check('no orders cannot create purchase upload',await ev('ShippingManagementEngine.getFinalPurchaseUploadSelection(__inventoryColumnTest.state.workspace).included.length===0 && document.querySelector("#downloadButton").disabled'));
   await upload('orders',orders);await click('[data-preview="inventory"]');
   const before=await columns('orders + inventory before analysis');check('order information customer / quantity / unit price',before.information.some(s=>s.includes('거래처 A')&&s.includes('10')&&s.includes('1,000')));
+  await quantityCells('pre-analysis inventory quantities', 'inventory', [['INV-001',10,-6],['INV-002',10,10],['INV-003',0,8]]);
   check('before analysis official outputs remain blocked',await ev('document.querySelector("#downloadButton").disabled && document.querySelector("#headerCloudSaveButton").disabled && ShippingManagementEngine.getFinalPurchaseUploadSelection(__inventoryColumnTest.state.workspace).included.length===0'));
   const inputPurchase=async(code,value)=>ev(`(()=>{const n=document.querySelector('.purchase-input[data-purchase-code="${code}"]');n.focus();n.value=${JSON.stringify(value)};n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
   await inputPurchase('INV-001','분석전 구매처');await inputPurchase('INV-002','충분 구매처');await inputPurchase('INV-003','재고전용 구매처');
@@ -66,6 +111,7 @@ try {
   for(const theme of ['light','dark']){await ev(`document.documentElement.dataset.nexusUiTheme='${theme}';true`);await shot('before-analysis-'+theme);await informationShot('before-analysis-information-'+theme);}
   await click('#analyzeButton');await until(()=>ev('__inventoryColumnTest.state.workspace.workspaceMode!==ShippingManagementEngine.PREVIEW_WORKSPACE_MODE && !document.querySelector("#downloadButton").disabled'),'analysis complete');await click('[data-preview="inventory"]');
   const after=await columns('after analysis');check('analysis retains purchase inputs',after.editors.find(r=>r.code==='INV-001')?.value==='분석전 구매처');
+  await quantityCells('post-analysis inventory quantities', 'inventory', [['INV-001',10,-6],['INV-002',10,10],['INV-003',0,8]]);
   for(const theme of ['light','dark']){await ev(`document.documentElement.dataset.nexusUiTheme='${theme}';true`);await informationShot('after-analysis-information-'+theme);}
   const selection=await ev('ShippingManagementEngine.getFinalPurchaseUploadSelection(__inventoryColumnTest.state.workspace)');assert.deepEqual(selection.included.map(r=>[r.productCode,r.purchaseNeed]),[['INV-001',6]]);check('F10 sufficient and inventory-only rows excluded',!selection.included.some(r=>['INV-002','INV-003'].includes(r.productCode)));
   // Settings use actual menu and native header drag events with the stable keys.
@@ -90,10 +136,41 @@ try {
   await click('#inventoryMenuButton');await click('#inventoryDataOpsLoadButton');await until(()=>ev('__inventoryColumnTest.state.workspace.inventoryApplicationMode==="TOTAL_ONLY" && !__inventoryColumnTest.state.inventoryApplyBusy'),'TOTAL_ONLY apply');await click('[data-preview="inventory"]');
   const total=await columns('TOTAL_ONLY');check('TOTAL_ONLY purchase read only and upload empty',total.editors.length===0&&await ev('ShippingManagementEngine.getFinalPurchaseUploadSelection(__inventoryColumnTest.state.workspace).included.length===0'));
   check('TOTAL_ONLY information read only',await ev(`document.querySelectorAll('.preview-inventory button[data-substitute-order-row],.preview-inventory [data-substitution-target-product]').length===0 && document.querySelector('.preview-inventory .order-information-badge').textContent.includes('거래처')`));
+  await quantityCells('TOTAL_ONLY quantities stay readable', 'inventory', [['INV-002',20,-13]]);
   await shot('total-only');
   await click('#workbenchResetButton');await until(()=>ev('!__inventoryColumnTest.state.workspace'),'reset synthetic work');
   await upload('orders',orders);await click('[data-preview="inventory"]');
   check('unapplied inventory stays empty without fake product rows or purchase inputs',await ev(`document.querySelectorAll('.preview-inventory tr[data-product-code]:not([data-product-code=""]),.preview-inventory .purchase-input').length===0 && __inventoryColumnTest.state.workspace.inventory.length===0 && !__inventoryColumnTest.state.workspace.previewDataState.inventory && document.querySelector('#previewTable').textContent.includes('재고 자료 미적용')`));
-  assert.deepEqual(report.errors,[]);report.result='passed';console.log('PASS inventory purchase/info columns',JSON.stringify(report.checks));
+  // Three customers ordering one product: 합계 is 30, never money or stock 18.
+  // All mutations below are real UI operations inside the isolated fixture profile.
+  await click('#workbenchResetButton');await until(()=>ev('!__inventoryColumnTest.state.workspace'),'reset aggregate fixture');
+  const aggregateOrders = [orders[0], ...[10,8,12].map((quantity,index) => {
+    const row = [...orders[1]];
+    row[0] = `2026/09/13-10${index}`; row[7] = quantity;
+    row[10] = quantity * 1000; row[13] = `합계 거래처 ${index+1}`; row[14] = `TOTAL-${index}`;
+    return row;
+  })];
+  const aggregateInventory = inventory.map(row => [...row]);
+  aggregateInventory[1][5] = 18; aggregateInventory[1][6] = 18;
+  await upload('inventory',aggregateInventory);await upload('orders',aggregateOrders);
+  const lineQuantities = [['INV-001',30,10],['INV-001','',8],['INV-001','',12]];
+  await click('[data-preview="allocations"]');
+  await quantityCells('pre-analysis order aggregate is sum of order quantities', 'allocations', lineQuantities);
+  await shot('before-analysis-order-aggregate');
+  await click('[data-preview="inventory"]');
+  await quantityCells('three-customer inventory aggregate / remaining', 'inventory', [['INV-001',30,-12],['INV-002',0,20],['INV-003',0,8]]);
+  await shot('before-analysis-inventory-order-remaining');
+  check('quantity displays do not enable preview output', await ev('document.querySelector("#downloadButton").disabled && document.querySelector("#headerCloudSaveButton").disabled'));
+  await inputPurchase('INV-001','합계 검증 구매처');
+  await click('#analyzeButton');await until(()=>ev('__inventoryColumnTest.state.workspace.workspaceMode!==ShippingManagementEngine.PREVIEW_WORKSPACE_MODE && !document.querySelector("#downloadButton").disabled'),'aggregate analysis complete');
+  await click('[data-preview="allocations"]');
+  await quantityCells('post-analysis order aggregate unchanged', 'allocations', lineQuantities);
+  await shot('after-analysis-order-aggregate');
+  await click('[data-preview="inventory"]');
+  await quantityCells('post-analysis inventory aggregate / remaining unchanged', 'inventory', [['INV-001',30,-12],['INV-002',0,20],['INV-003',0,8]]);
+  check('aggregate fixture preserves purchase input', await ev(`document.querySelector('.purchase-input[data-purchase-code="INV-001"]').value==='합계 검증 구매처'`));
+  assert.deepEqual(await ev('ShippingManagementEngine.getFinalPurchaseUploadSelection(__inventoryColumnTest.state.workspace).included.map(row=>[row.productCode,row.purchaseNeed])'), [['INV-001',12]], 'F10 remains shortage 12, not order 30 or stock 18');
+  await shot('after-analysis-inventory-order-remaining');
+  assert.deepEqual(report.errors,[]);report.result='passed';console.log('PASS inventory purchase/info/order/remaining and order aggregate columns',JSON.stringify(report.checks));
 }catch(error){report.error=error.stack;report.result='failed';console.error(error);process.exitCode=1;}
 finally{report.finishedAt=new Date().toISOString();writeFileSync(join(evidence,'result.json'),JSON.stringify(report,null,2));socket?.close();if(browser?.pid){if(process.platform==='win32')spawnSync('taskkill',['/pid',String(browser.pid),'/t','/f'],{windowsHide:true,stdio:'ignore'});else{spawnSync('pkill',['-TERM','-P',String(browser.pid)],{stdio:'ignore'});browser.kill('SIGTERM');}}server.closeAllConnections();await new Promise(r=>server.close(r));}
