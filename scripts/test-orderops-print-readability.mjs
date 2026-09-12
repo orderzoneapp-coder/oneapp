@@ -49,9 +49,12 @@ try {
   const orders=[['일자-No.','담당','창고','단위','품목코드','품목명','규격','수량','재고','단가','공급가액','적요','적요1','거래처','그룹']];
   const managers=['민트담당','노랑담당','분홍담당','진한색담당',''];
   const palette={'민트담당':'#ccfbf1','노랑담당':'#fef3c7','분홍담당':'#fce7f3','진한색담당':'#102030'};
+  const units=['BOX','EA','소분','kg','1kg','단',''];
+  const unitByCode=new Map();
   for(let group=0;group<30;group++){
     const code=`PRINT-${String(group+1).padStart(3,'0')}`;
-    const unit=['BOX','EA','소분','kg'][group%4];
+    const unit=units[group%units.length];
+    unitByCode.set(code,unit);
     inventory.push(['Yes',code,unit,`인쇄 검증상품 ${group+1}`,unit,18,10,8,0]);
     [10,8,12].forEach((quantity,line)=>{
       orders.push([`2026/09/13-${String(group*3+line+1).padStart(3,'0')}`,managers[(group*3+line)%managers.length],'1창고',unit,code,`인쇄 검증상품 ${group+1}`,unit,quantity,0,1000,quantity*1000,'일반 적요',line===1?'':'전달사항',`거래처 ${line+1}`,`G-${group}-${line}`]);
@@ -76,7 +79,7 @@ try {
   const captureState=()=>ev(`(()=>{const {state:s}=__inventoryColumnTest;return JSON.stringify({workspace:s.workspace,search:s.searchQuery,sort:s.sortSettings,hidden:s.hiddenColumnSettings,order:s.columnOrderSettings,colors:s.managerColorSettings});})()`);
   async function metrics(){return ev(`(()=>{
     const host=document.querySelector('#previewTable'),table=host.querySelector('table');
-    const read=n=>{const c=getComputedStyle(n);return {text:n.textContent.trim(),color:c.color,background:c.backgroundColor,shadow:c.boxShadow};};
+    const read=n=>{const c=getComputedStyle(n);return {text:n.textContent.trim(),color:c.color,textFill:c.webkitTextFillColor,background:c.backgroundColor,shadow:c.boxShadow};};
     return {theme:document.documentElement.dataset.nexusUiTheme,headers:[...table.querySelectorAll('thead .column-header-label')].map(n=>n.textContent),
       rows:[...table.querySelectorAll('tbody tr')].map(tr=>({code:tr.dataset.productCode,manager:tr.classList.contains('manager-color-row'),cells:[...tr.cells].map(td=>({...read(td),children:[...td.querySelectorAll('input,span,button')].map(read)}))})),
       body:document.documentElement.scrollWidth,viewport:innerWidth,
@@ -90,21 +93,34 @@ try {
     check(`${theme}: per-product order sum is once, not duplicated`,m.rows.filter(r=>r.cells[0].text==='30').length===30&&m.rows.filter(r=>r.cells[0].text==='').length===60);
     await shot('order-table-'+theme);
   }
+  const rowColorsCorrect=rows=>rows.every(row=>{
+    assert.ok(unitByCode.has(row.code),'known source row for color assertion');
+    const expected=unitByCode.get(row.code)==='BOX'?'rgb(0, 0, 0)':'rgb(128, 0, 0)';
+    return row.cells.every(cell=>[cell,...(cell.children||[])].every(node=>node.color===expected&&node.textFill===expected));
+  });
   const dark=report.dark;
   check('dark neutral body uses gray surface',dark.rows.filter(r=>!r.manager).every(r=>r.cells.every(c=>c.background==='rgb(209, 213, 219)')));
-  check('dark complete rows and editors use black text',dark.rows.every(r=>r.cells.every(c=>c.color==='rgb(0, 0, 0)'&&c.children.every(n=>n.color==='rgb(0, 0, 0)'))));
+  check('dark BOX rows are black; every other unit row and editor is red',rowColorsCorrect(dark.rows));
   // Resolve color-mix to sRGB with the browser's canvas rather than assuming
   // getComputedStyle serializes every color as rgb().
   const contrasts=await ev(`(()=>{
     const ctx=document.createElement('canvas').getContext('2d');
     const rgb=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data].slice(0,3);};
     const lum=color=>rgb(color).map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;}).reduce((s,x,i)=>s+x*[.2126,.7152,.0722][i],0);
-    return [...document.querySelectorAll('#previewTable tbody td')].map(n=>{const c=getComputedStyle(n),a=lum(c.color),b=lum(c.backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});
+    return [...document.querySelectorAll('#previewTable tbody td')].map(n=>{const c=getComputedStyle(n),a=lum(c.color),b=lum(c.backgroundColor);return {ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),box:n.closest('tr').classList.contains('box-unit-row')};});
   })()`);
-  report.minimumContrast=Math.min(...contrasts);check('dark body contrast at least 7:1 for every cell and assigned palette',report.minimumContrast>=7);
+  // User-requested red text: WCAG AA 4.5:1; retain the 7:1 check for black BOX text.
+  // https://www.w3.org/TR/WCAG22/#contrast-minimum
+  report.minimumContrast=Math.min(...contrasts.map(c=>c.ratio));
+  report.minimumBoxContrast=Math.min(...contrasts.filter(c=>c.box).map(c=>c.ratio));
+  check('dark red/black text contrast at least 4.5:1 for every cell and assigned palette',report.minimumContrast>=4.5);
+  check('dark black BOX text retains at least 7:1 contrast',report.minimumBoxContrast>=7);
   check('manager identification remains distinct',new Set(dark.rows.filter(r=>r.manager).map(r=>r.cells[0].background)).size>=4&&dark.rows.filter(r=>r.manager).every(r=>r.cells[0].shadow!=='none'));
-  await ev(`document.querySelector('#previewTable .order-edit-input').focus();true`);
-  const focus=await metrics();check('focused row keeps black foreground',focus.rows.every(r=>r.cells.every(c=>c.color==='rgb(0, 0, 0)')));
+  for(let index=0;index<units.length;index++){
+    const code=`PRINT-${String(index+1).padStart(3,'0')}`;
+    await ev(`(()=>{const selector='#previewTable tr[data-product-code="${code}"]';document.querySelector(selector+' td').click();document.querySelector(selector+' .order-edit-input').focus();return true;})()`);
+    check(`selected/focused ${units[index]||'blank unit'} row keeps its unit text color`,rowColorsCorrect((await metrics()).rows));
+  }
   for(const width of [1366,1024,819,390]){
     await send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
     await ev('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
@@ -120,8 +136,9 @@ try {
   for(const background of [true,false]){
     await click('#printButton');
     await send('Emulation.setEmulatedMedia',{media:'print'});
-    const p=await ev(`(()=>{const t=document.querySelector('#printArea table'),s=getComputedStyle(t),read=n=>{const c=getComputedStyle(n);return {text:n.textContent.trim(),position:c.position,borders:['Top','Right','Bottom','Left'].map(side=>({width:parseFloat(c['border'+side+'Width']),style:c['border'+side+'Style'],color:c['border'+side+'Color']})),background:c.backgroundColor,shadow:c.boxShadow};};return {collapse:s.borderCollapse,spacing:s.borderSpacing,headers:[...t.querySelectorAll('thead th')].map(read),rows:[...t.querySelectorAll('tbody tr')].map(tr=>({manager:tr.classList.contains('manager-color-row'),cells:[...tr.cells].map(read)}))};})()`);
+    const p=await ev(`(()=>{const t=document.querySelector('#printArea table'),s=getComputedStyle(t),read=n=>{const c=getComputedStyle(n);return {text:n.textContent.trim(),color:c.color,textFill:c.webkitTextFillColor,position:c.position,borders:['Top','Right','Bottom','Left'].map(side=>({width:parseFloat(c['border'+side+'Width']),style:c['border'+side+'Style'],color:c['border'+side+'Color']})),background:c.backgroundColor,shadow:c.boxShadow};};return {collapse:s.borderCollapse,spacing:s.borderSpacing,headers:[...t.querySelectorAll('thead th')].map(read),rows:[...t.querySelectorAll('tbody tr')].map(tr=>({code:tr.dataset.productCode,manager:tr.classList.contains('manager-color-row'),cells:[...tr.cells].map(read)}))};})()`);
     report['print-'+background]=p;
+    check(`print ${background}: BOX black / every non-BOX unit red`,rowColorsCorrect(p.rows));
     const pdf=await send('Page.printToPDF',{printBackground:background,preferCSSPageSize:true,displayHeaderFooter:false});
     writeFileSync(join(evidence,`order-table-background-${background?'on':'off'}.pdf`),Buffer.from(pdf.data,'base64'));
     await ev(`dispatchEvent(new Event('afterprint'));true`);
