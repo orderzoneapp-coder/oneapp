@@ -31,7 +31,7 @@ import {
   createAutosaveDocumentKey,
   createDraftSaveCoordinator,
   recoverAutosaveDocuments
-} from './draft-save-coordinator.js?v=0.1.0';
+} from './draft-save-coordinator.js?v=0.1.1';
 import {
   DECISION as MAPPING_DECISION,
   SESSION_STATUS as MAPPING_SESSION_STATUS,
@@ -683,7 +683,7 @@ function queueDocumentCheckpoint(mode = state.draft.activeMode, { trackDirty = t
     state.autosaveAvailable = true;
     state.autosaveUpdatedAt = new Date().toISOString();
     updateAutosaveButton();
-    setSaveState('자동저장됨', 'saved');
+    if (!state.draftDirty) setSaveState('자동저장됨', 'saved');
     return result;
   }).catch(() => {
     state.autosaveLoading = false;
