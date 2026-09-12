@@ -806,9 +806,9 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.28.1");
+assert.equal(engine.ENGINE_VERSION, "3.29.0");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
@@ -1432,11 +1432,10 @@ const purchaseShapeAfterOverride = XLSX.utils.sheet_to_json(
   workbookTools.buildPurchaseUploadWorkbook(purchaseContractWorkspace, XLSX).Sheets["구매입력"],
   { header: 1, raw: true, defval: null },
 );
-assert.deepEqual(
-  purchaseShapeAfterOverride,
-  purchaseShapeBeforeOverride,
-  "inventory overrides must not change the purchase-upload workbook shape or meaning",
-);
+assert.deepEqual(purchaseShapeAfterOverride.map(row=>row.filter((_,index)=>index!==11)), purchaseShapeBeforeOverride.map(row=>row.filter((_,index)=>index!==11)),
+  "approved F10 correction changes quantity only, preserving purchase form and other fields");
+assert.equal(purchaseShapeAfterOverride[1][11], engine.getFinalPurchaseUploadSelection(purchaseContractWorkspace).included[0].purchaseNeed,
+  "purchase quantity follows effective inventory overrides, not the legacy persisted quantity");
 
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
@@ -1529,7 +1528,7 @@ assert.deepEqual(
     ["s", "상품 000100"], ["s", "EA"],
   ],
 );
-assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 2]);
+assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 12], "F10 uses current total-warehouse shortage, not the fixture's stale purchase quantity 2");
 assert.deepEqual([purchaseUploadSheet.M2.t, purchaseUploadSheet.M2.v], ["n", 0]);
 assert.equal(purchaseUploadSheet.L2.s.numFmt, "#,##0");
 assert.equal(purchaseUploadSheet.M2.s.numFmt, "#,##0");
@@ -2163,7 +2162,7 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.order-view-presets.v1',
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
-  'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "ledger", "inventory", "purchases", "sales"])',
+  'const VIEW_PRESET_TABS = new Set(["readiness", "allocations", "procurement", "ledger", "inventory", "purchases", "sales"])',
   'columnWidths = migrateReadinessKeyedRecord(columnWidths)',
   'columnOrder = migrateReadinessKeyList(columnOrder)',
   'hiddenColumns = migrateReadinessKeyList(hiddenColumns)',

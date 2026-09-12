@@ -279,6 +279,33 @@ jobs:
           node scripts/test-smartinput-v2-unresolved-review-ui.mjs
           node scripts/test-smartinput-v2-unresolved-review-ui-browser.mjs
 
+  validate-orderops-workbench:
+    name: Validate OrderOps workbench v1.2
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify purchase workbook and reconciliation contracts
+        run: |
+          node scripts/test-orderops-workbench-purchase-selection.mjs
+          node scripts/test-orderops-workbench-contract.mjs
+      - name: Verify isolated browser transactions and process-crash recovery
+        env:
+          ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench
+        run: node scripts/test-orderops-workbench-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orderops-workbench-v12
+          path: test-artifacts/orderops-workbench
+          if-no-files-found: ignore
+          retention-days: 14
+
   validate-initial-input-layout:
     name: Validate SmartInput initial input layout
     runs-on: ubuntu-latest

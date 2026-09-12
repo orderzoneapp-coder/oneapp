@@ -2,6 +2,7 @@ import { readShipmentOrderCandidate } from '../orderq/shipment-order-read-adapte
 import { buildShipmentResult, buildShipmentReversal, SHIPMENT_STATUS } from './shipment-result-core.js?v=1.0.0';
 import { commitShipmentBundle, listShipmentDocumentsByOrder, readShipmentDocument } from './shipment-result-repository.js?v=1.0.0';
 import { readShipmentResultsByOrder } from './shipment-result-read-adapter.js?v=1.0.1';
+import { shipmentWorkbenchBlockers } from './workbench-contract.js?v=1';
 
 export class ShipmentOrderConflictError extends Error {
   constructor(result) {
@@ -21,10 +22,19 @@ async function verifiedSnapshot(orderId, expectedOrderRevision, expectedSnapshot
 
 export async function confirmShipment(command = {}) {
   const snapshot = await verifiedSnapshot(command.orderId, command.expectedOrderRevision, command.expectedSnapshotHash);
+  const resultState = await readShipmentResultsByOrder(command.orderId);
+  const blockers = shipmentWorkbenchBlockers({ snapshot, workspace: command.workspace, results: resultState });
+  if (blockers.length) {
+    const error = new Error(blockers.join(' · '));
+    error.code = 'SHIPMENT_WORKBENCH_REVIEW_REQUIRED';
+    throw error;
+  }
   const existingBundles = await listShipmentDocumentsByOrder(command.orderId);
   const priorBundles = existingBundles.filter(existing => existing.document.commandId !== command.commandId);
   const bundle = buildShipmentResult({ ...command, snapshot, existingBundles: priorBundles, intent: SHIPMENT_STATUS.CONFIRMED });
   await verifiedSnapshot(command.orderId, snapshot.orderRevision, snapshot.snapshotHash);
+  const finalBlockers = shipmentWorkbenchBlockers({ snapshot, workspace: command.workspace, results: await readShipmentResultsByOrder(command.orderId) });
+  if (finalBlockers.length) throw new Error(finalBlockers.join(' · '));
   const committed = await commitShipmentBundle(bundle);
   const verification = await readShipmentResultsByOrder(command.orderId);
   return { ...committed, verification };

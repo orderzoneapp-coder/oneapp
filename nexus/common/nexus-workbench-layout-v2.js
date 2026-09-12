@@ -13,6 +13,9 @@
   const safeNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   const storageKey = (appId) => `nexus:workbench-layout:${appId}:v2`;
+  const setHidden = (element, value) => { if (element.hidden !== value) element.hidden = value; };
+  const setAttribute = (element, name, value) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
+  const setStyle = (element, name, value) => { if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value); };
 
   function readPreference(appId, config) {
     try {
@@ -28,7 +31,8 @@
 
   function savePreference(layout) {
     try {
-      localStorage.setItem(storageKey(layout.appId), JSON.stringify({ schemaVersion: 2, left: layout.preference.left, right: layout.preference.right }));
+      const compact = layout.appId === 'orderops' && layout.workspace.classList.contains('orderops-workbench-v12') && innerWidth >= 640 && innerWidth < 1100;
+      localStorage.setItem(storageKey(layout.appId) + (compact ? ':compact' : ''), JSON.stringify({ schemaVersion: 2, left: layout.preference.left, right: layout.preference.right }));
     } catch (_) {}
   }
 
@@ -49,7 +53,7 @@
     const { workspace, config, preference } = layout;
     const width = workspace.getBoundingClientRect().width;
     const gap = 24;
-    if (layout.appId === 'orderops' && width >= 640 && width < 1100) {
+    if (layout.appId === 'orderops' && innerWidth >= 640 && innerWidth < 1100) {
       const minimum = side === 'left' ? config.leftMin : config.rightMin;
       const availableMax = side === 'left'
         ? width - config.centerMin - gap
@@ -58,7 +62,8 @@
       return { minimum, maximum: Math.max(minimum, Math.min(configuredMax, availableMax)) };
     }
     const rightOpen = isPaneRequestedOpen(layout.rightPane);
-    const other = side === 'left' ? (rightOpen ? preference.right : 0) : preference.left;
+    const leftOpen = isPaneRequestedOpen(layout.leftPane);
+    const other = side === 'left' ? (rightOpen ? preference.right : 0) : (leftOpen ? preference.left : 0);
     const minimum = side === 'left' ? config.leftMin : config.rightMin;
     const configuredMax = side === 'left' ? config.leftMax : config.rightMax;
     const availableMax = Math.max(minimum, width - config.centerMin - other - gap);
@@ -70,18 +75,18 @@
     const rightLimit = currentLimits(layout, 'right');
     const renderedLeft = clamp(layout.preference.left, leftLimit.minimum, leftLimit.maximum);
     const renderedRight = clamp(layout.preference.right, rightLimit.minimum, rightLimit.maximum);
-    layout.workspace.style.setProperty('--nexus-left-pane-width', `${renderedLeft}px`);
-    layout.workspace.style.setProperty('--nexus-right-pane-width', `${renderedRight}px`);
-    layout.workspace.style.setProperty('--nexus-center-pane-min', `${layout.config.centerMin}px`);
+    setStyle(layout.workspace, '--nexus-left-pane-width', `${renderedLeft}px`);
+    setStyle(layout.workspace, '--nexus-right-pane-width', `${renderedRight}px`);
+    setStyle(layout.workspace, '--nexus-center-pane-min', `${layout.config.centerMin}px`);
     if (layout.leftHandle) {
-      layout.leftHandle.setAttribute('aria-valuemin', String(leftLimit.minimum));
-      layout.leftHandle.setAttribute('aria-valuemax', String(leftLimit.maximum));
-      layout.leftHandle.setAttribute('aria-valuenow', String(Math.round(renderedLeft)));
+      setAttribute(layout.leftHandle, 'aria-valuemin', String(leftLimit.minimum));
+      setAttribute(layout.leftHandle, 'aria-valuemax', String(leftLimit.maximum));
+      setAttribute(layout.leftHandle, 'aria-valuenow', String(Math.round(renderedLeft)));
     }
     if (layout.rightHandle) {
-      layout.rightHandle.setAttribute('aria-valuemin', String(rightLimit.minimum));
-      layout.rightHandle.setAttribute('aria-valuemax', String(rightLimit.maximum));
-      layout.rightHandle.setAttribute('aria-valuenow', String(Math.round(renderedRight)));
+      setAttribute(layout.rightHandle, 'aria-valuemin', String(rightLimit.minimum));
+      setAttribute(layout.rightHandle, 'aria-valuemax', String(rightLimit.maximum));
+      setAttribute(layout.rightHandle, 'aria-valuenow', String(Math.round(renderedRight)));
     }
   }
 
@@ -90,28 +95,39 @@
     const compactOrderOps = layout.appId === 'orderops' && matchMedia('(max-width: 639px)').matches;
     const compactOtherApp = layout.appId !== 'orderops' && matchMedia('(max-width: 960px)').matches;
     if (!workspace.isConnected || !isVisible(workspace) || compactOrderOps || compactOtherApp) {
-      leftHandle.hidden = true;
-      rightHandle.hidden = true;
+      setHidden(leftHandle, true);
+      setHidden(rightHandle, true);
       return;
+    }
+    if (layout.appId === 'orderops' && workspace.classList.contains('orderops-workbench-v12')) {
+      layout.desktopPreference ||= layout.preference;
+      if (!layout.compactPreference) {
+        try { layout.compactPreference = JSON.parse(localStorage.getItem(storageKey(layout.appId) + ':compact')) || { ...layout.desktopPreference }; }
+        catch (_) { layout.compactPreference = { ...layout.desktopPreference }; }
+        layout.compactPreference = { left: safeNumber(layout.compactPreference.left, layout.config.left), right: safeNumber(layout.compactPreference.right, layout.config.right) };
+      }
+      layout.preference = innerWidth >= 640 && innerWidth < 1100 ? layout.compactPreference : layout.desktopPreference;
     }
     applyPreference(layout);
     const workspaceRect = workspace.getBoundingClientRect();
     const leftRect = leftPane.getBoundingClientRect();
     const rightOpen = isPaneRequestedOpen(rightPane);
-    workspace.dataset.nexusRightOpen = String(rightOpen);
+    const leftOpen = isPaneRequestedOpen(leftPane);
+    setAttribute(workspace, 'data-nexus-left-open', String(leftOpen));
+    setAttribute(workspace, 'data-nexus-right-open', String(rightOpen));
     const top = Math.max(workspaceRect.top, 0);
     const bottom = Math.min(workspaceRect.bottom, innerHeight);
     const height = Math.max(bottom - top, 0);
-    leftHandle.hidden = height < 80;
-    leftHandle.style.left = `${leftRect.right + 6 - 9}px`;
-    leftHandle.style.top = `${top}px`;
-    leftHandle.style.height = `${height}px`;
-    rightHandle.hidden = !rightOpen || height < 80;
+    const rightRect = rightOpen ? rightPane.getBoundingClientRect() : null;
+    setHidden(leftHandle, !leftOpen || height < 80);
+    setStyle(leftHandle, 'left', `${leftRect.right + 6 - 9}px`);
+    setStyle(leftHandle, 'top', `${top}px`);
+    setStyle(leftHandle, 'height', `${height}px`);
+    setHidden(rightHandle, !rightOpen || height < 80);
     if (rightOpen) {
-      const rightRect = rightPane.getBoundingClientRect();
-      rightHandle.style.left = `${rightRect.left - 6 - 9}px`;
-      rightHandle.style.top = `${top}px`;
-      rightHandle.style.height = `${height}px`;
+      setStyle(rightHandle, 'left', `${rightRect.left - 6 - 9}px`);
+      setStyle(rightHandle, 'top', `${top}px`);
+      setStyle(rightHandle, 'height', `${height}px`);
     }
   }
 
@@ -278,7 +294,19 @@
   })();
   const start = () => {
     refresh();
-    new MutationObserver(scheduleRefresh).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'class'] });
+    new MutationObserver((records) => {
+      // A table render/row selection cannot change the pane's requested open
+      // state. Real workspace size changes are handled by ResizeObserver.
+      // In particular, do not schedule another frame for our own handles.
+      const relevant = records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement;
+        if (!target || target.closest('.nexus-pane-resizer-v2')) return false;
+        if (target.matches('[data-nexus-workspace], [data-nexus-pane]')) return true;
+        if (target.closest('[data-nexus-workspace]')) return false;
+        return true;
+      });
+      if (relevant) scheduleRefresh();
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'class'] });
     addEventListener('resize', scheduleRefresh, { passive: true });
     addEventListener('scroll', scheduleRefresh, { passive: true, capture: true });
   };

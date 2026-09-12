@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.28.1";
+  const ENGINE_VERSION = "3.29.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
@@ -745,12 +745,28 @@
     return source;
   }
 
+  function explicitFileStructure(input, matrix, automaticHeaderRow) {
+    if (!input.explicitMapping) return null;
+    const { headerRowIndex, dataStartRowIndex, columns } = input.explicitMapping;
+    if (!Number.isInteger(headerRowIndex) || headerRowIndex < 0 || headerRowIndex >= matrix.length ||
+        !Number.isInteger(dataStartRowIndex) || dataStartRowIndex <= headerRowIndex || dataStartRowIndex >= matrix.length || !Array.isArray(columns)) {
+      throw new Error("헤더행·데이터 시작행·열 매핑 범위를 확인하세요.");
+    }
+    const originalHeaders = matrix[headerRowIndex] || [];
+    if (columns.length !== originalHeaders.length) throw new Error("원본 열 수와 매핑이 일치하지 않습니다.");
+    const selected = columns.map(value => String(value || ""));
+    const names = selected.filter(Boolean);
+    if (new Set(names.map(normalizeOrderHeader)).size !== names.length) throw new Error("같은 항목에 여러 원본 열이 연결되었습니다. 사용할 열 하나를 선택하세요.");
+    return { schemaVersion: "orderops-explicit-file-mapping/v1", headerRowIndex, dataStartRowIndex, columns: selected, originalHeaders: cloneMatrix([originalHeaders])[0], effectiveHeaders: selected.map(value => value.startsWith("warehouse:") ? value.slice(10) : value) };
+  }
+
   function parseOrderWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const headerRowIndex = findBestOrderHeaderRow(displayMatrix, headerAliases);
-    const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
+    const explicitMapping = explicitFileStructure(input, displayMatrix);
+    const headerRowIndex = explicitMapping?.headerRowIndex ?? findBestOrderHeaderRow(displayMatrix, headerAliases);
+    const headerRow = explicitMapping?.effectiveHeaders || (headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : []);
     const headerResolution = resolveOrderHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
     const sourceHeaderSignature = orderSourceHeaderSignature(headerRow);
@@ -838,7 +854,7 @@
     const canonicalMappingIsValid = missingColumns.length === 0 &&
       unresolvedCanonicalFields.length === 0;
     if (headerRowIndex >= 0 && canonicalMappingIsValid) {
-      for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
+      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);
@@ -975,6 +991,7 @@
 
     return {
       kind: "orders",
+      ...(explicitMapping ? { explicitMapping } : {}),
       fileName: cleanText(input.fileName) || "주문현황.xlsx",
       sheetName: cleanText(input.sheetName),
       fileHash: cleanText(input.fileHash),
@@ -1017,8 +1034,9 @@
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const headerRowIndex = findBestInventoryHeaderRow(displayMatrix, headerAliases);
-    const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
+    const explicitMapping = explicitFileStructure(input, displayMatrix);
+    const headerRowIndex = explicitMapping?.headerRowIndex ?? findBestInventoryHeaderRow(displayMatrix, headerAliases);
+    const headerRow = explicitMapping?.effectiveHeaders || (headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : []);
     const headerResolution = resolveInventoryHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
     const columns = describeInventoryColumns(headerRow, headerAliases);
@@ -1051,7 +1069,7 @@
     const rows = [];
     const occurrences = new Map();
     if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0) {
-      for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
+      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);
@@ -1197,6 +1215,7 @@
 
     return {
       kind: "inventory",
+      ...(explicitMapping ? { explicitMapping } : {}),
       fileName: cleanText(input.fileName) || "창고별재고.xlsx",
       sheetName: cleanText(input.sheetName),
       fileHash: cleanText(input.fileHash),
@@ -1616,7 +1635,7 @@
     const source = workspace?.sourceFiles?.inventory || {};
     const matrix = Array.isArray(source.matrix) ? source.matrix : [];
     const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
-    const derived = describeInventoryColumns(matrix[headerRowIndex] || []);
+    const derived = describeInventoryColumns(source.explicitMapping?.effectiveHeaders || matrix[headerRowIndex] || []);
     const stored = Array.isArray(source.columns) ? source.columns : [];
     if (stored.length !== derived.length) return derived;
     const storedIsValid = stored.every((column, index) =>
@@ -2361,6 +2380,7 @@
       matrix: parsed.sourceMatrix,
       productCodeColumnIndex: parsed.productCodeColumnIndex,
       headerMapping: parsed.headerMapping,
+      explicitMapping: parsed.explicitMapping,
       columns: parsed.columns,
       sourceKind: cleanText(parsed.sourceKind),
       sourceSchemaVersion: cleanText(parsed.sourceSchemaVersion),
@@ -2713,6 +2733,10 @@
   }
 
   function rebuildWorkspaceFromOrders(workspace) {
+    const preservedWorkbench = {};
+    for (const key of ["orderQSourceRecovery", "shipmentExecutionDraft", "workbenchUnapplied", "workbenchReconciliation", "workbenchConflicts", "inventorySourceReference", "inventoryApplicationMode", "inventoryOverrideDisposition"]) {
+      if (workspace[key] !== undefined) preservedWorkbench[key] = JSON.parse(JSON.stringify(workspace[key]));
+    }
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
@@ -2736,6 +2760,8 @@
       sourceMatrix: orderSource.matrix,
       productCodeColumnIndex: orderSource.productCodeColumnIndex,
       headerMapping: orderSource.headerMapping,
+      explicitMapping: orderSource.explicitMapping,
+      sourceEvidence: orderSource.sourceEvidence,
       sourceKind: orderSource.sourceKind,
       sourceSchemaVersion: orderSource.sourceSchemaVersion,
       orderId: orderSource.orderId,
@@ -2752,6 +2778,7 @@
       rowCount: workspace.inventory.length,
       rows: workspace.inventory.map((row) => ({ ...row })),
       columns: inventorySource.columns || [],
+      explicitMapping: inventorySource.explicitMapping,
       missingColumns: [],
       duplicateCodes: [],
       errors: [],
@@ -2774,6 +2801,7 @@
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
+    Object.assign(workspace, preservedWorkbench);
     applyPurchaseInputs(workspace, purchaseInputs);
     const noticeState = ensureNoticeState(workspace);
     const validNoticeIds = new Set(workspace.notices.map((notice) => notice.noticeId));
@@ -2883,7 +2911,7 @@
     const targetEvent = activeSubstitutionEvents(history).at(-1);
     if (!targetEvent) throw new Error("취소할 대체출고 작업이 없습니다.");
     const order = (workspace.orders || []).find(
-      (row) => Number(row?.sourceRowNumber) === Number(targetEvent.sourceRowNumber),
+      (row) => targetEvent.orderItemId ? row.orderItemId === targetEvent.orderItemId : Number(row?.sourceRowNumber) === Number(targetEvent.sourceRowNumber),
     );
     if (!order) throw new Error("대체출고를 복원할 주문행을 찾지 못했습니다.");
     if (normalizeProductCode(order.productCode) !== normalizeProductCode(targetEvent.toProduct?.productCode)) {
@@ -3499,6 +3527,8 @@
           matrix: ordersParsed.sourceMatrix,
           productCodeColumnIndex: ordersParsed.productCodeColumnIndex,
           headerMapping: ordersParsed.headerMapping,
+          explicitMapping: ordersParsed.explicitMapping,
+          sourceEvidence: ordersParsed.sourceEvidence ? JSON.parse(JSON.stringify(ordersParsed.sourceEvidence)) : undefined,
           sourceKind: cleanText(ordersParsed.sourceKind),
           sourceSchemaVersion: cleanText(ordersParsed.sourceSchemaVersion),
           orderId: cleanText(ordersParsed.orderId),
@@ -3516,6 +3546,7 @@
           matrix: inventoryParsed.sourceMatrix,
           productCodeColumnIndex: inventoryParsed.productCodeColumnIndex,
           columns: inventoryParsed.columns,
+          explicitMapping: inventoryParsed.explicitMapping,
           sourceKind: cleanText(inventoryParsed.sourceKind),
           sourceSchemaVersion: cleanText(inventoryParsed.sourceSchemaVersion),
           sourceEvidence: inventoryParsed.sourceEvidence
@@ -3669,6 +3700,36 @@
     return { included, excluded };
   }
 
+  // Output-only selection. Legacy purchaseManagement rows can retain a stale
+  // Seoul-only quantity, and getPurchaseUploadSelection alone also admits an
+  // inventory-missing order. Never repair those rows in the active workspace.
+  function getFinalPurchaseUploadSelection(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const snapshot = JSON.parse(JSON.stringify(workspace));
+    const inventoryRows = getInventoryViewRows(snapshot).rows;
+    const blockedReason = snapshot.workspaceMode === PREVIEW_WORKSPACE_MODE ? "분석 미실행·구매업로드 제외"
+      : snapshot.inventoryApplicationMode === "TOTAL_ONLY" ? "총량 비교 전용·구매업로드 제외"
+      : snapshot.basisDateStatus !== "valid" ? "기준일 미확정·구매업로드 제외" : "";
+    if (blockedReason) return { included: [], excluded: inventoryRows.map(row => ({ productCode: row.productCode, reason: blockedReason })), inventoryRows, sourceFingerprint: snapshot.sourceFingerprint || "" };
+    const byCode = new Map(inventoryRows.map((row) => [normalizeProductCode(row.productCode), row]));
+    const selection = getPurchaseUploadSelection(snapshot);
+    const included = [];
+    const excluded = selection.excluded.map((row) => ({ ...row }));
+    for (const row of selection.included) {
+      const inventory = byCode.get(normalizeProductCode(row.productCode));
+      let reason = "";
+      if (snapshot.inventoryApplicationMode === "TOTAL_ONLY") reason = "총량 비교 전용·구매업로드 제외";
+      else if (!row.inventoryMatched || !inventory || inventory.inventoryMissing) reason = "재고정보 미확인·구매업로드 제외";
+      else if (inventory.quantityComparable !== true || !Number.isFinite(inventory.purchaseNeed)) reason = "단위 비교 불가·구매업로드 제외";
+      else if (!(inventory.purchaseNeed > 0)) reason = "창고별재고 부족 수량 없음";
+      if (reason) excluded.push({ productCode: row.productCode, reason });
+      else included.push({ ...row, purchaseNeed: inventory.purchaseNeed });
+    }
+    return { included, excluded, inventoryRows, sourceFingerprint: snapshot.sourceFingerprint || "" };
+  }
+
   return Object.freeze({
     ENGINE_VERSION,
     WORKSPACE_SCHEMA_VERSION,
@@ -3719,6 +3780,7 @@
     applyPurchaseInputs,
     getPurchaseInputs,
     getPurchaseUploadSelection,
+    getFinalPurchaseUploadSelection,
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
     getInventoryViewRows,

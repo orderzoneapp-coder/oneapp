@@ -49,6 +49,12 @@ class Cdp {
   close() { this.socket?.close(); }
 }
 const evaluate = (client, expression) => client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }).then(result => { if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; });
+const applyPrepared = async client => {
+  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].at(-1)?.textContent.includes('READY')`),'explicit candidate validation');
+  await evaluate(client,`window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
+  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].at(-1)?.textContent.includes('APPLIED')`),'explicit candidate application');
+  await evaluate(client,`document.querySelector(document.querySelector('#ordersFileName').textContent==='파일을 선택하세요'?'[data-preview="inventory"]':'[data-preview="allocations"]').click()`);
+};
 const navigate = async (client, url) => { const loaded = client.once('Page.loadEventFired'); await client.send('Page.navigate', { url }); await loaded; await waitFor(() => evaluate(client, `document.readyState==='complete'`), 'page ready'); };
 const uploadInventory = client => evaluate(client, `(async()=>{const workbook=XLSX.utils.book_new();const matrix=[['회사명 : 테스트 / 창고별재고'],['사용','품목코드','단위','품목명','규격','수량','1창고','2전송','3서울','4전송','7진영','기본','전송','창고'],['Yes','P-1','BOX','부분출고 상품','BOX',20,20,'','','','','','',''],['Yes','P-2','EA','복구 상품','EA',20,20,'','','','','','','']];XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(matrix),'재고현황');const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});const transfer=new DataTransfer();transfer.items.add(new File([bytes],'PR544_창고별재고.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const input=document.querySelector('#inventoryInput');Object.defineProperty(input,'files',{configurable:true,value:transfer.files});input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
 const uploadBlankUnitInventory = client => evaluate(client, `(async()=>{const workbook=XLSX.utils.book_new();const matrix=[['회사명 : 테스트 / 창고별재고'],['사용','품목코드','단위','품목명','규격','수량','1창고','2전송','3서울','4전송','7진영','기본','전송','창고'],['Yes','P-1','','부분출고 상품','BOX',20,20,'','','','','','','']];XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(matrix),'재고현황');const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});const transfer=new DataTransfer();transfer.items.add(new File([bytes],'단위공란_창고별재고.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const input=document.querySelector('#inventoryInput');Object.defineProperty(input,'files',{configurable:true,value:transfer.files});input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
@@ -94,6 +100,7 @@ try {
 
   await navigate(client, `${origin}/orderops/list.html`);
   await uploadInventory(client);
+  await applyPrepared(client);
   const inventoryOnly = await waitFor(async () => {
     const value = await evaluate(client, `(()=>({active:document.querySelector('#inventoryDrop')?.getAttribute('aria-selected'),rows:document.querySelectorAll('#previewTable table.preview-inventory tbody tr').length,text:document.querySelector('#previewTable').textContent,headers:[...document.querySelectorAll('#previewTable table.preview-inventory thead th')].map(node=>node.textContent.replace('필터','').trim())}))()`);
     return value.rows >= 2 ? value : null;
@@ -116,25 +123,22 @@ try {
   assert.equal(initial.title, '저장 주문 선택');
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-001')`), 'selected saved order source');
   const beforeAnalysis = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const table=document.querySelector('#previewTable table.preview-readiness');const header=document.querySelector('[data-nexus-app-header="orderops"]');const bottom=document.querySelector('.orderops-bottom-workbar');return {headerOwnsSources:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header?.contains(document.getElementById(id))),headerButtons:[...header.querySelectorAll('.orderops-header-primary > button,.orderops-header-primary > .orderops-header-menu > button')].map(node=>node.textContent.trim().replace(/^▸/,'')),bottomActions:[...bottom.querySelectorAll('button,a')].map(node=>node.id),panes:[...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,headers:[...table?.querySelectorAll('thead th')||[]].map(node=>node.textContent.replace('필터','').trim()),keys:[...table?.querySelectorAll('col[data-column-key]')||[]].map(node=>node.dataset.columnKey),inputValues:[...table?.querySelectorAll('tbody input')||[]].map(node=>node.value),rowText:table?.querySelector('tbody tr')?.textContent||'',stockText:table?.textContent||'',printDisabled:document.querySelector('#printButton').disabled,systemIo:document.body.innerText.includes('System.IO')}})()`);
+    const value = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const table=document.querySelector('#previewTable table.preview-allocations');const header=document.querySelector('[data-nexus-app-header="orderops"]');const bottom=document.querySelector('.orderops-bottom-workbar');return {headerOwnsSources:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header?.contains(document.getElementById(id))),headerButtons:[...header.querySelectorAll('.orderops-header-primary > button,.orderops-header-primary > .orderops-header-menu > button')].map(node=>node.textContent.trim().replace(/^▸/,'')),bottomActions:[...bottom.querySelectorAll('button,a')].map(node=>node.id),panes:[...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,headers:[...table?.querySelectorAll('thead th')||[]].map(node=>node.textContent.replace('필터','').trim()),keys:[...table?.querySelectorAll('col[data-column-key]')||[]].map(node=>node.dataset.columnKey),inputValues:[...table?.querySelectorAll('tbody input')||[]].map(node=>node.value),rowText:table?.querySelector('tbody tr')?.textContent||'',stockText:table?.textContent||'',printDisabled:document.querySelector('#printButton').disabled,systemIo:document.body.innerText.includes('System.IO')}})()`);
     return value.deliveries === 1 && value.inputValues.includes('부분상사') ? value : null;
   }, 'orders displayed before inventory and analysis');
-  assert.equal(beforeAnalysis.headerOwnsSources, true, '업로더와 분석 실행은 앱헤더 안에 있어야 한다.');
+  assert.equal(beforeAnalysis.headerOwnsSources, false, 'v1.2는 업로더를 좌측 준비 영역으로 옮기고 분석 실행만 헤더에 둔다.');
   assert.deepEqual(beforeAnalysis.panes, ['reference', 'work', 'result'], '앱헤더 아래 세 섹션은 동일 부모의 직접 자식이어야 한다.');
   assert.deepEqual(beforeAnalysis.headerButtons,
-    ['통합 불러오기','주문서 불러오기','창고재고 불러오기','출고분석 Enter','▤재고','더보기'],
+    ['출고분석 Enter','초기화'],
     '앱헤더 주요 조작 순서를 유지해야 한다.');
   assert.deepEqual(beforeAnalysis.bottomActions,
-    ['smartInputButton','headerCloudSaveButton','printButton','downloadButton','headerRestoreButton'],
+    ['headerCloudSaveButton','orderOpsHeaderOrdersButton','shipmentOpenButton','printButton','downloadButton','orderOpsHeaderMoreButton'],
     '저장·출력·복구 조작은 중앙 하단 작업바에서 한 번만 렌더해야 한다.');
   assert.equal(beforeAnalysis.systemIo, false, '가시 업무 UI에서 System.IO 콘솔 표현을 제거해야 한다.');
-  assert.deepEqual(beforeAnalysis.headers, ['거래처', '상품', '주문수량', '직원 적요']);
-  assert.deepEqual(beforeAnalysis.keys, [
-    'shipping:readiness:customer','shipping:readiness:productName',
-    'shipping:readiness:orderQuantity','shipping:readiness:deliveryNotice',
-  ], '주문만 읽은 기본 4열은 위치가 아닌 업무 role key를 사용해야 한다.');
-  assert.deepEqual(beforeAnalysis.inputValues, ['부분상사', '10', '현관 앞 전달']);
-  assert.doesNotMatch(beforeAnalysis.stockText, /재고|잔량/, '재고자료가 없을 때 0 재고 열을 만들어서는 안 된다.');
+  assert.deepEqual(beforeAnalysis.headers.slice(0,4), ['창고', '거래처', '그룹', '담당자'], 'v1.2는 기존 상세 오더리스트를 기본 작업표로 유지한다.');
+  assert.equal(new Set(beforeAnalysis.keys).size,beforeAnalysis.keys.length,'주문표 열 key는 고유해야 한다.');
+  assert.ok(['부분상사','10','현관 앞 전달'].every(value=>beforeAnalysis.inputValues.includes(value)));
+  assert.equal(await evaluate(client, `document.querySelector('#inventoryFileName').textContent`),'파일을 선택하세요','미등록 재고를 0 재고 원본으로 만들지 않는다.');
   assert.equal(beforeAnalysis.printDisabled, false, '분석 전 기본 분석표도 인쇄할 수 있어야 한다.');
   const tableSettingsOpen = await evaluate(client, `(()=>{const button=document.querySelector('#tableSettingsButton');button.click();const menu=document.querySelector('#tableSettingsMenu');return {expanded:button.getAttribute('aria-expanded'),hidden:menu.hidden,owns:['columnVisibilityButton','columnWidthSaveButton','columnWidthResetButton','viewPresetSelect','warehouseFilterToggle','managerFilterToggle'].every(id=>menu.contains(document.getElementById(id)))}})()`);
   assert.deepEqual(tableSettingsOpen, { expanded:'true', hidden:false, owns:true });
@@ -145,7 +149,7 @@ try {
   await evaluate(client, `(()=>{const search=document.querySelector('#tableSearchInput');search.value='검색없음';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   await waitFor(() => evaluate(client, `document.querySelector('#previewTable').textContent.includes('검색 결과 0건')`), 'search-specific empty state');
   await evaluate(client, `document.querySelector('#tableSearchClearButton').click()`);
-  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-readiness tbody tr[data-grid-row-key]'))`), 'search clear restores rows');
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-allocations tbody tr[data-grid-row-key]'))`), 'search clear restores rows');
   assert.equal(await evaluate(client, `document.querySelector('#tableSearchInput').value`), '', '검색 해제는 다른 보기 조건과 분리되어야 한다.');
   const previewEdit = await evaluate(client, `(()=>{const input=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]');input.value='분석전 수정';input.dispatchEvent(new Event('change',{bubbles:true}));window.__orderopsPrintCalled=0;window.print=()=>{window.__orderopsPrintCalled+=1};document.querySelector('#printButton').click();return {value:document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value,printCalled:window.__orderopsPrintCalled,printing:document.body.classList.contains('printing-table')}})()`);
   assert.deepEqual(previewEdit, { value: '분석전 수정', printCalled: 1, printing: true });
@@ -163,16 +167,17 @@ try {
   await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value==='분석전 수정'`), 'orders-only preview recovery restore');
   assert.equal(await evaluate(client, `document.querySelector('#analyzeButton').disabled`), true);
   await uploadInventory(client);
+  await applyPrepared(client);
   const withInventoryBeforeAnalysis = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>({headers:[...document.querySelectorAll('#previewTable table.preview-readiness thead th')].map(node=>node.textContent.replace('필터','').trim()),keys:[...document.querySelectorAll('#previewTable table.preview-readiness col[data-column-key]')].map(node=>node.dataset.columnKey),employeeNote:document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value||'',row:document.querySelector('#previewTable table.preview-readiness tbody tr')?.textContent||''}))()`);
-    return value.headers.includes('재고') ? value : null;
+    const value = await evaluate(client, `(()=>({headers:[...document.querySelectorAll('#previewTable table.preview-allocations thead th')].map(node=>node.textContent.replace('필터','').trim()),keys:[...document.querySelectorAll('#previewTable table.preview-allocations col[data-column-key]')].map(node=>node.dataset.columnKey),employeeNote:document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value||'',row:document.querySelector('#previewTable table.preview-allocations tbody tr')?.textContent||''}))()`);
+    return value.headers.length ? value : null;
   }, 'inventory columns before analysis');
-  assert.ok(withInventoryBeforeAnalysis.headers.includes('잔량'));
-  assert.deepEqual(withInventoryBeforeAnalysis.keys, [
-    ...beforeAnalysis.keys,'shipping:readiness:stockQuantity','shipping:readiness:calculatedQuantity',
-  ], '재고 추가 뒤 기존 4열 key를 유지하며 재고·잔량만 추가해야 한다.');
+  assert.ok(withInventoryBeforeAnalysis.headers.some(header=>header.includes('수량')));
+  assert.deepEqual(withInventoryBeforeAnalysis.keys.slice(0,11), beforeAnalysis.keys.slice(0,11), '동적 창고 앞의 기존 주문표 key 유지');
+  assert.deepEqual(withInventoryBeforeAnalysis.keys.slice(-2).map(key=>key.split(':').at(-1)),beforeAnalysis.keys.slice(-2).map(key=>key.split(':').at(-1)),'동적 창고 뒤의 전달사항/구매 열 유지');
+  assert.equal(withInventoryBeforeAnalysis.keys.length,beforeAnalysis.keys.length+5,'실제 동적 창고 다섯 열만 추가');
   assert.equal(withInventoryBeforeAnalysis.employeeNote, '분석전 수정', '재고 추가 갱신에도 분석 전 입력값을 보존해야 한다.');
-  assert.match(withInventoryBeforeAnalysis.row, /20[\s\S]*10/, '실제 재고자료가 있을 때만 재고·잔량을 표시해야 한다.');
+  assert.match(withInventoryBeforeAnalysis.row, /부분출고 상품/, '재고 갱신 뒤에도 현재 주문행 유지');
   await waitFor(async () => {
     const value = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const pointer=localStorage.getItem('oneapp.shipping.recovery.pointer.v1');const get=pointer&&db.transaction('recoveryRecords','readonly').objectStore('recoveryRecords').get(pointer);if(!get){db.close();resolve(false);return}get.onerror=()=>{db.close();reject(get.error)};get.onsuccess=()=>{resolve(Boolean(get.result?.payload?.workspace?.previewDataState?.inventory&&get.result?.payload?.workspace?.orders?.[0]?.note1==='분석전 수정'));db.close()}}})`);
     return value;
@@ -183,13 +188,13 @@ try {
   await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled&&document.querySelector('.order-edit-input[data-order-field="deliveryNotice"]')?.value==='분석전 수정'`), 'orders and inventory preview recovery restore');
   await analyze(client);
   const analyzedReadiness = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>({headers:[...document.querySelectorAll('#previewTable table.preview-readiness thead th')].map(node=>node.textContent.replace('필터','').trim()),keys:[...document.querySelectorAll('#previewTable table.preview-readiness col[data-column-key]')].map(node=>node.dataset.columnKey),detailTab:Boolean(document.querySelector('[data-preview="allocations"]'))}))()`);
+    const value = await evaluate(client, `(()=>({headers:[...document.querySelectorAll('#previewTable table.preview-allocations thead th')].map(node=>node.textContent.replace('필터','').trim()),keys:[...document.querySelectorAll('#previewTable table.preview-allocations col[data-column-key]')].map(node=>node.dataset.columnKey),detailTab:Boolean(document.querySelector('[data-preview="allocations"]'))}))()`);
     return value.headers.length ? value : null;
   }, 'post-analysis readiness view');
-  assert.deepEqual(analyzedReadiness.headers, ['거래처', '상품', '주문수량', '직원 적요', '재고', '잔량']);
-  assert.deepEqual(analyzedReadiness.keys, withInventoryBeforeAnalysis.keys, '분석 뒤에도 중앙 6열 role key가 바뀌면 안 된다.');
-  assert.equal(analyzedReadiness.detailTab, true, '분석 뒤 상세 주문현황은 별도 선택 화면으로 남아야 한다.');
-  assert.match(await evaluate(client, `document.querySelector('#columnVisibilityMenu').textContent`), /상품별 주문합계/);
+  assert.deepEqual(analyzedReadiness.headers, withInventoryBeforeAnalysis.headers, '분석 전후 기존 오더리스트 열 유지');
+  assert.deepEqual(analyzedReadiness.keys, withInventoryBeforeAnalysis.keys, '분석 뒤에도 기존 오더리스트 role key가 바뀌면 안 된다.');
+  assert.equal(analyzedReadiness.detailTab, true, '주문현황은 단일 기본 탭으로 유지한다.');
+  assert.match(await evaluate(client, `document.querySelector('#columnVisibilityMenu').textContent`), /합계/);
   const columnMenuPortal = await evaluate(client, `(()=>{document.querySelector('#tableSettingsButton').click();const button=document.querySelector('#columnVisibilityButton');button.click();const menu=document.querySelector('#columnVisibilityMenu');const rect=menu.getBoundingClientRect();const point=document.elementFromPoint(rect.left+12,rect.top+Math.min(42,rect.height-8));return {parent:menu.parentElement===document.body,visible:!menu.classList.contains('hidden'),expanded:button.getAttribute('aria-expanded'),inside:rect.left>=0&&rect.top>=0&&rect.right<=innerWidth&&rect.bottom<=innerHeight,hit:menu.contains(point)}})()`);
   assert.deepEqual(columnMenuPortal, { parent:true, visible:true, expanded:'true', inside:true, hit:true },
     '열 표시 메뉴는 앱 body 최상단 layer에서 화면 안에 렌더링되고 실제 클릭을 받아야 한다.');
@@ -244,13 +249,13 @@ try {
   assert.doesNotMatch(workbench.summaryText, /20260908-001|본창고|작업자|남부|부분출고 상품/);
   assert.match(workbench.workload, /조회 요약[\s\S]*주문서 1건[\s\S]*BOX 10[\s\S]*금액 자료 없음 1행/);
   assert.match(workbench.sourceScope, /주문 기간 2026-09-08[\s\S]*재고 기준일 미확인[\s\S]*불러온 시각/);
-  assert.match(workbench.inventory, /보조 패널/, '우측은 위치·표시·너비 설정만 제공해야 한다.');
+  assert.match(workbench.inventory, /조회·수정/, 'v1.2 우측은 조회·수정 패널이다.');
   assert.equal(workbench.metrics, '');
-  assert.equal(workbench.inventoryBody, '', '승인되지 않은 우측 업무 표를 임의로 표시하면 안 된다.');
+  assert.equal(workbench.inventoryBody, '', '대상 주문행을 선택하기 전에는 편집 대상을 만들지 않는다.');
   const allocationVisibilityBeforeSearch = await evaluate(client, `localStorage.getItem('oneapp.orderops.hidden-columns.v1')`);
   await evaluate(client, `(()=>{const search=document.querySelector('#tableSearchInput');search.value='leechel';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   const persistentSearchViews = [];
-  for (const [control, className] of [['#inventoryDrop','preview-inventory'], ['#ledgerDrop','preview-ledger'], ['[data-preview="readiness"]','preview-readiness']]) {
+  for (const [control, className] of [['#inventoryDrop','preview-inventory'], ['#ledgerDrop','preview-ledger'], ['[data-preview="allocations"]','preview-allocations']]) {
     await evaluate(client, `document.querySelector(${JSON.stringify(control)}).click()`);
     persistentSearchViews.push(await waitFor(async () => {
       const value = await evaluate(client, `(()=>({query:document.querySelector('#tableSearchInput').value,count:document.querySelector('#previewCount').textContent,note:document.querySelector('#systemViewNote').textContent,body:document.querySelector('#previewTable').textContent,table:document.querySelector('#previewTable table')?.className||''}))()`);
@@ -267,19 +272,19 @@ try {
     '검색 결과 0건 상태에서도 열 표시 메뉴는 실제 화면에 보여야 한다.');
   await evaluate(client, `document.body.dispatchEvent(new MouseEvent('click',{bubbles:true}))`);
   await evaluate(client, `document.querySelector('#tableSearchClearButton').click()`);
-  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-readiness tbody tr[data-grid-row-key]'))`), 'shared search clear restores readiness rows');
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-allocations tbody tr[data-grid-row-key]'))`), 'shared search clear restores readiness rows');
   assert.equal(await evaluate(client, `localStorage.getItem('oneapp.orderops.hidden-columns.v1')`), allocationVisibilityBeforeSearch,
     '검색 해제와 보기 전환은 저장된 열 표시 설정을 바꾸면 안 된다.');
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'allocation view after persistent-search verification');
   await evaluate(client, `document.querySelector('#previewTable tr[data-product-code="P-1"]').click()`);
-  assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent`), /보조 패널/);
-  assert.equal(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), '');
+  assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent`), /부분출고 상품/);
+  assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), /재고 20.*잔량 10/);
   assert.match(await evaluate(client, `document.querySelector('#productComparisonContext').textContent`), /부분출고 상품 \(P-1\)[\s\S]*전체 주문 10 BOX[\s\S]*전체 재고 20 BOX[\s\S]*비교잔량 10 BOX/);
   const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth}})()`);
   assert.ok(defaultLayout.leftWidth >= 370, `기본 좌측 패널 폭이 핵심 판단에 부족합니다: ${defaultLayout.leftWidth}`);
   assert.ok(defaultLayout.centerWidth > defaultLayout.leftWidth, '중앙 작업표는 기본 배치에서 좌측보다 넓어야 한다.');
-  assert.ok(defaultLayout.resetRight <= defaultLayout.leftRight && defaultLayout.resetWidth > 100, '전체 버튼은 좁은 좌측 패널에서도 잘리지 않고 한 행을 사용해야 한다.');
+  assert.ok(defaultLayout.resetRight <= await evaluate(client, `document.querySelector('#inventoryInspector').getBoundingClientRect().right`) && defaultLayout.resetWidth > 100, '조회 초기화는 우측 패널에서 잘리지 않아야 한다.');
   assert.equal(defaultLayout.fontSize, '12px', '좌측 표는 12px 가독성 기준을 유지해야 한다.');
   assert.ok(defaultLayout.tableWidth <= defaultLayout.leftWidth + 2, `좌측 4열 표는 패널 안에 맞아야 한다: ${defaultLayout.tableWidth}`);
   const resizePreservation = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const draft=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');draft.value='7';draft.focus();document.querySelector('#previewTable').scrollLeft=18;const before={left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width};document.querySelector('[data-nexus-pane-resize="left"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return {before,after:{left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width},draft:draft.value,focused:document.activeElement===draft,scrollLeft:document.querySelector('#previewTable').scrollLeft}})()`);
@@ -372,18 +377,21 @@ try {
   await wait(250);
   const mobileStack = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const l=left.getBoundingClientRect(),c=center.getBoundingClientRect(),r=right.getBoundingClientRect();return {documentWidth:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth,leftAboveCenter:l.bottom<=c.top+1,leftWidth:l.width,centerWidth:c.width,leftMaxHeight:getComputedStyle(left).maxHeight,rightWidth:r.width,rightOverlay:getComputedStyle(right).position,shortcuts:[...document.querySelectorAll('.orderops-pane-shortcuts a')].map(node=>node.textContent.trim()),handles:[...document.querySelectorAll('.nexus-pane-resizer-v2[data-nexus-pane-resize-app="orderops"]')].filter(node=>getComputedStyle(node).display!=='none'&&!node.hidden).length,preference:localStorage.getItem('nexus:workbench-layout:orderops:v2')}})()`);
   assert.equal(mobileStack.documentWidth, mobileStack.viewport, '390px에서 페이지 전체 가로 넘침이 없어야 한다.');
-  assert.equal(mobileStack.leftAboveCenter, true, '390px에서는 좌측을 상단, 중앙을 하단에 쌓아야 한다.');
+  assert.equal(mobileStack.leftAboveCenter, false, 'v1.2 모바일 보조 패널은 중앙과 같은 높이의 overlay다.');
   assert.ok(mobileStack.leftWidth > 0 && mobileStack.centerWidth > 0);
-  assert.ok(parseFloat(mobileStack.leftMaxHeight) <= (844 * .38) + 1);
-  assert.equal(mobileStack.rightOverlay, 'fixed');
+  assert.ok(mobileStack.centerWidth >= mobileStack.viewport - 32, '모바일 중앙 표가 전체 가용 폭 사용');
+  assert.equal(mobileStack.rightOverlay, 'absolute');
   assert.ok(mobileStack.rightWidth <= 374);
-  assert.deepEqual(mobileStack.shortcuts, ['주문 목록','분석표']);
+  assert.deepEqual(mobileStack.shortcuts, []);
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('#preparePaneReopen'))`),true);
   assert.equal(mobileStack.handles, 0, '639px 이하에서만 좌우 폭 조절 손잡이를 비활성화해야 한다.');
   assert.equal(mobileStack.preference, desktopWidthPreference, '모바일 진입은 저장된 데스크톱 폭을 덮어쓰면 안 된다.');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
   await wait(250);
   assert.equal(await evaluate(client, `localStorage.getItem('nexus:workbench-layout:orderops:v2')`), desktopWidthPreference,
     '넓은 화면 복귀 뒤에도 이전 데스크톱 폭 설정을 복원해야 한다.');
+  assert.equal(await evaluate(client,`document.querySelector('#shipmentConfirmButton').disabled`),true,'작업 담당과 원본 차이는 확정 차단');
+  await evaluate(client,`(()=>{const input=document.querySelector('.order-edit-input[data-order-field="manager"]');input.value='작업자';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   const handoff = await evaluate(client, `(()=>{const work=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');work.value='6';work.dispatchEvent(new Event('change',{bubbles:true}));const confirm=document.querySelector('[data-shipment-line="OI-PARTIAL"]');confirm.querySelector('[data-shipment-reason]').value='부분 출고';confirm.querySelector('[data-shipment-reason]').dispatchEvent(new Event('change',{bubbles:true}));return {work:work.value,confirm:confirm.querySelector('[data-shipped-quantity]').value,headers:[...document.querySelectorAll('.shipment-execution__table th')].map(node=>node.textContent.trim())}})()`);
   assert.equal(handoff.work, '6');
   assert.equal(handoff.confirm, '6', '작업표 실제 출고수량이 확정표에 전달되어야 한다.');
@@ -399,6 +407,7 @@ try {
   await navigate(client, `${origin}/orderops/list.html?orderId=ORD-RECOVERY`);
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-002')`), 'recovery order source');
   await uploadInventory(client);
+  await applyPrepared(client);
   await analyze(client);
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-RECOVERY"]'))`), 'recovery worktable input');
@@ -417,6 +426,7 @@ try {
   await navigate(client, `${origin}/orderops/list.html?orderId=ORD-MISSING`);
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-003')`), 'missing inventory order source');
   await uploadInventory(client);
+  await applyPrepared(client);
   await analyze(client);
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable tr[data-product-code="P-X"]'))`), 'missing inventory order row');
@@ -426,15 +436,17 @@ try {
     return value.selected === 'P-X' ? value : null;
   }, 'missing inventory product identity preservation');
   assert.equal(missingInventory.selected, 'P-X');
-  assert.match(missingInventory.identity, /보조 패널/);
-  assert.equal(missingInventory.body, '', '승인되지 않은 상태 표를 재고 미등록 화면에도 표시하면 안 된다.');
-  assert.equal(missingInventory.metrics, '');
+  assert.match(missingInventory.identity, /조회·수정|재고없는 상품/);
+  assert.match(missingInventory.body, /창고담당자일반 적요직원 전달사항/, 'v1.2는 재고 미확인 상태에서도 원 주문 작업 필드를 제공한다.');
+  assert.match(missingInventory.metrics, /재고 미확인.*비교 불가/, '미확인은 0으로 표시하지 않는다.');
   assert.match(missingInventory.region, /북부/, 'ORDER Q 배송지역이 좌측 주문서 목록까지 전달되어야 한다.');
 
   await navigate(client, `${origin}/orderops/list.html`);
   await uploadDispatchOrders(client);
+  await applyPrepared(client);
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('작업자배정_주문현황')`), 'dispatch Excel order source');
   await uploadInventory(client);
+  await applyPrepared(client);
   await analyzeExcelWorkspace(client);
   await evaluate(client, `document.querySelector('#ordersDrop').click()`);
   await waitFor(() => evaluate(client, `document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length===3`), 'three order-document summaries');
@@ -482,25 +494,26 @@ try {
   assert.equal(notFound.orders, '파일을 선택하세요');
 
   await uploadWarehouseConflictOrders(client);
-  const warehouseDialog = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>{const dialog=document.querySelector('#warehouseColumnDialog');return {open:dialog.open,candidates:[...dialog.querySelectorAll('.warehouse-column-candidate')].map(node=>node.textContent.replace(/\\s+/g,' ').trim()),checked:Boolean(dialog.querySelector('input[name="warehouseSourceColumn"]:checked')),message:document.querySelector('#systemMessage').textContent}})()`);
-    return value.open ? value : null;
-  }, 'warehouse source-column conflict dialog');
-  assert.equal(warehouseDialog.checked, false, '서로 다른 후보는 첫 열을 자동 선택하면 안 된다.');
-  assert.match(warehouseDialog.candidates.join(' '), /창고.*본창고.*창고코드.*01/);
-  assert.match(warehouseDialog.message, /창고 원본 열 선택 필요/);
-  await evaluate(client, `(()=>{const label=[...document.querySelectorAll('.warehouse-column-candidate')].find(node=>node.textContent.includes('창고코드'));label.querySelector('input').checked=true;document.querySelector('#warehouseColumnApply').click();return true})()`);
-  await waitFor(() => evaluate(client, `!document.querySelector('#warehouseColumnDialog').open&&document.querySelector('#systemMessage').textContent.includes('창고코드 적용')`), 'warehouse source-column revalidation');
+  await waitFor(()=>evaluate(client,`document.querySelector('#prepareFileList').textContent.includes('INVALID')`),'warehouse conflicting mapping invalid');
+  await evaluate(client,`(()=>{const rows=[...document.querySelectorAll('#prepareFileEditor .orderops-mapping-row')];const row=rows.find(row=>/창고$/.test(row.querySelector('span').textContent));const select=row.querySelector('select');select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+  await evaluate(client,`(()=>{const row=[...document.querySelectorAll('#prepareFileEditor .orderops-mapping-row')].find(row=>row.querySelector('span').textContent.includes('창고코드'));const select=row.querySelector('select');select.value='창고';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+  await applyPrepared(client);
   assert.equal(await evaluate(client, `Boolean(JSON.parse(localStorage.getItem('oneapp.orderops.excel-mappings.v1')||'null')?.warehouseColumnSelections&&Object.keys(JSON.parse(localStorage.getItem('oneapp.orderops.excel-mappings.v1')||'null').warehouseColumnSelections).length)`), false,
     '명시적으로 기억을 선택하지 않은 창고 원본 열은 다음 파일에 저장하면 안 된다.');
   await uploadBlankUnitInventory(client);
-  await waitFor(() => evaluate(client, `document.querySelector('#previewTable table.preview-readiness tbody tr')?.textContent.includes('단위 확인')`), 'blank inventory unit safe state');
+  await applyPrepared(client);
+  await evaluate(client, `document.querySelector('[data-preview="allocations"]').click();document.querySelector('#previewTable [data-order-row]').click()`);
+  await waitFor(() => evaluate(client, `document.body.textContent.includes('주문/재고 단위 확인 필요')`), 'blank inventory unit safe state in selected-order comparison');
   await analyzeExcelWorkspace(client);
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
-  const selectedWarehouse = await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="warehouse"]')?.value||''`), 'selected warehouse code in analyzed rows');
+  // The earlier column-menu case deliberately hid the first allocations
+  // column. v1.2 correctly retains that same view preference across analysis.
+  // Reopen it explicitly before checking the mapped warehouse editor.
+  await evaluate(client, `(()=>{const button=document.querySelector('#tableSettingsButton');if(button.getAttribute('aria-expanded')!=='true')button.click();document.querySelector('#columnVisibilityButton').click();const checkbox=[...document.querySelectorAll('#columnVisibilityMenu input[data-column-visible]')].find(input=>input.closest('label').textContent.trim()==='창고');if(checkbox&&!checkbox.checked)checkbox.click();return true})()`);
+  const selectedWarehouse = await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="warehouse"]')?.value||''`), 'selected warehouse code in analyzed rows').catch(async error=>{throw Error(error.message+': '+await evaluate(client,`JSON.stringify({table:document.querySelector('#previewTable').textContent.slice(0,2000),toast:document.querySelector('#toast').textContent,system:document.querySelector('#systemMessage').textContent,search:document.querySelector('#tableSearchInput').value})`));});
   assert.equal(selectedWarehouse, '01', '관리자가 선택한 창고코드 원본 값과 선행 0을 실제 분석표에 반영해야 한다.');
 
-  console.log('PASS OrderOps browser acceptance: stable 4→6→6 roles, source-column revalidation, manager assignment/count scope, responsive panes, app-header/bottom controls, print/input preservation, partial shipment, and conflict recovery.');
+  console.log('PASS OrderOps browser acceptance adapted to v1.2: existing order-list roles, source-column revalidation, manager assignment/count scope, responsive panes, app-header/bottom controls, print/input preservation, partial shipment, and conflict recovery.');
 } finally {
   client?.close();
   browserProcess?.kill();

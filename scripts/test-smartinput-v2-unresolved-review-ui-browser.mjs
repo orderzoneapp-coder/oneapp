@@ -216,6 +216,11 @@ const prepareWorkspace = async client => {
     }
     return true;
   })()`);
+  if (await evaluate(client, `Boolean(document.querySelector('#prepareApplyButton'))`)) {
+    await expr(client, `document.querySelectorAll('#prepareFileList button').length===2&&[...document.querySelectorAll('#prepareFileList button')].every(node=>node.textContent.includes('READY'))`, 'OrderOps explicit file validation');
+    await evaluate(client, `window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
+    await expr(client, `[...document.querySelectorAll('#prepareFileList button')].every(node=>node.textContent.includes('APPLIED'))`, 'OrderOps explicit batch application');
+  }
   await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'analysis readiness');
   await click(client, '#analyzeButton');
   await expr(client, `!document.querySelector('#resultsPanel').classList.contains('hidden')&&document.querySelectorAll('#previewTable tbody tr').length>0`, 'normal OrderOps result', 30_000);
@@ -316,15 +321,18 @@ try {
       'inventoryInspectorClose', 'inventoryInspectorReopen',
       'inventoryMenuButton', 'inventoryMenuCloseButton', 'inventoryMenuUploadButton', 'inventoryShareButton',
       'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
+      'prepareApplyButton', 'prepareFilesButton', 'preparePaneClose', 'preparePaneReopen', 'prepareRemoveButton',
+      'shipmentOpenButton',
       'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',
+      'workbenchResetButton',
     ],
     'only the approved OrderOps workbench, source-menu, search, table-setting, manager, and warehouse-resolution controls may extend the former button baseline');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
   assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
-  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsLoaders:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header.contains(document.getElementById(id))),sourceRuntimeHidden:getComputedStyle(source).display==='none',resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
+  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsLoaders:header.contains(document.querySelector('#analyzeButton'))&&document.querySelector('#orderOpsFilePreparePane').contains(document.querySelector('#prepareFilesButton')),sourceRuntimeHidden:getComputedStyle(source).display==='none',resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
   assert.equal(rebuiltPlacement.headerOwnsLoaders && rebuiltPlacement.sourceRuntimeHidden && rebuiltPlacement.resultsBelow && rebuiltPlacement.resultsWidth > 0, true,
-    'the approved OrderOps rebuild must place the active source actions inside the app header, hide the legacy source strip, and keep the center pane below it');
+    'v1.2 keeps analysis in the header and file preparation on the left, hides the legacy source strip, and keeps the center below the header');
   const rebuiltPanes = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');return [...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane)})()`);
   assert.deepEqual(rebuiltPanes, ['reference', 'work', 'result'],
     'the rebuilt OrderOps panes must be direct children of the same workspace');
@@ -340,10 +348,9 @@ try {
     appHeaderHeight: currentMobileShell.appHeaderHeight,
     settingsInMore: currentMobileShell.settingsInMore,
     settingsMenuCollapsed: currentMobileShell.settingsMenuCollapsed,
-    primarySingleRow: currentMobileShell.primarySingleRow,
     overlaps: currentMobileShell.overlaps,
-  }, { appHeaderHeight: 56, settingsInMore: true, settingsMenuCollapsed: true, primarySingleRow: true, overlaps: false },
-  '390px OrderOps app header must remain one 56px row without overlap and move settings into More');
+  }, { appHeaderHeight: 56, settingsInMore: false, settingsMenuCollapsed: true, overlaps: false },
+  'v1.2 keeps the 56px nonoverlapping horizontally scrollable header and its settings action');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await wait(150);
   assert.equal(await evaluate(client, `document.querySelector('#headerSettingsButton').parentElement===document.querySelector('[data-nexus-app-header="orderops"] > .header-actions')`), true,
