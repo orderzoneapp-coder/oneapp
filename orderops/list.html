@@ -16,7 +16,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-orderops-v1-3"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1"></script>
+  <script src="inventory-snapshot.js?v=20260912-common-inventory-v1"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -2626,6 +2627,80 @@
       .orderops-manager-assignment { grid-template-columns: 1fr auto; }
       .orderops-manager-assignment > div { grid-column: 1 / -1; }
     }
+    .inventory-menu {
+      position: fixed;
+      top: calc(var(--nexus-ui-header-height, 64px) + var(--nexus-app-header-height, 56px) + 6px);
+      right: 12px;
+      z-index: 180;
+      width: min(440px, calc(100vw - 24px));
+      max-height: min(640px, calc(100dvh - var(--nexus-ui-header-height, 64px) - var(--nexus-app-header-height, 56px) - 18px));
+      overflow: auto;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      color: #e2e8f0;
+      background: #111827;
+      box-shadow: 0 18px 44px rgb(15 23 42 / 38%);
+    }
+    .inventory-menu[hidden] { display: none !important; }
+    .inventory-menu__head,
+    .inventory-menu__actions,
+    .inventory-menu__list-actions,
+    .inventory-menu__status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .inventory-menu__head { justify-content: space-between; margin-bottom: 10px; }
+    .inventory-menu__head strong { color: #f8fafc; font-size: 14px; }
+    .inventory-menu__head button,
+    .inventory-menu__actions button,
+    .inventory-menu__list-actions button {
+      min-height: 32px;
+      border: 1px solid #475569;
+      border-radius: 7px;
+      padding: 5px 9px;
+      color: #f8fafc;
+      background: #1e293b;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .inventory-menu button:disabled { opacity: .48; cursor: not-allowed; }
+    .inventory-menu__actions { flex-wrap: wrap; }
+    .inventory-menu__actions label { display: grid; gap: 3px; color: #cbd5e1; font-size: 11px; }
+    .inventory-menu__actions input,
+    .inventory-menu select {
+      min-height: 32px;
+      border: 1px solid #475569;
+      border-radius: 7px;
+      padding: 5px 8px;
+      color: #f8fafc;
+      background: #0f172a;
+      font: inherit;
+      font-size: 12px;
+    }
+    .inventory-menu select { width: 100%; margin-top: 10px; }
+    .inventory-menu__list-actions { margin-top: 8px; flex-wrap: wrap; }
+    .inventory-menu__status {
+      align-items: flex-start;
+      margin: 10px 0 0;
+      border-top: 1px solid #334155;
+      padding-top: 9px;
+      color: #cbd5e1;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .inventory-menu__status[data-error="true"] { color: #fecaca; }
+    @media (max-width: 639px) {
+      .inventory-menu {
+        top: calc(var(--nexus-ui-header-height, 104px) + var(--nexus-app-header-height, 56px) + 6px);
+        right: 8px;
+        width: calc(100vw - 16px);
+        max-height: calc(100dvh - var(--nexus-ui-header-height, 104px) - var(--nexus-app-header-height, 56px) - 14px);
+      }
+    }
   </style>
 </head>
 <body>
@@ -2649,6 +2724,9 @@
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
+      <button class="header-link" id="inventoryMenuButton" type="button" aria-label="재고 업로드·공유 저장·공통 재고 불러오기" aria-expanded="false" aria-controls="inventoryMenu">
+        <span aria-hidden="true">▤</span><span>재고</span>
+      </button>
       <button class="header-link header-save-button" id="headerCloudSaveButton" type="button" aria-label="작업 완료 후 클라우드 저장 F8" aria-keyshortcuts="F8" disabled>
         <span aria-hidden="true">✓</span><span>저장 F8</span>
       </button>
@@ -2660,6 +2738,28 @@
       </button>
     </div>
   </header>
+
+  <section class="inventory-menu" id="inventoryMenu" aria-label="공통 재고 저장과 불러오기" hidden>
+    <div class="inventory-menu__head">
+      <strong>재고</strong>
+      <button id="inventoryMenuCloseButton" type="button" aria-label="재고 메뉴 닫기">닫기</button>
+    </div>
+    <div class="inventory-menu__actions">
+      <button id="inventoryMenuUploadButton" type="button">Excel 업로드</button>
+      <label>기준일<input id="inventoryBasisDateInput" type="date"></label>
+      <button id="inventoryShareButton" type="button" hidden>현재 ERP 재고 공유 저장</button>
+    </div>
+    <select id="inventorySnapshotSelect" aria-label="공유 ERP 재고 선택">
+      <option value="">공유 ERP 재고 목록을 불러오세요</option>
+    </select>
+    <div class="inventory-menu__list-actions">
+      <button id="inventoryErpRefreshButton" type="button">ERP 목록 새로고침</button>
+      <button id="inventoryErpMoreButton" type="button" hidden>더보기</button>
+      <button id="inventoryErpApplyButton" type="button" disabled>선택 ERP 재고 적용</button>
+      <button id="inventoryDataOpsLoadButton" type="button">DataOps 확정재고 적용</button>
+    </div>
+    <p class="inventory-menu__status" id="inventoryCurrentStatus" role="status" aria-live="polite">현재 작업의 재고는 자동으로 교체되지 않습니다. 불러온 자료를 검산한 뒤 명시적으로 적용합니다.</p>
+  </section>
 
   <main class="page-shell">
     <section class="system-workbench" aria-label="주문관리 파일 작업영역">
@@ -3092,6 +3192,7 @@
         const refreshButton = document.getElementById("refreshButton");
         const analyzeButton = document.getElementById("analyzeButton");
         const cloudLoadButton = document.getElementById("headerCloudLoadButton");
+        const inventoryMenuButton = document.getElementById("inventoryMenuButton");
 
         const prepareHeaderButton = (button, label) => {
           if (!button) return null;
@@ -3136,9 +3237,13 @@
         const settingsButton = document.getElementById("headerSettingsButton");
         const compactHeaderMedia = window.matchMedia("(max-width: 639px)");
         const syncCompactHeaderActions = () => {
-          if (!settingsButton) return;
-          if (compactHeaderMedia.matches) moreMenuItems.append(settingsButton);
-          else headerActions?.append(settingsButton);
+          if (compactHeaderMedia.matches) {
+            if (inventoryMenuButton) moreMenuItems.append(inventoryMenuButton);
+            if (settingsButton) moreMenuItems.append(settingsButton);
+          } else {
+            if (inventoryMenuButton) primaryActions.insertBefore(inventoryMenuButton, moreMenu);
+            if (settingsButton) headerActions?.append(settingsButton);
+          }
         };
         syncCompactHeaderActions();
         compactHeaderMedia.addEventListener?.("change", syncCompactHeaderActions);
@@ -3220,6 +3325,7 @@
 
       const engine = window.ShippingManagementEngine;
       const workbookTools = window.ShippingManagementWorkbook;
+      const inventorySnapshotTools = window.OrderOpsInventorySnapshot;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
       const LOCAL_DB_NAME = "ONEAPPShippingRecoveryDB";
       const LOCAL_DB_VERSION = 1;
@@ -3314,6 +3420,12 @@
         deliveryManagerFilter: "",
         deliveryRegionFilter: "",
         inventory: null,
+        inventorySnapshots: [],
+        inventorySnapshotCursor: "",
+        inventorySnapshotHasMore: false,
+        inventorySnapshotLoading: false,
+        inventoryApplyBusy: false,
+        workspaceChangeVersion: 0,
         purchases: null,
         sales: null,
         validation: null,
@@ -3408,6 +3520,18 @@
         validationBox: document.getElementById("validationBox"),
         systemViewNote: document.getElementById("systemViewNote"),
         smartInputButton: document.getElementById("smartInputButton"),
+        inventoryMenuButton: document.getElementById("inventoryMenuButton"),
+        inventoryMenu: document.getElementById("inventoryMenu"),
+        inventoryMenuCloseButton: document.getElementById("inventoryMenuCloseButton"),
+        inventoryMenuUploadButton: document.getElementById("inventoryMenuUploadButton"),
+        inventoryBasisDateInput: document.getElementById("inventoryBasisDateInput"),
+        inventoryShareButton: document.getElementById("inventoryShareButton"),
+        inventorySnapshotSelect: document.getElementById("inventorySnapshotSelect"),
+        inventoryErpRefreshButton: document.getElementById("inventoryErpRefreshButton"),
+        inventoryErpMoreButton: document.getElementById("inventoryErpMoreButton"),
+        inventoryErpApplyButton: document.getElementById("inventoryErpApplyButton"),
+        inventoryDataOpsLoadButton: document.getElementById("inventoryDataOpsLoadButton"),
+        inventoryCurrentStatus: document.getElementById("inventoryCurrentStatus"),
         analyzeButton: document.getElementById("analyzeButton"),
         refreshButton: document.getElementById("refreshButton"),
         resultsPanel: document.getElementById("resultsPanel"),
@@ -3898,6 +4022,10 @@
         const canonicalJson = engine.canonicalStringify(payload);
         return {
           schemaVersion: LOCAL_RECOVERY_SCHEMA,
+          publicationState: options.publicationState === "STAGED" ? "STAGED" : "PUBLISHED",
+          inventoryApplyTransactionId: String(options.inventoryApplyTransactionId || ""),
+          stagedAt: String(options.stagedAt || ""),
+          publishedAt: String(options.publishedAt || (options.publicationState === "STAGED" ? "" : updatedAt)),
           recordId: createRecoveryRecordId(payload.sourceFingerprint, payload.updatedAt),
           sourceFingerprint: payload.sourceFingerprint,
           updatedAt: payload.updatedAt,
@@ -3921,6 +4049,7 @@
             record.payload.sourceFingerprint !== record.sourceFingerprint ||
             record.payload.workspace.sourceFingerprint !== record.sourceFingerprint ||
             record.payload.updatedAt !== record.updatedAt ||
+            !["STAGED", "PUBLISHED"].includes(record.publicationState || "PUBLISHED") ||
             engine.containsCloudTokenKey(record)
           ) {
             throw new Error("복구자료 구조 또는 token 비저장 계약이 올바르지 않습니다.");
@@ -4135,7 +4264,7 @@
       async function enforceRecoveryRetention(activeRecordId) {
         const records = await getAllRecoveryRecords();
         const candidates = await Promise.all(records.map(verifyRecoveryRecord));
-        const valid = candidates.filter((candidate) => candidate.valid)
+        const valid = candidates.filter((candidate) => candidate.valid && (candidate.record?.publicationState || "PUBLISHED") === "PUBLISHED")
           .sort((left, right) => recoveryTimestamp(right) - recoveryTimestamp(left));
         const latestCompleted = valid.find((candidate) =>
           candidate.record?.payload?.workspace?.workspaceMode !== engine.PREVIEW_WORKSPACE_MODE);
@@ -4258,6 +4387,7 @@
 
       function scheduleLocalSave() {
         window.clearTimeout(scheduleLocalSave.timer);
+        state.workspaceChangeVersion += 1;
         if (state.workspace) elements.localSaveStatus.textContent = "임시저장 · 저장 대기";
         scheduleLocalSave.timer = window.setTimeout(() => {
           queueLocalWorkspaceSave().catch((error) => {
@@ -4303,19 +4433,23 @@
           sourceMatrix: inventorySource.matrix,
           productCodeColumnIndex: inventorySource.productCodeColumnIndex,
           columns: inventorySource.columns || [],
+          sourceKind: inventorySource.sourceKind,
+          sourceSchemaVersion: inventorySource.sourceSchemaVersion,
         } : null;
         state.purchases = workspace?.orderOpsInputs?.purchases || null;
         state.sales = workspace?.orderOpsInputs?.sales || null;
         state.validation = state.orders && state.inventory
           ? engine.validateInputs(state.orders, state.inventory)
           : null;
+        if (workspace?.inventoryApplicationMode === "TOTAL_ONLY") state.validation = workspace.inputValidation;
         state.pendingSystemHistory = workspace?.systemHistory || null;
         elements.orderQSourcePicker.hidden = Boolean(state.orders);
         FILE_KINDS.forEach(renderFileCard);
         renderIntegratedFileCard();
         renderValidation();
-        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
-        elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
+        elements.analyzeButton.disabled = workspace?.inventoryApplicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
+        elements.replaceRecoveryButton.disabled = workspace?.inventoryApplicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
+        refreshInventoryMenuAvailability();
       }
 
       async function restoreLocalRecord(record) {
@@ -5112,6 +5246,7 @@
         } else {
           setSystemMessage("입력 오류 · 필수 열과 파일 내용을 확인하세요");
         }
+        refreshInventoryMenuAvailability();
       }
 
       let orderQSourceAdapterPromise = null;
@@ -8668,8 +8803,9 @@
         elements.shipmentExecutionStatus.textContent = state.shipmentCommandError || (reviewRequired
           ? `주문 Revision 변경 감지 · 기존 출고 취소 또는 정정 필요`
           : `${snapshot.orderNo} · 동결 Revision ${snapshot.orderRevision}${results.length ? ` · 결과 ${results.length}건` : " · 확정 전"}`);
-        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired || state.shipmentSourceChanged;
-        elements.shipmentHoldButton.disabled = state.shipmentCommandBusy;
+        const totalOnlyInventory = state.workspace?.inventoryApplicationMode === "TOTAL_ONLY";
+        elements.shipmentConfirmButton.disabled = state.shipmentCommandBusy || reviewRequired || state.shipmentSourceChanged || totalOnlyInventory;
+        elements.shipmentHoldButton.disabled = state.shipmentCommandBusy || totalOnlyInventory;
         elements.shipmentApplyLatestButton.disabled = state.shipmentCommandBusy;
         elements.shipmentKeepWorkButton.disabled = state.shipmentCommandBusy || state.shipmentKeepWorkAcknowledged;
         persistShipmentDraftToWorkspace();
@@ -8731,6 +8867,8 @@
 
       async function runShipmentCommand(intent) {
         const snapshot = state.orderQSource?.snapshot;
+        if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 출고확정을 실행하세요." };
+        if (state.workspace?.inventoryApplicationMode === "TOTAL_ONLY") return { ok: false, message: "DataOps 총량 재고는 비교 전용이며 출고확정에 사용할 수 없습니다." };
         if (!snapshot || state.shipmentCommandBusy) return { ok: false, message: "출고 작업을 시작할 수 없습니다." };
         state.shipmentCommandBusy = true;
         state.shipmentCommandError = "";
@@ -8966,6 +9104,7 @@
       let activeOrderOpsAnalysis = null;
 
       async function performAnalysis() {
+        if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 출고분석을 실행하세요." };
         if (!state.validation?.canAnalyze) return;
         state.analysisEnterLocked = false;
         setAnalysisEnterReady(false);
@@ -9076,14 +9215,14 @@
         };
       }
 
-      async function postCloudAction(action, body) {
+      async function postCloudAction(action, body, { requireToken = true } = {}) {
         const url = normalizeCloudUrl(elements.cloudUrlInput.value);
         const token = elements.cloudTokenInput.value;
-        if (!token) throw new Error("Shipping 전용 Cloud token을 입력하세요.");
+        if (requireToken && !token) throw new Error("Shipping 전용 Cloud token을 입력하세요.");
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action, token, ...(body || {}) }),
+          body: JSON.stringify({ action, ...(token ? { token } : {}), ...(body || {}) }),
         });
         if (!response.ok) throw new Error(`Cloud 요청 실패: HTTP ${response.status}`);
         const json = await response.json();
@@ -9091,6 +9230,434 @@
           throw new Error(json?.message || "Cloud 요청이 실패했습니다.");
         }
         return json.data;
+      }
+
+      let inventoryApplyOperation = null;
+
+      function setInventoryStatus(message, error = false) {
+        elements.inventoryCurrentStatus.textContent = String(message || "");
+        elements.inventoryCurrentStatus.dataset.error = String(Boolean(error));
+      }
+
+      function setInventoryMenuOpen(open) {
+        const nextOpen = Boolean(open);
+        elements.inventoryMenu.hidden = !nextOpen;
+        elements.inventoryMenuButton.setAttribute("aria-expanded", String(nextOpen));
+        if (nextOpen) {
+          if (!elements.inventoryBasisDateInput.value) {
+            elements.inventoryBasisDateInput.value = state.workspace?.basisDateStatus === "valid"
+              ? state.workspace.basisDate
+              : new Date().toISOString().slice(0, 10);
+          }
+          elements.inventoryMenuCloseButton.focus({ preventScroll: true });
+        }
+      }
+
+      function isShareableErpInventory(parsed = state.inventory) {
+        return Boolean(
+          parsed?.kind === "inventory" &&
+          !parsed.errors?.length &&
+          !parsed.duplicateCodes?.length &&
+          /^[a-f0-9]{64}$/.test(String(parsed.fileHash || "")) &&
+          parsed.sourceKind !== "DATAOPS_FINALIZED" &&
+          (parsed.columns || []).some((column) => column.role === "warehouseQuantity"),
+        );
+      }
+
+      function refreshInventoryMenuAvailability() {
+        elements.inventoryShareButton.hidden = !isShareableErpInventory();
+        elements.inventoryShareButton.disabled = state.inventorySnapshotLoading || state.inventoryApplyBusy;
+        elements.inventoryErpRefreshButton.disabled = state.inventorySnapshotLoading || state.inventoryApplyBusy;
+        elements.inventoryErpMoreButton.disabled = state.inventorySnapshotLoading || state.inventoryApplyBusy;
+        elements.inventoryErpApplyButton.disabled = state.inventorySnapshotLoading || state.inventoryApplyBusy || !elements.inventorySnapshotSelect.value;
+        elements.inventoryDataOpsLoadButton.disabled = state.inventorySnapshotLoading || state.inventoryApplyBusy;
+        elements.inventoryMenuUploadButton.disabled = state.inventoryApplyBusy;
+      }
+
+      function renderInventorySnapshotOptions() {
+        const selected = elements.inventorySnapshotSelect.value;
+        const options = state.inventorySnapshots.map((item) => {
+          const label = [
+            item.basisDate || "기준일 없음",
+            item.sourceFileName || "원본명 없음",
+            `${formatNumber(item.productCount || item.rowCount)}개 상품`,
+            item.savedAt || "저장시각 없음",
+          ].join(" · ");
+          const option = new Option(label, `${item.snapshotId}\u001f${item.revision}`);
+          option.dataset.snapshotId = item.snapshotId;
+          option.dataset.revision = item.revision;
+          return option;
+        });
+        if (!options.length) options.push(new Option(
+          state.inventorySnapshotLoading ? "공유 ERP 재고 목록을 불러오는 중..." : "저장된 공유 ERP 재고가 없습니다",
+          "",
+        ));
+        elements.inventorySnapshotSelect.replaceChildren(...options);
+        if (options.some((option) => option.value === selected)) elements.inventorySnapshotSelect.value = selected;
+        else if (state.inventorySnapshots.length) elements.inventorySnapshotSelect.value = options[0].value;
+        elements.inventoryErpMoreButton.hidden = !state.inventorySnapshotHasMore;
+        refreshInventoryMenuAvailability();
+      }
+
+      async function listInventorySnapshots({ append = false } = {}) {
+        if (state.inventorySnapshotLoading) return;
+        if (!ensureCloudConfiguration()) return;
+        state.inventorySnapshotLoading = true;
+        refreshInventoryMenuAvailability();
+        setInventoryStatus("공유 ERP 재고 목록을 검산하며 불러오는 중입니다.");
+        try {
+          const result = await postCloudAction("inventory_snapshot_list", {
+            sourceType: "ORDEROPS_ERP",
+            limit: 50,
+            cursor: append ? state.inventorySnapshotCursor : "",
+          });
+          const items = Array.isArray(result?.items) ? result.items : [];
+          const known = new Set((append ? state.inventorySnapshots : []).map((item) => `${item.snapshotId}\u001f${item.revision}`));
+          state.inventorySnapshots = [
+            ...(append ? state.inventorySnapshots : []),
+            ...items.filter((item) => !known.has(`${item.snapshotId}\u001f${item.revision}`)),
+          ];
+          state.inventorySnapshotCursor = String(result?.nextCursor || "");
+          state.inventorySnapshotHasMore = Boolean(result?.hasMore && state.inventorySnapshotCursor);
+          renderInventorySnapshotOptions();
+          setInventoryStatus(`공유 ERP 재고 ${formatNumber(state.inventorySnapshots.length)}건을 확인했습니다. 선택 후 적용하세요.`);
+        } catch (error) {
+          setInventoryStatus(`공유 ERP 재고 목록 실패 · ${error.message || error}`, true);
+          showToast(error.message || "공유 ERP 재고 목록을 불러오지 못했습니다.", true);
+        } finally {
+          state.inventorySnapshotLoading = false;
+          renderInventorySnapshotOptions();
+        }
+      }
+
+      async function shareCurrentErpInventory() {
+        if (!isShareableErpInventory()) {
+          showToast("검증된 ERP 창고재고를 먼저 업로드하세요.", true);
+          return;
+        }
+        if (!ensureCloudConfiguration()) return;
+        state.inventorySnapshotLoading = true;
+        refreshInventoryMenuAvailability();
+        setInventoryStatus("현재 ERP 재고의 원본·행·셀 합계를 검산하고 공유 저장합니다.");
+        try {
+          const snapshot = await inventorySnapshotTools.buildErpEnvelope(state.inventory, {
+            basisDate: elements.inventoryBasisDateInput.value,
+            engineVersion: engine.ENGINE_VERSION,
+            sha256Hex,
+          });
+          const saved = await postCloudAction("inventory_snapshot_save", { snapshot });
+          if (saved.hash !== snapshot.hash || Number(saved.rowCount) !== snapshot.rowCount || Number(saved.cellCount) !== snapshot.cellCount) {
+            throw new Error("공유 재고 저장 검산 결과가 일치하지 않습니다.");
+          }
+          setInventoryStatus(`${saved.deduplicated ? "기존 동일본 확인" : "공유 저장 완료"} · ${saved.basisDate || "기준일 없음"} · ${formatNumber(saved.productCount || saved.rowCount)}개 상품`);
+          showToast(saved.deduplicated ? "동일한 ERP 재고가 이미 공유되어 기존 확정본을 유지합니다." : "ERP 재고를 공유 저장했습니다.");
+          state.inventorySnapshotLoading = false;
+          await listInventorySnapshots();
+        } catch (error) {
+          setInventoryStatus(`공유 저장 실패 · ${error.message || error}`, true);
+          showToast(error.message || "ERP 재고를 공유 저장하지 못했습니다.", true);
+        } finally {
+          state.inventorySnapshotLoading = false;
+          refreshInventoryMenuAvailability();
+        }
+      }
+
+      function selectedInventorySnapshotMetadata() {
+        const [snapshotId, revision] = String(elements.inventorySnapshotSelect.value || "").split("\u001f");
+        return state.inventorySnapshots.find((item) => item.snapshotId === snapshotId && item.revision === revision) || null;
+      }
+
+      async function parseSharedErpInventory(metadata) {
+        const result = await postCloudAction("inventory_snapshot_get", {
+          snapshotId: metadata.snapshotId,
+          revision: metadata.revision,
+        });
+        const verified = await inventorySnapshotTools.readErpSnapshot(result, { sha256Hex });
+        const canonical = verified.canonical;
+        const parsed = engine.parseInventoryWorkbook({
+          fileName: canonical.sourceFile.fileName,
+          sheetName: canonical.sourceFile.sheetName,
+          fileHash: verified.snapshot.hash,
+          rawMatrix: canonical.sourceMatrix,
+          displayMatrix: canonical.sourceMatrix,
+        });
+        if (parsed.errors?.length || parsed.rowCount !== verified.metadata.rowCount) {
+          throw new Error(parsed.errors?.[0]?.message || "공유 ERP 재고를 현재 파서로 재검산하지 못했습니다.");
+        }
+        parsed.sourceKind = "ORDEROPS_ERP_SHARED";
+        parsed.sourceSchemaVersion = inventorySnapshotTools.ERP_SCHEMA;
+        return {
+          parsed,
+          reference: {
+            schemaVersion: engine.INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION,
+            sourceType: "ORDEROPS_ERP",
+            sourceId: verified.metadata.snapshotId,
+            revision: verified.metadata.revision,
+            hash: verified.metadata.hash,
+            basisDate: verified.metadata.basisDate,
+            savedAt: verified.metadata.savedAt,
+            applicationMode: "ERP_WAREHOUSE",
+          },
+          applicationMode: "ERP_WAREHOUSE",
+        };
+      }
+
+      async function parseDataOpsInventory() {
+        const snapshot = await postCloudAction("dataops_snapshot_get", {}, { requireToken: false });
+        const readModel = await inventorySnapshotTools.readDataOpsSnapshot(snapshot, { sha256Hex });
+        return {
+          parsed: inventorySnapshotTools.dataOpsReadModelToParsed(readModel),
+          reference: {
+            schemaVersion: engine.INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION,
+            sourceType: "DATAOPS_FINALIZED",
+            sourceId: readModel.sourceId,
+            revision: readModel.revision,
+            hash: readModel.hash,
+            basisDate: readModel.basisDate,
+            savedAt: readModel.savedAt,
+            applicationMode: "TOTAL_ONLY",
+            excludedProductCount: readModel.validation.errors.length,
+          },
+          applicationMode: "TOTAL_ONLY",
+        };
+      }
+
+      async function sourceFingerprintForInventory(parsed, workspace) {
+        const inputs = workspace?.orderOpsInputs || {};
+        return sha256Hex(JSON.stringify({
+          schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
+          orders: workspace?.sourceFiles?.orders?.sha256 || state.orders?.fileHash || "",
+          inventory: parsed.fileHash,
+          purchases: inputs.purchases?.fileHash || state.purchases?.fileHash || "",
+          sales: inputs.sales?.fileHash || state.sales?.fileHash || "",
+        }));
+      }
+
+      function commitCurrentWorkspaceInputs() {
+        const activeInput = document.activeElement;
+        if (activeInput instanceof HTMLInputElement || activeInput instanceof HTMLSelectElement || activeInput instanceof HTMLTextAreaElement) {
+          commitExcelGridInput(activeInput);
+        }
+        captureShipmentDraftInputs();
+        persistShipmentDraftToWorkspace();
+      }
+
+      function inventoryOperationWithTimeout(promise, label, timeoutMs = 15000) {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) => window.setTimeout(() => reject(new Error(`${label} 결과 확인 시간이 초과되었습니다.`)), timeoutMs)),
+        ]);
+      }
+
+      async function waitForInventoryApplyBoundary() {
+        window.clearTimeout(scheduleLocalSave.timer);
+        if (activeShipmentOperation) {
+          const result = await inventoryOperationWithTimeout(activeShipmentOperation, "출고확정");
+          if (!result?.ok) throw new Error(result?.message || "출고확정 결과를 확인하지 못했습니다.");
+        }
+        if (activeCloudSaveOperation) {
+          const result = await inventoryOperationWithTimeout(activeCloudSaveOperation, "Cloud 저장");
+          if (!result?.ok) throw new Error(result?.message || "Cloud 저장 결과를 확인하지 못했습니다.");
+        }
+        if (activeOrderOpsAnalysis) {
+          const result = await inventoryOperationWithTimeout(activeOrderOpsAnalysis, "출고분석");
+          if (!result?.ok) throw new Error(result?.message || "출고분석 결과를 확인하지 못했습니다.");
+        }
+        await waitForOrderOpsIdle();
+        await inventoryOperationWithTimeout(localWorkspaceSaveQueue, "임시저장");
+        commitCurrentWorkspaceInputs();
+        if (state.workspace?.sourceFingerprint) {
+          const saved = await inventoryOperationWithTimeout(queueLocalWorkspaceSave(), "최신 입력 임시저장");
+          if (!saved?.recordId || saved.sourceFingerprint !== state.workspace.sourceFingerprint) {
+            throw new Error("최신 입력 임시저장 검산 결과가 일치하지 않습니다.");
+          }
+        }
+      }
+
+      async function publishInventoryCandidate(candidate, transactionId) {
+        const stagedAt = new Date().toISOString();
+        const record = await buildRecoveryRecord(candidate, {
+          publicationState: "STAGED",
+          inventoryApplyTransactionId: transactionId,
+          stagedAt,
+          publishedAt: "",
+        });
+        await putRecoveryRecord(record);
+        const staged = await readRecoveryRecord(record.recordId);
+        const stagedVerification = await verifyRecoveryRecord(staged);
+        if (!stagedVerification.valid || staged.publicationState !== "STAGED") {
+          await deleteRecoveryRecordIds([record.recordId]);
+          throw new Error(`재고 적용 후보 저장 검산 실패: ${stagedVerification.reason || "상태 불일치"}`);
+        }
+        return { record: staged, stagedAt };
+      }
+
+      function chooseInventoryOverridePolicy(applicationMode) {
+        const count = state.workspace?.inventoryOverrides?.cells?.length || 0;
+        if (!count) return "DISCARD";
+        if (applicationMode === "TOTAL_ONLY") {
+          const proceed = window.confirm(
+            `현재 수기 재고 보정 ${count}셀은 창고 근거가 없는 총량 재고에 안전하게 옮길 수 없어 모두 제외됩니다. 총량 비교 재고를 적용하시겠습니까?`,
+          );
+          if (!proceed) throw new Error("수기 재고 보정 처리 선택을 취소했습니다.");
+          return "DISCARD";
+        }
+        const preserve = window.confirm(
+          `현재 수기 재고 보정 ${count}셀이 있습니다. 확인을 누르면 상품코드·단위·창고 열이 모두 같은 보정만 새 재고에 유지합니다. 취소를 누르면 다음 단계에서 보정 제외 여부를 선택합니다.`,
+        );
+        if (preserve) return "PRESERVE_COMPATIBLE";
+        const discard = window.confirm(`수기 재고 보정 ${count}셀을 모두 제외하고 새 재고를 적용하시겠습니까?`);
+        if (!discard) throw new Error("수기 재고 보정 처리 선택을 취소했습니다.");
+        return "DISCARD";
+      }
+
+      async function finalizeInventoryCandidate(staged, candidate) {
+        const published = { ...staged, publicationState: "PUBLISHED", publishedAt: new Date().toISOString() };
+        await putRecoveryRecord(published);
+        const reread = await readRecoveryRecord(published.recordId);
+        const verification = await verifyRecoveryRecord(reread);
+        if (!verification.valid || reread.publicationState !== "PUBLISHED") {
+          throw new Error(`재고 적용 확정본 검산 실패: ${verification.reason || "상태 불일치"}`);
+        }
+        try {
+          await persistLegacyCompatibilityRecord(reread);
+        } catch (error) {
+          setSystemMessage("재고 적용 확정 · 구버전 호환 복구본 저장은 실패했습니다");
+        }
+        try {
+          await enforceRecoveryRetention(reread.recordId);
+        } catch (error) {
+          setSystemMessage("재고 적용 확정 · 이전 복구본 정리는 다음 저장에서 다시 시도합니다");
+        }
+        localStorage.setItem(LOCAL_POINTER_KEY, reread.recordId);
+        localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
+          schemaVersion: reread.schemaVersion,
+          recordId: reread.recordId,
+          sourceFingerprint: reread.sourceFingerprint,
+          planId: candidate.planId,
+          basisDate: candidate.basisDate,
+          updatedAt: reread.updatedAt,
+          payloadSha256: reread.payloadSha256,
+          inventoryApplyTransactionId: reread.inventoryApplyTransactionId,
+        }));
+        return reread;
+      }
+
+      async function applyInventoryCandidate(loaded) {
+        if (inventoryApplyOperation) return inventoryApplyOperation;
+        const operation = (async () => {
+          state.inventoryApplyBusy = true;
+          refreshInventoryMenuAvailability();
+          setInventoryStatus("진행 중 저장·확정 결과를 확인한 뒤 최신 작업에 재고를 적용합니다.");
+          let stagedRecordId = "";
+          try {
+            await waitForInventoryApplyBoundary();
+            const transactionId = window.crypto?.randomUUID?.() || `inventory-${Date.now()}`;
+            const inventoryOverridePolicy = chooseInventoryOverridePolicy(loaded.applicationMode);
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              const base = state.workspace || engine.createPreviewWorkspace(state.orders, state.inventory, {
+                purchases: state.purchases,
+                sales: state.sales,
+                systemHistory: state.pendingSystemHistory,
+              });
+              const baseVersion = state.workspaceChangeVersion;
+              const baseDigest = await sha256Hex(engine.canonicalStringify(base));
+              const sourceFingerprint = await sourceFingerprintForInventory(loaded.parsed, base);
+              const candidate = engine.replaceWorkspaceInventory(base, loaded.parsed, {
+                applicationMode: loaded.applicationMode,
+                sourceReference: loaded.reference,
+                sourceFingerprint,
+                inventoryOverridePolicy,
+              });
+              const staged = await publishInventoryCandidate(candidate, transactionId);
+              stagedRecordId = staged.record.recordId;
+              const currentDigest = await sha256Hex(engine.canonicalStringify(state.workspace || base));
+              if ((state.workspace && state.workspace !== base) || state.workspaceChangeVersion !== baseVersion || currentDigest !== baseDigest) {
+                await deleteRecoveryRecordIds([stagedRecordId]);
+                stagedRecordId = "";
+                commitCurrentWorkspaceInputs();
+                if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
+                continue;
+              }
+              const published = await finalizeInventoryCandidate(staged.record, candidate);
+              stagedRecordId = "";
+              state.workspace = candidate;
+              state.inventory = loaded.parsed;
+              state.validation = loaded.applicationMode === "TOTAL_ONLY"
+                ? candidate.inputValidation
+                : (state.orders ? engine.validateInputs(state.orders, loaded.parsed) : null);
+              state.pendingSystemHistory = candidate.systemHistory;
+              state.selectedRecoveryId = published.recordId;
+              FILE_KINDS.forEach(renderFileCard);
+              renderValidation();
+              elements.analyzeButton.disabled = loaded.applicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
+              elements.replaceRecoveryButton.disabled = loaded.applicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
+              renderResults();
+              await refreshRecoveryRecords();
+              const label = loaded.applicationMode === "TOTAL_ONLY" ? "DataOps 총량 비교 재고" : "공유 ERP 창고재고";
+              const overrideDisposition = candidate.inventoryOverrideDisposition;
+              setInventoryStatus(`${label} 적용 완료 · ${loaded.reference.basisDate || "기준일 없음"} · 기존 담당·적요·출고 입력 유지 · 수기 보정 유지 ${formatNumber(overrideDisposition?.preservedCount || 0)} / 제외 ${formatNumber(overrideDisposition?.discardedCount || 0)}`);
+              setSystemMessage(loaded.applicationMode === "TOTAL_ONLY"
+                ? "총량 비교 재고 적용 완료 · 창고배정·구매제안은 차단되며 비교표만 제공합니다"
+                : "공유 ERP 재고 적용 완료 · 최신 주문 입력을 기준으로 다시 계산했습니다");
+              showToast(`${label}를 현재 작업에 적용했습니다.`);
+              refreshInventoryMenuAvailability();
+              return { ok: true, recordId: published.recordId };
+            }
+            throw new Error("재고 적용 중 작업 입력이 계속 변경되어 확정하지 못했습니다. 입력을 마친 뒤 다시 적용하세요.");
+          } catch (error) {
+            if (stagedRecordId) await deleteRecoveryRecordIds([stagedRecordId]).catch(() => undefined);
+            setInventoryStatus(`재고 적용 실패 · ${error.message || error} · 현재 화면과 입력은 유지됩니다.`, true);
+            setSystemMessage("재고 적용 실패 · 기존 작업과 마지막 확정 복구본을 유지합니다");
+            showToast(error.message || "재고를 적용하지 못했습니다.", true);
+            return { ok: false, message: error.message || "재고를 적용하지 못했습니다." };
+          } finally {
+            state.inventoryApplyBusy = false;
+            refreshInventoryMenuAvailability();
+          }
+        })();
+        inventoryApplyOperation = operation;
+        operation.finally(() => {
+          if (inventoryApplyOperation === operation) inventoryApplyOperation = null;
+        }).catch(() => undefined);
+        return operation;
+      }
+
+      async function loadSelectedErpInventory() {
+        const metadata = selectedInventorySnapshotMetadata();
+        if (!metadata) return showToast("적용할 공유 ERP 재고를 선택하세요.", true);
+        state.inventorySnapshotLoading = true;
+        refreshInventoryMenuAvailability();
+        setInventoryStatus("선택한 ERP 재고의 원문·행·셀·해시를 검산합니다.");
+        try {
+          const loaded = await parseSharedErpInventory(metadata);
+          state.inventorySnapshotLoading = false;
+          await applyInventoryCandidate(loaded);
+        } catch (error) {
+          setInventoryStatus(`공유 ERP 재고 불러오기 실패 · ${error.message || error}`, true);
+          showToast(error.message || "공유 ERP 재고를 불러오지 못했습니다.", true);
+        } finally {
+          state.inventorySnapshotLoading = false;
+          refreshInventoryMenuAvailability();
+        }
+      }
+
+      async function loadDataOpsInventory() {
+        if (!ensureCloudUrlConfiguration()) return;
+        state.inventorySnapshotLoading = true;
+        refreshInventoryMenuAvailability();
+        setInventoryStatus("DataOps 최신 확정재고의 고정 11열·LOT·단위·해시를 검산합니다.");
+        try {
+          const loaded = await parseDataOpsInventory();
+          state.inventorySnapshotLoading = false;
+          await applyInventoryCandidate(loaded);
+        } catch (error) {
+          setInventoryStatus(`DataOps 확정재고 불러오기 실패 · ${error.message || error}`, true);
+          showToast(error.message || "DataOps 확정재고를 불러오지 못했습니다.", true);
+        } finally {
+          state.inventorySnapshotLoading = false;
+          refreshInventoryMenuAvailability();
+        }
       }
 
       function renderCloudRevisions(revisions) {
@@ -9126,6 +9693,7 @@
       let activeCloudSaveOperation = null;
 
       async function runCloudPlanSave() {
+        if (state.inventoryApplyBusy) return { ok: false, message: "재고 적용 결과를 확인한 뒤 Cloud 저장을 실행하세요." };
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
         setSystemMessage("완료본 저장 중 · 변경 불가 revision을 생성합니다");
@@ -9186,6 +9754,14 @@
         const missingInput = hasUrl ? elements.cloudTokenInput : elements.cloudUrlInput;
         missingInput.focus();
         showToast("처음 한 번 Cloud URL과 전용 Token을 설정하세요.", true);
+        return false;
+      }
+
+      function ensureCloudUrlConfiguration() {
+        if (elements.cloudUrlInput.value.trim()) return true;
+        toggleWorkspaceStorage(true);
+        elements.cloudUrlInput.focus();
+        showToast("처음 한 번 공통 Cloud URL을 설정하세요.", true);
         return false;
       }
 
@@ -9970,6 +10546,21 @@
       renderOrderViewPresetOptions();
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
+      elements.inventoryMenuButton.addEventListener("click", () => setInventoryMenuOpen(elements.inventoryMenu.hidden));
+      elements.inventoryMenuCloseButton.addEventListener("click", () => {
+        setInventoryMenuOpen(false);
+        elements.inventoryMenuButton.focus({ preventScroll: true });
+      });
+      elements.inventoryMenuUploadButton.addEventListener("click", () => {
+        setInventoryMenuOpen(false);
+        elements.inventoryInput.click();
+      });
+      elements.inventoryShareButton.addEventListener("click", () => { void shareCurrentErpInventory(); });
+      elements.inventoryErpRefreshButton.addEventListener("click", () => { void listInventorySnapshots(); });
+      elements.inventoryErpMoreButton.addEventListener("click", () => { void listInventorySnapshots({ append: true }); });
+      elements.inventoryErpApplyButton.addEventListener("click", () => { void loadSelectedErpInventory(); });
+      elements.inventoryDataOpsLoadButton.addEventListener("click", () => { void loadDataOpsInventory(); });
+      elements.inventorySnapshotSelect.addEventListener("change", refreshInventoryMenuAvailability);
       elements.shipmentConfirmButton.addEventListener("click", () => executeShipmentCommand("CONFIRM"));
       elements.shipmentHoldButton.addEventListener("click", () => executeShipmentCommand("HOLD"));
       elements.shipmentApplyLatestButton.addEventListener("click", applyLatestOrderQSource);
@@ -10242,6 +10833,11 @@
       });
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
+        if (!elements.inventoryMenu.hidden) {
+          setInventoryMenuOpen(false);
+          elements.inventoryMenuButton.focus({ preventScroll: true });
+          return;
+        }
         if (!elements.columnVisibilityMenu.classList.contains("hidden")) {
           closeColumnVisibilityMenu({ restoreFocus: true });
           return;
@@ -10605,6 +11201,7 @@
       bindIntegratedFileCard();
       bindBundleDropSurface();
       restoreInventoryInspectorOpen();
+      refreshInventoryMenuAvailability();
 
       try {
         elements.cloudUrlInput.value = localStorage.getItem("oneapp_cloud_sync_url_v1") || "";
@@ -10630,6 +11227,7 @@
       async function waitForOrderOpsIdle(timeoutMs = 10000) {
         const startedAt = Date.now();
         while (Object.values(state.loading).some(Boolean)
+          || state.inventorySnapshotLoading
           || state.orderQCandidateLoading
           || state.unresolvedReview.loading
           || state.unresolvedReview.impact.loading) {
@@ -10642,6 +11240,11 @@
 
       async function flushOrderOpsBeforeWorkspaceLeave() {
         window.clearTimeout(scheduleLocalSave.timer);
+
+        if (inventoryApplyOperation) {
+          const inventoryApply = await inventoryApplyOperation;
+          if (!inventoryApply?.ok) throw new Error(inventoryApply?.message || "재고 적용 결과를 확인하지 못했습니다.");
+        }
 
         if (activeShipmentOperation) {
           const shipment = await activeShipmentOperation;
@@ -10691,7 +11294,7 @@
         window.addEventListener("nexus-ui:ready", registerOrderOpsWorkspaceAdapter, { once: true });
       }
 
-      if (!engine || !workbookTools || !window.XLSX) {
+      if (!engine || !workbookTools || !inventorySnapshotTools || !window.XLSX) {
         setSystemMessage("실행 불가 · 필수 라이브러리를 불러오지 못했습니다");
         elements.validationBox.className = "validation-box bad";
         elements.validationBox.innerHTML = `

@@ -478,11 +478,14 @@
       ],
       "sharedContracts": [
         "cloud-url",
+        "common-inventory-snapshot",
         "shipping-purchase-plan",
         "orderq-shipment-candidate-read-model",
         "shipping-result"
       ],
       "consumedContracts": [
+        "dataops-inventory-snapshot",
+        "common-inventory-snapshot",
         "orderq-unresolved-review-read-model",
         "orderq-shipment-candidate-read-model"
       ]
@@ -620,7 +623,7 @@
       "path": "code.gs",
       "kind": "google-apps-script-service",
       "status": "production",
-      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, explicitly saved Shipping purchase-plan revisions, token-protected ORDER Q vNext incremental records and company-partitioned official voucher commands, and the revisioned NEXUS company profile boundary.",
+      "purpose": "Back up and restore product master, history, shared configuration, the finalized DataOps inventory snapshot, immutable shared ERP inventory snapshots, explicitly saved Shipping purchase-plan revisions, token-protected ORDER Q vNext incremental records and company-partitioned official voucher commands, and the revisioned NEXUS company profile boundary.",
       "apiActions": {
         "post": [
           "initSync",
@@ -629,6 +632,9 @@
           "config",
           "dataops_snapshot_commit",
           "dataops_snapshot_get",
+          "inventory_snapshot_save",
+          "inventory_snapshot_list",
+          "inventory_snapshot_get",
           "shipping_plan_save",
           "shipping_plan_list",
           "shipping_plan_get",
@@ -660,6 +666,7 @@
         "table-view-config",
         "cloud-url",
         "dataops-inventory-snapshot",
+        "common-inventory-snapshot",
         "shipping-purchase-plan",
         "company-profile",
         "orderq-official-sync"
@@ -1213,6 +1220,38 @@
       }
     },
     {
+      "id": "common-inventory-snapshot",
+      "owner": "orderops",
+      "consumers": [
+        "orderops/list.html"
+      ],
+      "schemaVersion": "ONEAPP_INVENTORY_SNAPSHOT_V1",
+      "readSchemaVersion": "oneapp-common-inventory-read/v1",
+      "sourceTypes": [
+        "ORDEROPS_ERP",
+        "DATAOPS_FINALIZED"
+      ],
+      "applicationModes": [
+        "ERP_WAREHOUSE",
+        "TOTAL_ONLY"
+      ],
+      "publicationPolicy": "ERP snapshots are staged, reread, hash/count verified, appended to immutable history, and exposed only after an index row is published. Applying any source to an OrderOps workspace writes a STAGED local recovery record and promotes it to PUBLISHED only after the candidate and the latest workspace inputs are reverified.",
+      "totalOnlyPolicy": "DataOps finalized stock preserves source LOT rows and may aggregate only an exact product-code/name/spec/unit group. It never synthesizes a warehouse, shipment allocation, or purchase proposal.",
+      "resources": {
+        "clientAsset": "orderops/inventory-snapshot.js",
+        "cloud": [
+          "inventory_snapshot_save",
+          "inventory_snapshot_list",
+          "inventory_snapshot_get",
+          "InventorySnapshotStaging",
+          "InventorySnapshotHistory",
+          "InventorySnapshotIndex",
+          "ONEAPP_SHIPPING_PLAN_ACCESS_TOKEN"
+        ]
+      },
+      "rollback": "Remove the OrderOps inventory menu and common-inventory consumer while retaining immutable server snapshots and PUBLISHED local recovery records. STAGED records remain ineligible for automatic recovery."
+    },
+    {
       "id": "shipping-result",
       "owner": "orderops",
       "consumers": [
@@ -1259,7 +1298,8 @@
       "owner": "dataops",
       "consumers": [
         "DataOps.html",
-        "MerchOps.html"
+        "MerchOps.html",
+        "orderops/list.html"
       ],
       "schemaVersion": "ONEAPP_DATAOPS_SNAPSHOT_V1",
       "columns": [

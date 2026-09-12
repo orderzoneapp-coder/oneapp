@@ -219,6 +219,7 @@ jobs:
       - name: Test OrderOps allocation and workbook contracts
         run: |
           node scripts/test-shipping-management.mjs
+          node scripts/test-common-inventory-snapshot.mjs
           node scripts/test-orderops-dispatch-workbench.mjs
           node scripts/test-orderops-three-section-preview.mjs
 
@@ -238,7 +239,9 @@ jobs:
           node scripts/test-orderops-pr544-operator-flow-browser.mjs
 
       - name: Test OrderOps output and DataOps shared theme interaction
-        run: node scripts/test-orderops-theme-browser-e2e.mjs
+        run: |
+          node scripts/test-orderops-theme-browser-e2e.mjs
+          node scripts/test-orderops-common-inventory-browser.mjs
 
       - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs

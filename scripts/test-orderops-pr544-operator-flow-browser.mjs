@@ -122,7 +122,7 @@ try {
   assert.equal(beforeAnalysis.headerOwnsSources, true, '업로더와 분석 실행은 앱헤더 안에 있어야 한다.');
   assert.deepEqual(beforeAnalysis.panes, ['reference', 'work', 'result'], '앱헤더 아래 세 섹션은 동일 부모의 직접 자식이어야 한다.');
   assert.deepEqual(beforeAnalysis.headerButtons,
-    ['통합 불러오기','주문서 불러오기','창고재고 불러오기','출고분석 Enter','더보기'],
+    ['통합 불러오기','주문서 불러오기','창고재고 불러오기','출고분석 Enter','▤재고','더보기'],
     '앱헤더 주요 조작 순서를 유지해야 한다.');
   assert.deepEqual(beforeAnalysis.bottomActions,
     ['smartInputButton','headerCloudSaveButton','printButton','downloadButton','headerRestoreButton'],
