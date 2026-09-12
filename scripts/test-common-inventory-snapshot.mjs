@@ -219,4 +219,48 @@ const recoverySelection = engine.selectLatestVerifiedRecovery([
 assert.equal(recoverySelection.selected.recordId, "legacy-published");
 assert.equal(recoverySelection.candidates.some((candidate) => candidate.record.recordId === "staged-new"), false);
 
+const interruptedInventorySelection = engine.selectLatestVerifiedRecovery([
+  { valid: true, record: { recordId: "confirmed-before", publicationState: "PUBLISHED", updatedAt: "2026-09-12T01:00:00.000Z" } },
+  { valid: true, record: {
+    recordId: "inventory-published-before-final-check",
+    publicationState: "PUBLISHED",
+    inventoryApplyTransactionId: "TX-INTERRUPTED",
+    publishedAt: "2026-09-12T03:00:00.000Z",
+    updatedAt: "2026-09-12T03:00:00.000Z",
+  } },
+], "confirmed-before", { recordId: "confirmed-before" });
+assert.equal(interruptedInventorySelection.selected.recordId, "confirmed-before",
+  "종료된 재고 적용 확정 표시가 없는 후보는 PUBLISHED여도 자동 복구하지 않아야 한다.");
+assert.equal(interruptedInventorySelection.candidates.some((candidate) =>
+  candidate.record.recordId === "inventory-published-before-final-check"), false);
+
+const currentLegacyInventorySelection = engine.selectLatestVerifiedRecovery([
+  { valid: true, record: {
+    recordId: "legacy-inventory-confirmed",
+    publicationState: "PUBLISHED",
+    inventoryApplyTransactionId: "TX-LEGACY-CONFIRMED",
+    publishedAt: "2026-09-12T02:00:00.000Z",
+    updatedAt: "2026-09-12T02:00:00.000Z",
+  } },
+], "legacy-inventory-confirmed", {
+  recordId: "legacy-inventory-confirmed",
+  inventoryApplyTransactionId: "TX-LEGACY-CONFIRMED",
+});
+assert.equal(currentLegacyInventorySelection.selected.recordId, "legacy-inventory-confirmed",
+  "기존 배포본에서 포인터와 메타가 모두 확정한 재고 적용본은 호환 복구해야 한다.");
+
+const committedInventorySelection = engine.selectLatestVerifiedRecovery([
+  { valid: true, record: { recordId: "confirmed-before", publicationState: "PUBLISHED", updatedAt: "2026-09-12T01:00:00.000Z" } },
+  { valid: true, record: {
+    recordId: "inventory-committed",
+    publicationState: "PUBLISHED",
+    inventoryApplyTransactionId: "TX-COMMITTED",
+    inventoryApplyCommittedAt: "2026-09-12T04:00:00.000Z",
+    publishedAt: "2026-09-12T04:00:00.000Z",
+    updatedAt: "2026-09-12T04:00:00.000Z",
+  } },
+], "confirmed-before", { recordId: "confirmed-before" });
+assert.equal(committedInventorySelection.selected.recordId, "inventory-committed",
+  "최종 적용 확정 시각을 기록한 재고본만 이후 복구 선택 대상이어야 한다.");
+
 console.log("Common inventory snapshot tests passed.");

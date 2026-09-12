@@ -16,7 +16,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1-1"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1-2"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
@@ -4026,6 +4026,7 @@
           inventoryApplyTransactionId: String(options.inventoryApplyTransactionId || ""),
           stagedAt: String(options.stagedAt || ""),
           publishedAt: String(options.publishedAt || (options.publicationState === "STAGED" ? "" : updatedAt)),
+          inventoryApplyCommittedAt: String(options.inventoryApplyCommittedAt || ""),
           recordId: createRecoveryRecordId(payload.sourceFingerprint, payload.updatedAt),
           sourceFingerprint: payload.sourceFingerprint,
           updatedAt: payload.updatedAt,
@@ -4165,6 +4166,15 @@
         return Number.isFinite(timestamp) ? timestamp : 0;
       }
 
+      function localRecoveryMeta() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(LOCAL_META_KEY) || "{}");
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
       async function findRecoveryRecord() {
         if (!state.db) return null;
         state.recoveryCorruptionDetected = false;
@@ -4174,7 +4184,7 @@
         const records = await getAllRecoveryRecords();
         const candidates = await Promise.all(records.map(verifyRecoveryRecord));
         const pointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
-        const selection = engine.selectLatestVerifiedRecovery(candidates, pointer);
+        const selection = engine.selectLatestVerifiedRecovery(candidates, pointer, localRecoveryMeta());
         state.recoveryCorruptionDetected = legacyCorruptionDetected || selection.corruptionDetected;
         state.recoveryPointerOutdated = selection.pointerOutdated;
         state.recoveryRecords = selection.candidates;
@@ -4264,7 +4274,10 @@
       async function enforceRecoveryRetention(activeRecordId) {
         const records = await getAllRecoveryRecords();
         const candidates = await Promise.all(records.map(verifyRecoveryRecord));
-        const valid = candidates.filter((candidate) => candidate.valid && (candidate.record?.publicationState || "PUBLISHED") === "PUBLISHED")
+        const pointer = localStorage.getItem(LOCAL_POINTER_KEY) || "";
+        const recoveryMeta = localRecoveryMeta();
+        const valid = candidates.filter((candidate) => candidate.valid
+          && engine.isRecoveryPublicationCommitted(candidate.record, pointer, recoveryMeta))
           .sort((left, right) => recoveryTimestamp(right) - recoveryTimestamp(left));
         const latestCompleted = valid.find((candidate) =>
           candidate.record?.payload?.workspace?.workspaceMode !== engine.PREVIEW_WORKSPACE_MODE);
@@ -9524,7 +9537,13 @@
       }
 
       async function verifyPublishedInventoryCandidate(staged) {
-        const published = { ...staged, publicationState: "PUBLISHED", publishedAt: new Date().toISOString() };
+        const committedAt = new Date().toISOString();
+        const published = {
+          ...staged,
+          publicationState: "PUBLISHED",
+          publishedAt: committedAt,
+          inventoryApplyCommittedAt: committedAt,
+        };
         await putRecoveryRecord(published);
         const reread = await readRecoveryRecord(published.recordId);
         const verification = await verifyRecoveryRecord(reread);
@@ -9597,16 +9616,34 @@
                 if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
                 continue;
               }
-              const published = await verifyPublishedInventoryCandidate(staged.record);
               commitCurrentWorkspaceInputs();
               await inventoryOperationWithTimeout(localWorkspaceSaveQueue, "최종 입력 임시저장");
               const finalDigest = await sha256Hex(engine.canonicalStringify(state.workspace || base));
               commitCurrentWorkspaceInputs();
               if ((state.workspace && state.workspace !== base) || state.workspaceChangeVersion !== baseVersion || finalDigest !== baseDigest) {
-                await deleteRecoveryRecordIds([published.recordId]);
+                await deleteRecoveryRecordIds([stagedRecordId]);
                 stagedRecordId = "";
                 if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
                 continue;
+              }
+              const workbench = document.querySelector(".system-workbench");
+              workbench?.setAttribute("inert", "");
+              workbench?.setAttribute("aria-busy", "true");
+              let published;
+              try {
+                const lockedDigest = await sha256Hex(engine.canonicalStringify(state.workspace || base));
+                if ((state.workspace && state.workspace !== base)
+                  || state.workspaceChangeVersion !== baseVersion
+                  || lockedDigest !== baseDigest) {
+                  await deleteRecoveryRecordIds([stagedRecordId]);
+                  stagedRecordId = "";
+                  if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
+                  continue;
+                }
+                published = await verifyPublishedInventoryCandidate(staged.record);
+              } finally {
+                workbench?.removeAttribute("inert");
+                workbench?.removeAttribute("aria-busy");
               }
               activatePublishedInventoryCandidate(published, candidate);
               stagedRecordId = "";

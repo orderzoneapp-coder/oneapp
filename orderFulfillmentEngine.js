@@ -1332,10 +1332,20 @@
     return reread;
   }
 
-  function selectLatestVerifiedRecovery(candidates, pointer = "") {
+  function isRecoveryPublicationCommitted(record, pointer = "", recoveryMeta = {}) {
+    const publicationState = cleanText(record?.publicationState || "PUBLISHED");
+    if (publicationState !== "PUBLISHED") return false;
+    const transactionId = cleanText(record?.inventoryApplyTransactionId);
+    if (!transactionId) return true;
+    if (cleanText(record?.inventoryApplyCommittedAt)) return true;
+    return cleanText(pointer) === cleanText(record?.recordId)
+      && cleanText(recoveryMeta?.recordId) === cleanText(record?.recordId)
+      && cleanText(recoveryMeta?.inventoryApplyTransactionId) === transactionId;
+  }
+
+  function selectLatestVerifiedRecovery(candidates, pointer = "", recoveryMeta = {}) {
     const list = (Array.isArray(candidates) ? [...candidates] : []).filter((candidate) => {
-      const publicationState = cleanText(candidate?.record?.publicationState || "PUBLISHED");
-      return publicationState === "PUBLISHED";
+      return isRecoveryPublicationCommitted(candidate?.record, pointer, recoveryMeta);
     });
     const timestamp = (candidate) => {
       const parsed = Date.parse(candidate?.record?.updatedAt || "");
@@ -3687,6 +3697,7 @@
     sanitizeCloudTokenKeys,
     buildLocalRecoveryPayload,
     commitVerifiedRecoveryRecord,
+    isRecoveryPublicationCommitted,
     selectLatestVerifiedRecovery,
     parseOrderBasisDate,
     buildPlanId,
