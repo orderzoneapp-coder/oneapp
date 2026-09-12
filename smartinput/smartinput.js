@@ -5812,10 +5812,13 @@ function restoreEstimateOpenFocusAndScroll(recovery) {
     restoreScroll();
     restoreSelection();
     window.requestAnimationFrame(() => {
-      estimateOpenSelectionRestoreTargets.delete(target);
-      if (!target.isConnected || document.activeElement !== target) return;
+      if (!target.isConnected || document.activeElement !== target) {
+        estimateOpenSelectionRestoreTargets.delete(target);
+        return;
+      }
       restoreScroll();
       restoreSelection();
+      window.setTimeout(() => estimateOpenSelectionRestoreTargets.delete(target), 0);
     });
   });
 }
@@ -12235,10 +12238,9 @@ inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
-  const preserveSelection = estimateOpenSelectionRestoreTargets.has(input);
   window.requestAnimationFrame(() => {
     if (document.activeElement !== input) return;
-    if (!preserveSelection) input.select?.();
+    if (!estimateOpenSelectionRestoreTargets.has(input)) input.select?.();
     revealGridInput(input);
   });
   modeUi().activeCellId = `${tr.dataset.rowId}|${gridFieldId(input)}`;
