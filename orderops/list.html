@@ -16,9 +16,9 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-workbench-v12"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-last-product-row"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="workbench-ui.js?v=20260912-v12"></script>
+  <script src="workbench-ui.js?v=20260912-drop-end-row"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -2703,7 +2703,7 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="./workbench-v12.css?v=1">
+  <link rel="stylesheet" href="./workbench-v12.css?v=2">
 </head>
 <body>
   <header class="global-header" data-nexus-app-header="orderops">
@@ -3331,12 +3331,15 @@
         preparePane.dataset.nexusPane = "reference";
         preparePane.tabIndex = -1;
         preparePane.setAttribute("aria-label", "파일 준비·매핑");
-        preparePane.innerHTML = `<div class="orderops-side-panel__head"><h3>파일 준비</h3><button type="button" id="preparePaneClose">닫기</button></div>
-          <div class="orderops-prepare-actions"><button type="button" id="prepareFilesButton">Excel 파일</button><button type="button" id="prepareRemoveButton">지우기</button><button type="button" id="prepareApplyButton">적용</button></div>
+        preparePane.innerHTML = `<div class="orderops-prepare-actions" role="toolbar" aria-label="파일 준비 작업"><button type="button" id="prepareFilesButton"><span aria-hidden="true">＋</span> Excel 파일</button><button type="button" id="prepareRemoveButton">지우기</button><button type="button" id="preparePaneClose" aria-label="파일 준비 닫기">닫기</button></div>
           <input type="file" id="prepareFilesInput" accept=".xlsx,.xls" multiple hidden>
-          <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
-          <div id="prepareFileEditor"><p>파일을 선택하고 자료 유형·시트·열을 확인한 뒤 적용하세요.</p></div>
-          <p id="prepareStatus" role="status" aria-live="polite"></p>`;
+          <div id="prepareDropSurface" class="orderops-prepare-surface" aria-label="Excel 파일 끌어놓기 · 준비 및 매핑">
+            <div class="orderops-prepare-drop-hint"><strong>Excel 파일을 끌어다 놓으세요</strong><span>주문·재고·구매·판매 자료를 준비합니다.<br>유형과 열을 확인한 뒤 직접 적용하세요.</span></div>
+            <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
+            <div id="prepareFileEditor"></div>
+          </div>
+          <div class="orderops-prepare-footer"><p id="prepareStatus" role="status" aria-live="polite">.xlsx · .xls / 파일당 최대 25MiB · 여러 파일 가능</p>
+            <button type="button" id="prepareApplyButton"><strong>준비한 자료 적용</strong><small>확인한 자료만 현재 작업에 반영</small></button></div>`;
         leftPane.removeAttribute("data-nexus-pane");
         leftPane.classList.add("orderops-query-panel");
         leftPane.setAttribute("aria-label", "우측 주문 조회·담당 변경");
@@ -3344,6 +3347,7 @@
         rightPane.insertBefore(leftPane, rightPane.querySelector("#inventoryInspectorIdentity"));
         outerWorkspace.prepend(preparePane);
         paneShortcuts.innerHTML = `<button type="button" id="preparePaneReopen" aria-controls="orderOpsFilePreparePane" aria-expanded="true">파일 준비</button>`;
+        viewControlsScroll?.prepend(paneShortcuts);
         rightPane.querySelectorAll('[aria-label^="좌측"]').forEach(node => node.setAttribute("aria-label", node.getAttribute("aria-label").replace("좌측", "우측")));
         document.getElementById("deliveryFilterReset").textContent = "조회 초기화";
         document.getElementById("deliverySelectionOpenReadiness").textContent = "주문현황에서 보기";
@@ -3353,7 +3357,10 @@
         reset.id = "workbenchResetButton";
         reset.type = "button";
         reset.textContent = "초기화";
-        primaryActions.replaceChildren(tabs, analyzeButton, reset);
+        primaryActions.replaceChildren(tabs);
+        primaryActions.setAttribute("aria-label", "출고관리 화면 선택");
+        headerActions?.prepend(analyzeButton, reset);
+        appHeader.classList.add("orderops-workbench-header");
         const bottomLeft = document.createElement("div");
         bottomLeft.className = "orderops-workbar-save";
         bottomLeft.append(document.getElementById("headerCloudSaveButton"));
@@ -3379,6 +3386,32 @@
         document.body.append(ordersMenuItems, moreMenuItems);
         compactHeaderMedia.removeEventListener?.("change", syncCompactHeaderActions);
         if (settingsButton) headerActions?.append(settingsButton);
+        if (systemTopbar) {
+          // Keep the existing status/live nodes and their update contracts, but
+          // expose full details outside clipped panels without another row.
+          systemTopbar.id = "orderOpsWorkbenchStatus";
+          systemTopbar.setAttribute("popover", "auto");
+          systemTopbar.classList.add("orderops-workbench-status-popover");
+          const statusButton = document.createElement("button");
+          statusButton.id = "orderOpsWorkbenchStatusButton";
+          statusButton.type = "button";
+          statusButton.className = "table-tool-button";
+          statusButton.textContent = "작업 상태 ▾";
+          statusButton.setAttribute("popovertarget", systemTopbar.id);
+          statusButton.setAttribute("aria-controls", systemTopbar.id);
+          statusButton.setAttribute("aria-expanded", "false");
+          const notice = document.createElement("span");
+          notice.className = "orderops-status-notice";
+          notice.setAttribute("role", "status");
+          notice.setAttribute("aria-live", "polite");
+          const syncNotice = () => { const text = systemTopbar.textContent.replace(/\s+/g, " ").trim(); const invalid = systemTopbar.querySelector(".validation-box")?.classList.contains("bad"); statusButton.textContent = invalid ? "! 확인 필요 ▾" : "작업 상태 ▾"; statusButton.dataset.error = String(Boolean(invalid)); statusButton.title = text; notice.textContent = text; };
+          new MutationObserver(syncNotice).observe(systemTopbar, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class"] });
+          syncNotice();
+          systemTopbar.addEventListener("toggle", event => { statusButton.setAttribute("aria-expanded", String(event.newState === "open")); if (event.newState === "closed") statusButton.focus({ preventScroll: true }); });
+          viewControlsScroll?.parentElement.insertBefore(statusButton, viewControlsScroll.nextSibling);
+          viewControlsScroll?.parentElement.append(notice);
+          document.body.append(systemTopbar);
+        }
         const shipmentDialog = document.createElement("dialog");
         shipmentDialog.id = "shipmentWorkbenchDialog";
         shipmentDialog.className = "orderops-workbench-dialog";

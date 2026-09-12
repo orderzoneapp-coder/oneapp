@@ -748,16 +748,19 @@
   function explicitFileStructure(input, matrix, automaticHeaderRow) {
     if (!input.explicitMapping) return null;
     const { headerRowIndex, dataStartRowIndex, columns } = input.explicitMapping;
+    // Inclusive, zero-based. Legacy mappings retain their original full range.
+    const dataEndRowIndex = input.explicitMapping.dataEndRowIndex ?? matrix.length - 1;
     if (!Number.isInteger(headerRowIndex) || headerRowIndex < 0 || headerRowIndex >= matrix.length ||
         !Number.isInteger(dataStartRowIndex) || dataStartRowIndex <= headerRowIndex || dataStartRowIndex >= matrix.length || !Array.isArray(columns)) {
       throw new Error("헤더행·데이터 시작행·열 매핑 범위를 확인하세요.");
     }
+    if (!Number.isInteger(dataEndRowIndex) || dataEndRowIndex < dataStartRowIndex || dataEndRowIndex >= matrix.length) throw new Error("마지막 상품행은 헤더 다음 행부터 원본 마지막 행 사이에서 지정하세요.");
     const originalHeaders = matrix[headerRowIndex] || [];
     if (columns.length !== originalHeaders.length) throw new Error("원본 열 수와 매핑이 일치하지 않습니다.");
     const selected = columns.map(value => String(value || ""));
     const names = selected.filter(Boolean);
     if (new Set(names.map(normalizeOrderHeader)).size !== names.length) throw new Error("같은 항목에 여러 원본 열이 연결되었습니다. 사용할 열 하나를 선택하세요.");
-    return { schemaVersion: "orderops-explicit-file-mapping/v1", headerRowIndex, dataStartRowIndex, columns: selected, originalHeaders: cloneMatrix([originalHeaders])[0], effectiveHeaders: selected.map(value => value.startsWith("warehouse:") ? value.slice(10) : value) };
+    return { schemaVersion: "orderops-explicit-file-mapping/v1", headerRowIndex, dataStartRowIndex, dataEndRowIndex, columns: selected, originalHeaders: cloneMatrix([originalHeaders])[0], effectiveHeaders: selected.map(value => value.startsWith("warehouse:") ? value.slice(10) : value) };
   }
 
   function parseOrderWorkbook(input = {}) {
@@ -854,7 +857,7 @@
     const canonicalMappingIsValid = missingColumns.length === 0 &&
       unresolvedCanonicalFields.length === 0;
     if (headerRowIndex >= 0 && canonicalMappingIsValid) {
-      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
+      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex <= (explicitMapping?.dataEndRowIndex ?? displayMatrix.length - 1); rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);
@@ -1069,7 +1072,7 @@
     const rows = [];
     const occurrences = new Map();
     if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0) {
-      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
+      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex <= (explicitMapping?.dataEndRowIndex ?? displayMatrix.length - 1); rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);

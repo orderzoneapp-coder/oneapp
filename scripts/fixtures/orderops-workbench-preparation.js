@@ -23,15 +23,15 @@
   await w.prepare([file('multi-orders.xlsx',{첫시트:orders,둘째시트:orders})],'orders');
   const [first,second]=s.preparedFiles;
   await apply();assert(!s.workspace&&$('prepareStatus').textContent.includes('여러 개'),'U10 duplicate kind must not pick last');
-  select(first);change('preparedStart','3');select(second);change('preparedInclude',false);select(first);
-  assert($('preparedStart').value==='3','U07 selected sheet mapping retained');
-  await apply();assert(s.workspace.orders.length===1&&s.workspace.orders[0].productCode==='P2','U07/08 explicit start applied');
+  select(first);change('preparedEnd','2');select(second);change('preparedInclude',false);select(first);
+  assert($('preparedEnd').value==='2','U07 selected sheet mapping retained');
+  await apply();assert(s.workspace.orders.length===1&&s.workspace.orders[0].productCode==='P1','U07/08 explicit end applied');
   assert(s.workspace.sourceFiles.orders.sourceEvidence.rawMatrix.length===3,'U08 original rows retained');
   select(second);$('prepareRemoveButton').click();
   assert(s.preparedFiles.length===1&&s.workspace.orders.length===1,'U13 remove preparation only');
   const prior=s.workspace;
   await w.prepare([file('bad-purchase.xlsx',{구매:[['품목코드','품목명','구매처','수량'],['P1','상품1','구매처','oops']]})],'purchases');
-  const bad=s.preparedFiles.at(-1);select(first);change('preparedStart','2');await apply();
+  const bad=s.preparedFiles.at(-1);select(first);change('preparedEnd','3');await apply();
   assert(s.workspace===prior&&first.dirty&&bad.status==='INVALID','U11 invalid batch must not partially apply orders');
   select(bad);$('prepareRemoveButton').click();await apply();
   assert(s.workspace.orders.length===2,'U11 corrected batch applies');
@@ -51,20 +51,20 @@
     return {finish:async()=>{release();const result=await pending;crypto.subtle.digest=originalDigest;return result;}};
   }
   let gate=await gatedApply(false);
-  change('preparedStart','3');change('preparedInclude',false);
+  change('preparedEnd','2');change('preparedInclude',false);
   change('preparedSheet','다음');assert(s.selectedPreparedId===otherStock.id,'sheet selection while pending');
   change('preparedSheet','현재');
   const result=await gate.finish();
-  assert(result.ok&&s.inventory.explicitMapping.dataStartRowIndex===1,'F08 apply captures original parsed snapshot');
-  assert(stock.parsed.explicitMapping.dataStartRowIndex===2&&stock.dirty&&stock.status==='READY'&&!stock.include,'F08 latest mapping/include remains unapplied after prior success');
+  assert(result.ok&&s.inventory.explicitMapping.dataEndRowIndex===2,'F08 apply captures original parsed snapshot');
+  assert(stock.parsed.explicitMapping.dataEndRowIndex===1&&stock.dirty&&stock.status==='READY'&&!stock.include,'F08 latest mapping/include remains unapplied after prior success');
   let blocked=false;try{await __ops.flushOrderOpsBeforeWorkspaceLeave();}catch{blocked=true;}
   assert(blocked&&w.dirty(),'F08 pending preparation blocks app leave');
   change('preparedInclude',true);await apply();
   assert(!stock.dirty&&stock.status==='APPLIED'&&s.inventory.rows.length===1,'F08 reapply newest mapping');
   const inventoryBefore=JSON.stringify(s.workspace.inventory);
-  change('preparedStart','2');gate=await gatedApply(true);change('preparedStart','3');change('preparedInclude',false);
+  change('preparedEnd','3');gate=await gatedApply(true);change('preparedEnd','2');change('preparedInclude',false);
   const failed=await gate.finish();
-  assert(!failed.ok&&stock.dirty&&!stock.include&&stock.dataStartRowIndex===2,'F08 failure keeps newer preparation');
+  assert(!failed.ok&&stock.dirty&&!stock.include&&stock.dataEndRowIndex===1,'F08 failure keeps newer preparation');
   assert(JSON.stringify(s.workspace.inventory)===inventoryBefore,'F08 failure keeps accepted inventory');
   change('preparedInclude',true);await apply();
   select(otherStock);$('prepareRemoveButton').click();
@@ -82,5 +82,26 @@
   assert(clears===0,'U13 reset must not clear recovery stores');
   for(const id of latestBySource.values())assert(afterReset.recoveryRecords.includes(id),'U13 last confirmed work for each source retained');
   assert(localStorage.getItem('workbench-test-unrelated-setting')==='keep','U13 unrelated settings retained');
-  return {U05:'purchase/sales-only source views',U07_11:'multi-sheet, retained mapping, duplicate-kind block, invalid batch all-or-none, corrected reapply',PM_F08:'real inventory transaction success/failure with new start/include/sheet choices; dirty and beforeLeave preserved; reapply',U13:'preparation removal, stock use-off and reset preserve orders/recovery boundary'};
+  for(const kind of ['orders','inventory','purchases','sales']){
+    const sourceRows=kind==='orders'?orders:kind==='inventory'?inventory:[['품목코드','품목명',kind==='purchases'?'구매처':'거래처','수량'],['P1','상품1','참고 거래처',0],['P2','상품2','참고 거래처',2]];
+    const rows=[...sourceRows,['문의 안내: 마지막 상품 아래 정보 텍스트']];
+    await w.prepare([file('footer-'+kind+'.xlsx',{원본:rows})],kind);
+    const item=s.preparedFiles.at(-1);select(item);
+    assert(!$('preparedStart')&&$('preparedEnd'),'last row replaces start-row control');
+    change('preparedEnd','3');
+    assert(item.status==='READY'&&item.parsed.rows.length===2,kind+' excludes footer from parsing');
+    assert(item.parsed.sourceEvidence.rawMatrix.at(-1)[0]===rows.at(-1)[0],kind+' footer preserved as original evidence');
+    for(const end of ['1','5','2.5','']){change('preparedEnd',end);assert(item.status==='INVALID',kind+' rejects invalid end '+end);await apply();assert(!s.workspace,kind+' invalid end cannot apply');}
+    change('preparedEnd','3');await apply();
+    assert(s[kind].explicitMapping.dataEndRowIndex===2,kind+' applied inclusive end');
+    const restored=JSON.parse(JSON.stringify(ShippingManagementEngine.buildLocalRecoveryPayload(s.workspace)));
+    const saved=restored.workspace.sourceFiles[kind]||restored.workspace.orderOpsInputs[kind];
+    assert(saved.explicitMapping.dataEndRowIndex===2,kind+' recovery range retained');
+    assert(saved.sourceEvidence.rawMatrix.at(-1)[0]===rows.at(-1)[0],kind+' recovery footer retained');
+    assert(s[kind].rows[0].sourceRowNumber===2&&s[kind].rows[1].sourceRowNumber===3,kind+' original Excel row numbers retained');
+    s.preparedFiles=[];s.selectedPreparedId='';w.hydratePrepared();
+    assert($('preparedEnd').value==='3',kind+' restore displays last product row');
+    await reset();
+  }
+  return {U05:'purchase/sales-only source views',U07_11:'multi-sheet, retained last-row mapping, duplicate-kind block, invalid batch all-or-none, corrected reapply',PM_F08:'real inventory transaction success/failure with new end/include/sheet choices; dirty and beforeLeave preserved; reapply',U13:'preparation removal, stock use-off and reset preserve orders/recovery boundary'};
 })()

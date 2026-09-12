@@ -217,9 +217,9 @@ const prepareWorkspace = async client => {
     return true;
   })()`);
   if (await evaluate(client, `Boolean(document.querySelector('#prepareApplyButton'))`)) {
-    await expr(client, `document.querySelectorAll('#prepareFileList button').length===2&&[...document.querySelectorAll('#prepareFileList button')].every(node=>node.textContent.includes('READY'))`, 'OrderOps explicit file validation');
+    await expr(client, `document.querySelectorAll('#prepareFileList button').length===2&&[...document.querySelectorAll('#prepareFileList button')].every(node=>node.querySelector('[data-prepare-state="READY"]'))`, 'OrderOps explicit file validation');
     await evaluate(client, `window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
-    await expr(client, `[...document.querySelectorAll('#prepareFileList button')].every(node=>node.textContent.includes('APPLIED'))`, 'OrderOps explicit batch application');
+    await expr(client, `[...document.querySelectorAll('#prepareFileList button')].every(node=>node.querySelector('[data-prepare-state="APPLIED"]'))`, 'OrderOps explicit batch application');
   }
   await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'analysis readiness');
   await click(client, '#analyzeButton');
@@ -321,6 +321,7 @@ try {
       'inventoryInspectorClose', 'inventoryInspectorReopen',
       'inventoryMenuButton', 'inventoryMenuCloseButton', 'inventoryMenuUploadButton', 'inventoryShareButton',
       'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
+      'orderOpsWorkbenchStatusButton',
       'prepareApplyButton', 'prepareFilesButton', 'preparePaneClose', 'preparePaneReopen', 'prepareRemoveButton',
       'shipmentOpenButton',
       'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',

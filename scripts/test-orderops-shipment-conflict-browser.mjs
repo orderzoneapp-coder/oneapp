@@ -94,9 +94,9 @@ try {
   await waitFor(() => evaluate(client, `Boolean(window.XLSX?.utils?.aoa_to_sheet)`), 'OrderOps XLSX runtime');
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260907-001')`), 'ORDER Q direct source');
   await evaluate(client, `(async()=>{const workbook=XLSX.utils.book_new();const matrix=[['회사명 : 테스트 / 창고별재고'],['사용','품목코드','단위','품목명','규격','수량','1창고','2전송','3서울','4전송','7진영','기본','전송','창고'],['Yes','P-1','BOX','상품','BOX',10,10,'','','','','','','']];XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(matrix),'재고현황');const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});const transfer=new DataTransfer();transfer.items.add(new File([bytes],'창고별재고_출고파이프라인.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const input=document.querySelector('#inventoryInput');Object.defineProperty(input,'files',{configurable:true,value:transfer.files});input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#prepareFileList').textContent.includes('READY')`), 'inventory explicitly validated');
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#prepareFileList [data-prepare-state="READY"]'))`), 'inventory explicitly validated');
   await evaluate(client, `window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#prepareFileList').textContent.includes('APPLIED')&&!document.querySelector('#analyzeButton').disabled`), 'OrderOps direct-source analysis readiness');
+  await waitFor(() => evaluate(client, `Boolean(document.querySelector('#prepareFileList [data-prepare-state="APPLIED"]'))&&!document.querySelector('#analyzeButton').disabled`), 'OrderOps direct-source analysis readiness');
   await evaluate(client, `document.querySelector('#analyzeButton').click()`);
   await waitFor(() => evaluate(client, `!document.querySelector('#shipmentExecution').hidden&&document.querySelectorAll('#shipmentExecutionRows tr').length===1`), 'shipment execution panel');
   await evaluate(client, `document.querySelector('#shipmentOpenButton').click()`);
