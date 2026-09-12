@@ -208,7 +208,7 @@ import {
   shoppingCustomerSelectionKey,
   shoppingProductSelectionKey,
   shoppingUploadTotals
-} from './shopping-order-upload.js?v=0.1.0';
+} from './shopping-order-upload.js?v=0.1.1';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -5760,6 +5760,10 @@ function shoppingRequestContext(current = modeDraft()) {
   return {
     companyId: state.companyId,
     warehouse: shoppingWarehouseContext(current),
+    assignee: {
+      assigneeId: current.header.assigneeId,
+      assigneeName: current.header.assigneeName
+    },
     actor: state.actorId || 'SMART_INPUT_ADMIN'
   };
 }
@@ -7009,6 +7013,10 @@ async function handleFile(file) {
         captureGridPasteUndo();
         const current = modeDraft();
         const previousWarehouse = shoppingWarehouseContext(current);
+        const previousAssignee = {
+          assigneeId: current.header.assigneeId,
+          assigneeName: current.header.assigneeName
+        };
         const upload = createShoppingOrderUpload({
           ...shoppingSelected,
           fileName: file.name,
@@ -7023,7 +7031,8 @@ async function handleFile(file) {
           voucherDate: upload.selectedDeliveryDate,
           deliveryDate: upload.selectedDeliveryDate,
           manualDeliveryOverride: true,
-          ...previousWarehouse
+          ...previousWarehouse,
+          ...previousAssignee
         };
         current.sourceText = upload.sourceMatrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
         current.activeMethod = 'excel';

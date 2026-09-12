@@ -248,6 +248,8 @@ try {
   await expr(client, `document.querySelector('#productReferenceStatus')?.textContent==='READY'&&document.querySelector('#customerReferenceStatus')?.textContent==='READY'`, 'owner references ready');
   await input(client, '#warehouseInput', '본사창고');
   await expr(client, `document.querySelector('#warehouseInput').value==='본사창고'`, 'owner warehouse selected');
+  await input(client, '#assigneeInput', '김담당');
+  await expr(client, `document.querySelector('#assigneeInput').value==='김담당'`, 'order assignee entered');
   await evaluate(client, `new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/customer-master/vendor/xlsx.full.min.js';script.onload=()=>resolve(true);script.onerror=()=>reject(new Error('XLSX_LOAD_FAILED'));document.head.append(script);})`);
 
   await upload(client, issueFile);
@@ -323,13 +325,15 @@ try {
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=2');return (await db.getAll(db.STORE.ORDERS)).length===5;})()`, 'fifth surplus saved', 30_000);
   await upload(client, validFile);
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===5&&document.querySelector('#completeButton').disabled`, 'all existing orders excluded with zero-write action', 30_000);
-  const finalEvidence = await evaluate(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-final=1');const orders=await db.getAll(db.STORE.ORDERS);const items=await db.getAll(db.STORE.ORDER_ITEMS);const events=await db.getAll(db.STORE.ORDER_EVENTS);const queue=await db.getAll(db.STORE.SYNC_QUEUE);return {orders:orders.length,items:items.length,events:events.length,queue:queue.length,externalOrderNos:orders.map(order=>order.externalOrderNo),sourceType:[...new Set(orders.map(order=>order.sourceType))],firstEvidence:orders[0].shoppingSourceEvidence.rows[0]};})()`);
+  const finalEvidence = await evaluate(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-final=1');const orders=await db.getAll(db.STORE.ORDERS);const items=await db.getAll(db.STORE.ORDER_ITEMS);const events=await db.getAll(db.STORE.ORDER_EVENTS);const queue=await db.getAll(db.STORE.SYNC_QUEUE);return {orders:orders.length,items:items.length,events:events.length,queue:queue.length,externalOrderNos:orders.map(order=>order.externalOrderNo),sourceType:[...new Set(orders.map(order=>order.sourceType))],assignees:orders.map(order=>({assigneeId:order.assigneeId,assigneeName:order.assigneeName})),eventAssignees:events.map(event=>event.detail?.assignee),firstEvidence:orders[0].shoppingSourceEvidence.rows[0]};})()`);
   assert.equal(finalEvidence.orders, 5);
   assert.equal(finalEvidence.items, 14);
   assert.equal(finalEvidence.events, 5);
   assert.equal(finalEvidence.queue, 10);
   assert.deepEqual(finalEvidence.externalOrderNos, ['', '', '', '', '']);
   assert.deepEqual(finalEvidence.sourceType, ['SHOPPING_MALL_ORIGINAL']);
+  assert.deepEqual(finalEvidence.assignees, Array.from({ length: 5 }, () => ({ assigneeId: 'MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9', assigneeName: '김담당' })));
+  assert.deepEqual(finalEvidence.eventAssignees, finalEvidence.assignees);
   assert.equal(finalEvidence.firstEvidence.sourceValues['상점메모'].startsWith('메모 '), true);
   assert.equal(finalEvidence.firstEvidence.sourceCellEvidence.length, 17);
 
