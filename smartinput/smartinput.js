@@ -339,6 +339,7 @@ const state = {
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
   sourceImageWriteQueues: new Map(),
+  sourceImageMutationIntents: new Map(),
   clearedSourceImageDocumentIds: new Set(initialDraft.ui.pendingSourceImageDeletes || []),
   selectedRowIds: new Set(),
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
@@ -5208,6 +5209,34 @@ function queueSourceImageMutation(documentId, mutation) {
   return pending;
 }
 
+function beginSourceImageMutationIntent(documentId, kind, { mode = '', sourceImageId = '' } = {}) {
+  const previous = state.sourceImageMutationIntents.get(documentId);
+  if (kind === 'save'
+    && previous?.kind === 'save'
+    && previous.mode === mode
+    && previous.sourceImageId === sourceImageId) {
+    return previous;
+  }
+  const intent = Object.freeze({
+    kind,
+    mode,
+    sourceImageId,
+    sequence: Number(previous?.sequence || 0) + 1
+  });
+  state.sourceImageMutationIntents.set(documentId, intent);
+  return intent;
+}
+
+function sourceImageMutationIntentIsCurrent(documentId, intent) {
+  return Boolean(intent) && state.sourceImageMutationIntents.get(documentId) === intent;
+}
+
+function finishSourceImageMutationIntent(documentId, intent) {
+  if (!sourceImageMutationIntentIsCurrent(documentId, intent)) return false;
+  state.sourceImageMutationIntents.delete(documentId);
+  return true;
+}
+
 function setPendingSourceImageDelete(documentId, pending) {
   const current = new Set(state.draft.ui.pendingSourceImageDeletes || []);
   if (pending) current.add(documentId);
@@ -5215,17 +5244,20 @@ function setPendingSourceImageDelete(documentId, pending) {
   state.draft.ui.pendingSourceImageDeletes = [...current];
 }
 
-function finishPendingSourceImageDelete(documentId) {
+function finishPendingSourceImageDelete(documentId, intent) {
+  if (intent?.kind !== 'delete' || !sourceImageMutationIntentIsCurrent(documentId, intent)) return;
   const replacementPending = Object.values(state.sourceImages)
     .some(sourceImage => sourceImage?.documentId === documentId && sourceImage?.dataUrl);
   if (replacementPending) return;
   setPendingSourceImageDelete(documentId, false);
+  finishSourceImageMutationIntent(documentId, intent);
   saveDraftNow();
 }
 
 function queueSourceImageDelete(documentId) {
+  const intent = beginSourceImageMutationIntent(documentId, 'delete');
   return queueSourceImageMutation(documentId, () => deleteSourceImage(documentId)).then(() => {
-    finishPendingSourceImageDelete(documentId);
+    finishPendingSourceImageDelete(documentId, intent);
     return true;
   });
 }
@@ -7543,8 +7575,16 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
   };
   state.sourceImages[mode] = record;
   state.sourceImageRecords.set(documentId, record);
+  const intent = beginSourceImageMutationIntent(documentId, 'save', {
+    mode,
+    sourceImageId: record.sourceImageId
+  });
   try {
     await queueSourceImageMutation(documentId, () => saveSourceImage(record));
+    if (intent.kind !== 'save'
+      || state.draft.modes[mode]?.documentId !== documentId
+      || state.sourceImages[mode]?.sourceImageId !== record.sourceImageId) return true;
+    if (!finishSourceImageMutationIntent(documentId, intent)) return true;
     state.clearedSourceImageDocumentIds.delete(documentId);
     setPendingSourceImageDelete(documentId, false);
     saveDraftNow();

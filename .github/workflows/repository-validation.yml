@@ -271,8 +271,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: Test timeout, retry, stale-result, and unknown-write contracts
-        run: node scripts/test-smartinput-optional-operation-loader.mjs
+      - name: Test timeout, retry, stale-result, mutation ordering, and unknown-write contracts
+        run: |
+          node scripts/test-smartinput-optional-operation-loader.mjs
+          node scripts/test-smartinput-source-image-mutation-order.mjs
 
   validate-unresolved-review-ui:
     name: Validate Phase 6B approved-base UI

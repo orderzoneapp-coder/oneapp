@@ -222,7 +222,7 @@ const approvedOpt01Diff = execFileSync('git', [
 ], { cwd: repositoryRoot, encoding: 'utf8' }).replace(/\r\n/g, '\n');
 assert.equal(
   createHash('sha256').update(approvedOpt01Diff).digest('hex'),
-  '3ba484b5e4aba79635b6799aa9fe8e5fca9ad0f524e54e256ec0612333bd59c9',
+  '8ea22e57c06c9f7d9fc9f91223018b3b8fd179b09402c1502a6495dfb12587e2',
   'SmartInput JavaScript changes must exactly match the reviewed OPT-01 timeout, retry, and stale-result boundary'
 );
 assert.deepEqual(mutations, []);

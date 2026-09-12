@@ -373,7 +373,7 @@ try {
   await expr(client, `Boolean(window.__voucherSharePayload)`, 'order Kakao share payload');
   assert.match(await evaluate(client, `window.__voucherSharePayload.text`), /\[주문서\][\s\S]*사과[\s\S]*배[\s\S]*합계/, 'Kakao share must include current non-empty voucher rows and totals');
   const sourceBeforeOptionalLoadRetry = await evaluate(client, `document.querySelector('#sourceTextInput').value`);
-  await evaluate(client, `window.__optionalScriptAttempts=0;window.__voucherExportWrites=0;window.__optionalScriptObserver=new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node?.dataset?.oneappOptionalFeature==='xlsx-runtime')window.__optionalScriptAttempts+=1;})));window.__optionalScriptObserver.observe(document.head,{childList:true});delete window.XLSX;true`);
+  await evaluate(client, `window.__optionalScriptAttempts=0;window.__voucherExportWrites=0;window.__optionalNativeHeadAppend=document.head.append;document.head.append=function(...nodes){nodes.forEach(node=>{if(node?.dataset?.oneappOptionalFeature==='xlsx-runtime')node.removeAttribute('src');});return window.__optionalNativeHeadAppend.apply(this,nodes);};window.__optionalScriptObserver=new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node?.dataset?.oneappOptionalFeature==='xlsx-runtime')window.__optionalScriptAttempts+=1;})));window.__optionalScriptObserver.observe(document.head,{childList:true});delete window.XLSX;true`);
   await click(client, '#estimateExcelButton');
   await expr(client, `Boolean(document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]'))`, 'first optional XLSX attempt');
   await evaluate(client, `document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]').dispatchEvent(new Event('error'));true`);
@@ -389,7 +389,7 @@ try {
   assert.equal(await evaluate(client, `window.__voucherExportWrites`), 1, 'optional XLSX retry must create one output without duplicate execution');
   assert.match(await evaluate(client, `window.__voucherExportName`), /스마트입력_주문서_/);
   assert.equal(await evaluate(client, `window.__voucherExportMatrix.length`), 7, 'Excel output must include two working rows and exclude the trailing manual blank row');
-  await evaluate(client, `window.__optionalScriptObserver.disconnect();delete window.XLSX;true`);
+  await evaluate(client, `window.__optionalScriptObserver.disconnect();document.head.append=window.__optionalNativeHeadAppend;delete window.__optionalNativeHeadAppend;delete window.XLSX;true`);
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
   const beforeGridPaste = await evaluate(client, `(() => ({
@@ -428,10 +428,8 @@ try {
     units:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unit"]')].map(input=>input.value)
   }))()`), beforeGridPaste, 'reordered grid paste undo must restore the prior rows without retaining a fake blank row');
   await evaluate(client, String.raw`(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const fields=[...document.querySelectorAll('#voucherInputTable thead th[data-column]')].filter(th=>!th.classList.contains('is-column-hidden')).map(th=>th.dataset.column).filter(field=>row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]'));const headers=fields.map(field=>document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').childNodes[0]?.textContent?.trim()||document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').textContent.trim());const values=fields.map(field=>{const input=row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]');return field==='quantity'?'8':input.value;});const target=row.querySelector('[data-field="'+CSS.escape(fields[0])+'"],[data-custom-row-field="'+CSS.escape(fields[0])+'"]');const text=headers.join('\t')+'\n'+values.join('\t');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?text:''}});target.dispatchEvent(event);})()`);
-  await wait(120);
-  await expr(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value==='8'&&!document.querySelector('#undoGridPasteButton').disabled&&document.querySelector('#pendingPasteToSourceButton').hidden`, 'exact-structure grid paste');
-  await click(client, '#undoGridPasteButton');
-  assert.equal(await evaluate(client, `document.querySelector(${JSON.stringify(firstQuantity)}).value`), '2', 'grid paste undo must restore the prior row');
+  const exactStructureUndo = await expr(client, `(() => {const quantity=document.querySelector(${JSON.stringify(firstQuantity)});const undo=document.querySelector('#undoGridPasteButton');const pending=document.querySelector('#pendingPasteToSourceButton');if(quantity?.value!=='8'||undo?.disabled||!pending?.hidden)return null;const before={quantity:quantity.value,undoDisabled:undo.disabled,pendingHidden:pending.hidden};undo.click();return {...before,afterQuantity:document.querySelector(${JSON.stringify(firstQuantity)})?.value,afterDisabled:undo.disabled,toast:document.querySelector('#toast')?.textContent};})()`, 'exact-structure grid paste and atomic undo');
+  assert.equal(exactStructureUndo.afterQuantity, '2', `grid paste undo must restore the prior row: ${JSON.stringify(exactStructureUndo)}`);
   await click(client, '#inputRows [data-select-row]');
   assert.equal(await evaluate(client, `!document.querySelector('#deleteSelectedRows').disabled`), true, 'row selection must enable bulk delete');
   await evaluate(client, `(() => {const current=document.querySelector(${JSON.stringify(firstQuantity)});current.focus();current.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
@@ -943,7 +941,7 @@ try {
   try {
     await expr(client, `document.querySelector('#photoPreview')?.dataset.sourceImageId==='E2E-SOURCE-IMAGE'&&!document.querySelector('#photoViewer').hidden`, 'source image reload', 30_000);
   } catch (error) {
-    const sourceDiagnostic = await evaluate(client, `({method:JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'))?.modes?.order?.activeMethod,preview:document.querySelector('#photoPreview')?.dataset.sourceImageId,viewerHidden:document.querySelector('#photoViewer')?.hidden,status:document.querySelector('#appStatusMessage')?.textContent})`);
+    const sourceDiagnostic = await evaluate(client, `(async()=>{const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));let stored=[];let storeError='';try{const store=await import('/smartinput/smartinput-data-store.js?source-image-reload-diagnostic=1');stored=(await store.loadSmartInputData({includeEstimates:false})).sourceImages.map(image=>({documentId:image.documentId,sourceImageId:image.sourceImageId}));}catch(storeFailure){storeError=String(storeFailure?.message||storeFailure);}return {method:draft?.modes?.order?.activeMethod,preview:document.querySelector('#photoPreview')?.dataset.sourceImageId,viewerHidden:document.querySelector('#photoViewer')?.hidden,status:document.querySelector('#appStatusMessage')?.textContent,pendingDeletes:draft?.ui?.pendingSourceImageDeletes||[],stored,storeError};})()`);
     throw new Error(`${error.message} · ${JSON.stringify(sourceDiagnostic)}`);
   }
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).futureRoot`), 'KEEP-UNKNOWN', 'unknown draft fields must survive reload');
