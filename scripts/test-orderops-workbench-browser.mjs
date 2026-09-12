@@ -10,7 +10,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const profile = mkdtempSync(join(tmpdir(), 'orderops-v12-'));
 const evidence = process.env.ORDEROPS_EVIDENCE_DIR;
 const performanceMode = process.env.ORDEROPS_PERFORMANCE === '1';
+const cellContainmentPair = performanceMode && process.env.ORDEROPS_CELL_CONTAINMENT_PAIR === '1';
 const evidenceRun={startedAt:new Date().toISOString(),head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dirty:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),node:process.version,platform:process.platform,performanceMode,result:'running',logs:[],sourceHashes:Object.fromEntries(['orderops/list.html','orderops/workbench-ui.js','orderops/workbench-contract.js','orderops/workbench-v12.css','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,createHash('sha256').update(readFileSync(join(root,path))).digest('hex')]))};
+evidenceRun.performanceVerdict=performanceMode?'not-measured':'not-applicable';
+evidenceRun.responseHashes=[];
+evidenceRun.diagnosticOptions={profile:process.env.ORDEROPS_PROFILE==='1',cellContainmentResponseOnly:process.env.ORDEROPS_CELL_CONTAINMENT==='1',cellContainmentPair,diagnosticOnly:process.env.ORDEROPS_DIAGNOSTIC==='1'||cellContainmentPair,diagnosticSamples:process.env.ORDEROPS_DIAGNOSTIC_SAMPLES||'1',gpu:performanceMode?'default':'disabled'};
 const log=console.log;console.log=(...args)=>{evidenceRun.logs.push(args.map(value=>typeof value==='string'?value:JSON.stringify(value)).join(' '));log(...args);};
 let baselineMode = false;
 const baselineFiles = performanceMode ? new Map(['orderops/list.html','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,execFileSync('git',['show',`a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c:${path}`],{cwd:root,encoding:'utf8'})])) : new Map();
@@ -25,6 +29,8 @@ const server = createServer((req, res) => {
   if (!file.startsWith(resolve(root) + sep) || !existsSync(file)) return res.writeHead(404).end();
   res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control':'no-store' });
   let source = baselineMode && baselineFiles.has(pathname.slice(1)) ? baselineFiles.get(pathname.slice(1)) : pathname === '/orderops/list.html' ? html : readFileSync(file);
+  const cellContainment=cellContainmentPair?requestUrl.searchParams.get('cellContainment')==='1':process.env.ORDEROPS_CELL_CONTAINMENT==='1';
+  if(performanceMode&&cellContainment&&pathname==='/orderops/list.html')source=String(source).replace('mountPreparedPreview(previewMarkup);','mountPreparedPreview(previewMarkup.replace(/<input\\b[^>]*>/g, value => `<div style="content-visibility:auto;contain-intrinsic-size:auto 28px;height:28px">${value}</div>`));');
   if (performanceMode && process.env.ORDEROPS_PROFILE==='1' && pathname==='/orderops/list.html') {
     for(const name of ['getPreviewDefinitions','renderPreview','renderTableMarkup','renderOrderOpsSidePanels','renderWarehouseColorBar','renderSourceViewCards','renderColumnVisibilityMenu','updateColumnWidthToolbar','activatePreview','commitPreviewInputs','renderResults']) {
       source=String(source).replace(`function ${name}(`,`function ${name}(...args) { const start=performance.now(); try { return __profile_${name}(...args); } finally { (globalThis.__profileStages ||= []).push({name:'${name}',ms:performance.now()-start}); } } function __profile_${name}(`);
@@ -38,7 +44,12 @@ const server = createServer((req, res) => {
     const names=pathname==='/orderFulfillmentEngine.js'?['getInventoryViewRows','getShortageCategoryContext','getStockLedgerView','getFinalPurchaseUploadSelection']:pathname==='/nexus/common/nexus-workbench-layout-v2.js'?['positionHandles']:[];
     for(const name of names)source=String(source).replace(`function ${name}(`,`function ${name}(...args) { const start=performance.now(); try { return __profile_${name}(...args); } finally { (globalThis.__profileStages ||= []).push({name:'${name}',ms:performance.now()-start}); } } function __profile_${name}(`);
   }
-  res.end(performanceMode && pathname === '/orderops/list.html' ? String(source).replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)',perfHook) : source);
+  const response=performanceMode && pathname === '/orderops/list.html' ? String(source).replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)',perfHook) : source;
+  if(performanceMode&&pathname==='/orderops/list.html') {
+    evidenceRun.responseHashes.push({url:requestUrl.pathname+requestUrl.search,at:new Date().toISOString(),sha256:createHash('sha256').update(response).digest('hex')});
+    if(evidence&&cellContainmentPair){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,cellContainment?'cell-containment-response.html':'unchanged-response.html'),response);}
+  }
+  res.end(response);
 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, label) { const end=Date.now()+20000; let last; while(Date.now()<end) { try { const value=await fn(); if(value)return value; }catch(error){last=error;} await wait(80); } throw new Error(label + ': ' + (last?.message || 'timeout')); }
@@ -69,19 +80,22 @@ try {
   if (performanceMode) {
     const reports=[];
     const profiling=process.env.ORDEROPS_PROFILE==='1';
-    const diagnostic=profiling || process.env.ORDEROPS_DIAGNOSTIC==='1';
-    for(const baseline of (diagnostic?[false]:[true,false])) {
-      await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')});
+    const diagnostic=profiling || process.env.ORDEROPS_DIAGNOSTIC==='1' || cellContainmentPair;
+    const variants=cellContainmentPair?[{baseline:false,cell:false},{baseline:false,cell:true}]:(diagnostic?[false]:[true,false]).map(baseline=>({baseline,cell:process.env.ORDEROPS_CELL_CONTAINMENT==='1'}));
+    for(const {baseline,cell} of variants) {
+      await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')+'&cellContainment='+(cell?'1':'0')});
       await until(()=>ev('Boolean(globalThis.__perf?.state.db) && Boolean(globalThis.__ops)==='+String(!baseline)),'performance version initialization');
       for(const [count,warehouses] of (diagnostic?[[500,10]]:[[100,3],[500,10],[2000,10]])) {
         if(profiling){await send('Profiler.enable');await send('Profiler.start');}
         const result=await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-performance.js'),'utf8').replaceAll('__ROW_COUNT__',String(count)).replaceAll('__WAREHOUSE_COUNT__',String(warehouses)).replaceAll('__SAMPLES__',diagnostic?String(Math.max(1,Math.min(5,Number(process.env.ORDEROPS_DIAGNOSTIC_SAMPLES)||1))):'30'));
         if(profiling){const {profile:cpu}=await send('Profiler.stop');console.log('CPU',JSON.stringify(cpu.nodes.filter(n=>n.hitCount).sort((a,b)=>b.hitCount-a.hitCount).slice(0,30).map(n=>({name:n.callFrame.functionName,url:n.callFrame.url,line:n.callFrame.lineNumber,hits:n.hitCount}))));}
-        reports.push({version:baseline?'a5eeb19':'development',...result});console.log('PERFORMANCE',JSON.stringify(reports.at(-1)));
+        reports.push({version:baseline?'a5eeb19':'development',cellContainmentResponseOnly:cell,...result});console.log('PERFORMANCE',JSON.stringify(reports.at(-1)));
         if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance-progress.json'),JSON.stringify({completed:false,reports},null,2));}
       }
     }
-    if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance.json'),JSON.stringify({environment:'headless Chrome, same isolated profile/server, 1366x768, next two animation frames; no network business I/O',reports},null,2));}
+    const notMet=reports.filter(report=>report.version==='development').some(report=>report.summary.orders.p95>500||report.summary.inventory.p95>500||report.summary.selection.p95>100||report.summary.panel.p95>100);
+    evidenceRun.performanceVerdict=notMet?'not-met':diagnostic?'diagnostic-only':'programmatic-thresholds-met-physical-touch-unverified';
+    if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance.json'),JSON.stringify({performanceVerdict:evidenceRun.performanceVerdict,environment:'headless Chrome, same isolated profile/server, 1366x768, next two animation frames; no network business I/O',reports},null,2));}
   } else if(process.env.ORDEROPS_PREPARATION==='1') {
     console.log('PASS preparation acceptance',JSON.stringify(await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-preparation.js'),'utf8'))));
     assert.deepEqual(errors,[]);

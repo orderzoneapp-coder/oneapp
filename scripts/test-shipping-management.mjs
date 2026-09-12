@@ -2397,8 +2397,12 @@ assert.ok(html.includes('column.role === "salesQuantity" ? "출고"') &&
 assert.ok(html.includes('column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0') &&
   (html.match(/\? "잔량"/g) || []).length >= 2,
   "warehouse inventory must use the 잔량 header with or without a warehouse filter");
-assert.ok(html.includes('const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;'),
-  "zero quantity cells must render as blank without changing the underlying value");
+const quantityDisplayExpression = html.match(/const displayValue = ([^;]+);/)?.[1];
+assert.ok(quantityDisplayExpression, "the quantity display expression must exist");
+const quantityDisplay = new Function("quantityColumn", "numericQuantityValue", "totalComparisonColumn", "value", `return ${quantityDisplayExpression};`);
+assert.equal(quantityDisplay(true, 0, false, 0), "", "ordinary zero quantity display remains blank without changing stored zero");
+assert.equal(quantityDisplay(true, 0, true, 0), 0, "TOTAL_ONLY comparison distinguishes actual zero from unknown");
+assert.equal(quantityDisplay(true, null, true, "미확인"), "미확인", "TOTAL_ONLY unknown must not become zero");
 assert.ok(html.includes('["productCode", "productName", "specification", "orderQuantity"].includes(column.role)') &&
   html.includes('orderedContext ? "ordered-context-cell"'),
   "ordered rows must share one context fill from product code through order quantity");

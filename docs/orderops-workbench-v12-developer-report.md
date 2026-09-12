@@ -1,6 +1,15 @@
 # 출고관리 UI/UX v1.2 개발자 자체검증 보고 — 진행본
 
-판정: **Draft PR #589 / PM-F08 수정·추가 인수시험 진행 / 성능 미통과 / PM 최종 검증 전 / 병합·배포 금지**.
+판정: **Draft PR #589 / PM-F08 개별 대조 통과 / U29 CI 증거 대조 통과 / 성능 미통과 / PM 최종 검증 전 / 병합·배포 금지**.
+
+## 현재 제출 상태 (2026-09-12, `40c2fdb2` 이후 검사 보정)
+
+- PR: https://github.com/orderzoneapp-coder/oneapp/pull/589 (Draft 유지). 기준 원격 main은 `a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c`로 재확인했다. 공통헤더·호스트·SmartInput 제품 소스 변경 없음.
+- `40c2fdb2c518283856975ebe2783d66b7425c82a` CI [34695427021](https://github.com/orderzoneapp-coder/oneapp/actions/runs/34695427021)는 workbench/Phase 6B/SmartInput initial 세 job 성공, repository job 실패다. 실패는 일반 수량 0을 공란으로 표시하는 **정적 문자열 검사**가 TOTAL_ONLY의 실제 0 표시 예외를 허용하지 못한 것이다. 실제 제품 표시식을 실행하여 일반 0→공란 / 총량비교 0→0 / 미확인→미확인을 확인하도록 보정했고 로컬 검사 PASS했다. 필수 CI 우회나 기능 assertion 삭제는 없다. 새 head의 전체 CI 결과는 별도로 제출한다.
+- workbench CI artifact `ci-40c2fdb2/browser-result.json`: 2026-09-12 13:05:07~13:05:29 UTC, clean merge-test HEAD `92e7746e3dd87c40575d97a122dbe5175d37be8c`. PR head 자체와 구분하며 제품 파일 SHA256 및 전체 성공 로그를 보존한다. U29는 실제 호스트의 준비/충돌 이동 차단과 DataOps→브라우저 이력 복귀, 직원 적요·단가·orderId·returnTo·focus를 확인했다. PM은 해당 소스 assertion과 CI 원문 **증거 대조**를 통과시켰으며 독립 운영 브라우저 통과로 확대하지 않는다.
+- 완전한 표 2개를 문서에 동시에 유지하는 실험은 실제 reuse hit에도 주문 2.2~4.5초, 재고 2.1~3.7초로 개선되지 않아 폐기했다. `resident-surface-trial.patch`, `diagnostic-resident-hits`에 보존했으며 제품 소스에서 제거했다. 현재 제품은 한 표만 연결하는 기존 detached cache 방식이다.
+- 입력 셀 내부 block의 `content-visibility:auto`는 **시험 HTTP 응답에만** 주입했다. 첫 3회 진단도 주문 2.7~3.3초, 재고 약3.7초로 미달이다. 이어 같은 Chrome/프로필/1366×768/500행·10창고에서 전후 각 3회를 `diagnostic-cell-pair-final`에 기록했다. 미주입 주문 `[2210,2135,1977]`ms / 재고 `[3101,3346,1554]`ms, 주입 주문 `[3062,1491,1675]`ms / 재고 `[3991,2163,1879]`ms다. 초기 전체 표시는 5483→4057ms지만 전환에 일관된 개선이 없고 여전히 목표 미달이다. 첫 표시·재전환·동기 JS·원시 샘플·시각·응답 hash와 실제 응답 HTML을 보존했다. 이 후보도 채택하지 않으며 같은 CSS 값 조정이나 30회 실패 시험으로 확장하지 않는다. 운영 반영 없음.
+- `browser-result.json.result`는 실행 성공 여부다. 후속 성능 증거는 별도 `performanceVerdict`로 `not-met`, `diagnostic-only` 등을 명시하여 시험 실행 성공을 성능 통과로 오해하지 않게 했다. 과거 원시 증거는 덮어쓰지 않는다.
 
 ## 2026-09-12 추가 자체검증 (초안 head `8b0a6df` 이후)
 
@@ -83,16 +92,16 @@ node scripts/test-orderops-operations-improvements.mjs
 | ID | 자체 증거/상태 |
 |---|---|
 | U01~U04 | 신규 workbench 브라우저 + 기존 operator-flow 브라우저. 3개 형제 패널·중앙 하단바·기존 full allocations·분석 전 표시/메모 분리 확인. 최근 readiness 호환 진입 보완의 최종 CI 대기 |
-| U05 | 기존 operator-flow의 재고 단독 및 실제 부분자료 UI. 구매/판매 단독 새 준비 경로의 전체 시나리오는 추가 점검 대상 |
+| U05 | 재고 단독 기존 회귀 및 새 준비 경로의 구매/판매 단독 원문 조회, 계산 불가 사유 확인. 신규 workbench CI 포함 |
 | U06 | 위 a~d 직접 검증. 실제 파일/메모리 worksheet/화면 안내를 구분 |
-| U07~U11 | 명시 구조/열 충돌의 pure 및 실제 파일 UI, 원셀 저장 확인. 여러 시트/같은 종류 복수 후보/혼합 오류 일괄 적용의 전체 UI 조합은 추가 점검 대상 |
-| U12~U13 | 후보 입력 경합/실패/종료는 신규 브라우저 증거. 준비 파일 사용해제·초기화 범위는 구현/소스 확인, 전체 사용자 조합 추가 점검 |
+| U07~U11 | 명시 구조/열 충돌의 pure 및 실제 파일 UI, 원셀 보존. 여러 시트/매핑 보존/같은 종류 복수 후보 차단/혼합 오류 전체 미적용과 수정 후 재적용을 신규 workbench CI에서 확인 |
+| U12~U13 | 후보 경합/실패/종료, 준비 파일 사용해제·초기화 시 복구 clear 없음·출처별 최근 확정본 보존을 실제 브라우저 확인. PM-F08의 적용 중 준비 변경 보존도 개별 PM 대조 통과 |
 | U14~U16 | 1920/1366/1024/819/640/639/390 viewport에서 pane 위치·하단바·가로 스크롤·손잡이 및 기존 operator-flow의 재열기/폭 보존 확인. 새 공통 성능 보완 후 U33 갱신 대기 |
 | U17~U18 | 거래처 코드별 전체 담당 변경·창고/지역 범위 담당 건수·필터 유지, 우측 대상별 입력 보존 확인 |
 | U19~U22 | 위 세부 증거 및 기존 명령 adapter/브라우저. pure만 확인한 identity 변형과 실제 브라우저 사례를 구분 |
 | U23~U25 | TOTAL_ONLY 기존 common-inventory 브라우저, F8 모의 Cloud 추가 입력/복구, 출고 충돌/멱등성/실패. 실운영 Cloud 쓰기는 미검증 |
 | U26~U28 | 실제 F10 다운로드 + 기준 workbook 대조. operator-flow/theme/Excel-grid 브라우저의 F9 취소/흰색/필터·입력/스크롤·단축키 계약. 물리 프린터/실제 하드웨어 IME·터치는 미검증 |
-| U29 | 기존 host 순차 이동·beforeLeave 회귀 및 신규 beforeLeave 저장 호출. 새 준비 파일/충돌 팝업을 포함한 통합 iframe 전체 조합은 추가 점검 대상 |
+| U29 | 실제 host에서 미적용 준비/충돌 대기·취소의 이동 차단, 실제 DataOps 이동 후 history 복귀와 최신 입력·주문 경로 보존을 동일 CI에서 확인. PM 소스/CI 증거 대조 통과. 앱 탭의 새 기본 진입 정책 변경 없음 |
 | U30~U32 | 기존 portal 메뉴/바깥 클릭/Escape·테마 시험과 대표 viewport 화면 증거. 125%는 819 CSS px 대응(1024/1.25)이며 OS의 실제 확대 조작과 구분 |
 | U33 | SmartInput/공통헤더 제품 diff 없음. 공통 패널 변경 후 다른 다섯 앱·헤더·호스트 최종 회귀/CI 대기 |
 
@@ -100,7 +109,7 @@ node scripts/test-orderops-operations-improvements.mjs
 
 `ORDEROPS_PERFORMANCE=1 node scripts/test-orderops-workbench-browser.mjs`는 동일 장비/프로필/localhost에서 기준판과 개발판, 주문 100/500/2000 및 창고 3/10열, 현황 전환/행 선택/패널 동작별 30회를 계측한다. 실제 선택 행/state/class와 패널 requested 상태/폭을 검증한다. 표시 지표는 동작 이후 다음 두 animation frame 및 검색 입력 가능 시점이다. **물리 터치의 시각 피드백 p95를 측정한 것은 아니다.**
 
-초기 기준판 100행 p95 현황 약 1초, 개발판 단독 500행 진단 1회 약 4초로 500ms 목표에 미달했다. 30회 최종 결과로 사용하지 않는다. V8 profile에서 렌더링/레이아웃 read의 큰 비용을 확인했다. 공통 패널의 동일 값 반복 쓰기·표 mutation 재배치 억제와 중앙 표 layout containment를 보완하고 진단 중이다. 개선이 없던 row content-visibility 실험은 제거했다. 안정된 후보의 최종 30회 비교와 물리 터치 피드백 범위는 미완료이다.
+초기 기준판 100행 p95 현황 약 1초, 개발판 단독 500행 진단 1회 약 4초로 500ms 목표에 미달했다. 30회 최종 결과로 사용하지 않는다. V8 profile에서 렌더링/레이아웃 read의 큰 비용을 확인했다. 공통 패널의 동일 값 반복 쓰기·표 mutation 재배치 억제와 정의/Intl 재사용은 유지했지만 실제 프레임 목표 충족으로 이어지지는 않았다. strict containment·row content-visibility·분리 테두리·resident table은 효과가 없어 제거했다. 남은 비용을 특정하는 기술 판단 전 추가 구조 변경이나 목표 완화는 하지 않는다. 안정된 후보의 최종 30회 비교와 물리 터치 피드백 범위는 미완료이다.
 
 ## 로그·그림·출력 위치
 
