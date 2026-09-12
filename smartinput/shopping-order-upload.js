@@ -1,4 +1,4 @@
-import { ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER } from '../orderq/shopping-order-command-adapter.js?v=0.2.0';
+import { ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER } from '../orderq/shopping-order-command-adapter.js?v=0.2.1';
 
 export const SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA = 'ONEAPP_SMARTINPUT_SHOPPING_ORDER_UPLOAD_V1';
 
@@ -105,7 +105,7 @@ export function selectShoppingProduct(upload, sourceRowNumber, product) {
 }
 
 export function buildShoppingOrderUploadRequest(upload, {
-  companyId = '', warehouse = {}, actor = 'SMART_INPUT_ADMIN'
+  companyId = '', warehouse = {}, assignee = {}, actor = 'SMART_INPUT_ADMIN'
 } = {}, adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
   if (!upload || upload.schemaVersion !== SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA) {
     throw new Error('SMARTINPUT_SHOPPING_ORDER_UPLOAD_INVALID');
@@ -123,6 +123,10 @@ export function buildShoppingOrderUploadRequest(upload, {
       warehouseId: exactText(warehouse.warehouseId),
       warehouseCode: exactText(warehouse.warehouseCode),
       warehouseName: exactText(warehouse.warehouseName || warehouse.name)
+    }),
+    resolveAssignee: () => ({
+      assigneeId: exactText(assignee.assigneeId),
+      assigneeName: exactText(assignee.assigneeName || assignee.name)
     })
   });
   return {

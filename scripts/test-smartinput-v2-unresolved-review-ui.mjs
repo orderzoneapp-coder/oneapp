@@ -174,7 +174,7 @@ assert.deepEqual(contract.consumers, ['orderops']);
 const smartInputProductUiHashes = new Map([
   ['../smartinput/index.html', 'f54de72e20bb5209b68fab213cf240bd4509b85a93c84c549b60139f05e06bca'],
   ['../smartinput/smartinput.css', 'c838e5d167975f5577ae072f27834f28875cf24b8a907019d18643a98f27bc31'],
-  ['../smartinput/smartinput.js', '05dbd6916f76b9762260ada94d7290528f5e762e94e6cfe3509f764d516bf6a7']
+  ['../smartinput/smartinput.js', '73eee7232faf04b7646f681ad658d3098adae49074d67e14a94ecf80cfa97620']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,6 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
+    .replace(/smartinput\.js\?v=[^"']+/g, 'smartinput.js?v=0.11.52')
     .replace(/\nasync function waitForSmartInputIdle[\s\S]*?\n}\n\nfunction referencesReady\(\)/, '\nfunction referencesReady()')
     .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
     .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
@@ -200,5 +201,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-and-hydrated-layout-migration'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-and-shopping-assignee-handoff'
 }, null, 2));

@@ -3,14 +3,14 @@ import {
   SHOPPING_ORDER_HEADERS,
   buildShoppingOrderCandidates,
   validateShoppingOrderHeaders
-} from './shopping-order-dedupe-core.js?v=0.2.0';
+} from './shopping-order-dedupe-core.js?v=0.2.1';
 import {
   SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION,
   commitShoppingOrderCandidates,
   inspectShoppingOrderCandidates
-} from './shopping-order-import-repository.js?v=0.1.0';
+} from './shopping-order-import-repository.js?v=0.1.1';
 
-export const SHOPPING_ORDER_COMMAND_ADAPTER_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1';
+export const SHOPPING_ORDER_COMMAND_ADAPTER_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1_1';
 
 const text = value => String(value ?? '').trim();
 

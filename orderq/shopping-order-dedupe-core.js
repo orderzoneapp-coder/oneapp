@@ -265,6 +265,7 @@ function normalizeSourceRow(row, index, options) {
   const customerResolved = typeof options.resolveCustomer === 'function' ? (options.resolveCustomer(raw, row, index) || {}) : {};
   const productResolved = typeof options.resolveProduct === 'function' ? (options.resolveProduct(raw, row, index) || {}) : {};
   const warehouseResolved = typeof options.resolveWarehouse === 'function' ? (options.resolveWarehouse(raw, row, index) || {}) : {};
+  const assigneeResolved = typeof options.resolveAssignee === 'function' ? (options.resolveAssignee(raw, row, index) || {}) : {};
   const sourceCells = Array.isArray(row?.sourceCells)
     ? row.sourceCells.map(deepCopy)
     : headers.map(header => deepCopy(raw[header] ?? ''));
@@ -278,6 +279,8 @@ function normalizeSourceRow(row, index, options) {
     customerId: codeText(customerResolved.customerId || rowValue(row, raw, ['customerId'], '')),
     customerCode: codeText(customerResolved.customerCode || customerResolved.erpCustomerCode || rowValue(row, raw, ['customerCode', 'erpCustomerCode'], '')),
     customerName: displayText(customerResolved.customerName || rowValue(row, raw, ['customerName'], '거래처명')),
+    assigneeId: codeText(assigneeResolved.assigneeId || rowValue(row, raw, ['assigneeId'], '', options.assigneeId || '')),
+    assigneeName: displayText(assigneeResolved.assigneeName || rowValue(row, raw, ['assigneeName'], '', options.assigneeName || '')),
     warehouseId: codeText(warehouseResolved.warehouseId || rowValue(row, raw, ['warehouseId'], '', options.warehouseId || '')),
     warehouseCode: codeText(warehouseResolved.warehouseCode || rowValue(row, raw, ['warehouseCode'], '', options.warehouseCode || '')),
     warehouseName: displayText(warehouseResolved.warehouseName || rowValue(row, raw, ['warehouseName', 'warehouse'], '', options.warehouseName || '')),
@@ -356,6 +359,8 @@ export function buildShoppingOrderCandidates(sourceRows = [], options = {}) {
       customerId: first.customerId,
       customerCode: first.customerCode,
       customerName: first.customerName,
+      assigneeId: first.assigneeId,
+      assigneeName: first.assigneeName,
       deliveryDate: first.deliveryDate,
       deliveryExpectedDate: first.deliveryDate,
       warehouseId: first.warehouseId,

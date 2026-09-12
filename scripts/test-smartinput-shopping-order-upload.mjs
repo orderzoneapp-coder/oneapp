@@ -37,7 +37,7 @@ const fakeAdapter = {
   commit: async () => { throw new Error('FAKE_COMMIT_NOT_CONFIGURED'); }
 };
 
-function resolvedUpload(upload, adapter) {
+function resolvedUpload(upload, adapter, assignee = {}) {
   const customerIndex = upload.headers.indexOf('거래처명');
   const productCodeIndex = upload.headers.indexOf('상품코드');
   const productNameIndex = upload.headers.indexOf('상품명');
@@ -54,7 +54,8 @@ function resolvedUpload(upload, adapter) {
   });
   return buildShoppingOrderUploadRequest(upload, {
     companyId: 'ONEAPP',
-    warehouse: { warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '본사창고' }
+    warehouse: { warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '본사창고' },
+    assignee
   }, adapter);
 }
 
@@ -173,9 +174,13 @@ const synthetic = createShoppingOrderUpload({
   sourceCellMatrix: [[], row().sourceCellEvidence],
   fileName: 'synthetic.xls', sheetName: 'Worksheet', fileFingerprint: 'fixture'
 }, coreAdapter);
-const prepared = resolvedUpload(synthetic, coreAdapter);
+const prepared = resolvedUpload(synthetic, coreAdapter, { assigneeId: 'MGR-001', assigneeName: '김담당' });
 const base = prepared.built.candidates[0];
 assert.equal(base.issues.length, 0);
+assert.deepEqual({ assigneeId: base.assigneeId, assigneeName: base.assigneeName }, { assigneeId: 'MGR-001', assigneeName: '김담당' });
+const signatureWithoutAssignee = planShoppingOrderDuplicates([{ ...clone(base), assigneeId: '', assigneeName: '' }], []).results[0].canonicalSignature;
+assert.equal(planShoppingOrderDuplicates([base], []).results[0].canonicalSignature, signatureWithoutAssignee,
+  '담당자는 주문 속성이지만 쇼핑몰 중복 판정 기준은 아니다');
 const source2 = [clone(base), clone(base)].map((candidate, index) => ({ ...candidate, candidateId: `SOURCE-${index + 1}` }));
 assert.equal(planShoppingOrderDuplicates(source2, [bundle(base, '001')]).summary.newCount, 1);
 assert.equal(planShoppingOrderDuplicates(source2, [bundle(base, '001'), bundle(base, '002')]).summary.newCount, 0);

@@ -6,7 +6,7 @@ import {
   requestToPromise,
   transactionDone
 } from './orderq-db.js?v=0.8.0';
-import { formatOrderNo, orderDateKey, orderSequenceFromNo } from './order-document-model.js?v=0.7.1';
+import { assigneeIdentity, formatOrderNo, orderDateKey, orderSequenceFromNo } from './order-document-model.js?v=0.7.1';
 import {
   SHOPPING_ORDER_DEDUPE_SCHEMA,
   SHOPPING_ORDER_SOURCE_SCHEMA,
@@ -18,9 +18,9 @@ import {
   planShoppingOrderDuplicates,
   shoppingSourceMessageKey,
   validateShoppingOrderCandidate
-} from './shopping-order-dedupe-core.js?v=0.2.0';
+} from './shopping-order-dedupe-core.js?v=0.2.1';
 
-export const SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1';
+export const SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION = 'ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1';
 
 const text = value => String(value ?? '').trim();
 const numberOrNull = value => {
@@ -281,6 +281,7 @@ export async function commitShoppingOrderCandidate(decision, options = {}) {
     const orderNo = await allocateOrderNo(tx, orderDate);
     const items = orderItems(candidate, orderId, timestamp);
     const orderStatus = mappedOrderStatus(candidate);
+    const assignee = assigneeIdentity(candidate.assigneeName, candidate.assigneeId);
     const matchedCount = items.filter(item => item.matchStatus === 'MATCHED').length;
     const matchingStatus = matchedCount === items.length ? 'CONFIRMED' : (matchedCount ? 'PARTIAL' : 'MATCH_FAILED');
     const sourceEvidence = cloneShoppingEvidence(candidate.sourceEvidence || {
@@ -314,8 +315,7 @@ export async function commitShoppingOrderCandidate(decision, options = {}) {
       adminStatus: 'UNCHECKED',
       opsStatus: 'ACTIVE',
       inputChannel: 'SHOPPING_MALL',
-      assigneeId: '',
-      assigneeName: '',
+      ...assignee,
       status: orderStatus === 'FULL_CANCEL' ? 'CANCELLED' : matchingStatus,
       matchingStatus: orderStatus === 'FULL_CANCEL' ? 'CANCELLED' : matchingStatus,
       ...sumAmounts(items),
@@ -343,6 +343,7 @@ export async function commitShoppingOrderCandidate(decision, options = {}) {
         inputChannel: order.inputChannel,
         orderNo,
         itemCount: items.length,
+        assignee: { ...assignee },
         canonicalSignature: signature,
         occurrenceNo,
         existingCountAtCommit: matching.length,
