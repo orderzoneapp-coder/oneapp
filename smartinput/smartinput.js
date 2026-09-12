@@ -5800,13 +5800,23 @@ function restoreEstimateOpenFocusAndScroll(recovery) {
   try {
     target.focus({ preventScroll: true });
     restoreSelection();
-  } finally {
+  } catch (error) {
     estimateOpenSelectionRestoreTargets.delete(target);
+    throw error;
   }
   window.requestAnimationFrame(() => {
-    if (!target.isConnected || document.activeElement !== target) return;
+    if (!target.isConnected || document.activeElement !== target) {
+      estimateOpenSelectionRestoreTargets.delete(target);
+      return;
+    }
     restoreScroll();
     restoreSelection();
+    window.requestAnimationFrame(() => {
+      estimateOpenSelectionRestoreTargets.delete(target);
+      if (!target.isConnected || document.activeElement !== target) return;
+      restoreScroll();
+      restoreSelection();
+    });
   });
 }
 
@@ -12225,7 +12235,7 @@ inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
-  const preserveSelection = estimateOpenSelectionRestoreTargets.delete(input);
+  const preserveSelection = estimateOpenSelectionRestoreTargets.has(input);
   window.requestAnimationFrame(() => {
     if (document.activeElement !== input) return;
     if (!preserveSelection) input.select?.();
