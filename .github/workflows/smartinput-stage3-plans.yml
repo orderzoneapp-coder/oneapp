@@ -1,0 +1,23 @@
+name: SmartInput Stage 3 planning contracts
+on:
+  pull_request:
+    paths:
+      - smartinput/independent-estimate.js
+      - smartinput/estimate-master-apply.js
+      - scripts/test-smartinput-stage3-*.mjs
+      - .github/workflows/smartinput-stage3-plans.yml
+permissions:
+  contents: read
+jobs:
+  stage3-plans:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify pure candidate, selected patch, intent and receipt contracts
+        run: node scripts/test-smartinput-stage3-plans.mjs
+      - name: Compare candidate outputs with the existing F8 algorithms
+        run: node scripts/test-smartinput-stage3-f8-baseline.mjs
