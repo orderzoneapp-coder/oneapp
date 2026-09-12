@@ -199,7 +199,28 @@ try {
     const debug = await evaluate(client, `({system:document.querySelector('#systemMessage').textContent,toast:document.querySelector('#toast').textContent,table:document.querySelector('#previewTable').textContent,recovery:document.querySelector('#recoveryMessage').textContent})`);
     throw new Error(`${error.message}: ${JSON.stringify(debug)}`);
   }
-  await evaluate(client, `(() => { const snapshot=${JSON.stringify(dataOpsSnapshot)}; window.fetch=async (url,options)=>{ if(String(url).includes('/macros/s/browser-test/exec')) return new Response(JSON.stringify({status:'success',action:'dataops_snapshot_get',data:snapshot}),{status:200,headers:{'Content-Type':'application/json'}}); return Promise.reject(new Error('unexpected fetch '+url)); }; return true; })()`);
+  await evaluate(client, `(() => {
+    const snapshot=${JSON.stringify(dataOpsSnapshot)};
+    window.__savedCloudSnapshot=null;
+    window.fetch=async (url,options)=>{
+      if(!String(url).includes('/macros/s/browser-test/exec')) return Promise.reject(new Error('unexpected fetch '+url));
+      const payload=JSON.parse(options?.body || '{}');
+      let data;
+      if(payload.action==='dataops_snapshot_get') data=snapshot;
+      else if(payload.action==='shipping_plan_save') {
+        window.__savedCloudSnapshot=payload.snapshot;
+        data={planId:payload.snapshot.planId,revision:'CLOUD-BROWSER-1',hash:payload.snapshot.hash,rowCount:payload.snapshot.rowCount,cellCount:payload.snapshot.cellCount,savedAt:'2026-09-12T05:00:00.000Z'};
+      } else if(payload.action==='shipping_plan_list') {
+        const saved=window.__savedCloudSnapshot;
+        data=saved ? [{planId:saved.planId,revision:'CLOUD-BROWSER-1',hash:saved.hash,rowCount:saved.rowCount,cellCount:saved.cellCount,savedAt:'2026-09-12T05:00:00.000Z',sourceFileName:'browser'}] : [];
+      } else if(payload.action==='shipping_plan_get' && window.__savedCloudSnapshot) {
+        const plan=JSON.parse(window.__savedCloudSnapshot.canonicalJson);
+        data={plan,metadata:{planId:plan.planId,revision:'CLOUD-BROWSER-1',hash:window.__savedCloudSnapshot.hash,rowCount:window.__savedCloudSnapshot.rowCount,cellCount:window.__savedCloudSnapshot.cellCount}};
+      } else return new Response(JSON.stringify({status:'error',message:'unexpected action '+payload.action}),{status:400,headers:{'Content-Type':'application/json'}});
+      return new Response(JSON.stringify({status:'success',action:payload.action,data}),{status:200,headers:{'Content-Type':'application/json'}});
+    };
+    return true;
+  })()`);
   await click(client, "#inventoryMenuButton");
   await click(client, "#inventoryDataOpsLoadButton");
   try {
@@ -208,6 +229,38 @@ try {
     const debug = await evaluate(client, `({inventory:document.querySelector('#inventoryCurrentStatus').textContent,system:document.querySelector('#systemMessage').textContent,toast:document.querySelector('#toast').textContent})`);
     throw new Error(`${error.message}: ${JSON.stringify(debug)}`);
   }
+
+  const raceHookInstalled = await evaluate(client, `(() => {
+    const original=crypto.subtle.digest.bind(crypto.subtle);
+    let calls=0;
+    try {
+      crypto.subtle.digest=async (...args)=>{
+        calls+=1;
+        if(calls===7){
+          const input=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"],.order-edit-input[data-order-field="note1"]');
+          if(input){
+            input.focus();
+            input.value='직원 적요 최종 수정';
+          }
+          await new Promise(resolve=>setTimeout(resolve,30));
+        }
+        return original(...args);
+      };
+      return crypto.subtle.digest!==original;
+    } catch(error) { return false; }
+  })()`);
+  assert.equal(raceHookInstalled, true, "browser must allow the final-publication race fixture");
+  const firstPointer = await evaluate(client, `localStorage.getItem('oneapp.shipping.recovery.pointer.v1')`);
+  await click(client, "#inventoryMenuButton");
+  await click(client, "#inventoryDataOpsLoadButton");
+  await waitFor(() => evaluate(client, `localStorage.getItem('oneapp.shipping.recovery.pointer.v1')!==${JSON.stringify(firstPointer)} && document.querySelector('#inventoryCurrentStatus').textContent.includes('적용 완료')`), "DataOps inventory reapplication with a concurrent final input");
+
+  await evaluate(client, `(() => {
+    document.querySelector('#cloudTokenInput').value='browser-shipping-token';
+    document.querySelector('#headerCloudSaveButton').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(client, `Boolean(window.__savedCloudSnapshot)`), "TOTAL_ONLY Cloud save");
 
   const outcome = await evaluate(client, `(async () => {
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
@@ -222,6 +275,7 @@ try {
       manager:latest.payload.workspace.orders[0].manager,
       note:latest.payload.workspace.orders[0].note,
       note1:latest.payload.workspace.orders[0].note1,
+      sourceEvidence:latest.payload.workspace.sourceFiles.inventory.sourceEvidence,
       stockTotal:latest.payload.workspace.allocations[0].stockTotal,
       remaining:latest.payload.workspace.allocations[0].remainingQuantity,
       stagedCount:records.filter(record=>record.publicationState==='STAGED').length,
@@ -230,25 +284,43 @@ try {
       tableText:document.querySelector('#previewTable').textContent,
       analyzeDisabled:document.querySelector('#analyzeButton').disabled,
       cloudSaveDisabled:document.querySelector('#headerCloudSaveButton').disabled,
+      cloudSavePanelDisabled:document.querySelector('#cloudSaveButton').disabled,
+      systemMessage:document.querySelector('#systemMessage').textContent,
       shipmentExecutionHidden:document.querySelector('#shipmentExecution').hidden,
+      cloudSnapshot:window.__savedCloudSnapshot,
     };
   })()`);
   assert.equal(outcome.publicationState, "PUBLISHED");
   assert.equal(outcome.applicationMode, "TOTAL_ONLY");
-  assert.equal(outcome.planId, "");
+  assert.match(outcome.planId, /^SHIPPLAN-20260912-[a-f0-9]{16}$/);
   assert.equal(outcome.purchaseRows, 0);
   assert.equal(outcome.manager, "김담당");
   assert.equal(outcome.note, "일반 적요 보존");
-  assert.equal(outcome.note1, "직원 적요 보존");
+  assert.equal(outcome.note1, "직원 적요 최종 수정");
+  assert.deepEqual(outcome.sourceEvidence.rows, dataOpsRows);
   assert.equal(outcome.stockTotal, 7);
   assert.equal(outcome.remaining, 2);
   assert.equal(outcome.stagedCount, 0);
   assert.equal(outcome.pointer, outcome.latestId);
   assert.ok(outcome.tableText.includes("7") && outcome.tableText.includes("2"));
   assert.equal(outcome.analyzeDisabled, true);
-  assert.equal(outcome.cloudSaveDisabled, true);
+  assert.equal(outcome.cloudSaveDisabled, false);
+  const cloudPlan = JSON.parse(outcome.cloudSnapshot.canonicalJson);
+  assert.equal(cloudPlan.workspace.inventoryApplicationMode, "TOTAL_ONLY");
+  assert.equal(cloudPlan.workspace.orders[0].note1, "직원 적요 최종 수정");
+  assert.deepEqual(cloudPlan.workspace.sourceFiles.inventory.sourceEvidence.rows, dataOpsRows);
   assert.equal(outcome.shipmentExecutionHidden, true);
   assert.deepEqual(runtimeErrors, []);
+
+  await waitFor(() => evaluate(client, `!document.querySelector('#cloudLoadButton').disabled`), "saved TOTAL_ONLY Cloud revision");
+  await evaluate(client, `(() => {
+    const input=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"],.order-edit-input[data-order-field="note1"]');
+    input.value='Cloud 복구 전 임시 변경';
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`);
+  await click(client, "#cloudLoadButton");
+  await waitFor(() => evaluate(client, `[...document.querySelectorAll('.order-edit-input[data-order-field="deliveryNotice"],.order-edit-input[data-order-field="note1"]')].some(input=>input.value==='직원 적요 최종 수정')`), "TOTAL_ONLY Cloud workspace restore");
   console.log("OrderOps common inventory browser E2E PASS");
 } finally {
   client?.close();

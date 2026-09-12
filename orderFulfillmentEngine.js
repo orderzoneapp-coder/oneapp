@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.28.0";
+  const ENGINE_VERSION = "3.28.1";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
@@ -2354,6 +2354,7 @@
       columns: parsed.columns,
       sourceKind: cleanText(parsed.sourceKind),
       sourceSchemaVersion: cleanText(parsed.sourceSchemaVersion),
+      sourceEvidence: parsed.sourceEvidence ? JSON.parse(JSON.stringify(parsed.sourceEvidence)) : undefined,
       orderId: cleanText(parsed.orderId),
       orderNo: cleanText(parsed.orderNo),
       orderRevision: Number(parsed.orderRevision) || 0,
@@ -2654,7 +2655,13 @@
     candidate.previewDataState.inventory = true;
 
     if (applicationMode === "TOTAL_ONLY") {
-      candidate.planId = "";
+      const referenceBasisDate = parseOrderBasisDate(reference.basisDate);
+      if (candidate.basisDateStatus !== "valid" && referenceBasisDate) {
+        candidate.basisDate = referenceBasisDate;
+        candidate.basisDateStatus = "valid";
+        candidate.uploadDate = referenceBasisDate.replace(/-/g, "");
+      }
+      candidate.planId = buildPlanId(candidate.basisDate, sourceFingerprint);
       candidate.workspaceMode = PREVIEW_WORKSPACE_MODE;
       candidate.inventoryPreviousWorkspaceMode = previousWorkspaceMode;
       candidate.inventoryOverrides = { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] };
@@ -2741,6 +2748,11 @@
       warnings: [],
       sourceMatrix: inventorySource.matrix,
       productCodeColumnIndex: inventorySource.productCodeColumnIndex,
+      sourceKind: inventorySource.sourceKind,
+      sourceSchemaVersion: inventorySource.sourceSchemaVersion,
+      sourceEvidence: inventorySource.sourceEvidence
+        ? JSON.parse(JSON.stringify(inventorySource.sourceEvidence))
+        : undefined,
     };
     const rebuilt = analyze(parsedOrders, parsedInventory, {
       sourceFingerprint: workspace.sourceFingerprint,
@@ -3494,6 +3506,11 @@
           matrix: inventoryParsed.sourceMatrix,
           productCodeColumnIndex: inventoryParsed.productCodeColumnIndex,
           columns: inventoryParsed.columns,
+          sourceKind: cleanText(inventoryParsed.sourceKind),
+          sourceSchemaVersion: cleanText(inventoryParsed.sourceSchemaVersion),
+          sourceEvidence: inventoryParsed.sourceEvidence
+            ? JSON.parse(JSON.stringify(inventoryParsed.sourceEvidence))
+            : undefined,
         },
       },
       inventoryOverrides: {

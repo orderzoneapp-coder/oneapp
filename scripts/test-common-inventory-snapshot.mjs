@@ -38,6 +38,14 @@ assert.equal(canonical.normalizedRows[0].totalQuantity, 9);
 assert.equal(canonical.normalizedRows[0].warehouseValues.reduce((sum, row) => sum + row.quantity, 0), 9);
 assert.equal(canonical.warehouseScope.length, 3);
 
+const groupedInventory = JSON.parse(JSON.stringify(parsedInventory));
+groupedInventory.sourceMatrix[1][5] = "1,000";
+groupedInventory.rows[0].inventoryTotal = 1004;
+groupedInventory.sourceMatrix[2][6] = "";
+const groupedCanonical = snapshotTools.buildErpCanonical(groupedInventory, { basisDate: "2026-09-12" });
+assert.equal(groupedCanonical.normalizedRows[0].warehouseValues[0].quantity, 1000);
+assert.equal(groupedCanonical.normalizedRows[0].totalQuantity, 1004);
+
 const verifiedErp = await snapshotTools.readErpSnapshot({
   metadata: {
     snapshotId: "INV-test",
@@ -58,6 +66,8 @@ const dataOpsRows = [
   ["EA", "A100", "상품 A", "10입", 4, "LOT-2", "", 0, 0, "", 0],
   ["BOX", "B200", "상품 B", "20입", 5, "LOT-3", "", 0, 0, "", 0],
   ["EA", "B200", "상품 B", "20입", 6, "LOT-4", "", 0, 0, "", 0],
+  ["EA", "C300", "상품 C", "30입", "", "LOT-BLANK", "", 0, 0, "확인 필요", 0],
+  ["EA", "D400", "상품 D", "40입", 0, "LOT-ZERO", "", 0, 0, "실제 0", 0],
 ];
 const dataOpsCanonical = {
   schemaVersion: snapshotTools.DATAOPS_SCHEMA,
@@ -75,15 +85,22 @@ const dataOpsSnapshot = {
 };
 const totalReadModel = await snapshotTools.readDataOpsSnapshot(dataOpsSnapshot, { sha256Hex });
 assert.equal(totalReadModel.applicationMode, "TOTAL_ONLY");
-assert.equal(totalReadModel.normalizedRows.length, 1);
+assert.equal(totalReadModel.normalizedRows.length, 2);
 assert.equal(totalReadModel.normalizedRows[0].totalQuantity, 7);
 assert.deepEqual(totalReadModel.normalizedRows[0].sourceRowNumbers, [1, 2]);
-assert.equal(totalReadModel.validation.errors[0].code, "DATAOPS_UNIT_CONFLICT");
+assert.equal(totalReadModel.validation.errors.some((error) => error.code === "DATAOPS_UNIT_CONFLICT"), true);
+assert.equal(totalReadModel.validation.errors.some((error) => error.code === "DATAOPS_QUANTITY_BLANK"), true);
+assert.equal(totalReadModel.normalizedRows.find((row) => row.productCode === "D400").totalQuantity, 0);
+assert.equal(totalReadModel.normalizedRows.some((row) => row.productCode === "C300"), false);
 assert.deepEqual(totalReadModel.sourceRows, dataOpsRows);
 
 const totalParsed = snapshotTools.dataOpsReadModelToParsed(totalReadModel);
 assert.equal(totalParsed.columns.some((column) => column.role === "warehouseQuantity"), false);
 assert.equal(totalParsed.rows[0].inventoryTotal, 7);
+assert.equal(totalParsed.sourceEvidence.schemaVersion, snapshotTools.SOURCE_EVIDENCE_SCHEMA);
+assert.deepEqual(totalParsed.sourceEvidence.rows, dataOpsRows);
+assert.equal(totalParsed.sourceEvidence.exclusions.some((item) =>
+  item.code === "DATAOPS_QUANTITY_BLANK" && item.sourceRows[0].values[5] === "LOT-BLANK"), true);
 
 const orderMatrix = [
   ["일자", "담당", "창고", "단위", "품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"],
@@ -112,11 +129,14 @@ const replaced = engine.replaceWorkspaceInventory(workspace, totalParsed, {
     sourceId: totalReadModel.sourceId,
     revision: totalReadModel.revision,
     hash: totalReadModel.hash,
+    basisDate: totalReadModel.basisDate,
   },
 });
 assert.equal(replaced.workspaceMode, engine.PREVIEW_WORKSPACE_MODE);
 assert.equal(replaced.inventoryApplicationMode, "TOTAL_ONLY");
-assert.equal(replaced.planId, "");
+assert.equal(replaced.planId, `SHIPPLAN-20260912-${sourceFingerprint.slice(0, 16)}`);
+assert.equal(replaced.basisDateStatus, "valid");
+assert.deepEqual(replaced.sourceFiles.inventory.sourceEvidence.rows, dataOpsRows);
 assert.equal(replaced.inputValidation.canAnalyze, false);
 assert.equal(replaced.inputValidation.errors[0].code, "TOTAL_ONLY_NOT_ALLOCATABLE");
 assert.deepEqual(replaced.purchaseManagement, []);

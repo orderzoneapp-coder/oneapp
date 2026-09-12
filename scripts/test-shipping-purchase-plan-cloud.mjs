@@ -245,6 +245,62 @@ function buildDataOpsSnapshot() {
   };
 }
 
+function buildTotalOnlySnapshot() {
+  const sourceFingerprint = "f".repeat(64);
+  const planId = `SHIPPLAN-20260804-${sourceFingerprint.slice(0, 16)}`;
+  const inventoryMatrix = [["품목코드", "품목명", "규격", "단위", "수량"], ["000100", "테스트 상품", "", "EA", 1]];
+  const sourceEvidence = {
+    schemaVersion: "oneapp-common-inventory-source-evidence/v1",
+    sourceType: "DATAOPS_FINALIZED",
+    columns: ["단위", "품목코드", "품명", "규격", "재고", "기록", "거래", "구매가", "기본", "적요", "행사가"],
+    rows: [["EA", "000100", "테스트 상품", "", 1, "LOT-1", "", 0, 0, "", 0]],
+    exclusions: [],
+  };
+  const workspace = {
+    schemaVersion: WORKSPACE_SCHEMA,
+    workspaceMode: "ORDEROPS_PREVIEW",
+    inventoryApplicationMode: "TOTAL_ONLY",
+    sourceFingerprint,
+    planId,
+    basisDate: "2026-08-04",
+    basisDateStatus: "valid",
+    sourceFiles: {
+      orders: { fileName: "주문.xlsx", sheetName: "주문", rowCount: 1, sha256: "b".repeat(64), matrix: [["일자", "품목코드"], ["2026-08-04", "000100"]] },
+      inventory: { fileName: "DataOps 확정재고 2026-08-04", sheetName: "DataOpsSnapshot", rowCount: 1, sha256: "c".repeat(64), matrix: inventoryMatrix, sourceEvidence },
+    },
+    allocations: [{ productCode: "000100", stockTotal: 1, remainingQuantity: 0 }],
+    productSummaries: [{ productCode: "000100", stockTotal: 1, remainingQuantity: 0 }],
+    purchaseManagement: [],
+  };
+  const canonical = {
+    schemaVersion: SHIPPING_FORMAT,
+    planId,
+    basisDate: "2026-08-04",
+    sourceFingerprint,
+    sourceFileName: "주문.xlsx / DataOps 확정재고 2026-08-04",
+    sourceFiles: {
+      orders: { fileName: "주문.xlsx", sheetName: "주문", rowCount: 1, sha256: "b".repeat(64) },
+      inventory: { fileName: "DataOps 확정재고 2026-08-04", sheetName: "DataOpsSnapshot", rowCount: 1, sha256: "c".repeat(64) },
+    },
+    savedBy: "total-only-test",
+    productRowCount: 1,
+    purchaseUploadRowCount: 0,
+    purchaseInputs: {},
+    activePreview: "readiness",
+    workspace,
+  };
+  const canonicalJson = JSON.stringify(canonical);
+  return {
+    schemaVersion: SHIPPING_FORMAT,
+    planId,
+    hashAlgorithm: "SHA-256",
+    hash: crypto.createHash("sha256").update(canonicalJson, "utf8").digest("hex"),
+    rowCount: countRows(canonical),
+    cellCount: countScalarCells(canonical),
+    canonicalJson,
+  };
+}
+
 function buildInventorySnapshot(quantity = 10, fileHash = "d".repeat(64)) {
   const canonical = {
     schemaVersion: "ONEAPP_INVENTORY_SNAPSHOT_V1",
@@ -545,6 +601,14 @@ assert.equal(
   shippingStateBeforeSharedActions,
   "Master/History/Config actions must not mutate Shipping plan history or index",
 );
+
+const totalOnlySnapshot = buildTotalOnlySnapshot();
+const totalOnlySave = shippingPost("shipping_plan_save", { snapshot: totalOnlySnapshot });
+assert.equal(totalOnlySave.status, "success", totalOnlySave.message);
+const totalOnlyGet = shippingPost("shipping_plan_get", { planId: totalOnlySnapshot.planId });
+assert.equal(totalOnlyGet.status, "success", totalOnlyGet.message);
+assert.equal(totalOnlyGet.data.plan.workspace.inventoryApplicationMode, "TOTAL_ONLY");
+assert.equal(totalOnlyGet.data.plan.workspace.sourceFiles.inventory.sourceEvidence.rows[0][5], "LOT-1");
 
 const latestIndex = shippingList()[0];
 const tamperedPayload = `${historySheet.getRange(latestIndex.historyStartRow, 4).getValue()} `;
