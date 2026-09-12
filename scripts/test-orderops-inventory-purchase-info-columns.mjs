@@ -71,7 +71,11 @@ try {
             return cell ? (cell.querySelector('input')?.value ?? cell.textContent.trim()) : null;
           })
         }));
-      return {keys, headers, columns, rows};
+      const rawRows = preview.rows.map((values, index) => [
+        preview.sourceRows[index].productCode,
+        ...columns.map(matches => values[preview.columns.indexOf(matches[0])])
+      ]);
+      return {keys, headers, columns, rows, rawRows, totalOnly: state.workspace.inventoryApplicationMode === 'TOTAL_ONLY'};
     })()`);
     result.columns.forEach((matches, index) => {
       assert.equal(matches.length, 1, `${label}: one ${roles[index]} model column`);
@@ -87,9 +91,14 @@ try {
       assert.notEqual(value, null, `${label}: rendered quantity cell exists`);
       return value === '' ? '' : Number(String(value).replace(/,/g, ''));
     })]);
-    assert.deepEqual(values.slice().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-      expected.slice().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), `${label}: displayed quantities`);
-    report.checks.push({label, quantityColumns: result.columns, quantityRows: values});
+    const sorted = rows => rows.slice().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    assert.deepEqual(sorted(result.rawRows), sorted(expected), `${label}: numeric model quantities preserved`);
+    // Existing renderTableMarkup hides numeric zero in quantity cells. Check
+    // blank display separately from numeric 0; never convert unknown blanks to 0.
+    const displayed = expected.map(([code, ...quantities]) => [code, ...quantities.map((value, index) =>
+      value === 0 && tab === 'inventory' && !(result.totalOnly && index === 1) ? '' : value)]);
+    assert.deepEqual(sorted(values), sorted(displayed), `${label}: displayed quantities and zero hiding`);
+    report.checks.push({label, quantityColumns: result.columns, quantityRows: values, numericRows: result.rawRows});
   }
   await upload('inventory',inventory);await click('[data-preview="inventory"]');
   const only=await columns('inventory-only before analysis');check('inventory-only information blank and purchase editable',only.information.every(s=>s==='')&&only.editors.length===3);
