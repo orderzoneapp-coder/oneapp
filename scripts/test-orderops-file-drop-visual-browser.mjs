@@ -79,6 +79,17 @@ try {
     await ev(`document.querySelector('#validationBox').classList.add('bad');true`);await until(()=>ev(`document.querySelector('#orderOpsWorkbenchStatusButton').dataset.error==='true'`),'bad class observed');
     check('error visible without opening popup or scrolling toolbar',await ev(`(()=>{const b=document.querySelector('#orderOpsWorkbenchStatusButton'),r=b.getBoundingClientRect(),p=b.parentElement.getBoundingClientRect();return b.textContent.includes('확인 필요')&&r.left>=p.left&&r.right<=p.right&&!document.querySelector('#orderOpsWorkbenchStatus').matches(':popover-open');})()`));await shot('status-error-visible');
     await ev(`document.querySelector('#validationBox').classList.remove('bad');true`);
+    const setPaneState=async(left,right)=>{
+      await ev(`(()=>{const left=${left},right=${right},workspace=document.querySelector('.orderops-workbench-v12');if((workspace.dataset.nexusLeftOpen==='true')!==left)document.querySelector(left?'#preparePaneReopen':'#preparePaneClose').click();if((workspace.dataset.nexusRightOpen==='true')!==right)document.querySelector(right?'#inventoryInspectorReopen':'#inventoryInspectorClose').click();return true;})()`);
+      await until(()=>ev(`document.querySelector('.orderops-workbench-v12').dataset.nexusLeftOpen==='${left}'&&document.querySelector('.orderops-workbench-v12').dataset.nexusRightOpen==='${right}'`),`pane state ${left}/${right}`);
+      await wait(100);
+      const geometry=await ev(`(()=>{const rect=e=>e.getBoundingClientRect().toJSON(),workspace=document.querySelector('.orderops-workbench-v12'),left=document.querySelector('#orderOpsFilePreparePane'),center=workspace.querySelector(':scope>[data-nexus-pane="work"]'),right=document.querySelector('#inventoryInspector'),wr=rect(workspace),lr=left.hidden?null:rect(left),cr=rect(center),rr=right.hidden?null:rect(right),gap=parseFloat(getComputedStyle(workspace).columnGap)||0,expectedLeft=lr?lr.right+gap:wr.left,expectedRight=rr?rr.left-gap:wr.right;return {leftOpen:!left.hidden,rightOpen:!right.hidden,workspace:wr,left:lr,center:cr,right:rr,gap,expectedLeft,expectedRight,centerDelta:Math.abs((cr.left+cr.right)/2-(expectedLeft+expectedRight)/2)};})()`);
+      report.checks.push({paneGeometry:{left,right,...geometry}});
+      check(`desktop panes ${left}/${right}: sides fixed and center owns remaining middle`,(!geometry.left||Math.abs(geometry.left.left-geometry.workspace.left)<=2)&&(!geometry.right||Math.abs(geometry.right.right-geometry.workspace.right)<=2)&&Math.abs(geometry.center.left-geometry.expectedLeft)<=2&&Math.abs(geometry.center.right-geometry.expectedRight)<=2&&geometry.centerDelta<=2);
+      await shot(`pane-${left?'left-open':'left-closed'}-${right?'right-open':'right-closed'}`);
+    };
+    for(const [left,right] of [[true,true],[false,true],[true,false],[false,false]])await setPaneState(left,right);
+    await setPaneState(true,true);
   }
   if(!baseline){
     await ev(`document.querySelector('#previewTable').insertAdjacentHTML('beforeend','<table id="styleContractProbe"><tbody><tr><td><input class="purchase-input excel-grid-input" data-negative-balance="true" value="경고"></td><td><input class="order-edit-input" value="0"></td><td><input class="order-edit-input" value=""></td></tr></tbody></table>');true`);
