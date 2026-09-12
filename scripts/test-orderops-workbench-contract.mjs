@@ -1,3 +1,4 @@
+import './test-orderops-search-autofill.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { reconcileOrderWork, shipmentWorkbenchBlockers } from '../orderops/workbench-contract.js';
