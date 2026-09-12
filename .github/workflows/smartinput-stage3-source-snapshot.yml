@@ -1,0 +1,28 @@
+name: SmartInput Stage 3 pinned source snapshot
+on:
+  push:
+    branches: [codex/smartinput-stage3-independent-estimates-20260913]
+    paths: [.github/workflows/smartinput-stage3-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.repository == 'orderzoneapp-coder/oneapp' && github.ref == 'refs/heads/codex/smartinput-stage3-independent-estimates-20260913'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: f90d5be0fe7f0941e147c28b04f427455355ebd7
+          persist-credentials: false
+      - name: Archive only tracked source at the pinned commit
+        run: |
+          test "$(git rev-parse HEAD)" = f90d5be0fe7f0941e147c28b04f427455355ebd7
+          git archive --format=tar HEAD -o "$RUNNER_TEMP/oneapp-stage3-baseline.tar"
+          sha256sum "$RUNNER_TEMP/oneapp-stage3-baseline.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oneapp-stage3-baseline-f90d5be0
+          path: ${{ runner.temp }}/oneapp-stage3-baseline.tar
+          retention-days: 3
+          if-no-files-found: error
