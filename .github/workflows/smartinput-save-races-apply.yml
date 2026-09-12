@@ -40,6 +40,7 @@ jobs:
               'smartinput/smartinput.js': '4a41b820e0283c8935770cc024552df824503029',
               'scripts/test-smartinput-settings-ux.mjs': 'e2514604846b950dba8bf18b5b2890de9baaabfc',
               'scripts/test-smartinput-appheader-workspace.mjs': 'c7f5fd15e033a5a0180c8b23e6b82a353082dbbb',
+              'scripts/test-smartinput-independent-recovery.mjs': '275e0f224e8bc60fbaf39a088949e5a0328585f0',
           }
           for name, sha in expected.items():
               actual = subprocess.check_output(['git', 'hash-object', name], text=True).strip()
@@ -58,7 +59,7 @@ jobs:
           replace_once('smartinput/smartinput.js',
               "./draft-save-coordinator.js?v=0.1.0", "./draft-save-coordinator.js?v=0.1.1")
           replace_once('smartinput/index.html', 'smartinput.js?v=0.11.58', 'smartinput.js?v=0.11.59')
-          for name in ['scripts/test-smartinput-settings-ux.mjs', 'scripts/test-smartinput-appheader-workspace.mjs']:
+          for name in ['scripts/test-smartinput-settings-ux.mjs', 'scripts/test-smartinput-appheader-workspace.mjs', 'scripts/test-smartinput-independent-recovery.mjs']:
               replace_once(name, r'smartinput\.js\?v=0\.11\.58', r'smartinput\.js\?v=0\.11\.59')
           for path in Path('scripts').glob('test-smartinput-*.mjs'):
               for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -72,7 +73,7 @@ jobs:
           PY
           git diff --check
           git diff --stat
-          git diff -- smartinput/draft-save-coordinator.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-settings-ux.mjs scripts/test-smartinput-appheader-workspace.mjs scripts/test-smartinput-draft-save-coordinator.mjs
+          git diff -- smartinput/draft-save-coordinator.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-settings-ux.mjs scripts/test-smartinput-appheader-workspace.mjs scripts/test-smartinput-independent-recovery.mjs scripts/test-smartinput-draft-save-coordinator.mjs
       - name: Run direct save and affected entry-point checks
         run: |
           node --check smartinput/smartinput.js
@@ -88,7 +89,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add smartinput/draft-save-coordinator.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-settings-ux.mjs scripts/test-smartinput-appheader-workspace.mjs scripts/test-smartinput-draft-save-coordinator.mjs .github/workflows/smartinput-save-races-apply.yml
+          git add smartinput/draft-save-coordinator.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-settings-ux.mjs scripts/test-smartinput-appheader-workspace.mjs scripts/test-smartinput-independent-recovery.mjs scripts/test-smartinput-draft-save-coordinator.mjs .github/workflows/smartinput-save-races-apply.yml
           git diff --cached --check
           git commit -m 'fix: wait for SmartInput durable saves and preserve newer save state'
           git push origin HEAD:refs/heads/codex/smartinput-stage2-save-races-20260913
