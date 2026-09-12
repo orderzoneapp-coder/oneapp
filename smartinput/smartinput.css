@@ -59,7 +59,9 @@ input, select, textarea { color: var(--text); background: var(--surface); }
 .reference-overview > summary::-webkit-details-marker { display: none; }
 .reference-overview > summary::after { content: "⌄"; font-size: 11px; }
 .reference-overview[open] > summary::after { content: "⌃"; }
-.reference-overview__panel { position: absolute; z-index: 140; top: calc(100% + 8px); right: 0; width: min(540px, calc(100vw - 24px)); padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 52px rgba(5, 20, 38, .28); }
+.reference-overview__panel { position: fixed; z-index: 140; top: 12px; left: 12px; width: min(540px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 20px 52px rgba(5, 20, 38, .28); }
+.reference-overview__panel[hidden] { display: none; }
+.reference-overview__panel[data-positioned="false"] { visibility: hidden; pointer-events: none; }
 .reference-overview__panel > header { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .reference-overview__panel > header small { color: var(--text-faint); font-size: 10px; }
 .reference-domain { min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); }
@@ -936,7 +938,7 @@ tfoot td { position: sticky; bottom: 0; z-index: 2; height: 38px; padding: 0 8px
   .app-bar__inner { height: auto; min-height: 56px; padding: 8px 0; flex-wrap: wrap; gap: 8px 12px; }
   .save-state { display: none; }
   .app-status { order: 1; width: auto; margin-left: auto; display: flex; }
-  .reference-overview__panel { position: fixed; top: calc(var(--nexus-top-height) + 8px); left: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - var(--nexus-top-height) - 20px); overflow: auto; }
+  .reference-overview__panel { max-height: calc(100dvh - 24px); }
   .app-bar__primary { order: 2; width: 100%; margin-right: 0; }
   .header-fields { order: 3; width: 100%; overflow-x: auto; }
   .header-field { min-width: 150px; }

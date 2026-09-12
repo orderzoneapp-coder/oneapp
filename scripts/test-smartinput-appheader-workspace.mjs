@@ -19,8 +19,29 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
-assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.19"/, 'the compact table-toolbar CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.55"/, 'the compact table-toolbar behavior must use the next cache-bust version');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.20"/, 'the external reference-popup CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.56"/, 'the external reference-popup behavior must use the next cache-bust version');
+const appBarStart = html.indexOf('<header class="app-bar">');
+const appBarEnd = html.indexOf('</header>', appBarStart);
+const referenceOverviewPopupIndex = html.indexOf('id="referenceOverviewPopup"');
+assert.ok(appBarStart >= 0 && appBarEnd > appBarStart && referenceOverviewPopupIndex > appBarEnd,
+  'the reference popup host must be a document-level sibling after the clipped app header');
+assert.match(html, /id="referenceOverview"[\s\S]*<summary[^>]*aria-controls="referenceOverviewPopup"[^>]*aria-expanded="false"[^>]*aria-haspopup="dialog"/,
+  'the header trigger must retain the reference-overview state while controlling the external popup');
+assert.match(html, /id="referenceOverviewPopup"[^>]*data-reference-overview-popup[^>]*role="dialog"[^>]*aria-labelledby="referenceOverviewTitle"[^>]*tabindex="-1"[^>]*hidden/,
+  'the external reference popup must have an explicit dialog relationship and begin closed');
+assert.match(css, /\.reference-overview__panel\s*\{[^}]*position:\s*fixed[^}]*overflow:\s*auto/s,
+  'the reference popup must use an independently scrollable fixed layer rather than the app-header clipping context');
+assert.match(css, /\.reference-overview__panel\[hidden\]\s*\{[^}]*display:\s*none/s,
+  'the external reference popup must not flash while closed');
+assert.match(js, /function positionReferenceOverviewPopup\(\)[\s\S]*referenceOverviewPopup\.style\.top[\s\S]*referenceOverviewPopup\.style\.left/,
+  'the external reference popup must be positioned from the retained header trigger');
+assert.match(js, /document\.addEventListener\('pointerdown',[\s\S]*closeReferenceOverviewPopup\(\)/,
+  'the reference popup must close on an outside pointer interaction without changing the header overflow contract');
+assert.match(js, /event\.key !== 'Escape'[\s\S]*closeReferenceOverviewPopup\(\{ restoreFocus: true \}\)/,
+  'Escape must close the reference popup and return focus to its trigger');
+assert.match(js, /referenceOverviewFocusPopup[\s\S]*referenceOverviewPopup\.focus\(\{ preventScroll: true \}\)/,
+  'keyboard opening must place focus in the external reference popup before Escape returns it to the trigger');
 assert.match(js, /getMerchOpsSettingsSnapshotResult[\s\S]*function merchOpsEstimateOutputConfig\(\)[\s\S]*marginRules[\s\S]*estimateMappings/,
   'the estimate report must consume Settings-owned MerchOps pricing configuration through the read adapter');
 assert.match(js, /const outputConfig\s*=\s*\{[\s\S]*productCatalog:\s*state\.products,[\s\S]*\.\.\.merchOpsEstimateOutputConfig\(\)[\s\S]*buildEstimateF8Data\(sourceRows,\s*\{\s*\.\.\.outputConfig,\s*duplicateResolutions\s*\}\)/,
