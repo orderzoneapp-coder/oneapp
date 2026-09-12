@@ -174,7 +174,7 @@ assert.deepEqual(contract.consumers, ['orderops']);
 const smartInputProductUiHashes = new Map([
   ['../smartinput/index.html', 'f54de72e20bb5209b68fab213cf240bd4509b85a93c84c549b60139f05e06bca'],
   ['../smartinput/smartinput.css', 'c838e5d167975f5577ae072f27834f28875cf24b8a907019d18643a98f27bc31'],
-  ['../smartinput/smartinput.js', '73eee7232faf04b7646f681ad658d3098adae49074d67e14a94ecf80cfa97620']
+  ['../smartinput/smartinput.js', '1f9c8bf6b403e58858f000fd63c4ffe14e0667eed0bb9c37cc695850db9eb240']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -201,5 +201,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-and-shopping-assignee-handoff'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-and-erp-order-assignee-preservation'
 }, null, 2));
