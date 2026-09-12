@@ -8,10 +8,19 @@
     const labels = { orders: '주문현황', inventory: '창고재고', purchases: '구매 참고자료', sales: '판매 참고자료' };
     const pane = $('orderOpsFilePreparePane');
     const workspaceElement = pane.parentElement;
-    const fitHeight = () => { workspaceElement.style.setProperty('--orderops-workbench-height', `${Math.max(220, innerHeight - workspaceElement.getBoundingClientRect().top - 8)}px`); };
-    addEventListener('resize', fitHeight);
-    new ResizeObserver(fitHeight).observe(document.querySelector('[data-nexus-app-header="orderops"]'));
-    requestAnimationFrame(fitHeight);
+    let fittedViewport = '', headerHeight = -1;
+    const fitHeight = (force = false) => {
+      const viewport = `${innerWidth}:${innerHeight}`;
+      // Panel controls dispatch a synthetic resize too. An unchanged viewport
+      // and header do not require another forced layout of the full table.
+      if (!force && fittedViewport === viewport) return;
+      fittedViewport = viewport;
+      const height = `${Math.max(220, innerHeight - workspaceElement.getBoundingClientRect().top - 8)}px`;
+      if (workspaceElement.style.getPropertyValue('--orderops-workbench-height') !== height) workspaceElement.style.setProperty('--orderops-workbench-height', height);
+    };
+    addEventListener('resize', () => fitHeight());
+    new ResizeObserver(entries => { const next = entries[0]?.contentRect.height; if (next !== headerHeight) { headerHeight = next; fitHeight(true); } }).observe(document.querySelector('[data-nexus-app-header="orderops"]'));
+    requestAnimationFrame(() => fitHeight(true));
     const procurementScope = document.createElement('select');
     procurementScope.id = 'procurementScope'; procurementScope.hidden = true;
     procurementScope.setAttribute('aria-label', '발주현황 표시 범위');

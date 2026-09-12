@@ -10,6 +10,14 @@
 - 첫 PR CI의 4개 job 중 3개 성공, repository contracts는 TOTAL_ONLY 비교 7/2가 기존 주문현황 전환 후 보이지 않는 문제로 실패했다. 주문현황에 가짜 창고 대신 읽기 전용 총재고/비교잔량을 표시하고 TOTAL_ONLY 재고현황도 총량 비교를 사용하도록 보완했다. 관련 `test-orderops-common-inventory-browser.mjs` PASS. 전체 새 CI는 다음 head에서 다시 확인한다.
 - 성능 진단: 500행 기준 `getPreviewDefinitions` 1회 약 410~450ms, 중복 정의 생성과 기존 readiness 추가 구성을 정리했다. 그러나 총 표시 지연은 여전히 수초로 **미통과**이며 공통 표 장식은 약 20~30ms여서 지배 원인으로 단정하지 않는다. 개선이 검증되지 않은 containment는 제거했다. 준비된 자료의 30회 최종 비교·U29 iframe 추가 조합·공통 영향 최종 검증은 남아 있다.
 
+### U29 및 렌더 진단 추가 (후속 head)
+
+- 실제 `nexus/workspace.html` + 실제 OrderOps/DataOps를 사용한 격리 브라우저에서 미적용 준비 파일·실제 B/W/N 충돌창 대기/취소는 부모 URL과 iframe을 유지했다. DataOps 이동 후 **브라우저 뒤로가기**로 주문 경로에 복귀하면 직원 적요·단가·orderId가 보존됐다. 앱 탭 클릭의 새 canonical 기본 진입과 구분하며 공통헤더/호스트를 변경하지 않았다. `orderops-workbench-host.js`를 필수 브라우저 시험에 포함했다.
+- 같은 전체 브라우저 실행에서 U06 실제 다운로드, U19 명령/기출고 보호, U22 이력·적요·대체·Cloud 및 두 번의 프로세스 종료 복구도 PASS했다. Excel-grid와 테마/인쇄, operator-flow 관련 회귀 PASS. 소스 정적 자동 기본보기 assertion은 사전 계산 정의를 넘기는 동일 기능 호출에 맞게 갱신했다.
+- 정의 재사용은 workspace 객체 동일성만 신뢰하지 않고 **전체 작업 JSON·출고 초안·순기출고·원본 Snapshot·창고 필터·발주 범위**를 비교한다. 값이 바뀌면 재생성하고 F10 최종 선정 함수는 별도로 현재 작업본에서 계산한다. DOM은 전체 표 두 개까지만 보관하며 한 개만 연결하고 입력 변경 시 폐기한다. 행 생략/가상화·새 공통 엔진 없음. Intl 숫자 포맷터도 재사용한다.
+- 500행 정의 조회는 단회 진단 약23ms로 줄었지만, 짧은 3회 표시 진단은 주문 1.8~2.6초 / 재고 2.0~3.1초로 여전히 성능 미통과다. 30회 최종 수치가 아니다. 테두리 분리 실험은 개선이 불명하여 제거했다. 더 큰 렌더 표면 변경은 PM에게 경계를 보고했다.
+- 브라우저 실행은 이제 `browser-result.json`에 시작/종료 시각·Git HEAD·dirty 상태·제품 파일 SHA256·Chrome/Node 버전·전체 성공 로그/실패 사유를 기록하여 CI artifact와 함께 제출한다. 이전 미커밋 로그를 새 head 증거로 대체하지 않는다.
+
 이 문서는 개발자의 직접 확인 기록이며 기획자 명세 통과나 독립 PM 결과 검증을 대신하지 않는다. 승인 명세 원문은 [v1.2](orderops-workbench-v12-approved-spec.md), 착수/승인·역할 기록은 [진행 기록](orderops-workbench-v12-progress.md)이다.
 
 ## 기준과 책임

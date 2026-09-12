@@ -22,5 +22,5 @@
     await measure('panel',()=>{const button=document.querySelector(shouldOpen?'#inventoryInspectorReopen':'#inventoryInspectorClose');if(!button)throw Error('missing panel button');button.click();},()=>{const pane=document.querySelector('#inventoryInspector');if(pane.hidden===shouldOpen||(shouldOpen&&pane.getBoundingClientRect().width<=0))throw Error('requested panel state not visible');});
   }
   const summary=Object.fromEntries(Object.entries(data).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return[key,{samples:values.length,p50:sorted[Math.ceil(values.length*.5)-1],p95:sorted[Math.ceil(values.length*.95)-1],max:sorted.at(-1)}];}));
-  return {rows:count,warehouses,idleLayoutCalls,summary,diagnostics,measurement:'requested DOM state + next two displayed frames + focusable search; programmatic clicks, not physical touch feedback latency'};
+  return {rows:count,warehouses,idleLayoutCalls,summary,rawSamples:data,diagnostics,measurement:'requested DOM state + next two displayed frames + focusable search; programmatic clicks, not physical touch feedback latency'};
 })()

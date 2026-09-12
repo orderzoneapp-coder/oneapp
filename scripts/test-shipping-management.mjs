@@ -2376,7 +2376,7 @@ assert.ok(html.includes('elements.viewPresetSaveButton.disabled = !state.workspa
 assert.ok(html.includes('isDefault: value.isDefault === true') &&
   html.includes('preset.isDefault ? "★ " : ""') &&
   html.includes('candidate.previewId === previewId && candidate.isDefault === true') &&
-  html.includes('if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();'),
+  /if \(!applyDefaultOrderViewPreset\(previewId, \{ render: true \}\)\) renderPreview\((?:definitions)?\);/.test(html),
   "one saved layout per result screen must be selectable as the automatic default");
 assert.match(html, /\.column-sort-trigger\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?visibility:\s*hidden;/,
   "filter controls must remain hidden until the pointer reaches the header");

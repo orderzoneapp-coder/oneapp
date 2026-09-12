@@ -3789,11 +3789,12 @@
           : ui.unresolvedReviewReadAdapter;
       }
 
+      const tableNumberFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 });
       function formatNumber(value) {
         if (value === null || value === undefined || value === "") return "";
         const number = Number(value);
         return Number.isFinite(number)
-          ? new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 3 }).format(number)
+          ? tableNumberFormatter.format(number)
           : String(value);
       }
 
@@ -5132,6 +5133,8 @@
       }
 
       function resetResults({ preserveView = false } = {}) {
+        preparedPreviewCache = null;
+        previewSurfaceCache.clear();
         leaveUnresolvedReview({ render: false });
         setAnalysisEnterReady(false);
         state.analysisEnterLocked = false;
@@ -7080,7 +7083,23 @@
         if (scope) scope.hidden = state.activePreview !== "procurement";
       }
 
+      let preparedPreviewCache = null;
+      function previewDefinitionKey(workspace) {
+        // Workspace APIs permit in-place edits. Object identity or the UI-save
+        // counter alone cannot prove freshness; compare the complete inputs.
+        return JSON.stringify([workspace, state.shipmentDraft, state.shipmentResults?.netByOrderItem,
+          state.orderQSource?.snapshot, [...state.warehouseFilters], document.getElementById("procurementScope")?.value]);
+      }
+
       function getPreviewDefinitions(workspace) {
+        const key = previewDefinitionKey(workspace);
+        if (preparedPreviewCache?.workspace === workspace && preparedPreviewCache.key === key) return preparedPreviewCache.definitions;
+        const definitions = buildPreviewDefinitions(workspace);
+        preparedPreviewCache = { workspace, key: previewDefinitionKey(workspace), definitions };
+        return definitions;
+      }
+
+      function buildPreviewDefinitions(workspace) {
         const beforeAnalysis = workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE;
         const acknowledgementState = engine.ensureNoticeState(workspace);
         const acknowledgedIds = new Set(acknowledgementState.acknowledgedIds);
@@ -7747,8 +7766,8 @@
         if (persist) {
           try { localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY, nextOpen ? "1" : "0"); } catch (_) {}
         }
-        elements.resultsPanel.scrollLeft = 0;
-        window.requestAnimationFrame(() => { elements.resultsPanel.scrollLeft = 0; });
+        if (elements.resultsPanel.scrollLeft) elements.resultsPanel.scrollLeft = 0;
+        window.requestAnimationFrame(() => { if (elements.resultsPanel.scrollLeft) elements.resultsPanel.scrollLeft = 0; });
         window.dispatchEvent(new Event("resize"));
       }
 
@@ -8312,7 +8331,8 @@
                     const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
-                    const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
+                    const totalComparisonColumn = state.workspace?.inventoryApplicationMode === "TOTAL_ONLY" && ["stockQuantity", "calculatedQuantity"].includes(column.role);
+                    const displayValue = quantityColumn && numericQuantityValue === 0 && !totalComparisonColumn ? "" : value;
                     const negativeRemaining = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && negativeNumericValue;
                     const orderedContext = ["ledger", "inventory"].includes(previewId) &&
@@ -8695,6 +8715,28 @@
         return definitions.validation ? "validation" : Object.keys(definitions)[0] || "";
       }
 
+      // Keep at most the two last complete table DOMs. There is still only one
+      // attached table; no row is omitted and native grid/copy handlers remain.
+      const previewSurfaceCache = new Map();
+      elements.previewTable.addEventListener("input", () => previewSurfaceCache.clear());
+      function mountPreparedPreview(markup) {
+        const key = markup.replace(/class="([^"]*)"/g, (_, classes) =>
+          `class="${classes.split(/\s+/).filter(value => value && value !== "orderops-selected-product-row").join(" ")}"`);
+        const cached = previewSurfaceCache.get(state.activePreview);
+        const unchangedControls = cached && cached.nodes.every(node => !node.querySelectorAll ||
+          [...node.querySelectorAll("input,textarea")].every(input => input.value === input.defaultValue &&
+            (!["checkbox", "radio"].includes(input.type) || input.checked === input.defaultChecked)));
+        if (cached?.key === key && unchangedControls) elements.previewTable.replaceChildren(...cached.nodes);
+        else elements.previewTable.innerHTML = markup;
+        elements.previewTable.querySelectorAll("tr[data-product-code]").forEach(row => {
+          const selected = Boolean(state.selectedProductCode) && engine.normalizeProductCode(row.dataset.productCode) === engine.normalizeProductCode(state.selectedProductCode);
+          row.classList.toggle("orderops-selected-product-row", selected);
+        });
+        previewSurfaceCache.delete(state.activePreview);
+        previewSurfaceCache.set(state.activePreview, { key, nodes: [...elements.previewTable.childNodes] });
+        while (previewSurfaceCache.size > 2) previewSurfaceCache.delete(previewSurfaceCache.keys().next().value);
+      }
+
       function renderPreview(precomputedDefinitions) {
         if (state.activePreview === "readiness") state.activePreview = "allocations";
         if (state.unresolvedReview.active) {
@@ -8799,7 +8841,7 @@
             </section>
             ${previewMarkup}`;
         } else {
-          elements.previewTable.innerHTML = previewMarkup;
+          mountPreparedPreview(previewMarkup);
         }
         updateSubstitutionTargetMode(state.substitutionCtrlActive);
         updateColumnWidthToolbar();

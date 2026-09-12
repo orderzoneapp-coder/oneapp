@@ -5,10 +5,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join, resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const profile = mkdtempSync(join(tmpdir(), 'orderops-v12-'));
 const evidence = process.env.ORDEROPS_EVIDENCE_DIR;
 const performanceMode = process.env.ORDEROPS_PERFORMANCE === '1';
+const evidenceRun={startedAt:new Date().toISOString(),head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dirty:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),node:process.version,platform:process.platform,performanceMode,result:'running',logs:[],sourceHashes:Object.fromEntries(['orderops/list.html','orderops/workbench-ui.js','orderops/workbench-contract.js','orderops/workbench-v12.css','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,createHash('sha256').update(readFileSync(join(root,path))).digest('hex')]))};
+const log=console.log;console.log=(...args)=>{evidenceRun.logs.push(args.map(value=>typeof value==='string'?value:JSON.stringify(value)).join(' '));log(...args);};
 let baselineMode = false;
 const baselineFiles = performanceMode ? new Map(['orderops/list.html','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,execFileSync('git',['show',`a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c:${path}`],{cwd:root,encoding:'utf8'})])) : new Map();
 const perfHook = 'globalThis.__perf={state,renderResults,renderPreview}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)';
@@ -46,7 +49,7 @@ const errors=[];
 try {
   assert.ok(executable, 'Chrome is required');
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
-  browser=spawn(executable,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{windowsHide:true,stdio:'ignore'});
+  browser=spawn(executable,['--headless=new','--no-sandbox',...(performanceMode?[]:['--disable-gpu']),'--no-first-run','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{windowsHide:true,stdio:'ignore'});
   const port=await until(()=>existsSync(join(profile,'DevToolsActivePort'))&&readFileSync(join(profile,'DevToolsActivePort'),'utf8').split(/\r?\n/)[0],'CDP port');
   const target=(await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t=>t.type==='page');
   socket=new WebSocket(target.webSocketDebuggerUrl); const pending=new Map();let next=0;
@@ -57,6 +60,7 @@ try {
   const click=selector=>ev(`document.querySelector(${JSON.stringify(selector)}).click()`);
   const origin=`http://127.0.0.1:${server.address().port}`;
   await send('Runtime.enable');await send('Page.enable');
+  evidenceRun.browser=await send('Browser.getVersion');
   const downloadDir=join(profile,'downloads');mkdirSync(downloadDir,{recursive:true});
   await send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloadDir});
   await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
@@ -65,12 +69,13 @@ try {
   if (performanceMode) {
     const reports=[];
     const profiling=process.env.ORDEROPS_PROFILE==='1';
-    for(const baseline of (profiling?[false]:[true,false])) {
+    const diagnostic=profiling || process.env.ORDEROPS_DIAGNOSTIC==='1';
+    for(const baseline of (diagnostic?[false]:[true,false])) {
       await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')});
       await until(()=>ev('Boolean(globalThis.__perf?.state.db) && Boolean(globalThis.__ops)==='+String(!baseline)),'performance version initialization');
-      for(const [count,warehouses] of (profiling?[[500,10]]:[[100,3],[500,10],[2000,10]])) {
+      for(const [count,warehouses] of (diagnostic?[[500,10]]:[[100,3],[500,10],[2000,10]])) {
         if(profiling){await send('Profiler.enable');await send('Profiler.start');}
-        const result=await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-performance.js'),'utf8').replaceAll('__ROW_COUNT__',String(count)).replaceAll('__WAREHOUSE_COUNT__',String(warehouses)).replaceAll('__SAMPLES__',profiling?'1':'30'));
+        const result=await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-performance.js'),'utf8').replaceAll('__ROW_COUNT__',String(count)).replaceAll('__WAREHOUSE_COUNT__',String(warehouses)).replaceAll('__SAMPLES__',diagnostic?String(Math.max(1,Math.min(5,Number(process.env.ORDEROPS_DIAGNOSTIC_SAMPLES)||1))):'30'));
         if(profiling){const {profile:cpu}=await send('Profiler.stop');console.log('CPU',JSON.stringify(cpu.nodes.filter(n=>n.hitCount).sort((a,b)=>b.hitCount-a.hitCount).slice(0,30).map(n=>({name:n.callFrame.functionName,url:n.callFrame.url,line:n.callFrame.lineNumber,hits:n.hitCount}))));}
         reports.push({version:baseline?'a5eeb19':'development',...result});console.log('PERFORMANCE',JSON.stringify(reports.at(-1)));
         if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance-progress.json'),JSON.stringify({completed:false,reports},null,2));}
@@ -157,6 +162,10 @@ try {
   assert.equal(await ev('__ops.state.workspace.orders[0].note1Original'),recovered.note);
   assert.equal(await ev('__ops.state.workspace.workbenchUnapplied.length'),1);
   console.log('PASS U22-e/f second termination after accepted recovery: notes, orphan and inventory retained');
+  await send('Page.navigate',{url:origin+'/nexus/workspace.html?app=orderops&route='+encodeURIComponent('orderops/list.html?orderId=WB-ORDER&returnTo=orderops_list.html&focus=WB-I1')});
+  await until(()=>ev('Boolean(document.querySelector("#nexusWorkspaceFrame")?.contentWindow.__ops?.state.workspace?.workbenchReconciliation)'), 'actual host OrderOps ready');
+  console.log('PASS U29 actual host preparation/conflict/round-trip',JSON.stringify(await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-host.js'),'utf8'))));
   }
-} catch(error) { console.error('Runtime errors:',errors,'Failure:',error.message);throw error; }
-finally { socket?.close();if(browser){if(process.platform==='win32')spawnSync('taskkill',['/pid',String(browser.pid),'/t','/f'],{windowsHide:true,stdio:'ignore'});else browser.kill('SIGKILL');}await new Promise(r=>server.close(r));await wait(300);try { if(resolve(profile).startsWith(resolve(tmpdir())+sep))rmSync(profile,{recursive:true,force:true,maxRetries:2,retryDelay:100}); } catch { console.warn('Temporary browser evidence retained:',profile); } }
+  evidenceRun.result='passed';
+} catch(error) { evidenceRun.result='failed';evidenceRun.error=error.message;console.error('Runtime errors:',errors,'Failure:',error.message);throw error; }
+finally { if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'browser-result.json'),JSON.stringify({...evidenceRun,finishedAt:new Date().toISOString(),runtimeErrors:errors},null,2));}socket?.close();if(browser){if(process.platform==='win32')spawnSync('taskkill',['/pid',String(browser.pid),'/t','/f'],{windowsHide:true,stdio:'ignore'});else browser.kill('SIGKILL');}await new Promise(r=>server.close(r));await wait(300);try { if(resolve(profile).startsWith(resolve(tmpdir())+sep))rmSync(profile,{recursive:true,force:true,maxRetries:2,retryDelay:100}); } catch { console.warn('Temporary browser evidence retained:',profile); } }
