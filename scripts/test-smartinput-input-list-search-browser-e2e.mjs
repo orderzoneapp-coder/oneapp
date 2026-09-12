@@ -182,7 +182,7 @@ try {
       : `!document.querySelector('#voucherInputTable').hidden`, `${view} table view`);
   };
   const restoreFixture = async view => {
-    await evaluate(client, `localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,${JSON.stringify(fixtureDraftJson)});true`);
+    await evaluate(client, `(async()=>{localStorage.setItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY,${JSON.stringify(fixtureDraftJson)});await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readwrite');const store=tx.objectStore('autosave');const all=store.getAll();all.onerror=()=>reject(all.error);all.onsuccess=()=>all.result.filter(record=>record.schemaVersion==='ONEAPP_SMART_INPUT_AUTOSAVE_JOURNAL_V2').forEach(record=>store.delete(record.key));tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);};});return true;})()`);
     loaded = client.once('Page.loadEventFired');
     await client.send('Page.reload', { ignoreCache: true });
     await loaded;

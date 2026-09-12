@@ -721,3 +721,53 @@ export function saveLatestAutosave(draft) {
 export function loadLatestAutosave() {
   return get(DATA_STORES.AUTOSAVE, 'current');
 }
+
+export async function loadAutosaveJournalRecords(companyId = '') {
+  const records = await getAll(DATA_STORES.AUTOSAVE);
+  return records.filter(record => record?.schemaVersion === 'ONEAPP_SMART_INPUT_AUTOSAVE_JOURNAL_V2'
+    && (!companyId || record.companyId === companyId));
+}
+
+export async function commitAutosaveJournal({
+  base = null,
+  patch = null,
+  head,
+  workspace = null,
+  expectedDurableVersion = 0
+} = {}) {
+  if (!head?.key || head.recordType !== 'head') throw new Error('SMARTINPUT_AUTOSAVE_HEAD_REQUIRED');
+  const db = await openDatabase();
+  if (!db) throw new Error('SMARTINPUT_AUTOSAVE_JOURNAL_UNAVAILABLE');
+  const transaction = db.transaction(DATA_STORES.AUTOSAVE, 'readwrite');
+  const completed = transactionDone(transaction);
+  try {
+    const store = transaction.objectStore(DATA_STORES.AUTOSAVE);
+    const currentHead = await requestResult(store.get(head.key));
+    if (Number(currentHead?.durableVersion || 0) !== Number(expectedDurableVersion || 0)) {
+      transaction.abort();
+      throw new Error('SMARTINPUT_AUTOSAVE_JOURNAL_STALE');
+    }
+    if (base) store.put(base);
+    if (patch) store.put(patch);
+    if (workspace) store.put(workspace);
+    store.put(head);
+    await completed;
+    return head;
+  } catch (error) {
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
+export async function deleteAutosaveJournalRecords(keys = []) {
+  const recordKeys = [...new Set(keys.filter(key => key && key !== 'current'))];
+  if (!recordKeys.length) return;
+  const db = await openDatabase();
+  if (!db) throw new Error('SMARTINPUT_AUTOSAVE_JOURNAL_UNAVAILABLE');
+  const transaction = db.transaction(DATA_STORES.AUTOSAVE, 'readwrite');
+  recordKeys.forEach(key => transaction.objectStore(DATA_STORES.AUTOSAVE).delete(key));
+  await transactionDone(transaction);
+  db.close();
+}

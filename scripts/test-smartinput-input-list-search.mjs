@@ -6,11 +6,13 @@ import { fileURLToPath } from 'node:url';
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,
+  createInputListSearchIndex,
   createInputListSearchState,
   filterInputListRows,
   inputListDisplayRows,
   inputListSelectionScopeRowIds,
-  reduceInputListSearchState
+  reduceInputListSearchState,
+  updateInputListSearchIndex
 } from '../smartinput/input-list-search.js';
 
 const rows = [
@@ -20,6 +22,14 @@ const rows = [
   { rowId: 'EMPTY', itemCode: '', itemName: '', specification: '', quantity: '', memo: '', description: '' },
   { rowId: 'NORMALIZED_EMPTY', itemCode: '', itemName: '', specification: '', quantity: null, unitPrice: null, noticePrice: 0, memo: '', description: '' }
 ];
+
+const incrementalSearchIndex = createInputListSearchIndex(rows);
+const updatedCodeRow = { ...rows[0], itemName: '청사과' };
+updateInputListSearchIndex(incrementalSearchIndex, updatedCodeRow);
+assert.deepEqual(filterInputListRows([updatedCodeRow, ...rows.slice(1)], '청사과', { searchIndex: incrementalSearchIndex }).map(row => row.rowId), ['CODE'],
+  'an edited row must become searchable by updating only its cached search entry');
+assert.deepEqual(filterInputListRows([updatedCodeRow, ...rows.slice(1)], '사과', { searchIndex: incrementalSearchIndex }).map(row => row.rowId), ['CODE'],
+  'normal substring search behavior must remain unchanged with the cached index');
 
 assert.deepEqual(filterInputListRows(rows, '직원').map(row => row.rowId), ['DESCRIPTION'],
   'input-list search must include the employee description field');

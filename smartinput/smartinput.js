@@ -27,6 +27,12 @@ import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.1';
 import {
+  AUTOSAVE_JOURNAL_SCHEMA,
+  createAutosaveDocumentKey,
+  createDraftSaveCoordinator,
+  recoverAutosaveDocuments
+} from './draft-save-coordinator.js?v=0.1.0';
+import {
   DECISION as MAPPING_DECISION,
   SESSION_STATUS as MAPPING_SESSION_STATUS,
   addManualRow,
@@ -40,8 +46,9 @@ import {
   setColumnDecision,
   synchronizeWorkingRow,
   updateWorkingCell,
+  updateWorkingCells,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.2.5';
+} from './input-template-mapper.js?v=0.2.6';
 import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
@@ -70,12 +77,15 @@ import {
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,
+  createInputListSearchIndex,
   createInputListSearchState,
   filterInputListRows,
   inputListDisplayRows,
   inputListSelectionScopeRowIds,
-  reduceInputListSearchState
-} from './input-list-search.js?v=0.1.2';
+  removeInputListSearchIndexRow,
+  reduceInputListSearchState,
+  updateInputListSearchIndex
+} from './input-list-search.js?v=0.1.3';
 import {
   buildCatalogPriceSnapshot,
   priceSnapshotsEqual,
@@ -117,11 +127,14 @@ import {
   saveSourceImage,
   saveTemporaryCustomer,
   loadLatestAutosave,
+  loadAutosaveJournalRecords,
+  commitAutosaveJournal,
+  deleteAutosaveJournalRecords,
   saveLatestAutosave,
   loadInputTemplates,
   saveInputTemplates,
   saveMappingSessionV2
-} from './smartinput-data-store.js?v=0.6.2';
+} from './smartinput-data-store.js?v=0.6.3';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -322,6 +335,7 @@ const state = {
   pendingGridPasteText: '',
   mappingPasteUndo: null,
   mappingProjectionTimer: null,
+  mappingProjectionRowIds: new Set(),
   mappingValidation: null,
   noticeEstimateIds: [],
   smartDataReady: false,
@@ -334,6 +348,7 @@ const state = {
   pendingStructuredImport: null,
   inputListSearch: createInputListSearchState(),
   inputListSearchReturnFocus: null,
+  inputListSearchIndexes: new Map(),
   tableViewPreferences: createTableViewPreferences(Object.keys(contract.MODES)),
   tableViewScrollPositions: {},
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
@@ -344,6 +359,11 @@ const state = {
   selectedRowIds: new Set(),
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
+  compatibilitySaveTimer: null,
+  autosaveClientId: globalThis.crypto?.randomUUID?.() || `client-${Date.now().toString(36)}`,
+  latestQueuedDocumentVersions: new Map(),
+  pendingAutosaveModes: new Set(),
+  draftMutationVersion: 0,
   draftDirty: false,
   autosaveAvailable: false,
   autosaveUpdatedAt: '',
@@ -381,6 +401,11 @@ const state = {
   shoppingInspectionRequestId: 0,
   shoppingInspectionTimer: null
 };
+
+const draftSaveCoordinator = createDraftSaveCoordinator({
+  commit: commitAutosaveJournal,
+  cleanup: deleteAutosaveJournalRecords
+});
 
 function optionalOperationContext() {
   return {
@@ -597,7 +622,7 @@ function queueAutosaveSnapshot(draft) {
     state.autosaveAvailable = hasMeaningfulWorkspaceDraft(snapshot);
     state.autosaveUpdatedAt = record?.updatedAt || snapshot.updatedAt || new Date().toISOString();
     updateAutosaveButton();
-    setSaveState('자동저장됨', 'saved');
+    if (!state.draftDirty) setSaveState('자동저장됨', 'saved');
   }).catch(() => {
     state.autosaveLoading = false;
     updateAutosaveButton();
@@ -607,26 +632,105 @@ function queueAutosaveSnapshot(draft) {
   return queued;
 }
 
-function saveDraftNow({ writeAutosave = true } = {}) {
+function autosaveDocumentKey(mode, current = state.draft.modes?.[mode]) {
+  return createAutosaveDocumentKey({ companyId: state.companyId, mode, documentId: current?.documentId });
+}
+
+function autosaveWorkspaceRecord() {
+  const updatedAt = new Date().toISOString();
+  return {
+    key: `workspace:${state.companyId}:${state.autosaveClientId}`,
+    schemaVersion: AUTOSAVE_JOURNAL_SCHEMA,
+    recordType: 'workspace',
+    companyId: state.companyId,
+    clientId: state.autosaveClientId,
+    draftId: state.draft.draftId,
+    activeMode: state.draft.activeMode,
+    docKeys: Object.fromEntries(Object.entries(state.draft.modes || {}).map(([mode, current]) => [mode, autosaveDocumentKey(mode, current)])),
+    ui: JSON.parse(JSON.stringify(state.draft.ui || {})),
+    updatedAt
+  };
+}
+
+function queueDocumentCheckpoint(mode = state.draft.activeMode, { trackDirty = true, bypassLoading = false } = {}) {
+  if (state.autosaveLoading && !bypassLoading) {
+    state.pendingAutosaveModes.add(mode);
+    return { docKey: autosaveDocumentKey(mode), version: 0, promise: Promise.resolve(null), deferred: true };
+  }
+  const current = state.draft.modes?.[mode];
+  if (!current?.documentId) throw new Error('SMARTINPUT_AUTOSAVE_DOCUMENT_MISSING');
+  const ticket = draftSaveCoordinator.queue({
+    companyId: state.companyId,
+    mode,
+    documentId: current.documentId,
+    snapshot: current,
+    workspace: autosaveWorkspaceRecord()
+  });
+  const mutationVersion = state.draftMutationVersion;
+  if (trackDirty) state.latestQueuedDocumentVersions.set(ticket.docKey, ticket.version);
+  ticket.promise.then(result => {
+    if (trackDirty && state.latestQueuedDocumentVersions.get(ticket.docKey) !== ticket.version) return;
+    if (!trackDirty) {
+      state.autosaveAvailable = true;
+      updateAutosaveButton();
+      return result;
+    }
+    state.draftDirty = state.draftMutationVersion !== mutationVersion
+      || [...state.latestQueuedDocumentVersions].some(([docKey, version]) => (
+        draftSaveCoordinator.status(docKey).durableVersion < version
+      ));
+    state.autosaveLoading = false;
+    state.autosaveAvailable = true;
+    state.autosaveUpdatedAt = new Date().toISOString();
+    updateAutosaveButton();
+    setSaveState('자동저장됨', 'saved');
+    return result;
+  }).catch(() => {
+    state.autosaveLoading = false;
+    if (trackDirty) state.draftDirty = true;
+    updateAutosaveButton();
+    setSaveState('자동저장 실패', 'error');
+    setAppStatus('변경 저널을 자동저장하지 못했습니다. 입력 내용은 현재 화면과 호환 저장소에 유지됩니다.', 'warn');
+  });
+  return ticket;
+}
+
+function writeCompatibilityDraft({ queueDatabaseCopy = true } = {}) {
+  clearTimeout(state.compatibilitySaveTimer);
+  state.compatibilitySaveTimer = null;
+  try {
+    localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
+    if (queueDatabaseCopy) queueAutosaveSnapshot(state.draft);
+    return true;
+  } catch (_) {
+    setAppStatus('호환 저장소에 기록하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
+    return false;
+  }
+}
+
+function saveDraftNow({
+  writeAutosave = true,
+  writeCompatibility = true,
+  mode = state.draft.activeMode,
+  mutationAlreadyTracked = false
+} = {}) {
   clearTimeout(state.saveTimer);
+  if (writeAutosave) {
+    if (!mutationAlreadyTracked) state.draftMutationVersion += 1;
+    state.draftDirty = true;
+  }
   Object.values(state.draft.modes || {}).forEach(pruneEmptyWorkRows);
-  if (state.draft.activeMode !== 'estimate') {
-    modeDraft().voucherGroups = groupVoucherRows(state.draft.activeMode, modeDraft().rows, modeDraft().header)
+  const current = state.draft.modes[mode];
+  if (mode !== 'estimate') {
+    current.voucherGroups = groupVoucherRows(mode, current.rows, current.header)
       .map(({ rows, ...group }) => group);
   }
   state.draft.updatedAt = new Date().toISOString();
-  modeDraft().updatedAt = state.draft.updatedAt;
-  let compatibilitySaved = true;
-  try {
-    localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
-    state.draftDirty = false;
-  } catch (_) {
-    compatibilitySaved = false;
-    setAppStatus('호환 저장소에 기록하지 못했습니다. 입력 내용은 현재 화면에 유지됩니다.', 'warn');
-  }
+  current.updatedAt = state.draft.updatedAt;
+  const compatibilitySaved = writeCompatibility ? writeCompatibilityDraft({ queueDatabaseCopy: writeAutosave }) : true;
   if (writeAutosave) {
     setSaveState('자동저장 중…', 'saving');
-    queueAutosaveSnapshot(state.draft);
+    queueDocumentCheckpoint(mode);
   } else {
     setSaveState(state.autosaveAvailable ? '복구 가능' : '', 'saved');
     updateAutosaveButton();
@@ -640,14 +744,39 @@ function scheduleSave({ invalidateOperations = true } = {}) {
     invalidateOptionalOperations();
   }
   state.draftDirty = true;
+  state.draftMutationVersion += 1;
   setSaveState('자동저장 중…', 'saving');
   clearTimeout(state.saveTimer);
-  state.saveTimer = window.setTimeout(saveDraftNow, 160);
+  state.saveTimer = window.setTimeout(() => saveDraftNow({ writeCompatibility: false, mutationAlreadyTracked: true }), 500);
+  if (!state.compatibilitySaveTimer) {
+    state.compatibilitySaveTimer = window.setTimeout(() => writeCompatibilityDraft(), 2000);
+  }
 }
 
 async function initializeAutosave() {
+  const bootstrapGeneration = state.optionalInputGeneration;
   try {
-    const record = await loadLatestAutosave();
+    const [record, journalRecords] = await Promise.all([loadLatestAutosave(), loadAutosaveJournalRecords(state.companyId)]);
+    const recovered = draftSaveCoordinator.hydrate(journalRecords);
+    if (bootstrapGeneration === state.optionalInputGeneration && !state.draftDirty) {
+      const localWorkspaceMeaningful = hasMeaningfulWorkspaceDraft(state.draft);
+      let adoptedJournal = false;
+      const workspace = journalRecords.filter(item => item.recordType === 'workspace')
+        .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))[0];
+      Object.entries(workspace?.docKeys || {}).forEach(([mode, docKey]) => {
+        const checkpoint = recovered.get(docKey);
+        const localUpdatedAt = state.draft.modes?.[mode]?.updatedAt || '';
+        const checkpointUpdatedAt = checkpoint?.snapshot?.updatedAt || checkpoint?.head?.updatedAt || '';
+        const sameDocument = state.draft.modes?.[mode] && autosaveDocumentKey(mode, state.draft.modes[mode]) === docKey;
+        if (checkpoint?.snapshot && contract.MODES[mode]
+          && (!localWorkspaceMeaningful || (sameDocument && String(checkpointUpdatedAt) > String(localUpdatedAt)))) {
+          state.draft.modes[mode] = contract.normalizeModeDraft(mode, checkpoint.snapshot);
+          adoptedJournal = true;
+        }
+      });
+      if (adoptedJournal && workspace?.activeMode && contract.MODES[workspace.activeMode]) state.draft.activeMode = workspace.activeMode;
+      if (adoptedJournal) renderMode();
+    }
     if (record?.draft && hasMeaningfulWorkspaceDraft(record.draft)) {
       state.autosaveAvailable = true;
       state.autosaveUpdatedAt = record.updatedAt || record.draft.updatedAt || '';
@@ -656,10 +785,20 @@ async function initializeAutosave() {
       state.autosaveAvailable = true;
       state.autosaveUpdatedAt = migrated?.updatedAt || state.draft.updatedAt || '';
     }
+    if (recovered.size) state.autosaveAvailable = true;
+    if (bootstrapGeneration === state.optionalInputGeneration && !state.draftDirty) {
+      const migrations = Object.entries(state.draft.modes || {})
+        .filter(([mode, current]) => !recovered.has(autosaveDocumentKey(mode, current)))
+        .map(([mode]) => queueDocumentCheckpoint(mode, { trackDirty: false, bypassLoading: true }).promise);
+      if (migrations.length) await Promise.all(migrations);
+    }
   } catch (_) {
     setSaveState('복구 확인 실패', 'error');
   } finally {
     state.autosaveLoading = false;
+    const pendingModes = [...state.pendingAutosaveModes];
+    state.pendingAutosaveModes.clear();
+    pendingModes.forEach(mode => queueDocumentCheckpoint(mode));
     updateAutosaveButton();
   }
 }
@@ -669,9 +808,20 @@ async function restoreLatestAutosave() {
   state.busy = true;
   updateAutosaveButton();
   try {
+    await autosaveInitializationPromise;
+    await draftSaveCoordinator.flushWorkspace();
     await autosaveWriteQueue;
-    const record = await loadLatestAutosave();
-    if (!record?.draft || !hasMeaningfulWorkspaceDraft(record.draft)) {
+    const [record, journalRecords] = await Promise.all([loadLatestAutosave(), loadAutosaveJournalRecords(state.companyId)]);
+    const restoredDraft = record?.draft ? contract.normalizeDraft(record.draft) : contract.createDraft();
+    const recovered = recoverAutosaveDocuments(journalRecords);
+    const workspace = journalRecords.filter(item => item.recordType === 'workspace')
+      .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))[0];
+    Object.entries(workspace?.docKeys || {}).forEach(([mode, docKey]) => {
+      const checkpoint = recovered.get(docKey);
+      if (checkpoint?.snapshot && contract.MODES[mode]) restoredDraft.modes[mode] = contract.normalizeModeDraft(mode, checkpoint.snapshot);
+    });
+    if (workspace?.activeMode && contract.MODES[workspace.activeMode]) restoredDraft.activeMode = workspace.activeMode;
+    if (!hasMeaningfulWorkspaceDraft(restoredDraft)) {
       state.autosaveAvailable = false;
       state.autosaveUpdatedAt = '';
       return toast('복구할 자동저장이 없습니다.', 'error');
@@ -681,7 +831,7 @@ async function restoreLatestAutosave() {
     cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
     clearTimeout(state.saveTimer);
     state.draftDirty = false;
-    state.draft = contract.normalizeDraft(record.draft);
+    state.draft = restoredDraft;
     state.selectedRowIds.clear();
     state.gridPasteUndo = null;
     state.pendingImageEvidence = null;
@@ -716,7 +866,9 @@ async function waitForSmartInputIdle(timeoutMs = 10000) {
 }
 
 async function flushSmartInputBeforeWorkspaceLeave() {
+  await autosaveInitializationPromise;
   clearTimeout(state.saveTimer);
+  clearTimeout(state.compatibilitySaveTimer);
   await autosaveWriteQueue;
   await waitForSmartInputIdle();
   while (state.sourceImageWriteQueues.size) {
@@ -728,7 +880,13 @@ async function flushSmartInputBeforeWorkspaceLeave() {
     );
   }
   clearTimeout(state.saveTimer);
-  const compatibilitySaved = saveDraftNow({ writeAutosave: false });
+  Object.keys(state.draft.modes || {}).forEach(mode => {
+    const current = state.draft.modes[mode];
+    current.updatedAt ||= state.draft.updatedAt || new Date().toISOString();
+    queueDocumentCheckpoint(mode);
+  });
+  await draftSaveCoordinator.flushWorkspace();
+  const compatibilitySaved = writeCompatibilityDraft({ queueDatabaseCopy: false });
   if (!compatibilitySaved) throw new Error('최신 입력을 호환 저장소에 기록하지 못했습니다.');
   const expected = JSON.parse(JSON.stringify(state.draft));
   await queueAutosaveSnapshot(expected);
@@ -1161,9 +1319,58 @@ function inputListSourceRows(session = inputMappingSession()) {
   return session?.workingRows || [];
 }
 
+function inputListSearchIndex(session = inputMappingSession()) {
+  const mode = state.draft.activeMode;
+  const rows = modeDraft().rows;
+  const sourceRows = inputListSourceRows(session);
+  let cached = state.inputListSearchIndexes.get(mode);
+  if (!cached || cached.rows !== rows || cached.sourceRows !== sourceRows) {
+    cached = { rows, sourceRows, index: createInputListSearchIndex(rows, { sourceRows }) };
+    state.inputListSearchIndexes.set(mode, cached);
+  }
+  return cached.index;
+}
+
+function refreshInputListSearchRow(row, session = inputMappingSession()) {
+  if (!row?.rowId) return;
+  const mode = state.draft.activeMode;
+  const rows = modeDraft().rows;
+  const sourceRows = inputListSourceRows(session);
+  let cached = state.inputListSearchIndexes.get(mode);
+  if (!cached || cached.rows !== rows) {
+    cached = { rows, sourceRows, index: createInputListSearchIndex(rows, { sourceRows }) };
+  } else {
+    cached.sourceRows = sourceRows;
+    const sourceRow = sourceRows.find(item => item.rowId === row.rowId) || null;
+    updateInputListSearchIndex(cached.index, row, sourceRow);
+  }
+  state.inputListSearchIndexes.set(mode, cached);
+}
+
+function refreshInputListSearchRows(rows, changedRowIds, session = inputMappingSession(), previousRows = null) {
+  const mode = state.draft.activeMode;
+  const sourceRows = inputListSourceRows(session);
+  const changed = new Set(changedRowIds || []);
+  let cached = state.inputListSearchIndexes.get(mode);
+  if (!cached || !changed.size || (previousRows && cached.rows !== previousRows)) {
+    cached = { rows, sourceRows, index: createInputListSearchIndex(rows, { sourceRows }) };
+  } else {
+    cached.rows = rows;
+    cached.sourceRows = sourceRows;
+    changed.forEach(rowId => {
+      const row = rows.find(item => item.rowId === rowId);
+      const sourceRow = sourceRows.find(item => item.rowId === rowId) || null;
+      if (row) updateInputListSearchIndex(cached.index, row, sourceRow);
+      else removeInputListSearchIndexRow(cached.index, rowId);
+    });
+  }
+  state.inputListSearchIndexes.set(mode, cached);
+}
+
 function visibleInputListRows(session = inputMappingSession(), query = state.inputListSearch.query) {
   return filterInputListRows(modeDraft().rows, query, {
-    sourceRows: inputListSourceRows(session)
+    sourceRows: inputListSourceRows(session),
+    searchIndex: inputListSearchIndex(session)
   });
 }
 
@@ -1593,10 +1800,12 @@ function mappingSessionWithBatch(session) {
   };
 }
 
-function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) {
+function projectInputMappingToVoucherRows({ preserveProductEdits = true, changedRowIds = null } = {}) {
   const current = modeDraft();
   const session = inputMappingSession(current);
   if (!session) return;
+  const rowsBeforeProjection = current.rows;
+  const changed = changedRowIds ? new Set(changedRowIds) : null;
   const priorRows = preserveProductEdits ? new Map((current.rows || []).map(row => [row.rowId, row])) : new Map();
   const targetDefinitions = inputMappingDefinitions();
   const projectionSession = session.estimateErpSummary?.recognized
@@ -1605,7 +1814,7 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
       workingRows: (session.workingRows || []).filter(row => row.manual || isEstimateWorkbookItemRow(row.cells))
     }
     : session;
-  let projectedSources = projectMappedRows(projectionSession, targetDefinitions);
+  let projectedSources = projectMappedRows(projectionSession, targetDefinitions, { rowIds: changed });
   projectedSources = applyOrderDocumentNumberDerivation({
     rows: projectedSources,
     session,
@@ -1679,7 +1888,16 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true } = {}) 
     if (!row.productId || !row.masterProductId) row = matchGridPasteRow(row);
     return row;
   });
-  current.rows = contract.markDuplicatePossibilities(projected);
+  if (changed) {
+    const projectedByRowId = new Map(projected.map(row => [row.rowId, row]));
+    const workingRowIds = new Set((projectionSession.workingRows || []).map(row => row.rowId));
+    current.rows = contract.markDuplicatePossibilities((projectionSession.workingRows || [])
+      .map(row => projectedByRowId.get(row.rowId) || (changed.has(row.rowId) ? null : priorRows.get(row.rowId)))
+      .filter(row => row && workingRowIds.has(row.rowId)));
+  } else {
+    current.rows = contract.markDuplicatePossibilities(projected);
+  }
+  refreshInputListSearchRows(current.rows, changed, session, rowsBeforeProjection);
   const mappingBatch = contract.createBatch({
     batchId: session.batchId,
     sequence: 1,
@@ -5772,12 +5990,15 @@ function applyMappingHeaderLocks(session = null) {
   $('customerSearchButton').title = customerLocked ? '파일의 거래처 값은 작업테이블에서 수정하세요.' : '';
 }
 
-function scheduleMappingProjection({ render = false } = {}) {
+function scheduleMappingProjection({ render = false, changedRowIds = [] } = {}) {
   invalidateOptionalOperations();
+  changedRowIds.forEach(rowId => state.mappingProjectionRowIds.add(rowId));
   clearTimeout(state.mappingProjectionTimer);
   state.mappingProjectionTimer = window.setTimeout(() => {
     state.mappingProjectionTimer = null;
-    projectInputMappingToVoucherRows();
+    const pendingRowIds = [...state.mappingProjectionRowIds];
+    state.mappingProjectionRowIds.clear();
+    projectInputMappingToVoucherRows({ changedRowIds: pendingRowIds.length ? pendingRowIds : null });
     if (render) renderRows({ restoreFocus: false });
     else {
       updateSummaries();
@@ -5880,9 +6101,7 @@ function applyMappingGridPaste(rawText, startRowId) {
       next = addManualRow(next, values);
       return;
     }
-    values.forEach((value, columnIndex) => {
-      next = updateWorkingCell(next, row.rowId, columnIndex, value);
-    });
+    next = updateWorkingCells(next, row.rowId, values.map((value, columnIndex) => ({ columnIndex, value })));
   });
   modeDraft().inputMapping = next;
   state.pendingGridPasteText = '';
@@ -6544,6 +6763,7 @@ function setMode(mode) {
   clearTimeout(state.autoAnalyzeTimer);
   if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
+  saveDraftNow({ mode: previousMode, writeCompatibility: false });
   state.gridPasteUndo = null;
   resetInputListSearchForContextChange();
   state.draft.activeMode = mode;
@@ -11691,7 +11911,7 @@ $('mappingInputRows').addEventListener('input', event => {
   try {
     modeDraft().inputMapping = updateWorkingCell(inputMappingSession(), tr.dataset.mappingRowId, Number(input.dataset.mappingColumn), input.value);
     modeUi().activeCellId = `${tr.dataset.mappingRowId}|mapping:${input.dataset.mappingColumn}`;
-    scheduleMappingProjection();
+    scheduleMappingProjection({ changedRowIds: [tr.dataset.mappingRowId] });
   } catch (error) {
     toast(error.message || '셀 값을 반영하지 못했습니다.', 'error');
   }
@@ -12204,6 +12424,7 @@ inputRows.addEventListener('input', event => {
       forceFieldIds: [customInput.dataset.customRowField],
       displayValues: { [customInput.dataset.customRowField]: customInput.value }
     });
+    refreshInputListSearchRow(row);
     if (rowHasLinkedSource(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
     scheduleSave();
     return;
@@ -12234,6 +12455,7 @@ inputRows.addEventListener('input', event => {
     forceFieldIds: [field],
     displayValues: { [field]: input.value }
   });
+  refreshInputListSearchRow(row);
   if (field === 'quantity' || field === 'unitPrice') {
     const amountTarget = mappingTargetByProjection('supplyAmount') || { id: 'supplyAmount', projectionFieldId: 'supplyAmount' };
     const amount = projectedRowValue(row, amountTarget);
@@ -12481,11 +12703,15 @@ $('tableScroll').addEventListener('scroll', event => {
 }, { passive: true });
 
 window.addEventListener('pagehide', () => {
-  if (state.draftDirty) saveDraftNow();
+  if (!state.draftDirty) return;
+  let storedDraftId = '';
+  try { storedDraftId = JSON.parse(localStorage.getItem(contract.DRAFT_STORAGE_KEY) || 'null')?.draftId || ''; } catch (_) {}
+  if (storedDraftId && storedDraftId !== state.draft.draftId) return;
+  saveDraftNow();
 });
 renderMode();
 if (earlyUi) earlyUi.ready = true;
-initializeAutosave();
+const autosaveInitializationPromise = initializeAutosave();
 void hydrateEstimateLibrary();
 void hydrateReferences().then(() => {
   if (shoppingOrderImport()) void refreshShoppingOrderInspection({ persist: true });

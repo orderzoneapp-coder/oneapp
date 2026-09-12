@@ -46,6 +46,42 @@ function rowSearchValues(row = {}, sourceRow = null) {
   ];
 }
 
+function indexedSearchRow(row = {}, sourceRow = null) {
+  const values = rowSearchValues(row, sourceRow);
+  return Object.freeze({
+    row,
+    sourceRow,
+    actual: values.some(value => searchableValue(value) !== ''),
+    haystack: values.map(normalizeSearchValue).filter(Boolean).join('|')
+  });
+}
+
+export function createInputListSearchIndex(rows = [], { sourceRows = [] } = {}) {
+  const sourceByRowId = new Map(sourceRows.map(row => [String(row?.rowId || ''), row]));
+  const entries = new Map();
+  rows.forEach(row => {
+    const rowId = String(row?.rowId || '');
+    if (rowId) entries.set(rowId, indexedSearchRow(row, sourceByRowId.get(rowId) || null));
+  });
+  return { entries, sourceByRowId };
+}
+
+export function updateInputListSearchIndex(index, row, sourceRow = null) {
+  const target = index?.entries instanceof Map ? index : createInputListSearchIndex();
+  const rowId = String(row?.rowId || '');
+  if (!rowId) return target;
+  if (sourceRow) target.sourceByRowId.set(rowId, sourceRow);
+  target.entries.set(rowId, indexedSearchRow(row, sourceRow || target.sourceByRowId.get(rowId) || null));
+  return target;
+}
+
+export function removeInputListSearchIndexRow(index, rowId) {
+  const stableRowId = String(rowId || '');
+  index?.entries?.delete(stableRowId);
+  index?.sourceByRowId?.delete(stableRowId);
+  return index;
+}
+
 export function createInputListSearchState() {
   return Object.freeze({ open: false, query: '' });
 }
@@ -68,15 +104,22 @@ export function isActualInputListRow(row = {}, sourceRow = null) {
   return rowSearchValues(row, sourceRow).some(value => searchableValue(value) !== '');
 }
 
-export function filterInputListRows(rows = [], query = '', { sourceRows = [] } = {}) {
-  const sourceByRowId = new Map(sourceRows.map(row => [String(row?.rowId || ''), row]));
+export function filterInputListRows(rows = [], query = '', { sourceRows = [], searchIndex = null } = {}) {
+  const index = searchIndex?.entries instanceof Map
+    ? searchIndex
+    : createInputListSearchIndex(rows, { sourceRows });
   const terms = String(query || '').split(/\s+/).map(normalizeSearchValue).filter(Boolean);
   return rows.filter(row => {
-    const sourceRow = sourceByRowId.get(String(row?.rowId || '')) || null;
-    if (!isActualInputListRow(row, sourceRow)) return false;
+    const rowId = String(row?.rowId || '');
+    const sourceRow = index.sourceByRowId.get(rowId) || null;
+    let entry = index.entries.get(rowId);
+    if (!entry || entry.row !== row || entry.sourceRow !== sourceRow) {
+      updateInputListSearchIndex(index, row, sourceRow);
+      entry = index.entries.get(rowId);
+    }
+    if (!entry?.actual) return false;
     if (!terms.length) return true;
-    const haystack = rowSearchValues(row, sourceRow).map(normalizeSearchValue).filter(Boolean).join('|');
-    return terms.every(term => haystack.includes(term));
+    return terms.every(term => entry.haystack.includes(term));
   });
 }
 
