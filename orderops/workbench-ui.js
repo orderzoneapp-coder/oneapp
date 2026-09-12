@@ -1,6 +1,65 @@
 (function (root) {
   'use strict';
+  // Search and the Cloud token must not be inferred as a username/password pair.
+  // The workbench owns this UI-only guard; it never reads account or stored data.
+  function protectResultSearch(api) {
+    const input = api.elements.tableSearchInput;
+    if (!input || input.dataset.orderopsSearchGuard === '1') return;
+    const doc = input.ownerDocument;
+    const ownForm = id => {
+      let form = doc.getElementById(id);
+      if (!form) {
+        form = doc.createElement('form');
+        form.id = id;
+        form.hidden = true;
+        form.setAttribute('autocomplete', 'off');
+        form.addEventListener('submit', event => event.preventDefault());
+        doc.body.append(form);
+      }
+      return form;
+    };
+    input.setAttribute('form', ownForm('orderopsResultSearchForm').id);
+    input.setAttribute('name', 'orderops-result-query');
+    input.setAttribute('autocomplete', 'off');
+    const cloudForm = ownForm('orderopsCloudSettingsForm');
+    for (const key of ['cloudUrlInput', 'cloudTokenInput', 'cloudSavedByInput']) {
+      const field = api.elements[key];
+      if (!field) continue;
+      field.setAttribute('form', cloudForm.id);
+      field.setAttribute('name', `orderops-${key}`);
+    }
+    api.elements.cloudTokenInput?.setAttribute('autocomplete', 'new-password');
+    const restoreQuery = () => {
+      const query = String(api.state.searchQuery ?? '');
+      if (input.value !== query) input.value = query;
+    };
+    const isAutofilled = () => [':autofill', ':-webkit-autofill'].some(selector => {
+      try { return input.matches(selector); } catch (_) { return false; }
+    });
+    // Capture runs before list.html's input listener, even when it was registered
+    // earlier. Manual typing, IME, paste, search-clear and presets stay unchanged.
+    const rejectAutofill = event => {
+      if (!input.value || !isAutofilled()) return;
+      restoreQuery();
+      event.stopImmediatePropagation();
+    };
+    input.addEventListener('input', rejectAutofill, true);
+    input.addEventListener('change', rejectAutofill, true);
+    const style = doc.createElement('style');
+    style.textContent = '@keyframes orderopsSearchAutofill { from { opacity: 1; } to { opacity: 1; } }\n' +
+      '#tableSearchInput:autofill { animation: orderopsSearchAutofill .001s; }\n' +
+      '#tableSearchInput:-webkit-autofill { animation: orderopsSearchAutofill .001s; }';
+    doc.head.append(style);
+    input.addEventListener('animationstart', event => {
+      if (event.animationName === 'orderopsSearchAutofill') restoreQuery();
+    });
+    root.addEventListener('pageshow', restoreQuery);
+    input.dataset.orderopsSearchGuard = '1';
+    restoreQuery();
+  }
+
   root.createOrderOpsWorkbench = function (api) {
+    protectResultSearch(api);
     const { state: s, engine: e, elements: el, escapeHtml: esc } = api;
     const $ = id => document.getElementById(id);
     const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
