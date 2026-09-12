@@ -170,3 +170,72 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] .orderops-workbench-v12 #previewTable :is(.excel-grid-input, .order-edit-input, .inventory-input, .purchase-input):focus { box-shadow: inset 0 -2px 0 var(--ops-action); }
   .orderops-workbench-v12 :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--ops-action); outline-offset: 2px; }
 }
+
+/* OrderOps worktable only: light-gray paper and black text in dark mode.
+   Saved manager colors remain intact; blend them with gray, not the dark shell.
+   These screen rules must not tint the print document or the side panels. */
+@media screen {
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable {
+    --orderops-readable-paper: #d1d5db;
+    --orderops-manager-row-text: #000;
+    --orderops-unit-row-text: #000;
+    --orderops-box-row-text: #000;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr > td {
+    background-color: var(--orderops-readable-paper) !important;
+    background-image: none !important;
+    border-color: #7b8490 !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr.manager-color-row[style*="--manager-color"] > td {
+    background-color: color-mix(in srgb, var(--manager-color) 24%, var(--orderops-readable-paper)) !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr > td,
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr > td * {
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
+    text-shadow: none !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody :is(input, select, textarea, .inventory-total-frame) {
+    background: transparent !important;
+    caret-color: #000;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody :is(.manager-name, .order-information-badge) {
+    background: color-mix(in srgb, var(--manager-color, #d1d5db) 35%, #fff) !important;
+    border-color: #6b7280 !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr:focus-within {
+    outline-color: #1d4ed8;
+  }
+}
+
+/* Print borders are real cell edges, not screen shadows or collapsed borders.
+   Independent edges survive empty aggregate cells and repeated page headers. */
+@media print {
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea :is(thead, tbody, tr, th, td) {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea :is(th, td) {
+    border: 0 solid #475569 !important;
+    border-right-width: .6pt !important;
+    border-bottom-width: .6pt !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea tr > :first-child {
+    border-left-width: .6pt !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea thead tr:first-child > th {
+    border-top-width: .6pt !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea tbody tr:not(.manager-color-row) > td {
+    background: #fff !important;
+  }
+}
