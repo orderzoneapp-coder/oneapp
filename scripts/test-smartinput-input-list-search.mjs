@@ -105,9 +105,11 @@ assert.match(source, /function handleInputListSearchShortcut[\s\S]*event\.preven
 assert.match(source, /field === 'itemCode'[\s\S]*trySearchProductRow\(row, input\.value/,
   'item-code Enter must continue to invoke product master search');
 assert.match(source, /function selectedRowIdsForBulkAction\(\)[\s\S]*constrainInputListSelection/,
-  'bulk actions must share the visible-selection intersection guard');
-assert.match(source, /function applySelectedRowsUnitPrice\(\)[\s\S]*selectedRowIdsForBulkAction\(\)/,
-  'bulk unit-price application must recheck the visible selection immediately before mutation');
+  'row actions must share the visible-selection intersection guard');
+assert.doesNotMatch(html, /bulkUnitPriceInput|applyBulkUnitPriceButton/,
+  'the removed bulk unit-price UI must not be rendered beside the list search');
+assert.doesNotMatch(source, /applySelectedRowsUnitPrice|applyBulkUnitPrice/,
+  'the removed bulk unit-price action must not remain wired into SmartInput');
 assert.match(source, /function deleteSelectedMappingRows\(\)[\s\S]*selectedRowIdsForBulkAction\(\)/,
   'source and configured-input deletion must recheck the visible selection immediately before mutation');
 assert.match(source, /id !== 'mappingSelectAllRows'[\s\S]*selectAllRowsInScope\(event\.target\.checked\)/,

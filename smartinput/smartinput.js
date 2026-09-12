@@ -146,7 +146,6 @@ import {
   createRelatedVoucherImportPlan,
   relatedImportConflicts
 } from './related-voucher-import.js?v=0.1.0';
-import { applyBulkUnitPrice } from './grid-bulk-edit.js?v=0.1.0';
 import {
   LINKED_ESTIMATE_FIELD_LABELS,
   applyLinkedEstimateSourceEditPlan,
@@ -5284,39 +5283,6 @@ function syncRowSelectionControls() {
     tr.classList.toggle('is-grid-active', Boolean(rowId && rowId === state.draft.ui.selectedRowId));
   });
   $('deleteSelectedRows').disabled = !selectedCount;
-  $('bulkUnitPriceInput').disabled = sourceTableViewActive();
-  $('applyBulkUnitPriceButton').disabled = !selectedCount || sourceTableViewActive();
-}
-
-function applySelectedRowsUnitPrice() {
-  if (sourceTableViewActive()) return toast('입력형으로 전환한 뒤 선택 단가를 적용하세요.', 'error');
-  const selectedRowIds = selectedRowIdsForBulkAction();
-  if (!selectedRowIds.length) {
-    syncRowSelectionControls();
-    return toast('단가를 적용할 행을 선택하세요.', 'error');
-  }
-  try {
-    invalidateGridPasteUndo();
-    const current = modeDraft();
-    const beforeRows = new Map(current.rows.map(row => [row.rowId, cloneMappedMutationRow(row)]));
-    const selectedRowIdSet = new Set(selectedRowIds);
-    const result = applyBulkUnitPrice(current.rows, selectedRowIds, $('bulkUnitPriceInput').value, {
-      targetFieldId: mappingTargetByProjection('unitPrice')?.id || '',
-      actor: resolveSmartInputActor()
-    });
-    current.rows = result.rows.map(row => contract.normalizeRow(row));
-    current.rows
-      .filter(row => selectedRowIdSet.has(row.rowId))
-      .forEach(row => syncMappedWorkingRowAfterMutation(current, beforeRows.get(row.rowId), row, {
-        forceFieldIds: ['unitPrice'],
-        displayValues: { unitPrice: row.sourceUnitPrice ?? row.unitPrice ?? '' }
-      }));
-    renderRows({ restoreFocus: false });
-    saveDraftNow();
-    toast(`선택한 ${result.affectedCount.toLocaleString('ko-KR')}행에 단가를 적용했습니다.`, 'success');
-  } catch (error) {
-    toast(error.message === 'SMARTINPUT_BULK_PRICE_REQUIRED' ? '적용할 단가를 입력하세요.' : '단가는 숫자로 입력하세요.', 'error');
-  }
 }
 
 async function deleteSelectedGridRows() {
@@ -5355,18 +5321,14 @@ function renderInputMappingStatus() {
   const reloadButton = $('inputTemplateReloadButton');
   const pendingPasteButton = $('pendingPasteToSourceButton');
   const validationNav = $('mappingValidationNav');
-  const subWorkBar = $('subWorkBar');
   pendingPasteButton.hidden = !state.pendingGridPasteText;
   if (!session) {
     panel.hidden = true;
     saveButton.hidden = true;
     reloadButton.hidden = true;
     validationNav.hidden = true;
-    subWorkBar.hidden = pendingPasteButton.hidden;
     return;
   }
-  subWorkBar.hidden = false;
-  panel.hidden = false;
   panel.dataset.status = session.status;
   panel.dataset.templateStoreStatus = state.inputTemplatesStatus;
   const summary = mappingSummary(session);
@@ -5377,6 +5339,7 @@ function renderInputMappingStatus() {
       : (session.status === MAPPING_SESSION_STATUS.INVALID_TEMPLATE
         ? '양식 연결 오류'
         : (session.status === MAPPING_SESSION_STATUS.TEMPLATE_LOOKUP_ERROR ? '양식 조회 오류' : '양식 중복 오류')));
+  panel.hidden = session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && !session.templateDirty;
   $('inputMappingStatusTitle').textContent = title;
   $('inputMappingStatusSummary').textContent = state.inputTemplatesStatus === 'ERROR'
     ? '양식 조회 오류'
@@ -11146,7 +11109,7 @@ $('tableViewSwitch').addEventListener('keydown', event => {
   const button = event.target.closest('[data-table-view]');
   if (!button || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
-  const view = ['ArrowLeft', 'Home'].includes(event.key) ? TABLE_VIEW_MODE.SOURCE : TABLE_VIEW_MODE.INPUT;
+  const view = ['ArrowLeft', 'Home'].includes(event.key) ? TABLE_VIEW_MODE.INPUT : TABLE_VIEW_MODE.SOURCE;
   if (currentTableView() === view) controlTableViewButton(view)?.focus();
   else chooseCurrentTableView(view);
 });
@@ -11402,7 +11365,6 @@ $('shoppingOrderCandidates').addEventListener('click', event => {
   });
 });
 $('deleteSelectedRows').addEventListener('click', deleteSelectedGridRows);
-$('applyBulkUnitPriceButton').addEventListener('click', applySelectedRowsUnitPrice);
 
 inputRows.addEventListener('paste', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');

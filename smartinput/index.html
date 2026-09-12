@@ -89,7 +89,7 @@
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.4.0">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.11">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
-  <link rel="stylesheet" href="./smartinput.css?v=0.9.18">
+  <link rel="stylesheet" href="./smartinput.css?v=0.9.19">
 </head>
 <body>
   <header class="app-bar">
@@ -246,13 +246,19 @@
             </div>
             <div class="table-view-control" id="tableViewSwitch">
               <div class="table-view-switch" role="group" aria-label="테이블 표시 방식">
-                <button type="button" data-table-view="source" aria-pressed="false" disabled>원본형</button>
                 <button type="button" data-table-view="input" aria-pressed="true">입력형</button>
+                <button type="button" data-table-view="source" aria-pressed="false" disabled>원본형</button>
               </div>
               <small class="table-view-hint" id="tableViewHint" role="status" aria-live="polite"></small>
             </div>
-            <label class="bulk-price-control"><input id="bulkUnitPriceInput" type="text" inputmode="decimal" placeholder="0" aria-label="선택행에 적용할 단가"></label>
-            <button class="button button--quiet button--small" id="applyBulkUnitPriceButton" type="button" disabled>단가 적용</button>
+            <div class="input-mapping-status" id="inputMappingStatus" hidden role="status" aria-live="polite"><strong id="inputMappingStatusTitle">신규 양식</strong><span id="inputMappingStatusSummary"></span></div>
+            <div class="mapping-validation-nav" id="mappingValidationNav" hidden role="alert" aria-live="assertive">
+              <strong id="mappingValidationCount">수정 필요 0건</strong><span id="mappingValidationMessage"></span>
+              <button type="button" class="button button--quiet button--small" id="mappingValidationPrevious" aria-label="이전 매핑 오류">이전 오류</button>
+              <button type="button" class="button button--quiet button--small" id="mappingValidationNext" aria-label="다음 매핑 오류">다음 오류</button>
+            </div>
+            <button class="button button--quiet button--small" id="inputTemplateReloadButton" type="button" hidden>양식 다시 불러오기</button>
+            <button class="button button--quiet button--small" id="pendingPasteToSourceButton" type="button" hidden>원본입력뷰에서 확인</button>
             <button class="button button--quiet button--small" id="detailColumnsButton" type="button" hidden>상세 열</button>
             </div>
             <small class="sr-only" id="gridValidation" role="status"></small>
@@ -262,18 +268,6 @@
               <button class="button button--quiet button--small" id="deleteSelectedRows" type="button" disabled>선택 삭제</button>
             </div>
             <button class="button button--small reset-draft-button" id="resetDraftButton" type="button"><span aria-hidden="true">↻</span> 전표 초기화</button>
-          </div>
-          <div class="sub-work-bar" id="subWorkBar" hidden aria-label="현재 작업 도구">
-            <div class="input-mapping-status" id="inputMappingStatus" hidden role="status" aria-live="polite"><strong id="inputMappingStatusTitle">신규 양식</strong><span id="inputMappingStatusSummary"></span></div>
-            <div class="mapping-validation-nav" id="mappingValidationNav" hidden role="alert" aria-live="assertive">
-              <strong id="mappingValidationCount">수정 필요 0건</strong><span id="mappingValidationMessage"></span>
-              <button type="button" class="button button--quiet button--small" id="mappingValidationPrevious" aria-label="이전 매핑 오류">이전 오류</button>
-              <button type="button" class="button button--quiet button--small" id="mappingValidationNext" aria-label="다음 매핑 오류">다음 오류</button>
-            </div>
-            <div class="sub-work-bar__actions">
-              <button class="button button--quiet button--small" id="inputTemplateReloadButton" type="button" hidden>양식 다시 불러오기</button>
-              <button class="button button--quiet button--small" id="pendingPasteToSourceButton" type="button" hidden>원본입력뷰에서 확인</button>
-            </div>
           </div>
           <div class="sr-only" aria-label="입력표 상태"><strong id="gridRowCount">0행</strong><span id="gridSearchCount" hidden>검색 0행</span><span id="matchedCount">일치 0</span><span id="similarCount">확인 0</span><span id="failedCount">미인식 0</span><span id="duplicateCount">중복 가능 0</span></div>
           <small id="deliveryPolicyHint" class="sr-only">배송 가능일을 계산합니다.</small>
@@ -377,7 +371,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script>window.__ONEAPP_SMARTINPUT_EARLY_UI__?.mount();</script>
   <script src="./smartinput-contract.js?v=0.6.5"></script>
-  <script type="module" src="./smartinput.js?v=0.11.54"></script>
+  <script type="module" src="./smartinput.js?v=0.11.55"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.7.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
 </body>

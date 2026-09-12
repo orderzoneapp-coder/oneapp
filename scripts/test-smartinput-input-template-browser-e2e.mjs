@@ -89,6 +89,14 @@ const evaluate = async (client, expression) => {
 };
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
+const pointerClick = async (client, x, y) => {
+  await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+  await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+};
+const touchTap = async (client, x, y) => {
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1, radiusX: 1, radiusY: 1, force: 1 }] });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+};
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
 const typeWithoutBlur = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.value;})()`);
 const capture = async (client, name) => {
@@ -119,6 +127,8 @@ try {
   client = new CdpClient(targets[0].webSocketDebuggerUrl);
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable')]);
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await client.send('Emulation.setEmulatedMedia', { media: 'screen', features: [{ name: 'hover', value: 'hover' }, { name: 'pointer', value: 'fine' }] });
   const exceptions = [];
   const consoleErrors = [];
   client.on('Runtime.exceptionThrown', event => exceptions.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'exception'));
@@ -137,14 +147,57 @@ try {
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
   await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.querySelector('#mappingWorktable').hidden`, 'default configured input view');
-  assert.deepEqual(await evaluate(client, `(() => ({hidden:document.querySelector('#tableViewSwitch').hidden,sourcePressed:document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed'),inputPressed:document.querySelector('[data-table-view="input"]').getAttribute('aria-pressed'),hint:document.querySelector('#tableViewHint').textContent}))()`), {
+  assert.deepEqual(await evaluate(client, `(() => ({hidden:document.querySelector('#tableViewSwitch').hidden,order:[...document.querySelectorAll('#tableViewSwitch [data-table-view]')].map(button=>button.textContent.trim()),sourcePressed:document.querySelector('[data-table-view="source"]').getAttribute('aria-pressed'),inputPressed:document.querySelector('[data-table-view="input"]').getAttribute('aria-pressed'),hint:document.querySelector('#tableViewHint').textContent}))()`), {
     hidden: false,
+    order: ['입력형', '원본형'],
     sourcePressed: 'false',
     inputPressed: 'true',
     hint: '환경설정 열 배치 · 작업본 편집'
   }, 'source and input controls must stay visible while new intake defaults to input view');
   await click(client, '[data-table-view="source"]');
   await expr(client, `!document.querySelector('#mappingWorktable').hidden&&!document.querySelector('#sourceSheetView').hidden`, 'mapping source and worktable');
+  await wait(250);
+  const sourceHeaderHover = await evaluate(client, `(() => {const header=document.querySelector('#mappingTableHeaders [data-mapping-column="1"]');header.scrollIntoView({block:'center',inline:'nearest'});const tool=header.querySelector('.nexus-table-column-tool');const rect=header.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2,hasTool:Boolean(tool),opacity:getComputedStyle(tool).opacity};})()`);
+  const desktopPointerEnvironment = await evaluate(client, `({hover:matchMedia('(hover: hover)').matches,pointer:matchMedia('(pointer: fine)').matches})`);
+  assert.equal(sourceHeaderHover.hasTool, true, 'source headers must retain their actual common table search control');
+  if (desktopPointerEnvironment.hover) {
+    assert.equal(sourceHeaderHover.opacity, '0', 'hover-capable source headers must hide the common table search control until hover');
+  } else {
+    assert.ok(Number(sourceHeaderHover.opacity) > .9,
+      `a non-hover browser must keep the source-header search control reachable: ${JSON.stringify(desktopPointerEnvironment)}`);
+  }
+  let sourceHeaderHoverState;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const hoverPoint = await evaluate(client, `(() => {const header=document.querySelector('#mappingTableHeaders [data-mapping-column="1"]');header.scrollIntoView({block:'center',inline:'nearest'});const rect=header.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverPoint.x, y: hoverPoint.y, buttons: 0 });
+    await wait(180);
+    sourceHeaderHoverState = await evaluate(client, `(() => {const header=document.querySelector('#mappingTableHeaders [data-mapping-column="1"]');const tool=header.querySelector('.nexus-table-column-tool');const rect=header.getBoundingClientRect();return {opacity:Number(getComputedStyle(tool).opacity),headerHovered:header.matches(':hover'),toolHovered:tool.matches(':hover'),rect:{top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right},viewport:{width:innerWidth,height:innerHeight}};})()`);
+    if (sourceHeaderHoverState.opacity > .9) break;
+  }
+  assert.ok(sourceHeaderHoverState.opacity > .9,
+    `hovering a source header must reveal its actual table search control without keeping a permanent icon: ${JSON.stringify(sourceHeaderHoverState)}`);
+  let sourceToolOpened = false;
+  for (let attempt = 0; attempt < 3 && !sourceToolOpened; attempt += 1) {
+    const sourceToolPoint = await evaluate(client, `(() => {const header=document.querySelector('#mappingTableHeaders [data-mapping-column="1"]');header.scrollIntoView({block:'center',inline:'nearest'});const tool=header.querySelector('.nexus-table-column-tool');const headerRect=header.getBoundingClientRect();const toolRect=tool.getBoundingClientRect();return {hoverX:headerRect.left+headerRect.width/2,hoverY:headerRect.top+headerRect.height/2,x:toolRect.left+toolRect.width/2,y:toolRect.top+toolRect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sourceToolPoint.hoverX, y: sourceToolPoint.hoverY, buttons: 0 });
+    await expr(client, `Number(getComputedStyle(document.querySelector('#mappingTableHeaders [data-mapping-column="1"] .nexus-table-column-tool')).opacity)>.9`, 'source-header search hover for physical click', 1_000);
+    const liveToolPoint = await evaluate(client, `(() => {const tool=document.querySelector('#mappingTableHeaders [data-mapping-column="1"] .nexus-table-column-tool');const rect=tool.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: liveToolPoint.x, y: liveToolPoint.y, buttons: 0 });
+    await pointerClick(client, liveToolPoint.x, liveToolPoint.y);
+    sourceToolOpened = await evaluate(client, `Boolean(document.querySelector('.nexus-table-popover')&&!document.querySelector('.nexus-table-popover').hidden)`);
+  }
+  assert.equal(sourceToolOpened, true, 'a physical click on the revealed source-header search control must open the common table popover');
+  await click(client, '.nexus-table-popover [data-close-popover]');
+  await expr(client, `document.querySelector('.nexus-table-popover')?.hidden===true`, 'source-header search close');
+  const focusedSourceTool = await evaluate(client, `(() => {const tool=document.querySelector('#mappingTableHeaders [data-mapping-column="1"] .nexus-table-column-tool');tool.focus({focusVisible:true});return {focused:document.activeElement===tool,opacity:Number(getComputedStyle(tool).opacity)};})()`);
+  assert.equal(focusedSourceTool.focused, true, 'the hidden-at-rest source-header search control must remain keyboard focusable');
+  assert.ok(focusedSourceTool.opacity > .9, 'keyboard focus must reveal the source-header search control');
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+  await expr(client, `Boolean(document.querySelector('.nexus-table-popover')&&!document.querySelector('.nexus-table-popover').hidden)`, 'keyboard source-header search click');
+  await click(client, '.nexus-table-popover [data-close-popover]');
+  const newTemplateTableGeometry = await evaluate(client, `(() => {const table=document.querySelector('#tableScroll').getBoundingClientRect();const action=document.querySelector('.work-action-bar').getBoundingClientRect();const scroll=document.querySelector('.basic-action-scroll');return {tableTop:table.top,actionHeight:action.height,statusHidden:document.querySelector('#inputMappingStatus').hidden,scrollHeight:scroll.offsetHeight,scrollClientHeight:scroll.clientHeight,scrollWidth:scroll.scrollWidth,scrollClientWidth:scroll.clientWidth};})()`);
+  assert.equal(newTemplateTableGeometry.statusHidden, false, 'a new mapping must use the temporary top-toolbar notice');
   const initial = await evaluate(client, `(() => ({sourceRows:document.querySelectorAll('#sourceSheetRows tr').length,sourceHeader:[...document.querySelectorAll('#sourceSheetRows tr.is-header-row td')].map(cell=>cell.textContent),workingRows:document.querySelectorAll('#mappingInputRows tr:not([data-mapping-default-row])').length,headers:[...document.querySelectorAll('#mappingTableHeaders [data-open-field-mapping] strong')].map(node=>node.textContent),states:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-state]')].map(node=>node.dataset.mappingState),mappingLabels:[...document.querySelectorAll('#mappingTableHeaders [data-mapping-state] small')].map(node=>node.textContent),saveDisabled:document.querySelector('#completeButton').disabled,saveTitle:document.querySelector('#completeButton').title,sourceBlank:document.querySelectorAll('#sourceSheetRows tr')[2].querySelectorAll('td')[3].textContent}))()`);
   assert.equal(initial.sourceRows, 4);
   assert.deepEqual(initial.sourceHeader, ['품목코드', '품목명', '수량', '원본 메모']);
@@ -164,9 +217,9 @@ try {
   assert.ok(inputColumnView.headers.indexOf('규격') >= 0 && inputColumnView.headers.indexOf('규격') < inputColumnView.headers.indexOf('수량'),
     'input view must use configured SmartInput order even when the source puts quantity before specification');
   assert.deepEqual(inputColumnView.rows.map(row => row.quantity), ['0', '-1.5'], 'input view must retain zero and negative values');
-  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="input"]');button.focus();button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
   await expr(client, `!document.querySelector('#mappingWorktable').hidden&&document.activeElement===document.querySelector('[data-table-view="source"]')`, 'keyboard source-view selection');
-  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="source"]');button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return true;})()`);
+  await evaluate(client, `(() => {const button=document.querySelector('[data-table-view="source"]');button.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));return true;})()`);
   await expr(client, `!document.querySelector('#voucherInputTable').hidden&&document.activeElement===document.querySelector('[data-table-view="input"]')`, 'keyboard input-view selection');
   await click(client, '[data-table-view="source"]');
   assert.equal(await evaluate(client, `localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)`), initialDraftBytes,
@@ -289,6 +342,11 @@ try {
   await input(client, 'dialog[open] input[name="templateName"]', '행사발주 공식 양식');
   await click(client, 'dialog[open] [data-save]');
   await expr(client, `document.querySelector('#inputMappingStatus').dataset.status==='TEMPLATE_APPLIED'&&!document.querySelector('#completeButton').disabled`, 'saved template application');
+  const appliedTemplateTableGeometry = await evaluate(client, `(() => {const table=document.querySelector('#tableScroll').getBoundingClientRect();const action=document.querySelector('.work-action-bar').getBoundingClientRect();const scroll=document.querySelector('.basic-action-scroll');return {tableTop:table.top,actionHeight:action.height,statusHidden:document.querySelector('#inputMappingStatus').hidden,scrollHeight:scroll.offsetHeight,scrollClientHeight:scroll.clientHeight,scrollWidth:scroll.scrollWidth,scrollClientWidth:scroll.clientWidth};})()`);
+  assert.equal(appliedTemplateTableGeometry.statusHidden, true, 'an applied mapping must remove the temporary top-toolbar notice');
+  assert.ok(Math.abs(appliedTemplateTableGeometry.tableTop - newTemplateTableGeometry.tableTop) < .5
+    && Math.abs(appliedTemplateTableGeometry.actionHeight - newTemplateTableGeometry.actionHeight) < .5,
+  `the table start must stay fixed while the temporary notice changes: ${JSON.stringify({newTemplateTableGeometry, appliedTemplateTableGeometry})}`);
   const persistedTemplate = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('inputTemplatesV2','readonly');const get=tx.objectStore('inputTemplatesV2').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.[0]||null);db.close();};};})`);
   assert.equal(persistedTemplate.templateName, '행사발주 공식 양식');
   assert.deepEqual(persistedTemplate.headers, ['품목코드', '품목명', '수량', '원본 메모']);
@@ -393,9 +451,18 @@ try {
   'mobile input view must keep the compact switch in bounds and horizontal scrolling inside the table');
   const mobileInputShot = await capture(client, 'smartinput-table-toggle-input-390-dark-scrolled.png');
   await click(client, '[data-table-view="source"]');
-  const mobile = await evaluate(client, `(() => ({scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,sourceWidth:document.querySelector('#sourceInputPanel').getBoundingClientRect().width,tableWidth:document.querySelector('.grid-card').getBoundingClientRect().width,sourceVisible:!document.querySelector('#sourceSheetView').hidden,mappingVisible:!document.querySelector('#mappingWorktable').hidden,panelClosed:!document.querySelector('#smartInputWorkspace').classList.contains('related-panel-open')}))()`);
+  await client.send('Emulation.setEmulatedMedia', { media: 'screen', features: [{ name: 'hover', value: 'none' }, { name: 'pointer', value: 'coarse' }] });
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, configuration: 'mobile' });
+  await wait(200);
+  const mobile = await evaluate(client, `(() => {const tool=document.querySelector('#mappingTableHeaders [data-mapping-column="1"] .nexus-table-column-tool');tool.scrollIntoView({block:'center',inline:'nearest'});const rect=tool.getBoundingClientRect();return {scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth,sourceWidth:document.querySelector('#sourceInputPanel').getBoundingClientRect().width,tableWidth:document.querySelector('.grid-card').getBoundingClientRect().width,sourceVisible:!document.querySelector('#sourceSheetView').hidden,mappingVisible:!document.querySelector('#mappingWorktable').hidden,panelClosed:!document.querySelector('#smartInputWorkspace').classList.contains('related-panel-open'),toolOpacity:Number(getComputedStyle(tool).opacity),toolPointerEvents:getComputedStyle(tool).pointerEvents,toolX:rect.left+rect.width/2,toolY:rect.top+rect.height/2};})()`);
   assert.ok(mobile.sourceWidth <= 390 && mobile.tableWidth <= 390 && mobile.sourceVisible && mobile.mappingVisible && mobile.panelClosed,
     'mobile must keep source and mapping table in the stacked workflow after the right panel is closed');
+  assert.ok(mobile.toolOpacity > .9 && mobile.toolPointerEvents === 'auto', `touch and hover:none environments must keep source-header search reachable: ${JSON.stringify(mobile)}`);
+  await touchTap(client, mobile.toolX, mobile.toolY);
+  await expr(client, `Boolean(document.querySelector('.nexus-table-popover')&&!document.querySelector('.nexus-table-popover').hidden)`, 'touch source-header search click');
+  await click(client, '.nexus-table-popover [data-close-popover]');
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await client.send('Emulation.setEmulatedMedia', { media: 'screen', features: [{ name: 'hover', value: 'hover' }, { name: 'pointer', value: 'fine' }] });
   const mobileShot = await capture(client, 'smartinput-input-template-mapping-mobile.png');
 
   await evaluate(client, String.raw`(() => {window.__clipboardImagePathUsed=false;const target=document.querySelector('#sourceTextInput');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?'품목코드\t품목명\t수량\t원본 메모\n009\t근대\t3\t표 우선\n\t\t\t\n011\t상추\t0\t':'',items:[{kind:'file',type:'image/png',getAsFile:()=>{window.__clipboardImagePathUsed=true;return new File(['image'], 'excel-range.png',{type:'image/png'});}}]}});target.dispatchEvent(event);return event.defaultPrevented;})()`);

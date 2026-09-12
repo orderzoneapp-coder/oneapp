@@ -454,37 +454,8 @@ try {
   assert.deepEqual(inputDeleteAfter.inputMapping.workingRows, [inputDeleteBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2')],
     'input view visible select-all deletion must leave the hidden working row unchanged');
 
-  await restoreFixture('input');
-  const priceBefore = JSON.parse(await evaluate(client, protectedDataExpression));
-  await click(client, '#inputListSearchButton');
-  await input(client, '#gridSearchInput', 'CODE-ZERO');
-  await click(client, '#selectAllRows');
-  await input(client, '#bulkUnitPriceInput', '321');
-  await click(client, '#applyBulkUnitPriceButton');
-  await expr(client, `Number(JSON.parse(localStorage.getItem(window.SMART_INPUT_CONTRACT.DRAFT_STORAGE_KEY)).modes.order.rows.find(row=>row.rowId==='source-1')?.unitPrice)===321`, 'visible-only unit-price application');
-  const priceAfter = JSON.parse(await evaluate(client, protectedDataExpression));
-  assert.equal(Number(priceAfter.rows.find(row => row.rowId === 'source-1').unitPrice), 321,
-    'selected visible search result must receive the bulk unit price');
-  assert.deepEqual(priceAfter.rows.find(row => row.rowId === 'source-2'), priceBefore.rows.find(row => row.rowId === 'source-2'),
-    'bulk unit price must not mutate the hidden voucher row');
-  assert.deepEqual(priceAfter.inputMapping.workingRows.find(row => row.rowId === 'source-2'), priceBefore.inputMapping.workingRows.find(row => row.rowId === 'source-2'),
-    'bulk unit price must not mutate the hidden working row');
-  assert.deepEqual({
-    sourceMatrix: priceAfter.inputMapping.sourceMatrix,
-    sourceCellMatrix: priceAfter.inputMapping.sourceCellMatrix,
-    headers: priceAfter.inputMapping.headers,
-    signature: priceAfter.inputMapping.signature,
-    headerSignature: priceAfter.inputMapping.headerSignature
-  }, {
-    sourceMatrix: priceBefore.inputMapping.sourceMatrix,
-    sourceCellMatrix: priceBefore.inputMapping.sourceCellMatrix,
-    headers: priceBefore.inputMapping.headers,
-    signature: priceBefore.inputMapping.signature,
-    headerSignature: priceBefore.inputMapping.headerSignature
-  }, 'visible-only bulk price must preserve source evidence and signatures');
-  await click(client, '#inputListSearchCloseButton');
-  assert.equal(await evaluate(client, `document.querySelector('[data-row-id="source-2"] [data-select-row]').checked`), false,
-    'explicit close must not revive hidden selection');
+  assert.equal(await evaluate(client, `Boolean(document.querySelector('#bulkUnitPriceInput') || document.querySelector('#applyBulkUnitPriceButton'))`), false,
+    'the compact toolbar must not render the removed bulk unit-price controls');
 
   const screenshots = [];
   for (const width of [1920, 1440, 390]) {
