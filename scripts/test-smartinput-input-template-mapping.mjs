@@ -396,14 +396,13 @@ assert.match(smartInputCss, /\.grid-card > \.work-action-bar \.basic-action-scro
   'the basic actions must scroll within their own fixed slot while voucher reset remains visible');
 assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
   'problem mapping headers must receive a visible validation highlight');
-assert.match(smartInputHtml, /id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*id="inputMappingStatus"/,
-  'dynamic mapping and validation controls must live below the fixed basic toolbar');
-assert.doesNotMatch(
-  smartInputHtml.match(/<div class="document-fields__right">([\s\S]*?)<\/div>\s*<div class="sub-work-bar"/)?.[1] || '',
-  /id="inputMappingStatus"|id="mappingValidationNav"/,
-  'dynamic template status and validation controls must not be inserted between permanent basic-toolbar buttons'
-);
-assert.match(smartInputCss, /\.sub-work-bar \{[\s\S]*animation: sub-work-bar-open/,
-  'the single contextual toolbar must expand below the fixed basic toolbar');
+assert.match(smartInputHtml, /id="tableViewSwitch"[\s\S]*id="inputMappingStatus"[\s\S]*id="mappingValidationNav"[\s\S]*id="inputTemplateReloadButton"[\s\S]*id="pendingPasteToSourceButton"/,
+  'mapping notice, validation, and temporary mapping actions must use the upper fixed toolbar');
+assert.doesNotMatch(smartInputHtml, /id="subWorkBar"|class="sub-work-bar"/,
+  'a new-template notice must not reserve a dedicated row above the table');
+assert.match(smartInputCss, /\.work-action-bar \.basic-action-scroll > \* \{ flex: 0 0 auto; \}/,
+  'temporary mapping controls must scroll inside the fixed toolbar instead of moving the table start');
+assert.match(smartInputCss, /#mappingWorktable \.nexus-table-column-tool \{[\s\S]*opacity: 0[\s\S]*#mappingWorktable \.mapping-column-heading:hover > \.nexus-table-column-tool/,
+  'the actual source-column search control must be hidden until hover on pointer devices');
 
 console.log(`SmartInput input-template mapping tests passed (${largeProjection.length.toLocaleString('en-US')} rows in ${performanceElapsedMs.toFixed(1)}ms).`);

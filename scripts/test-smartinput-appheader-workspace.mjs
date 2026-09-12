@@ -19,8 +19,8 @@ assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
-assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.18"/, 'the estimate automation hardening UI CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.54"/, 'the ERP assignee preservation fix must use the next cache-bust version');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.19"/, 'the compact table-toolbar CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.55"/, 'the compact table-toolbar behavior must use the next cache-bust version');
 assert.match(js, /getMerchOpsSettingsSnapshotResult[\s\S]*function merchOpsEstimateOutputConfig\(\)[\s\S]*marginRules[\s\S]*estimateMappings/,
   'the estimate report must consume Settings-owned MerchOps pricing configuration through the read adapter');
 assert.match(js, /const outputConfig\s*=\s*\{[\s\S]*productCatalog:\s*state\.products,[\s\S]*\.\.\.merchOpsEstimateOutputConfig\(\)[\s\S]*buildEstimateF8Data\(sourceRows,\s*\{\s*\.\.\.outputConfig,\s*duplicateResolutions\s*\}\)/,
@@ -28,8 +28,8 @@ assert.match(js, /const outputConfig\s*=\s*\{[\s\S]*productCatalog:\s*state\.pro
 assert.match(html, /id="estimateSelectionSummary"[\s\S]*id="selectedEstimateDeleteButton"[^>]*>선택 삭제<\/button>[\s\S]*id="estimateRenameButton"[^>]*>정보 변경<\/button>/, 'the estimate library footer must expose only deletion and information change');
 assert.doesNotMatch(html, /merchOpsEstimateButton|estimateCreationCancelButton|estimateCreationSaveButton/, 'redundant estimate rail actions must stay removed');
 assert.doesNotMatch(html, /newEstimateButton|viewSelectedEstimatesButton|linkedEstimateGroupButton/, 'redundant estimate creation and preview controls must stay removed');
-assert.match(html, /id="gridSearchInput"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"[\s\S]*id="subWorkBar"[\s\S]*id="gridRowCount"/, 'permanent row actions must stay in the fixed toolbar while contextual status lives below it');
-assert.doesNotMatch(html, /class="grid-toolbar"|class="grid-review-tools"/, 'the former second status row must be removed');
+assert.match(html, /id="gridSearchInput"[\s\S]*id="inputMappingStatus"[\s\S]*id="mappingValidationNav"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"[\s\S]*id="gridRowCount"/, 'mapping notice and validation controls must stay in the fixed toolbar with permanent row actions');
+assert.doesNotMatch(html, /id="subWorkBar"|class="sub-work-bar"|class="grid-toolbar"|class="grid-review-tools"/, 'the former dedicated mapping-status row must be removed');
 assert.match(html, /id="inputRows"/, 'the restored editable grid body must remain');
 assert.equal((html.match(/data-mode="(?:order|purchase|sale|estimate)"/g) || []).length, 4,
   'all four voucher modes must remain');

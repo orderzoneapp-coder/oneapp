@@ -89,12 +89,16 @@ const html = readFileSync(fileURLToPath(new URL('../smartinput/index.html', impo
 const source = readFileSync(fileURLToPath(new URL('../smartinput/smartinput.js', import.meta.url)), 'utf8');
 assert.match(html, /id="tableViewSwitch"/,
   'the existing table toolbar must expose one compact source/input switch');
-assert.match(html, /data-table-view="source"[\s\S]*data-table-view="input"/,
-  'source and input choices must be explicit keyboard-focusable controls');
+assert.match(html, /data-table-view="input"[\s\S]*data-table-view="source"/,
+  'input must stay left of source as explicit keyboard-focusable controls');
+assert.doesNotMatch(html, /bulkUnitPriceInput|applyBulkUnitPriceButton/,
+  'the removed bulk unit-price control must not consume table-toolbar space');
 assert.match(source, /tableViewFor\(/,
   'SmartInput rendering must resolve the explicit session table-view choice');
 assert.match(source, /resetTableViewForSource\(/,
   'new source intake and saved-estimate reopening must use the explicit input-view reset');
+assert.match(source, /\['ArrowLeft', 'Home'\]\.includes\(event\.key\) \? TABLE_VIEW_MODE\.INPUT : TABLE_VIEW_MODE\.SOURCE/,
+  'keyboard left/home and right/end navigation must follow the visible input-to-source order');
 assert.match(source, /record\.estimateKind === 'LINKED_GROUP'[\s\S]*?TABLE_VIEW_MODE\.SOURCE/,
   'selecting a linked estimate from the right panel must explicitly open its source view');
 

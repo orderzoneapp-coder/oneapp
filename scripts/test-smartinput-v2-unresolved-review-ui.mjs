@@ -172,9 +172,9 @@ assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-mod
 assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', 'f54de72e20bb5209b68fab213cf240bd4509b85a93c84c549b60139f05e06bca'],
-  ['../smartinput/smartinput.css', 'c838e5d167975f5577ae072f27834f28875cf24b8a907019d18643a98f27bc31'],
-  ['../smartinput/smartinput.js', '1f9c8bf6b403e58858f000fd63c4ffe14e0667eed0bb9c37cc695850db9eb240']
+  ['../smartinput/index.html', '9340cac80f64c160a75d5176904035d279aea1f239027fdc7cd1ed0c3faa3f06'],
+  ['../smartinput/smartinput.css', '3b9a3280632aa47fb84e98ad2d98ca28a05695415095a0eba3c717adfea9f50a'],
+  ['../smartinput/smartinput.js', '5aaa9b19ea81509174bfc03f65dcd2f77f5bbf7e1c01fd9b3ac7e0b8f24d8b87']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -200,6 +200,6 @@ console.log(JSON.stringify({
   officialInventory: { value: null, label: '미반영' },
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
-  smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, bulk-dialog visibility, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-and-erp-order-assignee-preservation'
+  smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, compact table toolbar, source-header search affordance, business-key fail-closed grouping, and ORDER Q query-link',
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-erp-order-assignee-preservation-and-compact-table-toolbar-source-hover-search'
 }, null, 2));
