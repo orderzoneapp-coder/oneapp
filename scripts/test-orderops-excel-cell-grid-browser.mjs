@@ -134,9 +134,9 @@ const uploadWorkbook = async (client, inputId, fileName, matrix, sheetName) => {
   input.dispatchEvent(new Event('change',{bubbles:true}));
   return true;
 })()`);
-  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.textContent.includes('READY')`),'explicit file validation');
+  await waitFor(()=>evaluate(client,`Boolean([...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.querySelector('[data-prepare-state="READY"]'))`),'explicit file validation');
   await evaluate(client,`window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
-  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.textContent.includes('APPLIED')`),'explicit file application');
+  await waitFor(()=>evaluate(client,`Boolean([...document.querySelectorAll('#prepareFileList button')].filter(node=>node.textContent.includes(${JSON.stringify(fileName)})).at(-1)?.querySelector('[data-prepare-state="APPLIED"]'))`),'explicit file application');
 };
 
 const orderMatrix = [

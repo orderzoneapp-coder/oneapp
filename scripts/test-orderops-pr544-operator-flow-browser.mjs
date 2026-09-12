@@ -50,9 +50,9 @@ class Cdp {
 }
 const evaluate = (client, expression) => client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }).then(result => { if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; });
 const applyPrepared = async client => {
-  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].at(-1)?.textContent.includes('READY')`),'explicit candidate validation');
+  await waitFor(()=>evaluate(client,`Boolean([...document.querySelectorAll('#prepareFileList button')].at(-1)?.querySelector('[data-prepare-state="READY"]'))`),'explicit candidate validation');
   await evaluate(client,`window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
-  await waitFor(()=>evaluate(client,`[...document.querySelectorAll('#prepareFileList button')].at(-1)?.textContent.includes('APPLIED')`),'explicit candidate application');
+  await waitFor(()=>evaluate(client,`Boolean([...document.querySelectorAll('#prepareFileList button')].at(-1)?.querySelector('[data-prepare-state="APPLIED"]'))`),'explicit candidate application');
   await evaluate(client,`document.querySelector(document.querySelector('#ordersFileName').textContent==='파일을 선택하세요'?'[data-preview="inventory"]':'[data-preview="allocations"]').click()`);
 };
 const navigate = async (client, url) => { const loaded = client.once('Page.loadEventFired'); await client.send('Page.navigate', { url }); await loaded; await waitFor(() => evaluate(client, `document.readyState==='complete'`), 'page ready'); };
@@ -123,14 +123,14 @@ try {
   assert.equal(initial.title, '저장 주문 선택');
   await waitFor(() => evaluate(client, `document.querySelector('#ordersFileName')?.textContent.includes('20260908-001')`), 'selected saved order source');
   const beforeAnalysis = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const table=document.querySelector('#previewTable table.preview-allocations');const header=document.querySelector('[data-nexus-app-header="orderops"]');const bottom=document.querySelector('.orderops-bottom-workbar');return {headerOwnsSources:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header?.contains(document.getElementById(id))),headerButtons:[...header.querySelectorAll('.orderops-header-primary > button,.orderops-header-primary > .orderops-header-menu > button')].map(node=>node.textContent.trim().replace(/^▸/,'')),bottomActions:[...bottom.querySelectorAll('button,a')].map(node=>node.id),panes:[...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,headers:[...table?.querySelectorAll('thead th')||[]].map(node=>node.textContent.replace('필터','').trim()),keys:[...table?.querySelectorAll('col[data-column-key]')||[]].map(node=>node.dataset.columnKey),inputValues:[...table?.querySelectorAll('tbody input')||[]].map(node=>node.value),rowText:table?.querySelector('tbody tr')?.textContent||'',stockText:table?.textContent||'',printDisabled:document.querySelector('#printButton').disabled,systemIo:document.body.innerText.includes('System.IO')}})()`);
+    const value = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const table=document.querySelector('#previewTable table.preview-allocations');const header=document.querySelector('[data-nexus-app-header="orderops"]');const bottom=document.querySelector('.orderops-bottom-workbar');return {headerOwnsSources:['integratedFileButton','ordersFileButton','inventoryFileButton','analyzeButton'].every(id=>header?.contains(document.getElementById(id))),headerButtons:[...header.querySelectorAll(':scope > .header-actions > button')].map(node=>node.id),bottomActions:[...bottom.querySelectorAll('button,a')].map(node=>node.id),panes:[...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane),deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,headers:[...table?.querySelectorAll('thead th')||[]].map(node=>node.textContent.replace('필터','').trim()),keys:[...table?.querySelectorAll('col[data-column-key]')||[]].map(node=>node.dataset.columnKey),inputValues:[...table?.querySelectorAll('tbody input')||[]].map(node=>node.value),rowText:table?.querySelector('tbody tr')?.textContent||'',stockText:table?.textContent||'',printDisabled:document.querySelector('#printButton').disabled,systemIo:document.body.innerText.includes('System.IO')}})()`);
     return value.deliveries === 1 && value.inputValues.includes('부분상사') ? value : null;
   }, 'orders displayed before inventory and analysis');
   assert.equal(beforeAnalysis.headerOwnsSources, false, 'v1.2는 업로더를 좌측 준비 영역으로 옮기고 분석 실행만 헤더에 둔다.');
   assert.deepEqual(beforeAnalysis.panes, ['reference', 'work', 'result'], '앱헤더 아래 세 섹션은 동일 부모의 직접 자식이어야 한다.');
   assert.deepEqual(beforeAnalysis.headerButtons,
-    ['출고분석 Enter','초기화'],
-    '앱헤더 주요 조작 순서를 유지해야 한다.');
+    ['analyzeButton','workbenchResetButton','headerSettingsButton'],
+    '앱헤더 우측은 분석·초기화·환경설정 순서를 유지해야 한다.');
   assert.deepEqual(beforeAnalysis.bottomActions,
     ['headerCloudSaveButton','orderOpsHeaderOrdersButton','shipmentOpenButton','printButton','downloadButton','orderOpsHeaderMoreButton'],
     '저장·출력·복구 조작은 중앙 하단 작업바에서 한 번만 렌더해야 한다.');
@@ -494,7 +494,7 @@ try {
   assert.equal(notFound.orders, '파일을 선택하세요');
 
   await uploadWarehouseConflictOrders(client);
-  await waitFor(()=>evaluate(client,`document.querySelector('#prepareFileList').textContent.includes('INVALID')`),'warehouse conflicting mapping invalid');
+  await waitFor(()=>evaluate(client,`Boolean(document.querySelector('#prepareFileList [data-prepare-state="INVALID"]'))`),'warehouse conflicting mapping invalid');
   await evaluate(client,`(()=>{const rows=[...document.querySelectorAll('#prepareFileEditor .orderops-mapping-row')];const row=rows.find(row=>/창고$/.test(row.querySelector('span').textContent));const select=row.querySelector('select');select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   await evaluate(client,`(()=>{const row=[...document.querySelectorAll('#prepareFileEditor .orderops-mapping-row')].find(row=>row.querySelector('span').textContent.includes('창고코드'));const select=row.querySelector('select');select.value='창고';select.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   await applyPrepared(client);

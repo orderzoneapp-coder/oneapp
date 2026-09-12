@@ -19,6 +19,7 @@
       if (workspaceElement.style.getPropertyValue('--orderops-workbench-height') !== height) workspaceElement.style.setProperty('--orderops-workbench-height', height);
     };
     addEventListener('resize', () => fitHeight());
+    addEventListener('nexus-ui:ready', () => requestAnimationFrame(() => fitHeight(true)));
     new ResizeObserver(entries => { const next = entries[0]?.contentRect.height; if (next !== headerHeight) { headerHeight = next; fitHeight(true); } }).observe(document.querySelector('[data-nexus-app-header="orderops"]'));
     requestAnimationFrame(() => fitHeight(true));
     const procurementScope = document.createElement('select');
@@ -31,9 +32,10 @@
     let inventoryPreparationOperation = null;
     let commitLocked = false;
     let preparedVersion = 0;
+    let preparationReads = 0;
     const status = message => { $('prepareStatus').textContent = message; };
     const selected = () => s.preparedFiles.find(item => item.id === s.selectedPreparedId);
-    const dirty = () => s.preparedFiles.some(item => item.dirty) || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length);
+    const dirty = () => preparationReads > 0 || s.preparedFiles.some(item => item.dirty) || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length);
     const fieldNames = kind => kind === 'orders' ? [...e.ORDER_REQUIRED_COLUMNS, ...e.ORDER_OPTIONAL_COLUMNS]
       : kind === 'inventory' ? [...e.INVENTORY_REQUIRED_COLUMNS, ...e.INVENTORY_OPTIONAL_COLUMNS, '단위']
         : ['품목코드', '품목명', '수량', kind === 'purchases' ? '구매처' : '거래처'];
@@ -63,6 +65,7 @@
       const choice = results.find(result => result.kind === item.kind) || best;
       item.headerRowIndex = Math.max(0, choice?.parsed?.headerRowIndex || 0);
       item.dataStartRowIndex = item.headerRowIndex + 1;
+      item.dataEndRowIndex = item.display.length - 1;
       item.mapping = null;
       validate(item);
     }
@@ -90,17 +93,18 @@
       try {
         if (!item.kind) throw new Error('자료 유형을 선택하세요.');
         item.mapping ||= suggestMapping(item);
-        const explicitMapping = { headerRowIndex: item.headerRowIndex, dataStartRowIndex: item.dataStartRowIndex, columns: item.mapping };
+        const explicitMapping = { headerRowIndex: item.headerRowIndex, dataStartRowIndex: item.dataStartRowIndex, dataEndRowIndex: item.dataEndRowIndex, columns: item.mapping };
         if (['orders', 'inventory'].includes(item.kind)) {
           const input = { fileName: item.fileName, fileHash: item.fileHash, sheetName: item.sheetName, rawMatrix: item.raw, displayMatrix: item.kind === 'orders' ? api.normalizeOrderDates(item.display) : item.display, headerAliases: api.headerAliases(item.kind), explicitMapping };
           item.parsed = item.kind === 'orders' ? e.parseOrderWorkbook(input) : e.parseInventoryWorkbook(input);
         } else {
-          if (item.dataStartRowIndex <= item.headerRowIndex || item.dataStartRowIndex >= item.display.length) throw new Error('데이터 시작행 범위를 확인하세요.');
+          if (!Number.isInteger(item.headerRowIndex) || item.headerRowIndex < 0 || !Number.isInteger(item.dataStartRowIndex) || item.dataStartRowIndex <= item.headerRowIndex || item.dataStartRowIndex >= item.display.length) throw new Error('헤더행·데이터 시작행 범위를 확인하세요.');
+          if (!Number.isInteger(item.dataEndRowIndex) || item.dataEndRowIndex < item.dataStartRowIndex || item.dataEndRowIndex >= item.display.length) throw new Error('마지막 상품행 범위를 확인하세요.');
           const required = fieldNames(item.kind);
           if (required.some(field => item.mapping.filter(value => value === field).length !== 1)) throw new Error('필수 항목의 원본 열을 하나씩 지정하세요.');
           const get = (row, field) => row[item.mapping.indexOf(field)];
           const errors = [];
-          const rows = item.display.slice(item.dataStartRowIndex).flatMap((cells, offset) => {
+          const rows = item.display.slice(item.dataStartRowIndex, item.dataEndRowIndex + 1).flatMap((cells, offset) => {
             if (!cells.some(value => String(value ?? '').trim())) return [];
             const quantity = e.parseNumericCell(get(cells, '수량'));
             const code = e.normalizeProductCode(get(cells, '품목코드'));
@@ -116,27 +120,39 @@
     }
 
     function renderPreparation() {
-      $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}">${esc(item.fileName)} · ${esc(item.sheetName)}<br>${esc(item.remove ? '사용해제 예정' : item.status)}${item.include ? ' · 적용 대상' : ''}</button>`).join('');
+      pane.classList.toggle('has-prepared-files', s.preparedFiles.length > 0);
+      const statusLabels = { READY: '준비됨', INVALID: '확인 필요', APPLIED: '적용됨' };
+      $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · <span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}</span>${item.include ? ' · 적용 대상' : ''}</small></button>`).join('');
       const item = selected();
-      $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation);
-      $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation) || !dirty();
-      if (!item) { $('prepareFileEditor').innerHTML = '<p>파일을 선택하고 자료 유형·시트·열을 확인한 뒤 적용하세요.</p>'; return; }
+      $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation || preparationReads);
+      $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation || preparationReads) || !dirty();
+      if (!item) { $('prepareFileEditor').innerHTML = ''; return; }
       const fields = [...new Set(fieldNames(item.kind))];
-      $('prepareFileEditor').innerHTML = `<label><span>이번 적용에 포함</span><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''}></label>
+      $('prepareFileEditor').innerHTML = `<label class="orderops-prepare-include"><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''}><span>이번 적용에 포함</span></label>
+        <div class="orderops-prepare-fields">
         <label>자료 유형<select id="preparedKind"><option value="">유형 선택</option>${kinds.map(kind => `<option value="${kind}" ${item.kind === kind ? 'selected' : ''}>${labels[kind]}</option>`).join('')}</select></label>
         <label>시트<select id="preparedSheet">${item.workbook.SheetNames.map(name => `<option ${name === item.sheetName ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></label>
         <label>헤더행<input id="preparedHeader" type="number" min="1" max="${item.display.length}" value="${item.headerRowIndex + 1}"></label>
-        <label>데이터 시작행<input id="preparedStart" type="number" min="${item.headerRowIndex + 2}" max="${item.display.length}" value="${item.dataStartRowIndex + 1}"></label>
-        <div class="orderops-raw-preview"><table>${[...new Set([0,1,2,3,4,5,6,7,item.headerRowIndex,item.dataStartRowIndex,item.dataStartRowIndex+1,item.dataStartRowIndex+2])].filter(index=>index<item.display.length).sort((a,b)=>a-b).map(index => `<tr><th>${index + 1}</th>${item.display[index].map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('')}</table></div>
+        <label>마지막 상품행(포함)<input id="preparedEnd" type="number" min="${item.dataStartRowIndex + 1}" max="${item.display.length}" value="${item.dataEndRowIndex + 1}" aria-describedby="preparedRangeHelp"></label>
+        </div><p id="preparedRangeHelp">${item.dataStartRowIndex + 1}~${item.dataEndRowIndex + 1}행만 읽습니다. 하단 ${Math.max(0, item.display.length - item.dataEndRowIndex - 1)}행은 원본에 보존하고 제외합니다.</p>
+        <div class="orderops-raw-preview" tabindex="0" aria-label="원본 행 미리보기"><table>${[...new Set([0,1,2,3,4,5,6,7,item.headerRowIndex,item.dataStartRowIndex,item.dataEndRowIndex-1,item.dataEndRowIndex,item.dataEndRowIndex+1,item.display.length-1])].filter(index=>Number.isInteger(index)&&index>=0&&index<item.display.length).sort((a,b)=>a-b).map(index => `<tr class="${index > item.dataEndRowIndex ? 'orderops-excluded-source-row' : ''}"><th>${index + 1}${index > item.dataEndRowIndex ? ' 제외' : ''}</th>${item.display[index].map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('')}</table></div>
         <strong>원본 열 → 사용할 항목</strong>${(item.display[item.headerRowIndex] || []).map((header, index) => `<label class="orderops-mapping-row"><span>${index + 1}. ${esc(header || '(공란)')}</span><select data-map-index="${index}"><option value="">비매핑</option>${[...new Set([...fields, ...(item.kind === 'inventory' && header ? [`warehouse:${header}`] : [])])].map(field => `<option value="${esc(field)}" ${item.mapping?.[index] === field ? 'selected' : ''}>${esc(field.startsWith('warehouse:') ? '창고수량 · ' + field.slice(10) : field)}</option>`).join('')}</select></label>`).join('')}
         <p role="status">${esc(item.error || `${item.parsed?.rowCount || 0}행 검증됨 · 적용 전에는 현재 작업이 바뀌지 않습니다.`)}</p>`;
     }
 
     async function prepare(files, kind = '') {
       if (operation || s.inventoryApplyBusy) throw new Error('진행 중인 적용 결과를 확인하세요.');
+      const incoming = Array.from(files || []);
+      if (!incoming.length) return;
+      preparationReads++;
       setLeft(true);
+      $('prepareApplyButton').disabled = true;
+      $('prepareRemoveButton').disabled = true;
+      pane.setAttribute('aria-busy', 'true');
       status('파일 구조를 읽고 있습니다. 현재 작업은 유지됩니다.');
-      for (const file of Array.from(files || [])) {
+      const failures = [];
+      let added = 0;
+      try { for (const file of incoming) {
         try {
           if (!/\.(xlsx|xls)$/i.test(file.name) || file.size > 25 * 1024 * 1024) throw new Error(`${file.name}: Excel 형식·25MiB 제한을 확인하세요.`);
           const bytes = new Uint8Array(await file.arrayBuffer());
@@ -147,12 +163,16 @@
             const item = { id: crypto.randomUUID(), fileName: file.name, fileHash, workbook, sheetName, kind, dirty: true, include: true, applied: false,
               raw: root.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null, blankrows: true }), display: root.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '', blankrows: true }),
               cells: Object.fromEntries(Object.entries(sheet).filter(([key]) => !key.startsWith('!')).map(([key, cell]) => [key, { t: cell.t, v: cell.v, w: cell.w, z: cell.z, f: cell.f }])) };
-            automatic(item); s.preparedFiles.push(item); s.selectedPreparedId ||= item.id;
+            automatic(item); s.preparedFiles.push(item); s.selectedPreparedId ||= item.id; added++;
           }
           preparedVersion += 1;
-        } catch (error) { status(error.message); api.showToast(error.message, true); }
+        } catch (error) { failures.push(error.message); api.showToast(error.message, true); }
+      } } finally {
+        preparationReads--;
+        pane.setAttribute('aria-busy', String(preparationReads > 0));
+        renderPreparation();
+        status(failures.length ? `${failures.join(' · ')}${added ? ` / ${added}개 시트는 준비됨` : ''}` : `${added}개 시트 준비됨 · 유형·열 확인 후 적용하세요. 현재 작업은 유지됩니다.`);
       }
-      renderPreparation();
     }
 
     function hydratePrepared() {
@@ -163,7 +183,7 @@
         const display=clone(parsed.sourceEvidence?.displayMatrix || raw);
         if(!display.length)return [];
         const sheetName=parsed.sheetName || labels[kind];
-        const item={id:crypto.randomUUID(),fileName:parsed.fileName,fileHash:parsed.fileHash,sheetName,kind,dirty:false,applied:true,include:true,status:'APPLIED',parsed:clone(parsed),raw,display,cells:clone(parsed.sourceEvidence?.cells || {}),workbook:{SheetNames:[sheetName],Sheets:{[sheetName]:root.XLSX.utils.aoa_to_sheet(raw)}},headerRowIndex:parsed.explicitMapping?.headerRowIndex ?? parsed.headerRowIndex ?? 0,dataStartRowIndex:parsed.explicitMapping?.dataStartRowIndex ?? (parsed.headerRowIndex ?? 0)+1,mapping:clone(parsed.explicitMapping?.columns)};
+        const item={id:crypto.randomUUID(),fileName:parsed.fileName,fileHash:parsed.fileHash,sheetName,kind,dirty:false,applied:true,include:true,status:'APPLIED',parsed:clone(parsed),raw,display,cells:clone(parsed.sourceEvidence?.cells || {}),workbook:{SheetNames:[sheetName],Sheets:{[sheetName]:root.XLSX.utils.aoa_to_sheet(raw)}},headerRowIndex:parsed.explicitMapping?.headerRowIndex ?? parsed.headerRowIndex ?? 0,dataStartRowIndex:parsed.explicitMapping?.dataStartRowIndex ?? (parsed.headerRowIndex ?? 0)+1,dataEndRowIndex:parsed.explicitMapping?.dataEndRowIndex ?? display.length-1,mapping:clone(parsed.explicitMapping?.columns)};
         item.mapping ||= suggestMapping(item); return [item];
       });
       s.selectedPreparedId=s.preparedFiles[0]?.id || ''; renderPreparation();
@@ -275,6 +295,7 @@
     }
 
     async function applyFiles() {
+      if (preparationReads) return status('파일 읽기가 끝난 뒤 준비한 자료를 확인하고 적용하세요.');
       if (operation || inventoryPreparationOperation) return operation || inventoryPreparationOperation;
       const batch = s.preparedFiles.filter(item => item.include && item.dirty);
       if (!batch.length) return;
@@ -373,11 +394,32 @@
     }
 
     $('prepareFilesButton').onclick = () => $('prepareFilesInput').click();
-    $('prepareFilesInput').onchange = event => { void prepare(event.target.files); event.target.value = ''; };
+    const receiveFiles = files => { void prepare(files).catch(error => { status(error.message); api.showToast(error.message, true); }); };
+    $('prepareFilesInput').onchange = event => { receiveFiles(event.target.files); event.target.value = ''; };
+    // Files never auto-apply. Capture also prevents the legacy hidden uploader
+    // and browser navigation from consuming drops intended for this workbench.
+    const isFileDrag = event => Array.from(event.dataTransfer?.types || []).includes('Files') || Boolean(event.dataTransfer?.files?.length);
+    const isPreparationTarget = target => target instanceof Node && (pane.contains(target) || $('preparePaneReopen').contains(target));
+    const clearDrop = () => pane.classList.remove('is-file-dragover');
+    ['dragenter', 'dragover'].forEach(name => document.addEventListener(name, event => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault(); event.stopPropagation();
+      const accepted = isPreparationTarget(event.target);
+      if (event.dataTransfer) event.dataTransfer.dropEffect = accepted ? 'copy' : 'none';
+      pane.classList.toggle('is-file-dragover', accepted);
+    }, true));
+    document.addEventListener('dragleave', event => { if (!pane.contains(event.relatedTarget)) clearDrop(); }, true);
+    document.addEventListener('dragend', clearDrop, true);
+    document.addEventListener('drop', event => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault(); event.stopPropagation(); clearDrop();
+      if (isPreparationTarget(event.target)) receiveFiles(Array.from(event.dataTransfer.files || []));
+      else { status('파일 준비 영역에 Excel 파일을 놓아주세요. 현재 작업은 유지됩니다.'); api.showToast('Excel 파일은 왼쪽 파일 준비 영역에 놓아주세요.'); }
+    }, true);
     $('preparePaneClose').onclick = () => setLeft(false);
     $('preparePaneReopen').onclick = () => setLeft(pane.hidden);
     $('prepareApplyButton').onclick = () => { void applyFiles(); };
-    $('prepareRemoveButton').onclick = () => { const item = selected(); if (!item || operation || inventoryPreparationOperation) return; if (item.applied) { item.remove = !item.remove; item.dirty = true; item.include = true; } else { s.preparedFiles = s.preparedFiles.filter(value => value !== item); s.selectedPreparedId = s.preparedFiles[0]?.id || ''; } preparedVersion++; renderPreparation(); };
+    $('prepareRemoveButton').onclick = () => { const item = selected(); if (!item || operation || inventoryPreparationOperation || preparationReads) return; if (item.applied) { item.remove = !item.remove; item.dirty = true; item.include = true; } else { s.preparedFiles = s.preparedFiles.filter(value => value !== item); s.selectedPreparedId = s.preparedFiles[0]?.id || ''; } preparedVersion++; renderPreparation(); };
     $('prepareFileList').onclick = event => { const target = event.target.closest('[data-prepared-id]'); if (target) { s.selectedPreparedId = target.dataset.preparedId; renderPreparation(); } };
     $('prepareFileEditor').onchange = event => {
       const item = selected(); if (!item || operation) return;
@@ -385,7 +427,7 @@
       if (target.id === 'preparedInclude') item.include = target.checked;
       else if (target.id === 'preparedKind') { item.kind = target.value; item.mapping = null; }
       else if (target.id === 'preparedHeader') { item.headerRowIndex = Number(target.value) - 1; item.dataStartRowIndex = item.headerRowIndex + 1; item.mapping = null; }
-      else if (target.id === 'preparedStart') item.dataStartRowIndex = Number(target.value) - 1;
+      else if (target.id === 'preparedEnd') item.dataEndRowIndex = Number(target.value) - 1;
       else if (target.id === 'preparedSheet') { const match = s.preparedFiles.find(value => value.fileHash === item.fileHash && value.sheetName === target.value); if (match) { s.selectedPreparedId = match.id; renderPreparation(); return; } }
       else if (target.dataset.mapIndex !== undefined) item.mapping[Number(target.dataset.mapIndex)] = target.value;
       item.dirty = true; preparedVersion++; validate(item); renderPreparation();
@@ -397,7 +439,7 @@
     el.previewTable.addEventListener('click', event => { const tr = event.target.closest('tr[data-source-row-number]'); const input = event.target.closest('[data-order-row]') || tr?.querySelector('[data-order-row]'); const number = input?.dataset.orderRow || tr?.dataset.sourceRowNumber; const row = (s.workspace?.orders || []).find(item => String(item.sourceRowNumber) === String(number)); s.selectedOrderRow = row ? rowKey(row) : ''; renderInspector(); });
     $('shipmentOpenButton').onclick = async () => { await api.refreshShipment(); $('shipmentWorkbenchDialog').showModal(); };
     $('shipmentWorkbenchDialog').addEventListener('close', () => { api.captureInputs(); $('shipmentOpenButton').focus({ preventScroll: true }); });
-    $('workbenchResetButton').onclick = async () => { if (!confirm('현재 작업과 준비 파일을 초기화할까요? 기존 복구본·Cloud·주문·출고 이력은 삭제하지 않습니다.')) return; try { await waitBoundary(); s.preparedFiles = []; s.selectedPreparedId = ''; kinds.forEach(kind => { s[kind] = null; }); api.disconnectSource(); api.reset(); s.activePreview = 'allocations'; api.refreshInputs(); renderPreparation(); api.renderTabs(); } catch (error) { status(error.message); } };
+    $('workbenchResetButton').onclick = async () => { if (preparationReads) return status('파일 읽기가 끝난 뒤 초기화하세요.'); if (!confirm('현재 작업과 준비 파일을 초기화할까요? 기존 복구본·Cloud·주문·출고 이력은 삭제하지 않습니다.')) return; try { await waitBoundary(); s.preparedFiles = []; s.selectedPreparedId = ''; kinds.forEach(kind => { s[kind] = null; }); api.disconnectSource(); api.reset(); s.activePreview = 'allocations'; api.refreshInputs(); renderPreparation(); api.renderTabs(); } catch (error) { status(error.message); } };
     window.addEventListener('beforeunload', event => { if (dirty() || operation || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length)) { event.preventDefault(); event.returnValue = ''; } });
     try { setLeft(localStorage.getItem('oneapp.orderops.file-prepare-open.v1') !== '0', false); } catch (_) { setLeft(true, false); }
     renderPreparation();

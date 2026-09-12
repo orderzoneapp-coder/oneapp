@@ -298,6 +298,10 @@ jobs:
         env:
           ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench
         run: node scripts/test-orderops-workbench-browser.mjs
+      - name: Verify file drop preparation and compact themed controls
+        env:
+          ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench/drop-visual
+        run: node scripts/test-orderops-file-drop-visual-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
