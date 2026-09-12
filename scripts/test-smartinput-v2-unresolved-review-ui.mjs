@@ -173,8 +173,8 @@ assert.deepEqual(contract.consumers, ['orderops']);
 
 const smartInputProductUiHashes = new Map([
   ['../smartinput/index.html', '591d8989a754ef30ede03af8b8dd6f6ab3339342ce4a665609ddf583e591c407'],
-  ['../smartinput/smartinput.css', '4202651bd17f5063cb18a631a1ebfa73c32a09e0e1075e115d18825ee4dd009f'],
-  ['../smartinput/smartinput.js', '66afcbedb917dc2472319a35431eed597400e1afe6453f3340d5c1025169caba']
+  ['../smartinput/smartinput.css', 'd82aa09c6f5e824ba1db5abd39ae2439fd25eca0ee56b224a5cbe2836133c85c'],
+  ['../smartinput/smartinput.js', '6f4a58b3dc3d60e72b71bc5ba894e49ad7a367f62afbef630b1c95f3207546fb']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
   const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -183,6 +183,7 @@ for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
     .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
     .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
     .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
+    .replace(/smartinput\.css\?v=[^"']+/g, 'smartinput.css?v=0.9.20')
     .replace(/smartinput\.js\?v=[^"']+/g, 'smartinput.js?v=0.11.52')
     .replace(/\nasync function waitForSmartInputIdle[\s\S]*?\n}\n\nfunction referencesReady\(\)/, '\nfunction referencesReady()')
     .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
@@ -201,5 +202,5 @@ console.log(JSON.stringify({
   rawOrderQStoreAccessFromProductUi: 0,
   externalMutatingRequests: mutations.length,
   smartInputUiBaseline: 'ERP estimate full-sheet selection, F8 output, compact table toolbar, source-header search affordance, business-key fail-closed grouping, and ORDER Q query-link',
-  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-erp-order-assignee-preservation-compact-table-toolbar-source-hover-search-and-external-reference-popup'
+  smartInputUiChanged: 'approved-estimate-fast-load-tax-optional-bidirectional-linked-delete-rematch-match-dictionary-voucher-upload-sort-order-shipment-merchops-pricing-parity-numbered-row-selection-active-row-focus-estimate-automation-hardening-hydrated-layout-migration-shopping-assignee-handoff-erp-order-assignee-preservation-compact-table-toolbar-source-hover-search-external-reference-popup-and-estimate-card-open-recovery'
 }, null, 2));

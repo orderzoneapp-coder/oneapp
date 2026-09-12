@@ -5779,6 +5779,8 @@ function restoreEstimateOpenRecovery(recovery) {
   state.mappingProjectionTimer = null;
 }
 
+const estimateOpenSelectionRestoreTargets = new WeakSet();
+
 function restoreEstimateOpenFocusAndScroll(recovery) {
   const restoreScroll = () => recovery.scroll.forEach(({ id, top, left }) => {
     const element = $(id);
@@ -5794,8 +5796,13 @@ function restoreEstimateOpenFocusAndScroll(recovery) {
     if (focus?.selectionStart === null || typeof target.setSelectionRange !== 'function') return;
     target.setSelectionRange(focus.selectionStart, focus.selectionEnd ?? focus.selectionStart, focus.selectionDirection);
   };
-  target.focus({ preventScroll: true });
-  restoreSelection();
+  estimateOpenSelectionRestoreTargets.add(target);
+  try {
+    target.focus({ preventScroll: true });
+    restoreSelection();
+  } finally {
+    estimateOpenSelectionRestoreTargets.delete(target);
+  }
   window.requestAnimationFrame(() => {
     if (!target.isConnected || document.activeElement !== target) return;
     restoreScroll();
@@ -12218,9 +12225,10 @@ inputRows.addEventListener('focusin', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
   const tr = event.target.closest('[data-row-id]');
   if (!input || !tr) return;
+  const preserveSelection = estimateOpenSelectionRestoreTargets.delete(input);
   window.requestAnimationFrame(() => {
     if (document.activeElement !== input) return;
-    input.select?.();
+    if (!preserveSelection) input.select?.();
     revealGridInput(input);
   });
   modeUi().activeCellId = `${tr.dataset.rowId}|${gridFieldId(input)}`;
