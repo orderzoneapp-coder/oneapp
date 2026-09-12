@@ -16,8 +16,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1"></script>
-  <script src="inventory-snapshot.js?v=20260912-common-inventory-v1"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260912-common-inventory-v1-1"></script>
+  <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260910-system-message-review"></script>
   <style>
     :root {
@@ -4435,6 +4435,9 @@
           columns: inventorySource.columns || [],
           sourceKind: inventorySource.sourceKind,
           sourceSchemaVersion: inventorySource.sourceSchemaVersion,
+          sourceEvidence: inventorySource.sourceEvidence
+            ? JSON.parse(JSON.stringify(inventorySource.sourceEvidence))
+            : undefined,
         } : null;
         state.purchases = workspace?.orderOpsInputs?.purchases || null;
         state.sales = workspace?.orderOpsInputs?.sales || null;
@@ -8243,12 +8246,14 @@
                       : editableShipmentDraft
                         ? `<input class="shipment-draft-input excel-grid-input" data-shipment-draft-line="${escapeHtml(sourceRow.orderItemId)}"
                             data-grid-column="${escapeHtml(column.key)}"
+                            data-original-value="${escapeHtml(displayValue)}"
                             inputmode="decimal" autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 실제 출고수량">`
                       : editableOrder
                         ? `<input class="order-edit-input excel-grid-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
                             data-order-field="${escapeHtml(column.orderField)}"
                             data-grid-column="${escapeHtml(column.key)}"
+                            data-original-value="${escapeHtml(displayValue)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             ${column.orderField === "manager" ? 'list="orderOpsManagerOptions"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
@@ -8260,6 +8265,7 @@
                           : editableInventory
                             ? `<input class="inventory-input excel-grid-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                                 data-inventory-column="${escapeHtml(inventoryEditColumnKey)}" data-grid-column="${escapeHtml(column.key)}"
+                                data-original-value="${escapeHtml(displayValue)}"
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(displayValue)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
@@ -8938,13 +8944,15 @@
           renderPreview();
           elements.resultsPanel.classList.remove("hidden");
           elements.shipmentExecution.hidden = true;
+          const orderReview = getCurrentOrderReview();
           const sourceRowCount = stats.orderRowCount + stats.inventoryRowCount +
             (state.workspace.orderOpsInputs?.purchases?.rows?.length || 0) +
             (state.workspace.orderOpsInputs?.sales?.rows?.length || 0);
           elements.printButton.disabled = !(sourceRowCount > 0);
           elements.downloadButton.disabled = true;
-          elements.cloudSaveButton.disabled = true;
-          elements.headerCloudSaveButton.disabled = true;
+          const cloudSaveDisabled = orderReview.hasQuantityErrors || !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
+          elements.cloudSaveButton.disabled = cloudSaveDisabled;
+          elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
           const sourceLabels = FILE_KINDS
             .filter((kind) => state.workspace.previewDataState?.[kind])
             .map((kind) => FILE_KIND_LABELS[kind]);
@@ -9436,7 +9444,11 @@
       function commitCurrentWorkspaceInputs() {
         const activeInput = document.activeElement;
         if (activeInput instanceof HTMLInputElement || activeInput instanceof HTMLSelectElement || activeInput instanceof HTMLTextAreaElement) {
-          commitExcelGridInput(activeInput);
+          const originalValue = activeInput.dataset.originalValue;
+          if (originalValue === undefined || activeInput.value !== originalValue) {
+            const committed = commitExcelGridInput(activeInput);
+            if (committed) activeInput.dataset.originalValue = activeInput.value;
+          }
         }
         captureShipmentDraftInputs();
         persistShipmentDraftToWorkspace();
@@ -9511,7 +9523,7 @@
         return "DISCARD";
       }
 
-      async function finalizeInventoryCandidate(staged, candidate) {
+      async function verifyPublishedInventoryCandidate(staged) {
         const published = { ...staged, publicationState: "PUBLISHED", publishedAt: new Date().toISOString() };
         await putRecoveryRecord(published);
         const reread = await readRecoveryRecord(published.recordId);
@@ -9519,28 +9531,34 @@
         if (!verification.valid || reread.publicationState !== "PUBLISHED") {
           throw new Error(`재고 적용 확정본 검산 실패: ${verification.reason || "상태 불일치"}`);
         }
+        return reread;
+      }
+
+      function activatePublishedInventoryCandidate(published, candidate) {
+        localStorage.setItem(LOCAL_POINTER_KEY, published.recordId);
+        localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
+          schemaVersion: published.schemaVersion,
+          recordId: published.recordId,
+          sourceFingerprint: published.sourceFingerprint,
+          planId: candidate.planId,
+          basisDate: candidate.basisDate,
+          updatedAt: published.updatedAt,
+          payloadSha256: published.payloadSha256,
+          inventoryApplyTransactionId: published.inventoryApplyTransactionId,
+        }));
+      }
+
+      async function maintainPublishedInventoryCandidate(published) {
         try {
-          await persistLegacyCompatibilityRecord(reread);
+          await persistLegacyCompatibilityRecord(published);
         } catch (error) {
           setSystemMessage("재고 적용 확정 · 구버전 호환 복구본 저장은 실패했습니다");
         }
         try {
-          await enforceRecoveryRetention(reread.recordId);
+          await enforceRecoveryRetention(published.recordId);
         } catch (error) {
           setSystemMessage("재고 적용 확정 · 이전 복구본 정리는 다음 저장에서 다시 시도합니다");
         }
-        localStorage.setItem(LOCAL_POINTER_KEY, reread.recordId);
-        localStorage.setItem(LOCAL_META_KEY, JSON.stringify({
-          schemaVersion: reread.schemaVersion,
-          recordId: reread.recordId,
-          sourceFingerprint: reread.sourceFingerprint,
-          planId: candidate.planId,
-          basisDate: candidate.basisDate,
-          updatedAt: reread.updatedAt,
-          payloadSha256: reread.payloadSha256,
-          inventoryApplyTransactionId: reread.inventoryApplyTransactionId,
-        }));
-        return reread;
       }
 
       async function applyInventoryCandidate(loaded) {
@@ -9579,7 +9597,18 @@
                 if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
                 continue;
               }
-              const published = await finalizeInventoryCandidate(staged.record, candidate);
+              const published = await verifyPublishedInventoryCandidate(staged.record);
+              commitCurrentWorkspaceInputs();
+              await inventoryOperationWithTimeout(localWorkspaceSaveQueue, "최종 입력 임시저장");
+              const finalDigest = await sha256Hex(engine.canonicalStringify(state.workspace || base));
+              commitCurrentWorkspaceInputs();
+              if ((state.workspace && state.workspace !== base) || state.workspaceChangeVersion !== baseVersion || finalDigest !== baseDigest) {
+                await deleteRecoveryRecordIds([published.recordId]);
+                stagedRecordId = "";
+                if (state.workspace?.sourceFingerprint) await queueLocalWorkspaceSave();
+                continue;
+              }
+              activatePublishedInventoryCandidate(published, candidate);
               stagedRecordId = "";
               state.workspace = candidate;
               state.inventory = loaded.parsed;
@@ -9593,6 +9622,7 @@
               elements.analyzeButton.disabled = loaded.applicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
               elements.replaceRecoveryButton.disabled = loaded.applicationMode === "TOTAL_ONLY" || !state.validation?.canAnalyze;
               renderResults();
+              await maintainPublishedInventoryCandidate(published);
               await refreshRecoveryRecords();
               const label = loaded.applicationMode === "TOTAL_ONLY" ? "DataOps 총량 비교 재고" : "공유 ERP 창고재고";
               const overrideDisposition = candidate.inventoryOverrideDisposition;
@@ -9805,6 +9835,9 @@
           }
           clearSubstitutionSelection();
           state.workspace = plan.workspace;
+          if (state.workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE) {
+            restorePreviewInputState(state.workspace);
+          }
           engine.ensureNoticeState(state.workspace);
           engine.ensureSubstitutionHistory(state.workspace);
           engine.applyPurchaseInputs(state.workspace, plan.purchaseInputs);
@@ -10014,6 +10047,7 @@
               { actor: substitutionActor(), recordHistory: true },
             );
           }
+          input.dataset.originalValue = input.value;
           if (render) renderResults();
           scheduleLocalSave();
           return true;
@@ -10041,6 +10075,7 @@
           shippedQuantity: String(Math.round((quantity + Number.EPSILON) * 1e9) / 1e9),
           reason: String(state.shipmentDraft[orderItemId]?.reason || ""),
         };
+        input.dataset.originalValue = input.value;
         persistShipmentDraftToWorkspace();
         if (render) renderShipmentExecution({ capture: false });
         scheduleLocalSave();
@@ -10350,6 +10385,7 @@
             input.value,
             { actor: substitutionActor(), recordHistory: true },
           );
+          input.dataset.originalValue = input.value;
           scheduleLocalSave();
           if (render) renderPreview();
           return true;

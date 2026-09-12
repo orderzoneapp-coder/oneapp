@@ -806,7 +806,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.28.0");
+assert.equal(engine.ENGINE_VERSION, "3.28.1");
 assert.equal(engine.SYSTEM_HISTORY_SCHEMA_VERSION, "shipping-system-history/v1");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
@@ -1978,7 +1978,7 @@ const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
 assert.ok(
-  html.includes("inventory-snapshot.js?v=20260912-common-inventory-v1") &&
+  html.includes("inventory-snapshot.js?v=20260912-common-inventory-v1-1") &&
   html.includes('id="inventoryMenuButton"') &&
   html.includes('id="inventoryDataOpsLoadButton"'),
   "canonical OrderOps must expose one inventory entry with ERP and DataOps actions",
@@ -1995,6 +1995,7 @@ assert.ok(
 assert.ok(
   html.includes("await waitForInventoryApplyBoundary()") &&
   html.includes("currentDigest !== baseDigest") &&
+  html.includes("finalDigest !== baseDigest") &&
   html.includes("현재 화면과 입력은 유지됩니다"),
   "inventory application must preserve the latest workspace across concurrent edits and failures",
 );

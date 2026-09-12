@@ -7,6 +7,7 @@
 
   const ERP_SCHEMA = "ONEAPP_INVENTORY_SNAPSHOT_V1";
   const READ_SCHEMA = "oneapp-common-inventory-read/v1";
+  const SOURCE_EVIDENCE_SCHEMA = "oneapp-common-inventory-source-evidence/v1";
   const DATAOPS_SCHEMA = "ONEAPP_DATAOPS_SNAPSHOT_V1";
   const DATAOPS_COLUMNS = Object.freeze([
     "단위", "품목코드", "품명", "규격", "재고", "기록", "거래", "구매가", "기본", "적요", "행사가",
@@ -22,6 +23,27 @@
 
   function normalizeUnit(value) {
     return text(value).replace(/\s+/g, "").toLocaleUpperCase("ko-KR");
+  }
+
+  function parseQuantity(value) {
+    if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) {
+      return { ok: true, blank: true, value: null };
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value)
+        ? { ok: true, blank: false, value: Math.round((value + Number.EPSILON) * 1e9) / 1e9 }
+        : { ok: false, blank: false, value: null };
+    }
+    let normalized = String(value).trim().replace(/,/g, "");
+    let negative = false;
+    if (/^\(.*\)$/.test(normalized)) {
+      negative = true;
+      normalized = normalized.slice(1, -1);
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed)
+      ? { ok: true, blank: false, value: Math.round(((negative ? -parsed : parsed) + Number.EPSILON) * 1e9) / 1e9 }
+      : { ok: false, blank: false, value: null };
   }
 
   function countScalarCells(value) {
@@ -78,12 +100,14 @@
       const sourceRowNumber = Number(row.sourceRowNumber);
       const source = sourceMatrix[sourceRowNumber - 1] || [];
       const warehouseValues = warehouses.map((column) => {
-        const quantity = Number(source[column.sourceIndex]);
-        if (!Number.isFinite(quantity)) throw new Error(`${sourceRowNumber}행 ${column.header} 수량을 저장할 수 없습니다.`);
+        const parsedQuantity = parseQuantity(source[column.sourceIndex]);
+        if (!parsedQuantity.ok) {
+          throw new Error(`${sourceRowNumber}행 ${column.header} 수량을 저장할 수 없습니다.`);
+        }
         return {
           warehouseKey: warehouseKey(column),
           sourceColumnIndex: Number(column.sourceIndex),
-          quantity,
+          quantity: parsedQuantity.blank ? 0 : parsedQuantity.value,
         };
       });
       const totalQuantity = warehouseValues.reduce((sum, value) => sum + value.quantity, 0);
@@ -209,15 +233,19 @@
         return;
       }
       const productCode = normalizeCode(row[1]);
-      const quantity = typeof row[4] === "number" ? row[4] : Number(text(row[4]).replace(/,/g, ""));
-      if (!productCode || !Number.isFinite(quantity)) {
+      const parsedQuantity = parseQuantity(row[4]);
+      if (parsedQuantity.blank) {
+        errors.push({ code: "DATAOPS_QUANTITY_BLANK", sourceRowNumber, productCode });
+        return;
+      }
+      if (!productCode || !parsedQuantity.ok) {
         errors.push({ code: "DATAOPS_ROW_INVALID", sourceRowNumber, productCode });
         return;
       }
       if (!groups.has(productCode)) groups.set(productCode, []);
       groups.get(productCode).push({
         sourceRowNumber, productCode, productName: text(row[2]), specification: text(row[3]),
-        unit: text(row[0]), quantity,
+        unit: text(row[0]), quantity: parsedQuantity.value,
       });
     });
     const normalizedRows = [];
@@ -271,6 +299,26 @@
     const sourceMatrix = [header, ...readModel.normalizedRows.map((row) => [
       row.productCode, row.productName, row.specification, row.unit, row.totalQuantity,
     ])];
+    const sourceRows = readModel.sourceRows.map((row) => Array.isArray(row) ? [...row] : [row]);
+    const sourceEvidence = {
+      schemaVersion: SOURCE_EVIDENCE_SCHEMA,
+      sourceType: "DATAOPS_FINALIZED",
+      columns: [...DATAOPS_COLUMNS],
+      rows: sourceRows,
+      exclusions: readModel.validation.errors.map((error) => {
+        const sourceRowNumbers = Array.isArray(error.sourceRowNumbers)
+          ? error.sourceRowNumbers.map(Number).filter((value) => value > 0)
+          : Number(error.sourceRowNumber) > 0 ? [Number(error.sourceRowNumber)] : [];
+        return {
+          ...error,
+          sourceRowNumbers,
+          sourceRows: sourceRowNumbers.map((sourceRowNumber) => ({
+            sourceRowNumber,
+            values: sourceRows[sourceRowNumber - 1] ? [...sourceRows[sourceRowNumber - 1]] : [],
+          })),
+        };
+      }),
+    };
     return {
       kind: "inventory",
       fileName: `DataOps 확정재고 ${readModel.basisDate}`,
@@ -307,12 +355,14 @@
       ],
       sourceKind: "DATAOPS_FINALIZED",
       sourceSchemaVersion: DATAOPS_SCHEMA,
+      sourceEvidence,
     };
   }
 
   return Object.freeze({
     ERP_SCHEMA,
     READ_SCHEMA,
+    SOURCE_EVIDENCE_SCHEMA,
     DATAOPS_SCHEMA,
     DATAOPS_COLUMNS,
     countScalarCells,
