@@ -107,8 +107,8 @@ try {
   }, 'inventory-only source preview');
   assert.equal(inventoryOnly.active, 'true');
   assert.deepEqual(inventoryOnly.headers,
-    ['상품코드','상품','규격','단위','1창고','2전송','3서울','4전송','7진영','재고 합계'],
-    '재고 단독 표는 파서가 판정한 창고별 수량 열을 원본 순서로 표시해야 한다.');
+    ['품목코드','단위','품명','규격','구분','구매','주문','잔량','1창고','2전송','3서울','4전송','7진영','기본','전송','창고단가','정보','적요','시스템 메시지'],
+    '재고 단독 표도 기존 통합 열 모델의 구매·정보와 원본 순서의 창고별 수량 열을 표시해야 한다.');
   assert.doesNotMatch(inventoryOnly.text, /주문서를 불러오면 목록이 표시됩니다|재고자료 없음/, '재고 단독 업로드는 가짜 주문·재고 없음 화면으로 바꾸면 안 된다.');
   await navigate(client, `${origin}/orderops/list.html`);
   assert.equal(await evaluate(client, `document.querySelector('#orderQCandidateSelect').value`), '', '일반 화면 진입만으로 ORDER Q 목록을 자동 선택하지 않아야 한다.');

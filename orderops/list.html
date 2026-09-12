@@ -6745,6 +6745,10 @@
       }
 
       function buildInventoryPreview(workspace, shortageSets, inventoryByCode) {
+        if (workspace?.workspaceMode === engine.PREVIEW_WORKSPACE_MODE &&
+            !workspace.previewDataState?.inventory && !workspace.inventory?.length) {
+          return emptyWorkbenchPreview("inventory", "재고 자료 미적용 · 파일 준비에서 재고를 적용하세요.");
+        }
         if (typeof engine.getInventoryViewRows !== "function") return null;
         const inventoryView = engine.getInventoryViewRows(workspace);
         if (!inventoryView || !Array.isArray(inventoryView.columns) || !Array.isArray(inventoryView.rows)) return null;
@@ -6837,7 +6841,7 @@
           inventory: columns.map((column, index) => column.role === "warehouseQuantity" ? index : -1)
             .filter((index) => index >= 0),
           purchase: purchaseIndex,
-          purchaseEditable: true,
+          purchaseEditable: workspace.inventoryApplicationMode !== "TOTAL_ONLY",
           status: statusIndex,
           sourceRows,
           rows,
@@ -6881,7 +6885,8 @@
           const order = orders[index];
           const managerColor = managerColorFor(manager);
           const colorAssigned = isSafeManagerName(manager) && managerColor !== COLOR_CANCEL_COLOR;
-          const selectable = state.activePreview === "inventory" && Number(order?.sourceRowNumber) > 0;
+          const selectable = state.activePreview === "inventory" &&
+            state.workspace?.inventoryApplicationMode !== "TOTAL_ONLY" && Number(order?.sourceRowNumber) > 0;
           const selected = selectable && Number(state.selectedSubstitutionOrderRow) === Number(order.sourceRowNumber);
           const badgeClass = `order-information-badge${colorAssigned ? " manager-color-badge" : ""}${selected ? " substitution-selected" : ""}`;
           const badgeStyle = colorAssigned ? ` style="--manager-color:${managerColor}"` : "";
@@ -7040,52 +7045,6 @@
             ].includes(column.role))
             .map((column) => column.key);
         }
-        return preview;
-      }
-
-      function buildInventorySourcePreview(workspace) {
-        const sourceRows = workspace.inventory || [];
-        const inventorySource = workspace.sourceFiles?.inventory || {};
-        const sourceMatrix = Array.isArray(inventorySource.matrix) ? inventorySource.matrix : [];
-        const warehouseColumns = (inventorySource.columns || [])
-          .filter((column) => column?.role === "warehouseQuantity" && Number.isInteger(column.sourceIndex));
-        const headers = ["상품코드", "상품", "규격", "단위", ...warehouseColumns.map((column) => column.header), "재고 합계"];
-        const totalIndex = headers.length - 1;
-        const preview = {
-          label: "창고재고 · 읽기용",
-          headers,
-          numeric: Array.from({ length: warehouseColumns.length + 1 }, (_, index) => index + 4),
-          inventory: [],
-          purchase: -1,
-          purchaseEditable: false,
-          status: -1,
-          sourceRows,
-          rows: sourceRows.map((row) => [
-            row.productCode || "",
-            row.productName || "",
-            row.specification || "",
-            row.unit || "",
-            ...warehouseColumns.map((column) => sourceMatrix[Number(row.sourceRowNumber) - 1]?.[column.sourceIndex] ?? ""),
-            typeof row.inventoryTotal === "number" ? row.inventoryTotal : row.sourceInventoryTotal ?? "",
-          ]),
-          sortByProductCode: true,
-          shortageCount: 0,
-        };
-        preview.columns = createPreviewColumns("inventory-source", preview.headers, preview.numeric);
-        [110, 200, 100, 80, ...warehouseColumns.map(() => 90), 100].forEach((width, index) => {
-          if (preview.columns[index]) preview.columns[index].defaultWidth = width;
-        });
-        preview.columns[0].role = "productCode";
-        preview.columns[1].role = "productName";
-        preview.columns[2].role = "specification";
-        preview.columns[3].role = "unit";
-        warehouseColumns.forEach((sourceColumn, index) => {
-          const column = preview.columns[index + 4];
-          column.key = sourceColumn.key;
-          column.role = "warehouseQuantity";
-          column.inventoryColumnKey = sourceColumn.key;
-        });
-        preview.columns[totalIndex].role = "stockQuantity";
         return preview;
       }
 
@@ -7388,7 +7347,7 @@
             shortageCount: shortageContext.purchaseActionCount || shortageContext.shortageCount || 0,
           };
         }
-        const inventory = beforeAnalysis && !totalOnlyComparison ? buildInventorySourcePreview(workspace) : buildInventoryPreview(workspace, shortageSets, inventoryByCode);
+        const inventory = buildInventoryPreview(workspace, shortageSets, inventoryByCode);
         if (inventory) {
           inventory.shortcut = "F7";
           inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
@@ -8413,7 +8372,7 @@
                       boxUnitContext ? "box-unit-cell" : "",
                       column.role === "orderInformation" ? "information-value" : "",
                       column.role === "systemMessages" ? "system-message-value" : "",
-                      previewId === "inventory" && column.role === "orderInformation" && !referenceRow ? "substitution-target-cell" : "",
+                      previewId === "inventory" && state.workspace?.inventoryApplicationMode !== "TOTAL_ONLY" && column.role === "orderInformation" && !referenceRow ? "substitution-target-cell" : "",
                       column.role === "manager" && managerColor ? "manager-value" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
@@ -8480,7 +8439,7 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    const substitutionTarget = previewId === "inventory" && column.role === "orderInformation" && !referenceRow
+                    const substitutionTarget = previewId === "inventory" && state.workspace?.inventoryApplicationMode !== "TOTAL_ONLY" && column.role === "orderInformation" && !referenceRow
                       ? `data-substitution-target-product="${escapeHtml(sourceRow?.productCode || "")}"`
                       : "";
                     return `<td class="${classes}" ${substitutionTarget}
@@ -10453,7 +10412,7 @@
       }
 
       function handleSubstitutionTableClick(event) {
-        if (!state.workspace || state.activePreview !== "inventory") return false;
+        if (!state.workspace || state.activePreview !== "inventory" || state.workspace.inventoryApplicationMode === "TOTAL_ONLY") return false;
         const targetCell = event.target.closest("[data-substitution-target-product]");
         const chip = event.target.closest("[data-substitute-order-row]");
         if (selectedSubstitutionOrder() && (event.ctrlKey || event.metaKey) && targetCell) {
