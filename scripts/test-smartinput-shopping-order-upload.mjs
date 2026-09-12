@@ -255,7 +255,8 @@ assert.doesNotMatch(smartInputSource, /shopping-order-(?:dedupe-core|import-repo
   'SmartInput UI must consume only its command-boundary integration module');
 assert.match(integrationSource, /from '\.\.\/orderq\/shopping-order-command-adapter\.js\?v=/);
 assert.doesNotMatch(integrationSource, /openOrderQDb|indexedDB|objectStore\s*\(|shopping-order-import-repository/);
-assert.match(smartInputSource, /if \(shoppingOrderImport\(\)\) return completeShoppingOrderImport\(\)/);
+assert.match(smartInputSource, /if \(shoppingOrderImport\(\)\) \{[\s\S]*?invalidateOptionalOperations\(\);[\s\S]*?return completeShoppingOrderImport\(\);[\s\S]*?\}/,
+  'shopping-order commit must invalidate older optional results before crossing the write boundary');
 assert.match(source('smartinput/index.html'), /id="shoppingOrderImport"/);
 
 console.log(JSON.stringify({

@@ -1,4 +1,4 @@
-import { loadWarehouseCatalog } from './legacy-integration-adapter.js?v=0.3.0';
+import { loadWarehouseCatalog } from './legacy-integration-adapter.js?v=0.3.2';
 import { loadFieldDefinitions, loadSettingValue } from './smartinput-data-store.js?v=0.6.1';
 import { ensureFieldCatalogSeed } from './field-registry.js?v=0.1.0';
 import { loadReferenceDomain } from './reference-data-controller.js?v=0.1.1';

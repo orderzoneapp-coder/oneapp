@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -171,25 +172,59 @@ const contract = manifest.sharedDataContracts.find(entry => entry.id === 'orderq
 assert.ok(orderops.consumedContracts.includes('orderq-unresolved-review-read-model'));
 assert.deepEqual(contract.consumers, ['orderops']);
 
+const normalizeSmartInputUiSource = source => source
+  .replace(/\r\n/g, '\n')
+  .replace(/nexus-ui-theme-init\.js\?v=[^"']+/g, 'nexus-ui-theme-init.js?v=1.1.0')
+  .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
+  .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
+  .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
+  .replace(/smartinput\.js\?v=[^"']+/g, 'smartinput.js?v=0.11.52')
+  .replace(/\nasync function waitForSmartInputIdle[\s\S]*?\n}\n\nfunction referencesReady\(\)/, '\nfunction referencesReady()')
+  .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
+  .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
+
 const smartInputProductUiHashes = new Map([
   ['../smartinput/index.html', '591d8989a754ef30ede03af8b8dd6f6ab3339342ce4a665609ddf583e591c407'],
-  ['../smartinput/smartinput.css', '4202651bd17f5063cb18a631a1ebfa73c32a09e0e1075e115d18825ee4dd009f'],
-  ['../smartinput/smartinput.js', '66afcbedb917dc2472319a35431eed597400e1afe6453f3340d5c1025169caba']
+  ['../smartinput/smartinput.css', '4202651bd17f5063cb18a631a1ebfa73c32a09e0e1075e115d18825ee4dd009f']
 ]);
 for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
-  const normalizedSource = readFileSync(new URL(relativePath, import.meta.url), 'utf8')
-    .replace(/\r\n/g, '\n')
-    .replace(/nexus-ui-theme-init\.js\?v=[^"']+/g, 'nexus-ui-theme-init.js?v=1.1.0')
-    .replace(/nexus-ui\.css\?v=[^"']+/g, 'nexus-ui.css?v=1.3.4')
-    .replace(/nexus-ui-app-themes\.css\?v=[^"']+/g, 'nexus-ui-app-themes.css?v=1.3.5')
-    .replace(/nexus-ui\.js\?v=[^"']+/g, 'nexus-ui.js?v=1.4.1')
-    .replace(/smartinput\.js\?v=[^"']+/g, 'smartinput.js?v=0.11.52')
-    .replace(/\nasync function waitForSmartInputIdle[\s\S]*?\n}\n\nfunction referencesReady\(\)/, '\nfunction referencesReady()')
-    .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
-    .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
+  const normalizedSource = normalizeSmartInputUiSource(readFileSync(new URL(relativePath, import.meta.url), 'utf8'));
   assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
     `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the isolated workspace lifecycle seam and shared common-UI cache tokens`);
 }
+
+const approvedSmartInputBase = 'a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c';
+const repositoryRoot = new URL('..', import.meta.url);
+const approvedBaseSource = execFileSync('git', ['show', `${approvedSmartInputBase}:smartinput/smartinput.js`], {
+  cwd: repositoryRoot,
+  encoding: 'utf8'
+});
+assert.equal(
+  createHash('sha256').update(normalizeSmartInputUiSource(approvedBaseSource)).digest('hex'),
+  '66afcbedb917dc2472319a35431eed597400e1afe6453f3340d5c1025169caba',
+  'the Phase 6B SmartInput JavaScript baseline must remain the approved a5eeb19 source'
+);
+const approvedOpt01Diff = execFileSync('git', [
+  'diff',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--full-index',
+  '--no-color',
+  '--no-renames',
+  '--diff-algorithm=myers',
+  '--no-indent-heuristic',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+  '--unified=3',
+  approvedSmartInputBase,
+  '--',
+  'smartinput/smartinput.js'
+], { cwd: repositoryRoot, encoding: 'utf8' }).replace(/\r\n/g, '\n');
+assert.equal(
+  createHash('sha256').update(approvedOpt01Diff).digest('hex'),
+  '8ea22e57c06c9f7d9fc9f91223018b3b8fd179b09402c1502a6495dfb12587e2',
+  'SmartInput JavaScript changes must exactly match the reviewed OPT-01 timeout, retry, and stale-result boundary'
+);
 assert.deepEqual(mutations, []);
 
 console.log(JSON.stringify({

@@ -3,7 +3,8 @@ import {
   commitSaleCommand,
   findSaleCommandContext,
   freezeSaleCommandIntent,
-  inspectOfficialStocktakeConflicts
+  inspectOfficialStocktakeConflicts,
+  loadSaleCommandAggregate
 } from '../orderq/official-command-adapter.js?v=0.6.0';
 import { canonicalSha256, unresolvedProductStableId } from '../orderq/official-voucher-core.js?v=0.24.0';
 import {
@@ -14,6 +15,10 @@ import {
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
 } from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
+import {
+  createWriteResultTracker,
+  OPTIONAL_OPERATION_TIMEOUT_MS
+} from './optional-operation-loader.js?v=0.1.0';
 
 export const SALE_STAGE4_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1', officialSaleStage4: 'V1', normalizedSaleOriginVersion: 'SALE_V2',
@@ -28,6 +33,8 @@ export const SALE_STAGE4_EXPECTED_DEPLOYMENT = Object.freeze({
   gitCommit: 'ae120131a3890438ef5fadfa14f3c3905f872e69'
 });
 export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
+
+const saleWriteResults = createWriteResultTracker();
 
 const text = value => String(value ?? '').trim();
 const copy = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -267,6 +274,29 @@ export async function inspectSaleGroupStocktake(group = {}, context = {}) {
   return inspectOfficialStocktakeConflicts({ kind: 'SALE', ...draft });
 }
 
+function saleCommandReceipt(aggregate, commandId) {
+  return (aggregate?.commands || []).find(receipt => text(receipt.commandId) === text(commandId)
+    && text(receipt.status).toUpperCase() === 'COMMITTED') || null;
+}
+
+async function lookupSaleCommandResult(salesDocumentId, commandId) {
+  let timer = null;
+  try {
+    const aggregate = await Promise.race([
+      loadSaleCommandAggregate(salesDocumentId),
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(() => reject(new Error('판매 저장 결과 조회 시간이 초과되었습니다.')), OPTIONAL_OPERATION_TIMEOUT_MS.capability);
+      })
+    ]);
+    const receipt = saleCommandReceipt(aggregate, commandId);
+    return receipt
+      ? { known: true, result: receipt.result }
+      : { known: false, safeToRetry: true };
+  } finally {
+    if (timer !== null) globalThis.clearTimeout(timer);
+  }
+}
+
 export async function postSaleGroup(group, context = {}) {
   if (context.masters) validateSaleGroup(group, context.masters);
   const identity = deriveSaleDraftIdentity(group, context);
@@ -283,7 +313,20 @@ export async function postSaleGroup(group, context = {}) {
   if (aggregate && storedEnvelope && text(aggregate.document.draftIntentDigest) !== text(draft.draftIntentDigest)) throw new Error('ORDERQ_SALE_DRAFT_IDENTITY_CONFLICT');
   if (!aggregate) aggregate = await beginSaleCommand(draft, context.actor || SMARTINPUT_SALE_ACTOR_ID);
   const envelope = aggregate.document?.commandEnvelope || draft.commandEnvelope;
-  const result = await commitSaleCommand({ ...envelope, intent: envelope, actor: envelope.actorId,
-    salesDocumentId: draft.salesDocumentId, document: envelope.document, lines: envelope.lines, commandContract: 'VOUCHER_CORE_V1' });
+  const command = { ...envelope, intent: envelope, actor: envelope.actorId,
+    salesDocumentId: draft.salesDocumentId, document: envelope.document, lines: envelope.lines, commandContract: 'VOUCHER_CORE_V1' };
+  const resolved = await saleWriteResults.resolveUnknown({
+    feature: 'sale-official-command',
+    commandId: envelope.commandId,
+    lookup: () => lookupSaleCommandResult(draft.salesDocumentId, envelope.commandId)
+  });
+  const result = resolved === undefined
+    ? await saleWriteResults.submit({
+      feature: 'sale-official-command',
+      commandId: envelope.commandId,
+      timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.capability,
+      execute: () => commitSaleCommand(command)
+    })
+    : resolved;
   return { ...result, salesDocumentId: draft.salesDocumentId, commandId: envelope.commandId };
 }

@@ -15,6 +15,10 @@ import {
   preflightOfficialVoucherV2,
   withOfficialCommandIdentityV2
 } from '../orderq/official-voucher-v2-contract.js?v=0.5.0';
+import {
+  createWriteResultTracker,
+  OPTIONAL_OPERATION_TIMEOUT_MS
+} from './optional-operation-loader.js?v=0.1.0';
 
 export const PURCHASE_STAGE3_CAPABILITY = Object.freeze({
   officialPurchaseStage3: 'V1',
@@ -36,6 +40,8 @@ export const PURCHASE_STAGE3_EXPECTED_DEPLOYMENT = Object.freeze({
 // SmartInput currently has no authenticated actor/session provider. Keep the
 // established application actor explicit until that shared provider exists.
 export const SMARTINPUT_PURCHASE_ACTOR_ID = 'SMART_INPUT_ADMIN';
+
+const purchaseWriteResults = createWriteResultTracker();
 
 function text(value) { return String(value ?? '').trim(); }
 function copy(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
@@ -298,6 +304,29 @@ export async function inspectPurchaseGroupStocktake(group = {}, context = {}) {
   return inspectOfficialStocktakeConflicts({ kind: 'PURCHASE', ...draft });
 }
 
+function purchaseCommandReceipt(aggregate, commandId) {
+  return (aggregate?.commands || []).find(receipt => text(receipt.commandId) === text(commandId)
+    && text(receipt.status).toUpperCase() === 'COMMITTED') || null;
+}
+
+async function lookupPurchaseCommandResult(purchaseDocumentId, commandId) {
+  let timer = null;
+  try {
+    const aggregate = await Promise.race([
+      loadPurchaseCommandAggregate(purchaseDocumentId),
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(() => reject(new Error('구매 저장 결과 조회 시간이 초과되었습니다.')), OPTIONAL_OPERATION_TIMEOUT_MS.capability);
+      })
+    ]);
+    const receipt = purchaseCommandReceipt(aggregate, commandId);
+    return receipt
+      ? { known: true, result: receipt.result }
+      : { known: false, safeToRetry: true };
+  } finally {
+    if (timer !== null) globalThis.clearTimeout(timer);
+  }
+}
+
 export async function postPurchaseGroup(group, context = {}) {
   const source = derivePurchaseDraftIdentity(group, context);
   const identity = {
@@ -324,7 +353,7 @@ export async function postPurchaseGroup(group, context = {}) {
   // Retrying a lost response must resend the byte-identical persisted command;
   // wall-clock time and current UI state can never replace this envelope.
   const envelope = aggregate.document?.commandEnvelope || retry.envelope;
-  const result = await commitPurchaseCommand({
+  const command = {
     ...envelope,
     intent: envelope,
     actor: envelope.actorId,
@@ -333,6 +362,19 @@ export async function postPurchaseGroup(group, context = {}) {
     lines: envelope.lines,
     sourceType: envelope.sourceType,
     commandContract: 'VOUCHER_CORE_V1'
+  };
+  const resolved = await purchaseWriteResults.resolveUnknown({
+    feature: 'purchase-official-command',
+    commandId: envelope.commandId,
+    lookup: () => lookupPurchaseCommandResult(draft.purchaseDocumentId, envelope.commandId)
   });
+  const result = resolved === undefined
+    ? await purchaseWriteResults.submit({
+      feature: 'purchase-official-command',
+      commandId: envelope.commandId,
+      timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.capability,
+      execute: () => commitPurchaseCommand(command)
+    })
+    : resolved;
   return { ...result, purchaseDocumentId: draft.purchaseDocumentId, commandId: envelope.commandId };
 }

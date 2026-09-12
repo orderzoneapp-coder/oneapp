@@ -10,6 +10,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const html = read('smartinput/index.html');
 const appSource = read('smartinput/smartinput.js');
 const adapterSource = read('smartinput/legacy-integration-adapter.js');
+const optionalLoaderSource = read('smartinput/optional-operation-loader.js');
 const extractorSource = read('orderq/smartparser/order-text-extractor.js');
 const storeSource = read('smartinput/smartinput-data-store.js');
 const linkedSourceEditSource = read('smartinput/linked-estimate-source-edit.js');
@@ -22,7 +23,7 @@ assert.match(html, /nexus-ui\.css\?v=1\.4\.0/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
 assert.match(html, /smartinput\.css\?v=0\.9\.20/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.11\.56/);
+assert.match(html, /smartinput\.js\?v=0\.11\.57/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.7\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -107,6 +108,45 @@ assert.match(voucherActivitySource, /dateField: 'orderDate'[\s\S]*dateField: 'pu
   'date-scoped activity must use each official voucher date field');
 assert.match(voucherQueryHtml, /data-nexus-app-id="orderq-vnext"/);
 assert.match(adapterSource, /import\(path\)/, 'external app modules must stay behind a dynamic boundary');
+assert.match(appSource, /optional-operation-loader\.js\?v=0\.1\.0/, 'optional browser assets must use the retryable loader boundary');
+assert.match(adapterSource, /optional-operation-loader\.js\?v=0\.1\.0/, 'optional local modules must use the same loader contract');
+assert.match(optionalLoaderSource, /clearOwnFailedAttempt[\s\S]*assetCache\.get\(key\) === entry/, 'only the failed attempt may clear its loader cache entry');
+assert.match(optionalLoaderSource, /RESULT_UNKNOWN[\s\S]*같은 명령 ID의 결과를 먼저 조회/, 'unknown writes must keep the original command identity and require result lookup');
+assert.match(appSource, /async function reloadInputTemplates[\s\S]*withTimeout\([\s\S]*loadInputTemplates\(companyId, modeId\)[\s\S]*OPTIONAL_OPERATION_TIMEOUT_MS\.localModule/, 'manual template reload must leave LOADING through a bounded failure path');
+assert.match(appSource, /smartDataToken\.inputGeneration === state\.optionalInputGeneration[\s\S]*loadedSourceImageRecords\.forEach[\s\S]*!state\.sourceImageRecords\.has\(documentId\)/, 'late boot hydration must merge without replacing a newer source image');
+const changedGenerationSourceImageBranch = appSource.match(
+  /if \(smartDataToken\.inputGeneration === state\.optionalInputGeneration\) \{[\s\S]*?\} else \{([\s\S]*?)\n    \}\n    if \(optionalOperationIsLatest\(referenceToken\)\)/
+)?.[1] || '';
+assert.match(changedGenerationSourceImageBranch, /loadedSourceImageRecords\.forEach/, 'late boot hydration must retain persisted image records for later mode restoration');
+assert.match(changedGenerationSourceImageBranch, /clearedSourceImageDocumentIds\.has\(documentId\)[\s\S]*restoreSourceImageForMode/, 'late boot hydration must distinguish ordinary edits from an explicitly cleared source image');
+assert.match(appSource, /function clearParserWorkspace[\s\S]*clearedSourceImageDocumentIds\.add\(clearedSourceImageDocumentId\)[\s\S]*setPendingSourceImageDelete\(clearedSourceImageDocumentId, true\)[\s\S]*queueSourceImageDelete\(clearedSourceImageDocumentId\)/, 'parser clear must durably tombstone and remove the persisted source image');
+assert.match(appSource, /async function flushSmartInputBeforeWorkspaceLeave[\s\S]*state\.sourceImageWriteQueues\.size[\s\S]*Promise\.all\(pendingImages\)/, 'workspace leave must wait for pending source-image deletes and saves');
+assert.match(appSource, /function resumePendingSourceImageDeletes[\s\S]*queueSourceImageDelete\(documentId\)/, 'a reload must resume an unfinished source-image deletion');
+assert.match(appSource, /mergeHydratedSnapshotPreservingLiveChanges[\s\S]*state\.settings = contract\.normalizeSettings\(mergeHydratedSnapshotPreservingLiveChanges\(/, 'late boot settings must merge without replacing live column and preference edits');
+assert.match(appSource, /createHydrationWriteGate[\s\S]*persistCurrentSettingsAfterHydration[\s\S]*settingsWriteGate\.persist/, 'full settings writes must wait for the initial persisted snapshot');
+assert.match(appSource, /async function retrySmartAuxiliaryData[\s\S]*settingsWriteGate\.beginRetry\(\)[\s\S]*loadSmartInputData\(\{ includeEstimates: false \}\)[\s\S]*settingsWriteGate\.settleReady\(\)/, 'a failed auxiliary-data hydration must be retryable in the same screen');
+assert.doesNotMatch(appSource, /await saveSettings\(|\.then\(\(\) => saveSettings\(/, 'SmartInput must not write a full settings snapshot outside the hydration write gate');
+assert.match(appSource, /async function rematchRowsForCustomer[\s\S]*rowsAtStart = JSON\.stringify\(current\.rows\)[\s\S]*JSON\.stringify\(current\.rows\) !== rowsAtStart[\s\S]*current\.rows = matched/, 'late customer rematch results must be rejected before replacing edited rows');
+assert.match(appSource, /activeCustomerRematchAttemptId[\s\S]*completeButton[^\n]*disabled[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeCustomerRematchAttemptId/, 'official save must remain blocked until customer rematching settles');
+assert.match(appSource, /function scheduleMappingProjection[\s\S]*invalidateOptionalOperations\(\);[\s\S]*scheduleSave\(\{ invalidateOperations: false \}\)/, 'mapping edits must invalidate older operations at edit time rather than after the debounce');
+assert.match(appSource, /function invalidateEstimateLibraryRead[\s\S]*ESTIMATE_LIBRARY_READ[\s\S]*await commitEstimateBundle[\s\S]*invalidateEstimateLibraryRead\(\);[\s\S]*state\.estimates =/, 'a late estimate-library read must not replace a successfully committed in-memory library');
+assert.match(appSource, /async function recoverEstimateF8Integrity[\s\S]*withTimeout\([\s\S]*loadEstimateLibrary\(\)[\s\S]*F8 저장 결과 목록 로딩 시간 초과/, 'F8 pre-commit and post-commit estimate reads must leave a bounded failure path');
+assert.match(appSource, /activeFileInputAttemptId[\s\S]*async function handleFile[\s\S]*state\.activeFileInputAttemptId = operationToken\.attemptId[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeFileInputAttemptId/, 'save must not overlap a pending file read even when another activity changes the visible activity label');
+assert.match(appSource, /function openEstimateSaveDialog[\s\S]*state\.activeFileInputAttemptId/, 'Save As must not bypass the pending-file write boundary');
+assert.match(appSource, /async function waitForSmartInputIdle[\s\S]*state\.activeFileInputAttemptId/, 'workspace leave must wait for a pending file read');
+assert.match(appSource, /async function refreshAllReferencesFromToolbar[\s\S]*withTimeout\([\s\S]*refreshAllReferenceData[\s\S]*withTimeout\([\s\S]*loadVoucherFieldRegistry/, 'manual full reference refresh must have bounded reference and registry waits');
+assert.match(appSource, /async function rematchRowsForCustomer[\s\S]*withTimeout\([\s\S]*rematchExtractedLinesForCustomer/, 'customer rematching must leave its save block through a bounded failure path');
+assert.match(appSource, /async function ensureOfficialCapability[\s\S]*loadPurchaseStage3Capability[\s\S]*loadSaleStage4Capability[\s\S]*async function completeSaleOfficial[\s\S]*ensureOfficialCapability\('sale'\)[\s\S]*async function completePurchaseOfficial[\s\S]*ensureOfficialCapability\('purchase'\)/, 'official save must retry a transient capability failure in the same screen');
+assert.match(appSource, /function discardStaleResult|const discardStaleResult[\s\S]*scheduleShoppingOrderInspection\(0\)/, 'a stale shopping inspection must schedule a current replacement instead of staying ANALYZING');
+for (const mutationContract of [
+  /function applyMappingGridPaste[\s\S]*invalidateOptionalOperations\(\);[\s\S]*captureGridPasteUndo\(\)/,
+  /function activatePendingReferences[\s\S]*window\.confirm[\s\S]*invalidateOptionalOperations\(\);[\s\S]*domains\.forEach/,
+  /const finish = product => \{[\s\S]*if \(product\) \{\s*invalidateOptionalOperations\(\);/
+]) {
+  assert.match(appSource, mutationContract, 'user row mutations must invalidate an older customer rematch before it can replace current rows');
+}
+assert.match(appSource, /try \{\s*if \(!acceptsResult\(\)\) return staleResult\(\);\s*await commitEstimateLinkBundle/, 'F8 recovery must reject stale input immediately before its transactional write');
+assert.match(appSource, /function applyEstimateF8RecoveredPostimages[\s\S]*rememberActiveEstimateWork\(\)[\s\S]*estimateF8WorkingRebase[\s\S]*replacementById[\s\S]*loadCatalogRecord/, 'F8 recovery must rebase post-commit edits and update only the affected estimate targets');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
   'the adapter must use the exact 0a order text extractor');
 assert.doesNotMatch(adapterSource, /function splitSourceMessages|function parseOrderLine|function looksLikeOrder/,

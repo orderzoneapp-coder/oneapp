@@ -128,20 +128,21 @@ try {
     const partialFail=structuredClone(partial);partialFail.estimateId='LINKED-FAIL';partialFail.catalogName='저장 실패 연동';partialFail.sortOrder=3;partialFail.draft.catalogRecordId='LINKED-FAIL';
     const partialSame=structuredClone(partial);partialSame.estimateId='LINKED-SAME';partialSame.catalogName='동일 영향 재시도 연동';partialSame.sortOrder=4;partialSame.draft.catalogRecordId='LINKED-SAME';
     const partialChange=structuredClone(partial);partialChange.estimateId='LINKED-CHANGE';partialChange.catalogName='영향 변경 재확인 연동';partialChange.sortOrder=5;partialChange.draft.catalogRecordId='LINKED-CHANGE';
+    const partialStale=structuredClone(partial);partialStale.estimateId='LINKED-STALE';partialStale.catalogName='복구 중 편집 연동';partialStale.sortOrder=6;partialStale.draft.catalogRecordId='LINKED-STALE';
     const allSources=[{estimateId:'GONE-A',catalogName:'삭제 A'},{estimateId:'GONE-B',catalogName:'삭제 B'}];
     const allRows=[row('LINKED:GONE-A:ROW-1','SNAP-A','Snapshot 품목 A','GONE-A'),row('LINKED:GONE-B:ROW-1','SNAP-B','Snapshot 품목 B','GONE-B')];
-    const allMissing={estimateId:'LINKED-ALL',catalogName:'전체 누락 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,rowCount:2,amount:2000,sortOrder:6,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-ALL',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,header:{},rows:allRows,updatedAt:timestamp}};
+    const allMissing={estimateId:'LINKED-ALL',catalogName:'전체 누락 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,rowCount:2,amount:2000,sortOrder:7,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-ALL',estimateKind:'LINKED_GROUP',linkedEstimateSources:allSources,header:{},rows:allRows,updatedAt:timestamp}};
     const retrySources=[{estimateId:'GONE-C',catalogName:'삭제 C'},{estimateId:'GONE-D',catalogName:'삭제 D'}];
     const retryRows=[row('LINKED:GONE-C:ROW-1','SNAP-C','Snapshot 품목 C','GONE-C'),row('LINKED:GONE-D:ROW-1','SNAP-D','Snapshot 품목 D','GONE-D')];
-    const outputRetry={estimateId:'LINKED-OUTPUT-RETRY',catalogName:'출력 재시도 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,rowCount:2,amount:2000,sortOrder:7,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-OUTPUT-RETRY',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,header:{},rows:retryRows,updatedAt:timestamp}};
-    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');const store=tx.objectStore('estimates');store.clear();[source,partial,partialFail,partialSame,partialChange,allMissing,outputRetry].forEach(record=>store.put(record));tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve();};};});
+    const outputRetry={estimateId:'LINKED-OUTPUT-RETRY',catalogName:'출력 재시도 연동',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,rowCount:2,amount:2000,sortOrder:8,createdAt:timestamp,updatedAt:timestamp,draft:{catalogRecordId:'LINKED-OUTPUT-RETRY',estimateKind:'LINKED_GROUP',linkedEstimateSources:retrySources,header:{},rows:retryRows,updatedAt:timestamp}};
+    await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readwrite');const store=tx.objectStore('estimates');store.clear();[source,partial,partialFail,partialSame,partialChange,partialStale,allMissing,outputRetry].forEach(record=>store.put(record));tx.onerror=()=>reject(tx.error);tx.oncomplete=()=>{db.close();resolve();};};});
     return true;
   })()`);
   let reload = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await reload;
   await click(client, '[data-mode="estimate"]');
-  await expr(client, `document.querySelectorAll('.linked-estimate-integrity-badge').length===6`, 'missing-source badges');
+  await expr(client, `document.querySelectorAll('.linked-estimate-integrity-badge').length===7`, 'missing-source badges');
   assert.equal(await evaluate(client, `document.querySelector('[data-estimate-id="LINKED-PARTIAL"]')?.dataset.integrityStatus`), 'PARTIAL_MISSING');
   assert.equal(await evaluate(client, `document.querySelector('[data-estimate-id="LINKED-ALL"]')?.dataset.integrityStatus`), 'ALL_MISSING');
 
@@ -182,6 +183,21 @@ try {
   assert.deepEqual(partial.linkedEstimateSources.map(source => source.estimateId), ['SOURCE-A']);
   assert.equal(partial.draft.rows.some(row => row.itemCode === 'MANUAL-1'), true, 'manual linked row must survive cleanup');
   assert.equal(partial.estimateAutomationHistory.at(-1).action, 'REMOVE_MISSING_LINKS_AND_REBUILD');
+
+  await click(client, '[data-estimate-id="LINKED-STALE"] [data-select-estimate-card]');
+  const sourceBeforeConcurrentRecovery = (await readEstimates(client)).find(record => record.estimateId === 'SOURCE-A');
+  await evaluate(client, `window.__f8Writes=0;true`);
+  await click(client, '#estimateExcelButton');
+  await expr(client, `Boolean(document.querySelector('.estimate-f8-recovery-dialog[open]'))`, 'concurrent-edit recovery dialog');
+  await evaluate(client, `(()=>{window.__f8TransactionOriginal=IDBDatabase.prototype.transaction;window.__f8ConcurrentEditInjected=false;IDBDatabase.prototype.transaction=function(storeNames,mode,...rest){const transaction=window.__f8TransactionOriginal.call(this,storeNames,mode,...rest);const names=Array.isArray(storeNames)?storeNames:[storeNames];if(!window.__f8ConcurrentEditInjected&&mode==='readwrite'&&names.includes('estimates')){window.__f8ConcurrentEditInjected=true;queueMicrotask(()=>{const input=document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]');input.value='7';input.dispatchEvent(new Event('input',{bubbles:true}));});}return transaction;};document.querySelector('.estimate-f8-recovery-dialog [data-recovery-confirm]').click();return true;})()`);
+  await expr(client, `document.querySelector('#appStatus')?.textContent.includes('F8 연결 복구 저장 완료')`, 'recovery completion with concurrent edit');
+  await evaluate(client, `IDBDatabase.prototype.transaction=window.__f8TransactionOriginal;delete window.__f8TransactionOriginal;true`);
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')?.value`), '7', 'an edit made while F8 commits must remain in the active worktable');
+  assert.equal(await evaluate(client, `window.__f8Writes`), 0, 'a stale F8 continuation must not create Excel');
+  const afterConcurrentRecovery = await readEstimates(client);
+  const concurrentRecovered = afterConcurrentRecovery.find(record => record.estimateId === 'LINKED-STALE');
+  assert.deepEqual(concurrentRecovered.linkedEstimateSources.map(source => source.estimateId), ['SOURCE-A']);
+  assert.deepEqual(afterConcurrentRecovery.find(record => record.estimateId === 'SOURCE-A'), sourceBeforeConcurrentRecovery, 'F8 recovery must not rewrite an unselected estimate');
 
   await click(client, '[data-estimate-id="LINKED-ALL"] [data-select-estimate-card]');
   await evaluate(client, `window.__f8Writes=0;true`);
