@@ -19,6 +19,33 @@ const SESSION_STATUS = Object.freeze({
 
 const cellText = value => String(value ?? '');
 
+const workingRowIndexes = new WeakMap();
+const optimizationMetrics = {
+  fullWorkingRowBuilds: 0,
+  incrementalWorkingRowUpdates: 0,
+  fullMappedRowProjections: 0,
+  incrementalMappedRowProjections: 0
+};
+
+function rememberWorkingRowIndex(session, workingRows = session?.workingRows || []) {
+  const index = new Map();
+  workingRows.forEach((row, rowIndex) => index.set(row.rowId, rowIndex));
+  workingRowIndexes.set(session, index);
+  return index;
+}
+
+function workingRowIndex(session) {
+  return workingRowIndexes.get(session) || rememberWorkingRowIndex(session);
+}
+
+export function resetInputMappingOptimizationMetrics() {
+  Object.keys(optimizationMetrics).forEach(key => { optimizationMetrics[key] = 0; });
+}
+
+export function inputMappingOptimizationMetrics() {
+  return { ...optimizationMetrics };
+}
+
 function cloneMatrix(matrix = []) {
   return (Array.isArray(matrix) ? matrix : []).map(row => (
     Array.isArray(row) ? row.map(cellText) : [cellText(row)]
@@ -208,6 +235,7 @@ function resolveTemplate(companyId, voucherMode, headers, templates = [], target
 }
 
 function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
+  optimizationMetrics.fullWorkingRowBuilds += 1;
   const width = headers.length;
   const sourceRows = sourceMatrix.slice(headerRowIndex + 1).map((sourceRow, offset) => {
     const sourceRowIndex = headerRowIndex + 1 + offset;
@@ -272,7 +300,7 @@ export function createMappingSession({
     : 0;
   const headers = headersAt(sourceMatrix, safeIndex);
   const resolved = resolveTemplate(companyId, voucherMode, headers, templates, targetDefinitions);
-  return {
+  const session = {
     schemaVersion: 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2',
     sessionId: `SIMAP-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
     companyId: cellText(companyId),
@@ -298,6 +326,8 @@ export function createMappingSession({
     workingRows: workingRows(sourceMatrix, cellMatrix, safeIndex, headers, editJournal, manualRows),
     updatedAt: new Date().toISOString()
   };
+  rememberWorkingRowIndex(session);
+  return session;
 }
 
 export function reassignHeaderRow(session, headerRowIndex, templates = [], targetDefinitions = []) {
@@ -347,28 +377,90 @@ export function setColumnDecision(session, columnIndex, decision, targetFieldId 
   return { ...session, mappings, issues: [], updatedAt: new Date().toISOString() };
 }
 
-export function updateWorkingCell(session, rowId, columnIndex, value) {
-  if (!session || !Array.isArray(session.workingRows)) throw new Error('MAPPING_SESSION_REQUIRED');
-  const row = session.workingRows.find(item => item.rowId === rowId);
-  if (!row || !Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= session.headers.length) {
-    throw new Error('MAPPING_CELL_INVALID');
-  }
-  const editJournal = { ...(session.editJournal || {}) };
-  const manualRows = (session.manualRows || []).map(item => ({ ...item, cells: [...(item.cells || [])] }));
-  if (row.manual) {
-    const target = manualRows.find(item => item.rowId === rowId);
-    if (!target) throw new Error('MAPPING_MANUAL_ROW_MISSING');
-    target.cells[columnIndex] = cellText(value);
-  } else {
-    editJournal[`${row.sourceRowIndex}:${columnIndex}`] = cellText(value);
-  }
+function sourceWorkingRow(session, sourceRowIndex, editJournal) {
+  const cells = Array.from({ length: session.headers.length }, (_, columnIndex) => {
+    const key = `${sourceRowIndex}:${columnIndex}`;
+    return Object.prototype.hasOwnProperty.call(editJournal, key)
+      ? cellText(editJournal[key])
+      : cellText(session.sourceMatrix?.[sourceRowIndex]?.[columnIndex]);
+  });
   return {
+    rowId: `source-${sourceRowIndex}`,
+    sourceRowIndex,
+    cells,
+    sourceCells: Array.from({ length: session.headers.length }, (_, columnIndex) => ({
+      ...(session.sourceCellMatrix?.[sourceRowIndex]?.[columnIndex] || {}),
+      displayValue: cellText(session.sourceMatrix?.[sourceRowIndex]?.[columnIndex])
+    })),
+    manual: false
+  };
+}
+
+function manualWorkingRow(session, stored, fallbackIndex = 0) {
+  return {
+    rowId: cellText(stored?.rowId) || `manual-${fallbackIndex + 1}`,
+    sourceRowIndex: null,
+    cells: Array.from({ length: session.headers.length }, (_, columnIndex) => cellText(stored?.cells?.[columnIndex])),
+    sourceCells: [],
+    manual: true
+  };
+}
+
+function insertWorkingRowInStableOrder(rows, row) {
+  if (row.manual) return [...rows, row];
+  const insertAt = rows.findIndex(candidate => candidate.manual
+    || Number(candidate.sourceRowIndex) > Number(row.sourceRowIndex));
+  if (insertAt < 0) return [...rows, row];
+  return [...rows.slice(0, insertAt), row, ...rows.slice(insertAt)];
+}
+
+export function updateWorkingCells(session, rowId, changes = []) {
+  if (!session || !Array.isArray(session.workingRows)) throw new Error('MAPPING_SESSION_REQUIRED');
+  const stableRowId = cellText(rowId);
+  const index = workingRowIndex(session);
+  const rowIndex = index.get(stableRowId);
+  const row = Number.isInteger(rowIndex) ? session.workingRows[rowIndex] : null;
+  if (!row) throw new Error('MAPPING_CELL_INVALID');
+  const byColumn = new Map();
+  changes.forEach(change => {
+    const columnIndex = Number(change?.columnIndex);
+    if (!Number.isInteger(columnIndex) || columnIndex < 0 || columnIndex >= session.headers.length) {
+      throw new Error('MAPPING_CELL_INVALID');
+    }
+    byColumn.set(columnIndex, cellText(change?.value ?? change?.displayValue));
+  });
+  if (!byColumn.size || [...byColumn].every(([columnIndex, value]) => cellText(row.cells?.[columnIndex]) === value)) return session;
+  const editJournal = { ...(session.editJournal || {}) };
+  const manualRows = row.manual ? [...(session.manualRows || [])] : (session.manualRows || []);
+  if (row.manual) {
+    const manualIndex = manualRows.findIndex(item => item.rowId === stableRowId);
+    if (manualIndex < 0) throw new Error('MAPPING_MANUAL_ROW_MISSING');
+    const target = { ...manualRows[manualIndex], cells: [...(manualRows[manualIndex].cells || [])] };
+    byColumn.forEach((value, columnIndex) => { target.cells[columnIndex] = value; });
+    manualRows[manualIndex] = target;
+  } else {
+    byColumn.forEach((value, columnIndex) => { editJournal[`${row.sourceRowIndex}:${columnIndex}`] = value; });
+  }
+  const nextRow = row.manual
+    ? manualWorkingRow(session, manualRows.find(item => item.rowId === stableRowId), rowIndex)
+    : sourceWorkingRow(session, row.sourceRowIndex, editJournal);
+  const nextWorkingRows = [...session.workingRows];
+  if (nextRow.cells.some(hasMeaningfulSourceValue)) nextWorkingRows[rowIndex] = nextRow;
+  else nextWorkingRows.splice(rowIndex, 1);
+  const next = {
     ...session,
     editJournal,
     manualRows,
-    workingRows: activeWorkingRows(session, editJournal, manualRows),
+    workingRows: nextWorkingRows,
     updatedAt: new Date().toISOString()
   };
+  optimizationMetrics.incrementalWorkingRowUpdates += 1;
+  rememberWorkingRowIndex(next);
+  return next;
+}
+
+export function updateWorkingCell(session, rowId, columnIndex, value) {
+  return updateWorkingCells(session, rowId, [{ columnIndex, value }]);
 }
 
 export function synchronizeWorkingRow(session, rowId, updates = []) {
@@ -385,14 +477,10 @@ export function synchronizeWorkingRow(session, rowId, updates = []) {
   });
   if (!byColumn.size) return session;
 
-  const existing = session.workingRows.find(row => row.rowId === stableRowId);
+  const existingIndex = workingRowIndex(session).get(stableRowId);
+  const existing = Number.isInteger(existingIndex) ? session.workingRows[existingIndex] : null;
   if (existing) {
-    let next = session;
-    byColumn.forEach((value, columnIndex) => {
-      const live = next.workingRows.find(row => row.rowId === stableRowId);
-      if (cellText(live?.cells?.[columnIndex]) !== value) next = updateWorkingCell(next, stableRowId, columnIndex, value);
-    });
-    return next;
+    return updateWorkingCells(session, stableRowId, [...byColumn].map(([columnIndex, value]) => ({ columnIndex, value })));
   }
 
   const sourceRowIndex = /^source-(\d+)$/.exec(stableRowId)?.[1];
@@ -402,12 +490,17 @@ export function synchronizeWorkingRow(session, rowId, updates = []) {
     && !(session.deletedSourceRows || []).includes(Number(sourceRowIndex))) {
     const editJournal = { ...(session.editJournal || {}) };
     byColumn.forEach((value, columnIndex) => { editJournal[`${sourceRowIndex}:${columnIndex}`] = value; });
-    return {
+    const row = sourceWorkingRow(session, Number(sourceRowIndex), editJournal);
+    if (!row.cells.some(hasMeaningfulSourceValue)) return { ...session, editJournal, updatedAt: new Date().toISOString() };
+    const next = {
       ...session,
       editJournal,
-      workingRows: activeWorkingRows(session, editJournal, session.manualRows),
+      workingRows: insertWorkingRowInStableOrder(session.workingRows, row),
       updatedAt: new Date().toISOString()
     };
+    optimizationMetrics.incrementalWorkingRowUpdates += 1;
+    rememberWorkingRowIndex(next);
+    return next;
   }
 
   const values = Array(session.headers.length).fill('');
@@ -417,12 +510,16 @@ export function synchronizeWorkingRow(session, rowId, updates = []) {
   const stored = manualRows.find(row => row.rowId === stableRowId);
   if (stored) {
     byColumn.forEach((value, columnIndex) => { stored.cells[columnIndex] = value; });
-    return {
+    const row = manualWorkingRow(session, stored, manualRows.indexOf(stored));
+    const next = {
       ...session,
       manualRows,
-      workingRows: activeWorkingRows(session, session.editJournal, manualRows),
+      workingRows: insertWorkingRowInStableOrder(session.workingRows, row),
       updatedAt: new Date().toISOString()
     };
+    optimizationMetrics.incrementalWorkingRowUpdates += 1;
+    rememberWorkingRowIndex(next);
+    return next;
   }
   return addManualRow(session, values, stableRowId);
 }
@@ -510,17 +607,25 @@ function targetValue(target, value) {
   return Number.isFinite(number) ? number : null;
 }
 
-export function projectMappedRows(session, targetDefinitions = []) {
+export function projectMappedRows(session, targetDefinitions = [], { rowIds = null } = {}) {
   if (!session || [SESSION_STATUS.INVALID_TEMPLATE, SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status)) return [];
+  const selected = rowIds ? new Set(rowIds) : null;
+  if (selected) optimizationMetrics.incrementalMappedRowProjections += 1;
+  else optimizationMetrics.fullMappedRowProjections += 1;
   const targets = targetIndex(targetDefinitions);
   const mappings = (session.mappings || []).filter(mapping => [DECISION.MAPPED, DECISION.RECOMMENDED].includes(mapping.state));
-  return (session.workingRows || [])
+  const rowIndex = workingRowIndex(session);
+  const candidates = selected
+    ? [...selected].map(rowId => session.workingRows?.[rowIndex.get(rowId)]).filter(Boolean)
+    : (session.workingRows || []);
+  return candidates
     .filter(row => (row.cells || []).some(hasMeaningfulSourceValue))
-    .map((row, rowIndex) => {
+    .map(row => {
+      const rowOrdinal = rowIndex.get(row.rowId) || 0;
       const projected = {
         rowId: row.rowId,
-        sourceLineNo: row.sourceRowIndex === null ? rowIndex + 1 : row.sourceRowIndex + 1,
-        sourceRowNo: row.sourceRowIndex === null ? rowIndex + 1 : row.sourceRowIndex + 1,
+        sourceLineNo: row.sourceRowIndex === null ? rowOrdinal + 1 : row.sourceRowIndex + 1,
+        sourceRowNo: row.sourceRowIndex === null ? rowOrdinal + 1 : row.sourceRowIndex + 1,
         rawText: (row.cells || []).join('\t'),
         inputOwnership: row.manual ? 'USER' : 'SOURCE',
         customValues: {},

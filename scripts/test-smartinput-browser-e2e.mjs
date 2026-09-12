@@ -440,11 +440,13 @@ try {
   assert.ok(handleWidthAfter > handleWidthBefore);
 
   await expr(client, `!document.querySelector('#restoreAutosaveButton').disabled`, 'latest autosave ready');
-  const autosave = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.map(record=>({key:record.key,schemaVersion:record.schemaVersion,sourceText:record.draft?.modes?.order?.sourceText})));db.close();};};})`);
-  assert.equal(autosave.length, 1, 'autosave DB must overwrite one current record instead of building a list');
-  assert.equal(autosave[0].key, 'current');
-  assert.equal(autosave[0].schemaVersion, 'ONEAPP_SMART_INPUT_AUTOSAVE_V1');
-  assert.match(autosave[0].sourceText, /사과 2박스/);
+  const autosave = await evaluate(client, `(async()=>{const records=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};});const journal=await import('/smartinput/draft-save-coordinator.js');const recovered=journal.recoverAutosaveDocuments(records);const workspace=records.filter(record=>record.recordType==='workspace').sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0];return {current:records.filter(record=>record.key==='current').map(record=>({schemaVersion:record.schemaVersion,sourceText:record.draft?.modes?.order?.sourceText})),heads:records.filter(record=>record.recordType==='head').map(record=>({docKey:record.docKey,durableVersion:record.durableVersion})),orderSourceText:recovered.get(workspace.docKeys.order)?.snapshot?.sourceText,complete:workspace&&Object.values(workspace.docKeys).every(docKey=>recovered.has(docKey))};})()`);
+  assert.equal(autosave.current.length, 1, 'the V1 compatibility checkpoint must continue to overwrite the single current record');
+  assert.equal(autosave.current[0].schemaVersion, 'ONEAPP_SMART_INPUT_AUTOSAVE_V1');
+  assert.equal(autosave.heads.length, 4, 'each voucher document must have one durable journal head');
+  assert.equal(new Set(autosave.heads.map(head => head.docKey)).size, 4, 'journal heads must remain isolated by document key');
+  assert.equal(autosave.complete, true, 'every workspace document key must resolve through a complete base/patch chain');
+  assert.match(autosave.orderSourceText, /사과 2박스/);
   const autosaveStartedAt = performance.now();
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개\n자동저장 성능 기준선');
   await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').get('current');get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.draft?.modes?.order?.sourceText?.includes('자동저장 성능 기준선'));db.close();};};})`, 'autosave response baseline');

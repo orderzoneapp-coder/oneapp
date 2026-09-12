@@ -18,6 +18,7 @@ globalThis.indexedDB = {
 const ui = await import('../orderops/unresolved-review-ui.js');
 const listHtml = readFileSync(new URL('../orderops/list.html', import.meta.url), 'utf8');
 const uiSource = readFileSync(new URL('../orderops/unresolved-review-ui.js', import.meta.url), 'utf8');
+const smartInputSource = readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');
 const manifest = JSON.parse(readFileSync(new URL('../app-manifest.json', import.meta.url), 'utf8'));
 
 const sessionStorageStub = {
@@ -204,6 +205,7 @@ assert.equal(
   '66afcbedb917dc2472319a35431eed597400e1afe6453f3340d5c1025169caba',
   'the Phase 6B SmartInput JavaScript baseline must remain the approved a5eeb19 source'
 );
+const approvedOpt01Merge = '1362a0b8140f62646aa9a18632ff8ed998f7280d';
 const approvedOpt01Diff = execFileSync('git', [
   'diff',
   '--no-ext-diff',
@@ -217,6 +219,7 @@ const approvedOpt01Diff = execFileSync('git', [
   '--dst-prefix=b/',
   '--unified=3',
   approvedSmartInputBase,
+  approvedOpt01Merge,
   '--',
   'smartinput/smartinput.js'
 ], { cwd: repositoryRoot, encoding: 'utf8' }).replace(/\r\n/g, '\n');
@@ -225,6 +228,12 @@ assert.equal(
   '8ea22e57c06c9f7d9fc9f91223018b3b8fd179b09402c1502a6495dfb12587e2',
   'SmartInput JavaScript changes must exactly match the reviewed OPT-01 timeout, retry, and stale-result boundary'
 );
+assert.match(smartInputSource, /createDraftSaveCoordinator\(\{[\s\S]*commit: commitAutosaveJournal,[\s\S]*cleanup: deleteAutosaveJournalRecords[\s\S]*\}\)/,
+  'the approved stage 2 save path must use the document journal coordinator');
+assert.match(smartInputSource, /scheduleMappingProjection\(\{ changedRowIds: \[tr\.dataset\.mappingRowId\] \}\)/,
+  'the approved stage 2 mapping path must project only the edited row');
+assert.match(smartInputSource, /window\.setTimeout\(\(\) => saveDraftNow\(\{ writeCompatibility: false, mutationAlreadyTracked: true \}\), 500\)/,
+  'the approved stage 2 autosave debounce must remain explicit');
 assert.deepEqual(mutations, []);
 
 console.log(JSON.stringify({

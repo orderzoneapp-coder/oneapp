@@ -11,13 +11,16 @@ import {
   createTemplateRecord,
   deleteWorkingRows,
   detectHeaderRow,
+  inputMappingOptimizationMetrics,
   projectMappedRows,
   recommendMappings,
   reassignHeaderRow,
   setColumnDecision,
+  resetInputMappingOptimizationMetrics,
   templateSignature,
   templateSignatureV2,
   updateWorkingCell,
+  updateWorkingCells,
   validateTemplateDraft
 } from '../smartinput/input-template-mapper.js';
 import { structuredFieldsForMode } from '../smartinput/multivoucher-stage1.js';
@@ -30,6 +33,24 @@ const targets = [
   { id: 'boxQuantity', label: '박스수량', scope: 'voucher', valueType: 'NUMBER' },
   { id: 'memo', label: '메모', scope: 'voucher', valueType: 'TEXT' }
 ];
+
+const stage2LargeMatrix = [['품목코드', '품목명', '수량'], ...Array.from({ length: 5000 }, (_, index) => [`P-${index}`, `품목-${index}`, '1'])];
+let largeSession = createMappingSession({ matrix: stage2LargeMatrix, targetDefinitions: targets });
+resetInputMappingOptimizationMetrics();
+const untouchedWorkingRow = largeSession.workingRows[4000];
+largeSession = updateWorkingCells(largeSession, 'source-2501', [
+  { columnIndex: 1, value: '수정 품목' },
+  { columnIndex: 2, value: '7' }
+]);
+const changedProjection = projectMappedRows(largeSession, targets, { rowIds: ['source-2501'] });
+assert.equal(largeSession.workingRows[4000], untouchedWorkingRow, 'an unrelated working row must preserve identity');
+assert.deepEqual(changedProjection.map(row => [row.rowId, row.itemName, row.quantity]), [['source-2501', '수정 품목', 7]]);
+assert.deepEqual(inputMappingOptimizationMetrics(), {
+  fullWorkingRowBuilds: 0,
+  incrementalWorkingRowUpdates: 1,
+  fullMappedRowProjections: 0,
+  incrementalMappedRowProjections: 1
+}, 'a 5,000-row cell edit must update and project exactly one row without a full rebuild');
 
 function confirmRecommendations(session, definitions = targets) {
   return session.mappings.reduce((current, mapping) => mapping.state === DECISION.RECOMMENDED
@@ -356,8 +377,8 @@ assert.ok(performanceElapsedMs < 5_000, `10,000 x 20 mapping must remain respons
 const smartInputSource = readFileSync(fileURLToPath(new URL('../smartinput/smartinput.js', import.meta.url)), 'utf8');
 assert.equal((smartInputSource.match(/\$\('mappingInputRows'\)\.addEventListener\('input'/g) || []).length, 1,
   'mapping-table input delegation must be registered once');
-assert.match(smartInputSource, /scheduleMappingProjection\(\)/,
-  'mapping edits must use the scheduled projection path instead of querying storage per cell');
+assert.match(smartInputSource, /scheduleMappingProjection\(\{ changedRowIds: \[tr\.dataset\.mappingRowId\] \}\)/,
+  'mapping edits must schedule only the changed row instead of querying storage or reprojecting the whole document per cell');
 assert.match(
   smartInputSource,
   /createTemplateRecord\(\{ companyId: state\.companyId, voucherMode: state\.draft\.activeMode, signature: template\.signature, headers: template\.headers, mappings \}, name, allTargets, template\)/,
