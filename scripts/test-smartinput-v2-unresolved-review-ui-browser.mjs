@@ -321,6 +321,7 @@ try {
       'inventoryInspectorClose', 'inventoryInspectorReopen',
       'inventoryMenuButton', 'inventoryMenuCloseButton', 'inventoryMenuUploadButton', 'inventoryShareButton',
       'orderOpsHeaderMoreButton', 'orderOpsHeaderOrderQButton', 'orderOpsHeaderOrdersButton',
+      'orderOpsWorkbenchStatusButton',
       'prepareApplyButton', 'prepareFilesButton', 'preparePaneClose', 'preparePaneReopen', 'prepareRemoveButton',
       'shipmentOpenButton',
       'tableSearchClearButton', 'tableSettingsButton', 'warehouseColumnApply', 'warehouseColumnCancel',
