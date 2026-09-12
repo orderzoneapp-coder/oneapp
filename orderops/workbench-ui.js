@@ -19,6 +19,7 @@
     document.querySelector('.view-controls-scroll').prepend(procurementScope);
     procurementScope.onchange = () => { if (s.workspace) api.renderResults(); };
     let operation = null;
+    let inventoryPreparationOperation = null;
     let commitLocked = false;
     let preparedVersion = 0;
     const status = message => { $('prepareStatus').textContent = message; };
@@ -108,8 +109,8 @@
     function renderPreparation() {
       $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}">${esc(item.fileName)} · ${esc(item.sheetName)}<br>${esc(item.remove ? '사용해제 예정' : item.status)}${item.include ? ' · 적용 대상' : ''}</button>`).join('');
       const item = selected();
-      $('prepareRemoveButton').disabled = !item || Boolean(operation);
-      $('prepareApplyButton').disabled = Boolean(operation) || !dirty();
+      $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation);
+      $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation) || !dirty();
       if (!item) { $('prepareFileEditor').innerHTML = '<p>파일을 선택하고 자료 유형·시트·열을 확인한 뒤 적용하세요.</p>'; return; }
       const fields = [...new Set(fieldNames(item.kind))];
       $('prepareFileEditor').innerHTML = `<label><span>이번 적용에 포함</span><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''}></label>
@@ -265,6 +266,7 @@
     }
 
     async function applyFiles() {
+      if (operation || inventoryPreparationOperation) return operation || inventoryPreparationOperation;
       const batch = s.preparedFiles.filter(item => item.include && item.dirty);
       if (!batch.length) return;
       const byKind = new Map();
@@ -279,9 +281,28 @@
       // Inventory-only uses the existing inventory apply transaction.
       if (byKind.size === 1 && byKind.has('inventory') && !byKind.get('inventory').remove && s.workspace) {
         const item = byKind.get('inventory');
-        const result = await api.applyInventory({ parsed: item.parsed, applicationMode: 'ERP_WAREHOUSE', reference: { schemaVersion: e.INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION, sourceType: 'ORDEROPS_ERP', sourceId: item.fileHash, revision: '', hash: item.fileHash, basisDate: '', savedAt: '', applicationMode: 'ERP_WAREHOUSE' } });
-        if (result?.ok) { item.applied = true; item.dirty = false; item.status = 'APPLIED'; status('재고 적용 완료 · 주문 작업값 보존'); renderPreparation(); }
-        return result;
+        // The transaction owns this parsed snapshot, not later edits to the
+        // preparation item. Keep new mappings/include choices dirty on return.
+        const parsed = clone(item.parsed);
+        inventoryPreparationOperation = (async () => {
+          try {
+            const result = await api.applyInventory({ parsed, applicationMode: 'ERP_WAREHOUSE', reference: { schemaVersion: e.INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION, sourceType: 'ORDEROPS_ERP', sourceId: item.fileHash, revision: '', hash: item.fileHash, basisDate: '', savedAt: '', applicationMode: 'ERP_WAREHOUSE' } });
+            if (result?.ok) {
+              item.applied = true;
+              if (preparedVersion === batchVersion && s.preparedFiles.includes(item)) {
+                item.dirty = false; item.status = 'APPLIED';
+                status('재고 적용 완료 · 주문 작업값 보존');
+              } else {
+                item.dirty = true; validate(item);
+                status('이전 준비 버전의 재고 적용 완료 · 대기 중 변경한 매핑/선택은 미적용입니다. 확인 후 다시 적용하세요.');
+              }
+            } else status(result?.message || '재고 적용 실패 · 준비 입력과 기존 작업을 유지합니다.');
+            return result;
+          } catch (error) { status(error.message); api.showToast(error.message, true); return { ok: false, message: error.message }; }
+        })();
+        renderPreparation();
+        try { return await inventoryPreparationOperation; }
+        finally { inventoryPreparationOperation = null; renderPreparation(); }
       }
       let inputs;
       const result = await runReplacement(async base => {
@@ -347,7 +368,7 @@
     $('preparePaneClose').onclick = () => setLeft(false);
     $('preparePaneReopen').onclick = () => setLeft(pane.hidden);
     $('prepareApplyButton').onclick = () => { void applyFiles(); };
-    $('prepareRemoveButton').onclick = () => { const item = selected(); if (!item) return; if (item.applied) { item.remove = !item.remove; item.dirty = true; item.include = true; } else { s.preparedFiles = s.preparedFiles.filter(value => value !== item); s.selectedPreparedId = s.preparedFiles[0]?.id || ''; } preparedVersion++; renderPreparation(); };
+    $('prepareRemoveButton').onclick = () => { const item = selected(); if (!item || operation || inventoryPreparationOperation) return; if (item.applied) { item.remove = !item.remove; item.dirty = true; item.include = true; } else { s.preparedFiles = s.preparedFiles.filter(value => value !== item); s.selectedPreparedId = s.preparedFiles[0]?.id || ''; } preparedVersion++; renderPreparation(); };
     $('prepareFileList').onclick = event => { const target = event.target.closest('[data-prepared-id]'); if (target) { s.selectedPreparedId = target.dataset.preparedId; renderPreparation(); } };
     $('prepareFileEditor').onchange = event => {
       const item = selected(); if (!item || operation) return;
@@ -371,6 +392,6 @@
     window.addEventListener('beforeunload', event => { if (dirty() || operation || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length)) { event.preventDefault(); event.returnValue = ''; } });
     try { setLeft(localStorage.getItem('oneapp.orderops.file-prepare-open.v1') !== '0', false); } catch (_) { setLeft(true, false); }
     renderPreparation();
-    return { prepare, dirty, hydratePrepared, renderInspector, applyLatest, runReplacement, get operation() { return operation; }, get commitLocked() { return commitLocked; }, setLeft };
+    return { prepare, dirty, hydratePrepared, renderInspector, applyLatest, runReplacement, get operation() { return operation || inventoryPreparationOperation; }, get commitLocked() { return commitLocked; }, setLeft };
   };
 })(window);

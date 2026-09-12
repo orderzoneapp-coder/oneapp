@@ -7111,7 +7111,16 @@
         };
         validation.columns = createPreviewColumns("validation", validation.headers, validation.numeric);
 
-        const allocationInventoryView = typeof engine.getAllocationInventoryView === "function"
+        const totalOnlyComparison = workspace.inventoryApplicationMode === "TOTAL_ONLY";
+        const allocationInventoryView = totalOnlyComparison ? {
+          // Total-only data has no warehouse identity. Keep comparison visible
+          // in the normal order list without inventing editable warehouses.
+          columns: [{ header: "총재고", role: "stockQuantity" }, { header: "비교잔량", role: "calculatedQuantity" }],
+          rows: (workspace.allocations || []).map(row => {
+            const inventory = inventoryByCode.get(engine.normalizeProductCode(row.productCode));
+            return { warehouseValues: [inventory?.inventoryMissing ? "미확인" : inventory?.stockTotal ?? "미확인", inventory?.quantityComparable ? inventory.remainingQuantity : "비교 불가"] };
+          }),
+        } : typeof engine.getAllocationInventoryView === "function"
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
@@ -7188,7 +7197,7 @@
             row.quantity,
             ...(directOrderQShipment ? [row.actualShipmentQuantity] : []),
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
-            ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(blankZero),
+            ...(allocationInventoryView.rows[index]?.warehouseValues || []).map(value => totalOnlyComparison ? value : blankZero(value)),
             formatEmployeeDeliveryNotice(row),
             row.purchase || "",
           ]),
@@ -7228,8 +7237,8 @@
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
             column.defaultWidth = 56;
-            column.role = "warehouseQuantity";
-            column.inventoryColumnKey = allocationInventoryView.columns[index]?.key || "";
+            column.role = totalOnlyComparison ? allocationInventoryView.columns[index].role : "warehouseQuantity";
+            if (!totalOnlyComparison) column.inventoryColumnKey = allocationInventoryView.columns[index]?.key || "";
           }
         });
         [160, 90].forEach((width, index) => {
@@ -7274,7 +7283,9 @@
 
         validation.noticesPreview = notices;
         const definitions = {
-          readiness: buildReadinessPreview(workspace),
+          // Legacy view IDs resolve to the existing order list, without building
+          // a second full preview workspace on every view switch.
+          readiness: allocations,
           validation,
           allocations,
           purchases: buildTransactionPreview(workspace, "purchases"),
@@ -7325,7 +7336,7 @@
             shortageCount: shortageContext.purchaseActionCount || shortageContext.shortageCount || 0,
           };
         }
-        const inventory = beforeAnalysis ? buildInventorySourcePreview(workspace) : buildInventoryPreview(workspace, shortageSets, inventoryByCode);
+        const inventory = beforeAnalysis && !totalOnlyComparison ? buildInventorySourcePreview(workspace) : buildInventoryPreview(workspace, shortageSets, inventoryByCode);
         if (inventory) {
           inventory.shortcut = "F7";
           inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
@@ -8684,7 +8695,7 @@
         return definitions.validation ? "validation" : Object.keys(definitions)[0] || "";
       }
 
-      function renderPreview() {
+      function renderPreview(precomputedDefinitions) {
         if (state.activePreview === "readiness") state.activePreview = "allocations";
         if (state.unresolvedReview.active) {
           renderUnresolvedReview();
@@ -8692,7 +8703,7 @@
         }
         setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = precomputedDefinitions || getPreviewDefinitions(state.workspace);
         const defaultPreview = defaultPreviewForWorkspace(state.workspace, definitions);
         if (!definitions[state.activePreview]) state.activePreview = defaultPreview;
         const primaryDefinition = definitions[defaultPreview];
@@ -11092,7 +11103,7 @@
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (previewId !== "inventory") clearSubstitutionSelection();
-        if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
+        if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview(definitions);
         if (leftUnresolvedReview) setActiveFilterPanel(state.activeFilterPanel);
         scheduleLocalSave();
         return true;

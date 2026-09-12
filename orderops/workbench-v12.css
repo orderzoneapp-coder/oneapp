@@ -5,7 +5,7 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
 .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane] { min-width: 0; min-height: 0 !important; max-height: 100%; }
 .orderops-results-workspace.orderops-workbench-v12 > [data-nexus-pane][hidden] { display: none !important; }
 .orderops-workbench-v12 > [data-nexus-pane="work"] { display: flex; flex-direction: column; overflow: hidden; }
-.orderops-workbench-v12 #previewTable { min-height: 0; flex: 1 1 0; overflow: auto; contain: strict; }
+.orderops-workbench-v12 #previewTable { min-height: 0; flex: 1 1 0; overflow: auto; }
 .orderops-workbench-v12 .orderops-bottom-workbar { flex: 0 0 auto; flex-wrap: nowrap; justify-content: space-between; overflow: hidden; min-height: 58px; }
 .orderops-workbar-save, .orderops-workbar-next { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .orderops-workbar-save { flex: 0 0 auto; }
@@ -61,7 +61,6 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-workbar-save .system-mode { display: none; }
 }
 @media print {
-  .orderops-workbench-v12 #previewTable { contain: none; }
   body:has(.orderops-workbench-v12) { overflow: visible; }
   .orderops-file-prepare, .orderops-query-panel, .orderops-inspector-edit, .orderops-workbench-dialog, .orderops-workbench-v12 .orderops-bottom-workbar { display: none !important; }
 }

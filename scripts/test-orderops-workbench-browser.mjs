@@ -22,7 +22,19 @@ const server = createServer((req, res) => {
   if (!file.startsWith(resolve(root) + sep) || !existsSync(file)) return res.writeHead(404).end();
   res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control':'no-store' });
   let source = baselineMode && baselineFiles.has(pathname.slice(1)) ? baselineFiles.get(pathname.slice(1)) : pathname === '/orderops/list.html' ? html : readFileSync(file);
+  if (performanceMode && process.env.ORDEROPS_PROFILE==='1' && pathname==='/orderops/list.html') {
+    for(const name of ['getPreviewDefinitions','renderPreview','renderTableMarkup','renderOrderOpsSidePanels','renderWarehouseColorBar','renderSourceViewCards','renderColumnVisibilityMenu','updateColumnWidthToolbar','activatePreview','commitPreviewInputs','renderResults']) {
+      source=String(source).replace(`function ${name}(`,`function ${name}(...args) { const start=performance.now(); try { return __profile_${name}(...args); } finally { (globalThis.__profileStages ||= []).push({name:'${name}',ms:performance.now()-start}); } } function __profile_${name}(`);
+    }
+  }
   if(performanceMode && pathname==='/nexus/common/nexus-workbench-layout-v2.js') source=String(source).replace('function positionHandles(layout) {','function positionHandles(layout) { globalThis.__layoutCalls=(globalThis.__layoutCalls||0)+1;');
+  if(performanceMode && process.env.ORDEROPS_PROFILE==='1' && pathname==='/nexus/common/nexus-table-ux.js') {
+    for(const name of ['decorate','applyView','applyNumericAlignment']) source=String(source).replace(`function ${name}(`,`function ${name}(...args) { const start=performance.now(); try { return __profile_${name}(...args); } finally { (globalThis.__profileStages ||= []).push({name:'table-${name}',ms:performance.now()-start}); } } function __profile_${name}(`);
+  }
+  if(performanceMode && process.env.ORDEROPS_PROFILE==='1') {
+    const names=pathname==='/orderFulfillmentEngine.js'?['getInventoryViewRows','getShortageCategoryContext','getStockLedgerView','getFinalPurchaseUploadSelection']:pathname==='/nexus/common/nexus-workbench-layout-v2.js'?['positionHandles']:[];
+    for(const name of names)source=String(source).replace(`function ${name}(`,`function ${name}(...args) { const start=performance.now(); try { return __profile_${name}(...args); } finally { (globalThis.__profileStages ||= []).push({name:'${name}',ms:performance.now()-start}); } } function __profile_${name}(`);
+  }
   res.end(performanceMode && pathname === '/orderops/list.html' ? String(source).replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)',perfHook) : source);
 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -65,6 +77,9 @@ try {
       }
     }
     if(evidence){mkdirSync(evidence,{recursive:true});writeFileSync(join(evidence,'performance.json'),JSON.stringify({environment:'headless Chrome, same isolated profile/server, 1366x768, next two animation frames; no network business I/O',reports},null,2));}
+  } else if(process.env.ORDEROPS_PREPARATION==='1') {
+    console.log('PASS preparation acceptance',JSON.stringify(await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-preparation.js'),'utf8'))));
+    assert.deepEqual(errors,[]);
   } else {
   assert.deepEqual(errors,[]);
   assert.equal(await ev('document.querySelectorAll("#previewTabs [data-preview]").length'),6);
@@ -105,6 +120,7 @@ try {
   assert.deepEqual(errors,[]);
   console.log('PASS U01/02/04/07/08/14/15/16/18/31 initial workbench browser',JSON.stringify(layout));
   await send('Emulation.setDeviceMetricsOverride',{width:1366,height:768,deviceScaleFactor:1,mobile:false});
+  console.log('PASS preparation acceptance',JSON.stringify(await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-preparation.js'),'utf8'))));
   const scenario=await ev(readFileSync(join(root,'scripts/fixtures/orderops-workbench-scenario.js'),'utf8'));
   console.log('PASS U06/U19/U22 transaction and actual command browser scenarios',JSON.stringify(scenario));
   const download=await until(()=>readdirSync(downloadDir).find(name=>name.endsWith('.xlsx')),'actual F10 downloaded file');

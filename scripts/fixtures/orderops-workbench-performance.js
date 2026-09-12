@@ -9,7 +9,8 @@
   s.workspace=e.analyze(s.orders,s.inventory,{sourceFingerprint:'c'.repeat(64)});renderResults();await frame();
   const callsBefore=globalThis.__layoutCalls||0;await new Promise(r=>setTimeout(r,350));const idleLayoutCalls=(globalThis.__layoutCalls||0)-callsBefore;
   const data={orders:[],inventory:[],selection:[],panel:[]};
-  const measure=async(key,fn,verify)=>{const start=performance.now();fn();await frame();verify();const focus=document.querySelector('#tableSearchInput');focus.focus({preventScroll:true});if(document.activeElement!==focus)throw Error('input not available');data[key].push(performance.now()-start);};
+  const diagnostics=[];
+  const measure=async(key,fn,verify)=>{globalThis.__profileStages=[];const start=performance.now();fn();const syncMs=performance.now()-start;await frame();verify();const focus=document.querySelector('#tableSearchInput');focus.focus({preventScroll:true});if(document.activeElement!==focus)throw Error('input not available');data[key].push(performance.now()-start);if(__SAMPLES__===1)diagnostics.push({key,syncMs,stages:globalThis.__profileStages});};
   const view=id=>{const button=document.querySelector('#previewTabs [data-preview="'+id+'"]')||document.querySelector(id==='inventory'?'#inventoryDrop':'#ordersDrop');if(!button)throw Error('missing real view button '+id);button.click();};
   const verifyView=id=>{if(s.activePreview!==id||!document.querySelector('#previewTable table.preview-'+id))throw Error('view did not change '+id);if(document.querySelectorAll('#previewTable tbody tr[data-product-code]').length<count)throw Error('missing displayed source rows');};
   for(let i=0;i<__SAMPLES__;i++){
@@ -21,5 +22,5 @@
     await measure('panel',()=>{const button=document.querySelector(shouldOpen?'#inventoryInspectorReopen':'#inventoryInspectorClose');if(!button)throw Error('missing panel button');button.click();},()=>{const pane=document.querySelector('#inventoryInspector');if(pane.hidden===shouldOpen||(shouldOpen&&pane.getBoundingClientRect().width<=0))throw Error('requested panel state not visible');});
   }
   const summary=Object.fromEntries(Object.entries(data).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return[key,{samples:values.length,p50:sorted[Math.ceil(values.length*.5)-1],p95:sorted[Math.ceil(values.length*.95)-1],max:sorted.at(-1)}];}));
-  return {rows:count,warehouses,idleLayoutCalls,summary,measurement:'requested DOM state + next two displayed frames + focusable search; programmatic clicks, not physical touch feedback latency'};
+  return {rows:count,warehouses,idleLayoutCalls,summary,diagnostics,measurement:'requested DOM state + next two displayed frames + focusable search; programmatic clicks, not physical touch feedback latency'};
 })()
