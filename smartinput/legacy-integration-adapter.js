@@ -1,14 +1,24 @@
 import { extractOrderProductLines } from '../orderq/smartparser/order-text-extractor.js?v=0.8.1';
+import {
+  OPTIONAL_OPERATION_ERROR_CODE,
+  OPTIONAL_OPERATION_TIMEOUT_MS,
+  createOptionalOperationLoader
+} from './optional-operation-loader.js?v=0.1.0';
 
 export { extractOrderProductLines };
 
 const text = value => String(value ?? '').normalize('NFKC').trim();
 const normalize = value => text(value).toLowerCase().replace(/\s+/g, '');
-const moduleCache = new Map();
+const optionalModuleLoader = createOptionalOperationLoader({ importModule: path => import(path) });
 
 async function load(path) {
-  if (!moduleCache.has(path)) moduleCache.set(path, import(path));
-  return moduleCache.get(path);
+  const resolved = new URL(path, import.meta.url);
+  return optionalModuleLoader.loadModule({
+    feature: `legacy-integration:${resolved.pathname}`,
+    assetVersion: resolved.searchParams.get('v') || 'unversioned',
+    specifier: path,
+    timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.localModule
+  });
 }
 
 function unavailable(code, message, cause) {
@@ -317,7 +327,7 @@ export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 
 export async function loadPurchaseStage3Capability() {
   try {
-    const module = await load('./purchase-official-stage3.js');
+    const module = await load('./purchase-official-stage3.js?v=0.9.1');
     return await module.loadPurchaseStage3Capability();
   } catch (error) {
     return { ready: false, code: 'PURCHASE_FINALIZE_UNAVAILABLE', detail: text(error?.message || error) };
@@ -326,7 +336,7 @@ export async function loadPurchaseStage3Capability() {
 
 export async function loadSaleStage4Capability() {
   try {
-    const module = await load('./sale-official-stage4.js');
+    const module = await load('./sale-official-stage4.js?v=1.1.1');
     return await module.loadSaleStage4Capability();
   } catch (error) {
     return { ready: false, code: 'SALE_FINALIZE_UNAVAILABLE', detail: text(error?.message || error) };
@@ -346,18 +356,20 @@ export function validatePurchaseGroup(group = {}) {
 
 export async function postPurchaseGroup(group, context = {}) {
   try {
-    const module = await load('./purchase-official-stage3.js');
+    const module = await load('./purchase-official-stage3.js?v=0.9.1');
     return await module.postPurchaseGroup(group, context);
   } catch (error) {
+    if ([OPTIONAL_OPERATION_ERROR_CODE.RESULT_UNKNOWN, OPTIONAL_OPERATION_ERROR_CODE.RESULT_LOOKUP_FAILED].includes(error?.code)) throw error;
     throw unavailable('PURCHASE_FINALIZE_UNAVAILABLE', '구매 원장 연결을 사용할 수 없습니다. 현재 작업과 초안은 유지됩니다.', error);
   }
 }
 
 export async function postSaleGroup(group, context = {}) {
   try {
-    const module = await load('./sale-official-stage4.js');
+    const module = await load('./sale-official-stage4.js?v=1.1.1');
     return await module.postSaleGroup(group, context);
   } catch (error) {
+    if ([OPTIONAL_OPERATION_ERROR_CODE.RESULT_UNKNOWN, OPTIONAL_OPERATION_ERROR_CODE.RESULT_LOOKUP_FAILED].includes(error?.code)) throw error;
     throw unavailable('SALE_FINALIZE_UNAVAILABLE', '판매 원장 연결을 사용할 수 없습니다. 현재 작업과 초안은 유지됩니다.', error);
   }
 }

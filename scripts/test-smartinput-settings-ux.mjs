@@ -166,7 +166,7 @@ assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
 assert.match(html, /nexus-ui\.js\?v=1\.7\.0/);
 assert.match(html, /smartinput\.css\?v=0\.9\.20/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.11\.56/);
+assert.match(html, /smartinput\.js\?v=0\.11\.57/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);
@@ -195,8 +195,8 @@ assert.match(app, /workingInputOrderByMode\[mode\] = \{ \.\.\.workingInputOrderB
 assert.match(app, /settingsGrid\.prepend\(voucherSettingsGroup\);[\s\S]*voucherSettingsGroup\.open = true/,
   'the selected voucher fields must be the first open settings section');
 assert.match(app, /if \(settingsDirty && !window\.confirm\('저장하지 않은 환경설정 변경을 취소하시겠습니까\?'\)\) return false/);
-assert.match(app, /await saveSettings\(next\);[\s\S]*state\.settings = next;/,
-  'persistent and active settings must change only inside the save action');
+assert.match(app, /const settingsBeforeSave = state\.settings;[\s\S]*state\.settings = next;[\s\S]*await persistCurrentSettingsAfterHydration\(\);[\s\S]*if \(!settingsStored && state\.settings === next\) state\.settings = settingsBeforeSave;/,
+  'the save action must pass its current snapshot through the hydration gate and restore the prior active settings if persistence fails');
 assert.match(css, /\.smart-settings-dialog \{ width: min\(1180px,[\s\S]*height: min\(860px/);
 assert.match(css, /@media \(max-width: 820px\)[\s\S]*\.smart-settings-dialog \{ inset: 0; width: 100vw; height: 100dvh/);
 assert.match(css, /\.smart-settings-dialog button:focus-visible/);

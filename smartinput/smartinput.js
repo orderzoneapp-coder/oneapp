@@ -13,9 +13,16 @@ import {
   warehouseDisplayName,
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
-} from './legacy-integration-adapter.js?v=0.3.0';
-import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.6.0';
-import { SaleFinalizeService } from './sale-finalize-service.js?v=0.6.0';
+} from './legacy-integration-adapter.js?v=0.3.2';
+import {
+  OPTIONAL_OPERATION_TIMEOUT_MS,
+  createHydrationWriteGate,
+  createOptionalOperationLoader,
+  isOptionalOperationStale,
+  mergeHydratedSnapshotPreservingLiveChanges
+} from './optional-operation-loader.js?v=0.1.0';
+import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.6.2';
+import { SaleFinalizeService } from './sale-finalize-service.js?v=0.6.1';
 import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.2.0';
 import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.1';
@@ -98,6 +105,7 @@ import {
   createRecordId,
   commitEstimateBundle,
   commitEstimateLinkBundle,
+  deleteSourceImage,
   loadEstimateLibrary,
   loadSmartInputData,
   normalizeAliasName,
@@ -139,7 +147,7 @@ import {
   resolveSmartInputCompanyId,
   updateVoucherFieldSettings
 } from './field-registry.js?v=0.1.0';
-import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.1';
+import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.2';
 import { readWorksheetSource } from './xlsx-source-reader.js?v=0.1.0';
 import {
   applyRelatedVoucherImportPlan,
@@ -148,6 +156,7 @@ import {
 } from './related-voucher-import.js?v=0.1.0';
 import {
   LINKED_ESTIMATE_FIELD_LABELS,
+  LINKED_ESTIMATE_SOURCE_EDIT_FIELDS,
   applyLinkedEstimateSourceEditPlan,
   createLinkedEstimateSourceEditPlan,
   inspectLinkedEstimateSourceEdits,
@@ -212,32 +221,63 @@ import {
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
 
-const externalScripts = new Map();
-function loadOptionalScript(url, globalName, unavailableMessage) {
-  if (window[globalName]) return Promise.resolve(window[globalName]);
-  if (externalScripts.has(globalName)) return externalScripts.get(globalName);
-  const pending = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = url;
-    script.async = true;
-    script.onload = () => window[globalName] ? resolve(window[globalName]) : reject(new Error(unavailableMessage));
-    script.onerror = () => reject(new Error(unavailableMessage));
-    document.head.append(script);
+const OPTIONAL_OPERATION_FEATURE = Object.freeze({
+  FILE_INPUT: 'file-input',
+  PHOTO_INPUT: 'photo-input',
+  ESTIMATE_EXPORT: 'estimate-export',
+  PURCHASE_SALES_EXPORT: 'purchase-sales-export',
+  VOUCHER_EXPORT: 'voucher-export',
+  CUSTOMER_REMATCH: 'customer-rematch',
+  ESTIMATE_LIBRARY_READ: 'estimate-library-read',
+  SMART_DATA_READ: 'smart-data-read',
+  REFERENCE_READ: 'reference-read',
+  INPUT_TEMPLATE_READ: 'input-template-read'
+});
+const OPTIONAL_OPERATION_FEATURES = Object.freeze([
+  OPTIONAL_OPERATION_FEATURE.FILE_INPUT,
+  OPTIONAL_OPERATION_FEATURE.PHOTO_INPUT,
+  OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT,
+  OPTIONAL_OPERATION_FEATURE.PURCHASE_SALES_EXPORT,
+  OPTIONAL_OPERATION_FEATURE.VOUCHER_EXPORT,
+  OPTIONAL_OPERATION_FEATURE.CUSTOMER_REMATCH
+]);
+const referenceOperationFeature = domain => `${OPTIONAL_OPERATION_FEATURE.REFERENCE_READ}:${domain}`;
+const optionalOperationLoader = createOptionalOperationLoader({ globalScope: window, documentRef: document });
+
+function loadOptionalScript({ feature, assetVersion, url, globalName, unavailableMessage }) {
+  return optionalOperationLoader.loadScript({
+    feature,
+    assetVersion,
+    url,
+    globalName,
+    unavailableMessage,
+    timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.externalScript
   });
-  externalScripts.set(globalName, pending);
-  return pending;
 }
 
-const ensureXlsx = () => loadOptionalScript(
-  'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
-  'XLSX',
-  'Excel 처리 모듈을 불러오지 못했습니다. 텍스트·CSV·TSV 입력은 계속 사용할 수 있습니다.'
-);
-const ensureTesseract = () => loadOptionalScript(
-  'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js',
-  'Tesseract',
-  '사진 OCR 모듈을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.'
-);
+async function ensureXlsx(operationToken = null) {
+  const xlsx = await loadOptionalScript({
+    feature: 'xlsx-runtime',
+    assetVersion: '1.2.0',
+    url: 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    globalName: 'XLSX',
+    unavailableMessage: 'Excel 처리 모듈을 불러오지 못했습니다. 텍스트·CSV·TSV 입력은 계속 사용할 수 있습니다.'
+  });
+  if (operationToken) assertOptionalOperationCurrent(operationToken);
+  return xlsx;
+}
+
+async function ensureTesseract(operationToken = null) {
+  const tesseract = await loadOptionalScript({
+    feature: 'tesseract-runtime',
+    assetVersion: '6',
+    url: 'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js',
+    globalName: 'Tesseract',
+    unavailableMessage: '사진 OCR 모듈을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.'
+  });
+  if (operationToken) assertOptionalOperationCurrent(operationToken);
+  return tesseract;
+}
 
 const $ = id => document.getElementById(id);
 const modeTabs = document.querySelector('.mode-tabs');
@@ -298,6 +338,8 @@ const state = {
   tableViewScrollPositions: {},
   sourceImages: { order: null, purchase: null, sale: null, estimate: null },
   sourceImageRecords: new Map(),
+  sourceImageWriteQueues: new Map(),
+  clearedSourceImageDocumentIds: new Set(initialDraft.ui.pendingSourceImageDeletes || []),
   selectedRowIds: new Set(),
   photoView: { zoom: 1, rotation: 0, activeRegion: null, detailColumns: false, ocrOpen: false },
   saveTimer: null,
@@ -310,6 +352,11 @@ const state = {
   listening: false,
   busy: false,
   activeActivity: '',
+  activeFileInputAttemptId: '',
+  activeCustomerRematchAttemptId: '',
+  activeCapabilityAttemptId: '',
+  optionalWorkspaceEpoch: 0,
+  optionalInputGeneration: 0,
   autoAnalyzeTimer: null,
   analysisRequestId: 0,
   sourceComposing: false,
@@ -333,6 +380,67 @@ const state = {
   shoppingInspectionRequestId: 0,
   shoppingInspectionTimer: null
 };
+
+function optionalOperationContext() {
+  return {
+    workspaceEpoch: state.optionalWorkspaceEpoch,
+    inputGeneration: state.optionalInputGeneration
+  };
+}
+
+function invalidateOptionalOperations({ workspaceChanged = false } = {}) {
+  const fileInputWasPending = Boolean(state.activeFileInputAttemptId);
+  const customerRematchWasPending = Boolean(state.activeCustomerRematchAttemptId);
+  if (fileInputWasPending) {
+    state.activeFileInputAttemptId = '';
+    if (state.activeActivity === 'Excel·파일 불러오는 중') setActiveActivity('');
+  }
+  if (customerRematchWasPending) state.activeCustomerRematchAttemptId = '';
+  if (workspaceChanged) state.optionalWorkspaceEpoch += 1;
+  state.optionalInputGeneration += 1;
+  const context = optionalOperationContext();
+  OPTIONAL_OPERATION_FEATURES.forEach(feature => optionalOperationLoader.invalidateOperation(feature, context));
+  if (fileInputWasPending || customerRematchWasPending) {
+    renderDelivery();
+    if (fileInputWasPending) renderReferenceControls();
+  }
+  return context;
+}
+
+function beginOptionalOperation(feature, { assetVersion = '', newInput = false } = {}) {
+  if (newInput) invalidateOptionalOperations();
+  return optionalOperationLoader.beginOperation({
+    feature,
+    assetVersion,
+    ...optionalOperationContext()
+  });
+}
+
+function optionalOperationIsCurrent(token) {
+  return optionalOperationLoader.isCurrent(token, optionalOperationContext());
+}
+
+function optionalOperationIsLatest(token) {
+  return optionalOperationLoader.isCurrent(token);
+}
+
+function assertOptionalOperationCurrent(token) {
+  return optionalOperationLoader.assertCurrent(token, optionalOperationContext());
+}
+
+function invalidateEstimateLibraryRead() {
+  optionalOperationLoader.invalidateOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_LIBRARY_READ, optionalOperationContext());
+}
+
+const settingsWriteGate = createHydrationWriteGate({
+  write: saveSettings,
+  normalize: contract.normalizeSettings,
+  unavailableMessage: '기존 설정을 불러오지 못해 변경 내용을 저장하지 않았습니다. 화면을 다시 열어 주세요.'
+});
+
+async function persistCurrentSettingsAfterHydration() {
+  return settingsWriteGate.persist(() => state.settings);
+}
 if (state.draft.ui.relatedPanelLayoutVersion !== 1) {
   state.draft.ui.relatedPanelLayoutVersion = 1;
   state.draft.ui.relatedOpen = true;
@@ -525,7 +633,11 @@ function saveDraftNow({ writeAutosave = true } = {}) {
   return compatibilitySaved;
 }
 
-function scheduleSave() {
+function scheduleSave({ invalidateOperations = true } = {}) {
+  if (invalidateOperations) {
+    if (state.activeActivity === '사진 OCR 처리 중') cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
+    invalidateOptionalOperations();
+  }
   state.draftDirty = true;
   setSaveState('자동저장 중…', 'saving');
   clearTimeout(state.saveTimer);
@@ -564,6 +676,8 @@ async function restoreLatestAutosave() {
       return toast('복구할 자동저장이 없습니다.', 'error');
     }
     if (activeWorkspaceHasContent() && !window.confirm('현재 입력을 최근 자동저장 상태로 복구하시겠습니까? 현재 화면의 저장되지 않은 변경은 바뀔 수 있습니다.')) return;
+    invalidateOptionalOperations({ workspaceChanged: true });
+    cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
     clearTimeout(state.saveTimer);
     state.draftDirty = false;
     state.draft = contract.normalizeDraft(record.draft);
@@ -593,7 +707,7 @@ async function restoreLatestAutosave() {
 
 async function waitForSmartInputIdle(timeoutMs = 10000) {
   const startedAt = Date.now();
-  while (state.busy) {
+  while (state.busy || state.activeFileInputAttemptId) {
     if (Date.now() - startedAt >= timeoutMs) throw new Error('진행 중인 스마트입력 작업의 결과 확인 시간이 초과되었습니다.');
     await new Promise(resolve => window.setTimeout(resolve, 50));
   }
@@ -604,6 +718,14 @@ async function flushSmartInputBeforeWorkspaceLeave() {
   clearTimeout(state.saveTimer);
   await autosaveWriteQueue;
   await waitForSmartInputIdle();
+  while (state.sourceImageWriteQueues.size) {
+    const pendingImages = [...state.sourceImageWriteQueues.values()];
+    await withTimeout(
+      Promise.all(pendingImages),
+      OPTIONAL_OPERATION_TIMEOUT_MS.localModule,
+      '원본 사진 저장·삭제 완료 확인 시간이 초과되었습니다.'
+    );
+  }
   clearTimeout(state.saveTimer);
   const compatibilitySaved = saveDraftNow({ writeAutosave: false });
   if (!compatibilitySaved) throw new Error('최신 입력을 호환 저장소에 기록하지 못했습니다.');
@@ -623,7 +745,17 @@ function registerSmartInputWorkspaceAdapter() {
   const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
   if (!bridge?.registerAdapter || registerSmartInputWorkspaceAdapter.registered) return false;
   registerSmartInputWorkspaceAdapter.registered = true;
-  bridge.registerAdapter({ beforeLeave: flushSmartInputBeforeWorkspaceLeave, print: () => window.print() });
+  bridge.registerAdapter({
+    beforeLeave: flushSmartInputBeforeWorkspaceLeave,
+    print: () => {
+      if (state.activeFileInputAttemptId) {
+        toast('파일 불러오기가 끝난 뒤 인쇄하세요.', 'warn');
+        return false;
+      }
+      window.print();
+      return true;
+    }
+  });
   return true;
 }
 
@@ -757,8 +889,8 @@ function renderReferenceDomain(domain) {
 function renderReferenceControls() {
   $('analyzeButton').disabled = state.busy;
   $('customerSearchButton').disabled = state.busy || modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP';
-  $('estimateNoticeButton').disabled = state.busy;
-  $('estimateExcelButton').disabled = state.busy;
+  $('estimateNoticeButton').disabled = state.busy || Boolean(state.activeFileInputAttemptId);
+  $('estimateExcelButton').disabled = state.busy || Boolean(state.activeFileInputAttemptId);
   const creation = estimateCreation();
   $('estimateCreateButton').disabled = state.busy || !creation || creation.selectedIds.length < 2;
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
@@ -814,16 +946,36 @@ function ingestLatestReference(domain, latest, { allowCurrent = false } = {}) {
 async function reloadReferenceDomain(domain, { quiet = false } = {}) {
   const reference = state.references[domain];
   if (reference.loading) return;
+  const operationToken = beginOptionalOperation(referenceOperationFeature(domain), { assetVersion: 'reference-generation-v1' });
   reference.loading = true;
   if (!reference.active) reference.status = REFERENCE_DOMAIN_STATUS.LOADING;
   renderReferenceControls();
-  const latest = await loadReferenceDomain(domain);
-  ingestLatestReference(domain, latest);
-  if (!quiet) {
-    const suffix = latest.status === REFERENCE_DOMAIN_STATUS.ERROR
-      ? '로드 실패 · 현재 작업은 유지됩니다.'
-      : `${latest.count.toLocaleString('ko-KR')}건 확인`;
-    toast(`${referenceDomainLabel(domain)} 기준정보 ${suffix}`, latest.status === REFERENCE_DOMAIN_STATUS.ERROR ? 'error' : 'success');
+  try {
+    const latest = await withTimeout(
+      loadReferenceDomain(domain),
+      OPTIONAL_OPERATION_TIMEOUT_MS.externalReference,
+      `${referenceDomainLabel(domain)} 기준자료 로딩 시간 초과`
+    );
+    if (!optionalOperationIsLatest(operationToken)) return;
+    ingestLatestReference(domain, latest);
+    if (!quiet) {
+      const suffix = latest.status === REFERENCE_DOMAIN_STATUS.ERROR
+        ? '로드 실패 · 현재 작업은 유지됩니다.'
+        : `${latest.count.toLocaleString('ko-KR')}건 확인`;
+      toast(`${referenceDomainLabel(domain)} 기준정보 ${suffix}`, latest.status === REFERENCE_DOMAIN_STATUS.ERROR ? 'error' : 'success');
+    }
+  } catch (error) {
+    if (!optionalOperationIsLatest(operationToken)) return;
+    ingestLatestReference(domain, {
+      status: REFERENCE_DOMAIN_STATUS.ERROR,
+      error: { code: `${domain.toUpperCase()}_REFERENCE_TIMEOUT`, message: error?.message || '로드 실패' }
+    });
+    if (!quiet) toast(`${referenceDomainLabel(domain)} 기준정보 로드 실패 · 현재 작업은 유지됩니다.`, 'error');
+  } finally {
+    if (optionalOperationIsLatest(operationToken)) {
+      reference.loading = false;
+      renderReferenceControls();
+    }
   }
 }
 
@@ -1581,19 +1733,34 @@ function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
 }
 
 async function reloadInputTemplates({ applyCurrent = false, announce = true } = {}) {
+  const companyId = state.companyId;
+  const modeId = state.draft.activeMode;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.INPUT_TEMPLATE_READ, { assetVersion: 'smartinput-db-v5' });
   state.inputTemplatesStatus = 'LOADING';
   state.inputTemplatesError = null;
   renderInputMappingStatus();
   try {
-    const templates = await loadInputTemplates(state.companyId, state.draft.activeMode);
+    const templates = await withTimeout(
+      loadInputTemplates(companyId, modeId),
+      OPTIONAL_OPERATION_TIMEOUT_MS.localModule,
+      '입력 양식 로딩 시간 초과'
+    );
+    if (!optionalOperationIsLatest(operationToken) || state.companyId !== companyId || state.draft.activeMode !== modeId) return null;
     state.inputTemplates = Array.isArray(templates) ? templates : [];
     state.inputTemplatesStatus = state.inputTemplates.length ? 'READY' : 'EMPTY';
-    if (applyCurrent) restoreInputMappingSession({ applyLatestTemplate: true });
+    const applyLoadedTemplate = applyCurrent && operationToken.inputGeneration === state.optionalInputGeneration;
+    if (applyLoadedTemplate) {
+      invalidateOptionalOperations();
+      restoreInputMappingSession({ applyLatestTemplate: true });
+    }
     renderMode();
     saveDraftNow();
-    if (announce) toast(applyCurrent ? '입력 양식을 다시 불러와 현재 원본에 적용했습니다.' : '입력 양식 목록을 다시 불러왔습니다.', 'success');
+    if (announce) toast(applyLoadedTemplate
+      ? '입력 양식을 다시 불러와 현재 원본에 적용했습니다.'
+      : '입력 양식 목록을 다시 불러왔습니다.', 'success');
     return state.inputTemplates;
   } catch (error) {
+    if (!optionalOperationIsLatest(operationToken) || state.companyId !== companyId || state.draft.activeMode !== modeId) return null;
     state.inputTemplatesStatus = 'ERROR';
     state.inputTemplatesError = error;
     renderInputMappingStatus();
@@ -1806,7 +1973,7 @@ async function finishColumnDrop(event) {
   clearColumnDragMarkers();
   applyFormLayout();
   try {
-    await saveSettings(state.settings);
+    await persistCurrentSettingsAfterHydration();
     setSaveState('저장됨', 'saved');
     toast('열 순서를 저장했습니다.', 'success');
   } catch (_) {
@@ -1848,7 +2015,7 @@ async function persistVoucherColumnWidths() {
     ]))
   });
   try {
-    await saveSettings(state.settings);
+    await persistCurrentSettingsAfterHydration();
     setSaveState('저장됨', 'saved');
   } catch (_) {
     toast('열 너비를 저장하지 못했습니다.', 'error');
@@ -1939,13 +2106,13 @@ function applyFormLayout() {
   $('detailColumnsButton').setAttribute('aria-pressed', String(state.photoView.detailColumns));
 }
 
-function updateMethod(method, { persist = true } = {}) {
+function updateMethod(method, { persist = true, invalidateOperations = true } = {}) {
   const selected = contract.INPUT_METHODS.find(item => item.id === method) || contract.INPUT_METHODS[2];
   const changed = modeDraft().activeMethod !== selected.id;
   modeDraft().activeMethod = selected.id;
   methodButtons.forEach(button => button.classList.toggle('is-active', button.dataset.method === selected.id));
   renderSourceSurface();
-  if (persist && changed) scheduleSave();
+  if (persist && changed) scheduleSave({ invalidateOperations });
   return selected;
 }
 
@@ -2978,6 +3145,7 @@ function openFieldMappingDialog(columnIndex) {
     try {
       const target = mappingTargetById(targetFieldId);
       const current = inputMappingSession();
+      invalidateOptionalOperations();
       modeDraft().inputMapping = {
         ...setColumnDecision(current, columnIndex, MAPPING_DECISION.MAPPED, targetFieldId, inputMappingDefinitions()),
         templateDirty: current.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE || current.templateDirty === true
@@ -3095,6 +3263,7 @@ function openFieldMappingDialog(columnIndex) {
   });
   dialog.querySelector('[data-unmap]').addEventListener('click', () => {
     const current = inputMappingSession();
+    invalidateOptionalOperations();
     modeDraft().inputMapping = {
       ...setColumnDecision(current, columnIndex, MAPPING_DECISION.UNMAPPED, '', inputMappingDefinitions()),
       templateDirty: current.status !== MAPPING_SESSION_STATUS.NEW_TEMPLATE || current.templateDirty === true
@@ -3434,6 +3603,20 @@ function openInputTemplateManager() {
 }
 
 async function openSettingsDialog() {
+  let hydrationStatus = settingsWriteGate.status();
+  if (hydrationStatus === 'LOADING') {
+    toast('기존 환경설정을 불러오는 중입니다. 완료 후 다시 열어 주세요.', 'warn');
+    return;
+  }
+  if (hydrationStatus === 'ERROR') {
+    toast('기존 환경설정을 다시 불러오고 있습니다.', 'warn');
+    await retrySmartAuxiliaryData();
+    hydrationStatus = settingsWriteGate.status();
+    if (hydrationStatus !== 'READY') {
+      toast('기존 환경설정을 다시 확인하지 못해 편집을 시작하지 않았습니다.', 'error');
+      return;
+    }
+  }
   const customerId = modeDraft().header.customerId;
   const hasCustomerOverride = customerId && Object.prototype.hasOwnProperty.call(state.settings.deliveryCustomerWeekdays, customerId);
   const customerWeekdays = hasCustomerOverride
@@ -3950,10 +4133,13 @@ async function openSettingsDialog() {
       message.textContent = '지정 휴무일은 YYYY-MM-DD 형식으로 입력하세요.';
       return;
     }
+    const settingsBeforeSave = state.settings;
+    state.settings = next;
+    let settingsStored = false;
     try {
-      await saveSettings(next);
-      await persistFieldRegistryLayout(next);
-      state.settings = next;
+      const persistedSettings = await persistCurrentSettingsAfterHydration();
+      settingsStored = true;
+      await persistFieldRegistryLayout(persistedSettings);
       updateDeliveryPolicy();
       renderRows({ restoreFocus: false });
       saveDraftNow();
@@ -3961,6 +4147,7 @@ async function openSettingsDialog() {
       finish();
       toast('환경설정을 저장했습니다.', 'success');
     } catch (error) {
+      if (!settingsStored && state.settings === next) state.settings = settingsBeforeSave;
       message.textContent = error.message || '설정을 저장하지 못했습니다.';
     }
   });
@@ -4403,7 +4590,7 @@ function applyRelatedPanelState() {
 function setRelatedPanelOpen(open) {
   state.draft.ui.relatedOpen = Boolean(open);
   applyRelatedPanelState();
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
 }
 
 function renderEstimateWorkspace() {
@@ -4570,6 +4757,7 @@ function renderCatalogControls() {
 function previewEstimateCreation() {
   const creation = estimateCreation();
   if (!creation) return;
+  invalidateOptionalOperations({ workspaceChanged: true });
   const selectedIds = new Set(creation.selectedIds);
   const records = individualEstimateRecords().filter(record => selectedIds.has(record.estimateId));
   const fallback = contract.createDraft().modes.estimate;
@@ -4612,6 +4800,7 @@ function startEstimateCreation(kind, { deferPreview = false, initialSelectedIds 
 function cancelEstimateCreation({ silent = false, persist = true, render = true } = {}) {
   const creation = estimateCreation();
   if (!creation) return false;
+  invalidateOptionalOperations({ workspaceChanged: true });
   const returnDraft = creation.returnDraft || state.estimateSelectionReturnDraft;
   if (returnDraft) state.draft.modes.estimate = contract.normalizeModeDraft('estimate', returnDraft);
   const returnEstimateId = returnDraft?.catalogRecordId;
@@ -4683,6 +4872,7 @@ async function deleteSelectedEstimates() {
   } catch (error) {
     return toast(error.message || '견적서를 삭제하지 못했습니다. 기존 목록은 유지됩니다.', 'error');
   }
+  invalidateEstimateLibraryRead();
   state.estimates = remaining;
   state.noticeEstimateIds = [];
   deletedIds.forEach(estimateId => state.estimateWorkingCopies.delete(estimateId));
@@ -4812,6 +5002,7 @@ function openSelectedEstimateInformationDialog() {
       const bundle = updatedEstimateInformationBundle(record, { catalogName, customer: selectedCustomer }, timestamp);
       await commitEstimateBundle({ upserts: bundle });
       const bundleById = new Map(bundle.map(item => [item.estimateId, item]));
+      invalidateEstimateLibraryRead();
       state.estimates = normalizeEstimateOrder(state.estimates.map(item => bundleById.get(item.estimateId) || item));
       renameEstimateSourceMetadata(modeDraft(), record.estimateId, catalogName);
       state.estimateWorkingCopies.forEach(draft => renameEstimateSourceMetadata(draft, record.estimateId, catalogName));
@@ -4860,6 +5051,7 @@ function openSelectedEstimateInformationDialog() {
 }
 
 async function persistEstimateLibrary(records = state.estimates) {
+  invalidateEstimateLibraryRead();
   state.estimates = records.map((record, index) => ({ ...record, sortOrder: index + 1 }));
   await Promise.all(state.estimates.map(record => saveEstimate(record)));
 }
@@ -4998,8 +5190,58 @@ function cancelEstimateTouchDrag() {
 
 function restoreSourceImageForMode(mode) {
   const documentId = state.draft.modes[mode]?.documentId;
+  if (state.clearedSourceImageDocumentIds.has(documentId)) {
+    state.sourceImages[mode] = null;
+    return;
+  }
   state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
 }
+
+function queueSourceImageMutation(documentId, mutation) {
+  if (!documentId || typeof mutation !== 'function') return Promise.resolve();
+  const previous = state.sourceImageWriteQueues.get(documentId) || Promise.resolve();
+  const pending = previous.catch(() => {}).then(mutation);
+  state.sourceImageWriteQueues.set(documentId, pending);
+  void pending.finally(() => {
+    if (state.sourceImageWriteQueues.get(documentId) === pending) state.sourceImageWriteQueues.delete(documentId);
+  }).catch(() => {});
+  return pending;
+}
+
+function setPendingSourceImageDelete(documentId, pending) {
+  const current = new Set(state.draft.ui.pendingSourceImageDeletes || []);
+  if (pending) current.add(documentId);
+  else current.delete(documentId);
+  state.draft.ui.pendingSourceImageDeletes = [...current];
+}
+
+function finishPendingSourceImageDelete(documentId) {
+  const replacementPending = Object.values(state.sourceImages)
+    .some(sourceImage => sourceImage?.documentId === documentId && sourceImage?.dataUrl);
+  if (replacementPending) return;
+  setPendingSourceImageDelete(documentId, false);
+  saveDraftNow();
+}
+
+function queueSourceImageDelete(documentId) {
+  return queueSourceImageMutation(documentId, () => deleteSourceImage(documentId)).then(() => {
+    finishPendingSourceImageDelete(documentId);
+    return true;
+  });
+}
+
+function resumePendingSourceImageDeletes() {
+  [...new Set(state.draft.ui.pendingSourceImageDeletes || [])].forEach(documentId => {
+    if (!documentId) return;
+    state.clearedSourceImageDocumentIds.add(documentId);
+    state.sourceImageRecords.delete(documentId);
+    void queueSourceImageDelete(documentId).catch(() => {
+      setAppStatus('이전에 지운 원본 사진 정리를 완료하지 못했습니다. 화면 이동 전에 다시 확인합니다.', 'warn');
+    });
+  });
+}
+
+resumePendingSourceImageDeletes();
 
 function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
   const fallback = contract.createDraft().modes.estimate;
@@ -5034,9 +5276,11 @@ function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
   });
 }
 
-function loadCatalogRecord(record, { preserveSelection = false } = {}) {
+function loadCatalogRecord(record, { preserveSelection = false, invalidateOperations = true } = {}) {
   if (!record?.draft) return;
-  syncSourceText();
+  if (invalidateOperations) invalidateOptionalOperations({ workspaceChanged: true });
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
+  syncSourceText({ invalidateOperations: false });
   state.draft.activeMode = 'estimate';
   const hasWorkingCopy = state.estimateWorkingCopies.has(record.estimateId);
   const recordDraft = estimateRecordDraft(record);
@@ -5102,6 +5346,8 @@ function loadCatalogRecord(record, { preserveSelection = false } = {}) {
 
 function startNewCatalog() {
   const current = modeDraft();
+  invalidateOptionalOperations({ workspaceChanged: true });
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
   const fallback = contract.createDraft().modes.estimate;
   fallback.header = { ...fallback.header, ...current.header, customValues: { ...(current.header.customValues || {}) } };
   fallback.activeMethod = 'direct';
@@ -5125,10 +5371,23 @@ function startNewCatalog() {
 
 async function rematchRowsForCustomer(customer) {
   const current = modeDraft();
+  const modeId = state.draft.activeMode;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.CUSTOMER_REMATCH, { assetVersion: 'estimate-match-dictionary-v1' });
   const before = current.rows.map(row => cloneMappedMutationRow({ ...row, editedFields: { ...(row.editedFields || {}) } }));
+  const rowsAtStart = JSON.stringify(current.rows);
+  state.activeCustomerRematchAttemptId = operationToken.attemptId;
+  renderDelivery();
   try {
     setAppStatus(`${customerName(customer)} 기준으로 상품을 다시 매칭하고 있습니다.`);
-    const matched = await rematchExtractedLinesForCustomer(before, customer, 'SMART_INPUT');
+    const matched = await withTimeout(
+      rematchExtractedLinesForCustomer(before, customer, 'SMART_INPUT'),
+      OPTIONAL_OPERATION_TIMEOUT_MS.externalReference,
+      '상품 재매칭 시간이 초과되었습니다. 다시 실행해 주세요.'
+    );
+    if (!optionalOperationIsCurrent(operationToken)
+      || state.draft.activeMode !== modeId
+      || state.draft.modes[modeId] !== current
+      || JSON.stringify(current.rows) !== rowsAtStart) return;
     current.rows = matched.map((line, index) => {
       const previous = before[index];
       const next = contract.normalizeRow({ ...previous, ...line, rowId: previous.rowId, editedFields: previous.editedFields });
@@ -5144,8 +5403,14 @@ async function rematchRowsForCustomer(customer) {
     const summary = contract.summarizeRows(current.rows);
     setAppStatus(`${customerName(customer)} 재매칭 완료 · 일치 ${summary.matched} · 확인 ${summary.similar} · 미인식 ${summary.unresolved}`);
   } catch (error) {
+    if (!optionalOperationIsCurrent(operationToken)) return;
     setAppStatus('상품 재매칭을 완료하지 못했습니다. 현재 수정값은 유지됩니다.', 'warn');
     toast(error.message || '상품 재매칭에 실패했습니다.', 'error');
+  } finally {
+    if (state.activeCustomerRematchAttemptId === operationToken.attemptId) {
+      state.activeCustomerRematchAttemptId = '';
+      renderDelivery();
+    }
   }
 }
 
@@ -5249,6 +5514,7 @@ function captureGridPasteUndo() {
 function undoGridPaste() {
   const snapshot = state.gridPasteUndo;
   if (!snapshot || snapshot.mode !== state.draft.activeMode) return;
+  invalidateOptionalOperations();
   const current = modeDraft();
   current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
   current.batches = cloneGridValue(snapshot.batches);
@@ -5296,6 +5562,7 @@ async function deleteSelectedGridRows() {
     return;
   }
   const selectedRowIdSet = new Set(selectedRowIds);
+  invalidateOptionalOperations();
   invalidateGridPasteUndo();
   const linkedRows = modeDraft().rows.filter(row => selectedRowIdSet.has(row.rowId) && (row.linkedSourceRefs?.length || (row.linkedSourceEstimateId && row.linkedSourceRowId)));
   modeDraft().rows = modeDraft().rows.filter(row => !selectedRowIdSet.has(row.rowId));
@@ -5474,6 +5741,7 @@ function applyMappingHeaderLocks(session = null) {
 }
 
 function scheduleMappingProjection({ render = false } = {}) {
+  invalidateOptionalOperations();
   clearTimeout(state.mappingProjectionTimer);
   state.mappingProjectionTimer = window.setTimeout(() => {
     state.mappingProjectionTimer = null;
@@ -5484,7 +5752,7 @@ function scheduleMappingProjection({ render = false } = {}) {
       if (sourceTableViewActive()) renderMappingTableTotals();
       renderDelivery();
     }
-    scheduleSave();
+    scheduleSave({ invalidateOperations: false });
   }, 90);
 }
 
@@ -5567,6 +5835,7 @@ function applyMappingGridPaste(rawText, startRowId) {
     renderInputMappingStatus();
     return toast('행별 열 수가 필드명과 달라 적용하지 않았습니다. 원본입력뷰에서 확인하세요.', 'error');
   }
+  invalidateOptionalOperations();
   captureGridPasteUndo();
   let next = inputMappingSession();
   let startIndex = startRowId === MAPPING_DEFAULT_ROW_ID
@@ -5652,6 +5921,7 @@ function deleteSelectedMappingRows() {
     syncRowSelectionControls();
     return;
   }
+  invalidateOptionalOperations();
   modeDraft().inputMapping = deleteWorkingRows(session, selectedRowIds);
   state.selectedRowIds.clear();
   projectInputMappingToVoucherRows();
@@ -5682,6 +5952,7 @@ function scheduleShoppingOrderInspection(delay = 180) {
   const upload = shoppingOrderImport();
   clearTimeout(state.shoppingInspectionTimer);
   if (!upload) return;
+  state.shoppingInspectionRequestId += 1;
   clearShoppingCommitEvidence(upload);
   upload.inspection = null;
   upload.inspectionError = null;
@@ -5745,10 +6016,20 @@ function preparedShoppingCandidates(upload = shoppingOrderImport()) {
   }
 }
 
-async function refreshShoppingOrderInspection({ persist = true, announce = false } = {}) {
+async function refreshShoppingOrderInspection({ persist = true, announce = false, isCurrent = null } = {}) {
   const upload = shoppingOrderImport();
   if (!upload) return null;
+  const acceptsResult = () => typeof isCurrent !== 'function' || isCurrent();
   const requestId = ++state.shoppingInspectionRequestId;
+  const discardStaleResult = () => {
+    const liveUpload = shoppingOrderImport();
+    if (requestId === state.shoppingInspectionRequestId
+      && liveUpload === upload
+      && upload.status === 'ANALYZING') {
+      scheduleShoppingOrderInspection(0);
+    }
+    return null;
+  };
   applyAutomaticShoppingOwnerMatches(upload);
   preparedShoppingCandidates(upload);
   upload.status = 'ANALYZING';
@@ -5757,7 +6038,7 @@ async function refreshShoppingOrderInspection({ persist = true, announce = false
   renderDelivery();
   try {
     const inspection = await inspectShoppingOrderUpload(upload, shoppingRequestContext());
-    if (requestId !== state.shoppingInspectionRequestId || shoppingOrderImport()?.fileFingerprint !== upload.fileFingerprint) return null;
+    if (!acceptsResult() || requestId !== state.shoppingInspectionRequestId || shoppingOrderImport()?.fileFingerprint !== upload.fileFingerprint) return discardStaleResult();
     upload.inspection = inspection;
     upload.status = 'READY';
     upload.inspectionError = null;
@@ -5769,7 +6050,7 @@ async function refreshShoppingOrderInspection({ persist = true, announce = false
     if (announce) toast('실제 ORDER Q 주문서 기준 중복 판정을 새로 확인했습니다.', 'success');
     return inspection;
   } catch (error) {
-    if (requestId !== state.shoppingInspectionRequestId) return null;
+    if (!acceptsResult() || requestId !== state.shoppingInspectionRequestId) return discardStaleResult();
     upload.status = 'ERROR';
     upload.inspectionError = { code: error.code || 'SHOPPING_ORDER_INSPECTION_FAILED', message: error.message || String(error) };
     upload.inspection = null;
@@ -5823,7 +6104,7 @@ function renderShoppingOrderPanel() {
       const source = sourceRow.sourceValues || shoppingSourceValues(upload, sourceRow);
       const selected = upload.productSelections?.[shoppingProductSelectionKey(sourceRow.sourceRowNumber)];
       return `<li class="shopping-order-item ${selected?.productId ? 'is-resolved' : 'is-unresolved'}">
-        <button type="button" data-shopping-product-row="${sourceRow.sourceRowNumber}" aria-label="${esc(source['상품명'] || source['상품코드'])} 상품 기준정보 선택">
+        <button type="button" data-shopping-product-row="${sourceRow.sourceRowNumber}" aria-label="${esc(source['상품명'] || source['상품코드'])} 상품 기준정보 선택" ${state.busy ? 'disabled' : ''}>
           <strong>${esc(source['상품명'] || '상품명 없음')}</strong><span>${esc(source['상품코드'] || '코드 없음')} · ${esc(source['규격'] || '규격 없음')}</span>
           <small>${selected?.productId ? `연결: ${esc(selected.itemCode)} · ${esc(selected.itemName)}` : '상품 선택 필요'}</small>
         </button>
@@ -5831,11 +6112,20 @@ function renderShoppingOrderPanel() {
       </li>`;
     }).join('');
     return `<article class="shopping-order-candidate" data-shopping-candidate="${esc(candidate.candidateId)}" data-status="${status.status}">
-      <header><div><small>${candidateIndex + 1}번 후보 · 원본 ${candidate.sourceRows?.[0]?.sourceRowNumber || '?'}~${candidate.sourceRows?.at(-1)?.sourceRowNumber || '?'}행</small><button type="button" data-shopping-customer="${esc(sourceCustomerName)}"><strong>${esc(sourceCustomerName || '거래처 미확인')}</strong><span>${selectedCustomer?.customerId ? `연결: ${esc(selectedCustomer.customerCode || selectedCustomer.customerName)}` : '거래처 선택 필요'}</span></button></div><em>${esc(status.label)}</em></header>
+      <header><div><small>${candidateIndex + 1}번 후보 · 원본 ${candidate.sourceRows?.[0]?.sourceRowNumber || '?'}~${candidate.sourceRows?.at(-1)?.sourceRowNumber || '?'}행</small><button type="button" data-shopping-customer="${esc(sourceCustomerName)}" ${state.busy ? 'disabled' : ''}><strong>${esc(sourceCustomerName || '거래처 미확인')}</strong><span>${selectedCustomer?.customerId ? `연결: ${esc(selectedCustomer.customerCode || selectedCustomer.customerName)}` : '거래처 선택 필요'}</span></button></div><em>${esc(status.label)}</em></header>
       <ul class="shopping-order-items">${itemRows}</ul>
       ${issueList ? `<ul class="shopping-order-issues">${issueList}</ul>` : ''}
     </article>`;
   }).join('') || '<div class="shopping-order-empty">선택한 배송일자의 주문 후보가 없습니다.</div>';
+}
+
+function shoppingCommitFingerprint(upload, context) {
+  return JSON.stringify({
+    fileFingerprint: upload?.fileFingerprint || '',
+    customerSelections: upload?.customerSelections || {},
+    productSelections: upload?.productSelections || {},
+    context: context || {}
+  });
 }
 
 async function completeShoppingOrderImport() {
@@ -5847,26 +6137,28 @@ async function completeShoppingOrderImport() {
   }
   const newCount = Number(upload.inspection?.summary?.newCount || 0);
   if (!newCount) return toast('새로 저장할 주문 후보가 없습니다.', 'warn');
+  const commitUpload = cloneGridValue(upload);
+  const commitContext = cloneGridValue(shoppingRequestContext());
+  const commitFingerprint = shoppingCommitFingerprint(commitUpload, commitContext);
   state.busy = true;
   clearShoppingCommitEvidence(upload);
   renderDelivery();
   renderShoppingOrderPanel();
   setAppStatus(`쇼핑몰 신규 주문 ${newCount}건을 후보별로 저장하고 있습니다.`);
   try {
-    const result = await commitShoppingOrderUpload(upload, shoppingRequestContext());
-    upload.commitResult = result;
-    upload.committedAt = new Date().toISOString();
+    const result = await commitShoppingOrderUpload(commitUpload, commitContext);
+    const committedAt = new Date().toISOString();
     const created = result.results.filter(row => row.status === 'CREATED');
     created.forEach(row => appendDeliveryHistory({
       status: 'SAVED',
       targetId: 'orderq-vnext',
       targetRecordId: row.order?.orderId || '',
       orderNo: row.order?.orderNo || '',
-      deliveredAt: upload.committedAt,
+      deliveredAt: committedAt,
       online: false,
       draftId: state.draft.draftId,
       sourceBatchIds: [],
-      orderDate: row.order?.orderDate || upload.selectedDeliveryDate,
+      orderDate: row.order?.orderDate || commitUpload.selectedDeliveryDate,
       customerId: row.order?.customerId || '',
       customerName: row.order?.customerName || '',
       rowCount: row.items?.length || 0,
@@ -5875,22 +6167,43 @@ async function completeShoppingOrderImport() {
     const last = created.at(-1);
     if (last) state.draft.ui.lastDelivery = {
       status: 'SAVED', targetId: 'orderq-vnext', targetRecordId: last.order?.orderId || '',
-      orderNo: last.order?.orderNo || '', deliveredAt: upload.committedAt, online: false
+      orderNo: last.order?.orderNo || '', deliveredAt: committedAt, online: false
     };
-    upload.delivery = {
+    const delivery = {
       createdCount: created.length,
       duplicateCount: result.results.filter(row => row.status === 'DUPLICATE').length,
       reviewRequiredCount: result.results.filter(row => row.status === 'REVIEW_REQUIRED').length,
       failedCount: result.results.filter(row => row.status === 'FAILED').length
     };
-    await refreshShoppingOrderInspection({ persist: false });
-    upload.commitResult = result;
+    const liveUpload = shoppingOrderImport(state.draft.modes.order);
+    const liveContext = shoppingRequestContext(state.draft.modes.order);
+    const commitStillCurrent = liveUpload === upload
+      && shoppingCommitFingerprint(liveUpload, liveContext) === commitFingerprint;
+    if (commitStillCurrent) {
+      upload.commitResult = result;
+      upload.committedAt = committedAt;
+      upload.delivery = delivery;
+    }
+    if (liveUpload) await refreshShoppingOrderInspection({ persist: false });
+    const attachResult = shoppingOrderImport(state.draft.modes.order) === upload
+      && shoppingCommitFingerprint(upload, shoppingRequestContext(state.draft.modes.order)) === commitFingerprint;
+    if (attachResult) {
+      upload.commitResult = result;
+      upload.committedAt = committedAt;
+      upload.delivery = delivery;
+    } else if (liveUpload) {
+      clearShoppingCommitEvidence(liveUpload);
+    }
     saveDraftNow();
     renderShoppingOrderPanel();
     const failed = Number(result.summary.failedCount || 0);
     const review = Number(result.summary.reviewRequiredCount || 0);
-    setAppStatus(`쇼핑몰 주문 저장 완료 ${created.length}건 · 기존 제외 ${result.summary.duplicateCount}건 · 확인 필요 ${review + failed}건`, review || failed ? 'warn' : 'normal');
-    toast(created.length ? `신규 주문 ${created.length}건을 ORDER Q에 저장했습니다.` : '새로 저장된 주문이 없습니다.', created.length ? 'success' : 'warn');
+    setAppStatus(attachResult
+      ? `쇼핑몰 주문 저장 완료 ${created.length}건 · 기존 제외 ${result.summary.duplicateCount}건 · 확인 필요 ${review + failed}건`
+      : `쇼핑몰 주문 ${created.length}건 저장 완료 · 저장 중 변경한 선택은 다음 판정에 유지됩니다.`, attachResult && !(review || failed) ? 'normal' : 'warn');
+    toast(attachResult
+      ? (created.length ? `신규 주문 ${created.length}건을 ORDER Q에 저장했습니다.` : '새로 저장된 주문이 없습니다.')
+      : `신규 주문 ${created.length}건을 저장했고 이후 변경은 현재 작업에 유지했습니다.`, attachResult && created.length ? 'success' : 'warn');
   } catch (error) {
     setAppStatus('쇼핑몰 주문 저장을 완료하지 못했습니다. 원본과 판정은 유지됩니다.', 'error');
     toast(error.message || '쇼핑몰 주문 저장에 실패했습니다.', 'error');
@@ -6094,16 +6407,21 @@ function renderDelivery() {
   const creationCount = creation?.selectedIds.length || 0;
   const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
   const shoppingNewCount = Number(shopping?.inspection?.summary?.newCount || 0);
-  $('completeButton').disabled = state.busy || Boolean(creation) || mappingBlocksVoucher
+  const fileInputPending = Boolean(state.activeFileInputAttemptId);
+  $('completeButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId) || Boolean(creation) || mappingBlocksVoucher
     || Boolean(shopping && (shopping.status !== 'READY' || shoppingNewCount < 1));
   $('completeButton').title = shopping
     ? (shopping.status !== 'READY' ? '실제 ORDER Q 원장 판정을 기다리고 있습니다.' : (shoppingNewCount < 1 ? '새로 저장할 주문 후보가 없습니다.' : ''))
-    : (mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '');
+    : (fileInputPending
+      ? '파일 불러오기가 끝난 뒤 저장할 수 있습니다.'
+      : (state.activeCustomerRematchAttemptId
+      ? '거래처 기준 상품 재매칭이 끝난 뒤 저장할 수 있습니다.'
+      : (mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '')));
   $('completeButton').hidden = false;
   $('completeButton').textContent = shopping ? `신규 주문 저장 ${shoppingNewCount}건` : '저장';
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
   $('saveEstimateAsButton').hidden = !isEstimate;
-  $('saveEstimateAsButton').disabled = state.busy || !loadedEstimate || Boolean(creation);
+  $('saveEstimateAsButton').disabled = state.busy || fileInputPending || !loadedEstimate || Boolean(creation);
   $('estimateCreateButton').hidden = !isEstimate;
   $('estimateCreateButton').disabled = state.busy || !creation || creationCount < 2;
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
@@ -6189,6 +6507,8 @@ function setMode(mode) {
       state.estimateMultiSelectKind = '';
     }
   }
+  invalidateOptionalOperations({ workspaceChanged: true });
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
   clearTimeout(state.autoAnalyzeTimer);
   if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
@@ -6218,6 +6538,7 @@ function setMode(mode) {
     }
     saveDraftNow();
     renderMode();
+    if (shoppingOrderImport()) scheduleShoppingOrderInspection(0);
     void reloadInputTemplates({ applyCurrent: true, announce: false });
     return true;
   } catch (error) {
@@ -6230,10 +6551,10 @@ function setMode(mode) {
   }
 }
 
-function syncSourceText() {
+function syncSourceText({ invalidateOperations = true } = {}) {
   if (state.pendingStructuredImport?.rawText !== sourceTextInput.value) state.pendingStructuredImport = null;
   modeDraft().sourceText = sourceTextInput.value;
-  scheduleSave();
+  scheduleSave({ invalidateOperations });
   resizeSource();
   renderSourceAnalysis();
   scheduleAutoAnalysis();
@@ -6592,6 +6913,7 @@ function removeParserArtifactRows(current) {
 }
 
 function clearParserWorkspace() {
+  invalidateOptionalOperations();
   invalidateGridPasteUndo();
   const current = modeDraft();
   const parserBatchIds = new Set((current.batches || [])
@@ -6625,7 +6947,15 @@ function clearParserWorkspace() {
   sourceTextInput.value = '';
   $('fileInput').value = '';
   $('photoInput').value = '';
+  const clearedSourceImageDocumentId = current.documentId;
   state.sourceImages[state.draft.activeMode] = null;
+  if (clearedSourceImageDocumentId) {
+    state.clearedSourceImageDocumentIds.add(clearedSourceImageDocumentId);
+    setPendingSourceImageDelete(clearedSourceImageDocumentId, true);
+    state.sourceImageRecords.delete(clearedSourceImageDocumentId);
+    void queueSourceImageDelete(clearedSourceImageDocumentId)
+      .catch(() => setAppStatus('입력은 비웠지만 저장된 원본 사진을 정리하지 못했습니다. 화면을 다시 열기 전에 저장소 상태를 확인하세요.', 'warn'));
+  }
   state.selectedRowIds.clear();
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
@@ -6675,6 +7005,10 @@ function fallbackLines(rawText, batch) {
 
 async function analyzeSource({ automatic = false } = {}) {
   if (!automatic) clearTimeout(state.autoAnalyzeTimer);
+  if (state.activeFileInputAttemptId) {
+    if (!automatic) toast('파일 불러오기가 끝난 뒤 분석하세요.', 'warn');
+    return;
+  }
   invalidateGridPasteUndo();
   if (state.busy) {
     if (automatic) scheduleAutoAnalysis(600);
@@ -6934,16 +7268,32 @@ async function analyzeSource({ automatic = false } = {}) {
 
 async function handleFile(file) {
   if (!file) return;
+  if (state.busy && state.activeActivity !== '사진 OCR 처리 중') {
+    $('fileInput').value = '';
+    toast('진행 중인 저장 또는 분석이 끝난 뒤 파일을 불러오세요.', 'warn');
+    return;
+  }
+  const modeId = state.draft.activeMode;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.FILE_INPUT, {
+    assetVersion: /\.(xlsx|xls|csv|tsv)$/i.test(file.name) ? 'xlsx-js-style-1.2.0' : 'text-file',
+    newInput: true
+  });
+  state.activeFileInputAttemptId = operationToken.attemptId;
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
   invalidateGridPasteUndo();
   state.pendingStructuredImport = null;
   try {
-    updateMethod('excel');
+    updateMethod('excel', { invalidateOperations: false });
     setActiveActivity('Excel·파일 불러오는 중');
+    renderDelivery();
+    renderReferenceControls();
     setAppStatus(`${file.name} 파일을 읽고 있습니다.`);
     if (/\.(xlsx|xls|csv|tsv)$/i.test(file.name)) {
-      await ensureXlsx();
+      await ensureXlsx(operationToken);
       const fileBytes = new Uint8Array(await file.arrayBuffer());
+      assertOptionalOperationCurrent(operationToken);
       const fileHashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
+      assertOptionalOperationCurrent(operationToken);
       const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
       const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
       let selected = null;
@@ -6955,26 +7305,26 @@ async function handleFile(file) {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
         const worksheetSource = readWorksheetSource(window.XLSX, workbook.Sheets[sheetName]);
         const matrix = worksheetSource.displayMatrix;
-        if (state.draft.activeMode === 'order' && isExactShoppingOrderMatrix(matrix)) {
+        if (modeId === 'order' && isExactShoppingOrderMatrix(matrix)) {
           shoppingSelected ||= { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName };
           return;
         }
         if (isPurchaseMetaSheet(sheetName, matrix)) {
-          if (state.draft.activeMode === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
+          if (modeId === 'purchase') purchaseMetaRows = readPurchaseMeta(matrix);
           return;
         }
         if (isSalesMetaSheet(sheetName, matrix)) {
-          if (state.draft.activeMode === 'sale') salesMetaRows = readSalesMeta(matrix);
+          if (modeId === 'sale') salesMetaRows = readSalesMeta(matrix);
           return;
         }
         const detection = detectHeaderRow(matrix, inputMappingTargets());
         const candidate = { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName, detection };
-        candidate.estimateErpSummary = inspectEstimateWorkbookCandidate(candidate, state.draft.activeMode);
-        selected = chooseEstimateWorkbookCandidate(selected, candidate, state.draft.activeMode);
+        candidate.estimateErpSummary = inspectEstimateWorkbookCandidate(candidate, modeId);
+        selected = chooseEstimateWorkbookCandidate(selected, candidate, modeId);
       });
       if (shoppingSelected) {
         captureGridPasteUndo();
-        const current = modeDraft();
+        const current = state.draft.modes[modeId];
         const previousWarehouse = shoppingWarehouseContext(current);
         const previousAssignee = {
           assigneeId: current.header.assigneeId,
@@ -7023,7 +7373,11 @@ async function handleFile(file) {
         preparedShoppingCandidates(upload);
         saveDraftNow();
         renderMode();
-        await refreshShoppingOrderInspection({ persist: true });
+        await refreshShoppingOrderInspection({
+          persist: true,
+          isCurrent: () => optionalOperationIsCurrent(operationToken)
+        });
+        assertOptionalOperationCurrent(operationToken);
         const totals = shoppingUploadTotals(upload);
         const summary = upload.inspection?.summary || {};
         const reviewCount = Number(summary.reviewRequiredCount || 0);
@@ -7033,8 +7387,7 @@ async function handleFile(file) {
       }
       if (!selected) throw new Error('읽을 수 있는 Excel 시트가 없습니다.');
       captureGridPasteUndo();
-      const modeId = state.draft.activeMode;
-      const current = modeDraft();
+      const current = state.draft.modes[modeId];
       const fresh = contract.createDraft({ activeMode: modeId }).modes[modeId];
       current.header = cloneGridValue(fresh.header);
       current.sourceText = selected.matrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
@@ -7049,7 +7402,7 @@ async function handleFile(file) {
         fileFingerprint: fileDigest,
         sourceCellMatrix: selected.sourceCellMatrix,
         companyId: state.companyId,
-        voucherMode: state.draft.activeMode
+        voucherMode: modeId
       }));
       if (state.inputTemplatesStatus === 'ERROR' || state.inputTemplatesStatus === 'LOADING') {
         mapping = {
@@ -7083,20 +7436,27 @@ async function handleFile(file) {
       return;
     } else {
       const rawText = await file.text();
-      delete modeDraft().shoppingOrderImport;
+      assertOptionalOperationCurrent(operationToken);
+      delete state.draft.modes[modeId].shoppingOrderImport;
       state.pendingSourceName = file.name;
       state.pendingStructuredImport = null;
       sourceTextInput.value = rawText;
-      syncSourceText();
+      syncSourceText({ invalidateOperations: false });
       setAppStatus(`${file.name}을 불러왔습니다. 기존 텍스트 분석을 시작합니다.`);
       toast('텍스트 파일을 원본입력뷰에 불러왔습니다.', 'success');
     }
   } catch (error) {
+    if (isOptionalOperationStale(error) || !optionalOperationIsCurrent(operationToken)) return;
     toast(error.message || '파일을 읽지 못했습니다.', 'error');
     setAppStatus('파일을 읽지 못했습니다.', 'error');
   } finally {
-    setActiveActivity('');
     $('fileInput').value = '';
+    if (state.activeFileInputAttemptId === operationToken.attemptId) {
+      state.activeFileInputAttemptId = '';
+      if (state.activeActivity === 'Excel·파일 불러오는 중') setActiveActivity('');
+      renderDelivery();
+      renderReferenceControls();
+    }
   }
 }
 
@@ -7121,15 +7481,19 @@ function appendParserText(text, method = 'text') {
   syncSourceText();
 }
 
-function cancelPhotoAnalysisForNewInput() {
+function cancelPhotoAnalysisForNewInput({ invalidateOperations = true } = {}) {
+  if (invalidateOperations) invalidateOptionalOperations();
   state.photoCaptureSequence += 1;
-  if (modeDraft().activeMethod !== 'photo') return;
+  const photoAnalysisActive = state.activeActivity === '사진 OCR 처리 중';
+  if (modeDraft().activeMethod !== 'photo' && !photoAnalysisActive) return;
   state.pendingImageEvidence = null;
   state.pendingOcrReview = null;
+  if (!photoAnalysisActive) return;
   state.busy = false;
   $('analyzeButton').disabled = false;
   $('parserProgress').hidden = true;
   setActiveActivity('');
+  renderDelivery();
 }
 
 async function acceptParserDrop(event) {
@@ -7180,7 +7544,10 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
   state.sourceImages[mode] = record;
   state.sourceImageRecords.set(documentId, record);
   try {
-    await saveSourceImage(record);
+    await queueSourceImageMutation(documentId, () => saveSourceImage(record));
+    state.clearedSourceImageDocumentIds.delete(documentId);
+    setPendingSourceImageDelete(documentId, false);
+    saveDraftNow();
     return true;
   } catch (_) {
     return false;
@@ -7189,32 +7556,47 @@ async function persistSourceImageForMode(mode = state.draft.activeMode) {
 
 async function recognizeImage(file) {
   if (!isImageFile(file)) return;
+  if (state.busy && state.activeActivity !== '사진 OCR 처리 중') {
+    $('photoInput').value = '';
+    toast('진행 중인 저장 또는 분석이 끝난 뒤 사진을 불러오세요.', 'warn');
+    return;
+  }
+  const modeId = state.draft.activeMode;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.PHOTO_INPUT, {
+    assetVersion: 'tesseract-6',
+    newInput: true
+  });
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
+  const captureSequence = state.photoCaptureSequence;
   invalidateGridPasteUndo();
   if (shoppingOrderImport()) {
-    delete modeDraft().shoppingOrderImport;
+    delete state.draft.modes[modeId].shoppingOrderImport;
     state.shoppingInspectionRequestId += 1;
     sourceTextInput.value = '';
   }
-  const captureSequence = ++state.photoCaptureSequence;
-  updateMethod('photo');
+  updateMethod('photo', { invalidateOperations: false });
   let imageEvidence;
   try {
     imageEvidence = await fileToImageEvidence(file);
+    assertOptionalOperationCurrent(operationToken);
   } catch (error) {
-    if (captureSequence === state.photoCaptureSequence) {
+    if (captureSequence === state.photoCaptureSequence && optionalOperationIsCurrent(operationToken)) {
       toast(error.message || '원본 사진을 불러오지 못했습니다.', 'error');
       setAppStatus('원본 사진을 불러오지 못했습니다.', 'error');
     }
     $('photoInput').value = '';
     return;
   }
-  if (captureSequence !== state.photoCaptureSequence) return;
+  if (captureSequence !== state.photoCaptureSequence || !optionalOperationIsCurrent(operationToken)) {
+    $('photoInput').value = '';
+    return;
+  }
   state.pendingImageEvidence = imageEvidence;
-  state.sourceImages[state.draft.activeMode] = imageEvidence;
+  state.sourceImages[modeId] = imageEvidence;
   state.pendingSourceName = imageEvidence.fileName;
   imageEvidence.notice = '원본 사진을 유지한 채 상품표를 분석하고 있습니다.';
   renderSourceSurface();
-  void persistSourceImageForMode();
+  void persistSourceImageForMode(modeId);
   $('photoInput').value = '';
   if (!modeDraft().rows.length) renderRows({ restoreFocus: false });
   if (state.busy) {
@@ -7223,7 +7605,7 @@ async function recognizeImage(file) {
       await new Promise(resolve => window.setTimeout(resolve, 120));
     }
   }
-  if (captureSequence !== state.photoCaptureSequence || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
+  if (captureSequence !== state.photoCaptureSequence || !optionalOperationIsCurrent(operationToken) || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
   state.pendingImageEvidence = imageEvidence;
   state.busy = true;
   $('analyzeButton').disabled = true;
@@ -7232,13 +7614,14 @@ async function recognizeImage(file) {
   setActiveActivity('사진 OCR 처리 중');
   let shouldAnalyze = false;
   try {
-    await persistSourceImageForMode();
+    await persistSourceImageForMode(modeId);
+    assertOptionalOperationCurrent(operationToken);
     renderSourceSurface();
-    await ensureTesseract();
+    await ensureTesseract(operationToken);
     const analysis = await recognizeOcrDocument(file, {
       Tesseract: window.Tesseract,
       onProgress: progress => {
-        if (captureSequence !== state.photoCaptureSequence) return;
+        if (captureSequence !== state.photoCaptureSequence || !optionalOperationIsCurrent(operationToken)) return;
         const percent = Math.round(Number(progress.progress || 0) * 100);
         if (progress.status === 'preprocessing') {
           $('parserProgress').querySelector('strong').textContent = `${progress.variant || '사진'} 전처리 중`;
@@ -7249,53 +7632,56 @@ async function recognizeImage(file) {
         }
       }
     });
+    assertOptionalOperationCurrent(operationToken);
     if (captureSequence !== state.photoCaptureSequence || currentSourceImage()?.sourceImageId !== imageEvidence.sourceImageId) return;
     const text = String(analysis.rawText || '').replace(/\r/g, '');
     if (!text.trim()) throw new Error('사진에서 문자를 찾지 못했습니다.');
     state.pendingOcrReview = { ...analysis, rawText: text };
     sourceTextInput.value = text;
-    modeDraft().sourceText = text;
-    scheduleSave();
+    state.draft.modes[modeId].sourceText = text;
+    scheduleSave({ invalidateOperations: false });
     resizeSource();
     renderSourceAnalysis();
     if (analysis.status === 'VERIFIED') {
       shouldAnalyze = true;
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
-      state.sourceImages[state.draft.activeMode].notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
-      await persistSourceImageForMode();
+      state.sourceImages[modeId].notice = `검증 완료 · ${analysis.validRows.length}행 · 수량 ${totals.quantity.toLocaleString('ko-KR')} · 금액 ${totals.amount.toLocaleString('ko-KR')}원`;
+      await persistSourceImageForMode(modeId);
+      assertOptionalOperationCurrent(operationToken);
       renderSourceSurface();
       setAppStatus('사진의 행 산식과 합계가 일치했습니다. 검증된 상품만 자동 분석합니다.');
       toast('OCR 검증을 통과한 상품행만 입력합니다.', 'success');
     } else {
-      const current = modeDraft();
+      const current = state.draft.modes[modeId];
       const liveBatchIds = new Set(current.batches.filter(batch => batch.sourceRole === 'LIVE_SOURCE').map(batch => batch.batchId));
       current.batches = current.batches.filter(batch => batch.sourceRole !== 'LIVE_SOURCE');
       current.rows = current.rows.filter(row => !liveBatchIds.has(row.batchId));
       renderRows();
       const totals = analysis.calculatedTotal;
       $('sourceNotice').textContent = `OCR 확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행 · 계산 ${totals.amount.toLocaleString('ko-KR')}원`;
-      state.sourceImages[state.draft.activeMode].notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
-      await persistSourceImageForMode();
+      state.sourceImages[modeId].notice = `확인 필요 · 검증 ${analysis.validRows.length}행 · 오류 ${analysis.invalidRows.length}행`;
+      await persistSourceImageForMode(modeId);
+      assertOptionalOperationCurrent(operationToken);
       renderSourceSurface();
       setAppStatus('OCR 산식·합계 검증이 일치하지 않아 상품행을 생성하지 않았습니다.', 'error');
       toast('OCR 확인이 필요합니다. 원문은 유지되고 상품행은 생성하지 않았습니다.', 'error');
     }
   } catch (error) {
-    if (captureSequence !== state.photoCaptureSequence) return;
+    if (isOptionalOperationStale(error) || captureSequence !== state.photoCaptureSequence || !optionalOperationIsCurrent(operationToken)) return;
     state.pendingOcrReview = null;
-    if (state.sourceImages[state.draft.activeMode]) {
-      state.sourceImages[state.draft.activeMode].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
-      void persistSourceImageForMode();
+    if (state.sourceImages[modeId]) {
+      state.sourceImages[modeId].notice = '자동 인식에 실패했습니다. 원본 사진을 보면서 직접 입력할 수 있습니다.';
+      void persistSourceImageForMode(modeId);
       renderSourceSurface();
     }
     toast(error.message || '사진 문자를 추출하지 못했습니다.', 'error');
     setAppStatus('사진 OCR을 완료하지 못했습니다. 직접 입력할 수 있습니다.', 'warn');
   } finally {
-    if (captureSequence === state.photoCaptureSequence) {
+    $('photoInput').value = '';
+    if (captureSequence === state.photoCaptureSequence && optionalOperationIsCurrent(operationToken)) {
       state.busy = false;
       setActiveActivity('');
-      $('photoInput').value = '';
       renderReferenceControls();
       $('parserProgress').hidden = true;
       $('parserProgress').querySelector('strong').textContent = '자료를 분석하고 있습니다.';
@@ -7484,6 +7870,7 @@ function activatePendingReferences({ explicit = true, render = true } = {}) {
   if (explicit) {
     const detail = diffs.map(diff => `${referenceDomainLabel(diff.domain)} ${diff.fromRevision || '없음'} → ${diff.toRevision || '없음'} · +${diff.added} / -${diff.removed} / 변경 ${diff.changed}`).join('\n');
     if (!window.confirm(`보류 중인 기준정보를 현재 작업에 적용하시겠습니까?\n${detail}\n관리자가 편집한 필드와 현재 입력·행 선택은 유지됩니다.`)) return false;
+    invalidateOptionalOperations();
   }
   domains.forEach(domain => {
     const pending = state.references[domain].pending;
@@ -7652,6 +8039,7 @@ function openProductDialog(row, { query = '', focusTarget = null, returnField = 
     closed = true;
     const liveRow = modeDraft().rows.find(item => item.rowId === row.rowId) || row;
     if (product) {
+      invalidateOptionalOperations();
       if (typeof onSelected === 'function') {
         onSelected(product);
         search.setAttribute('aria-expanded', 'false');
@@ -7828,6 +8216,10 @@ async function copyNoticeCanvas(canvas, fileName) {
 }
 
 function openEstimateNoticePreview() {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 공지를 만드세요.', 'warn');
+    return;
+  }
   const current = modeDraft();
   const availablePriceFields = estimateNoticePriceDefinitions();
   const availablePriceFieldIds = new Set(availablePriceFields.map(field => field.id));
@@ -7875,7 +8267,7 @@ function openEstimateNoticePreview() {
     const next = contract.normalizeSettings({ ...state.settings, estimateNoticePriceFields: selectedPriceFieldIds });
     state.settings = next;
     priceSettingsSave = priceSettingsSave
-      .then(() => saveSettings(next))
+      .then(() => persistCurrentSettingsAfterHydration())
       .catch(error => toast(error.message || '단가 필터를 저장하지 못했습니다.', 'error'));
   };
   const renderPreview = () => {
@@ -8173,37 +8565,223 @@ function estimateF8ReusableIndependentCopy(diagnosis, records = state.estimates)
     && record.recoveryOrigin.impactFingerprint === diagnosis.impactFingerprint) || null;
 }
 
-function estimateF8WorkingRebase(updatedRecord) {
-  const workingDraft = state.estimateWorkingCopies.get(updatedRecord.estimateId);
-  if (!workingDraft) return null;
-  const storedRecord = state.estimates.find(item => item.estimateId === updatedRecord.estimateId);
-  const baselineDraft = state.estimateWorkingCopyBaselines.get(updatedRecord.estimateId) || storedRecord?.draft;
-  if (!baselineDraft || linkedEstimateWorkingDraftsEquivalent(baselineDraft, workingDraft)) return null;
-  const rebuiltRefs = new Set((updatedRecord.draft?.rows || []).flatMap(row => (row.linkedSourceRefs || [])
-    .map(ref => `${String(ref?.estimateId || '').trim()}:${String(ref?.rowId || '').trim()}`)));
-  const removedEditedRow = (workingDraft.rows || []).find(row => {
-    const edited = Object.values(row.editedFields || {}).some(Boolean) || (row.linkedSyncFields || []).length;
-    if (!edited) return false;
-    const refs = (row.linkedSourceRefs || []).length
-      ? row.linkedSourceRefs
-      : (row.linkedSourceEstimateId && row.linkedSourceRowId ? [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }] : []);
-    return refs.length && refs.every(ref => !rebuiltRefs.has(`${String(ref?.estimateId || '').trim()}:${String(ref?.rowId || '').trim()}`));
-  });
-  if (removedEditedRow) {
-    const error = new Error(`${estimateTitle(storedRecord)}의 제거 대상 품목에 저장하지 않은 편집이 있습니다. 해당 품목을 먼저 확인하세요.`);
-    error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
-    throw error;
+const estimateF8ValuesEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+function estimateF8ThreeWayConflictPath(baseline, working, postimage, path = '') {
+  if (estimateF8ValuesEqual(working, baseline)
+    || estimateF8ValuesEqual(postimage, baseline)
+    || estimateF8ValuesEqual(working, postimage)) return '';
+  const records = [baseline, working, postimage].every(value => value && typeof value === 'object' && !Array.isArray(value));
+  if (!records) return path || '작업본';
+  const keys = new Set([...Object.keys(baseline), ...Object.keys(working), ...Object.keys(postimage)]);
+  for (const key of keys) {
+    const conflict = estimateF8ThreeWayConflictPath(
+      baseline[key],
+      working[key],
+      postimage[key],
+      path ? `${path}.${key}` : key
+    );
+    if (conflict) return conflict;
   }
-  const rebased = rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord: updatedRecord });
-  if (rebased.conflicts.length) {
-    const error = new Error(rebased.conflicts[0].message || '새 원본과 저장하지 않은 작업본이 같은 값을 다르게 변경했습니다.');
-    error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
-    throw error;
-  }
-  return rebased.draft;
+  return '';
 }
 
-async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}) {
+function estimateF8RowReferenceKeys(row = {}) {
+  const refs = Array.isArray(row.linkedSourceRefs) && row.linkedSourceRefs.length
+    ? row.linkedSourceRefs
+    : (row.linkedSourceEstimateId && row.linkedSourceRowId
+      ? [{ estimateId: row.linkedSourceEstimateId, rowId: row.linkedSourceRowId }]
+      : []);
+  return refs.map(ref => `${String(ref?.estimateId || '').trim()}:${String(ref?.rowId || '').trim()}`)
+    .filter(key => key !== ':');
+}
+
+function alignEstimateF8WorkingRows(baselineDraft, workingDraft, rebuiltDraft) {
+  const rebuiltIdByRef = new Map();
+  (rebuiltDraft.rows || []).forEach(row => {
+    const rowId = String(row?.rowId || '');
+    estimateF8RowReferenceKeys(row).forEach(ref => rebuiltIdByRef.set(ref, rowId));
+  });
+  const rowIdChanges = new Map();
+  (baselineDraft.rows || []).forEach(row => {
+    const rowId = String(row?.rowId || '');
+    const survivingIds = new Set(estimateF8RowReferenceKeys(row).map(ref => rebuiltIdByRef.get(ref)).filter(Boolean));
+    if (survivingIds.size === 1 && !survivingIds.has(rowId)) rowIdChanges.set(rowId, [...survivingIds][0]);
+  });
+  const align = draft => ({
+    ...cloneGridValue(draft),
+    rows: (draft.rows || []).map(row => ({
+      ...cloneGridValue(row),
+      rowId: rowIdChanges.get(String(row?.rowId || '')) || row.rowId
+    }))
+  });
+  return { baselineDraft: align(baselineDraft), workingDraft: align(workingDraft) };
+}
+
+function estimateF8WorkingRebase(updatedRecord, {
+  workingDraft = state.estimateWorkingCopies.get(updatedRecord?.estimateId),
+  baselineDraft = state.estimateWorkingCopyBaselines.get(updatedRecord?.estimateId)
+    || state.estimates.find(item => item.estimateId === updatedRecord?.estimateId)?.draft,
+  storedRecord = state.estimates.find(item => item.estimateId === updatedRecord?.estimateId)
+} = {}) {
+  if (!workingDraft || !baselineDraft || linkedEstimateWorkingDraftsEquivalent(baselineDraft, workingDraft)) return null;
+  const rebuiltDraft = updatedRecord?.draft;
+  if (!rebuiltDraft) throw new Error('ESTIMATE_F8_RECOVERY_POSTIMAGE_MISSING');
+  const aligned = alignEstimateF8WorkingRows(baselineDraft, workingDraft, rebuiltDraft);
+  const alignedBaselineDraft = aligned.baselineDraft;
+  const alignedWorkingDraft = aligned.workingDraft;
+  const baselineRows = new Map((alignedBaselineDraft.rows || []).map(row => [String(row?.rowId || ''), row]));
+  const workingRows = new Map((alignedWorkingDraft.rows || []).map(row => [String(row?.rowId || ''), row]));
+  const rebuiltRows = new Map((rebuiltDraft.rows || []).map(row => [String(row?.rowId || ''), row]));
+
+  for (const [rowId, baselineRow] of baselineRows) {
+    const workingRow = workingRows.get(rowId);
+    const rebuiltRow = rebuiltRows.get(rowId);
+    if (!workingRow || rebuiltRow) continue;
+    const changed = !estimateF8ValuesEqual(workingRow, baselineRow);
+    if (changed) {
+      const error = new Error(`${workingRow.itemName || workingRow.itemCode || estimateTitle(storedRecord)}의 저장하지 않은 편집과 F8 제거 대상이 충돌합니다.`);
+      error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
+      throw error;
+    }
+  }
+
+  for (const [rowId, baselineRow] of baselineRows) {
+    const workingRow = workingRows.get(rowId);
+    const rebuiltRow = rebuiltRows.get(rowId);
+    if (!workingRow || !rebuiltRow) continue;
+    for (const field of LINKED_ESTIMATE_SOURCE_EDIT_FIELDS) {
+      if (estimateF8ValuesEqual(workingRow[field], baselineRow[field])
+        || estimateF8ValuesEqual(rebuiltRow[field], baselineRow[field])
+        || estimateF8ValuesEqual(workingRow[field], rebuiltRow[field])) continue;
+      const error = new Error(`${workingRow.itemName || workingRow.itemCode || estimateTitle(storedRecord)}의 ${LINKED_ESTIMATE_FIELD_LABELS[field] || field} 값이 원본과 작업본에서 모두 변경되었습니다.`);
+      error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
+      throw error;
+    }
+  }
+
+  const recoveryOwnedDraftFields = new Set([
+    'rows', 'linkedEstimateSources', 'estimateAutomationHistory', 'estimateLinkHistory',
+    'updatedAt', 'catalogRecordId', 'estimateKind'
+  ]);
+  const topLevelKeys = new Set([...Object.keys(alignedBaselineDraft), ...Object.keys(alignedWorkingDraft), ...Object.keys(rebuiltDraft)]);
+  for (const key of topLevelKeys) {
+    if (recoveryOwnedDraftFields.has(key)) continue;
+    const conflictPath = estimateF8ThreeWayConflictPath(alignedBaselineDraft[key], alignedWorkingDraft[key], rebuiltDraft[key], key);
+    if (conflictPath) {
+      const error = new Error(`${estimateTitle(storedRecord)}의 ${conflictPath} 변경이 F8 복구 결과와 충돌합니다.`);
+      error.code = 'ESTIMATE_LINK_WORKING_COPY_CONFLICT';
+      throw error;
+    }
+  }
+
+  const merged = mergeHydratedSnapshotPreservingLiveChanges(alignedBaselineDraft, alignedWorkingDraft, rebuiltDraft);
+  for (const key of recoveryOwnedDraftFields) {
+    if (key === 'rows') continue;
+    if (Object.prototype.hasOwnProperty.call(rebuiltDraft, key)) merged[key] = cloneGridValue(rebuiltDraft[key]);
+    else delete merged[key];
+  }
+  const recoveryOwnedRowFields = [
+    'rowId', 'linkedSourceEstimateId', 'linkedSourceEstimateName', 'linkedSourceRowId',
+    'linkedSourceEstimateIds', 'linkedSourceRefs', 'inputOwnership'
+  ];
+  merged.rows = (merged.rows || []).map(row => {
+    const rebuiltRow = rebuiltRows.get(String(row?.rowId || ''));
+    if (!rebuiltRow) return row;
+    const next = { ...row };
+    recoveryOwnedRowFields.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(rebuiltRow, key)) next[key] = cloneGridValue(rebuiltRow[key]);
+      else delete next[key];
+    });
+    return next;
+  });
+  merged.catalogBaselinePrices = buildCatalogPriceSnapshot(merged.rows);
+  return merged;
+}
+
+function applyEstimateF8RecoveredPostimages({
+  latestById,
+  livePrecommitById = latestById,
+  estimateUpserts,
+  persistedById,
+  additionalRecordIds = []
+}) {
+  rememberActiveEstimateWork();
+  const activeSnapshot = state.draft.activeMode === 'estimate'
+    ? {
+      estimateId: modeDraft().catalogRecordId,
+      draft: cloneGridValue(modeDraft())
+    }
+    : null;
+  const nextWorkingCopies = new Map();
+  const replacementById = new Map();
+
+  for (const expectedPostimage of estimateUpserts) {
+    const estimateId = expectedPostimage.estimateId;
+    const persistedRecord = persistedById.get(estimateId);
+    if (!persistedRecord || !estimateF8ValuesEqual(persistedRecord, expectedPostimage)) {
+      const error = new Error('연결 복구 저장 뒤 같은 견적서가 다시 변경되었습니다. 현재 작업을 유지하고 최신 내용을 다시 확인하세요.');
+      error.code = 'ESTIMATE_F8_POSTCOMMIT_TARGET_CHANGED';
+      throw error;
+    }
+    const baselineRecord = latestById.get(estimateId) || null;
+    const liveRecord = state.estimates.find(record => record.estimateId === estimateId) || null;
+    const livePrecommitRecord = livePrecommitById.get(estimateId) || null;
+    if ((livePrecommitRecord && (!liveRecord || !estimateF8ValuesEqual(liveRecord, livePrecommitRecord)))
+      || (!livePrecommitRecord && liveRecord)) {
+      const error = new Error('연결 복구 중 현재 견적서 목록이 변경되었습니다. 저장된 복구 결과와 현재 작업을 자동으로 덮어쓰지 않았습니다.');
+      error.code = 'ESTIMATE_F8_CURRENT_STATE_CHANGED';
+      throw error;
+    }
+    const workingDraft = state.estimateWorkingCopies.get(estimateId);
+    if (baselineRecord && workingDraft) {
+      const rebased = estimateF8WorkingRebase(persistedRecord, {
+        workingDraft: cloneGridValue(workingDraft),
+        baselineDraft: baselineRecord.draft,
+        storedRecord: baselineRecord
+      });
+      if (rebased) nextWorkingCopies.set(estimateId, rebased);
+    }
+    replacementById.set(estimateId, persistedRecord);
+  }
+
+  const additionalRecords = additionalRecordIds
+    .filter(estimateId => !replacementById.has(estimateId) && !state.estimates.some(record => record.estimateId === estimateId))
+    .map(estimateId => persistedById.get(estimateId))
+    .filter(Boolean);
+  state.estimates = [
+    ...state.estimates.map(record => replacementById.get(record.estimateId) || record),
+    ...[...replacementById.values()].filter(record => !state.estimates.some(current => current.estimateId === record.estimateId)),
+    ...additionalRecords
+  ];
+  estimateUpserts.forEach(record => {
+    if (nextWorkingCopies.has(record.estimateId)) {
+      state.estimateWorkingCopies.set(record.estimateId, nextWorkingCopies.get(record.estimateId));
+      state.estimateWorkingCopyBaselines.set(record.estimateId, cloneGridValue(record.draft));
+    } else {
+      state.estimateWorkingCopies.delete(record.estimateId);
+      state.estimateWorkingCopyBaselines.delete(record.estimateId);
+    }
+  });
+  invalidateEstimateLibraryRead();
+  const activeReplacement = activeSnapshot?.estimateId
+    ? replacementById.get(activeSnapshot.estimateId)
+    : null;
+  if (activeReplacement
+    && state.draft.activeMode === 'estimate'
+    && modeDraft().catalogRecordId === activeSnapshot.estimateId
+    && estimateF8ValuesEqual(modeDraft(), activeSnapshot.draft)) {
+    loadCatalogRecord(activeReplacement, { preserveSelection: true, invalidateOperations: false });
+  } else {
+    renderCatalogControls();
+    renderDelivery();
+  }
+}
+
+async function recoverEstimateF8Integrity({ selectedRecords, currentDraft, isCurrent = null } = {}) {
+  const acceptsResult = () => typeof isCurrent !== 'function' || isCurrent();
+  const staleResult = () => ({ status: 'STALE', error: '견적 자료가 변경되어 연결 복구를 저장하지 않았습니다.' });
+  if (!acceptsResult()) return staleResult();
   const targets = estimateF8RecoveryTargets(selectedRecords, currentDraft);
   const targetIds = targets.map(record => record.estimateId);
   let diagnoses = estimateF8MissingDiagnoses(targets, state.estimates);
@@ -8222,13 +8800,19 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
   rememberActiveEstimateWork();
   setAppStatus(`견적 F8 연결 확인 · ${diagnoses.length}건의 영향만 확인하세요.`, 'warn');
   let decisions = await showEstimateF8RecoveryDialog(diagnoses);
+  if (!acceptsResult()) return staleResult();
   if (!decisions) return { status: 'CANCELLED' };
 
   const copyIds = new Map();
   let reconfirmCount = 0;
   let staleRetryCount = 0;
   while (staleRetryCount <= 2) {
-    const latest = await loadEstimateLibrary();
+    const latest = await withTimeout(
+      loadEstimateLibrary(),
+      OPTIONAL_OPERATION_TIMEOUT_MS.estimateList,
+      'F8 연결 복구용 견적서 목록 로딩 시간 초과'
+    );
+    if (!acceptsResult()) return staleResult();
     const latestById = new Map(latest.map(record => [record.estimateId, record]));
     const latestTargets = targetIds.map(estimateId => latestById.get(estimateId)).filter(Boolean);
     if (latestTargets.length !== targetIds.length) {
@@ -8244,7 +8828,19 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
     }) || decisions.some(decision => !freshDiagnoses.some(diagnosis => diagnosis.targetEstimateId === decision.targetEstimateId));
     if (changed) {
       if (!freshDiagnoses.length) {
-        state.estimates = latest;
+        const livePrecommitById = new Map(state.estimates
+          .filter(record => targetIds.includes(record.estimateId))
+          .map(record => [record.estimateId, cloneGridValue(record)]));
+        try {
+          applyEstimateF8RecoveredPostimages({
+            latestById,
+            livePrecommitById,
+            estimateUpserts: latestTargets,
+            persistedById: latestById
+          });
+        } catch (error) {
+          return { status: 'FAILED', error: error?.message || '최신 연결 복구 결과와 현재 작업을 결합하지 못했습니다.' };
+        }
         return { status: 'RECOVERED', outputRecordIds: targetIds, recoveredCount: 0 };
       }
       if (reconfirmCount >= 1) {
@@ -8252,6 +8848,7 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
       }
       setAppStatus('F8 영향 범위가 변경되어 최신 내용으로 한 번 더 확인해야 합니다.', 'warn');
       decisions = await showEstimateF8RecoveryDialog(freshDiagnoses);
+      if (!acceptsResult()) return staleResult();
       if (!decisions) return { status: 'CANCELLED' };
       diagnoses = freshDiagnoses;
       reconfirmCount += 1;
@@ -8265,7 +8862,7 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
     const expectedEstimatePreimages = new Map();
     const expectedMissingEstimateIds = [];
     const outputRecordIds = [...targetIds];
-    const rebasedWorkingDrafts = new Map();
+    const additionalRecordIds = [];
     freshDiagnoses.forEach(diagnosis => {
       const linkedRecord = latestById.get(diagnosis.targetEstimateId);
       const decision = decisionById.get(diagnosis.targetEstimateId);
@@ -8288,8 +8885,11 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
           allRecords: latest.map(record => record.estimateId === updated.estimateId ? updated : record)
         });
         if (postDiagnosis.status !== 'READY') throw new Error('ESTIMATE_F8_RECOVERY_POSTIMAGE_INVALID');
-        const rebased = estimateF8WorkingRebase(updated);
-        if (rebased) rebasedWorkingDrafts.set(updated.estimateId, rebased);
+        estimateF8WorkingRebase(updated, {
+          workingDraft: state.estimateWorkingCopies.get(updated.estimateId),
+          baselineDraft: linkedRecord.draft,
+          storedRecord: linkedRecord
+        });
         estimateUpserts.push(updated);
         return;
       }
@@ -8297,6 +8897,7 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
         const reusableCopy = estimateF8ReusableIndependentCopy(diagnosis, latest);
         if (reusableCopy) {
           expectedEstimatePreimages.set(reusableCopy.estimateId, cloneGridValue(reusableCopy));
+          additionalRecordIds.push(reusableCopy.estimateId);
           copyIds.set(diagnosis.targetEstimateId, reusableCopy.estimateId);
           const outputIndex = outputRecordIds.indexOf(linkedRecord.estimateId);
           if (outputIndex >= 0) outputRecordIds[outputIndex] = reusableCopy.estimateId;
@@ -8320,8 +8921,13 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
         if (outputIndex >= 0) outputRecordIds[outputIndex] = copyId;
       }
     });
+    const livePrecommitById = new Map(estimateUpserts.map(record => [
+      record.estimateId,
+      cloneGridValue(state.estimates.find(current => current.estimateId === record.estimateId) || null)
+    ]));
 
     try {
+      if (!acceptsResult()) return staleResult();
       await commitEstimateLinkBundle({
         estimateUpserts,
         expectedEstimatePreimages: [...expectedEstimatePreimages.values()],
@@ -8335,38 +8941,77 @@ async function recoverEstimateF8Integrity({ selectedRecords, currentDraft } = {}
       return { status: 'FAILED', error: error?.message || 'F8 연결 복구 저장에 실패했습니다.' };
     }
 
-    const persisted = normalizeEstimateOrder(await loadEstimateLibrary());
+    const staleAfterCommit = !acceptsResult();
+    let persisted;
+    try {
+      persisted = await withTimeout(
+        loadEstimateLibrary(),
+        OPTIONAL_OPERATION_TIMEOUT_MS.estimateList,
+        'F8 저장 결과 목록 로딩 시간 초과'
+      );
+    } catch (error) {
+      return {
+        status: 'RECOVERED_REFRESH_FAILED',
+        error: `연결 복구 저장은 완료됐지만 최신 목록을 다시 읽지 못했습니다: ${error?.message || '목록 로드 실패'}`
+      };
+    }
     const persistedById = new Map(persisted.map(record => [record.estimateId, record]));
     const invalidPostimage = freshDiagnoses
       .filter(diagnosis => diagnosis.status === 'PARTIAL_MISSING')
       .map(diagnosis => inspectEstimateF8Integrity({ record: persistedById.get(diagnosis.targetEstimateId), allRecords: persisted }))
       .find(diagnosis => diagnosis.status !== 'READY');
-    if (invalidPostimage) return { status: 'FAILED', error: '저장 후 연결 무결성 재검사에 실패했습니다.' };
-    state.estimates = persisted;
-    estimateUpserts.forEach(record => {
-      if (rebasedWorkingDrafts.has(record.estimateId)) {
-        state.estimateWorkingCopies.set(record.estimateId, rebasedWorkingDrafts.get(record.estimateId));
-        state.estimateWorkingCopyBaselines.set(record.estimateId, cloneGridValue(record.draft));
-      } else {
-        state.estimateWorkingCopies.delete(record.estimateId);
-        state.estimateWorkingCopyBaselines.delete(record.estimateId);
-      }
-    });
-    const openRecovered = estimateUpserts.find(record => record.estimateId === modeDraft().catalogRecordId);
-    if (openRecovered) loadCatalogRecord(persistedById.get(openRecovered.estimateId), { preserveSelection: true });
-    else renderCatalogControls();
-    return { status: 'RECOVERED', outputRecordIds, recoveredCount: freshDiagnoses.length };
+    if (invalidPostimage) {
+      return {
+        status: 'RECOVERED_CONFLICT',
+        outputRecordIds,
+        recoveredCount: freshDiagnoses.length,
+        error: '연결 복구는 저장됐지만 저장 후 무결성 결과가 다시 변경되었습니다. 현재 작업을 유지하고 다시 확인하세요.'
+      };
+    }
+    try {
+      applyEstimateF8RecoveredPostimages({
+        latestById,
+        livePrecommitById,
+        estimateUpserts,
+        persistedById,
+        additionalRecordIds
+      });
+    } catch (error) {
+      return {
+        status: 'RECOVERED_CONFLICT',
+        outputRecordIds,
+        recoveredCount: freshDiagnoses.length,
+        error: error?.message || '연결 복구는 저장됐지만 현재 작업과 자동 결합하지 못했습니다.'
+      };
+    }
+    return {
+      status: staleAfterCommit || !acceptsResult() ? 'RECOVERED_STALE' : 'RECOVERED',
+      outputRecordIds,
+      recoveredCount: freshDiagnoses.length
+    };
   }
   return { status: 'FAILED', error: '다른 작업에서 연결 대상이 계속 변경 중입니다. 변경이 끝난 뒤 다시 실행하세요.' };
 }
 
 async function exportEstimateExcel() {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 보고서를 생성하세요.', 'warn');
+    return;
+  }
   if (estimateF8ExportInFlight) {
     toast('견적 F8 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
     return;
   }
   estimateF8ExportInFlight = true;
   try {
+    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+    try {
+      await ensureXlsx(operationToken);
+    } catch (error) {
+      return toast(isOptionalOperationStale(error)
+        ? '견적 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
+        : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
+    }
     const creation = estimateCreation();
     let selectedRecords = selectedEstimateRecords();
     let currentDraft = modeDraft();
@@ -8381,9 +9026,38 @@ async function exportEstimateExcel() {
     if (!plan.ok) {
       let recovery;
       try {
-        recovery = await recoverEstimateF8Integrity({ selectedRecords, currentDraft });
+        recovery = await recoverEstimateF8Integrity({
+          selectedRecords,
+          currentDraft,
+          isCurrent: () => optionalOperationIsCurrent(operationToken)
+        });
       } catch (error) {
         recovery = { status: 'FAILED', error: error?.message || 'F8 연결 복구에 실패했습니다.' };
+      }
+      if (recovery.status === 'STALE') {
+        setAppStatus('견적 자료가 변경되어 F8 연결 복구를 저장하지 않았습니다.', 'warn');
+        toast('변경된 현재 견적을 유지했습니다. F8을 다시 실행하세요.', 'warn');
+        return;
+      }
+      if (recovery.status === 'RECOVERED_STALE') {
+        setAppStatus('F8 연결 복구 저장 완료 · 현재 견적이 변경되어 Excel 생성은 중단했습니다.', 'warn');
+        toast('연결 복구는 저장했고 현재 편집은 유지했습니다. F8을 다시 실행하세요.', 'warn');
+        return;
+      }
+      if (recovery.status === 'RECOVERED_REFRESH_FAILED') {
+        setAppStatus(recovery.error, 'warn');
+        toast('연결 복구는 저장됐습니다. 목록을 다시 불러온 뒤 F8을 실행하세요.', 'warn');
+        return;
+      }
+      if (recovery.status === 'RECOVERED_CONFLICT') {
+        setAppStatus(`견적 F8 연결 복구 저장 완료 · ${recovery.error}`, 'warn');
+        toast('연결 복구는 저장했고 현재 편집은 덮어쓰지 않았습니다. 견적서를 다시 확인하세요.', 'warn');
+        return;
+      }
+      if (!optionalOperationIsCurrent(operationToken)) {
+        setAppStatus('견적 자료가 변경되어 이전 F8 생성을 중단했습니다.', 'warn');
+        toast('변경된 현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
+        return;
       }
       if (recovery.status === 'CANCELLED') {
         setAppStatus('견적 F8 연결 정리 취소 · 저장 내용은 변경하지 않았습니다.', 'warn');
@@ -8440,6 +9114,11 @@ async function exportEstimateExcel() {
     if (duplicateGroups.length) {
       setAppStatus(`견적 F8 중복 확인 · ${duplicateGroups.length}개 품목의 기준 입고가를 선택하세요.`, 'warn');
       duplicateResolutions = await showEstimateDuplicateResolutionDialog(duplicateGroups, outputConfig);
+      if (!optionalOperationIsCurrent(operationToken)) {
+        setAppStatus('견적 자료가 변경되어 이전 F8 생성을 중단했습니다.', 'warn');
+        toast('변경된 현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
+        return;
+      }
       if (!duplicateResolutions) {
         setAppStatus(`견적 F8 출력 취소 · 중복 ${duplicateGroups.length}개 품목 미확정`, 'warn');
         return;
@@ -8452,8 +9131,6 @@ async function exportEstimateExcel() {
       toast(`F8 Excel을 생성하지 않았습니다. ${detail}`, 'error');
       return;
     }
-    try { await ensureXlsx(); }
-    catch (error) { return toast(error.message, 'error'); }
     const workbook = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
     window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
@@ -8666,17 +9343,27 @@ function buildPurchaseReportSourceRows(current = modeDraft()) {
 let purchaseSalesExportInFlight = false;
 
 async function exportPurchaseSalesExcel() {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 보고서를 생성하세요.', 'warn');
+    return;
+  }
   if (purchaseSalesExportInFlight) {
     toast('구매 판매업로드 Excel을 생성 중입니다. 완료 후 다시 시도하세요.', 'warn');
     return;
   }
-  const current = modeDraft();
-  const rows = voucherOutputRows(current);
+  const rows = voucherOutputRows();
   if (!rows.length) return toast('Excel로 출력할 구매 품목이 없습니다.', 'error');
   purchaseSalesExportInFlight = true;
   try {
-    try { await ensureXlsx(); }
-    catch (error) { return toast(error.message, 'error'); }
+    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.PURCHASE_SALES_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+    try {
+      await ensureXlsx(operationToken);
+    } catch (error) {
+      return toast(isOptionalOperationStale(error)
+        ? '전표 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
+        : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
+    }
+    const current = modeDraft();
     const output = buildPurchaseSalesUploadData(buildPurchaseReportSourceRows(current));
     const workbook = window.XLSX.utils.book_new();
     output.sheetNames.forEach(sheetName => {
@@ -8736,6 +9423,10 @@ async function copyVoucherText(text) {
 }
 
 async function shareCurrentVoucher() {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 공유하세요.', 'warn');
+    return;
+  }
   if (state.draft.activeMode === 'estimate') return openEstimateNoticePreview();
   const rows = voucherOutputRows();
   if (!rows.length) return toast('공유할 전표 품목이 없습니다.', 'error');
@@ -8758,13 +9449,23 @@ async function shareCurrentVoucher() {
 }
 
 async function exportCurrentVoucherExcel() {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 보고서를 생성하세요.', 'warn');
+    return;
+  }
   if (state.draft.activeMode === 'estimate') return exportEstimateExcel();
   if (state.draft.activeMode === 'purchase') return exportPurchaseSalesExcel();
   const rows = voucherOutputRows();
   if (!rows.length) return toast('Excel로 출력할 전표 품목이 없습니다.', 'error');
-  try { await ensureXlsx(); }
-  catch (error) { return toast(error.message, 'error'); }
   const mode = state.draft.activeMode;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.VOUCHER_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+  try {
+    await ensureXlsx(operationToken);
+  } catch (error) {
+    return toast(isOptionalOperationStale(error)
+      ? '전표 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
+      : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
+  }
   const workbook = window.XLSX.utils.book_new();
   const sheet = window.XLSX.utils.aoa_to_sheet(buildVoucherOutputMatrix(mode));
   window.XLSX.utils.book_append_sheet(workbook, sheet, contract.MODES[mode].label);
@@ -9039,6 +9740,7 @@ function persistEstimateBulkProgress(plan, statusOverrides = {}) {
 
 function acceptEstimateBulkRecord(record) {
   const existing = state.estimates.some(item => item.estimateId === record.estimateId);
+  invalidateEstimateLibraryRead();
   state.estimates = normalizeEstimateOrder(existing
     ? state.estimates.map(item => item.estimateId === record.estimateId ? record : item)
     : [...state.estimates, record]);
@@ -9441,6 +10143,10 @@ async function runAutomaticEstimateBulkUpdates(classification) {
 }
 
 function openEstimateSaveDialog({ saveAs = false } = {}) {
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 견적서를 저장하세요.', 'warn');
+    return;
+  }
   if (!validateEstimateDocument()) return;
   const current = modeDraft();
   const creation = estimateCreation();
@@ -9677,6 +10383,7 @@ async function saveEstimateDocument(catalogName) {
     const bundleById = new Map(bundle.map(item => [item.estimateId, item]));
     const savedRecord = bundleById.get(estimateId) || record;
     const deletedIds = new Set(deletedEstimateIds);
+    invalidateEstimateLibraryRead();
     state.estimates = normalizeEstimateOrder(updateExistingRecord
       ? state.estimates.filter(item => !deletedIds.has(item.estimateId)).map(item => bundleById.get(item.estimateId) || item)
       : [...state.estimates.filter(item => !deletedIds.has(item.estimateId)).map(item => bundleById.get(item.estimateId) || item), savedRecord]);
@@ -9753,6 +10460,7 @@ function importRelatedVoucher(voucherId) {
       `현재 입력과 불러올 전표의 ${conflicts.map(item => item.kind === 'CUSTOMER' ? '거래처' : '창고').join('·')}가 다릅니다.\n`
       + '자동으로 합치지 않고 원본 행 구분을 유지한 채 불러오시겠습니까?'
     )) return;
+    invalidateOptionalOperations({ workspaceChanged: true });
     const before = current.rows.length;
     const applied = applyRelatedVoucherImportPlan(plan, current, { acceptConflicts: conflicts.length > 0 });
     current.header = contract.normalizeHeader(applied.header, current.header);
@@ -9790,12 +10498,28 @@ function confirmGroupedVoucherCreation(mode, groups = []) {
 }
 
 async function completeOrder() {
-  if (shoppingOrderImport()) return completeShoppingOrderImport();
+  if (state.busy) {
+    toast('진행 중인 작업이 끝난 뒤 저장하세요.', 'warn');
+    return;
+  }
+  if (state.activeFileInputAttemptId) {
+    toast('파일 불러오기가 끝난 뒤 저장하세요.', 'warn');
+    return;
+  }
+  if (state.activeCustomerRematchAttemptId) {
+    toast('거래처 기준 상품 재매칭이 끝난 뒤 저장하세요.', 'warn');
+    return;
+  }
+  if (shoppingOrderImport()) {
+    invalidateOptionalOperations();
+    return completeShoppingOrderImport();
+  }
   if (inputMappingSession() && !inputMappingTemplateReady()) {
     setAppStatus('입력 양식이 확정되지 않아 전표 저장을 중단했습니다. 현재 작업은 유지됩니다.', 'error');
     toast('모든 열을 매핑 또는 비매핑으로 결정하고 입력 양식을 저장하세요.', 'error');
     return;
   }
+  invalidateOptionalOperations();
   const current = modeDraft();
   if (pruneEmptyWorkRows(current)) {
     renderRows({ restoreFocus: false });
@@ -9862,12 +10586,60 @@ async function finalizeWithStocktakeDecision(service, request) {
   return { cancelled: false, results };
 }
 
+async function ensureOfficialCapability(mode) {
+  const isPurchase = mode === 'purchase';
+  const capabilityKey = isPurchase ? 'purchaseCapability' : 'saleCapability';
+  if (state[capabilityKey].ready) return true;
+  const companyId = state.companyId;
+  const modeId = state.draft.activeMode;
+  const attemptId = createRecordId('SICAP');
+  const activity = isPurchase ? '구매 저장 계약 다시 확인' : '판매 저장 계약 다시 확인';
+  state.activeCapabilityAttemptId = attemptId;
+  state.busy = true;
+  setActiveActivity(activity);
+  renderDelivery();
+  try {
+    const capability = await withTimeout(
+      isPurchase ? loadPurchaseStage3Capability() : loadSaleStage4Capability(),
+      OPTIONAL_OPERATION_TIMEOUT_MS.capability,
+      `${isPurchase ? '구매' : '판매'} 저장 계약 확인 시간이 초과되었습니다.`
+    );
+    if (state.activeCapabilityAttemptId !== attemptId
+      || state.companyId !== companyId
+      || state.draft.activeMode !== modeId) return false;
+    state[capabilityKey] = capability?.ready
+      ? capability
+      : {
+        ready: false,
+        code: isPurchase ? 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE' : 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE',
+        detail: capability?.detail || capability?.code || 'ping failed'
+      };
+    return state[capabilityKey].ready;
+  } catch (error) {
+    if (state.activeCapabilityAttemptId === attemptId) {
+      state[capabilityKey] = {
+        ready: false,
+        code: isPurchase ? 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE' : 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE',
+        detail: error?.message || 'ping failed'
+      };
+    }
+    return false;
+  } finally {
+    if (state.activeCapabilityAttemptId === attemptId) {
+      state.activeCapabilityAttemptId = '';
+      state.busy = false;
+      if (state.activeActivity === activity) setActiveActivity('');
+      renderDelivery();
+    }
+  }
+}
+
 async function completeSaleOfficial() {
-  const current = modeDraft();
-  if (!state.saleCapability.ready) {
+  if (!state.saleCapability.ready && !await ensureOfficialCapability('sale')) {
     setAppStatus('공식 판매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
     return toast('판매 원장 연결을 사용할 수 없습니다. 현재 작업과 자동저장은 유지됩니다.', 'error');
   }
+  const current = modeDraft();
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('sale', current.rows, current.header);
@@ -9917,11 +10689,11 @@ async function completeSaleOfficial() {
 }
 
 async function completePurchaseOfficial() {
-  const current = modeDraft();
-  if (!state.purchaseCapability.ready) {
+  if (!state.purchaseCapability.ready && !await ensureOfficialCapability('purchase')) {
     setAppStatus('공식 구매전표 중앙 배포 계약을 확인할 수 없어 저장이 비활성화되었습니다.', 'warn');
     return toast('구매 원장 연결을 사용할 수 없습니다. 현재 작업과 자동저장은 유지됩니다.', 'error');
   }
+  const current = modeDraft();
   applyWarehouseMatch();
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('purchase', current.rows, current.header);
@@ -10302,6 +11074,8 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   const hasData = current.rows.length || current.sourceText.trim();
   if (requireConfirmation && hasData && !window.confirm(`${contract.MODES[state.draft.activeMode].label} 입력 내용을 비우고 새로 작성하시겠습니까?`)) return;
   if (hasData) saveDraftNow();
+  invalidateOptionalOperations({ workspaceChanged: true });
+  cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
   resetInputListSearchForContextChange();
   const fallback = contract.createDraft().modes[state.draft.activeMode];
   fallback.header.warehouseId = current.header.warehouseId;
@@ -10331,25 +11105,109 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
 }
 
 async function hydrateEstimateLibrary() {
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_LIBRARY_READ, { assetVersion: 'smartinput-db-v5' });
   try {
     performance.mark?.('smartinput-estimate-library-load-start');
-    const estimates = await withTimeout(loadEstimateLibrary(), 2500, '견적서 목록 로딩 시간 초과');
+    const estimates = await withTimeout(loadEstimateLibrary(), OPTIONAL_OPERATION_TIMEOUT_MS.estimateList, '견적서 목록 로딩 시간 초과');
+    if (!optionalOperationIsLatest(operationToken)) return;
     state.estimates = normalizeEstimateOrder(estimates || []);
     state.smartDataReady = true;
     state.smartDataError = null;
   } catch (error) {
+    if (!optionalOperationIsLatest(operationToken)) return;
     state.smartDataReady = false;
     state.smartDataError = error || new Error('견적서 목록 로드 실패');
   } finally {
-    renderMode();
-    performance.mark?.('smartinput-estimate-library-rendered');
-    try {
-      performance.measure?.('smartinput-estimate-library-ready', 'smartinput-estimate-library-load-start', 'smartinput-estimate-library-rendered');
-    } catch (_) {}
+    if (optionalOperationIsLatest(operationToken)) {
+      renderMode();
+      performance.mark?.('smartinput-estimate-library-rendered');
+      try {
+        performance.measure?.('smartinput-estimate-library-ready', 'smartinput-estimate-library-load-start', 'smartinput-estimate-library-rendered');
+      } catch (_) {}
+    }
   }
 }
 
+let smartAuxiliaryRetryPromise = null;
+
+async function retrySmartAuxiliaryData() {
+  if (settingsWriteGate.status() === 'READY') return true;
+  if (smartAuxiliaryRetryPromise) return smartAuxiliaryRetryPromise;
+  const companyId = state.companyId;
+  const modeId = state.draft.activeMode;
+  const settingsAtRetryStart = cloneGridValue(state.settings);
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.SMART_DATA_READ, { assetVersion: 'smartinput-db-v5' });
+  settingsWriteGate.beginRetry();
+  state.smartAuxiliaryDataError = null;
+  smartAuxiliaryRetryPromise = (async () => {
+    try {
+      const data = await withTimeout(
+        loadSmartInputData({ includeEstimates: false }),
+        OPTIONAL_OPERATION_TIMEOUT_MS.localModule,
+        '스마트입력 설정 로딩 시간이 초과되었습니다.'
+      );
+      if (!optionalOperationIsLatest(operationToken) || state.companyId !== companyId) {
+        throw new Error('스마트입력 설정 로드가 현재 작업으로 대체되었습니다.');
+      }
+      const migratedInitialInputModes = contract.initialInputLayoutMigrationModes(data.settings || {});
+      state.settings = contract.normalizeSettings(mergeHydratedSnapshotPreservingLiveChanges(
+        settingsAtRetryStart,
+        state.settings,
+        contract.normalizeSettings(data.settings || {})
+      ));
+      settingsWriteGate.settleReady();
+      let settingsMigrationError = null;
+      if (migratedInitialInputModes.length) {
+        try {
+          await settingsWriteGate.enqueue(state.settings);
+        } catch (error) {
+          settingsMigrationError = error || new Error('전표별 입력 구성 자동 전환 저장 실패');
+        }
+      }
+      if (!optionalOperationIsLatest(operationToken) || state.companyId !== companyId) return false;
+      state.linkGroups = data.linkGroups || [];
+      state.temporaryCustomers = data.temporaryCustomers || [];
+      state.aliasMappings = data.aliasMappings || [];
+      const loadedSourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
+      loadedSourceImageRecords.forEach((record, documentId) => {
+        if (!state.clearedSourceImageDocumentIds.has(documentId) && !state.sourceImageRecords.has(documentId)) {
+          state.sourceImageRecords.set(documentId, record);
+        }
+      });
+      Object.keys(state.sourceImages).forEach(mode => {
+        if (!state.sourceImages[mode]) restoreSourceImageForMode(mode);
+      });
+      restoreCachedReferences(data.referenceCache || {});
+      state.customers = normalizedCustomerCandidates(state.customers);
+      state.smartAuxiliaryDataError = settingsMigrationError;
+      if (state.draft.activeMode === modeId && operationToken.inputGeneration === state.optionalInputGeneration) {
+        restoreInputMappingSession({ applyLatestTemplate: false });
+      }
+      renderMode();
+      return true;
+    } catch (error) {
+      if (optionalOperationIsLatest(operationToken) && state.companyId === companyId) {
+        state.smartAuxiliaryDataError = error || new Error('스마트입력 설정 로드 실패');
+        settingsWriteGate.settleError(state.smartAuxiliaryDataError);
+        renderMode();
+      }
+      return false;
+    } finally {
+      smartAuxiliaryRetryPromise = null;
+    }
+  })();
+  return smartAuxiliaryRetryPromise;
+}
+
 async function hydrateReferences() {
+  const companyId = state.companyId;
+  const modeId = state.draft.activeMode;
+  const settingsAtHydrationStart = cloneGridValue(state.settings);
+  const smartDataToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.SMART_DATA_READ, { assetVersion: 'smartinput-db-v5' });
+  const referenceToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.REFERENCE_READ, { assetVersion: 'reference-generation-v1' });
+  const productReferenceToken = beginOptionalOperation(referenceOperationFeature('product'), { assetVersion: 'reference-generation-v1' });
+  const customerReferenceToken = beginOptionalOperation(referenceOperationFeature('customer'), { assetVersion: 'reference-generation-v1' });
+  const templateToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.INPUT_TEMPLATE_READ, { assetVersion: 'smartinput-db-v5' });
   state.catalogStatus = 'LOADING';
   state.customerStatus = 'LOADING';
   state.referenceStatus = REFERENCE_DOMAIN_STATUS.LOADING;
@@ -10357,72 +11215,106 @@ async function hydrateReferences() {
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
-    withTimeout(loadSmartInputData({ includeEstimates: false }), 5000, '스마트입력 설정 로딩 시간 초과'),
-    withTimeout(loadInputTemplates(state.companyId, state.draft.activeMode), 5000, '입력 양식 로딩 시간 초과')
+    withTimeout(loadSmartInputData({ includeEstimates: false }), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '스마트입력 설정 로딩 시간 초과'),
+    withTimeout(loadInputTemplates(companyId, modeId), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '입력 양식 로딩 시간 초과')
   ]);
-  state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
-    ? smartDataResult[1].value
-    : [];
-  state.inputTemplatesStatus = smartDataResult[1].status === 'rejected'
-    ? 'ERROR'
-    : (state.inputTemplates.length ? 'READY' : 'EMPTY');
-  state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
-  if (smartDataResult[0].status === 'fulfilled') {
+  if (optionalOperationIsLatest(templateToken) && state.companyId === companyId && state.draft.activeMode === modeId) {
+    state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
+      ? smartDataResult[1].value
+      : [];
+    state.inputTemplatesStatus = smartDataResult[1].status === 'rejected'
+      ? 'ERROR'
+      : (state.inputTemplates.length ? 'READY' : 'EMPTY');
+    state.inputTemplatesError = smartDataResult[1].status === 'rejected' ? smartDataResult[1].reason : null;
+  }
+  if (optionalOperationIsLatest(smartDataToken) && state.companyId === companyId && smartDataResult[0].status === 'fulfilled') {
     const data = smartDataResult[0].value;
     const migratedInitialInputModes = contract.initialInputLayoutMigrationModes(data.settings || {});
-    state.settings = contract.normalizeSettings(data.settings || {});
+    state.settings = contract.normalizeSettings(mergeHydratedSnapshotPreservingLiveChanges(
+      settingsAtHydrationStart,
+      state.settings,
+      contract.normalizeSettings(data.settings || {})
+    ));
+    settingsWriteGate.settleReady();
     let settingsMigrationError = null;
     if (migratedInitialInputModes.length) {
       try {
-        await saveSettings(state.settings);
+        await settingsWriteGate.enqueue(state.settings);
       } catch (error) {
         settingsMigrationError = error || new Error('전표별 입력 구성 자동 전환 저장 실패');
       }
     }
+    if (!optionalOperationIsLatest(smartDataToken) || state.companyId !== companyId) return;
     state.linkGroups = data.linkGroups || [];
     state.temporaryCustomers = data.temporaryCustomers || [];
     state.aliasMappings = data.aliasMappings || [];
-    state.sourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
-    Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
-    restoreCachedReferences(data.referenceCache || {});
+    const loadedSourceImageRecords = new Map((data.sourceImages || []).map(sourceImage => [sourceImage.documentId, sourceImage]));
+    if (smartDataToken.inputGeneration === state.optionalInputGeneration) {
+      state.sourceImageRecords = new Map([...loadedSourceImageRecords]
+        .filter(([documentId]) => !state.clearedSourceImageDocumentIds.has(documentId)));
+      Object.keys(state.sourceImages).forEach(mode => restoreSourceImageForMode(mode));
+    } else {
+      loadedSourceImageRecords.forEach((record, documentId) => {
+        if (!state.clearedSourceImageDocumentIds.has(documentId) && !state.sourceImageRecords.has(documentId)) {
+          state.sourceImageRecords.set(documentId, record);
+        }
+      });
+      Object.keys(state.sourceImages).forEach(mode => {
+        if (!state.sourceImages[mode]) restoreSourceImageForMode(mode);
+      });
+    }
+    if (optionalOperationIsLatest(referenceToken)) restoreCachedReferences(data.referenceCache || {});
     state.customers = normalizedCustomerCandidates(state.customers);
     state.smartAuxiliaryDataError = settingsMigrationError;
-    restoreInputMappingSession({ applyLatestTemplate: false });
+    if (state.draft.activeMode === modeId && referenceToken.inputGeneration === state.optionalInputGeneration) {
+      restoreInputMappingSession({ applyLatestTemplate: false });
+    }
     renderMode();
-  } else {
+  } else if (optionalOperationIsLatest(smartDataToken) && state.companyId === companyId) {
     state.smartAuxiliaryDataError = smartDataResult[0].reason || new Error('스마트입력 설정 로드 실패');
+    settingsWriteGate.settleError(state.smartAuxiliaryDataError);
     renderMode();
   }
+  if (!optionalOperationIsLatest(referenceToken)) return;
   try {
-    await ensureFieldCatalogSeed();
-    const registries = await Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
-      companyId: state.companyId,
-      voucherMode,
-      actor: state.actorId
-    })));
+    const registries = await withTimeout((async () => {
+      await ensureFieldCatalogSeed();
+      return Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+        companyId: state.companyId,
+        voucherMode,
+        actor: state.actorId
+      })));
+    })(), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '전표 필드 등록부 로딩 시간 초과');
+    if (!optionalOperationIsLatest(referenceToken)) return;
     state.fieldRegistries = Object.fromEntries(registries.map(registry => [registry.voucherMode, registry]));
     state.fieldRegistryStatus = 'READY';
     state.fieldRegistryError = null;
   } catch (error) {
+    if (!optionalOperationIsLatest(referenceToken)) return;
     state.fieldRegistryStatus = 'ERROR';
     state.fieldRegistryError = error;
     setAppStatus('전표 필드 등록부를 불러오지 못했습니다. 기본 필드로 계속 입력할 수 있습니다.', 'warn');
   }
   const results = await Promise.allSettled([
-    withTimeout(loadReferenceDomain('product'), 7000, '상품 기준자료 로딩 시간 초과'),
-    withTimeout(loadReferenceDomain('customer'), 7000, '거래처 기준자료 로딩 시간 초과'),
-    withTimeout(loadWarehouseCatalog(), 5000, '창고 기준자료 로딩 시간 초과'),
-    withTimeout(loadPurchaseStage3Capability(), 5000, '구매 저장 계약 확인 시간 초과'),
-    withTimeout(loadSaleStage4Capability(), 5000, '판매 저장 계약 확인 시간 초과')
+    withTimeout(loadReferenceDomain('product'), OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '상품 기준자료 로딩 시간 초과'),
+    withTimeout(loadReferenceDomain('customer'), OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '거래처 기준자료 로딩 시간 초과'),
+    withTimeout(loadWarehouseCatalog(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '창고 기준자료 로딩 시간 초과'),
+    withTimeout(loadPurchaseStage3Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '구매 저장 계약 확인 시간 초과'),
+    withTimeout(loadSaleStage4Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '판매 저장 계약 확인 시간 초과')
   ]);
-  ingestLatestReference('product', results[0].status === 'fulfilled' ? results[0].value : {
-    status: REFERENCE_DOMAIN_STATUS.ERROR,
-    error: { code: 'PRODUCT_REFERENCE_TIMEOUT', message: results[0].reason?.message || '상품 기준자료 로드 실패' }
-  });
-  ingestLatestReference('customer', results[1].status === 'fulfilled' ? results[1].value : {
-    status: REFERENCE_DOMAIN_STATUS.ERROR,
-    error: { code: 'CUSTOMER_REFERENCE_TIMEOUT', message: results[1].reason?.message || '거래처 기준자료 로드 실패' }
-  });
+  if (!optionalOperationIsLatest(referenceToken)) return;
+  if (optionalOperationIsLatest(productReferenceToken)) {
+    ingestLatestReference('product', results[0].status === 'fulfilled' ? results[0].value : {
+      status: REFERENCE_DOMAIN_STATUS.ERROR,
+      error: { code: 'PRODUCT_REFERENCE_TIMEOUT', message: results[0].reason?.message || '상품 기준자료 로드 실패' }
+    });
+  }
+  if (optionalOperationIsLatest(customerReferenceToken)) {
+    ingestLatestReference('customer', results[1].status === 'fulfilled' ? results[1].value : {
+      status: REFERENCE_DOMAIN_STATUS.ERROR,
+      error: { code: 'CUSTOMER_REFERENCE_TIMEOUT', message: results[1].reason?.message || '거래처 기준자료 로드 실패' }
+    });
+  }
   if (results[2].status === 'fulfilled') {
     state.warehouseCatalog = results[2].value;
     renderWarehouseOptions();
@@ -10481,6 +11373,10 @@ async function persistFieldRegistryLayout(settings) {
 
 async function refreshAllReferencesFromToolbar() {
   if (state.busy) return false;
+  const companyId = state.companyId;
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.REFERENCE_READ, { assetVersion: 'reference-generation-v1' });
+  const productReferenceToken = beginOptionalOperation(referenceOperationFeature('product'), { assetVersion: 'reference-generation-v1' });
+  const customerReferenceToken = beginOptionalOperation(referenceOperationFeature('customer'), { assetVersion: 'reference-generation-v1' });
   const focused = document.activeElement;
   const focusId = focused?.id || '';
   const selectionStart = typeof focused?.selectionStart === 'number' ? focused.selectionStart : null;
@@ -10491,12 +11387,22 @@ async function refreshAllReferencesFromToolbar() {
   renderReferenceControls();
   setAppStatus('상품·거래처·창고·담당자·프로젝트·필드명을 한 번에 새로고침하고 있습니다.');
   try {
-    const result = await refreshAllReferenceData({ companyId: state.companyId });
-    const registries = await Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
-      companyId: state.companyId,
-      voucherMode,
-      actor: state.actorId
-    })));
+    const result = await withTimeout(
+      refreshAllReferenceData({ companyId }),
+      OPTIONAL_OPERATION_TIMEOUT_MS.externalReference,
+      '전체 기준정보 새로고침 시간이 초과되었습니다.'
+    );
+    if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
+    const registries = await withTimeout(
+      Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+        companyId,
+        voucherMode,
+        actor: state.actorId
+      }))),
+      OPTIONAL_OPERATION_TIMEOUT_MS.localModule,
+      '전표 필드 등록부 새로고침 시간이 초과되었습니다.'
+    );
+    if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
     const rowsByDomain = Object.fromEntries(['product', 'customer', 'warehouse', 'employee', 'project', 'fieldDefinition']
       .map(domain => [domain, result.entities.filter(row => row.domain === domain).map(row => row.value)]));
     state.fieldRegistries = Object.fromEntries(registries.map(registry => [registry.voucherMode, registry]));
@@ -10521,10 +11427,21 @@ async function refreshAllReferencesFromToolbar() {
     });
     state.warehouseCatalog = { warehouses: rowsByDomain.warehouse, aliases: [], revision: result.generation.domains.warehouse.ownerRevision };
     renderWarehouseOptions();
+    const capabilityResults = await Promise.allSettled([
+      withTimeout(loadPurchaseStage3Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '구매 저장 계약 확인 시간 초과'),
+      withTimeout(loadSaleStage4Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '판매 저장 계약 확인 시간 초과')
+    ]);
+    if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
+    state.purchaseCapability = capabilityResults[0].status === 'fulfilled'
+      ? capabilityResults[0].value
+      : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: capabilityResults[0].reason?.message || 'ping failed' };
+    state.saleCapability = capabilityResults[1].status === 'fulfilled'
+      ? capabilityResults[1].value
+      : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: capabilityResults[1].reason?.message || 'ping failed' };
     state.inputListSearch = Object.freeze(retainedInputListSearch);
     renderInputListSearch();
     renderRows({ restoreFocus: false });
-    if (focusId) {
+    if (focusId && operationToken.workspaceEpoch === state.optionalWorkspaceEpoch) {
       const target = $(focusId);
       target?.focus();
       if (target && selectionStart !== null && typeof target.setSelectionRange === 'function') {
@@ -10535,14 +11452,35 @@ async function refreshAllReferencesFromToolbar() {
     toast('전체 기준정보를 갱신하고 현재 검색어로 다시 검색했습니다.', 'success');
     return true;
   } catch (error) {
+    if (!optionalOperationIsLatest(operationToken)) return false;
+    [
+      ['product', productReferenceToken],
+      ['customer', customerReferenceToken]
+    ].forEach(([domain, token]) => {
+      const reference = state.references[domain];
+      if (optionalOperationIsLatest(token) && reference.status === REFERENCE_DOMAIN_STATUS.LOADING && !reference.active) {
+        ingestLatestReference(domain, {
+          status: REFERENCE_DOMAIN_STATUS.ERROR,
+          error: { code: `${domain.toUpperCase()}_REFERENCE_REFRESH_FAILED`, message: error?.message || '전체 새로고침 실패' }
+        });
+      }
+    });
     state.fieldRegistryError = error;
     setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
     toast(error.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
     return false;
   } finally {
-    state.busy = false;
-    setActiveActivity('');
-    renderReferenceControls();
+    if (optionalOperationIsLatest(operationToken)) {
+      [
+        ['product', productReferenceToken],
+        ['customer', customerReferenceToken]
+      ].forEach(([domain, token]) => {
+        if (optionalOperationIsLatest(token)) state.references[domain].loading = false;
+      });
+      state.busy = false;
+      setActiveActivity('');
+      renderReferenceControls();
+    }
   }
 }
 
@@ -10667,6 +11605,7 @@ $('sourceSheetRows').addEventListener('click', event => {
   if (!button || !existing) return;
   const headerRowIndex = Number(button.dataset.useHeaderRow);
   if (!Number.isInteger(headerRowIndex) || headerRowIndex === existing.headerRowIndex) return;
+  invalidateOptionalOperations();
   captureGridPasteUndo();
   let reassigned = reassignHeaderRow(existing, headerRowIndex, state.inputTemplates, inputMappingDefinitions());
   reassigned.batchId = existing.batchId;
@@ -10816,12 +11755,12 @@ $('detailColumnsButton').addEventListener('click', () => {
     mapping.hiddenColumns = [];
     mapping.updatedAt = new Date().toISOString();
     renderRows({ restoreFocus: false });
-    scheduleSave();
+    scheduleSave({ invalidateOperations: false });
     return;
   }
   state.photoView.detailColumns = !state.photoView.detailColumns;
   modeUi().detailColumns = state.photoView.detailColumns;
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
   applyFormLayout();
 });
 const photoResizer = $('photoResizer');
@@ -10851,7 +11790,7 @@ photoResizer.addEventListener('pointermove', event => {
 const finishPhotoResize = event => {
   if (photoResizer.hasPointerCapture(event.pointerId)) photoResizer.releasePointerCapture(event.pointerId);
   photoResizer.classList.remove('is-dragging');
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
 };
 photoResizer.addEventListener('pointerup', finishPhotoResize);
 photoResizer.addEventListener('pointercancel', finishPhotoResize);
@@ -10861,7 +11800,7 @@ photoResizer.addEventListener('keydown', event => {
   const currentWidth = document.querySelector('.parser-card').getBoundingClientRect().width;
   const step = event.shiftKey ? 40 : 12;
   applyParserPaneWidth(currentWidth + (event.key === 'ArrowRight' ? step : -step));
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
 });
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
@@ -10946,6 +11885,7 @@ $('assigneeInput').addEventListener('input', event => {
   header.assigneeName = event.target.value;
   header.assigneeId = '';
   scheduleSave();
+  if (shoppingOrderImport()) scheduleShoppingOrderInspection();
 });
 $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
@@ -11115,7 +12055,7 @@ relatedPanelResizer.addEventListener('pointermove', event => {
 const finishRelatedPanelResize = event => {
   if (relatedPanelResizer.hasPointerCapture(event.pointerId)) relatedPanelResizer.releasePointerCapture(event.pointerId);
   document.body.classList.remove('related-panel-resizing');
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
 };
 relatedPanelResizer.addEventListener('pointerup', finishRelatedPanelResize);
 relatedPanelResizer.addEventListener('pointercancel', finishRelatedPanelResize);
@@ -11124,7 +12064,7 @@ relatedPanelResizer.addEventListener('keydown', event => {
   event.preventDefault();
   const step = event.shiftKey ? 40 : 12;
   applyRelatedPanelWidth(Number(state.draft.ui.relatedPaneWidth || 260) + (event.key === 'ArrowLeft' ? step : -step));
-  scheduleSave();
+  scheduleSave({ invalidateOperations: false });
 });
 
 function handleInputListSearchShortcut(event) {
@@ -11390,6 +12330,7 @@ $('selectAllRows').addEventListener('change', event => {
   renderRows({ restoreFocus: false });
 });
 $('shoppingOrderCandidates').addEventListener('click', event => {
+  if (state.busy) return;
   const customerButton = event.target.closest('[data-shopping-customer]');
   if (customerButton) {
     const sourceCustomerName = customerButton.dataset.shoppingCustomer || '';
@@ -11398,6 +12339,7 @@ $('shoppingOrderCandidates').addEventListener('click', event => {
       applyToHeader: false,
       officialOnly: true,
       onSelected: customer => {
+        if (state.busy) return;
         const upload = shoppingOrderImport();
         if (!upload) return;
         clearShoppingCommitEvidence(upload);
@@ -11424,6 +12366,7 @@ $('shoppingOrderCandidates').addEventListener('click', event => {
   }, {
     query: source['상품코드'] || source['상품명'] || '',
     onSelected: product => {
+      if (state.busy) return;
       const liveUpload = shoppingOrderImport();
       if (!liveUpload || !isSelectableMasterProduct(product)) return;
       clearShoppingCommitEvidence(liveUpload);

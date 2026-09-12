@@ -306,10 +306,59 @@ try {
   await click(client, '[data-mode="order"]');
   await input(client, '#sourceTextInput', '');
 
+  await evaluate(client, `(() => {
+    window.__nativeFileText=File.prototype.text;
+    window.__pendingTextFiles={};
+    File.prototype.text=function(){return new Promise((resolve,reject)=>{(window.__pendingTextFiles[this.name]||=[]).push({resolve,reject});});};
+    window.__selectTextFile=name=>{const target=document.querySelector('#fileInput');const transfer=new DataTransfer();transfer.items.add(new File(['fixture'],name,{type:'text/plain'}));Object.defineProperty(target,'files',{configurable:true,value:transfer.files});Object.defineProperty(target,'value',{configurable:true,writable:true,value:'selected:'+name});target.dispatchEvent(new Event('change',{bubbles:true}));};
+    return true;
+  })()`);
+  await evaluate(client, `window.__selectTextFile('A.txt');true`);
+  await expr(client, `window.__pendingTextFiles['A.txt']?.length===1`, 'delayed text file A');
+  assert.deepEqual(await evaluate(client, `({disabled:document.querySelector('#completeButton').disabled,title:document.querySelector('#completeButton').title})`), {
+    disabled: true,
+    title: '파일 불러오기가 끝난 뒤 저장할 수 있습니다.'
+  }, 'save must be fail-closed while a selected file is still loading');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateExcelButton').disabled`), true, 'report export control must be disabled while a selected file is still loading');
+  await evaluate(client, `document.querySelector('#estimateExcelButton').dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));true`);
+  assert.match(await evaluate(client, `document.querySelector('#toast').textContent`), /파일 불러오기가 끝난 뒤 보고서를 생성/,
+    'the report handler must also reject a programmatic event while a file result is pending');
+  await input(client, '#assigneeInput', '파일 대기 취소 편집');
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').disabled`), false, 'editing the current work must cancel the delayed file and immediately release the save control');
+  await evaluate(client, `window.__selectTextFile('B.txt');true`);
+  await expr(client, `window.__pendingTextFiles['B.txt']?.length===1`, 'delayed text file B');
+  await evaluate(client, `window.__pendingTextFiles['B.txt'][0].resolve('B 최신 원본');true`);
+  await expr(client, `document.querySelector('#sourceTextInput').value==='B 최신 원본'`, 'newer text file result');
+  await evaluate(client, `window.__pendingTextFiles['A.txt'][0].resolve('A 늦은 원본');true`);
+  await wait(120);
+  assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), 'B 최신 원본', 'late file A must not replace newer file B');
+  await evaluate(client, `window.__selectTextFile('clear.txt');true`);
+  await expr(client, `window.__pendingTextFiles['clear.txt']?.length===1`, 'file pending before parser clear');
+  await click(client, '#clearParserButton');
+  await evaluate(client, `window.__pendingTextFiles['clear.txt'][0].resolve('지우기 뒤 늦은 원본');true`);
+  await wait(120);
+  assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), '', 'parser clear must invalidate a delayed file result');
+  await evaluate(client, `window.__selectTextFile('retry.txt');true`);
+  await expr(client, `window.__pendingTextFiles['retry.txt']?.length===1`, 'failing same-file attempt');
+  await evaluate(client, `window.__pendingTextFiles['retry.txt'][0].reject(new Error('fixture read failure'));true`);
+  await expr(client, `document.querySelector('#toast').textContent.includes('fixture read failure')&&document.querySelector('#fileInput').value===''`, 'failed file input reset');
+  await evaluate(client, `window.__selectTextFile('retry.txt');true`);
+  await expr(client, `window.__pendingTextFiles['retry.txt']?.length===2`, 'same-file retry attempt');
+  await evaluate(client, `window.__pendingTextFiles['retry.txt'][1].resolve('같은 파일 재시도 성공');true`);
+  await expr(client, `document.querySelector('#sourceTextInput').value==='같은 파일 재시도 성공'&&document.querySelector('#fileInput').value===''`, 'same-file retry success');
+  await evaluate(client, `File.prototype.text=window.__nativeFileText;delete window.__nativeFileText;delete window.__pendingTextFiles;delete window.__selectTextFile;const target=document.querySelector('#fileInput');delete target.files;delete target.value;true`);
+  await click(client, '#clearParserButton');
+  assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), '', 'clearing the completed retry must restore the ordinary text-intake workspace');
+
   const directInputStartedAt = performance.now();
   await input(client, '#sourceTextInput', '테스트 거래처\n사과 2박스\n배 3개');
   await click(client, '#analyzeButton');
-  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2`, 'pure text parsing rows');
+  try {
+    await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2`, 'pure text parsing rows');
+  } catch (error) {
+    const diagnostic = await evaluate(client, `({source:document.querySelector('#sourceTextInput')?.value,rows:document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length,analyzeDisabled:document.querySelector('#analyzeButton')?.disabled,saveDisabled:document.querySelector('#completeButton')?.disabled,activity:document.querySelector('#activityCurrentText')?.textContent,status:document.querySelector('#appStatus')?.textContent,toast:document.querySelector('#toast')?.textContent,fileValue:document.querySelector('#fileInput')?.value})`);
+    throw new Error(`${error.message} · ${JSON.stringify(diagnostic)} · runtime=${JSON.stringify(exceptions)}`);
+  }
   flowTimings.directInputAnalyzeMs = Number((performance.now() - directInputStartedAt).toFixed(2));
   assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>Number(input.value))`), [2, 3]);
   assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'parsed information must always retain one trailing manual row');
@@ -323,12 +372,24 @@ try {
   await click(client, '#estimateNoticeButton');
   await expr(client, `Boolean(window.__voucherSharePayload)`, 'order Kakao share payload');
   assert.match(await evaluate(client, `window.__voucherSharePayload.text`), /\[주문서\][\s\S]*사과[\s\S]*배[\s\S]*합계/, 'Kakao share must include current non-empty voucher rows and totals');
-  await evaluate(client, `window.XLSX={utils:{book_new:()=>({sheets:{}}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>{book.sheets[name]=sheet;window.__voucherExportMatrix=sheet;}},writeFile:(book,name)=>{window.__voucherExportName=name;}};true`);
+  const sourceBeforeOptionalLoadRetry = await evaluate(client, `document.querySelector('#sourceTextInput').value`);
+  await evaluate(client, `window.__optionalScriptAttempts=0;window.__voucherExportWrites=0;window.__optionalScriptObserver=new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node?.dataset?.oneappOptionalFeature==='xlsx-runtime')window.__optionalScriptAttempts+=1;})));window.__optionalScriptObserver.observe(document.head,{childList:true});delete window.XLSX;true`);
   await click(client, '#estimateExcelButton');
-  await expr(client, `Boolean(window.__voucherExportName)`, 'order Excel output');
+  await expr(client, `Boolean(document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]'))`, 'first optional XLSX attempt');
+  await evaluate(client, `document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]').dispatchEvent(new Event('error'));true`);
+  await expr(client, `document.querySelector('#toast').textContent.includes('Excel 처리 모듈을 불러오지 못했습니다')`, 'optional XLSX failure feedback');
+  assert.equal(await evaluate(client, `document.querySelector('#sourceTextInput').value`), sourceBeforeOptionalLoadRetry, 'optional XLSX failure must preserve the current input');
+  await click(client, '#estimateExcelButton');
+  await expr(client, `window.__optionalScriptAttempts===2&&Boolean(document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]'))`, 'second optional XLSX attempt');
+  await click(client, '#relatedPanelCloseButton');
+  await click(client, '#relatedPanelToggle');
+  assert.equal(await evaluate(client, `Boolean(document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]'))`), true, 'UI-only panel preferences must not cancel the active export');
+  await evaluate(client, `window.XLSX={utils:{book_new:()=>({sheets:{}}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>{book.sheets[name]=sheet;window.__voucherExportMatrix=sheet;}},writeFile:(book,name)=>{window.__voucherExportWrites+=1;window.__voucherExportName=name;}};document.head.querySelector('script[data-oneapp-optional-feature="xlsx-runtime"]').dispatchEvent(new Event('load'));true`);
+  await expr(client, `Boolean(window.__voucherExportName)`, 'optional XLSX retry output');
+  assert.equal(await evaluate(client, `window.__voucherExportWrites`), 1, 'optional XLSX retry must create one output without duplicate execution');
   assert.match(await evaluate(client, `window.__voucherExportName`), /스마트입력_주문서_/);
   assert.equal(await evaluate(client, `window.__voucherExportMatrix.length`), 7, 'Excel output must include two working rows and exclude the trailing manual blank row');
-  await evaluate(client, `delete window.XLSX;true`);
+  await evaluate(client, `window.__optionalScriptObserver.disconnect();delete window.XLSX;true`);
 
   const firstQuantity = '#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]';
   const beforeGridPaste = await evaluate(client, `(() => ({
@@ -887,13 +948,26 @@ try {
   }
   assert.equal(await evaluate(client, `JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')).futureRoot`), 'KEEP-UNKNOWN', 'unknown draft fields must survive reload');
   const photoShot = await capture(client, 'smartinput-0a-photo-reload.png');
+  await click(client, '#clearParserButton');
+  loaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload', { ignoreCache: true });
+  await loaded;
+  await expr(client, `Boolean(document.querySelector('#estimateLibraryLinkedButton'))`, 'SmartInput shell after immediate source-image clear reload');
+  await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?source-image-delete-resume-e2e=1');const data=await store.loadSmartInputData({includeEstimates:false});const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));return !data.sourceImages.some(image=>image.documentId===${JSON.stringify(documentId)})&&!document.querySelector('#photoPreview')?.dataset.sourceImageId&&!draft?.ui?.pendingSourceImageDeletes?.includes(${JSON.stringify(documentId)});})()`, 'resumed source image delete after immediate reload', 30_000);
+  await click(client, '[data-mode="purchase"]');
+  await click(client, '[data-mode="order"]');
+  assert.equal(await evaluate(client, `document.querySelector('#photoPreview')?.dataset.sourceImageId||''`), '', 'an explicitly cleared source image must not resurrect after immediate reload and mode switching');
 
   if (await evaluate(client, `document.documentElement.dataset.nexusUiTheme==='dark'`)) {
     await click(client, '[data-nexus-ui-theme-toggle]');
     await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'light theme for purchase and sale baselines');
     await wait(200);
   }
-  await evaluate(client, `Promise.all([...document.querySelectorAll('.brand__logo')].map(image=>image.decode?.().catch(()=>{})||Promise.resolve())).then(()=>true)`);
+  await expr(
+    client,
+    `[...document.querySelectorAll('.brand__logo')].every(image => image.complete && image.naturalWidth > 0)`,
+    'brand logos loaded after source-image reload',
+  );
   for (const mode of ['purchase', 'sale']) {
     const modeFlowStartedAt = performance.now();
     let dateDeleteEvidence = null;
