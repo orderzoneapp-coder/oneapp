@@ -181,8 +181,13 @@ try {
     const bytes=new TextEncoder().encode(engine.canonicalStringify(payload));
     const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');
     const record={schemaVersion:'shipping-local-recovery/v2',publicationState:'PUBLISHED',inventoryApplyTransactionId:'',stagedAt:'',publishedAt:updatedAt,recordId:'browser-seed',sourceFingerprint:workspace.sourceFingerprint,updatedAt,hashAlgorithm:'SHA-256',payloadSha256:hash,payload};
+    const interruptedAt='2026-09-12T03:00:00.000Z';
+    const interruptedPayload=engine.buildLocalRecoveryPayload(workspace,{activePreview:'readiness'},{cloudUrl:'https://script.google.com/macros/s/browser-test/exec',savedBy:'browser-test'},interruptedAt);
+    const interruptedBytes=new TextEncoder().encode(engine.canonicalStringify(interruptedPayload));
+    const interruptedHash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',interruptedBytes))].map(value=>value.toString(16).padStart(2,'0')).join('');
+    const interruptedRecord={schemaVersion:'shipping-local-recovery/v2',publicationState:'PUBLISHED',inventoryApplyTransactionId:'INTERRUPTED-BEFORE-FINAL-CHECK',stagedAt:updatedAt,publishedAt:interruptedAt,inventoryApplyCommittedAt:'',recordId:'browser-interrupted-inventory',sourceFingerprint:workspace.sourceFingerprint,updatedAt:interruptedAt,hashAlgorithm:'SHA-256',payloadSha256:interruptedHash,payload:interruptedPayload};
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-    await new Promise((resolve,reject)=>{const tx=db.transaction('recoveryRecords','readwrite');tx.objectStore('recoveryRecords').put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('recoveryRecords','readwrite');tx.objectStore('recoveryRecords').put(record);tx.objectStore('recoveryRecords').put(interruptedRecord);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
     localStorage.setItem('oneapp.shipping.recovery.pointer.v1',record.recordId);
     localStorage.setItem('oneapp_cloud_sync_url_v1','https://script.google.com/macros/s/browser-test/exec');
     return true;
@@ -192,6 +197,8 @@ try {
   await client.send("Page.reload", { ignoreCache: true });
   await loaded;
   await waitFor(() => evaluate(client, `!document.querySelector('#restoreButton').disabled`), "published recovery selection");
+  assert.equal(await evaluate(client, `localStorage.getItem('oneapp.shipping.recovery.pointer.v1')`), 'browser-seed',
+    "a newer PUBLISHED inventory candidate without final apply confirmation must not replace the confirmed recovery pointer");
   await click(client, "#restoreButton");
   try {
     await waitFor(() => evaluate(client, `document.querySelector('#previewTable').textContent.includes('상품 A') && [...document.querySelectorAll('#previewTable input')].some(input=>input.value==='거래처 A')`), "restored order workspace");
@@ -269,6 +276,7 @@ try {
     const latest=published[0];
     return {
       publicationState:latest.publicationState,
+      inventoryApplyCommittedAt:latest.inventoryApplyCommittedAt,
       applicationMode:latest.payload.workspace.inventoryApplicationMode,
       planId:latest.payload.workspace.planId,
       purchaseRows:latest.payload.workspace.purchaseManagement.length,
@@ -291,6 +299,7 @@ try {
     };
   })()`);
   assert.equal(outcome.publicationState, "PUBLISHED");
+  assert.match(outcome.inventoryApplyCommittedAt, /^2026-|^20\d\d-/);
   assert.equal(outcome.applicationMode, "TOTAL_ONLY");
   assert.match(outcome.planId, /^SHIPPLAN-20260912-[a-f0-9]{16}$/);
   assert.equal(outcome.purchaseRows, 0);

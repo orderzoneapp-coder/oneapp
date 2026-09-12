@@ -337,6 +337,30 @@ try {
   assert.equal(finalEvidence.firstEvidence.sourceValues['상점메모'].startsWith('메모 '), true);
   assert.equal(finalEvidence.firstEvidence.sourceCellEvidence.length, 17);
 
+  const erpAssigneeEvidence = await evaluate(client, `(async()=>{
+    const stage=await import('/smartinput/multivoucher-stage1.js?erp-assignee-browser=1');
+    const intake=await import('/orderq/order-intake-engine.js?erp-assignee-browser=1');
+    const dbModule=await import('/orderq/orderq-db.js?erp-assignee-browser=1');
+    const header={assigneeId:'MGR-COMMON',assigneeName:'공통담당',orderDate:'2026-09-12',deliveryDate:'2026-09-13',warehouseCode:'88'};
+    const rows=[
+      {rowId:'ERP-A',sourceBatchId:'ERP-ASSIGNEE-BROWSER',rowCustomerCode:'C-A',rowCustomerName:'거래처 A',rowVoucherNo:'ERP-A-001',rowTransactionType:'일반',rowWarehouseCode:'88',rowVoucherDate:'2026-09-12',rowDeliveryDate:'2026-09-13',assigneeName:'A담당',itemCode:'A-1',itemName:'A상품',quantity:1,unit:'EA'},
+      {rowId:'ERP-B',sourceBatchId:'ERP-ASSIGNEE-BROWSER',rowCustomerCode:'C-B',rowCustomerName:'거래처 B',rowVoucherNo:'ERP-B-001',rowTransactionType:'일반',rowWarehouseCode:'88',rowVoucherDate:'2026-09-12',rowDeliveryDate:'2026-09-13',assigneeName:'B담당',itemCode:'B-1',itemName:'B상품',quantity:2,unit:'EA'}
+    ];
+    const groups=stage.groupVoucherRows('order',rows,header);
+    for(const group of groups){
+      const payload=stage.buildOrderGroupPayload(group,{...header,sourceType:'SMART_INPUT',rawFingerprint:'ERP-ASSIGNEE-BROWSER',inputChannel:'SMART_INPUT',actorName:'SMART INPUT 관리자'});
+      await intake.createOrder(payload);
+    }
+    const orders=(await dbModule.getAll(dbModule.STORE.ORDERS))
+      .filter(order=>order.sourceId==='ERP-ASSIGNEE-BROWSER')
+      .sort((left,right)=>left.externalOrderNo.localeCompare(right.externalOrderNo));
+    return orders.map(order=>({externalOrderNo:order.externalOrderNo,customerName:order.customerName,assigneeId:order.assigneeId,assigneeName:order.assigneeName}));
+  })()`);
+  assert.deepEqual(erpAssigneeEvidence, [
+    { externalOrderNo: 'ERP-A-001', customerName: '거래처 A', assigneeId: 'MGR-a%EB%8B%B4%EB%8B%B9', assigneeName: 'A담당' },
+    { externalOrderNo: 'ERP-B-001', customerName: '거래처 B', assigneeId: 'MGR-b%EB%8B%B4%EB%8B%B9', assigneeName: 'B담당' }
+  ], 'ERP 미출고현황의 주문별 담당자는 공통 상단 담당자로 덮어쓰지 않고 ORDER Q 주문에 저장되어야 한다.');
+
   const externalMutations = networkRequests.filter(row => !row.url.startsWith(origin) && !['GET', 'HEAD', 'OPTIONS'].includes(row.method.toUpperCase()));
   const localMutations = requests.filter(row => !['GET', 'HEAD', 'OPTIONS'].includes(row.method.toUpperCase()));
   assert.deepEqual(externalMutations, []);
@@ -351,6 +375,7 @@ try {
     secondCommit: { priorDuplicates: 4, created: 1 },
     finalDuplicateZeroWrite: 5,
     stored: finalEvidence,
+    erpOrderAssignees: erpAssigneeEvidence,
     pickerRefresh,
     viewports: ['1920 light/dark', '1440 light/dark', '390 light/dark'],
     screenshots,

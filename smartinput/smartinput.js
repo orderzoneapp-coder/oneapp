@@ -59,7 +59,7 @@ import {
   stage1RowFieldDefinitions,
   structuredFieldsForMode,
   summarizeVoucherGroups
-} from './multivoucher-stage1.js?v=0.2.2';
+} from './multivoucher-stage1.js?v=0.2.3';
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,

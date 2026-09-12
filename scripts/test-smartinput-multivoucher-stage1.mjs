@@ -113,13 +113,15 @@ for (const mode of ['purchase', 'sale', 'estimate']) {
   );
 }
 const orderBusinessParsed = parseStructuredSheet([
-  ['거래처코드', '일자-No.', '거래유형', '창고코드', '품목코드', '품목명', '수량'],
-  ['C-01', '2026/09/05-7', '기타', '88', 'A', '상품A', '1']
+  ['거래처코드', '일자-No.', '거래유형', '창고코드', '담당', '품목코드', '품목명', '수량'],
+  ['C-01', '2026/09/05-7', '기타', '88', 'A담당', 'A', '상품A', '1']
 ], {
   fieldDefinitions: orderBusinessFields,
   numberParser: contract.numberOrNull
 });
 assert.equal(orderBusinessParsed.rows[0].rowTransactionType, '기타');
+assert.equal(orderBusinessParsed.rows[0].assigneeName, 'A담당',
+  'ERP 미출고현황의 담당 원문은 행 데이터로 보존해야 한다.');
 
 const purchaseRoleParsed = parseStructuredSheet([
   ['공급처ID', '공급처코드', '공급처명', '품목코드', '품목명', '수량'],
@@ -216,6 +218,27 @@ assert.equal(groupVoucherRows('order', [
   erpOrderRows[0],
   { ...erpOrderRows[2], rowId: 'ERP-NEXT-UPLOAD', sourceBatchId: 'BATCH-NEXT' }
 ]).length, 2, '서로 다른 업로드 작업은 같은 업무키여도 자동으로 교차 병합하지 않아야 한다.');
+
+const assigneeOrders = groupVoucherRows('order', [
+  { ...erpOrderRows[0], rowId: 'ERP-ASSIGNEE-A', assigneeName: 'A담당' },
+  { ...erpOrderRows[1], rowId: 'ERP-ASSIGNEE-B', assigneeName: 'B담당' }
+], { assigneeId: 'MGR-COMMON', assigneeName: '공통담당' });
+assert.deepEqual(assigneeOrders.map(group => group.assigneeName), ['A담당', 'B담당'],
+  '주문별 원본 담당자는 상단 공통 담당자로 덮어쓰지 않아야 한다.');
+assert.deepEqual(assigneeOrders.map(group => {
+  const payload = buildOrderGroupPayload(group, { assigneeId: 'MGR-COMMON', assigneeName: '공통담당' });
+  return { assigneeId: payload.assigneeId, assigneeName: payload.assigneeName };
+}), [
+  { assigneeId: '', assigneeName: 'A담당' },
+  { assigneeId: '', assigneeName: 'B담당' }
+], '원본 담당자명이 다르면 공통 담당자 ID를 잘못 재사용하지 않아야 한다.');
+const conflictingAssigneeGroup = groupVoucherRows('order', [
+  { ...erpOrderRows[0], rowId: 'ERP-ASSIGNEE-CONFLICT-A', assigneeName: 'A담당' },
+  { ...erpOrderRows[2], rowId: 'ERP-ASSIGNEE-CONFLICT-B', assigneeName: 'B담당' }
+])[0];
+assert.equal(conflictingAssigneeGroup.validationStatus, 'REVIEW_REQUIRED');
+assert.match(conflictingAssigneeGroup.validationErrors.join('\n'), /담당자 값이 같은 주문서 안에서 다름/,
+  '같은 주문 업무키 안의 서로 다른 담당자는 임의 채택하지 않고 확인 필요로 차단해야 한다.');
 const uploadSerialIgnoredGroups = groupVoucherRows('order', [
   { ...erpOrderRows[0], rowId: 'ERP-UPLOAD-SER-1', UPLOAD_SER_NO: '1' },
   { ...erpOrderRows[2], rowId: 'ERP-UPLOAD-SER-999', UPLOAD_SER_NO: '999' }

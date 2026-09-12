@@ -1989,8 +1989,23 @@ for (const action of ["inventory_snapshot_save", "inventory_snapshot_list", "inv
 assert.ok(
   html.includes('publicationState: "STAGED"') &&
   html.includes('publicationState: "PUBLISHED"') &&
-  html.includes("inventoryApplyTransactionId"),
+  html.includes("inventoryApplyTransactionId") &&
+  html.includes("inventoryApplyCommittedAt"),
   "inventory application must stage and publish verified recovery records",
+);
+const inventoryApplySource = html.slice(
+  html.indexOf("async function applyInventoryCandidate"),
+  html.indexOf("async function loadSelectedErpInventory", html.indexOf("async function applyInventoryCandidate")),
+);
+assert.ok(
+  inventoryApplySource.indexOf("finalDigest !== baseDigest")
+    < inventoryApplySource.indexOf("verifyPublishedInventoryCandidate(staged.record)"),
+  "inventory recovery must not become PUBLISHED before the final current-input check",
+);
+assert.ok(
+  inventoryApplySource.includes('workbench?.setAttribute("inert", "")')
+    && inventoryApplySource.includes('workbench?.removeAttribute("inert")'),
+  "the final inventory publication boundary must prevent edits while the confirmed candidate is committed",
 );
 assert.ok(
   html.includes("await waitForInventoryApplyBoundary()") &&

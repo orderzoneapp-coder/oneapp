@@ -136,6 +136,10 @@ export function stage1RowFieldDefinitions(mode = 'order') {
   return Object.freeze([
     field('rowCustomerCode', config.customerCodeLabel, config.customerCodeAliases),
     field('rowCustomerName', config.customerLabel, config.customerAliases),
+    ...(mode === 'order' ? [
+      field('assigneeName', '담당자', ['담당', '담당자명', '사원']),
+      field('assigneeId', '담당자ID', ['담당자아이디', '담당코드', '사원코드'])
+    ] : []),
     field('rowVoucherDate', config.voucherDateLabel, config.voucherDateAliases),
     field('rowDeliveryDate', config.deliveryDateLabel, config.deliveryDateAliases),
     field('rowWarehouseCode', config.warehouseLabel, config.warehouseAliases),
@@ -198,6 +202,8 @@ export function normalizeStage1Row(row = {}, context = {}) {
     rowWarehouseCode: text(row.rowWarehouseCode),
     rowVoucherNo: text(row.rowVoucherNo),
     rowTransactionType: text(row.rowTransactionType),
+    assigneeId: text(row.assigneeId),
+    assigneeName: text(row.assigneeName),
     sourceBatchId: text(row.sourceBatchId || context.sourceBatchId || row.batchId),
     sourceDocumentKey: text(row.sourceDocumentKey || context.sourceDocumentKey),
     sourceVoucherIndex: numberOrNull(row.sourceVoucherIndex ?? context.sourceVoucherIndex) ?? 1,
@@ -329,6 +335,13 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
     const rowRole = groupRoleSnapshot(mode, row, header);
     const voucherGroupKey = buildVoucherGroupKey(mode, row, header);
     if (!groups.has(voucherGroupKey)) {
+      const rowAssigneeName = rowValue(row, 'assigneeName', header.assigneeName);
+      const headerAssigneeName = text(header.assigneeName);
+      const rowAssigneeId = rowValue(
+        row,
+        'assigneeId',
+        !rowAssigneeName || rowAssigneeName === headerAssigneeName ? header.assigneeId : ''
+      );
       const idempotencyParts = [
         mode,
         row.sourceBatchId,
@@ -345,6 +358,8 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
         warehouseId: rowValue(row, 'rowWarehouseId', header.warehouseId),
         warehouseCode: rowValue(row, 'rowWarehouseCode', header.warehouseCode || header.warehouseName),
         transactionType: rowValue(row, 'rowTransactionType', header.transactionType),
+        assigneeId: rowAssigneeId,
+        assigneeName: rowAssigneeName,
         externalVoucherNo: text(row.rowVoucherNo),
         sourceBatchId: text(row.sourceBatchId),
         sourceDocumentKey: text(row.sourceDocumentKey),
@@ -372,7 +387,8 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
         ['배송처명', 'deliveryCustomerName', rowRole.deliveryCustomerName],
         ['세무거래처 ID', 'billingCustomerId', rowRole.billingCustomerId],
         ['세무거래처코드', 'billingCustomerCode', rowRole.billingCustomerCode],
-        ['세무거래처명', 'billingCustomerName', rowRole.billingCustomerName]
+        ['세무거래처명', 'billingCustomerName', rowRole.billingCustomerName],
+        ['담당자', 'assigneeName', rowValue(row, 'assigneeName', header.assigneeName)]
       ].forEach(([label, fieldName, actual]) => {
         const expected = text(group[fieldName]);
         const candidate = text(actual);
@@ -426,6 +442,7 @@ const ORDER_GROUP_ROW_HEADER_FIELDS = Object.freeze([
   'rowCustomerId', 'rowCustomerCode', 'rowCustomerName',
   'rowVoucherDate', 'rowDeliveryDate', 'rowWarehouseId', 'rowWarehouseCode',
   'rowVoucherNo', 'rowTransactionType',
+  'assigneeId', 'assigneeName',
   'deliveryCustomerId', 'deliveryCustomerCode', 'deliveryCustomerName',
   'billingCustomerId', 'billingCustomerCode', 'billingCustomerName'
 ]);
@@ -564,6 +581,8 @@ export function buildMinimumUploadMatrix(mode = 'order') {
 }
 
 export function buildOrderGroupPayload(group, common = {}) {
+  const groupAssigneeName = text(group.assigneeName);
+  const commonAssigneeName = text(common.assigneeName);
   return {
     ...common,
     customerId: group.deliveryCustomerId || common.customerId || '',
@@ -575,6 +594,9 @@ export function buildOrderGroupPayload(group, common = {}) {
     warehouseCode: group.warehouseCode || common.warehouseCode || '',
     warehouseName: group.warehouseCode || common.warehouseName || '',
     transactionType: group.transactionType || common.transactionType || '',
+    assigneeId: text(group.assigneeId)
+      || (groupAssigneeName && groupAssigneeName !== commonAssigneeName ? '' : text(common.assigneeId)),
+    assigneeName: groupAssigneeName || commonAssigneeName,
     sourceDocumentKey: group.idempotencyKey,
     sourceMessageKey: group.idempotencyKey,
     sourceId: group.sourceBatchId,
