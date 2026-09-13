@@ -1,1 +1,1 @@
-PLACEHOLDER
+(() => { throw new Error('temporary recovery in progress'); })();
