@@ -1,0 +1,25 @@
+name: SmartInput Stage 4 read and viewport primitives
+on:
+  pull_request:
+    paths:
+      - smartinput/estimate-read-cache.js
+      - smartinput/table-viewport.js
+      - scripts/test-smartinput-lazy-read.mjs
+      - scripts/test-smartinput-table-viewport.mjs
+      - .github/workflows/smartinput-stage4-primitives.yml
+permissions:
+  contents: read
+jobs:
+  stage4-primitives:
+    name: Validate isolated Stage 4 primitives (not app integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check read cache states, cancellation, selection scope and bounded reads
+        run: node scripts/test-smartinput-lazy-read.mjs
+      - name: Check variable-height row windows, logical navigation and pinned ranges
+        run: node scripts/test-smartinput-table-viewport.mjs

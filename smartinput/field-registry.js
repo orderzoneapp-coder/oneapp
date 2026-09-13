@@ -5,7 +5,7 @@ import {
   replaceFieldCatalogGeneration,
   saveCompanyVoucherFieldSettings,
   saveSettingValue
-} from './smartinput-data-store.js?v=0.6.1';
+} from './smartinput-data-store.js?v=0.7.0';
 import {
   CORE_FIELD_DEFINITIONS,
   CUSTOM_FIELD_DEFINITIONS,
@@ -48,7 +48,7 @@ export async function fetchStaticFieldCatalog(fetchImpl = globalThis.fetch) {
   return validateFieldCatalog(await response.json());
 }
 
-export async function ensureFieldCatalogSeed({ fetchImpl = globalThis.fetch, force = false } = {}) {
+async function readFieldCatalogSeed({ fetchImpl = globalThis.fetch, force = false } = {}) {
   const metadata = await loadSettingValue(FIELD_SEED_META_KEY);
   if (!force && metadata?.generationId && metadata?.definitionCount === 2178) {
     const definitions = await loadFieldDefinitions(metadata.generationId);
@@ -71,7 +71,7 @@ export async function ensureFieldCatalogSeed({ fetchImpl = globalThis.fetch, for
   return { metadata: nextMetadata, definitions, changed: true };
 }
 
-export async function loadVoucherFieldRegistry({ companyId = DEFAULT_COMPANY_ID, voucherMode, actor = '', fetchImpl = globalThis.fetch } = {}) {
+async function readVoucherFieldRegistry({ companyId = DEFAULT_COMPANY_ID, voucherMode, actor = '', fetchImpl = globalThis.fetch } = {}) {
   const seeded = await ensureFieldCatalogSeed({ fetchImpl });
   const catalog = seeded.definitions.filter(field => field.voucherModes?.includes(voucherMode));
   let settings = await loadCompanyVoucherFieldSettings(companyId, voucherMode);
@@ -95,6 +95,7 @@ export async function loadVoucherFieldRegistry({ companyId = DEFAULT_COMPANY_ID,
 }
 
 export async function updateVoucherFieldSettings({ companyId = DEFAULT_COMPANY_ID, voucherMode, settings, actor = '', definitions = [] } = {}) {
+  registryPromises.clear();
   const normalized = normalizeCompanyVoucherFieldSettings(companyId, voucherMode, settings, actor, definitions).map(row => ({
     ...row,
     settingRevision: Number(row.settingRevision || 0) + 1,
@@ -102,5 +103,30 @@ export async function updateVoucherFieldSettings({ companyId = DEFAULT_COMPANY_I
     updatedAt: new Date().toISOString()
   }));
   await saveCompanyVoucherFieldSettings(normalized);
+  registryPromises.clear();
   return normalized;
+}
+
+
+let seedPromises = new WeakMap();
+const registryPromises = new Map();
+export function invalidateFieldRegistryCache() { seedPromises = new WeakMap(); registryPromises.clear(); }
+export function ensureFieldCatalogSeed(options = {}) {
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  if (options.force) invalidateFieldRegistryCache();
+  if (!seedPromises.has(fetchImpl)) {
+    const pending = readFieldCatalogSeed(options);
+    seedPromises.set(fetchImpl, pending);
+    pending.catch(() => { if (seedPromises.get(fetchImpl) === pending) seedPromises.delete(fetchImpl); });
+  }
+  return seedPromises.get(fetchImpl);
+}
+export async function loadVoucherFieldRegistry(options = {}) {
+  const seeded = await ensureFieldCatalogSeed(options);
+  const key = JSON.stringify([options.companyId || DEFAULT_COMPANY_ID, options.voucherMode, seeded.metadata.generationId, options.actor || '']);
+  if (!registryPromises.has(key)) {
+    const pending = readVoucherFieldRegistry(options); registryPromises.set(key, pending);
+    pending.catch(() => { if (registryPromises.get(key) === pending) registryPromises.delete(key); });
+  }
+  return structuredClone(await registryPromises.get(key));
 }

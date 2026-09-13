@@ -557,7 +557,9 @@
         "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
         "company-partitioned background official-voucher synchronization",
         "independent same-ID estimates with selected-only atomic updates and last Excel exclusions",
-        "optional selected-estimate product-master commands with separate durable retry"
+        "optional selected-estimate product-master commands with separate durable retry",
+        "v5 estimate-summary projections and bounded on-demand body/photo cache",
+        "generation-scoped field-registry cache and virtualized native input/mapping/source tables"
       ],
       "ownedContracts": [
         "smartinput-local-work",

@@ -1635,3 +1635,5 @@ tr.is-update-excluded > td:first-child { box-shadow: inset 3px 0 var(--accent); 
   .shopping-order-item { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .shopping-order-item > span { padding-left: 0; }
 }
+
+.virtual-table-spacer, .virtual-table-spacer > td { background: transparent !important; pointer-events: none; border: 0 !important; padding: 0 !important; }

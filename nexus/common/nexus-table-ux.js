@@ -166,6 +166,7 @@
 
   function isDataRow(row) {
     return row.cells.length > 0 && !row.querySelector('.empty-table-cell') &&
+      !row.classList.contains('virtual-table-spacer') &&
       !row.classList.contains('nexus-table-generated-status');
   }
 
@@ -247,6 +248,16 @@
     if (!table.isConnected) return;
     const state = stateFor(table);
     const headers = [...table.querySelectorAll('thead tr:last-child th')];
+    if (table.__nexusLogicalView) {
+      const counts = table.__nexusLogicalView.apply({ query: state.query, filters: state.filters, sort: state.sort,
+        compare: (a, b) => compareValues(a, b, headerLabel(headers[state.sort?.index] || document.createElement('th'))) });
+      table.dataset.nexusTotalRows = String(counts.total); table.dataset.nexusVisibleRows = String(counts.visible);
+      table.dataset.nexusEmptyReason = counts.total === 0 ? 'source' : counts.visible === 0 ? 'filter' : '';
+      table.classList.toggle('nexus-table-no-results', counts.total > 0 && counts.visible === 0);
+      applyNumericAlignment(table, headers); updateToolStates(table, state);
+      if (activeMenu?.table === table) updatePopoverStatus();
+      return;
+    }
     reorderRows(table, state, headers);
     const rows = dataRows(table);
     let visibleCount = 0;
@@ -465,6 +476,10 @@
 
   function uniqueColumnValues(table, index) {
     const values = new Map();
+    if (table.__nexusLogicalView) {
+      table.__nexusLogicalView.values(index).forEach(value => { const label = text(value); if (!values.has(normalized(label))) values.set(normalized(label), label); });
+      return [...values].map(([key, label]) => ({ key, label })).sort((a, b) => compareValues(a.label, b.label, ''));
+    }
     dataRows(table).forEach((row) => {
       const label = cellText(row.cells[index]);
       const key = normalized(label);
