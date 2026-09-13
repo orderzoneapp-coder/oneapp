@@ -156,11 +156,14 @@ try {
   assert.equal(await ev('__ops.state.workspace.orders[0].noteOriginal'),'일반');
   const multiAcceptance=await ev(readFileSync(join(root,'scripts/fixtures/orderops-multi-reapply-acceptance.js'),'utf8'));
   console.log('PASS independent acceptance F-01/F-02/F-03/F-04 browser and storage retry',JSON.stringify(multiAcceptance));
+  await ev('__ops.flushOrderOpsBeforeWorkspaceLeave()');
   await send('Page.navigate',{url:origin+'/orderops/list.html'});
   await until(()=>ev('Boolean(globalThis.__ops?.state.db && globalThis.__ops.state.recoveryRecord)'),'multi-document re-entry recovery discovery');
   await click('#restoreButton');
   await until(()=>ev(`globalThis.__ops?.state.workspace?.workbenchReconciliation?.schemaVersion==='orderops-prepared-source-reconciliation/v1'`),'multi-document accepted recovery after reload');
   assert.deepEqual(await ev(`(()=>{const b=__ops.state.workspace.orders.find(row=>row.orderId==='ACCEPT-B');return {manager:b.manager,warehouse:b.warehouse,purchase:ShippingManagementEngine.getPurchaseInputs(__ops.state.workspace)['P-B'],draft:__ops.state.workspace.workbenchPreparedShipmentDrafts.values['ACCEPT-B-LINE'].reason};})()`),{manager:'작업 담당 B',warehouse:'작업 창고 B',purchase:'보존 구매처',draft:'보존 출고 초안'},'accepted multi-document work must survive browser re-entry');
+  const continuityAcceptance=await ev(readFileSync(join(root,'scripts/fixtures/orderops-multi-reapply-after-recovery.js'),'utf8'));
+  console.log('PASS R1/R2 continuous work preservation after analysis, recovery, and A-only revision update',JSON.stringify(continuityAcceptance));
   const layout=[];
   for(const width of [1920,1366,1024,819,640,639,390]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height:768,deviceScaleFactor:1,mobile:false});await wait(120);

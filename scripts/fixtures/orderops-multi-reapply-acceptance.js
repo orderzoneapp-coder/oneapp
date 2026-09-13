@@ -31,8 +31,8 @@
   });
   const source = revision => {
     const a = snapshot({
-      id: 'ACCEPT-A', revision, hash: revision === 1 ? 'a' : 'd', quantity: revision === 1 ? 2 : 4,
-      supplyAmount: revision === 1 ? 2000 : 4000, unitPrice: 1000, memo: '원본 적요 A', description: '직원 메모 A',
+      id: 'ACCEPT-A', revision, hash: revision === 1 ? 'a' : revision === 2 ? 'd' : 'e', quantity: revision === 1 ? 2 : revision === 2 ? 4 : 6,
+      supplyAmount: revision === 1 ? 2000 : revision === 2 ? 4000 : 6000, unitPrice: 1000, memo: '원본 적요 A', description: '직원 메모 A',
     });
     const b = snapshot({
       id: 'ACCEPT-B', revision: 1, hash: 'b', quantity: 3,
@@ -41,7 +41,7 @@
     return OrderOpsSourceCoordinator.combineOrderSources([
       { status: 'READY', snapshot: a, parsedOrders: mapOrderQSnapshotToParsedOrders(a) },
       { status: 'READY', snapshot: b, parsedOrders: mapOrderQSnapshotToParsedOrders(b) },
-    ], { fileHash: (revision === 1 ? 'c' : '9').repeat(64), fileName: `ORDER Q 검수 ${revision}` });
+    ], { fileHash: (revision === 1 ? 'c' : revision === 2 ? '9' : '8').repeat(64), fileName: `ORDER Q 검수 ${revision}` });
   };
   const applyPrepared = async () => {
     document.querySelector('#prepareApplyButton').click();
@@ -101,9 +101,37 @@
   assert(e.getPurchaseInputs(s.workspace)['P-B'] === '보존 구매처', 'purchase input was not preserved');
   assert(s.workspace.workbenchPreparedShipmentDrafts?.values?.['ACCEPT-B-LINE']?.reason === '보존 출고 초안', 'multi-document shipment draft was not preserved');
   assert(s.workspace.systemHistory.events.at(-1).kind === 'ORDER_PREPARED_SOURCE_RECONCILED', 'reconciliation history missing');
+
+  for (const kind of ['purchases', 'sales']) {
+    const referenceItem = w.prepareParsedSource({
+      status: 'READY',
+      parsed: {
+        kind,
+        fileName: `${kind}-continuity.xlsx`,
+        fileHash: (kind === 'purchases' ? '6' : '7').repeat(64),
+        sheetName: kind === 'purchases' ? '구매' : '판매',
+        headerRowIndex: 0,
+        rowCount: 1,
+        rows: [{ productCode: 'P-A', productName: '검수 상품 A', quantity: 1, partner: kind === 'purchases' ? '검수 구매처' : '검수 판매처', sourceRowNumber: 2 }],
+        errors: [], warnings: [], missingColumns: [], sourceMatrix: [],
+      },
+    });
+    assert(referenceItem.dirty && referenceItem.include, `${kind} reference source was not prepared`);
+    await applyPrepared();
+    assert(s.workspace.workbenchPreparedShipmentDrafts?.values?.['ACCEPT-B-LINE']?.reason === '보존 출고 초안', `${kind}-only application lost multi-document shipment draft`);
+    assert(s.workspace.workbenchSourceBaselines?.orders?.sourceDocuments?.length === 2, `${kind}-only application lost immutable order baseline`);
+  }
+
+  const analysis = await __ops.performAnalysis();
+  assert(analysis?.ok, `analysis failed: ${JSON.stringify(analysis)}`);
+  assert(s.workspace.workbenchSourceBaselines?.orders?.sourceDocuments?.length === 2, 'analysis lost immutable order baseline');
+  assert(s.workspace.workbenchPreparedShipmentDrafts?.values?.['ACCEPT-B-LINE']?.reason === '보존 출고 초안', 'analysis lost multi-document shipment draft');
+  const analyzedB = s.workspace.orders.find(row => row.orderId === 'ACCEPT-B');
+  assert(analyzedB.manager === '작업 담당 B' && analyzedB.warehouse === '작업 창고 B', 'analysis changed unchanged document work');
   return {
     sameRevision: 'idempotent', changedRevision: 'reconciled', failedStorage: 'non-destructive',
     preserved: ['manager', 'warehouse', 'purchase', 'shipmentDraft'],
+    continuity: ['purchase-only', 'sales-only', 'analysis'],
     deliveryColumns: ['date', 'originalAmount', 'calculatedAmount', 'note'],
   };
 })()

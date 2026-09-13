@@ -167,10 +167,10 @@ assert.deepEqual(recovery.ui.selectedVoucherIds, [...selected]);
 assert.equal(recovery.ui.voucherDraft.manager, '대기 담당');
 
 for (const contract of [
-  'source-coordinator.js?v=20260913-acceptance-fix',
-  'voucher-workbench.js?v=20260913-acceptance-fix',
-  'workbench-ui.js?v=20260913-acceptance-fix',
-  '../orderFulfillmentEngine.js?v=20260913-acceptance-fix',
+  'source-coordinator.js?v=20260913-continuity-fix',
+  'voucher-workbench.js?v=20260913-continuity-fix',
+  'workbench-ui.js?v=20260913-continuity-fix',
+  '../orderFulfillmentEngine.js?v=20260913-continuity-fix',
   'data-orderops-api-source="orders"',
   'data-orderops-api-source="purchases"',
   'data-orderops-api-source="sales"',
