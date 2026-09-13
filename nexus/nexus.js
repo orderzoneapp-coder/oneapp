@@ -1,1 +1,1 @@
-(() => { throw new Error('temporary recovery in progress'); })();
+recovery-needed
