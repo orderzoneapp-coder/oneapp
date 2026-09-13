@@ -1,0 +1,168 @@
+name: Prepare verified SmartInput Stage 3 objects
+on:
+  push:
+    branches: [codex/smartinput-stage3-native-v22-check-20260913]
+    paths: [.github/workflows/smartinput-stage3-publish-objects.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  prepare:
+    if: github.repository == 'orderzoneapp-coder/oneapp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: cca63dc932b99075e041ca65de1a3dd975d5eed7
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Restore verified files and preserve current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, io, json, os, subprocess, tarfile, zipfile
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          api='https://api.github.com/repos/orderzoneapp-coder/oneapp/'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
+          def get(path):
+              with urlopen(Request(api+path,headers=headers),timeout=30) as r:return r.read()
+          expected={'coreEngine.js':'45e14030604ae5b482b2f8dd2df8194e781506ee','reference-data/product-master-command-adapter.js':'bc7e9cb88a4cf3ac99142dc9adf363c172976722','smartinput/independent-estimate.js':'f05bfcd381a6ab31354a7a635666254edd852314','smartinput/estimate-master-apply.js':'ed1a3156f4ae12978851f1ae30bb36faede87c42','smartinput/smartinput-data-store.js':'c48fdaf6b98a547c441500b22a7e05c796aaceac','smartinput/estimate-f8-source-plan.js':'6a53b579362c3d9e7e4e7fa8766c6b13bf5d3532','scripts/test-smartinput-stage3-plans.mjs':'d5796de8224b206ed1d9208ae84c93577faf6a9c','scripts/test-smartinput-stage3-storage-browser.mjs':'8dc33beed82e21501e119b9c3070555c5d17c206'}
+          branch='codex/smartinput-stage3-independent-estimates-20260913'
+          assert json.loads(get('git/ref/heads/'+branch))['object']['sha']=='cca63dc932b99075e041ca65de1a3dd975d5eed7','Work branch changed; do not overwrite'
+          assert json.loads(get('git/ref/heads/main'))['object']['sha']=='732e2922b36d5cfaf057b14446bca1bea87971dc','Main changed; recompare first'
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','merge','--no-commit','--no-ff','732e2922b36d5cfaf057b14446bca1bea87971dc'],check=True)
+          assert not subprocess.check_output(['git','diff','17a072e16cc5a31888c41f70de91a97245ebf8a8','--',*expected],text=True),'Source overlap requires review'
+          raw=get('actions/artifacts/10307924545/zip')
+          assert hashlib.sha256(raw).hexdigest()=='8e8701ee116d484d7a86c8d889e2c717e55613a230c19cb747f9a9c93eea4f2c'
+          z=zipfile.ZipFile(io.BytesIO(raw)); tar=tarfile.open(fileobj=io.BytesIO(z.read('stage3-native-files.tar.gz')),mode='r:gz')
+          assert {m.name for m in tar.getmembers()}==set(expected)
+          for name,sha in expected.items():
+              b=tar.extractfile(name).read()
+              assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()==sha,name
+              Path(name).parent.mkdir(parents=True,exist_ok=True);Path(name).write_bytes(b)
+          p=Path('smartinput/estimate-master-apply.js');s=p.read_text()
+          for a,b in [("{ code: 'MASTER_PRODUCT_UNRESOLVED', code, field:","{ code: 'MASTER_PRODUCT_UNRESOLVED', productCode: code, field:"),("{ code: 'MASTER_VALUE_NOT_AUTHORIZED', code, field:","{ code: 'MASTER_VALUE_NOT_AUTHORIZED', productCode: code, field:"),("{ code: 'MASTER_FIELD_VALUE_CONFLICT', code: first.code, field:","{ code: 'MASTER_FIELD_VALUE_CONFLICT', productCode: first.code, field:"),("{ code: 'MASTER_PREIMAGE_TYPE_UNSUPPORTED', code: first.code, field:","{ code: 'MASTER_PREIMAGE_TYPE_UNSUPPORTED', productCode: first.code, field:")]:
+              assert s.count(a)==1;a_count=s.count(a);s=s.replace(a,b)
+          p.write_text(s)
+          p=Path('scripts/test-smartinput-stage3-plans.mjs');s=p.read_text()
+          extra="""test('master review preserves the issue code separately from the exact product code', async () => {
+            const conflict = await createEstimateMasterIntent(masterArgs({ selectedEstimateIds: ['EST-A', 'EST-B'],
+              confirmedFields: [masterSource(), masterSource({ estimateId: 'EST-B', value: 25 })] }));
+            assert.equal(conflict.command, null);
+            assert.equal(conflict.issues[0].code, 'MASTER_FIELD_VALUE_CONFLICT');
+            assert.equal(conflict.issues[0].productCode, '0007');
+            const missing = await createEstimateMasterIntent(masterArgs({ products: [] }));
+            assert.equal(missing.issues[0].code, 'MASTER_PRODUCT_UNRESOLVED');
+            assert.equal(missing.issues[0].productCode, '0007');
+          });
+          test('master zero selection does not inspect context or source and rejects a selected-outside source', async () => {
+            const empty = await createEstimateMasterIntent(masterArgs({ selectedEstimateIds: [], actor: null }));
+            assert.equal(empty.status, 'NO_CANDIDATES'); assert.equal(empty.command, null);
+            await assert.rejects(createEstimateMasterIntent(masterArgs({ confirmedFields: [masterSource({ estimateId: 'EST-B' })] })), /MASTER_SOURCE_OUTSIDE_SELECTION/);
+          });
+          """
+          assert s.count('let failures = 0;')==1;p.write_text(s.replace('let failures = 0;',extra+'\nlet failures = 0;'))
+          Path('.github/workflows/smartinput-stage3-source-snapshot.yml').unlink()
+          p=Path('.github/workflows/smartinput-stage3-plans.yml');s=p.read_text()
+          s=s.replace('name: SmartInput Stage 3 planning contracts','name: SmartInput Stage 3 data contracts')
+          s=s.replace('      - smartinput/independent-estimate.js','      - coreEngine.js\n      - reference-data/product-master-command-adapter.js\n      - smartinput/smartinput-data-store.js\n      - smartinput/estimate-f8-source-plan.js\n      - smartinput/independent-estimate.js')
+          s=s.replace('timeout-minutes: 3','timeout-minutes: 5')
+          s += '\n      - name: Verify native v5 transactions and last confirmed Excel result\n        run: node scripts/test-smartinput-stage3-storage-browser.mjs\n'
+          p.write_text(s)
+          Path('docs/NEXUS_SMARTINPUT_STAGE3_WORK_RECORD.md').write_text('''# SmartInput Stage 3 implementation record
+
+          Updated: 2026-09-13. Active specification: user-supplied v2.2 (576 lines).
+          Status: DRAFT / incomplete integration / NOT approved for merge or deployment.
+
+          ## Baseline and scope
+          - Original foundation: 17a072e16cc5a31888c41f70de91a97245ebf8a8.
+          - Current main included: 732e2922b36d5cfaf057b14446bca1bea87971dc.
+          - Intervening main changes are OrderOps and its validation only; preserved without source overlap.
+          - Preserve OPT-01, Stage 2 and PR #596 save-race corrections (runtime 0.11.59).
+          - v2.2 supersedes v6/new summary-store/two-tab/combined-save proposals. Keep DB v5 and existing stores.
+          - Target behavior is one estimate list, selected updates, last ONE confirmed Excel-round exclusions and selected-only master application. No renamed linked tab or new combined-save workflow.
+
+          ## Implemented code in this commit
+          - Native v5 point reads and strict transactions for selected estimate patches, scoped mappings, receipts and latestExcelResult in the SAME transaction.
+          - UNCHANGED confirms the new Excel round without estimate business writes; old receipt replay cannot overwrite a newer latest result.
+          - Native general-edit and migration-evidence/receipt primitives; no new stores or database-version bump.
+          - Independent owned-row projection, selection-table identity, exclusion indexing, typed patches and working-copy three-way plans.
+          - Dedicated SmartInput owner API and opt-in Core receipt/canonical-history transaction; legacy MerchOps rollback behavior retained.
+          - Full master intent persistence before dispatch and terminal UNCHANGED receipts. Review error codes are separate from exact product codes.
+          - No new app runtime/UI imports or production migration activation in this commit. Existing app entry point/HTML/CSS remain unchanged.
+
+          ## Direct verification
+          - Actions 34727423694 / job 103643929958: actual Chrome IndexedDB, 10/10 cases PASS. Native abort, concurrent duplicate calls, latest-result replacement/replay, unselected preservation, settings point reads.
+          - Exact tested artifact 10307924545; ZIP SHA-256 8e8701ee116d484d7a86c8d889e2c717e55613a230c19cb747f9a9c93eea4f2c. Eight file blob hashes checked before applying.
+          - Planning/dispatch tests: 25 cases including two added review/selection tests; F8 candidate comparisons 3 cases.
+          - Existing save coordinator/races, MerchOps atomicity/owner, reference, History/Settings/Export, official SmartInput boundary and repository validation passed directly.
+          - Initial native run failed due a missing closing brace in loadEstimateDirectMappings. Fixed the observed syntax error; explicit ESM parse/import then the same native test passed. No assertion weakening.
+          - Local browser navigation was policy-blocked before product execution; no local policy bypass. Native verification ran in authorized GitHub Actions.
+          - This is implementation self-verification, NOT independent PM approval. Final combined PR CI is recorded separately.
+
+          ## Remaining integration gates (do not mistake CI success for completion)
+          - 3A: actual linked UI removal; EXCEL vs selected-estimate table behavior; member edits/selection/filter/F8 and related views; confirmed-mapping review UI.
+          - 3A: legacy backup/old-tab/reload transition, consistent evidence, dirty working-copy conversion and durable journal adoption, interrupted resume and current-value-compatible rollback.
+          - 3B: runtime context/capability preparation and standalone/combined results/retry UI; native owner interruption/publication and concurrent-other-writer coverage.
+          - Working UI changes are not yet accepted. Do not deploy or claim full 3A/3B until these gates pass.
+          - No operational database/real company records changed; no main push, merge or Pages deployment performed by this preparation.
+          ''')
+          PY
+          git add coreEngine.js reference-data/product-master-command-adapter.js smartinput/independent-estimate.js smartinput/estimate-master-apply.js smartinput/smartinput-data-store.js smartinput/estimate-f8-source-plan.js scripts/test-smartinput-stage3-plans.mjs scripts/test-smartinput-stage3-storage-browser.mjs .github/workflows/smartinput-stage3-plans.yml .github/workflows/smartinput-stage3-source-snapshot.yml docs/NEXUS_SMARTINPUT_STAGE3_WORK_RECORD.md
+          git diff --cached --check
+      - name: Check exact small refinements and unchanged consumer boundaries
+        run: |
+          node --input-type=module --check < smartinput/estimate-master-apply.js
+          node scripts/test-smartinput-stage3-plans.mjs
+          node scripts/test-smartinput-stage3-f8-baseline.mjs
+          node scripts/test-merchops-owner-boundaries.mjs
+          node scripts/test-history-settings-export-owner-boundaries.mjs
+          node scripts/test-reference-data-contract.mjs
+          node scripts/test-smartinput-official-write-boundary.mjs
+          node scripts/validate-repository.mjs
+      - name: Publish content-addressed objects only, never a branch or main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, subprocess
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          api='https://api.github.com/repos/orderzoneapp-coder/oneapp/'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'}
+          def request(path,value=None):
+              with urlopen(Request(api+path,headers=headers,data=None if value is None else json.dumps(value).encode(),method='GET' if value is None else 'POST'),timeout=30) as r:return json.load(r)
+          parent='cca63dc932b99075e041ca65de1a3dd975d5eed7'; main='732e2922b36d5cfaf057b14446bca1bea87971dc'
+          assert request('git/ref/heads/codex/smartinput-stage3-independent-estimates-20260913')['object']['sha']==parent
+          assert request('git/ref/heads/main')['object']['sha']==main
+          names=subprocess.check_output(['git','diff','--cached','--name-only',main],text=True).splitlines()
+          allowed={'coreEngine.js','reference-data/product-master-command-adapter.js','smartinput/independent-estimate.js','smartinput/estimate-master-apply.js','smartinput/smartinput-data-store.js','smartinput/estimate-f8-source-plan.js','scripts/test-smartinput-stage3-plans.mjs','scripts/test-smartinput-stage3-storage-browser.mjs','scripts/test-smartinput-stage3-f8-baseline.mjs','.github/workflows/smartinput-stage3-plans.yml','docs/NEXUS_SMARTINPUT_STAGE3_WORK_RECORD.md'}
+          assert set(names)==allowed,names
+          entries=[]
+          for name in names:
+              data=Path(name).read_bytes(); expected=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+              blob=request('git/blobs',{'content':base64.b64encode(data).decode(),'encoding':'base64'})
+              assert blob['sha']==expected
+              mode=subprocess.check_output(['git','ls-files','--stage','--',name],text=True).split()[0]
+              entries.append({'path':name,'mode':mode,'type':'blob','sha':blob['sha']})
+          base=request('git/commits/'+main)['tree']['sha']
+          tree=request('git/trees',{'base_tree':base,'tree':entries})
+          assert tree['sha']==subprocess.check_output(['git','write-tree'],text=True).strip()
+          result={'parent':parent,'additional_parent':main,'tree':tree['sha'],'files':entries,'main_updated':False,'branch_updated':False}
+          Path('/tmp/stage3-published-objects.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('# Verified Stage 3 objects (no ref update)\n\n```json\n'+json.dumps(result,indent=2)+'\n```\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage3-published-object-manifest
+          path: /tmp/stage3-published-objects.json
+          retention-days: 7
