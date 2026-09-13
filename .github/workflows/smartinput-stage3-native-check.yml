@@ -1,0 +1,75 @@
+name: SmartInput Stage 3 native transaction check
+on:
+  push:
+    branches: [codex/smartinput-stage3-native-v22-check-20260913]
+    paths: [.github/workflows/smartinput-stage3-native-check.yml]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 17a072e16cc5a31888c41f70de91a97245ebf8a8
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Restore and verify exact isolated patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os, subprocess
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          parts = [
+            'f5b1b81738d36134ec433353d1fd53ed7f791b2b',
+            '9e9dabe152af104896a8294d6dc69c76ba2b3c5a',
+            '81de481467941a88814c995d7c5d234b27490597',
+            '3bcc22e34d175d556908f19a7cb2e111e6fec0b2',
+            '0ecc04f79078d45f775f6c7064ca5e7d3edcccce',
+            '36a40ad679653cad501f61cb7484c2c8cee977de',
+            '08f3d97e6fe0061d6f838d288c7c61b9d3d8d349',
+            '1d9de0dd89ce00753e9f78e6c52a0e647693f4ca',
+            '9ebbd2ad851a3e93c93df607ab1a6becd7b6b085',
+          ]
+          payload = []
+          for i, sha in enumerate(parts):
+              request = Request('https://api.github.com/repos/orderzoneapp-coder/oneapp/git/blobs/' + sha,
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+              with urlopen(request, timeout=30) as response:
+                  blob = json.load(response)
+              data = base64.b64decode(blob['content'])
+              assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest() == sha
+              if i == 2:
+                  assert data.count(b'PqsrqqJR') == 1
+                  data = data.replace(b'PqsrqqJR', b'PqsrqJR')
+                  assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest() == '6fc16abda0d87992603eae9f3ef9f172a1e0e36e'
+              payload.append(data)
+          patch = gzip.decompress(base64.b64decode(b''.join(payload), validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '9266fe8f20204da5ca695f3a2eafc57b1000d917910be38e59a557cb668951e9'
+          Path('/tmp/stage3-native.patch').write_bytes(patch)
+          subprocess.run(['git','apply','--check','--unidiff-zero','/tmp/stage3-native.patch'], check=True)
+          subprocess.run(['git','apply','--unidiff-zero','/tmp/stage3-native.patch'], check=True)
+          print('Exact patch verified; isolated checkout only, no remote/product write.')
+          PY
+          git diff --check
+      - name: Native IndexedDB selected writes and latest Excel round
+        env:
+          STAGE3_DEBUG: '1'
+        run: node scripts/test-smartinput-stage3-storage-browser.mjs
+      - name: Related pure and unchanged owner regressions
+        run: |
+          node scripts/test-smartinput-stage3-plans.mjs
+          node scripts/test-smartinput-stage3-f8-baseline.mjs
+          node scripts/test-smartinput-draft-save-coordinator.mjs
+          node scripts/test-merchops-storage-atomicity.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage3-native-tested-patch
+          path: /tmp/stage3-native.patch
+          retention-days: 3
