@@ -50,7 +50,13 @@ const makeInventoryDateKey = (value, baseDate = "") => {
   return (Number(baseYear) * 10000) + (Number(short[1]) * 100) + Number(short[2]);
 };
 
-const makeContext = (scenarioName) => {
+const embeddedCoreStart = html.indexOf("(function initOneAppCore(global) {");
+const embeddedCoreEnd = html.indexOf("})(window);", embeddedCoreStart);
+assert.ok(embeddedCoreStart >= 0 && embeddedCoreEnd > embeddedCoreStart);
+const embeddedCore = html.slice(embeddedCoreStart, embeddedCoreEnd + "})(window);".length);
+const ERP11 = ["품목코드", "입고가", "0", "출고가", "0", "입고B", "n", "도매A", "n", "도매B", "n"];
+let reopenedCount = 0;
+const makeContext = (scenarioName, coreMode = "external") => {
   const context = vm.createContext({
     console,
     Date,
@@ -72,7 +78,7 @@ const makeContext = (scenarioName) => {
   context.window = context;
   context.self = context;
   context.globalThis = context;
-  vm.runInContext(coreSource, context, { filename: "coreEngine.js" });
+  vm.runInContext(coreMode === "embedded" ? embeddedCore : coreSource, context, { filename: `${coreMode}-core.js` });
   vm.runInContext(sheetJsSource.toString("utf8"), context, { filename: "xlsx.full.min.js" });
   assert.ok(context.XLSX?.utils, "SheetJS did not initialize");
 
@@ -171,8 +177,8 @@ const makeRow = ({ code, role, source = {}, finalData = {}, inputOrder = 0 }) =>
   finalData: { ...finalData },
 });
 
-const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null, noInboundActionQueue = { action: "", codes: [] } }) => {
-  const { context, realXlsx, writtenFiles } = makeContext(name);
+const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = null, aggregateTransform = null, noInboundActionQueue = { action: "", codes: [] }, coreMode = "external", prepare = null }) => {
+  const { context, realXlsx, writtenFiles } = makeContext(name, coreMode);
   const toasts = [];
   const alerts = [];
   const managedRows = snapshotRows || rows;
@@ -208,13 +214,148 @@ const runF8Scenario = async ({ name, rows, masterProducts = {}, snapshotRows = n
   vm.runInContext(`${f8Declaration}\nglobalThis.__runQuickF8 = handleQuickExcelExport;`, context, {
     filename: "MerchOps-F8.js",
   });
+  if (prepare) await prepare(context);
+  const beforeExport = JSON.stringify({ rows, masterProducts, managed: context.data.managedItems });
   await context.__runQuickF8();
+  assert.equal(JSON.stringify({ rows, masterProducts, managed: context.data.managedItems }), beforeExport, "F8 must not mutate working rows, source, or master");
   const writtenFile = writtenFiles.at(-1) || "";
   const reopened = writtenFile ? realXlsx.read(fs.readFileSync(writtenFile), { type: "buffer" }) : null;
+  if (reopened?.Sheets["ERP업데이트"]) {
+    const erpSheet = reopened.Sheets["ERP업데이트"];
+    const erp = realXlsx.utils.sheet_to_json(erpSheet, { header: 1, raw: true, defval: "" });
+    assert.deepEqual(Array.from(erp[0]), ERP11, `${name}: approved ERP headers`);
+    assert.ok(erp.every(row => row.length === 11), `${name}: every ERP row must have exactly 11 fields`);
+    assert.equal(realXlsx.utils.decode_range(erpSheet["!ref"]).e.c, 10, `${name}: ERP sheet must end at K`);
+    assert.ok(Object.keys(erpSheet).filter(key => !key.startsWith("!")).every(key => realXlsx.utils.decode_cell(key).c < 11), `${name}: no hidden trailing ERP cells`);
+    reopenedCount++;
+    if (process.env.MERCHOPS_F8_EVIDENCE_DIR) {
+      fs.mkdirSync(process.env.MERCHOPS_F8_EVIDENCE_DIR, { recursive: true });
+      fs.copyFileSync(writtenFile, path.join(process.env.MERCHOPS_F8_EVIDENCE_DIR, path.basename(writtenFile)));
+    }
+  }
   return { context, reopened, writtenFile, toasts, alerts };
 };
 
 try {
+
+  // SI-MO-F8-UPLOAD-FIX-01: use the actual external/bundled Core and actual F8 writer.
+  const manualStart = html.indexOf("    const handleForceApplyMarginRules = useCallback(() => {");
+  const manualEnd = html.indexOf("    const handleApplyScreenPercent = useCallback", manualStart);
+  assert.ok(manualStart >= 0 && manualEnd > manualStart);
+  const manualDeclaration = html.slice(manualStart, manualEnd);
+  const marginRules = [{ id: "contract", whCode: "*", unit: "*", rate: 10, type: "divide" }];
+  const defaultSource = { 품목명: "시중가 검증", 창고: "01", 단위: "BOX", 입고가: 18500, 출고가: 19000, 시중가: "", 행사가: 18000 };
+  for (const coreMode of ["external", "embedded"]) {
+    for (const scenario of [
+      { id: "M01", sourceMarket: "", recalc: true, expected: 20600 },
+      { id: "M02", sourceMarket: 19000, recalc: true, expected: 20600 },
+      { id: "M03blank", sourceMarket: "", recalc: false, expected: "" },
+      { id: "M03original", sourceMarket: 19000, recalc: false, expected: 19000 },
+      { id: "M04edited", sourceMarket: "", recalc: true, direct: 21000, expected: 21000 },
+      { id: "M04zero", sourceMarket: "", recalc: true, direct: 0, expected: 0 },
+      { id: "M04blank", sourceMarket: "", recalc: true, direct: "", expected: "" },
+      { id: "M09legacy", sourceMarket: "", legacy: true, proof: true, expected: 20600 },
+      { id: "M09noProof", sourceMarket: 19000, legacy: true, proof: false, expected: 19000 },
+      { id: "M09noRule", sourceMarket: 19000, legacy: true, proof: true, noRule: true, expected: 19000 },
+    ]) {
+      const row = makeRow({ code: "0000123", role: "estimate", source: { ...defaultSource, 시중가: scenario.sourceMarket } });
+      const result = await runF8Scenario({ name: `${coreMode}-${scenario.id}`, rows: [row], coreMode,
+        masterProducts: { "0000123": { 시중가: 99000, 최종전송: 70000, 행사가: 80000, 기본: "1" } },
+        prepare: context => {
+          row.finalData = context.ONEAPP.PRICING.computeFinalData({}, row.sources, marginRules, scenario.recalc === true);
+          if (scenario.legacy) row.finalData = {
+            시중가: 20600,
+            _isRuleApplied: !scenario.noRule,
+            ...(scenario.proof ? { _marketPricePolicy: "estimate_rule_recalc_allowed" } : {})
+          };
+          if (hasOwn(scenario, "direct")) {
+            row.finalData.시중가 = scenario.direct;
+            row.finalData._editedFields = { 시중가: true };
+          }
+        }
+      });
+      assert.ok(result.reopened, `${coreMode}/${scenario.id}: F8 saved workbook`);
+      const cell = result.reopened.Sheets["쇼핑몰업로드"].F2;
+      assert.equal(cell?.v ?? "", scenario.expected, `${coreMode}/${scenario.id}: market price`);
+      if (scenario.expected !== "") assert.equal(cell.t, "n", "market price remains numeric");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].A2.v, "0000123", "leading zero code retained");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].A2.t, "s");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].C2.t, "s");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].C2.v, "0");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].G2.t, "s");
+      assert.equal(result.reopened.Sheets["ERP업데이트"].G2.v, "n");
+    }
+    // M05: the manual action performs a second calculation after restoring working warehouse.
+    const row = makeRow({ code: "M05", role: "estimate", source: { ...defaultSource }, finalData: { 창고: "03" } });
+    const result = await runF8Scenario({ name: `${coreMode}-M05manual`, rows: [row], coreMode, prepare: context => {
+      context.config = { marginRules: [
+        { id: "manual-context", whCode: "03", unit: "BOX", rate: 25, type: "divide" },
+        ...marginRules
+      ] };
+      context.window.getManagedRowKey = item => item._managedKey || item.코드;
+      context.window.setTimeout = fn => { fn(); return 1; };
+      context.ui.setIsProcessing = () => {};
+      context.ui.setProcessMsg = () => {};
+      context.data.setManagedItems = update => {
+        context.data.managedItems = update(context.data.managedItems);
+        Object.assign(row, context.data.managedItems.M05);
+      };
+      vm.runInContext(`${manualDeclaration}\nglobalThis.__manualRule = handleForceApplyMarginRules;`, context);
+      context.__manualRule();
+      assert.equal(row.finalData.시중가, 24700, "manual second calculation uses current warehouse, not import warehouse");
+      assert.equal(row.finalData._generatedFields.시중가, true);
+    } });
+    assert.equal(result.reopened.Sheets["쇼핑몰업로드"].F2.v, 24700);
+
+    const env = makeContext(`${coreMode}-policy`, coreMode);
+    const pricing = env.context.ONEAPP.PRICING;
+    const resolve = env.context.ONEAPP.MERCH.resolveWorkingField;
+    // M06: explicit old generated metadata must be reset, without mutating the input marker object.
+    for (const role of ["estimate", "purchase", "inventory", "info"]) {
+      const source = { ...defaultSource, 시중가: 19000, _generatedFields: { 시중가: true, 도매A: true } };
+      const sources = { _activeRole: role, [role]: source };
+      const before = JSON.stringify(sources);
+      const computed = pricing.computeFinalData({ 시중가: 30000 }, sources, marginRules, false);
+      assert.equal(computed._generatedFields.시중가, undefined, `${role}: stale market marker cleared`);
+      assert.equal(computed._generatedFields.도매A, true, "other generated fields retained");
+      assert.equal(JSON.stringify(sources), before, "marker clearing does not mutate source");
+      assert.equal(computed.시중가, ["purchase", "inventory"].includes(role) ? 30000 : 19000, `${role}: existing compute policy preserved`);
+    }
+    // M07/M09: no promotion of master-reference market values or unrelated role drafts to generated values.
+    for (const role of ["purchase", "inventory", "info"]) {
+      const item = makeRow({ code: "R", role, source: { ...defaultSource, 시중가: 19000 } });
+      item.finalData = pricing.computeFinalData({ 시중가: 30000 }, item.sources, marginRules, true);
+      assert.equal(item.finalData._generatedFields?.시중가, undefined);
+      assert.equal(resolve(item, { 시중가: 30000 }, "시중가").value, 19000, "non-estimate working source selection stays unchanged");
+      item.finalData = { 시중가: 20600, _marketPricePolicy: "estimate_rule_recalc_allowed", _isRuleApplied: true };
+      assert.equal(resolve(item, {}, "시중가").value, 19000, "legacy proof must belong to an estimate role");
+    }
+    const missing = makeRow({ code: "N", role: "estimate", source: { 품목명: "없는 시중가", 입고가: 0 }, finalData: { 시중가: 20600, _isRuleApplied: true } });
+    assert.equal(resolve(missing, { 시중가: 99000 }, "시중가").isWorkingValue, false, "unproven final/master market values are not output");
+    console.log(`PASS F8 market contracts ${coreMode}: auto/manual/direct/legacy/role reset`);
+  }
+  const typed = await runF8Scenario({ name: "ERP11-zero-blank", rows: [
+    makeRow({ code: "00001", role: "estimate", source: { 품목명: "숫자0", 입고가: 0, 출고가: 0, 입고B: 0, 도매A: 0, 도매B: 0 } }),
+    makeRow({ code: "00002", role: "estimate", source: { 품목명: "공란", 입고가: "", 출고가: "", 입고B: "", 도매A: "", 도매B: "" } })
+  ] });
+  for (const column of ["B", "D", "F", "H", "J"]) {
+    assert.equal(typed.reopened.Sheets["ERP업데이트"][`${column}2`].v, 0);
+    assert.equal(typed.reopened.Sheets["ERP업데이트"][`${column}2`].t, "n");
+    assert.equal(typed.reopened.Sheets["ERP업데이트"][`${column}3`]?.v ?? "", "");
+  }
+
+  const inventory11 = await runF8Scenario({ name: "ERP11-inventory-synthetic", rows: [
+    makeRow({ code: "INV01", role: "inventory", inputOrder: 0, source: { 품목명: "재고", 입고가: 500, 출고가: 700, 재고수량: 2, 기록: "2026-09-11" } }),
+    makeRow({ code: "INV01", role: "inventory", inputOrder: 1, source: { 품목명: "재고", 입고가: 600, 출고가: 800, 재고수량: 3, 기록: "2026-09-12" } }),
+    makeRow({ code: "INV02", role: "inventory", inputOrder: 2, source: { 품목명: "0재고", 입고가: 0, 출고가: 0, 재고수량: 0, 기록: "2026-09-12" } })
+  ] });
+  assert.ok(inventory11.reopened, "synthetic inventory F8 must save successfully");
+  const invRows = inventory11.context.XLSX.utils.sheet_to_json(inventory11.reopened.Sheets["쇼핑몰업로드"], { header: 1, raw: true });
+  assert.equal(invRows.length, 3, "inventory must aggregate duplicate LOT codes");
+  assert.equal(invRows[1][15], 5, "inventory stock sum must remain actual 2+3, not 999");
+  assert.equal(invRows[2][15], 0, "zero inventory remains zero");
+  assert.equal(inventory11.reopened.Sheets["ERP업데이트"].B2.v, 600, "latest LOT cost remains representative");
+
   // 대표 Lot 기준: 유효한 최신일 우선, 공란일 후순위, 동일일과 전체 공란은 단가와 무관하게 첫 원본 입력순서 우선.
   const representativeEnv = makeContext("representative");
   const inventoryModule = representativeEnv.context.window.MERCH_INVENTORY_F8_MODULE;
@@ -285,7 +426,9 @@ try {
   assert.equal(estimateShop[2][0], "20010002");
   assert.equal(estimateShop[2][14], "1", "estimate subdivision must inherit the outbound-price sale decision");
   assert.equal(estimateShop[2][15], 999, "estimate subdivision stock must be fixed at 999");
-  assert.equal(estimateErp[1][11], "", "missing final-transmission must stay blank instead of copying inbound price");
+  assert.equal(estimateErp[1].length, 11, "final-transmission is excluded by the approved ERP11 contract");
+  assert.equal(estimateErp[1][3], 13000, "ERP outbound must remain normal, not promotional");
+  assert.equal(estimateShop[1][3], 12000, "shop outbound must retain promo precedence");
 
   const existingSubdivisionResult = await runF8Scenario({
     name: "estimate-existing-subdivision-sale-stock-policy",
@@ -387,9 +530,8 @@ try {
     ],
   });
   const transmissionErp = transmissionResult.context.XLSX.utils.sheet_to_json(transmissionResult.reopened.Sheets["ERP업데이트"], { header: 1, raw: true, defval: "" });
-  assert.equal(transmissionErp[1][11], 0, "explicit zero final-transmission must survive F8 XLSX generation");
-  assert.equal(transmissionErp[2][11], "", "explicit blank final-transmission must survive F8 XLSX generation");
-  assert.equal(transmissionErp[3][11], "", "missing final-transmission must survive F8 XLSX generation without fallback");
+  assert.ok(transmissionErp.every(row => row.length === 11), "final-transmission is excluded for zero, blank, and missing input without changing the input");
+  assert.deepEqual(Array.from(transmissionErp.slice(1), row => row[1]), [9000, 9000, 9000], "removing trailing fields must preserve inbound prices");
 
   const purchaseRow = makeRow({
     code: "30010001",
@@ -531,7 +673,7 @@ try {
     console.warn("Reference inventory workbooks were not found; repository-safe synthetic F8 regressions still passed.");
   }
 
-  console.log("MerchOps Quick F8 inventory aggregation, blocking diagnostics, role regressions, and real XLSX reopen checks passed.");
+  console.log(`MerchOps Quick F8: ${reopenedCount} real XLSX reopens passed (ERP11, market, subdivision, inventory, source preservation).`);
 } finally {
   const resolvedTempDir = path.resolve(tempDir);
   const allowedTempPrefix = path.resolve(ROOT, ".tmp-merchops-f8-");

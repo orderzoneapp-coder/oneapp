@@ -217,8 +217,7 @@ for (const field of ['검색어등록', '창고', '단위', '1종코드']) {
 }
 assert.doesNotMatch(exportSource, /if \(!hasStockValue\(working\.재고수량\)\) return DEFAULT_EXPORT_STOCK_QTY/, "F9 must not generate stock 999 when the source column is missing");
 assert.doesNotMatch(merchSource.slice(f8Start, f8End), /shopUploadStock = !window\.isBlankCell\(finalStockRaw\) \? window\.parseNum\(finalStockRaw\) : 999/, "F8 must not generate stock 999 when the source column is missing");
-assert.match(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], ''\)/, "F8 missing final-transmission must use an explicit blank default");
-assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission = getBestNumByAliases\(row, \['최종전송', '최종\(전송\)', '최종입고'\], inPrice\)/, "F8 must not copy inbound price into a missing final-transmission column");
+assert.doesNotMatch(merchSource.slice(f8Start, f8End), /finalTransmission|erpBasicFlag|subErpBasicFlag|erpRow\[11\]|erpRow\[15\]/, "approved ERP11 omits trailing output fields in every normal/subdivision path");
 assert.match(merchSource.slice(f8Start, f8End), /const subName = String\(subMaster\['품목명'\] \|\| subMaster\['상품명'\] \|\| ''\)\.trim\(\)/, "F8 may use registered master name metadata only when a calculated subdivision product is absent from the working list");
 assert.doesNotMatch(dataOpsSource, /merch_export_draft/, "DataOps is not a consumer of the MerchOps F9 draft contract");
 

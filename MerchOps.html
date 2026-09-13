@@ -13,13 +13,13 @@
     <script defer src="nexus/common/nexus-table-ux.js?v=1.1.0"></script>
     <meta name="google" content="notranslate">
     <title>가격·시세 - NEXUS</title>
-    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.196_F8ShopSaleStock]">
+    <meta name="application-version" content="ONEAPP MerchOps - Main Workspace [v2.1.197_F8MarketERP11]">
     <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="coreEngine.js"></script>
+    <script src="coreEngine.js?v=20260913-f8-market-erp11"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script>
     // Product/Settings owner adapters are loaded without becoming an app-boot gate.
@@ -37,6 +37,7 @@
         ownerPath: String(ownerPath || ''),
         message: `${String(action || '해당 변경')}은(는) ${String(ownerAppId || 'owner')} 소유 화면에서 수행해야 합니다.`
     }));
+    // v2.1.197: 계산 시중가의 F8 누락을 수정하고 ERP업데이트를 확정 11열로 통일한다.
     // v2.1.196: 견적/시세 F8 쇼핑몰업로드는 출고가로 판매여부를 정하고 재고수량 999를 일관 적용한다.
     // v2.1.195: 미등록 상품을 owner command로 실제 등록하고 현재 작업 Snapshot에 반영해 기존 업무로 이어간다.
     // v2.1.194: 미등록 상품 검토줄에 현재 작업 상품 삭제를 추가하고 전부 처리되면 기존 업무 화면으로 자동 복귀한다.
@@ -286,10 +287,19 @@
     const promoActionGenerated = finalData?._promoResetRequested === true
       && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name));
     const previousPromoGenerated = finalData?._previousPromoApplied === true && fields.includes('행사가');
+    // F8-01: legacy estimate drafts need explicit recalculation evidence, not a nonblank final value.
+    const legacyMarketPrice = parseNum(finalCell.value);
+    const legacyEstimateMarketGenerated = canonicalField === '시중가'
+      && sourceRole === 'estimate'
+      && finalData?._marketPricePolicy === 'estimate_rule_recalc_allowed'
+      && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied)
+      && finalCell.found && !isBlankValue(finalCell.value)
+      && Number.isFinite(legacyMarketPrice) && legacyMarketPrice > 0;
     const explicitGenerated = fields.some(name => generatedMarkers[name] === true)
       || options.generated === true
       || promoActionGenerated
       || previousPromoGenerated
+      || legacyEstimateMarketGenerated
       || (canonicalField === '출고가' && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied));
     const result = (value, origin, isWorkingValue, isExplicitBlank, resolvedField = canonicalField, resolvedRole = '') => ({
       value,
@@ -1392,6 +1402,11 @@
     const hasUploadSource = !!activeRole && isNonEmptySource((sources || {})[activeRole]);
     const source = hasUploadSource ? { ...((sources || {})[activeRole] || {}) } : { ...(mItem || {}) };
     const working = { ...source };
+    // A new source/calculation must not inherit the previous estimate's generated market-price marker.
+    if (hasOwnField(working._generatedFields, '시중가')) {
+      working._generatedFields = { ...working._generatedFields };
+      delete working._generatedFields['시중가'];
+    }
 
     // v1.0.8 정책:
     // - 업로드 source가 있으면 해당 파일에 있는 값만 작업값으로 사용한다.
@@ -1430,6 +1445,7 @@
     } else if (PRICING.shouldAllowMarketPriceRecalcForRole(activeRole)) {
       if (forceRecalc && calculatedOutPrice > 0) {
         working['시중가'] = calculatedOutPrice;
+        working._generatedFields = { ...(working._generatedFields || {}), '시중가': true };
         working._marketPricePolicy = 'estimate_rule_recalc_allowed';
       } else if (sourceHasMarketPrice) {
         working['시중가'] = source['시중가'];
@@ -9291,7 +9307,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             return { code: subCode, spec: getBestStr(row, '1종규격'), parentInPrice: inPrice, subIn, subOut };
         };
         const wb = window.XLSX.utils.book_new();
-        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n']];
         const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
         const confirmData = [['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']];
         wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
@@ -9303,7 +9319,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const isInventoryRow = !!(inventoryF8Module && inventoryF8Module.isInventoryRow(row));
             const code = window.normalizeProductCodeText(isEstimateRow ? (readQuickSourceStr(row, ['품목코드', '상품코드', '코드'], row.코드) || row.코드) : row.코드);
             let saleCode = getSaleCode(row);
-            let inPrice, erpOutPrice, promoPrice, shopSalePrice, inPriceB, erpASale, erpBSale, pMarket, shopBPrice, shopBWholesale, finalTransmission, shopUploadStock, name, spec, brand, description, tag;
+            let inPrice, erpOutPrice, promoPrice, shopSalePrice, inPriceB, erpASale, erpBSale, pMarket, shopBPrice, shopBWholesale, shopUploadStock, name, spec, brand, description, tag;
             const themeFlags = buildThemeFlags(row);
             if (isEstimateRow) {
                 // 견적서 QuickF8 쇼핑몰업로드 정책
@@ -9323,7 +9339,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 pMarket = readQuickSourceNum(row, ['시중가', '시중단가'], '');
                 shopBPrice = readQuickSourceNum(row, ['B판매가', 'B 판매가'], '');
                 shopBWholesale = erpBSale;
-                finalTransmission = readQuickSourceNum(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 shopUploadStock = 999;
                 name = readQuickSourceStr(row, ['품목명', '상품명'], '');
                 spec = readQuickSourceStr(row, ['규격', '단위'], '');
@@ -9341,7 +9356,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 pMarket = getBestNum(row, '시중가');
                 shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
                 shopBWholesale = getBestNum(row, '도매B');
-                finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], '');
                 const finalStockRaw = getBestValue(row, '재고수량', '');
                 // F8 쇼핑몰업로드 재고 정책:
                 // - 엑셀/작업값에 명시 재고가 있으면 0을 포함해 그대로 보존한다.
@@ -9358,11 +9372,8 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             if (noInboundQuickF8Policy?.forceTheme2) {
                 themeFlags[1] = '1';
             }
-            // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
-            // ERP업데이트 P열(헤더 '1')은 기본여부다.
-            // 판매여부와 무관하게 ERP 입고가가 0보다 크면 1, 입고가가 0·공란이면 공백으로 출력한다.
-            const erpBasicFlag = inPrice > 0 ? '1' : '';
-            erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', erpBasicFlag]);
+            // F8-04: 스마트입력 확정 ERP 11열. 정상 출고가 유지; 행사·최종전송·기본여부는 이 출력에서만 제외한다.
+            erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n']);
             // 쇼핑몰업로드는 견적서 작업 시 마스터값을 오늘 작업값으로 보강하지 않는다.
             shopData.push([code, name, spec, shopSalePrice, erpASale, pMarket, shopBPrice, shopBWholesale, 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
             // inventory F8은 DataOps 실제 재고만 출력한다. 소분 가격행 생성은 견적·구매 등 기존 역할에서만 유지한다.
@@ -9477,7 +9488,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
             const erpIndexes = erpIndexesByCode.get(subInfo.code) || [];
             if (shopIndexes.length > 1 || erpIndexes.length > 1) return;
 
-            const subErpBasicFlag = subInfo.subIn > 0 ? '1' : '';
             if (shopIndexes.length === 1 && erpIndexes.length === 1) {
                 // 소분품목이 이미 리스트에 있으면 한 행을 유지하고 계산된 가격을 갱신하며, 견적 행은 부모의 F8 판매·재고 정책도 적용한다.
                 // 품명·규격·브랜드·설명·테마·태그는 기존 소분품목 값을 보존한다.
@@ -9492,8 +9502,6 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 const erpRow = erpData[erpIndexes[0]];
                 erpRow[1] = subInfo.subIn;
                 erpRow[3] = subInfo.subOut;
-                erpRow[11] = subInfo.subIn;
-                erpRow[15] = subErpBasicFlag;
                 subOutputCount++;
                 return;
             }
@@ -9506,7 +9514,7 @@ ${targetText} ${targetRows.length}건을 엑셀로 생성합니다.${workflowTex
                 missingSubCodes.add(subInfo.code);
                 return;
             }
-            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', subErpBasicFlag]);
+            erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n']);
             shopData.push([
                 subInfo.code,
                 subName,
@@ -10204,6 +10212,10 @@ ${targetModeText} ${targets.size}건을 MerchOps 마스터에 저장합니다. �
                                 recalculated._marketPricePolicy = 'master_reference_for_purchase_inventory';
                             } else {
                                 recalculated['시중가'] = recalculatedOutPrice || 0;
+                                if (activeRoleForRule === 'estimate') {
+                                    recalculated._generatedFields = { ...(recalculated._generatedFields || {}), '시중가': true };
+                                    recalculated._marketPricePolicy = 'estimate_rule_recalc_allowed';
+                                }
                             }
                         }
                         recalculated._isRuleApplied = true;
@@ -14379,7 +14391,7 @@ const App = () => {
                             React.createElement("div", { className: "flex items-center gap-2" },
                                 React.createElement("h1", { className: "text-[15px] font-black text-slate-800 whitespace-nowrap", "data-nexus-app-title": true }, "MerchOps"),
                                 React.createElement("span", { className: "h-7 px-3 rounded-md bg-slate-100 text-slate-700 text-[11px] font-bold hidden sm:flex items-center", "aria-current": "page" }, "가격·시세"),
-                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.196_F8ShopSaleStock")),
+                                React.createElement("span", { className: "text-slate-500 text-[9px] whitespace-nowrap hidden xl:inline" }, "v2.1.197_F8MarketERP11")),
                             React.createElement("p", { className: "hidden sm:block text-[10px] text-slate-500 mt-0.5 truncate" }, "상품 가격·프로모션 관리"))),
                     React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags, masterLookupMode: data.masterLookupMode, snapshotStatus: data.productSnapshotStatus, snapshotRevision: data.productSnapshotRevision, snapshotUpdateAvailable: data.productSnapshotUpdateAvailable }),
                     React.createElement("nav", { className: "flex flex-wrap gap-2 shrink-0 items-center justify-end", "aria-label": "MerchOps 기준정보와 설정" },

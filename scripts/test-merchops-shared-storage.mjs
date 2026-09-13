@@ -670,7 +670,10 @@ for (const name of [
   "Master.html",
   "Item_manager.html",
 ]) {
-  assert.match(files[name], /<script src="coreEngine\.js"><\/script>/, `${name} must load the shared storage engine`);
+  const coreScript = name === "MerchOps.html"
+    ? /<script src="coreEngine\.js\?v=20260913-f8-market-erp11"><\/script>/
+    : /<script src="coreEngine\.js"><\/script>/;
+  assert.match(files[name], coreScript, `${name} must load the shared storage engine`);
 }
 assert.doesNotMatch(files["export_center.html"], /<script src="coreEngine\.js"><\/script>/, "Export Center must remain output-only and must not load master writers");
 assert.match(files["SmartParser.html"], /ONEAPP_SMARTPARSER_ANALYSIS_RESULT_V1/);

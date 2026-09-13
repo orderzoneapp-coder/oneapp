@@ -200,10 +200,19 @@
     const promoActionGenerated = finalData?._promoResetRequested === true
       && fields.some(name => ['행사가', '행사테마', '테마', 'promoTheme', '_theme', '테마1', '테마2', '테마3', '테마4', '테마5'].includes(name));
     const previousPromoGenerated = finalData?._previousPromoApplied === true && fields.includes('행사가');
+    // F8-01: legacy estimate drafts need explicit recalculation evidence, not a nonblank final value.
+    const legacyMarketPrice = parseNum(finalCell.value);
+    const legacyEstimateMarketGenerated = canonicalField === '시중가'
+      && sourceRole === 'estimate'
+      && finalData?._marketPricePolicy === 'estimate_rule_recalc_allowed'
+      && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied)
+      && finalCell.found && !isBlankValue(finalCell.value)
+      && Number.isFinite(legacyMarketPrice) && legacyMarketPrice > 0;
     const explicitGenerated = fields.some(name => generatedMarkers[name] === true)
       || options.generated === true
       || promoActionGenerated
       || previousPromoGenerated
+      || legacyEstimateMarketGenerated
       || (canonicalField === '출고가' && !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied));
     const result = (value, origin, isWorkingValue, isExplicitBlank, resolvedField = canonicalField, resolvedRole = '') => ({
       value,
@@ -1393,6 +1402,11 @@
     const hasUploadSource = !!activeRole && isNonEmptySource((sources || {})[activeRole]);
     const source = hasUploadSource ? { ...((sources || {})[activeRole] || {}) } : { ...(mItem || {}) };
     const working = { ...source };
+    // A new source/calculation must not inherit the previous estimate's generated market-price marker.
+    if (hasOwnField(working._generatedFields, '시중가')) {
+      working._generatedFields = { ...working._generatedFields };
+      delete working._generatedFields['시중가'];
+    }
 
     // v1.0.8 정책:
     // - 업로드 source가 있으면 해당 파일에 있는 값만 작업값으로 사용한다.
@@ -1431,6 +1445,7 @@
     } else if (PRICING.shouldAllowMarketPriceRecalcForRole(activeRole)) {
       if (forceRecalc && calculatedOutPrice > 0) {
         working['시중가'] = calculatedOutPrice;
+        working._generatedFields = { ...(working._generatedFields || {}), '시중가': true };
         working._marketPricePolicy = 'estimate_rule_recalc_allowed';
       } else if (sourceHasMarketPrice) {
         working['시중가'] = source['시중가'];
