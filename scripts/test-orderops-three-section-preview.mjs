@@ -35,12 +35,13 @@ assert.equal(engine.getDeliverySummaryRows(ordersOnly).length, 1);
 
 engine.setOrderValue(ordersOnly, 2, "deliveryNotice", "직원 적요 수정", { recordHistory: true, actor: "synthetic-admin" });
 assert.equal(orders.rows[0].note, "일반 적요", "employee and general notes must stay separate");
-assert.equal(orders.rows[0].note1, "직원 적요 수정");
+assert.equal(orders.rows[0].note1, "직원 적요", "parsed source evidence must remain immutable after work edits");
+assert.equal(ordersOnly.orders[0].note1, "직원 적요 수정");
 assert.equal(ordersOnly.systemHistory.events.length, 1);
-engine.setCustomerManager(ordersOnly, engine.customerWorkKey(orders.rows[0]), "담당 B", { recordHistory: true, actor: "synthetic-admin" });
+engine.setCustomerManager(ordersOnly, engine.customerWorkKey(ordersOnly.orders[0]), "담당 B", { recordHistory: true, actor: "synthetic-admin" });
 assert.deepEqual(ordersOnly.orders.map((row) => row.manager), ["담당 B", "담당 B"]);
 
-const withInventory = engine.createPreviewWorkspace(orders, inventory, { systemHistory: ordersOnly.systemHistory });
+const withInventory = engine.createPreviewWorkspace({ ...orders, rows: ordersOnly.orders }, inventory, { systemHistory: ordersOnly.systemHistory });
 assert.equal(withInventory.allocations[0].stockTotal, 12);
 assert.equal(withInventory.allocations[0].remainingQuantity, 7, "remaining quantity must use actual inventory minus total product orders");
 assert.equal(withInventory.systemHistory.events.length, 3, "preview history must cross source refreshes");
@@ -96,7 +97,7 @@ for (const contract of [
   'hasInventory ? ["재고", "잔량"]',
   "orderops-header-primary",
   'id="deliveryWarehouseFilter"',
-  '<th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>전표·거래처</th><th>수량</th><th>창고·담당</th>',
+  '<th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>주문일</th><th>전표·거래처</th><th>수량</th><th>금액</th><th>적요</th><th>창고·담당</th>',
   'id="deliveryManagerFilter"',
   "restorePreviewInputState",
   "localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY",

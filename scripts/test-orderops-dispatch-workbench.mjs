@@ -261,7 +261,7 @@ for (const contract of [
   'function formatEmployeeDeliveryNotice(row)',
   'orderops-side-table orderops-delivery-table',
   '@container (max-width: 419px)',
-  '<th>전표·거래처</th><th>수량</th><th>창고·담당</th>',
+  '<th>주문일</th><th>전표·거래처</th><th>수량</th><th>금액</th><th>적요</th><th>창고·담당</th>',
   'data-delivery-manager-filter=',
   'id="deliveryWorkloadSummary"',
   'id="deliverySourceScope"',

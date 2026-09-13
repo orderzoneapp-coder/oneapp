@@ -135,8 +135,10 @@ try {
     ['analyzeButton','workbenchResetButton','headerSettingsButton'],
     '앱헤더 우측은 분석·초기화·환경설정 순서를 유지해야 한다.');
   assert.deepEqual(beforeAnalysis.bottomActions,
-    ['headerCloudSaveButton','orderOpsHeaderOrdersButton','shipmentOpenButton','printButton','downloadButton','orderOpsHeaderMoreButton'],
-    '저장·출력·복구 조작은 중앙 하단 작업바에서 한 번만 렌더해야 한다.');
+    ['headerCloudSaveButton','shipmentOpenButton','printButton','downloadButton','orderOpsHeaderMoreButton'],
+    '중앙 하단 작업바에는 현재 작업 저장·출고·출력 조작만 한 번 렌더해야 한다.');
+  assert.equal(await evaluate(client, `document.querySelector('#orderOpsFilePreparePane').contains(document.querySelector('#orderOpsHeaderOrdersButton'))`), true,
+    '자료·복구 보조 메뉴는 좌측 자료 준비 영역에 있어야 한다.');
   assert.equal(beforeAnalysis.systemIo, false, '가시 업무 UI에서 System.IO 콘솔 표현을 제거해야 한다.');
   assert.deepEqual(beforeAnalysis.headers.slice(0,4), ['창고', '거래처', '그룹', '담당자'], 'v1.2는 기존 상세 오더리스트를 기본 작업표로 유지한다.');
   assert.equal(new Set(beforeAnalysis.keys).size,beforeAnalysis.keys.length,'주문표 열 key는 고유해야 한다.');
@@ -246,9 +248,10 @@ try {
   assert.equal(workbench.deliveries, 1, '배송 건수는 상품행이 아닌 고객·주문 배송 단위여야 한다.');
   assert.match(workbench.distribution, /작업자 1건/);
   assert.deepEqual(workbench.filters, ['deliveryWarehouseFilter', 'deliveryManagerFilter']);
-  assert.deepEqual(workbench.summaryHeaders, ['','전표·거래처','수량','창고·담당']);
+  assert.deepEqual(workbench.summaryHeaders, ['','주문일','전표·거래처','수량','금액','적요','창고·담당']);
   assert.match(workbench.summaryText, /20260908-001[\s\S]*부분상사[\s\S]*10 BOX[\s\S]*본창고[\s\S]*작업자/);
-  assert.doesNotMatch(workbench.summaryText, /남부|부분출고 상품|분석전 수정/);
+  assert.match(workbench.summaryText, /2026-09-08[\s\S]*금액 자료 없음[\s\S]*분석전 수정/);
+  assert.doesNotMatch(workbench.summaryText, /남부|부분출고 상품/);
   assert.match(workbench.workload, /조회 요약[\s\S]*주문서 1건[\s\S]*BOX 10/);
   assert.match(workbench.sourceScope, /주문 기간 2026-09-08[\s\S]*재고 기준일 미확인[\s\S]*불러온 시각/);
   assert.match(workbench.inventory, /조회·수정/, 'v1.2 우측은 조회·수정 패널이다.');
@@ -283,12 +286,13 @@ try {
   assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorIdentity').textContent`), /부분출고 상품/);
   assert.match(await evaluate(client, `document.querySelector('#inventoryInspectorMetrics').textContent`), /재고 20.*잔량 10/);
   assert.match(await evaluate(client, `document.querySelector('#productComparisonContext').textContent`), /부분출고 상품 \(P-1\)[\s\S]*전체 주문 10 BOX[\s\S]*전체 재고 20 BOX[\s\S]*비교잔량 10 BOX/);
-  const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth}})()`);
+  const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');const wrap=table.closest('.orderops-side-table-wrap');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,rightWidth:right.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth,wrapClient:wrap.clientWidth,wrapScroll:wrap.scrollWidth,bodyWidth:document.documentElement.scrollWidth,viewport:innerWidth}})()`);
   assert.ok(defaultLayout.leftWidth >= 370, `기본 좌측 패널 폭이 핵심 판단에 부족합니다: ${defaultLayout.leftWidth}`);
   assert.ok(defaultLayout.centerWidth > defaultLayout.leftWidth, '중앙 작업표는 기본 배치에서 좌측보다 넓어야 한다.');
   assert.ok(defaultLayout.resetRight <= await evaluate(client, `document.querySelector('#inventoryInspector').getBoundingClientRect().right`) && defaultLayout.resetWidth > 100, '조회 초기화는 우측 패널에서 잘리지 않아야 한다.');
   assert.equal(defaultLayout.fontSize, '12px', '좌측 표는 12px 가독성 기준을 유지해야 한다.');
-  assert.ok(defaultLayout.tableWidth <= defaultLayout.leftWidth + 2, `좌측 4열 표는 패널 안에 맞아야 한다: ${defaultLayout.tableWidth}`);
+  assert.ok(defaultLayout.tableWidth > defaultLayout.rightWidth && defaultLayout.wrapScroll >= defaultLayout.tableWidth && defaultLayout.wrapScroll <= defaultLayout.tableWidth + 2 && defaultLayout.wrapClient <= defaultLayout.rightWidth && defaultLayout.bodyWidth <= defaultLayout.viewport,
+    `우측 7열 표의 가로 스크롤은 패널 안에 격리되어야 한다: ${JSON.stringify(defaultLayout)}`);
   const resizePreservation = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const draft=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');draft.value='7';draft.focus();document.querySelector('#previewTable').scrollLeft=18;const before={left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width};document.querySelector('[data-nexus-pane-resize="left"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return {before,after:{left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width},draft:draft.value,focused:document.activeElement===draft,scrollLeft:document.querySelector('#previewTable').scrollLeft}})()`);
   assert.ok(resizePreservation.after.left > resizePreservation.before.left);
   assert.ok(Math.abs(resizePreservation.after.right - resizePreservation.before.right) < 1);
@@ -459,7 +463,7 @@ try {
   await evaluate(client, `(()=>{const input=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"][data-order-row="3"]');input.value='직원메모1 수정';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="deliveryNotice"][data-order-row="3"]')?.value==='직원메모1 수정'`), 'employee note edit');
   const editedNotes = await evaluate(client, `(()=>{const summary=document.querySelector('#deliverySummaryBody tr[data-delivery-key]')?.textContent||'';const noticeInput=document.querySelector('.order-edit-input[data-order-field="deliveryNotice"][data-order-row="3"]');return {summary,input:noticeInput?.value||''}})()`);
-  assert.doesNotMatch(editedNotes.summary, /직원메모1 수정|직원메모2|일반메모/, '전표관리 축약표는 메모를 섞지 않고 중앙 작업표에 보존한다.');
+  assert.match(editedNotes.summary, /일반메모[\s\S]*직원메모1 수정/, '전표관리 전표행은 일반·직원 적요를 원문 구분 순서로 표시한다.');
   const savedNotes = await waitFor(async () => {
     const value = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB',1);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const pointer=localStorage.getItem('oneapp.shipping.recovery.pointer.v1');if(!pointer){db.close();resolve(null);return}let get;try{get=db.transaction('recoveryRecords','readonly').objectStore('recoveryRecords').get(pointer)}catch(error){db.close();resolve(null);return}get.onerror=()=>{db.close();reject(get.error)};get.onsuccess=()=>{const row=get.result?.payload?.workspace?.orders?.find(item=>Number(item.sourceRowNumber)===3);resolve(row?{note:row.note,noteOriginal:row.noteOriginal,note1:row.note1,note1Original:row.note1Original}:null);db.close()}}})`);
     return value?.note1 === '직원메모1 수정' ? value : null;
@@ -469,7 +473,7 @@ try {
   await waitFor(() => evaluate(client, `document.querySelector('#recoveryMessage').textContent.includes('작업자배정_주문현황')`), 'employee note recovery candidate');
   await evaluate(client, `document.querySelector('#headerRestoreButton').click()`);
   await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="deliveryNotice"][data-order-row="3"]')?.value==='직원메모1 수정'`), 'employee note restored worktable');
-  assert.doesNotMatch(await evaluate(client, `document.querySelector('#deliverySummaryBody tr[data-delivery-key]')?.textContent||''`), /직원메모1 수정|직원메모2|일반메모/);
+  assert.match(await evaluate(client, `document.querySelector('#deliverySummaryBody tr[data-delivery-key]')?.textContent||''`), /일반메모[\s\S]*직원메모1 수정/);
   assert.deepEqual(await evaluate(client, `[...document.querySelector('#deliveryWarehouseFilter').options].map(option=>option.textContent)`), ['전체 창고','본창고']);
   await evaluate(client, `(()=>{const search=document.querySelector('#deliveryVoucherSearch');search.value='고객1';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   assert.deepEqual(await waitFor(async () => {

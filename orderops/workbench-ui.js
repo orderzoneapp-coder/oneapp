@@ -193,7 +193,7 @@
     function renderPreparation() {
       pane.classList.toggle('has-prepared-files', s.preparedFiles.length > 0);
       const statusLabels = { READY: '준비됨', INVALID: '확인 필요', APPLIED: '적용됨', PARTIAL: '일부 조회', EMPTY: '0건', ERROR: '조회 실패' };
-      $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · <span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}</span>${item.include ? ' · 적용 대상' : ''}</small></button>`).join('');
+      $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · <span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}</span>${item.include && item.dirty ? ' · 적용 대상' : ''}</small></button>`).join('');
       const item = selected();
       $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation || preparationReads);
       $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation || preparationReads) || !dirty();
@@ -259,15 +259,28 @@
       if (!parsed || !kinds.includes(parsed.kind)) throw new Error('지원하지 않는 준비 자료입니다.');
       const sourceStatus = String(source.status || (parsed.rowCount ? 'READY' : 'EMPTY'));
       const identity = [parsed.kind, parsed.fileHash, parsed.sourceKind, parsed.fileName].join(':');
+      const sameActiveOrderSource = sourceStatus === 'READY' && parsed.kind === 'orders' && s.orders &&
+        root.OrderOpsSourceCoordinator.sameOrderSource(s.orders, parsed);
       const existing = s.preparedFiles.find(item => item.adapterIdentity === identity);
       if (existing) {
-        Object.assign(existing, { parsed, orderQSource: clone(source.orderQSource || null), sourceStatus, sourceMessage: String(source.message || ''), dirty: sourceStatus === 'READY', include: sourceStatus === 'READY', status: sourceStatus === 'READY' ? 'READY' : sourceStatus });
+        Object.assign(existing, {
+          parsed,
+          orderQSource: clone(source.orderQSource || null),
+          sourceStatus,
+          sourceMessage: String(source.message || ''),
+          dirty: sourceStatus === 'READY' && !sameActiveOrderSource,
+          include: sourceStatus === 'READY' && !sameActiveOrderSource,
+          applied: sameActiveOrderSource,
+          status: sameActiveOrderSource ? 'APPLIED' : sourceStatus,
+        });
         s.selectedPreparedId = existing.id;
         validate(existing);
         preparedVersion += 1;
         setLeft(true);
         renderPreparation();
-        status(source.message || `${labels[parsed.kind]} API 자료를 다시 준비했습니다.`);
+        status(sameActiveOrderSource
+          ? '동일 회사·문서·Revision·hash가 이미 적용되어 현재 작업값을 유지했습니다.'
+          : (source.message || `${labels[parsed.kind]} API 자료를 다시 준비했습니다.`));
         return existing;
       }
       const item = {
@@ -279,9 +292,9 @@
         workbook: { SheetNames: [parsed.sheetName || labels[parsed.kind]], Sheets: {} },
         sheetName: parsed.sheetName || labels[parsed.kind],
         kind: parsed.kind,
-        dirty: sourceStatus === 'READY',
-        include: sourceStatus === 'READY',
-        applied: false,
+        dirty: sourceStatus === 'READY' && !sameActiveOrderSource,
+        include: sourceStatus === 'READY' && !sameActiveOrderSource,
+        applied: sameActiveOrderSource,
         sourceStatus,
         sourceMessage: String(source.message || ''),
         orderQSource: clone(source.orderQSource || null),
@@ -289,7 +302,7 @@
         raw: clone(parsed.sourceMatrix || []),
         display: clone(parsed.sourceMatrix || []),
         cells: {},
-        status: sourceStatus,
+        status: sameActiveOrderSource ? 'APPLIED' : sourceStatus,
       };
       validate(item);
       s.preparedFiles.push(item);
@@ -297,7 +310,9 @@
       preparedVersion += 1;
       setLeft(true);
       renderPreparation();
-      status(source.message || `${labels[parsed.kind]} API 자료 준비 완료 · 확인 후 적용하세요.`);
+      status(sameActiveOrderSource
+        ? '동일 회사·문서·Revision·hash가 이미 적용되어 현재 작업값을 유지했습니다.'
+        : (source.message || `${labels[parsed.kind]} API 자료 준비 완료 · 확인 후 적용하세요.`));
       return item;
     }
 
@@ -437,7 +452,7 @@
         if (byKind.has(item.kind)) return status(`${labels[item.kind]} 후보가 여러 개입니다. 적용할 항목 하나만 포함하세요.`);
         byKind.set(item.kind, item);
       }
-      if (s.workspace && !confirm(`${[...byKind.keys()].map(kind => labels[kind]).join('·')} 자료를 교체/사용해제합니다. 주문을 교체하면 현재 주문 작업값은 이전 복구본에 보관합니다. 적용할까요?`)) return;
+      if (s.workspace && !confirm(`${[...byKind.keys()].map(kind => labels[kind]).join('·')} 자료를 조정/교체/사용해제합니다. 같은 주문의 작업값은 최신 원본과 조정하고 충돌은 적용 전에 확인합니다. 적용할까요?`)) return;
       const batchVersion = preparedVersion;
       // Inventory-only uses the existing inventory apply transaction.
       if (byKind.size === 1 && byKind.has('inventory') && !byKind.get('inventory').remove && s.workspace) {
@@ -466,11 +481,44 @@
         finally { inventoryPreparationOperation = null; renderPreparation(); }
       }
       let inputs;
+      let orderReconciliation = null;
       const preparedOrderQSource = byKind.get('orders')?.orderQSource || null;
       const result = await runReplacement(async base => {
         inputs = Object.fromEntries(kinds.map(kind => [kind, byKind.has(kind) ? (byKind.get(kind).remove ? null : clone(byKind.get(kind).parsed)) : clone(s[kind])]));
         if (!byKind.has('orders') && inputs.orders && base) inputs.orders.rows = clone(base.orders);
-        const candidate = e.createPreviewWorkspace(inputs.orders, inputs.inventory, { purchases: inputs.purchases, sales: inputs.sales, systemHistory: base?.systemHistory });
+        let effectiveOrders = inputs.orders;
+        if (byKind.has('orders') && inputs.orders && base && Array.isArray(s.orders?.rows)) {
+          const args = {
+            previousParsed: s.orders,
+            nextParsed: inputs.orders,
+            workspace: base,
+            draft: Object.keys(s.shipmentDraft || {}).length
+              ? s.shipmentDraft
+              : (base.shipmentExecutionDraft?.values || base.workbenchPreparedShipmentDrafts?.values || {}),
+            purchaseInputs: e.getPurchaseInputs(clone(base)),
+          };
+          orderReconciliation = root.OrderOpsSourceCoordinator.reconcilePreparedOrderWork(args);
+          let decisions = [];
+          if (orderReconciliation.conflicts.length) {
+            const choices = await resolveConflicts(orderReconciliation.conflicts);
+            if (!choices) throw new Error('조정을 취소했습니다. 현재 작업과 준비 입력을 유지합니다.');
+            decisions = orderReconciliation.conflicts.map(conflict => ({ ...clone(conflict), choice: choices[conflict.id] }));
+            orderReconciliation = root.OrderOpsSourceCoordinator.reconcilePreparedOrderWork({ ...args, choices });
+          }
+          if (orderReconciliation.conflicts.length) throw new Error('미해결 충돌이 있어 적용하지 않았습니다.');
+          orderReconciliation.decisions = decisions;
+          effectiveOrders = orderReconciliation.parsedOrders;
+          const sourceRowsUnchanged = JSON.stringify(s.orders.rows || []) === JSON.stringify(inputs.orders.rows || []);
+          if (orderReconciliation.comparison.same && sourceRowsUnchanged && byKind.size === 1) return base;
+        }
+        const candidate = e.createPreviewWorkspace(effectiveOrders, inputs.inventory, { purchases: inputs.purchases, sales: inputs.sales, systemHistory: orderReconciliation?.systemHistory || base?.systemHistory });
+        const orderSourceBaseline = byKind.has('orders')
+          ? clone(inputs.orders)
+          : clone(base?.workbenchSourceBaselines?.orders || inputs.orders);
+        candidate.workbenchSourceBaselines = {
+          schemaVersion: 'orderops-source-baselines/v1',
+          orders: orderSourceBaseline,
+        };
         if (preparedOrderQSource?.snapshot) {
           candidate.orderQSourceRecovery = {
             schemaVersion: 'orderops-orderq-source-recovery/v1',
@@ -480,14 +528,46 @@
             schemaVersion: 'orderops-shipment-execution-draft/v1',
             orderId: preparedOrderQSource.snapshot.orderId || '',
             orderRevision: Number(preparedOrderQSource.snapshot.orderRevision) || 0,
-            values: Object.create(null),
+            values: clone(orderReconciliation?.draft || Object.create(null)),
           };
         }
         if (!candidate.sourceFingerprint) candidate.sourceFingerprint = await api.sha256Hex('orderops-empty-application:' + crypto.randomUUID());
+        if (orderReconciliation) {
+          candidate.substitutionHistory = orderReconciliation.substitutionHistory;
+          candidate.systemHistory = orderReconciliation.systemHistory || { schemaVersion: e.SYSTEM_HISTORY_SCHEMA_VERSION, events: [] };
+          if (orderReconciliation.inventoryOverrides) candidate.inventoryOverrides = orderReconciliation.inventoryOverrides;
+          candidate.workbenchUnapplied = orderReconciliation.unapplied;
+          candidate.workbenchReconciliation = {
+            schemaVersion: 'orderops-prepared-source-reconciliation/v1',
+            comparison: clone(orderReconciliation.comparison),
+            retained: clone(orderReconciliation.retained),
+            added: clone(orderReconciliation.added),
+            removed: clone(orderReconciliation.removed),
+            excludedPurchaseInputs: clone(orderReconciliation.excludedPurchaseInputs),
+            decisions: clone(orderReconciliation.decisions || []),
+          };
+          candidate.systemHistory.events.push({
+            eventId: crypto.randomUUID(),
+            kind: 'ORDER_PREPARED_SOURCE_RECONCILED',
+            occurredAt: new Date().toISOString(),
+            actor: api.actor(),
+            detail: clone(candidate.workbenchReconciliation),
+          });
+          e.applyPurchaseInputs(candidate, orderReconciliation.purchaseInputs);
+          if (!preparedOrderQSource?.snapshot && Object.keys(orderReconciliation.draft || {}).length) {
+            candidate.workbenchPreparedShipmentDrafts = {
+              schemaVersion: 'orderops-prepared-shipment-drafts/v1',
+              values: clone(orderReconciliation.draft),
+            };
+          }
+        }
         if (!byKind.has('orders') && base) {
           for (const key of ['substitutionHistory', 'orderQSourceRecovery', 'shipmentExecutionDraft', 'workbenchUnapplied', 'workbenchReconciliation', 'workbenchConflicts']) if (base[key]) candidate[key] = clone(base[key]);
           if (!byKind.has('inventory')) for (const key of ['inventoryOverrides', 'inventorySourceReference', 'inventoryApplicationMode']) if (base[key]) candidate[key] = clone(base[key]);
           e.applyPurchaseInputs(candidate, e.getPurchaseInputs(clone(base)));
+        }
+        if (base && !byKind.has('inventory')) {
+          for (const key of ['inventorySourceReference', 'inventoryApplicationMode']) if (base[key]) candidate[key] = clone(base[key]);
         }
         return candidate;
       }, candidate => {
