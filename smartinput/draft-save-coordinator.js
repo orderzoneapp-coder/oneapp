@@ -184,11 +184,24 @@ export function createDraftSaveCoordinator({ commit, cleanup = async () => {}, n
       });
       return recovered;
     },
-    queue({ companyId, mode, documentId, snapshot, workspace = null }) {
+    queue({
+      companyId,
+      mode,
+      documentId,
+      snapshot,
+      workspace = null,
+      snapshotOwned = false,
+      workspaceOwned = false
+    }) {
       const docKey = createAutosaveDocumentKey({ companyId, mode, documentId });
       const state = stateFor(docKey);
       const version = ++state.nextVersion;
-      state.pending = { companyId, version, snapshot: clone(snapshot), workspace: workspace ? clone(workspace) : null };
+      state.pending = {
+        companyId,
+        version,
+        snapshot: snapshotOwned ? snapshot : clone(snapshot),
+        workspace: workspace ? (workspaceOwned ? workspace : clone(workspace)) : null
+      };
       const promise = new Promise((resolve, reject) => state.waiters.push({ version, resolve, reject }));
       void pump(docKey, state).catch(() => undefined);
       return { docKey, version, promise };

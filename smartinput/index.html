@@ -220,6 +220,7 @@
       <div class="app-status" id="appStatus">
         <span class="app-status__dot" aria-hidden="true"></span>
         <span class="app-status__message" id="appStatusMessage" role="status" aria-live="polite">새 입력을 시작할 수 있습니다.</span>
+        <button class="button button--quiet button--small" id="cancelComputeButton" type="button" hidden>계산 취소</button>
       </div>
       <div class="app-bar__actions">
         <span class="save-state" id="saveState" role="status" aria-live="polite"></span>
@@ -492,7 +493,7 @@
     })();
   </script>
   <script src="./smartinput-contract.js?v=0.6.5"></script>
-  <script type="module" src="./smartinput.js?v=0.14.1"></script>
+  <script type="module" src="./smartinput.js?v=0.14.2"></script>
     <script defer src="../nexus/common/nexus-ui.js?v=1.7.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.1"></script>
 </body>
