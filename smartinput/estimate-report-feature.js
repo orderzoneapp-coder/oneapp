@@ -8,7 +8,7 @@ export {
   validateEstimateRows,
   renderKakaoNoticeCanvases,
   KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.7';
+} from './estimate-output.js?v=0.2.8';
 export { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.1';
 export {
   applyEstimateF8PartialRecovery,
