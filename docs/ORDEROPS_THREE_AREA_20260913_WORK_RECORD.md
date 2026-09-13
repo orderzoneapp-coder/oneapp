@@ -1,7 +1,7 @@
 # ORDER Q 출고관리 3영역 재구축 작업 기록
 
 - 작업일: 2026-09-13
-- 상태: 구현·배포 전 검증 완료
+- 상태: 구현·배포·운영 기술 확인 완료
 - 기준 명세: `# ORDER Q 원본 기능 기반 · 3영역 재구축 개발기획안` v1.0 / 2026-09-13
 - 위험 검증 기록: 기준 커밋 `bcf5dcabb2c523e8bd167a8cbfa6b82a8ef3f683`, Pages run `34736959743`, artifact `10311198370`
 - 최초 개발 기준: `origin/main`의 `fa330bcc764971faf3bf0ef941594ca662dbfb3a`
@@ -40,7 +40,22 @@
 
 ## 배포·운영 증거
 
-PR, 병합 커밋, Pages 빌드와 운영 URL 확인 결과는 배포 완료 후 이 절에 기록한다.
+- 기능 PR: [#604](https://github.com/orderzoneapp-coder/oneapp/pull/604)
+- 기능 병합 커밋: `deb199ed88cb18b4785d4b053df8b211458191ac`
+- PR 검증 run: [34741581697](https://github.com/orderzoneapp-coder/oneapp/actions/runs/34741581697)
+  - `Validate OrderOps workbench v1.2`: PASS. 실제 브라우저 트랜잭션, 프로세스 강제 종료/복구, 파일 드롭, 재고 열, 다크/인쇄 검증 포함.
+  - 저장소 manifest와 History/Settings/Export owner contract 단계: PASS.
+  - 전체 run의 SmartInput 2개 실패는 PR 기준 `main`에도 동일하게 존재하는 캐시 버전·승인 해시 불일치이다. 본 변경은 SmartInput 파일이나 승인 기준값을 수정하지 않았다. 기준 `main` run은 [34741138756](https://github.com/orderzoneapp-coder/oneapp/actions/runs/34741138756)이다.
+- Pages 배포 run: [34741685351](https://github.com/orderzoneapp-coder/oneapp/actions/runs/34741685351), 기능 병합 SHA로 build/report/deploy 모두 PASS.
+- 운영 URL: [https://oneapp.orderz.co.kr/orderops/list.html](https://oneapp.orderz.co.kr/orderops/list.html)
+- 운영 응답 확인: `orderops/list.html`, `source-coordinator.js`, `voucher-workbench.js`, `workbench-ui.js` 모두 HTTP 200.
+- 배포 바이트 확인: 운영 응답으로 계산한 Git blob SHA-1이 병합 커밋의 아래 4개 blob과 모두 일치했다.
+  - `orderops/list.html`: `8d7e484767f7d95ce7e7ff7cba877469ae8a43d2`
+  - `orderops/source-coordinator.js`: `d24b27535743af14ec9da831ffbbfd7fc839efc7`
+  - `orderops/voucher-workbench.js`: `41d78f44f73086d6221af4c4422385c5ec73fcb9`
+  - `orderops/workbench-ui.js`: `6b62201478c7df3eb7a9cf028ae8e2541b01060e`
+- 운영 브라우저 확인: 제목 `출고관리 - NEXUS`, 초기화 오류 없음, 고정 `자료 준비 / 현재 작업 / 전표관리` DOM, API 버튼 4개와 현재 보기 제목을 확인했다. 우측 패널을 열어 전표 조회·체크·창고·담당·선택 전표 적용 UI가 실제 렌더링되는 것도 확인했다.
+- 운영 확인은 읽기 전용으로 수행했다. 실제 계정/API 명령, 공식 원장 쓰기, 사용자 Excel 결과 대조는 실행하지 않았으며 별도 업무검수 범위로 남긴다.
 
 ## 롤백
 
