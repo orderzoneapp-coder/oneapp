@@ -88,11 +88,11 @@ assert.equal(analyzedMixedUnits.stats.mixedUnitProductCount, 1);
 
 for (const contract of [
   "normalizeOrderOpsWorkspaceDom",
-  'outerWorkspace.append(leftPane, resultsPanel, rightPane)',
+  'window.buildOrderOpsThreePane()',
   'workspaceMode === engine.PREVIEW_WORKSPACE_MODE',
   '"거래처", "상품", "주문수량", "직원 적요"',
   'hasInventory ? ["재고", "잔량"]',
-  "orderops-header-primary",
+  "three-pane-layout.js",
   'id="deliveryWarehouseFilter"',
   '<th>거래처</th><th>수량</th><th>금액</th><th>적요</th>',
   "data-delivery-manager-filter",
@@ -103,3 +103,7 @@ for (const contract of [
 }
 
 console.log("PASS OrderOps analysis-ready preview: orders-first rendering data, real-inventory-only balances, note separation, manager linkage, and history preservation.");
+
+const layout = readFileSync(join(root, "orderops", "three-pane-layout.js"), "utf8");
+assert.ok(layout.includes("workspace.append(left,result,right)"), "three final sibling panes must be composed together");
+assert.ok(layout.includes("orderops-header-primary"), "header navigation remains outside the work table");

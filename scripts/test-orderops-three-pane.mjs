@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+const require=createRequire(import.meta.url), e=require('../orderFulfillmentEngine.js'), v=require('../orderops/voucher-workbench.js');
+const clone=x=>JSON.parse(JSON.stringify(x));
+const rows=[
+ {sourceRowNumber:2,productCode:'P1',productName:'상품1',customer:'같은 거래처',customerCode:'C1',group:'A',basisDate:'2026-09-12',warehouse:'88창고',manager:'담당1',quantity:3.5,sourceUnit:'EA',unitPrice:1000,supplyAmount:3500},
+ {sourceRowNumber:3,productCode:'P2',productName:'상품2',customer:'같은 거래처',customerCode:'C1',group:'A',basisDate:'2026-09-12',warehouse:'88창고',manager:'담당1',quantity:2,sourceUnit:'BOX',unitPrice:500,supplyAmount:1000},
+ {sourceRowNumber:4,productCode:'P1',productName:'상품1',customer:'같은 거래처',customerCode:'C1',group:'B',basisDate:'2026-09-13',warehouse:'88창고',manager:'담당1',quantity:0.5,sourceUnit:'EA',unitPrice:1000,supplyAmount:500},
+];
+const parsed={fileName:'orders.xlsx',sheetName:'주문',fileHash:'a'.repeat(64),rows:clone(rows),rowCount:3,errors:[],warnings:[],missingColumns:[]};
+const w=e.createPreviewWorkspace(parsed), initial=v.index(w);
+assert.equal(initial.length,2,'same customer is not the selected-voucher boundary');
+const id=initial[0].id,checked=new Set([id]),original=clone(w),t=v.totals(initial,e);
+assert.deepEqual(t.units,[['EA',4],['BOX',2]]);assert.equal(t.amount,5000);
+assert.equal(v.filter(initial,{from:'2026-09-13',to:'2026-09-13'}).length,1);
+assert.equal(v.filter(initial,{search:'상품2'}).length,1);
+const basis=Object.fromEntries(w.orders.map(r=>[r.workbenchRowId,{warehouse:r.warehouse,manager:r.manager}]));
+const patches=v.plan(w,checked,{warehouse:'본사',manager:'담당2'},basis);
+assert.equal(patches.length,4);
+const candidate=clone(w),result=e.applyOrderPatches(candidate,patches,{recordHistory:true,actor:'test'});
+assert.equal(result.changedRowCount,2);assert.equal(result.changedFieldCount,4);
+assert.deepEqual(clone(w),original,'candidate construction never mutates the current workspace');
+assert.deepEqual(candidate.orders.map(r=>r.manager),['담당2','담당2','담당1']);
+assert.deepEqual(candidate.orders.map(r=>r.warehouse),['본사','본사','88창고']);
+assert.equal(v.index(candidate)[0].id,id,'voucher identity survives warehouse and manager changes');
+assert.equal(candidate.systemHistory.events.length,4);
+assert.ok(candidate.systemHistory.events.every(event=>event.voucherId===id&&event.workRowId));
+const again=v.plan(candidate,checked,{warehouse:'본사',manager:'담당2'});assert.equal(again.length,0);
+assert.equal(e.applyOrderPatches(candidate,again,{recordHistory:true}).changedRowCount,0);assert.equal(candidate.systemHistory.events.length,4);
+assert.throws(()=>v.plan(candidate,checked,{manager:'담당3'},basis),/중앙에서 변경/);
+assert.throws(()=>v.plan(candidate,new Set(['missing']),{manager:'담당3'}),/원본이 변경/);
+const dup=clone(w);dup.orders[1].sourceRowNumber=2;const dupBefore=clone(dup);
+assert.throws(()=>e.applyOrderPatches(dup,patches),/중복/);assert.deepEqual(dup,dupBefore);
+const invalid=[...patches,{...patches[0],rowId:'wrong'}],before=clone(w);
+assert.throws(()=>e.applyOrderPatches(w,invalid),/식별값/);assert.deepEqual(clone(w),before,'late validation error cannot partially apply early patches');
+const badExpected=patches.map((p,i)=>i===2?{...p,expectedValue:'stale'}:p);
+assert.throws(()=>e.applyOrderPatches(w,badExpected),/변경되었습니다/);assert.deepEqual(clone(w),before);
+const unknown=e.createPreviewWorkspace({...parsed,rows:[{...rows[0],sourceUnit:'',quantity:'not-a-number',supplyAmount:'',unitPrice:''}]});
+const unknownTotal=v.totals(v.index(unknown),e);assert.equal(unknownTotal.unknownAmounts,1);assert.equal(unknownTotal.badQuantities,1);assert.deepEqual(unknownTotal.units,[]);
+const noBoundary=e.createPreviewWorkspace({...parsed,rows:rows.map(r=>({...r,group:''}))});assert.equal(v.index(noBoundary).length,3,'unknown document boundaries stay separate');
+const recovered=clone(candidate);assert.deepEqual(v.index(recovered).map(r=>r.id),v.index(candidate).map(r=>r.id));
+assert.deepEqual(e.getInventoryViewRows(w),e.getInventoryViewRows(e.createPreviewWorkspace({...parsed,rows:clone(rows)})),'identification metadata cannot change inventory arithmetic');
+const html=readFileSync(new URL('../orderops/list.html',import.meta.url),'utf8');
+const layout=readFileSync(new URL('../orderops/three-pane-layout.js',import.meta.url),'utf8');
+assert.ok(html.includes('window.buildOrderOpsThreePane()'));
+assert.ok(!html.includes('outerWorkspace.append(leftPane, resultsPanel, rightPane)'));
+assert.ok(layout.includes('workspace.append(left,result,right)'));
+assert.ok(layout.includes("left.querySelector('#orderSourcePanel').append(picker)"));
+assert.ok(layout.includes('id="prepareFilesButton"'));
+assert.ok(layout.indexOf('id="prepareFilesButton"')>layout.indexOf('id="prepareDropSurface"'));
+assert.ok(layout.includes('id="voucherSelectAll"'));assert.ok(layout.includes('id="voucherSearch"'));
+assert.ok(!layout.includes('자료 불러오기 ▾'));
+console.log('PASS ORDEROPS-3P-01: selected-voucher scope, stable IDs, atomic validation, no-op, conflicts, mixed units, unknown values, recovery, arithmetic and layout contract.');

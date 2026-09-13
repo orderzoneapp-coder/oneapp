@@ -16,9 +16,12 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260912-last-product-row"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260913-3p-01"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="workbench-ui.js?v=20260912-drop-end-row"></script>
+  <script src="workbench-ui.js?v=20260913-3p-01"></script>
+  <script src="three-pane-layout.js?v=20260913-3p-01"></script>
+  <script src="voucher-workbench.js?v=20260913-3p-01"></script>
+  <script src="source-coordinator.js?v=20260913-3p-01"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -2704,6 +2707,7 @@
     }
   </style>
   <link rel="stylesheet" href="./workbench-v12.css?v=3">
+  <link rel="stylesheet" href="./three-pane-workbench.css?v=20260913-3p-01">
 </head>
 <body>
   <header class="global-header" data-nexus-app-header="orderops">
@@ -3039,7 +3043,7 @@
     </section>
 
     <footer class="page-footer">
-      <span>ORDER Q v1.59 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.60 · ORDEROPS-3P-01 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3167,263 +3171,13 @@
     (function () {
       "use strict";
 
-      function normalizeOrderOpsWorkspaceDom() {
-        const appHeader = document.querySelector('[data-nexus-app-header="orderops"]');
-        const pageShell = document.querySelector("main.page-shell");
-        const footer = pageShell?.querySelector(":scope > .page-footer");
-        const systemWorkbench = pageShell?.querySelector(":scope > .system-workbench");
-        const inputPanel = systemWorkbench?.querySelector(":scope > .input-panel");
-        const sourceSelector = inputPanel?.querySelector(":scope > #sourceSelector");
-        const executionPanel = inputPanel?.querySelector(":scope > .execution-panel");
-        const resultsPanel = pageShell?.querySelector(":scope > #resultsPanel");
-        const nestedWorkspace = resultsPanel?.querySelector(":scope > .orderops-results-workspace");
-        const leftPane = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="reference"]');
-        const centralWork = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="work"]');
-        const rightPane = nestedWorkspace?.querySelector(':scope > [data-nexus-pane="result"]');
-        if (!appHeader || !pageShell || !resultsPanel || !leftPane || !centralWork || !rightPane) return;
-
-        const headerActions = appHeader.querySelector(":scope > .header-actions");
-        const primaryActions = document.createElement("div");
-        primaryActions.className = "orderops-header-primary";
-        primaryActions.setAttribute("aria-label", "출고관리 자료 업로드와 분석 실행");
-        const integratedButton = document.getElementById("integratedFileButton");
-        const ordersButton = document.getElementById("ordersFileButton");
-        const inventoryButton = document.getElementById("inventoryFileButton");
-        const purchasesButton = document.getElementById("purchasesFileButton");
-        const salesButton = document.getElementById("salesFileButton");
-        const refreshButton = document.getElementById("refreshButton");
-        const analyzeButton = document.getElementById("analyzeButton");
-        const cloudLoadButton = document.getElementById("headerCloudLoadButton");
-        const inventoryMenuButton = document.getElementById("inventoryMenuButton");
-
-        const prepareHeaderButton = (button, label) => {
-          if (!button) return null;
-          button.classList.add("header-link");
-          button.textContent = label;
-          return button;
-        };
-        primaryActions.append(
-          prepareHeaderButton(integratedButton, "통합 불러오기"),
-          prepareHeaderButton(inventoryButton, "창고재고 불러오기"),
-        );
-
-        const ordersMenu = document.createElement("div");
-        ordersMenu.className = "orderops-header-menu";
-        ordersMenu.innerHTML = `<button id="orderOpsHeaderOrdersButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderOrdersMenu" aria-expanded="false">주문서 불러오기</button>
-          <div class="orderops-header-menu__items" id="orderOpsHeaderOrdersMenu" role="menu" aria-label="주문서 불러오기 경로" hidden></div>`;
-        const ordersMenuItems = ordersMenu.querySelector(".orderops-header-menu__items");
-        ordersMenuItems.append(prepareHeaderButton(ordersButton, "주문 Excel 선택"));
-        const orderQButton = document.createElement("button");
-        orderQButton.id = "orderOpsHeaderOrderQButton";
-        orderQButton.type = "button";
-        orderQButton.textContent = "ORDER Q 저장 주문 선택";
-        ordersMenuItems.append(orderQButton);
-        primaryActions.insertBefore(ordersMenu, inventoryButton || null);
-        if (analyzeButton) {
-          analyzeButton.classList.add("header-link");
-          primaryActions.append(analyzeButton);
-        }
-
-        const moreMenu = document.createElement("div");
-        moreMenu.className = "orderops-header-menu";
-        moreMenu.innerHTML = `<button id="orderOpsHeaderMoreButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderMoreMenu" aria-expanded="false">더보기</button>
-          <div class="orderops-header-menu__items" id="orderOpsHeaderMoreMenu" role="menu" aria-label="출고관리 더보기" hidden></div>`;
-        const moreMenuItems = moreMenu.querySelector(".orderops-header-menu__items");
-        moreMenuItems.append(
-          prepareHeaderButton(purchasesButton, "구매 참고자료 불러오기"),
-          prepareHeaderButton(salesButton, "판매 참고자료 불러오기"),
-          prepareHeaderButton(refreshButton, "현재 자료 새로고침"),
-          prepareHeaderButton(cloudLoadButton, "Cloud 완료본 불러오기"),
-        );
-        primaryActions.append(moreMenu);
-        const settingsButton = document.getElementById("headerSettingsButton");
-        const compactHeaderMedia = window.matchMedia("(max-width: 639px)");
-        const syncCompactHeaderActions = () => {
-          if (compactHeaderMedia.matches) {
-            if (inventoryMenuButton) moreMenuItems.append(inventoryMenuButton);
-            if (settingsButton) moreMenuItems.append(settingsButton);
-          } else {
-            if (inventoryMenuButton) primaryActions.insertBefore(inventoryMenuButton, moreMenu);
-            if (settingsButton) headerActions?.append(settingsButton);
-          }
-        };
-        syncCompactHeaderActions();
-        compactHeaderMedia.addEventListener?.("change", syncCompactHeaderActions);
-        const sourceStatuses = document.createElement("div");
-        sourceStatuses.className = "orderops-header-source-statuses";
-        sourceStatuses.setAttribute("aria-live", "polite");
-        sourceStatuses.innerHTML = `<span class="orderops-header-file-status" data-orderops-file-status="orders">주문 미등록</span>
-          <span class="orderops-header-file-status" data-orderops-file-status="inventory">재고 미등록</span>`;
-        primaryActions.append(sourceStatuses);
-        headerActions?.before(primaryActions);
-
-        const outerWorkspace = document.createElement("div");
-        outerWorkspace.className = "orderops-results-workspace";
-        outerWorkspace.dataset.nexusWorkspace = "orderops";
-        outerWorkspace.setAttribute("aria-label", "출고관리 좌측·중앙·우측 작업영역");
-        leftPane.remove();
-        rightPane.remove();
-        resultsPanel.dataset.nexusPane = "work";
-        resultsPanel.classList.add("orderops-central-work");
-        const centralChildren = [...centralWork.children];
-        centralChildren.forEach((node) => resultsPanel.append(node));
-        const viewControlsScroll = resultsPanel.querySelector(".view-controls-scroll");
-        const tableViewTools = viewControlsScroll?.querySelector(":scope > .table-view-tools");
-        const warehouseFilterToggle = viewControlsScroll?.querySelector(":scope > #warehouseFilterToggle");
-        const managerFilterToggle = viewControlsScroll?.querySelector(":scope > #managerFilterToggle");
-        const previewCount = viewControlsScroll?.querySelector(":scope > #previewCount");
-        if (viewControlsScroll && tableViewTools && warehouseFilterToggle && managerFilterToggle) {
-          const tableSettings = document.createElement("div");
-          tableSettings.className = "orderops-table-settings";
-          tableSettings.innerHTML = `<button class="table-tool-button" id="tableSettingsButton" type="button" aria-haspopup="menu" aria-controls="tableSettingsMenu" aria-expanded="false">표 설정</button>
-            <div class="orderops-table-settings__menu" id="tableSettingsMenu" role="menu" aria-label="표 설정" hidden></div>`;
-          const menu = tableSettings.querySelector(".orderops-table-settings__menu");
-          menu.append(tableViewTools, warehouseFilterToggle, managerFilterToggle);
-          viewControlsScroll.insertBefore(tableSettings, previewCount || null);
-        }
-
-        const systemTopbar = systemWorkbench?.querySelector(":scope > .system-topbar");
-        const orderQPicker = systemWorkbench?.querySelector(":scope > .orderq-source-picker");
-        if (sourceSelector) {
-          sourceSelector.classList.add("orderops-source-runtime");
-          resultsPanel.prepend(sourceSelector);
-        }
-        if (orderQPicker) resultsPanel.prepend(orderQPicker);
-        if (systemTopbar) {
-          systemTopbar.classList.add("orderops-status-bar");
-          systemTopbar.querySelector(".system-name")?.remove();
-          systemTopbar.querySelector(".system-cursor")?.remove();
-          resultsPanel.prepend(systemTopbar);
-        }
-
-        const bottomWorkbar = document.createElement("div");
-        bottomWorkbar.className = "orderops-bottom-workbar";
-        bottomWorkbar.setAttribute("aria-label", "출고관리 저장·출력 작업바");
-        ["smartInputButton", "headerCloudSaveButton", "printButton", "downloadButton", "headerRestoreButton"]
-          .map((id) => document.getElementById(id))
-          .filter(Boolean)
-          .forEach((control) => bottomWorkbar.append(control));
-        const storageStatus = systemTopbar?.querySelector(".system-mode");
-        if (storageStatus) bottomWorkbar.append(storageStatus);
-        resultsPanel.append(bottomWorkbar);
-
-        outerWorkspace.append(leftPane, resultsPanel, rightPane);
-        leftPane.id ||= "orderOpsOrderListPane";
-        leftPane.tabIndex = -1;
-        resultsPanel.tabIndex = -1;
-        const paneShortcuts = document.createElement("nav");
-        paneShortcuts.className = "orderops-pane-shortcuts";
-        paneShortcuts.setAttribute("aria-label", "출고관리 패널 바로가기");
-        paneShortcuts.innerHTML = `<a href="#${leftPane.id}">주문 목록</a><a href="#${resultsPanel.id}">분석표</a>`;
-        pageShell.insertBefore(paneShortcuts, footer || null);
-        pageShell.insertBefore(outerWorkspace, footer || null);
-        nestedWorkspace.remove();
-        centralWork.remove();
-        inputPanel?.remove();
-        systemWorkbench?.remove();
-
-        // v1.2: preserve the existing controls/handlers, but give each pane one
-        // responsibility. All three panes remain siblings below the app header.
-        outerWorkspace.classList.add("orderops-workbench-v12");
-        const preparePane = document.createElement("aside");
-        preparePane.id = "orderOpsFilePreparePane";
-        preparePane.className = "orderops-side-panel orderops-file-prepare";
-        preparePane.dataset.nexusPane = "reference";
-        preparePane.tabIndex = -1;
-        preparePane.setAttribute("aria-label", "파일 준비·매핑");
-        preparePane.innerHTML = `<div class="orderops-prepare-actions" role="toolbar" aria-label="파일 준비 작업"><button type="button" id="prepareFilesButton"><span aria-hidden="true">＋</span> Excel 파일</button><button type="button" id="prepareRemoveButton">지우기</button><button type="button" id="preparePaneClose" aria-label="파일 준비 닫기">닫기</button></div>
-          <input type="file" id="prepareFilesInput" accept=".xlsx,.xls" multiple hidden>
-          <div id="prepareDropSurface" class="orderops-prepare-surface" aria-label="Excel 파일 끌어놓기 · 준비 및 매핑">
-            <div class="orderops-prepare-drop-hint"><strong>Excel 파일을 끌어다 놓으세요</strong><span>주문·재고·구매·판매 자료를 준비합니다.<br>유형과 열을 확인한 뒤 직접 적용하세요.</span></div>
-            <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
-            <div id="prepareFileEditor"></div>
-          </div>
-          <div class="orderops-prepare-footer"><p id="prepareStatus" role="status" aria-live="polite">.xlsx · .xls / 파일당 최대 25MiB · 여러 파일 가능</p>
-            <button type="button" id="prepareApplyButton"><strong>준비한 자료 적용</strong><small>확인한 자료만 현재 작업에 반영</small></button></div>`;
-        leftPane.removeAttribute("data-nexus-pane");
-        leftPane.classList.add("orderops-query-panel");
-        leftPane.setAttribute("aria-label", "우측 주문 조회·담당 변경");
-        rightPane.querySelector(".orderops-side-panel__head h3").textContent = "조회·수정";
-        rightPane.insertBefore(leftPane, rightPane.querySelector("#inventoryInspectorIdentity"));
-        outerWorkspace.prepend(preparePane);
-        paneShortcuts.innerHTML = `<button type="button" id="preparePaneReopen" aria-controls="orderOpsFilePreparePane" aria-expanded="true">파일 준비</button>`;
-        viewControlsScroll?.prepend(paneShortcuts);
-        rightPane.querySelectorAll('[aria-label^="좌측"]').forEach(node => node.setAttribute("aria-label", node.getAttribute("aria-label").replace("좌측", "우측")));
-        document.getElementById("deliveryFilterReset").textContent = "조회 초기화";
-        document.getElementById("deliverySelectionOpenReadiness").textContent = "주문현황에서 보기";
-        sourceStatuses.hidden = true;
-        const tabs = document.getElementById("previewTabs");
-        const reset = document.createElement("button");
-        reset.id = "workbenchResetButton";
-        reset.type = "button";
-        reset.textContent = "초기화";
-        primaryActions.replaceChildren(tabs);
-        primaryActions.setAttribute("aria-label", "출고관리 화면 선택");
-        headerActions?.prepend(analyzeButton, reset);
-        appHeader.classList.add("orderops-workbench-header");
-        const bottomLeft = document.createElement("div");
-        bottomLeft.className = "orderops-workbar-save";
-        bottomLeft.append(document.getElementById("headerCloudSaveButton"));
-        if (storageStatus) bottomLeft.append(storageStatus);
-        const bottomRight = document.createElement("div");
-        bottomRight.className = "orderops-workbar-next";
-        ordersMenu.querySelector("button").textContent = "자료 불러오기 ▾";
-        ordersMenuItems.append(inventoryMenuButton, cloudLoadButton, document.getElementById("headerRestoreButton"));
-        moreMenu.querySelector("button").textContent = "기타 ▾";
-        moreMenuItems.append(document.getElementById("smartInputButton"));
-        const shipmentOpen = document.createElement("button");
-        shipmentOpen.id = "shipmentOpenButton";
-        shipmentOpen.type = "button";
-        shipmentOpen.textContent = "출고확정";
-        shipmentOpen.hidden = true;
-        bottomRight.append(ordersMenu, shipmentOpen, document.getElementById("printButton"), document.getElementById("downloadButton"), moreMenu);
-        bottomWorkbar.replaceChildren(bottomLeft, bottomRight);
-        const hiddenSources = document.createElement("div");
-        hiddenSources.hidden = true;
-        hiddenSources.append(sourceSelector, integratedButton, inventoryButton, purchasesButton, salesButton, ordersButton, sourceStatuses);
-        preparePane.append(hiddenSources);
-        // Menus live outside every clipping/scrolling pane.
-        document.body.append(ordersMenuItems, moreMenuItems);
-        compactHeaderMedia.removeEventListener?.("change", syncCompactHeaderActions);
-        if (settingsButton) headerActions?.append(settingsButton);
-        if (systemTopbar) {
-          // Keep the existing status/live nodes and their update contracts, but
-          // expose full details outside clipped panels without another row.
-          systemTopbar.id = "orderOpsWorkbenchStatus";
-          systemTopbar.setAttribute("popover", "auto");
-          systemTopbar.classList.add("orderops-workbench-status-popover");
-          const statusButton = document.createElement("button");
-          statusButton.id = "orderOpsWorkbenchStatusButton";
-          statusButton.type = "button";
-          statusButton.className = "table-tool-button";
-          statusButton.textContent = "작업 상태 ▾";
-          statusButton.setAttribute("popovertarget", systemTopbar.id);
-          statusButton.setAttribute("aria-controls", systemTopbar.id);
-          statusButton.setAttribute("aria-expanded", "false");
-          const notice = document.createElement("span");
-          notice.className = "orderops-status-notice";
-          notice.setAttribute("role", "status");
-          notice.setAttribute("aria-live", "polite");
-          const syncNotice = () => { const text = systemTopbar.textContent.replace(/\s+/g, " ").trim(); const invalid = systemTopbar.querySelector(".validation-box")?.classList.contains("bad"); statusButton.textContent = invalid ? "! 확인 필요 ▾" : "작업 상태 ▾"; statusButton.dataset.error = String(Boolean(invalid)); statusButton.title = text; notice.textContent = text; };
-          new MutationObserver(syncNotice).observe(systemTopbar, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class"] });
-          syncNotice();
-          systemTopbar.addEventListener("toggle", event => { statusButton.setAttribute("aria-expanded", String(event.newState === "open")); if (event.newState === "closed") statusButton.focus({ preventScroll: true }); });
-          viewControlsScroll?.parentElement.insertBefore(statusButton, viewControlsScroll.nextSibling);
-          viewControlsScroll?.parentElement.append(notice);
-          document.body.append(systemTopbar);
-        }
-        const shipmentDialog = document.createElement("dialog");
-        shipmentDialog.id = "shipmentWorkbenchDialog";
-        shipmentDialog.className = "orderops-workbench-dialog";
-        shipmentDialog.innerHTML = '<form method="dialog"><button aria-label="출고 확인 닫기">닫기</button></form>';
-        shipmentDialog.append(document.getElementById("shipmentExecution"));
-        document.body.append(shipmentDialog);
-      }
-
+      // ORDEROPS-3P-01: a single initial layout builder replaces stacked v1/v1.2 moves.
+      function normalizeOrderOpsWorkspaceDom() { window.buildOrderOpsThreePane(); }
       normalizeOrderOpsWorkspaceDom();
 
       const engine = window.ShippingManagementEngine;
       let workbench = null;
+      let voucherWorkbench = null;
       const workbookTools = window.ShippingManagementWorkbook;
       const inventorySnapshotTools = window.OrderOpsInventorySnapshot;
       const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -5166,6 +4920,7 @@
       }
 
       function resetResults({ preserveView = false } = {}) {
+        voucherWorkbench?.clear();
         preparedPreviewCache = null;
         previewSurfaceCache.clear();
         leaveUnresolvedReview({ render: false });
@@ -5379,7 +5134,7 @@
         } else if (!hasAnySource) {
           elements.deliverySummaryBody.innerHTML = '<tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr>';
           elements.deliverySummaryCount.textContent = "현재 작업 0건";
-          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>자료를 선택하세요.</strong><span>주문·재고·구매·판매 자료는 불러온 즉시 읽기용 표로 확인할 수 있습니다.</span></div>';
+          elements.previewTable.innerHTML = window.orderOpsEmptyTable(state.activePreview);
         }
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
@@ -7071,6 +6826,9 @@
       function renderWorkbenchTabs() {
         const labels = [["allocations", "주문현황"], ["inventory", "창고재고"], ["procurement", "발주현황"], ["purchases", "구매현황"], ["sales", "판매현황"], ["ledger", "수불현황"]];
         elements.previewTabs.innerHTML = labels.map(([id, label]) => `<button type="button" role="tab" data-preview="${id}" aria-selected="${state.activePreview === id}" class="tab-button ${state.activePreview === id ? "active" : ""}">${label}</button>`).join("");
+        document.getElementById("resultsHeading").textContent = labels.find(([id]) => id === state.activePreview)?.[1] || "주문현황";
+        if (!state.workspace) elements.previewTable.innerHTML = window.orderOpsEmptyTable(state.activePreview);
+        voucherWorkbench?.render();
         const scope = document.getElementById("procurementScope");
         if (scope) scope.hidden = state.activePreview !== "procurement";
       }
@@ -7543,6 +7301,7 @@
       }
 
       function renderDeliverySummary() {
+        if (voucherWorkbench) return voucherWorkbench.render();
         if (!elements.deliverySummaryBody) return;
         const allRows = deliverySummaryRows();
         if (state.selectedDeliveryKey && !allRows.some((row) => row.deliveryKey === state.selectedDeliveryKey)) {
@@ -7765,7 +7524,7 @@
 
       function restoreInventoryInspectorOpen() {
         let open = false;
-        try { open = localStorage.getItem(INVENTORY_INSPECTOR_OPEN_KEY) === "1"; } catch (_) {}
+        try { open = localStorage.getItem(INVENTORY_INSPECTOR_OPEN_KEY) !== "0"; } catch (_) {}
         setInventoryInspectorOpen(open, { persist: false });
       }
 
@@ -8744,7 +8503,7 @@
         if (!primaryDefinition) {
           elements.previewTabs.replaceChildren();
           elements.previewCount.textContent = "0행";
-          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>표시할 자료가 없습니다.</strong><span>주문·재고·구매·판매 자료를 선택하세요.</span></div>';
+          elements.previewTable.innerHTML = window.orderOpsEmptyTable(state.activePreview);
           return;
         }
         renderWorkbenchTabs();
@@ -11193,7 +10952,7 @@
         if (!state.workspace) {
           state.activePreview = button.dataset.preview;
           renderWorkbenchTabs();
-          elements.previewTable.innerHTML = '<div class="orderops-empty-workspace">자료 미등록 · 좌측에서 파일을 준비하고 적용하세요.</div>';
+          elements.previewTable.innerHTML = window.orderOpsEmptyTable(state.activePreview);
           return;
         }
         activatePreview(button.dataset.preview);
@@ -11477,7 +11236,7 @@
       restoreInventoryInspectorOpen();
       refreshInventoryMenuAvailability();
 
-      workbench = window.createOrderOpsWorkbench({
+      const workbenchApi = {
         state, engine, elements, escapeHtml, setRight: setInventoryInspectorOpen,
         parsePrimary: parsePrimaryWorkbookSheet, parseGeneric: parseGenericWorkbookSheet,
         score: integratedCandidateScore, normalizeOrderDates: normalizeOrderDateMatrix,
@@ -11508,6 +11267,14 @@
           state.shipmentCommandError = ""; state.shipmentResults = null;
           updateOrderQRoute(result.snapshot.orderId);
         },
+      };
+      workbench = window.createOrderOpsWorkbench(workbenchApi);
+      voucherWorkbench = window.OrderOpsVouchers.attach({ ...workbenchApi, renderPreview }, workbench);
+      const preparationDirty = workbench.dirty;
+      workbench.dirty = () => preparationDirty() || voucherWorkbench.dirty();
+      window.attachOrderOpsActivitySources(workbenchApi, workbench);
+      window.addEventListener("beforeunload", event => {
+        if (voucherWorkbench.dirty()) { event.preventDefault(); event.returnValue = ""; }
       });
       renderWorkbenchTabs();
 

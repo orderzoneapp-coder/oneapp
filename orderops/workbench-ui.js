@@ -428,7 +428,7 @@
       const key = rowKey(row);
       const edit = s.inspectorEdits[key] ||= { values: {}, base: {} };
       const specs = [['warehouse', '창고'], ['manager', '담당자'], ['noteOriginal', '일반 적요'], ['note1Original', '직원 전달사항']];
-      el.inventoryInspectorBody.innerHTML = `<div class="orderops-inspector-edit">${specs.map(([field, label]) => `<label>${label}<input data-inspector-field="${field}" value="${esc(Object.prototype.hasOwnProperty.call(edit.values, field) ? edit.values[field] : row[field] ?? '')}"></label>`).join('')}<p class="pending">${Object.keys(edit.values).length ? '수정 대기 · 대상별 입력 보존' : '작업본 조회'}</p><p>${esc(row.customer)} · 담당 변경은 같은 거래처/배송 단위 전체에 적용</p><button type="button" data-inspector-apply>작업본에 적용</button><button type="button" data-inspector-cancel>입력 취소</button></div>`;
+      el.inventoryInspectorBody.innerHTML = `<div class="orderops-inspector-edit">${specs.map(([field, label]) => `<label>${label}<input data-inspector-field="${field}" value="${esc(Object.prototype.hasOwnProperty.call(edit.values, field) ? edit.values[field] : row[field] ?? '')}"></label>`).join('')}<p class="pending">${Object.keys(edit.values).length ? '수정 대기 · 대상별 입력 보존' : '작업본 조회'}</p><p>${esc(row.customer)} · 선택한 주문행에만 적용</p><button type="button" data-inspector-apply>작업본에 적용</button><button type="button" data-inspector-cancel>입력 취소</button></div>`;
       if (row.orderItemId && s.orderQSource?.snapshot) {
         const draft = s.shipmentDraft[row.orderItemId] || {};
         const remaining = Math.max(0, Number(s.orderQSource.snapshot.candidateLines.find(line=>line.orderItemId===row.orderItemId)?.shippableQuantity || 0)-Number(s.shipmentResults?.netByOrderItem?.[row.orderItemId] || 0));
@@ -445,7 +445,7 @@
       }
       try {
         for (const [field, value] of Object.entries(edit.values)) {
-          if (field === 'manager') e.setCustomerManager(s.workspace, e.customerWorkKey(row), value, { recordHistory: true, actor: api.actor() });
+          if (field === 'manager') e.setOrderValue(s.workspace, row.sourceRowNumber, 'manager', value, { recordHistory: true, actor: api.actor() });
           else e.setOrderValue(s.workspace, row.sourceRowNumber, field === 'noteOriginal' ? 'note' : field === 'note1Original' ? 'deliveryNotice' : field, value, { recordHistory: true, actor: api.actor() });
         }
         delete s.inspectorEdits[key]; api.scheduleSave(); api.renderResults();

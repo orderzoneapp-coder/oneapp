@@ -3027,6 +3027,45 @@
       : rebuildWorkspaceFromOrders(workspace);
   }
 
+  // ORDEROPS-3P-01. Validate the complete selected-row patch before any mutation.
+  // Call on an isolated candidate; the workbench publishes it only after recovery verification.
+  function applyOrderPatches(workspace, patches, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION || !Array.isArray(patches)) {
+      throw new Error("지원하지 않는 주문 작업본입니다.");
+    }
+    const byRow = new Map();
+    for (const row of workspace.orders || []) {
+      const number = Number(row.sourceRowNumber);
+      if (!Number.isInteger(number) || number <= 0 || byRow.has(number)) throw new Error("중복 또는 미확인 작업행 번호가 있습니다. 적용하지 않았습니다.");
+      byRow.set(number, row);
+    }
+    const seen = new Set(), changes = [];
+    for (const patch of patches) {
+      if (!["warehouse", "manager"].includes(patch.field)) throw new Error("일괄 변경은 창고·담당자만 지원합니다.");
+      const row = byRow.get(Number(patch.sourceRowNumber));
+      if (!row || !patch.rowId || row.workbenchRowId !== patch.rowId || row.workbenchVoucherId !== patch.voucherId) throw new Error("선택 전표·행 식별값이 변경되었습니다.");
+      const key = JSON.stringify([patch.rowId, patch.field]);
+      if (seen.has(key)) throw new Error("동일 항목의 변경 명령이 중복되었습니다.");
+      seen.add(key);
+      if (Object.prototype.hasOwnProperty.call(patch, "expectedValue") && !Object.is(row[patch.field], patch.expectedValue)) throw new Error("수정 중인 항목이 변경되었습니다. 입력을 유지합니다.");
+      const nextValue = cleanText(patch.value);
+      if (cleanText(row[patch.field]) !== nextValue) changes.push({ row, patch, previousValue: row[patch.field], nextValue });
+    }
+    for (const { row, patch, previousValue, nextValue } of changes) {
+      row[patch.field] = nextValue;
+      const event = appendSystemEditEvent(workspace, {
+        productCode: row.productCode, sourceRowNumber: row.sourceRowNumber,
+        field: patch.field, fieldLabel: patch.field === "manager" ? "담당자(선택 전표)" : "창고(선택 전표)", previousValue, nextValue,
+      }, options);
+      if (event) { event.voucherId = patch.voucherId; event.workRowId = patch.rowId; }
+    }
+    if (changes.length) {
+      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
+      else rebuildWorkspaceFromOrders(workspace);
+    }
+    return { changedFieldCount: changes.length, changedRowCount: new Set(changes.map(c => c.patch.rowId)).size };
+  }
+
   function setCustomerManager(workspace, customerKey, value, options = {}) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -3796,6 +3835,7 @@
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
+    applyOrderPatches,
     setCustomerManager,
     setInventoryOverride,
     getAllocationInventoryView,

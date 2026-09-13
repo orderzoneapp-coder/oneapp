@@ -1,0 +1,91 @@
+/* ORDEROPS-3P-01: scoped to this screen; global header and original page unchanged. */
+@media screen {
+  .orderops-three-pane { gap:10px !important; }
+  .orderops-three-pane > [data-nexus-pane] { border-radius:10px; }
+  .orderops-three-pane .orderops-prepare-actions { display:flex !important; align-items:center; gap:5px; padding:10px; flex-wrap:wrap; }
+  .orderops-three-pane .orderops-prepare-actions > strong { flex:1 0 40%; font-size:15px; }
+  .orderops-three-pane .orderops-prepare-actions button { font-size:11px; white-space:nowrap; padding:5px 8px; }
+  .orderops-three-pane .orderops-api-buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:4px 12px 12px; flex-shrink:0; }
+  .orderops-three-pane .orderops-api-buttons button { display:block; width:100%; height:44px; font-size:14px; font-weight:750; border:1px solid var(--slate-400); border-radius:7px; }
+  .orderops-three-pane [data-source-kind="orders"] { color:#b9ddff !important; background:#103c61 !important; border-color:#238ddd !important; }
+  .orderops-three-pane [data-source-kind="purchases"] { color:#b3f9db !important; background:#124a3b !important; border-color:#259c72 !important; }
+  .orderops-three-pane [data-source-kind="sales"] { color:#e5d2ff !important; background:#382251 !important; border-color:#8c59bf !important; }
+  .orderops-three-pane [data-source-kind="inventory"] { color:#ffe4a1 !important; background:#483b15 !important; border-color:#bc8b22 !important; }
+  .orderops-three-pane .orderops-source-details { flex:0 0 auto; margin:0 12px 8px; font-size:11px; border:1px solid var(--slate-300); border-radius:6px; }
+  .orderops-three-pane .orderops-source-details summary { padding:6px; cursor:pointer; }
+  .orderops-three-pane .orderq-source-picker { display:block; padding:8px; border:0; margin:0; background:transparent; }
+  .orderops-three-pane .orderq-source-picker[hidden] { display:none; }
+  .orderops-three-pane .orderq-source-picker__title { display:none; }
+  .orderops-three-pane .orderq-source-picker__controls { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+  .orderops-three-pane .orderq-source-picker__controls input,.orderops-three-pane .orderq-source-picker__controls select { width:100%; grid-column:1/-1; min-width:0; }
+  .orderops-three-pane .orderq-source-picker__notice { white-space:normal; font-size:11px; }
+  .orderops-three-pane .orderops-prepare-surface { margin:0 12px; min-height:150px; flex:1 1 auto; border:1px dashed var(--slate-400); overflow:auto; display:flex; flex-direction:column; }
+  .orderops-three-pane .orderops-prepare-drop-hint { display:flex !important; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px; padding:16px 8px; flex:1 0 170px; font-size:12px; }
+  .orderops-three-pane .orderops-file-glyph { font-size:40px; line-height:1; color:var(--slate-400); }
+  .orderops-three-pane #prepareFilesButton { min-height:44px; width:min(100%,210px); background:#00d5e5 !important; color:#002632 !important; border:0; border-radius:7px; font-size:15px; font-weight:800; }
+  .orderops-three-pane .has-prepared-files .orderops-prepare-drop-hint { flex:0 0 auto; min-height:0; gap:6px; padding:8px; }
+  .orderops-three-pane .has-prepared-files .orderops-file-glyph,.orderops-three-pane .has-prepared-files .orderops-prepare-drop-hint > strong { display:none; }
+  .orderops-three-pane .orderops-prepare-footer { flex:0 0 auto; padding:8px 12px 12px; }
+  .orderops-three-pane #prepareStatus:empty { display:none; }
+  .orderops-three-pane #prepareApplyButton { min-height:42px; }
+  .orderops-three-pane .orderops-view-titlebar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:15px 14px 8px; flex:0 0 auto; }
+  .orderops-three-pane #resultsHeading { display:block !important; font-size:23px; line-height:1.3; margin:0; color:inherit; }
+  .orderops-three-pane .view-controls { margin:0; padding:8px 10px; flex:0 0 auto; }
+  .orderops-three-pane .view-controls-scroll { gap:5px; }
+  .orderops-three-pane .search-field { min-width:170px; flex:1 1 200px; }
+  .orderops-three-pane .search-field input { width:100%; min-width:100px; }
+  .orderops-three-pane .table-tool-button { white-space:nowrap; }
+  .orderops-three-pane .orderops-bottom-workbar { min-height:48px; }
+  .orderops-three-pane #inventoryInspector { padding:0; display:flex; flex-direction:column; overflow:auto; }
+  .orderops-three-pane #inventoryInspector[hidden] { display:none !important; }
+  .orderops-three-pane #inventoryInspector > .orderops-side-panel__head { padding:14px 12px 8px; flex-shrink:0; }
+  .orderops-three-pane #inventoryInspector h3 { font-size:21px; }
+  .orderops-three-pane .voucher-date { padding:4px 12px 10px; display:flex; gap:6px; align-items:end; flex-shrink:0; }
+  .orderops-three-pane .voucher-date label { flex:1; min-width:0; display:grid; gap:5px; font-size:11px; }
+  .orderops-three-pane .voucher-date label > span { display:flex; align-items:center; gap:4px; }
+  .orderops-three-pane .voucher-date input { min-width:0; width:50%; padding:5px 2px; font-size:11px; }
+  .orderops-three-pane #voucherRangeReset { font-size:11px; padding:7px 6px; white-space:nowrap; }
+  .orderops-three-pane .voucher-filter { padding:4px 12px 8px; flex-shrink:0; }
+  .orderops-three-pane .voucher-filter > strong { display:block; font-size:12px; margin:0 0 6px; }
+  .orderops-three-pane .voucher-chips { display:flex; flex-wrap:wrap; gap:5px; }
+  .orderops-three-pane .voucher-chips button { flex:1 0 auto; padding:7px 9px; font-size:11px; border-radius:5px; }
+  .orderops-three-pane .voucher-chips button[aria-pressed="true"] { color:#007a83; background:#e1fcff; border-color:#00b6c7; }
+  .orderops-three-pane #voucherCount { margin:2px 12px 8px; padding-top:10px; border-top:1px solid var(--slate-300); font-size:15px; }
+  .orderops-three-pane .voucher-searchbar { display:flex; align-items:center; gap:8px; margin:0 12px 8px; flex-shrink:0; }
+  .orderops-three-pane .voucher-searchbar label { white-space:nowrap; font-size:11px; display:flex; align-items:center; gap:5px; }
+  .orderops-three-pane #voucherSearch { min-width:0; width:100%; font-size:11px; padding:8px; }
+  .orderops-three-pane input[type="checkbox"] { accent-color:#00becd; width:15px; height:15px; cursor:pointer; }
+  .orderops-three-pane .voucher-table-scroll { flex:1 1 180px; min-height:130px; overflow:auto; margin:0 12px; border:1px solid var(--slate-300); border-radius:5px; }
+  .orderops-three-pane .voucher-table { min-width:0 !important; width:100% !important; border-collapse:collapse; table-layout:fixed; font-size:11px; }
+  .orderops-three-pane .voucher-table th { position:sticky; top:0; background:var(--slate-100); z-index:1; height:30px; }
+  .orderops-three-pane .voucher-table td { padding:7px 5px; vertical-align:middle; border-bottom:1px solid var(--slate-200); overflow:hidden; text-overflow:ellipsis; }
+  .orderops-three-pane .voucher-table td:nth-child(2) { font-size:10px; }
+  .orderops-three-pane .voucher-table small { display:block; margin-top:4px; font-size:10px; }
+  .orderops-three-pane .voucher-table tr[data-voucher-id] { cursor:pointer; }
+  .orderops-three-pane .voucher-table tr[aria-selected="true"],.orderops-three-pane .voucher-table tr:has(input:checked) { background:#dff8fa; }
+  .orderops-three-pane .voucher-totals { margin:0 12px 8px; padding:9px 5px; font-size:11px; color:#008a97; font-weight:700; border:1px solid var(--slate-300); border-top:0; flex-shrink:0; }
+  .orderops-three-pane .voucher-bulk { margin:0 8px 8px; padding:10px; border:1px solid var(--slate-300); border-radius:7px; flex-shrink:0; }
+  .orderops-three-pane .voucher-bulk[hidden] { display:none; }
+  .orderops-three-pane .voucher-bulk > div { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .orderops-three-pane .voucher-bulk strong { font-size:13px; }
+  .orderops-three-pane .voucher-bulk label { display:grid; grid-template-columns:42px minmax(0,1fr) 48px; align-items:center; gap:5px; margin:6px 0; font-size:11px; }
+  .orderops-three-pane .voucher-bulk input { width:100%; min-width:0; font-size:11px; padding:7px; }
+  .orderops-three-pane .voucher-bulk button { font-size:11px; padding:6px; }
+  .orderops-three-pane .voucher-bulk label button,.orderops-three-pane #voucherApply { background:#00d5e5 !important; color:#002632 !important; border-color:#00d5e5; font-weight:800; }
+  .orderops-three-pane #voucherApply { width:100%; min-height:38px; margin-top:5px; font-size:13px; border-radius:6px; }
+  .orderops-three-pane .orderops-row-details { margin:0 12px 8px; font-size:11px; flex-shrink:0; }
+  .orderops-three-pane .orderops-row-details summary { cursor:pointer; padding:6px 0; }
+  .orderops-three-pane .orderops-legacy-controls[hidden] { display:none !important; }
+  .orderops-source-dialog { max-width:440px; }
+  .orderops-source-dialog label { display:grid; grid-template-columns:65px 1fr; gap:10px; align-items:center; }
+  .orderops-source-dialog input { min-width:0; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane > [data-nexus-pane] { background:#0d1a2a; color:#e2ebf6; border-color:#2d4358; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .orderops-prepare-surface { background:#132131; border-color:#37516a; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-chips button[aria-pressed="true"] { color:#00e4ed; background:#064453; border-color:#00d3df; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-table th { background:#0b1727; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-table td { border-color:#26394c; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-table tr[aria-selected="true"],[data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-table tr:has(input:checked) { background:#133448; }
+  [data-nexus-ui-theme="dark"] .orderops-three-pane .voucher-totals { color:#00dfe9; }
+  .orderops-three-pane button:focus-visible,.orderops-three-pane input:focus-visible,.orderops-three-pane tr:focus-visible { outline:2px solid #00becd; outline-offset:2px; }
+}
+@media print { .orderops-three-pane .orderops-view-titlebar, .orderops-three-pane #inventoryInspector { display:none !important; } }
