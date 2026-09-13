@@ -12,14 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 732e2922b36d5cfaf057b14446bca1bea87971dc
           persist-credentials: false
-      - name: Archive current source and exact blob manifest
+          fetch-depth: 0
+      - name: Archive preserved PR source and exact Git metadata
         run: |
-          git archive --format=tar HEAD > /tmp/stage3-main-732e2922.tar
-          git ls-tree -r HEAD > /tmp/stage3-main-732e2922-blobs.txt
+          git archive --format=tar HEAD > /tmp/stage3-pr599-continuation.tar
+          git -c core.quotepath=false ls-tree -r HEAD > /tmp/stage3-pr599-continuation-blobs.txt
+          git bundle create /tmp/stage3-pr599-continuation.bundle HEAD refs/remotes/origin/main
       - uses: actions/upload-artifact@v4
         with:
-          name: stage3-main-732e2922
-          path: /tmp/stage3-main-732e2922*
+          name: stage3-pr599-continuation
+          path: /tmp/stage3-pr599-continuation*
           retention-days: 3
