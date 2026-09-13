@@ -7,7 +7,7 @@
     'smart-parser': { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 700 },
     merchops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
     dataops: { left: 250, right: 270, leftMin: 220, leftMax: 420, rightMin: 220, rightMax: 430, centerMin: 720 },
-    orderops: { left: 380, right: 280, leftMin: 220, leftMax: 520, rightMin: 180, rightMax: 420, centerMin: 320 }
+    orderops: { left: 380, right: 320, leftMin: 220, leftMax: 520, rightMin: 220, rightMax: 420, centerMin: 320 }
   });
   const layouts = new WeakMap();
   const safeNumber = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;

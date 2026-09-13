@@ -167,10 +167,10 @@ assert.deepEqual(recovery.ui.selectedVoucherIds, [...selected]);
 assert.equal(recovery.ui.voucherDraft.manager, '대기 담당');
 
 for (const contract of [
-  'source-coordinator.js?v=20260913-continuity-fix',
-  'voucher-workbench.js?v=20260913-continuity-fix',
-  'workbench-ui.js?v=20260913-continuity-fix',
-  '../orderFulfillmentEngine.js?v=20260913-continuity-fix',
+  'source-coordinator.js?v=20260913-right-panel-v1',
+  'voucher-workbench.js?v=20260913-right-panel-v1',
+  'workbench-ui.js?v=20260913-right-panel-v1',
+  '../orderFulfillmentEngine.js?v=20260913-right-panel-v1',
   'data-orderops-api-source="orders"',
   'data-orderops-api-source="purchases"',
   'data-orderops-api-source="sales"',
@@ -197,10 +197,11 @@ const leftPane = html.slice(html.indexOf('id="orderOpsFilePreparePane"'), html.i
 assert.ok(leftPane.includes('id="orderOpsHeaderOrdersButton"'), 'auxiliary load/restore entry belongs to the left source pane');
 const bottomBar = html.slice(html.indexOf('class="orderops-bottom-workbar"'), html.indexOf('</footer>', html.indexOf('class="orderops-bottom-workbar"')));
 assert.ok(!bottomBar.includes('orderOpsHeaderOrdersButton'), 'center bottom bar must not retain a duplicate load menu');
-for (const heading of ['주문일', '금액', '적요']) assert.ok(html.includes(`<th>${heading}</th>`), `missing delivery heading: ${heading}`);
-for (const contract of ['deliveryAmountMarkup', 'selectedSummaryValue.amountTotal', 'selectedSummaryValue.calculatedAmountTotal', 'colspan="7"']) {
+for (const heading of ['주문일', '거래처명 / 수량 / 금액', '적요']) assert.ok(html.includes(`<th>${heading}</th>`), `missing delivery heading: ${heading}`);
+for (const contract of ['deliveryCompactAmountText', 'selectedSummaryValue.amountTotal', 'selectedSummaryValue.calculatedAmountTotal', 'colspan="4"']) {
   assert.ok(html.includes(contract), `missing delivery amount contract: ${contract}`);
 }
+assert.ok(!html.includes('<th>전표·거래처</th><th>수량</th><th>금액</th>'), 'right voucher list must not retain the former split columns');
 assert.ok(!html.includes('normalizeOrderOpsWorkspaceDom'), 'runtime DOM rearrangement path must be removed');
 for (const contract of ['Math.min(62', 'Math.min(4', "status: partial ? 'PARTIAL'", 'failureDates']) {
   assert.ok(activityAdapter.includes(contract), `missing bounded voucher activity contract: ${contract}`);

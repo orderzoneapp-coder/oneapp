@@ -90,7 +90,7 @@ try {
     for(const {baseline,cell,predecorated=true} of variants) {
       // Reset only this isolated fixture's UI preferences. Odd panel clicks
       // must not change the next comparison's initial table viewport.
-      await ev(`localStorage.setItem('oneapp.orderops.inventory-inspector-open.v1','0');localStorage.setItem('oneapp.orderops.file-prepare-open.v1','1');localStorage.setItem('nexus:workbench-layout:orderops:v2',JSON.stringify({schemaVersion:2,left:380,right:280}));true`);
+      await ev(`localStorage.setItem('oneapp.orderops.inventory-inspector-open.v1','0');localStorage.setItem('oneapp.orderops.file-prepare-open.v1','1');localStorage.setItem('nexus:workbench-layout:orderops:v2',JSON.stringify({schemaVersion:2,left:380,right:320}));true`);
       await send('Page.navigate',{url:origin+'/orderops/list.html?baseline='+(baseline?'1':'0')+'&cellContainment='+(cell?'1':'0')+'&predecorated='+(predecorated?'1':'0')});
       await until(()=>ev('Boolean(globalThis.__perf?.state.db) && Boolean(globalThis.__ops)==='+String(!baseline)),'performance version initialization');
       for(const [count,warehouses] of (diagnostic?[[500,10]]:[[100,3],[500,10],[2000,10]])) {
@@ -116,7 +116,7 @@ try {
   assert.equal(await ev('Boolean(document.querySelector("#prepareDropSurface #prepareFilesButton"))'),true,'Excel chooser belongs to drop/parser surface');
   assert.equal(await ev('Boolean(document.querySelector("#orderOpsFilePreparePane #orderOpsHeaderOrdersButton"))'),true,'auxiliary load entry belongs to left pane');
   assert.equal(await ev('Boolean(document.querySelector(".orderops-bottom-workbar #orderOpsHeaderOrdersButton"))'),false,'center bottom bar has no duplicate load menu');
-  assert.deepEqual(await ev(`[...document.querySelectorAll('.orderops-delivery-table thead th')].map(cell=>cell.textContent.trim())`),['','주문일','전표·거래처','수량','금액','적요','창고·담당']);
+  assert.deepEqual(await ev(`[...document.querySelectorAll('.orderops-delivery-table thead th')].map(cell=>cell.textContent.trim())`),['','주문일','거래처명 / 수량 / 금액','적요']);
   await ev(`window.confirm=()=>true;window.alert=()=>{};`);
   // Real File/SheetJS/explicit mapping/apply UI. Test hook exists only in this
   // local server's response; shipped application has no test state endpoint.
@@ -133,6 +133,17 @@ try {
   assert.equal(await ev('document.querySelector("#orderOpsCurrentViewTitle").textContent'),'현재 주문현황');
   assert.ok(await ev('document.querySelector("#previewTable").textContent.includes("합성상품")'));
   assert.equal(await ev('document.querySelectorAll("[data-voucher-check]").length'),2);
+  const compactVoucherPanel=await ev(`(()=>{const panel=document.querySelector('#inventoryInspector'),query=document.querySelector('#orderOpsOrderListPane'),table=document.querySelector('.orderops-delivery-table'),wrap=table.closest('.orderops-side-table-wrap'),row=table.querySelector('tbody tr[data-delivery-key]'),cells=[...row.cells],head=document.querySelector('.orderops-order-list-head'),title=head.querySelector('strong').getBoundingClientRect(),search=document.querySelector('.orderops-delivery-search').getBoundingClientRect();return {headers:[...table.tHead.rows[0].cells].map(cell=>cell.textContent.trim()),headerTools:table.querySelectorAll('.nexus-table-column-tool').length,cellCount:cells.length,combined:cells[2].textContent,combinedWhiteSpace:getComputedStyle(cells[2]).whiteSpace,note:cells[3].textContent,horizontal:wrap.scrollWidth>wrap.clientWidth+1,panelHorizontal:panel.scrollWidth>panel.clientWidth+1||query.scrollWidth>query.clientWidth+1,tableWidth:table.scrollWidth,wrapWidth:wrap.clientWidth,titleSearchSameLine:Math.abs((title.top+title.bottom)/2-(search.top+search.bottom)/2)<2,warehouseChips:document.querySelectorAll('[data-delivery-warehouse-filter]').length,managerChips:document.querySelectorAll('[data-delivery-manager-filter]').length,dateCollapsed:!document.querySelector('#deliveryDateRangePicker').open,clearCollapsed:!document.querySelector('.orderops-bulk-clear-menu').open};})()`);
+  assert.deepEqual(compactVoucherPanel.headers,['','주문일','거래처명 / 수량 / 금액','적요']);
+  assert.equal(compactVoucherPanel.headerTools,0,'right voucher headers must not expose generic search icons');
+  assert.equal(compactVoucherPanel.cellCount,4);
+  assert.match(compactVoucherPanel.combined,/거래처 A \/ 10 EA \/ 금액 없음/);
+  assert.equal(compactVoucherPanel.combinedWhiteSpace,'nowrap');
+  assert.equal(compactVoucherPanel.note,'일반 / 직원');
+  assert.equal(compactVoucherPanel.horizontal,false,JSON.stringify(compactVoucherPanel));
+  assert.equal(compactVoucherPanel.panelHorizontal,false,JSON.stringify(compactVoucherPanel));
+  assert.ok(compactVoucherPanel.tableWidth<=compactVoucherPanel.wrapWidth+1,JSON.stringify(compactVoucherPanel));
+  assert.ok(compactVoucherPanel.titleSearchSameLine&&compactVoucherPanel.warehouseChips>=2&&compactVoucherPanel.managerChips>=2&&compactVoucherPanel.dateCollapsed&&compactVoucherPanel.clearCollapsed,JSON.stringify(compactVoucherPanel));
   await click('[data-voucher-check]');
   await ev(`(()=>{const managerInput=document.querySelector('#deliveryManagerAssignmentInput');managerInput.value='선택 담당';managerInput.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
   await click('#deliveryManagerAssignmentApply');
@@ -147,6 +158,7 @@ try {
   assert.equal(await ev('Boolean(__ops.state.workspace.sourceFiles.orders.sourceEvidence.cells)'),true);
   await click('#inventoryInspectorReopen');
   await click('#previewTable [data-order-row="2"]');
+  await click('.orderops-row-details > summary');
   await ev(`const edit=document.querySelector('[data-inspector-field="note1Original"]');edit.value='보존할 직원 입력';edit.dispatchEvent(new Event('input',{bubbles:true}));`);
   await click('#previewTable [data-order-row="3"]');
   await click('#previewTable [data-order-row="2"]');

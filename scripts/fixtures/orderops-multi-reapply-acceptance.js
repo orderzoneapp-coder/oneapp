@@ -70,8 +70,8 @@
   renderResults();
 
   const tableText = document.querySelector('.orderops-delivery-table').textContent;
-  assert(tableText.includes('2026-09-12') && tableText.includes('2026-09-13'), 'delivery list dates missing');
-  assert(tableText.includes('원본 2,000원') && tableText.includes('계산 900원'), 'original/calculated delivery amounts missing');
+  assert(tableText.includes('09-12') && tableText.includes('09-13'), 'delivery list compact dates missing');
+  assert(tableText.includes('2,000원') && tableText.includes('계산 900원'), 'original/calculated delivery amounts missing');
   assert(tableText.includes('원본 적요 A') && tableText.includes('직원 메모 B'), 'delivery notes missing');
   document.querySelector('#deliveryVoucherCheckAll').click();
   const selectedText = document.querySelector('#deliveryManagerAssignmentSummary').textContent;
