@@ -1074,3 +1074,10 @@ SmartInput 파일럿은 5단계 기본 복구와 상품·거래처 Snapshot 소�
 - 기존 세 native table의 tbody에 `virtual-table-body.js`를 연결한다. 200행 초과 시 화면 범위와 앞뒤 10행을 만들며 가변 높이와 활성 입력 행을 보존한다. IME 조합 중 DOM 교체를 미룬다. 전체 행은 기존 model에 남아 저장·합계·보고서·검색·붙여넣기·행 선택의 근거가 된다.
 - 공통 표 모듈은 해당 table의 `__nexusLogicalView`가 있는 경우에만 전체 logical model로 정렬·필터·필터 후보를 계산한다. 다른 앱의 표 동작은 기존 경로를 사용한다.
 - `ONEAPP_SMARTINPUT_PERFORMANCE.snapshot()`은 실제 본문/사진 읽기 수, projection 구축 수, 각 표의 논리/표시 행 수와 최근 최대 30회 입력→다음 프레임 시간을 제공한다. 계측 코드 연결을 성능 목표 달성으로 보고하지 않는다.
+
+### SmartInput 5단계 선택 기능 로딩·긴 계산 분리 (2026-09-13)
+- 초기 SmartInput graph는 파일 해석, OCR parser, 견적 보고서, 구매 판매업로드, 구매·판매 Finalize Service를 포함하지 않는다. 기존 `optional-operation-loader.js`가 파일/사진/공유/보고서/공식 저장 버튼의 첫 실행에서 기능 facade를 불러오고, 성공 모듈만 재사용하며 실패와 늦은 결과는 현재 작업에 적용하지 않는다.
+- 일반 견적 저장에 필요한 가격 snapshot 비교만 `estimate-price-snapshot.js` 정적 core로 유지한다. `estimate-output.js`는 같은 함수를 재-export하므로 기존 보고서 API와 값이 유지된다.
+- 같은 환경 30회 계측에서 100행은 50ms 아래였고 1,000행 F8과 구매 출력 행렬은 50ms를 넘었다. 500행 이상 F8 검증·중복·행렬 생성과 구매 판매업로드 행렬 생성만 module Worker로 실행한다. 작은 자료, Worker 생성·로딩·실행 실패는 기존 순수 함수를 direct fallback으로 실행하며 결과를 바꾸지 않는다.
+- XLSX workbook 생성·파일 저장, 카톡 canvas·Clipboard, OCR의 기존 Tesseract Worker, IndexedDB, 견적·마스터·ORDER Q owner command는 main의 기존 소유 경계에 남는다. DB v5, store, ID, Revision, 자동저장 journal, 선택 견적 범위와 command receipt 형식은 변경하지 않는다.
+- `ONEAPP_SMARTINPUT_PERFORMANCE.snapshot()`은 기능 cold/warm 로딩, direct/worker/fallback 계산 시간과 브라우저 Long Task 표본을 추가로 제공하며 원문 업무값은 기록하지 않는다.

@@ -559,7 +559,8 @@
         "independent same-ID estimates with selected-only atomic updates and last Excel exclusions",
         "optional selected-estimate product-master commands with separate durable retry",
         "v5 estimate-summary projections and bounded on-demand body/photo cache",
-        "generation-scoped field-registry cache and virtualized native input/mapping/source tables"
+        "generation-scoped field-registry cache and virtualized native input/mapping/source tables",
+        "action-scoped optional feature modules and measured Worker isolation for large report matrices"
       ],
       "ownedContracts": [
         "smartinput-local-work",
