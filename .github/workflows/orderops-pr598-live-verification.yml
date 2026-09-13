@@ -1,0 +1,40 @@
+name: Verify deployed OrderOps PR598
+
+# One-off verification branch only. No deployment and no main changes.
+on:
+  push:
+    branches:
+      - verify/orderops-pr598-live-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live:
+    name: Read-only production bytes and browser verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Assert product sources remain the deployed fixed merge
+        run: git diff --exit-code 732e2922b36d5cfaf057b14446bca1bea87971dc -- orderops/list.html orderops/workbench-v12.css
+      - name: Install Korean font for evidence
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+      - name: Read live site and verify a fresh browser with synthetic local data
+        run: |
+          node --check scripts/verify-orderops-pr598-live.mjs
+          node scripts/verify-orderops-pr598-live.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orderops-pr598-live-732e2922
+          path: test-artifacts/orderops-pr598-live
+          retention-days: 7
