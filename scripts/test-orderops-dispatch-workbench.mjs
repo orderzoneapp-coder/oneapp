@@ -261,8 +261,9 @@ for (const contract of [
   'function formatEmployeeDeliveryNotice(row)',
   'orderops-side-table orderops-delivery-table',
   '@container (max-width: 419px)',
-  '<th>주문일</th><th>전표·거래처</th><th>수량</th><th>금액</th><th>적요</th><th>창고·담당</th>',
-  'data-delivery-manager-filter=',
+  '<th>주문일</th><th>거래처명 / 수량 / 금액</th><th>적요</th>',
+  'data-delivery-manager-filter',
+  'data-delivery-warehouse-filter',
   'id="deliveryWorkloadSummary"',
   'id="deliverySourceScope"',
   'id="deliverySelectionContext"',
@@ -270,10 +271,12 @@ for (const contract of [
   'function ensureColumnVisibilityMenuLayer()',
   'document.body.append(elements.columnVisibilityMenu)',
   '검색 해제로 검색어만 지울 수 있습니다.',
-  '>조회 초기화</button>',
+  '>전체 기간</button>',
   '분석표 필터 초기화 F2',
   '승인된 처리결과·이력·후속 작업이 아직 없습니다.',
 ]) assert.ok(html.includes(contract), `출고관리 추가 레이아웃 계약 누락: ${contract}`);
+assert.ok(!html.includes('<h3>주문서별 배송 배정</h3>'),
+  '우측 기본 화면은 중복된 배송 배정 제목을 노출하지 않아야 한다');
 assert.ok(!html.includes('normalizeOrderOpsWorkspaceDom'),
   '출고관리 최종 마크업은 런타임 DOM 재배치에 의존하지 않아야 한다');
 assert.doesNotMatch(html, /data-summary-manager/,

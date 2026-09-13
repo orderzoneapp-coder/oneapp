@@ -233,7 +233,7 @@ try {
     handles:[...document.querySelectorAll('.nexus-pane-resizer-v2')].filter(node=>!node.hidden).map(node=>node.dataset.nexusPaneResize),
     deliveries:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-customer-key]').length,
     distribution:document.querySelector('#deliveryDistribution').textContent,
-    filters:[...document.querySelectorAll('.orderops-delivery-filters select')].map(node=>node.id),
+    filters:['deliveryWarehouseFilter','deliveryManagerFilter'].filter(id=>document.getElementById(id)),
     summaryHeaders:[...document.querySelectorAll('.orderops-delivery-table thead th')].map(node=>node.textContent.trim()),
     summaryText:document.querySelector('#deliverySummaryBody').textContent,
     workload:document.querySelector('#deliveryWorkloadSummary').textContent,
@@ -246,13 +246,12 @@ try {
   assert.equal(workbench.enhanced, 'true');
   assert.deepEqual(workbench.handles, ['left', 'right']);
   assert.equal(workbench.deliveries, 1, '배송 건수는 상품행이 아닌 고객·주문 배송 단위여야 한다.');
-  assert.match(workbench.distribution, /작업자 1건/);
+  assert.match(workbench.distribution, /전체.*작업자/);
   assert.deepEqual(workbench.filters, ['deliveryWarehouseFilter', 'deliveryManagerFilter']);
-  assert.deepEqual(workbench.summaryHeaders, ['','주문일','전표·거래처','수량','금액','적요','창고·담당']);
-  assert.match(workbench.summaryText, /20260908-001[\s\S]*부분상사[\s\S]*10 BOX[\s\S]*본창고[\s\S]*작업자/);
-  assert.match(workbench.summaryText, /2026-09-08[\s\S]*금액 자료 없음[\s\S]*분석전 수정/);
+  assert.deepEqual(workbench.summaryHeaders, ['','주문일','거래처명 / 수량 / 금액','적요']);
+  assert.match(workbench.summaryText, /09-08[\s\S]*부분상사 \/ 10 BOX \/ 금액 없음[\s\S]*분석전 수정/);
   assert.doesNotMatch(workbench.summaryText, /남부|부분출고 상품/);
-  assert.match(workbench.workload, /조회 요약[\s\S]*주문서 1건[\s\S]*BOX 10/);
+  assert.match(workbench.workload, /선택 0건[\s\S]*수량 0[\s\S]*금액 0원/);
   assert.match(workbench.sourceScope, /주문 기간 2026-09-08[\s\S]*재고 기준일 미확인[\s\S]*불러온 시각/);
   assert.match(workbench.inventory, /조회·수정/, 'v1.2 우측은 조회·수정 패널이다.');
   assert.equal(workbench.metrics, '');
@@ -289,10 +288,10 @@ try {
   const defaultLayout = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const center=workspace.querySelector(':scope > [data-nexus-pane="work"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const reset=document.querySelector('#deliveryFilterReset');const table=document.querySelector('.orderops-delivery-table');const wrap=table.closest('.orderops-side-table-wrap');return {leftWidth:left.getBoundingClientRect().width,centerWidth:center.getBoundingClientRect().width,rightWidth:right.getBoundingClientRect().width,resetRight:reset.getBoundingClientRect().right,leftRight:left.getBoundingClientRect().right,resetWidth:reset.getBoundingClientRect().width,fontSize:getComputedStyle(table).fontSize,tableWidth:table.scrollWidth,wrapClient:wrap.clientWidth,wrapScroll:wrap.scrollWidth,bodyWidth:document.documentElement.scrollWidth,viewport:innerWidth}})()`);
   assert.ok(defaultLayout.leftWidth >= 370, `기본 좌측 패널 폭이 핵심 판단에 부족합니다: ${defaultLayout.leftWidth}`);
   assert.ok(defaultLayout.centerWidth > defaultLayout.leftWidth, '중앙 작업표는 기본 배치에서 좌측보다 넓어야 한다.');
-  assert.ok(defaultLayout.resetRight <= await evaluate(client, `document.querySelector('#inventoryInspector').getBoundingClientRect().right`) && defaultLayout.resetWidth > 100, '조회 초기화는 우측 패널에서 잘리지 않아야 한다.');
-  assert.equal(defaultLayout.fontSize, '12px', '좌측 표는 12px 가독성 기준을 유지해야 한다.');
-  assert.ok(defaultLayout.tableWidth > defaultLayout.rightWidth && defaultLayout.wrapScroll >= defaultLayout.tableWidth && defaultLayout.wrapScroll <= defaultLayout.tableWidth + 2 && defaultLayout.wrapClient <= defaultLayout.rightWidth && defaultLayout.bodyWidth <= defaultLayout.viewport,
-    `우측 7열 표의 가로 스크롤은 패널 안에 격리되어야 한다: ${JSON.stringify(defaultLayout)}`);
+  assert.ok(defaultLayout.resetRight <= await evaluate(client, `document.querySelector('#inventoryInspector').getBoundingClientRect().right`) && defaultLayout.resetWidth >= 64, '전체 기간 버튼은 우측 패널에서 잘리지 않아야 한다.');
+  assert.equal(defaultLayout.fontSize, '9px', '우측 압축 표는 좁은 패널에서 한 줄 정보를 유지해야 한다.');
+  assert.ok(defaultLayout.tableWidth <= defaultLayout.wrapClient + 1 && defaultLayout.wrapScroll <= defaultLayout.wrapClient + 1 && defaultLayout.wrapClient <= defaultLayout.rightWidth && defaultLayout.bodyWidth <= defaultLayout.viewport,
+    `우측 4열 표는 가로 스크롤 없이 패널 안에 들어가야 한다: ${JSON.stringify(defaultLayout)}`);
   const resizePreservation = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');const left=workspace.querySelector(':scope > [data-nexus-pane="reference"]');const right=workspace.querySelector(':scope > [data-nexus-pane="result"]');const draft=document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]');draft.value='7';draft.focus();document.querySelector('#previewTable').scrollLeft=18;const before={left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width};document.querySelector('[data-nexus-pane-resize="left"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));return {before,after:{left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width},draft:draft.value,focused:document.activeElement===draft,scrollLeft:document.querySelector('#previewTable').scrollLeft}})()`);
   assert.ok(resizePreservation.after.left > resizePreservation.before.left);
   assert.ok(Math.abs(resizePreservation.after.right - resizePreservation.before.right) < 1);
@@ -312,10 +311,10 @@ try {
   assert.equal(leftAssignmentReady.disabled, false);
   assert.match(leftAssignmentReady.summary, /선택 1건[\s\S]*1행[\s\S]*10 BOX/);
   await evaluate(client, `(()=>{const input=document.querySelector('#deliveryManagerAssignmentInput');input.value='좌측재배정';document.querySelector('#deliveryManagerAssignmentApply').click();return true})()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#deliveryDistribution').textContent.includes('좌측재배정 1건')`), 'left manager assignment');
+  await waitFor(() => evaluate(client, `document.querySelector('[data-delivery-manager-filter="좌측재배정"]')?.title.includes('1건')`), 'left manager assignment');
   assert.match(await evaluate(client, `document.querySelector('#systemMessage').textContent`), /담당 변경.*1행 반영/);
   await evaluate(client, `(()=>{const input=document.querySelector('#deliveryManagerAssignmentInput');input.value='작업자';document.querySelector('#deliveryManagerAssignmentApply').click();return true})()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#deliveryDistribution').textContent.includes('작업자 1건')`), 'left manager assignment restore');
+  await waitFor(() => evaluate(client, `document.querySelector('[data-delivery-manager-filter="작업자"]')?.title.includes('1건')`), 'left manager assignment restore');
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.order-edit-input[data-order-field="manager"]'))`), 'detailed manager editor');
   await evaluate(client, `document.querySelector('[data-delivery-manager-filter="작업자"]').click()`);
@@ -323,13 +322,13 @@ try {
     { filter: '작업자', rows: 1, pressed: 'true' }, '담당자별 건수를 누르면 해당 담당자의 주문만 모아야 한다.');
   await evaluate(client, `(()=>{const input=document.querySelector('.order-edit-input[data-order-field="manager"]');input.value='재배정';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   await waitFor(() => evaluate(client, `document.querySelector('.order-edit-input[data-order-field="manager"]')?.value==='재배정'`), 'customer-unit manager synchronization');
-  assert.match(await evaluate(client, `document.querySelector('#deliveryDistribution').textContent`), /재배정 1건/);
+  assert.ok(await evaluate(client, `document.querySelector('[data-delivery-manager-filter="재배정"]')?.title.includes('1건')`));
   assert.deepEqual(await evaluate(client, `(()=>({filter:document.querySelector('#deliveryManagerFilter').value,count:document.querySelector('#deliverySummaryCount').textContent,rows:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length}))()`),
-    { filter: '작업자', count: '현재 작업 1건 · 조회 0건', rows: 0 }, '담당자별 조회 중 재배정하면 필터는 유지하고 전체·조회 건수를 구분해야 한다.');
-  await evaluate(client, `document.querySelector('#deliveryFilterReset').click()`);
+    { filter: '작업자', count: '(0/1건)', rows: 0 }, '담당자별 조회 중 재배정하면 필터는 유지하고 전체·조회 건수를 구분해야 한다.');
+  await evaluate(client, `document.querySelector('[data-delivery-manager-filter=""]').click()`);
   await evaluate(client, `(()=>{const input=document.querySelector('.order-edit-input[data-order-field="manager"]');input.value='중앙재배정';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
-  await waitFor(() => evaluate(client, `document.querySelector('#deliveryDistribution').textContent.includes('중앙재배정 1건')`), 'central-to-summary customer manager synchronization');
-  assert.match(await evaluate(client, `document.querySelector('#deliveryDistribution').textContent`), /중앙재배정 1건/);
+  await waitFor(() => evaluate(client, `document.querySelector('[data-delivery-manager-filter="중앙재배정"]')?.title.includes('1건')`), 'central-to-summary customer manager synchronization');
+  assert.ok(await evaluate(client, `document.querySelector('[data-delivery-manager-filter="중앙재배정"]')?.title.includes('1건')`));
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]'))`), 'allocation view restored after left focus');
   const panelBefore = await evaluate(client, `(()=>{const panel=document.querySelector('#inventoryInspector');return {identity:document.querySelector('#inventoryInspectorIdentity').textContent,width:panel.getBoundingClientRect().width,draft:document.querySelector('[data-shipment-draft-line="OI-PARTIAL"]').value}})()`);
@@ -477,16 +476,17 @@ try {
   assert.deepEqual(await evaluate(client, `[...document.querySelector('#deliveryWarehouseFilter').options].map(option=>option.textContent)`), ['전체 창고','본창고']);
   await evaluate(client, `(()=>{const search=document.querySelector('#deliveryVoucherSearch');search.value='고객1';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   assert.deepEqual(await waitFor(async () => {
-    const value = await evaluate(client, `(()=>({rows:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,distribution:document.querySelector('#deliveryDistribution').textContent}))()`);
+    const value = await evaluate(client, `(()=>({rows:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,distribution:document.querySelector('[data-delivery-manager-filter="담당A"]')?.title||''}))()`);
     return value.rows === 2 ? value : null;
   }, 'voucher-search scoped manager counts'), { rows:2, distribution:'담당A 2건' },
   '담당자별 건수는 현재 전표 검색 범위의 주문서 건으로 계산해야 한다.');
-  await evaluate(client, `document.querySelector('#deliveryFilterReset').click()`);
+  assert.equal(await evaluate(client, `(()=>{const button=document.querySelector('#deliveryFilterReset');button.click();return document.querySelector('#deliveryVoucherSearch').value})()`), '고객1', '전체 기간은 검색·창고·담당 조건을 지우지 않는다.');
+  await evaluate(client, `(()=>{const search=document.querySelector('#deliveryVoucherSearch');search.value='';search.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
   await evaluate(client, `document.querySelector('[data-preview="allocations"]').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.order-edit-input[data-order-field="manager"][data-order-row="3"]'))`), 'restored detailed manager editor');
   await evaluate(client, `(()=>{const filter=document.querySelector('#deliveryManagerFilter');filter.value='담당A';filter.dispatchEvent(new Event('change',{bubbles:true}));const input=document.querySelector('.order-edit-input[data-order-field="manager"][data-order-row="3"]');input.value='담당B';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
   const continuousAssignment = await waitFor(async () => {
-    const value = await evaluate(client, `(()=>({filter:document.querySelector('#deliveryManagerFilter').value,remaining:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,distribution:document.querySelector('#deliveryDistribution').textContent,central:[...document.querySelectorAll('.order-edit-input[data-order-field="manager"]')].map(input=>input.value)}))()`);
+    const value = await evaluate(client, `(()=>({filter:document.querySelector('#deliveryManagerFilter').value,remaining:document.querySelectorAll('#deliverySummaryBody tr[data-delivery-key]').length,distribution:[...document.querySelectorAll('[data-delivery-manager-filter]')].map(button=>button.title).join(' | '),central:[...document.querySelectorAll('.order-edit-input[data-order-field="manager"]')].map(input=>input.value)}))()`);
     return value.remaining === 1 && value.central.slice(0,3).every(manager=>manager==='담당B') ? value : null;
   }, 'continuous filtered manager assignment');
   assert.equal(continuousAssignment.filter, '담당A');

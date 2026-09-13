@@ -16,11 +16,11 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260913-continuity-fix"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260913-right-panel-v1"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="source-coordinator.js?v=20260913-continuity-fix"></script>
-  <script src="voucher-workbench.js?v=20260913-continuity-fix"></script>
-  <script src="workbench-ui.js?v=20260913-continuity-fix"></script>
+  <script src="source-coordinator.js?v=20260913-right-panel-v1"></script>
+  <script src="voucher-workbench.js?v=20260913-right-panel-v1"></script>
+  <script src="workbench-ui.js?v=20260913-right-panel-v1"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -1438,6 +1438,7 @@
     }
     th:hover .column-sort-trigger,
     th:focus-within .column-sort-trigger,
+    th.column-filtered .column-sort-trigger,
     .column-sort-trigger[aria-expanded="true"] {
       opacity: 1;
       visibility: visible;
@@ -2705,7 +2706,7 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="./workbench-v12.css?v=5">
+  <link rel="stylesheet" href="./workbench-v12.css?v=6">
 </head>
 <body>
   <header class="global-header orderops-workbench-header" data-nexus-app-header="orderops">
@@ -2934,52 +2935,89 @@
         <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
       </button><div class="orderops-header-menu"><button id="orderOpsHeaderMoreButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderMoreMenu" aria-expanded="false">기타 ▾</button>
           </div></div></div></section><aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="전표관리">
-          <div class="orderops-side-panel__head">
-            <div><h3>전표관리</h3><p>조회·체크·선택 전표 작업본 변경</p></div>
-            <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-controls="inventoryInspector">닫기</button>
+          <div class="orderops-side-panel__head orderops-voucher-panel-head">
+            <h3>전표관리</h3>
+            <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-label="전표관리 닫기" aria-controls="inventoryInspector">×</button>
           </div>
           <aside class="orderops-side-panel orderops-query-panel" aria-label="전표 조회·일괄 변경" id="orderOpsOrderListPane" tabindex="-1">
-          <div class="orderops-side-panel__head">
-            <div><h3>주문서별 배송 배정</h3><p id="deliverySummaryCount">현재 작업 0건</p></div>
-          </div>
-          <div class="orderops-delivery-distribution" id="deliveryDistribution" aria-label="담당자별 배송 건수"></div>
-          <div class="orderops-delivery-filters" aria-label="주문서 조회 필터"><label class="orderops-delivery-filter">시작일<input id="deliveryDateFrom" type="date"></label><label class="orderops-delivery-filter">종료일<input id="deliveryDateTo" type="date"></label><label class="orderops-delivery-filter orderops-delivery-search">검색<input id="deliveryVoucherSearch" type="search" autocomplete="off" placeholder="전표·거래처·상품"></label>
-            <label class="orderops-delivery-filter">창고
-              <select id="deliveryWarehouseFilter" aria-label="우측 주문서 창고 조회"><option value="">전체 창고</option></select>
-            </label>
-            <label class="orderops-delivery-filter">담당
-              <select id="deliveryManagerFilter" aria-label="우측 주문서 담당자별 조회"><option value="">전체 담당자</option></select>
-            </label>
+            <div class="orderops-period-toolbar" aria-label="주문 기간 조회">
+              <details class="orderops-date-range-picker" id="deliveryDateRangePicker">
+                <summary><span aria-hidden="true">▣</span><span id="deliveryDateRangeText">전체 주문 기간</span></summary>
+                <div class="orderops-date-range-fields">
+                  <label class="orderops-delivery-filter">시작일<input id="deliveryDateFrom" type="date"></label>
+                  <label class="orderops-delivery-filter">종료일<input id="deliveryDateTo" type="date"></label>
+                </div>
+              </details>
+              <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button" title="날짜 범위를 전체 기간으로 되돌립니다.">전체 기간</button>
+            </div>
 
-            <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button" title="창고·담당·지역의 좌측 조회 조건만 지웁니다.">조회 초기화</button>
-          </div>
-          <div class="orderops-source-scope" id="deliverySourceScope" aria-label="자료 기준과 조회 범위">
-            <span>주문 기간 미확인 · 재고 기준일 미확인</span>
-          </div>
-          <div class="orderops-side-table-wrap">
-            <table class="orderops-side-table orderops-delivery-table" aria-label="주문서별 배송 배정 요약">
-              <colgroup><col style="width:32px"><col style="width:92px"><col style="width:150px"><col style="width:105px"><col style="width:130px"><col style="width:180px"><col style="width:145px"></colgroup>
-              <thead><tr><th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>주문일</th><th>전표·거래처</th><th>수량</th><th>금액</th><th>적요</th><th>창고·담당</th></tr></thead>
-              <tbody id="deliverySummaryBody"><tr><td colspan="7" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
-            </table>
-          </div>
-          <div class="orderops-workload-summary" id="deliveryWorkloadSummary" aria-live="polite">
-            <strong>조회 요약</strong><span>주문서 0건</span>
-          </div>
-          <div class="orderops-selection-context" id="deliverySelectionContext" hidden="">
-            <span id="deliverySelectionText"></span>
-            <button id="deliverySelectionOpenReadiness" type="button">주문현황에서 보기</button>
-          </div>
-          <section class="orderops-manager-assignment" aria-label="선택 주문 또는 거래처 담당 변경"><div><strong id="deliveryManagerAssignmentTitle">일괄 정보 변경</strong><span id="deliveryManagerAssignmentSummary">전표를 체크하세요.</span></div>
-          <label>창고<input id="deliveryWarehouseAssignmentInput" type="text" autocomplete="off" disabled=""></label><label class="orderops-clear-value"><input id="deliveryWarehouseClear" type="checkbox" disabled=""> 값 지우기</label><button id="deliveryWarehouseAssignmentApply" type="button" disabled="">창고 적용</button>
-          <label>담당<input id="deliveryManagerAssignmentInput" type="text" list="orderOpsManagerOptions" autocomplete="off" disabled=""></label><label class="orderops-clear-value"><input id="deliveryManagerClear" type="checkbox" disabled=""> 값 지우기</label><button id="deliveryManagerAssignmentApply" type="button" disabled="">담당 적용</button>
-          <button id="deliveryVoucherApply" type="button" disabled="">선택 전표 적용</button></section>
-        </aside><div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 패널</strong><span>승인된 보조 업무가 아직 없습니다.</span></div>
-          <div class="orderops-inventory-metrics" id="inventoryInspectorMetrics"></div>
-          <div id="inventoryInspectorBody"></div>
-          <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
+            <section class="orderops-quick-filter" aria-labelledby="deliveryWarehouseFilterLabel">
+              <strong id="deliveryWarehouseFilterLabel">창고</strong>
+              <div class="orderops-delivery-distribution" id="deliveryWarehouseDistribution" aria-label="창고 빠른 선택"></div>
+            </section>
+            <section class="orderops-quick-filter" aria-labelledby="deliveryManagerFilterLabel">
+              <strong id="deliveryManagerFilterLabel">담당자</strong>
+              <div class="orderops-delivery-distribution" id="deliveryDistribution" aria-label="담당자 빠른 선택"></div>
+            </section>
+
+            <div class="orderops-compat-filters" hidden="">
+              <select id="deliveryWarehouseFilter" aria-label="우측 주문서 창고 조회"><option value="">전체 창고</option></select>
+              <select id="deliveryManagerFilter" aria-label="우측 주문서 담당자별 조회"><option value="">전체 담당자</option></select>
+            </div>
+
+            <div class="orderops-order-list-head">
+              <strong>주문 목록 <span id="deliverySummaryCount">(0건)</span></strong>
+              <label class="orderops-delivery-search"><span class="orderops-visually-hidden">거래처명·적요 검색</span><span aria-hidden="true">⌕</span><input id="deliveryVoucherSearch" type="search" autocomplete="off" placeholder="거래처명·적요 검색"></label>
+            </div>
+            <div class="orderops-side-table-wrap">
+              <table class="orderops-side-table orderops-delivery-table" data-nexus-common-tools="off" aria-label="전표관리 주문 목록">
+                <colgroup><col class="orderops-voucher-check-col"><col class="orderops-voucher-date-col"><col class="orderops-voucher-summary-col"><col class="orderops-voucher-note-col"></colgroup>
+                <thead><tr><th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>주문일</th><th>거래처명 / 수량 / 금액</th><th>적요</th></tr></thead>
+                <tbody id="deliverySummaryBody"><tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+            <div class="orderops-workload-summary" id="deliveryWorkloadSummary" aria-live="polite">
+              <strong>선택 0건</strong><span>수량 0</span><span>금액 0원</span>
+            </div>
+            <div class="orderops-selection-context" id="deliverySelectionContext" hidden="">
+              <span id="deliverySelectionText"></span>
+              <button id="deliverySelectionOpenReadiness" type="button" hidden="">주문현황에서 보기</button>
+            </div>
+            <section class="orderops-manager-assignment" aria-label="선택 전표 일괄 정보 변경">
+              <div class="orderops-assignment-heading"><strong id="deliveryManagerAssignmentTitle">일괄 정보 변경</strong><span id="deliveryManagerAssignmentSummary">전표를 체크하세요.</span></div>
+              <div class="orderops-assignment-row">
+                <label><span>창고</span><input id="deliveryWarehouseAssignmentInput" type="text" autocomplete="off" placeholder="창고명을 입력하세요." disabled=""></label>
+                <button id="deliveryWarehouseAssignmentApply" type="button" disabled="">적용</button>
+              </div>
+              <div class="orderops-assignment-row">
+                <label><span>담당자</span><input id="deliveryManagerAssignmentInput" type="text" list="orderOpsManagerOptions" autocomplete="off" placeholder="담당자명을 입력하세요." disabled=""></label>
+                <button id="deliveryManagerAssignmentApply" type="button" disabled="">적용</button>
+              </div>
+              <button id="deliveryVoucherApply" type="button" disabled=""><span aria-hidden="true">✓</span> 선택 전표 적용</button>
+              <details class="orderops-bulk-clear-menu">
+                <summary>값 지우기</summary>
+                <div>
+                  <label class="orderops-clear-value"><input id="deliveryWarehouseClear" type="checkbox" disabled=""> 창고 값 지우기</label>
+                  <label class="orderops-clear-value"><input id="deliveryManagerClear" type="checkbox" disabled=""> 담당자 값 지우기</label>
+                </div>
+              </details>
+            </section>
+            <details class="orderops-panel-details">
+              <summary>자료 기준</summary>
+              <div class="orderops-source-scope" id="deliverySourceScope" aria-label="자료 기준과 조회 범위">
+                <span>주문 기간 미확인 · 재고 기준일 미확인</span>
+              </div>
+            </details>
+          </aside>
+          <details class="orderops-panel-details orderops-row-details">
+            <summary>선택 행 상세</summary>
+            <div class="orderops-inventory-identity" id="inventoryInspectorIdentity"><strong>보조 패널</strong><span>승인된 보조 업무가 아직 없습니다.</span></div>
+            <div class="orderops-inventory-metrics" id="inventoryInspectorMetrics"></div>
+            <div id="inventoryInspectorBody"></div>
+            <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
+          </details>
         </aside></div><footer class="page-footer">
-      <span>ORDER Q v1.62 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.63 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -3419,6 +3457,8 @@
         warehouseColorOptions: document.getElementById("warehouseColorOptions"),
         managerColorOptions: document.getElementById("managerColorOptions"),
         deliverySummaryCount: document.getElementById("deliverySummaryCount"),
+        deliveryDateRangeText: document.getElementById("deliveryDateRangeText"),
+        deliveryWarehouseDistribution: document.getElementById("deliveryWarehouseDistribution"),
         deliveryDistribution: document.getElementById("deliveryDistribution"),
         deliverySummaryBody: document.getElementById("deliverySummaryBody"),
         deliveryWarehouseFilter: document.getElementById("deliveryWarehouseFilter"),
@@ -5176,8 +5216,7 @@
           renderResults();
           scheduleLocalSave();
         } else if (!hasAnySource) {
-          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="7" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr>';
-          elements.deliverySummaryCount.textContent = "현재 작업 0건";
+          renderDeliverySummary();
           elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>자료를 선택하세요.</strong><span>주문·재고·구매·판매 자료는 불러온 즉시 읽기용 표로 확인할 수 있습니다.</span></div>';
         }
         const bothSelected = Boolean(state.orders && state.inventory);
@@ -7296,9 +7335,11 @@
           query: state.voucherSearch,
         }).filter((row) => {
           const warehouseMatches = !state.deliveryWarehouseFilter || (
-            state.deliveryWarehouseFilter === DELIVERY_UNASSIGNED_FILTER
-              ? !row.warehouse
-              : row.warehouse === state.deliveryWarehouseFilter
+            state.deliveryWarehouseFilter === DELIVERY_MIXED_FILTER
+              ? (row.warehouses || []).length > 1
+              : state.deliveryWarehouseFilter === DELIVERY_UNASSIGNED_FILTER
+                ? !(row.warehouses || []).filter(Boolean).length
+                : (row.warehouses || []).includes(state.deliveryWarehouseFilter)
           );
           const managerMatches = !state.deliveryManagerFilter || (
             state.deliveryManagerFilter === DELIVERY_MIXED_FILTER
@@ -7318,6 +7359,21 @@
           warehouse: [DELIVERY_UNASSIGNED_FILTER, DELIVERY_MIXED_FILTER].includes(state.deliveryWarehouseFilter) ? "" : state.deliveryWarehouseFilter,
           query: state.voucherSearch,
         });
+      }
+
+      function warehouseCountScopeRows(rows = deliverySummaryRows()) {
+        return window.OrderOpsVoucherWorkbench.filterVouchers(rows, {
+          fromDate: state.voucherDateFrom,
+          toDate: state.voucherDateTo,
+          manager: [DELIVERY_UNASSIGNED_FILTER, DELIVERY_MIXED_FILTER].includes(state.deliveryManagerFilter) ? "" : state.deliveryManagerFilter,
+          query: state.voucherSearch,
+        }).filter((row) => !state.deliveryManagerFilter || (
+          state.deliveryManagerFilter === DELIVERY_MIXED_FILTER
+            ? row.managerMixed
+            : state.deliveryManagerFilter === DELIVERY_UNASSIGNED_FILTER
+              ? row.managerUnassigned
+              : row.managerValues.includes(state.deliveryManagerFilter)
+        ));
       }
 
       function deliveryQuantityParts(row) {
@@ -7355,44 +7411,35 @@
           .map((part) => `<span class="orderops-amount-line">${escapeHtml(part)}</span>`).join("");
       }
 
-      function renderDeliveryWorkloadSummary(rows) {
-        const quantities = new Map();
-        let originalAmount = 0;
-        let originalCount = 0;
-        let calculatedAmount = 0;
-        let calculatedCount = 0;
-        let unknownAmountCount = 0;
-        let invalidAmountCount = 0;
-        rows.forEach((row) => {
-          (row.quantityGroups || []).forEach((quantity) => {
-            const key = quantity.unit || "__UNASSIGNED__";
-            const current = quantities.get(key) || { unit: quantity.unit || "단위 미지정", total: 0, valueCount: 0 };
-            current.total += Number(quantity.total || 0);
-            current.valueCount += Number(quantity.valueCount || 0);
-            quantities.set(key, current);
-          });
-          if (row.amountValueCount > 0) {
-            originalAmount += Number(row.amountTotal || 0);
-            originalCount += Number(row.amountValueCount || 0);
-          }
-          if (row.calculatedAmountValueCount > 0) {
-            calculatedAmount += Number(row.calculatedAmountTotal || 0);
-            calculatedCount += Number(row.calculatedAmountValueCount || 0);
-          }
-          unknownAmountCount += Number(row.amountUnknownCount || 0);
-          invalidAmountCount += Number(row.amountInvalidCount || 0);
-        });
-        const tokens = [
-          `<strong>조회 요약</strong>`,
-          `<span class="orderops-summary-token">주문서 ${formatNumber(rows.length)}건</span>`,
-          ...[...quantities.values()].filter((item) => item.valueCount > 0)
-            .map((item) => `<span class="orderops-summary-token">${escapeHtml(item.unit)} ${escapeHtml(formatNumber(item.total))}</span>`),
-        ];
-        if (originalCount > 0) tokens.push(`<span class="orderops-summary-token">원본금액 ${escapeHtml(formatNumber(originalAmount))}원</span>`);
-        if (calculatedCount > 0) tokens.push(`<span class="orderops-summary-token">계산금액 ${escapeHtml(formatNumber(calculatedAmount))}원 · 읽기용</span>`);
-        if (unknownAmountCount > 0) tokens.push(`<span class="orderops-summary-token">금액 자료 없음 ${formatNumber(unknownAmountCount)}행</span>`);
-        if (invalidAmountCount > 0) tokens.push(`<span class="orderops-summary-token">금액 확인 ${formatNumber(invalidAmountCount)}행</span>`);
-        elements.deliveryWorkloadSummary.innerHTML = tokens.join("");
+      function deliveryCompactDate(value) {
+        const normalized = normalizedSourceDate(value);
+        return normalized ? normalized.slice(5) : String(value || "미확인");
+      }
+
+      function deliveryCompactAmountText(row) {
+        const parts = [];
+        if (row.amountValueCount > 0) parts.push(`${formatNumber(row.amountTotal)}원`);
+        if (row.calculatedAmountValueCount > 0) parts.push(`계산 ${formatNumber(row.calculatedAmountTotal)}원`);
+        if (row.amountInvalidCount > 0) parts.push("금액 확인");
+        if (row.amountUnknownCount > 0) parts.push("금액 없음");
+        return parts.join("+") || "금액 없음";
+      }
+
+      function renderDeliveryWorkloadSummary(summary, hiddenSelectedCount = 0) {
+        const quantityText = summary.quantities.length
+          ? summary.quantities.map((item) => `${formatNumber(item.total)}${item.unit ? ` ${item.unit}` : ""}`).join(" / ")
+          : "0";
+        const amountParts = [];
+        if (summary.amountValueCount > 0) amountParts.push(`${formatNumber(summary.amountTotal)}원`);
+        if (summary.calculatedAmountValueCount > 0) amountParts.push(`계산 ${formatNumber(summary.calculatedAmountTotal)}원`);
+        if (summary.amountUnknownCount > 0) amountParts.push(`자료 없음 ${formatNumber(summary.amountUnknownCount)}행`);
+        if (summary.amountInvalidCount > 0) amountParts.push(`확인 ${formatNumber(summary.amountInvalidCount)}행`);
+        const hiddenText = hiddenSelectedCount ? ` · 목록 밖 ${formatNumber(hiddenSelectedCount)}건` : "";
+        elements.deliveryWorkloadSummary.innerHTML = [
+          `<strong>선택 ${formatNumber(summary.voucherCount)}건${hiddenText}</strong>`,
+          `<span>수량 ${escapeHtml(quantityText)}</span>`,
+          `<span>금액 ${escapeHtml(amountParts.join(" / ") || "0원")}</span>`,
+        ].join('<span class="orderops-summary-divider" aria-hidden="true">|</span>');
       }
 
       function normalizedSourceDate(value) {
@@ -7451,6 +7498,43 @@
         return validValue;
       }
 
+      function renderDeliveryDateRange(allRows) {
+        const availableDates = [...new Set(allRows.map((row) => normalizedSourceDate(row.date)).filter(Boolean))].sort();
+        const fromDate = state.voucherDateFrom || availableDates[0] || "";
+        const toDate = state.voucherDateTo || availableDates.at(-1) || "";
+        elements.deliveryDateRangeText.textContent = fromDate && toDate
+          ? (fromDate === toDate ? fromDate : `${fromDate} ~ ${toDate}`)
+          : fromDate || toDate || "전체 주문 기간";
+      }
+
+      function deliveryFilterCounts(rows, kind) {
+        const counts = new Map();
+        rows.forEach((row) => {
+          const values = kind === "warehouse" ? (row.warehouses || []) : (row.managerValues || []);
+          const namedValues = [...new Set(values.filter(Boolean))];
+          namedValues.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+          if (!namedValues.length || values.includes("")) {
+            counts.set(DELIVERY_UNASSIGNED_FILTER, (counts.get(DELIVERY_UNASSIGNED_FILTER) || 0) + 1);
+          }
+          if (namedValues.length > 1) {
+            counts.set(DELIVERY_MIXED_FILTER, (counts.get(DELIVERY_MIXED_FILTER) || 0) + 1);
+          }
+        });
+        return counts;
+      }
+
+      function renderDeliveryFilterChips(container, rows, kind, currentValue) {
+        const attribute = kind === "warehouse" ? "data-delivery-warehouse-filter" : "data-delivery-manager-filter";
+        const counts = deliveryFilterCounts(rows, kind);
+        const labelFor = (value) => value === DELIVERY_UNASSIGNED_FILTER ? "미지정" : value === DELIVERY_MIXED_FILTER ? "혼합" : value;
+        const entries = [...counts.entries()].sort(([left], [right]) => labelFor(left).localeCompare(labelFor(right), "ko"));
+        container.innerHTML = [
+          `<button type="button" class="orderops-distribution-chip" ${attribute}="" aria-pressed="${!currentValue}" title="전체 ${formatNumber(rows.length)}건">전체</button>`,
+          ...entries.map(([value, count]) => `<button type="button" class="orderops-distribution-chip" ${attribute}="${escapeHtml(value)}"
+            aria-pressed="${currentValue === value}" title="${escapeHtml(labelFor(value))} ${formatNumber(count)}건">${escapeHtml(labelFor(value))}</button>`),
+        ].join("");
+      }
+
       function renderDeliverySummary() {
         if (!elements.deliverySummaryBody) return;
         const allRows = deliverySummaryRows();
@@ -7470,7 +7554,7 @@
           state.deliveryWarehouseFilter,
           "전체 창고",
           namedWarehouses,
-          { unassigned: allRows.some((row) => !row.warehouse) },
+          { mixed: allRows.some((row) => (row.warehouses || []).length > 1), unassigned: allRows.some((row) => !(row.warehouses || []).filter(Boolean).length) },
         );
         state.deliveryManagerFilter = renderDeliveryFilterOptions(
           elements.deliveryManagerFilter,
@@ -7482,22 +7566,22 @@
         const rows = filteredDeliverySummaryRows(allRows);
         const filtered = Boolean(state.deliveryWarehouseFilter || state.deliveryManagerFilter || state.voucherDateFrom || state.voucherDateTo || state.voucherSearch);
         renderDeliverySourceScope(allRows);
-        renderDeliveryWorkloadSummary(rows);
+        renderDeliveryDateRange(allRows);
         elements.deliverySummaryCount.textContent = filtered
-          ? `현재 작업 ${formatNumber(allRows.length)}건 · 조회 ${formatNumber(rows.length)}건`
-          : `현재 작업 ${formatNumber(allRows.length)}건`;
-        const distribution = managerCountScopeRows(allRows).reduce((counts, row) => {
-          const value = row.managerMixed ? DELIVERY_MIXED_FILTER : row.manager || DELIVERY_UNASSIGNED_FILTER;
-          const label = row.managerMixed ? "혼합" : row.manager || "미지정";
-          if (!counts[value]) counts[value] = { label, count: 0 };
-          counts[value].count += 1;
-          return counts;
-        }, Object.create(null));
-        elements.deliveryDistribution.innerHTML = Object.entries(distribution).length
-          ? Object.entries(distribution).sort(([, a], [, b]) => a.label.localeCompare(b.label, "ko")).map(([value, item]) =>
-              `<button type="button" class="orderops-distribution-chip" data-delivery-manager-filter="${escapeHtml(value)}"
-                aria-pressed="${state.deliveryManagerFilter === value}">${escapeHtml(item.label)} ${formatNumber(item.count)}건</button>`).join("")
-          : '<span class="orderops-distribution-chip">배송 0건</span>';
+          ? `(${formatNumber(rows.length)}/${formatNumber(allRows.length)}건)`
+          : `(${formatNumber(allRows.length)}건)`;
+        renderDeliveryFilterChips(
+          elements.deliveryWarehouseDistribution,
+          warehouseCountScopeRows(allRows),
+          "warehouse",
+          state.deliveryWarehouseFilter,
+        );
+        renderDeliveryFilterChips(
+          elements.deliveryDistribution,
+          managerCountScopeRows(allRows),
+          "manager",
+          state.deliveryManagerFilter,
+        );
         elements.orderOpsManagerOptions.innerHTML = namedManagers
           .map((manager) => `<option value="${escapeHtml(manager)}"></option>`).join("");
         elements.deliverySummaryBody.innerHTML = rows.length ? rows.map((row) => `
@@ -7505,14 +7589,11 @@
             data-delivery-key="${escapeHtml(row.deliveryKey)}" data-delivery-customer-key="${escapeHtml(row.customerKey)}"
             aria-selected="${row.deliveryKey === state.selectedDeliveryKey}">
             <td><input type="checkbox" data-voucher-check="${escapeHtml(row.voucherId)}" aria-label="${escapeHtml(row.orderNumber || row.customer || "전표")} 선택" ${state.selectedVoucherIds.has(row.voucherId) ? "checked" : ""}></td>
-            <td class="orderops-voucher-date">${escapeHtml(row.date || "미확인")}</td>
-            <td title="${escapeHtml([row.orderNumber, row.customerId].filter(Boolean).join(" · "))}"><strong>${escapeHtml(row.orderNumber || "번호 미지정")}</strong><span>${escapeHtml(row.customer || "거래처 미지정")}</span></td>
-            <td class="number" aria-label="${escapeHtml(deliveryQuantityText(row))}">${deliveryQuantityMarkup(row)}</td>
-            <td class="number orderops-voucher-amount" aria-label="${escapeHtml(deliveryAmountText(row))}">${deliveryAmountMarkup(row)}</td>
+            <td class="orderops-voucher-date" title="${escapeHtml(row.date || "미확인")}">${escapeHtml(deliveryCompactDate(row.date))}</td>
+            <td class="orderops-voucher-summary" title="${escapeHtml([row.orderNumber, row.customerId, deliveryAmountText(row)].filter(Boolean).join(" · "))}">${escapeHtml(`${row.customer || "거래처 미지정"} / ${deliveryQuantityText(row)} / ${deliveryCompactAmountText(row)}`)}</td>
             <td class="orderops-voucher-note" title="${escapeHtml(row.noteLabel || "적요 없음")}">${escapeHtml(row.noteLabel || "적요 없음")}</td>
-            <td><strong>${escapeHtml(row.warehouseLabel)}</strong><span>${escapeHtml(row.managerLabel)}</span></td>
           </tr>`).join("")
-          : `<tr><td colspan="7" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
+          : `<tr><td colspan="4" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
         const selectedSummary = allRows.find((row) => row.deliveryKey === state.selectedDeliveryKey) || null;
         const selectedSummaryValue = window.OrderOpsVoucherWorkbench.summarizeSelection(allRows, state.selectedVoucherIds);
         const visibleSelectedCount = rows.filter((row) => state.selectedVoucherIds.has(row.voucherId)).length;
@@ -7525,6 +7606,7 @@
         if (selectedSummaryValue.amountInvalidCount > 0) selectedAmountParts.push(`금액 확인 ${formatNumber(selectedSummaryValue.amountInvalidCount)}행`);
         const selectedAmountText = selectedAmountParts.join(" · ");
         const hasSelection = selectedSummaryValue.voucherCount > 0;
+        renderDeliveryWorkloadSummary(selectedSummaryValue, hiddenSelectedCount);
         [elements.deliveryManagerClear, elements.deliveryWarehouseClear, elements.deliveryManagerAssignmentApply, elements.deliveryWarehouseAssignmentApply, elements.deliveryVoucherApply]
           .forEach((control) => { if (control) control.disabled = !hasSelection; });
         elements.deliveryManagerAssignmentInput.disabled = !hasSelection || elements.deliveryManagerClear.checked;
@@ -7532,7 +7614,7 @@
         elements.deliveryManagerAssignmentTitle.textContent = "일괄 정보 변경";
         elements.deliveryManagerAssignmentSummary.textContent = hasSelection
           ? `선택 ${selectedSummaryValue.voucherCount}건 · ${selectedSummaryValue.rowCount}행${hiddenSelectedCount ? ` · 현재 목록 밖 ${hiddenSelectedCount}건` : ""}${quantityText ? ` · ${quantityText}` : ""}${selectedAmountText ? ` · ${selectedAmountText}` : ""}`
-          : "전표를 체크하세요. 빈 입력은 변경하지 않으며 값 지우기는 별도로 선택합니다.";
+          : "전표를 체크하세요.";
         if (elements.deliveryVoucherCheckAll) {
           elements.deliveryVoucherCheckAll.checked = rows.length > 0 && visibleSelectedCount === rows.length;
           elements.deliveryVoucherCheckAll.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < rows.length;
@@ -7542,7 +7624,7 @@
 
       function updateDeliverySelectionContext(summary = null) {
         const selectedSummary = summary || deliverySummaryRows().find((row) => row.deliveryKey === state.selectedDeliveryKey);
-        elements.deliverySelectionContext.hidden = !selectedSummary;
+        elements.deliverySelectionContext.hidden = true;
         if (!selectedSummary) return;
         const relatedVisible = Boolean(elements.previewTable.querySelector("tr.orderops-selected-delivery-row"));
         const viewLabel = VIEW_PRESET_LABELS[state.activePreview] || "현재 보기";
@@ -7550,7 +7632,7 @@
           ? `${viewLabel}에서 연관 행 표시 중`
           : `${viewLabel}에서 검색·필터 또는 집계 범위로 숨김`;
         elements.deliverySelectionText.innerHTML = `<strong>${escapeHtml(selectedSummary.customer || "거래처 미지정")}</strong> · 주문 ${escapeHtml(selectedSummary.orderNumber || "미지정")} · 주문일 ${escapeHtml(selectedSummary.date || "미확인")} · ${escapeHtml(deliveryAmountText(selectedSummary))} · 적요 ${escapeHtml(selectedSummary.noteLabel || "없음")} · 창고 ${escapeHtml(selectedSummary.warehouse || "미지정")} · 담당 ${escapeHtml(selectedSummary.managerLabel)} · 지역 ${escapeHtml(selectedSummary.regionLabel)} · ${escapeHtml(visibility)}`;
-        elements.deliverySelectionOpenReadiness.hidden = state.activePreview === "readiness" && relatedVisible;
+        elements.deliverySelectionOpenReadiness.hidden = true;
       }
 
       function captureVoucherDraftBase(fields = ["warehouse", "manager"]) {
@@ -10883,15 +10965,18 @@
       elements.deliveryDateTo.addEventListener("change", () => { state.voucherDateTo = elements.deliveryDateTo.value; renderDeliverySummary(); });
       elements.deliveryVoucherSearch.addEventListener("input", () => { state.voucherSearch = elements.deliveryVoucherSearch.value; renderDeliverySummary(); });
       elements.deliveryFilterReset.addEventListener("click", () => {
-        state.deliveryWarehouseFilter = "";
-        state.deliveryManagerFilter = "";
-        state.deliveryRegionFilter = "";
         state.voucherDateFrom = "";
         state.voucherDateTo = "";
-        state.voucherSearch = "";
         elements.deliveryDateFrom.value = "";
         elements.deliveryDateTo.value = "";
-        elements.deliveryVoucherSearch.value = "";
+        document.getElementById("deliveryDateRangePicker")?.removeAttribute("open");
+        renderDeliverySummary();
+      });
+      elements.deliveryWarehouseDistribution.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-delivery-warehouse-filter]");
+        if (!button) return;
+        const warehouse = button.dataset.deliveryWarehouseFilter;
+        state.deliveryWarehouseFilter = state.deliveryWarehouseFilter === warehouse ? "" : warehouse;
         renderDeliverySummary();
       });
       elements.deliveryDistribution.addEventListener("click", (event) => {
