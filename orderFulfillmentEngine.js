@@ -2660,8 +2660,10 @@
         purchases: Boolean(options.purchases?.rows),
         sales: Boolean(options.sales?.rows),
       },
-      orders: ordersParsed?.rows || [],
-      inventory: inventoryParsed?.rows || [],
+      // Parsed input is immutable evidence. Workbench edits must never mutate
+      // the baseline used by a later same-revision or changed-revision merge.
+      orders: Array.isArray(ordersParsed?.rows) ? JSON.parse(JSON.stringify(ordersParsed.rows)) : [],
+      inventory: Array.isArray(inventoryParsed?.rows) ? JSON.parse(JSON.stringify(inventoryParsed.rows)) : [],
       inventoryOverrides: { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
       substitutionHistory: { schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION, events: [] },
       systemHistory: options.systemHistory && Array.isArray(options.systemHistory.events)
@@ -2797,7 +2799,7 @@
 
   function rebuildWorkspaceFromOrders(workspace) {
     const preservedWorkbench = {};
-    for (const key of ["orderQSourceRecovery", "shipmentExecutionDraft", "workbenchUnapplied", "workbenchReconciliation", "workbenchConflicts", "inventorySourceReference", "inventoryApplicationMode", "inventoryOverrideDisposition"]) {
+    for (const key of ["orderQSourceRecovery", "shipmentExecutionDraft", "workbenchPreparedShipmentDrafts", "workbenchSourceBaselines", "workbenchUnapplied", "workbenchReconciliation", "workbenchConflicts", "inventorySourceReference", "inventoryApplicationMode", "inventoryOverrideDisposition"]) {
       if (workspace[key] !== undefined) preservedWorkbench[key] = JSON.parse(JSON.stringify(workspace[key]));
     }
     const purchaseInputs = getPurchaseInputs(workspace);

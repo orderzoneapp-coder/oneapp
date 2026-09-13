@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.3.16",
+  "schemaVersion": "1.3.17",
   "updatedAt": "2026-09-13",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -467,7 +467,7 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Consume immutable ORDER Q shipment candidates, manage inventory-backed shipment work, and own append-only shipment confirmations, holds, reversals, and review-required results.",
+      "purpose": "Consume immutable single or multi-document ORDER Q shipment candidates, preserve active operator work through revision-aware source reconciliation, manage inventory-backed shipment work, and own append-only shipment confirmations, holds, reversals, and review-required results.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [

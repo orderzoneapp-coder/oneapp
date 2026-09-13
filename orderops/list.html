@@ -16,11 +16,11 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260913-voucher-patch"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260913-acceptance-fix"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="source-coordinator.js?v=20260913-three-area"></script>
-  <script src="voucher-workbench.js?v=20260913-three-area"></script>
-  <script src="workbench-ui.js?v=20260913-three-area"></script>
+  <script src="source-coordinator.js?v=20260913-acceptance-fix"></script>
+  <script src="voucher-workbench.js?v=20260913-acceptance-fix"></script>
+  <script src="workbench-ui.js?v=20260913-acceptance-fix"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -2705,7 +2705,7 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="./workbench-v12.css?v=4">
+  <link rel="stylesheet" href="./workbench-v12.css?v=5">
 </head>
 <body>
   <header class="global-header orderops-workbench-header" data-nexus-app-header="orderops">
@@ -2779,10 +2779,17 @@
         </div>
         <p class="orderq-source-picker__notice" id="orderQSourceNotice" role="status" aria-live="polite">저장 주문을 찾으려면 목록 새로고침을 누르세요. 창고재고 Excel은 계속 필요합니다.</p>
       </section></div>
-          <div class="orderops-prepare-actions" role="toolbar" aria-label="Excel 파일 준비 작업"><button type="button" id="prepareFilesButton"><span aria-hidden="true">＋</span> Excel 파일</button><button type="button" id="prepareRemoveButton">준비 제거</button></div>
+          <div class="orderops-prepare-source-tools orderops-header-menu"><button id="orderOpsHeaderOrdersButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderOrdersMenu" aria-expanded="false">기존 자료·복구 ▾</button>
+            <div class="orderops-header-menu__items" id="orderOpsHeaderOrdersMenu" role="menu" aria-label="자료 준비 보조 경로" hidden=""><button id="orderOpsHeaderOrderQButton" type="button">ORDER Q 저장 주문 선택</button><button class="header-link" id="inventoryMenuButton" type="button" aria-label="재고 업로드·공유 저장·공통 재고 불러오기" aria-expanded="false" aria-controls="inventoryMenu">
+              <span aria-hidden="true">▤</span><span>재고</span>
+            </button><button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">Cloud 완료본 불러오기</button><button class="header-link" id="headerRestoreButton" type="button" aria-label="최신 정상 임시저장 바로 복구">
+              <span aria-hidden="true">↻</span><span>이전복구</span>
+            </button></div>
+          </div>
+          <div class="orderops-prepare-actions" role="toolbar" aria-label="준비 파일 관리"><button type="button" id="prepareRemoveButton">준비 제거</button></div>
           <input type="file" id="prepareFilesInput" accept=".xlsx,.xls" multiple="" hidden="">
           <div id="prepareDropSurface" class="orderops-prepare-surface" aria-label="Excel 파일 끌어놓기 · 준비 및 매핑">
-            <div class="orderops-prepare-drop-hint"><strong>Excel 파일을 끌어다 놓으세요</strong><span>주문·재고·구매·판매 자료를 준비합니다.<br>유형과 열을 확인한 뒤 직접 적용하세요.</span></div>
+            <div class="orderops-prepare-drop-hint"><button type="button" id="prepareFilesButton"><span aria-hidden="true">＋</span> Excel 파일 선택</button><strong>또는 Excel 파일을 끌어다 놓으세요</strong><span>주문·재고·구매·판매 자료를 준비합니다.<br>유형과 열을 확인한 뒤 직접 적용하세요.</span></div>
             <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
             <div id="prepareFileEditor"></div>
           </div>
@@ -2921,8 +2928,7 @@
           <strong id="localSaveStatus">임시저장 준비</strong>
           <span class="storage-status-divider">·</span>
           <span id="cloudStatus">완료본 저장 · 미연결</span>
-        </div></div><div class="orderops-workbar-next"><div class="orderops-header-menu"><button id="orderOpsHeaderOrdersButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderOrdersMenu" aria-expanded="false">자료 불러오기 ▾</button>
-          </div><button id="shipmentOpenButton" type="button" hidden="">출고확정</button><button class="header-link header-output-button" id="printButton" type="button" aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled="">
+        </div></div><div class="orderops-workbar-next"><button id="shipmentOpenButton" type="button" hidden="">출고확정</button><button class="header-link header-output-button" id="printButton" type="button" aria-label="현재 보이는 화면 인쇄 F9" aria-keyshortcuts="F9" disabled="">
         <span aria-hidden="true">▣</span><span>화면인쇄 F9</span>
       </button><button class="header-link header-output-button" id="downloadButton" type="button" aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled="">
         <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
@@ -2952,9 +2958,9 @@
           </div>
           <div class="orderops-side-table-wrap">
             <table class="orderops-side-table orderops-delivery-table" aria-label="주문서별 배송 배정 요약">
-              <colgroup><col style="width:32px"><col style="width:38%"><col style="width:25%"><col></colgroup>
-              <thead><tr><th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>전표·거래처</th><th>수량</th><th>창고·담당</th></tr></thead>
-              <tbody id="deliverySummaryBody"><tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
+              <colgroup><col style="width:32px"><col style="width:92px"><col style="width:150px"><col style="width:105px"><col style="width:130px"><col style="width:180px"><col style="width:145px"></colgroup>
+              <thead><tr><th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>주문일</th><th>전표·거래처</th><th>수량</th><th>금액</th><th>적요</th><th>창고·담당</th></tr></thead>
+              <tbody id="deliverySummaryBody"><tr><td colspan="7" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr></tbody>
             </table>
           </div>
           <div class="orderops-workload-summary" id="deliveryWorkloadSummary" aria-live="polite">
@@ -2973,16 +2979,11 @@
           <div id="inventoryInspectorBody"></div>
           <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
         </aside></div><footer class="page-footer">
-      <span>ORDER Q v1.60 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.61 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
 
-  <div class="orderops-header-menu__items" id="orderOpsHeaderOrdersMenu" role="menu" aria-label="주문서 불러오기 경로" hidden=""><button id="orderOpsHeaderOrderQButton" type="button">ORDER Q 저장 주문 선택</button><button class="header-link" id="inventoryMenuButton" type="button" aria-label="재고 업로드·공유 저장·공통 재고 불러오기" aria-expanded="false" aria-controls="inventoryMenu">
-        <span aria-hidden="true">▤</span><span>재고</span>
-      </button><button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">Cloud 완료본 불러오기</button><button class="header-link" id="headerRestoreButton" type="button" aria-label="최신 정상 임시저장 바로 복구">
-        <span aria-hidden="true">↻</span><span>이전복구</span>
-      </button></div>
   <div class="orderops-header-menu__items" id="orderOpsHeaderMoreMenu" role="menu" aria-label="출고관리 더보기" hidden=""><button class="execution-button session-refresh header-link" id="refreshButton" type="button" aria-label="현재 파일과 분석 결과 새로고침">현재 자료 새로고침</button><a class="header-link header-smart-input" id="smartInputButton" href="../smartinput/index.html" aria-label="스마트 전표입력 화면 열기 F4" aria-keyshortcuts="F4">
         <span aria-hidden="true">✎</span><span>스마트입력 F4</span>
       </a></div>
@@ -4302,30 +4303,31 @@
       function restorePreviewInputState(workspace) {
         const ordersSource = workspace?.sourceFiles?.orders;
         const inventorySource = workspace?.sourceFiles?.inventory;
+        const ordersBaseline = workspace?.workbenchSourceBaselines?.orders;
         state.orders = ordersSource ? {
           kind: "orders",
-          fileName: ordersSource.fileName,
-          sheetName: ordersSource.sheetName,
-          fileHash: ordersSource.sha256,
-          headerRowIndex: ordersSource.headerRowIndex,
-          rowCount: workspace.orders?.length || 0,
-          rows: workspace.orders || [],
+          fileName: ordersBaseline?.fileName || ordersSource.fileName,
+          sheetName: ordersBaseline?.sheetName || ordersSource.sheetName,
+          fileHash: ordersBaseline?.fileHash || ordersSource.sha256,
+          headerRowIndex: ordersBaseline?.headerRowIndex ?? ordersSource.headerRowIndex,
+          rowCount: ordersBaseline?.rows?.length ?? workspace.orders?.length ?? 0,
+          rows: JSON.parse(JSON.stringify(ordersBaseline?.rows || workspace.orders || [])),
           errors: [], warnings: [], missingColumns: [],
-          sourceMatrix: ordersSource.matrix,
-          productCodeColumnIndex: ordersSource.productCodeColumnIndex,
-          headerMapping: ordersSource.headerMapping,
-          explicitMapping: ordersSource.explicitMapping,
-          sourceEvidence: ordersSource.sourceEvidence,
-          sourceKind: ordersSource.sourceKind,
-          sourceSchemaVersion: ordersSource.sourceSchemaVersion,
-          orderId: ordersSource.orderId,
-          orderNo: ordersSource.orderNo,
-          orderRevision: ordersSource.orderRevision,
-          orderSnapshotHash: ordersSource.orderSnapshotHash,
-          orderUpdatedAt: ordersSource.orderUpdatedAt,
-          sourceRegistry: ordersSource.sourceRegistry,
-          sourceDocuments: ordersSource.sourceDocuments,
-          coverage: ordersSource.coverage,
+          sourceMatrix: ordersBaseline?.sourceMatrix || ordersSource.matrix,
+          productCodeColumnIndex: ordersBaseline?.productCodeColumnIndex ?? ordersSource.productCodeColumnIndex,
+          headerMapping: ordersBaseline?.headerMapping || ordersSource.headerMapping,
+          explicitMapping: ordersBaseline?.explicitMapping || ordersSource.explicitMapping,
+          sourceEvidence: ordersBaseline?.sourceEvidence || ordersSource.sourceEvidence,
+          sourceKind: ordersBaseline?.sourceKind || ordersSource.sourceKind,
+          sourceSchemaVersion: ordersBaseline?.sourceSchemaVersion || ordersSource.sourceSchemaVersion,
+          orderId: ordersBaseline?.orderId || ordersSource.orderId,
+          orderNo: ordersBaseline?.orderNo || ordersSource.orderNo,
+          orderRevision: ordersBaseline?.orderRevision ?? ordersSource.orderRevision,
+          orderSnapshotHash: ordersBaseline?.orderSnapshotHash || ordersSource.orderSnapshotHash,
+          orderUpdatedAt: ordersBaseline?.orderUpdatedAt || ordersSource.orderUpdatedAt,
+          sourceRegistry: ordersBaseline?.sourceRegistry || ordersSource.sourceRegistry,
+          sourceDocuments: ordersBaseline?.sourceDocuments || ordersSource.sourceDocuments,
+          coverage: ordersBaseline?.coverage || ordersSource.coverage,
         } : null;
         state.inventory = inventorySource ? {
           kind: "inventory",
@@ -5174,7 +5176,7 @@
           renderResults();
           scheduleLocalSave();
         } else if (!hasAnySource) {
-          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="4" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr>';
+          elements.deliverySummaryBody.innerHTML = '<tr><td colspan="7" class="empty-table-cell">주문서를 불러오면 목록이 표시됩니다.</td></tr>';
           elements.deliverySummaryCount.textContent = "현재 작업 0건";
           elements.previewTable.innerHTML = '<div class="orderops-empty-workspace"><strong>자료를 선택하세요.</strong><span>주문·재고·구매·판매 자료는 불러온 즉시 읽기용 표로 확인할 수 있습니다.</span></div>';
         }
@@ -7348,6 +7350,11 @@
         return parts.join(" / ") || "금액 자료 없음";
       }
 
+      function deliveryAmountMarkup(row) {
+        return deliveryAmountText(row).split(" / ")
+          .map((part) => `<span class="orderops-amount-line">${escapeHtml(part)}</span>`).join("");
+      }
+
       function renderDeliveryWorkloadSummary(rows) {
         const quantities = new Map();
         let originalAmount = 0;
@@ -7498,16 +7505,25 @@
             data-delivery-key="${escapeHtml(row.deliveryKey)}" data-delivery-customer-key="${escapeHtml(row.customerKey)}"
             aria-selected="${row.deliveryKey === state.selectedDeliveryKey}">
             <td><input type="checkbox" data-voucher-check="${escapeHtml(row.voucherId)}" aria-label="${escapeHtml(row.orderNumber || row.customer || "전표")} 선택" ${state.selectedVoucherIds.has(row.voucherId) ? "checked" : ""}></td>
+            <td class="orderops-voucher-date">${escapeHtml(row.date || "미확인")}</td>
             <td title="${escapeHtml([row.orderNumber, row.customerId].filter(Boolean).join(" · "))}"><strong>${escapeHtml(row.orderNumber || "번호 미지정")}</strong><span>${escapeHtml(row.customer || "거래처 미지정")}</span></td>
             <td class="number" aria-label="${escapeHtml(deliveryQuantityText(row))}">${deliveryQuantityMarkup(row)}</td>
+            <td class="number orderops-voucher-amount" aria-label="${escapeHtml(deliveryAmountText(row))}">${deliveryAmountMarkup(row)}</td>
+            <td class="orderops-voucher-note" title="${escapeHtml(row.noteLabel || "적요 없음")}">${escapeHtml(row.noteLabel || "적요 없음")}</td>
             <td><strong>${escapeHtml(row.warehouseLabel)}</strong><span>${escapeHtml(row.managerLabel)}</span></td>
           </tr>`).join("")
-          : `<tr><td colspan="4" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
+          : `<tr><td colspan="7" class="empty-table-cell">${allRows.length ? "조건에 맞는 주문서가 없습니다." : "주문서를 불러오면 목록이 표시됩니다."}</td></tr>`;
         const selectedSummary = allRows.find((row) => row.deliveryKey === state.selectedDeliveryKey) || null;
         const selectedSummaryValue = window.OrderOpsVoucherWorkbench.summarizeSelection(allRows, state.selectedVoucherIds);
         const visibleSelectedCount = rows.filter((row) => state.selectedVoucherIds.has(row.voucherId)).length;
         const hiddenSelectedCount = Math.max(0, selectedSummaryValue.voucherCount - visibleSelectedCount);
         const quantityText = selectedSummaryValue.quantities.map((item) => `${formatNumber(item.total)} ${item.unit || "단위 미지정"}`).join(" / ");
+        const selectedAmountParts = [];
+        if (selectedSummaryValue.amountValueCount > 0) selectedAmountParts.push(`원본금액 ${formatNumber(selectedSummaryValue.amountTotal)}원`);
+        if (selectedSummaryValue.calculatedAmountValueCount > 0) selectedAmountParts.push(`계산금액 ${formatNumber(selectedSummaryValue.calculatedAmountTotal)}원 · 읽기용`);
+        if (selectedSummaryValue.amountUnknownCount > 0) selectedAmountParts.push(`금액 자료 없음 ${formatNumber(selectedSummaryValue.amountUnknownCount)}행`);
+        if (selectedSummaryValue.amountInvalidCount > 0) selectedAmountParts.push(`금액 확인 ${formatNumber(selectedSummaryValue.amountInvalidCount)}행`);
+        const selectedAmountText = selectedAmountParts.join(" · ");
         const hasSelection = selectedSummaryValue.voucherCount > 0;
         [elements.deliveryManagerClear, elements.deliveryWarehouseClear, elements.deliveryManagerAssignmentApply, elements.deliveryWarehouseAssignmentApply, elements.deliveryVoucherApply]
           .forEach((control) => { if (control) control.disabled = !hasSelection; });
@@ -7515,7 +7531,7 @@
         elements.deliveryWarehouseAssignmentInput.disabled = !hasSelection || elements.deliveryWarehouseClear.checked;
         elements.deliveryManagerAssignmentTitle.textContent = "일괄 정보 변경";
         elements.deliveryManagerAssignmentSummary.textContent = hasSelection
-          ? `선택 ${selectedSummaryValue.voucherCount}건 · ${selectedSummaryValue.rowCount}행${hiddenSelectedCount ? ` · 현재 목록 밖 ${hiddenSelectedCount}건` : ""}${quantityText ? ` · ${quantityText}` : ""}`
+          ? `선택 ${selectedSummaryValue.voucherCount}건 · ${selectedSummaryValue.rowCount}행${hiddenSelectedCount ? ` · 현재 목록 밖 ${hiddenSelectedCount}건` : ""}${quantityText ? ` · ${quantityText}` : ""}${selectedAmountText ? ` · ${selectedAmountText}` : ""}`
           : "전표를 체크하세요. 빈 입력은 변경하지 않으며 값 지우기는 별도로 선택합니다.";
         if (elements.deliveryVoucherCheckAll) {
           elements.deliveryVoucherCheckAll.checked = rows.length > 0 && visibleSelectedCount === rows.length;
@@ -7533,7 +7549,7 @@
         const visibility = relatedVisible
           ? `${viewLabel}에서 연관 행 표시 중`
           : `${viewLabel}에서 검색·필터 또는 집계 범위로 숨김`;
-        elements.deliverySelectionText.innerHTML = `<strong>${escapeHtml(selectedSummary.customer || "거래처 미지정")}</strong> · 주문 ${escapeHtml(selectedSummary.orderNumber || "미지정")} · 창고 ${escapeHtml(selectedSummary.warehouse || "미지정")} · 담당 ${escapeHtml(selectedSummary.managerLabel)} · 지역 ${escapeHtml(selectedSummary.regionLabel)} · ${escapeHtml(visibility)}`;
+        elements.deliverySelectionText.innerHTML = `<strong>${escapeHtml(selectedSummary.customer || "거래처 미지정")}</strong> · 주문 ${escapeHtml(selectedSummary.orderNumber || "미지정")} · 주문일 ${escapeHtml(selectedSummary.date || "미확인")} · ${escapeHtml(deliveryAmountText(selectedSummary))} · 적요 ${escapeHtml(selectedSummary.noteLabel || "없음")} · 창고 ${escapeHtml(selectedSummary.warehouse || "미지정")} · 담당 ${escapeHtml(selectedSummary.managerLabel)} · 지역 ${escapeHtml(selectedSummary.regionLabel)} · ${escapeHtml(visibility)}`;
         elements.deliverySelectionOpenReadiness.hidden = state.activePreview === "readiness" && relatedVisible;
       }
 

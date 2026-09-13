@@ -21,7 +21,9 @@ const log=console.log;console.log=(...args)=>{evidenceRun.logs.push(args.map(val
 let baselineMode = false;
 const baselineFiles = performanceMode ? new Map(['orderops/list.html','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,execFileSync('git',['show',`a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c:${path}`],{cwd:root,encoding:'utf8'})])) : new Map();
 const perfHook = 'globalThis.__perf={state,renderResults,renderPreview}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)';
-const html = readFileSync(join(root, 'orderops/list.html'), 'utf8').replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)', 'globalThis.__ops={state,workbench,renderResults,refreshInputState,applyLatestOrderQSource,restorePreviewInputState,loadOrderQSource,flushOrderOpsBeforeWorkspaceLeave,performAnalysis,refreshShipmentExecution,commitCurrentWorkspaceInputs,saveCloudPlan,loadCloudPlan}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)');
+const html = readFileSync(join(root, 'orderops/list.html'), 'utf8')
+  .replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)', 'globalThis.__ops={state,workbench,renderResults,refreshInputState,applyLatestOrderQSource,restorePreviewInputState,loadOrderQSource,flushOrderOpsBeforeWorkspaceLeave,performAnalysis,refreshShipmentExecution,commitCurrentWorkspaceInputs,saveCloudPlan,loadCloudPlan}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)')
+  .replace('buildRecord: buildRecoveryRecord, putRecord: putRecoveryRecord, readRecord: readRecoveryRecord,', 'buildRecord: buildRecoveryRecord, putRecord: (...args) => globalThis.__testPutRecord ? globalThis.__testPutRecord(...args) : putRecoveryRecord(...args), readRecord: readRecoveryRecord,');
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.svg':'image/svg+xml' };
 const server = createServer((req, res) => {
   const requestUrl = new URL(req.url, 'http://localhost');
@@ -111,6 +113,10 @@ try {
   assert.equal(await ev('document.querySelectorAll("[data-orderops-api-source]").length'),4);
   assert.deepEqual(await ev(`[...document.querySelectorAll('.orderops-workbench-v12 > [data-nexus-pane]')].map(pane=>pane.getAttribute('aria-label'))`),['자료 준비','현재 작업','전표관리']);
   assert.equal(await ev('document.querySelector("#orderOpsCurrentViewTitle").textContent'),'현재 주문현황');
+  assert.equal(await ev('Boolean(document.querySelector("#prepareDropSurface #prepareFilesButton"))'),true,'Excel chooser belongs to drop/parser surface');
+  assert.equal(await ev('Boolean(document.querySelector("#orderOpsFilePreparePane #orderOpsHeaderOrdersButton"))'),true,'auxiliary load entry belongs to left pane');
+  assert.equal(await ev('Boolean(document.querySelector(".orderops-bottom-workbar #orderOpsHeaderOrdersButton"))'),false,'center bottom bar has no duplicate load menu');
+  assert.deepEqual(await ev(`[...document.querySelectorAll('.orderops-delivery-table thead th')].map(cell=>cell.textContent.trim())`),['','주문일','전표·거래처','수량','금액','적요','창고·담당']);
   await ev(`window.confirm=()=>true;window.alert=()=>{};`);
   // Real File/SheetJS/explicit mapping/apply UI. Test hook exists only in this
   // local server's response; shipped application has no test state endpoint.
@@ -148,6 +154,13 @@ try {
   await click('[data-inspector-apply]');
   assert.equal(await ev('__ops.state.workspace.orders[0].note1Original'),'보존할 직원 입력');
   assert.equal(await ev('__ops.state.workspace.orders[0].noteOriginal'),'일반');
+  const multiAcceptance=await ev(readFileSync(join(root,'scripts/fixtures/orderops-multi-reapply-acceptance.js'),'utf8'));
+  console.log('PASS independent acceptance F-01/F-02/F-03/F-04 browser and storage retry',JSON.stringify(multiAcceptance));
+  await send('Page.navigate',{url:origin+'/orderops/list.html'});
+  await until(()=>ev('Boolean(globalThis.__ops?.state.db && globalThis.__ops.state.recoveryRecord)'),'multi-document re-entry recovery discovery');
+  await click('#restoreButton');
+  await until(()=>ev(`globalThis.__ops?.state.workspace?.workbenchReconciliation?.schemaVersion==='orderops-prepared-source-reconciliation/v1'`),'multi-document accepted recovery after reload');
+  assert.deepEqual(await ev(`(()=>{const b=__ops.state.workspace.orders.find(row=>row.orderId==='ACCEPT-B');return {manager:b.manager,warehouse:b.warehouse,purchase:ShippingManagementEngine.getPurchaseInputs(__ops.state.workspace)['P-B'],draft:__ops.state.workspace.workbenchPreparedShipmentDrafts.values['ACCEPT-B-LINE'].reason};})()`),{manager:'작업 담당 B',warehouse:'작업 창고 B',purchase:'보존 구매처',draft:'보존 출고 초안'},'accepted multi-document work must survive browser re-entry');
   const layout=[];
   for(const width of [1920,1366,1024,819,640,639,390]) {
     await send('Emulation.setDeviceMetricsOverride',{width,height:768,deviceScaleFactor:1,mobile:false});await wait(120);

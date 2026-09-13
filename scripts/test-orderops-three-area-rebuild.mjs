@@ -56,6 +56,11 @@ assert.equal(amountList[0].calculatedAmountTotal, 2100, 'blank source amount exp
 assert.equal(amountList[0].calculatedAmountValueCount, 1, 'calculated amount count remains explicit');
 assert.equal(amountList[0].amountUnknownCount, 1, 'missing calculation inputs remain unknown');
 assert.equal(amountList[0].amountInvalidCount, 1, 'invalid source amount remains invalid');
+const amountSelection = vouchers.summarizeSelection(amountList, new Set([amountList[0].voucherId]));
+assert.equal(amountSelection.amountTotal, 900, 'selected original amount remains separately totaled');
+assert.equal(amountSelection.calculatedAmountTotal, 2100, 'selected calculated amount remains separately totaled');
+assert.equal(amountSelection.amountUnknownCount, 1, 'selected unknown amount rows remain explicit');
+assert.equal(amountSelection.amountInvalidCount, 1, 'selected invalid amount rows remain explicit');
 const excelParsed = engine.parseOrderWorkbook({
   fileName: 'renamed.xlsx',
   sheetName: '주문',
@@ -95,6 +100,56 @@ const filtered = vouchers.filterVouchers(list, { query: 'B-001', fromDate: '2026
 assert.equal(filtered.length, 1);
 assert.equal(vouchers.summarizeSelection(list, selected).voucherCount, 1);
 
+engine.setPurchaseValue(workspace, 'P-1', '보존 구매처');
+workspace.orders[1].manager = '작업 담당 B';
+workspace.orders[1].warehouse = '작업 창고 B';
+assert.equal(combined.parsed.rows[1].manager, '담당 B', 'work edits must not mutate immutable parsed-source evidence');
+const shipmentDraft = { 'ORDER-B-LINE': { shippedQuantity: '2', reason: '보존 출고 초안' } };
+const identical = coordinator.reconcilePreparedOrderWork({
+  previousParsed: combined.parsed,
+  nextParsed: JSON.parse(JSON.stringify(combined.parsed)),
+  workspace,
+  draft: shipmentDraft,
+  purchaseInputs: { 'P-1': '보존 구매처' },
+});
+assert.equal(identical.comparison.same, true, 'same company/document/revision/hash is idempotent');
+assert.equal(identical.conflicts.length, 0);
+assert.equal(identical.parsedOrders.rows[1].manager, '작업 담당 B');
+assert.deepEqual(identical.draft['ORDER-B-LINE'], shipmentDraft['ORDER-B-LINE']);
+
+const aRevision2 = {
+  ...a,
+  orderRevision: 2,
+  snapshotHash: 'd'.repeat(64),
+  candidateLines: a.candidateLines.map(line => ({ ...line, shippableQuantity: 4 })),
+};
+const changedCombined = coordinator.combineOrderSources([
+  { status: 'READY', snapshot: aRevision2, parsedOrders: mapOrderQSnapshotToParsedOrders(aRevision2) },
+  { status: 'READY', snapshot: b, parsedOrders: mapOrderQSnapshotToParsedOrders(b) },
+], { fileHash: '9'.repeat(64) });
+const reconciled = coordinator.reconcilePreparedOrderWork({
+  previousParsed: combined.parsed,
+  nextParsed: changedCombined.parsed,
+  workspace,
+  draft: shipmentDraft,
+  purchaseInputs: { 'P-1': '보존 구매처' },
+});
+assert.deepEqual(reconciled.comparison.changed, ['ONEAPP:order:ORDER-A']);
+assert.deepEqual(reconciled.comparison.unchanged, ['ONEAPP:order:ORDER-B']);
+assert.equal(reconciled.parsedOrders.rows[0].quantity, 4, 'changed document receives latest source quantity');
+assert.equal(reconciled.parsedOrders.rows[1].manager, '작업 담당 B', 'unchanged document keeps manager work');
+assert.equal(reconciled.parsedOrders.rows[1].warehouse, '작업 창고 B', 'unchanged document keeps warehouse work');
+assert.equal(reconciled.purchaseInputs['P-1'], '보존 구매처', 'compatible purchase input survives reconciliation');
+assert.deepEqual(reconciled.draft['ORDER-B-LINE'], shipmentDraft['ORDER-B-LINE'], 'compatible shipment draft survives reconciliation');
+const conflictedWorkspace = JSON.parse(JSON.stringify(workspace));
+conflictedWorkspace.orders[0].quantity = 7;
+const conflicted = coordinator.reconcilePreparedOrderWork({
+  previousParsed: combined.parsed,
+  nextParsed: changedCombined.parsed,
+  workspace: conflictedWorkspace,
+});
+assert.ok(conflicted.conflicts.some(item => item.field === 'quantity'), 'same-field source/work changes require a decision');
+
 const activity = coordinator.activitySnapshotToParsed({
   status: 'READY', fromDate: '2026-09-12', toDate: '2026-09-13', rows: [{
     id: 'PURCHASE-1', companyId: 'ONEAPP', voucherNo: 'P-001', date: '2026-09-13', customerName: '구매처', items: [{ lineId: 'PL-1', code: 'P-1', name: '상품', quantity: 4, unit: 'EA' }],
@@ -112,8 +167,10 @@ assert.deepEqual(recovery.ui.selectedVoucherIds, [...selected]);
 assert.equal(recovery.ui.voucherDraft.manager, '대기 담당');
 
 for (const contract of [
-  'source-coordinator.js?v=20260913-three-area',
-  'voucher-workbench.js?v=20260913-three-area',
+  'source-coordinator.js?v=20260913-acceptance-fix',
+  'voucher-workbench.js?v=20260913-acceptance-fix',
+  'workbench-ui.js?v=20260913-acceptance-fix',
+  '../orderFulfillmentEngine.js?v=20260913-acceptance-fix',
   'data-orderops-api-source="orders"',
   'data-orderops-api-source="purchases"',
   'data-orderops-api-source="sales"',
@@ -132,6 +189,18 @@ for (const contract of [
   'workbench.runReplacement(',
   'const candidate = JSON.parse(JSON.stringify(base))',
 ]) assert.ok(html.includes(contract), `missing three-area UI contract: ${contract}`);
+const dropStart = html.indexOf('id="prepareDropSurface"');
+const chooseButton = html.indexOf('id="prepareFilesButton"');
+const editorStart = html.indexOf('id="prepareFileEditor"');
+assert.ok(dropStart >= 0 && chooseButton > dropStart && chooseButton < editorStart, 'Excel chooser must be inside the drop/parser surface');
+const leftPane = html.slice(html.indexOf('id="orderOpsFilePreparePane"'), html.indexOf('data-nexus-pane="center"'));
+assert.ok(leftPane.includes('id="orderOpsHeaderOrdersButton"'), 'auxiliary load/restore entry belongs to the left source pane');
+const bottomBar = html.slice(html.indexOf('class="orderops-bottom-workbar"'), html.indexOf('</footer>', html.indexOf('class="orderops-bottom-workbar"')));
+assert.ok(!bottomBar.includes('orderOpsHeaderOrdersButton'), 'center bottom bar must not retain a duplicate load menu');
+for (const heading of ['주문일', '금액', '적요']) assert.ok(html.includes(`<th>${heading}</th>`), `missing delivery heading: ${heading}`);
+for (const contract of ['deliveryAmountMarkup', 'selectedSummaryValue.amountTotal', 'selectedSummaryValue.calculatedAmountTotal', 'colspan="7"']) {
+  assert.ok(html.includes(contract), `missing delivery amount contract: ${contract}`);
+}
 assert.ok(!html.includes('normalizeOrderOpsWorkspaceDom'), 'runtime DOM rearrangement path must be removed');
 for (const contract of ['Math.min(62', 'Math.min(4', "status: partial ? 'PARTIAL'", 'failureDates']) {
   assert.ok(activityAdapter.includes(contract), `missing bounded voucher activity contract: ${contract}`);

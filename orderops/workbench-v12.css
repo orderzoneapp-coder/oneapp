@@ -118,8 +118,8 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button { min-height: 32px; padding: 6px 10px; border: 1px solid var(--ops-border); border-radius: 8px; color: var(--ops-text); background: transparent; cursor: pointer; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button:hover:not(:disabled) { background: var(--nexus-ui-panel-subtle); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button:disabled { opacity: .5; cursor: not-allowed; }
-  .orderops-prepare-actions { display: flex; gap: 8px; }
-  .orderops-prepare-actions #prepareFilesButton { flex: 1; font-weight: 700; }
+  .orderops-prepare-source-tools > button { width: 100%; font-weight: 700; }
+  .orderops-prepare-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .orderops-api-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .orderops-api-scope label { display: grid; gap: 3px; min-width: 0; color: var(--ops-muted); font-size: 10px; }
   .orderops-api-scope label:last-child { grid-column: 1 / -1; }
@@ -141,10 +141,11 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   #prepareFileEditor pre { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
   .orderops-prepare-surface { flex: 1 1 0; min-height: 80px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--ops-border); border-radius: 9px; background: var(--ops-input); scrollbar-width: thin; }
   .orderops-prepare-drop-hint { display: grid; gap: 9px; padding: 18px 14px; color: var(--ops-muted); font-size: 13px; line-height: 1.7; }
+  html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-prepare-drop-hint #prepareFilesButton { width: 100%; border-color: var(--ops-action); color: var(--ops-text); font-weight: 750; }
   .orderops-prepare-drop-hint strong { font-weight: 500; }
   .orderops-prepare-drop-hint span { font-size: 12px; }
   .has-prepared-files .orderops-prepare-drop-hint { padding: 10px 12px; border-bottom: 1px solid var(--ops-border); font-size: 11px; }
-  .has-prepared-files .orderops-prepare-drop-hint span { display: none; }
+  .has-prepared-files .orderops-prepare-drop-hint > span { display: none; }
   .is-file-dragover .orderops-prepare-surface { border-color: var(--ops-action); box-shadow: inset 0 0 0 2px var(--ops-action); background: color-mix(in srgb, var(--ops-action) 12%, var(--ops-input)); }
   .is-file-dragover .orderops-prepare-drop-hint strong { color: var(--ops-text); font-weight: 700; }
   .orderops-prepare-file-list { display: grid; gap: 3px; padding: 6px; }
@@ -183,8 +184,11 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-current-view-title { flex: 0 0 auto; margin: 0; padding: 9px 12px 5px; color: var(--ops-text); font-size: 15px; font-weight: 800; }
   .orderops-query-panel .orderops-delivery-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .orderops-query-panel .orderops-delivery-search, .orderops-query-panel .orderops-delivery-filter-reset { grid-column: 1 / -1; }
+  .orderops-delivery-table { min-width: 834px; }
   .orderops-delivery-table th:first-child, .orderops-delivery-table td:first-child { width: 32px; text-align: center; }
   .orderops-delivery-table td > span { display: block; margin-top: 2px; color: var(--ops-muted); font-size: 10px; }
+  .orderops-delivery-table .orderops-voucher-note { white-space: normal; overflow-wrap: anywhere; }
+  .orderops-delivery-table .orderops-voucher-amount span { white-space: nowrap; }
   .orderops-delivery-table input[type="checkbox"], .orderops-manager-assignment input[type="checkbox"] { width: 15px !important; min-height: 15px !important; padding: 0 !important; accent-color: var(--ops-action); }
   .orderops-manager-assignment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 10px; }
   .orderops-manager-assignment > div, .orderops-manager-assignment > label:not(.orderops-clear-value), #deliveryVoucherApply { grid-column: 1 / -1; }

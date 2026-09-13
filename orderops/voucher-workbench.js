@@ -65,6 +65,8 @@
         rowIds: [],
         sourceRowNumbers: [],
         productCodes: [],
+        notes: new Set(),
+        note1s: new Set(),
         quantityGroups: new Map(),
         amountTotal: 0,
         amountValueCount: 0,
@@ -81,6 +83,8 @@
       voucher.rowIds.push(rowId(row, index));
       voucher.sourceRowNumbers.push(Number(row.sourceRowNumber) || 0);
       voucher.productCodes.push(text(row.productCode));
+      if (text(row.noteOriginal || row.note)) voucher.notes.add(text(row.noteOriginal || row.note));
+      if (text(row.note1Original || row.note1)) voucher.note1s.add(text(row.note1Original || row.note1));
       voucher.rowCount += 1;
       const unit = text(row.sourceUnit);
       const key = unit || '__UNASSIGNED__';
@@ -110,6 +114,8 @@
     return [...groups.values()].map(voucher => {
       const warehouses = [...voucher.warehouses];
       const managers = [...voucher.managers];
+      const notes = [...voucher.notes];
+      const note1s = [...voucher.note1s];
       return Object.freeze({
         ...voucher,
         warehouses,
@@ -118,6 +124,11 @@
         managers,
         manager: managers.length === 1 ? managers[0] : '',
         managerLabel: managers.length > 1 ? `혼합(${managers.map(value => value || '미지정').join(', ')})` : managers[0] || '미지정',
+        notes,
+        note1s,
+        note: notes.join(' / '),
+        note1: note1s.join(' / '),
+        noteLabel: [...notes, ...note1s].join(' / '),
         quantityGroups: [...voucher.quantityGroups.values()].map(item => ({ ...item, total: round(item.total) })),
         amountTotal: voucher.amountValueCount > 0 ? voucher.amountTotal : null,
         calculatedAmountTotal: voucher.calculatedAmountValueCount > 0 ? voucher.calculatedAmountTotal : null,
@@ -136,7 +147,7 @@
       if (toDate && (!voucher.date || voucher.date > toDate)) return false;
       if (warehouse && !voucher.warehouses.includes(warehouse)) return false;
       if (manager && !voucher.managers.includes(manager)) return false;
-      const haystack = [voucher.orderNumber, voucher.orderId, voucher.customer, voucher.customerId, ...voucher.warehouses, ...voucher.managers, ...voucher.productCodes]
+      const haystack = [voucher.date, voucher.orderNumber, voucher.orderId, voucher.customer, voucher.customerId, voucher.noteLabel, ...voucher.notes, ...voucher.note1s, ...voucher.warehouses, ...voucher.managers, ...voucher.productCodes]
         .map(value => text(value).toLocaleLowerCase('ko-KR')).join(' ');
       return query.every(token => haystack.includes(token));
     });
@@ -158,6 +169,17 @@
       voucherCount: rows.length,
       rowCount: rows.reduce((sum, voucher) => sum + voucher.rowCount, 0),
       quantities: [...quantities.values()].map(item => ({ ...item, total: round(item.total) })),
+      amountTotal: rows.some(voucher => voucher.amountValueCount > 0)
+        ? round(rows.reduce((sum, voucher) => sum + Number(voucher.amountTotal || 0), 0))
+        : null,
+      amountValueCount: rows.reduce((sum, voucher) => sum + Number(voucher.amountValueCount || 0), 0),
+      calculatedAmountTotal: rows.some(voucher => voucher.calculatedAmountValueCount > 0)
+        ? round(rows.reduce((sum, voucher) => sum + Number(voucher.calculatedAmountTotal || 0), 0))
+        : null,
+      calculatedAmountValueCount: rows.reduce((sum, voucher) => sum + Number(voucher.calculatedAmountValueCount || 0), 0),
+      amountBlankCount: rows.reduce((sum, voucher) => sum + Number(voucher.amountBlankCount || 0), 0),
+      amountUnknownCount: rows.reduce((sum, voucher) => sum + Number(voucher.amountUnknownCount || 0), 0),
+      amountInvalidCount: rows.reduce((sum, voucher) => sum + Number(voucher.amountInvalidCount || 0), 0),
     };
   }
 
