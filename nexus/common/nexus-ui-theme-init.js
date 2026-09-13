@@ -85,12 +85,17 @@
     root.dataset.nexusApp = appId;
   }
 
-  if (appId === 'smart-input' && !document.querySelector('script[data-smartinput-source-preparation]')) {
-    const sourcePreparation = document.createElement('script');
-    sourcePreparation.src = '/smartinput/source-preparation-ui.js?v=0.1.0';
-    sourcePreparation.defer = true;
-    sourcePreparation.dataset.smartinputSourcePreparation = 'true';
-    document.head.appendChild(sourcePreparation);
+  if (appId === 'smart-input') {
+    const loadSourcePreparation = () => {
+      if (document.querySelector('script[data-smartinput-source-preparation]')) return;
+      const sourcePreparation = document.createElement('script');
+      sourcePreparation.src = '/smartinput/source-preparation-ui-v2.js?v=0.1.1';
+      sourcePreparation.dataset.smartinputSourcePreparation = 'true';
+      document.head.appendChild(sourcePreparation);
+    };
+    const scheduleSourcePreparation = () => window.setTimeout(loadSourcePreparation, 1200);
+    if (document.readyState === 'complete') scheduleSourcePreparation();
+    else window.addEventListener('load', scheduleSourcePreparation, { once: true });
   }
 
   root.dataset.nexusUiInitStartedAt = String(startedAt);
