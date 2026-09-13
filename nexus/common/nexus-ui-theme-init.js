@@ -85,6 +85,14 @@
     root.dataset.nexusApp = appId;
   }
 
+  if (appId === 'smart-input' && !document.querySelector('script[data-smartinput-source-preparation]')) {
+    const sourcePreparation = document.createElement('script');
+    sourcePreparation.src = '/smartinput/source-preparation-ui.js?v=0.1.0';
+    sourcePreparation.defer = true;
+    sourcePreparation.dataset.smartinputSourcePreparation = 'true';
+    document.head.appendChild(sourcePreparation);
+  }
+
   root.dataset.nexusUiInitStartedAt = String(startedAt);
   const initialTheme = apply(read(), { persist: false });
 
