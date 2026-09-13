@@ -40,7 +40,7 @@ const pages = [
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.2.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.4.0`;
+  const uiCss = `${base}nexus-ui.css?v=1.4.1`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
   const runtime = `${base}nexus-ui.js?v=1.7.1`;
 
@@ -140,6 +140,7 @@ assert.match(uiCss, /--nexus-ui-header-height:\s*64px/, 'desktop header must be 
 assert.match(uiCss, /--nexus-ui-header-height:\s*104px/, 'mobile header must be 104px');
 assert.match(uiCss, /\.nexus-ui-header\s*\{[^}]*width:\s*100%/s, 'the global header must span the full viewport width');
 assert.match(uiCss, /grid-template-columns:\s*270px\s+minmax\(0,\s*1fr\)\s+270px/, 'desktop header must keep equal fixed side rails around the centered tabs');
+assert.match(uiCss, /@media \(min-width:\s*761px\) and \(max-width:\s*1279px\)[\s\S]*?--nexus-ui-header-height:\s*104px[\s\S]*?"brand theme"\s+60px[\s\S]*?"nav nav"\s+44px/, 'compact desktop header must place all app links on an unobstructed second row');
 assert.match(uiCss, /\.nexus-ui-brand__current\s*\{[^}]*flex:\s*0\s+0\s+110px[^}]*width:\s*110px[^}]*max-width:\s*110px/s, 'current app/version slot must not move with text length');
 assert.match(uiCss, /--nexus-ui-page-bg:\s*#15181d/, 'dark body must be rgb(21, 24, 29)');
 assert.match(uiCss, /:root\s*\{[^}]*--nexus-ui-page-bg:\s*#f3efe6/s, 'light body must use the approved ivory page tone');

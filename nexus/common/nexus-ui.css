@@ -397,6 +397,41 @@ html[data-nexus-workspace-embedded="true"] .nexus-ui-header {
   outline-offset: 2px;
 }
 
+@media (min-width: 761px) and (max-width: 1279px) {
+  :root {
+    --nexus-ui-header-height: 104px;
+  }
+
+  .nexus-ui-header {
+    grid-template:
+      "brand theme" 60px
+      "nav nav" 44px
+      / minmax(0, 1fr) auto;
+  }
+
+  .nexus-ui-brand {
+    grid-area: brand;
+  }
+
+  .nexus-ui-nav {
+    grid-area: nav;
+    align-self: end;
+    width: 100%;
+    height: 44px;
+  }
+
+  .nexus-ui-nav__track {
+    height: 44px;
+  }
+
+  .nexus-ui-theme {
+    grid-area: theme;
+    min-width: 136px;
+    height: 60px;
+    margin-left: 8px;
+  }
+}
+
 @media (max-width: 760px) {
   :root {
     --nexus-ui-header-height: 104px;

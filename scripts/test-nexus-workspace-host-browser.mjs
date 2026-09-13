@@ -205,8 +205,37 @@ try {
     { id:'orderq-vnext', route:'/orderq/', label:'주문조회', ariaLabel:'주문조회 열기', path:'/orderq/', app:null, workspaceRoute:null },
   ], 'all NEXUS home buttons must preserve label, app ID, route, and destination');
 
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1080, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `document.querySelector('#loginPanel').hidden=true; document.querySelector('#homePanel').hidden=false; true`);
+  const homeDesktopTargets = await evaluate(client, `(async () => {
+    const results=[];
+    for (const link of document.querySelectorAll('#appGrid .nexus-app-card')) {
+      link.scrollIntoView({block:'center',inline:'nearest'});
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const rect=link.getBoundingClientRect();
+      const x=rect.left+rect.width/2;
+      const y=rect.top+rect.height/2;
+      results.push({
+        id:link.dataset.nexusAppId,
+        hit:document.elementFromPoint(x,y)?.closest?.('[data-nexus-app-id]')?.dataset.nexusAppId || '',
+      });
+    }
+    return results;
+  })()`);
+  assert.deepEqual(
+    homeDesktopTargets,
+    homeLinks.map(({ id }) => ({ id, hit:id })),
+    'every NEXUS home button center must remain clickable at a 1080px desktop width',
+  );
+  const homeOrderOpsPoint = await evaluate(client, `(() => {
+    const link=document.querySelector('[data-nexus-app-id="orderops"]');
+    link.scrollIntoView({block:'center',inline:'nearest'});
+    const rect=link.getBoundingClientRect();
+    return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+  })()`);
   const homeOrderOpsLoaded = client.once('Page.loadEventFired');
-  await evaluate(client, `document.querySelector('[data-nexus-app-id="orderops"]').click()`);
+  await client.send('Input.dispatchMouseEvent', { type:'mousePressed', x:homeOrderOpsPoint.x, y:homeOrderOpsPoint.y, button:'left', clickCount:1 });
+  await client.send('Input.dispatchMouseEvent', { type:'mouseReleased', x:homeOrderOpsPoint.x, y:homeOrderOpsPoint.y, button:'left', clickCount:1 });
   await homeOrderOpsLoaded;
   await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'orderops'
     && new URL(location.href).searchParams.get('route') === 'orderops/list.html'
@@ -245,6 +274,40 @@ try {
     { id:'orderops', route:'orderops/list.html', href:'/orderops/list.html', label:'출고관리', ariaLabel:'출고관리 열기' },
     { id:'dataops', route:'DataOps.html', href:'/DataOps.html', label:'DataOps', ariaLabel:'DataOps 열기' },
   ], 'the rendered global header must expose the exact canonical destination for every button');
+
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1080, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const desktopHeaderTargets = await evaluate(client, `(() => ({
+    headerHeight:document.querySelector('.nexus-ui-header').getBoundingClientRect().height,
+    links:[...document.querySelectorAll('[data-nexus-ui-app-target]')].map((link) => {
+      const rect=link.getBoundingClientRect();
+      const x=rect.left+rect.width/2;
+      const y=rect.top+rect.height/2;
+      return {
+        id:link.dataset.nexusUiAppTarget,
+        hit:document.elementFromPoint(x,y)?.closest?.('[data-nexus-ui-app-target]')?.dataset.nexusUiAppTarget || '',
+      };
+    })
+  }))()`);
+  assert.equal(desktopHeaderTargets.headerHeight, 104, 'compact desktop header must use a second row instead of covering app links');
+  assert.deepEqual(
+    desktopHeaderTargets.links,
+    initial.links.map(({ id }) => ({ id, hit:id })),
+    'every global-header button center must remain clickable at a 1080px desktop width',
+  );
+  const desktopOrderOpsPoint = await evaluate(client, `(() => {
+    document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureState.leaveResult='READY';
+    const link=document.querySelector('[data-nexus-ui-app-target="orderops"]');
+    const rect=link.getBoundingClientRect();
+    return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+  })()`);
+  await client.send('Input.dispatchMouseEvent', { type:'mousePressed', x:desktopOrderOpsPoint.x, y:desktopOrderOpsPoint.y, button:'left', clickCount:1 });
+  await client.send('Input.dispatchMouseEvent', { type:'mouseReleased', x:desktopOrderOpsPoint.x, y:desktopOrderOpsPoint.y, button:'left', clickCount:1 });
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'orderops'
+    && new URL(location.href).searchParams.get('route') === 'orderops/list.html'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'orderops'`), 'desktop OrderOps mouse destination');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(client, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
 
   await evaluate(client, `document.querySelector('.nexus-ui-header').dataset.workspaceTestMarker='persistent-header'`);
   const visibleBefore = await evaluate(client, `document.querySelector('.nexus-ui-nav').scrollLeft`);
@@ -474,7 +537,7 @@ try {
   }
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: 12 home links, 7 exact header links, mobile OrderOps touch, seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
+  console.log('PASS NEXUS workspace browser: 12 clickable desktop home links, 7 exact clickable desktop header links, desktop/mouse and mobile/touch OrderOps, seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
   if (browser && !browser.killed) {
