@@ -3017,7 +3017,7 @@
             <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
           </details>
         </aside></div><footer class="page-footer">
-      <span>ORDER Q v1.63 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.64 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -6574,9 +6574,21 @@
           .forEach((header) => header.classList.remove("column-drop-before", "column-drop-after", "column-dragging"));
       }
 
+      function commitFocusedPurchaseInput() {
+        const input = document.activeElement;
+        if (!(input instanceof HTMLInputElement) ||
+            !input.matches(".purchase-input[data-purchase-code]") ||
+            !elements.previewTable.contains(input)) return true;
+        return commitPurchaseInput(input);
+      }
+
       function handleColumnDragStart(event) {
         const header = event.target.closest("th[data-column-drag-key]");
         if (!header || event.target.closest(".column-resize-handle, .column-sort-trigger") || !COLUMN_ORDER_TABS.has(state.activePreview)) {
+          event.preventDefault();
+          return;
+        }
+        if (!commitFocusedPurchaseInput()) {
           event.preventDefault();
           return;
         }
@@ -10350,6 +10362,15 @@
         return true;
       }
 
+      function syncPurchaseInputDraft(input) {
+        if (!input || !state.workspace) return false;
+        // Keep the live cell value in the workspace before any table rerender.
+        // The final change/drag commit below records one audited edit from data-original-value.
+        engine.setPurchaseValue(state.workspace, input.dataset.purchaseCode, input.value);
+        scheduleLocalSave();
+        return true;
+      }
+
       function commitOrderInput(input, { render = true } = {}) {
         if (!input || !state.workspace || !["readiness", "allocations"].includes(state.activePreview)) return false;
         try {
@@ -11504,6 +11525,7 @@
       elements.previewTable.addEventListener("input", (event) => {
         const input = event.target.closest("[data-purchase-code]");
         if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return;
+        syncPurchaseInputDraft(input);
         if (input.dataset.composing !== "true") renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("compositionstart", (event) => {
@@ -11517,6 +11539,7 @@
         const input = event.target.closest?.(".purchase-input[data-purchase-code]");
         if (!input || !state.workspace || !["inventory", "ledger", "allocations", "procurement"].includes(state.activePreview)) return;
         input.dataset.composing = "false";
+        syncPurchaseInputDraft(input);
         renderPurchaseAutocomplete(input);
       });
       elements.previewTable.addEventListener("change", (event) => {
