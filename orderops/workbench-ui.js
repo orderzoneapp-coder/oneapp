@@ -94,7 +94,7 @@
     let preparationReads = 0;
     const status = message => { $('prepareStatus').textContent = message; };
     const selected = () => s.preparedFiles.find(item => item.id === s.selectedPreparedId);
-    const dirty = () => preparationReads > 0 || s.preparedFiles.some(item => item.dirty) || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length);
+    const dirty = () => preparationReads > 0 || s.preparedFiles.some(item => item.dirty) || s.voucherDraftDirty || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length);
     const fieldNames = kind => kind === 'orders' ? [...e.ORDER_REQUIRED_COLUMNS, ...e.ORDER_OPTIONAL_COLUMNS]
       : kind === 'inventory' ? [...e.INVENTORY_REQUIRED_COLUMNS, ...e.INVENTORY_OPTIONAL_COLUMNS, '단위']
         : ['품목코드', '품목명', '수량', kind === 'purchases' ? '구매처' : '거래처'];
@@ -150,6 +150,13 @@
     function validate(item) {
       item.error = '';
       try {
+        if (item.adapterSource) {
+          if (item.sourceStatus === 'ERROR') throw new Error(item.sourceMessage || 'API 자료를 읽지 못했습니다.');
+          if (item.sourceStatus === 'PARTIAL') throw new Error(item.sourceMessage || '일부 조회 결과입니다. 범위를 다시 확인하세요.');
+          if (item.sourceStatus === 'EMPTY' || !item.parsed?.rowCount) throw new Error(item.sourceMessage || '조회 범위에 자료가 없습니다.');
+          item.status = item.applied && !item.dirty ? 'APPLIED' : 'READY';
+          return;
+        }
         if (!item.kind) throw new Error('자료 유형을 선택하세요.');
         item.mapping ||= suggestMapping(item);
         const explicitMapping = { headerRowIndex: item.headerRowIndex, dataStartRowIndex: item.dataStartRowIndex, dataEndRowIndex: item.dataEndRowIndex, columns: item.mapping };
@@ -175,17 +182,29 @@
         item.parsed.sourceEvidence = { rawMatrix: clone(item.raw), displayMatrix: clone(item.display), cells: clone(item.cells) };
         if (item.parsed.errors?.length) throw new Error(item.parsed.errors.map(error => error.message).join(' · '));
         item.status = item.applied && !item.dirty ? 'APPLIED' : 'READY';
-      } catch (error) { item.status = 'INVALID'; item.error = error.message; }
+      } catch (error) {
+        item.status = item.adapterSource && ['PARTIAL', 'EMPTY', 'ERROR'].includes(item.sourceStatus)
+          ? item.sourceStatus
+          : 'INVALID';
+        item.error = error.message;
+      }
     }
 
     function renderPreparation() {
       pane.classList.toggle('has-prepared-files', s.preparedFiles.length > 0);
-      const statusLabels = { READY: '준비됨', INVALID: '확인 필요', APPLIED: '적용됨' };
+      const statusLabels = { READY: '준비됨', INVALID: '확인 필요', APPLIED: '적용됨', PARTIAL: '일부 조회', EMPTY: '0건', ERROR: '조회 실패' };
       $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · <span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}</span>${item.include ? ' · 적용 대상' : ''}</small></button>`).join('');
       const item = selected();
       $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation || preparationReads);
       $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation || preparationReads) || !dirty();
       if (!item) { $('prepareFileEditor').innerHTML = ''; return; }
+      if (item.adapterSource) {
+        const documents = item.parsed?.sourceRegistry?.documents || item.parsed?.sourceDocuments || [];
+        $('prepareFileEditor').innerHTML = `<label class="orderops-prepare-include"><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''} ${item.status === 'READY' || item.status === 'APPLIED' ? '' : 'disabled'}><span>이번 적용에 포함</span></label>
+          <div class="orderops-api-source-summary"><strong>${esc(labels[item.kind] || item.kind)} · ${esc(item.sourceStatus)}</strong><span>전표 ${documents.length}건 · 작업행 ${item.parsed?.rowCount || 0}행</span><span>${esc(item.sourceMessage || '적용 전에는 현재 작업이 바뀌지 않습니다.')}</span></div>
+          <details><summary>출처·조회 범위</summary><pre>${esc(JSON.stringify({ coverage: item.parsed?.coverage || null, documents }, null, 2))}</pre></details>`;
+        return;
+      }
       const fields = [...new Set(fieldNames(item.kind))];
       $('prepareFileEditor').innerHTML = `<label class="orderops-prepare-include"><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''}><span>이번 적용에 포함</span></label>
         <div class="orderops-prepare-fields">
@@ -234,6 +253,54 @@
       }
     }
 
+    function prepareParsedSource(source = {}) {
+      if (operation || s.inventoryApplyBusy) throw new Error('진행 중인 적용 결과를 확인하세요.');
+      const parsed = clone(source.parsed);
+      if (!parsed || !kinds.includes(parsed.kind)) throw new Error('지원하지 않는 준비 자료입니다.');
+      const sourceStatus = String(source.status || (parsed.rowCount ? 'READY' : 'EMPTY'));
+      const identity = [parsed.kind, parsed.fileHash, parsed.sourceKind, parsed.fileName].join(':');
+      const existing = s.preparedFiles.find(item => item.adapterIdentity === identity);
+      if (existing) {
+        Object.assign(existing, { parsed, orderQSource: clone(source.orderQSource || null), sourceStatus, sourceMessage: String(source.message || ''), dirty: sourceStatus === 'READY', include: sourceStatus === 'READY', status: sourceStatus === 'READY' ? 'READY' : sourceStatus });
+        s.selectedPreparedId = existing.id;
+        validate(existing);
+        preparedVersion += 1;
+        setLeft(true);
+        renderPreparation();
+        status(source.message || `${labels[parsed.kind]} API 자료를 다시 준비했습니다.`);
+        return existing;
+      }
+      const item = {
+        id: crypto.randomUUID(),
+        adapterIdentity: identity,
+        adapterSource: true,
+        fileName: parsed.fileName || `${labels[parsed.kind]} API`,
+        fileHash: parsed.fileHash || '',
+        workbook: { SheetNames: [parsed.sheetName || labels[parsed.kind]], Sheets: {} },
+        sheetName: parsed.sheetName || labels[parsed.kind],
+        kind: parsed.kind,
+        dirty: sourceStatus === 'READY',
+        include: sourceStatus === 'READY',
+        applied: false,
+        sourceStatus,
+        sourceMessage: String(source.message || ''),
+        orderQSource: clone(source.orderQSource || null),
+        parsed,
+        raw: clone(parsed.sourceMatrix || []),
+        display: clone(parsed.sourceMatrix || []),
+        cells: {},
+        status: sourceStatus,
+      };
+      validate(item);
+      s.preparedFiles.push(item);
+      s.selectedPreparedId = item.id;
+      preparedVersion += 1;
+      setLeft(true);
+      renderPreparation();
+      status(source.message || `${labels[parsed.kind]} API 자료 준비 완료 · 확인 후 적용하세요.`);
+      return item;
+    }
+
     function hydratePrepared() {
       if (operation || s.preparedFiles.some(item=>item.dirty)) return;
       s.preparedFiles = kinds.flatMap(kind => {
@@ -256,6 +323,7 @@
 
     async function runReplacement(build, activate, check = async () => true) {
       if (operation) return operation;
+      let scheduleAfter = true;
       operation = (async () => {
         s.workbenchApplyBusy = true;
         try {
@@ -264,6 +332,10 @@
             api.captureInputs();
             const base = s.workspace, version = s.workspaceChangeVersion;
             const candidate = await build(base);
+            if (candidate === base) {
+              scheduleAfter = false;
+              return { ok: true, unchanged: true };
+            }
             const record = await api.buildRecord(candidate, { publicationState: 'STAGED' });
             await api.putRecord(record);
             const staged = await api.readRecord(record.recordId);
@@ -293,7 +365,7 @@
         } finally { s.workbenchApplyBusy = false; }
       })();
       try { return await operation; } catch (error) { status(error.message); api.showToast(error.message, true); return { ok: false, message: error.message }; }
-      finally { operation = null; if (s.workspace) api.scheduleSave(); renderPreparation(); }
+      finally { operation = null; if (s.workspace && scheduleAfter) api.scheduleSave(); renderPreparation(); }
     }
 
     async function resolveConflicts(conflicts) {
@@ -394,10 +466,23 @@
         finally { inventoryPreparationOperation = null; renderPreparation(); }
       }
       let inputs;
+      const preparedOrderQSource = byKind.get('orders')?.orderQSource || null;
       const result = await runReplacement(async base => {
         inputs = Object.fromEntries(kinds.map(kind => [kind, byKind.has(kind) ? (byKind.get(kind).remove ? null : clone(byKind.get(kind).parsed)) : clone(s[kind])]));
         if (!byKind.has('orders') && inputs.orders && base) inputs.orders.rows = clone(base.orders);
         const candidate = e.createPreviewWorkspace(inputs.orders, inputs.inventory, { purchases: inputs.purchases, sales: inputs.sales, systemHistory: base?.systemHistory });
+        if (preparedOrderQSource?.snapshot) {
+          candidate.orderQSourceRecovery = {
+            schemaVersion: 'orderops-orderq-source-recovery/v1',
+            snapshot: clone(preparedOrderQSource.snapshot),
+          };
+          candidate.shipmentExecutionDraft = {
+            schemaVersion: 'orderops-shipment-execution-draft/v1',
+            orderId: preparedOrderQSource.snapshot.orderId || '',
+            orderRevision: Number(preparedOrderQSource.snapshot.orderRevision) || 0,
+            values: Object.create(null),
+          };
+        }
         if (!candidate.sourceFingerprint) candidate.sourceFingerprint = await api.sha256Hex('orderops-empty-application:' + crypto.randomUUID());
         if (!byKind.has('orders') && base) {
           for (const key of ['substitutionHistory', 'orderQSourceRecovery', 'shipmentExecutionDraft', 'workbenchUnapplied', 'workbenchReconciliation', 'workbenchConflicts']) if (base[key]) candidate[key] = clone(base[key]);
@@ -407,7 +492,11 @@
         return candidate;
       }, candidate => {
         Object.assign(s, inputs); s.workspace = candidate;
-        if (byKind.has('orders')) api.disconnectSource();
+        if (byKind.has('orders')) {
+          const orderQSource = byKind.get('orders').orderQSource;
+          if (orderQSource && typeof api.activateOrder === 'function') api.activateOrder(orderQSource);
+          else api.disconnectSource();
+        }
         s.pendingSystemHistory = candidate.systemHistory;
         s.activePreview = 'allocations';
         api.restoreInputs(candidate); api.renderResults();
@@ -428,7 +517,7 @@
       const key = rowKey(row);
       const edit = s.inspectorEdits[key] ||= { values: {}, base: {} };
       const specs = [['warehouse', '창고'], ['manager', '담당자'], ['noteOriginal', '일반 적요'], ['note1Original', '직원 전달사항']];
-      el.inventoryInspectorBody.innerHTML = `<div class="orderops-inspector-edit">${specs.map(([field, label]) => `<label>${label}<input data-inspector-field="${field}" value="${esc(Object.prototype.hasOwnProperty.call(edit.values, field) ? edit.values[field] : row[field] ?? '')}"></label>`).join('')}<p class="pending">${Object.keys(edit.values).length ? '수정 대기 · 대상별 입력 보존' : '작업본 조회'}</p><p>${esc(row.customer)} · 선택한 주문행에만 적용</p><button type="button" data-inspector-apply>작업본에 적용</button><button type="button" data-inspector-cancel>입력 취소</button></div>`;
+      el.inventoryInspectorBody.innerHTML = `<div class="orderops-inspector-edit">${specs.map(([field, label]) => `<label>${label}<input data-inspector-field="${field}" value="${esc(Object.prototype.hasOwnProperty.call(edit.values, field) ? edit.values[field] : row[field] ?? '')}"></label>`).join('')}<p class="pending">${Object.keys(edit.values).length ? '수정 대기 · 대상별 입력 보존' : '작업본 조회'}</p><p>${esc(row.customer)} · 이 입력은 선택한 작업행에만 적용됩니다.</p><button type="button" data-inspector-apply>작업본에 적용</button><button type="button" data-inspector-cancel>입력 취소</button></div>`;
       if (row.orderItemId && s.orderQSource?.snapshot) {
         const draft = s.shipmentDraft[row.orderItemId] || {};
         const remaining = Math.max(0, Number(s.orderQSource.snapshot.candidateLines.find(line=>line.orderItemId===row.orderItemId)?.shippableQuantity || 0)-Number(s.shipmentResults?.netByOrderItem?.[row.orderItemId] || 0));
@@ -444,9 +533,14 @@
         status(`${field} 값이 중앙에서 변경됐습니다. 우측 입력은 유지됩니다. 현재값 ${row[field] ?? ''} / 수정값 ${edit.values[field]}`); return;
       }
       try {
-        for (const [field, value] of Object.entries(edit.values)) {
-          if (field === 'manager') e.setOrderValue(s.workspace, row.sourceRowNumber, 'manager', value, { recordHistory: true, actor: api.actor() });
-          else e.setOrderValue(s.workspace, row.sourceRowNumber, field === 'noteOriginal' ? 'note' : field === 'note1Original' ? 'deliveryNotice' : field, value, { recordHistory: true, actor: api.actor() });
+        const identityValues = Object.fromEntries(Object.entries(edit.values).filter(([field]) => ['warehouse', 'manager'].includes(field)));
+        if (Object.keys(identityValues).length) e.applyOrderPatches(s.workspace, [{
+          workRowId: e.getOrderWorkRowId(row, s.workspace.sourceFiles?.orders || {}),
+          values: identityValues,
+          expected: Object.fromEntries(Object.keys(identityValues).map(field => [field, edit.base[field]])),
+        }], { recordHistory: true, actor: api.actor() });
+        for (const [field, value] of Object.entries(edit.values).filter(([field]) => !['warehouse', 'manager'].includes(field))) {
+          e.setOrderValue(s.workspace, row.sourceRowNumber, field === 'noteOriginal' ? 'note' : field === 'note1Original' ? 'deliveryNotice' : field, value, { recordHistory: true, actor: api.actor() });
         }
         delete s.inspectorEdits[key]; api.scheduleSave(); api.renderResults();
       } catch (error) { status(error.message); }
@@ -491,6 +585,15 @@
       else if (target.dataset.mapIndex !== undefined) item.mapping[Number(target.dataset.mapIndex)] = target.value;
       item.dirty = true; preparedVersion++; validate(item); renderPreparation();
     };
+    document.querySelectorAll('[data-orderops-api-source]').forEach(button => {
+      button.addEventListener('click', () => {
+        if (typeof api.loadApiSource !== 'function') return;
+        void api.loadApiSource(button.dataset.orderopsApiSource).catch(error => {
+          status(error.message || String(error));
+          api.showToast(error.message || String(error), true);
+        });
+      });
+    });
     el.inventoryInspectorBody.addEventListener('input', event => { const field = event.target.dataset.inspectorField, row = activeRow(); if (!field || !row || commitLocked) return; const edit = s.inspectorEdits[rowKey(row)] ||= { values: {}, base: {} }; if (!(field in edit.base)) edit.base[field] = row[field]; edit.values[field] = event.target.value; s.workspaceChangeVersion++; });
     el.inventoryInspectorBody.addEventListener('input', event => { const field=event.target.dataset.inspectorDraft,row=activeRow(); if(!field||!row?.orderItemId||commitLocked)return;s.shipmentDraft[row.orderItemId]||={};s.shipmentDraft[row.orderItemId][field]=event.target.value;api.captureInputs();api.scheduleSave(); });
     el.inventoryInspectorBody.addEventListener('change', event => { if(event.target.dataset.inspectorDraft) api.renderResults(); });
@@ -502,6 +605,6 @@
     window.addEventListener('beforeunload', event => { if (dirty() || operation || Object.values(s.inspectorEdits).some(edit => Object.keys(edit.values).length)) { event.preventDefault(); event.returnValue = ''; } });
     try { setLeft(localStorage.getItem('oneapp.orderops.file-prepare-open.v1') !== '0', false); } catch (_) { setLeft(true, false); }
     renderPreparation();
-    return { prepare, dirty, hydratePrepared, renderInspector, applyLatest, runReplacement, get operation() { return operation || inventoryPreparationOperation; }, get commitLocked() { return commitLocked; }, setLeft };
+    return { prepare, prepareParsedSource, dirty, hydratePrepared, renderInspector, applyLatest, runReplacement, get operation() { return operation || inventoryPreparationOperation; }, get commitLocked() { return commitLocked; }, setLeft };
   };
 })(window);

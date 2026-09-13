@@ -2013,7 +2013,7 @@ assert.ok(
   html.includes("현재 화면과 입력은 유지됩니다"),
   "inventory application must preserve the latest workspace across concurrent edits and failures",
 );
-assert.match(html, /data-nexus-app-identity[^>]*>[\s\S]*?data-nexus-app-title>출고관리<\/span>/,
+assert.match(html, /data-nexus-app-identity[^>]*>[\s\S]*?data-nexus-app-title(?:="")?>출고관리<\/span>/,
   "the canonical header must expose only the left-aligned 출고관리 app identity");
 assert.doesNotMatch(html, /brand-(?:badge|logo|logo-frame)|class="brand-mark"/,
   "the canonical app header must not retain the ONEAPP/ORDER Q logo or version badge");
@@ -2293,8 +2293,11 @@ for (const id of [
 ]) {
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
-assert.ok(html.includes('orderQButton.id = "orderOpsHeaderOrderQButton"'),
-  "the Order Q saved-order path must be created exactly once inside the order-source menu");
+assert.ok(
+  html.split('id="orderQSourcePicker"').length - 1 === 1
+    && html.includes('data-orderops-api-source="orders"'),
+  "the fixed left preparation pane must expose the saved-order path exactly once",
+);
 assert.doesNotMatch(html, /<div class="system-name">System\.IO<\/div>|class="system-cursor"/,
   "the visible OrderOps status area must not retain the System.IO console name or blinking cursor");
 assert.doesNotMatch(html, /id="bundleInput"|id="bundleDrop"/,
@@ -2313,15 +2316,24 @@ assert.match(combinedCss, /\.integrated-compact-slot\s*\{[^}]*display:\s*inline-
   "canonical integrated workbook control must be a compact data-source picker");
 assert.doesNotMatch(combinedCss, /\.integrated-uploader\s*\{/,
   "canonical large integrated uploader styling must be removed");
-const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header"'), html.indexOf('</header>'));
-assert.ok(canonicalHeaderSource.indexOf('id="smartInputButton"') < canonicalHeaderSource.indexOf('id="printButton"'),
-  "canonical Smart input F4 must remain before screen print in the restored global header");
-for (const restoredHeaderControl of ["printButton", "downloadButton", "headerCloudLoadButton", "headerCloudSaveButton", "headerRestoreButton", "headerSettingsButton"]) {
-  assert.match(canonicalHeaderSource, new RegExp(`id="${restoredHeaderControl}"`),
-    `${restoredHeaderControl} must be restored to the OrderOps header`);
+const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header orderops-workbench-header"'), html.indexOf('</header>'));
+for (const headerControl of ["analyzeButton", "workbenchResetButton", "headerSettingsButton"]) {
+  assert.match(canonicalHeaderSource, new RegExp(`id="${headerControl}"`),
+    `${headerControl} must remain in the fixed OrderOps app header`);
 }
-assert.doesNotMatch(html, /nexus-orderops-workspace|orderOpsResultRail|data-nexus-completion-bar="orderops"/,
-  "the rolled-back OrderOps layout must not retain the three-pane rail or bottom completion bar");
+const completionBarSource = html.slice(html.indexOf('class="orderops-bottom-workbar"'), html.indexOf('</footer>', html.indexOf('class="orderops-bottom-workbar"')));
+for (const completionControl of ["headerCloudSaveButton", "printButton", "downloadButton"]) {
+  assert.match(completionBarSource, new RegExp(`id="${completionControl}"`),
+    `${completionControl} must remain in the central save/output bar`);
+}
+assert.ok(
+  html.includes('id="smartInputButton"') && html.includes('id="headerCloudLoadButton"') && html.includes('id="headerRestoreButton"'),
+  "Smart input and saved-work management paths must remain available from the fixed header menus",
+);
+assert.match(html, /class="orderops-results-workspace orderops-workbench-v12"/,
+  "the fixed OrderOps layout must expose the three-area workspace");
+assert.doesNotMatch(html, /orderOpsResultRail|data-nexus-completion-bar="orderops"/,
+  "the fixed OrderOps layout must not retain the obsolete result rail or duplicate completion bar");
 for (const transactionViewContract of [
   'function buildTransactionPreview(workspace, kind)',
   'purchases: buildTransactionPreview(workspace, "purchases")',

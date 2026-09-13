@@ -12,7 +12,7 @@ const baseline = process.argv.includes('--baseline');
 const manual = process.argv.includes('--manual');
 const evidence = resolve(process.env.ORDEROPS_EVIDENCE_DIR || join(tmpdir(), 'orderops-drop-visual-evidence'));
 const profile = mkdtempSync(join(tmpdir(), 'orderops-drop-visual-'));
-const runtimeFiles = ['orderops/list.html', 'orderops/workbench-ui.js', 'orderops/workbench-v12.css', 'orderFulfillmentEngine.js'];
+const runtimeFiles = ['orderops/list.html', 'orderops/workbench-ui.js', 'orderops/source-coordinator.js', 'orderops/voucher-workbench.js', 'orderops/workbench-v12.css', 'orderFulfillmentEngine.js'];
 const sources = new Map(runtimeFiles.map(path => [path, baseline ? execFileSync('git', ['show', `1a6f943f:${path}`], { cwd: root }) : readFileSync(join(root, path))]));
 const report = { startedAt: new Date().toISOString(), baseline, manual, head: execFileSync('git', ['rev-parse','HEAD'], { cwd: root, encoding: 'utf8' }).trim(), sourceHashes: Object.fromEntries([...sources].map(([p,b]) => [p,createHash('sha256').update(b).digest('hex')])), profile, checks: [], errors: [], blockedRequests: [], result: 'running', dragEvidence: 'DOM DataTransfer/DragEvent; NOT OS drag-and-drop' };
 mkdirSync(evidence, { recursive: true });
@@ -66,12 +66,12 @@ try {
   }
   await ev(`document.querySelector('#prepareApplyButton').click()`);await until(()=>ev('__ops.state.workspace?.orders?.length===2&&!__ops.workbench.operation'),'explicit apply');
   await ev(`document.querySelector('#inventoryInspectorReopen').click();document.querySelector('#previewTable [data-order-row="2"]').click();true`);
-  report.loadedGeometry=await ev(`(()=>{const rect=e=>e.getBoundingClientRect().toJSON(),header=document.querySelector('[data-nexus-app-header="orderops"]');return {header:rect(header),tabs:rect(document.querySelector('#previewTabs')),actions:rect(header.querySelector('.header-actions')),table:rect(document.querySelector('#previewTable')),workspace:rect(document.querySelector('.orderops-workbench-v12')),preparation:rect(document.querySelector('#orderOpsFilePreparePane'))};})()`);
+  report.loadedGeometry=await ev(`(()=>{const rect=e=>e.getBoundingClientRect().toJSON(),header=document.querySelector('[data-nexus-app-header="orderops"]');return {header:rect(header),tabs:rect(document.querySelector('#previewTabs')),actions:rect(header.querySelector('.header-actions')),currentTitle:rect(document.querySelector('#orderOpsCurrentViewTitle')),table:rect(document.querySelector('#previewTable')),workspace:rect(document.querySelector('.orderops-workbench-v12')),preparation:rect(document.querySelector('#orderOpsFilePreparePane'))};})()`);
   if(!baseline){
     const g=report.loadedGeometry;
     check('desktop app tabs centered',Math.abs(g.tabs.x+g.tabs.width/2-1366/2)<=2);
     check('desktop actions aligned right',Math.abs(g.actions.right-(g.header.right-24))<=2);
-    check('workspace directly below header; two surplus rows removed',g.workspace.top-g.header.bottom<=9&&g.table.top<230);
+    check('workspace directly below header; current-view title precedes table',g.workspace.top-g.header.bottom<=9&&g.currentTitle.bottom<=g.table.top&&g.table.top<270);
     await ev(`document.querySelector('#orderOpsWorkbenchStatusButton').click();true`);await until(()=>ev(`document.querySelector('#orderOpsWorkbenchStatus').matches(':popover-open')`),'status open');
     check('full status outside clipped panel',await ev(`document.querySelector('#orderOpsWorkbenchStatus').parentElement===document.body&&document.querySelector('#orderOpsWorkbenchStatus').contains(document.querySelector('#validationBox'))`));
     await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await wait(100);

@@ -1,13 +1,13 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.3.5
+- Architecture document version: 2.3.6
 - Previous detailed review: 2026-09-04
-- Documentation updated: 2026-09-12
+- Documentation updated: 2026-09-13
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
 - Review scope: NEXUS 7개 글로벌헤더와 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
-- Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 창고/담당/지역 조회·담당 건수 선택·단위 안전·우측 키보드 재열기를 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
+- Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 자료 준비/API 상태와 우측 전표별 체크·창고/담당 일괄 변경·단위 안전·키보드 재열기를 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적

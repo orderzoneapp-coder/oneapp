@@ -370,6 +370,19 @@
     return "";
   }
 
+  function getOrderWorkRowId(row = {}, source = {}, index = 0) {
+    const supplied = cleanText(row.workRowId);
+    if (supplied) return supplied;
+    const originalIdentity = orderOriginalIdentityKey(row, source);
+    if (originalIdentity) return `work-row:${originalIdentity}`;
+    const sourceFingerprint = cleanText(
+      row.sourceFingerprint || source.orderSnapshotHash || source.sha256 || source.fileHash,
+    );
+    const sheetName = cleanText(row.sheetName || source.sheetName);
+    const rowNumber = Number(row.originalSourceRowNumber || row.sourceRowNumber) || Number(index) + 1;
+    return `work-row:file:${sourceFingerprint || "unidentified"}\u001fsheet:${sheetName}\u001fline:${rowNumber}`;
+  }
+
   function getOrderReviewState(input = {}) {
     const { rows, source } = orderReviewSource(input);
     const identityRows = new Map();
@@ -763,6 +776,28 @@
     return { schemaVersion: "orderops-explicit-file-mapping/v1", headerRowIndex, dataStartRowIndex, dataEndRowIndex, columns: selected, originalHeaders: cloneMatrix([originalHeaders])[0], effectiveHeaders: selected.map(value => value.startsWith("warehouse:") ? value.slice(10) : value) };
   }
 
+  function excelOrderRowIdentity(input, boundary, sourceRowNumber) {
+    const fingerprint = cleanText(input.fileHash).toLowerCase() || `name:${cleanText(input.fileName) || "unidentified"}`;
+    const sheetName = cleanText(input.sheetName);
+    const voucherBoundary = [
+      cleanText(boundary.orderNumber || boundary.group),
+      cleanText(boundary.basisDate),
+      cleanText(boundary.warehouse),
+      cleanText(boundary.customerCode || boundary.customer),
+    ];
+    const suffix = voucherBoundary.some(Boolean)
+      ? `voucher:${canonicalStringify(voucherBoundary)}`
+      : `unbounded-line:${sourceRowNumber}`;
+    const voucherId = `excel:${fingerprint}\u001fsheet:${sheetName}\u001f${suffix}`;
+    return {
+      voucherId,
+      sourceDocumentKey: voucherId,
+      sourceFingerprint: fingerprint,
+      originalSourceRowNumber: sourceRowNumber,
+      workRowId: `work-row:file:${fingerprint}\u001fsheet:${sheetName}\u001fline:${sourceRowNumber}`,
+    };
+  }
+
   function parseOrderWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
@@ -933,9 +968,18 @@
           warehouse,
           sourceRowNumber: rowIndex + 1,
         };
+        const rowIdentity = excelOrderRowIdentity(input, {
+          orderNumber,
+          group,
+          basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
+          warehouse,
+          customerCode,
+          customer,
+        }, rowIndex + 1);
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
+          ...rowIdentity,
           orderNumber,
           basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
           basisDateStatus: rowBasisDateStatus,
@@ -1307,6 +1351,19 @@
         activePreview: cleanText(ui.activePreview) || "validation",
         selectedProductCode: normalizeProductCode(ui.selectedProductCode),
         selectedDeliveryKey: cleanText(ui.selectedDeliveryKey),
+        selectedVoucherIds: Array.isArray(ui.selectedVoucherIds) ? ui.selectedVoucherIds.map(cleanText).filter(Boolean) : [],
+        voucherFilters: ui.voucherFilters && typeof ui.voucherFilters === "object"
+          ? {
+              fromDate: cleanText(ui.voucherFilters.fromDate),
+              toDate: cleanText(ui.voucherFilters.toDate),
+              warehouse: cleanText(ui.voucherFilters.warehouse),
+              manager: cleanText(ui.voucherFilters.manager),
+              query: cleanText(ui.voucherFilters.query),
+            }
+          : {},
+        voucherDraft: ui.voucherDraft && typeof ui.voucherDraft === "object"
+          ? JSON.parse(JSON.stringify(ui.voucherDraft))
+          : {},
       },
       settings: {
         cloudUrl: cleanText(settings.cloudUrl),
@@ -2393,6 +2450,9 @@
       orderRevision: Number(parsed.orderRevision) || 0,
       orderSnapshotHash: cleanText(parsed.orderSnapshotHash),
       orderUpdatedAt: cleanText(parsed.orderUpdatedAt),
+      sourceRegistry: parsed.sourceRegistry ? JSON.parse(JSON.stringify(parsed.sourceRegistry)) : undefined,
+      sourceDocuments: Array.isArray(parsed.sourceDocuments) ? JSON.parse(JSON.stringify(parsed.sourceDocuments)) : undefined,
+      coverage: parsed.coverage ? JSON.parse(JSON.stringify(parsed.coverage)) : undefined,
       kind,
     };
   }
@@ -2772,6 +2832,9 @@
       orderRevision: orderSource.orderRevision,
       orderSnapshotHash: orderSource.orderSnapshotHash,
       orderUpdatedAt: orderSource.orderUpdatedAt,
+      sourceRegistry: orderSource.sourceRegistry ? JSON.parse(JSON.stringify(orderSource.sourceRegistry)) : undefined,
+      sourceDocuments: Array.isArray(orderSource.sourceDocuments) ? JSON.parse(JSON.stringify(orderSource.sourceDocuments)) : undefined,
+      coverage: orderSource.coverage ? JSON.parse(JSON.stringify(orderSource.coverage)) : undefined,
     };
     const parsedInventory = {
       fileName: inventorySource.fileName,
@@ -3027,45 +3090,6 @@
       : rebuildWorkspaceFromOrders(workspace);
   }
 
-  // ORDEROPS-3P-01. Validate the complete selected-row patch before any mutation.
-  // Call on an isolated candidate; the workbench publishes it only after recovery verification.
-  function applyOrderPatches(workspace, patches, options = {}) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION || !Array.isArray(patches)) {
-      throw new Error("지원하지 않는 주문 작업본입니다.");
-    }
-    const byRow = new Map();
-    for (const row of workspace.orders || []) {
-      const number = Number(row.sourceRowNumber);
-      if (!Number.isInteger(number) || number <= 0 || byRow.has(number)) throw new Error("중복 또는 미확인 작업행 번호가 있습니다. 적용하지 않았습니다.");
-      byRow.set(number, row);
-    }
-    const seen = new Set(), changes = [];
-    for (const patch of patches) {
-      if (!["warehouse", "manager"].includes(patch.field)) throw new Error("일괄 변경은 창고·담당자만 지원합니다.");
-      const row = byRow.get(Number(patch.sourceRowNumber));
-      if (!row || !patch.rowId || row.workbenchRowId !== patch.rowId || row.workbenchVoucherId !== patch.voucherId) throw new Error("선택 전표·행 식별값이 변경되었습니다.");
-      const key = JSON.stringify([patch.rowId, patch.field]);
-      if (seen.has(key)) throw new Error("동일 항목의 변경 명령이 중복되었습니다.");
-      seen.add(key);
-      if (Object.prototype.hasOwnProperty.call(patch, "expectedValue") && !Object.is(row[patch.field], patch.expectedValue)) throw new Error("수정 중인 항목이 변경되었습니다. 입력을 유지합니다.");
-      const nextValue = cleanText(patch.value);
-      if (cleanText(row[patch.field]) !== nextValue) changes.push({ row, patch, previousValue: row[patch.field], nextValue });
-    }
-    for (const { row, patch, previousValue, nextValue } of changes) {
-      row[patch.field] = nextValue;
-      const event = appendSystemEditEvent(workspace, {
-        productCode: row.productCode, sourceRowNumber: row.sourceRowNumber,
-        field: patch.field, fieldLabel: patch.field === "manager" ? "담당자(선택 전표)" : "창고(선택 전표)", previousValue, nextValue,
-      }, options);
-      if (event) { event.voucherId = patch.voucherId; event.workRowId = patch.rowId; }
-    }
-    if (changes.length) {
-      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
-      else rebuildWorkspaceFromOrders(workspace);
-    }
-    return { changedFieldCount: changes.length, changedRowCount: new Set(changes.map(c => c.patch.rowId)).size };
-  }
-
   function setCustomerManager(workspace, customerKey, value, options = {}) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
@@ -3101,6 +3125,90 @@
       manager: nextValue,
       affectedRowCount: targets.length,
       changedRowCount,
+    };
+  }
+
+  function applyOrderPatches(workspace, patches, options = {}) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    if (!Array.isArray(patches) || patches.length === 0) {
+      throw new Error("적용할 주문행 변경이 없습니다.");
+    }
+    const source = workspace.sourceFiles?.orders || {};
+    const rowsById = new Map();
+    (workspace.orders || []).forEach((row, index) => {
+      const workRowId = getOrderWorkRowId(row, source, index);
+      if (rowsById.has(workRowId)) throw new Error("주문행 식별값이 중복되어 일괄 변경을 적용할 수 없습니다.");
+      rowsById.set(workRowId, row);
+    });
+    const allowedFields = new Set(["warehouse", "manager"]);
+    const normalized = [];
+    const seenPatchIds = new Set();
+    patches.forEach((patch) => {
+      const workRowId = cleanText(patch?.workRowId);
+      if (!workRowId || seenPatchIds.has(workRowId)) throw new Error("일괄 변경 대상 주문행이 없거나 중복되었습니다.");
+      seenPatchIds.add(workRowId);
+      const order = rowsById.get(workRowId);
+      if (!order) throw new Error("일괄 변경 대상 주문행이 현재 작업본과 일치하지 않습니다.");
+      const values = patch?.values && typeof patch.values === "object" ? patch.values : {};
+      const fields = Object.keys(values);
+      if (!fields.length || fields.some((field) => !allowedFields.has(field))) {
+        throw new Error("일괄 변경할 수 없는 주문 항목이 포함되었습니다.");
+      }
+      const expected = patch?.expected && typeof patch.expected === "object" ? patch.expected : {};
+      fields.forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(expected, field) &&
+          comparableHistoryValue(order[field]) !== comparableHistoryValue(expected[field])) {
+          const error = new Error("중앙 작업값이 변경되어 우측 입력을 자동 적용하지 않았습니다.");
+          error.code = "ORDER_PATCH_CONFLICT";
+          error.conflict = {
+            workRowId,
+            voucherId: cleanText(patch?.voucherId),
+            field,
+            expectedValue: expected[field],
+            currentValue: order[field],
+            requestedValue: values[field],
+          };
+          throw error;
+        }
+      });
+      normalized.push({ workRowId, voucherId: cleanText(patch?.voucherId), order, values });
+    });
+
+    let changedRowCount = 0;
+    let changedFieldCount = 0;
+    normalized.forEach(({ workRowId, voucherId, order, values }) => {
+      let rowChanged = false;
+      Object.entries(values).forEach(([field, value]) => {
+        const previousValue = cleanText(order[field]);
+        const nextValue = cleanText(value);
+        if (previousValue === nextValue) return;
+        order[field] = nextValue;
+        rowChanged = true;
+        changedFieldCount += 1;
+        appendSystemEditEvent(workspace, {
+          productCode: order.productCode,
+          sourceRowNumber: Number(order.sourceRowNumber) || 0,
+          workRowId,
+          voucherId,
+          field,
+          fieldLabel: field === "warehouse" ? "창고(선택 전표)" : "담당자(선택 전표)",
+          previousValue,
+          nextValue,
+        }, options);
+      });
+      if (rowChanged) changedRowCount += 1;
+    });
+    if (changedFieldCount > 0) {
+      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
+      else rebuildWorkspaceFromOrders(workspace);
+    }
+    return {
+      requestedRowCount: normalized.length,
+      changedRowCount,
+      changedFieldCount,
+      recalculated: changedFieldCount > 0,
     };
   }
 
@@ -3578,6 +3686,9 @@
           orderRevision: Number(ordersParsed.orderRevision) || 0,
           orderSnapshotHash: cleanText(ordersParsed.orderSnapshotHash),
           orderUpdatedAt: cleanText(ordersParsed.orderUpdatedAt),
+          sourceRegistry: ordersParsed.sourceRegistry ? JSON.parse(JSON.stringify(ordersParsed.sourceRegistry)) : undefined,
+          sourceDocuments: Array.isArray(ordersParsed.sourceDocuments) ? JSON.parse(JSON.stringify(ordersParsed.sourceDocuments)) : undefined,
+          coverage: ordersParsed.coverage ? JSON.parse(JSON.stringify(ordersParsed.coverage)) : undefined,
         },
         inventory: {
           fileName: inventoryParsed.fileName,
@@ -3793,6 +3904,7 @@
     normalizeProductCode,
     normalizeOrderHeader,
     customerWorkKey,
+    getOrderWorkRowId,
     getDeliverySummaryRows,
     normalizeCategoryCode,
     canonicalStringify,
@@ -3837,6 +3949,7 @@
     setOrderValue,
     applyOrderPatches,
     setCustomerManager,
+    applyOrderPatches,
     setInventoryOverride,
     getAllocationInventoryView,
   });

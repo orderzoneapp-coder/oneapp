@@ -12,7 +12,7 @@ const evidence = process.env.ORDEROPS_EVIDENCE_DIR;
 const performanceMode = process.env.ORDEROPS_PERFORMANCE === '1';
 const cellContainmentPair = performanceMode && process.env.ORDEROPS_CELL_CONTAINMENT_PAIR === '1';
 const predecoratedPair = performanceMode && process.env.ORDEROPS_PREDECORATED_PAIR === '1';
-const evidenceRun={startedAt:new Date().toISOString(),head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dirty:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),node:process.version,platform:process.platform,performanceMode,result:'running',logs:[],sourceHashes:Object.fromEntries(['orderops/list.html','orderops/workbench-ui.js','orderops/workbench-contract.js','orderops/workbench-v12.css','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,createHash('sha256').update(readFileSync(join(root,path))).digest('hex')]))};
+const evidenceRun={startedAt:new Date().toISOString(),head:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dirty:execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),node:process.version,platform:process.platform,performanceMode,result:'running',logs:[],sourceHashes:Object.fromEntries(['orderops/list.html','orderops/workbench-ui.js','orderops/workbench-contract.js','orderops/source-coordinator.js','orderops/voucher-workbench.js','orderops/workbench-v12.css','orderFulfillmentEngine.js','orderFulfillmentWorkbook.js','nexus/common/nexus-workbench-layout-v2.js'].map(path=>[path,createHash('sha256').update(readFileSync(join(root,path))).digest('hex')]))};
 evidenceRun.performanceVerdict=performanceMode?'not-measured':'not-applicable';
 evidenceRun.predecoratedPair=predecoratedPair;
 evidenceRun.responseHashes=[];
@@ -108,6 +108,9 @@ try {
   } else {
   assert.deepEqual(errors,[]);
   assert.equal(await ev('document.querySelectorAll("#previewTabs [data-preview]").length'),6);
+  assert.equal(await ev('document.querySelectorAll("[data-orderops-api-source]").length'),4);
+  assert.deepEqual(await ev(`[...document.querySelectorAll('.orderops-workbench-v12 > [data-nexus-pane]')].map(pane=>pane.getAttribute('aria-label'))`),['자료 준비','현재 작업','전표관리']);
+  assert.equal(await ev('document.querySelector("#orderOpsCurrentViewTitle").textContent'),'현재 주문현황');
   await ev(`window.confirm=()=>true;window.alert=()=>{};`);
   // Real File/SheetJS/explicit mapping/apply UI. Test hook exists only in this
   // local server's response; shipped application has no test state endpoint.
@@ -121,7 +124,19 @@ try {
   await click('#prepareApplyButton');
   await until(()=>ev('__ops.state.workspace?.orders?.length===2&&!__ops.workbench.operation'),'file apply');
   assert.equal(await ev('__ops.state.activePreview'),'allocations');
+  assert.equal(await ev('document.querySelector("#orderOpsCurrentViewTitle").textContent'),'현재 주문현황');
   assert.ok(await ev('document.querySelector("#previewTable").textContent.includes("합성상품")'));
+  assert.equal(await ev('document.querySelectorAll("[data-voucher-check]").length'),2);
+  await click('[data-voucher-check]');
+  await ev(`(()=>{const managerInput=document.querySelector('#deliveryManagerAssignmentInput');managerInput.value='선택 담당';managerInput.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
+  await click('#deliveryManagerAssignmentApply');
+  await until(()=>ev(`__ops.state.workspace.orders[0].manager==='선택 담당'`),'selected voucher manager transaction');
+  assert.deepEqual(await ev('__ops.state.workspace.orders.map(row=>row.manager)'),['선택 담당','담당 A'],'unchecked voucher must remain unchanged');
+  await ev(`(()=>{const managerInput=document.querySelector('#deliveryManagerAssignmentInput');managerInput.value='담당 A';managerInput.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
+  await click('#deliveryManagerAssignmentApply');
+  await until(()=>ev(`__ops.state.workspace.orders[0].manager==='담당 A'`),'selected voucher manager restore transaction');
+  assert.deepEqual(await ev('__ops.state.workspace.orders.map(row=>row.manager)'),['담당 A','담당 A']);
+  await click('[data-voucher-check]');
   assert.equal(await ev('Boolean(__ops.state.workspace.sourceFiles.orders.explicitMapping)'),true);
   assert.equal(await ev('Boolean(__ops.state.workspace.sourceFiles.orders.sourceEvidence.cells)'),true);
   await click('#inventoryInspectorReopen');

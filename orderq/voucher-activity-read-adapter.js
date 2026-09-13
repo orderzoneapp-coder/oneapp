@@ -11,7 +11,22 @@ const MODE_CONFIG = Object.freeze({
 });
 
 function validDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+  const candidate = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return false;
+  const parsed = new Date(`${candidate}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === candidate;
+}
+
+function isoDates(fromDate, toDate, maxDays) {
+  if (!validDate(fromDate) || !validDate(toDate) || fromDate > toDate) throw new Error('VOUCHER_ACTIVITY_RANGE_INVALID');
+  const dates = [];
+  const cursor = new Date(`${fromDate}T00:00:00.000Z`);
+  const end = new Date(`${toDate}T00:00:00.000Z`);
+  while (cursor <= end && dates.length < maxDays) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return { dates, truncated: cursor <= end };
 }
 
 function number(value) {
@@ -90,6 +105,8 @@ export async function readVoucherActivity({ mode, date, companyId = '' }) {
         voucherNo: document.orderNo || document.externalDocumentNo || document.voucherNo || id,
         date: document[config.dateField] || date,
         savedAt,
+        revision: Number(document.revision || document.documentRevision || document.orderRevision) || 0,
+        hash: document.hash || document.snapshotHash || document.documentHash || '',
         customerName: customerName(mode, document) || '거래처 미지정',
         customerId: document.supplierCustomerId || document.salesCustomerId || document.customerId || document.deliveryCustomerId || '',
         customerCode: document.supplierCustomerCode || document.salesCustomerCode || document.customerCode || document.deliveryCustomerCode || '',
@@ -145,4 +162,50 @@ export async function readVoucherActivity({ mode, date, companyId = '' }) {
   } finally {
     db?.close();
   }
+}
+
+export async function readVoucherActivityRange({ mode, fromDate, toDate, companyId = '', maxDays = 31, concurrency = 4 }) {
+  const boundedDays = Math.max(1, Math.min(62, Number(maxDays) || 31));
+  const boundedConcurrency = Math.max(1, Math.min(4, Number(concurrency) || 4));
+  const range = isoDates(fromDate, toDate, boundedDays);
+  const results = [];
+  for (let offset = 0; offset < range.dates.length; offset += boundedConcurrency) {
+    const batch = range.dates.slice(offset, offset + boundedConcurrency);
+    results.push(...await Promise.all(batch.map(date => readVoucherActivity({ mode, date, companyId }))));
+  }
+  const failures = results.filter(result => result.status === 'ERROR');
+  const rows = results.flatMap(result => result.status === 'READY' ? result.rows : []);
+  const seen = new Set();
+  const deduplicated = rows.filter(row => {
+    const key = [row.companyId, row.voucherMode, row.id, row.revision, row.hash].join('\u001f');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const partial = range.truncated || failures.length > 0;
+  return {
+    schema: ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT,
+    adapter: ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER,
+    status: partial ? 'PARTIAL' : (deduplicated.length ? 'READY' : 'EMPTY'),
+    mode,
+    fromDate,
+    toDate,
+    companyId,
+    count: deduplicated.length,
+    rows: deduplicated,
+    checkedAt: new Date().toISOString(),
+    source: 'ORDER Q 공식 전표 Read Adapter',
+    coverage: {
+      requestedFromDate: fromDate,
+      requestedToDate: toDate,
+      readDates: range.dates,
+      maxDays: boundedDays,
+      truncated: range.truncated,
+      failureDates: failures.map(result => result.date),
+    },
+    error: partial ? {
+      code: 'VOUCHER_ACTIVITY_RANGE_PARTIAL',
+      message: [range.truncated ? `${boundedDays}일 제한으로 일부 기간만 읽었습니다.` : '', failures.length ? `${failures.length}개 일자를 읽지 못했습니다.` : ''].filter(Boolean).join(' '),
+    } : null,
+  };
 }
