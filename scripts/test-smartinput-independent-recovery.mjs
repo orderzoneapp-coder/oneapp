@@ -19,7 +19,7 @@ const voucherQueryHtml = read('orderq/voucher-query.html');
 const manifest = JSON.parse(read('app-manifest.json'));
 
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0/);
-assert.match(html, /nexus-ui\.css\?v=1\.4\.0/);
+assert.match(html, /nexus-ui\.css\?v=1\.4\.1/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
 assert.match(html, /smartinput\.css\?v=0\.9\.21/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
