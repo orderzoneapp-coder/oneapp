@@ -38,7 +38,10 @@
 - 기존 SmartInput 조기 실패와 독립적으로 위 링크 검사를 끝까지 실행하도록 `Validate NEXUS home and global header links` CI 작업을 추가했다.
 - Repository validation 24 checks/0 warnings, 공통 UI 복구, 기본 로그인/홈, 인증 최소제어, 회사정보, 공통 작업영역, client safety 검사 PASS.
 - 기준 `origin/main`에 이미 존재하는 별도 실패: SmartInput HTML은 `smartinput.css?v=0.9.22`인데 `test-smartinput-independent-recovery.mjs`와 `test-smartinput-settings-ux.mjs`는 `0.9.21`을 기대한다. `test-nexus-table-ux-contract.mjs`는 기준 SmartInput HTML에 없는 `nexus-table-ux.js?v=1.1.0`을 기대한다. 본 브랜치는 SmartInput의 이 자산이나 해당 기대값을 변경하지 않는다.
-- PR·병합 SHA·CI·Pages 배포: 완료 후 기록한다.
+- PR: `#611`.
+- PR 검증 run `34774174762`: `Validate NEXUS home and global header links` PASS, SmartInput optional loader PASS, SmartInput 초기 입력 레이아웃 PASS, OrderOps workbench v1.2 PASS.
+- 같은 run의 전체 repository job은 기준 `origin/main`과 동일한 SmartInput CSS 토큰 기대값에서 실패했고, Phase 6B도 기준 소스 정규화 hash `d38c6c68...`와 과거 승인 hash 불일치로 실패했다. 이번 링크 전용 독립 job에는 실패가 없다.
+- 병합 SHA·Pages 배포와 운영 검증 결과는 PR 병합 후 GitHub/운영 증거로 확인한다.
 - 운영 페이지의 자산 토큰·해시와 NEXUS 홈/글로벌헤더 이동: 배포 후 읽기 전용으로 확인한다.
 
 ## 롤백
