@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Restore and verify exact isolated patch
+      - name: Restore exact patch and repair confirmed missing function brace
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -25,23 +25,11 @@ jobs:
           import base64, gzip, hashlib, json, os, subprocess
           from pathlib import Path
           from urllib.request import Request, urlopen
-          parts = [
-            'f5b1b81738d36134ec433353d1fd53ed7f791b2b',
-            '9e9dabe152af104896a8294d6dc69c76ba2b3c5a',
-            '81de481467941a88814c995d7c5d234b27490597',
-            '3bcc22e34d175d556908f19a7cb2e111e6fec0b2',
-            '0ecc04f79078d45f775f6c7064ca5e7d3edcccce',
-            '36a40ad679653cad501f61cb7484c2c8cee977de',
-            '08f3d97e6fe0061d6f838d288c7c61b9d3d8d349',
-            '1d9de0dd89ce00753e9f78e6c52a0e647693f4ca',
-            '9ebbd2ad851a3e93c93df607ab1a6becd7b6b085',
-          ]
+          parts = ['f5b1b81738d36134ec433353d1fd53ed7f791b2b','9e9dabe152af104896a8294d6dc69c76ba2b3c5a','81de481467941a88814c995d7c5d234b27490597','3bcc22e34d175d556908f19a7cb2e111e6fec0b2','0ecc04f79078d45f775f6c7064ca5e7d3edcccce','36a40ad679653cad501f61cb7484c2c8cee977de','08f3d97e6fe0061d6f838d288c7c61b9d3d8d349','1d9de0dd89ce00753e9f78e6c52a0e647693f4ca','9ebbd2ad851a3e93c93df607ab1a6becd7b6b085']
           payload = []
           for i, sha in enumerate(parts):
-              request = Request('https://api.github.com/repos/orderzoneapp-coder/oneapp/git/blobs/' + sha,
-                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
-              with urlopen(request, timeout=30) as response:
-                  blob = json.load(response)
+              request = Request('https://api.github.com/repos/orderzoneapp-coder/oneapp/git/blobs/' + sha, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+              with urlopen(request, timeout=30) as response: blob = json.load(response)
               data = base64.b64decode(blob['content'])
               assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest() == sha
               if i == 2:
@@ -54,9 +42,16 @@ jobs:
           Path('/tmp/stage3-native.patch').write_bytes(patch)
           subprocess.run(['git','apply','--check','--unidiff-zero','/tmp/stage3-native.patch'], check=True)
           subprocess.run(['git','apply','--unidiff-zero','/tmp/stage3-native.patch'], check=True)
-          print('Exact patch verified; isolated checkout only, no remote/product write.')
+          path = Path('smartinput/smartinput-data-store.js')
+          source = path.read_text()
+          before = "    requests([[DATA_STORES.ALIAS_MAPPINGS, null, true]], ([records]) => finish(records));\n  });\n\n/** One consistent read"
+          assert source.count(before) == 1
+          path.write_text(source.replace(before, before.replace('  });\n\n', '  });\n}\n\n')))
+          print('Isolated exact patch + observed syntax fix. No production data access.')
           PY
           git diff --check
+          for source in smartinput/smartinput-data-store.js smartinput/independent-estimate.js smartinput/estimate-master-apply.js reference-data/product-master-command-adapter.js smartinput/estimate-f8-source-plan.js; do node --input-type=module --check < "$source"; done
+          node --input-type=module -e "import('./smartinput/smartinput-data-store.js').then(()=>console.log('datastore ESM import PASS'))"
       - name: Native IndexedDB selected writes and latest Excel round
         env:
           STAGE3_DEBUG: '1'
@@ -67,9 +62,13 @@ jobs:
           node scripts/test-smartinput-stage3-f8-baseline.mjs
           node scripts/test-smartinput-draft-save-coordinator.mjs
           node scripts/test-merchops-storage-atomicity.mjs
+      - name: Preserve exact tested files
+        if: always()
+        run: |
+          tar -czf /tmp/stage3-native-files.tar.gz coreEngine.js reference-data/product-master-command-adapter.js smartinput/independent-estimate.js smartinput/estimate-master-apply.js smartinput/smartinput-data-store.js smartinput/estimate-f8-source-plan.js scripts/test-smartinput-stage3-plans.mjs scripts/test-smartinput-stage3-storage-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: stage3-native-tested-patch
-          path: /tmp/stage3-native.patch
+          name: stage3-native-tested-files
+          path: /tmp/stage3-native-files.tar.gz
           retention-days: 3
