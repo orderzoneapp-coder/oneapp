@@ -1056,3 +1056,12 @@ Their business meaning must not be unified merely because the key number is the 
    - 단독 실행, 장애 격리, 데이터 무결성, 운영 배포와 독립 롤백이 확인된 앱만 계획에서 파일럿, 파일럿에서 운영으로 승격한다.
 
 SmartInput 파일럿은 5단계 기본 복구와 상품·거래처 Snapshot 소비자 연결을 수행했다. 상품·거래처·ORDER Q 원장 소유권 이전과 다른 단계의 상태 승격은 수행하지 않는다.
+
+
+### SmartInput 3단계 독립 견적서 (2026-09-13)
+- 연동 탭·생성·연쇄 저장을 폐기하고 `independent-estimate.js` → `estimate-workspace.js` → 기존 v5 `smartinput-data-store.js` 경로를 사용한다. estimateId와 ownedRowId, 거래처별 전체행, 수기값과 기존 F8 대표값 규칙을 보존한다.
+- 선택 회사/견적서만 CAS 저장한다. estimates·매핑·설정의 intent/receipt/마지막 엑셀 결과는 native IDB transaction 경계로 처리한다. 미선택 자료는 쓰지 않는다. 일반 저장/초기화는 마지막 엑셀 회차를 대체하지 않는다.
+- 견적서 선택과 파일 불러오기는 순서 독립이다. 미저장 견적별 작업은 기존 V2 journal의 workspace UI에 보존한다. 신규 DB/store를 만들지 않는다.
+- 마스터는 선택 견적서의 허용된 네 가격 필드만 Product Master owner command로 요청한다. 실제 인증 세션과 company.profile_read로 회사 근거를 확인하며, 로컬 편집용 기본 actor를 마스터 권한으로 쓰지 않는다. command receipt와 publication 재시도는 견적서 저장과 별개다.
+- 전환은 고정 백업 다운로드·기존 탭 종료·재로드 후 기존 F8 결과 비교를 통과한 대상만 같은 ID로 커밋한다. 완료 대상 재실행은 전환 후 편집을 보존한다.
+- 호환 복구: 배포된 3단계 reader와 v5 형식은 유지하고 `/smartinput/?estimateRecovery=readonly`로 사업 자료 쓰기를 중지한다. ownedRows/F8/미저장 V2 journal은 계속 읽고 보존한다. 소스 복구 시 이 쓰기 가드를 기본 활성화한 호환 수정본을 PR로 배포한다. 이전 linked writer로 되돌리거나 백업 전체를 운영 DB에 덮어쓰지 않는다. 수정 후 가드를 해제하며, 개별 데이터 복원은 백업·현재값·전환 후 편집을 대조한 CAS로만 처리한다.

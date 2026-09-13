@@ -1,0 +1,26 @@
+name: SmartInput Stage 3 continuation source
+on:
+  push:
+    branches: [codex/smartinput-stage3-independent-estimates-20260913]
+    paths: [.github/workflows/smartinput-stage3-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Archive preserved PR source and exact Git metadata
+        run: |
+          git archive --format=tar HEAD > /tmp/stage3-pr599-continuation.tar
+          git -c core.quotepath=false ls-tree -r HEAD > /tmp/stage3-pr599-continuation-blobs.txt
+          git bundle create /tmp/stage3-pr599-continuation.bundle HEAD refs/remotes/origin/main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage3-pr599-continuation
+          path: /tmp/stage3-pr599-continuation*
+          retention-days: 3

@@ -21,9 +21,9 @@ const manifest = JSON.parse(read('app-manifest.json'));
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0/);
 assert.match(html, /nexus-ui\.css\?v=1\.4\.0/);
 assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
-assert.match(html, /smartinput\.css\?v=0\.9\.20/);
+assert.match(html, /smartinput\.css\?v=0\.9\.21/);
 assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.11\.59/);
+assert.match(html, /smartinput\.js\?v=0\.12\.0/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
 assert.match(html, /nexus-ui\.js\?v=1\.7\.0/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
@@ -35,8 +35,8 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/);
-assert.match(html, /id="linkedEstimateList"/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/);
+assert.doesNotMatch(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
 assert.match(html, /<th class="sequence-column sequence-select-column"[^>]*>[\s\S]*class="sequence-checkbox sequence-checkbox--all"[\s\S]*id="selectAllRows"[\s\S]*<span>No\.<\/span>/, 'select-all must render No. inside the checkbox control');
@@ -60,22 +60,15 @@ assert.match(appSource, /tr\.classList\.toggle\('is-row-selected',[\s\S]*tr\.cla
 assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
   'autosave must never write through to linked estimate originals');
-assert.match(appSource, /commitEstimateBundle\(\{ upserts: bundle, deletes: deletedEstimateIds, expectedPreimages \}\)/, 'explicit Save must atomically persist linked updates and empty-source deletions with optimistic pre-images');
-assert.match(appSource, /linkedFieldConflicts[\s\S]*linked-value-conflict/, 'different linked source values must be identified before explicit source selection');
-assert.match(appSource, /showLinkedEstimateSourceEditDialog\(evidence\)/, 'linked edits must pass through the operator source-selection dialog');
-assert.match(linkedSourceEditSource, /LINKED_ESTIMATE_SOURCE_SELECTION_REQUIRED/, 'multiple linked sources must fail closed without an explicit selection');
-assert.match(linkedSourceEditSource, /LINKED_ESTIMATE_NEW_ROW_SOURCE_REQUIRED/, 'new linked rows must fail closed without an explicit target estimate');
-assert.match(linkedSourceEditSource, /operation === 'DELETE'[\s\S]*targets: row\.sources\.map/, 'linked row deletion must retain every source row as an explicit deletion target');
-assert.match(linkedSourceEditSource, /deletedSourceIds[\s\S]*deletes: \[\.\.\.deletedSourceIds\]/, 'source estimates with zero remaining products must join the atomic delete bundle');
-assert.match(appSource, /nameCollision[\s\S]*기존 저장분을 덮어쓸까요/, 'exact estimate-name collisions must require overwrite confirmation');
+assert.match(appSource, /estimateWorkspace.edit/, 'general save must use target-only CAS');
+assert.match(appSource, /collision && !window.confirm/, 'name collisions need explicit overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
 assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>정보 변경</, 'the estimate library must expose only selected deletion and information actions');
 assert.match(html, /id="saveEstimateAsButton"[^>]*>새 견적서 저장</, 'a loaded estimate must use Save As instead of in-place rename');
-assert.match(appSource, /function openSelectedEstimateInformationDialog\([\s\S]*data-estimate-customer-match[\s\S]*commitEstimateBundle\(\{ upserts: bundle \}\)/,
-  'single-record information changes must support customer rematching while preserving linked display metadata');
-assert.match(appSource, /target\.customerId[\s\S]*target\.customerCode[\s\S]*target\.customerName[\s\S]*target\.draft\.header = estimateHeaderWithCustomer/,
+assert.match(appSource, /function openSelectedEstimateInformationDialog[\s\S]*commitIndependentEstimateEdit/, 'information changes use target-only CAS');
+assert.match(appSource, /function updatedEstimateInformationBundle[\s\S]*customerId:[\s\S]*customerCode:[\s\S]*customerName:[\s\S]*next\[target\] = value; next\.draft\.header\[target\] = value/,
   'estimate information changes must persist the same customer identity on the record and draft header');
 assert.doesNotMatch(appSource, /state\.draft\.modes\.estimate = nextCurrent;[\s\S]{0,600}clearCustomerAfterSave\(nextCurrent\.header\)/,
   'saving the selected estimate must not clear its rematched customer before a later in-place save');
@@ -83,12 +76,9 @@ assert.match(appSource, /mapping\.targetEstimateId[\s\S]*TARGET_CUSTOMER_CHANGED
   'changing an estimate customer must retire stale per-customer target mappings');
 assert.doesNotMatch(html + appSource, /merchOpsEstimateButton|openEstimateCreateChoiceDialog/,
   'MerchOps and redundant estimate-kind choice controls must stay removed');
-assert.match(appSource, /state\.noticeEstimateIds = \[record\.estimateId\];[\s\S]*loadCatalogRecord\(record, \{ preserveSelection: true \}\)/,
-  'normal card selection must immediately switch to exactly one stored estimate');
-assert.match(appSource, /function estimateCreation\([\s\S]*COMPOSITION_PREVIEW/, 'multi-selection must be isolated in an explicit creation workflow');
-assert.match(html, /id="estimateMultiSelectButton"[^>]*aria-label="견적서 다중 선택"[^>]*>[\s\S]*\+/, 'the explicit multi-select entry must be icon-only and accessible');
-assert.match(appSource, /const additive = event\.ctrlKey \|\| event\.metaKey;[\s\S]*beginEstimateMultiSelect\(\{ deferPreview: true \}\)/,
-  'Ctrl or Command click must enter the same additive multi-selection workflow');
+assert.match(appSource, /function handleEstimateCardSelection[\s\S]*selected\.delete[\s\S]*selected\.add[\s\S]*changeEstimateSelection/, 'card clicks toggle update targets');
+assert.match(appSource, /function estimateCreation\(\) \{\s*return null;/, 'retired linked creation must be unreachable');
+assert.match(html, /id="estimateMultiSelectButton"[^>]*>전체 선택<\/button>/, 'select all must be explicit');
 assert.doesNotMatch(appSource, /toast\(`\$\{records\.length\}개 견적서 · 중복 제거/, 'estimate selection must not create a redundant coachmark over the action area');
 assert.match(appSource, /data-estimate-name[^>]*placeholder="견적서명을 입력하세요"[^>]*autofocus/, 'estimate naming must be immediately ready for direct keyboard input');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*focusNameInput\(\);[\s\S]*setTimeout\(focusNameInput, 0\)/, 'estimate naming focus must be immediate and restored after native modal focus handling');
@@ -129,8 +119,8 @@ assert.doesNotMatch(appSource, /await saveSettings\(|\.then\(\(\) => saveSetting
 assert.match(appSource, /async function rematchRowsForCustomer[\s\S]*rowsAtStart = JSON\.stringify\(current\.rows\)[\s\S]*JSON\.stringify\(current\.rows\) !== rowsAtStart[\s\S]*current\.rows = matched/, 'late customer rematch results must be rejected before replacing edited rows');
 assert.match(appSource, /activeCustomerRematchAttemptId[\s\S]*completeButton[^\n]*disabled[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeCustomerRematchAttemptId/, 'official save must remain blocked until customer rematching settles');
 assert.match(appSource, /function scheduleMappingProjection[\s\S]*invalidateOptionalOperations\(\);[\s\S]*scheduleSave\(\{ invalidateOperations: false \}\)/, 'mapping edits must invalidate older operations at edit time rather than after the debounce');
-assert.match(appSource, /function invalidateEstimateLibraryRead[\s\S]*ESTIMATE_LIBRARY_READ[\s\S]*await commitEstimateBundle[\s\S]*invalidateEstimateLibraryRead\(\);[\s\S]*state\.estimates =/, 'a late estimate-library read must not replace a successfully committed in-memory library');
-assert.match(appSource, /async function recoverEstimateF8Integrity[\s\S]*withTimeout\([\s\S]*loadEstimateLibrary\(\)[\s\S]*F8 저장 결과 목록 로딩 시간 초과/, 'F8 pre-commit and post-commit estimate reads must leave a bounded failure path');
+assert.match(appSource, /function invalidateEstimateLibraryRead[\s\S]*ESTIMATE_LIBRARY_READ[\s\S]*commitIndependentEstimateEdit[\s\S]*invalidateEstimateLibraryRead\(\);[\s\S]*state\.estimates =/, 'a late estimate-library read must not replace a successfully committed in-memory library');
+assert.match(appSource, /async function recoverEstimateF8Integrity[\s\S]*기존 자료 전환/, 'F8 must use the explicit preserved migration path');
 assert.match(appSource, /activeFileInputAttemptId[\s\S]*async function handleFile[\s\S]*state\.activeFileInputAttemptId = operationToken\.attemptId[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeFileInputAttemptId/, 'save must not overlap a pending file read even when another activity changes the visible activity label');
 assert.match(appSource, /function openEstimateSaveDialog[\s\S]*state\.activeFileInputAttemptId/, 'Save As must not bypass the pending-file write boundary');
 assert.match(appSource, /async function waitForSmartInputIdle[\s\S]*state\.activeFileInputAttemptId/, 'workspace leave must wait for a pending file read');
@@ -145,8 +135,7 @@ for (const mutationContract of [
 ]) {
   assert.match(appSource, mutationContract, 'user row mutations must invalidate an older customer rematch before it can replace current rows');
 }
-assert.match(appSource, /try \{\s*if \(!acceptsResult\(\)\) return staleResult\(\);\s*await commitEstimateLinkBundle/, 'F8 recovery must reject stale input immediately before its transactional write');
-assert.match(appSource, /function applyEstimateF8RecoveredPostimages[\s\S]*rememberActiveEstimateWork\(\)[\s\S]*estimateF8WorkingRebase[\s\S]*replacementById[\s\S]*loadCatalogRecord/, 'F8 recovery must rebase post-commit edits and update only the affected estimate targets');
+assert.match(read('smartinput/estimate-workspace.js'), /rebaseIndependentEstimateWork/, 'selected commits preserve per-estimate working edits');
 assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
   'the adapter must use the exact 0a order text extractor');
 assert.doesNotMatch(adapterSource, /function splitSourceMessages|function parseOrderLine|function looksLikeOrder/,
@@ -163,7 +152,7 @@ assert.match(appSource, /세무거래처는 선택사항입니다/, 'customer re
 assert.doesNotMatch(appSource, /if \(!selectedTaxCustomerId\)\s*\{[\s\S]{0,160}세무거래처를 정확히 1곳 지정하세요/, 'customer relationship save must not require a tax customer');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 
-for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList', 'linkedEstimateList']) {
+for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList']) {
   assert.match(html, new RegExp(marker), `${marker} must remain in the protected SmartInput workspace`);
 }
 assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must live in the app header');

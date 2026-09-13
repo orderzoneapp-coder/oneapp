@@ -142,7 +142,7 @@ try {
   });
   const navigationStartedAt = Date.now();
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/smartinput/` });
-  const earlyControls = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const heading=document.querySelector('#estimateLibraryHeading');const panel=document.querySelector('#estimateLibraryView');const individual=document.querySelector('#estimateLibraryIndividualButton');const linked=document.querySelector('#estimateLibraryLinkedButton');if(!shell?.mounted||shell.ready||!heading||!panel||!individual||!linked)return null;return {headingVisible:!heading.hidden&&heading.getBoundingClientRect().height>0,panelOpen:panel.classList.contains('is-open'),individualEnabled:!individual.disabled,linkedEnabled:!linked.disabled,loadingText:document.querySelector('#catalogPickerList')?.textContent?.trim()||''};})()`), 'early estimate-list controls', 1_500);
+  const earlyControls = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const heading=document.querySelector('#estimateLibraryHeading');const panel=document.querySelector('#estimateLibraryView');const individual=document.querySelector('#estimateLibraryIndividualButton');const linked=document.querySelector('#estimateDeselectAllButton');if(!shell?.mounted||shell.ready||!heading||!panel||!individual||!linked)return null;return {headingVisible:!heading.hidden&&heading.getBoundingClientRect().height>0,panelOpen:panel.classList.contains('is-open'),individualEnabled:!individual.disabled,deselectEnabled:!linked.disabled,loadingText:document.querySelector('#catalogPickerList')?.textContent?.trim()||''};})()`), 'early estimate-list controls', 1_500);
   const earlyRevealMs = Date.now() - navigationStartedAt;
   assert.equal(await evaluate(client, `window.__ONEAPP_SMARTINPUT_EARLY_UI__?.ready===false`), true,
     'estimate-list controls must appear before the delayed main module');
@@ -150,15 +150,12 @@ try {
     headingVisible: true,
     panelOpen: true,
     individualEnabled: true,
-    linkedEnabled: true,
+    deselectEnabled: true,
     loadingText: '견적서 목록을 불러오는 중입니다.'
   }, 'local UI state must reveal the estimate-list shell before the main module');
-  await click(client, '#estimateLibraryLinkedButton');
-  const earlyLinked = await waitFor(() => evaluate(client, `(() => {const shell=window.__ONEAPP_SMARTINPUT_EARLY_UI__;const linked=document.querySelector('#estimateLibraryLinkedButton');const list=document.querySelector('#linkedEstimateList');return shell&&!shell.ready&&linked?.getAttribute('aria-pressed')==='true'&&!list?.hidden?{kind:shell.estimateLibraryKind,loadingText:list.textContent.trim()}:null;})()`), 'early linked-estimate selection', 1_200);
-  assert.deepEqual(earlyLinked, { kind: 'linked', loadingText: '연동견적서를 불러오는 중입니다.' }, 'linked-estimate selection must respond while data modules load');
+  await click(client, '#estimateLibraryIndividualButton');
   await waitFor(() => evaluate(client, `window.__ONEAPP_SMARTINPUT_EARLY_UI__?.ready===true&&Boolean(document.querySelector('.nexus-ui-header'))&&Boolean(document.querySelector('#inputRows tr'))`), 'SmartInput shell');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateLibraryLinkedButton').getAttribute('aria-pressed')==='true'&&!document.querySelector('#linkedEstimateList').hidden`), true,
-    'early linked-estimate selection must survive main-module initialization');
+  assert.equal(await evaluate(client, `!document.querySelector('#catalogPickerList').hidden&&!document.querySelector('#linkedEstimateList')`), true, 'single list survives initialization');
 
   await click(client, '[data-mode="estimate"]');
   await waitFor(() => evaluate(client, `!document.querySelector('#estimateLibraryHeading').hidden`), 'estimate library');
@@ -170,22 +167,17 @@ try {
   const estimateLibraryReadyMs = await evaluate(client, `performance.getEntriesByName('smartinput-estimate-library-ready').at(-1)?.duration ?? -1`);
   assert.ok(estimateLibraryReadyMs >= 0 && estimateLibraryReadyMs < 2_500, 'estimate library fast path must finish inside its independent local-read budget');
   await wait(500);
-  await evaluate(client, `(() => {window.__touchInputEvidence=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{const control=event.target.closest?.('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton');if(control)window.__touchInputEvidence.push({type,controlId:control.id,pointerType:event.pointerType||''});},true);return true;})()`);
+  await evaluate(client, `(() => {window.__touchInputEvidence=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,event=>{const control=event.target.closest?.('#estimateLibraryIndividualButton,#estimateDeselectAllButton,#estimateMultiSelectButton');if(control)window.__touchInputEvidence.push({type,controlId:control.id,pointerType:event.pointerType||''});},true);return true;})()`);
 
-  const controls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
+  const controls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateDeselectAllButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
   assert.equal(controls.every(control => control.width >= 44 && control.height >= 44 && control.touchAction === 'manipulation' && !control.disabled), true,
     'estimate-list header controls must expose enabled 44px touch targets');
 
-  await touch(client, '#estimateMultiSelectButton');
-  await waitFor(() => evaluate(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'`), 'plus touch enter');
-  await touch(client, '#estimateMultiSelectButton');
-  await waitFor(() => evaluate(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'`), 'plus touch exit');
-  await touch(client, '#estimateMultiSelectButton');
-  await waitFor(() => evaluate(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'`), 'plus touch re-entry');
-  await touch(client, '#estimateLibraryLinkedButton');
-  await waitFor(() => evaluate(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&!document.querySelector('#linkedEstimateList').hidden&&document.querySelector('#catalogPickerList').hidden`), 'linked list touch after multiselect');
-  await touch(client, '#estimateLibraryIndividualButton');
-  await waitFor(() => evaluate(client, `!document.querySelector('#catalogPickerList').hidden&&document.querySelector('#linkedEstimateList').hidden`), 'individual list touch return');
+  for (const selector of ['#estimateMultiSelectButton', '#estimateDeselectAllButton', '#estimateMultiSelectButton', '#estimateDeselectAllButton', '#estimateLibraryIndividualButton']) {
+    await touch(client, selector);
+    await waitFor(() => evaluate(client, `!document.querySelector('#estimateMultiSelectButton').disabled`), 'selection settled');
+  }
+  assert.equal(await evaluate(client, `!document.querySelector('#catalogPickerList').hidden`), true, 'touch selection retains the list');
   const touchEvidence = await evaluate(client, `window.__touchInputEvidence`);
   assert.ok(touchEvidence.filter(event => event.type === 'pointerdown' && event.pointerType === 'touch').length >= 5, 'each control tap must use a touch pointer');
   assert.ok(touchEvidence.filter(event => event.type === 'pointerup' && event.pointerType === 'touch').length >= 5, 'each touch pointer must complete');

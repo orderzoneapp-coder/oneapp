@@ -14,13 +14,14 @@ assert.match(html, /class="parser-card"[^>]*id="sourceInputPanel"/, 'the indepen
 assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser must not be hidden by a work-table toggle');
 assert.match(html, /class="workbench"/, 'the work table must remain');
 assert.match(html, /class="related-panel estimate-library-view"[^>]*id="estimateLibraryView"/, 'the right estimate library must remain a workspace sibling');
-assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"[\s\S]*id="linkedEstimateList"/, 'individual and linked estimate lists must remain available');
+assert.match(html, /id="estimateLibraryView"[\s\S]*id="catalogPickerList"/, 'one estimate list must remain available');
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"[\s\S]*id="voucherReadyState"/, 'non-estimate voucher modes must expose a date-scoped right-side activity panel');
 assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 'the dynamic voucher context and estimate library must share the protected right workspace without replacing either contract');
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
-assert.match(html, /id="estimateLibraryIndividualButton"[^>]*>견적서 목록<\/button>[\s\S]*id="estimateLibraryLinkedButton"[^>]*>연동견적서<\/button>[\s\S]*id="estimateMultiSelectButton"[^>]*>[\s\S]*\+/, 'individual and linked estimate lists must use separate buttons beside one icon-only multi-select action');
-assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.20"/, 'the external reference-popup CSS must use the next cache-bust version');
-assert.match(html, /src="\.\/smartinput\.js\?v=0\.11\.59"/, 'the external reference-popup behavior must use the current cache-bust version');
+assert.match(html, /id="estimateLibraryIndividualButton"[\s\S]*id="estimateMultiSelectButton"[\s\S]*id="estimateDeselectAllButton"/, 'one list must expose select all and deselect all');
+assert.doesNotMatch(html, /id="(?:estimateLibraryLinkedButton|linkedEstimateList|estimateCreateButton)"/, 'retired linked controls must be removed');
+assert.match(html, /href="\.\/smartinput\.css\?v=0\.9\.21"/, 'the external reference-popup CSS must use the next cache-bust version');
+assert.match(html, /src="\.\/smartinput\.js\?v=0\.12\.0"/, 'the external reference-popup behavior must use the current cache-bust version');
 const appBarStart = html.indexOf('<header class="app-bar">');
 const appBarEnd = html.indexOf('</header>', appBarStart);
 const referenceOverviewPopupIndex = html.indexOf('id="referenceOverviewPopup"');
@@ -71,19 +72,13 @@ assert.match(css, /\.grid-card > \.work-action-bar \.document-fields__right\s*\{
   'all voucher modes must keep permanent controls in one stable scrolling slot beside the fixed reset action');
 assert.match(css, /\.estimate-card__drag-handle\s*\{[^}]*touch-action:\s*none/s,
   'card ordering must be isolated to a dedicated drag handle');
-assert.match(css, /\.estimate-library-toolbar\s*\{[^}]*grid-template-columns:[^;}]*44px/s,
-  'the icon-only estimate multi-select control must receive a 44px grid track');
-assert.match(css, /\.estimate-library-kind-button,\s*\.estimate-multi-select-button\s*\{[^}]*min-height:\s*44px[^}]*height:\s*44px[^}]*touch-action:\s*manipulation/s,
-  'all estimate-library header controls must expose reliable 44px touch targets');
-assert.match(js, /individualButton\.disabled\s*=\s*state\.busy;[\s\S]*linkedButton\.disabled\s*=\s*state\.busy;/,
-  'estimate-list kind controls must remain actionable during multi-select');
-assert.match(js, /function selectEstimateLibraryKind\(kind,[\s\S]*const multiSelect = estimateMultiSelectActive\(\);[\s\S]*if \(estimateCreationActive\(\)\)[\s\S]*cancelEstimateCreation\(\{ silent: true, persist: false, render: false \}\);[\s\S]*else if \(multiSelect\)[\s\S]*state\.estimateMultiSelectKind = '';[\s\S]*state\.estimateLibraryKind = kind;/,
-  'switching estimate-list kind must safely cancel multi-select without persisting the navigation state');
+assert.match(css, /#estimateMultiSelectButton, #estimateDeselectAllButton\s*\{[^}]*min-height:\s*44px[^}]*touch-action:\s*manipulation/s, 'selection controls retain touch targets');
+assert.match(js, /function changeEstimateSelection[\s\S]*estimateWorkspace.select/, 'selection must use the independent workspace');
 assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-height:\s*44px[^}]*grid-template-columns:\s*repeat\(2,/s,
   'the right-panel footer must stay at or below 44px with two horizontal actions');
 assert.match(css, /\.estimate-info-customer__value\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
   'the estimate information dialog must keep the matched customer and rematch action together');
-assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateCreateButton"[^>]*>연동견적서 생성<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/,
+assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/,
   'the table footer must keep Save left and approved estimate/output actions right in order');
 assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
   'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');

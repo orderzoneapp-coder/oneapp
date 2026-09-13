@@ -80,8 +80,12 @@ jobs:
           node scripts/test-smartinput-settings-ux-browser.mjs
           node scripts/test-smartinput-right-panel-touch-browser.mjs
           node scripts/test-smartinput-browser-e2e.mjs
-          node scripts/test-smartinput-estimate-bulk-update-browser.mjs
-          node scripts/test-smartinput-estimate-f8-recovery-browser.mjs
+          node scripts/test-smartinput-stage3-plans.mjs
+          node scripts/test-smartinput-stage3-f8-baseline.mjs
+          node scripts/test-smartinput-stage3-storage-browser.mjs
+          node scripts/test-smartinput-stage3-workspace-browser.mjs
+          node scripts/test-smartinput-stage3-owner-browser.mjs
+          node scripts/test-smartinput-stage3-migration-browser.mjs
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
           node scripts/test-smartinput-v2-official-revision-browser.mjs
 

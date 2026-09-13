@@ -247,6 +247,12 @@ export function buildEstimateF8DraftPlan({
         return fail('견적서의 저장 유형과 작업표 유형이 일치하지 않습니다.', selectionCount);
       }
 
+      if (resolved.draft.schemaVersion === 'ONEAPP_SMARTINPUT_INDEPENDENT_ESTIMATE_V1') {
+        if (!Array.isArray(resolved.draft.ownedRows)) return fail('독립 견적서의 전체 거래행을 확인할 수 없습니다.', selectionCount);
+        entries.push({ kind: 'DIRECT', recordId: text(target.record?.estimateId || resolved.draft.catalogRecordId),
+          draft: { ...resolved.draft, inputMapping: null, rows: resolved.draft.ownedRows } });
+        continue;
+      }
       const linked = recordKind === 'LINKED_GROUP' || draftKind === 'LINKED_GROUP';
       if (!linked) {
         entries.push({ kind: 'DIRECT', recordId: text(target.record?.estimateId || resolved.draft.catalogRecordId), draft: resolved.draft });

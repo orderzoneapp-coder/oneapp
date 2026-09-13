@@ -1,3 +1,7 @@
+import { INDEPENDENT_ESTIMATE_SCHEMA, LAST_ESTIMATE_EXCEL_RESULT_SCHEMA, estimateTechnicalKey,
+  estimateValuesEqual, hashEstimatePlan, validateIndependentEstimate, applyIndependentEstimatePatches,
+  createLastEstimateExcelResult, projectIndependentEstimateDraft } from './independent-estimate.js?v=0.2.0';
+
 export const SMARTINPUT_DB_NAME = 'oneapp-smartinput';
 export const SMARTINPUT_DB_VERSION = 5;
 const DB_NAME = SMARTINPUT_DB_NAME;
@@ -286,15 +290,17 @@ export async function loadEstimateLibrary() {
 
 export async function loadSmartInputData({ includeEstimates = true } = {}) {
   const storeNames = [
-    DATA_STORES.SETTINGS,
     DATA_STORES.LINK_GROUPS,
     DATA_STORES.TEMPORARY_CUSTOMERS,
     DATA_STORES.ALIAS_MAPPINGS,
     ...(includeEstimates ? [DATA_STORES.ESTIMATES] : []),
     DATA_STORES.SOURCE_IMAGES
   ];
-  const rowsByStore = await getAllStores(storeNames);
-  const settingsRows = rowsByStore[DATA_STORES.SETTINGS] || [];
+  const [rowsByStore, settingsRows] = await Promise.all([
+    getAllStores(storeNames),
+    Promise.all(['app', INPUT_TEMPLATES_KEY, 'reference:product', 'reference:customer'].map(key => get(DATA_STORES.SETTINGS, key)))
+      .then(rows => rows.filter(Boolean))
+  ]);
   const linkGroups = rowsByStore[DATA_STORES.LINK_GROUPS] || [];
   const temporaryCustomers = rowsByStore[DATA_STORES.TEMPORARY_CUSTOMERS] || [];
   const aliasMappings = rowsByStore[DATA_STORES.ALIAS_MAPPINGS] || [];
@@ -770,4 +776,334 @@ export async function deleteAutosaveJournalRecords(keys = []) {
   recordKeys.forEach(key => transaction.objectStore(DATA_STORES.AUTOSAVE).delete(key));
   await transactionDone(transaction);
   db.close();
+}
+
+
+// Stage 3 uses v5's existing stores. These writes never fall back to localStorage.
+const stage3Clone = value => structuredClone(value);
+const stage3Error = code => Object.assign(new Error(code), { code });
+const stage3Required = value => typeof value === 'string' && value.trim().length > 0;
+function stage3Context(companyId, actor) {
+  if (!stage3Required(companyId) || !stage3Required(actor?.actorId)) throw stage3Error('ESTIMATE_OPERATION_CONTEXT_REQUIRED');
+}
+function stage3RecordCompany(record, companyId) {
+  if (!record) throw stage3Error('ESTIMATE_CONFIRMED_MISSING');
+  if (record.companyId !== companyId) throw stage3Error('ESTIMATE_COMPANY_MISMATCH');
+}
+async function stage3Transaction(names, mode, run) {
+  // Compatible recovery keeps the current v5 reader, owned rows and autosave journal.
+  if (mode === 'readwrite' && new URLSearchParams(globalThis.location?.search || '').get('estimateRecovery') === 'readonly') throw stage3Error('ESTIMATE_RECOVERY_READ_ONLY');
+  const db = await openDatabase();
+  if (!db) throw stage3Error('ESTIMATE_INDEXEDDB_REQUIRED');
+  return new Promise((resolve, reject) => {
+    let transaction, result, operationError;
+    try { transaction = db.transaction([...new Set(names)], mode); }
+    catch (error) { db.close(); reject(error); return; }
+    const abort = error => { operationError = error; try { transaction.abort(); } catch (_) { db.close(); reject(error); } };
+    const requests = (entries, ready) => {
+      if (!entries.length) { try { ready([]); } catch (error) { abort(error); } return; }
+      const values = new Array(entries.length); let remaining = entries.length;
+      entries.forEach(([store, key, all], index) => {
+        let request;
+        try { const objectStore = transaction.objectStore(store); request = all ? objectStore.getAll() : objectStore.get(key); }
+        catch (error) { abort(error); return; }
+        request.onerror = () => abort(request.error || stage3Error('ESTIMATE_READ_FAILED'));
+        request.onsuccess = () => {
+          values[index] = request.result ?? null;
+          if (--remaining === 0) { try { ready(values); } catch (error) { abort(error); } }
+        };
+      });
+    };
+    transaction.oncomplete = () => { db.close(); resolve(result); };
+    transaction.onabort = () => { db.close(); reject(operationError || transaction.error || stage3Error('ESTIMATE_TRANSACTION_ABORTED')); };
+    transaction.onerror = () => { operationError ||= transaction.error; };
+    try { run({ transaction, requests, finish: value => { result = value; }, abort }); } catch (error) { abort(error); }
+  });
+}
+function stage3Setting(transaction, key, value, updatedAt) {
+  transaction.objectStore(DATA_STORES.SETTINGS).put({ key, value: stage3Clone(value), updatedAt });
+}
+
+export async function loadEstimateForUpdate({ companyId, estimateId }) {
+  if (!stage3Required(companyId) || !stage3Required(estimateId)) throw stage3Error('ESTIMATE_SCOPE_REQUIRED');
+  return stage3Transaction([DATA_STORES.ESTIMATES], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.ESTIMATES, estimateId]], ([record]) => {
+      if (!record) return finish({ status: 'CONFIRMED_MISSING', companyId, estimateId });
+      if (!record.companyId) return finish({ status: 'CONTEXT_REQUIRED', companyId, estimateId });
+      if (record.companyId !== companyId) return finish({ status: 'COMPANY_MISMATCH', companyId, estimateId });
+      if (record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) return finish({ status: 'MIGRATION_REQUIRED', companyId, estimateId, record });
+      validateIndependentEstimate(record);
+      finish({ status: 'READY', companyId, estimateId, record });
+    });
+  });
+}
+export async function loadLastEstimateExcelResult({ companyId, estimateId }) {
+  const key = estimateTechnicalKey('latestExcelResult', companyId, estimateId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key]], ([stored]) => {
+      if (!stored) return finish({ status: 'NO_RECORD', companyId, estimateId, result: null });
+      const result = stored.value;
+      if (result?.schemaVersion !== LAST_ESTIMATE_EXCEL_RESULT_SCHEMA || result.companyId !== companyId || result.estimateId !== estimateId) throw stage3Error('ESTIMATE_LAST_RESULT_INVALID');
+      finish({ status: 'READY', companyId, estimateId, result });
+    });
+  });
+}
+
+async function verifyStage3Hash(value) {
+  const { payloadHash, ...payload } = value;
+  if (!stage3Required(payloadHash) || await hashEstimatePlan(payload) !== payloadHash) throw stage3Error('ESTIMATE_PAYLOAD_HASH_MISMATCH');
+}
+export async function persistSelectedEstimateUpdatePlan(plan) {
+  if (!plan?.selectedEstimateIds?.length || plan.status === 'EMPTY') return { status: 'EMPTY', durable: false };
+  stage3Context(plan.companyId, plan.actor);
+  await verifyStage3Hash(plan);
+  if (plan.schemaVersion !== 'ONEAPP_SMARTINPUT_SELECTED_ESTIMATE_UPDATE_V1') throw stage3Error('ESTIMATE_PLAN_SCHEMA_INVALID');
+  if (!Object.values(plan.sourceIndex?.entries || {}).some(rows => rows.length)) return { status: 'EMPTY_SOURCE', durable: false };
+  const key = estimateTechnicalKey('operation', plan.companyId, plan.operationId);
+  const pendingKey = estimateTechnicalKey('pending', plan.companyId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key], [DATA_STORES.SETTINGS, pendingKey]], ([previous, pending]) => {
+      if (previous && !estimateValuesEqual(previous.value, plan)) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+      if (!previous) stage3Setting(transaction, key, plan, plan.occurredAt);
+      registerStage3Pending(transaction, pendingKey, pending?.value, 'update', plan.operationId, plan.occurredAt);
+      finish({ durable: true, existing: Boolean(previous), operationId: plan.operationId, companyId: plan.companyId, payloadHash: plan.payloadHash });
+    });
+  });
+}
+
+export async function getEstimateUpdateResult({ companyId, operationId, estimateId, payloadHash }) {
+  const key = estimateTechnicalKey('receipt', companyId, operationId, estimateId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key]], ([stored]) => {
+      if (stored && stored.value.payloadHash !== payloadHash) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+      finish(stored?.value || { status: 'CONFIRMED_NOT_APPLIED', companyId, operationId, estimateId, payloadHash });
+    });
+  });
+}
+export async function commitSelectedEstimateUpdate({ plan, target }) {
+  if (!plan?.selectedEstimateIds?.length) return { status: 'EMPTY' };
+  stage3Context(plan.companyId, plan.actor);
+  if (!plan.selectedEstimateIds.includes(target?.estimateId) || !plan.targets.some(item => estimateValuesEqual(item, target))) throw stage3Error('ESTIMATE_TARGET_NOT_SELECTED');
+  if (!target.expectedPreimage || !['PLANNED', 'UNCHANGED', 'PARTIAL_REVIEW'].includes(target.status)) return { status: 'REVIEW_REQUIRED', estimateId: target.estimateId, issues: stage3Clone(target.issues) };
+  if (!Object.values(plan.sourceIndex.entries || {}).some(rows => rows.length)) return { status: 'EMPTY_SOURCE' };
+  // Computation and hash verification happen before the IDB transaction.
+  await verifyStage3Hash(plan);
+  for (const patch of target.rowPatches || []) {
+    if (!plan.allowedFieldIds.includes(patch.field) || (patch.valueKind === 'CLEAR' && !plan.explicitClears.includes(patch.field))) throw stage3Error('ESTIMATE_PATCH_SCOPE_INVALID');
+  }
+  const timestamp = new Date().toISOString();
+  const changed = target.rowPatches.length > 0;
+  const candidate = changed ? applyIndependentEstimatePatches(target.expectedPreimage, target.rowPatches, { updatedAt: timestamp }) : target.expectedPreimage;
+  const lastResult = createLastEstimateExcelResult({ plan, target, estimateRevision: candidate.dataRevision, committedAt: timestamp });
+  const receipt = { schemaVersion: 'SMARTINPUT_ESTIMATE_UPDATE_RECEIPT_V1', companyId: plan.companyId, operationId: plan.operationId,
+    estimateId: target.estimateId, payloadHash: plan.payloadHash, status: target.status === 'PARTIAL_REVIEW' ? 'PARTIAL_REVIEW' : changed ? 'SAVED' : 'UNCHANGED',
+    committed: true, committedAt: timestamp, dataRevision: candidate.dataRevision, issues: stage3Clone(target.issues),
+    processedFields: stage3Clone(target.processedFields), lastExcelResult: lastResult };
+  const operationKey = estimateTechnicalKey('operation', plan.companyId, plan.operationId);
+  const receiptKey = estimateTechnicalKey('receipt', plan.companyId, plan.operationId, target.estimateId);
+  const latestKey = estimateTechnicalKey('latestExcelResult', plan.companyId, target.estimateId);
+  const aliases = target.mappingPatches || [];
+  return stage3Transaction([DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS, DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, receiptKey], [DATA_STORES.SETTINGS, operationKey], [DATA_STORES.ESTIMATES, target.estimateId],
+      ...aliases.map(patch => [DATA_STORES.ALIAS_MAPPINGS, patch.after.aliasMappingId])], ([previousReceipt, persisted, current, ...currentAliases]) => {
+      if (!persisted || !estimateValuesEqual(persisted.value, plan)) throw stage3Error('ESTIMATE_OPERATION_NOT_DURABLE');
+      if (previousReceipt) {
+        if (previousReceipt.value.payloadHash !== plan.payloadHash) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+        // Never roll the latest-result pointer back when replaying an older receipt.
+        return finish(previousReceipt.value);
+      }
+      stage3RecordCompany(current, plan.companyId);
+      if (current.dataRevision !== target.expectedRevision || !estimateValuesEqual(current, target.expectedPreimage)) throw stage3Error('ESTIMATE_PREIMAGE_CONFLICT');
+      aliases.forEach((patch, index) => {
+        if (patch.after.companyId !== plan.companyId || patch.after.targetEstimateId !== target.estimateId
+          || patch.after.mappingType !== 'ESTIMATE_DIRECT_ROW_V1') throw stage3Error('ESTIMATE_MAPPING_SCOPE_INVALID');
+        if (!estimateValuesEqual(currentAliases[index], patch.before)) throw stage3Error('ESTIMATE_MAPPING_PREIMAGE_CONFLICT');
+      });
+      if (changed) {
+        candidate.history = [...(current.history || []), { operationId: plan.operationId, actor: plan.actor, occurredAt: timestamp,
+          patches: stage3Clone(target.rowPatches) }];
+        transaction.objectStore(DATA_STORES.ESTIMATES).put(candidate);
+      }
+      aliases.forEach((patch, index) => { if (!estimateValuesEqual(currentAliases[index], patch.after)) transaction.objectStore(DATA_STORES.ALIAS_MAPPINGS).put(patch.after); });
+      stage3Setting(transaction, receiptKey, receipt, timestamp);
+      stage3Setting(transaction, latestKey, lastResult, timestamp);
+      finish(receipt);
+    });
+  });
+}
+
+/** Durable dispatch intent in the same v5 technical namespace. No owner database is opened here. */
+export async function persistEstimateMasterIntent(intent) {
+  const command = intent?.command;
+  if (!command?.selectedEstimateIds?.length) throw stage3Error('MASTER_SELECTION_REQUIRED');
+  stage3Context(command.companyId, command.actor); await verifyStage3Hash(command);
+  const key = estimateTechnicalKey('masterIntent', command.companyId, command.commandId);
+  const pendingKey = estimateTechnicalKey('pending', command.companyId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key], [DATA_STORES.SETTINGS, pendingKey]], ([previous, pending]) => {
+      if (previous && !estimateValuesEqual(previous.value.command, command)) throw stage3Error('MASTER_INTENT_PAYLOAD_CONFLICT');
+      if (!previous) stage3Setting(transaction, key, intent, new Date().toISOString());
+      registerStage3Pending(transaction, pendingKey, pending?.value, 'master', command.commandId, new Date().toISOString());
+      finish({ durable: true, existing: Boolean(previous), companyId: command.companyId, commandId: command.commandId, payloadHash: command.payloadHash });
+    });
+  });
+}
+export async function loadEstimateMasterIntent({ companyId, commandId }) {
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, estimateTechnicalKey('masterIntent', companyId, commandId)]], ([value]) => finish(value?.value || null));
+  });
+}
+
+/** Explicit general edit/rename/delete: target-only CAS, never linked-source or latest-Excel-result writes. */
+export async function commitIndependentEstimateEdit({ companyId, actor, operationId, estimateId, expectedPreimage = null, candidate = null, action = 'SAVE' }) {
+  stage3Context(companyId, actor);
+  if (!stage3Required(operationId) || !stage3Required(estimateId) || !['SAVE', 'DELETE', 'METADATA'].includes(action)) throw stage3Error('ESTIMATE_EDIT_INVALID');
+  if (candidate) {
+    validateIndependentEstimate(candidate);
+    if (candidate.companyId !== companyId || candidate.estimateId !== estimateId) throw stage3Error('ESTIMATE_EDIT_SCOPE_INVALID');
+  }
+  if (expectedPreimage) stage3RecordCompany(expectedPreimage, companyId);
+  if (action !== 'DELETE' && !candidate) throw stage3Error('ESTIMATE_EDIT_CANDIDATE_REQUIRED');
+  const payloadHash = await hashEstimatePlan({ companyId, actor, operationId, estimateId, expectedPreimage, candidate, action });
+  const intent = { companyId, actor, operationId, estimateId, expectedPreimage, candidate, action };
+  const intentKey = estimateTechnicalKey('editIntent', companyId, operationId);
+  const pendingKey = estimateTechnicalKey('pending', companyId);
+  await stage3Transaction([DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, intentKey], [DATA_STORES.SETTINGS, pendingKey]], ([prior, pending]) => {
+      if (prior && !estimateValuesEqual(prior.value, intent)) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+      if (!prior) stage3Setting(transaction, intentKey, intent, new Date().toISOString());
+      registerStage3Pending(transaction, pendingKey, pending?.value, 'edit', operationId, new Date().toISOString());
+      finish(true);
+    });
+  });
+  const key = estimateTechnicalKey('editReceipt', companyId, operationId, estimateId);
+  return stage3Transaction([DATA_STORES.ESTIMATES, DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key], [DATA_STORES.ESTIMATES, estimateId]], ([prior, current]) => {
+      if (prior) {
+        if (prior.value.payloadHash !== payloadHash) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+        return finish(prior.value);
+      }
+      if (!estimateValuesEqual(current, expectedPreimage)) throw stage3Error('ESTIMATE_PREIMAGE_CONFLICT');
+      if (current) stage3RecordCompany(current, companyId);
+      if (action === 'DELETE') transaction.objectStore(DATA_STORES.ESTIMATES).delete(estimateId);
+      else if (!estimateValuesEqual(candidate, current)) {
+        if (current && candidate.dataRevision !== current.dataRevision + 1) throw stage3Error('ESTIMATE_EDIT_REVISION_INVALID');
+        transaction.objectStore(DATA_STORES.ESTIMATES).put({ ...candidate, history: [...(current?.history || []), { operationId, actor, action, occurredAt: candidate.updatedAt || new Date().toISOString() }] });
+      }
+      const result = { status: action === 'DELETE' ? 'DELETED' : estimateValuesEqual(candidate, current) ? 'UNCHANGED' : 'SAVED',
+        companyId, estimateId, operationId, payloadHash, dataRevision: candidate?.dataRevision ?? null, committedAt: new Date().toISOString() };
+      stage3Setting(transaction, key, result, result.committedAt); finish(result);
+    });
+  });
+}
+
+/** Read an explicit edit receipt without reissuing the write. */
+export async function getIndependentEstimateEditResult(intent) {
+  stage3Context(intent.companyId, intent.actor);
+  const normalized = { companyId: intent.companyId, actor: intent.actor, operationId: intent.operationId,
+    estimateId: intent.estimateId, expectedPreimage: intent.expectedPreimage ?? null, candidate: intent.candidate ?? null,
+    action: intent.action || 'SAVE' };
+  const payloadHash = await hashEstimatePlan(normalized);
+  const key = estimateTechnicalKey('editReceipt', intent.companyId, intent.operationId, intent.estimateId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key]], ([stored]) => {
+      if (stored && stored.value.payloadHash !== payloadHash) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+      finish(stored?.value || { status: 'CONFIRMED_NOT_APPLIED', ...normalized, payloadHash });
+    });
+  });
+}
+export async function loadEstimateDirectMappings() {
+  return stage3Transaction([DATA_STORES.ALIAS_MAPPINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.ALIAS_MAPPINGS, null, true]], ([records]) => finish(records));
+  });
+}
+
+/** One consistent read for preservation. It is not run from an Excel-update handler. */
+export async function captureEstimateMigrationEvidence() {
+  const stores = [DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS, DATA_STORES.AUTOSAVE, DATA_STORES.SOURCE_IMAGES];
+  return stage3Transaction(stores, 'readonly', ({ requests, finish }) => {
+    requests(stores.map(store => [store, null, true]), values => finish(Object.fromEntries(stores.map((store, index) => [store, values[index]]))));
+  });
+}
+export async function preserveEstimateMigrationEvidence({ companyId, actor, migrationId, snapshot, manifest, safety }) {
+  stage3Context(companyId, actor);
+  if (!stage3Required(migrationId) || !snapshot || !manifest?.snapshotHash || !safety?.oldTabsConfirmedClosed
+    || !safety?.backupExported || !stage3Required(safety?.previousLoadId) || !stage3Required(safety?.currentLoadId)
+    || safety.previousLoadId === safety.currentLoadId) throw stage3Error('ESTIMATE_MIGRATION_SAFETY_REQUIRED');
+  if (await hashEstimatePlan(snapshot) !== manifest.snapshotHash) throw stage3Error('ESTIMATE_MIGRATION_HASH_MISMATCH');
+  const key = estimateTechnicalKey('migration', companyId, migrationId);
+  const stores = [DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS, DATA_STORES.AUTOSAVE, DATA_STORES.SETTINGS];
+  return stage3Transaction(stores, 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key], ...stores.filter(store => store !== DATA_STORES.SETTINGS).map(store => [store, null, true])], ([prior, estimates, aliases, autosave]) => {
+      if (prior) {
+        if (prior.value.manifest.snapshotHash !== manifest.snapshotHash) throw stage3Error('ESTIMATE_MIGRATION_PAYLOAD_CONFLICT');
+        return finish(prior.value);
+      }
+      if (!estimateValuesEqual(estimates, snapshot[DATA_STORES.ESTIMATES]) || !estimateValuesEqual(aliases, snapshot[DATA_STORES.ALIAS_MAPPINGS])
+        || snapshot[DATA_STORES.AUTOSAVE].filter(record => record.recordType === 'base' || record.recordType === 'patch').some(record => { const found = autosave.find(current => current.key === record.key); return found && !estimateValuesEqual(found, record); })) throw stage3Error('ESTIMATE_MIGRATION_SOURCE_CHANGED');
+      const result = { companyId, actor, migrationId, manifest, safety, snapshot, status: 'PRESERVED', preservedAt: new Date().toISOString() };
+      stage3Setting(transaction, key, result, result.preservedAt); finish(result);
+    });
+  });
+}
+export async function loadEstimateMigration({ companyId, migrationId }) {
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, estimateTechnicalKey('migration', companyId, migrationId)]], ([stored]) => finish(stored?.value || null));
+  });
+}
+export async function commitIndependentEstimateMigration({ companyId, actor, migrationId, expectedPreimage, candidate, companyEvidence = null, verifiedOutputHash }) {
+  stage3Context(companyId, actor); validateIndependentEstimate(candidate);
+  if (candidate.companyId !== companyId || candidate.estimateId !== expectedPreimage?.estimateId || !stage3Required(verifiedOutputHash)) throw stage3Error('ESTIMATE_MIGRATION_SCOPE_INVALID');
+  if (candidate.createdAt !== expectedPreimage.createdAt || candidate.updatedAt !== expectedPreimage.updatedAt
+    || candidate.sortOrder !== expectedPreimage.sortOrder) throw stage3Error('ESTIMATE_MIGRATION_BUSINESS_METADATA_CHANGED');
+  const estimateId = candidate.estimateId;
+  const migrationKey = estimateTechnicalKey('migration', companyId, migrationId);
+  const receiptKey = estimateTechnicalKey('migrationReceipt', companyId, migrationId, estimateId);
+  const payloadHash = await hashEstimatePlan({ companyId, migrationId, expectedPreimage, candidate, verifiedOutputHash, companyEvidence });
+  return stage3Transaction([DATA_STORES.ESTIMATES, DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, migrationKey], [DATA_STORES.SETTINGS, receiptKey], [DATA_STORES.ESTIMATES, estimateId]], ([preserved, prior, current]) => {
+      if (!preserved?.value?.snapshot || preserved.value.companyId !== companyId) throw stage3Error('ESTIMATE_MIGRATION_NOT_PRESERVED');
+      if (prior) { if (prior.value.payloadHash !== payloadHash) throw stage3Error('ESTIMATE_MIGRATION_PAYLOAD_CONFLICT'); return finish(prior.value); }
+      const fixed = preserved.value.snapshot[DATA_STORES.ESTIMATES].find(record => record.estimateId === estimateId);
+      if (!estimateValuesEqual(fixed, expectedPreimage) || !estimateValuesEqual(current, expectedPreimage)) throw stage3Error('ESTIMATE_PREIMAGE_CONFLICT');
+      if (current.companyId && current.companyId !== companyId) throw stage3Error('ESTIMATE_COMPANY_MISMATCH');
+      if (!current.companyId && (companyEvidence?.companyId !== companyId || companyEvidence?.actorId !== actor.actorId
+        || !companyEvidence?.estimateIds?.includes(estimateId) || !stage3Required(companyEvidence.confirmedAt))) throw stage3Error('ESTIMATE_COMPANY_UNCONFIRMED');
+      const receipt = { status: 'COMMITTED', companyId, migrationId, estimateId, payloadHash, verifiedOutputHash,
+        companyEvidence, committedAt: new Date().toISOString() };
+      transaction.objectStore(DATA_STORES.ESTIMATES).put(candidate);
+      stage3Setting(transaction, receiptKey, receipt, receipt.committedAt); finish(receipt);
+    });
+  });
+}
+
+// Bounded unresolved-work pointers; normal reads never scan historical receipts.
+function registerStage3Pending(transaction, key, previous, kind, id, timestamp) {
+  const entries = Array.isArray(previous) ? previous : [];
+  if (!entries.some(entry => entry.kind === kind && entry.id === id)) stage3Setting(transaction, key, [...entries, { kind, id }], timestamp);
+}
+export async function loadPendingEstimateOperations({ companyId }) {
+  const key = estimateTechnicalKey('pending', companyId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readonly', ({ requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key]], ([pointer]) => {
+      const entries = Array.isArray(pointer?.value) ? pointer.value : [];
+      const names = { update: 'operation', master: 'masterIntent', edit: 'editIntent' };
+      if (entries.some(entry => !names[entry.kind])) throw stage3Error('ESTIMATE_PENDING_POINTER_INVALID');
+      requests(entries.map(entry => [DATA_STORES.SETTINGS, estimateTechnicalKey(names[entry.kind], companyId, entry.id)]), values => {
+        if (values.some(value => !value)) throw stage3Error('ESTIMATE_PENDING_PAYLOAD_MISSING');
+        finish(entries.map((entry, index) => ({ ...entry, value: values[index].value })));
+      });
+    });
+  });
+}
+export async function completePendingEstimateOperation({ companyId, kind, id }) {
+  const key = estimateTechnicalKey('pending', companyId);
+  return stage3Transaction([DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, key]], ([pointer]) => {
+      const before = Array.isArray(pointer?.value) ? pointer.value : [];
+      const after = before.filter(entry => entry.kind !== kind || entry.id !== id);
+      if (after.length !== before.length) stage3Setting(transaction, key, after, new Date().toISOString());
+      finish(true);
+    });
+  });
 }

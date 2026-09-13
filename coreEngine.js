@@ -718,15 +718,24 @@
     return options.allowExpired === true || Number(current.expiresAt) > Date.now();
   };
 
-  STORAGE.replaceMasterState = async (state = {}, extraStoreEntries = state.extraStoreEntries || {}, lease = null) => {
+  STORAGE.replaceMasterState = async (state = {}, extraStoreEntries = state.extraStoreEntries || {}, lease = null, smartInputCommand = null) => {
     const db = await STORAGE.initIDB();
     const items = Array.isArray(state.items) ? state.items : [];
+    if (smartInputCommand && (smartInputCommand.schemaVersion !== 'SMARTINPUT_ESTIMATE_MASTER_APPLY_V1'
+      || !String(smartInputCommand.receiptKey || '').startsWith('smartInputEstimateCommand:')
+      || !smartInputCommand.payloadHash || !smartInputCommand.receipt
+      || smartInputCommand.receipt.payloadHash !== smartInputCommand.payloadHash
+      || Object.keys(extraStoreEntries).some(key => key !== smartInputCommand.receiptKey))) {
+      throw Object.assign(new Error('SMARTINPUT_MASTER_STORAGE_COMMAND_INVALID'), { code: 'SMARTINPUT_MASTER_STORAGE_COMMAND_INVALID' });
+    }
     const safeExtraEntries = extraStoreEntries && typeof extraStoreEntries === 'object' ? extraStoreEntries : {};
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_MASTER, STORE_KV], 'readwrite');
       const masterStore = tx.objectStore(STORE_MASTER);
       const sharedStore = tx.objectStore(STORE_KV);
       let operationError = null;
+      let commandGuardChecked = false;
+      let commandReceipt = null;
       const abortWith = (error) => {
         operationError = error;
         try { tx.abort(); } catch (abortError) { reject(error); }
@@ -736,7 +745,36 @@
           abortWith(lease.getOwnershipError());
           return;
         }
+        if (smartInputCommand && !commandGuardChecked) {
+          const receiptRequest = sharedStore.get(smartInputCommand.receiptKey);
+          const revisionRequest = sharedStore.get(MASTER_REVISION_KEY);
+          let pending = 2;
+          const ready = () => {
+            if (--pending) return;
+            const prior = receiptRequest.result;
+            if (prior) {
+              if (prior.payloadHash !== smartInputCommand.payloadHash) return abortWith(Object.assign(new Error('SMARTINPUT_MASTER_PAYLOAD_CONFLICT'), { code: 'SMARTINPUT_MASTER_PAYLOAD_CONFLICT' }));
+              commandReceipt = prior;
+              return; // Existing receipt is authoritative even after another app changes the master.
+            }
+            if (revisionRequest.result !== smartInputCommand.expectedRevision) return abortWith(STORAGE.createMasterRevisionConflictError());
+            commandGuardChecked = true;
+            writeState();
+          };
+          receiptRequest.onsuccess = ready;
+          revisionRequest.onsuccess = ready;
+          receiptRequest.onerror = () => abortWith(receiptRequest.error);
+          revisionRequest.onerror = () => abortWith(revisionRequest.error);
+          return;
+        }
         try {
+          if (smartInputCommand) {
+            commandReceipt = smartInputCommand.receipt;
+            if (smartInputCommand.unchanged) {
+              sharedStore.put(commandReceipt, smartInputCommand.receiptKey);
+              return; // UNCHANGED has a terminal receipt, not a new business revision.
+            }
+          }
           masterStore.clear();
           items.forEach(item => masterStore.put(item));
           if (state.snapshot === undefined) sharedStore.delete(MASTER_SNAPSHOT_KEY);
@@ -768,7 +806,7 @@
       } else {
         writeState();
       }
-      tx.oncomplete = () => resolve({ count: items.length });
+      tx.oncomplete = () => resolve(smartInputCommand ? { count: items.length, receipt: commandReceipt } : { count: items.length });
       tx.onerror = () => reject(ERRORS.create(tx.error, '마스터 원자 저장'));
       tx.onabort = () => reject(operationError || ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), '마스터 원자 저장'));
     });
@@ -1045,7 +1083,45 @@
     });
   };
 
+
+  // SmartInput-only durable command boundary. No change to legacy afterVerified/rollback semantics.
+  const commitSmartInputEstimateMaster = async (data, options) => {
+    const command = options.smartInputEstimateCommand;
+    if (command?.schemaVersion !== 'SMARTINPUT_ESTIMATE_MASTER_APPLY_V1'
+      || typeof options.prepareExtraStoreEntries !== 'function') throw new Error('SMARTINPUT_MASTER_COMMAND_REQUIRED');
+    const receiptKey = `smartInputEstimateCommand:${encodeURIComponent(command.companyId)}:${encodeURIComponent(command.commandId)}`;
+    try {
+      return await STORAGE.withStorageLock(MASTER_LOCK_NAME, async lease => {
+        const previousState = await STORAGE.readMasterState([receiptKey]);
+        const prior = previousState.extraStoreEntries[receiptKey];
+        if (prior) {
+          if (prior.payloadHash !== command.payloadHash) throw Object.assign(new Error('SMARTINPUT_MASTER_PAYLOAD_CONFLICT'), { code: 'SMARTINPUT_MASTER_PAYLOAD_CONFLICT' });
+          return prior;
+        }
+        if (previousState.revision !== options.expectedRevision) throw STORAGE.createMasterRevisionConflictError();
+        const unchanged = options.smartInputUnchanged === true;
+        const revision = unchanged ? previousState.revision : STORAGE.createMasterRevision();
+        const extraStoreEntries = options.prepareExtraStoreEntries({ previousState, revision });
+        if (!extraStoreEntries || Object.keys(extraStoreEntries).length !== 1 || !extraStoreEntries[receiptKey]
+          || extraStoreEntries[receiptKey].payloadHash !== command.payloadHash) throw new Error('SMARTINPUT_MASTER_RECEIPT_REQUIRED');
+        const receipt = extraStoreEntries[receiptKey];
+        const items = unchanged ? previousState.items : STORAGE.getMasterItems(data, { allowEmpty: false });
+        const written = await STORAGE.replaceMasterState({ items, snapshot: data, revision }, extraStoreEntries, lease, {
+          schemaVersion: command.schemaVersion, receiptKey, payloadHash: command.payloadHash,
+          expectedRevision: options.expectedRevision, receipt, unchanged
+        });
+        // oncomplete is the boundary: failed publication or re-read must never roll this back.
+        return written.receipt;
+      }, options.lockOptions || {});
+    } catch (error) {
+      if (error.code === 'MERCH_LOCK_RELEASE_FAILED' && error.taskResult
+        && ['APPLIED', 'UNCHANGED'].includes(error.taskResult.status)) return { ...error.taskResult, lockReleaseWarning: true };
+      throw error;
+    }
+  };
+
   STORAGE.commitMasterState = async (data = {}, options = {}) => {
+    if (options.smartInputEstimateCommand) return commitSmartInputEstimateMaster(data, options);
     let previousState = null;
     let revision = '';
     let expectedWrittenState = null;

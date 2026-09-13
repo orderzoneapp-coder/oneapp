@@ -206,7 +206,7 @@ try {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
   await wait(260);
   await evaluate(client, `document.querySelector('.workspace').classList.remove('has-photo-source');true`);
-  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-code-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();const voucher=document.querySelector('.app-voucher-switcher').getBoundingClientRect();const customer=document.querySelector('.header-customer-group').getBoundingClientRect();const header=document.querySelector('.header-fields');const headerBounds=header.getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,standaloneProductSearchColumn:Boolean(document.querySelector('#voucherInputTable [data-column="productSearch"]')),firstProductColumn:document.querySelector('#voucherInputTable thead th[data-column]')?.dataset.column,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),voucherCustomerGap:customer.left-voucher.right,customerHeaderGap:headerBounds.left-customer.right,headerDivider:getComputedStyle(header).borderLeftWidth,customerInHeader:Boolean(document.querySelector('.app-bar .header-customer-group #customerInput')),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:Boolean(document.querySelector('.reference-overview__coachmark')),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton,#uploadTemplateButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions #completeButton')),deliveryCardVisible:getComputedStyle(document.querySelector('.voucher-footer-actions .delivery-card')).display!=='none',shareText:document.querySelector('#estimateNoticeButton')?.textContent.trim(),excelText:document.querySelector('#estimateExcelButton')?.textContent.trim(),outputsInFooter:Boolean(document.querySelector('.voucher-footer-actions #estimateOutputActions')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton')),voucherContextVisible:!document.querySelector('#voucherContextView').hidden,voucherContextTitle:document.querySelector('#voucherContextTitle').textContent.trim(),voucherContextStatus:document.querySelector('#voucherContextDelivery').textContent.trim(),estimateHeadingHidden:document.querySelector('#estimateLibraryHeading').hidden,estimateListsHidden:document.querySelector('#catalogPickerList').hidden&&document.querySelector('#linkedEstimateList').hidden};})()`);
+  const visualZones = await evaluate(client, `(() => {const search=document.querySelector('#inputRows .product-code-search-cell');const excel=search?.nextElementSibling;const logo=document.querySelector('.brand__logo--light');const brand=document.querySelector('.brand').getBoundingClientRect();const appInner=document.querySelector('.app-bar__inner').getBoundingClientRect();const voucher=document.querySelector('.app-voucher-switcher').getBoundingClientRect();const customer=document.querySelector('.header-customer-group').getBoundingClientRect();const header=document.querySelector('.header-fields');const headerBounds=header.getBoundingClientRect();return {removeCell:Boolean(document.querySelector('#inputRows [data-remove-row]')),nativeSearchCells:document.querySelectorAll('#inputRows input[type="search"]').length,standaloneProductSearchColumn:Boolean(document.querySelector('#voucherInputTable [data-column="productSearch"]')),firstProductColumn:document.querySelector('#voucherInputTable thead th[data-column]')?.dataset.column,customerRegisterCoachmark:document.body.innerText.includes('거래처관리에서 등록'),searchBackground:getComputedStyle(search).backgroundColor,excelBackground:getComputedStyle(excel).backgroundColor,searchDivider:getComputedStyle(search).borderRightWidth,logoComplete:logo?.complete,logoWidth:logo?.naturalWidth,brandHeight:brand.height,brandLeftGap:Math.abs(appInner.left-brand.left),voucherCustomerGap:customer.left-voucher.right,customerHeaderGap:headerBounds.left-customer.right,headerDivider:getComputedStyle(header).borderLeftWidth,customerInHeader:Boolean(document.querySelector('.app-bar .header-customer-group #customerInput')),headerHasReferenceCounts:/상품\s[\d,]+건\s*·\s*거래처\s[\d,]+건/.test(document.querySelector('.app-bar').innerText),coachmark:Boolean(document.querySelector('.reference-overview__coachmark')),referenceBeforeSettings:document.querySelector('#referenceOverview')?.nextElementSibling?.id==='settingsButton',legacyButtons:[...document.querySelectorAll('#draftListButton,#saveDraftButton,#catalogSaveButton,#uploadTemplateButton')].length,completeText:document.querySelector('#completeButton')?.textContent.trim(),completeInFooter:Boolean(document.querySelector('.voucher-footer-actions #completeButton')),deliveryCardVisible:getComputedStyle(document.querySelector('.voucher-footer-actions .delivery-card')).display!=='none',shareText:document.querySelector('#estimateNoticeButton')?.textContent.trim(),excelText:document.querySelector('#estimateExcelButton')?.textContent.trim(),outputsInFooter:Boolean(document.querySelector('.voucher-footer-actions #estimateOutputActions')),sequence:document.querySelector('#tableScroll thead th:first-child')?.textContent.trim(),resetInTopBar:Boolean(document.querySelector('.work-action-bar>#deliveryPolicyHint')&&document.querySelector('.work-action-bar #resetDraftButton')),voucherContextVisible:!document.querySelector('#voucherContextView').hidden,voucherContextTitle:document.querySelector('#voucherContextTitle').textContent.trim(),voucherContextStatus:document.querySelector('#voucherContextDelivery').textContent.trim(),estimateHeadingHidden:document.querySelector('#estimateLibraryHeading').hidden,estimateListsHidden:document.querySelector('#catalogPickerList').hidden};})()`);
   assert.equal(visualZones.removeCell, false, 'Excel rows must not render an in-cell × delete control');
   assert.equal(visualZones.nativeSearchCells, 0, 'Excel cells must not expose native search × controls');
   assert.equal(visualZones.standaloneProductSearchColumn, false, 'worktable must not render a standalone product-search column');
@@ -251,7 +251,7 @@ try {
   assert.deepEqual(domBaseline.tableColumns.map(column => column.label), [
     'No.', '품목코드', '품목명', '규격', '수량', '단가', '공급가액', '메모', '적요(직원)', '공지단가'
   ], 'first-use order mode must show its approved initial field labels and order');
-  assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton']);
+  assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'saveEstimateAsButton', 'estimateMasterApplyButton', 'estimateMigrationButton', 'estimateRetryButton', 'estimateMasterRetryButton', 'estimateNoticeButton', 'estimateExcelButton']);
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
   assert.deepEqual({ fixedColumns: mergedSelectionColumn.fixedColumns, headerHasSelectAll: mergedSelectionColumn.headerHasSelectAll, rowNumber: mergedSelectionColumn.rowNumber, sameCell: mergedSelectionColumn.sameCell }, { fixedColumns: 1, headerHasSelectAll: true, rowNumber: '1', sameCell: true }, 'No. and selection must share one fixed column');
   assert.ok(mergedSelectionColumn.checkboxWidth >= 20, 'row selection checkbox must be enlarged');
@@ -952,7 +952,7 @@ try {
   loaded = client.once('Page.loadEventFired');
   await client.send('Page.reload', { ignoreCache: true });
   await loaded;
-  await expr(client, `Boolean(document.querySelector('#estimateLibraryLinkedButton'))`, 'SmartInput shell after immediate source-image clear reload');
+  await expr(client, `Boolean(document.querySelector('#estimateDeselectAllButton'))`, 'SmartInput shell after immediate source-image clear reload');
   await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?source-image-delete-resume-e2e=1');const data=await store.loadSmartInputData({includeEstimates:false});const draft=JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1'));return !data.sourceImages.some(image=>image.documentId===${JSON.stringify(documentId)})&&!document.querySelector('#photoPreview')?.dataset.sourceImageId&&!draft?.ui?.pendingSourceImageDeletes?.includes(${JSON.stringify(documentId)});})()`, 'resumed source image delete after immediate reload', 30_000);
   await click(client, '[data-mode="purchase"]');
   await click(client, '[data-mode="order"]');
@@ -1047,8 +1047,8 @@ try {
 
   const headerBeforeEstimate = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};return {customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
   await click(client, '[data-mode="estimate"]');
-  const estimateHeader = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};const warehouse=document.querySelector('[data-header-field="warehouse"]');const transaction=document.querySelector('[data-header-field="transactionType"]');return {label:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),warehouseLabel:warehouse.querySelector('span').textContent.trim(),warehouseHidden:warehouse.hidden,transactionHidden:transaction.hidden,transactionVisibility:getComputedStyle(transaction).visibility,contextHidden:document.querySelector('#voucherContextView').hidden,estimateHeadingVisible:!document.querySelector('#estimateLibraryHeading').hidden,individualText:document.querySelector('#estimateLibraryIndividualButton').textContent.trim(),linkedText:document.querySelector('#estimateLibraryLinkedButton').textContent.trim(),multiLabel:document.querySelector('#estimateMultiSelectButton').getAttribute('aria-label'),customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
-  assert.deepEqual({ label: estimateHeader.label, warehouseLabel: estimateHeader.warehouseLabel, warehouseHidden: estimateHeader.warehouseHidden, transactionHidden: estimateHeader.transactionHidden, transactionVisibility: estimateHeader.transactionVisibility, contextHidden: estimateHeader.contextHidden, estimateHeadingVisible: estimateHeader.estimateHeadingVisible, individualText: estimateHeader.individualText, linkedText: estimateHeader.linkedText, multiLabel: estimateHeader.multiLabel }, { label: '견적 작성일', warehouseLabel: '최종수정일', warehouseHidden: false, transactionHidden: false, transactionVisibility: 'hidden', contextHidden: true, estimateHeadingVisible: true, individualText: '견적서 목록', linkedText: '연동견적서', multiLabel: '견적서 다중 선택' }, 'estimate mode must restore the dedicated estimate-list rail without the voucher activity view');
+  const estimateHeader = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};const warehouse=document.querySelector('[data-header-field="warehouse"]');const transaction=document.querySelector('[data-header-field="transactionType"]');return {label:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),warehouseLabel:warehouse.querySelector('span').textContent.trim(),warehouseHidden:warehouse.hidden,transactionHidden:transaction.hidden,transactionVisibility:getComputedStyle(transaction).visibility,contextHidden:document.querySelector('#voucherContextView').hidden,estimateHeadingVisible:!document.querySelector('#estimateLibraryHeading').hidden,individualText:document.querySelector('#estimateLibraryIndividualButton').textContent.trim(),linkedText:document.querySelector('#estimateDeselectAllButton').textContent.trim(),multiLabel:document.querySelector('#estimateMultiSelectButton').textContent.trim(),customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
+  assert.deepEqual({ label: estimateHeader.label, warehouseLabel: estimateHeader.warehouseLabel, warehouseHidden: estimateHeader.warehouseHidden, transactionHidden: estimateHeader.transactionHidden, transactionVisibility: estimateHeader.transactionVisibility, contextHidden: estimateHeader.contextHidden, estimateHeadingVisible: estimateHeader.estimateHeadingVisible, individualText: estimateHeader.individualText, linkedText: estimateHeader.linkedText, multiLabel: estimateHeader.multiLabel }, { label: '견적 작성일', warehouseLabel: '최종수정일', warehouseHidden: false, transactionHidden: false, transactionVisibility: 'hidden', contextHidden: true, estimateHeadingVisible: true, individualText: '견적서 목록 · 0개 선택', linkedText: '전체 해제', multiLabel: '전체 선택' }, 'estimate mode must restore the dedicated estimate-list rail without the voucher activity view');
   assert.deepEqual(estimateHeader.customer, headerBeforeEstimate.customer, 'customer entry position and size must stay fixed across voucher switching');
   assert.deepEqual(estimateHeader.fields, headerBeforeEstimate.fields, 'header field shell must stay fixed across voucher switching');
   assert.equal(await evaluate(client, `!document.querySelector('#estimateEditorView').hidden&&!document.querySelector('#sourceInputPanel').hidden&&document.querySelector('#tableScroll').offsetWidth>0&&!document.querySelector('#estimateLibraryButton')&&!document.querySelector('#estimateEditorButton')`), true, 'estimate mode must always preserve the parser and table beside the right list');
@@ -1103,279 +1103,15 @@ try {
   await evaluate(client, `(() => {const cards=[...document.querySelectorAll('#catalogPickerList [data-estimate-id]')];const handle=cards[0].querySelector('[data-estimate-drag-handle]');const transfer=new DataTransfer();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));cards[1].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));handle.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));return true;})()`);
   await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id]')?.dataset.estimateId===window.__estimateCardOrder[0]`, 'estimate card drag order restore');
   await wait(350);
-  await click(client, '#catalogPickerList .estimate-card:not(.is-selected) [data-select-estimate-card]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'normal card touch must switch to exactly one open estimate');
-  await evaluate(client, `(() => {const target=document.querySelector('#catalogPickerList .estimate-card:not(.is-selected) [data-select-estimate-card]');target.dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));return true;})()`);
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'Ctrl+click must enter the same ordered multiselect and add the touched estimate');
+  // Linked creation, cascades and destructive F8 recovery were retired by stage 3.
+  // Native failure/round-result/migration coverage lives in the four stage3 browser tests.
   await click(client, '#estimateMultiSelectButton');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'plus must cancel multiselect and restore the previously open estimate');
-  await click(client, '#estimateMultiSelectButton');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1&&document.querySelector('#estimateCreateButton').disabled`, 'plus click must enter multiselect while carrying the open estimate; direct touch is covered by the focused touchscreen test');
-  const estimateTouchControls = await evaluate(client, `(() => [...document.querySelectorAll('#estimateLibraryIndividualButton,#estimateLibraryLinkedButton,#estimateMultiSelectButton')].map(button => ({id:button.id,width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,touchAction:getComputedStyle(button).touchAction,disabled:button.disabled})))()`);
-  assert.equal(estimateTouchControls.every(control => control.width >= 44 && control.height >= 44 && control.touchAction === 'manipulation' && !control.disabled), true,
-    'estimate-list header controls must remain enabled with at least 44px reliable touch targets during multi-select');
-  await click(client, '#estimateLibraryLinkedButton');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='false'&&!document.querySelector('#linkedEstimateList').hidden&&document.querySelector('#catalogPickerList').hidden`, 'linked-estimate touch must cancel active multiselect and switch the requested list');
-  await click(client, '#estimateLibraryIndividualButton');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2`, 'select all independent estimates');
+  await click(client, '#estimateDeselectAllButton');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===0`, 'deselect all');
   await click(client, '#catalogPickerList [data-select-estimate-card]');
-  await expr(client, `!document.querySelector('#catalogPickerList').hidden&&document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'individual list must remain touch-switchable after multiselect cancellation');
-  await click(client, '#estimateMultiSelectButton');
-  await expr(client, `document.querySelector('#estimateMultiSelectButton').getAttribute('aria-pressed')==='true'&&document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'plus must re-enter multiselect after list switching');
-  await click(client, '#catalogPickerList .estimate-card:not(.is-selected) [data-select-estimate-card]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===2&&document.querySelectorAll('.estimate-card__selection-order').length===2`, 'creation mode card touches must accumulate ordered selections');
-  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===2&&document.querySelectorAll('#inputRows .linked-row-badge').length===2`, 'linked creation preview with duplicate products removed');
-  assert.match(await evaluate(client, `document.querySelector('#inputRows .linked-row-badge')?.textContent`), /2개 견적서/, 'deduplicated row must retain both source links');
-  assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /다중 선택 · 2개 선택 · 미리보기/, 'multiselect status must distinguish selected sources and preview');
-  assert.equal(await evaluate(client, `!/중복 제거|상품 미리보기/.test(document.querySelector('#toast').textContent)`), true, 'estimate selection must not create a redundant lower coachmark');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateCreateButton').textContent.trim()`), '연동견적서 생성', 'linked creation belongs in the main table footer');
-  await evaluate(client, `window.__estimateBlockedWrites=0;window.__estimateWrittenWorkbook=null;window.XLSX={utils:{book_new:()=>({sheets:[]}),aoa_to_sheet:data=>({data}),book_append_sheet:(workbook,sheet,name)=>workbook.sheets.push({name,data:sheet.data})},writeFile:workbook=>{window.__estimateBlockedWrites+=1;window.__estimateWrittenWorkbook=workbook;}};true`);
-  await click(client, '#estimateExcelButton');
-  await expr(client, `Boolean(document.querySelector('.estimate-duplicate-dialog[open]'))`, 'duplicate item review dialog');
-  assert.equal(await evaluate(client, `window.__estimateBlockedWrites`), 0,
-    'F8 must wait for a duplicate price decision before creating the workbook');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-duplicate-group').length`), 1,
-    'the same item code must be collected into one review group');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-duplicate-candidate').length`), 2,
-    'the review group must expose every source estimate candidate');
-  assert.equal(await evaluate(client, `document.querySelector('[data-duplicate-confirm]').disabled`), true,
-    'workbook creation must remain fail-closed until a representative candidate is selected');
-  for (const theme of ['light', 'dark']) {
-    await evaluate(client, `window.ONEAPP_NEXUS_UI_THEME.apply(${JSON.stringify(theme)},{persist:false,emit:true});true`);
-    await wait(100);
-    assert.equal(await evaluate(client, `(() => {const box=document.querySelector('.estimate-duplicate-dialog').getBoundingClientRect();return box.left>=0&&box.top>=0&&box.right<=innerWidth&&box.bottom<=innerHeight;})()`), true,
-      `${theme} duplicate review dialog must fit the viewport`);
-  }
-  await evaluate(client, `(() => {const field=document.querySelector('.estimate-duplicate-candidate [data-duplicate-inbound]');field.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,'1000');field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
-  await expr(client, `Boolean(document.querySelector('.estimate-duplicate-candidate input[type="radio"]:checked'))&&!document.querySelector('[data-duplicate-confirm]').disabled`, 'direct inbound-price edit selects candidate');
-  assert.match(await evaluate(client, `document.querySelector('.estimate-duplicate-candidate [data-duplicate-out]').textContent`), /1,300/,
-    'the duplicate dialog must preview the inbound-price-based output price');
-  await capture(client, 'smartinput-estimate-f8-duplicate-review-dark.png');
-  await evaluate(client, `window.ONEAPP_NEXUS_UI_THEME.apply('light',{persist:false,emit:true});true`);
-  await click(client, '[data-duplicate-confirm]');
-  await expr(client, `window.__estimateBlockedWrites===1`, 'resolved duplicate report workbook');
-  assert.deepEqual(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.map(sheet=>sheet.name)`),
-    ['쇼핑몰업로드', 'ERP업데이트', '견적서 업로드'], 'resolved F8 workbook must contain the three normal output sheets');
-  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='쇼핑몰업로드').data.slice(1).filter(row=>row[0]==='EST-1').length`), 1,
-    'product-master output must contain one representative row for the duplicate code');
-  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='견적서 업로드').data.slice(1).filter(row=>row[8]==='EST-1').length`), 2,
-    'estimate upload output must preserve both customer transaction rows');
-  assert.equal(await evaluate(client, `window.__estimateWrittenWorkbook.sheets.find(sheet=>sheet.name==='견적서 업로드').data.slice(1).filter(row=>row[8]==='EST-1').some(row=>row[12]===1300)`), true,
-    'the directly edited inbound price must update the selected transaction output price');
-  await evaluate(client, `delete window.XLSX;true`);
-  await click(client, '#estimateCreateButton');
-  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'linked estimate save dialog');
-  await input(client, '[data-estimate-name]', '가을 행사 연동견적');
-  await click(client, '[data-confirm-save]');
-  await expr(client, `!document.querySelector('#linkedEstimateList').hidden&&Boolean(document.querySelector('#linkedEstimateList [data-estimate-kind="LINKED_GROUP"]'))`, 'linked estimate persisted and linked list selected');
-  assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /저장 완료.*연결 2개/, 'fixed estimate status must report saved linked-source count');
-  assert.match(await evaluate(client, `document.querySelector('#linkedEstimateList [data-select-estimate-card] small')?.textContent`), /작성 .*수정/, 'estimate cards must distinguish immutable creation and latest modification dates');
-  await click(client, '#estimateLibraryIndividualButton');
-  await click(client, '#catalogPickerList [data-select-estimate-card]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'individual source selected before cascading deletion');
-  assert.equal(await evaluate(client, `!document.querySelector('#selectedEstimateDeleteButton').disabled`), true, 'a linked source estimate must remain directly deletable; cascade semantics are covered by the focused source-edit contract');
-  const unselectedWorkingCopySourceId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
-  await evaluate(client, `(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const input=row.querySelector('[data-field="memo"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'저장하지 않은 미선택 원본 메모');input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
-  await click(client, '#catalogPickerList .estimate-card:not(.is-selected) [data-select-estimate-card]');
-  const workingCopyConflictSourceId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
-  await evaluate(client, `(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const input=row.querySelector('[data-field="memo"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'저장하지 않은 원본 작업 메모');input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
-  await click(client, '#estimateLibraryLinkedButton');
-  await click(client, '#linkedEstimateList [data-select-estimate-card]');
-  assert.ok(await evaluate(client, `document.querySelectorAll('#inputRows .linked-value-conflict').length>=1`), 'different source values must be identified instead of silently overwritten');
-  await input(client, '#inputRows [data-field="quantity"]', '9');
-  await wait(500);
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.some(record=>record.estimateKind!=='LINKED_GROUP'&&record.draft?.rows?.some(row=>Number(row.quantity)===9)));db.close();};};})`), false, 'autosave must not write linked edits into source estimates');
-  const workingCopyBlockedStoreBefore = await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};})`);
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked source selection dialog');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]').length`), 2, 'merged row must show both original estimate rows');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]:checked').length`), 0, 'multiple sources must not silently preselect the first source');
-  assert.equal(await evaluate(client, `document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled`), true, 'save must remain fail-closed until an original source is selected');
-  for (const theme of ['light', 'dark']) {
-    await evaluate(client, `document.documentElement.dataset.nexusTheme=${JSON.stringify(theme)};true`);
-    await wait(120);
-    assert.equal(await evaluate(client, `(() => {const dialog=document.querySelector('.linked-source-edit-dialog').getBoundingClientRect();return dialog.left>=0&&dialog.top>=0&&dialog.right<=innerWidth&&dialog.bottom<=innerHeight&&document.documentElement.scrollWidth<=innerWidth;})()`), true, `1920px ${theme} linked-source dialog must fit the viewport`);
-  }
-  console.log('SmartInput linked-source popup 1920px light/dark PASS');
-  await evaluate(client, `document.documentElement.dataset.nexusTheme='light';true`);
-  await click(client, '.linked-source-edit-dialog [data-close]');
-  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="quantity"]').value`), '9', 'cancel with source working copies must preserve the linked working-row edit');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'working-copy conflict source dialog');
-  const linkedSourceId = workingCopyConflictSourceId;
-  await evaluate(client, `(() => {const choice=[...document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]')].find(input=>input.value.startsWith(${JSON.stringify(`${workingCopyConflictSourceId}:`)}));choice.click();return choice.value;})()`);
-  assert.equal(await evaluate(client, `document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled`), false, 'explicit source selection must enable the atomic save confirmation');
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `document.querySelector('#toast').textContent.includes('저장하지 않은 작업본')&&document.querySelector('#appStatus').textContent.includes('저장하지 못했습니다')`, 'selected source unsaved working-copy conflict');
-  assert.deepEqual(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};})`), workingCopyBlockedStoreBefore, 'working-copy conflict must perform zero estimates Store writes');
-  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="quantity"]').value`), '9', 'working-copy conflict must preserve the linked working-row edit');
-  await click(client, '#estimateLibraryIndividualButton');
-  await click(client, `#catalogPickerList [data-estimate-id="${workingCopyConflictSourceId}"] [data-select-estimate-card]`);
-  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="memo"]')].some(input=>input.value==='저장하지 않은 원본 작업 메모')`, 'selected source working copy retained after blocked linked save');
-  await click(client, '#completeButton');
-  await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')`, 'selected source working copy explicitly saved');
-  await click(client, '#estimateLibraryLinkedButton');
-  await click(client, '#linkedEstimateList [data-select-estimate-card]');
-  await expr(client, `document.querySelector('#inputRows [data-field="quantity"]')?.value==='9'`, 'blocked linked sourced-row edit restored after explicit source save and linked reopen');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked source retry after explicit source save');
-  await evaluate(client, `(() => {const choice=[...document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]')].find(input=>input.value.startsWith(${JSON.stringify(`${workingCopyConflictSourceId}:`)}));choice.click();return true;})()`);
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').get(${JSON.stringify(workingCopyConflictSourceId)});get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.draft?.rows?.some(row=>Number(row.quantity)===9));db.close();};};})`, 'linked retry succeeds atomically after explicit source save');
-  assert.equal(await evaluate(client, `(() => {const row=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].find(candidate=>candidate.querySelector('.linked-row-badge')?.textContent.includes('2개'));return row?.querySelector('[data-field="quantity"]')?.value==='1'&&Boolean(row?.querySelector('.linked-value-conflict'));})()`), true, 'A=1/B=9 must immediately rematerialize to the A representative and retain the conflict marker');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{const linked=get.result.find(record=>record.estimateKind==='LINKED_GROUP');const row=linked?.draft?.rows?.find(candidate=>candidate.linkedSourceRefs?.length===2);resolve(row?.quantity===1&&row?.linkedFieldConflicts?.includes('quantity')&&row?.linkedPriceConflict===true);db.close();};};})`), true, 'stored linked record must match the post-save representative and conflict state');
-  await click(client, '#estimateLibraryIndividualButton');
-  await click(client, `#catalogPickerList [data-estimate-id="${unselectedWorkingCopySourceId}"] [data-select-estimate-card]`);
-  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="memo"]')].some(input=>input.value==='저장하지 않은 미선택 원본 메모')`, 'unselected source working copy retained after successful linked save');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').get(${JSON.stringify(unselectedWorkingCopySourceId)});get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result?.draft?.rows?.some(row=>row.memo==='저장하지 않은 미선택 원본 메모'));db.close();};};})`), false, 'unselected working copy must remain unsaved and absent from the estimates Store');
-  await click(client, '#completeButton');
-  await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')`, 'unselected source working copy explicitly saved for subsequent regression');
-  await click(client, '#estimateLibraryLinkedButton');
-  await click(client, '#linkedEstimateList [data-select-estimate-card]');
-  assert.equal(await evaluate(client, `(() => {const row=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].find(candidate=>candidate.querySelector('.linked-row-badge')?.textContent.includes('2개'));return row?.querySelector('[data-field="quantity"]')?.value==='1'&&Boolean(row?.querySelector('.linked-value-conflict'));})()`), true, 'reopened linked view must equal the post-save A=1/B=9 representative and conflict state');
-  await input(client, '#inputRows [data-field="quantity"]', '10');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked source atomic rollback dialog');
-  await evaluate(client, `(() => {const choice=[...document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]')].find(input=>input.value.startsWith(${JSON.stringify(`${linkedSourceId}:`)}));choice.click();return true;})()`);
-  await evaluate(client, `(() => {window.__estimatePutOriginal=IDBObjectStore.prototype.put;window.__estimatePutCount=0;IDBObjectStore.prototype.put=function(...args){if(this.name==='estimates'&&++window.__estimatePutCount===2)throw new DOMException('Injected second estimate write failure','AbortError');return window.__estimatePutOriginal.apply(this,args);};return true;})()`);
-  console.log('SmartInput linked-source injected rollback starting');
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `document.querySelector('#appStatus').textContent.includes('저장하지 못했습니다')`, 'injected linked bundle rollback');
-  console.log('SmartInput linked-source injected rollback surfaced');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.filter(record=>record.estimateKind!=='LINKED_GROUP').every(record=>!record.draft?.rows?.some(row=>Number(row.quantity)===10)));db.close();};};})`), true, 'one failed write must roll back the entire IndexedDB bundle');
-  assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="quantity"]').value`), '10', 'failed atomic save must preserve the working input');
-  await evaluate(client, `IDBObjectStore.prototype.put=window.__estimatePutOriginal;delete window.__estimatePutOriginal;true`);
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked source retry dialog');
-  await evaluate(client, `(() => {const choice=[...document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]')].find(input=>input.value.startsWith(${JSON.stringify(`${linkedSourceId}:`)}));choice.click();return true;})()`);
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.find(record=>record.estimateId===${JSON.stringify(linkedSourceId)})?.draft?.rows?.some(row=>Number(row.quantity)===10));db.close();};};})`, 'selected linked source write-through record');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.filter(record=>record.estimateKind!=='LINKED_GROUP'&&record.estimateId!==${JSON.stringify(linkedSourceId)}).every(record=>!record.draft?.rows?.some(row=>Number(row.quantity)===10)));db.close();};};})`), true, 'unselected original estimates must remain unchanged');
-  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')];const row=rows.find(candidate=>!candidate.querySelector('.linked-row-badge')?.textContent.includes('2개'));const input=row.querySelector('[data-field="quantity"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'8');input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'single-source confirmation dialog');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]').length===1&&document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]:checked').length===1&&!document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled`), true, 'single-source edit must identify its only original row and still require operator confirmation');
-  await click(client, '.linked-source-edit-dialog [data-close]');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.some(record=>record.estimateKind!=='LINKED_GROUP'&&record.draft?.rows?.some(row=>Number(row.quantity)===8)));db.close();};};})`), false, 'cancel must leave every original estimate unchanged');
-  assert.equal(await evaluate(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].some(input=>input.value==='8')`), true, 'cancel must keep the working-row edit');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'single-source confirmation retry');
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.some(record=>record.estimateKind!=='LINKED_GROUP'&&record.draft?.rows?.some(row=>Number(row.quantity)===8)));db.close();};};})`, 'single selected source save');
-  await evaluate(client, `(() => {const element=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,'LINK-NEW');element.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
-  await input(client, '#inputRows tr:nth-last-child(2) [data-field="itemName"]', '연동 신규 품목');
-  await input(client, '#inputRows tr:nth-last-child(2) [data-field="unitPrice"]', '-500');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'new linked row source selection dialog');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]:checked').length`), 0, 'a new linked row must never select a target estimate automatically');
-  assert.equal(await evaluate(client, `document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled`), true, 'a new linked row must fail closed without a selected estimate');
-  assert.equal(await evaluate(client, `document.querySelector('.linked-source-edit-dialog').textContent.includes('공백')&&document.querySelector('.linked-source-edit-dialog').textContent.includes('음수')`), true, 'the review must distinguish blank quantity from negative unit price');
-  const newRowSourceId = await evaluate(client, `(() => {const choice=document.querySelector('.linked-source-edit-dialog [data-source-choice]');choice.click();return choice.value;})()`);
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.find(record=>record.estimateId===${JSON.stringify(newRowSourceId)})?.draft?.rows?.some(row=>row.itemCode==='LINK-NEW'&&row.quantity===null&&Number(row.unitPrice)===-500));db.close();};};})`, 'new row added only to selected original estimate');
-  assert.equal(await evaluate(client, `new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('estimates','readonly');const get=tx.objectStore('estimates').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result.filter(record=>record.estimateKind!=='LINKED_GROUP'&&record.estimateId!==${JSON.stringify(newRowSourceId)}).every(record=>!record.draft?.rows?.some(row=>row.itemCode==='LINK-NEW')));db.close();};};})`), true, 'new row must not be copied to unselected original estimates');
-  await click(client, '#estimateLibraryIndividualButton');
-  await click(client, `#catalogPickerList [data-estimate-id="${linkedSourceId}"] [data-select-estimate-card]`);
-  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].some(input=>input.value==='10')`, 'linked edit written through to individual estimate');
-  await input(client, '#inputRows [data-field="quantity"]', '11');
-  await wait(500);
-  await click(client, '#completeButton');
-  await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')`, 'individual estimate explicit save completion');
-  assert.match(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.trim()`), /저장 완료.*연결 1개.*반영 1건/, '개별 견적서 저장은 연결 사용량과 자동 재구성 건수를 함께 보고해야 한다.');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateSelectionSummary').textContent.includes('반영 1건')`), true, '개별 견적서 저장은 관련 연동견적서를 같은 저장 묶음에서 자동 재구성해야 한다.');
-  await click(client, '#estimateLibraryLinkedButton');
-  await expr(client, `!document.querySelector('#linkedEstimateList').hidden&&Boolean(document.querySelector('#linkedEstimateList [data-select-estimate-card]'))`, 'linked estimate list');
-  await click(client, '#linkedEstimateList [data-select-estimate-card]');
-  await expr(client, `[...document.querySelectorAll('#inputRows [data-field="quantity"]')].some(input=>input.value==='11')`, 'individual edit reflected in linked estimate');
-  await click(client, '#saveEstimateAsButton');
-  await input(client, '[data-estimate-name]', '가을 행사 연동견적 수정');
-  await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelectorAll('#linkedEstimateList [data-estimate-kind="LINKED_GROUP"]').length===2&&[...document.querySelectorAll('#linkedEstimateList [data-select-estimate-card]')].some(button=>button.textContent.includes('가을 행사 연동견적 수정'))`, 'Save As must create a new named form and preserve the original');
-  await click(client, '#estimateLibraryIndividualButton');
-  await click(client, '#catalogPickerList [data-select-estimate-card]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'single individual estimate selected for successful F8 export');
-  await evaluate(client, `window.XLSX={utils:{book_new:()=>({names:[]}),aoa_to_sheet:data=>data,book_append_sheet:(book,sheet,name)=>book.names.push(name)},writeFile:(book,name)=>{window.__estimateExportName=name;window.__estimateExportSheets=book.names}};true`);
-  await click(client, '#estimateExcelButton');
-  await expr(client, `Boolean(window.__estimateExportName)`, 'estimate export');
-  assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'SmartInput F8 must omit 확인요청 when there are no warnings and append 견적서 업로드 last');
-  await evaluate(client, `window.__estimateExportName='';window.__estimateExportSheets=[];document.dispatchEvent(new KeyboardEvent('keydown',{key:'F8',code:'F8',bubbles:true,cancelable:true}));true`);
-  await expr(client, `Boolean(window.__estimateExportName)`, 'estimate F8 keyboard export');
-  assert.match(await evaluate(client, `window.__estimateExportName`), /^통합업로드용_QuickF8_\d{4}-\d{2}-\d{2}\.xlsx$/);
-  assert.deepEqual(await evaluate(client, `window.__estimateExportSheets`), ['쇼핑몰업로드','ERP업데이트','견적서 업로드'], 'F8 key must use the same estimate output path as the button');
-  await click(client, '#catalogPickerList [data-select-estimate-card]');
-  const renameTargetId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
-  await click(client, '#estimateRenameButton');
-  await expr(client, `document.activeElement?.matches('[data-estimate-name-change]')`, 'information dialog direct input focus');
-  assert.equal(await evaluate(client, `document.querySelector('[data-estimate-customer-name]').textContent.trim()`), '거래처 미지정', 'legacy customerless estimate must make the missing customer explicit');
-  await click(client, '[data-estimate-customer-match]');
-  await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]'))`, 'estimate information customer fixture');
-  await input(client, '.smart-customer-dialog input[type="search"]', '격리 검증 거래처');
-  await click(client, '.smart-customer-dialog [data-link-mode]');
-  await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]:checked'))`, 'relationship delivery customer auto-selection');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.smart-customer-dialog input[name="taxCustomerRole"]:checked').length`), 0, 'tax customer must remain optional instead of being auto-selected');
-  assert.match(await evaluate(client, `document.querySelector('.smart-customer-dialog .smart-link-footer').textContent`), /세무거래처는 선택사항/);
-  await click(client, '.smart-customer-dialog [data-link-save]');
-  await expr(client, `!document.querySelector('.smart-customer-dialog')&&document.querySelector('[data-estimate-customer-name]')?.textContent.trim()==='격리 검증 거래처'`, 'estimate information customer rematched');
-  await input(client, '[data-estimate-name-change]', '정보 변경된 견적');
-  await click(client, '[data-confirm-information]');
-  await expr(client, `document.querySelector('#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]')?.textContent.includes('정보 변경된 견적')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'estimate name and customer applied without changing its id');
-  const estimateInformation = await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');const group=data.linkGroups.find(item=>item.memberCustomerIds?.includes('E2E-CUSTOMER'));return {record:{id:record.customerId,code:record.customerCode,name:record.customerName},header:{id:record.draft.header.customerId,code:record.draft.header.customerCode,name:record.draft.header.customerName,taxId:record.draft.header.taxCustomerId,taxName:record.draft.header.taxCustomerName},relationship:{deliveryIds:group.deliveryCustomerIds,taxCustomerId:group.taxCustomerId}};})()`);
-  assert.deepEqual(estimateInformation, {
-    record: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처' },
-    header: { id: 'E2E-CUSTOMER', code: 'E2E-CUSTOMER', name: '격리 검증 거래처', taxId: '', taxName: '' },
-    relationship: { deliveryIds: ['E2E-CUSTOMER'], taxCustomerId: '' }
-  }, 'estimate information must persist its customer and allow a delivery-only relationship without a tax customer');
-  await input(client, '#inputRows [data-field="unitPrice"]', '1801');
-  await click(client, '#completeButton');
-  await expr(client, `!document.querySelector('#completeButton').disabled&&document.querySelector('#appStatus').textContent.includes('저장 완료')&&document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'`, 'first in-place save preserves the rematched customer');
-  await input(client, '#inputRows [data-field="unitPrice"]', '1802');
-  await click(client, '#completeButton');
-  await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?estimate-information-resave-e2e=1');const data=await store.loadSmartInputData();const record=data.estimates.find(item=>item.estimateId==='${renameTargetId}');return record?.customerId==='E2E-CUSTOMER'&&record?.draft?.header?.customerId==='E2E-CUSTOMER'&&record?.draft?.rows?.some(row=>Number(row.unitPrice)===1802);})()`, 'repeated in-place saves preserve the rematched customer');
-  await click(client, `#catalogPickerList .estimate-card:not([data-estimate-id="${renameTargetId}"]) [data-select-estimate-card]`);
-  await click(client, `#catalogPickerList [data-estimate-id="${renameTargetId}"] [data-select-estimate-card]`);
-  await expr(client, `document.querySelector('#customerInput').dataset.customerId==='E2E-CUSTOMER'&&document.querySelector('#customerInput').value==='격리 검증 거래처'`, 'estimate list reselection restores the rematched customer');
-  await click(client, '#saveEstimateAsButton');
-  await input(client, '[data-estimate-name]', '삭제 확인용 사본');
-  await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===3`, 'one-source independent copy creation');
-  await evaluate(client, `window.__estimateDeleteConfirmCalls=0;window.confirm=()=>{window.__estimateDeleteConfirmCalls+=1;return true;};true`);
-  await click(client, '#selectedEstimateDeleteButton');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'single selected estimate deletion');
-  assert.equal(await evaluate(client, `window.__estimateDeleteConfirmCalls`), 0, 'one selected card deletion must proceed without a redundant confirmation');
-  await click(client, '#catalogPickerList [data-select-estimate-card]');
-  await click(client, '#saveEstimateAsButton');
-  await input(client, '[data-estimate-name]', '다중 삭제 사본 A');
-  await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===3`, 'first disposable copy');
-  await click(client, '#saveEstimateAsButton');
-  await input(client, '[data-estimate-name]', '다중 삭제 사본 B');
-  await click(client, '[data-confirm-save]');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===4`, 'second disposable copy');
-  await click(client, '#estimateMultiSelectButton');
-  await evaluate(client, `(() => {const cards=[...document.querySelectorAll('#catalogPickerList [data-estimate-id]')].filter(card=>/다중 삭제 사본/.test(card.textContent));const selected=cards.find(card=>!card.classList.contains('is-selected'));selected?.querySelector('[data-select-estimate-card]').click();return cards.length;})()`);
-  await expr(client, `[...document.querySelectorAll('#catalogPickerList .is-selected')].filter(card=>/다중 삭제 사본/.test(card.textContent)).length===2`, 'explicit multiselect for two disposable copies');
-  await click(client, '#selectedEstimateDeleteButton');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2`, 'confirmed multiple deletion');
-  assert.equal(await evaluate(client, `window.__estimateDeleteConfirmCalls`), 1, 'two selected cards must require one confirmation');
-
-  await click(client, '#catalogPickerList [data-select-estimate-card]');
-  const cascadedSourceId = await evaluate(client, `document.querySelector('#catalogPickerList .is-selected').dataset.estimateId`);
-  await click(client, '#selectedEstimateDeleteButton');
-  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===1&&document.querySelector('#toast').textContent.includes('연동견적서')`, 'individual source deletion cascades to linked estimates');
-  assert.equal(await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?source-delete-cascade-e2e=1');const data=await store.loadSmartInputData();return !data.estimates.some(record=>record.estimateId===${JSON.stringify(cascadedSourceId)})&&data.estimates.filter(record=>record.estimateKind==='LINKED_GROUP').every(record=>!(record.linkedEstimateSources||[]).some(source=>source.estimateId===${JSON.stringify(cascadedSourceId)})&&!(record.draft?.rows||[]).some(row=>(row.linkedSourceEstimateIds||[]).includes(${JSON.stringify(cascadedSourceId)})));})()`), true,
-    'deleting an individual estimate must remove its source metadata and products from every linked estimate');
-
-  await click(client, '#estimateLibraryLinkedButton');
-  await click(client, '#linkedEstimateList [data-select-estimate-card]');
-  await click(client, '#selectAllRows');
-  await click(client, '#deleteSelectedRows');
-  await expr(client, `document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length===0`, 'all linked products removed from working draft');
-  await click(client, '#completeButton');
-  await expr(client, `Boolean(document.querySelector('.linked-source-edit-dialog[open]'))`, 'linked product deletion confirmation');
-  assert.equal(await evaluate(client, `document.querySelectorAll('.linked-source-edit-dialog [data-source-choice]').length===0&&!document.querySelector('.linked-source-edit-dialog [data-confirm-source]').disabled&&document.querySelector('.linked-source-edit-dialog').textContent.includes('품목이 0개가 되는 원본 견적서는 함께 삭제')`), true,
-    'linked product deletion must target every source automatically and disclose empty-estimate deletion');
-  await click(client, '.linked-source-edit-dialog [data-confirm-source]');
-  await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?linked-delete-cascade-e2e=1');const data=await store.loadSmartInputData();return data.estimates.filter(record=>record.estimateKind!=='LINKED_GROUP').length===0&&data.estimates.filter(record=>record.estimateKind==='LINKED_GROUP').every(record=>(record.linkedEstimateSources||[]).length===0&&(record.draft?.rows||[]).length===0);})()`, 'linked product deletion removes empty source estimate and cascades to sibling linked estimates');
+  await expr(client, `document.querySelectorAll('#catalogPickerList .is-selected').length===1`, 'individual target selection');
+  assert.equal(await evaluate(client, `!document.querySelector('#estimateLibraryLinkedButton,#linkedEstimateList,#estimateCreateButton')`), true, 'linked UI is removed');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await client.send('Page.reload', { ignoreCache: true });

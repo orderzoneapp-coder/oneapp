@@ -133,10 +133,10 @@ function appHarness() {
   };
   let label = { message: '자동저장 중…', stateName: 'saving' };
   const queue = new Function('state', 'draftSaveCoordinator', 'setSaveState', 'updateAutosaveButton',
-    'setAppStatus', 'createAutosaveDocumentKey', 'AUTOSAVE_JOURNAL_SCHEMA',
+    'setAppStatus', 'createAutosaveDocumentKey', 'AUTOSAVE_JOURNAL_SCHEMA', 'captureSelectedEstimateWork', 'estimateWorkspace',
     `${checkpointFunctions}\nreturn queueDocumentCheckpoint;`)(
     state, coordinator, (message, stateName) => { label = { message, stateName }; },
-    () => {}, () => {}, createAutosaveDocumentKey, AUTOSAVE_JOURNAL_SCHEMA);
+    () => {}, () => {}, createAutosaveDocumentKey, AUTOSAVE_JOURNAL_SCHEMA, () => {}, { journal: () => ({}) });
   return { state, coordinator, commits, queue, label: () => label };
 }
 
