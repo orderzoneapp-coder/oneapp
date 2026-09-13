@@ -1,0 +1,28 @@
+name: MerchOps F8 isolated work
+on:
+  push:
+    branches: [fix/merchops-f8-market-erp11-20260913]
+    paths: [.github/workflows/merchops-f8-work.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Export exact baseline for isolated tests
+        run: |
+          mkdir -p /tmp/merchops-f8-work
+          git archive --format=tar HEAD > /tmp/merchops-f8-work/source.tar
+          git rev-parse HEAD > /tmp/merchops-f8-work/source-head.txt
+          git -c core.quotepath=false ls-tree -r HEAD > /tmp/merchops-f8-work/blobs.txt
+          curl --fail --location --retry 2 https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js -o /tmp/merchops-f8-work/xlsx.full.min.js
+          echo 'c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99  /tmp/merchops-f8-work/xlsx.full.min.js' | sha256sum -c -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merchops-f8-source
+          path: /tmp/merchops-f8-work/*
+          retention-days: 3
