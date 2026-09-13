@@ -6720,11 +6720,7 @@ function renderRows({ restoreFocus = true } = {}) {
       const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
       const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
       return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(rowFieldDisplayValue(row, field.id, row[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`;
-  }, $('voucherInputTable').querySelectorAll('col').length, (row, column, index) => {
-    if (column === 0) return index + 1;
-    const field = $('voucherInputTable').querySelectorAll('thead th')[column]?.dataset.column;
-    return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
-  });
+    }).join('');
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
@@ -6749,7 +6745,11 @@ function renderRows({ restoreFocus = true } = {}) {
       ${customCells}
       <td data-column="status"><div class="row-status">${row.linkedSourceEstimateId ? `<em class="linked-row-badge" title="${esc(row.linkedSourceEstimateName)} 보존 자료">소속 · ${esc(row.linkedSourceEstimateName)}</em>` : ''}${row.linkedFieldConflicts?.length ? `<em class="linked-value-conflict" title="원본별 값이 다릅니다. 저장할 때 수정할 원본과 원본 행을 선택합니다.">값 다름</em>` : ''}<span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
     </tr>`;
-  }).join('');
+  }, $('voucherInputTable').querySelectorAll('col').length, (row, column, index) => {
+    if (column === 0) return index + 1;
+    const field = $('voucherInputTable').querySelectorAll('thead th')[column]?.dataset.column;
+    return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
+  });
   syncRowSelectionControls();
   syncGridPasteUndoButton();
   updateSummaries();
