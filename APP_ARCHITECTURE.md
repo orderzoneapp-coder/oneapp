@@ -6,7 +6,7 @@
 - Documentation updated: 2026-09-14
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 홈 12개 카드와 7개 글로벌헤더의 표시명·앱 ID·공식 경로 결속, 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
+- Review scope: NEXUS 홈 12개 카드와 7개 글로벌헤더의 표시명·앱 ID·공식 경로·실제 클릭영역 결속, 761~1279px 데스크톱에서 글로벌헤더 앱 링크를 가리지 않는 2단 배치, 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
 - Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 파서 내부 Excel/API 준비와 보조 복구 메뉴·중앙 작업 전용 하단바·우측 전표의 4열 압축 목록·빠른 창고/담당 필터·고정 선택 합계/일괄 변경·다중 주문 Revision 조정·저장 실패 재시도·출고분석과 구매/판매 참고자료 적용 뒤 원본 기준선/다중 출고 초안 보존·재진입 후 부분 Revision 갱신을 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
