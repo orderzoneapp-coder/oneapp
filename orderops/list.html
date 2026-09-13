@@ -16,11 +16,11 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260913-acceptance-fix"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260913-continuity-fix"></script>
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
-  <script src="source-coordinator.js?v=20260913-acceptance-fix"></script>
-  <script src="voucher-workbench.js?v=20260913-acceptance-fix"></script>
-  <script src="workbench-ui.js?v=20260913-acceptance-fix"></script>
+  <script src="source-coordinator.js?v=20260913-continuity-fix"></script>
+  <script src="voucher-workbench.js?v=20260913-continuity-fix"></script>
+  <script src="workbench-ui.js?v=20260913-continuity-fix"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -2979,7 +2979,7 @@
           <div id="inventoryInspectorBody"></div>
           <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
         </aside></div><footer class="page-footer">
-      <span>ORDER Q v1.61 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.62 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
@@ -9308,7 +9308,7 @@
           const orders = base && state.orders ? { ...state.orders, rows: JSON.parse(JSON.stringify(base.orders)) } : state.orders;
           const candidate = await analyzeCurrentInputs({ orders });
           if (state.workspace !== base || state.workspaceChangeVersion !== version) throw new Error("분석 중 입력이 변경되어 적용하지 않았습니다. 최신 입력은 유지됩니다.");
-          for (const key of ["systemHistory", "substitutionHistory", "inventoryOverrides", "inventorySourceReference", "inventoryApplicationMode", "orderQSourceRecovery", "shipmentExecutionDraft", "workbenchUnapplied", "workbenchReconciliation"]) {
+          for (const key of ["systemHistory", "substitutionHistory", "inventoryOverrides", "inventorySourceReference", "inventoryApplicationMode", "orderQSourceRecovery", "shipmentExecutionDraft", "workbenchPreparedShipmentDrafts", "workbenchSourceBaselines", "workbenchUnapplied", "workbenchReconciliation", "workbenchConflicts"]) {
             if (base?.[key]) candidate[key] = JSON.parse(JSON.stringify(base[key]));
           }
           if (base) engine.applyPurchaseInputs(candidate, engine.getPurchaseInputs(JSON.parse(JSON.stringify(base))));

@@ -64,7 +64,7 @@ const analyze = async client => {
   await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'analysis readiness');
   await evaluate(client, `document.querySelector('#analyzeButton').click()`);
   try {
-    await waitFor(() => evaluate(client, `!document.querySelector('#shipmentExecution').hidden&&Boolean(document.querySelector('[data-preview="allocations"]'))`), 'shipment execution');
+    await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled&&document.querySelector('#systemMessage').textContent.startsWith('분석 완료')&&!document.querySelector('#shipmentExecution').hidden&&Boolean(document.querySelector('[data-preview="allocations"]'))`), 'shipment execution');
   } catch (error) {
     const detail = await evaluate(client, `document.body.innerText.slice(-1200)`);
     throw new Error(`${error.message}: ${detail}`);
@@ -73,7 +73,7 @@ const analyze = async client => {
 const analyzeExcelWorkspace = async client => {
   await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'Excel analysis readiness');
   await evaluate(client, `document.querySelector('#analyzeButton').click()`);
-  await waitFor(() => evaluate(client, `!document.querySelector('#resultsPanel').classList.contains('hidden')&&Boolean(document.querySelector('[data-preview="allocations"]'))`), 'Excel analysis results');
+  await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled&&document.querySelector('#systemMessage').textContent.startsWith('분석 완료')&&!document.querySelector('#resultsPanel').classList.contains('hidden')&&Boolean(document.querySelector('[data-preview="allocations"]'))`), 'Excel analysis results');
 };
 
 let browserProcess; let client;

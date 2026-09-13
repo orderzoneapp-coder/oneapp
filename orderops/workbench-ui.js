@@ -562,7 +562,7 @@
           }
         }
         if (!byKind.has('orders') && base) {
-          for (const key of ['substitutionHistory', 'orderQSourceRecovery', 'shipmentExecutionDraft', 'workbenchUnapplied', 'workbenchReconciliation', 'workbenchConflicts']) if (base[key]) candidate[key] = clone(base[key]);
+          for (const key of ['substitutionHistory', 'orderQSourceRecovery', 'shipmentExecutionDraft', 'workbenchPreparedShipmentDrafts', 'workbenchSourceBaselines', 'workbenchUnapplied', 'workbenchReconciliation', 'workbenchConflicts']) if (base[key]) candidate[key] = clone(base[key]);
           if (!byKind.has('inventory')) for (const key of ['inventoryOverrides', 'inventorySourceReference', 'inventoryApplicationMode']) if (base[key]) candidate[key] = clone(base[key]);
           e.applyPurchaseInputs(candidate, e.getPurchaseInputs(clone(base)));
         }
