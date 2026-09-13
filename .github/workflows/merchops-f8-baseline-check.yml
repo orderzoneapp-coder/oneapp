@@ -1,0 +1,73 @@
+name: MerchOps F8 baseline comparison
+on:
+  push:
+    branches: [verify/merchops-f8-base-and-release-20260913]
+    paths: [.github/workflows/merchops-f8-baseline-check.yml]
+permissions:
+  contents: read
+jobs:
+  compare-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Create isolated current-main and merged-candidate trees
+        run: |
+          set -euo pipefail
+          git config user.name 'oneapp-verification'
+          git config user.email 'orderzoneapp@gmail.com'
+          git worktree add --detach /tmp/f8-base 579b120f90115fbbae76dac84a5090cba9cf9d31
+          git worktree add --detach /tmp/f8-candidate 579b120f90115fbbae76dac84a5090cba9cf9d31
+          git -C /tmp/f8-candidate merge --no-commit --no-ff a0f49884960045554538208d9c27cd8b3dfd991f
+          mkdir -p /tmp/f8-comparison
+          git -C /tmp/f8-candidate diff --cached --name-only > /tmp/f8-comparison/merged-files.txt
+          test "$(git -C /tmp/f8-candidate hash-object MerchOps.html)" = d4b30aa49e67a5cb056ab99cacc9af615f8f43ce
+          test "$(git -C /tmp/f8-candidate hash-object coreEngine.js)" = cd81e50956778a2c02c767341af1134c98e50faa
+          test -z "$(git -C /tmp/f8-candidate diff --cached --name-only -- smartinput nexus/common .github)"
+      - name: Reproduce unrelated SmartInput failures on unchanged current main
+        run: |
+          python - <<'PY'
+          import subprocess, json
+          from pathlib import Path
+          tests = [
+              ('scripts/test-smartinput-independent-recovery.mjs', ['smartinput\\.css\\?v=0\\.9\\.21', 'AssertionError']),
+              ('scripts/test-smartinput-v2-unresolved-review-ui.mjs', ['approved SmartInput UI baseline', 'AssertionError']),
+              ('scripts/test-smartinput-stage3-workspace-browser.mjs', ["Cannot read properties of undefined (reading 'join')", 'renderRows'])
+          ]
+          report = []
+          for path, markers in tests:
+              result = subprocess.run(['node', path], cwd='/tmp/f8-base', capture_output=True, text=True, timeout=70)
+              output = result.stdout + result.stderr
+              Path('/tmp/f8-comparison', Path(path).stem + '.log').write_text(output)
+              expected_failure = result.returncode != 0 and all(marker in output for marker in markers)
+              report.append({'test': path, 'base_sha': '579b120f90115fbbae76dac84a5090cba9cf9d31', 'actual_exit': result.returncode, 'same_failure_without_merchops_change': expected_failure})
+              print(json.dumps(report[-1]))
+              if not expected_failure:
+                  print(output[-5000:])
+                  raise SystemExit('Baseline error was not reproduced: do not classify as a known baseline failure')
+          Path('/tmp/f8-comparison/baseline-failures.json').write_text(json.dumps(report, indent=2))
+          PY
+      - name: Verify MerchOps on current-main merged candidate
+        working-directory: /tmp/f8-candidate
+        env:
+          MERCHOPS_F8_EVIDENCE_DIR: /tmp/f8-comparison/xlsx
+        run: |
+          set -euo pipefail
+          node scripts/test-merchops-all.mjs 2>&1 | tee /tmp/f8-comparison/merged-merchops-suite.log
+          node scripts/test-oneapp-parser-wh-20260802-01.mjs 2>&1 | tee /tmp/f8-comparison/merged-parser.log
+          node scripts/test-client-safety.mjs 2>&1 | tee /tmp/f8-comparison/merged-client-safety.log
+          node scripts/validate-repository.mjs 2>&1 | tee /tmp/f8-comparison/merged-repository.log
+          git diff --cached --check
+          git write-tree > /tmp/f8-comparison/verified-merge-tree.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: merchops-f8-baseline-and-merged-proof
+          path: /tmp/f8-comparison/*
+          retention-days: 7
