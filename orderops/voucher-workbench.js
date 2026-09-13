@@ -1,174 +1,195 @@
-/* ORDEROPS-3P-01: order-workspace vouchers, not official ledger commands. */
-(function(root, factory) {
+(function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.OrderOpsVouchers = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function() {
+  root.OrderOpsVoucherWorkbench = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+
+  const VOUCHER_WORKBENCH_SCHEMA = 'ONEAPP_ORDEROPS_VOUCHER_WORKBENCH_V1';
   const text = value => String(value ?? '').trim();
-  const copy = value => JSON.parse(JSON.stringify(value));
-  function index(workspace) {
-    if (!workspace) return [];
+  const canonical = value => JSON.stringify(value);
+  const round = value => Math.round((Number(value) + Number.EPSILON) * 1e9) / 1e9;
+  const parseNumeric = value => {
+    if (value === '' || value === null || value === undefined || String(value).trim() === '') {
+      return { ok: true, blank: true, value: 0 };
+    }
+    let normalized = String(value).trim().replace(/,/g, '');
+    let negative = false;
+    if (/^\(.*\)$/.test(normalized)) {
+      negative = true;
+      normalized = normalized.slice(1, -1);
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed)
+      ? { ok: true, blank: false, value: round(negative ? -parsed : parsed) }
+      : { ok: false, blank: false, value: null };
+  };
+  const defaultRowId = (row = {}, index = 0, source = {}) => {
+    if (text(row.workRowId)) return text(row.workRowId);
+    const document = text(row.orderId || row.sourceDocumentKey || source.orderId || source.sourceDocumentKey);
+    const line = text(row.orderItemId || row.sourceLineKey) || String(Number(row.originalSourceRowNumber || row.sourceRowNumber) || index + 1);
+    const fingerprint = text(row.sourceFingerprint || source.orderSnapshotHash || source.sha256 || source.fileHash);
+    return document ? `document:${document}:line:${line}` : `file:${fingerprint || 'unidentified'}:sheet:${text(source.sheetName)}:line:${line}`;
+  };
+  const voucherIdFor = (row = {}, index = 0, source = {}) => {
+    const ownerDocument = text(row.orderId || row.sourceDocumentKey || source.orderId || source.sourceDocumentKey);
+    if (ownerDocument) return `document:${ownerDocument}`;
+    const fingerprint = text(row.sourceFingerprint || source.orderSnapshotHash || source.sha256 || source.fileHash) || 'unidentified';
+    const orderNumber = text(row.orderNumber || row.group);
+    const customer = text(row.customerId || row.customerCode || row.customerKey || row.customer);
+    if (orderNumber) return `file:${fingerprint}:sheet:${text(source.sheetName)}:voucher:${orderNumber}:customer:${customer}`;
+    const originalLine = Number(row.originalSourceRowNumber || row.sourceRowNumber) || index + 1;
+    return `file:${fingerprint}:sheet:${text(source.sheetName)}:unbounded-line:${originalLine}`;
+  };
+
+  function buildVouchers(workspace = {}, options = {}) {
+    const rows = Array.isArray(workspace.orders) ? workspace.orders : [];
     const source = workspace.sourceFiles?.orders || {};
-    const sourceKey = text(source.sha256 || source.fileHash || workspace.sourceFingerprint || source.fileName || 'workspace');
+    const rowId = typeof options.rowId === 'function'
+      ? (row, index) => options.rowId(row, source, index)
+      : (row, index) => defaultRowId(row, index, source);
     const groups = new Map();
-    (workspace.orders || []).forEach((row, position) => {
-      const originalLine = text(row.orderItemId || row.sourceLineKey || row.sourceRowNumber || position + 1);
-      row.workbenchRowId ||= JSON.stringify([sourceKey, source.sheetName || '', row.orderId || '', originalLine]);
-      const number = text(row.orderNumber || row.group);
-      row.workbenchVoucherId ||= row.orderId
-        ? JSON.stringify(['orderq', row.companyId || 'ONEAPP', row.orderId])
-        : JSON.stringify(['excel', sourceKey, source.sheetName || '', number || row.workbenchRowId,
-          row.basisDate || '', row.warehouse || '', row.customerId || row.customerCode || row.customer || '']);
-      let voucher = groups.get(row.workbenchVoucherId);
-      if (!voucher) {
-        voucher = { id: row.workbenchVoucherId, rows: [], rowIds: [], sourceRowNumbers: [], dates: [], warehouses: [], managers: [], customer: text(row.customer), orderNumber: number };
-        groups.set(voucher.id, voucher);
-      }
-      voucher.rows.push(row); voucher.rowIds.push(row.workbenchRowId); voucher.sourceRowNumbers.push(Number(row.sourceRowNumber));
-      for (const [field, value] of [['dates', row.basisDate], ['warehouses', row.warehouse], ['managers', row.manager]]) {
-        const label = text(value); if (!voucher[field].includes(label)) voucher[field].push(label);
+    rows.forEach((row, index) => {
+      const voucherId = text(row.voucherId) || voucherIdFor(row, index, source);
+      if (!groups.has(voucherId)) groups.set(voucherId, {
+        schemaVersion: VOUCHER_WORKBENCH_SCHEMA,
+        voucherId,
+        orderId: text(row.orderId),
+        orderNumber: text(row.orderNumber || row.group),
+        companyId: text(row.companyId),
+        date: text(row.basisDate),
+        customer: text(row.customer),
+        customerId: text(row.customerId || row.customerCode),
+        warehouses: new Set(),
+        managers: new Set(),
+        rowIds: [],
+        sourceRowNumbers: [],
+        productCodes: [],
+        quantityGroups: new Map(),
+        amountTotal: 0,
+        amountValueCount: 0,
+        calculatedAmountTotal: 0,
+        calculatedAmountValueCount: 0,
+        amountBlankCount: 0,
+        amountInvalidCount: 0,
+        amountUnknownCount: 0,
+        rowCount: 0,
+      });
+      const voucher = groups.get(voucherId);
+      voucher.warehouses.add(text(row.warehouse));
+      voucher.managers.add(text(row.manager));
+      voucher.rowIds.push(rowId(row, index));
+      voucher.sourceRowNumbers.push(Number(row.sourceRowNumber) || 0);
+      voucher.productCodes.push(text(row.productCode));
+      voucher.rowCount += 1;
+      const unit = text(row.sourceUnit);
+      const key = unit || '__UNASSIGNED__';
+      const quantity = parseNumeric(row.quantity);
+      const group = voucher.quantityGroups.get(key) || { unit, total: 0, valueCount: 0, blankCount: 0, invalidCount: 0 };
+      if (!quantity.ok) group.invalidCount += 1;
+      else if (quantity.blank) group.blankCount += 1;
+      else { group.total = round(group.total + quantity.value); group.valueCount += 1; }
+      voucher.quantityGroups.set(key, group);
+
+      const amount = parseNumeric(row.supplyAmount);
+      if (!amount.ok) voucher.amountInvalidCount += 1;
+      else if (!amount.blank) {
+        voucher.amountTotal = round(voucher.amountTotal + amount.value);
+        voucher.amountValueCount += 1;
+      } else {
+        voucher.amountBlankCount += 1;
+        const unitPrice = parseNumeric(row.unitPrice);
+        if (quantity.ok && !quantity.blank && unitPrice.ok && !unitPrice.blank) {
+          voucher.calculatedAmountTotal = round(voucher.calculatedAmountTotal + round(quantity.value * unitPrice.value));
+          voucher.calculatedAmountValueCount += 1;
+        } else {
+          voucher.amountUnknownCount += 1;
+        }
       }
     });
-    return [...groups.values()];
-  }
-  function totals(vouchers, engine) {
-    const units = new Map(); let amount = 0, knownAmounts = 0, calculatedAmounts = 0, unknownAmounts = 0, badQuantities = 0;
-    for (const voucher of vouchers) for (const row of voucher.rows) {
-      const q = engine.parseNumericCell(row.quantity);
-      if (q.ok && !q.blank) {
-        const u = text(row.sourceUnit) || '단위 미지정'; units.set(u, Math.round(((units.get(u) || 0) + q.value) * 1e8) / 1e8);
-      } else badQuantities++;
-      const a = engine.parseNumericCell(row.supplyAmount);
-      if (a.ok && !a.blank) { amount += a.value; knownAmounts++; }
-      else if (a.ok && a.blank) {
-        const price = engine.parseNumericCell(row.unitPrice);
-        if (q.ok && !q.blank && price.ok && !price.blank) { amount += q.value * price.value; calculatedAmounts++; }
-        else unknownAmounts++;
-      } else unknownAmounts++;
-    }
-    return { units: [...units], amount: Math.round(amount * 1e8) / 1e8, knownAmounts, calculatedAmounts, unknownAmounts, badQuantities };
-  }
-  function filter(vouchers, query = {}) {
-    const search = text(query.search).toLocaleLowerCase('ko-KR');
-    return vouchers.filter(v => {
-      if (query.warehouse && !v.warehouses.includes(query.warehouse)) return false;
-      if (query.manager && !v.managers.includes(query.manager)) return false;
-      if (query.from || query.to) {
-        if (!v.dates.some(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && (!query.from || d >= query.from) && (!query.to || d <= query.to))) return false;
-      }
-      return !search || [v.customer, v.orderNumber, ...v.rows.map(r => [r.noteOriginal, r.note1Original, r.productName, r.productCode].join(' '))].join(' ').toLocaleLowerCase('ko-KR').includes(search);
+    return [...groups.values()].map(voucher => {
+      const warehouses = [...voucher.warehouses];
+      const managers = [...voucher.managers];
+      return Object.freeze({
+        ...voucher,
+        warehouses,
+        warehouse: warehouses.length === 1 ? warehouses[0] : '',
+        warehouseLabel: warehouses.length > 1 ? `혼합(${warehouses.map(value => value || '미지정').join(', ')})` : warehouses[0] || '미지정',
+        managers,
+        manager: managers.length === 1 ? managers[0] : '',
+        managerLabel: managers.length > 1 ? `혼합(${managers.map(value => value || '미지정').join(', ')})` : managers[0] || '미지정',
+        quantityGroups: [...voucher.quantityGroups.values()].map(item => ({ ...item, total: round(item.total) })),
+        amountTotal: voucher.amountValueCount > 0 ? voucher.amountTotal : null,
+        calculatedAmountTotal: voucher.calculatedAmountValueCount > 0 ? voucher.calculatedAmountTotal : null,
+      });
     });
   }
-  function plan(workspace, checked, values, bases) {
-    const chosen = index(workspace).filter(v => checked.has(v.id));
-    if (chosen.length !== checked.size) throw new Error('선택한 전표의 원본이 변경되었습니다. 목록을 다시 확인하세요.');
-    const patch = Object.fromEntries(['warehouse', 'manager'].filter(k => text(values[k])).map(k => [k, text(values[k])]));
+
+  function filterVouchers(vouchers = [], filters = {}) {
+    const query = text(filters.query).toLocaleLowerCase('ko-KR').split(/\s+/).filter(Boolean);
+    const fromDate = text(filters.fromDate);
+    const toDate = text(filters.toDate);
+    const warehouse = text(filters.warehouse);
+    const manager = text(filters.manager);
+    return vouchers.filter(voucher => {
+      if (fromDate && (!voucher.date || voucher.date < fromDate)) return false;
+      if (toDate && (!voucher.date || voucher.date > toDate)) return false;
+      if (warehouse && !voucher.warehouses.includes(warehouse)) return false;
+      if (manager && !voucher.managers.includes(manager)) return false;
+      const haystack = [voucher.orderNumber, voucher.orderId, voucher.customer, voucher.customerId, ...voucher.warehouses, ...voucher.managers, ...voucher.productCodes]
+        .map(value => text(value).toLocaleLowerCase('ko-KR')).join(' ');
+      return query.every(token => haystack.includes(token));
+    });
+  }
+
+  function summarizeSelection(vouchers = [], selectedIds = []) {
+    const selected = new Set(selectedIds);
+    const quantities = new Map();
+    const rows = vouchers.filter(voucher => selected.has(voucher.voucherId));
+    rows.forEach(voucher => voucher.quantityGroups.forEach(item => {
+      const key = item.unit || '__UNASSIGNED__';
+      const current = quantities.get(key) || { unit: item.unit, total: 0, valueCount: 0, invalidCount: 0 };
+      current.total += Number(item.total || 0);
+      current.valueCount += Number(item.valueCount || 0);
+      current.invalidCount += Number(item.invalidCount || 0);
+      quantities.set(key, current);
+    }));
+    return {
+      voucherCount: rows.length,
+      rowCount: rows.reduce((sum, voucher) => sum + voucher.rowCount, 0),
+      quantities: [...quantities.values()].map(item => ({ ...item, total: round(item.total) })),
+    };
+  }
+
+  function buildPatches(vouchers = [], selectedIds = [], changes = {}, baseByRowId = {}) {
+    const selected = new Set(selectedIds);
+    const fields = ['warehouse', 'manager'].filter(field => changes[field]?.mode === 'SET' || changes[field]?.mode === 'CLEAR');
+    if (!selected.size) throw new Error('ORDEROPS_VOUCHER_SELECTION_EMPTY');
+    if (!fields.length) throw new Error('ORDEROPS_VOUCHER_PATCH_EMPTY');
     const patches = [];
-    for (const voucher of chosen) for (const row of voucher.rows) for (const [field, value] of Object.entries(patch)) {
-      const base = bases?.[row.workbenchRowId];
-      if (base && !Object.is(base[field], row[field])) throw new Error(`${voucher.customer || '선택 전표'}의 ${field === 'manager' ? '담당자' : '창고'}가 중앙에서 변경되었습니다. 입력은 유지됩니다.`);
-      if (text(row[field]) !== value) patches.push({ sourceRowNumber: Number(row.sourceRowNumber), rowId: row.workbenchRowId, voucherId: voucher.id, field, value, expectedValue: row[field] });
-    }
+    vouchers.filter(voucher => selected.has(voucher.voucherId)).forEach(voucher => {
+      voucher.rowIds.forEach(workRowId => {
+        const values = {};
+        const expected = {};
+        fields.forEach(field => {
+          values[field] = changes[field].mode === 'CLEAR' ? '' : text(changes[field].value);
+          if (Object.prototype.hasOwnProperty.call(baseByRowId[workRowId] || {}, field)) expected[field] = baseByRowId[workRowId][field];
+        });
+        patches.push({ workRowId, voucherId: voucher.voucherId, values, expected });
+      });
+    });
     return patches;
   }
-  function attach(api, workbench) {
-    const { state:s, engine:e, elements:el, escapeHtml:esc } = api;
-    const $ = id => document.getElementById(id);
-    const checked = new Set(); let values = { warehouse:'', manager:'' }, bases = null, busy = false, all = [], visible = [];
-    const query = { from:'', to:'', search:'', warehouse:'', manager:'' };
-    const format = n => Number(n).toLocaleString('ko-KR', {maximumFractionDigits:8});
-    const caption = vs => {
-      const t = totals(vs, e);
-      const quantities = t.units.map(([u,n]) => `${format(n)} ${u}`).join(' / ') || '0';
-      const amount = t.knownAmounts + t.calculatedAmounts ? `${format(t.amount)}원${t.calculatedAmounts ? ' (계산 포함)' : ''}` : (vs.length ? '금액 미확인' : '0원');
-      return `${quantities} · ${amount}${t.unknownAmounts ? ` · 금액 미확인 ${t.unknownAmounts}행` : ''}${t.badQuantities ? ` · 수량 확인 ${t.badQuantities}행` : ''}`;
-    };
-    function render() {
-      all = index(s.workspace);
-      const valid = new Set(all.map(v => v.id));
-      for (const id of checked) if (!valid.has(id)) checked.delete(id);
-      if (!checked.size) clearDraft();
-      visible = filter(all, query);
-      $('voucherCount').textContent = `주문 목록 (${visible.length}건${visible.length !== all.length ? ` / 전체 ${all.length}건` : ''})`;
-      const chipGroup = (field, id, label) => {
-        const names = [...new Set(all.flatMap(v => v[field]))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'ko'));
-        const key = field === 'warehouses' ? 'warehouse' : 'manager';
-        // Retain an active filter even if its last voucher was edited out of it.
-        if (query[key] && !names.includes(query[key])) names.push(query[key]);
-        $(id).innerHTML = [['', `전체 ${label}`], ...names.map(n=>[n,n])].map(([value,name]) => `<button type="button" data-voucher-filter="${key}" data-value="${esc(value)}" aria-pressed="${query[key]===value}">${esc(name)}</button>`).join('');
-      };
-      chipGroup('warehouses','voucherWarehouses','창고'); chipGroup('managers','voucherManagers','담당');
-      $('voucherRows').innerHTML = visible.length ? visible.map(v => {
-        const note = [...new Set(v.rows.map(r=>text(r.note1Original || r.note1 || r.noteOriginal || r.note)).filter(Boolean))].join(' · ');
-        return `<tr data-voucher-id="${esc(v.id)}" tabindex="0" aria-selected="${s.selectedDeliveryKey===v.id}"><td><input type="checkbox" data-voucher-check="${esc(v.id)}" ${checked.has(v.id)?'checked':''} aria-label="${esc(v.customer || '거래처 미지정')} ${esc(v.orderNumber)} 전표 선택"></td><td>${esc(v.dates.filter(Boolean).join(' / ') || '미확인')}</td><td><strong>${esc(v.customer || '거래처 미지정')}</strong><small>${esc(caption([v]))}</small></td><td title="${esc(note)}">${esc(note)}</td></tr>`;
-      }).join('') : '<tr><td colspan="4" class="empty-table-cell">표시할 주문이 없습니다.</td></tr>';
-      const count = visible.filter(v=>checked.has(v.id)).length;
-      $('voucherSelectAll').checked = visible.length > 0 && count === visible.length;
-      $('voucherSelectAll').indeterminate = count > 0 && count < visible.length;
-      $('voucherSelectAll').disabled = !visible.length;
-      const hiddenCount = checked.size - count;
-      $('voucherTotals').textContent = `선택 ${checked.size}건${hiddenCount ? ` · 현재 목록 밖 ${hiddenCount}건` : ''} | ${caption(all.filter(v=>checked.has(v.id)))}`;
-      $('voucherBulk').hidden = !checked.size;
-      $('voucherBulk').querySelectorAll('button,input').forEach(n=>n.disabled=busy);
-      $('voucherWarehouseOptions').innerHTML = [...new Set(all.flatMap(v=>v.warehouses).filter(Boolean))].map(v=>`<option value="${esc(v)}"></option>`).join('');
-      // Existing datalist is also used by the central cell editor.
-      el.orderOpsManagerOptions && (el.orderOpsManagerOptions.innerHTML = [...new Set(all.flatMap(v=>v.managers).filter(Boolean))].map(v=>`<option value="${esc(v)}"></option>`).join(''));
-    }
-    const activeBase = () => Object.fromEntries(all.filter(v=>checked.has(v.id)).flatMap(v=>v.rows.map(r=>[r.workbenchRowId,{warehouse:r.warehouse,manager:r.manager}])));
-    function clearDraft() {
-      values={warehouse:'',manager:''}; bases=null;
-      $('voucherWarehouseInput').value=''; $('voucherManagerInput').value='';
-    }
-    function selectionChanged() {
-      if (bases) { const next=activeBase(); for (const [id,b] of Object.entries(next)) if (!bases[id]) bases[id]=b; }
-      render();
-    }
-    function focus(id) {
-      const voucher = all.find(v=>v.id===id); if (!voucher) return;
-      s.selectedDeliveryKey=id; s.selectedDeliverySourceRows=new Set(voucher.sourceRowNumbers); s.selectedDeliveryProductCodes=new Set(voucher.rows.map(r=>e.normalizeProductCode(r.productCode)));
-      api.renderPreview();
-      requestAnimationFrame(()=>el.previewTable.querySelector('.orderops-selected-delivery-row')?.scrollIntoView({block:'nearest',inline:'nearest'}));
-    }
-    async function apply(field) {
-      if (busy || workbench.operation || s.inventoryApplyBusy || !s.workspace || !checked.size) return;
-      api.captureInputs();
-      const selected = new Set(checked), nextValues = field ? {[field]:values[field]} : {...values};
-      let patches;
-      try { patches=plan(s.workspace, selected, nextValues, bases); }
-      catch(error){ api.showToast(error.message,true); return; }
-      if (!patches.length) { api.showToast('변경할 값을 입력하세요. 동일한 값은 다시 적용하지 않습니다.'); return; }
-      busy=true; render();
-      const savedScroll={top:el.previewTable.scrollTop,left:el.previewTable.scrollLeft};
-      try {
-        const result = await workbench.runReplacement(async base => {
-          const candidate=copy(base);
-          const fresh=plan(candidate,selected,nextValues,bases);
-          e.applyOrderPatches(candidate,fresh,{recordHistory:true,actor:api.actor()});
-          return candidate;
-        },candidate=>{
-          s.workspace=candidate; if(s.orders) s.orders.rows=candidate.orders;
-          s.pendingSystemHistory=candidate.systemHistory; s.workspaceChangeVersion++;
-          if(field) values[field]=''; else values={warehouse:'',manager:''};
-          $('voucherWarehouseInput').value=values.warehouse; $('voucherManagerInput').value=values.manager;
-          if(field && bases) { for(const row of candidate.orders) { if(bases[row.workbenchRowId]) bases[row.workbenchRowId][field]=row[field]; } } else bases=null;
-          api.renderResults();
-        });
-        if(result?.ok) { api.showToast(`선택 ${selected.size}건의 작업본에 적용했습니다.`); requestAnimationFrame(()=>{el.previewTable.scrollTop=savedScroll.top;el.previewTable.scrollLeft=savedScroll.left;}); }
-      } finally {busy=false;render();}
-    }
-    $('voucherSelectAll').onchange=ev=>{for(const v of visible) ev.target.checked?checked.add(v.id):checked.delete(v.id);selectionChanged();};
-    $('voucherRows').onchange=ev=>{const id=ev.target.dataset.voucherCheck;if(id){ev.target.checked?checked.add(id):checked.delete(id);selectionChanged();}};
-    $('voucherRows').onclick=ev=>{if(ev.target.closest('input,label'))return;const row=ev.target.closest('[data-voucher-id]');if(row)focus(row.dataset.voucherId);};
-    $('voucherRows').onkeydown=ev=>{if(ev.target.matches('input'))return;if(['Enter',' '].includes(ev.key)){ev.preventDefault();const row=ev.target.closest('[data-voucher-id]');if(row)focus(row.dataset.voucherId);}};
-    for(const id of ['voucherWarehouses','voucherManagers']) $(id).onclick=ev=>{const b=ev.target.closest('[data-voucher-filter]');if(!b)return;query[b.dataset.voucherFilter]=b.dataset.value;render();};
-    for(const [id,key] of [['voucherDateFrom','from'],['voucherDateTo','to'],['voucherSearch','search']]) $(id).oninput=ev=>{query[key]=ev.target.value;render();};
-    $('voucherRangeReset').onclick=()=>{query.from='';query.to='';$('voucherDateFrom').value='';$('voucherDateTo').value='';render();};
-    for(const [id,key] of [['voucherWarehouseInput','warehouse'],['voucherManagerInput','manager']]) $(id).oninput=ev=>{bases ||= activeBase();values[key]=ev.target.value;};
-    $('voucherWarehouseApply').onclick=()=>void apply('warehouse');$('voucherManagerApply').onclick=()=>void apply('manager');$('voucherApply').onclick=()=>void apply();
-    $('voucherCancel').onclick=clearDraft;
-    render();
-    return {render,dirty:()=>Boolean(text(values.warehouse)||text(values.manager)),clear:()=>{checked.clear();values={warehouse:'',manager:''};bases=null;$('voucherWarehouseInput').value='';$('voucherManagerInput').value='';render();}};
-  }
-  return {index,totals,filter,plan,attach};
+
+  return Object.freeze({
+    VOUCHER_WORKBENCH_SCHEMA,
+    parseNumeric,
+    defaultRowId,
+    voucherIdFor,
+    buildVouchers,
+    filterVouchers,
+    summarizeSelection,
+    buildPatches,
+    canonical,
+  });
 });

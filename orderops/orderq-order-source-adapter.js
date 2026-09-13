@@ -156,13 +156,13 @@ export function mapOrderQSnapshotToParsedOrders(snapshot) {
 }
 
 export async function loadOrderQOrderSource(orderId, expectations = {}) {
-  const { readShipmentOrderCandidate } = await import('../orderq/shipment-order-read-adapter.js?v=0.8.1');
+  const { readShipmentOrderCandidate } = await import('../orderq/shipment-order-read-adapter.js?v=0.8.2');
   const result = await readShipmentOrderCandidate(orderId, expectations);
   if (!result.snapshot) return result;
   return { ...result, parsedOrders: mapOrderQSnapshotToParsedOrders(result.snapshot) };
 }
 
 export async function listOrderQOrderSources(options = {}) {
-  const { listShipmentOrderCandidates } = await import('../orderq/shipment-order-read-adapter.js?v=0.8.1');
+  const { listShipmentOrderCandidates } = await import('../orderq/shipment-order-read-adapter.js?v=0.8.2');
   return listShipmentOrderCandidates(options);
 }

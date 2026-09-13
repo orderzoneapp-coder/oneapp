@@ -1,4 +1,4 @@
-/* OrderOps-only v1.2 layout. No global header or other app selectors. */
+/* OrderOps-only v1.3 layout. No global header or other app selectors. */
 body:has(.orderops-workbench-v12) { overflow: hidden; }
 body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
 .orderops-results-workspace.orderops-workbench-v12 { min-width: 0; min-height: 0 !important; height: var(--orderops-workbench-height, 70dvh); grid-template-rows: minmax(0, 1fr) !important; }
@@ -120,6 +120,25 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button:disabled { opacity: .5; cursor: not-allowed; }
   .orderops-prepare-actions { display: flex; gap: 8px; }
   .orderops-prepare-actions #prepareFilesButton { flex: 1; font-weight: 700; }
+  .orderops-api-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .orderops-api-scope label { display: grid; gap: 3px; min-width: 0; color: var(--ops-muted); font-size: 10px; }
+  .orderops-api-scope label:last-child { grid-column: 1 / -1; }
+  .orderops-api-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-api-actions button { min-height: 38px; font-weight: 750; }
+  .orderops-api-status { margin: 0; padding: 7px 9px; border: 1px solid var(--ops-border); border-radius: 8px; font-size: 11px; color: var(--ops-muted); }
+  .orderops-api-status[data-status="LOADING"] { border-color: var(--nexus-ui-warning, #b45309); }
+  .orderops-api-status[data-status="READY"] { border-color: var(--ops-action); color: var(--ops-text); }
+  .orderops-api-status[data-status="PARTIAL"], .orderops-api-status[data-status="ERROR"] { border-color: var(--nexus-ui-danger, #b91c1c); color: var(--nexus-ui-danger, #b91c1c); }
+  .orderops-file-prepare .orderq-source-picker { display: grid; gap: 7px; grid-template-columns: minmax(0, 1fr); padding: 8px; border-color: var(--ops-border); background: var(--ops-input); }
+  .orderops-file-prepare .orderq-source-picker[hidden] { display: none; }
+  .orderops-file-prepare .orderq-source-picker__controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .orderops-file-prepare .orderq-source-picker__controls > * { grid-column: 1; width: 100%; min-width: 0; }
+  .orderops-file-prepare .orderq-source-picker__controls select { min-height: 96px; }
+  .orderops-file-prepare .orderq-source-picker__notice { grid-column: 1; margin: 0; }
+  .orderops-api-source-summary { display: grid; gap: 5px; padding: 9px; border: 1px solid var(--ops-border); border-radius: 7px; color: var(--ops-muted); font-size: 11px; }
+  .orderops-api-source-summary strong { color: var(--ops-text); }
+  #prepareFileEditor details { margin-top: 8px; font-size: 11px; }
+  #prepareFileEditor pre { max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
   .orderops-prepare-surface { flex: 1 1 0; min-height: 80px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--ops-border); border-radius: 9px; background: var(--ops-input); scrollbar-width: thin; }
   .orderops-prepare-drop-hint { display: grid; gap: 9px; padding: 18px 14px; color: var(--ops-muted); font-size: 13px; line-height: 1.7; }
   .orderops-prepare-drop-hint strong { font-weight: 500; }
@@ -134,7 +153,7 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-prepare-file-list strong { font-size: 12px; font-weight: 650; }
   .orderops-prepare-file-list small { font-size: 11px; color: var(--ops-muted); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-prepare-file-list button[aria-pressed="true"] { background: var(--nexus-ui-selection-bg); box-shadow: inset 3px 0 0 var(--ops-action); }
-  .orderops-prepare-file-list [data-prepare-state="INVALID"] { color: var(--nexus-ui-danger); font-weight: 700; }
+  .orderops-prepare-file-list :is([data-prepare-state="INVALID"], [data-prepare-state="ERROR"], [data-prepare-state="PARTIAL"]) { color: var(--nexus-ui-danger); font-weight: 700; }
   #prepareFileEditor { padding: 0 12px 12px; }
   #prepareFileEditor:empty { padding: 0; }
   .orderops-prepare-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -161,6 +180,18 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-inspector-edit label { display: grid; gap: 5px; margin: 0 0 10px; font-size: 11px; color: var(--ops-muted); }
   .orderops-inspector-edit p { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
   .orderops-inspector-edit .pending { color: var(--nexus-ui-warning); }
+  .orderops-current-view-title { flex: 0 0 auto; margin: 0; padding: 9px 12px 5px; color: var(--ops-text); font-size: 15px; font-weight: 800; }
+  .orderops-query-panel .orderops-delivery-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .orderops-query-panel .orderops-delivery-search, .orderops-query-panel .orderops-delivery-filter-reset { grid-column: 1 / -1; }
+  .orderops-delivery-table th:first-child, .orderops-delivery-table td:first-child { width: 32px; text-align: center; }
+  .orderops-delivery-table td > span { display: block; margin-top: 2px; color: var(--ops-muted); font-size: 10px; }
+  .orderops-delivery-table input[type="checkbox"], .orderops-manager-assignment input[type="checkbox"] { width: 15px !important; min-height: 15px !important; padding: 0 !important; accent-color: var(--ops-action); }
+  .orderops-manager-assignment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 10px; }
+  .orderops-manager-assignment > div, .orderops-manager-assignment > label:not(.orderops-clear-value), #deliveryVoucherApply { grid-column: 1 / -1; }
+  .orderops-manager-assignment > div { display: grid; gap: 3px; }
+  .orderops-manager-assignment > div span { color: var(--ops-muted); font-size: 10px; line-height: 1.45; }
+  .orderops-manager-assignment .orderops-clear-value { display: flex; align-items: center; gap: 5px; margin: 0; font-size: 10px; }
+  html[data-nexus-ui-theme] .orderops-workbench-v12 #deliveryVoucherApply { color: var(--ops-action-text); border-color: var(--ops-action); background: var(--ops-action); font-weight: 800; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-delivery-filters, .orderops-delivery-distribution, .orderops-workload-summary, .orderops-source-scope, .orderops-selection-context, .orderops-product-context, .orderops-inventory-identity) { border-color: var(--ops-border); background: transparent; color: var(--ops-muted); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-side-table :is(th, td) { border: 0; border-bottom: 1px solid var(--ops-border); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-bottom-workbar { border: 0; border-top: 1px solid var(--ops-border); background: var(--ops-surface); padding: 8px 10px; }

@@ -87,23 +87,22 @@ assert.equal(analyzedMixedUnits.productSummaries[0].totalOrderQuantity, null);
 assert.equal(analyzedMixedUnits.stats.mixedUnitProductCount, 1);
 
 for (const contract of [
-  "normalizeOrderOpsWorkspaceDom",
-  'window.buildOrderOpsThreePane()',
+  'class="orderops-results-workspace orderops-workbench-v12"',
+  'data-nexus-pane="reference"',
+  'data-nexus-pane="work"',
+  'data-nexus-pane="result"',
   'workspaceMode === engine.PREVIEW_WORKSPACE_MODE',
   '"거래처", "상품", "주문수량", "직원 적요"',
   'hasInventory ? ["재고", "잔량"]',
-  "three-pane-layout.js",
+  "orderops-header-primary",
   'id="deliveryWarehouseFilter"',
-  '<th>거래처</th><th>수량</th><th>금액</th><th>적요</th>',
-  "data-delivery-manager-filter",
+  '<th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>전표·거래처</th><th>수량</th><th>창고·담당</th>',
+  'id="deliveryManagerFilter"',
   "restorePreviewInputState",
   "localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY",
 ]) {
   assert.ok(html.includes(contract), `OrderOps three-section contract missing: ${contract}`);
 }
+assert.ok(!html.includes("normalizeOrderOpsWorkspaceDom"), "final three-area markup must not depend on runtime DOM relocation");
 
 console.log("PASS OrderOps analysis-ready preview: orders-first rendering data, real-inventory-only balances, note separation, manager linkage, and history preservation.");
-
-const layout = readFileSync(join(root, "orderops", "three-pane-layout.js"), "utf8");
-assert.ok(layout.includes("workspace.append(left,result,right)"), "three final sibling panes must be composed together");
-assert.ok(layout.includes("orderops-header-primary"), "header navigation remains outside the work table");
