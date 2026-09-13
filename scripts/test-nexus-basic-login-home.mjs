@@ -11,7 +11,7 @@ assert.match(html, /<form id="loginForm"/, 'NEXUS home requires the basic login 
 assert.match(html, /<body class="nexus-home-page">/, 'NEXUS home visual changes must stay home-scoped');
 assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0" data-nexus-app-id="nexus-home"/, 'NEXUS home must initialize the shared theme before paint');
 assert.match(html, /nexus\.css\?v=1\.3\.3/, 'NEXUS home must load the fixed-header ivory theme CSS revision');
-assert.match(html, /nexus\.js\?v=1\.3\.5/, 'NEXUS home must load the canonical workspace-route runtime revision');
+assert.match(html, /nexus\.js\?v=1\.3\.6/, 'NEXUS home must load the canonical workspace-route runtime revision');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="light"[^>]+aria-label="일반모드 적용"[^>]*>☼<\/button>/, 'home light icon must be an accessible direct-action button');
 assert.match(html, /<button class="nexus-home-theme__icon"[^>]+data-home-theme-set="dark"[^>]+aria-label="다크모드 적용"[^>]*>☾<\/button>/, 'home dark icon must be an accessible direct-action button');
 assert.match(html, /id="homeThemeToggle"[^>]+role="switch"/, 'home must expose an accessible screen-mode switch');
@@ -69,6 +69,24 @@ assert.match(runtime, /id: 'customer-master'[\s\S]*path: '\/customer-master\/ind
 assert.match(runtime, /id: 'smart-input'[\s\S]*path: '\/smartinput\/index\.html'/, 'SmartInput workspace route must use its canonical allowlisted document');
 assert.match(runtime, /const homeEntryPath = \(app\) => \{[\s\S]*if \(!WORKSPACE_APP_IDS\.has\(app\.id\)\) return app\.path;[\s\S]*\/nexus\/workspace\.html\?\$\{query\.toString\(\)\}/, 'non-global home cards must keep their direct paths while the seven global apps use validated workspace queries');
 assert.match(runtime, /link\.href = homeEntryPath\(app\)/, 'home cards must resolve their launch target through the workspace-entry policy');
+assert.match(runtime, /link\.dataset\.nexusAppId = app\.id;[\s\S]*link\.dataset\.nexusAppRoute = app\.path;[\s\S]*link\.setAttribute\('aria-label', `\$\{app\.label\} 열기`\)/, 'home cards must keep their visible label, app ID, declared route, and accessible name together');
+for (const [id, label, path] of [
+  ['master-lookup', '상품관리', '/Master.html'],
+  ['customer-master', '거래처관리', '/customer-master/index.html'],
+  ['merchops', '가격·시세', '/MerchOps.html'],
+  ['smart-input', '스마트입력', '/smartinput/index.html'],
+  ['orderops', '출고관리', '/orderops/list.html'],
+  ['dataops', '재고·정산', '/DataOps.html'],
+  ['smart-parser', '문서분석', '/SmartParser.html'],
+  ['export-center', '출력검증', '/export_center.html'],
+  ['settings', '환경설정', '/settings.html'],
+  ['item-manager', 'SKU 관리', '/Item_manager.html'],
+  ['history-viewer', '변경이력', '/history_viewer.html'],
+  ['orderq-vnext', '주문조회', '/orderq/'],
+]) {
+  const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.match(runtime, new RegExp(`id: '${id}', label: '${label}'[^\\n]+path: '${escapedPath}'`), `${label}: NEXUS home card must keep its canonical path`);
+}
 for (const directPath of ['/export_center.html', '/settings.html', '/Item_manager.html', '/history_viewer.html', '/orderq/']) {
   assert.match(runtime, new RegExp(`path: ['"]${directPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`), `${directPath} must remain an official direct home target`);
 }
@@ -112,7 +130,7 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.7\.0/, `${file}: updated common header runtime is required`);
+  assert.match(page, /nexus-ui\.js\?v=1\.7\.1/, `${file}: updated common header runtime is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 

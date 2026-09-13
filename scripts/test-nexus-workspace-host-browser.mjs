@@ -171,6 +171,47 @@ try {
   ]);
 
   const origin = `http://127.0.0.1:${address.port}`;
+  const homeLoaded = client.once('Page.loadEventFired');
+  await client.send('Page.navigate', { url: `${origin}/nexus/` });
+  await homeLoaded;
+  const homeLinks = await waitFor(() => evaluate(client, `(() => {
+    const links=[...document.querySelectorAll('#appGrid .nexus-app-card')];
+    if (links.length !== 12) return null;
+    return links.map((link) => {
+      const url=new URL(link.href);
+      return {
+        id:link.dataset.nexusAppId,
+        route:link.dataset.nexusAppRoute,
+        label:link.querySelector('strong')?.textContent,
+        ariaLabel:link.getAttribute('aria-label'),
+        path:url.pathname,
+        app:url.searchParams.get('app'),
+        workspaceRoute:url.searchParams.get('route')
+      };
+    });
+  })()`), 'NEXUS home canonical app links');
+  assert.deepEqual(homeLinks, [
+    { id:'master-lookup', route:'/Master.html', label:'상품관리', ariaLabel:'상품관리 열기', path:'/nexus/workspace.html', app:'master-lookup', workspaceRoute:'Master.html' },
+    { id:'customer-master', route:'/customer-master/index.html', label:'거래처관리', ariaLabel:'거래처관리 열기', path:'/nexus/workspace.html', app:'customer-master', workspaceRoute:'customer-master/index.html' },
+    { id:'merchops', route:'/MerchOps.html', label:'가격·시세', ariaLabel:'가격·시세 열기', path:'/nexus/workspace.html', app:'merchops', workspaceRoute:'MerchOps.html' },
+    { id:'smart-input', route:'/smartinput/index.html', label:'스마트입력', ariaLabel:'스마트입력 열기', path:'/nexus/workspace.html', app:'smart-input', workspaceRoute:'smartinput/index.html' },
+    { id:'orderops', route:'/orderops/list.html', label:'출고관리', ariaLabel:'출고관리 열기', path:'/nexus/workspace.html', app:'orderops', workspaceRoute:'orderops/list.html' },
+    { id:'dataops', route:'/DataOps.html', label:'재고·정산', ariaLabel:'재고·정산 열기', path:'/nexus/workspace.html', app:'dataops', workspaceRoute:'DataOps.html' },
+    { id:'smart-parser', route:'/SmartParser.html', label:'문서분석', ariaLabel:'문서분석 열기', path:'/nexus/workspace.html', app:'smart-parser', workspaceRoute:'SmartParser.html' },
+    { id:'export-center', route:'/export_center.html', label:'출력검증', ariaLabel:'출력검증 열기', path:'/export_center.html', app:null, workspaceRoute:null },
+    { id:'settings', route:'/settings.html', label:'환경설정', ariaLabel:'환경설정 열기', path:'/settings.html', app:null, workspaceRoute:null },
+    { id:'item-manager', route:'/Item_manager.html', label:'SKU 관리', ariaLabel:'SKU 관리 열기', path:'/Item_manager.html', app:null, workspaceRoute:null },
+    { id:'history-viewer', route:'/history_viewer.html', label:'변경이력', ariaLabel:'변경이력 열기', path:'/history_viewer.html', app:null, workspaceRoute:null },
+    { id:'orderq-vnext', route:'/orderq/', label:'주문조회', ariaLabel:'주문조회 열기', path:'/orderq/', app:null, workspaceRoute:null },
+  ], 'all NEXUS home buttons must preserve label, app ID, route, and destination');
+
+  const homeOrderOpsLoaded = client.once('Page.loadEventFired');
+  await evaluate(client, `document.querySelector('[data-nexus-app-id="orderops"]').click()`);
+  await homeOrderOpsLoaded;
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'orderops'
+    && new URL(location.href).searchParams.get('route') === 'orderops/list.html'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'orderops'`), 'NEXUS home OrderOps card destination');
+
   const loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `${origin}/nexus/workspace.html` });
   await loaded;
@@ -182,14 +223,28 @@ try {
     app: new URL(location.href).searchParams.get('app'),
     route: new URL(location.href).searchParams.get('route'),
     active: document.querySelector('[data-nexus-ui-app-target][aria-current="page"]')?.dataset.nexusUiAppTarget,
-    order: [...document.querySelectorAll('[data-nexus-ui-app-target]')].map((node) => node.dataset.nexusUiAppTarget),
+    links: [...document.querySelectorAll('[data-nexus-ui-app-target]')].map((node) => ({
+      id:node.dataset.nexusUiAppTarget,
+      route:node.dataset.nexusUiRoute,
+      href:new URL(node.href).pathname,
+      label:node.textContent,
+      ariaLabel:node.getAttribute('aria-label')
+    })),
   }))()`);
   assert.equal(initial.headers, 1, 'the global header must remain a single DOM node');
   assert.equal(initial.frames, 1, 'the host must keep exactly one iframe');
   assert.equal(initial.app, 'master-lookup');
   assert.equal(initial.route, 'Master.html');
   assert.equal(initial.active, 'master-lookup');
-  assert.deepEqual(initial.order, ['master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops']);
+  assert.deepEqual(initial.links, [
+    { id:'master-lookup', route:'Master.html', href:'/Master.html', label:'상품관리', ariaLabel:'상품관리 열기' },
+    { id:'customer-master', route:'customer-master/index.html', href:'/customer-master/index.html', label:'거래처관리', ariaLabel:'거래처관리 열기' },
+    { id:'smart-input', route:'smartinput/index.html', href:'/smartinput/index.html', label:'스마트입력', ariaLabel:'스마트입력 열기' },
+    { id:'smart-parser', route:'SmartParser.html', href:'/SmartParser.html', label:'스마트파서', ariaLabel:'스마트파서 열기' },
+    { id:'merchops', route:'MerchOps.html', href:'/MerchOps.html', label:'MerchOps', ariaLabel:'MerchOps 열기' },
+    { id:'orderops', route:'orderops/list.html', href:'/orderops/list.html', label:'출고관리', ariaLabel:'출고관리 열기' },
+    { id:'dataops', route:'DataOps.html', href:'/DataOps.html', label:'DataOps', ariaLabel:'DataOps 열기' },
+  ], 'the rendered global header must expose the exact canonical destination for every button');
 
   await evaluate(client, `document.querySelector('.nexus-ui-header').dataset.workspaceTestMarker='persistent-header'`);
   const visibleBefore = await evaluate(client, `document.querySelector('.nexus-ui-nav').scrollLeft`);
@@ -249,7 +304,22 @@ try {
     && document.querySelector('#nexusWorkspaceLoading').hidden`), 'parent history forward');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
   await evaluate(client, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const orderOpsTouch = await evaluate(client, `(() => {
+    const link=document.querySelector('[data-nexus-ui-app-target="orderops"]');
+    link.scrollIntoView({block:'nearest',inline:'center'});
+    const rect=link.getBoundingClientRect();
+    const x=rect.left+rect.width/2;
+    const y=rect.top+rect.height/2;
+    return {x,y,hit:document.elementFromPoint(x,y)?.closest?.('[data-nexus-ui-app-target]')?.dataset.nexusUiAppTarget};
+  })()`);
+  assert.equal(orderOpsTouch.hit, 'orderops', 'the visual center of the mobile OrderOps button must hit OrderOps itself');
+  await client.send('Input.dispatchTouchEvent', { type:'touchStart', touchPoints:[{ x:orderOpsTouch.x, y:orderOpsTouch.y }] });
+  await client.send('Input.dispatchTouchEvent', { type:'touchEnd', touchPoints:[] });
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'orderops'
+    && new URL(location.href).searchParams.get('route') === 'orderops/list.html'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'orderops'`), 'mobile OrderOps touch destination');
   const compactExpected = await evaluate(client, `(() => {
     const nav=document.querySelector('.nexus-ui-nav');
     nav.scrollLeft=0;
@@ -404,7 +474,7 @@ try {
   }
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
+  console.log('PASS NEXUS workspace browser: 12 home links, 7 exact header links, mobile OrderOps touch, seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
   if (browser && !browser.killed) {

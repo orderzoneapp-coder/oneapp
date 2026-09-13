@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.3.19",
-  "updatedAt": "2026-09-13",
+  "schemaVersion": "1.3.20",
+  "updatedAt": "2026-09-14",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -43,6 +43,7 @@
         "first-use delegated-user activation",
         "master or delegated-user identification",
         "per-user home-card and global-tab visibility projection without access gating",
+        "canonical label, app-id, declared-route, and href binding for all home cards",
         "protected workspace launcher for the seven global apps with official direct fallback",
         "direct launcher for auxiliary apps",
         "fixed ownership Footer without server or identity dependencies"
@@ -82,6 +83,7 @@
       ],
       "coreCapabilities": [
         "persistent global header with one active iframe",
+        "canonical global-header app-id and href integrity validation",
         "same-origin route and source-window validation",
         "parent URL and browser-history synchronization",
         "app-owned before-leave save and operation-result handshake",

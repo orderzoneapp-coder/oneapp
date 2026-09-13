@@ -98,6 +98,9 @@ function renderHeader(rawProjection, appId = 'master-lookup') {
   return header.querySelectorAll('[data-nexus-ui-app-target]').map(link => ({
     id: link.dataset.nexusUiAppTarget,
     label: link.textContent,
+    route: link.dataset.nexusUiRoute,
+    href: link.href,
+    ariaLabel: link.getAttribute('aria-label'),
     current: link.getAttribute('aria-current') === 'page',
   }));
 }
@@ -105,9 +108,23 @@ function renderHeader(rawProjection, appId = 'master-lookup') {
 const schema = 'NEXUS_UI_VISIBILITY_V1';
 const projection = visibleAppIds => JSON.stringify({ schemaVersion: schema, configured: true, visibleAppIds });
 const canonical = ['master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops'];
+const canonicalLinks = [
+  { id: 'master-lookup', label: '상품관리', route: 'Master.html', href: 'https://example.test/Master.html', ariaLabel: '상품관리 열기' },
+  { id: 'customer-master', label: '거래처관리', route: 'customer-master/index.html', href: 'https://example.test/customer-master/index.html', ariaLabel: '거래처관리 열기' },
+  { id: 'smart-input', label: '스마트입력', route: 'smartinput/index.html', href: 'https://example.test/smartinput/index.html', ariaLabel: '스마트입력 열기' },
+  { id: 'smart-parser', label: '스마트파서', route: 'SmartParser.html', href: 'https://example.test/SmartParser.html', ariaLabel: '스마트파서 열기' },
+  { id: 'merchops', label: 'MerchOps', route: 'MerchOps.html', href: 'https://example.test/MerchOps.html', ariaLabel: 'MerchOps 열기' },
+  { id: 'orderops', label: '출고관리', route: 'orderops/list.html', href: 'https://example.test/orderops/list.html', ariaLabel: '출고관리 열기' },
+  { id: 'dataops', label: 'DataOps', route: 'DataOps.html', href: 'https://example.test/DataOps.html', ariaLabel: 'DataOps 열기' },
+];
 const allKnown = ['master-lookup', 'customer-master', 'merchops', 'smart-input', 'orderops', 'dataops', 'smart-parser', 'export-center', 'settings', 'item-manager', 'history-viewer', 'orderq-vnext'];
 
 assert.deepEqual(renderHeader(null).map(app => app.id), canonical, 'missing projection must recover to all seven global apps');
+assert.deepEqual(
+  renderHeader(null).map(({ current, ...link }) => link),
+  canonicalLinks,
+  'every global-header label, app ID, declared route, accessible name, and actual href must stay on one canonical mapping',
+);
 assert.deepEqual(renderHeader(projection(allKnown)).map(app => app.id), canonical, 'all enabled IDs must project to the seven global apps in canonical order');
 assert.deepEqual(renderHeader(projection(['dataops', 'item-manager', 'smart-parser'])).map(app => app.id), ['master-lookup', 'smart-parser', 'dataops'], 'valid subset must preserve canonical order and the SKU alias');
 assert.deepEqual(renderHeader(projection([])).map(app => app.id), [], 'a valid all-disabled projection must render zero tabs');
