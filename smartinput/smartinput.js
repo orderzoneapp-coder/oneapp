@@ -431,8 +431,8 @@ const state = {
   estimateTouchDrag: null,
   estimateSelectionQueue: Promise.resolve(),
   voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
-  purchaseCapability: { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: 'loading' },
-  saleCapability: { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: 'loading' },
+  purchaseCapability: { ready: false, deferred: true, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_DEFERRED', detail: '저장 시 확인' },
+  saleCapability: { ready: false, deferred: true, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_DEFERRED', detail: '저장 시 확인' },
   shoppingInspectionRequestId: 0,
   shoppingInspectionTimer: null
 };
@@ -6858,8 +6858,8 @@ function renderDelivery() {
   $('deliveryDescription').textContent = isOrder
     ? (shopping ? '실제 ORDER Q 원장의 동일 주문 개수를 다시 확인한 뒤 초과 신규 후보만 저장합니다.' : 'ORDER Q vNext 저장소에 먼저 기록합니다.')
     : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : (isPurchase
-      ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
-      : (isSale ? (state.saleCapability.ready ? '중앙 공식 판매전표로 저장합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.')
+      ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : (state.purchaseCapability.deferred ? '저장 시 중앙 배포 계약을 확인합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.'))
+      : (isSale ? (state.saleCapability.ready ? '중앙 공식 판매전표로 저장합니다.' : (state.saleCapability.deferred ? '저장 시 중앙 배포 계약을 확인합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.'))
         : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.')));
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
@@ -11481,6 +11481,8 @@ async function hydrateReferences() {
   state.customerStatus = 'LOADING';
   state.referenceStatus = REFERENCE_DOMAIN_STATUS.LOADING;
   state.referenceMessage = '상품·거래처·배송 설정을 불러오고 있습니다.';
+  state.purchaseCapability = { ready: false, deferred: true, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_DEFERRED', detail: '저장 시 확인' };
+  state.saleCapability = { ready: false, deferred: true, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_DEFERRED', detail: '저장 시 확인' };
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
@@ -11567,9 +11569,7 @@ async function hydrateReferences() {
   const results = await Promise.allSettled([
     withTimeout(loadReferenceDomain('product'), OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '상품 기준자료 로딩 시간 초과'),
     withTimeout(loadReferenceDomain('customer'), OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '거래처 기준자료 로딩 시간 초과'),
-    withTimeout(loadWarehouseCatalog(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '창고 기준자료 로딩 시간 초과'),
-    withTimeout(loadPurchaseStage3Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '구매 저장 계약 확인 시간 초과'),
-    withTimeout(loadSaleStage4Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '판매 저장 계약 확인 시간 초과')
+    withTimeout(loadWarehouseCatalog(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '창고 기준자료 로딩 시간 초과')
   ]);
   if (!optionalOperationIsLatest(referenceToken)) return;
   if (optionalOperationIsLatest(productReferenceToken)) {
@@ -11588,12 +11588,6 @@ async function hydrateReferences() {
     state.warehouseCatalog = results[2].value;
     renderWarehouseOptions();
   }
-  state.purchaseCapability = results[3].status === 'fulfilled'
-    ? results[3].value
-    : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: results[3].reason?.message || 'ping failed' };
-  state.saleCapability = results[4].status === 'fulfilled'
-    ? results[4].value
-    : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: results[4].reason?.message || 'ping failed' };
   refreshReferenceAggregate();
   renderMode();
   setAppStatus(referencesReady() ? '기준정보 준비됨' : state.referenceMessage, referencesReady() ? '' : 'warn');
@@ -11696,17 +11690,8 @@ async function refreshAllReferencesFromToolbar() {
     });
     state.warehouseCatalog = { warehouses: rowsByDomain.warehouse, aliases: [], revision: result.generation.domains.warehouse.ownerRevision };
     renderWarehouseOptions();
-    const capabilityResults = await Promise.allSettled([
-      withTimeout(loadPurchaseStage3Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '구매 저장 계약 확인 시간 초과'),
-      withTimeout(loadSaleStage4Capability(), OPTIONAL_OPERATION_TIMEOUT_MS.capability, '판매 저장 계약 확인 시간 초과')
-    ]);
-    if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
-    state.purchaseCapability = capabilityResults[0].status === 'fulfilled'
-      ? capabilityResults[0].value
-      : { ready: false, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_UNAVAILABLE', detail: capabilityResults[0].reason?.message || 'ping failed' };
-    state.saleCapability = capabilityResults[1].status === 'fulfilled'
-      ? capabilityResults[1].value
-      : { ready: false, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_UNAVAILABLE', detail: capabilityResults[1].reason?.message || 'ping failed' };
+    state.purchaseCapability = { ready: false, deferred: true, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_DEFERRED', detail: '저장 시 확인' };
+    state.saleCapability = { ready: false, deferred: true, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_DEFERRED', detail: '저장 시 확인' };
     state.inputListSearch = Object.freeze(retainedInputListSearch);
     renderInputListSearch();
     renderRows({ restoreFocus: false });
