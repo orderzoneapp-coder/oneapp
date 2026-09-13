@@ -1,0 +1,65 @@
+name: MerchOps F8 live deployment verification
+on:
+  push:
+    branches: [verify/merchops-f8-base-and-release-20260913]
+    paths: [.github/workflows/merchops-f8-live-check.yml]
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 936a100255ca76715bf286c7bc795abbe5f7d063
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify deployed HTML and its exact Core URL against reviewed blobs
+        run: |
+          python - <<'PY'
+          import urllib.request, hashlib, time, json
+          from pathlib import Path
+          from datetime import datetime, timezone
+          out = Path('/tmp/merchops-live-proof'); out.mkdir()
+          targets = [
+            ('MerchOps.html', 'https://oneapp.orderz.co.kr/MerchOps.html', 'd4b30aa49e67a5cb056ab99cacc9af615f8f43ce'),
+            ('coreEngine.js', 'https://oneapp.orderz.co.kr/coreEngine.js?v=20260913-f8-market-erp11', 'cd81e50956778a2c02c767341af1134c98e50faa')
+          ]
+          results = []
+          for name, url, expected in targets:
+              last_error = ''
+              for attempt in range(10):
+                  try:
+                      with urllib.request.urlopen(url, timeout=20) as response:
+                          data = response.read()
+                          actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+                          if actual != expected: raise ValueError(f'published {name} is {actual}, expected {expected}')
+                          Path(name).write_bytes(data)
+                          results.append({'file': name, 'url': url, 'http_status': response.status, 'blob_sha': actual, 'expected_blob_sha': expected, 'sha256': hashlib.sha256(data).hexdigest(), 'verified_at': datetime.now(timezone.utc).isoformat()})
+                          break
+                  except Exception as error:
+                      last_error = str(error)
+                      if attempt == 9: raise
+                      time.sleep(8)
+              print(json.dumps(results[-1]))
+          html = Path('MerchOps.html').read_text()
+          assert 'v2.1.197_F8MarketERP11' in html
+          assert '<script src="coreEngine.js?v=20260913-f8-market-erp11"></script>' in html
+          (out/'live-source-proof.json').write_text(json.dumps({'merge_sha': '936a100255ca76715bf286c7bc795abbe5f7d063', 'version': 'v2.1.197_F8MarketERP11', 'results': results}, indent=2))
+          PY
+      - name: Run actual F8 tests against the published source bytes
+        env:
+          MERCHOPS_F8_EVIDENCE_DIR: /tmp/merchops-live-proof/xlsx
+        run: |
+          set -euo pipefail
+          node scripts/test-merchops-f8-xlsx-e2e.mjs 2>&1 | tee /tmp/merchops-live-proof/live-f8.log
+          git diff --exit-code -- MerchOps.html coreEngine.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: merchops-f8-live-proof
+          path: /tmp/merchops-live-proof/*
+          retention-days: 7
