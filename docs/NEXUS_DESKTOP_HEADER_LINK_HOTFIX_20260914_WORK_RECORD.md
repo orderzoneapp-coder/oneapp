@@ -19,3 +19,4 @@
 - `test-nexus-common-ui-recovery.mjs`: 공통 UI와 18개 소비 페이지 계약 통과.
 - `test-nexus-workspace-host.mjs`: 단일 iframe·공식 경로·same-origin 메시지·이력·재시도 계약 통과.
 - `test-nexus-header-navigation-contract.mjs`, `test-nexus-basic-login-home.mjs`, `test-orderops-theme-browser-e2e.mjs`, `test-master-itemmanager-app-header.mjs`: 통과.
+- `test-history-settings-export-owner-boundaries.mjs`: manifest `1.3.21` 기대값 갱신 후 통과.
