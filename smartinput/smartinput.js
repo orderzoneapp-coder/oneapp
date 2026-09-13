@@ -168,19 +168,6 @@ import {
   restoreLinkedEstimateWorkingRowEdits
 } from './linked-estimate-source-edit.js?v=0.1.2';
 import {
-  ESTIMATE_BULK_TARGET_MATCH_SCHEMA,
-  ESTIMATE_BULK_TARGET_MATCH_TYPE,
-  classifyEstimateBulkRows,
-  collectEstimateBulkReadPreimages,
-  createEstimateBulkNewRecord,
-  createEstimateBulkProgress,
-  createEstimateBulkReplacementRecord,
-  createEstimateBulkConnectedComponents,
-  createEstimatePerCustomerPlan,
-  estimateBulkTargetMatchContextKey,
-  estimateBulkDraftsEquivalent
-} from './estimate-bulk-update.js?v=0.3.1';
-import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
   parseSettingsInputOrder,
@@ -221,6 +208,9 @@ import {
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
 
+const ESTIMATE_BULK_TARGET_MATCH_TYPE = 'ESTIMATE_BULK_TARGET';
+const ESTIMATE_BULK_TARGET_MATCH_SCHEMA = 'ONEAPP_SMARTINPUT_ESTIMATE_BULK_TARGET_MATCH_V1';
+
 const OPTIONAL_OPERATION_FEATURE = Object.freeze({
   FILE_INPUT: 'file-input',
   PHOTO_INPUT: 'photo-input',
@@ -250,7 +240,8 @@ const OPTIONAL_FEATURE_MODULES = Object.freeze({
   ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.0', specifier: './ocr-feature.js?v=0.1.0', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
   estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.1.0', specifier: './estimate-report-feature.js?v=0.1.0', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
   voucherOutput: Object.freeze({ feature: 'voucher-output-module', assetVersion: '0.1.0', specifier: './voucher-output-feature.js?v=0.1.0', unavailableMessage: '구매 보고서 기능을 불러오지 못했습니다. 현재 입력은 유지됩니다.' }),
-  officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.1.0', specifier: './official-voucher-feature.js?v=0.1.0', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' })
+  officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.1.0', specifier: './official-voucher-feature.js?v=0.1.0', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
+  estimateBulk: Object.freeze({ feature: 'estimate-bulk-module', assetVersion: '0.3.1', specifier: './estimate-bulk-feature.js?v=0.1.0', unavailableMessage: '다건 견적 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' })
 });
 const optionalFeatureLoaded = new Set();
 const optionalFeatureMetrics = [];
@@ -278,6 +269,29 @@ async function loadOptionalFeature(name, operationToken = null) {
   }
 }
 
+let estimateBulkFeature = null;
+
+async function ensureEstimateBulkFeature() {
+  estimateBulkFeature ||= await loadOptionalFeature('estimateBulk');
+  return estimateBulkFeature;
+}
+
+function estimateBulkFunction(name) {
+  const fn = estimateBulkFeature?.[name];
+  if (typeof fn !== 'function') throw new Error('다건 견적 저장 기능을 먼저 준비해야 합니다.');
+  return fn;
+}
+
+const classifyEstimateBulkRows = (...args) => estimateBulkFunction('classifyEstimateBulkRows')(...args);
+const collectEstimateBulkReadPreimages = (...args) => estimateBulkFunction('collectEstimateBulkReadPreimages')(...args);
+const createEstimateBulkNewRecord = (...args) => estimateBulkFunction('createEstimateBulkNewRecord')(...args);
+const createEstimateBulkProgress = (...args) => estimateBulkFunction('createEstimateBulkProgress')(...args);
+const createEstimateBulkReplacementRecord = (...args) => estimateBulkFunction('createEstimateBulkReplacementRecord')(...args);
+const createEstimateBulkConnectedComponents = (...args) => estimateBulkFunction('createEstimateBulkConnectedComponents')(...args);
+const createEstimatePerCustomerPlan = (...args) => estimateBulkFunction('createEstimatePerCustomerPlan')(...args);
+const estimateBulkTargetMatchContextKey = (...args) => estimateBulkFunction('estimateBulkTargetMatchContextKey')(...args);
+const estimateBulkDraftsEquivalent = (...args) => estimateBulkFunction('estimateBulkDraftsEquivalent')(...args);
+
 function recordOptionalCompute(metric) {
   optionalComputeMetrics.push({ ...metric });
   if (optionalComputeMetrics.length > 120) optionalComputeMetrics.shift();
@@ -289,6 +303,37 @@ function measureOptionalCompute(feature, phase, work) {
     return work();
   } finally {
     recordOptionalCompute({ feature, phase, path: 'direct', durationMs: performance.now() - startedAt });
+  }
+}
+
+function renderStage5ComputeControl() {
+  const button = $('cancelComputeButton');
+  if (button) button.hidden = !state.activeStage5Compute;
+}
+
+function cancelActiveStage5Compute({ notifyUser = false } = {}) {
+  const active = state.activeStage5Compute;
+  if (!active) return false;
+  state.activeStage5Compute = null;
+  active.controller.abort();
+  renderStage5ComputeControl();
+  if (notifyUser) setAppStatus(`${active.label} 취소 · 입력 자료는 유지됩니다.`, 'warn');
+  return true;
+}
+
+async function runCancelableStage5Compute(run, options, label) {
+  cancelActiveStage5Compute();
+  const controller = new AbortController();
+  const active = { controller, label };
+  state.activeStage5Compute = active;
+  renderStage5ComputeControl();
+  try {
+    return await run({ ...options, signal: controller.signal });
+  } finally {
+    if (state.activeStage5Compute === active) {
+      state.activeStage5Compute = null;
+      renderStage5ComputeControl();
+    }
   }
 }
 
@@ -398,6 +443,10 @@ const state = {
   autosaveClientId: globalThis.crypto?.randomUUID?.() || `client-${Date.now().toString(36)}`,
   latestQueuedDocumentVersions: new Map(),
   pendingAutosaveModes: new Set(),
+  pendingAutosaveRowIds: new Map(),
+  fullAutosaveModes: new Set(),
+  autosaveSnapshotCache: new Map(),
+  autosaveCheckpointSamples: [],
   draftMutationVersion: 0,
   draftDirty: false,
   autosaveAvailable: false,
@@ -408,6 +457,7 @@ const state = {
   listening: false,
   busy: false,
   activeActivity: '',
+  activeStage5Compute: null,
   activeFileInputAttemptId: '',
   activeCustomerRematchAttemptId: '',
   activeCapabilityAttemptId: '',
@@ -450,6 +500,7 @@ function optionalOperationContext() {
 }
 
 function invalidateOptionalOperations({ workspaceChanged = false } = {}) {
+  cancelActiveStage5Compute();
   const fileInputWasPending = Boolean(state.activeFileInputAttemptId);
   const customerRematchWasPending = Boolean(state.activeCustomerRematchAttemptId);
   if (fileInputWasPending) {
@@ -675,6 +726,7 @@ $('tableScroll').addEventListener('input', () => {
 }, true);
 window.ONEAPP_SMARTINPUT_PERFORMANCE = { snapshot: () => ({ reads: estimateStore.smartInputReadStats(), input: inputViewport.stats(), mapping: mappingViewport.stats(), source: sourceViewport.stats(),
   inputToNextFrameMs: [...inputFrameSamples], p95InputToNextFrameMs: inputFrameSamples.length ? [...inputFrameSamples].sort((a,b) => a-b)[Math.ceil(inputFrameSamples.length * .95) - 1] : null,
+  autosaveCheckpoints: (state.autosaveCheckpointSamples || []).map(metric => ({ ...metric })),
   optionalFeatures: optionalFeatureMetrics.map(metric => ({ ...metric })), optionalComputes: optionalComputeMetrics.map(metric => ({ ...metric })),
   loadedOptionalFeatures: [...optionalFeatureLoaded], longTasks: longTaskSamples.map(metric => ({ ...metric })) }) };
 
@@ -960,6 +1012,57 @@ function autosaveWorkspaceRecord() {
   };
 }
 
+function rememberAutosaveMutation(mode, dirtyRowId = '') {
+  state.fullAutosaveModes ||= new Set();
+  state.pendingAutosaveRowIds ||= new Map();
+  if (!dirtyRowId) {
+    state.fullAutosaveModes.add(mode);
+    state.pendingAutosaveRowIds.delete(mode);
+    return;
+  }
+  if (state.fullAutosaveModes.has(mode)) return;
+  if (!state.pendingAutosaveRowIds.has(mode)) state.pendingAutosaveRowIds.set(mode, new Set());
+  state.pendingAutosaveRowIds.get(mode).add(String(dirtyRowId));
+}
+
+function buildAutosaveDocumentSnapshot(mode, current) {
+  state.autosaveSnapshotCache ||= new Map();
+  state.pendingAutosaveRowIds ||= new Map();
+  state.fullAutosaveModes ||= new Set();
+  const docKey = autosaveDocumentKey(mode, current);
+  const previous = state.autosaveSnapshotCache.get(docKey);
+  const dirtyRowIds = state.pendingAutosaveRowIds.get(mode) || new Set();
+  const currentRows = current.rows || [];
+  const previousRows = previous?.rows || [];
+  const stableRows = previousRows.length === currentRows.length
+    && currentRows.every((row, index) => String(row?.rowId || '') === String(previousRows[index]?.rowId || ''));
+  const canReuseRows = !state.fullAutosaveModes.has(mode)
+    && dirtyRowIds.size > 0
+    && previous
+    && !current.inputMapping
+    && !current.shoppingOrderImport
+    && stableRows;
+  let snapshot;
+  if (canReuseRows) {
+    const nextRows = previousRows.slice();
+    currentRows.forEach((row, index) => {
+      if (dirtyRowIds.has(String(row?.rowId || ''))) nextRows[index] = structuredClone(row);
+    });
+    snapshot = {
+      ...previous,
+      updatedAt: current.updatedAt,
+      voucherGroups: current.voucherGroups ? structuredClone(current.voucherGroups) : current.voucherGroups,
+      rows: nextRows
+    };
+  } else {
+    snapshot = structuredClone(current);
+  }
+  state.autosaveSnapshotCache.set(docKey, snapshot);
+  state.pendingAutosaveRowIds.delete(mode);
+  state.fullAutosaveModes.delete(mode);
+  return { snapshot, path: canReuseRows ? 'row-copy-on-write' : 'full-snapshot' };
+}
+
 function queueDocumentCheckpoint(mode = state.draft.activeMode, { trackDirty = true, bypassLoading = false } = {}) {
   if (state.autosaveLoading && !bypassLoading) {
     state.pendingAutosaveModes.add(mode);
@@ -967,12 +1070,26 @@ function queueDocumentCheckpoint(mode = state.draft.activeMode, { trackDirty = t
   }
   const current = state.draft.modes?.[mode];
   if (!current?.documentId) throw new Error('SMARTINPUT_AUTOSAVE_DOCUMENT_MISSING');
+  const checkpointStartedAt = performance.now();
+  const workspace = autosaveWorkspaceRecord();
+  const prepared = buildAutosaveDocumentSnapshot(mode, current);
+  const snapshot = prepared.snapshot;
+  state.autosaveCheckpointSamples ||= [];
+  state.autosaveCheckpointSamples.push({
+    mode,
+    path: prepared.path,
+    rowCount: Number(current.rows?.length || 0),
+    durationMs: performance.now() - checkpointStartedAt
+  });
+  if (state.autosaveCheckpointSamples.length > 30) state.autosaveCheckpointSamples.shift();
   const ticket = draftSaveCoordinator.queue({
     companyId: state.companyId,
     mode,
     documentId: current.documentId,
-    snapshot: current,
-    workspace: autosaveWorkspaceRecord()
+    snapshot,
+    workspace,
+    snapshotOwned: true,
+    workspaceOwned: true
   });
   const mutationVersion = state.draftMutationVersion;
   if (trackDirty) state.latestQueuedDocumentVersions.set(ticket.docKey, ticket.version);
@@ -1046,19 +1163,19 @@ function saveDraftNow({
   return compatibilitySaved;
 }
 
-function scheduleSave({ invalidateOperations = true } = {}) {
+function scheduleSave({ invalidateOperations = true, dirtyRowId = '' } = {}) {
   if (invalidateOperations) {
     if (state.activeActivity === '사진 OCR 처리 중') cancelPhotoAnalysisForNewInput({ invalidateOperations: false });
     invalidateOptionalOperations();
   }
   state.draftDirty = true;
   state.draftMutationVersion += 1;
+  rememberAutosaveMutation(state.draft.activeMode, dirtyRowId);
   setSaveState('자동저장 중…', 'saving');
   clearTimeout(state.saveTimer);
   state.saveTimer = window.setTimeout(() => saveDraftNow({ writeCompatibility: false, mutationAlreadyTracked: true }), 500);
-  if (!state.compatibilitySaveTimer) {
-    state.compatibilitySaveTimer = window.setTimeout(() => writeCompatibilityDraft(), 2000);
-  }
+  clearTimeout(state.compatibilitySaveTimer);
+  state.compatibilitySaveTimer = window.setTimeout(() => writeCompatibilityDraft(), 2000);
 }
 
 async function initializeAutosave() {
@@ -9415,7 +9532,7 @@ async function exportEstimateExcel() {
       productCatalog: state.products,
       ...merchOpsEstimateOutputConfig()
     };
-    const preparedOutput = await reportFeature.runStage5Compute({
+    const preparedOutput = await runCancelableStage5Compute(reportFeature.runStage5Compute, {
       feature: 'estimate-report',
       phase: 'ESTIMATE_F8_PREPARE',
       payload: { rows: sourceRows, outputConfig },
@@ -9425,7 +9542,7 @@ async function exportEstimateExcel() {
         duplicateGroups: buildEstimateDuplicateGroups(sourceRows, outputConfig)
       }),
       onMetric: recordOptionalCompute
-    });
+    }, '견적 F8 계산');
     if (!optionalOperationIsCurrent(operationToken)) {
       setAppStatus('견적 자료가 변경되어 이전 F8 계산 결과를 적용하지 않았습니다.', 'warn');
       toast('현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
@@ -9455,14 +9572,14 @@ async function exportEstimateExcel() {
         return;
       }
     }
-    const output = await reportFeature.runStage5Compute({
+    const output = await runCancelableStage5Compute(reportFeature.runStage5Compute, {
       feature: 'estimate-report',
       phase: 'ESTIMATE_F8_BUILD',
       payload: { rows: sourceRows, options: outputConfig, duplicateResolutionEntries: [...duplicateResolutions.entries()] },
       rowCount: sourceRows.length,
       direct: () => buildEstimateF8Data(sourceRows, { ...outputConfig, duplicateResolutions }),
       onMetric: recordOptionalCompute
-    });
+    }, '견적 F8 계산');
     if (!optionalOperationIsCurrent(operationToken)) {
       setAppStatus('견적 자료가 변경되어 이전 F8 계산 결과를 내려받지 않았습니다.', 'warn');
       toast('현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
@@ -9495,6 +9612,13 @@ async function exportEstimateExcel() {
     }
     setAppStatus(`견적 F8 Excel 생성 완료 · ${plan.selectionCount}개 견적 · ${output.outputRowCount}품목 · 확인 ${output.confirmData.length - 1}건`);
     toast(plan.selectionCount > 1 ? '현재 테이블 미리보기와 같은 상품을 Excel로 생성했습니다.' : '현재 견적서를 Excel로 생성했습니다.', 'success');
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      setAppStatus('견적 F8 계산 취소 · 현재 견적은 유지됩니다.', 'warn');
+      toast('현재 견적은 유지했습니다. 필요할 때 F8을 다시 실행하세요.', 'warn');
+      return;
+    }
+    throw error;
   } finally {
     estimateF8ExportInFlight = false;
   }
@@ -9713,14 +9837,14 @@ async function exportPurchaseSalesExcel() {
     }
     const current = modeDraft();
     const sourceRows = measureOptionalCompute('purchase-sales-report', 'source-rows', () => buildPurchaseReportSourceRows(current));
-    const output = await voucherOutputFeature.runStage5Compute({
+    const output = await runCancelableStage5Compute(voucherOutputFeature.runStage5Compute, {
       feature: 'purchase-sales-report',
       phase: 'PURCHASE_SALES_BUILD',
       payload: { rows: sourceRows },
       rowCount: sourceRows.length,
       direct: () => voucherOutputFeature.buildPurchaseSalesUploadData(sourceRows),
       onMetric: recordOptionalCompute
-    });
+    }, '구매 판매업로드 계산');
     if (!optionalOperationIsCurrent(operationToken)) {
       setAppStatus('전표 자료가 변경되어 이전 Excel 계산 결과를 내려받지 않았습니다.', 'warn');
       toast('현재 입력은 유지했습니다. Excel을 다시 실행하세요.', 'warn');
@@ -9735,6 +9859,13 @@ async function exportPurchaseSalesExcel() {
     xlsxRuntime.writeFile(workbook, output.fileName);
     setAppStatus(`구매 판매업로드 생성 완료 · ${output.stats.outputRows}행 · 확인 ${output.stats.fatalErrors + output.stats.warnings}건`);
     toast('DataOps 판매업로드 Excel을 생성했습니다.', 'success');
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      setAppStatus('구매 판매업로드 계산 취소 · 현재 입력은 유지됩니다.', 'warn');
+      toast('현재 입력은 유지했습니다. 필요할 때 Excel을 다시 실행하세요.', 'warn');
+      return;
+    }
+    throw error;
   } finally {
     purchaseSalesExportInFlight = false;
   }
@@ -10770,9 +10901,16 @@ async function completeOrder() {
     const creation = estimateCreation();
     if (creation?.kind === 'LINKED_GROUP' && creation.selectedIds.length < 2) return toast('연동견적서는 원본 두 개 이상을 선택하세요.', 'warn');
     if (creation && !creation.selectedIds.length) return toast('생성할 견적서를 선택하세요.', 'warn');
-    const estimateBulk = inputMappingTemplateReady()
-      ? classifyEstimateBulkRows(current.rows)
-      : null;
+    let estimateBulk = null;
+    if (inputMappingTemplateReady()) {
+      try {
+        await ensureEstimateBulkFeature();
+        estimateBulk = classifyEstimateBulkRows(current.rows);
+      } catch (error) {
+        toast(error.message, 'error');
+        return;
+      }
+    }
     if (!creation && estimateBulk?.groups.length > 1) {
       await runAutomaticEstimateBulkUpdates(estimateBulk);
       return;
@@ -12145,6 +12283,7 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; renderVoucherContext(); scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
+$('cancelComputeButton').addEventListener('click', () => cancelActiveStage5Compute({ notifyUser: true }));
 $('saveEstimateAsButton').addEventListener('click', () => openEstimateSaveDialog({ saveAs: true }));
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
 $('estimateNoticeButton').addEventListener('click', shareCurrentVoucher);
@@ -12382,7 +12521,7 @@ inputRows.addEventListener('input', event => {
     });
     refreshInputListSearchRow(row);
     if (rowHasLinkedSource(row)) row.linkedSyncFields = [...new Set([...(row.linkedSyncFields || []), 'customValues'])];
-    scheduleSave();
+    scheduleSave({ dirtyRowId: row.rowId });
     return;
   }
   const input = event.target.closest('[data-field]');
@@ -12419,7 +12558,7 @@ inputRows.addEventListener('input', event => {
     if (amountInput) amountInput.value = amount === '' ? '' : Number(amount).toLocaleString('ko-KR');
   }
   updateSummaries();
-  scheduleSave();
+  scheduleSave({ dirtyRowId: row.rowId });
 });
 inputRows.addEventListener('keydown', event => {
   const input = event.target.closest('[data-field], [data-custom-row-field]');
