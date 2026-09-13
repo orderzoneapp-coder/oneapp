@@ -66,3 +66,6 @@ assert.deepEqual(withoutSources.estimateUploadData, combined.before.estimateUplo
 assert.deepEqual(withoutSources.shopData, combined.before.shopData); passed++;
 console.log('PASS: candidate report data stays fixed after source changes/removal');
 console.log(`Stage 3 candidate/real-F8 baseline comparisons passed (${passed}/${passed}); runtime integration remains separate.`);
+
+// Run the current upload contract independently of browser UI readiness.
+await import('./test-smartinput-f8-upload-contract.mjs');

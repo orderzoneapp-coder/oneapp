@@ -309,13 +309,18 @@ export function buildKakaoNoticeRows(rows = [], previousPrices = {}, priceFields
   }).filter(row => row.itemCode || row.nameSpec);
 }
 
-export function validateEstimateRows(rows = []) {
-  const candidates = (Array.isArray(rows) ? rows : [])
+function estimateOutputCandidates(rows = []) {
+  // Keep original indices: duplicate selections belong to source rows, not the filtered list.
+  return (Array.isArray(rows) ? rows : [])
     .map((row, rowIndex) => ({ row, rowIndex }))
     .filter(({ row }) => (
       text(outputCode(row))
       || text(outputText(row, ['품목명', '상품명'], ['itemName']))
     ));
+}
+
+export function validateEstimateRows(rows = []) {
+  const candidates = estimateOutputCandidates(rows);
   const errors = [];
   if (!candidates.length) errors.push({
     code: 'EMPTY', rowIndex: null, item: '', field: '품목', originalValue: '',
@@ -365,7 +370,7 @@ function duplicateCandidate(row, rowIndex, product, marginRules) {
 export function buildEstimateDuplicateGroups(rows = [], { productCatalog = [], marginRules = [] } = {}) {
   const catalog = productCatalogIndex(productCatalog);
   const grouped = new Map();
-  (Array.isArray(rows) ? rows : []).forEach((row, rowIndex) => {
+  estimateOutputCandidates(rows).forEach(({ row, rowIndex }) => {
     const code = outputCode(row);
     if (!code) return;
     const entries = grouped.get(code) || [];
@@ -398,9 +403,9 @@ export function calculateEstimateResolvedPrice(row = {}, inboundPrice = '', {
 }
 
 export function resolveEstimateDuplicateRows(rows = [], resolutions = new Map()) {
-  const source = Array.isArray(rows) ? rows : [];
+  const source = estimateOutputCandidates(rows);
   const grouped = new Map();
-  source.forEach((row, rowIndex) => {
+  source.forEach(({ row, rowIndex }) => {
     const code = outputCode(row);
     if (!code) return;
     const entries = grouped.get(code) || [];
@@ -436,7 +441,7 @@ export function resolveEstimateDuplicateRows(rows = [], resolutions = new Map())
 
   const resolvedRows = [];
   const selectedRowsByIndex = new Map();
-  source.forEach((row, rowIndex) => {
+  source.forEach(({ row, rowIndex }) => {
     const code = outputCode(row);
     if (!duplicateCodes.has(code)) {
       resolvedRows.push(row);
@@ -798,6 +803,9 @@ export function buildEstimateF8Data(rows = [], {
       shopRow[3] = subdivision.subSale;
       shopRow[4] = subdivision.subSale;
       shopRow[5] = subdivision.subSale;
+      // Existing and newly added subdivisions share the final sale/stock policy.
+      shopRow[14] = subdivision.saleCode;
+      shopRow[15] = subdivision.stock;
       const erpRow = erpData[erpIndexes[0]];
       erpRow[1] = subdivision.subInbound;
       erpRow[3] = subdivision.subSale;
