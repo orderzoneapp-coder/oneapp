@@ -35,6 +35,7 @@
 - `test-nexus-workspace-host.mjs`: 7개 정규 헤더 경로와 `출고관리` ID/스마트입력 URL 불일치 fail-closed, 기존 경로·이력·복구 계약 PASS.
 - `test-nexus-workspace-host-browser.mjs`: 홈 12개 실제 링크, 홈 `출고관리` 카드 클릭, 글로벌헤더 7개 실제 링크, 390px `출고관리` 중심 hit target·실제 touch, 7개 실앱, 42방향 전환 PASS.
 - `test-nexus-unified-dark-app-headers-browser-e2e.mjs`: 1600·1280·390px 및 일반·다크에서 7개 직접 앱 각각의 7개 정규 링크, 헤더 시각·접근성 회귀 PASS.
+- 기존 SmartInput 조기 실패와 독립적으로 위 링크 검사를 끝까지 실행하도록 `Validate NEXUS home and global header links` CI 작업을 추가했다.
 - Repository validation 24 checks/0 warnings, 공통 UI 복구, 기본 로그인/홈, 인증 최소제어, 회사정보, 공통 작업영역, client safety 검사 PASS.
 - 기준 `origin/main`에 이미 존재하는 별도 실패: SmartInput HTML은 `smartinput.css?v=0.9.22`인데 `test-smartinput-independent-recovery.mjs`와 `test-smartinput-settings-ux.mjs`는 `0.9.21`을 기대한다. `test-nexus-table-ux-contract.mjs`는 기준 SmartInput HTML에 없는 `nexus-table-ux.js?v=1.1.0`을 기대한다. 본 브랜치는 SmartInput의 이 자산이나 해당 기대값을 변경하지 않는다.
 - PR·병합 SHA·CI·Pages 배포: 완료 후 기록한다.
