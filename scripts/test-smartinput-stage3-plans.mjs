@@ -155,7 +155,7 @@ const masterSource = (extra = {}) => ({ companyId: 'C1', estimateId: 'EST-A', ow
   operationId: 'OP-1', estimateStatus: 'SAVED', code: '0007', field: 'purchasePriceB', valueKind: 'VALUE', value: 0, sourceRefs: ['Sheet1!N2'], ...extra });
 const masterArgs = (extra = {}) => ({ enabled: true, commandId: 'CMD-1', operationId: 'OP-1', companyId: 'C1', actor: { actorId: 'A1', actorState: 'OWNER_MASTER' },
   reason: '명시 선택 견적 가격 적용', baseSnapshotId: 'MASTER-SNAP', baseContentHash: 'MASTER-HASH', expectedRevision: 5,
-  selectedFields: ['purchasePriceB'], products: [{ 코드: '0007', 입고B: 10 }], confirmedFields: [masterSource()], ...extra });
+  selectedEstimateIds: ['EST-A'], selectedFields: ['purchasePriceB'], products: [{ 코드: '0007', 입고B: 10 }], confirmedFields: [masterSource()], ...extra });
 const resultFor = (command, status, extra = {}) => ({ status, commandId: command.commandId, companyId: command.companyId, payloadHash: command.payloadHash, ...extra });
 const persisted = command => ({ ...resultFor(command, 'PREPARED'), durable: true });
 
@@ -174,7 +174,7 @@ test('master context is never invented; four-field allowlist excludes general pr
 });
 
 test('master excludes unsuccessful estimates and conflicting field values, not unrelated safe fields', async () => {
-  const intent = await createEstimateMasterIntent(masterArgs({ selectedFields: ['purchasePriceB', 'wholesaleA'], confirmedFields: [masterSource(), masterSource({ estimateId: 'EST-B', value: 9 }), masterSource({ estimateId: 'FAILED', estimateStatus: 'FAILED', field: 'wholesaleA', value: 100 }), masterSource({ field: 'wholesaleA', value: 25 })] }));
+  const intent = await createEstimateMasterIntent(masterArgs({ selectedEstimateIds: ['EST-A', 'EST-B', 'FAILED'], selectedFields: ['purchasePriceB', 'wholesaleA'], confirmedFields: [masterSource(), masterSource({ estimateId: 'EST-B', value: 9 }), masterSource({ estimateId: 'FAILED', estimateStatus: 'FAILED', field: 'wholesaleA', value: 100 }), masterSource({ field: 'wholesaleA', value: 25 })] }));
   assert.equal(intent.status, 'PARTIAL_REVIEW'); assert.deepEqual(intent.command.patches.map(patch => patch.field), ['도매A']);
   assert.equal(intent.command.sourceEstimates.some(source => source.estimateId === 'FAILED'), false);
 });
@@ -248,6 +248,22 @@ test('hashes preserve JSON distinctions and reject dates, sparse arrays and cycl
   await assert.rejects(hashEstimatePlan(new Array(1)), /ESTIMATE_NON_JSON_VALUE/);
   const cyclic = {}; cyclic.self = cyclic;
   await assert.rejects(hashEstimatePlan(cyclic), /ESTIMATE_CYCLIC_VALUE/);
+});
+
+test('master review preserves the issue code separately from the exact product code', async () => {
+  const conflict = await createEstimateMasterIntent(masterArgs({ selectedEstimateIds: ['EST-A', 'EST-B'],
+    confirmedFields: [masterSource(), masterSource({ estimateId: 'EST-B', value: 25 })] }));
+  assert.equal(conflict.command, null);
+  assert.equal(conflict.issues[0].code, 'MASTER_FIELD_VALUE_CONFLICT');
+  assert.equal(conflict.issues[0].productCode, '0007');
+  const missing = await createEstimateMasterIntent(masterArgs({ products: [] }));
+  assert.equal(missing.issues[0].code, 'MASTER_PRODUCT_UNRESOLVED');
+  assert.equal(missing.issues[0].productCode, '0007');
+});
+test('master zero selection does not inspect context or source and rejects a selected-outside source', async () => {
+  const empty = await createEstimateMasterIntent(masterArgs({ selectedEstimateIds: [], actor: null }));
+  assert.equal(empty.status, 'NO_CANDIDATES'); assert.equal(empty.command, null);
+  await assert.rejects(createEstimateMasterIntent(masterArgs({ confirmedFields: [masterSource({ estimateId: 'EST-B' })] })), /MASTER_SOURCE_OUTSIDE_SELECTION/);
 });
 
 let failures = 0;

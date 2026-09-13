@@ -401,8 +401,283 @@ function operationHistoryState(history, operationId, operationHash) {
   return { found: true, conflict: hashes.size !== 1 || !hashes.has(operationHash), rows };
 }
 
+
+export const SMARTINPUT_ESTIMATE_MASTER_COMMAND_SCHEMA_VERSION = 'SMARTINPUT_ESTIMATE_MASTER_APPLY_V1';
+export const SMARTINPUT_ESTIMATE_PATCH_FIELDS = Object.freeze({ purchasePriceB: '입고B', wholesaleA: '도매A', wholesaleB: '도매B', promoPrice: '행사가' });
+const smartInputFields = new Map(Object.entries(SMARTINPUT_ESTIMATE_PATCH_FIELDS).map(([source, target]) => [target, source]));
+let smartInputCompanyEvidence = null;
+
+/** Resolve omitted legacy session scope from the existing authenticated company owner read. */
+export async function prepareSmartInputEstimateContext() {
+  const current = readSmartInputEstimateContext();
+  if (current.status === 'READY' || current.code !== 'NEXUS_COMPANY_CONTEXT_REQUIRED') return current;
+  try {
+    const bundle = JSON.parse(globalThis.sessionStorage?.getItem('oneapp.nexus.home.session.v1') || 'null')
+      || JSON.parse(globalThis.localStorage?.getItem('oneapp.nexus.home.persistent-session.v1') || 'null');
+    const { callCompanyGateway } = await import('../nexus/company-transport.js?v=1.0.0');
+    const response = await callCompanyGateway({ appId: 'company', operationId: 'company.profile_read', payload: {}, sessionToken: bundle.token });
+    if (response?.profile?.schemaVersion !== 'NEXUS_COMPANY_PROFILE_V1' || !clean(response.profile.companyId)) {
+      return { status: 'CONTEXT_REQUIRED', code: 'NEXUS_COMPANY_EVIDENCE_INVALID' };
+    }
+    smartInputCompanyEvidence = { token: bundle.token, actorId: clean(bundle.session.user.userId || bundle.session.user.loginId),
+      companyId: clean(response.profile.companyId), expiresAt: Math.min(Date.parse(bundle.session.expiresAt), Date.now() + 300000) };
+    return readSmartInputEstimateContext();
+  } catch (error) { return { status: 'CONTEXT_REQUIRED', code: error.code || error.message || 'NEXUS_COMPANY_CONTEXT_REQUIRED' }; }
+}
+
+/** Read the actual NEXUS session, never the editor's ONEAPP/SMART_INPUT_ADMIN fallbacks. */
+export function readSmartInputEstimateContext() {
+  let bundle;
+  try {
+    bundle = JSON.parse(globalThis.sessionStorage?.getItem('oneapp.nexus.home.session.v1') || 'null')
+      || JSON.parse(globalThis.localStorage?.getItem('oneapp.nexus.home.persistent-session.v1') || 'null');
+  } catch { return { status: 'CONTEXT_REQUIRED', code: 'NEXUS_SESSION_INVALID' }; }
+  const session = bundle?.session, user = session?.user;
+  const expiresAt = Date.parse(session?.expiresAt || '');
+  if (!clean(bundle?.token) || !user || !Number.isFinite(expiresAt) || expiresAt <= Date.now() || user.status !== 'ACTIVE') {
+    return { status: 'CONTEXT_REQUIRED', code: 'NEXUS_SESSION_REQUIRED' };
+  }
+  const actorId = clean(user.userId || user.loginId);
+  const evidence = smartInputCompanyEvidence;
+  const companyId = clean(session.companyId || session.scope?.companyId || user.companyId
+    || (evidence?.token === bundle.token && evidence.actorId === actorId && evidence.expiresAt > Date.now() ? evidence.companyId : ''));
+  const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+  if (!companyId || !actorId) return { status: 'CONTEXT_REQUIRED', code: 'NEXUS_COMPANY_CONTEXT_REQUIRED' };
+  if (user.role !== 'OWNER_MASTER' && !(permissions.includes('foundation.write') && permissions.includes('smartinput.use'))) {
+    return { status: 'CONTEXT_REQUIRED', code: 'NEXUS_MASTER_PERMISSION_REQUIRED' };
+  }
+  return { status: 'READY', companyId, actor: { actorId, actorState: clean(user.role), loginId: clean(user.loginId) }, expiresAt };
+}
+function assertSmartInputContext(input, readContext) {
+  const context = readContext();
+  if (context?.status !== 'READY' || context.companyId !== input.companyId || context.actor?.actorId !== input.actor?.actorId
+    || context.actor?.actorState !== input.actor?.actorState) throw commandError('SMARTINPUT_CONTEXT_REQUIRED');
+  return context;
+}
+function smartInputResult(command, status, details = {}) {
+  return { status, companyId: command.companyId, commandId: command.commandId, payloadHash: command.payloadHash, ...details };
+}
+function validateSmartInputEstimateCommand(command) {
+  if (command?.schemaVersion !== SMARTINPUT_ESTIMATE_MASTER_COMMAND_SCHEMA_VERSION || command.sourceAppId !== 'smart-input'
+    || command.ownerAppId !== PRODUCT_MASTER_OWNER_APP_ID) throw commandError('SMARTINPUT_COMMAND_SCHEMA_INVALID');
+  for (const field of ['commandId', 'operationId', 'payloadHash', 'companyId', 'reason', 'baseSnapshotId', 'baseContentHash']) {
+    if (!clean(command[field])) throw commandError('SMARTINPUT_COMMAND_EVIDENCE_REQUIRED');
+  }
+  const selected = command.selectedEstimateIds;
+  if (!Array.isArray(selected) || !selected.length || selected.some(id => typeof id !== 'string' || !id.trim())
+    || new Set(selected).size !== selected.length) throw commandError('SMARTINPUT_SELECTION_REQUIRED');
+  if (!['SELECTED_ESTIMATES_ONLY', 'AFTER_SELECTED_ESTIMATE_UPDATE'].includes(command.executionMode)) throw commandError('SMARTINPUT_EXECUTION_MODE_INVALID');
+  if (!Array.isArray(command.sourceEstimates) || !command.sourceEstimates.length || !Array.isArray(command.patches) || !command.patches.length) throw commandError('SMARTINPUT_SOURCE_REQUIRED');
+  const sourceById = new Map();
+  for (const source of command.sourceEstimates) {
+    if (!selected.includes(source.estimateId) || !Number.isSafeInteger(source.revision) || source.revision < 0
+      || !Array.isArray(source.rowIds) || !source.rowIds.length || !Array.isArray(source.fieldIds) || !source.fieldIds.length
+      || source.fieldIds.some(field => !hasOwn(SMARTINPUT_ESTIMATE_PATCH_FIELDS, field))) throw commandError('SMARTINPUT_SOURCE_OUTSIDE_SELECTION');
+    if (sourceById.has(source.estimateId)) throw commandError('SMARTINPUT_SOURCE_REVISION_AMBIGUOUS');
+    sourceById.set(source.estimateId, source);
+  }
+  const seen = new Set();
+  for (const patch of command.patches) {
+    if (typeof patch.code !== 'string' || !patch.code.trim() || patch.code !== patch.code.trim() || !smartInputFields.has(patch.field)
+      || !hasOwn(patch, 'beforeValue') || typeof patch.beforePresent !== 'boolean'
+      || !['VALUE', 'CLEAR'].includes(patch.valueKind) || (patch.valueKind === 'VALUE'
+        ? typeof patch.afterValue !== 'number' || !Number.isFinite(patch.afterValue) : patch.afterValue !== null)) throw commandError('SMARTINPUT_PATCH_INVALID');
+    const key = JSON.stringify([patch.code, patch.field]);
+    if (seen.has(key)) throw commandError('SMARTINPUT_DUPLICATE_PATCH'); seen.add(key);
+    if (!Array.isArray(patch.sourceRefs) || !patch.sourceRefs.length) throw commandError('SMARTINPUT_PATCH_SOURCE_REQUIRED');
+    for (const ref of patch.sourceRefs) {
+      const source = sourceById.get(ref.estimateId);
+      if (!source || !selected.includes(ref.estimateId) || ref.revision !== source.revision || !source.rowIds.includes(ref.ownedRowId)
+        || ref.fieldId !== smartInputFields.get(patch.field) || !source.fieldIds.includes(ref.fieldId)
+        || ref.operationId !== source.operationId || (patch.valueKind === 'CLEAR' && ref.explicitClear !== true)) throw commandError('SMARTINPUT_PATCH_SOURCE_INVALID');
+    }
+  }
+  return command;
+}
+async function smartInputStorage() {
+  const storage = globalThis.ONEAPP?.STORAGE;
+  if (typeof storage?.commitMasterState !== 'function' || typeof storage?.readMasterSnapshotState !== 'function'
+    || typeof storage?.initIDB !== 'function') throw commandError('SMARTINPUT_OWNER_CAPABILITY_UNAVAILABLE');
+  if (typeof globalThis.indexedDB?.databases === 'function') {
+    const dbs = await globalThis.indexedDB.databases();
+    if (!dbs.some(db => db.name === 'MerchOpsDB')) throw commandError('SMARTINPUT_OWNER_DATABASE_MISSING');
+  }
+  return storage;
+}
+const smartInputReceiptKey = ({ companyId, commandId }) => `smartInputEstimateCommand:${encodeURIComponent(companyId)}:${encodeURIComponent(commandId)}`;
+async function readSmartInputReceipt(storage, args) {
+  const key = smartInputReceiptKey(args);
+  const state = await storage.readMasterState([key]);
+  const receipt = state.extraStoreEntries[key] || null;
+  if (receipt && args.payloadHash && receipt.payloadHash !== args.payloadHash) throw commandError('SMARTINPUT_MASTER_PAYLOAD_CONFLICT');
+  return receipt;
+}
+const numericMasterEqual = (left, right) => {
+  if (left === '' || left === null || left === undefined || right === null) return Object.is(left, right);
+  const parsed = typeof left === 'number' ? left : Number(String(left).replace(/,/g, '').trim());
+  return Number.isFinite(parsed) && parsed === right;
+};
+
+function createSmartInputEstimateOwner(overrides = {}) {
+  const readContext = overrides.readSmartInputEstimateContext || readSmartInputEstimateContext;
+  const sourceApi = overrides.smartInputEstimateSource || (() => import('../smartinput/smartinput-data-store.js?v=0.6.4'));
+  const getStorage = overrides.smartInputStorage || smartInputStorage;
+  const getSnapshot = overrides.getSmartInputProductSnapshot || getProductSnapshotResult;
+  const query = async args => {
+    assertSmartInputContext(args, readContext);
+    const storage = await getStorage();
+    const receipt = await readSmartInputReceipt(storage, args);
+    return receipt || smartInputResult(args, 'CONFIRMED_NOT_APPLIED');
+  };
+  const publish = async args => {
+    assertSmartInputContext(args, readContext);
+    const storage = await getStorage();
+    const key = smartInputReceiptKey(args);
+    const initial = await readSmartInputReceipt(storage, args);
+    if (!initial) return smartInputResult(args, 'CONFIRMED_NOT_APPLIED');
+    if (initial.publicationState === 'PUBLISHED') return initial;
+    try {
+      return await storage.withStorageLock('oneapp-merch-master-save', async lease => {
+        assertSmartInputContext(args, readContext);
+        const receipt = await readSmartInputReceipt(storage, args);
+        if (receipt.publicationState === 'PUBLISHED') return receipt;
+        const raw = globalThis.localStorage?.getItem(HISTORY_KEY);
+        let history = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(history)) throw commandError('SMARTINPUT_HISTORY_MIRROR_INVALID');
+        const byId = new Map(history.map(entry => [entry.id, entry]));
+        for (const entry of receipt.canonicalHistoryEntries || []) {
+          const prior = byId.get(entry.id);
+          if (prior && (prior.commandId !== entry.commandId || prior.operationHash !== entry.operationHash)) throw commandError('SMARTINPUT_HISTORY_ENTRY_CONFLICT');
+          if (!prior) { history.push(entry); byId.set(entry.id, entry); }
+        }
+        if (raw !== JSON.stringify(history)) storage.writeLocalJSON(HISTORY_KEY, history);
+        // Publish the current master, never the old command's after-image over a later writer.
+        if (receipt.status === 'APPLIED') {
+          const latest = await storage.readMasterSnapshotState();
+          storage.writeLocalJSON('merchMaster_v870', latest.masterMap);
+          storage.writeLocalValue('merchMaster_revision_v870', String(latest.revision ?? ''));
+          const notificationKey = `smartInputEstimatePublished:${encodeURIComponent(args.companyId)}:${encodeURIComponent(args.commandId)}`;
+          if (!globalThis.localStorage.getItem(notificationKey)) {
+            const event = { commandId: args.commandId, sourceAppId: 'smart-input', revision: latest.revision, at: receipt.committedAt };
+            storage.writeLocalValue('merchMaster_sync_trigger', JSON.stringify(event));
+            storage.writeLocalValue(notificationKey, receipt.payloadHash);
+          }
+        }
+        const db = await storage.initIDB();
+        try {
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction('store', 'readwrite'), store = tx.objectStore('store');
+            const request = store.get(key), lock = store.get(lease.lockKey);
+            let pending = 2, result, failure;
+            const abort = error => { failure = error; try { tx.abort(); } catch (_) { reject(error); } };
+            const ready = () => {
+              if (--pending) return;
+              if (!storage.isCurrentLeaseRecord(lock.result, lease) || lease.getOwnershipError?.()) return abort(commandError('MERCH_LOCK_FENCE_LOST'));
+              if (request.result?.payloadHash !== receipt.payloadHash) return abort(commandError('SMARTINPUT_MASTER_PAYLOAD_CONFLICT'));
+              result = { ...request.result, publicationState: 'PUBLISHED', publicationPending: false };
+              store.put(result, key);
+            };
+            request.onsuccess = ready; lock.onsuccess = ready;
+            request.onerror = () => abort(request.error); lock.onerror = () => abort(lock.error);
+            tx.oncomplete = () => resolve(result);
+            tx.onabort = () => reject(failure || tx.error || commandError('SMARTINPUT_PUBLICATION_ABORTED'));
+            tx.onerror = () => { failure ||= tx.error; };
+          });
+        } finally { db.close(); }
+      });
+    } catch (error) {
+      if (error?.taskResult?.publicationState === 'PUBLISHED') return error.taskResult;
+      return { ...initial, publicationPending: true, publicationError: error.code || error.message };
+    }
+  };
+  return {
+    smartInputCommandSchemaVersion: SMARTINPUT_ESTIMATE_MASTER_COMMAND_SCHEMA_VERSION,
+    getSmartInputEstimateCommandResult: query,
+    resumeSmartInputEstimateCommandPublication: publish,
+    async commitReviewedSmartInputEstimate(input) {
+      const args = input || {};
+      let command, storage, commitStarted = false;
+      try {
+        command = cloneJson(validateSmartInputEstimateCommand(input));
+        assertSmartInputContext(command, readContext);
+        const { payloadHash, ...payload } = command;
+        if (await sha256Hex(payload) !== payloadHash) throw commandError('SMARTINPUT_COMMAND_HASH_MISMATCH');
+        storage = await getStorage();
+        const prior = await readSmartInputReceipt(storage, command);
+        if (prior) return prior;
+        const source = await sourceApi();
+        const sourceRecords = new Map();
+        for (const evidence of command.sourceEstimates) {
+          const loaded = await source.loadEstimateForUpdate({ companyId: command.companyId, estimateId: evidence.estimateId });
+          if (loaded?.status !== 'READY' || loaded.record.dataRevision !== evidence.revision) throw commandError('SMARTINPUT_ESTIMATE_SOURCE_STALE');
+          sourceRecords.set(evidence.estimateId, loaded.record);
+        }
+        for (const patch of command.patches) for (const ref of patch.sourceRefs) {
+          const record = sourceRecords.get(ref.estimateId);
+          const row = record.ownedRows.find(row => row.ownedRowId === ref.ownedRowId);
+          if (!row || clean(row.itemCode) !== patch.code || !sameValue(row[ref.fieldId] ?? null, patch.afterValue)) throw commandError('SMARTINPUT_ESTIMATE_SOURCE_VALUE_MISMATCH');
+          if (command.executionMode === 'AFTER_SELECTED_ESTIMATE_UPDATE') {
+            if (!ref.updatePayloadHash) throw commandError('SMARTINPUT_ESTIMATE_RECEIPT_REQUIRED');
+            const receipt = await source.getEstimateUpdateResult({ companyId: command.companyId, operationId: ref.operationId,
+              estimateId: ref.estimateId, payloadHash: ref.updatePayloadHash });
+            const field = receipt?.processedFields?.find(field => field.ownedRowId === ref.ownedRowId && field.field === ref.fieldId);
+            if (!receipt?.committed || receipt.dataRevision !== ref.revision || !field || !sameValue(field.afterValue, patch.afterValue)
+              || receipt.issues?.some(issue => issue.ownedRowId === ref.ownedRowId && issue.field === ref.fieldId)) throw commandError('SMARTINPUT_ESTIMATE_SOURCE_NOT_CONFIRMED');
+          }
+        }
+        const observed = await getSnapshot();
+        const snapshot = observed.snapshot;
+        if (!snapshot || observed.status === 'ERROR' || snapshot.snapshotId !== command.baseSnapshotId
+          || snapshot.contentHash !== command.baseContentHash || clean(snapshot.revision || snapshot.snapshotVersion) !== clean(command.expectedRevision)) throw commandError('PRODUCT_REVISION_CONFLICT');
+        const map = productsToMap(snapshot.data.products);
+        const beforeMap = cloneJson(map);
+        const actualPatches = [];
+        for (const patch of command.patches) {
+          const product = map[patch.code];
+          if (!product || (hasOwn(product, patch.field) !== patch.beforePresent) || !sameValue(product[patch.field] ?? null, patch.beforeValue)) throw commandError('SMARTINPUT_MASTER_PREIMAGE_CONFLICT');
+          if (product.companyId && product.companyId !== command.companyId) throw commandError('SMARTINPUT_MASTER_COMPANY_MISMATCH');
+          if (!numericMasterEqual(product[patch.field], patch.afterValue)) { product[patch.field] = cloneJson(patch.afterValue); actualPatches.push(patch); }
+        }
+        const rawExpected = await resolveCommitExpectedRevision({ readMasterState: () => storage.readMasterState() }, command.expectedRevision);
+        assertSmartInputContext(command, readContext);
+        commitStarted = true;
+        const receipt = await storage.commitMasterState(map, {
+          expectedRevision: rawExpected, smartInputEstimateCommand: command, smartInputUnchanged: !actualPatches.length,
+          prepareExtraStoreEntries: ({ previousState, revision }) => {
+            assertSmartInputContext(command, readContext);
+            const currentMap = previousState.items.length ? productsToMap(previousState.items) : previousState.snapshot || {};
+            if (!sameValue(currentMap, beforeMap)) throw commandError('SMARTINPUT_MASTER_PREIMAGE_CONFLICT');
+            const committedAt = new Date().toISOString();
+            const canonicalHistoryEntries = actualPatches.map((patch, index) => ({ id: `smart-input:${command.companyId}:${command.commandId}:${index}`,
+              commandId: command.commandId, operationId: command.operationId, operationHash: command.payloadHash,
+              timestampISO: committedAt, actorId: command.actor.actorId, actorState: command.actor.actorState,
+              source: 'SmartInput 선택 견적서', sourceRole: 'smart-input', actionType: 'estimate_master_apply',
+              code: patch.code, field: patch.field, oldVal: patch.beforeValue, newVal: patch.afterValue,
+              sourceEstimates: command.sourceEstimates, sourceRefs: patch.sourceRefs, revision, reason: command.reason }));
+            return { [smartInputReceiptKey(command)]: smartInputResult(command, actualPatches.length ? 'APPLIED' : 'UNCHANGED', {
+              schemaVersion: 'SMARTINPUT_ESTIMATE_MASTER_RECEIPT_V1', operationId: command.operationId, beforeRevision: rawExpected ?? null,
+              appliedRevision: revision ?? null, selectedEstimateIds: command.selectedEstimateIds, sourceEstimates: command.sourceEstimates,
+              patches: actualPatches, actor: command.actor, canonicalHistoryEntries, committedAt,
+              publicationState: actualPatches.length ? 'PENDING' : 'PUBLISHED', publicationPending: actualPatches.length > 0
+            }) };
+          }
+        });
+        // A read/publication failure after this point cannot become a product rollback.
+        if (receipt.publicationPending) return publish({ ...command, actor: command.actor }).catch(() => receipt);
+        return receipt;
+      } catch (error) {
+        const code = error.code || error.message || 'SMARTINPUT_OWNER_FAILED';
+        const status = code === 'SMARTINPUT_CONTEXT_REQUIRED' ? 'CONTEXT_REQUIRED'
+          : /CONFLICT|STALE/.test(code) ? 'CONFLICT' : commitStarted && error.name !== 'AbortError' ? 'RESULT_UNKNOWN' : 'FAILED';
+        return smartInputResult(args, status, { code });
+      }
+    }
+  };
+}
+
 export function createProductMasterCommandAdapter(dependencyOverrides = {}) {
   return deepFreeze({
+    ...createSmartInputEstimateOwner(dependencyOverrides),
     version: PRODUCT_MASTER_COMMAND_ADAPTER_VERSION,
     commandSchemaVersion: MERCHOPS_REVIEWED_WORK_COMMAND_SCHEMA_VERSION,
     registrationCommandSchemaVersion: MERCHOPS_PRODUCT_REGISTRATION_COMMAND_SCHEMA_VERSION,

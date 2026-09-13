@@ -26,8 +26,12 @@ const codeOf = value => typeof value === 'string' ? value.trim() : '';
  * a screen value or an optimistic UI success flag is not an eligible input source.
  */
 export async function createEstimateMasterIntent({ enabled = false, commandId, operationId, companyId, actor,
-  reason, baseSnapshotId, baseContentHash, expectedRevision, products = [], confirmedFields = [], selectedFields = [] } = {}) {
+  reason, baseSnapshotId, baseContentHash, expectedRevision, products = [], confirmedFields = [], selectedFields = [],
+  selectedEstimateIds = [], executionMode = 'AFTER_SELECTED_ESTIMATE_UPDATE' } = {}) {
   if (!enabled) return freeze({ status: 'DISABLED', command: null, issues: [] });
+  const selected = [...new Set(selectedEstimateIds)];
+  if (!selected.length) return freeze({ status: 'NO_CANDIDATES', command: null, issues: [] });
+  if (selected.some(id => !nonempty(id)) || !['AFTER_SELECTED_ESTIMATE_UPDATE', 'SELECTED_ESTIMATES_ONLY'].includes(executionMode)) fail('MASTER_SELECTION_INVALID');
   if (!contextPresent({ companyId, actor })) return freeze({ status: 'CONTEXT_REQUIRED', command: null, issues: [] });
   if (!nonempty(commandId) || !nonempty(operationId) || !nonempty(reason)
     || !nonempty(baseSnapshotId) || !nonempty(baseContentHash) || expectedRevision === undefined) fail('MASTER_COMMAND_EVIDENCE_REQUIRED');
@@ -44,6 +48,7 @@ export async function createEstimateMasterIntent({ enabled = false, commandId, o
   const issues = [];
   const grouped = new Map();
   confirmedFields.forEach(source => {
+    if (!selected.includes(source.estimateId)) fail('MASTER_SOURCE_OUTSIDE_SELECTION');
     if (!fields.has(source.field)) return;
     if (!['SAVED', 'UNCHANGED'].includes(source.estimateStatus) || source.conflict === true) {
       issues.push({ code: 'MASTER_SOURCE_NOT_CONFIRMED', estimateId: source.estimateId || '', field: source.field });
@@ -59,12 +64,12 @@ export async function createEstimateMasterIntent({ enabled = false, commandId, o
     const code = codeOf(source.code);
     const product = productByCode.get(code);
     if (!product || (source.productId && product.productId !== source.productId)) {
-      issues.push({ code: 'MASTER_PRODUCT_UNRESOLVED', code, field: source.field });
+      issues.push({ code: 'MASTER_PRODUCT_UNRESOLVED', productCode: code, field: source.field });
       return;
     }
     if (source.valueKind === 'CLEAR' ? source.explicitClear !== true
       : source.valueKind !== 'VALUE' || typeof source.value !== 'number' || !Number.isFinite(source.value)) {
-      issues.push({ code: 'MASTER_VALUE_NOT_AUTHORIZED', code, field: source.field });
+      issues.push({ code: 'MASTER_VALUE_NOT_AUTHORIZED', productCode: code, field: source.field });
       return;
     }
     // Numeric blanks are represented explicitly. This module never turns a blank into zero.
@@ -78,18 +83,21 @@ export async function createEstimateMasterIntent({ enabled = false, commandId, o
   grouped.forEach(group => {
     const first = group[0];
     if (group.some(item => !jsonEqual(item.afterValue, first.afterValue) || item.source.valueKind !== first.source.valueKind)) {
-      issues.push({ code: 'MASTER_FIELD_VALUE_CONFLICT', code: first.code, field: first.field,
+      issues.push({ code: 'MASTER_FIELD_VALUE_CONFLICT', productCode: first.code, field: first.field,
         estimateIds: [...new Set(group.map(item => item.source.estimateId))] });
       return;
     }
     const beforeValue = own(first.product, first.field) ? first.product[first.field] : null;
     if (beforeValue !== null && typeof beforeValue !== 'number' && typeof beforeValue !== 'string') {
-      issues.push({ code: 'MASTER_PREIMAGE_TYPE_UNSUPPORTED', code: first.code, field: first.field });
+      issues.push({ code: 'MASTER_PREIMAGE_TYPE_UNSUPPORTED', productCode: first.code, field: first.field });
       return;
     }
     patches.push({ code: first.code, field: first.field, beforeValue,
       beforePresent: own(first.product, first.field), afterValue: first.afterValue, valueKind: first.source.valueKind,
-      sourceRefs: [...new Set(group.flatMap(item => item.source.sourceRefs))] });
+      sourceRefs: group.map(({ source }) => ({ estimateId: source.estimateId, ownedRowId: source.ownedRowId,
+        fieldId: source.field, revision: source.estimateRevision, operationId: source.operationId,
+        updatePayloadHash: source.updatePayloadHash || '', valueKind: source.valueKind, explicitClear: source.explicitClear === true,
+        inputRefs: [...source.sourceRefs] })) });
     group.forEach(({ source }) => {
       const key = JSON.stringify([source.estimateId, source.estimateRevision, source.operationId]);
       if (!sources.has(key)) sources.set(key, { estimateId: source.estimateId, revision: source.estimateRevision,
@@ -102,7 +110,7 @@ export async function createEstimateMasterIntent({ enabled = false, commandId, o
   if (!patches.length) return freeze({ status: issues.length ? 'REVIEW_REQUIRED' : 'NO_CANDIDATES', command: null, issues });
   const payload = { schemaVersion: SMARTINPUT_ESTIMATE_MASTER_APPLY_SCHEMA, sourceAppId: 'smart-input', ownerAppId: 'master-lookup',
     commandId, operationId, companyId, actor: clone(actor), reason, baseSnapshotId, baseContentHash,
-    expectedRevision, sourceEstimates: [...sources.values()], patches };
+    expectedRevision, executionMode, selectedEstimateIds: selected, sourceEstimates: [...sources.values()], patches };
   const command = { ...payload, payloadHash: await hashEstimatePlan(payload) };
   // Keep equal values in the command: only the owner can durably decide UNCHANGED.
   return freeze({ schemaVersion: SMARTINPUT_MASTER_INTENT_SCHEMA, status: issues.length ? 'PARTIAL_REVIEW' : 'READY',
@@ -128,7 +136,7 @@ function unknown(command, code) {
 }
 
 /**
- * A dependency-injected dispatch boundary, deliberately not connected to production yet.
+ * A dependency-injected dispatch boundary. Production supplies the existing v5 datastore and owner adapter.
  * persistIntent must resolve only after its transaction completes; it must CAS the full
  * immutable command under the same key and reject changed payloads for a reused commandId.
  * The owner independently enforces the same receipt rule in its own database transaction.

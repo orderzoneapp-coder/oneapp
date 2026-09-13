@@ -2,8 +2,9 @@ name: SmartInput Stage 3 planning contracts
 on:
   pull_request:
     paths:
-      - smartinput/independent-estimate.js
-      - smartinput/estimate-master-apply.js
+      - smartinput/**
+      - reference-data/product-master-command-adapter.js
+      - coreEngine.js
       - scripts/test-smartinput-stage3-*.mjs
       - .github/workflows/smartinput-stage3-plans.yml
 permissions:
@@ -21,3 +22,9 @@ jobs:
         run: node scripts/test-smartinput-stage3-plans.mjs
       - name: Compare candidate outputs with the existing F8 algorithms
         run: node scripts/test-smartinput-stage3-f8-baseline.mjs
+      - name: Verify native storage, migration, owner receipts and actual application flow
+        run: |
+          node scripts/test-smartinput-stage3-storage-browser.mjs
+          node scripts/test-smartinput-stage3-migration-browser.mjs
+          node scripts/test-smartinput-stage3-owner-browser.mjs
+          node scripts/test-smartinput-stage3-workspace-browser.mjs
