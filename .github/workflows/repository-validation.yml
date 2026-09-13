@@ -279,6 +279,8 @@ jobs:
       - name: Test timeout, retry, stale-result, mutation ordering, and unknown-write contracts
         run: |
           node scripts/test-smartinput-optional-operation-loader.mjs
+          node scripts/test-smartinput-stage5-feature-loading.mjs
+          node scripts/test-smartinput-stage5-compute.mjs
           node scripts/test-smartinput-source-image-mutation-order.mjs
 
   validate-unresolved-review-ui:

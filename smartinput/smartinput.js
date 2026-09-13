@@ -3,7 +3,6 @@ import * as estimateStore from './smartinput-data-store.js?v=0.7.0';
 import { createEstimateWorkspace } from './estimate-workspace.js?v=0.1.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, projectIndependentEstimateDraft, estimateIdentityFromRow,
   estimateValuesEqual, estimateUpdateFieldDefinitions, estimateTechnicalKey, DIRECT_ROW_KEY_VERSION, hashEstimatePlan } from './independent-estimate.js?v=0.2.0';
-import { prepareEstimateMigration, convertPreservedEstimates } from './estimate-migration.js?v=0.1.0';
 import { readSmartInputEstimateContext, prepareSmartInputEstimateContext, createProductMasterCommandAdapter } from '../reference-data/product-master-command-adapter.js?v=0.3.0';
 import { getProductSnapshot } from '../reference-data/product-master-read-adapter.js?v=0.1.0';
 import {
@@ -29,10 +28,6 @@ import {
   isOptionalOperationStale,
   mergeHydratedSnapshotPreservingLiveChanges
 } from './optional-operation-loader.js?v=0.1.0';
-import { PurchaseFinalizeService } from './purchase-finalize-service.js?v=0.6.2';
-import { SaleFinalizeService } from './sale-finalize-service.js?v=0.6.1';
-import { showStocktakeConflictDialog } from './stocktake-conflict-dialog.js?v=0.2.0';
-import { recognizeOcrDocument, verifiedRowsToParserLines } from './ocr-document-parser.js?v=0.1.1';
 import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.1';
 import {
   AUTOSAVE_JOURNAL_SCHEMA,
@@ -94,20 +89,7 @@ import {
   reduceInputListSearchState,
   updateInputListSearchIndex
 } from './input-list-search.js?v=0.1.3';
-import {
-  buildCatalogPriceSnapshot,
-  priceSnapshotsEqual,
-  buildKakaoNoticeRows,
-  buildEstimateF8Data,
-  buildEstimateDuplicateGroups,
-  buildEstimateF8RowsFromDraft,
-  buildEstimateF8RowsFromPlan,
-  calculateEstimateResolvedPrice,
-  validateEstimateRows,
-  renderKakaoNoticeCanvases,
-  KAKAO_NOTICE_ROWS_PER_PAGE
-} from './estimate-output.js?v=0.2.6';
-import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
+import { buildCatalogPriceSnapshot, priceSnapshotsEqual } from './estimate-price-snapshot.js?v=0.1.0';
 import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.1';
 import {
   applyEstimateF8PartialRecovery,
@@ -115,8 +97,6 @@ import {
   inspectEstimateF8Integrity
 } from './estimate-f8-recovery.js?v=0.1.1';
 import {
-  chooseEstimateWorkbookCandidate,
-  inspectEstimateWorkbookCandidate,
   isEstimateWorkbookItemRow
 } from './estimate-workbook-selector.js?v=0.1.1';
 import {
@@ -169,7 +149,6 @@ import {
   updateVoucherFieldSettings
 } from './field-registry.js?v=0.2.0';
 import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.2';
-import { readWorksheetSource } from './xlsx-source-reader.js?v=0.1.0';
 import {
   applyRelatedVoucherImportPlan,
   createRelatedVoucherImportPlan,
@@ -248,6 +227,7 @@ const OPTIONAL_OPERATION_FEATURE = Object.freeze({
   ESTIMATE_EXPORT: 'estimate-export',
   PURCHASE_SALES_EXPORT: 'purchase-sales-export',
   VOUCHER_EXPORT: 'voucher-export',
+  OFFICIAL_VOUCHER: 'official-voucher',
   CUSTOMER_REMATCH: 'customer-rematch',
   ESTIMATE_LIBRARY_READ: 'estimate-library-read',
   SMART_DATA_READ: 'smart-data-read',
@@ -260,10 +240,57 @@ const OPTIONAL_OPERATION_FEATURES = Object.freeze([
   OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT,
   OPTIONAL_OPERATION_FEATURE.PURCHASE_SALES_EXPORT,
   OPTIONAL_OPERATION_FEATURE.VOUCHER_EXPORT,
+  OPTIONAL_OPERATION_FEATURE.OFFICIAL_VOUCHER,
   OPTIONAL_OPERATION_FEATURE.CUSTOMER_REMATCH
 ]);
 const referenceOperationFeature = domain => `${OPTIONAL_OPERATION_FEATURE.REFERENCE_READ}:${domain}`;
 const optionalOperationLoader = createOptionalOperationLoader({ globalScope: window, documentRef: document });
+const OPTIONAL_FEATURE_MODULES = Object.freeze({
+  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.1.0', specifier: './file-intake-feature.js?v=0.1.0', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
+  ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.0', specifier: './ocr-feature.js?v=0.1.0', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
+  estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.1.0', specifier: './estimate-report-feature.js?v=0.1.0', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
+  voucherOutput: Object.freeze({ feature: 'voucher-output-module', assetVersion: '0.1.0', specifier: './voucher-output-feature.js?v=0.1.0', unavailableMessage: '구매 보고서 기능을 불러오지 못했습니다. 현재 입력은 유지됩니다.' }),
+  officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.1.0', specifier: './official-voucher-feature.js?v=0.1.0', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' })
+});
+const optionalFeatureLoaded = new Set();
+const optionalFeatureMetrics = [];
+const optionalComputeMetrics = [];
+
+async function loadOptionalFeature(name, operationToken = null) {
+  const descriptor = OPTIONAL_FEATURE_MODULES[name];
+  if (!descriptor) throw new Error(`알 수 없는 선택 기능입니다: ${name}`);
+  const startedAt = performance.now();
+  const warm = optionalFeatureLoaded.has(name);
+  try {
+    const module = await optionalOperationLoader.loadModule({
+      ...descriptor,
+      timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.localModule
+    });
+    if (operationToken) assertOptionalOperationCurrent(operationToken);
+    optionalFeatureLoaded.add(name);
+    optionalFeatureMetrics.push({ name, warm, status: 'READY', durationMs: performance.now() - startedAt });
+    if (optionalFeatureMetrics.length > 60) optionalFeatureMetrics.shift();
+    return module;
+  } catch (error) {
+    optionalFeatureMetrics.push({ name, warm, status: isOptionalOperationStale(error) ? 'STALE' : 'ERROR', durationMs: performance.now() - startedAt });
+    if (optionalFeatureMetrics.length > 60) optionalFeatureMetrics.shift();
+    throw error;
+  }
+}
+
+function recordOptionalCompute(metric) {
+  optionalComputeMetrics.push({ ...metric });
+  if (optionalComputeMetrics.length > 120) optionalComputeMetrics.shift();
+}
+
+function measureOptionalCompute(feature, phase, work) {
+  const startedAt = performance.now();
+  try {
+    return work();
+  } finally {
+    recordOptionalCompute({ feature, phase, path: 'direct', durationMs: performance.now() - startedAt });
+  }
+}
 
 function loadOptionalScript({ feature, assetVersion, url, globalName, unavailableMessage }) {
   return optionalOperationLoader.loadScript({
@@ -630,12 +657,26 @@ const inputViewport = createVirtualTableBody({ body: $('inputRows'), scroller: $
 const mappingViewport = createVirtualTableBody({ body: $('mappingInputRows'), scroller: $('tableScroll'), rowAttribute: 'data-mapping-row-id', keyOf: row => row.rowId, onRender: () => renderEstimateExclusions() });
 const sourceViewport = createVirtualTableBody({ body: $('sourceSheetRows'), scroller: $('sourceSheetScroll'), rowAttribute: 'data-source-row-index', keyOf: row => String(row.index) });
 const inputFrameSamples = [];
+const longTaskSamples = [];
+if (typeof PerformanceObserver === 'function') {
+  try {
+    const longTaskObserver = new PerformanceObserver(list => {
+      list.getEntries().forEach(entry => longTaskSamples.push({ startTime: entry.startTime, durationMs: entry.duration }));
+      if (longTaskSamples.length > 120) longTaskSamples.splice(0, longTaskSamples.length - 120);
+    });
+    longTaskObserver.observe({ type: 'longtask', buffered: true });
+  } catch (_) {
+    // Long Task API is optional; feature and frame metrics remain available.
+  }
+}
 $('tableScroll').addEventListener('input', () => {
   const started = performance.now();
   requestAnimationFrame(() => { inputFrameSamples.push(performance.now() - started); if (inputFrameSamples.length > 30) inputFrameSamples.shift(); });
 }, true);
 window.ONEAPP_SMARTINPUT_PERFORMANCE = { snapshot: () => ({ reads: estimateStore.smartInputReadStats(), input: inputViewport.stats(), mapping: mappingViewport.stats(), source: sourceViewport.stats(),
-  inputToNextFrameMs: [...inputFrameSamples], p95InputToNextFrameMs: inputFrameSamples.length ? [...inputFrameSamples].sort((a,b) => a-b)[Math.ceil(inputFrameSamples.length * .95) - 1] : null }) };
+  inputToNextFrameMs: [...inputFrameSamples], p95InputToNextFrameMs: inputFrameSamples.length ? [...inputFrameSamples].sort((a,b) => a-b)[Math.ceil(inputFrameSamples.length * .95) - 1] : null,
+  optionalFeatures: optionalFeatureMetrics.map(metric => ({ ...metric })), optionalComputes: optionalComputeMetrics.map(metric => ({ ...metric })),
+  loadedOptionalFeatures: [...optionalFeatureLoaded], longTasks: longTaskSamples.map(metric => ({ ...metric })) }) };
 
 async function ensureEstimateBodies(ids, { sources = false } = {}) {
   const companyId = state.companyId, visited = new Set();
@@ -762,9 +803,12 @@ async function changeEstimateSelection(ids) {
       const record = state.estimates.find(item => item.estimateId === issue.estimateId);
       return record && (!record.companyId || record.companyId === state.companyId) && record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA ? [record] : [];
     });
+    const reportFeature = legacy.length
+      ? await loadOptionalFeature('estimateReport')
+      : null;
     const preservedRows = legacy.flatMap(record => {
       const plan = buildEstimateF8DraftPlan({ selectedRecords: [record], individualRecords: state.estimates.filter(item => item.estimateKind !== 'LINKED_GROUP'), allRecords: state.estimates });
-      const rows = plan.ok ? buildEstimateF8RowsFromPlan(plan) : record.draft?.rows || [];
+      const rows = plan.ok ? reportFeature.buildEstimateF8RowsFromPlan(plan) : record.draft?.rows || [];
       return rows.map((row, index) => ({ ...structuredClone(row), rowId: `preserved:${record.estimateId}:${index}`, estimateOwnerName: estimateTitle(record) }));
     });
     const previous = modeDraft();
@@ -840,6 +884,7 @@ async function openEstimateMigration() {
   if (state.busy) return;
   const key = `smartinput:estimate:v1:migrationPreparation:${encodeURIComponent(state.companyId)}`;
   try {
+    const { prepareEstimateMigration, convertPreservedEstimates } = await loadOptionalFeature('estimateReport');
     await flushDraftBeforeWorkspaceChange();
     const pending = await estimateStore.loadSettingValue(key);
     if (!pending || pending.previousLoadId === estimateLoadId) {
@@ -6675,11 +6720,7 @@ function renderRows({ restoreFocus = true } = {}) {
       const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
       const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
       return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(rowFieldDisplayValue(row, field.id, row[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`;
-  }, $('voucherInputTable').querySelectorAll('col').length, (row, column, index) => {
-    if (column === 0) return index + 1;
-    const field = $('voucherInputTable').querySelectorAll('thead th')[column]?.dataset.column;
-    return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
-  });
+    }).join('');
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
@@ -6704,7 +6745,11 @@ function renderRows({ restoreFocus = true } = {}) {
       ${customCells}
       <td data-column="status"><div class="row-status">${row.linkedSourceEstimateId ? `<em class="linked-row-badge" title="${esc(row.linkedSourceEstimateName)} 보존 자료">소속 · ${esc(row.linkedSourceEstimateName)}</em>` : ''}${row.linkedFieldConflicts?.length ? `<em class="linked-value-conflict" title="원본별 값이 다릅니다. 저장할 때 수정할 원본과 원본 행을 선택합니다.">값 다름</em>` : ''}<span>${orderQProductMismatch ? 'ORDER Q 상품 불일치' : rowStatusText(row.matchStatus, row)}</span>${orderQProductMismatch ? `<button type="button" data-detach-orderq="${esc(row.rowId)}" title="ORDER Q 연결을 해제한 뒤 새 상품을 직접 선택합니다.">DIRECT로 연결 해제</button>` : ''}${row.referenceResolution === 'MISSING' ? `<a class="row-owner-register" data-product-register="${esc(row.rowId)}" href="${ownerAppHref('product')}" target="_blank" rel="noopener">상품관리에서 등록</a>` : ''}</div></td>
     </tr>`;
-  }).join('');
+  }, $('voucherInputTable').querySelectorAll('col').length, (row, column, index) => {
+    if (column === 0) return index + 1;
+    const field = $('voucherInputTable').querySelectorAll('thead th')[column]?.dataset.column;
+    return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
+  });
   syncRowSelectionControls();
   syncGridPasteUndoButton();
   updateSummaries();
@@ -7562,6 +7607,7 @@ async function analyzeSource({ automatic = false } = {}) {
         }
       }
     } else if (pendingOcr?.status === 'VERIFIED') {
+      const { verifiedRowsToParserLines } = await loadOptionalFeature('ocr');
       lines = verifiedRowsToParserLines(pendingOcr, batch.batchId);
       if (state.draft.activeMode === 'order') {
         const captured = await captureTextIntake({
@@ -7725,13 +7771,17 @@ async function handleFile(file) {
     renderReferenceControls();
     setAppStatus(`${file.name} 파일을 읽고 있습니다.`);
     if (/\.(xlsx|xls|csv|tsv)$/i.test(file.name)) {
-      await ensureXlsx(operationToken);
+      const [xlsxRuntime, fileIntake] = await Promise.all([
+        ensureXlsx(operationToken),
+        loadOptionalFeature('fileIntake', operationToken)
+      ]);
+      const { readWorksheetSource, inspectEstimateWorkbookCandidate, chooseEstimateWorkbookCandidate } = fileIntake;
       const fileBytes = new Uint8Array(await file.arrayBuffer());
       assertOptionalOperationCurrent(operationToken);
       const fileHashBuffer = await crypto.subtle.digest('SHA-256', fileBytes);
       assertOptionalOperationCurrent(operationToken);
       const fileDigest = [...new Uint8Array(fileHashBuffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-      const workbook = window.XLSX.read(fileBytes, { type: 'array', cellDates: false, cellText: true });
+      const workbook = measureOptionalCompute('file-intake', 'xlsx-read', () => xlsxRuntime.read(fileBytes, { type: 'array', cellDates: false, cellText: true }));
       let selected = null;
       let shoppingSelected = null;
       let purchaseMetaRows = null;
@@ -7739,7 +7789,7 @@ async function handleFile(file) {
       const targets = inputMappingDefinitions();
       workbook.SheetNames.forEach(sheetName => {
         if (!workbook.Sheets[sheetName]?.['!ref']) return;
-        const worksheetSource = readWorksheetSource(window.XLSX, workbook.Sheets[sheetName]);
+        const worksheetSource = measureOptionalCompute('file-intake', 'worksheet-source', () => readWorksheetSource(xlsxRuntime, workbook.Sheets[sheetName]));
         const matrix = worksheetSource.displayMatrix;
         if (modeId === 'order' && isExactShoppingOrderMatrix(matrix)) {
           shoppingSelected ||= { matrix, sourceCellMatrix: worksheetSource.sourceCellMatrix, sheetName };
@@ -8062,9 +8112,12 @@ async function recognizeImage(file) {
     await persistSourceImageForMode(modeId);
     assertOptionalOperationCurrent(operationToken);
     renderSourceSurface();
-    await ensureTesseract(operationToken);
-    const analysis = await recognizeOcrDocument(file, {
-      Tesseract: window.Tesseract,
+    const [tesseractRuntime, ocrFeature] = await Promise.all([
+      ensureTesseract(operationToken),
+      loadOptionalFeature('ocr', operationToken)
+    ]);
+    const analysis = await ocrFeature.recognizeOcrDocument(file, {
+      Tesseract: tesseractRuntime,
       onProgress: progress => {
         if (captureSequence !== state.photoCaptureSequence || !optionalOperationIsCurrent(operationToken)) return;
         const percent = Math.round(Number(progress.progress || 0) * 100);
@@ -8660,11 +8713,24 @@ async function copyNoticeCanvas(canvas, fileName) {
   toast('이미지 복사를 지원하지 않아 PNG로 저장했습니다.', 'warn');
 }
 
-function openEstimateNoticePreview() {
+async function openEstimateNoticePreview() {
   if (state.activeFileInputAttemptId) {
     toast('파일 불러오기가 끝난 뒤 공지를 만드세요.', 'warn');
     return;
   }
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT, { assetVersion: 'estimate-report-0.1.0' });
+  setActiveActivity('카톡 공지 기능 준비 중');
+  let reportFeature;
+  try {
+    reportFeature = await loadOptionalFeature('estimateReport', operationToken);
+  } catch (error) {
+    const stale = isOptionalOperationStale(error);
+    toast(stale ? '견적 자료가 변경되어 이전 공지 작업을 중단했습니다. 다시 실행하세요.' : error.message, stale ? 'warn' : 'error');
+    return;
+  } finally {
+    if (optionalOperationIsCurrent(operationToken) && state.activeActivity === '카톡 공지 기능 준비 중') setActiveActivity('');
+  }
+  const { buildKakaoNoticeRows, renderKakaoNoticeCanvases, KAKAO_NOTICE_ROWS_PER_PAGE } = reportFeature;
   const current = modeDraft();
   const availablePriceFields = estimateNoticePriceDefinitions();
   const availablePriceFieldIds = new Set(availablePriceFields.map(field => field.id));
@@ -8777,7 +8843,7 @@ function estimateF8FailureDetail(errors = []) {
     : (first?.message || '출력 대상을 확인하세요.');
 }
 
-function showEstimateDuplicateResolutionDialog(groups = [], outputConfig = {}) {
+function showEstimateDuplicateResolutionDialog(groups = [], outputConfig = {}, calculateResolvedPrice) {
   return new Promise(resolve => {
     const dialog = document.createElement('dialog');
     dialog.className = 'smart-dialog estimate-duplicate-dialog';
@@ -8826,7 +8892,7 @@ function showEstimateDuplicateResolutionDialog(groups = [], outputConfig = {}) {
       const valid = raw === '' || (Number.isFinite(Number(normalized)) && Number(normalized) >= 0);
       input.setAttribute('aria-invalid', String(!valid));
       const result = valid
-        ? calculateEstimateResolvedPrice(candidate.row, raw === '' ? '' : Number(normalized), {
+        ? calculateResolvedPrice(candidate.row, raw === '' ? '' : Number(normalized), {
           marginRules: outputConfig.marginRules,
           pricingProduct: candidate.pricingProduct
         })
@@ -9238,14 +9304,26 @@ async function exportEstimateExcel() {
   }
   estimateF8ExportInFlight = true;
   try {
-    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_EXPORT, { assetVersion: 'estimate-report-0.1.0+xlsx-js-style-1.2.0' });
+    let xlsxRuntime;
+    let reportFeature;
     try {
-      await ensureXlsx(operationToken);
+      [xlsxRuntime, reportFeature] = await Promise.all([
+        ensureXlsx(operationToken),
+        loadOptionalFeature('estimateReport', operationToken)
+      ]);
     } catch (error) {
       return toast(isOptionalOperationStale(error)
         ? '견적 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
         : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
     }
+    const {
+      buildEstimateF8RowsFromPlan,
+      validateEstimateRows,
+      buildEstimateDuplicateGroups,
+      calculateEstimateResolvedPrice,
+      buildEstimateF8Data
+    } = reportFeature;
     await ensureEstimateBodies(estimateWorkspace.selected(), { sources: true });
     const creation = estimateCreation();
     captureSelectedEstimateWork();
@@ -9332,8 +9410,28 @@ async function exportEstimateExcel() {
 
     // 연동견적/조합도 병합 전 개별 원본을 펼친다. 중복은 모아서 대표 입고가를 확정하고,
     // 품목코드 누락 등 중복 이외의 원본 오류는 기존처럼 출력 전에 차단한다.
-    const sourceRows = buildEstimateF8RowsFromPlan(plan);
-    const rawValidation = validateEstimateRows(sourceRows);
+    const sourceRows = measureOptionalCompute('estimate-report', 'f8-source-rows', () => buildEstimateF8RowsFromPlan(plan));
+    const outputConfig = {
+      productCatalog: state.products,
+      ...merchOpsEstimateOutputConfig()
+    };
+    const preparedOutput = await reportFeature.runStage5Compute({
+      feature: 'estimate-report',
+      phase: 'ESTIMATE_F8_PREPARE',
+      payload: { rows: sourceRows, outputConfig },
+      rowCount: sourceRows.length,
+      direct: () => ({
+        rawValidation: validateEstimateRows(sourceRows),
+        duplicateGroups: buildEstimateDuplicateGroups(sourceRows, outputConfig)
+      }),
+      onMetric: recordOptionalCompute
+    });
+    if (!optionalOperationIsCurrent(operationToken)) {
+      setAppStatus('견적 자료가 변경되어 이전 F8 계산 결과를 적용하지 않았습니다.', 'warn');
+      toast('현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
+      return;
+    }
+    const rawValidation = preparedOutput.rawValidation;
     const rawErrors = rawValidation.errors.filter(error => error.code !== 'DUPLICATE_ITEM_CODE');
     if (rawErrors.length) {
       const detail = estimateF8FailureDetail(rawErrors);
@@ -9342,15 +9440,11 @@ async function exportEstimateExcel() {
       return;
     }
 
-    const outputConfig = {
-      productCatalog: state.products,
-      ...merchOpsEstimateOutputConfig()
-    };
-    const duplicateGroups = buildEstimateDuplicateGroups(sourceRows, outputConfig);
+    const duplicateGroups = preparedOutput.duplicateGroups;
     let duplicateResolutions = new Map();
     if (duplicateGroups.length) {
       setAppStatus(`견적 F8 중복 확인 · ${duplicateGroups.length}개 품목의 기준 입고가를 선택하세요.`, 'warn');
-      duplicateResolutions = await showEstimateDuplicateResolutionDialog(duplicateGroups, outputConfig);
+      duplicateResolutions = await showEstimateDuplicateResolutionDialog(duplicateGroups, outputConfig, calculateEstimateResolvedPrice);
       if (!optionalOperationIsCurrent(operationToken)) {
         setAppStatus('견적 자료가 변경되어 이전 F8 생성을 중단했습니다.', 'warn');
         toast('변경된 현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
@@ -9361,26 +9455,38 @@ async function exportEstimateExcel() {
         return;
       }
     }
-    const output = buildEstimateF8Data(sourceRows, { ...outputConfig, duplicateResolutions });
+    const output = await reportFeature.runStage5Compute({
+      feature: 'estimate-report',
+      phase: 'ESTIMATE_F8_BUILD',
+      payload: { rows: sourceRows, options: outputConfig, duplicateResolutionEntries: [...duplicateResolutions.entries()] },
+      rowCount: sourceRows.length,
+      direct: () => buildEstimateF8Data(sourceRows, { ...outputConfig, duplicateResolutions }),
+      onMetric: recordOptionalCompute
+    });
+    if (!optionalOperationIsCurrent(operationToken)) {
+      setAppStatus('견적 자료가 변경되어 이전 F8 계산 결과를 내려받지 않았습니다.', 'warn');
+      toast('현재 견적은 유지했습니다. F8을 다시 실행하세요.', 'warn');
+      return;
+    }
     if (!output.ok) {
       const detail = estimateF8FailureDetail(output.errors);
       setAppStatus(`견적 F8 출력 차단 · ${detail}`, 'error');
       toast(`F8 Excel을 생성하지 않았습니다. ${detail}`, 'error');
       return;
     }
-    const workbook = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
-    window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
+    const workbook = xlsxRuntime.utils.book_new();
+    xlsxRuntime.utils.book_append_sheet(workbook, xlsxRuntime.utils.aoa_to_sheet(output.shopData), '쇼핑몰업로드');
+    xlsxRuntime.utils.book_append_sheet(workbook, xlsxRuntime.utils.aoa_to_sheet(output.erpData), 'ERP업데이트');
     if (output.confirmData.length > 1) {
-      window.XLSX.utils.book_append_sheet(workbook, window.XLSX.utils.aoa_to_sheet(output.confirmData), '확인요청');
+      xlsxRuntime.utils.book_append_sheet(workbook, xlsxRuntime.utils.aoa_to_sheet(output.confirmData), '확인요청');
     }
-    const estimateUploadSheet = window.XLSX.utils.aoa_to_sheet(output.estimateUploadData);
+    const estimateUploadSheet = xlsxRuntime.utils.aoa_to_sheet(output.estimateUploadData);
     estimateUploadSheet['!cols'] = [10, 8, 14, 18, 10, 10, 12, 12, 14, 34, 14, 10, 12, 12, 12, 12, 18, 20, 18]
       .map(wch => ({ wch }));
-    window.XLSX.utils.book_append_sheet(workbook, estimateUploadSheet, '견적서 업로드');
+    xlsxRuntime.utils.book_append_sheet(workbook, estimateUploadSheet, '견적서 업로드');
     const dateStamp = new Date().toLocaleDateString('sv-SE');
     try {
-      window.XLSX.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
+      xlsxRuntime.writeFile(workbook, `통합업로드용_QuickF8_${dateStamp}.xlsx`);
     } catch (error) {
       const detail = error?.message || '브라우저 파일 저장을 완료하지 못했습니다.';
       setAppStatus(`견적 F8 Excel 생성 실패 · ${detail}`, 'error');
@@ -9592,23 +9698,41 @@ async function exportPurchaseSalesExcel() {
   if (!rows.length) return toast('Excel로 출력할 구매 품목이 없습니다.', 'error');
   purchaseSalesExportInFlight = true;
   try {
-    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.PURCHASE_SALES_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+    const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.PURCHASE_SALES_EXPORT, { assetVersion: 'voucher-output-0.1.0+xlsx-js-style-1.2.0' });
+    let xlsxRuntime;
+    let voucherOutputFeature;
     try {
-      await ensureXlsx(operationToken);
+      [xlsxRuntime, voucherOutputFeature] = await Promise.all([
+        ensureXlsx(operationToken),
+        loadOptionalFeature('voucherOutput', operationToken)
+      ]);
     } catch (error) {
       return toast(isOptionalOperationStale(error)
         ? '전표 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
         : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
     }
     const current = modeDraft();
-    const output = buildPurchaseSalesUploadData(buildPurchaseReportSourceRows(current));
-    const workbook = window.XLSX.utils.book_new();
-    output.sheetNames.forEach(sheetName => {
-      const sheet = window.XLSX.utils.aoa_to_sheet(output.matrices[sheetName]);
-      sheet['!cols'] = (output.widths[sheetName] || []).map(wch => ({ wch }));
-      window.XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    const sourceRows = measureOptionalCompute('purchase-sales-report', 'source-rows', () => buildPurchaseReportSourceRows(current));
+    const output = await voucherOutputFeature.runStage5Compute({
+      feature: 'purchase-sales-report',
+      phase: 'PURCHASE_SALES_BUILD',
+      payload: { rows: sourceRows },
+      rowCount: sourceRows.length,
+      direct: () => voucherOutputFeature.buildPurchaseSalesUploadData(sourceRows),
+      onMetric: recordOptionalCompute
     });
-    window.XLSX.writeFile(workbook, output.fileName);
+    if (!optionalOperationIsCurrent(operationToken)) {
+      setAppStatus('전표 자료가 변경되어 이전 Excel 계산 결과를 내려받지 않았습니다.', 'warn');
+      toast('현재 입력은 유지했습니다. Excel을 다시 실행하세요.', 'warn');
+      return;
+    }
+    const workbook = xlsxRuntime.utils.book_new();
+    output.sheetNames.forEach(sheetName => {
+      const sheet = xlsxRuntime.utils.aoa_to_sheet(output.matrices[sheetName]);
+      sheet['!cols'] = (output.widths[sheetName] || []).map(wch => ({ wch }));
+      xlsxRuntime.utils.book_append_sheet(workbook, sheet, sheetName);
+    });
+    xlsxRuntime.writeFile(workbook, output.fileName);
     setAppStatus(`구매 판매업로드 생성 완료 · ${output.stats.outputRows}행 · 확인 ${output.stats.fatalErrors + output.stats.warnings}건`);
     toast('DataOps 판매업로드 Excel을 생성했습니다.', 'success');
   } finally {
@@ -10690,17 +10814,33 @@ function stocktakeConflictsFromFinalizeResults(results = []) {
   return [...unique.values()];
 }
 
-async function finalizeWithStocktakeDecision(service, request) {
+async function finalizeWithStocktakeDecision(service, request, showConflictDialog) {
   let results = await service.finalize(request);
   const conflicts = stocktakeConflictsFromFinalizeResults(results);
   if (!conflicts.length) return { cancelled: false, results };
-  const stocktakeDecisions = await showStocktakeConflictDialog(conflicts);
+  const stocktakeDecisions = await showConflictDialog(conflicts);
   if (!stocktakeDecisions) return { cancelled: true, results: [] };
   results = await service.finalize({
     ...request,
     stocktakeDecisions
   });
   return { cancelled: false, results };
+}
+
+async function prepareOfficialVoucherFeature(mode) {
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.OFFICIAL_VOUCHER, { assetVersion: 'official-voucher-0.1.0' });
+  const activity = `${mode === 'purchase' ? '구매' : '판매'} 저장 기능 준비 중`;
+  setActiveActivity(activity);
+  try {
+    return await loadOptionalFeature('officialVoucher', operationToken);
+  } catch (error) {
+    const stale = isOptionalOperationStale(error);
+    setAppStatus(stale ? '입력 내용이 변경되어 이전 저장 준비를 중단했습니다.' : error.message, stale ? 'warn' : 'error');
+    toast(stale ? '현재 입력은 유지했습니다. 저장을 다시 실행하세요.' : error.message, stale ? 'warn' : 'error');
+    return null;
+  } finally {
+    if (optionalOperationIsCurrent(operationToken) && state.activeActivity === activity) setActiveActivity('');
+  }
 }
 
 async function ensureOfficialCapability(mode) {
@@ -10761,11 +10901,13 @@ async function completeSaleOfficial() {
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('sale', current.rows, current.header);
   if (!confirmGroupedVoucherCreation('sale', groups)) return;
+  const officialFeature = await prepareOfficialVoucherFeature('sale');
+  if (!officialFeature) return;
   state.busy = true;
   renderDelivery();
   try {
     // SaleFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
-    const finalized = await finalizeWithStocktakeDecision(SaleFinalizeService, {
+    const finalized = await finalizeWithStocktakeDecision(officialFeature.SaleFinalizeService, {
       groups,
       companyId: state.companyId,
       activeMethod: current.activeMethod,
@@ -10774,7 +10916,7 @@ async function completeSaleOfficial() {
       customers: state.customers,
       products: state.products,
       warehouses: state.warehouseCatalog.warehouses || []
-    });
+    }, officialFeature.showStocktakeConflictDialog);
     if (finalized.cancelled) return;
     const results = finalized.results;
     results.filter(row => row.ok).forEach(({ group, result }) => {
@@ -10815,18 +10957,20 @@ async function completePurchaseOfficial() {
   resolveStage1RowReferences(current.rows);
   const groups = groupVoucherRows('purchase', current.rows, current.header);
   if (!confirmGroupedVoucherCreation('purchase', groups)) return;
+  const officialFeature = await prepareOfficialVoucherFeature('purchase');
+  if (!officialFeature) return;
   const masters = { customers: state.customers, products: state.products, warehouses: state.warehouseCatalog.warehouses || [] };
   state.busy = true;
   renderDelivery();
   try {
     // PurchaseFinalizeService.finalize(...) runs inside the stocktake decision coordinator.
-    const finalized = await finalizeWithStocktakeDecision(PurchaseFinalizeService, {
+    const finalized = await finalizeWithStocktakeDecision(officialFeature.PurchaseFinalizeService, {
       groups,
       masters,
       companyId: state.companyId,
       activeMethod: current.activeMethod,
       manualSessionId: current.documentId
-    });
+    }, officialFeature.showStocktakeConflictDialog);
     if (finalized.cancelled) return;
     const results = finalized.results;
     results.filter(row => row.ok).forEach(({ group, result }) => {

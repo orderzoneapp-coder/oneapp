@@ -275,19 +275,7 @@ function priceKey(row = {}, index = 0) {
   return code ? `CODE:${code}` : `ROW:${index}`;
 }
 
-export function buildCatalogPriceSnapshot(rows = [], priceFieldId = 'noticePrice') {
-  return Object.fromEntries((Array.isArray(rows) ? rows : []).map((row, index) => [
-    priceKey(row, index),
-    numeric(row?.[priceFieldId]) ?? 0
-  ]));
-}
-
-export function priceSnapshotsEqual(left = {}, right = {}) {
-  const leftKeys = Object.keys(left || {}).sort();
-  const rightKeys = Object.keys(right || {}).sort();
-  return leftKeys.length === rightKeys.length
-    && leftKeys.every((key, index) => key === rightKeys[index] && Number(left[key]) === Number(right[key]));
-}
+export { buildCatalogPriceSnapshot, priceSnapshotsEqual } from './estimate-price-snapshot.js?v=0.1.0';
 
 function normalizeNoticePriceFields(priceFields = []) {
   const normalized = (Array.isArray(priceFields) ? priceFields : []).map(field => ({
