@@ -30,6 +30,14 @@ export function createEstimateWorkspace({ store, readContext, readMasterContext 
     try { return await callback(); } finally { busy = false; change(); }
   };
   const readRecord = async estimateId => {
+    if (store.loadEstimateBody) {
+      const cached = await store.loadEstimateBody({ companyId, estimateId });
+      if (cached.status !== 'READY') return { status: cached.status === 'NOT_FOUND' ? 'CONFIRMED_MISSING' : cached.status, estimateId };
+      const record = copy(cached.value);
+      if (!record.companyId) return { status: 'CONTEXT_REQUIRED', estimateId, record };
+      if (record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) return { status: 'MIGRATION_REQUIRED', estimateId, record };
+      return { status: 'READY', companyId, estimateId, record };
+    }
     const result = await store.loadEstimateForUpdate({ companyId, estimateId });
     if (result.status !== 'READY') return result;
     return result;

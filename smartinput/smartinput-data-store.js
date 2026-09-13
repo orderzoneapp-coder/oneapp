@@ -1,3 +1,4 @@
+import { createEstimateReadCache, projectEstimateSummary, estimateSummaryKey, ESTIMATE_SUMMARY_PREFIX } from './estimate-read-cache.js?v=0.1.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, LAST_ESTIMATE_EXCEL_RESULT_SCHEMA, estimateTechnicalKey,
   estimateValuesEqual, hashEstimatePlan, validateIndependentEstimate, applyIndependentEstimatePatches,
   createLastEstimateExcelResult, projectIndependentEstimateDraft } from './independent-estimate.js?v=0.2.0';
@@ -238,7 +239,9 @@ async function put(storeName, record, keyField) {
     writeFallback(value);
     return record;
   }
-  const transaction = db.transaction(storeName, 'readwrite');
+  const transaction = db.transaction(storeName === DATA_STORES.ESTIMATES ? [storeName, DATA_STORES.SETTINGS] : storeName, 'readwrite');
+  if (storeName === DATA_STORES.ESTIMATES) updateEstimateProjection(transaction, record, record.estimateId);
+  if (storeName === DATA_STORES.SOURCE_IMAGES) transaction.addEventListener('complete', () => invalidateCachedRead(record.documentId), { once: true });
   transaction.objectStore(storeName).put(record);
   await transactionDone(transaction);
   db.close();
@@ -253,7 +256,9 @@ async function remove(storeName, key) {
     writeFallback(value);
     return;
   }
-  const transaction = db.transaction(storeName, 'readwrite');
+  const transaction = db.transaction(storeName === DATA_STORES.ESTIMATES ? [storeName, DATA_STORES.SETTINGS] : storeName, 'readwrite');
+  if (storeName === DATA_STORES.ESTIMATES) updateEstimateProjection(transaction, null, key);
+  if (storeName === DATA_STORES.SOURCE_IMAGES) transaction.addEventListener('complete', () => invalidateCachedRead(key), { once: true });
   transaction.objectStore(storeName).delete(key);
   await transactionDone(transaction);
   db.close();
@@ -288,13 +293,13 @@ export async function loadEstimateLibrary() {
   return sortedEstimates(await getAll(DATA_STORES.ESTIMATES));
 }
 
-export async function loadSmartInputData({ includeEstimates = true } = {}) {
+export async function loadSmartInputData({ includeEstimates = true, includeSourceImages = true } = {}) {
   const storeNames = [
     DATA_STORES.LINK_GROUPS,
     DATA_STORES.TEMPORARY_CUSTOMERS,
     DATA_STORES.ALIAS_MAPPINGS,
     ...(includeEstimates ? [DATA_STORES.ESTIMATES] : []),
-    DATA_STORES.SOURCE_IMAGES
+    ...(includeSourceImages ? [DATA_STORES.SOURCE_IMAGES] : [])
   ];
   const [rowsByStore, settingsRows] = await Promise.all([
     getAllStores(storeNames),
@@ -591,7 +596,7 @@ export async function commitEstimateBundle({ upserts = [], deletes = [], expecte
     writeFallback(value);
     return { upserts: records, deletes: ids };
   }
-  const transaction = db.transaction(DATA_STORES.ESTIMATES, 'readwrite');
+  const transaction = db.transaction([DATA_STORES.ESTIMATES, DATA_STORES.SETTINGS], 'readwrite');
   const store = transaction.objectStore(DATA_STORES.ESTIMATES);
   const completed = transactionDone(transaction);
   try {
@@ -599,8 +604,8 @@ export async function commitEstimateBundle({ upserts = [], deletes = [], expecte
     const current = await Promise.all(expectedPreimages.map(expected => requestResult(store.get(expected.estimateId))));
     expectedPreimages.forEach((expected, index) => { currentRecords[expected.estimateId] = current[index] || null; });
     assertEstimatePreimages(currentRecords, expectedPreimages);
-    records.forEach(record => store.put(record));
-    ids.forEach(estimateId => store.delete(estimateId));
+    records.forEach(record => { updateEstimateProjection(transaction, record, record.estimateId); store.put(record); });
+    ids.forEach(estimateId => { updateEstimateProjection(transaction, null, estimateId); store.delete(estimateId); });
     await completed;
     return { upserts: records, deletes: ids };
   } catch (error) {
@@ -651,7 +656,7 @@ export async function commitEstimateLinkBundle({
       aliasDeletes: deletedAliasIds
     };
   }
-  const transaction = db.transaction([DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS], 'readwrite');
+  const transaction = db.transaction([DATA_STORES.ESTIMATES, DATA_STORES.ALIAS_MAPPINGS, DATA_STORES.SETTINGS], 'readwrite');
   const estimateStore = transaction.objectStore(DATA_STORES.ESTIMATES);
   const aliasStore = transaction.objectStore(DATA_STORES.ALIAS_MAPPINGS);
   const completed = transactionDone(transaction);
@@ -670,8 +675,8 @@ export async function commitEstimateLinkBundle({
     assertAliasPreimages(Object.fromEntries(expectedAliasPreimages.map((expected, index) => [expected.aliasMappingId, currentAliases[index] || null])), expectedAliasPreimages);
     assertExpectedMissing(Object.fromEntries(missingEstimateIds.map((estimateId, index) => [estimateId, currentMissingEstimates[index] || null])), missingEstimateIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
     assertExpectedMissing(Object.fromEntries(missingAliasIds.map((aliasMappingId, index) => [aliasMappingId, currentMissingAliases[index] || null])), missingAliasIds, 'SMARTINPUT_ESTIMATE_LINK_EXPECTED_MISSING');
-    estimates.forEach(record => estimateStore.put(record));
-    deletedEstimateIds.forEach(estimateId => estimateStore.delete(estimateId));
+    estimates.forEach(record => { updateEstimateProjection(transaction, record, record.estimateId); estimateStore.put(record); });
+    deletedEstimateIds.forEach(estimateId => { updateEstimateProjection(transaction, null, estimateId); estimateStore.delete(estimateId); });
     aliases.forEach(record => aliasStore.put(record));
     deletedAliasIds.forEach(aliasMappingId => aliasStore.delete(aliasMappingId));
     await completed;
@@ -922,6 +927,7 @@ export async function commitSelectedEstimateUpdate({ plan, target }) {
       if (changed) {
         candidate.history = [...(current.history || []), { operationId: plan.operationId, actor: plan.actor, occurredAt: timestamp,
           patches: stage3Clone(target.rowPatches) }];
+        updateEstimateProjection(transaction, candidate, candidate.estimateId);
         transaction.objectStore(DATA_STORES.ESTIMATES).put(candidate);
       }
       aliases.forEach((patch, index) => { if (!estimateValuesEqual(currentAliases[index], patch.after)) transaction.objectStore(DATA_STORES.ALIAS_MAPPINGS).put(patch.after); });
@@ -985,9 +991,10 @@ export async function commitIndependentEstimateEdit({ companyId, actor, operatio
       }
       if (!estimateValuesEqual(current, expectedPreimage)) throw stage3Error('ESTIMATE_PREIMAGE_CONFLICT');
       if (current) stage3RecordCompany(current, companyId);
-      if (action === 'DELETE') transaction.objectStore(DATA_STORES.ESTIMATES).delete(estimateId);
+      if (action === 'DELETE') { updateEstimateProjection(transaction, null, estimateId); transaction.objectStore(DATA_STORES.ESTIMATES).delete(estimateId); }
       else if (!estimateValuesEqual(candidate, current)) {
         if (current && candidate.dataRevision !== current.dataRevision + 1) throw stage3Error('ESTIMATE_EDIT_REVISION_INVALID');
+        updateEstimateProjection(transaction, candidate, estimateId);
         transaction.objectStore(DATA_STORES.ESTIMATES).put({ ...candidate, history: [...(current?.history || []), { operationId, actor, action, occurredAt: candidate.updatedAt || new Date().toISOString() }] });
       }
       const result = { status: action === 'DELETE' ? 'DELETED' : estimateValuesEqual(candidate, current) ? 'UNCHANGED' : 'SAVED',
@@ -1071,7 +1078,8 @@ export async function commitIndependentEstimateMigration({ companyId, actor, mig
         || !companyEvidence?.estimateIds?.includes(estimateId) || !stage3Required(companyEvidence.confirmedAt))) throw stage3Error('ESTIMATE_COMPANY_UNCONFIRMED');
       const receipt = { status: 'COMMITTED', companyId, migrationId, estimateId, payloadHash, verifiedOutputHash,
         companyEvidence, committedAt: new Date().toISOString() };
-      transaction.objectStore(DATA_STORES.ESTIMATES).put(candidate);
+      updateEstimateProjection(transaction, candidate, candidate.estimateId);
+        transaction.objectStore(DATA_STORES.ESTIMATES).put(candidate);
       stage3Setting(transaction, receiptKey, receipt, receipt.committedAt); finish(receipt);
     });
   });
@@ -1107,3 +1115,81 @@ export async function completePendingEstimateOperation({ companyId, kind, id }) 
     });
   });
 }
+
+
+const summaryMarker = 'smartinput:estimateSummaryReady:v1';
+const readMetrics = { summaryReads: 0, projectionBodyReads: 0, bodyReads: 0, imageReads: 0 };
+const estimateReadCache = createEstimateReadCache({ read: async request => {
+  readMetrics[request.kind === 'body' ? 'bodyReads' : 'imageReads']++;
+  const value = await get(request.kind === 'body' ? DATA_STORES.ESTIMATES : DATA_STORES.SOURCE_IMAGES, request.id);
+  if (!value) return { status: 'NOT_FOUND' };
+  if (value.companyId && value.companyId !== request.companyId) return { status: 'ERROR', error: new Error('ESTIMATE_COMPANY_MISMATCH') };
+  return { status: 'READY', value, revision: value.dataRevision ?? null };
+} });
+const readChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('smartinput-read-invalidation-v1') : null;
+readChannel?.unref?.();
+readChannel?.addEventListener('message', event => {
+  if (event.data?.id) estimateReadCache.invalidate(request => request.id === event.data.id);
+});
+function invalidateCachedRead(id) {
+  estimateReadCache.invalidate(request => request.id === id); readChannel?.postMessage({ id });
+}
+function estimateProjection(record) {
+  return { ...projectEstimateSummary(record), catalogName: record.catalogName || '', schemaVersion: record.schemaVersion || null,
+    estimateKind: record.estimateKind || 'INDIVIDUAL', dataRevision: record.dataRevision ?? null,
+    rowCount: record.rowCount ?? record.draft?.rows?.length ?? 0, amount: record.amount ?? 0,
+    linkedEstimateSources: (record.linkedEstimateSources || []).map(source => ({ estimateId: source.estimateId })) };
+}
+function updateEstimateProjection(transaction, record, estimateId) {
+  const old = transaction.objectStore(DATA_STORES.ESTIMATES).get(estimateId);
+  old.addEventListener('success', () => {
+    const settings = transaction.objectStore(DATA_STORES.SETTINGS);
+    if (old.result) settings.delete(estimateSummaryKey(old.result.companyId || null, estimateId));
+    if (record) settings.put({ key: estimateSummaryKey(record.companyId || null, estimateId), value: estimateProjection(record) });
+  });
+  transaction.addEventListener('complete', () => invalidateCachedRead(estimateId), { once: true });
+}
+export async function loadEstimateSummaries(companyId) {
+  readMetrics.summaryReads++;
+  const db = await openDatabase();
+  if (!db) return sortedEstimates(Object.values(readFallback()[DATA_STORES.ESTIMATES] || {}).filter(record => !record.companyId || record.companyId === companyId).map(estimateProjection));
+  const tx = db.transaction([DATA_STORES.ESTIMATES, DATA_STORES.SETTINGS], 'readwrite');
+  const completed = transactionDone(tx), settings = tx.objectStore(DATA_STORES.SETTINGS);
+  let summaries = [];
+  try {
+    await new Promise((resolve, reject) => {
+      const marker = settings.get(summaryMarker);
+      marker.onerror = () => reject(marker.error);
+      marker.onsuccess = () => {
+        if (marker.result) {
+          const query = settings.getAll(IDBKeyRange.bound(ESTIMATE_SUMMARY_PREFIX, ESTIMATE_SUMMARY_PREFIX + '\uffff'));
+          query.onerror = () => reject(query.error);
+          query.onsuccess = () => { summaries = query.result.map(row => row.value); resolve(); };
+        } else {
+          // One body at a time; only disposable metadata is written, never business records.
+          settings.delete(IDBKeyRange.bound(ESTIMATE_SUMMARY_PREFIX, ESTIMATE_SUMMARY_PREFIX + '\uffff'));
+          const cursor = tx.objectStore(DATA_STORES.ESTIMATES).openCursor();
+          cursor.onerror = () => reject(cursor.error);
+          cursor.onsuccess = () => {
+            if (!cursor.result) { settings.put({ key: summaryMarker, value: true }); resolve(); return; }
+            readMetrics.projectionBodyReads++;
+            const projection = estimateProjection(cursor.result.value); summaries.push(projection);
+            settings.put({ key: estimateSummaryKey(projection.companyId, projection.estimateId), value: projection });
+            cursor.result.continue();
+          };
+        }
+      };
+    });
+    await completed;
+    return sortedEstimates(summaries.filter(record => !record.companyId || record.companyId === companyId));
+  } catch (error) { await completed.catch(() => {}); throw error; }
+  finally { db.close(); }
+}
+export async function loadEstimateBody({ companyId, estimateId, revision = null, force = false }) {
+  if (force) estimateReadCache.invalidate(request => request.kind === 'body' && request.id === estimateId);
+  return estimateReadCache.load({ kind: 'body', companyId, id: estimateId, revision });
+}
+export async function loadSourceImageForDocument({ companyId, documentId }) {
+  return estimateReadCache.load({ kind: 'image', companyId, id: documentId, revision: null });
+}
+export function smartInputReadStats() { return { ...readMetrics, ...estimateReadCache.stats() }; }

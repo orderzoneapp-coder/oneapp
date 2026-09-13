@@ -1,4 +1,5 @@
-import * as estimateStore from './smartinput-data-store.js?v=0.6.4';
+import { createVirtualTableBody } from './virtual-table-body.js?v=0.1.0';
+import * as estimateStore from './smartinput-data-store.js?v=0.7.0';
 import { createEstimateWorkspace } from './estimate-workspace.js?v=0.1.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, projectIndependentEstimateDraft, estimateIdentityFromRow,
   estimateValuesEqual, estimateUpdateFieldDefinitions, estimateTechnicalKey, DIRECT_ROW_KEY_VERSION, hashEstimatePlan } from './independent-estimate.js?v=0.2.0';
@@ -141,7 +142,7 @@ import {
   loadInputTemplates,
   saveInputTemplates,
   saveMappingSessionV2
-} from './smartinput-data-store.js?v=0.6.4';
+} from './smartinput-data-store.js?v=0.7.0';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -166,7 +167,7 @@ import {
   resolveSmartInputActor,
   resolveSmartInputCompanyId,
   updateVoucherFieldSettings
-} from './field-registry.js?v=0.1.0';
+} from './field-registry.js?v=0.2.0';
 import { refreshAllReferenceData } from './reference-refresh-controller.js?v=0.1.2';
 import { readWorksheetSource } from './xlsx-source-reader.js?v=0.1.0';
 import {
@@ -619,6 +620,44 @@ function updateAutosaveButton() {
 
 
 const estimateLoadId = crypto.randomUUID();
+const inputViewport = createVirtualTableBody({ body: $('inputRows'), scroller: $('tableScroll'), rowAttribute: 'data-row-id', keyOf: row => row.rowId,
+  decorate: node => {
+    const cells = new Map([...node.querySelectorAll('td[data-column]')].map(cell => [cell.dataset.column, cell]));
+    for (const heading of $('voucherInputTable').querySelectorAll('thead th[data-column]')) {
+      const cell = cells.get(heading.dataset.column); if (cell) { cell.classList.toggle('is-column-hidden', heading.classList.contains('is-column-hidden')); node.append(cell); }
+    }
+  }, onRender: () => renderEstimateExclusions() });
+const mappingViewport = createVirtualTableBody({ body: $('mappingInputRows'), scroller: $('tableScroll'), rowAttribute: 'data-mapping-row-id', keyOf: row => row.rowId, onRender: () => renderEstimateExclusions() });
+const sourceViewport = createVirtualTableBody({ body: $('sourceSheetRows'), scroller: $('sourceSheetScroll'), rowAttribute: 'data-source-row-index', keyOf: row => String(row.index) });
+const inputFrameSamples = [];
+$('tableScroll').addEventListener('input', () => {
+  const started = performance.now();
+  requestAnimationFrame(() => { inputFrameSamples.push(performance.now() - started); if (inputFrameSamples.length > 30) inputFrameSamples.shift(); });
+}, true);
+window.ONEAPP_SMARTINPUT_PERFORMANCE = { snapshot: () => ({ reads: estimateStore.smartInputReadStats(), input: inputViewport.stats(), mapping: mappingViewport.stats(), source: sourceViewport.stats(),
+  inputToNextFrameMs: [...inputFrameSamples], p95InputToNextFrameMs: inputFrameSamples.length ? [...inputFrameSamples].sort((a,b) => a-b)[Math.ceil(inputFrameSamples.length * .95) - 1] : null }) };
+
+async function ensureEstimateBodies(ids, { sources = false } = {}) {
+  const companyId = state.companyId, visited = new Set();
+  let pending = [...new Set(ids)];
+  while (pending.length) {
+    const batch = pending.splice(0, 4).filter(id => !visited.has(id)); batch.forEach(id => visited.add(id));
+    const loaded = await Promise.all(batch.map(async estimateId => {
+      const summary = state.estimates.find(record => record.estimateId === estimateId);
+      const result = await estimateStore.loadEstimateBody({ companyId, estimateId });
+      if (result.status !== 'READY') throw new Error(`견적서 ${estimateId} 조회: ${result.status}`);
+      return structuredClone(result.value);
+    }));
+    if (companyId !== state.companyId) return;
+    const byId = new Map(loaded.map(record => [record.estimateId, record]));
+    state.estimates = state.estimates.map(record => byId.get(record.estimateId) || record);
+    for (const record of loaded) {
+      if (record.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA) estimateWorkspace.adopt(record);
+      if (sources && record.estimateKind === 'LINKED_GROUP') pending.push(...(record.linkedEstimateSources || []).map(source => source.estimateId).filter(id => !visited.has(id)));
+    }
+  }
+}
+
 const initialEstimateWorkspace = state.draft.ui.estimateWorkspace;
 const estimateWorkspace = createEstimateWorkspace({
   store: estimateStore,
@@ -712,6 +751,8 @@ async function changeEstimateSelection(ids) {
   await flushDraftBeforeWorkspaceChange();
   estimateWorkspace.select(ids);
   if (!estimateExcelFile()) {
+    await ensureEstimateBodies(ids, { sources: true });
+    if (!estimateValuesEqual(ids, estimateWorkspace.selected())) return;
     const loaded = await estimateWorkspace.loadSelection();
     if (loaded.status === 'STALE') return;
     if (loaded.issues.length) {
@@ -1601,6 +1642,11 @@ function visibleInputListRows(session = inputMappingSession(), query = state.inp
 }
 
 function selectionScopeRows() {
+  const viewport = sourceTableViewActive() ? mappingViewport : inputViewport;
+  if (viewport.stats().filterActive) {
+    const keys = new Set(viewport.visibleKeys());
+    return (sourceTableViewActive() ? visibleMappingRows() : visibleInputListRows()).filter(row => keys.has(row.rowId));
+  }
   if (!state.inputListSearch.open && !state.estimateExclusionOnly) {
     return sourceTableViewActive()
       ? visibleMappingRows(inputMappingSession(), '')
@@ -1614,7 +1660,7 @@ function selectionScopeRowIds() {
     ? visibleMappingRows(inputMappingSession(), '')
     : modeDraft().rows;
   return inputListSelectionScopeRowIds(allRows, selectionScopeRows(), {
-    searchOpen: state.inputListSearch.open || state.estimateExclusionOnly
+    searchOpen: state.inputListSearch.open || state.estimateExclusionOnly || (sourceTableViewActive() ? mappingViewport : inputViewport).stats().filterActive
   });
 }
 
@@ -2634,17 +2680,18 @@ function renderSourceSheet() {
     ? `${session.sheetName || '시트'} · 거래처 ${Number(session.estimateErpSummary.customerCount || 0).toLocaleString('ko-KR')}곳 · 품목 ${Number(session.estimateErpSummary.itemCount || 0).toLocaleString('ko-KR')}개 · 원본 ${matrix.length.toLocaleString('ko-KR')}행`
     : `${session.sheetName || '시트'} · ${matrix.length.toLocaleString('ko-KR')}행 · ${width.toLocaleString('ko-KR')}열`;
   $('sourceHeaderRowStatus').textContent = session.fixedHeader ? '쇼핑몰 17열 · 필드명 1행' : `필드명 ${session.headerRowIndex + 1}행`;
-  $('sourceSheetRows').innerHTML = matrix.map((row, rowIndex) => (
+  sourceViewport.render(matrix.map((cells, index) => ({ cells, index })), ({ cells: row, index: rowIndex }) => (
     `<tr class="${rowIndex === session.headerRowIndex ? 'is-header-row' : ''}" data-source-row-index="${rowIndex}">
       <th scope="row">${session.fixedHeader ? `<span>${Number(session.sourceCellMatrix?.[rowIndex]?.[0]?.rowIndex) + 1 || rowIndex + 1}</span>` : `<button type="button" data-use-header-row="${rowIndex}" aria-label="${rowIndex + 1}행을 필드명으로 사용">${rowIndex + 1}</button>`}</th>
       ${Array.from({ length: width }, (_, columnIndex) => `<td title="${esc(row[columnIndex] ?? '')}">${esc(row[columnIndex] ?? '')}</td>`).join('')}
     </tr>`
-  )).join('');
+  ), width + 1, (row, column) => column === 0 ? row.index + 1 : row.cells[column - 1]);
   view.querySelector('footer span').textContent = session.fixedHeader
     ? '정확한 쇼핑몰 17열 필드명과 원본 행 순서를 유지합니다.'
     : '행 번호를 누르면 해당 행을 필드명으로 사용합니다.';
   window.requestAnimationFrame(() => {
-    const selected = $('sourceSheetRows').querySelector('.is-header-row');
+    if (matrix.length <= 200) sourceViewport.ensure(String(session.headerRowIndex));
+    const selected = matrix.length <= 200 ? $('sourceSheetRows').querySelector('.is-header-row') : null;
     selected?.scrollIntoView({ block: 'nearest' });
   });
 }
@@ -5261,7 +5308,8 @@ async function retireEstimateTargetMappingsAfterCustomerChange(record, customer,
   return mappings.length;
 }
 
-function openSelectedEstimateInformationDialog() {
+async function openSelectedEstimateInformationDialog() {
+  try { await ensureEstimateBodies(estimateWorkspace.selected()); } catch (error) { return toast(error.message, 'error'); }
   const records = selectedEstimateRecords();
   if (records.length !== 1) return toast('정보를 변경할 견적서 하나를 선택하세요.', 'warn');
   const record = records[0];
@@ -5376,10 +5424,12 @@ async function persistEstimateLibrary(records = state.estimates) {
   invalidateEstimateLibraryRead();
   const beforeById = new Map(state.estimates.map(record => [record.estimateId, record]));
   for (const candidate of records) {
-    const before = beforeById.get(candidate.estimateId);
-    if (estimateValuesEqual(before, candidate)) continue;
+    const summary = beforeById.get(candidate.estimateId);
+    if (estimateValuesEqual(summary, candidate)) continue;
+    await ensureEstimateBodies([candidate.estimateId]);
+    const before = state.estimates.find(record => record.estimateId === candidate.estimateId);
     if (!before || before.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) throw new Error('기존 자료 전환이 필요합니다.');
-    const next = { ...structuredClone(candidate), dataRevision: before.dataRevision + 1 };
+    const next = { ...structuredClone(before), sortOrder: candidate.sortOrder, dataRevision: before.dataRevision + 1 };
     const operationId = createRecordId('SIEDIT');
     await estimateStore.commitIndependentEstimateEdit({ companyId: state.companyId,
       actor: { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' }, operationId,
@@ -5526,6 +5576,15 @@ function restoreSourceImageForMode(mode) {
     return;
   }
   state.sourceImages[mode] = state.sourceImageRecords.get(documentId) || null;
+  if (mode !== state.draft.activeMode || state.sourceImages[mode] || !documentId || state.draft.modes[mode]?.activeMethod !== 'photo') return;
+  const companyId = state.companyId, intent = state.sourceImageMutationIntents.get(documentId);
+  void estimateStore.loadSourceImageForDocument({ companyId, documentId }).then(result => {
+    if (companyId !== state.companyId || mode !== state.draft.activeMode || state.draft.modes[mode]?.documentId !== documentId || state.sourceImageRecords.has(documentId)
+      || state.clearedSourceImageDocumentIds.has(documentId) || state.sourceImageMutationIntents.get(documentId) !== intent) return;
+    if (result.status === 'READY') {
+      state.sourceImageRecords.set(documentId, structuredClone(result.value)); state.sourceImages[mode] = state.sourceImageRecords.get(documentId); renderSourceSurface();
+    } else if (result.status === 'ERROR') setAppStatus('원본 사진을 읽지 못했습니다. 다시 열어 재시도하세요.', 'warn');
+  }).catch(error => setAppStatus(error.message, 'warn'));
 }
 
 function queueSourceImageMutation(documentId, mutation) {
@@ -6037,9 +6096,10 @@ function renderMappingRows() {
   const renderedRows = state.inputListSearch.open
     ? rows
     : [...rows, { rowId: MAPPING_DEFAULT_ROW_ID, cells: Array(session.headers.length).fill(''), manual: true, defaultRow: true }];
-  $('mappingInputRows').innerHTML = renderedRows.map((row, visibleIndex) => {
+  const sequenceById = new Map((session.workingRows || []).map((row, index) => [row.rowId, index + 1]));
+  mappingViewport.render(renderedRows, (row, visibleIndex) => {
     const isDefault = row.rowId === MAPPING_DEFAULT_ROW_ID;
-    const sequence = isDefault ? (session.workingRows || []).length + 1 : Math.max(1, (session.workingRows || []).findIndex(item => item.rowId === row.rowId) + 1);
+    const sequence = isDefault ? (session.workingRows || []).length + 1 : sequenceById.get(row.rowId) || 1;
     return `<tr data-mapping-row-id="${esc(row.rowId)}" ${isDefault ? 'data-mapping-default-row="true" class="mapping-blank-row"' : ''}>
       <td class="row-sequence-cell row-sequence-select-cell"><label class="sequence-checkbox"><input type="checkbox" data-mapping-select-row="${isDefault ? '' : esc(row.rowId)}" aria-label="${sequence}번 원본 행 선택" ${isDefault ? 'disabled' : (state.selectedRowIds.has(row.rowId) ? 'checked' : '')}><span class="row-sequence-number">${sequence}</span></label></td>
       ${visibleColumns.map(columnIndex => {
@@ -6048,7 +6108,7 @@ function renderMappingRows() {
         return `<td class="${unmapped ? 'is-unmapped' : ''}" data-mapping-column="${columnIndex}"><input data-mapping-cell data-mapping-column="${columnIndex}" value="${esc(row.cells?.[columnIndex] ?? '')}" aria-label="${esc(session.headers[columnIndex] || `${columnIndex + 1}열`)}"></td>`;
       }).join('')}
     </tr>`;
-  }).join('');
+  }, visibleColumns.length + 1, (row, column, index) => column === 0 ? index + 1 : row.cells?.[visibleColumns[column - 1]]);
   renderMappingTableTotals(session, visibleColumns, rows);
   const summary = mappingSummary(session);
   $('gridRowCount').textContent = `${(session.workingRows || []).length.toLocaleString('ko-KR')}행`;
@@ -6147,13 +6207,14 @@ function mappingVisibleColumns(session = inputMappingSession()) {
 }
 
 function mappingCell(rowId, columnIndex) {
+  if (!document.querySelector(`[data-mapping-row-id="${CSS.escape(rowId)}"]`)) mappingViewport.ensure(rowId);
   return document.querySelector(`[data-mapping-row-id="${CSS.escape(rowId)}"] [data-mapping-cell][data-mapping-column="${columnIndex}"]`);
 }
 
 function moveMappingFocus(rowId, columnIndex, key, shiftKey = false) {
   const session = inputMappingSession();
   if (!session) return;
-  const rows = [...(session.workingRows || []).map(row => row.rowId), MAPPING_DEFAULT_ROW_ID];
+  const rows = mappingViewport.visibleKeys();
   const columns = mappingVisibleColumns(session);
   const rowIndex = rows.indexOf(rowId);
   const columnPosition = columns.indexOf(columnIndex);
@@ -6599,9 +6660,10 @@ function renderRows({ restoreFocus = true } = {}) {
     matchStatus: state.busy && modeDraft().activeMethod === 'photo' ? 'ANALYZING' : 'EMPTY'
   };
   const renderedRows = state.inputListSearch.open ? visibleRows : [...visibleRows, defaultRow];
-  inputRows.innerHTML = renderedRows.map(row => {
+  const sequenceById = new Map(rows.map((row, index) => [row.rowId, index + 1]));
+  inputViewport.render(renderedRows, row => {
     const isDefault = row.rowId === DEFAULT_INPUT_ROW_ID;
-    const sequence = isDefault ? rows.length + 1 : Math.max(1, rows.findIndex(item => item.rowId === row.rowId) + 1);
+    const sequence = isDefault ? rows.length + 1 : sequenceById.get(row.rowId) || 1;
     const orderQProductMismatch = row.sourceType === 'ORDER_Q' && (
       (row.metaProductId && row.productId && row.metaProductId !== row.productId)
       || (row.metaProductCode && row.itemCode && row.metaProductCode.toUpperCase() !== row.itemCode.toUpperCase())
@@ -6613,7 +6675,11 @@ function renderRows({ restoreFocus = true } = {}) {
       const inputType = field.valueType === 'NUMBER' && !excelNumber ? 'number' : 'text';
       const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
       return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(rowFieldDisplayValue(row, field.id, row[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`;
-    }).join('');
+  }, $('voucherInputTable').querySelectorAll('col').length, (row, column, index) => {
+    if (column === 0) return index + 1;
+    const field = $('voucherInputTable').querySelectorAll('thead th')[column]?.dataset.column;
+    return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
+  });
     const customCells = customFieldsFor('voucher').map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
@@ -6969,6 +7035,7 @@ function createTrailingDefaultRow(sourceRow) {
 
 function materializeDefaultRow(tr, sourceInput = document.activeElement) {
   if (!tr || tr.dataset.defaultRow !== 'true') return modeDraft().rows.find(row => row.rowId === tr?.dataset.rowId) || null;
+  if (modeDraft().rows.length > 200) queueMicrotask(() => renderRows({ restoreFocus: false }));
   const row = appendDirectRow();
   const trailing = createTrailingDefaultRow(tr);
   const activeInput = tr.contains(sourceInput) ? sourceInput : [...tr.querySelectorAll('[data-field], [data-custom-row-field]')].find(input => hasEnteredValue(input.value));
@@ -6996,6 +7063,7 @@ function materializeDefaultRow(tr, sourceInput = document.activeElement) {
 
 function addDirectRow() {
   invalidateGridPasteUndo();
+  inputViewport.ensure(DEFAULT_INPUT_ROW_ID);
   const last = inputRows.querySelector('tr[data-default-row="true"] input[data-field="itemCode"]');
   last?.focus();
 }
@@ -7022,6 +7090,7 @@ function enterGridFields() {
 }
 
 function gridInput(rowId, field) {
+  if (!inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"]`)) inputViewport.ensure(rowId);
   return inputRows.querySelector(`[data-row-id="${CSS.escape(rowId)}"] [data-field="${CSS.escape(field)}"], [data-row-id="${CSS.escape(rowId)}"] [data-custom-row-field="${CSS.escape(field)}"]`);
 }
 
@@ -7062,7 +7131,7 @@ function focusGridTarget(target) {
 function sequentialGridTarget(rowId, field) {
   const visibleFields = visibleEditableGridFields();
   const fields = enterGridFields();
-  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rows = inputViewport.visibleKeys().map(rowId => ({ dataset: { rowId } }));
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
   if (rowIndex < 0 || !fields.length) return null;
   const fieldIndex = fields.indexOf(field);
@@ -7078,7 +7147,7 @@ function sequentialGridTarget(rowId, field) {
 
 function directionalGridTarget(rowId, field, key) {
   const fields = visibleEditableGridFields();
-  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rows = inputViewport.visibleKeys().map(rowId => ({ dataset: { rowId } }));
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
   const fieldIndex = fields.indexOf(field);
   if (rowIndex < 0 || fieldIndex < 0) return null;
@@ -7091,7 +7160,7 @@ function directionalGridTarget(rowId, field, key) {
 }
 
 function nextRowEntryTarget(rowId, backwards = false) {
-  const rows = [...inputRows.querySelectorAll('tr[data-row-id]')];
+  const rows = inputViewport.visibleKeys().map(rowId => ({ dataset: { rowId } }));
   const rowIndex = rows.findIndex(row => row.dataset.rowId === rowId);
   if (rowIndex < 0) return null;
   const targetRow = rows[rowIndex + (backwards ? -1 : 1)];
@@ -9177,6 +9246,7 @@ async function exportEstimateExcel() {
         ? '견적 자료가 변경되어 이전 Excel 생성을 중단했습니다. 다시 실행하세요.'
         : error.message, isOptionalOperationStale(error) ? 'warn' : 'error');
     }
+    await ensureEstimateBodies(estimateWorkspace.selected(), { sources: true });
     const creation = estimateCreation();
     captureSelectedEstimateWork();
     let selectedRecords = selectedEstimateRecords().map(record => ({ ...record,
@@ -9657,8 +9727,7 @@ function validateEstimateDocument() {
   }
   const invalidIndex = current.rows.findIndex(row => !row.itemCode && !row.itemName);
   if (invalidIndex >= 0) {
-    const rowElement = inputRows.querySelectorAll('tr')[invalidIndex];
-    rowElement?.querySelector('[data-field="itemName"]')?.focus();
+    gridInput(current.rows[invalidIndex].rowId, 'itemName')?.focus();
     toast(`${invalidIndex + 1}행의 품목을 확인하세요.`, 'error');
     return false;
   }
@@ -10429,6 +10498,7 @@ async function saveEstimateDocument(catalogName) {
   const current = modeDraft();
   const requestedName = String(catalogName || '').trim();
   if (!requestedName) return false;
+  try { await ensureEstimateBodies(state.estimates.filter(record => record.estimateId === current.catalogRecordId || estimateTitle(record) === requestedName).map(record => record.estimateId)); } catch (error) { toast(error.message, 'error'); return false; }
   const loaded = state.estimates.find(record => record.estimateId === current.catalogRecordId && estimateTitle(record) === requestedName);
   const collision = state.estimates.find(record => estimateTitle(record) === requestedName && record.estimateId !== loaded?.estimateId);
   if (collision && !window.confirm(`“${requestedName}” 견적서만 현재 내용으로 변경할까요?`)) return false;
@@ -10985,7 +11055,7 @@ async function completeOrderLegacy() {
     else if (first.field === 'warehouse') $('warehouseInput').focus();
     else if (first.field.startsWith('row:')) {
       const [, index, field] = first.field.split(':');
-      inputRows.querySelectorAll('tr')[Number(index)]?.querySelector(`[data-field="${field === 'item' ? 'itemName' : field}"]`)?.focus();
+      gridInput(current.rows[Number(index)].rowId, field === 'item' ? 'itemName' : field)?.focus();
     }
     return toast(first.message, 'error');
   }
@@ -11159,9 +11229,13 @@ async function hydrateEstimateLibrary() {
   const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.ESTIMATE_LIBRARY_READ, { assetVersion: 'smartinput-db-v5' });
   try {
     performance.mark?.('smartinput-estimate-library-load-start');
-    const estimates = await withTimeout(loadEstimateLibrary(), OPTIONAL_OPERATION_TIMEOUT_MS.estimateList, '견적서 목록 로딩 시간 초과');
+    const estimates = await withTimeout(estimateStore.loadEstimateSummaries(state.companyId), OPTIONAL_OPERATION_TIMEOUT_MS.estimateList, '견적서 목록 로딩 시간 초과');
     if (!optionalOperationIsLatest(operationToken)) return;
-    state.estimates = normalizeEstimateOrder(estimates || []);
+    const loadedById = new Map(state.estimates.filter(record => record.draft).map(record => [record.estimateId, record]));
+    state.estimates = (estimates || []).map(summary => {
+      const loaded = loadedById.get(summary.estimateId);
+      return loaded && loaded.dataRevision === summary.dataRevision && loaded.updatedAt === summary.updatedAt ? loaded : summary;
+    });
     state.smartDataReady = true;
     state.smartDataError = null;
   } catch (error) {
@@ -11193,7 +11267,7 @@ async function retrySmartAuxiliaryData() {
   smartAuxiliaryRetryPromise = (async () => {
     try {
       const data = await withTimeout(
-        loadSmartInputData({ includeEstimates: false }),
+        loadSmartInputData({ includeEstimates: false, includeSourceImages: false }),
         OPTIONAL_OPERATION_TIMEOUT_MS.localModule,
         '스마트입력 설정 로딩 시간이 초과되었습니다.'
       );
@@ -11266,7 +11340,7 @@ async function hydrateReferences() {
   renderReferenceControls();
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
-    withTimeout(loadSmartInputData({ includeEstimates: false }), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '스마트입력 설정 로딩 시간 초과'),
+    withTimeout(loadSmartInputData({ includeEstimates: false, includeSourceImages: false }), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '스마트입력 설정 로딩 시간 초과'),
     withTimeout(loadInputTemplates(companyId, modeId), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '입력 양식 로딩 시간 초과')
   ]);
   if (optionalOperationIsLatest(templateToken) && state.companyId === companyId && state.draft.activeMode === modeId) {
@@ -11330,7 +11404,7 @@ async function hydrateReferences() {
   try {
     const registries = await withTimeout((async () => {
       await ensureFieldCatalogSeed();
-      return Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+      return Promise.all([state.draft.activeMode, ...Object.keys(contract.MODES).filter(mode => mode !== state.draft.activeMode)].map(voucherMode => loadVoucherFieldRegistry({
         companyId: state.companyId,
         voucherMode,
         actor: state.actorId
@@ -11445,7 +11519,7 @@ async function refreshAllReferencesFromToolbar() {
     );
     if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
     const registries = await withTimeout(
-      Promise.all(Object.keys(contract.MODES).map(voucherMode => loadVoucherFieldRegistry({
+      Promise.all([state.draft.activeMode, ...Object.keys(contract.MODES).filter(mode => mode !== state.draft.activeMode)].map(voucherMode => loadVoucherFieldRegistry({
         companyId,
         voucherMode,
         actor: state.actorId

@@ -1065,3 +1065,12 @@ SmartInput 파일럿은 5단계 기본 복구와 상품·거래처 Snapshot 소�
 - 마스터는 선택 견적서의 허용된 네 가격 필드만 Product Master owner command로 요청한다. 실제 인증 세션과 company.profile_read로 회사 근거를 확인하며, 로컬 편집용 기본 actor를 마스터 권한으로 쓰지 않는다. command receipt와 publication 재시도는 견적서 저장과 별개다.
 - 전환은 고정 백업 다운로드·기존 탭 종료·재로드 후 기존 F8 결과 비교를 통과한 대상만 같은 ID로 커밋한다. 완료 대상 재실행은 전환 후 편집을 보존한다.
 - 호환 복구: 배포된 3단계 reader와 v5 형식은 유지하고 `/smartinput/?estimateRecovery=readonly`로 사업 자료 쓰기를 중지한다. ownedRows/F8/미저장 V2 journal은 계속 읽고 보존한다. 소스 복구 시 이 쓰기 가드를 기본 활성화한 호환 수정본을 PR로 배포한다. 이전 linked writer로 되돌리거나 백업 전체를 운영 DB에 덮어쓰지 않는다. 수정 후 가드를 해제하며, 개별 데이터 복원은 백업·현재값·전환 후 편집을 대조한 CAS로만 처리한다.
+
+
+### SmartInput 4단계 조회·표 렌더 (2026-09-13)
+- 기존 v5 settings의 `smartinput:estimateSummary:v1:` projection만 목록에서 읽는다. 최초 한 번 cursor로 본문을 한 건씩 읽어 구성하고, 모든 견적 writer는 본문과 projection을 같은 transaction에서 갱신한다. 일반 목록 재조회는 본문/사진을 읽지 않는다.
+- 상세·선택 편집·F8에서 필요한 견적서와 기존 연동 자료의 참조 대상만 최대 4개씩 읽는다. 사진은 현재 사진 문서만 읽는다. cache는 쓰기 완료와 다른 탭 알림으로 무효화하며 실패/없음/세대 변경을 구분한다. 캐시에 미저장 작업본을 저장하지 않는다.
+- seed Promise와 회사/전표/세대별 registry Promise를 재사용하고 설정 변경·6개 영역 새로고침에서 무효화한다. 현재 전표 요청을 먼저 시작한다.
+- 기존 세 native table의 tbody에 `virtual-table-body.js`를 연결한다. 200행 초과 시 화면 범위와 앞뒤 10행을 만들며 가변 높이와 활성 입력 행을 보존한다. IME 조합 중 DOM 교체를 미룬다. 전체 행은 기존 model에 남아 저장·합계·보고서·검색·붙여넣기·행 선택의 근거가 된다.
+- 공통 표 모듈은 해당 table의 `__nexusLogicalView`가 있는 경우에만 전체 logical model로 정렬·필터·필터 후보를 계산한다. 다른 앱의 표 동작은 기존 경로를 사용한다.
+- `ONEAPP_SMARTINPUT_PERFORMANCE.snapshot()`은 실제 본문/사진 읽기 수, projection 구축 수, 각 표의 논리/표시 행 수와 최근 최대 30회 입력→다음 프레임 시간을 제공한다. 계측 코드 연결을 성능 목표 달성으로 보고하지 않는다.
