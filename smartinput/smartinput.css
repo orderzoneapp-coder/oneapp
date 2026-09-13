@@ -1333,7 +1333,15 @@ html[data-nexus-theme="dark"] .source-token--unmatched { color: #ffe4e6 !importa
   align-items: center;
 }
 .related-panel .estimate-library-heading p { display: none; }
-.estimate-library-toolbar { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; align-items: center; gap: 5px; }
+.estimate-library-toolbar { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 5px; }
+#estimateMultiSelectButton, #estimateDeselectAllButton { min-height: 44px; min-width: 44px; touch-action: manipulation; }
+.estimate-library-kind-button { overflow: hidden; text-overflow: ellipsis; }
+.estimate-update-menu { position: relative; }
+.estimate-update-menu > summary { min-height: 36px; cursor: pointer; list-style: none; }
+.estimate-update-menu__content { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 40; display: grid; gap: 8px; width: min(320px, 85vw); max-height: 60vh; overflow: auto; padding: 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 18px #0003; }
+.estimate-update-menu__content > label { white-space: normal; font-size: 12px; }
+tr.is-update-excluded > td { background: var(--accent-soft); }
+tr.is-update-excluded > td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .estimate-library-kind-button,
 .estimate-multi-select-button { min-width: 0; min-height: 44px; height: 44px; border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text-soft); background: var(--surface); font-size: 9px; font-weight: 900; white-space: nowrap; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .estimate-library-kind-button:hover,
