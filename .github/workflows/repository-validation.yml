@@ -111,6 +111,7 @@ jobs:
       - name: Test NEXUS basic login and home contracts
         run: |
           node scripts/test-nexus-basic-login-home.mjs
+          node scripts/test-nexus-header-navigation-contract.mjs
           node scripts/test-nexus-cross-tab-session.mjs
 
       - name: Test NEXUS minimal user-control contracts

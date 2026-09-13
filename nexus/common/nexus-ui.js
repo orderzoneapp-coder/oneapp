@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.7.0';
+  const VERSION = '1.7.1';
   const WORKSPACE_SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const WORKSPACE_MESSAGE_TYPES = Object.freeze({
     HOST_READY: 'NEXUS_WORKSPACE_HOST_READY_V1',
@@ -346,6 +346,8 @@
       const link = element('a', 'nexus-ui-nav__link', app.label);
       link.href = asset(app.path);
       link.dataset.nexusUiAppTarget = app.id;
+      link.dataset.nexusUiRoute = app.path;
+      link.setAttribute('aria-label', `${app.label} 열기`);
       if (app.id === currentAppId) {
         link.classList.add('is-current');
         link.setAttribute('aria-current', 'page');

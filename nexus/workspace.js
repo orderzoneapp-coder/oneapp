@@ -12,7 +12,7 @@
 })(typeof window === 'object' ? window : globalThis, () => {
   'use strict';
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.1.1';
   const SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const HANDSHAKE_TIMEOUT_MS = 8000;
   const LEAVE_TIMEOUT_MS = 12000;
@@ -109,6 +109,26 @@
     url.searchParams.set('app', target.app.id);
     url.searchParams.set('route', target.route);
     return url.href;
+  };
+
+  const headerTargetFromAnchor = (anchor, siteRootHref, expectedOrigin) => {
+    const appId = String(anchor?.dataset?.nexusUiAppTarget || '').trim();
+    const app = appForId(appId);
+    if (!app) return Object.freeze({ ok: false, code: 'UNKNOWN_APP', message: '등록되지 않은 앱입니다.' });
+
+    const declaredRoute = String(anchor?.dataset?.nexusUiRoute || '').trim();
+    if (declaredRoute && declaredRoute !== app.path) {
+      return Object.freeze({ ok: false, code: 'HEADER_ROUTE_MISMATCH', message: '헤더 버튼 경로가 등록 정보와 일치하지 않습니다.' });
+    }
+
+    const href = typeof anchor?.href === 'string' && anchor.href
+      ? anchor.href
+      : anchor?.getAttribute?.('href');
+    const target = validateRoute(app.id, href, siteRootHref, expectedOrigin);
+    if (!target.ok || target.route !== app.path) {
+      return Object.freeze({ ok: false, code: 'HEADER_ROUTE_MISMATCH', message: '헤더 버튼 경로가 등록 정보와 일치하지 않습니다.' });
+    }
+    return target;
   };
 
   const validateMessageEvent = (event, options) => {
@@ -316,7 +336,7 @@
       if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const appId = anchor.dataset?.nexusUiAppTarget;
       if (appId) {
-        const next = validateRoute(appId, '', this.siteRoot, this.origin);
+        const next = headerTargetFromAnchor(anchor, this.siteRoot, this.origin);
         if (!next.ok) return;
         event.preventDefault();
         this.requestNavigation(next, 'push');
@@ -689,6 +709,7 @@
     validateRoute,
     parseHostRequest,
     workspaceUrlFor,
+    headerTargetFromAnchor,
     validateMessageEvent,
     WorkspaceHost,
     mount,

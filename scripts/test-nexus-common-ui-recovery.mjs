@@ -42,7 +42,7 @@ for (const [file, appId, base, title] of pages) {
   const init = `${base}nexus-ui-theme-init.js?v=1.2.0`;
   const uiCss = `${base}nexus-ui.css?v=1.4.0`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
-  const runtime = `${base}nexus-ui.js?v=1.7.0`;
+  const runtime = `${base}nexus-ui.js?v=1.7.1`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);

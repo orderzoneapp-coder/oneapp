@@ -1,12 +1,12 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.3.9
+- Architecture document version: 2.3.10
 - Previous detailed review: 2026-09-04
-- Documentation updated: 2026-09-13
+- Documentation updated: 2026-09-14
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
-- Review scope: NEXUS 7개 글로벌헤더와 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
+- Review scope: NEXUS 홈 12개 카드와 7개 글로벌헤더의 표시명·앱 ID·공식 경로 결속, 홈 기본 진입 단일 iframe 호스트, 전체 앱의 영구 다크 앱헤더·56px 높이·좌측 식별 정렬, 6개 업무 앱의 조절 가능한 작업영역, 7개 앱의 공통 표·인쇄 계약과 SmartParser 즉시 적용·연속 연결 계약. 스마트입력은 사용자 승인 복원 레이아웃을 유지
 - Runtime verification: 7개 앱의 일반/다크 헤더와 공통 표 표시·순백색 인쇄 계약, 6개 작업영역의 독립 폭 조절·상태 보존, OrderOps 분석 전 저장·복구·동일 부모 3개 섹션·좌측 파서 내부 Excel/API 준비와 보조 복구 메뉴·중앙 작업 전용 하단바·우측 전표의 4열 압축 목록·빠른 창고/담당 필터·고정 선택 합계/일괄 변경·다중 주문 Revision 조정·저장 실패 재시도·출고분석과 구매/판매 참고자료 적용 뒤 원본 기준선/다중 출고 초안 보존·재진입 후 부분 Revision 갱신을 실제 브라우저에서 검증하며 운영 배포 버전은 CI와 Pages에서 별도 대조
 - Machine-readable companion: app-manifest.json
 
@@ -288,6 +288,7 @@ Production files must not be reorganized into folders without first updating and
 |---|---|
 | 브라우저 식별 | NEXUS 파비콘과 `업무명 - NEXUS` 제목 형식을 사용한다. |
 | 앱 명칭 | 공통 정적 앱 목록의 승인된 명칭을 사용한다. 글로벌 탭은 상품관리·거래처관리·스마트입력·스마트파서·MerchOps·출고관리·DataOps로 고정하고, 하위 화면 제목은 `업무명 - NEXUS` 형식을 유지한다. |
+| 링크 무결성 | NEXUS 홈 카드와 글로벌 탭은 표시명·앱 ID·선언 경로·실제 `href`를 같은 정규 매핑으로 생성한다. 통합 호스트는 클릭한 글로벌 탭의 앱 ID와 실제 `href`가 같은 공식 기본 경로인지 검증한 뒤에만 이동하며, 불일치는 다른 앱으로 추정 이동하지 않는다. 모바일은 각 탭의 시각 중심이 해당 앵커 자체를 터치 대상으로 유지해야 한다. |
 | 데스크톱 헤더 | 높이 64px, 탭 그룹 높이 44px, 탭 96×38px, 간격 4px, 모서리 8px, 글자 13px/600, 전환 150ms를 유지한다. 헤더와 탭은 화면모드와 무관하게 기존 다크 스타일을 사용한다. |
 | 모바일 헤더 | 높이 104px, 탭 96×44px와 최소 44px 터치 영역을 유지한다. 로고와 테마 스위치는 겹치지 않고 탭 이동은 가로 사용이 가능해야 한다. |
 | 선택·포커스 | 선택 탭은 밝은 글자와 얇은 민트 하단선으로 구분하고 넓은 강조 배경을 사용하지 않는다. 키보드 포커스는 공통 포커스 토큰으로 명확히 표시한다. |

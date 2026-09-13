@@ -447,6 +447,9 @@
       const detail = document.createElement('span');
       link.className = 'nexus-app-card';
       link.href = homeEntryPath(app);
+      link.dataset.nexusAppId = app.id;
+      link.dataset.nexusAppRoute = app.path;
+      link.setAttribute('aria-label', `${app.label} 열기`);
       name.textContent = app.label;
       detail.textContent = app.detail;
       link.append(name, detail);

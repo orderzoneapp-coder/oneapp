@@ -9,7 +9,7 @@ const host = require('../nexus/workspace.js');
 const workspaceHref = 'https://example.test/nexus/workspace.html';
 const siteRoot = 'https://example.test/';
 
-assert.equal(host.VERSION, '1.1.0');
+assert.equal(host.VERSION, '1.1.1');
 assert.equal(host.SCHEMA_VERSION, 'nexus-workspace-message/v1');
 assert.deepEqual(host.APPS.map(({ id, label, path }) => ({ id, label, path })), [
   { id: 'master-lookup', label: '상품관리', path: 'Master.html' },
@@ -20,6 +20,32 @@ assert.deepEqual(host.APPS.map(({ id, label, path }) => ({ id, label, path })), 
   { id: 'orderops', label: '출고관리', path: 'orderops/list.html' },
   { id: 'dataops', label: 'DataOps', path: 'DataOps.html' },
 ]);
+
+for (const app of host.APPS) {
+  const target = host.headerTargetFromAnchor({
+    href: new URL(app.path, siteRoot).href,
+    dataset: { nexusUiAppTarget: app.id, nexusUiRoute: app.path },
+  }, siteRoot, 'https://example.test');
+  assert.equal(target.ok, true, `${app.label}: the visible header button must resolve from its own canonical href`);
+  assert.equal(target.app.id, app.id);
+  assert.equal(target.route, app.path);
+}
+assert.deepEqual(
+  host.headerTargetFromAnchor({
+    href: 'https://example.test/smartinput/index.html',
+    dataset: { nexusUiAppTarget: 'orderops', nexusUiRoute: 'orderops/list.html' },
+  }, siteRoot, 'https://example.test'),
+  { ok: false, code: 'HEADER_ROUTE_MISMATCH', message: '헤더 버튼 경로가 등록 정보와 일치하지 않습니다.' },
+  'a displayed OrderOps control must never fall through to the SmartInput href',
+);
+assert.deepEqual(
+  host.headerTargetFromAnchor({
+    href: 'https://example.test/orderops/list.html',
+    dataset: { nexusUiAppTarget: 'orderops', nexusUiRoute: 'smartinput/index.html' },
+  }, siteRoot, 'https://example.test'),
+  { ok: false, code: 'HEADER_ROUTE_MISMATCH', message: '헤더 버튼 경로가 등록 정보와 일치하지 않습니다.' },
+  'a stale or mismatched declared header route must be rejected',
+);
 
 const empty = host.parseHostRequest('', workspaceHref);
 assert.equal(empty.ok, true, 'an empty host route must use the product-management entry');
@@ -99,7 +125,7 @@ const [html, css, js, commonUi, architecture] = await Promise.all([
 
 assert.match(html, /id="nexusWorkspaceFrame"/);
 assert.match(html, /common\/nexus-ui-theme-init\.js\?v=1\.2\.0/);
-assert.match(html, /common\/nexus-ui\.js\?v=1\.7\.0/);
+assert.match(html, /common\/nexus-ui\.js\?v=1\.7\.1/);
 assert.equal((html.match(/<iframe\b/g) || []).length, 1, 'the host must own exactly one iframe');
 assert.match(html, /독립 앱으로 열기/);
 assert.match(html, /다시 시도/);

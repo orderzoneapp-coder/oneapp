@@ -19,6 +19,15 @@ const apps = [
   { path: 'orderops/list.html', id: 'orderops', title: '출고관리', logoFree: true },
   { path: 'DataOps.html', id: 'dataops', title: 'DataOps' },
 ];
+const canonicalGlobalLinks = [
+  { id:'master-lookup', route:'Master.html', path:'/Master.html', label:'상품관리' },
+  { id:'customer-master', route:'customer-master/index.html', path:'/customer-master/index.html', label:'거래처관리' },
+  { id:'smart-input', route:'smartinput/index.html', path:'/smartinput/index.html', label:'스마트입력' },
+  { id:'smart-parser', route:'SmartParser.html', path:'/SmartParser.html', label:'스마트파서' },
+  { id:'merchops', route:'MerchOps.html', path:'/MerchOps.html', label:'MerchOps' },
+  { id:'orderops', route:'orderops/list.html', path:'/orderops/list.html', label:'출고관리' },
+  { id:'dataops', route:'DataOps.html', path:'/DataOps.html', label:'DataOps' },
+];
 
 for (const app of apps) {
   const html = readFileSync(join(root, app.path), 'utf8');
@@ -176,6 +185,12 @@ try {
         overlap,
         logoCount:header.querySelectorAll('img,.brand-mark,.brand-logo,.brand-logo-frame').length,
         hasOneApp:/ONEAPP/.test(header.textContent||''),
+        globalLinks:[...global.querySelectorAll('[data-nexus-ui-app-target]')].map((link)=>({
+          id:link.dataset.nexusUiAppTarget,
+          route:link.dataset.nexusUiRoute,
+          path:new URL(link.href).pathname,
+          label:link.textContent
+        })),
       };
     })()`);
   };
@@ -195,6 +210,7 @@ try {
         assert.ok(state.minControlContrast >= 4.5, `${app.id} app-header controls must be readable: ${state.minControlContrast}`);
         assert.equal(state.verticalOverflow, false, `${app.id} controls must stay inside the 56px app-header row: ${JSON.stringify(state)}`);
         assert.equal(state.overlap, false, `${app.id} app-header controls must not overlap: ${JSON.stringify(state)}`);
+        assert.deepEqual(state.globalLinks, canonicalGlobalLinks, `${app.id} must render the exact seven global-header destinations at ${width}px`);
         if (app.logoFree) {
           assert.equal(state.logoCount, 0, `${app.id} app header must not include a logo`);
           assert.equal(state.hasOneApp, false, `${app.id} app header must not include ONEAPP text`);
