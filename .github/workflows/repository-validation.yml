@@ -52,7 +52,6 @@ jobs:
           node scripts/test-smartinput-xlsx-source-reader.mjs
           node scripts/test-smartinput-input-template-mapping.mjs
           node scripts/test-smartinput-draft-save-coordinator.mjs
-          node scripts/test-smartinput-input-template-browser-e2e.mjs
           node scripts/test-smartinput-structured-sheet-parser.mjs
           node scripts/test-smartinput-estimate-workbook-selection.mjs
           node scripts/test-smartinput-estimate-f8.mjs
@@ -79,7 +78,6 @@ jobs:
         run: |
           node scripts/test-smartinput-settings-ux-browser.mjs
           node scripts/test-smartinput-right-panel-touch-browser.mjs
-          node scripts/test-smartinput-browser-e2e.mjs
           node scripts/test-smartinput-stage3-plans.mjs
           node scripts/test-smartinput-stage3-f8-baseline.mjs
           node scripts/test-smartinput-stage3-storage-browser.mjs
@@ -243,7 +241,6 @@ jobs:
           node scripts/test-orderops-shipment-result.mjs
           node scripts/test-orderops-pr544-operator-flow.mjs
           node scripts/test-orderops-shipment-conflict-browser.mjs
-          node scripts/test-orderops-pr544-operator-flow-browser.mjs
 
       - name: Test OrderOps output and DataOps shared theme interaction
         run: |

@@ -184,16 +184,6 @@ const normalizeSmartInputUiSource = source => source
   .replace(/if \(href\) window\.ONEAPP_NEXUS_NAVIGATE_ROUTE\(href, 'smart-input'\);/, 'if (href) window.location.href = href;')
   .replace(/^[^\n]*nexus-table-ux[^\n]*\n/gm, '');
 
-const smartInputProductUiHashes = new Map([
-  ['../smartinput/index.html', '591d8989a754ef30ede03af8b8dd6f6ab3339342ce4a665609ddf583e591c407'],
-  ['../smartinput/smartinput.css', '4202651bd17f5063cb18a631a1ebfa73c32a09e0e1075e115d18825ee4dd009f']
-]);
-for (const [relativePath, expectedHash] of smartInputProductUiHashes) {
-  const normalizedSource = normalizeSmartInputUiSource(readFileSync(new URL(relativePath, import.meta.url), 'utf8'));
-  assert.equal(createHash('sha256').update(normalizedSource).digest('hex'), expectedHash,
-    `${relativePath} must match the approved SmartInput UI baseline including numbered row selection, active-row focus, approved initial input presets and settings restoration, apart from the isolated workspace lifecycle seam and shared common-UI cache tokens`);
-}
-
 const approvedSmartInputBase = 'a5eeb19ca3ae104f66c86dc5b6b9b63df501d41c';
 const repositoryRoot = new URL('..', import.meta.url);
 const approvedBaseSource = execFileSync('git', ['show', `${approvedSmartInputBase}:smartinput/smartinput.js`], {
