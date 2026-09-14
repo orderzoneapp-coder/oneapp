@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const STORAGE_KEY = 'oneapp.nexus.ui.theme.v1';
   const LEGACY_KEYS = Object.freeze([
     'oneapp.nexus.v1.colorMode',
@@ -83,19 +83,6 @@
   if (appId) {
     root.dataset.nexusUiApp = appId;
     root.dataset.nexusApp = appId;
-  }
-
-  if (appId === 'smart-input') {
-    const loadSourcePreparation = () => {
-      if (document.querySelector('script[data-smartinput-source-preparation]')) return;
-      const sourcePreparation = document.createElement('script');
-      sourcePreparation.src = '/smartinput/source-preparation-ui-v2.js?v=0.1.1';
-      sourcePreparation.dataset.smartinputSourcePreparation = 'true';
-      document.head.appendChild(sourcePreparation);
-    };
-    const scheduleSourcePreparation = () => window.setTimeout(loadSourcePreparation, 1200);
-    if (document.readyState === 'complete') scheduleSourcePreparation();
-    else window.addEventListener('load', scheduleSourcePreparation, { once: true });
   }
 
   root.dataset.nexusUiInitStartedAt = String(startedAt);

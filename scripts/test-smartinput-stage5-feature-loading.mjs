@@ -13,6 +13,7 @@ import {
 
 const appSource = fs.readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');
 const themeSource = fs.readFileSync(new URL('../nexus/common/nexus-ui-theme-init.js', import.meta.url), 'utf8');
+const smartInputHtml = fs.readFileSync(new URL('../smartinput/index.html', import.meta.url), 'utf8');
 const staticImports = [...appSource.matchAll(/^import[\s\S]*?from\s+['"]([^'"]+)['"];$/gm)].map(match => match[1]);
 const deferredModules = [
   'estimate-output.js',
@@ -41,10 +42,10 @@ assert.match(appSource, /Promise\.all\(\[\s*ensureXlsx\(operationToken\),\s*load
   'file intake must prepare the XLSX runtime and internal feature from the same click');
 assert.match(appSource, /Promise\.all\(\[\s*ensureTesseract\(operationToken\),\s*loadOptionalFeature\('ocr'/,
   'OCR must prepare Tesseract and the parser from the same click');
-assert.match(themeSource, /source-preparation-ui-v2\.js\?v=0\.1\.1/,
-  'the current source preparation UI must remain the delayed default asset');
-assert.match(themeSource, /setTimeout\([\s\S]*1200\)/,
-  'the source preparation UI delay must be preserved');
+assert.doesNotMatch(themeSource, /source-preparation-ui-v2\.js/,
+  'the common theme initializer must not load a SmartInput-only feature');
+assert.match(smartInputHtml, /<script defer src="\.\/source-preparation-ui-v2\.js\?v=0\.1\.1"/,
+  'SmartInput must load its source preparation UI directly without a fixed delay');
 
 const rows = [
   { rowId: 'R1', masterProductId: 'M1', itemCode: 'A', noticePrice: '1,200' },

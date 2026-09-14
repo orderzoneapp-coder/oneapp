@@ -151,6 +151,8 @@ assert.match(source, /setAckMultiCodes\(new Set\(Array\.isArray\(snapshot\.ackMu
 assert.match(source, /onRestoreWorkScreenState\(snapshot\.screenState \|\| \{\}, snapshot\)/);
 assert.match(source, /setFiles\(\{ prev: null, in: null, out: null, end: null \}\)/);
 assert.doesNotMatch(source, /restoreWorkState\(\{ silent: true \}\)/, "saved work must not silently replace the current screen on load");
+assert.match(source, /workspaceDurableRevisionRef\.current === mutationRevision/, "unchanged DataOps work must bypass a duplicate autosave");
+assert.match(source, /while \(true\)[\s\S]*workspaceMutationRevisionRef\.current === mutationRevision/, "DataOps leave must include changes that arrive during a save");
 
 const screenAutosaveStart = source.indexOf("const scheduleWorkScreenAutosave = useCallback");
 const screenAutosaveEnd = source.indexOf("const activeIssueModeRef", screenAutosaveStart);

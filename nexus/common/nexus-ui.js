@@ -1,11 +1,14 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.7.1';
+  const VERSION = '1.8.0';
   const WORKSPACE_SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const WORKSPACE_MESSAGE_TYPES = Object.freeze({
+    BRIDGE_READY: 'NEXUS_WORKSPACE_BRIDGE_READY_V1',
     HOST_READY: 'NEXUS_WORKSPACE_HOST_READY_V1',
     APP_READY: 'NEXUS_WORKSPACE_APP_READY_V1',
+    APP_ERROR: 'NEXUS_WORKSPACE_APP_ERROR_V1',
+    CANCEL: 'NEXUS_WORKSPACE_CANCEL_V1',
     NAVIGATE: 'NEXUS_WORKSPACE_NAVIGATE_V1',
     ROUTE_CHANGED: 'NEXUS_WORKSPACE_ROUTE_CHANGED_V1',
     BEFORE_LEAVE: 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1',
@@ -90,6 +93,8 @@
     let hostState = null;
     let adapter = null;
     let leaveSequence = Promise.resolve();
+    let readyTask = null;
+    let readyController = null;
 
     const normalizeLeaveResult = (value) => {
       if (value === false) return { result: 'BLOCKED', message: '현재 앱의 미저장 작업을 먼저 완료해 주세요.' };
@@ -125,19 +130,57 @@
       }
     };
 
-    const sendReady = async (message) => {
-      try {
-        if (typeof adapter?.ready === 'function') await adapter.ready();
-        post(WORKSPACE_MESSAGE_TYPES.APP_READY, message.transitionId, message.appId, currentRoute());
-      } catch (error) {
-        root.dataset.nexusWorkspaceReadyError = String(error?.message || error || '앱 준비에 실패했습니다.').slice(0, 500);
-      }
+    const cancelReady = (transitionId = '') => {
+      if (!readyController || (transitionId && readyTask?.transitionId !== transitionId)) return false;
+      readyController.abort();
+      readyController = null;
+      readyTask = null;
+      root.dataset.nexusWorkspaceReady = 'cancelled';
+      window.dispatchEvent(new CustomEvent('nexus-workspace:cancel', {
+        detail: Object.freeze({ transitionId: transitionId || hostState?.transitionId || '' }),
+      }));
+      return true;
+    };
+
+    const startReadyWhenPossible = () => {
+      if (!hostState || !adapter || readyTask?.transitionId === hostState.transitionId) return false;
+      if (readyTask) cancelReady(readyTask.transitionId);
+      const context = Object.freeze({
+        appId: hostState.appId,
+        route: currentRoute(),
+        transitionId: hostState.transitionId,
+      });
+      const controllerForRun = new AbortController();
+      readyController = controllerForRun;
+      readyTask = { transitionId: context.transitionId, controller: controllerForRun };
+      root.dataset.nexusWorkspaceReady = 'preparing';
+
+      Promise.resolve()
+        .then(() => typeof adapter.ready === 'function' ? adapter.ready(context, controllerForRun.signal) : undefined)
+        .then(() => {
+          if (controllerForRun.signal.aborted || hostState?.transitionId !== context.transitionId) return;
+          root.dataset.nexusWorkspaceReady = 'true';
+          post(WORKSPACE_MESSAGE_TYPES.APP_READY, context.transitionId, context.appId, currentRoute());
+        })
+        .catch((error) => {
+          if (controllerForRun.signal.aborted || hostState?.transitionId !== context.transitionId) return;
+          const message = String(error?.message || error || '앱 준비에 실패했습니다.').slice(0, 500);
+          root.dataset.nexusWorkspaceReady = 'error';
+          root.dataset.nexusWorkspaceReadyError = message;
+          post(WORKSPACE_MESSAGE_TYPES.APP_ERROR, context.transitionId, context.appId, currentRoute(), { message });
+        })
+        .finally(() => {
+          if (readyTask?.controller !== controllerForRun) return;
+          readyController = null;
+        });
+      return true;
     };
 
     const handleBeforeLeave = (message) => {
       const request = async () => {
         try {
-          const value = typeof adapter?.beforeLeave === 'function'
+          if (!adapter) return { result: 'ERROR', message: '현재 앱의 저장 연결이 등록되지 않았습니다.' };
+          const value = typeof adapter.beforeLeave === 'function'
             ? await adapter.beforeLeave({ appId: message.appId, route: currentRoute() })
             : { result: 'READY' };
           return normalizeLeaveResult(value);
@@ -160,14 +203,18 @@
       if (message.type === WORKSPACE_MESSAGE_TYPES.HOST_READY) {
         const owner = appForWorkspaceRoute(currentRoute(), message.appId);
         if (!owner || owner !== message.appId) return;
+        if (hostState?.transitionId !== message.transitionId) cancelReady();
         hostState = { transitionId: message.transitionId, appId: message.appId };
         root.dataset.nexusWorkspaceHostApp = message.appId;
         applyHostTheme(message.theme);
-        void sendReady(message);
+        startReadyWhenPossible();
         return;
       }
       if (!hostState || message.appId !== hostState.appId) return;
-      if (message.type === WORKSPACE_MESSAGE_TYPES.BEFORE_LEAVE) {
+      if (message.type === WORKSPACE_MESSAGE_TYPES.CANCEL) {
+        if (message.transitionId !== hostState.transitionId) return;
+        cancelReady(message.transitionId);
+      } else if (message.type === WORKSPACE_MESSAGE_TYPES.BEFORE_LEAVE) {
         handleBeforeLeave(message);
       } else if (message.type === WORKSPACE_MESSAGE_TYPES.THEME) {
         if (message.transitionId !== hostState.transitionId) return;
@@ -206,7 +253,12 @@
 
     const registerAdapter = (value = {}) => {
       adapter = value && typeof value === 'object' ? value : null;
-      return () => { if (adapter === value) adapter = null; };
+      startReadyWhenPossible();
+      return () => {
+        if (adapter !== value) return;
+        adapter = null;
+        cancelReady();
+      };
     };
 
     window.addEventListener('message', onMessage);
@@ -227,8 +279,13 @@
       navigate(targetAppId, route);
     }, true);
 
+    if (workspaceEmbedded) {
+      const bridgeAppId = appForWorkspaceRoute(currentRoute(), root.dataset.nexusUiApp || '');
+      if (bridgeAppId) post(WORKSPACE_MESSAGE_TYPES.BRIDGE_READY, '', bridgeAppId, currentRoute());
+    }
+
     return Object.freeze({
-      VERSION: '1.0.0',
+      VERSION: '1.1.0',
       schemaVersion: WORKSPACE_SCHEMA_VERSION,
       isEmbedded: workspaceEmbedded,
       registerAdapter,
@@ -238,6 +295,7 @@
       currentRoute,
       get appId() { return hostState?.appId || ''; },
       get connected() { return Boolean(hostState); },
+      get adapterRegistered() { return Boolean(adapter); },
     });
   };
 

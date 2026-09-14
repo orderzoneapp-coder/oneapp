@@ -76,6 +76,23 @@ body.nexus-workspace {
   animation: nexus-workspace-spin 700ms linear infinite;
 }
 
+.nexus-ui-nav__link.is-pending {
+  background: var(--nexus-ui-tab-hover-bg);
+  color: var(--nexus-ui-tab-active-text);
+}
+
+.nexus-ui-nav__link.is-pending::before {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nexus-ui-teal);
+  content: "";
+  animation: nexus-workspace-pulse 800ms ease-in-out infinite alternate;
+}
+
 .nexus-workspace__error-card {
   width: min(100%, 520px);
   padding: 28px;
@@ -160,6 +177,11 @@ body.nexus-workspace {
   to { transform: rotate(360deg); }
 }
 
+@keyframes nexus-workspace-pulse {
+  from { opacity: .35; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 760px) {
   .nexus-workspace__main {
     height: calc(100dvh - var(--nexus-ui-header-height, 104px));
@@ -178,6 +200,7 @@ body.nexus-workspace {
 @media (prefers-reduced-motion: reduce) {
   .nexus-workspace__frame { transition: none; }
   .nexus-workspace__spinner { animation: none; }
+  .nexus-ui-nav__link.is-pending::before { animation: none; }
 }
 
 @media print {

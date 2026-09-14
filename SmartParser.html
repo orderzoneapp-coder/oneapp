@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="nexus/common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="smart-parser"></script>
+    <script src="nexus/common/nexus-ui-theme-init.js?v=1.3.0" data-nexus-app-id="smart-parser"></script>
     <link rel="stylesheet" href="nexus/common/nexus-ui.css?v=1.4.1">
     <link rel="stylesheet" href="nexus/common/nexus-ui-app-themes.css?v=1.3.11">
     <link rel="stylesheet" href="nexus/common/nexus-workbench-layout-v2.css?v=1.0.0">
     <link rel="stylesheet" href="nexus/common/nexus-table-ux.css?v=1.1.0">
-    <script defer src="nexus/common/nexus-ui.js?v=1.7.1"></script>
+    <script defer src="nexus/common/nexus-ui.js?v=1.8.0"></script>
     <script defer src="nexus/common/nexus-workbench-layout-v2.js?v=1.2.0"></script>
     <script defer src="nexus/common/nexus-table-ux.js?v=1.1.0"></script>
     <meta name="google" content="notranslate">
@@ -2490,9 +2490,11 @@ const ParserApp = () => {
         write.catch(e => console.warn("세션 저장 실패", e));
     }, [appState.parserBuffer, appState.currentTag, appState.analysisResult]);
     useEffect(() => {
-        const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
-        if (!bridge?.registerAdapter) return undefined;
-        return bridge.registerAdapter({
+        let unregister = null;
+        const register = () => {
+            const bridge = window.ONEAPP_NEXUS_WORKSPACE_CHILD;
+            if (!bridge?.registerAdapter || unregister) return;
+            unregister = bridge.registerAdapter({
             beforeLeave: async () => {
                 const wasProcessing = Boolean(workspaceStateRef.current?.isProcessing);
                 document.activeElement?.blur?.();
@@ -2521,7 +2523,14 @@ const ParserApp = () => {
                 return { result: 'READY' };
             },
             print: () => window.print()
-        });
+            });
+        };
+        register();
+        window.addEventListener('nexus-ui:ready', register);
+        return () => {
+            window.removeEventListener('nexus-ui:ready', register);
+            unregister?.();
+        };
     }, []);
     // ⭐ 단축키 연동: 체크 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
     useEffect(() => {

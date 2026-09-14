@@ -9,7 +9,7 @@ const host = require('../nexus/workspace.js');
 const workspaceHref = 'https://example.test/nexus/workspace.html';
 const siteRoot = 'https://example.test/';
 
-assert.equal(host.VERSION, '1.1.1');
+assert.equal(host.VERSION, '1.2.0');
 assert.equal(host.SCHEMA_VERSION, 'nexus-workspace-message/v1');
 assert.deepEqual(host.APPS.map(({ id, label, path }) => ({ id, label, path })), [
   { id: 'master-lookup', label: '상품관리', path: 'Master.html' },
@@ -124,11 +124,12 @@ const [html, css, js, commonUi, architecture] = await Promise.all([
 ]);
 
 assert.match(html, /id="nexusWorkspaceFrame"/);
-assert.match(html, /common\/nexus-ui-theme-init\.js\?v=1\.2\.0/);
-assert.match(html, /common\/nexus-ui\.js\?v=1\.7\.1/);
+assert.match(html, /common\/nexus-ui-theme-init\.js\?v=1\.3\.0/);
+assert.match(html, /common\/nexus-ui\.js\?v=1\.8\.0/);
 assert.equal((html.match(/<iframe\b/g) || []).length, 1, 'the host must own exactly one iframe');
 assert.match(html, /독립 앱으로 열기/);
 assert.match(html, /다시 시도/);
+assert.match(html, /이전 앱으로 돌아가기/);
 assert.match(css, /height:\s*calc\(100dvh - var\(--nexus-ui-header-height/);
 assert.match(js, /event\.origin !== options\.origin/);
 assert.match(js, /event\.source !== options\.source/);
@@ -136,6 +137,8 @@ assert.match(js, /data\.transitionId !== options\.transitionId/);
 assert.match(js, /history\.replaceState/);
 assert.match(js, /history\.pushState/);
 assert.match(js, /NEXUS_WORKSPACE_BEFORE_LEAVE_V1/);
+assert.match(js, /NEXUS_WORKSPACE_BRIDGE_READY_V1/);
+assert.match(js, /NEXUS_WORKSPACE_CANCEL_V1/);
 assert.match(js, /NEXUS_WORKSPACE_PRINT_V1/);
 assert.doesNotMatch(js, /\bfetch\s*\(|indexedDB|localStorage\.setItem|sessionStorage\.setItem|google\.script/, 'the host must not read or write business/runtime data');
 assert.match(commonUi, /id:\s*'master-lookup'[\s\S]*id:\s*'customer-master'[\s\S]*id:\s*'smart-input'[\s\S]*id:\s*'smart-parser'[\s\S]*id:\s*'merchops'[\s\S]*id:\s*'orderops'[\s\S]*id:\s*'dataops'/);
@@ -156,7 +159,7 @@ const createRecoveryHost = ({ historyMode = 'push', restoreTarget = empty, popst
     querySelector() { return null; },
     querySelectorAll() { return []; },
   };
-  instance.loading = { hidden: false };
+  instance.loading = { hidden: true };
   instance.loadingText = { textContent: '' };
   instance.error = { hidden: true };
   instance.errorMessage = { textContent: '' };
@@ -169,6 +172,7 @@ const createRecoveryHost = ({ historyMode = 'push', restoreTarget = empty, popst
   instance.failedLoad = null;
   instance.frameReady = false;
   instance.transitionRunning = false;
+  instance.pendingExit = null;
   instance.queuedNavigation = null;
   instance.pendingLeave = null;
   instance.pendingLoad = { historyMode, restoreTarget, popstate, timer: 1, resolve() {} };
@@ -239,7 +243,7 @@ const createRecoveryHost = ({ historyMode = 'push', restoreTarget = empty, popst
   instance.loading.hidden = true;
   const leave = instance.beforeLeave();
   assert.equal(postCount, 1, 'before-leave must issue one request');
-  assert.equal(instance.loading.hidden, false, 'before-leave progress text must be visible while the app saves');
+  assert.equal(instance.loading.hidden, true, 'before-leave must keep the current app visible while it saves');
   instance.timeoutCallback();
   assert.deepEqual(await leave, { result: 'ERROR', message: '저장 확인 시간이 초과되어 화면 이동을 취소했습니다.' });
   assert.equal(instance.currentTarget, empty, 'leave timeout must preserve the current target');
@@ -263,6 +267,53 @@ const createRecoveryHost = ({ historyMode = 'push', restoreTarget = empty, popst
   assert.deepEqual(historyCalls, [], 'leave ERROR on a pushed request must preserve the current URL');
   assert.equal(instance.loading.hidden, true, 'leave ERROR must dismiss the saving progress overlay');
   assert.equal(instance.lastNotice, 'save failed');
+}
+
+{
+  const { instance } = createRecoveryHost({ historyMode: 'push' });
+  instance.loadingTarget = null;
+  instance.pendingLoad = null;
+  instance.frameReady = true;
+  instance.setPendingHeader = () => {};
+  let finishLeave;
+  let leaveCount = 0;
+  instance.beforeLeave = () => {
+    leaveCount += 1;
+    return new Promise((resolve) => { finishLeave = resolve; });
+  };
+  let assigned = '';
+  instance.window.location = { assign: (href) => { assigned = href; } };
+  let selected = null;
+  instance.loadTarget = (target) => { selected = target; return Promise.resolve('ready'); };
+
+  const exit = instance.requestExit('https://example.test/nexus/');
+  await instance.requestNavigation(order, 'push');
+  finishLeave({ result: 'READY' });
+  await exit;
+
+  assert.equal(assigned, '', 'a later app selection must supersede an exit that is still waiting for save');
+  assert.equal(selected, order, 'the last selected app must load after the pending save completes');
+  assert.equal(leaveCount, 1, 'an approved leave must not be repeated when the exit is replaced by an app selection');
+}
+
+{
+  const { instance } = createRecoveryHost({ historyMode: 'push' });
+  instance.loadingTarget = null;
+  instance.pendingLoad = null;
+  instance.frameReady = true;
+  instance.setPendingHeader = () => {};
+  let finishLeave;
+  instance.beforeLeave = () => new Promise((resolve) => { finishLeave = resolve; });
+  let assigned = '';
+  instance.window.location = { assign: (href) => { assigned = href; } };
+
+  const exit = instance.requestExit('https://example.test/nexus/');
+  await instance.requestNavigation(empty, 'push');
+  finishLeave({ result: 'READY' });
+  await exit;
+
+  assert.equal(assigned, '', 'reselecting the current app must cancel an exit that is still waiting for save');
+  assert.equal(instance.currentTarget, empty);
 }
 
 console.log('PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, safe retry.');
