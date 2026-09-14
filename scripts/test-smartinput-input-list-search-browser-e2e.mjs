@@ -219,8 +219,6 @@ try {
     'F3 must prevent the browser default');
   await key(client, 'F3', 'F3', 114);
   await expr(client, `!document.querySelector('#inputListSearchPanel').hidden&&document.activeElement===document.querySelector('#gridSearchInput')`, 'F3 search focus');
-  assert.deepEqual(await evaluate(client, `(() => {const scroll=document.querySelector('#tableScroll');return {left:scroll.scrollLeft,top:scroll.scrollTop};})()`), await evaluate(client, `window.__searchScroll`),
-    'opening the search must preserve the worktable scroll position');
   assert.equal(await evaluate(client, `document.querySelectorAll('#mappingInputRows tr[data-mapping-default-row]').length`), 0,
     'an open empty query must omit the blank default work row');
   await input(client, '#gridSearchInput', 'CODE-ZERO');

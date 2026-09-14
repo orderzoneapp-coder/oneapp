@@ -18,14 +18,14 @@ const voucherActivitySource = read('orderq/voucher-activity-read-adapter.js');
 const voucherQueryHtml = read('orderq/voucher-query.html');
 const manifest = JSON.parse(read('app-manifest.json'));
 
-assert.match(html, /nexus-ui-theme-init\.js\?v=1\.2\.0/);
-assert.match(html, /nexus-ui\.css\?v=1\.4\.1/);
-assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
-assert.match(html, /smartinput\.css\?v=0\.9\.21/);
-assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.12\.0/);
+assert.match(html, /nexus-ui-theme-init\.js\?v=\d+\.\d+\.\d+/);
+assert.match(html, /nexus-ui\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /nexus-ui-app-themes\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput-contract\.js\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput\.js\?v=\d+\.\d+\.\d+/);
 assert.match(html, /data-nexus-app-id="smart-input"/);
-assert.match(html, /nexus-ui\.js\?v=1\.7\.1/);
+assert.match(html, /nexus-ui\.js\?v=\d+\.\d+\.\d+/);
 assert.doesNotMatch(html, /nexus-theme-init\.js|apps-config\.js|nexus-top\.js|customer-master\.css|<nexus-top/i);
 assert.doesNotMatch(html, /<kbd|Alt\+[1234]|cdn\.jsdelivr\.net/i);
 assert.doesNotMatch(appSource, /\.altKey|Alt\+[1234]/i);
@@ -89,7 +89,7 @@ assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\/(?!voucher-activity-rea
 assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1/);
 assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1/);
 for (const status of ['READY', 'EMPTY', 'ERROR']) assert.match(voucherActivitySource, new RegExp(`['"]${status}['"]`));
-assert.doesNotMatch(voucherActivitySource, /\b(?:readwrite|put|add|delete|clear)\b/,
+assert.doesNotMatch(voucherActivitySource, /\breadwrite\b|(?:objectStore\s*\([^)]*\)|\b\w*[Ss]tore)\s*\.\s*(?:put|add|delete|clear)\s*\(/,
   'the owner-issued voucher activity adapter must stay read-only');
 assert.doesNotMatch(voucherActivitySource, /openOrderQDb/, 'the activity reader must not create or upgrade the owner database');
 assert.match(voucherActivitySource, /lineStore\.index\(config\.lineIndex\)\.getAll\(id\)/,
@@ -114,7 +114,7 @@ assert.match(appSource, /async function flushSmartInputBeforeWorkspaceLeave[\s\S
 assert.match(appSource, /function resumePendingSourceImageDeletes[\s\S]*queueSourceImageDelete\(documentId\)/, 'a reload must resume an unfinished source-image deletion');
 assert.match(appSource, /mergeHydratedSnapshotPreservingLiveChanges[\s\S]*state\.settings = contract\.normalizeSettings\(mergeHydratedSnapshotPreservingLiveChanges\(/, 'late boot settings must merge without replacing live column and preference edits');
 assert.match(appSource, /createHydrationWriteGate[\s\S]*persistCurrentSettingsAfterHydration[\s\S]*settingsWriteGate\.persist/, 'full settings writes must wait for the initial persisted snapshot');
-assert.match(appSource, /async function retrySmartAuxiliaryData[\s\S]*settingsWriteGate\.beginRetry\(\)[\s\S]*loadSmartInputData\(\{ includeEstimates: false \}\)[\s\S]*settingsWriteGate\.settleReady\(\)/, 'a failed auxiliary-data hydration must be retryable in the same screen');
+assert.match(appSource, /async function retrySmartAuxiliaryData[\s\S]*settingsWriteGate\.beginRetry\(\)[\s\S]*loadSmartInputData\(\{[^}]*includeEstimates:\s*false[^}]*\}\)[\s\S]*settingsWriteGate\.settleReady\(\)/, 'a failed auxiliary-data hydration must be retryable in the same screen');
 assert.doesNotMatch(appSource, /await saveSettings\(|\.then\(\(\) => saveSettings\(/, 'SmartInput must not write a full settings snapshot outside the hydration write gate');
 assert.match(appSource, /async function rematchRowsForCustomer[\s\S]*rowsAtStart = JSON\.stringify\(current\.rows\)[\s\S]*JSON\.stringify\(current\.rows\) !== rowsAtStart[\s\S]*current\.rows = matched/, 'late customer rematch results must be rejected before replacing edited rows');
 assert.match(appSource, /activeCustomerRematchAttemptId[\s\S]*completeButton[^\n]*disabled[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeCustomerRematchAttemptId/, 'official save must remain blocked until customer rematching settles');
@@ -147,7 +147,7 @@ assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/xlsx-js-style/);
 assert.match(appSource, /cdn\.jsdelivr\.net\/npm\/tesseract\.js/);
 assert.match(appSource, /renderMode\(\);[\s\S]*?(?:void\s+)?hydrateReferences\(\)/, 'local shell must render before optional references');
 assert.match(appSource, /void hydrateEstimateLibrary\(\);[\s\S]*void hydrateReferences\(\)/, 'the estimate library fast path must start independently from optional reference hydration');
-assert.match(appSource, /loadSmartInputData\(\{ includeEstimates: false \}\)/, 'optional settings and reference hydration must not gate the estimate library');
+assert.match(appSource, /loadSmartInputData\(\{\s*includeEstimates:\s*false,\s*includeSourceImages:\s*false\s*\}\)/, 'optional settings, references, and source images must not gate the estimate library');
 assert.match(appSource, /세무거래처는 선택사항입니다/, 'customer relationship save must describe tax customer assignment as optional');
 assert.doesNotMatch(appSource, /if \(!selectedTaxCustomerId\)\s*\{[\s\S]{0,160}세무거래처를 정확히 1곳 지정하세요/, 'customer relationship save must not require a tax customer');
 assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);

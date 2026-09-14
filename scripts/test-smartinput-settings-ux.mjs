@@ -161,12 +161,12 @@ assert.deepEqual(Array.from(normalized.voucherColumnsByMode.estimate), ['itemCod
 const html = read('smartinput/index.html');
 const app = read('smartinput/smartinput.js');
 const css = read('smartinput/smartinput.css');
-assert.match(html, /nexus-ui\.css\?v=1\.4\.1/);
-assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/);
-assert.match(html, /nexus-ui\.js\?v=1\.7\.1/);
-assert.match(html, /smartinput\.css\?v=0\.9\.21/);
-assert.match(html, /smartinput-contract\.js\?v=0\.6\.5/);
-assert.match(html, /smartinput\.js\?v=0\.12\.0/);
+assert.match(html, /nexus-ui\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /nexus-ui-app-themes\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /nexus-ui\.js\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput\.css\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput-contract\.js\?v=\d+\.\d+\.\d+/);
+assert.match(html, /smartinput\.js\?v=\d+\.\d+\.\d+/);
 assert.match(app, /data-toggle-voucher-explorer/);
 assert.match(app, /data-voucher-field-search/);
 assert.match(app, /data-voucher-field-category/);

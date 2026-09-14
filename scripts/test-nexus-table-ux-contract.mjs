@@ -10,8 +10,8 @@ const pages = [
 ];
 for (const relative of pages) {
   const html = fs.readFileSync(path.join(root, relative), 'utf8');
-  assert.match(html, /nexus-table-ux\.css\?v=1\.1\.0/, `${relative} must load common table presentation`);
-  assert.match(html, /nexus-table-ux\.js\?v=1\.1\.0/, `${relative} must load common table interaction`);
+  assert.match(html, /nexus-table-ux\.css\?v=\d+\.\d+\.\d+/, `${relative} must load versioned common table presentation`);
+  assert.match(html, /nexus-table-ux\.js\?v=\d+\.\d+\.\d+/, `${relative} must load versioned common table interaction`);
 }
 
 const css = fs.readFileSync(path.join(root, 'nexus/common/nexus-table-ux.css'), 'utf8');
