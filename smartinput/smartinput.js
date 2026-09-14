@@ -1293,6 +1293,8 @@ async function waitForSmartInputIdle(timeoutMs = 10000) {
 }
 
 async function flushSmartInputBeforeWorkspaceLeave() {
+  document.activeElement?.blur?.();
+  await new Promise(resolve => window.setTimeout(resolve, 0));
   await autosaveInitializationPromise;
   clearTimeout(state.saveTimer);
   clearTimeout(state.compatibilitySaveTimer);
@@ -1307,6 +1309,9 @@ async function flushSmartInputBeforeWorkspaceLeave() {
     );
   }
   clearTimeout(state.saveTimer);
+  clearTimeout(state.compatibilitySaveTimer);
+  await autosaveWriteQueue;
+  if (!state.draftDirty) return { result: 'READY' };
   Object.keys(state.draft.modes || {}).forEach(mode => {
     const current = state.draft.modes[mode];
     current.updatedAt ||= state.draft.updatedAt || new Date().toISOString();

@@ -27,6 +27,7 @@ const mime = {
 };
 const requests = [];
 const failNext = new Map();
+const delayNext = new Map();
 let serveRealApps = false;
 const server = createServer((request, response) => {
   try {
@@ -40,8 +41,15 @@ const server = createServer((request, response) => {
         response.end('<!doctype html><title>fixture 404</title><h1>Not found</h1>');
         return;
       }
-      response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime['.html'] });
-      response.end(fixture);
+      const delayMs = delayNext.get(pathname) || 0;
+      delayNext.delete(pathname);
+      const sendFixture = () => {
+        if (response.destroyed || response.writableEnded) return;
+        response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime['.html'] });
+        response.end(fixture);
+      };
+      if (delayMs > 0) setTimeout(sendFixture, delayMs);
+      else sendFixture();
       return;
     }
     const relative = `${pathname.replace(/^\/+/, '')}${pathname.endsWith('/') ? 'index.html' : ''}`;
@@ -419,6 +427,45 @@ try {
     && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
     && document.querySelector('#nexusWorkspaceLoading').hidden`), 'isolated history recovery phase');
 
+  const invalidHeaderHref = await evaluate(client, `(() => {
+    const link=document.querySelector('[data-nexus-ui-app-target="orderops"]');
+    const original=link.href;
+    link.href='/smartinput/index.html';
+    link.click();
+    link.href=original;
+    return location.href;
+  })()`);
+  await wait(100);
+  assert.equal(await evaluate(client, 'location.href'), invalidHeaderHref, 'an invalid global-header href must be blocked before browser navigation');
+
+  requests.length = 0;
+  delayNext.set('/SmartParser.html', 2500);
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="smart-parser"]').click()`);
+  await waitFor(() => requests.includes('/SmartParser.html'), 'started intermediate app request');
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="merchops"]').click()`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'merchops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'merchops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'superseded started app navigation');
+  assert.equal(requests.filter((path) => path === '/SmartParser.html').length, 1, 'an already-started intermediate request may occur once');
+  assert.equal(requests.filter((path) => path === '/MerchOps.html').length, 1, 'the final selection must start without waiting for the superseded response');
+
+  const resetAfterSupersede = client.once('Page.loadEventFired');
+  await evaluate(client, `location.replace(${JSON.stringify(`${origin}/nexus/workspace.html?app=dataops&route=DataOps.html`)})`);
+  await resetAfterSupersede;
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'current-tab cancellation source');
+
+  requests.length = 0;
+  delayNext.set('/smartinput/index.html', 2500);
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="smart-input"]').click()`);
+  await waitFor(() => requests.includes('/smartinput/index.html'), 'started target before current-tab cancellation');
+  await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="dataops"]').click()`);
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
+    && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
+    && document.querySelector('#nexusWorkspaceLoading').hidden`), 'current-tab cancellation reload');
+  assert.equal(requests.filter((path) => path === '/DataOps.html').length, 1, 'current-tab cancellation after document replacement must reopen the previous app once');
+
   failNext.set('/smartinput/index.html', 1);
   const beforePushFailure = await evaluate(client, `({href:location.href,length:history.length,app:document.querySelector('[data-nexus-ui-app-target][aria-current="page"]').dataset.nexusUiAppTarget})`);
   await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="smart-input"]').click()`);
@@ -516,15 +563,37 @@ try {
     if (await evaluate(client, `new URL(location.href).searchParams.get('app')`) !== realAppId) {
       await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="${realAppId}"]').click()`);
     }
-    await waitFor(() => evaluate(client, `(() => {
-      const frame=document.querySelector('#nexusWorkspaceFrame');
-      const child=frame?.contentWindow;
-      return new URL(location.href).searchParams.get('app') === '${realAppId}'
-        && document.querySelector('#nexusWorkspaceLoading').hidden
-        && child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.connected === true
-        && child.document.documentElement.dataset.nexusWorkspaceEmbedded === 'true'
-        && Boolean(child.document.querySelector('[data-nexus-app-header="${realAppId}"]'));
-    })()`), `real integrated app ${realAppId}`, 60_000);
+    try {
+      await waitFor(() => evaluate(client, `(() => {
+        const frame=document.querySelector('#nexusWorkspaceFrame');
+        const child=frame?.contentWindow;
+        return new URL(location.href).searchParams.get('app') === '${realAppId}'
+          && document.querySelector('#nexusWorkspaceLoading').hidden
+          && child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.connected === true
+          && child.document.documentElement.dataset.nexusWorkspaceEmbedded === 'true'
+          && Boolean(child.document.querySelector('[data-nexus-app-header="${realAppId}"]'));
+      })()`), `real integrated app ${realAppId}`, 60_000);
+    } catch (error) {
+      const diagnostic = await evaluate(client, `(() => {
+        const frame=document.querySelector('#nexusWorkspaceFrame');
+        const child=frame?.contentWindow;
+        return {
+          requested:'${realAppId}',
+          parentApp:new URL(location.href).searchParams.get('app'),
+          childHref:child?.location?.href || '',
+          connected:child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.connected || false,
+          adapterRegistered:child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.adapterRegistered || false,
+          ready:child?.document?.documentElement?.dataset?.nexusWorkspaceReady || '',
+          readyError:child?.document?.documentElement?.dataset?.nexusWorkspaceReadyError || '',
+          rendered:Boolean(child?.__SMART_PARSER_RENDERED__),
+          bodyText:child?.document?.body?.innerText?.slice(0,300) || '',
+          errorHidden:document.querySelector('#nexusWorkspaceError')?.hidden,
+          errorMessage:document.querySelector('#nexusWorkspaceErrorMessage')?.textContent || ''
+        };
+      })()`);
+      console.error('Workspace real-app diagnostic:', JSON.stringify({ ...diagnostic, runtimeExceptions }));
+      throw error;
+    }
     const chromeState = await evaluate(client, `(() => {
       const frame=document.querySelector('#nexusWorkspaceFrame');
       return {
@@ -537,7 +606,7 @@ try {
   }
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: 12 clickable desktop home links, 7 exact clickable desktop header links, desktop/mouse and mobile/touch OrderOps, seven real apps, 42 directed transitions, persistent header, reload re-handshake, indexed history retry, 404 timeout recovery, theme/print, compact reveal.');
+  console.log('PASS NEXUS workspace browser: exact header-link blocking, queued and started-navigation supersession, current-tab cancellation, seven real apps, 42 directed transitions, persistent header, adapter handshake, indexed history retry, failure recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
   if (browser && !browser.killed) {

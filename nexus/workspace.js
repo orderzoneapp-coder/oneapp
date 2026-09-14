@@ -12,13 +12,16 @@
 })(typeof window === 'object' ? window : globalThis, () => {
   'use strict';
 
-  const VERSION = '1.1.1';
+  const VERSION = '1.2.0';
   const SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const HANDSHAKE_TIMEOUT_MS = 8000;
   const LEAVE_TIMEOUT_MS = 12000;
   const MESSAGE_TYPES = Object.freeze({
+    BRIDGE_READY: 'NEXUS_WORKSPACE_BRIDGE_READY_V1',
     HOST_READY: 'NEXUS_WORKSPACE_HOST_READY_V1',
     APP_READY: 'NEXUS_WORKSPACE_APP_READY_V1',
+    APP_ERROR: 'NEXUS_WORKSPACE_APP_ERROR_V1',
+    CANCEL: 'NEXUS_WORKSPACE_CANCEL_V1',
     NAVIGATE: 'NEXUS_WORKSPACE_NAVIGATE_V1',
     ROUTE_CHANGED: 'NEXUS_WORKSPACE_ROUTE_CHANGED_V1',
     BEFORE_LEAVE: 'NEXUS_WORKSPACE_BEFORE_LEAVE_V1',
@@ -27,7 +30,9 @@
     PRINT: 'NEXUS_WORKSPACE_PRINT_V1',
   });
   const INBOUND_TYPES = new Set([
+    MESSAGE_TYPES.BRIDGE_READY,
     MESSAGE_TYPES.APP_READY,
+    MESSAGE_TYPES.APP_ERROR,
     MESSAGE_TYPES.NAVIGATE,
     MESSAGE_TYPES.ROUTE_CHANGED,
     MESSAGE_TYPES.LEAVE_RESULT,
@@ -162,6 +167,7 @@
       this.error = documentObject.getElementById('nexusWorkspaceError');
       this.errorMessage = documentObject.getElementById('nexusWorkspaceErrorMessage');
       this.retry = documentObject.getElementById('nexusWorkspaceRetry');
+      this.restorePrevious = documentObject.getElementById('nexusWorkspaceRestorePrevious');
       this.standalone = documentObject.getElementById('nexusWorkspaceStandalone');
       this.notice = documentObject.getElementById('nexusWorkspaceNotice');
       this.currentTarget = null;
@@ -171,7 +177,9 @@
       this.loadTransitionId = '';
       this.frameReady = false;
       this.frameDocumentLoaded = false;
+      this.hostReadyTransitionId = '';
       this.transitionRunning = false;
+      this.pendingExit = null;
       this.queuedNavigation = null;
       this.pendingLeave = null;
       this.pendingLoad = null;
@@ -184,7 +192,7 @@
     }
 
     start() {
-      if (!this.frame || !this.loading || !this.error || !this.retry || !this.standalone || !this.notice) return;
+      if (!this.frame || !this.loading || !this.error || !this.retry || !this.restorePrevious || !this.standalone || !this.notice) return;
       this.document.addEventListener('click', (event) => this.onDocumentClick(event), true);
       this.window.addEventListener('message', (event) => this.onMessage(event));
       this.window.addEventListener('popstate', (event) => this.onPopState(event));
@@ -193,6 +201,7 @@
       this.frame.addEventListener('load', () => this.onFrameLoad());
       this.frame.addEventListener('error', () => this.failLoad('업무 앱 문서를 불러오지 못했습니다.'));
       this.retry.addEventListener('click', () => this.retryCurrentTarget());
+      this.restorePrevious.addEventListener('click', () => this.restorePreviousTarget());
 
       const initial = parseHostRequest(this.window.location.search, this.workspaceHref);
       if (!initial.ok) {
@@ -234,7 +243,13 @@
       }
       this.frameDocumentLoaded = true;
       this.frame.classList.add('is-document-loaded');
-      this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, this.loadingTarget, {
+      this.sendHostReady();
+    }
+
+    sendHostReady() {
+      if (!this.loadingTarget || !this.loadTransitionId || this.hostReadyTransitionId === this.loadTransitionId) return false;
+      this.hostReadyTransitionId = this.loadTransitionId;
+      return this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, this.loadingTarget, {
         theme: this.theme(),
         hostVersion: VERSION,
       });
@@ -272,10 +287,7 @@
       });
       this.frameDocumentLoaded = true;
       this.frame.classList.add('is-document-loaded');
-      this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, target, {
-        theme: this.theme(),
-        hostVersion: VERSION,
-      });
+      this.sendHostReady();
     }
 
     failUnexpectedFrameLoad(message) {
@@ -292,6 +304,18 @@
 
     onMessage(event) {
       const data = event?.data;
+      if (data?.type === MESSAGE_TYPES.BRIDGE_READY) {
+        if (!this.loadingTarget
+          || event.origin !== this.origin
+          || event.source !== this.frame.contentWindow
+          || data.schemaVersion !== SCHEMA_VERSION
+          || data.appId !== this.loadingTarget.app.id) return;
+        const bridgeTarget = validateRoute(data.appId, data.route, this.siteRoot, this.origin);
+        if (!bridgeTarget.ok || bridgeTarget.url !== this.loadingTarget.url) return;
+        this.frameDocumentLoaded = true;
+        this.sendHostReady();
+        return;
+      }
       const expectedTransitionId = data?.type === MESSAGE_TYPES.LEAVE_RESULT
         ? this.pendingLeave?.id
         : this.loadTransitionId;
@@ -304,6 +328,14 @@
       if (data.type === MESSAGE_TYPES.APP_READY) {
         if (!this.loadingTarget || data.appId !== this.loadingTarget.app.id) return;
         this.completeLoad();
+        return;
+      }
+
+      if (data.type === MESSAGE_TYPES.APP_ERROR) {
+        if (!this.loadingTarget || data.appId !== this.loadingTarget.app.id) return;
+        this.failLoad(typeof data.message === 'string' && data.message
+          ? data.message.slice(0, 500)
+          : '앱 준비에 실패했습니다.');
         return;
       }
 
@@ -336,9 +368,12 @@
       if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const appId = anchor.dataset?.nexusUiAppTarget;
       if (appId) {
-        const next = headerTargetFromAnchor(anchor, this.siteRoot, this.origin);
-        if (!next.ok) return;
         event.preventDefault();
+        const next = headerTargetFromAnchor(anchor, this.siteRoot, this.origin);
+        if (!next.ok) {
+          this.showNotice(next.message);
+          return;
+        }
         this.requestNavigation(next, 'push');
         return;
       }
@@ -382,7 +417,7 @@
           historyMode: 'none',
           restoreTarget: recovery.restoreTarget,
           popstate: recovery.popstate,
-        }).finally(() => { this.transitionRunning = false; });
+        }).finally(() => this.finishNavigationTransition());
         return;
       }
       const next = parseHostRequest(this.window.location.search, this.window.location.href);
@@ -403,62 +438,111 @@
     async requestExit(href) {
       if (this.transitionRunning) return;
       this.transitionRunning = true;
+      const pendingExit = { href, superseded: false };
+      this.pendingExit = pendingExit;
       const leave = await this.beforeLeave();
+      if (this.pendingExit === pendingExit) this.pendingExit = null;
+      if (pendingExit.superseded && leave.result === 'READY') {
+        this.transitionRunning = false;
+        if (this.queuedNavigation) return this.runNavigationQueue(true);
+        this.setPendingHeader(null);
+        this.frame.focus();
+        return;
+      }
       this.transitionRunning = false;
       if (leave.result === 'READY') {
         this.window.location.assign(href);
       } else {
+        this.queuedNavigation = null;
+        this.setPendingHeader(null);
         this.loading.hidden = true;
         this.showNotice(leave.message || '현재 작업을 보존하지 못해 화면 이동을 취소했습니다.');
       }
     }
 
-    async requestNavigation(target, historyMode, navigationOptions = {}) {
+    requestNavigation(target, historyMode, navigationOptions = {}) {
       if (this.historyRestore || this.historyRetry) {
         this.showNotice('브라우저 이력을 복구하고 있습니다. 잠시 후 다시 시도해 주세요.');
-        return;
+        return Promise.resolve();
       }
-      if (this.currentTarget?.url === target.url && this.frameReady) {
+      if (this.pendingExit) this.pendingExit.superseded = true;
+      const selectsCurrentTarget = this.currentTarget?.url === target.url;
+      if (selectsCurrentTarget && this.pendingLeave) {
+        this.queuedNavigation = null;
+        this.setPendingHeader(null);
         this.frame.focus();
-        return;
+        return Promise.resolve();
+      }
+      if (selectsCurrentTarget && this.pendingLoad) {
+        this.queuedNavigation = { target: this.currentTarget, historyMode: 'replace', navigationOptions: {} };
+        this.setPendingHeader(this.currentTarget);
+        this.cancelPendingLoad();
+        return Promise.resolve();
+      }
+      if (selectsCurrentTarget && this.frameReady) {
+        this.queuedNavigation = null;
+        this.setPendingHeader(null);
+        this.frame.focus();
+        return Promise.resolve();
       }
       this.queuedNavigation = { target, historyMode, navigationOptions };
-      if (this.transitionRunning) return;
+      this.setPendingHeader(target);
+      if (this.pendingLoad) {
+        this.cancelPendingLoad();
+        return Promise.resolve();
+      }
+      if (this.transitionRunning) return Promise.resolve();
+      return this.runNavigationQueue();
+    }
+
+    async runNavigationQueue(initialLeaveApproved = false) {
       this.transitionRunning = true;
-
-      const leave = await this.beforeLeave();
-      if (leave.result !== 'READY') {
-        this.transitionRunning = false;
-        this.queuedNavigation = null;
-        this.loading.hidden = true;
-        if (historyMode === 'none' && this.currentTarget) {
-          if (!this.restorePopState(navigationOptions.popstate, this.currentTarget)) this.commitHistory(this.currentTarget, 'replace');
-        }
-        this.showNotice(leave.message || (leave.result === 'BLOCKED'
-          ? '현재 작업이 완료되지 않아 화면 이동을 취소했습니다.'
-          : '현재 작업을 저장하지 못해 화면 이동을 취소했습니다.'));
-        return;
-      }
-
-      const queued = this.queuedNavigation;
-      this.queuedNavigation = null;
-      if (!queued) {
-        this.transitionRunning = false;
-        return;
-      }
+      let leaveApproved = initialLeaveApproved;
       try {
-        await this.loadTarget(queued.target, {
-          historyMode: queued.historyMode,
-          popstate: queued.navigationOptions?.popstate || null,
-        });
+        while (this.queuedNavigation) {
+          if (!leaveApproved) {
+            const leave = await this.beforeLeave();
+            if (leave.result !== 'READY') {
+              const rejected = this.queuedNavigation;
+              this.queuedNavigation = null;
+              this.setPendingHeader(null);
+              if (rejected?.historyMode === 'none' && this.currentTarget) {
+                const popstate = rejected.navigationOptions?.popstate || null;
+                if (!this.restorePopState(popstate, this.currentTarget)) this.commitHistory(this.currentTarget, 'replace');
+              }
+              this.showNotice(leave.message || (leave.result === 'BLOCKED'
+                ? '현재 작업이 완료되지 않아 화면 이동을 취소했습니다.'
+                : '현재 작업을 저장하지 못해 화면 이동을 취소했습니다.'));
+              break;
+            }
+            leaveApproved = true;
+          }
+
+          const queued = this.queuedNavigation;
+          this.queuedNavigation = null;
+          if (!queued) break;
+          if (this.currentTarget?.url === queued.target.url && this.frameReady) {
+            leaveApproved = false;
+            this.setPendingHeader(null);
+            this.frame.focus();
+            continue;
+          }
+
+          const loadResult = await this.loadTarget(queued.target, {
+            historyMode: queued.historyMode,
+            popstate: queued.navigationOptions?.popstate || null,
+          });
+          if (loadResult === 'cancelled') continue;
+          leaveApproved = false;
+        }
       } finally {
-        this.transitionRunning = false;
+        this.finishNavigationTransition();
       }
-      if (this.queuedNavigation) {
-        const final = this.queuedNavigation;
-        this.queuedNavigation = null;
-        this.requestNavigation(final.target, final.historyMode, final.navigationOptions);
-      }
+    }
+
+    finishNavigationTransition() {
+      this.transitionRunning = false;
+      if (this.queuedNavigation) void this.runNavigationQueue();
     }
 
     beforeLeave() {
@@ -470,12 +554,9 @@
         const timer = this.window.setTimeout(() => {
           if (this.pendingLeave?.id !== id) return;
           this.pendingLeave = null;
-          this.loading.hidden = true;
           resolve({ result: 'ERROR', message: '저장 확인 시간이 초과되어 화면 이동을 취소했습니다.' });
         }, LEAVE_TIMEOUT_MS);
         this.pendingLeave = { id, timer, resolve };
-        this.loading.hidden = false;
-        this.loadingText.textContent = '현재 입력을 저장하고 검산하고 있습니다.';
         this.post(MESSAGE_TYPES.BEFORE_LEAVE, id, this.currentTarget);
       });
     }
@@ -494,6 +575,7 @@
       this.retryTarget = target;
       this.failedLoad = null;
       this.loadTransitionId = createTransitionId(this.window.crypto);
+      this.hostReadyTransitionId = '';
       this.frameReady = false;
       this.frameDocumentLoaded = false;
       this.frame.classList.remove('is-document-loaded');
@@ -522,6 +604,19 @@
       });
     }
 
+    cancelPendingLoad() {
+      const pending = this.pendingLoad;
+      const target = this.loadingTarget;
+      if (!pending || !target) return false;
+      this.post(MESSAGE_TYPES.CANCEL, pending.transitionId, target);
+      if (pending.timer) this.window.clearTimeout(pending.timer);
+      this.pendingLoad = null;
+      this.loadingTarget = null;
+      this.hostReadyTransitionId = '';
+      pending.resolve('cancelled');
+      return true;
+    }
+
     loadTarget(target, options = {}) {
       const handshake = this.beginHandshake(target, options);
       if (this.frame.hasAttribute('src') && this.frame.contentWindow) {
@@ -541,6 +636,7 @@
       this.retryTarget = this.currentTarget;
       this.failedLoad = pending.preserveFailedLoad;
       this.frameReady = true;
+      this.frame.classList.add('is-document-loaded');
       this.loading.hidden = true;
       if (!this.failedLoad) this.error.hidden = true;
       this.setActiveHeader(this.currentTarget);
@@ -551,7 +647,8 @@
       this.updateStandalone(this.failedLoad?.target || this.currentTarget);
       this.post(MESSAGE_TYPES.THEME, this.loadTransitionId, this.currentTarget, { theme: this.theme() });
       this.pendingLoad = null;
-      pending.resolve(true);
+      this.setPendingHeader(null);
+      pending.resolve('ready');
       this.frame.focus();
     }
 
@@ -560,9 +657,11 @@
       const pending = this.pendingLoad;
       const failedTarget = this.loadingTarget || this.currentTarget;
       const restoreTarget = pending?.restoreTarget || this.currentTarget;
+      if (pending && failedTarget) this.post(MESSAGE_TYPES.CANCEL, pending.transitionId, failedTarget);
       this.pendingLoad = null;
       this.loadingTarget = null;
       this.frameReady = false;
+      this.hostReadyTransitionId = '';
       this.failedLoad = failedTarget ? {
         target: failedTarget,
         historyMode: pending?.historyMode || 'replace',
@@ -574,8 +673,9 @@
       }
       this.restoreCurrentTarget(restoreTarget);
       this.loading.hidden = true;
+      this.setPendingHeader(null);
       this.showLoadError(message, failedTarget);
-      pending?.resolve?.(false);
+      pending?.resolve?.('failed');
     }
 
     retryCurrentTarget() {
@@ -601,7 +701,17 @@
         restoreTarget: recovery.restoreTarget,
         popstate: recovery.popstate || null,
       })
-        .finally(() => { this.transitionRunning = false; });
+        .finally(() => this.finishNavigationTransition());
+    }
+
+    restorePreviousTarget() {
+      if (this.transitionRunning || this.historyRestore || this.historyRetry) return;
+      const target = this.failedLoad?.restoreTarget;
+      if (!target) return;
+      this.transitionRunning = true;
+      this.setPendingHeader(target);
+      this.loadTarget(target, { historyMode: 'replace', restoreTarget: null })
+        .finally(() => this.finishNavigationTransition());
     }
 
     sendTheme(value) {
@@ -659,6 +769,15 @@
       else if (activeRect.right > navRect.right) nav.scrollLeft += activeRect.right - navRect.right;
     }
 
+    setPendingHeader(target) {
+      this.document.querySelectorAll('[data-nexus-ui-app-target]').forEach((link) => {
+        const pending = Boolean(target && link.dataset.nexusUiAppTarget === target.app.id);
+        link.classList.toggle('is-pending', pending);
+        if (pending) link.setAttribute('aria-busy', 'true');
+        else link.removeAttribute('aria-busy');
+      });
+    }
+
     updateStandalone(target) {
       if (target?.url) this.standalone.href = target.url;
     }
@@ -675,6 +794,7 @@
       if (target) this.retryTarget = target;
       this.errorMessage.textContent = message;
       this.updateStandalone(target);
+      this.restorePrevious.hidden = !this.failedLoad?.restoreTarget;
       this.error.hidden = false;
     }
 

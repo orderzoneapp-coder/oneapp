@@ -39,10 +39,10 @@ const pages = [
 
 for (const [file, appId, base, title] of pages) {
   const html = await readFile(file, 'utf8');
-  const init = `${base}nexus-ui-theme-init.js?v=1.2.0`;
+  const init = `${base}nexus-ui-theme-init.js?v=1.3.0`;
   const uiCss = `${base}nexus-ui.css?v=1.4.1`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
-  const runtime = `${base}nexus-ui.js?v=1.7.1`;
+  const runtime = `${base}nexus-ui.js?v=1.8.0`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -116,6 +116,9 @@ assert.match(uiSource, /event\.origin !== location\.origin/, 'workspace bridge m
 assert.match(uiSource, /event\.source !== window\.parent/, 'workspace bridge must reject foreign parent windows');
 assert.match(uiSource, /NEXUS_WORKSPACE_BEFORE_LEAVE_V1/, 'workspace bridge must require a before-leave result before navigation');
 assert.match(uiSource, /NEXUS_WORKSPACE_APP_READY_V1/, 'workspace bridge must announce application readiness');
+assert.match(uiSource, /NEXUS_WORKSPACE_BRIDGE_READY_V1/, 'workspace bridge must announce connection readiness before full window load');
+assert.match(uiSource, /NEXUS_WORKSPACE_APP_ERROR_V1/, 'workspace bridge must report application preparation failures');
+assert.match(uiSource, /adapter\.ready\(context, controllerForRun\.signal\)/, 'workspace adapters must receive transition context and cancellation');
 assert.match(uiSource, /NEXUS_UI_VISIBILITY_V1/, 'common UI visibility projection must be schema-versioned');
 assert.match(uiSource, /sessionStorage\.getItem/, 'common UI must synchronously read the same-tab visibility projection');
 assert.doesNotMatch(uiSource, /sessionStorage\.setItem/, 'common UI must never write the visibility projection');

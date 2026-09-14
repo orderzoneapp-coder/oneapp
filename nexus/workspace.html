@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NEXUS 통합업무</title>
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
-  <script src="common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="master-lookup"></script>
+  <script src="common/nexus-ui-theme-init.js?v=1.3.0" data-nexus-app-id="master-lookup"></script>
   <link rel="stylesheet" href="common/nexus-ui.css?v=1.4.1">
-  <link rel="stylesheet" href="workspace.css?v=1.0.0">
-  <script defer src="common/nexus-ui.js?v=1.7.1"></script>
-  <script defer src="workspace.js?v=1.1.1"></script>
+  <link rel="stylesheet" href="workspace.css?v=1.1.0">
+  <script defer src="common/nexus-ui.js?v=1.8.0"></script>
+  <script defer src="workspace.js?v=1.2.0"></script>
 </head>
 <body class="nexus-workspace">
   <main class="nexus-workspace__main" aria-label="NEXUS 통합 업무영역">
@@ -32,6 +32,7 @@
         <p id="nexusWorkspaceErrorMessage">주소를 확인한 뒤 다시 시도해 주세요.</p>
         <div class="nexus-workspace__error-actions">
           <button id="nexusWorkspaceRetry" type="button">다시 시도</button>
+          <button id="nexusWorkspaceRestorePrevious" type="button" hidden>이전 앱으로 돌아가기</button>
           <a id="nexusWorkspaceStandalone" href="../Master.html" target="_blank" rel="noopener">독립 앱으로 열기</a>
           <a href="./">NEXUS 홈</a>
         </div>

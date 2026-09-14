@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="../nexus/common/nexus-ui-theme-init.js?v=1.2.0" data-nexus-app-id="orderops"></script>
+  <script src="../nexus/common/nexus-ui-theme-init.js?v=1.3.0" data-nexus-app-id="orderops"></script>
   <link rel="stylesheet" href="../nexus/common/nexus-ui.css?v=1.4.1">
   <link rel="stylesheet" href="../nexus/common/nexus-ui-app-themes.css?v=1.3.11">
   <link rel="stylesheet" href="../nexus/common/nexus-workbench-layout-v2.css?v=1.2.0">
   <link rel="stylesheet" href="../nexus/common/nexus-table-ux.css?v=1.1.0">
-  <script defer src="../nexus/common/nexus-ui.js?v=1.7.1"></script>
+  <script defer src="../nexus/common/nexus-ui.js?v=1.8.0"></script>
   <script defer src="../nexus/common/nexus-workbench-layout-v2.js?v=1.5.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.0"></script>
   <meta name="google" content="notranslate">
@@ -4314,9 +4314,17 @@
 
       let localWorkspaceSaveQueue = Promise.resolve();
       let activeLocalWorkspaceSave = null;
+      let localWorkspaceDurableVersion = -1;
 
       function queueLocalWorkspaceSave(workspace = state.workspace, options = {}) {
-        const write = () => persistLocalWorkspace(workspace, options);
+        const mutationVersion = state.workspaceChangeVersion;
+        const write = async () => {
+          const saved = await persistLocalWorkspace(workspace, options);
+          if (workspace === state.workspace && state.workspaceChangeVersion === mutationVersion) {
+            localWorkspaceDurableVersion = mutationVersion;
+          }
+          return saved;
+        };
         const queued = localWorkspaceSaveQueue.then(write, write);
         activeLocalWorkspaceSave = queued;
         localWorkspaceSaveQueue = queued.catch(() => undefined);
@@ -4416,6 +4424,7 @@
         const payload = verification.record.payload;
         clearSubstitutionSelection();
         state.workspace = payload.workspace;
+        localWorkspaceDurableVersion = state.workspaceChangeVersion;
         restorePreviewInputState(state.workspace);
         restoreOrderQSourceFromWorkspace(state.workspace);
         hydrateShipmentDraftFromWorkspace(state.workspace);
@@ -11747,23 +11756,27 @@
         }
 
         await waitForOrderOpsIdle();
-        await localWorkspaceSaveQueue;
-        window.clearTimeout(scheduleLocalSave.timer);
-
         const activeInput = document.activeElement;
         if (activeInput instanceof HTMLInputElement || activeInput instanceof HTMLSelectElement || activeInput instanceof HTMLTextAreaElement) {
           commitExcelGridInput(activeInput);
         }
         captureShipmentDraftInputs();
         persistShipmentDraftToWorkspace();
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        window.clearTimeout(scheduleLocalSave.timer);
+        await localWorkspaceSaveQueue;
 
         if (state.workspace) {
           if (!state.db || !state.workspace.sourceFingerprint) {
             throw new Error("최신 출고 작업을 검산할 수 있는 원본 식별정보와 복구 저장소가 준비되지 않았습니다.");
           }
-          const saved = await queueLocalWorkspaceSave();
-          if (!saved?.recordId || saved.sourceFingerprint !== state.workspace.sourceFingerprint) {
-            throw new Error("최신 출고 작업 임시저장 검산 결과가 일치하지 않습니다.");
+          while (localWorkspaceDurableVersion !== state.workspaceChangeVersion) {
+            const mutationVersion = state.workspaceChangeVersion;
+            const saved = await queueLocalWorkspaceSave();
+            if (!saved?.recordId || saved.sourceFingerprint !== state.workspace.sourceFingerprint) {
+              throw new Error("최신 출고 작업 임시저장 검산 결과가 일치하지 않습니다.");
+            }
+            if (state.workspaceChangeVersion === mutationVersion) break;
           }
         }
         return { result: "READY" };

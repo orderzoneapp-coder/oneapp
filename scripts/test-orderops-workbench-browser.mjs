@@ -169,6 +169,10 @@ try {
   const multiAcceptance=await ev(readFileSync(join(root,'scripts/fixtures/orderops-multi-reapply-acceptance.js'),'utf8'));
   console.log('PASS independent acceptance F-01/F-02/F-03/F-04 browser and storage retry',JSON.stringify(multiAcceptance));
   await ev('__ops.flushOrderOpsBeforeWorkspaceLeave()');
+  await ev(`globalThis.__testPutRecord=()=>{globalThis.__testPutRecordCount=(globalThis.__testPutRecordCount||0)+1;throw new Error('unchanged workspace must not write');};globalThis.__testPutRecordCount=0;`);
+  await ev('__ops.flushOrderOpsBeforeWorkspaceLeave()');
+  assert.equal(await ev('globalThis.__testPutRecordCount'),0,'unchanged OrderOps leave must not rewrite the recovery record');
+  await ev('delete globalThis.__testPutRecord;delete globalThis.__testPutRecordCount;');
   await send('Page.navigate',{url:origin+'/orderops/list.html'});
   await until(()=>ev('Boolean(globalThis.__ops?.state.db && globalThis.__ops.state.recoveryRecord)'),'multi-document re-entry recovery discovery');
   await click('#restoreButton');
