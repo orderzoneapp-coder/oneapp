@@ -169,13 +169,16 @@ assert.equal(recovery.ui.voucherDraft.manager, '대기 담당');
 for (const contract of [
   'source-coordinator.js?v=20260913-right-panel-v1',
   'voucher-workbench.js?v=20260913-right-panel-v1',
-  'workbench-ui.js?v=20260913-right-panel-v1',
+  'workbench-ui.js?v=20260915-layout-v1',
   '../orderFulfillmentEngine.js?v=20260913-right-panel-v1',
   'data-orderops-api-source="orders"',
   'data-orderops-api-source="purchases"',
   'data-orderops-api-source="sales"',
   'data-orderops-api-source="inventory"',
   'id="orderOpsCurrentViewTitle"',
+  'class="orderops-central-section-head"',
+  'class="orderops-prepare-match-summary"',
+  'class="orderops-date-search-head"',
   'id="deliveryVoucherCheckAll"',
   'id="deliveryWarehouseAssignmentApply"',
   'id="deliveryVoucherApply"',
@@ -189,6 +192,7 @@ for (const contract of [
   'workbench.runReplacement(',
   'const candidate = JSON.parse(JSON.stringify(base))',
 ]) assert.ok(html.includes(contract), `missing three-area UI contract: ${contract}`);
+assert.ok(!html.includes('<details class="orderops-date-range-picker"'), 'right date search must be directly visible instead of collapsed');
 const dropStart = html.indexOf('id="prepareDropSurface"');
 const chooseButton = html.indexOf('id="prepareFilesButton"');
 const editorStart = html.indexOf('id="prepareFileEditor"');

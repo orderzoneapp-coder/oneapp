@@ -193,8 +193,22 @@
     function renderPreparation() {
       pane.classList.toggle('has-prepared-files', s.preparedFiles.length > 0);
       const statusLabels = { READY: '준비됨', INVALID: '확인 필요', APPLIED: '적용됨', PARTIAL: '일부 조회', EMPTY: '0건', ERROR: '조회 실패' };
-      $('prepareFileList').innerHTML = s.preparedFiles.map(item => `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · <span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}</span>${item.include && item.dirty ? ' · 적용 대상' : ''}</small></button>`).join('');
+      $('prepareFileList').innerHTML = s.preparedFiles.map(item => {
+        const rowCount = item.display?.length || item.parsed?.rowCount || 0;
+        const columnCount = Math.max(0, ...(item.display || []).map(row => row.length));
+        return `<button type="button" data-prepared-id="${esc(item.id)}" aria-pressed="${item.id === s.selectedPreparedId}"><strong>${esc(item.fileName)}</strong><small>${esc(item.sheetName)} · ${rowCount}행${columnCount ? ` · ${columnCount}열` : ''}</small><span data-prepare-state="${esc(item.status)}">${esc(item.remove ? '사용해제 예정' : statusLabels[item.status] || item.status)}${item.include && item.dirty ? ' · 적용 대상' : ''}</span></button>`;
+      }).join('');
       const item = selected();
+      if (item && !item.adapterSource) {
+        const matched = item.mapping?.filter(Boolean).length || 0;
+        const similar = item.parsed?.warnings?.length || 0;
+        const unmatched = (item.parsed?.missingColumns?.length || 0) + (item.parsed?.errors?.length || 0);
+        $('prepareMatchSummary').innerHTML = `<span data-match-state="matched">일치 <strong>${matched}</strong></span><span data-match-state="similar">유사 <strong>${similar}</strong></span><span data-match-state="unmatched">불일치 <strong>${unmatched}</strong></span>`;
+      } else if (item) {
+        $('prepareMatchSummary').innerHTML = `<span data-match-state="matched">검증 <strong>${item.parsed?.rowCount || 0}</strong></span><span data-match-state="similar">주의 <strong>${item.parsed?.warnings?.length || 0}</strong></span><span data-match-state="unmatched">오류 <strong>${item.parsed?.errors?.length || 0}</strong></span>`;
+      } else {
+        $('prepareMatchSummary').innerHTML = '';
+      }
       $('prepareRemoveButton').disabled = !item || Boolean(operation || inventoryPreparationOperation || preparationReads);
       $('prepareApplyButton').disabled = Boolean(operation || inventoryPreparationOperation || preparationReads) || !dirty();
       if (!item) { $('prepareFileEditor').innerHTML = ''; return; }
@@ -206,14 +220,21 @@
         return;
       }
       const fields = [...new Set(fieldNames(item.kind))];
+      const previewIndexes = [...new Set([0, 1, 2, 3, 4, 5, 6, 7, item.headerRowIndex, item.dataStartRowIndex, item.dataEndRowIndex - 1, item.dataEndRowIndex, item.dataEndRowIndex + 1, item.display.length - 1])]
+        .filter(index => Number.isInteger(index) && index >= 0 && index < item.display.length).sort((a, b) => a - b);
+      const previewRows = previewIndexes.map(index => {
+        const sourceText = (item.display[index] || []).map(value => String(value ?? '').trim()).filter(Boolean).join(' · ') || '(공란)';
+        const rowState = index === item.headerRowIndex ? '헤더' : index < item.dataStartRowIndex ? '참고' : index > item.dataEndRowIndex ? '제외' : '사용';
+        return `<tr data-source-row-state="${rowState}" class="${index > item.dataEndRowIndex ? 'orderops-excluded-source-row' : ''}"><th>${index + 1}</th><td title="${esc(sourceText)}">${esc(sourceText)}</td><td><span>${rowState}</span></td></tr>`;
+      }).join('');
       $('prepareFileEditor').innerHTML = `<label class="orderops-prepare-include"><input id="preparedInclude" type="checkbox" ${item.include ? 'checked' : ''}><span>이번 적용에 포함</span></label>
+        <div class="orderops-raw-preview" tabindex="0" aria-label="원본 행 미리보기"><table data-nexus-common-tools="off"><thead><tr><th>No.</th><th>원본 데이터 (일부)</th><th>상태</th></tr></thead><tbody>${previewRows}</tbody></table></div>
         <div class="orderops-prepare-fields">
         <label>자료 유형<select id="preparedKind"><option value="">유형 선택</option>${kinds.map(kind => `<option value="${kind}" ${item.kind === kind ? 'selected' : ''}>${labels[kind]}</option>`).join('')}</select></label>
         <label>시트<select id="preparedSheet">${item.workbook.SheetNames.map(name => `<option ${name === item.sheetName ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></label>
         <label>헤더행<input id="preparedHeader" type="number" min="1" max="${item.display.length}" value="${item.headerRowIndex + 1}"></label>
         <label>마지막 상품행(포함)<input id="preparedEnd" type="number" min="${item.dataStartRowIndex + 1}" max="${item.display.length}" value="${item.dataEndRowIndex + 1}" aria-describedby="preparedRangeHelp"></label>
         </div><p id="preparedRangeHelp">${item.dataStartRowIndex + 1}~${item.dataEndRowIndex + 1}행만 읽습니다. 하단 ${Math.max(0, item.display.length - item.dataEndRowIndex - 1)}행은 원본에 보존하고 제외합니다.</p>
-        <div class="orderops-raw-preview" tabindex="0" aria-label="원본 행 미리보기"><table>${[...new Set([0,1,2,3,4,5,6,7,item.headerRowIndex,item.dataStartRowIndex,item.dataEndRowIndex-1,item.dataEndRowIndex,item.dataEndRowIndex+1,item.display.length-1])].filter(index=>Number.isInteger(index)&&index>=0&&index<item.display.length).sort((a,b)=>a-b).map(index => `<tr class="${index > item.dataEndRowIndex ? 'orderops-excluded-source-row' : ''}"><th>${index + 1}${index > item.dataEndRowIndex ? ' 제외' : ''}</th>${item.display[index].map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('')}</table></div>
         <strong>원본 열 → 사용할 항목</strong>${(item.display[item.headerRowIndex] || []).map((header, index) => `<label class="orderops-mapping-row"><span>${index + 1}. ${esc(header || '(공란)')}</span><select data-map-index="${index}"><option value="">비매핑</option>${[...new Set([...fields, ...(item.kind === 'inventory' && header ? [`warehouse:${header}`] : [])])].map(field => `<option value="${esc(field)}" ${item.mapping?.[index] === field ? 'selected' : ''}>${esc(field.startsWith('warehouse:') ? '창고수량 · ' + field.slice(10) : field)}</option>`).join('')}</select></label>`).join('')}
         <p role="status">${esc(item.error || `${item.parsed?.rowCount || 0}행 검증됨 · 적용 전에는 현재 작업이 바뀌지 않습니다.`)}</p>`;
     }
@@ -244,6 +265,7 @@
             automatic(item); s.preparedFiles.push(item); s.selectedPreparedId ||= item.id; added++;
           }
           preparedVersion += 1;
+          document.getElementById('orderOpsSourceOptions')?.removeAttribute('open');
         } catch (error) { failures.push(error.message); api.showToast(error.message, true); }
       } } finally {
         preparationReads--;
