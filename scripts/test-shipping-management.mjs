@@ -2123,12 +2123,12 @@ for (const requiredInteractionContract of [
   'manager-color-row',
   'unit-alert-row',
   'box-unit-row',
-  'manager-color-badge',
+  'manager-color-entry',
   'function managerPrintColorFor',
   '--manager-print-color:',
   'printOutput: true',
   'function orderInformationManagers',
-  'renderOrderInformationBadges(displayValue, sourceRow)',
+  'renderOrderInformationEntries(displayValue, sourceRow)',
   'id="resultFilterResetButton"',
   'id="columnSortMenu"',
   'id="purchaseAutocomplete"',
@@ -2347,7 +2347,7 @@ for (const ledgerContract of ['label: "수불현황"', 'label: "창고별재고"
 }
 for (const ledgerPurchasingContract of [
   'column.role === "unitPrice"', 'column.role === "orderInformation"',
-  'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationBadges(displayValue, sourceRow)',
+  'purchaseEditable: ledgerPurchaseIndex >= 0', 'renderOrderInformationEntries(displayValue, sourceRow)',
   '["inventory", "ledger"].includes(state.activePreview)',
   'getShortageCategoryContext(workspace)', 'column.role === "rowState"',
   'block: "center"', 'class="inventory-total-frame"', '재고부족 모아보기',
@@ -2610,6 +2610,8 @@ assert.ok(columnFilterHelperStart >= 0 && columnFilterHelperEnd > columnFilterHe
   applyColumnFilterStart >= 0 && applyColumnFilterEnd > applyColumnFilterStart,
   "column value-filter helpers must remain directly testable");
 const columnFilterContext = {
+  isInventoryInformationColumn: (previewId, columnKey) =>
+    previewId === "inventory" && columnKey === "shipping:inventory:order-information",
   state: {
     columnFilters: {
       inventory: {
