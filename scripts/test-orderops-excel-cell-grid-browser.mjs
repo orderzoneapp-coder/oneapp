@@ -12,7 +12,8 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const canonicalHtml = readFileSync(join(root, "orderops", "list.html"), "utf8").replace(
   "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js",
   "/customer-master/vendor/xlsx.full.min.js",
-);
+).replace('initializeLocalRecovery().then(loadOrderQSourceFromRoute)',
+  'globalThis.__gridTest={state,renderPreview}; initializeLocalRecovery().then(loadOrderQSourceFromRoute)');
 const mime = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -297,9 +298,38 @@ try {
 
   await evaluate(client, `document.querySelector('#inventoryDrop').click()`);
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('#previewTable table.preview-inventory [data-substitution-target-product="GRID-002"]'))`), "inventory substitution targets");
+  const informationContract = await evaluate(client, `(()=>{
+    const first=document.querySelector('.preview-inventory .order-information-cell');
+    const row=first.closest('tr');
+    first.focus();
+    const range=document.createRange();range.selectNodeContents(first);range.collapse(false);
+    const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+    const before=first.textContent;
+    const write=new InputEvent('beforeinput',{inputType:'insertText',data:'X',bubbles:true,cancelable:true});
+    first.dispatchEvent(write);
+    const header=[...document.querySelectorAll('.preview-inventory thead th')].find(th=>th.textContent.trim()==='정보');
+    return {focus:document.activeElement===first,caret:selection.anchorNode&&first.contains(selection.anchorNode),
+      prevented:write.defaultPrevented,unchanged:first.textContent===before,border:getComputedStyle(first).borderTopWidth,
+      outline:getComputedStyle(row).outlineWidth,sourceSelected:document.querySelectorAll('.substitution-selected').length,
+      productSelected:row.classList.contains('orderops-selected-product-row'),headerFilter:Boolean(header?.querySelector('.column-sort-trigger'))};
+  })()`);
+  assert.deepEqual(informationContract,{focus:true,caret:true,prevented:true,unchanged:true,border:'0px',outline:'0px',sourceSelected:0,productSelected:false,headerFilter:false});
+  assert.equal(await evaluate(client, `(()=>{const entry=document.querySelector('.preview-inventory [data-substitute-order-row]');entry.click();return document.querySelectorAll('.substitution-selected').length===0 && !entry.closest('tr').classList.contains('orderops-selected-product-row');})()`),true,'ordinary information click cannot select an internal filter');
+  await evaluate(client, `(()=>{const first=document.querySelector('.preview-inventory .order-information-cell');
+    first.focus();first.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));return true;})()`);
+  const informationDown = await waitFor(() => evaluate(client, `document.activeElement?.matches('.order-information-cell') && document.activeElement.closest('tr')?.dataset.productCode==='GRID-002'`), 'information ArrowDown');
+  assert.equal(informationDown,true);
+  await evaluate(client, `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));true`);
+  assert.equal(await evaluate(client, `document.activeElement?.matches('td[data-grid-navigable]') && document.activeElement.cellIndex===document.querySelector('.preview-inventory tr[data-product-code="GRID-002"] td.information-value').cellIndex+1`),true,'information ArrowRight moves to note cell');
+  await evaluate(client, `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));true`);
+  assert.equal(await evaluate(client, `document.activeElement?.matches('.order-information-cell') && document.activeElement.closest('tr')?.dataset.productCode==='GRID-002'`),true,'information ArrowLeft returns to information cell');
+  await evaluate(client, `(()=>{const state=__gridTest.state;state.columnFilters.inventory={'shipping:inventory:order-information':{excludeBlank:true}};
+    state.sortSettings.inventory={columnKey:'shipping:inventory:order-information',direction:'desc'};
+    __gridTest.renderPreview();return true;})()`);
+  assert.deepEqual(await evaluate(client, `({filters:__gridTest.state.columnFilters.inventory||null,sort:__gridTest.state.sortSettings.inventory||null,rows:document.querySelectorAll('.preview-inventory tbody tr[data-product-code]').length})`),{filters:null,sort:null,rows:2},'old information filters cannot hide rows');
   const beforeNoop = await evaluate(client, `(()=>{
-    const chip=document.querySelector('button[data-substitute-order-row]');
-    chip.click();
+    const chip=document.querySelector('[data-substitute-order-row]');
+    chip.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true}));
     const table=document.querySelector('#previewTable table.preview-inventory');
     const row=table.querySelector('tbody tr[data-product-code="GRID-002"]');
     row.querySelector('td.primary-readable-cell').dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true}));

@@ -255,14 +255,13 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   }
   .orderops-delivery-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 9px; }
   .orderops-delivery-table .orderops-voucher-check-col { width: 25px; }
-  .orderops-delivery-table .orderops-voucher-date-col { width: 42px; }
   .orderops-delivery-table .orderops-voucher-summary-col { width: auto; }
   .orderops-delivery-table .orderops-voucher-note-col { width: 52px; }
   .orderops-delivery-table :is(th, td) { min-width: 0; max-width: none; padding: 5px 4px; line-height: 1.25; vertical-align: middle; }
   .orderops-delivery-table th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .orderops-delivery-table th:nth-child(3) { font-size: 8px; }
+  .orderops-delivery-table th:nth-child(2) { font-size: 8px; }
   .orderops-delivery-table th:first-child, .orderops-delivery-table td:first-child { width: 25px; padding-inline: 2px; text-align: center; }
-  .orderops-delivery-table :is(.orderops-voucher-date, .orderops-voucher-summary, .orderops-voucher-note) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orderops-delivery-table :is(.orderops-voucher-summary, .orderops-voucher-note) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .orderops-delivery-table .orderops-voucher-summary { color: var(--ops-text); font-variant-numeric: tabular-nums; }
   .orderops-delivery-table .orderops-voucher-note { color: var(--ops-muted); }
   .orderops-delivery-table input[type="checkbox"], .orderops-manager-assignment input[type="checkbox"] { width: 14px !important; min-height: 14px !important; padding: 0 !important; accent-color: var(--ops-action); }
@@ -340,12 +339,47 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
     background: transparent !important;
     caret-color: currentColor;
   }
-  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody :is(.manager-name, .order-information-badge) {
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody .manager-name {
     background: color-mix(in srgb, var(--manager-color, #d1d5db) 35%, #fff) !important;
     border-color: #6b7280 !important;
   }
   html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable tbody tr:focus-within {
     outline-color: #1d4ed8;
+  }
+}
+
+@media screen {
+  html[data-nexus-ui-app="orderops"] body #previewTable tbody tr:has(> td.information-value:focus-within) {
+    outline: 0 !important;
+  }
+  html[data-nexus-ui-app="orderops"] body #previewTable tbody td.information-value:focus-within {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+  html[data-nexus-ui-app="orderops"] body #previewTable tbody td.information-value .order-information-cell:focus {
+    outline: 0 !important;
+    box-shadow: none !important;
+  }
+  html[data-nexus-ui-app="orderops"] body #previewTable table.preview-inventory tbody td.information-value.information-non-box-unit,
+  html[data-nexus-ui-app="orderops"] body #previewTable table.preview-inventory tbody td.information-value.information-non-box-unit * {
+    color: #b91c1c !important;
+    -webkit-text-fill-color: #b91c1c !important;
+  }
+  html[data-nexus-ui-app="orderops"] body #previewTable table.preview-inventory tbody td.information-value.information-box-unit,
+  html[data-nexus-ui-app="orderops"] body #previewTable table.preview-inventory tbody td.information-value.information-box-unit * {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable table.preview-inventory tbody td.information-value.information-non-box-unit,
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable table.preview-inventory tbody td.information-value.information-non-box-unit * {
+    color: #800000 !important;
+    -webkit-text-fill-color: #800000 !important;
+  }
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable table.preview-inventory tbody td.information-value.information-box-unit,
+  html[data-nexus-ui-app="orderops"][data-nexus-ui-theme="dark"] body #previewTable table.preview-inventory tbody td.information-value.information-box-unit * {
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
   }
 }
 
@@ -362,6 +396,16 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-app="orderops"] body.printing-table #printArea tbody tr[data-grid-row-key] > td * {
     color: var(--orderops-readable-row-text) !important;
     -webkit-text-fill-color: var(--orderops-readable-row-text) !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea table.preview-inventory tbody td.information-value.information-non-box-unit,
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea table.preview-inventory tbody td.information-value.information-non-box-unit * {
+    color: #b91c1c !important;
+    -webkit-text-fill-color: #b91c1c !important;
+  }
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea table.preview-inventory tbody td.information-value.information-box-unit,
+  html[data-nexus-ui-app="orderops"] body.printing-table #printArea table.preview-inventory tbody td.information-value.information-box-unit * {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
   }
   html[data-nexus-ui-app="orderops"] body.printing-table #printArea table {
     border-collapse: separate !important;

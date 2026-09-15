@@ -97,7 +97,7 @@ for (const contract of [
   'hasInventory ? ["재고", "잔량"]',
   "orderops-header-primary",
   'id="deliveryWarehouseFilter"',
-  '<th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>주문일</th><th>거래처명 / 수량 / 금액</th><th>적요</th>',
+  '<th><input id="deliveryVoucherCheckAll" type="checkbox" aria-label="현재 조회 전표 전체 선택"></th><th>거래처명 / 수량 / 금액</th><th>적요</th>',
   'id="deliveryManagerFilter"',
   "restorePreviewInputState",
   "localStorage.setItem(INVENTORY_INSPECTOR_OPEN_KEY",

@@ -70,7 +70,11 @@
   renderResults();
 
   const tableText = document.querySelector('.orderops-delivery-table').textContent;
-  assert(tableText.includes('09-12') && tableText.includes('09-13'), 'delivery list compact dates missing');
+  const dateRange = document.querySelector('#deliveryDateRangeText').textContent;
+  assert(dateRange.includes('2026-09-12') && dateRange.includes('2026-09-13') &&
+    document.querySelector('#deliveryDateFrom').closest('label').textContent.includes('주문일 시작') &&
+    document.querySelector('#deliveryDateTo').closest('label').textContent.includes('주문일 종료'),
+  'order dates must remain available in date search');
   assert(tableText.includes('2,000원') && tableText.includes('계산 900원'), 'original/calculated delivery amounts missing');
   assert(tableText.includes('원본 적요 A') && tableText.includes('직원 메모 B'), 'delivery notes missing');
   document.querySelector('#deliveryVoucherCheckAll').click();
@@ -132,6 +136,7 @@
     sameRevision: 'idempotent', changedRevision: 'reconciled', failedStorage: 'non-destructive',
     preserved: ['manager', 'warehouse', 'purchase', 'shipmentDraft'],
     continuity: ['purchase-only', 'sales-only', 'analysis'],
-    deliveryColumns: ['date', 'originalAmount', 'calculatedAmount', 'note'],
+    deliveryColumns: ['originalAmount', 'calculatedAmount', 'note'],
+    deliveryDateSearch: ['orderDateFrom', 'orderDateTo'],
   };
 })()

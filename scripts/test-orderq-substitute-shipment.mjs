@@ -130,7 +130,9 @@ for (const relativePath of ["orderops/list.html", "orderops_list.html"]) {
     'function handleSubstitutionTableClick',
     'engine.substituteOrderProduct(',
     'engine.undoLastSubstitution(',
-    '대체출고: 거래처 칩 선택 → Ctrl+대상 정보 셀 클릭',
+    relativePath === 'orderops_list.html'
+      ? '대체출고: 거래처 칩 선택 → Ctrl+대상 정보 셀 클릭'
+      : '대체출고: 정보 항목 Ctrl+클릭 → 대상 정보 셀 Ctrl+클릭',
     'data-substitution-target-product=',
     'substitution-target-cell',
     'substitution-target-mode',

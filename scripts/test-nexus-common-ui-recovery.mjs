@@ -192,7 +192,8 @@ assert.match(appThemeCss, /\.execution-button\.analysis-run:disabled[\s\S]*?colo
 assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*--slate-700:\s*#e0e4e8/s, 'ORDER Q dark table text must use the higher-contrast hierarchy');
 assert.match(appThemeCss, /tr\.no-order-row td\s*\{[^}]*color:\s*#aeb7c1/s, 'ORDER Q inactive rows must remain readable in dark mode');
 assert.match(appThemeCss, /td\.unit-alert-cell[\s\S]*?color:\s*var\(--nexus-ui-danger\)/, 'ORDER Q dark warning units must use the readable danger token');
-assert.match(appThemeCss, /\.order-information-badge\.manager-color-badge[\s\S]*?var\(--manager-color\)/, 'ORDER Q manager-colored information badges must survive the dark table palette');
+assert.match(appThemeCss, /\.order-information-badge\.manager-color-badge[\s\S]*?var\(--manager-color\)/, 'legacy ORDER Q information badges must survive the dark table palette');
+assert.match(await readFile('orderops/list.html', 'utf8'), /\.order-information-entry\.manager-color-entry[\s\S]*?var\(--manager-color\)/, 'canonical ORDER Q manager-colored information text must remain readable');
 assert.match(appThemeCss, /data-nexus-ui-theme="light"\]\[data-nexus-ui-app="orderops"\][^{]*\{[^}]*--orderops-manager-row-weight:\s*48%/s, 'ORDER Q light manager rows must retain a clearly visible pastel surface');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app="orderops"\][^{]*\{[^}]*--orderops-manager-row-weight:\s*22%/s, 'ORDER Q dark manager rows must use a restrained but visible tint');
 assert.match(appThemeCss, /tr\.manager-color-row\[style\*="--manager-color"\]\s*>\s*td[\s\S]*?var\(--orderops-manager-row-weight\)[\s\S]*?!important/s, 'ORDER Q manager row tint must outrank every complete-row cell background');

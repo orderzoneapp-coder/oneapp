@@ -201,8 +201,8 @@ const leftPane = html.slice(html.indexOf('id="orderOpsFilePreparePane"'), html.i
 assert.ok(leftPane.includes('id="orderOpsHeaderOrdersButton"'), 'auxiliary load/restore entry belongs to the left source pane');
 const bottomBar = html.slice(html.indexOf('class="orderops-bottom-workbar"'), html.indexOf('</footer>', html.indexOf('class="orderops-bottom-workbar"')));
 assert.ok(!bottomBar.includes('orderOpsHeaderOrdersButton'), 'center bottom bar must not retain a duplicate load menu');
-for (const heading of ['주문일', '거래처명 / 수량 / 금액', '적요']) assert.ok(html.includes(`<th>${heading}</th>`), `missing delivery heading: ${heading}`);
-for (const contract of ['deliveryCompactAmountText', 'selectedSummaryValue.amountTotal', 'selectedSummaryValue.calculatedAmountTotal', 'colspan="4"']) {
+for (const heading of ['거래처명 / 수량 / 금액', '적요']) assert.ok(html.includes(`<th>${heading}</th>`), `missing delivery heading: ${heading}`);
+for (const contract of ['deliveryCompactAmountText', 'selectedSummaryValue.amountTotal', 'selectedSummaryValue.calculatedAmountTotal', 'colspan="3"']) {
   assert.ok(html.includes(contract), `missing delivery amount contract: ${contract}`);
 }
 assert.ok(!html.includes('<th>전표·거래처</th><th>수량</th><th>금액</th>'), 'right voucher list must not retain the former split columns');
