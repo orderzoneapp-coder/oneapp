@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-dark-app-headers-'));
@@ -30,7 +31,9 @@ const canonicalGlobalLinks = [
 ];
 
 for (const app of apps) {
-  const html = readFileSync(join(root, app.path), 'utf8');
+  const html = app.path === 'Master.html'
+    ? readMasterContractSource(root)
+    : readFileSync(join(root, app.path), 'utf8');
   assert.match(html, /nexus-ui-app-themes\.css\?v=1\.3\.11/, `${app.path} must load the unified app-header stylesheet token`);
   assert.match(html, new RegExp(`data-nexus-app-header["']?\\s*[:=]\\s*["']${app.id}["']`), `${app.path} must expose the canonical app-header marker`);
   assert.match(html, /data-nexus-app-(?:identity|title)/, `${app.path} must expose its left-aligned app identity`);

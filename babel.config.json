@@ -1,0 +1,12 @@
+{
+  "comments": true,
+  "compact": false,
+  "presets": [
+    [
+      "@babel/preset-react",
+      {
+        "runtime": "classic"
+      }
+    ]
+  ]
+}

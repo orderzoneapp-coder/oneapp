@@ -624,6 +624,12 @@ function esc(value) {
 }
 
 function loadDraft() {
+  const bootstrapDraft = earlyUi?.consumeInitialDraft?.();
+  if (bootstrapDraft?.reused) {
+    try {
+      return contract.normalizeDraft(bootstrapDraft.value);
+    } catch (_) {}
+  }
   try {
     return contract.normalizeDraft(JSON.parse(localStorage.getItem(contract.DRAFT_STORAGE_KEY) || 'null'));
   } catch (_) {
@@ -1124,6 +1130,7 @@ function writeCompatibilityDraft({ queueDatabaseCopy = true } = {}) {
   clearTimeout(state.compatibilitySaveTimer);
   state.compatibilitySaveTimer = null;
   try {
+    earlyUi?.invalidateInitialDraft?.();
     localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
     if (queueDatabaseCopy) queueAutosaveSnapshot(state.draft);
     return true;
@@ -1266,7 +1273,10 @@ async function restoreLatestAutosave() {
     state.pendingSourceName = '';
     state.pendingStructuredImport = null;
     Object.keys(state.sourceImages).forEach(restoreSourceImageForMode);
-    try { localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft)); } catch (_) {}
+    try {
+      earlyUi?.invalidateInitialDraft?.();
+      localStorage.setItem(contract.DRAFT_STORAGE_KEY, JSON.stringify(state.draft));
+    } catch (_) {}
     state.autosaveAvailable = true;
     state.autosaveUpdatedAt = record.updatedAt || state.draft.updatedAt || '';
     renderMode();

@@ -133,7 +133,7 @@ assert.equal(customerRequestContract.resources.inboxKey, 'referenceChangeRequest
 
 const allowedWriterFiles = new Set(productContract.legacyWriterAllowlist);
 assert.deepEqual([...allowedWriterFiles].sort(), [
-  'Master.html', 'coreEngine.js',
+  'Master.html', 'master/master-app.js', 'coreEngine.js',
   'masterAddUpdate.js',
 ].sort());
 assert.equal(productContract.stopCommandException.asset, 'smartparser/stop-management-command-adapter.js');

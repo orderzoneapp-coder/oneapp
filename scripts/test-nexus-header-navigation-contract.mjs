@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { access, readFile } from 'node:fs/promises';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 
 const uiSource = await readFile('nexus/common/nexus-ui.js', 'utf8');
 
@@ -140,6 +141,7 @@ const files = Object.fromEntries(await Promise.all([
   'orderq/index.html', 'orderq/voucher-query.js', 'orderq/voucher-activity-read-adapter.js',
   'smartinput/smartinput.js', 'trend_report.html', 'guide_data.html',
 ].map(async file => [file, await readFile(file, 'utf8')])));
+files['Master.html'] = readMasterContractSource(process.cwd());
 
 assert.match(files['orderops/list.html'], /id="smartInputButton" href="\.\.\/smartinput\/index\.html"/, 'F01: F4 must target the official SmartInput entry');
 assert.match(files['SmartParser.html'], /href: "guide_Merch\.html#part2-2"/, 'F02: SmartParser guide must target a verified section');

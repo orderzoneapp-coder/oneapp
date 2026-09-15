@@ -75,7 +75,7 @@ NEXUS는 각 앱이 기본 업무를 독립적으로 수행하고 필요한 정�
 - SmartParser의 사용자가 별도 품절/정지 화면에서 명시한 `STOP`·`RESUME`·`UPDATE_METADATA`만 `smartparser/stop-management-command-adapter.js`를 통해 expected Snapshot/revision과 operation ID를 검증한 뒤 판매여부·정지목록·쇼핑몰 상태 대기열·실제 history·mirror·notification을 한 성공 단위로 반영한다. 분석의 0원·품절은 issue와 정지 권고일 뿐 command를 자동 실행하지 않는다.
 - `reference-data/product-master-command-adapter.js`는 `ONEAPP_PRODUCT_MASTER_COMMAND_ADAPTER_V1` 아래 `MERCHOPS_REVIEWED_WORK_APPLY_V1`과 `MERCHOPS_PRODUCT_REGISTRATION_V1` 경계를 제공한다. MerchOps는 작업 시작 Snapshot ID·revision·hash와 검토 증거를 보내며 F7은 기존 상품 field patch만, 관리자 확인 신규등록은 제한된 생성 field만 수행한다. 행 삭제·임의 필드·일반 판매여부 변경은 거부하고 충돌, history 실패, 연결상태 변경, 후검산 실패는 전체 변경을 rollback한다.
 - MerchOps의 bundled/external core 호환 API는 Adapter 로드 직후 owner boundary로 다시 고정한다. cloud URL seed·쓰기, full backup/restore, config 복원, master cloud import·Excel apply·backup restore 및 공개 master commit alias는 `OWNER_ROUTED`로 fail-closed하며 시작 시 Settings 키를 만들거나 덮어쓰지 않는다.
-- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`을 제거했다. SmartParser 전용 catalog-apply와 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 제한 명령 경계다. 공식 화면 writer는 `Master.html`이며 공유 `coreEngine.js`·`masterAddUpdate.js`의 검증 명령 경계를 사용한다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
+- 현행 상품 직접 writer 동결 allowlist에서 `MerchOps.html`, `SmartParser.html`, `settings.html`, `export_center.html`, `Item_manager.html`을 제거했다. SmartParser 전용 catalog-apply와 stop command Adapter는 범용 raw writer가 아니라 manifest에 명시된 제한 명령 경계다. 공식 화면 writer는 `Master.html`과 그 사전 변환 실행물 `master/master-app.js`이며 공유 `coreEngine.js`·`masterAddUpdate.js`의 검증 명령 경계를 사용한다. `master/master-app.jsx`는 이 실행물의 단일 원본이고 브라우저에서 직접 실행하지 않는다. DataOps F6는 Product Snapshot만 소비하고, 관리자 단건등록·F9 판매재개가 필요할 때만 기존 `masterAddUpdate.js`의 CAS·history·rollback 명령 경계를 호출한다.
 - DEC-021에 따라 History Viewer는 `ONEAPP_CHANGE_HISTORY_READ_ADAPTER_V1`의 불변 Snapshot만 읽고 Cloud 결과를 메모리에서만 병합한다. Settings는 `ONEAPP_SETTINGS_CONFIG_OWNER_ADAPTER_V1` allowlist와 검증·pre-image·rollback·후검산 경계로 설정만 복구하며 상품·이력·정지 상태 변경은 owner 화면으로 보낸다. Export Center는 기존 `merch_export_draft`를 유지하고 Product Snapshot을 읽기 전용 참조하며 F9와 화면 버튼 모두 output-only로 실행한다.
 - `ItemMaster.html` 독립 구현은 폐기됐다. 현재 파일은 기존 직접 주소를 위한 정적 호환 안내이며 앱 Runtime이나 DB 쓰기를 실행하지 않는다. 과거 `oneapp-itemmaster-isolated-v1` 데이터는 자동 삭제·덮어쓰기하지 않고 `Master.html`에서 실제 데이터가 발견될 때만 백업·선택 검토 경로를 제공한다.
 - `Item_manager.html`은 manifest의 `item-manager` ID와 기존 URL을 호환 유지하는 `SKU 관리` 파일럿이다. 상품 분류를 읽어 SKU 후보·BOM 작업본을 만들고 상품관리 요청함으로 등록 요청을 전달하며 공식 상품 master·revision·history를 직접 쓰지 않는다.
@@ -173,6 +173,10 @@ Cold와 Warm을 구분하고 같은 PC·브라우저·자료·네트워크 조�
 절대 KPI를 초과하거나, 기존 p95보다 10%를 넘게 악화되면서 절대 증가량도 100ms를 초과하면 원인을 확인하고 조정·격리·롤백을 검토한다. 기준을 충족하지 못한다고 담당자가 임의로 낮추지 않는다. 기능 테스트 통과는 사용성 회귀를 정당화하지 않는다.
 
 측정은 변경 영향에 맞게 수행하되 측정하지 않은 지표를 통과로 기록하지 않는다. 새로운 기본 수치나 예외를 이번 문서 정리에 추가하지 않는다.
+
+`Master.html`의 공식 상품관리 화면은 `master/master-app.jsx`를 단일 앱 원본으로 사용하고, 고정된 Babel·Tailwind 빌드로 `master/master-app.js`와 `master/master.css`를 생성한다. 브라우저 진입 중 JSX 변환과 Tailwind Play CDN 스타일 생성을 수행하지 않는다. 생성물은 직접 편집하지 않으며 CI가 깨끗한 재생성 결과와 저장소의 생성물이 같은지 확인한다. `Item_manager.html`의 독립 파일럿 실행 방식은 이 계약에 포함하지 않는다.
+
+SmartInput은 초기 UI가 `oneapp.smartinput.draft.v1`을 읽어 파싱한 결과를 본문 초기화에 한 번만 인계한다. 다른 문서의 저장·삭제·전체 삭제와 같은 문서의 호환 초안 쓰기는 인계 전 캐시를 무효화하고 기존 새 읽기·오류 복구 경로를 사용한다. 인계 뒤에는 초기 캐시를 해제하며 저장·복구 정책과 본문 작업 상태는 변경하지 않는다.
 
 ---
 

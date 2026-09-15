@@ -1,0 +1,17 @@
+{
+  "name": "oneapp-static-build",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "build:master": "pnpm run build:master:js && pnpm run build:master:css",
+    "build:master:js": "babel master/master-app.jsx --out-file master/master-app.js --config-file ./babel.config.json",
+    "build:master:css": "tailwindcss -c tailwind.master.config.cjs -i master/master-tailwind.css -o master/master.css --minify",
+    "check:master-build": "pnpm run build:master && git diff --exit-code -- master/master-app.js master/master.css"
+  },
+  "devDependencies": {
+    "@babel/cli": "7.24.7",
+    "@babel/core": "7.24.7",
+    "@babel/preset-react": "7.24.7",
+    "tailwindcss": "3.4.17"
+  }
+}
