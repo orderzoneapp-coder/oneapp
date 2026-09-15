@@ -2427,10 +2427,10 @@ assert.ok(html.includes('const negativeRemaining = ["inventory", "ledger"].inclu
   html.includes('negativeRemaining ? "ledger-negative-cell"') &&
   html.includes('purchaseNegative ? "purchase-negative-cell"'),
   "negative warehouse and ledger balances must share the purchase-place highlight");
-assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{[^}]*background:\s*#fef9c3;[^}]*box-shadow:\s*none;/,
-  "negative purchase cells must retain only the pale fill without an internal horizontal rule");
-assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
-  "negative balance cells must retain only the pale fill without an internal vertical rule");
+assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{[^}]*background:\s*#fef9c3;[^}]*box-shadow:\s*inset 0 -2px 0 #fb7185;/,
+  "negative purchase cells must retain the pale fill and rose point line");
+assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*inset 3px 0 0 #fb7185;/,
+  "negative balance cells must retain the pale fill and rose point line");
 assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
   html.includes('exactWarningUnit(sourceRow) ? "unit-alert-row"') &&
   html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
@@ -2885,6 +2885,16 @@ assert.ok(purchaseCompletionSource.includes("previewTable.scrollTo") &&
   purchaseCompletionSource.includes("window.scrollTo") &&
   purchaseCompletionSource.includes("showPurchaseCompletionCoachmark"),
   "completed purchase entry must scroll both views to the top and show temporary guidance");
+const purchaseNavigationStart = html.indexOf("function handleInventoryPurchaseNavigation");
+const purchaseNavigationEnd = html.indexOf("function commitExcelGridInput", purchaseNavigationStart);
+const purchaseNavigationSource = html.slice(purchaseNavigationStart, purchaseNavigationEnd);
+assert.ok(purchaseNavigationStart >= 0 && purchaseNavigationEnd > purchaseNavigationStart &&
+  purchaseNavigationSource.includes("(negativeIndex + direction + negatives.length) % negatives.length") &&
+  purchaseNavigationSource.includes("|| negatives[0]") &&
+  purchaseNavigationSource.includes("focusPurchaseInput(target)"),
+  "Tab and Shift+Tab must wrap through visible negative-balance purchase cells");
+assert.doesNotMatch(purchaseNavigationSource, /finishPurchaseEntry\(/,
+  "the last visible shortage must not clear purchase focus on Tab");
 assert.ok(html.includes('id="warehouseColorResetButton" type="button">전체 다시보기</button>'),
   "filter reset must be presented as returning to the full view");
 assert.ok(html.includes("색 선택 즉시 저장·적용"),

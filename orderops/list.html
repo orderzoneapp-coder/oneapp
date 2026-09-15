@@ -1272,9 +1272,9 @@
       outline: 0;
       box-shadow: none;
     }
-    .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: none; }
+    .purchase-input[data-negative-balance="true"] { color: #854d0e; background: #fef9c3; box-shadow: inset 0 -2px 0 #fb7185; }
     .purchase-input:focus { outline: 0; background: transparent; }
-    .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: none; }
+    .purchase-input[data-negative-balance="true"]:focus { background: #fef08a; box-shadow: inset 0 -2px 0 #fb7185; }
     .order-edit-input {
       width: 100%; min-width: 0; height: 25px; padding: 1px 6px;
       border: 0; border-radius: 0; color: var(--slate-900);
@@ -1298,7 +1298,7 @@
     td.ledger-negative-cell .inventory-total-frame {
       color: #854d0e !important;
       background: #fef9c3 !important;
-      box-shadow: none;
+      box-shadow: inset 3px 0 0 #fb7185;
     }
     td.primary-readable-cell,
     td.primary-readable-cell .order-edit-input,
@@ -2706,7 +2706,7 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="./workbench-v12.css?v=7">
+  <link rel="stylesheet" href="./workbench-v12.css?v=8">
 </head>
 <body>
   <header class="global-header orderops-workbench-header" data-nexus-app-header="orderops">
@@ -8813,6 +8813,7 @@
       // Keep at most the two last complete table DOMs. There is still only one
       // attached table; no row is omitted and native grid/copy handlers remain.
       const previewSurfaceCache = new Map();
+      let previewRenderedWorkspace = null;
       elements.previewTable.addEventListener("input", () => previewSurfaceCache.clear());
       function mountPreparedPreview(markup) {
         const key = markup.replace(/class="([^"]*)"/g, (_, classes) =>
@@ -8830,9 +8831,17 @@
         previewSurfaceCache.delete(state.activePreview);
         previewSurfaceCache.set(state.activePreview, { key, nodes: [...elements.previewTable.childNodes] });
         while (previewSurfaceCache.size > 2) previewSurfaceCache.delete(previewSurfaceCache.keys().next().value);
+        previewRenderedWorkspace = state.workspace;
       }
 
       function renderPreview(precomputedDefinitions) {
+        const focusedInput = document.activeElement;
+        const focusedPurchaseChanged = previewRenderedWorkspace === state.workspace &&
+          focusedInput instanceof HTMLInputElement &&
+          focusedInput.matches(".purchase-input[data-purchase-code]") &&
+          elements.previewTable.contains(focusedInput) &&
+          focusedInput.value !== focusedInput.dataset.originalValue;
+        if (focusedPurchaseChanged && !commitFocusedPurchaseInput()) return;
         if (state.activePreview === "readiness") state.activePreview = "allocations";
         if (state.unresolvedReview.active) {
           renderUnresolvedReview();
@@ -8840,7 +8849,8 @@
         }
         setUnresolvedReviewControls(false);
         closePurchaseAutocomplete();
-        const definitions = precomputedDefinitions || getPreviewDefinitions(state.workspace);
+        const definitions = focusedPurchaseChanged ? getPreviewDefinitions(state.workspace)
+          : precomputedDefinitions || getPreviewDefinitions(state.workspace);
         const defaultPreview = defaultPreviewForWorkspace(state.workspace, definitions);
         if (!definitions[state.activePreview]) state.activePreview = defaultPreview;
         const primaryDefinition = definitions[defaultPreview];
@@ -10786,29 +10796,21 @@
         }
 
         if (event.key !== "Tab") return;
-        commitPurchaseInput(input);
+        event.preventDefault();
+        if (!commitPurchaseInput(input)) return;
+        closePurchaseAutocomplete();
         const negatives = inputs.filter((candidate) => candidate.dataset.negativeBalance === "true");
         if (negatives.length === 0) {
-          event.preventDefault();
           focusOutsideInventoryTable(event.shiftKey ? -1 : 1);
           return;
         }
-        event.preventDefault();
         const direction = event.shiftKey ? -1 : 1;
         const negativeIndex = negatives.indexOf(input);
         let target;
         if (negativeIndex >= 0) {
-          if (direction > 0 && negativeIndex === negatives.length - 1) {
-            finishPurchaseEntry(negatives);
-            return;
-          }
           target = negatives[(negativeIndex + direction + negatives.length) % negatives.length];
         } else if (direction > 0) {
-          target = negatives.find((candidate) => inputs.indexOf(candidate) > currentIndex);
-          if (!target) {
-            finishPurchaseEntry(negatives);
-            return;
-          }
+          target = negatives.find((candidate) => inputs.indexOf(candidate) > currentIndex) || negatives[0];
         } else {
           target = [...negatives].reverse().find((candidate) => inputs.indexOf(candidate) < currentIndex)
             || negatives[negatives.length - 1];
