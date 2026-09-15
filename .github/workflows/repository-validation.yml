@@ -31,6 +31,17 @@ jobs:
         with:
           node-version: 24
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install pinned static-build dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify committed Master build outputs
+        run: pnpm check:master-build
+
       - name: Validate manifest, files, and contracts
         run: node scripts/validate-repository.mjs
 
@@ -44,6 +55,7 @@ jobs:
           node scripts/test-smartinput-settings-ux.mjs
           node scripts/test-smartinput-initial-input-layout.mjs
           node scripts/test-smartinput-initial-input-mapping.mjs
+          node scripts/test-smartinput-draft-bootstrap.mjs
 
       - name: Test SmartInput clipboard and parsers
         run: |

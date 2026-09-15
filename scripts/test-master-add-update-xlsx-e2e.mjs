@@ -6,11 +6,12 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { readMasterContractSource } from "./master-source-fixture.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
 const moduleSource = fs.readFileSync(path.join(ROOT, "masterAddUpdate.js"), "utf8");
-const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
+const masterHtml = readMasterContractSource(ROOT);
 const sheetJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
 const expectedSheetJsSha256 = "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99";
 

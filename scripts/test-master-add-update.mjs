@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
+import { readMasterContractSource } from "./master-source-fixture.mjs";
 
 const ROOT = process.cwd();
 const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
@@ -901,7 +902,7 @@ await scenario("26. SmartParser 즉시 catalog apply·stop command 경로 회귀
   assert.match(stopAdapter, /afterVerifiedError: 'SmartParser stop-management linked-state verification failed'/);
 });
 
-const masterHtml = fs.readFileSync(path.join(ROOT, "Master.html"), "utf8");
+const masterHtml = readMasterContractSource(ROOT);
 assert.match(masterHtml, /masterAddUpdate\.js/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.analyzeUploadRows/);
 assert.match(masterHtml, /ONEAPP_MASTER_ADD_UPDATE\.commitApprovedChanges/);

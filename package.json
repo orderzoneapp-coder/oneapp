@@ -1,0 +1,15 @@
+{
+  "name": "oneapp-static-build",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "build:master": "pnpm run build:master:js",
+    "build:master:js": "babel master/master-app.jsx --out-file master/master-app.js --config-file ./babel.config.json",
+    "check:master-build": "pnpm run build:master && git diff --exit-code -- master/master-app.js"
+  },
+  "devDependencies": {
+    "@babel/cli": "7.24.7",
+    "@babel/core": "7.24.7",
+    "@babel/preset-react": "7.24.7"
+  }
+}

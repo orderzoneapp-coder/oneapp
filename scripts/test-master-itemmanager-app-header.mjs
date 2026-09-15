@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 
 const pages = [
   {
@@ -15,7 +16,9 @@ const pages = [
 ];
 
 for (const page of pages) {
-  const html = await readFile(page.file, 'utf8');
+  const html = page.file === 'Master.html'
+    ? readMasterContractSource(process.cwd())
+    : await readFile(page.file, 'utf8');
 
   assert.match(html, new RegExp(`data-nexus-app-id="${page.appId}"`), `${page.file}: common header app id must remain`);
   assert.match(html, /nexus\/common\/nexus-ui\.js\?v=1\.8\.0/, `${page.file}: common header runtime must remain`);

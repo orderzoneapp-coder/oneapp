@@ -1411,6 +1411,7 @@
       },
       "legacyWriterAllowlist": [
         "Master.html",
+        "master/master-app.js",
         "coreEngine.js",
         "masterAddUpdate.js"
       ],

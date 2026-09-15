@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 
 const relativeLuminance = (hex) => {
   const channels = hex.match(/../g).map((value) => Number.parseInt(value, 16) / 255);
@@ -38,7 +39,9 @@ const pages = [
 ];
 
 for (const [file, appId, base, title] of pages) {
-  const html = await readFile(file, 'utf8');
+  const html = file === 'Master.html'
+    ? readMasterContractSource(process.cwd())
+    : await readFile(file, 'utf8');
   const init = `${base}nexus-ui-theme-init.js?v=1.3.0`;
   const uiCss = `${base}nexus-ui.css?v=1.4.1`;
   const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
@@ -58,7 +61,9 @@ for (const [file, appId] of [
   ['MerchOps.html', 'merchops'],
   ['DataOps.html', 'dataops'],
 ]) {
-  const html = await readFile(file, 'utf8');
+  const html = file === 'Master.html'
+    ? readMasterContractSource(process.cwd())
+    : await readFile(file, 'utf8');
   assert.match(html, /nexus-app-header[^"`]*[\s\S]*?w-full|w-full[^"`]*[\s\S]*?nexus-app-header/, `${file}: the app header must use the full available width`);
   assert.match(html, new RegExp(`data-nexus-app-header["']?\\s*[:=]\\s*["']${appId}["']`), `${file}: the canonical app-header marker is required`);
   assert.match(html, /min-h-\[56px\]/, `${file}: the Master-based 56px app-header density is required`);

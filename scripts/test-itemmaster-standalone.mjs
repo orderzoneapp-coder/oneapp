@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const master = readFileSync(resolve(root, 'Master.html'), 'utf8');
+const master = readMasterContractSource(root);
 const compatibility = readFileSync(resolve(root, 'ItemMaster.html'), 'utf8');
 const itemManager = readFileSync(resolve(root, 'Item_manager.html'), 'utf8');
 const manifest = JSON.parse(readFileSync(resolve(root, 'app-manifest.json'), 'utf8'));

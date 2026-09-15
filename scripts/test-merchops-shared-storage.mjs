@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { readMasterContractSource } from "./master-source-fixture.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const coreSource = fs.readFileSync(path.join(ROOT, "coreEngine.js"), "utf8");
@@ -615,6 +616,7 @@ const files = Object.fromEntries(
   ]
     .map((name) => [name, fs.readFileSync(path.join(ROOT, name), "utf8")]),
 );
+files["Master.html"] = readMasterContractSource(ROOT);
 const dataOpsPersistStart = files["DataOps.html"].indexOf("const persistDataOpsMasterCache =");
 const dataOpsPersistEnd = files["DataOps.html"].indexOf("const DATAOPS_MASTER_ITEM_HELPER", dataOpsPersistStart);
 assert.ok(dataOpsPersistStart >= 0 && dataOpsPersistEnd > dataOpsPersistStart);

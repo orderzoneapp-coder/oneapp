@@ -2,6 +2,8 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { readMasterContractSource } from './master-source-fixture.mjs';
 import {
   beginProductChangeRequestReview,
   collapseProductChangeRequestDuplicates,
@@ -107,7 +109,7 @@ assert.equal((await getProductChangeRequest(request.requestId)).entry.result.rev
 assert.equal((await listProductChangeRequests({ status: ['PENDING', 'IN_REVIEW'] })).requests.length, 0);
 assert.equal((await completeProductChangeRequest({ requestId: request.requestId, resolution: 'REJECTED', reason: 'late reject' })).status, 'CONFLICT');
 
-const master = readFileSync(new URL('../Master.html', import.meta.url), 'utf8');
+const master = readMasterContractSource(fileURLToPath(new URL('..', import.meta.url)));
 const sku = readFileSync(new URL('../Item_manager.html', import.meta.url), 'utf8');
 const commonUi = readFileSync(new URL('../nexus/common/nexus-ui.js', import.meta.url), 'utf8');
 assert.match(master, />SKU 관리</);
