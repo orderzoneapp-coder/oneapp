@@ -134,6 +134,7 @@ jobs:
 
       - name: Test Master and Item Manager app-header separation
         run: |
+          node scripts/test-master-static-build.mjs
           node scripts/test-master-itemmanager-app-header.mjs
           node scripts/test-product-sku-management.mjs
 

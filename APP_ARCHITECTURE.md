@@ -174,7 +174,7 @@ Cold와 Warm을 구분하고 같은 PC·브라우저·자료·네트워크 조�
 
 측정은 변경 영향에 맞게 수행하되 측정하지 않은 지표를 통과로 기록하지 않는다. 새로운 기본 수치나 예외를 이번 문서 정리에 추가하지 않는다.
 
-`Master.html`의 공식 상품관리 화면은 `master/master-app.jsx`를 단일 앱 원본으로 사용하고, 고정된 Babel 빌드로 `master/master-app.js`를 생성한다. 브라우저 진입 중 JSX 변환을 수행하지 않는다. 생성물은 직접 편집하지 않으며 CI가 깨끗한 재생성 결과와 저장소의 생성물이 같은지 확인한다. `Item_manager.html`의 독립 파일럿 실행 방식은 이 계약에 포함하지 않는다.
+`Master.html`의 공식 상품관리 화면은 `master/master-app.jsx`를 단일 앱 원본으로 사용하고, 고정된 Babel·Tailwind 빌드로 `master/master-app.js`와 `master/master.css`를 생성한다. 브라우저 진입 중 JSX 변환과 Tailwind Play CDN 스타일 생성을 수행하지 않는다. 생성물은 직접 편집하지 않으며 CI가 깨끗한 재생성 결과와 저장소의 생성물이 같은지 확인한다. `Item_manager.html`의 독립 파일럿 실행 방식은 이 계약에 포함하지 않는다.
 
 SmartInput은 초기 UI가 `oneapp.smartinput.draft.v1`을 읽어 파싱한 결과를 본문 초기화에 한 번만 인계한다. 다른 문서의 저장·삭제·전체 삭제와 같은 문서의 호환 초안 쓰기는 인계 전 캐시를 무효화하고 기존 새 읽기·오류 복구 경로를 사용한다. 인계 뒤에는 초기 캐시를 해제하며 저장·복구 정책과 본문 작업 상태는 변경하지 않는다.
 
