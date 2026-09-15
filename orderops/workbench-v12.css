@@ -1,4 +1,4 @@
-/* OrderOps-only v1.3 layout. No global header or other app selectors. */
+/* OrderOps-only v1.4 layout. No global header or other app selectors. */
 body:has(.orderops-workbench-v12) { overflow: hidden; }
 body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
 .orderops-results-workspace.orderops-workbench-v12 { min-width: 0; min-height: 0 !important; height: var(--orderops-workbench-height, 70dvh); grid-template-rows: minmax(0, 1fr) !important; }
@@ -82,6 +82,9 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-app="orderops"] body [data-nexus-app-header="orderops"].orderops-workbench-header { display: grid !important; grid-template-columns: minmax(280px, 1fr) auto minmax(280px, 1fr); column-gap: 12px; }
   .orderops-workbench-header > .orderops-header-primary { justify-self: center; min-width: 0; }
   .orderops-workbench-header > .header-actions { justify-self: end; justify-content: flex-end; margin: 0; min-width: 0; gap: 8px; }
+  .orderops-workbench-header > .nexus-app-header__identity { justify-self: start; }
+  .orderops-workbench-header .nexus-app-header__copy { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .orderops-workbench-header .nexus-app-header__copy small { padding: 4px 9px; border: 1px solid #33506e; border-radius: 999px; color: #aac6df; font-size: 10px; font-weight: 700; white-space: nowrap; }
   .orderops-workbench-header .orderops-header-primary > .preview-tabs { gap: 6px; }
   html[data-nexus-ui-app="orderops"] body .orderops-workbench-header #previewTabs .tab-button { min-width: 76px; height: 34px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 750; background: transparent !important; }
   html[data-nexus-ui-app="orderops"] body .orderops-workbench-header #previewTabs .tab-button.active { color: #d5fff8 !important; border-color: #46bbaa !important; background: #153c3c !important; box-shadow: inset 0 -2px 0 #6bcfc5 !important; }
@@ -118,6 +121,10 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button { min-height: 32px; padding: 6px 10px; border: 1px solid var(--ops-border); border-radius: 8px; color: var(--ops-text); background: transparent; cursor: pointer; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button:hover:not(:disabled) { background: var(--nexus-ui-panel-subtle); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 :is(.orderops-file-prepare, .orderops-side-panel[data-nexus-pane="result"]) button:disabled { opacity: .5; cursor: not-allowed; }
+  .orderops-source-options { flex: 0 0 auto; min-width: 0; }
+  .orderops-source-options > summary { min-height: 32px; padding: 7px 10px; border: 1px solid var(--ops-border); border-radius: 8px; color: var(--ops-text); background: transparent; font-size: 11px; font-weight: 750; cursor: pointer; list-style-position: inside; }
+  .orderops-source-options[open] > summary { margin-bottom: 7px; border-color: var(--ops-action); }
+  .orderops-source-options > :not(summary) { margin-bottom: 7px; }
   .orderops-prepare-source-tools > button { width: 100%; font-weight: 700; }
   .orderops-prepare-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .orderops-api-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -145,16 +152,26 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-prepare-drop-hint strong { font-weight: 500; }
   .orderops-prepare-drop-hint span { font-size: 12px; }
   .has-prepared-files .orderops-prepare-drop-hint { padding: 10px 12px; border-bottom: 1px solid var(--ops-border); font-size: 11px; }
+  .has-prepared-files .orderops-prepare-drop-hint { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .has-prepared-files .orderops-prepare-drop-hint #prepareFilesButton { grid-column: 1; }
+  .has-prepared-files .orderops-prepare-drop-hint > strong { grid-column: 2; white-space: nowrap; }
   .has-prepared-files .orderops-prepare-drop-hint > span { display: none; }
   .is-file-dragover .orderops-prepare-surface { border-color: var(--ops-action); box-shadow: inset 0 0 0 2px var(--ops-action); background: color-mix(in srgb, var(--ops-action) 12%, var(--ops-input)); }
   .is-file-dragover .orderops-prepare-drop-hint strong { color: var(--ops-text); font-weight: 700; }
   .orderops-prepare-file-list { display: grid; gap: 3px; padding: 6px; }
   .orderops-prepare-file-list:empty { display: none; }
-  html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-prepare-file-list button { display: grid; gap: 3px; text-align: left; overflow-wrap: anywhere; border-color: transparent; }
+  html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-prepare-file-list button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; text-align: left; overflow-wrap: anywhere; border-color: transparent; }
   .orderops-prepare-file-list strong { font-size: 12px; font-weight: 650; }
-  .orderops-prepare-file-list small { font-size: 11px; color: var(--ops-muted); }
+  .orderops-prepare-file-list small { grid-column: 1; font-size: 11px; color: var(--ops-muted); }
+  .orderops-prepare-file-list [data-prepare-state] { grid-column: 2; grid-row: 1 / span 2; align-self: center; padding: 3px 7px; border-radius: 999px; color: var(--ops-text); background: var(--nexus-ui-panel-subtle); font-size: 10px; font-weight: 750; white-space: nowrap; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-prepare-file-list button[aria-pressed="true"] { background: var(--nexus-ui-selection-bg); box-shadow: inset 3px 0 0 var(--ops-action); }
   .orderops-prepare-file-list :is([data-prepare-state="INVALID"], [data-prepare-state="ERROR"], [data-prepare-state="PARTIAL"]) { color: var(--nexus-ui-danger); font-weight: 700; }
+  .orderops-prepare-match-summary { display: flex; gap: 7px; padding: 8px 6px 0; }
+  .orderops-prepare-match-summary:empty { display: none; }
+  .orderops-prepare-match-summary > span { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; color: var(--ops-muted); background: var(--nexus-ui-panel-subtle); font-size: 10px; white-space: nowrap; }
+  .orderops-prepare-match-summary [data-match-state="matched"] { color: var(--ops-action); background: color-mix(in srgb, var(--ops-action) 12%, var(--ops-input)); }
+  .orderops-prepare-match-summary [data-match-state="similar"] { color: var(--nexus-ui-warning, #a16207); background: color-mix(in srgb, var(--nexus-ui-warning, #a16207) 12%, var(--ops-input)); }
+  .orderops-prepare-match-summary [data-match-state="unmatched"] { color: var(--nexus-ui-danger); background: var(--nexus-ui-danger-bg); }
   #prepareFileEditor { padding: 0 12px 12px; }
   #prepareFileEditor:empty { padding: 0; }
   .orderops-prepare-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -169,8 +186,14 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   #prepareFileEditor [role="status"] { margin: 12px 0 0; color: var(--ops-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
   #preparedRangeHelp { color: var(--ops-muted); font-size: 11px; line-height: 1.5; }
   .orderops-excluded-source-row { opacity: .65; }
-  .orderops-raw-preview { max-height: 150px; overflow: auto; margin: 12px 0; scrollbar-width: thin; }
-  .orderops-raw-preview table { font-size: 11px; white-space: nowrap; border-collapse: collapse; }
+  .orderops-raw-preview { max-height: 190px; overflow: auto; margin: 8px 0 12px; border: 1px solid var(--ops-border); border-radius: 7px; scrollbar-width: thin; }
+  .orderops-raw-preview table { width: 100%; table-layout: fixed; font-size: 10px; white-space: nowrap; border-collapse: collapse; }
+  .orderops-raw-preview thead { position: sticky; top: 0; z-index: 1; background: var(--ops-surface); }
+  .orderops-raw-preview :is(th:first-child, td:first-child) { width: 38px; text-align: center; }
+  .orderops-raw-preview :is(th:last-child, td:last-child) { width: 50px; text-align: center; }
+  .orderops-raw-preview tbody td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
+  .orderops-raw-preview tbody td:last-child span { display: inline-flex; padding: 2px 5px; border-radius: 999px; color: var(--ops-muted); background: var(--nexus-ui-panel-subtle); font-size: 9px; }
+  .orderops-raw-preview tr[data-source-row-state="사용"] td:last-child span { color: var(--ops-action); background: color-mix(in srgb, var(--ops-action) 12%, var(--ops-input)); }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-raw-preview :is(th, td) { padding: 5px 7px; border: 0; border-bottom: 1px solid var(--ops-border); }
   .orderops-prepare-footer { display: grid; gap: 8px; }
   #prepareStatus { margin: 0; min-height: 28px; max-height: 64px; overflow: auto; font-size: 11px; line-height: 1.5; color: var(--ops-muted); overflow-wrap: anywhere; }
@@ -181,29 +204,25 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   .orderops-inspector-edit label { display: grid; gap: 5px; margin: 0 0 10px; font-size: 11px; color: var(--ops-muted); }
   .orderops-inspector-edit p { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
   .orderops-inspector-edit .pending { color: var(--nexus-ui-warning); }
-  .orderops-current-view-title { flex: 0 0 auto; margin: 0; padding: 9px 12px 5px; color: var(--ops-text); font-size: 15px; font-weight: 800; }
+  .orderops-central-section-head { flex: 0 0 auto; display: grid; min-width: 0; border-bottom: 1px solid var(--ops-border); background: color-mix(in srgb, var(--ops-surface) 88%, var(--nexus-ui-panel-subtle)); }
+  .orderops-current-view-title { flex: 0 0 auto; margin: 0; padding: 10px 12px 6px; color: var(--ops-text); font-size: 15px; font-weight: 800; }
+  .orderops-central-section-head > .view-controls { border-bottom: 0; background: transparent; }
   .orderops-voucher-panel-head { flex: 0 0 auto; border-bottom: 1px solid var(--ops-border) !important; }
   .orderops-voucher-panel-head h3 { font-size: 18px !important; letter-spacing: -.02em; }
+  .orderops-date-search-head { display: grid; gap: 1px; }
+  .orderops-date-search-head > span { color: var(--ops-muted); font-size: 9px; font-weight: 750; letter-spacing: .08em; }
+  .orderops-date-search-head h3 { margin: 0; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-voucher-panel-head .orderops-panel-close { width: 28px; min-height: 28px; padding: 0; font-size: 18px; line-height: 1; }
   .orderops-period-toolbar { position: relative; z-index: 8; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
   .orderops-workbench-v12 .orderops-query-panel { flex: 1 1 0; min-height: 0; overflow: hidden; }
   .orderops-workbench-v12 .orderops-query-panel > :not(.orderops-side-table-wrap) { flex-shrink: 0; }
-  .orderops-date-range-picker { position: relative; min-width: 0; }
-  .orderops-date-range-picker summary {
-    display: flex; min-height: 34px; align-items: center; gap: 7px; padding: 6px 9px;
-    overflow: hidden; border: 1px solid var(--ops-border); border-radius: 7px;
-    color: var(--ops-text); background: var(--ops-input); font-size: 10px; font-weight: 700;
-    cursor: pointer; list-style: none; white-space: nowrap;
-  }
-  .orderops-date-range-picker summary::-webkit-details-marker { display: none; }
-  .orderops-date-range-picker summary span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .orderops-date-range-picker[open] summary { border-color: var(--ops-action); }
+  .orderops-date-range-picker { min-width: 0; }
   .orderops-date-range-fields {
-    position: absolute; top: calc(100% + 5px); left: 0; z-index: 20;
-    display: grid; width: min(244px, calc(100vw - 32px)); gap: 7px; padding: 9px;
-    border: 1px solid var(--ops-border); border-radius: 8px; background: var(--ops-surface);
-    box-shadow: 0 12px 28px #0004;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 5px;
   }
+  .orderops-date-range-fields label { display: grid; gap: 3px; min-width: 0; color: var(--ops-muted); font-size: 9px; }
+  .orderops-date-range-separator { padding-bottom: 8px; color: var(--ops-muted); font-size: 10px; }
+  html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-date-range-fields input { min-height: 34px; padding: 4px 5px; font-size: 9px; }
   html[data-nexus-ui-theme] .orderops-workbench-v12 .orderops-period-toolbar #deliveryFilterReset { grid-column: auto; min-height: 34px; padding: 5px 9px; white-space: nowrap; }
   .orderops-quick-filter { display: grid; gap: 5px; min-width: 0; }
   .orderops-quick-filter > strong { color: var(--ops-text); font-size: 11px; }

@@ -20,7 +20,7 @@
   <script src="inventory-snapshot.js?v=20260912-common-inventory-v1-1"></script>
   <script src="source-coordinator.js?v=20260913-right-panel-v1"></script>
   <script src="voucher-workbench.js?v=20260913-right-panel-v1"></script>
-  <script src="workbench-ui.js?v=20260913-right-panel-v1"></script>
+  <script src="workbench-ui.js?v=20260915-layout-v1"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260912-workbench-v12"></script>
   <style>
     :root {
@@ -2706,12 +2706,12 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="./workbench-v12.css?v=6">
+  <link rel="stylesheet" href="./workbench-v12.css?v=7">
 </head>
 <body>
   <header class="global-header orderops-workbench-header" data-nexus-app-header="orderops">
     <div class="brand nexus-app-header__identity" aria-label="출고관리" data-nexus-app-identity="">
-      <span class="brand-product" data-nexus-app-title="">출고관리</span>
+      <div class="nexus-app-header__copy"><span class="brand-product" data-nexus-app-title="">출고관리</span><small>출고 업무</small></div>
     </div>
     <div class="orderops-header-primary" aria-label="출고관리 화면 선택"><div class="preview-tabs" id="previewTabs" role="tablist" aria-label="결과 미리보기"></div></div><div class="header-actions"><button class="execution-button analysis-run header-link" id="analyzeButton" type="button" aria-keyshortcuts="Enter" disabled="">
             <span aria-hidden="true">▸</span><span>출고분석 Enter</span>
@@ -2757,6 +2757,7 @@
 
 
     <div class="orderops-results-workspace orderops-workbench-v12" data-nexus-workspace="orderops" aria-label="출고관리 좌측·중앙·우측 작업영역"><aside id="orderOpsFilePreparePane" class="orderops-side-panel orderops-file-prepare" data-nexus-pane="reference" tabindex="-1" aria-label="자료 준비"><div class="orderops-side-panel__head"><div><h3>자료 준비</h3><p>API·Excel을 검토한 뒤 작업본에 적용</p></div><button type="button" id="preparePaneClose" aria-label="자료 준비 닫기">닫기</button></div>
+          <details class="orderops-source-options" id="orderOpsSourceOptions" open><summary>API·기존 자료</summary>
           <div class="orderops-api-scope" aria-label="API 조회 범위">
             <label>시작일<input id="orderOpsApiFromDate" type="date"></label><label>종료일<input id="orderOpsApiToDate" type="date"></label>
             <label>회사<input id="orderOpsApiCompanyId" type="text" autocomplete="off" placeholder="ONEAPP"></label>
@@ -2787,10 +2788,12 @@
               <span aria-hidden="true">↻</span><span>이전복구</span>
             </button></div>
           </div>
+          </details>
           <div class="orderops-prepare-actions" role="toolbar" aria-label="준비 파일 관리"><button type="button" id="prepareRemoveButton">준비 제거</button></div>
           <input type="file" id="prepareFilesInput" accept=".xlsx,.xls" multiple="" hidden="">
           <div id="prepareDropSurface" class="orderops-prepare-surface" aria-label="Excel 파일 끌어놓기 · 준비 및 매핑">
             <div class="orderops-prepare-drop-hint"><button type="button" id="prepareFilesButton"><span aria-hidden="true">＋</span> Excel 파일 선택</button><strong>또는 Excel 파일을 끌어다 놓으세요</strong><span>주문·재고·구매·판매 자료를 준비합니다.<br>유형과 열을 확인한 뒤 직접 적용하세요.</span></div>
+            <div id="prepareMatchSummary" class="orderops-prepare-match-summary" aria-label="항목 매핑 상태" aria-live="polite"></div>
             <div id="prepareFileList" class="orderops-prepare-file-list" aria-label="준비 파일 목록"></div>
             <div id="prepareFileEditor"></div>
           </div>
@@ -2864,7 +2867,7 @@
 
 
       <datalist id="orderOpsManagerOptions"></datalist>
-    <h2 id="orderOpsCurrentViewTitle" class="orderops-current-view-title">현재 주문현황</h2><div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
+    <div class="orderops-central-section-head"><h2 id="orderOpsCurrentViewTitle" class="orderops-current-view-title">현재 주문현황</h2><div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <div class="view-controls-scroll" tabindex="0" aria-label="검색·필터·열 설정 도구"><nav class="orderops-pane-shortcuts" aria-label="출고관리 패널 바로가기"><button type="button" id="preparePaneReopen" aria-controls="orderOpsFilePreparePane" aria-expanded="true">파일 준비</button></nav>
         <label class="search-field">
           <span>검색</span>
@@ -2903,7 +2906,7 @@
 
         </div><button id="orderOpsWorkbenchStatusButton" type="button" class="table-tool-button" popovertarget="orderOpsWorkbenchStatus" aria-controls="orderOpsWorkbenchStatus" aria-expanded="false" data-error="false" title="필수 파일 대기 · 주문현황과 창고재고를 선택하세요 ○필수 파일 선택 대기">작업 상태 ▾</button>
         <button class="orderops-panel-reopen hidden" id="inventoryInspectorReopen" type="button" aria-controls="inventoryInspector" aria-expanded="false">우측 열기</button>
-      <span class="orderops-status-notice" role="status" aria-live="polite">필수 파일 대기 · 주문현황과 창고재고를 선택하세요 ○필수 파일 선택 대기</span></div><div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="선택한 필터 및 배색">
+      <span class="orderops-status-notice" role="status" aria-live="polite">필수 파일 대기 · 주문현황과 창고재고를 선택하세요 ○필수 파일 선택 대기</span></div></div><div class="warehouse-color-bar hidden" id="warehouseColorBar" aria-label="선택한 필터 및 배색">
         <section class="fixed-filter-group hidden" id="warehouseFilterPanel" aria-label="창고 보기 필터">
           <span class="warehouse-color-title">창고 보기</span>
           <div class="warehouse-color-options" id="warehouseColorOptions"></div>
@@ -2936,18 +2939,19 @@
       </button><div class="orderops-header-menu"><button id="orderOpsHeaderMoreButton" type="button" aria-haspopup="menu" aria-controls="orderOpsHeaderMoreMenu" aria-expanded="false">기타 ▾</button>
           </div></div></div></section><aside class="orderops-side-panel" id="inventoryInspector" data-nexus-pane="result" aria-label="전표관리">
           <div class="orderops-side-panel__head orderops-voucher-panel-head">
-            <h3>전표관리</h3>
+            <div class="orderops-date-search-head"><span>전표관리</span><h3>일자검색</h3></div>
             <button class="orderops-panel-close" id="inventoryInspectorClose" type="button" aria-label="전표관리 닫기" aria-controls="inventoryInspector">×</button>
           </div>
           <aside class="orderops-side-panel orderops-query-panel" aria-label="전표 조회·일괄 변경" id="orderOpsOrderListPane" tabindex="-1">
             <div class="orderops-period-toolbar" aria-label="주문 기간 조회">
-              <details class="orderops-date-range-picker" id="deliveryDateRangePicker">
-                <summary><span aria-hidden="true">▣</span><span id="deliveryDateRangeText">전체 주문 기간</span></summary>
+              <div class="orderops-date-range-picker" id="deliveryDateRangePicker">
+                <span class="orderops-visually-hidden" id="deliveryDateRangeText">전체 주문 기간</span>
                 <div class="orderops-date-range-fields">
-                  <label class="orderops-delivery-filter">시작일<input id="deliveryDateFrom" type="date"></label>
-                  <label class="orderops-delivery-filter">종료일<input id="deliveryDateTo" type="date"></label>
+                  <label class="orderops-delivery-filter"><span>시작일</span><input id="deliveryDateFrom" type="date" aria-label="주문 시작일"></label>
+                  <span class="orderops-date-range-separator" aria-hidden="true">~</span>
+                  <label class="orderops-delivery-filter"><span>종료일</span><input id="deliveryDateTo" type="date" aria-label="주문 종료일"></label>
                 </div>
-              </details>
+              </div>
               <button class="orderops-delivery-filter-reset" id="deliveryFilterReset" type="button" title="날짜 범위를 전체 기간으로 되돌립니다.">전체 기간</button>
             </div>
 
@@ -3017,7 +3021,7 @@
             <p class="orderops-inventory-caption">이 패널의 표시 상태와 너비는 다음 화면에서도 유지됩니다.</p>
           </details>
         </aside></div><footer class="page-footer">
-      <span>ORDER Q v1.64 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
+      <span>ORDER Q v1.65 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
       <a href="../SHIPPING_MANAGEMENT_GUIDANCE.md">개발·운영 기준 보기</a>
     </footer>
   </main>
