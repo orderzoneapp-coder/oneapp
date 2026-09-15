@@ -11,12 +11,28 @@
   <script>
     (() => {
       const validModes = ['order', 'purchase', 'sale', 'estimate'];
+      const draftStorageKey = 'oneapp.smartinput.draft.v1';
+      const abortController = new AbortController();
+      let initialDraftCache = {
+        consumed: false,
+        valid: false,
+        raw: null,
+        parsed: null
+      };
+      const invalidateInitialDraft = () => {
+        if (!initialDraftCache.consumed) initialDraftCache.valid = false;
+      };
+      window.addEventListener('storage', event => {
+        if (event.key === draftStorageKey || event.key === null) invalidateInitialDraft();
+      }, { signal: abortController.signal });
       let saved = null;
       try {
-        saved = JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1') || 'null');
+        initialDraftCache.raw = localStorage.getItem(draftStorageKey);
+        saved = JSON.parse(initialDraftCache.raw || 'null');
+        initialDraftCache.parsed = saved;
+        initialDraftCache.valid = true;
       } catch (_) {}
       const savedUi = saved?.ui || {};
-      const abortController = new AbortController();
       const shell = {
         activeMode: validModes.includes(saved?.activeMode) ? saved.activeMode : 'order',
         relatedOpen: savedUi.relatedPanelLayoutVersion === 1 ? Boolean(savedUi.relatedOpen) : true,
@@ -25,6 +41,15 @@
         mounted: false,
         ready: false,
         abortController,
+        invalidateInitialDraft,
+        consumeInitialDraft() {
+          if (initialDraftCache.consumed || !initialDraftCache.valid) return { reused: false, value: null };
+          initialDraftCache.consumed = true;
+          const value = initialDraftCache.parsed;
+          initialDraftCache.raw = null;
+          initialDraftCache.parsed = null;
+          return { reused: true, value };
+        },
         mount() {
           if (shell.mounted) return;
           const byId = id => document.getElementById(id);
@@ -493,7 +518,7 @@
     })();
   </script>
   <script src="./smartinput-contract.js?v=0.6.5"></script>
-  <script type="module" src="./smartinput.js?v=0.14.2"></script>
+  <script type="module" src="./smartinput.js?v=0.14.3"></script>
   <script defer src="./source-preparation-ui-v2.js?v=0.1.1" data-smartinput-source-preparation="true"></script>
   <script defer src="../nexus/common/nexus-ui.js?v=1.8.0"></script>
   <script defer src="../nexus/common/nexus-table-ux.js?v=1.1.1"></script>
