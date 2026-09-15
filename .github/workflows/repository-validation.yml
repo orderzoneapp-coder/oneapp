@@ -370,7 +370,9 @@ jobs:
       - name: Verify inventory purchase and information columns before and after analysis
         env:
           ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench/inventory-columns
-        run: node scripts/test-orderops-inventory-purchase-info-columns.mjs
+        run: |
+          node scripts/test-orderops-inventory-purchase-info-columns.mjs
+          node scripts/test-orderops-negative-purchase-tab-browser.mjs
       - name: Verify dark contrast and F9 print borders against the frozen baseline
         run: |
           cp orderops/workbench-v12.css "$RUNNER_TEMP/orderops-print-current.css"

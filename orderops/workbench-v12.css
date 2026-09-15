@@ -300,6 +300,9 @@ body:has(.orderops-workbench-v12) .page-shell { padding-bottom: 0; }
   html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] .orderops-workbench-v12 #previewTable :is(.excel-grid-input, .order-edit-input, .inventory-input, .purchase-input) { border: 0 !important; border-radius: 0; box-shadow: none; }
   html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] .orderops-workbench-v12 #previewTable :is(.excel-grid-input, .order-edit-input, .inventory-input, .purchase-input):not([data-negative-balance="true"]) { background-color: transparent !important; }
   html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] .orderops-workbench-v12 #previewTable :is(.excel-grid-input, .order-edit-input, .inventory-input, .purchase-input):focus { box-shadow: inset 0 -2px 0 var(--ops-action); }
+  html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] .orderops-workbench-v12 #previewTable .purchase-input[data-negative-balance="true"] {
+    box-shadow: inset 0 -2px 0 #fb7185 !important;
+  }
   .orderops-workbench-v12 :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--ops-action); outline-offset: 2px; }
 }
 
