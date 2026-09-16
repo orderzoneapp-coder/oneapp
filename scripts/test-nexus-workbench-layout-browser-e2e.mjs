@@ -10,19 +10,19 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-workbench-layout-'));
-const workbenchPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','DataOps.html','orderops/list.html'];
+const workbenchPaths = ['Master.html','customer-master/index.html','SmartParser.html','MerchOps.html','DataOps.html'];
 workbenchPaths.forEach((path) => {
   const html = readFileSync(join(root, path), 'utf8');
   assert.match(html, /nexus-workbench-layout-v2\.css/, `${path} must consume the approved layout stylesheet`);
   assert.match(html, /nexus-workbench-layout-v2\.js/, `${path} must consume the approved layout controller`);
 });
-const rolledBackPaths = ['smartinput/index.html'];
+const rolledBackPaths = ['smartinput/index.html', 'orderops/list.html'];
 rolledBackPaths.forEach((path) => assert.doesNotMatch(readFileSync(join(root, path), 'utf8'), /nexus-workbench-layout-v2/, `${path} must retain its restored layout outside the common layout module`));
 const smartInputHtml = readFileSync(join(root, 'smartinput/index.html'), 'utf8');
 assert.match(smartInputHtml, /class="parser-card"[^>]*data-nexus-pane="reference"[\s\S]*id="photoResizer"[\s\S]*class="workbench"[^>]*data-nexus-pane="work"/, 'SmartInput must keep its approved parser/table split layout');
 assert.doesNotMatch(smartInputHtml, /smart-input-reference-pane|smart-input-main-flow/, 'SmartInput must not retain the rebuilt reference/central wrappers');
 assert.doesNotMatch(readFileSync(join(root, 'DataOps.html'), 'utf8'), /min-w-\[1000px\]/, 'DataOps must not restore the clipped forced-width wrapper');
-assert.match(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /orderops:\s*\{/, 'the separately approved OrderOps workbench must be resizable');
+assert.match(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /orderops:\s*\{/, 'rollback must preserve the shared layout module and its dormant OrderOps configuration');
 assert.doesNotMatch(readFileSync(join(root, 'nexus/common/nexus-workbench-layout-v2.js'), 'utf8'), /['"]smart-input['"]\s*:/, 'the common layout allowlist must continue to exclude SmartInput');
 const mime = { '.css':'text/css; charset=utf-8', '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.svg':'image/svg+xml' };
 const server = createServer((request, response) => {
@@ -252,7 +252,7 @@ try {
   await loaded;
   assert.equal(await evaluate(client, `location.pathname.endsWith('/DataOps.html')`), true, 'History Viewer must return to its validated calling app');
   assert.deepEqual(runtimeExceptions, [], `workbench pages must not throw runtime exceptions: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workbench browser E2E: seven tabs, six approved resizable workbenches including OrderOps, independent persisted resize, state preservation, close/reopen, small-screen access, SmartInput restored-layout exclusion, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
+  console.log('PASS NEXUS workbench browser E2E: seven tabs, five current-layout workbenches, independent persisted resize, state preservation, close/reopen, small-screen access, SmartInput and OrderOps restored-layout exclusions, SmartParser completion bar, DataOps width repair, no runtime exceptions.');
 } finally {
   client?.close();
   await new Promise((resolveClose) => server.close(resolveClose));

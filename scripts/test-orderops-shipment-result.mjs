@@ -82,7 +82,7 @@ for (const relative of ['orderops/list.html', 'orderops_list.html']) {
   const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   inlineScripts.forEach((match, index) => new vm.Script(match[1], { filename: `${relative}:inline-${index + 1}` }));
   for (const contract of ['id="shipmentExecution"', 'id="shipmentConfirmButton"', 'id="shipmentHoldButton"', 'data-shipped-quantity', '부분출고 사유', 'data-reverse-shipment', 'SHIPMENT_ORDER_REVISION_CONFLICT']) {
-    assert.ok(html.includes(contract), `${relative} 출고 작업 UI 계약 누락: ${contract}`);
+    assert.ok(!html.includes(contract), `${relative} rollback must not reactivate shipment-result UI: ${contract}`);
   }
   assert.doesNotMatch(html, /NEXUS 판매전표 직접 등록|ECOUNT.*API.*등록/, '이번 범위에 판매전표 직접 등록을 추가하면 안 된다.');
 }
@@ -92,4 +92,4 @@ assert.match(orderQuery, /<th>출고상태<\/th>/);
 assert.match(orderQuery, /shipment-result-read-adapter\.js/);
 assert.match(orderQuery, /oneapp-orderops-shipment-results/);
 
-console.log('OrderOps shipment core, progress axis, idempotence, partial/over shipment, substitution lineage, hold/reversal, ownership, and UI contracts passed.');
+console.log('Retained shipment core, progress, idempotence, hold/reversal, ownership, ORDER Q read consumer, and removed OrderOps UI contracts passed.');

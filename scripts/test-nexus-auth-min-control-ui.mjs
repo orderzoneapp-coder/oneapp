@@ -73,7 +73,8 @@ const directPages = [
 ];
 for (const page of directPages) {
   const html = await readFile(page, 'utf8');
-  assert.match(html, /nexus-ui\.js\?v=1\.8\.0/, `${page}: visibility-only header is required`);
+  assert.match(html, page === 'orderops/list.html' ? /nexus-ui\.js\?v=1\.5\.0/ : /nexus-ui\.js\?v=1\.8\.0/,
+    `${page}: approved page-specific visibility-only header token is required`);
   assert.doesNotMatch(html, /http-equiv=["']refresh|location\.(?:href|replace)[^\n]+\/nexus\//i, `${page}: direct entry must not redirect to login`);
 }
 

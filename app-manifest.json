@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.3.21",
-  "updatedAt": "2026-09-14",
+  "updatedAt": "2026-09-16",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -471,7 +471,7 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Prepare external data in the left pane, execute inventory-backed shipment work in the central table, and query or update selected vouchers in a compact right pane while preserving immutable single or multi-document ORDER Q candidates, revision-aware operator work, and append-only shipment results.",
+      "purpose": "Operate the basic Excel/parser shipment workflow with order status, stock ledger, warehouse inventory, local recovery and explicit Shipping Cloud saves. The 2026-09-16 rollback restores the 2026-09-07 baseline a596cbbdc1f8df52ee2b7f8f0dcf094cc372a8ab with minimal NEXUS host integration and retains the Phase 6B read-only unresolved-review result state; expanded source workbench and official shipment-result commands are not active UI consumers.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [
@@ -482,17 +482,10 @@
       ],
       "sharedContracts": [
         "cloud-url",
-        "common-inventory-snapshot",
-        "shipping-purchase-plan",
-        "orderq-shipment-candidate-read-model",
-        "shipping-result"
+        "shipping-purchase-plan"
       ],
       "consumedContracts": [
-        "dataops-inventory-snapshot",
-        "common-inventory-snapshot",
-        "voucher-activity-snapshot",
-        "orderq-unresolved-review-read-model",
-        "orderq-shipment-candidate-read-model"
+        "orderq-unresolved-review-read-model"
       ]
     },
     {
@@ -977,9 +970,8 @@
     {
       "id": "orderq-shipment-candidate-read-model",
       "owner": "orderq-vnext",
-      "consumers": [
-        "orderops"
-      ],
+      "consumers": [],
+      "activationPolicy": "Owner read assets remain preserved. The 2026-09-16 basic OrderOps rollback removes the product UI consumer without changing ORDER Q orders, revisions or stores.",
       "schemaVersion": "ONEAPP_ORDERQ_SHIPMENT_CANDIDATE_V1",
       "statuses": [
         "READY",
@@ -989,7 +981,7 @@
         "ERROR"
       ],
       "readerPolicy": "ORDER Q alone reads its order Stores and emits a deeply frozen, source-line-preserving shipment Snapshot. Point reads compare orderRevision and snapshotHash when supplied; list reads are bounded to 200 candidates and EMPTY, NOT_FOUND, STALE, and ERROR are never represented as READY.",
-      "ownershipPolicy": "OrderOps consumes only the read Adapter and must not import or write ORDER Q Stores. The Snapshot preserves orderId, orderItemId, sourceLineKey, product identity, ordered and cancelled quantities, existing order and administrator statuses, revision, and deterministic hash.",
+      "ownershipPolicy": "Any OrderOps consumer must use only the read Adapter and must not import or write ORDER Q Stores; the basic UI currently has no such consumer. The Snapshot preserves orderId, orderItemId, sourceLineKey, product identity, ordered and cancelled quantities, existing order and administrator statuses, revision, and deterministic hash.",
       "resources": {
         "contractAsset": "orderq/shipment-order-read-model.js",
         "adapterAsset": "orderq/shipment-order-read-adapter.js",
@@ -1235,9 +1227,8 @@
     {
       "id": "common-inventory-snapshot",
       "owner": "orderops",
-      "consumers": [
-        "orderops/list.html"
-      ],
+      "consumers": [],
+      "activationPolicy": "The basic OrderOps UI does not load this reader after the 2026-09-16 rollback. Owner assets, Cloud actions, immutable snapshots and recovery records remain preserved.",
       "schemaVersion": "ONEAPP_INVENTORY_SNAPSHOT_V1",
       "readSchemaVersion": "oneapp-common-inventory-read/v1",
       "sourceTypes": [
@@ -1267,6 +1258,7 @@
     {
       "id": "shipping-result",
       "owner": "orderops",
+      "activationPolicy": "Owner command, read and repository assets and existing append-only records remain preserved. The basic OrderOps UI does not load or invoke official confirm, hold or reversal commands after the 2026-09-16 rollback; the existing ORDER Q read consumer is unchanged.",
       "consumers": [
         "orderq-vnext"
       ],
@@ -1311,8 +1303,7 @@
       "owner": "dataops",
       "consumers": [
         "DataOps.html",
-        "MerchOps.html",
-        "orderops/list.html"
+        "MerchOps.html"
       ],
       "schemaVersion": "ONEAPP_DATAOPS_SNAPSHOT_V1",
       "columns": [
@@ -1955,8 +1946,13 @@
       },
       "orderops": {
         "F3": "Focus the integrated search field and keep the text caret ready for immediate input.",
-        "F7": "Print the current visible OrderOps tab, filters, rows, column visibility, and column order on A4 portrait.",
-        "F8": "Create the complete integrated OrderOps workbook independently of current screen filters, hidden columns, or column order."
+        "F4": "Open Smart Input.",
+        "F5": "Open Order Status.",
+        "F6": "Open the Stock Ledger.",
+        "F7": "Open Warehouse Inventory.",
+        "F8": "Save the reviewed Shipping Cloud revision.",
+        "F9": "Print the current visible OrderOps tab, filters, rows, column visibility, and column order on A4 portrait.",
+        "F10": "Create the complete integrated OrderOps workbook independently of current screen filters, hidden columns, or column order."
       }
     }
   },

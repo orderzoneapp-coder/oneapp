@@ -17,7 +17,6 @@ const apps = [
   { path: 'SmartParser.html', id: 'smart-parser', title: '스마트파서', logoFree: true },
   { path: 'MerchOps.html', id: 'merchops', title: 'MerchOps' },
   { path: 'smartinput/index.html', id: 'smart-input', title: '스마트입력' },
-  { path: 'orderops/list.html', id: 'orderops', title: '출고관리', logoFree: true },
   { path: 'DataOps.html', id: 'dataops', title: 'DataOps' },
 ];
 const canonicalGlobalLinks = [
@@ -41,7 +40,7 @@ for (const app of apps) {
 const parserHtml = readFileSync(join(root, 'SmartParser.html'), 'utf8');
 assert.doesNotMatch(parserHtml.slice(parserHtml.indexOf('data-nexus-app-header'), parserHtml.indexOf('data-nexus-app-header') + 5000), />ONEAPP</, 'SmartParser app header must not render the ONEAPP wordmark');
 const orderOpsHtml = readFileSync(join(root, 'orderops/list.html'), 'utf8');
-assert.doesNotMatch(orderOpsHtml, /brand-logo-frame|brand-logo|brand-mark|brand-badge/, 'OrderOps app header must not retain ONEAPP/ORDER Q logo markup or spacing');
+assert.match(orderOpsHtml, /brand-logo-frame/, 'the approved a596cbbd OrderOps rollback retains its original app-header markup; its theme is covered by the baseline browser suite');
 
 const mime = { '.css':'text/css; charset=utf-8', '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.json':'application/json; charset=utf-8', '.png':'image/png', '.svg':'image/svg+xml' };
 const server = createServer((request, response) => {
@@ -224,7 +223,7 @@ try {
     }
   }
   assert.deepEqual(runtimeExceptions, [], `app-header pages must not throw runtime exceptions: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS unified dark app headers: seven apps, theme-independent colors, 56px height, aligned identities, logo removal, readable non-overlapping controls.');
+  console.log('PASS NEXUS unified dark app headers: six current-layout apps, seven global links, theme-independent colors, 56px height, aligned identities, logo removal, readable non-overlapping controls; restored OrderOps covered separately.');
 } finally {
   client?.close();
   await new Promise((resolveClose) => server.close(resolveClose));

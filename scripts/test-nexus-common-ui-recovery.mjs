@@ -27,7 +27,7 @@ const pages = [
   ['customer-master/index.html', 'customer-master', '../nexus/common/', '거래처관리 - NEXUS'],
   ['Item_manager.html', 'item-manager', 'nexus/common/', 'SKU 관리 - NEXUS'],
   ['history_viewer.html', 'history-viewer', 'nexus/common/', '변경이력 - NEXUS'],
-  ['orderops/list.html', 'orderops', '../nexus/common/', '출고관리 - NEXUS'],
+  ['orderops/list.html', 'orderops', '../nexus/common/', '주문·출고 - NEXUS'],
   ['orderq/index.html', 'orderq-vnext', '../nexus/common/', '주문조회 - NEXUS'],
   ['orderq/input.html', 'orderq-vnext', '../nexus/common/', '주문서 입력 - NEXUS'],
   ['orderq/operations.html', 'orderq-vnext', '../nexus/common/', '출고운영 - NEXUS'],
@@ -42,10 +42,13 @@ for (const [file, appId, base, title] of pages) {
   const html = file === 'Master.html'
     ? readMasterContractSource(process.cwd())
     : await readFile(file, 'utf8');
-  const init = `${base}nexus-ui-theme-init.js?v=1.3.0`;
-  const uiCss = `${base}nexus-ui.css?v=1.4.1`;
-  const appCss = `${base}nexus-ui-app-themes.css?v=1.3.11`;
-  const runtime = `${base}nexus-ui.js?v=1.8.0`;
+  // The approved a596cbbd OrderOps rollback retains its exact asset URLs.
+  // Only that page uses the historical tokens; shared asset files stay current.
+  const restoredOrderOps = appId === 'orderops';
+  const init = `${base}nexus-ui-theme-init.js?v=${restoredOrderOps ? '1.1.0' : '1.3.0'}`;
+  const uiCss = `${base}nexus-ui.css?v=${restoredOrderOps ? '1.3.5' : '1.4.1'}`;
+  const appCss = `${base}nexus-ui-app-themes.css?v=${restoredOrderOps ? '1.3.9' : '1.3.11'}`;
+  const runtime = `${base}nexus-ui.js?v=${restoredOrderOps ? '1.5.0' : '1.8.0'}`;
 
   assert.match(html, new RegExp(`<script src="${init.replace(/[.?]/g, '\\$&')}" data-nexus-app-id="${appId}"></script>`), `${file}: early theme/app id is required`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${uiCss}"`), `${file}: common UI CSS is required`);
@@ -193,7 +196,7 @@ assert.match(appThemeCss, /data-nexus-ui-app="orderops"[^}]*--slate-700:\s*#e0e4
 assert.match(appThemeCss, /tr\.no-order-row td\s*\{[^}]*color:\s*#aeb7c1/s, 'ORDER Q inactive rows must remain readable in dark mode');
 assert.match(appThemeCss, /td\.unit-alert-cell[\s\S]*?color:\s*var\(--nexus-ui-danger\)/, 'ORDER Q dark warning units must use the readable danger token');
 assert.match(appThemeCss, /\.order-information-badge\.manager-color-badge[\s\S]*?var\(--manager-color\)/, 'legacy ORDER Q information badges must survive the dark table palette');
-assert.match(await readFile('orderops/list.html', 'utf8'), /\.order-information-entry\.manager-color-entry[\s\S]*?var\(--manager-color\)/, 'canonical ORDER Q manager-colored information text must remain readable');
+assert.match(await readFile('orderops/list.html', 'utf8'), /\.order-information-badge\.manager-color-badge[\s\S]*?var\(--manager-color\)/, 'restored OrderOps manager-color badges must retain their color contract');
 assert.match(appThemeCss, /data-nexus-ui-theme="light"\]\[data-nexus-ui-app="orderops"\][^{]*\{[^}]*--orderops-manager-row-weight:\s*48%/s, 'ORDER Q light manager rows must retain a clearly visible pastel surface');
 assert.match(appThemeCss, /data-nexus-ui-theme="dark"\]\[data-nexus-ui-app="orderops"\][^{]*\{[^}]*--orderops-manager-row-weight:\s*22%/s, 'ORDER Q dark manager rows must use a restrained but visible tint');
 assert.match(appThemeCss, /tr\.manager-color-row\[style\*="--manager-color"\]\s*>\s*td[\s\S]*?var\(--orderops-manager-row-weight\)[\s\S]*?!important/s, 'ORDER Q manager row tint must outrank every complete-row cell background');

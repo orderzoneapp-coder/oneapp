@@ -143,7 +143,7 @@ const files = Object.fromEntries(await Promise.all([
 ].map(async file => [file, await readFile(file, 'utf8')])));
 files['Master.html'] = readMasterContractSource(process.cwd());
 
-assert.match(files['orderops/list.html'], /id="smartInputButton" href="\.\.\/smartinput\/index\.html"/, 'F01: F4 must target the official SmartInput entry');
+assert.match(files['orderops/list.html'], /id="smartInputButton" href="input\.html"/, 'OrderOps rollback preserves the approved a596cbbd F4 link');
 assert.match(files['SmartParser.html'], /href: "guide_Merch\.html#part2-2"/, 'F02: SmartParser guide must target a verified section');
 assert.match(files['guide_Merch.html'], /id="part2-2"[\s\S]*업무 플로우 A : 스마트 파서/, 'F02: the target guide section must exist and identify the SmartParser workflow');
 assert.match(files['nexus/nexus.js'], /id: 'item-manager', label: 'SKU 관리'/, 'F03: NEXUS home must identify the compatibility tool accurately');
@@ -164,7 +164,7 @@ assert.match(files['orderq/voucher-activity-read-adapter.js'], /companyId=\$\{en
 assert.match(files['trend_report.html'], /href="MerchOps\.html"/, 'F09: trend report must use the official relative MerchOps path');
 assert.match(files['guide_data.html'], /href="DataOps\.html"/, 'F10: DataOps guide must use the official DataOps path');
 assert.match(files['orderq/index.html'], /target\.searchParams\.set\('returnTo', currentOrderQueryHref\(orderId\)\)/, 'G03: ORDER Q must attach its current filtered return route');
-assert.match(files['orderops/list.html'], /function orderQReturnHref[\s\S]*target\.searchParams\.set\("view", "query"\)/, 'G03: OrderOps must validate and restore the ORDER Q route');
+assert.doesNotMatch(files['orderops/list.html'], /function orderQReturnHref/, 'OrderOps rollback removes the later direct-order return UI while retaining the ORDER Q owner route');
 
 for (const path of ['Master.html', 'customer-master/index.html', 'SmartParser.html', 'MerchOps.html', 'smartinput/index.html', 'orderops/list.html', 'DataOps.html']) {
   await access(path);

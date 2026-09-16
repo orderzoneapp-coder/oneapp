@@ -130,7 +130,8 @@ const appPages = [
 
 for (const file of appPages) {
   const page = await readFile(file, 'utf8');
-  assert.match(page, /nexus-ui\.js\?v=1\.8\.0/, `${file}: updated common header runtime is required`);
+  assert.match(page, file === 'orderops/list.html' ? /nexus-ui\.js\?v=1\.5\.0/ : /nexus-ui\.js\?v=1\.8\.0/,
+    `${file}: approved page-specific common header token is required`);
   assert.doesNotMatch(page, /nexus\/nexus\.js|nexus-auth|userDisplayName|userAccountType/i, `${file}: login and user UI must stay out of the work app`);
 }
 
