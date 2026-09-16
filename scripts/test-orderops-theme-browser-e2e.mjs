@@ -182,14 +182,14 @@ try {
     return Object.fromEntries(book.SheetNames.map(name=>[name,XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:''})]));
   })()`);
   const fileNames = () => evaluate(client, `Object.fromEntries(['orders','inventory','purchases','sales'].map(kind=>[kind,document.querySelector('#'+kind+'FileName').textContent]))`);
-  const readRecovery = () => evaluate(client, `(async () => {
+  const readRecovery = (recordId = null) => evaluate(client, `(async () => {
     const pointer=localStorage.getItem('oneapp.shipping.recovery.pointer.v1');
     if(!pointer) throw new Error('Missing verified recovery pointer');
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     let records;
     try {records=await new Promise((resolve,reject)=>{const request=db.transaction('recoveryRecords','readonly').objectStore('recoveryRecords').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
     finally {db.close();}
-    const record=records.find(item=>item.recordId===pointer);
+    const record=records.find(item=>item.recordId===(${JSON.stringify(recordId)} || pointer));
     if(!record) throw new Error('Recovery pointer does not address a stored record');
     const canonical=ShippingManagementEngine.canonicalStringify(record.payload);
     const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical));
@@ -202,6 +202,17 @@ try {
     await waitFor(() => evaluate(client, `document.querySelector('#localSaveStatus').textContent.includes('임시저장 · ') && !/대기|없음|실패/.test(document.querySelector('#localSaveStatus').textContent) && Boolean(localStorage.getItem('oneapp.shipping.recovery.pointer.v1'))`), label);
     return readRecovery();
   };
+  const inputIdleExpression = `document.querySelector('#prepDropZone')?.getAttribute('aria-busy')==='false' && !document.querySelector('#prepFileButton')?.disabled`;
+  const waitInputIdle = (label) => waitFor(() => evaluate(client, inputIdleExpression), label);
+  const selectPreview = async (view) => {
+    await waitInputIdle(view+' preview input settled');
+    await evaluate(client, `(() => {
+      const button=document.querySelector('#prepPreviewTabs [data-preview="${view}"]');
+      if(!button || !button.getClientRects().length || button.disabled) throw new Error('Missing visible ${view} preview control');
+      button.click();
+    })()`);
+    await waitFor(() => evaluate(client, `document.querySelector('#prepPreviewTabs [data-preview="${view}"]')?.getAttribute('aria-selected')==='true' && Boolean(document.querySelector('#previewTable table'))`), view+' preview selected');
+  };
   const uploadMatrix = async (kind, matrix, name, expectSuccess = true) => {
     await evaluate(client, `(() => {
       const book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
@@ -210,29 +221,31 @@ try {
       document.querySelector('#toast').classList.add('hidden');
       Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`);
-    if(expectSuccess) await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && !document.querySelector('#analyzeButton').disabled`), name+' accepted');
+    if(expectSuccess) await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && (${inputIdleExpression})`), name+' automatically accepted and settled');
   };
   const editOrder = async (field, value) => {
-    await click(client, '#ordersDrop');
+    await selectPreview('allocations');
     await evaluate(client, `(() => {const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');if(!input)throw new Error('Missing ${field} editor');input.value=${JSON.stringify(String(value))};input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const editWholeStock = async (value) => {
-    await click(client, '#inventoryDrop');
+    await selectPreview('inventory');
     await evaluate(client, `(() => {const input=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');if(!input)throw new Error('Missing whole-stock editor');input.value=${JSON.stringify(String(value))};input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const editSupplier = async () => {
-    await click(client, '#inventoryDrop');
+    await selectPreview('inventory');
     await evaluate(client, `(() => {const input=document.querySelector('.purchase-input[data-purchase-code="000001"]');if(!input)throw new Error('Missing supplier editor');input.value='보존검증구매처';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const analyzeAgain = async (label) => {
+    await waitInputIdle(label+' input settled');
     assert.equal(await evaluate(client, `document.querySelector('#analyzeButton').disabled`), false, label+' must be available');
     await click(client, '#analyzeButton');
     await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled && !document.querySelector('#downloadButton').disabled`), label);
+    await waitInputIdle(label+' completed');
   };
   const assertEditedValues = async (label) => {
-    await click(client, '#ordersDrop');
+    await selectPreview('allocations');
     assert.deepEqual(await evaluate(client, `['quantity','unitPrice'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`), ['7','1200'], label+' order editors');
-    await click(client, '#inventoryDrop');
+    await selectPreview('inventory');
     assert.deepEqual(await evaluate(client, `(() => {const stock=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');return [stock?.value,document.querySelector('.purchase-input[data-purchase-code="000001"]')?.value];})()`), ['4','보존검증구매처'], label+' inventory and supplier editors');
     const rows=await exportRows();
     const value=(sheet,header)=>{
@@ -264,21 +277,10 @@ try {
     return after;
   };
   for (const [kind, matrix] of Object.entries(matrices)) {
-    await evaluate(client, `(() => {
-      const book=XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
-      const transfer=new DataTransfer();
-      transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}.xlsx'));
-      const input=document.querySelector('#${kind}Input');
-      Object.defineProperty(input,'files',{configurable:true,value:transfer.files});
-      input.dispatchEvent(new Event('change',{bubbles:true}));
-    })()`);
-    await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes('${kind}.xlsx')`), `${kind} Excel parsed`);
+    await uploadMatrix(kind, matrix, `${kind}.xlsx`);
   }
-  await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'basic analysis ready');
-  await click(client, '#analyzeButton');
-  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled`), 'basic analysis complete');
-  await click(client, '#ordersDrop');
+  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled && (${inputIdleExpression})`), 'basic automatic analysis complete');
+  await selectPreview('allocations');
   for (const [field,value] of [['quantity','7'],['unitPrice','1200']]) {
     await evaluate(client, `(() => {
       const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');
@@ -322,13 +324,19 @@ try {
   const replacementNames=await fileNames();
   assert.match(replacementNames.orders,/accepted-replacement.xlsx/);
   for(const kind of ['inventory','purchases','sales']) assert.equal(replacementNames[kind],beforeReplacementNames[kind], 'valid replacement must change only the selected input kind');
-  assert.deepEqual(await readRecovery(),beforeReplacement,'accepting a new file must retain the previous verified recovery until new analysis is saved');
-  await analyzeAgain('accepted replacement analysis');
+  await selectPreview('allocations');
+  assert.deepEqual(await evaluate(client, `['quantity','unitPrice','note'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]')?.value)`), ['3','900','새 파일'], 'accepted replacement must automatically show the new order values without another analysis action');
   const replacementRows=await exportRows();
   assert.deepEqual(['주문수량','단가','적요'].map(header=>replacementRows['주문현황'][1][replacementRows['주문현황'][0].indexOf(header)]),[3,900,'새 파일'],'only an accepted new file may replace current order values');
-  await savedRecovery('accepted replacement saved');
+  await waitFor(async () => {
+    const recovery=await readRecovery();
+    const order=recovery.workspace.orders[0];
+    return recovery.pointer!==beforeReplacement.pointer && recovery.workspace.sourceFiles.orders.fileName==='accepted-replacement.xlsx' && order.quantity===3 && order.unitPrice===900 && order.note==='새 파일';
+  }, 'accepted replacement automatically saved');
+  const afterReplacement=await savedRecovery('accepted replacement saved');
+  assert.ok(afterReplacement.records.some(([recordId,hash])=>recordId===beforeReplacement.pointer&&hash===beforeReplacement.payloadSha256), 'automatic replacement save must retain the previous verified recovery record');
+  assert.deepEqual((await readRecovery(beforeReplacement.pointer)).workspace,beforeReplacement.workspace,'the retained prior recovery must still verify and preserve the complete previous work');
   await uploadMatrix('orders',matrices.orders,'orders.xlsx');
-  await analyzeAgain('restore original input fixture');
   // Reverse edit order: stock/supplier first, then quantity/price.
   await editWholeStock(4);
   await editSupplier();
@@ -346,10 +354,10 @@ try {
   assert.deepEqual(businessState(await readRecovery()),businessState(beforeReload),'reload must recover the edited workspace and immutable input matrices');
   await analyzeAgain('recovered workspace reanalysis');
   await assertEditedValues('recovered workspace after reanalysis');
-  await click(client, '#ordersDrop');
+  await selectPreview('allocations');
   assert.deepEqual(await evaluate(client, `['quantity','unitPrice'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`), ['7','1200']);
   for (const view of ['ledger','inventory']) {
-    await click(client, `#${view}Drop`);
+    await selectPreview(view);
     assert.match(await evaluate(client, `document.querySelector('#previewTable').textContent`), /기본상품/);
   }
   const workbookResult=await evaluate(client, `(async () => {
@@ -364,7 +372,7 @@ try {
   assert.ok(workbookResult.rows['주문현황'].some(row=>row.includes(7)&&row.includes(1200)), 'Excel uses restored edits');
   console.log('Basic Excel → both edit orders → reanalysis → read/validation/cancel failures preserve work → accepted replacement → verified save/reload/reanalysis → Excel reopen PASS');
   // F05: edit the actual warehouse cell, then verify the downloadable workbook, not a synthetic model.
-  await click(client, '#inventoryDrop');
+  await selectPreview('inventory');
   await evaluate(client, `(() => {
     const input=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');
     if(!input) throw new Error('Missing whole-stock editor');
@@ -393,23 +401,15 @@ try {
     sales:[['품목코드','품목명','거래처','수량','단위','규격'],['000001','단위상품','매출처',1,'BOX','포장']],
   };
   for(const [kind,matrix] of Object.entries(unitMatrices)){
-    await evaluate(client,`(() => {
-      const book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
-      const transfer=new DataTransfer(); transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}-units.xlsx'));
-      const input=document.querySelector('#${kind}Input');
-      Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
-    })()`);
-    await waitFor(()=>evaluate(client,`document.querySelector('#${kind}FileName').textContent.includes('${kind}-units.xlsx')`),kind+' units parsed');
+    await uploadMatrix(kind,matrix,`${kind}-units.xlsx`);
   }
-  await waitFor(()=>evaluate(client,`!document.querySelector('#analyzeButton').disabled`),'unit analysis ready');
-  await click(client,'#analyzeButton');
-  await waitFor(()=>evaluate(client,`!document.querySelector('#downloadButton').disabled`),'unit analysis complete');
-  await click(client,'#ordersDrop');
+  await waitFor(()=>evaluate(client,`!document.querySelector('#downloadButton').disabled && (${inputIdleExpression})`),'unit automatic analysis complete');
+  await selectPreview('allocations');
   const unitText=await evaluate(client,`document.querySelector('#previewTable').textContent`);
   assert.match(unitText,/2 BOX/); assert.match(unitText,/30 EA/); assert.match(unitText,/단위/);
-  await click(client,'#inventoryDrop');
+  await selectPreview('inventory');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/단위.*(확인|보류)/);
-  await click(client,'#ledgerDrop');
+  await selectPreview('ledger');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/ONLY-BUY/);
   calculationRows=await exportRows();
   const ledger=calculationRows['재고수불부'];

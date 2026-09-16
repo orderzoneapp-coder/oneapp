@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.2";
+  const ENGINE_VERSION = "3.19.3";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -478,7 +478,12 @@
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const headerRowIndex = findBestOrderHeaderRow(displayMatrix, headerAliases);
+    if (input.headerRowIndex !== undefined && (!Number.isInteger(input.headerRowIndex)
+      || input.headerRowIndex < 0 || input.headerRowIndex >= displayMatrix.length)) {
+      throw new RangeError("주문 항목명 행은 원본 범위 안의 정수 좌표여야 합니다.");
+    }
+    const headerRowIndex = input.headerRowIndex === undefined
+      ? findBestOrderHeaderRow(displayMatrix, headerAliases) : input.headerRowIndex;
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveOrderHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
@@ -678,20 +683,71 @@
     };
   }
 
+  function applyInventoryColumnMappings(headerRow, columns, mappings, headerAliases = {}) {
+    if (mappings === undefined) return { columns, errors: [] };
+    const errors = [];
+    const invalid = (message, details = {}) => errors.push(createIssue("INVENTORY_COLUMN_MAPPING_INVALID", message, details));
+    if (!Array.isArray(mappings)) {
+      invalid("재고 열 매핑은 원본 열 위치를 가진 목록이어야 합니다.");
+      return { columns, errors };
+    }
+    const aliases = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
+    const positions = new Set();
+    const fields = new Set();
+    const warehouses = new Set();
+    const explicitRoles = new Map();
+    mappings.forEach((mapping) => {
+      const { sourceIndex, target, enabled } = mapping || {};
+      if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= headerRow.length || positions.has(sourceIndex)) {
+        invalid("재고 매핑의 원본 열 위치가 유효하지 않거나 중복되었습니다.", { sourceIndex });
+        return;
+      }
+      positions.add(sourceIndex);
+      if (!enabled || target === "") return;
+      if (target !== "warehouseQuantity" && target !== "warehousePrice") {
+        if (!Object.prototype.hasOwnProperty.call(INVENTORY_CANONICAL_ALIASES, target) || fields.has(target)) {
+          invalid("재고 작업 항목이 유효하지 않거나 중복 연결되었습니다.", { sourceIndex, target });
+        }
+        fields.add(target);
+        return;
+      }
+      const header = cleanText(headerRow[sourceIndex]);
+      const canonical = aliases.get(normalizeOrderHeader(header));
+      const column = columns.find((candidate) => candidate.sourceIndex === sourceIndex);
+      if (!column || !header || INVENTORY_REQUIRED_COLUMNS.includes(canonical) || canonical === "단위") {
+        invalid("필수 항목·단위 열 또는 이름 없는 열을 창고 수량·단가로 사용할 수 없습니다.", { sourceIndex });
+        return;
+      }
+      const name = `${target}:${normalizeOrderHeader(header)}`;
+      if (warehouses.has(name)) invalid("같은 이름의 창고 수량·단가 열이 중복 연결되었습니다.", { sourceIndex });
+      warehouses.add(name);
+      explicitRoles.set(sourceIndex, target);
+    });
+    if (errors.length) return { columns, errors };
+    return { errors, columns: columns.map((column) => explicitRoles.has(column.sourceIndex)
+      ? { ...column, role: explicitRoles.get(column.sourceIndex), editable: true, numeric: true } : column) };
+  }
+
   function parseInventoryWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const headerRowIndex = findBestInventoryHeaderRow(displayMatrix, headerAliases);
+    if (input.headerRowIndex !== undefined && (!Number.isInteger(input.headerRowIndex)
+      || input.headerRowIndex < 0 || input.headerRowIndex >= displayMatrix.length)) {
+      throw new RangeError("재고 항목명 행은 원본 범위 안의 정수 좌표여야 합니다.");
+    }
+    const headerRowIndex = input.headerRowIndex === undefined
+      ? findBestInventoryHeaderRow(displayMatrix, headerAliases) : input.headerRowIndex;
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveInventoryHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
-    const columns = describeInventoryColumns(headerRow, headerAliases);
+    const explicitColumns = applyInventoryColumnMappings(headerRow, describeInventoryColumns(headerRow, headerAliases), input.columnMappings, headerAliases);
+    const columns = explicitColumns.columns;
     const warehouseColumns = columns.filter((column) => column.role === "warehouseQuantity");
     const missingColumns = INVENTORY_REQUIRED_COLUMNS.filter(
       (column) => columnMap[normalizeHeader(column)] === undefined,
     );
-    const errors = [];
+    const errors = [...explicitColumns.errors];
     const warnings = [];
 
     if (headerRowIndex < 0 || missingColumns.length > 0) {
@@ -715,7 +771,7 @@
 
     const rows = [];
     const occurrences = new Map();
-    if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0) {
+    if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0 && explicitColumns.errors.length === 0) {
       for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
@@ -1241,7 +1297,13 @@
     const source = workspace?.sourceFiles?.inventory || {};
     const matrix = Array.isArray(source.matrix) ? source.matrix : [];
     const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
-    const derived = describeInventoryColumns(matrix[headerRowIndex] || []);
+    const headerRow = matrix[headerRowIndex] || [];
+    const inferred = describeInventoryColumns(headerRow);
+    const intake = source.intakeMapping;
+    const explicit = intake?.schemaVersion === "orderops-intake-mapping/v1"
+      && intake.draft?.schemaVersion === "orderops-excel-preparation/v1" && intake.draft.kind === "inventory"
+      ? applyInventoryColumnMappings(headerRow, inferred, intake.draft.columns) : null;
+    const derived = explicit && explicit.errors.length === 0 ? explicit.columns : inferred;
     const stored = Array.isArray(source.columns) ? source.columns : [];
     if (stored.length !== derived.length) return derived;
     const storedIsValid = stored.every((column, index) =>
@@ -1856,6 +1918,13 @@
     });
     rebuilt.inventoryOverrides = inventoryOverrides;
     rebuilt.substitutionHistory = substitutionHistory;
+    // Mapping evidence belongs to the selected source, not to recalculation.
+    // Keep only this optional input attachment; other source metadata is rebuilt normally.
+    for (const [kind, source] of [["orders", orderSource], ["inventory", inventorySource]]) {
+      if (Object.prototype.hasOwnProperty.call(source, "intakeMapping")) {
+        rebuilt.sourceFiles[kind].intakeMapping = source.intakeMapping;
+      }
+    }
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);

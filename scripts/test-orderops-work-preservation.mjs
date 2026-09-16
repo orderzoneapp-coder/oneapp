@@ -128,7 +128,7 @@ async function harness(htmlPath) {
   const context = vm.createContext(env);
   vm.runInContext([
     "isSupportedFile", "isInputOperationBusy", "validateFileCandidate", "setLoading", "setAnalysisEnterReady", "resetResults", "refreshInputState",
-    "analyzeCurrentInputs", "runAnalysis", "handleFile", "handleBundleFiles", "handleIntegratedFile", "refreshCurrentSession", "downloadResult",
+    "analyzeCurrentInputs", "commitInputCandidates", "runAnalysis", "handleFile", "handleBundleFiles", "handleIntegratedFile", "refreshCurrentSession", "downloadResult",
   ].map((name) => extractFunction(html, name)).join("\n"), context, { filename: `${htmlPath}:work-preservation` });
   const call = async (name, ...args) => {
     env.callArgs = args;
@@ -345,7 +345,7 @@ for (const htmlPath of HTML_PATHS) {
       });
     }
 
-    await test(`${htmlPath}: valid ${kind} read alone replaces its input after validation`, async () => {
+    await test(`${htmlPath}: valid ${kind} read automatically replaces only its source and displays reviewed work`, async () => {
       const h = await harness(htmlPath);
       edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
       h.env.scheduleLocalSave();
@@ -357,14 +357,102 @@ for (const htmlPath of HTML_PATHS) {
       assert.equal(h.state[kind].fileName, replacement.fileName);
       assert.equal(h.state[kind].fileHash, replacement.fileHash);
       FILE_KINDS.filter((type) => type !== kind).forEach((type) => assert.strictEqual(h.state[type], previousInputs[type]));
-      assert.equal(h.state.workspace, null, "정상 새 입력을 선택한 뒤 이전 결과를 새 파일의 결과로 오인하면 안 됩니다.");
-      assert.equal(h.elements.downloadButton.disabled, true);
-      assert.deepEqual(h.log.recovery, previousRecovery, "새 파일 선택만으로 마지막 정상 복구자료를 없애면 안 됩니다.");
-      assert.equal(h.log.saves.length, 1);
+      const expected = kind === "orders" ? { ...POSITIVE, quantity: 10, unitPrice: 1000, purchase: "" }
+        : kind === "inventory" ? { ...POSITIVE, inventory: 10 } : POSITIVE;
+      assertWork(h.state.workspace, expected);
+      assertRecoveryAndOutput(h.state.workspace, expected);
+      assert.equal(h.state.activePreview, "allocations", "정상 새 자료는 추가 분석 없이 출고리스트를 표시해야 합니다.");
+      assert.equal(h.elements.downloadButton.disabled, false);
+      assert.deepEqual(h.log.saves[0], previousRecovery, "새 작업 저장이 이전 정상 복구자료를 삭제하면 안 됩니다.");
+      assertWork(h.log.recovery.workspace, expected);
+      assert.equal(h.log.saves.length, 2);
       assert.equal(h.state.loading[kind], false);
       assert.ok(h.log.toasts.some((toast) => !toast.error));
     });
   }
+
+  for (const kind of ["inventory", "purchases"]) {
+    await test(`${htmlPath}: ${kind} candidate preserves recovery source metadata and audit history`, async () => {
+      const h = await harness(htmlPath);
+      edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+      const replacement = { ...clone(h.state[kind]), fileName: `replacement-${kind}.xlsx`, fileHash: hash(`replacement-${kind}`) };
+      h.state.workspace.systemHistory = {
+        schemaVersion: "shipping-system-history/v1",
+        events: [{ eventId: "review-edit-1", kind: "CELL_EDITED", field: "quantity", previousValue: 10, nextValue: 7, occurredAt: WHEN }],
+      };
+      h.state.workspace.substitutionHistory.events.push({
+        eventId: "review-substitution-1", kind: "SUBSTITUTED", occurredAt: WHEN,
+        fromProduct: { productCode: "0002", productName: "이전 상품" },
+        toProduct: { productCode: "0001", productName: "합성상품" }, quantity: 7, customer: "거래처A",
+      });
+      const noticeId = h.state.workspace.notices[0]?.noticeId;
+      assert.ok(noticeId, "전달사항 확인 보존용 fixture가 있어야 합니다.");
+      engine.setNoticeAcknowledged(h.state.workspace, noticeId, true);
+      h.state.workspace.sourceFiles.orders.sourceMetadata = { originalSheet: "주문", headerRow: 1, sourceColumns: [4, 5, 7], rawEvidence: ["", 0, "0", -2] };
+      h.state.workspace.sourceFiles.inventory.sourceMetadata = { originalSheet: "재고", sourceColumns: [5, 6, 7] };
+      h.state.workspace.orderOpsInputs.sales.sourceMetadata = { originalSheet: "판매", sourceRows: [2] };
+      h.state.workspace = clone(engine.buildLocalRecoveryPayload(h.state.workspace, {}, {}, WHEN)).workspace;
+      const previous = h.state.workspace;
+      const before = clone(previous);
+      // Old recovery records must not require the original File objects again.
+      FILE_KINDS.forEach((type) => { h.state[type] = null; });
+      h.state.validation = null;
+      const result = await h.call("commitInputCandidates", new Map([[kind, replacement]]), { preferredKind: kind });
+      const expected = kind === "inventory" ? { ...POSITIVE, inventory: 10 } : POSITIVE;
+      assert.notStrictEqual(h.state.workspace, previous);
+      assert.deepEqual(previous, before, "입력으로 쓴 복구 작업본도 불변이어야 합니다.");
+      assertWork(h.state.workspace, expected);
+      assertRecoveryAndOutput(h.state.workspace, expected);
+      assert.deepEqual(clone(h.state.workspace.systemHistory), before.systemHistory);
+      assert.deepEqual(clone(h.state.workspace.substitutionHistory), before.substitutionHistory);
+      assert.deepEqual(clone(h.state.workspace.noticeAcknowledgements), before.noticeAcknowledgements);
+      assert.deepEqual(clone(h.state.workspace.sourceFiles.orders), before.sourceFiles.orders);
+      assert.deepEqual(clone(h.state.workspace.orderOpsInputs.sales), before.orderOpsInputs.sales);
+      if (kind === "inventory") {
+        assert.equal(h.state.workspace.sourceFiles.inventory.fileName, replacement.fileName);
+        assert.equal(h.state.workspace.sourceFiles.inventory.sha256, replacement.fileHash);
+        assert.equal(h.state.workspace.sourceFiles.inventory.sourceMetadata, undefined, "교체된 원본의 옛 좌표를 새 원본으로 이월하면 안 됩니다.");
+        assert.deepEqual(clone(h.state.workspace.inventoryOverrides.cells), []);
+      } else {
+        assert.deepEqual(clone(h.state.workspace.sourceFiles.inventory), before.sourceFiles.inventory);
+        assert.deepEqual(clone(h.state.workspace.inventoryOverrides), before.inventoryOverrides);
+        assert.equal(h.state.workspace.orderOpsInputs.purchases.fileName, replacement.fileName);
+      }
+      assert.equal(result.workspace, h.state.workspace);
+      assert.equal(result.previewKind, kind);
+      assert.equal(h.state.activePreview, "allocations");
+      assert.equal(h.state.analysisRunning, false);
+      assert.equal(h.log.saves.length, 1);
+      assert.deepEqual(h.log.recovery.workspace.systemHistory, before.systemHistory);
+      assert.deepEqual(h.log.recovery.workspace.sourceFiles.orders, before.sourceFiles.orders);
+    });
+  }
+
+  await test(`${htmlPath}: candidate calculation throw leaves inputs/work/export/recovery untouched`, async () => {
+    const h = await harness(htmlPath);
+    edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+    h.env.scheduleLocalSave();
+    await h.call("downloadResult");
+    const current = h.state.workspace;
+    const before = clone(current);
+    const previousInputs = Object.fromEntries(FILE_KINDS.map((kind) => [kind, h.state[kind]]));
+    const recovery = clone(h.log.recovery);
+    const replacement = { ...clone(h.state.inventory), fileName: "candidate-inventory.xlsx", fileHash: hash("candidate-inventory") };
+    h.env.engine = { ...engine, recalculateWorkspace() { throw new Error("INJECTED_CANDIDATE_CALCULATION_FAILURE"); } };
+    await assert.rejects(h.call("commitInputCandidates", new Map([["inventory", replacement]])), /INJECTED_CANDIDATE_CALCULATION_FAILURE/);
+    assert.strictEqual(h.state.workspace, current);
+    assert.deepEqual(current, before);
+    FILE_KINDS.forEach((kind) => assert.strictEqual(h.state[kind], previousInputs[kind]));
+    assert.deepEqual(h.log.recovery, recovery);
+    assert.equal(h.log.saves.length, 1);
+    assert.equal(h.elements.downloadButton.disabled, false);
+    assert.equal(h.elements.printButton.disabled, false);
+    assert.equal(h.state.analysisRunning, false);
+    h.env.engine = engine;
+    await h.call("downloadResult");
+    assert.deepEqual(h.log.exports[1], h.log.exports[0]);
+    assertRecoveryAndOutput(current, POSITIVE);
+  });
 
   await test(`${htmlPath}: pending read blocks double-file, reanalysis and refresh without clearing active work`, async () => {
     const h = await harness(htmlPath);
@@ -458,10 +546,13 @@ for (const htmlPath of HTML_PATHS) {
     assert.strictEqual(h.state.purchases, purchases);
     for (const kind of ["orders", "inventory", "sales"]) assert.strictEqual(h.state[kind], previous[kind]);
     assert.strictEqual(h.state.integratedFile, result);
-    assert.equal(h.state.workspace, null);
-    assert.equal(h.elements.downloadButton.disabled, true);
-    assert.deepEqual(h.log.recovery, recovery);
-    assert.equal(h.log.saves.length, 1);
+    assertWork(h.state.workspace, POSITIVE);
+    assertRecoveryAndOutput(h.state.workspace, POSITIVE);
+    assert.equal(h.state.activePreview, "allocations");
+    assert.equal(h.elements.downloadButton.disabled, false);
+    assert.deepEqual(h.log.saves[0], recovery);
+    assertWork(h.log.recovery.workspace, POSITIVE);
+    assert.equal(h.log.saves.length, 2);
     assert.equal(h.state.loading.integrated, false);
     assert.ok(h.log.toasts.some((toast) => /기존 데이터 유지/.test(toast.message)));
   });

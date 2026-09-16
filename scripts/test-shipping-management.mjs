@@ -9,6 +9,37 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const orderOpsHtml = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
+const preparationCss = fs.readFileSync(path.join(ROOT, "orderops", "excel-preparation.css"), "utf8");
+function assertExcelPreparationLayout(page, label) {
+  const asideStart = page.indexOf('<aside class="excel-preparation-panel"');
+  const asideEnd = page.indexOf("</aside>", asideStart);
+  assert.ok(asideStart >= 0 && asideEnd > asideStart, `${label}: visible preparation panel must exist`);
+  const aside = page.slice(asideStart, asideEnd);
+  assert.doesNotMatch(aside.slice(0, aside.indexOf(">")), /\bhidden\b/,
+    `${label}: the main file controls must not live in hidden compatibility UI`);
+  assert.deepEqual([...aside.matchAll(/data-prep-kind="([^"]+)"/g)].map((match) => match[1]),
+    ["orders", "purchases", "sales", "inventory"], `${label}: source choices must use the approved 2x2 sequence`);
+  for (const contract of [
+    'id="prepDropZone"', 'id="prepFileButton"', 'id="prepFileList"',
+    'id="prepFileDetails"', 'id="prepMappingDetails"',
+    'id="prepSaveTemplateButton"', 'id="prepApplyButton"',
+    'class="prep-integrated-slot" id="integratedCard"', 'id="integratedFileButton"', 'id="integratedInput"',
+    '엑셀 파일을 여기에 드래그하거나 클릭하여 불러오세요.', '통합 Excel 불러오기',
+  ]) assert.ok(aside.includes(contract), `${label}: preparation contract is missing: ${contract}`);
+  const drop = aside.slice(aside.indexOf('id="prepDropZone"'), aside.indexOf('<div class="prep-integrated-slot"'));
+  assert.ok(drop.includes('id="prepFileButton"'), `${label}: the file button must be inside the drop area`);
+  const tabsStart = page.indexOf('id="prepPreviewTabs"');
+  const tabs = page.slice(tabsStart, page.indexOf("</div>", tabsStart));
+  assert.match(tabs, /role="tablist" aria-label="중앙 자료 조회"/,
+    `${label}: result navigation must remain accessible outside the hidden source strip`);
+  assert.deepEqual([...tabs.matchAll(/data-preview="([^"]+)"/g)].map((match) => match[1]),
+    ["allocations", "ledger", "inventory", "purchases", "sales"], `${label}: all five central result views must remain available`);
+  assert.match(page, /class="source-selector excel-preparation-compat"[^>]*id="sourceSelector"[^>]*hidden/,
+    `${label}: old source IDs must remain compatibility controls, not duplicate visible inputs`);
+}
+assertExcelPreparationLayout(orderOpsHtml, "public OrderOps");
+assert.match(preparationCss, /\.prep-kind-buttons\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+  "the visible source choices must form two columns");
 assert.doesNotMatch(orderOpsHtml, /tokens truncated|…\d+ tokens truncated…/,
   "the public OrderOps mirror must not contain a truncated source fragment");
 assert.match(orderOpsHtml, /<body>[\s\S]*<\/body>\s*<\/html>/,
@@ -43,7 +74,7 @@ assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*
 assert.match(orderOpsHtml, /\.execution-panel\s*\{[^}]*border:\s*0;/,
   "the public execution controls must not share an outer border");
 assert.match(orderOpsHtml, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
-  "the public source strip must expose exactly five source/result tabs");
+  "the hidden compatibility strip must retain its five legacy source/result controls");
 assert.match(orderOpsHtml, /\.system-topbar\s*\{[^}]*min-height:\s*58px;[^}]*padding:\s*10px 14px;/,
   "the public System.IO status row must use the DataOps-scale vertical spacing");
 assert.match(orderOpsHtml, /\.upload-card,\s*\.execution-panel\s*\{[^}]*min-height:\s*54px;/,
@@ -67,9 +98,9 @@ for (const sourceCardContract of [
   'id="purchasesFileButton"',
   'id="salesFileButton"',
   '<p class="drop-title">수불현황</p>',
-  'class="integrated-compact-slot" id="integratedCard"',
+  'class="prep-integrated-slot" id="integratedCard"',
   'id="integratedFileButton"',
-  '📁</span><span>통합</span>',
+  '📁</span><span>통합 Excel 불러오기</span>',
   'aria-label="통합 Excel 파일 불러오기"',
 ]) {
   assert.ok(orderOpsHtml.includes(sourceCardContract),
@@ -77,8 +108,8 @@ for (const sourceCardContract of [
 }
 assert.doesNotMatch(orderOpsHtml, /integrated-uploader|id="integratedDrop"|id="integratedFileName"/,
   "the large integrated workbook uploader UI must be removed");
-assert.match(orderOpsHtml, /<div class="data-source-label">[\s\S]*class="integrated-compact-slot" id="integratedCard"/,
-  "the compact integrated picker must sit beside the data-source label");
+assert.match(orderOpsHtml, /<aside class="excel-preparation-panel"[\s\S]*class="prep-integrated-slot" id="integratedCard"[\s\S]*<\/aside>/,
+  "the integrated picker must stay visible in the new left preparation panel");
 assert.doesNotMatch(orderOpsHtml, /<div class="file-icon"[^>]*>6<\/div>/,
   "the integrated workbook uploader must not look like a sixth numbered result tab");
 assert.ok(orderOpsHtml.includes('const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" })'),
@@ -318,7 +349,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260917-work-preservation") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260917-left-excel-mapping") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -718,7 +749,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.2");
+assert.equal(engine.ENGINE_VERSION, "3.19.3");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
@@ -1887,6 +1918,7 @@ assert.ok(
 );
 
 const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
+assertExcelPreparationLayout(html, "canonical OrderOps");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
 assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
 new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
@@ -1950,6 +1982,7 @@ function assertBalancedCssBraces(css) {
 }
 
 styleBlocks.forEach(assertBalancedCssBraces);
+assertBalancedCssBraces(preparationCss);
 const combinedCss = styleBlocks.join("\n");
 assert.match(combinedCss, /table\.column-width-managed\s*\{[^}]*min-width:\s*0;/,
   "the canonical OrderOps table must allow unused space on the right");
@@ -2131,6 +2164,9 @@ for (const id of [
   "sourceSelector", "ordersInput", "inventoryInput", "purchasesInput", "salesInput", "analyzeButton", "refreshButton",
   "ordersFileButton", "inventoryFileButton", "purchasesFileButton", "salesFileButton", "ledgerCard", "ledgerDrop", "ledgerStatus",
   "integratedCard", "integratedFileButton", "integratedInput",
+  "prepKindButtons", "prepDropZone", "prepFileButton", "prepFileList", "prepFileDetails", "prepMappingDetails",
+  "prepFileName", "prepKindSelect", "prepTemplateName", "prepSheetSelect", "prepHeaderRow", "prepStartRow", "prepEndRow",
+  "prepSourcePreview", "prepColumnMappings", "prepSaveTemplateButton", "prepApplyButton", "prepMappingStatus", "prepPreviewTabs",
   "resultFilterResetButton", "warehouseFilterToggle", "managerFilterToggle", "warehouseFilterPanel", "managerFilterPanel",
   "shortageFocusButton",
   "colorAssignmentPanel", "colorTargetSelect", "pastelColorPalette", "vividColorPalette", "vividColorToggle",
@@ -2144,7 +2180,7 @@ for (const id of [
   assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} must exist exactly once`);
 }
 assert.doesNotMatch(html, /id="bundleInput"|id="bundleDrop"/,
-  "the auto-routing drop surface must reuse the visible five-card strip");
+  "left preparation must reuse the four source pickers instead of adding a separate bundle input");
 for (const kind of ["orders", "inventory", "purchases", "sales"]) {
   assert.ok(html.includes(`id="${kind}Input" type="file" accept=".xlsx,.xls">`),
     `${kind} input must remain a single-file picker`);
@@ -2154,9 +2190,9 @@ assert.ok(html.includes('id="integratedInput" type="file" accept=".xlsx,.xls">')
 assert.match(combinedCss, /\.execution-panel\s*\{[^}]*grid-template-columns:\s*repeat\(2,[^}]*border:\s*0;/,
   "canonical analysis and refresh actions must be two buttons without a shared outer border");
 assert.match(combinedCss, /\.upload-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,/,
-  "canonical upload strip must contain exactly five result tabs");
-assert.match(combinedCss, /\.integrated-compact-slot\s*\{[^}]*display:\s*inline-flex;/,
-  "canonical integrated workbook control must be a compact data-source picker");
+  "canonical hidden compatibility strip must retain its five result controls");
+assert.match(preparationCss, /\.excel-preparation-panel \.prep-integrated-slot\s*\{[^}]*display:\s*flex;/,
+  "canonical integrated workbook picker must use the visible left-panel container");
 assert.doesNotMatch(combinedCss, /\.integrated-uploader\s*\{/,
   "canonical large integrated uploader styling must be removed");
 const canonicalHeaderSource = html.slice(html.indexOf('<header class="global-header">'), html.indexOf('</header>'));
@@ -2500,10 +2536,10 @@ assert.ok(classifyStart >= 0 && classifyEnd > classifyStart, "bundle classifier 
 const classifySource = html.slice(classifyStart, classifyEnd);
 for (const requiredSource of [
   "Promise.all([",
-  'parseExcelFile(file, "orders")',
-  'parseExcelFile(file, "inventory")',
-  'parseGenericExcelFile(file, "purchases")',
-  'parseGenericExcelFile(file, "sales")',
+  'parseExcelFile(file, "orders", { probe: true })',
+  'parseExcelFile(file, "inventory", { probe: true })',
+  'parseGenericExcelFile(file, "purchases", { probe: true })',
+  'parseGenericExcelFile(file, "sales", { probe: true })',
   "orderSignature",
   "inventorySignature",
   "topStructureScore",
@@ -2514,7 +2550,7 @@ for (const requiredSource of [
 }
 
 const bundleStart = html.indexOf("async function handleBundleFiles");
-const bundleEnd = html.indexOf("function toggleWorkspaceStorage", bundleStart);
+const bundleEnd = html.indexOf("function isInputOperationBusy", bundleStart);
 assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exist");
 const bundleSource = html.slice(bundleStart, bundleEnd);
 for (const requiredSource of [
@@ -2522,7 +2558,8 @@ for (const requiredSource of [
   "Promise.all(files.map(classifyBundleFile))",
   "const byKind = new Map();",
   "byKind.has(item.kind)",
-  "byKind.forEach((parsed, kind) => { state[kind] = parsed; });",
+  "validateFileCandidate(item.kind, item.parsed);",
+  "await commitInputCandidates(byKind, { preferredKind: classified[0]?.kind });",
   "refreshInputState();",
 ]) {
   assert.ok(bundleSource.includes(requiredSource), `bundle handler is missing: ${requiredSource}`);
@@ -2541,35 +2578,49 @@ assert.ok(html.includes('fileButton.addEventListener("click", () => input.click(
 assert.ok(html.includes("bindBundleDropSurface();"), "the compact source-strip drop target must be initialized");
 
 const individualStart = html.indexOf("async function handleFile");
-const individualEnd = html.indexOf("function renderFileCard", individualStart);
+const individualEnd = html.indexOf("async function handleIntegratedFile", individualStart);
 assert.ok(individualStart >= 0 && individualEnd > individualStart, "individual upload handler must exist");
 const individualSource = html.slice(individualStart, individualEnd);
 for (const requiredSource of [
   "isSupportedFile(file)",
   "file.size > MAX_FILE_SIZE",
-  "resetResults();",
   "setLoading(kind, true);",
   '["orders", "inventory"].includes(kind)',
   "await parseGenericExcelFile(file, kind)",
   "validateFileCandidate(kind, candidate);",
-  "state[kind] = candidate;",
+  "await commitInputCandidates(new Map([[kind, candidate]]), { preferredKind: kind });",
   "refreshInputState();",
 ]) {
   assert.ok(individualSource.includes(requiredSource), `individual upload flow is missing: ${requiredSource}`);
 }
 assert.ok(!individualSource.includes("state[kind] = null;"),
   "failed file replacement must not clear the previous input");
-assert.ok(individualSource.indexOf("validateFileCandidate(kind, candidate)") < individualSource.indexOf("resetResults();"),
-  "the candidate must pass validation before the current work is replaced");
+assert.doesNotMatch(individualSource, /resetResults\(\)/,
+  "valid file reads must not clear current work before the candidate calculation succeeds");
+assert.ok(individualSource.indexOf("validateFileCandidate(kind, candidate)") < individualSource.indexOf("await commitInputCandidates"),
+  "the candidate must pass validation before entering automatic calculation and replacement");
+const commitStart = html.indexOf("async function commitInputCandidates");
+const commitEnd = html.indexOf("function toggleWorkspaceStorage", commitStart);
+assert.ok(commitStart >= 0 && commitEnd > commitStart, "the atomic automatic-input pipeline must exist");
+const commitSource = html.slice(commitStart, commitEnd);
+for (const contract of [
+  "validateFileCandidate(kind, parsed)", "await analyzeCurrentInputs({ fromSources: true, inputs })",
+  "engine.recalculateWorkspace(candidateWorkspace)", "state.workspace = candidateWorkspace",
+  'state.activePreview = "allocations"', "renderResults();", "scheduleLocalSave();", "renderPreparedInputPreview(previewKind)",
+]) assert.ok(commitSource.includes(contract), `automatic input pipeline is missing: ${contract}`);
+assert.ok(commitSource.indexOf("await analyzeCurrentInputs") < commitSource.indexOf("state[kind] = parsed"),
+  "candidate calculation must finish before active input replacement");
+assert.ok(commitSource.indexOf("await analyzeCurrentInputs") < commitSource.indexOf("state.workspace = candidateWorkspace"),
+  "candidate calculation must finish before active workspace replacement");
 const integratedParseStart = html.indexOf("async function parseIntegratedExcelFile");
 const integratedParseEnd = html.indexOf("async function classifyBundleFile", integratedParseStart);
 assert.ok(integratedParseStart >= 0 && integratedParseEnd > integratedParseStart,
   "integrated workbook parser must exist before the legacy multi-file classifier");
 const integratedParseSource = html.slice(integratedParseStart, integratedParseEnd);
 for (const integratedContract of [
-  "workbook.SheetNames.forEach", "sheetAliasMatchScore(sheetName", "integratedCandidateScore",
+  "for (const sheetName of workbook.SheetNames)", "sheetAliasMatchScore(sheetName", "integratedCandidateScore",
   "필수 열·헤더 구조 검증에 실패했습니다", "applied.set(selected.kind, selected.parsed)",
-  "selected.parsed.sourceLabel", "failures", "ignored",
+  "selected.parsed.sourceLabel", "failures", "ignored", "duplicateKinds", "applied.delete(selected.kind)",
 ]) {
   assert.ok(integratedParseSource.includes(integratedContract),
     `integrated workbook sheet contract is missing: ${integratedContract}`);
@@ -2578,8 +2629,9 @@ const integratedHandleStart = html.indexOf("async function handleIntegratedFile"
 const integratedHandleEnd = html.indexOf("function renderFileCard", integratedHandleStart);
 const integratedHandleSource = html.slice(integratedHandleStart, integratedHandleEnd);
 assert.ok(integratedHandleSource.includes("result.applied.forEach") &&
+  integratedHandleSource.includes('await commitInputCandidates(result.applied, { preferredKind: "orders" })') &&
   integratedHandleSource.includes("오류 ${result.failures.length}개 시트는 기존 데이터 유지") &&
-  !integratedHandleSource.includes("state[kind] = null"),
+  !integratedHandleSource.includes("state[kind] = null") && !integratedHandleSource.includes("resetResults();"),
   "integrated upload must replace only successfully validated data kinds and preserve failed active data");
 for (const integratedMappingContract of [
   'sheetAliases: ["주문", "미출고", "주문현황"]',
