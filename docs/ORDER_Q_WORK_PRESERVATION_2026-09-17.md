@@ -24,7 +24,14 @@
 
 로컬 실행 결과: 작업 보존 82/82, 기존 계산 36/36, Shipping reference 및 관련 7개 스크립트 PASS. 실제 Chromium의 연속 편집/재분석/파일 실패/IndexedDB SHA 검증 저장/새로고침/복구/6시트 출력과 기존 F05~F08·테마·인쇄 회귀 PASS, 페이지 console warning/error 0. Client safety PASS, repository validation 24/0, diff check PASS. 잘못된 구매 필수 열을 사용하던 기존 브라우저 fixture는 정상 구매처 열로 수정하고 구매처 보존 검증을 추가했다.
 
-## 남은 항목
+## 추가 승인 범위: NEXUS 이동·재시도
+
+- PR 첫 CI의 NEXUS 브라우저 검사가 실패했고 재실행도 다른 history 단계에서 실패했다. 사용자의 추가 처리 지시에 따라 공통 이동 경계만 국소 수정했다. 타 앱의 업무 처리·저장소는 변경하지 않았다.
+- 결정적 Node 재현: 이전 문서의 늦은 load가 새 대상의 HOST_READY를 소비하여 실제 대상 연결이 timeout된다. 실제 Chromium 계측에서는 APP_READY 직후 부모 이력을 확정하고 늦은 native load로 재연결하는 순서와 history 실패를 확인했다.
+- 호스트 1.2.2는 정확한 대상 URL/Document로 HOST_READY를 제한하고, 같은 Document의 native load·APP_READY가 모두 도착한 뒤에만 이력을 확정한다. 동일 문서의 늦은 load는 무시하며 동일 URL의 새 문서는 별도 transition으로 이전 신호를 배제한다. timeout 기간과 보안 검사는 완화하지 않았다.
+- Node는 늦은 load, 준비/로딩 순서 역전, 동일 URL의 문서 교체, 오래된 READY/ERROR/timeout을 검사한다. 실제 Chromium은 기존 뒤로가기/재시도, 42방향 이동, 7개 실제 앱, 화면/테마/인쇄를 유지한다. 실패 시에는 업무값 없이 연결 메타데이터만 출력한다.
+
+## 후속 범위
 
 - 창고 헤더·시트 별칭(F02/F03)은 별도 후속 교정이다.
-- 모든 기본 앱 결함이 해소됐다는 판정이 아니다. 이번 완료 범위는 위 두 작업 보존 문제다.
+- 모든 기본 앱 결함이 해소됐다는 판정이 아니다. 이번 완료 범위는 두 작업 보존 문제와 추가 승인된 NEXUS 연결 경합이다.

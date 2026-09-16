@@ -9,7 +9,7 @@ const host = require('../nexus/workspace.js');
 const workspaceHref = 'https://example.test/nexus/workspace.html';
 const siteRoot = 'https://example.test/';
 
-assert.equal(host.VERSION, '1.2.0');
+assert.equal(host.VERSION, '1.2.2');
 assert.equal(host.SCHEMA_VERSION, 'nexus-workspace-message/v1');
 assert.deepEqual(host.APPS.map(({ id, label, path }) => ({ id, label, path })), [
   { id: 'master-lookup', label: '상품관리', path: 'Master.html' },
@@ -353,9 +353,17 @@ const createReconnectHost = () => {
   instance.frame.focus = () => {};
   instance.frame.hasAttribute = () => true;
   instance.frame.contentWindow = {
-    location: { href: merch.url, replace(url) { this.href = url; } },
+    location: { href: merch.url, replace(url) { commitFrameDocument(url); } },
     postMessage(message) { messages.push(message); },
   };
+  const commitFrameDocument = (url) => {
+    const frameDocument = { URL: url };
+    instance.frame.contentWindow.location.href = url;
+    instance.frame.contentWindow.document = frameDocument;
+    instance.frame.contentDocument = frameDocument;
+    return frameDocument;
+  };
+  commitFrameDocument(merch.url);
   instance.currentTarget = merch;
   instance.frameReady = true;
   const receive = (type, transitionId, target = merch) => instance.onMessage({
@@ -378,7 +386,7 @@ const createReconnectHost = () => {
     assert.equal(instance.transitionRunning, false, 'the reconnect is not a queued navigation');
     return recovery;
   };
-  return { instance, merch, data, windowObject, timers, messages, historyCalls, goCalls, receive, failAndReconnect };
+  return { instance, merch, data, windowObject, timers, messages, historyCalls, goCalls, receive, failAndReconnect, commitFrameDocument };
 };
 
 {
@@ -405,6 +413,7 @@ const createReconnectHost = () => {
   receive(host.MESSAGE_TYPES.APP_ERROR, reconnectId);
   receive(host.MESSAGE_TYPES.APP_READY, reconnectId);
   assert.equal(instance.loadingTarget, data, 'stale reconnect timeout/error/ready must not alter the new retry');
+  instance.onFrameLoad();
   receive(host.MESSAGE_TYPES.APP_READY, instance.loadTransitionId, data);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(instance.currentTarget, data);
@@ -434,6 +443,7 @@ const createReconnectHost = () => {
   assert.equal(instance.loadTransitionId, newId, 'a stale retry click must not supersede the newer app selection');
   receive(host.MESSAGE_TYPES.APP_READY, reconnectId);
   assert.deepEqual(historyCalls, []);
+  instance.onFrameLoad();
   receive(host.MESSAGE_TYPES.APP_READY, newId, order);
   await navigation;
   assert.equal(instance.currentTarget, order);
@@ -441,4 +451,157 @@ const createReconnectHost = () => {
   assert.equal(historyCalls[0].mode, 'push');
 }
 
-console.log('PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, deterministic reconnect/early retry and stale-signal safety.');
+{
+  const { instance, merch, data, windowObject, historyCalls, goCalls, receive, failAndReconnect, commitFrameDocument } = createReconnectHost();
+  failAndReconnect();
+  const deliveries = [];
+  const requestedUrls = [];
+  // A browser navigation request does not synchronously replace the active
+  // document. Keep restored MerchOps alive until DataOps actually commits.
+  instance.frame.contentWindow.location.replace = (url) => { requestedUrls.push(url); };
+  instance.frame.contentWindow.postMessage = (message) => {
+    deliveries.push({ message, documentUrl: instance.frame.contentWindow.location.href });
+  };
+  instance.retryCurrentTarget();
+  windowObject.location = new URL(host.workspaceUrlFor(data, workspaceHref));
+  instance.onPopState({ state: { nexusWorkspaceIndex: 1 } });
+  const retryId = instance.loadTransitionId;
+  assert.deepEqual(goCalls, [1, -1]);
+  assert.deepEqual(requestedUrls, [data.url]);
+  assert.equal(instance.loadingTarget, data);
+  assert.equal(instance.frame.contentWindow.location.href, merch.url);
+
+  // The restored document's late load arrives after retry has started. The
+  // child bridge rejects HOST_READY addressed to another app, so this load
+  // must not consume the DataOps transition's one permitted HOST_READY.
+  instance.onFrameLoad();
+  assert.equal(instance.frameDocumentLoaded, false, 'a stale load from another URL must not mark the retry document loaded');
+  assert.equal(deliveries.some(({ message }) => message.type === host.MESSAGE_TYPES.HOST_READY), false);
+  assert.equal(instance.loadingTarget, data);
+  assert.deepEqual(historyCalls, []);
+  commitFrameDocument(data.url);
+  receive(host.MESSAGE_TYPES.BRIDGE_READY, '', data);
+  instance.onFrameLoad();
+  receive(host.MESSAGE_TYPES.BRIDGE_READY, '', data);
+  const readyDeliveries = deliveries.filter(({ message }) => message.type === host.MESSAGE_TYPES.HOST_READY);
+  assert.deepEqual(
+    readyDeliveries.map(({ message, documentUrl }) => ({ appId: message.appId, transitionId: message.transitionId, documentUrl })),
+    [{ appId: 'dataops', transitionId: retryId, documentUrl: data.url }],
+    'a stale restored-frame load must not consume HOST_READY before the actual retry target document connects',
+  );
+  receive(host.MESSAGE_TYPES.APP_READY, retryId, data);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(instance.currentTarget, data);
+  assert.equal(instance.frameReady, true);
+  assert.equal(instance.loading.hidden, true);
+  assert.equal(instance.error.hidden, true);
+  assert.equal(instance.historyIndex, 1);
+  assert.deepEqual(historyCalls, [], 'the recovered handshake must retain both original parent history entries');
+}
+
+{
+  const { instance, merch, data, windowObject, messages, historyCalls, receive } = createReconnectHost();
+  const previousParentUrl = windowObject.location.href;
+  let handshakeCount = 0;
+  const beginHandshake = instance.beginHandshake.bind(instance);
+  instance.beginHandshake = (...args) => { handshakeCount += 1; return beginHandshake(...args); };
+  const loading = instance.loadTarget(data, { historyMode: 'push' });
+  const transitionId = instance.loadTransitionId;
+  const targetDocument = instance.frame.contentDocument;
+  receive(host.MESSAGE_TYPES.BRIDGE_READY, '', data);
+  assert.equal(instance.frameDocumentLoaded, false, 'bridge execution must not stand in for the native document load');
+  receive(host.MESSAGE_TYPES.APP_READY, transitionId, data);
+  assert.equal(instance.currentTarget, merch, 'APP_READY before native load must not commit the app transition');
+  assert.equal(instance.loadingTarget, data);
+  assert.equal(instance.frameReady, false);
+  assert.equal(instance.loading.hidden, false);
+  assert.equal(windowObject.location.href, previousParentUrl);
+  assert.deepEqual(historyCalls, [], 'early APP_READY must not push or replace parent history');
+
+  instance.onFrameLoad();
+  assert.equal(await loading, 'ready');
+  assert.equal(instance.currentTarget, data);
+  assert.equal(instance.frame.contentDocument, targetDocument);
+  assert.equal(instance.frameReady, true);
+  assert.equal(instance.loading.hidden, true);
+  assert.equal(instance.pendingLoad, null);
+  assert.equal(historyCalls.length, 1, 'matching native load and APP_READY must complete exactly once');
+  assert.equal(historyCalls[0].mode, 'push');
+  assert.equal(new URL(historyCalls[0].url).searchParams.get('app'), 'dataops');
+
+  instance.onFrameLoad();
+  instance.onFrameLoad();
+  receive(host.MESSAGE_TYPES.BRIDGE_READY, '', data);
+  receive(host.MESSAGE_TYPES.APP_READY, transitionId, data);
+  assert.equal(handshakeCount, 1, 'late native load for the already-ready Document must not reconnect');
+  assert.equal(instance.loadTransitionId, transitionId);
+  assert.equal(instance.pendingLoad, null);
+  assert.equal(instance.loadingTarget, null);
+  assert.equal(instance.frameReady, true);
+  assert.equal(instance.loading.hidden, true);
+  assert.equal(historyCalls.length, 1, 'duplicate same-document signals must not change parent history again');
+  assert.equal(messages.filter((message) => message.type === host.MESSAGE_TYPES.HOST_READY).length, 1);
+  assert.equal(messages.filter((message) => message.type === host.MESSAGE_TYPES.THEME).length, 1);
+}
+
+for (const readyBeforeNativeLoad of [true, false]) {
+  const { instance, merch, data, timers, messages, historyCalls, receive, commitFrameDocument } = createReconnectHost();
+  const loading = instance.loadTarget(data, { historyMode: 'push' });
+  const previousTransitionId = instance.loadTransitionId;
+  const previousTimerId = instance.pendingLoad.timer;
+  const previousTimeout = timers.get(previousTimerId);
+  const firstDocument = instance.frame.contentDocument;
+  instance.onFrameLoad();
+  assert.equal(instance.currentTarget, merch, 'native load alone must still wait for app readiness');
+  assert.deepEqual(historyCalls, []);
+
+  const replacementDocument = commitFrameDocument(data.url);
+  assert.notEqual(replacementDocument, firstDocument, 'a same-URL reload creates a distinct Document');
+  receive(host.MESSAGE_TYPES.BRIDGE_READY, '', data);
+  const replacementTransitionId = instance.loadTransitionId;
+  assert.notEqual(replacementTransitionId, previousTransitionId, 'a replacement Document needs its own transition ID despite the shared WindowProxy');
+  assert.equal(instance.pendingLoad.transitionId, replacementTransitionId);
+  assert.equal(timers.has(previousTimerId), false, 'the superseded Document timer must be cleared');
+  assert.notEqual(instance.pendingLoad.timer, previousTimerId);
+  assert.equal(timers.has(instance.pendingLoad.timer), true, 'the replacement Document must retain an active timeout');
+  const replayPreviousSignals = () => {
+    receive(host.MESSAGE_TYPES.APP_READY, previousTransitionId, data);
+    receive(host.MESSAGE_TYPES.APP_ERROR, previousTransitionId, data);
+    previousTimeout();
+    assert.equal(instance.loadingTarget, data, 'old Document READY, ERROR and timeout must not complete or fail the replacement');
+    assert.equal(instance.loadTransitionId, replacementTransitionId);
+    assert.equal(instance.pendingLoad.transitionId, replacementTransitionId);
+    assert.equal(instance.currentTarget, merch);
+    assert.equal(instance.failedLoad, null);
+    assert.equal(instance.error.hidden, true);
+    assert.deepEqual(historyCalls, []);
+  };
+  replayPreviousSignals();
+  if (readyBeforeNativeLoad) receive(host.MESSAGE_TYPES.APP_READY, replacementTransitionId, data);
+  assert.equal(instance.currentTarget, merch, 'a prior Document load must not satisfy the replacement Document readiness');
+  assert.equal(instance.loadingTarget, data);
+  assert.equal(instance.frameReady, false);
+  assert.equal(instance.loading.hidden, false);
+  assert.deepEqual(historyCalls, [], 'signals from different Documents must not commit parent history');
+
+  instance.onFrameLoad();
+  if (!readyBeforeNativeLoad) {
+    replayPreviousSignals();
+    receive(host.MESSAGE_TYPES.APP_READY, replacementTransitionId, data);
+  }
+  assert.equal(await loading, 'ready');
+  assert.equal(instance.currentTarget, data);
+  assert.equal(instance.frame.contentDocument, replacementDocument);
+  assert.equal(historyCalls.length, 1);
+  assert.equal(historyCalls[0].mode, 'push');
+  instance.onFrameLoad();
+  assert.equal(instance.loadingTarget, null);
+  assert.equal(historyCalls.length, 1);
+  assert.deepEqual(
+    messages.filter((message) => message.type === host.MESSAGE_TYPES.HOST_READY).map((message) => message.transitionId),
+    [previousTransitionId, replacementTransitionId],
+    'each Document must receive exactly one HOST_READY with its own transition',
+  );
+}
+
+console.log('PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, deterministic reconnect/early retry, native-load readiness ordering and stale-document safety.');
