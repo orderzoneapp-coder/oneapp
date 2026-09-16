@@ -155,6 +155,11 @@ try {
   await client.send('Page.enable');
   await client.send('Runtime.enable');
   const runtimeErrors = [];
+  const orderOpsDiagnostics = [];
+  let collectOrderOpsDiagnostics = true;
+  client.on('Runtime.consoleAPICalled', (event) => {
+    if (collectOrderOpsDiagnostics && ['error','warning','warn'].includes(event.type)) orderOpsDiagnostics.push(event.args.map(argument=>argument.value ?? argument.description ?? '').join(' '));
+  });
   client.on('Runtime.exceptionThrown', (event) => runtimeErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'Runtime exception'));
 
   const loaded = client.once('Page.loadEventFired');
@@ -215,6 +220,71 @@ try {
   for (const rows of Object.values(workbookResult.rows)) assert.ok(rows.some(row=>row.includes('000001')), 'export preserves leading-zero product identity');
   assert.ok(workbookResult.rows['주문현황'].some(row=>row.includes(7)&&row.includes(1200)), 'Excel uses restored edits');
   console.log('Basic Excel → analysis → quantity/price edit → save/reload → order/ledger/warehouse → Excel reopen PASS');
+  // F05: edit the actual warehouse cell, then verify the downloadable workbook, not a synthetic model.
+  await click(client, '#inventoryDrop');
+  await evaluate(client, `(() => {
+    const input=[...document.querySelectorAll('.inventory-input')].find(node=>node.value==='8');
+    if(!input) throw new Error('Missing whole-stock editor');
+    input.value='0'; input.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  const exportRows = () => evaluate(client, `(async () => {
+    let blob; const original=URL.createObjectURL;
+    URL.createObjectURL=value=>{blob=value;return original.call(URL,value);};
+    try {document.querySelector('#downloadButton').click();} finally {URL.createObjectURL=original;}
+    const book=XLSX.read(await blob.arrayBuffer(),{type:'array'});
+    return Object.fromEntries(book.SheetNames.map(name=>[name,XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:''})]));
+  })()`);
+  let calculationRows=await exportRows();
+  const orderSheet=calculationRows['주문현황'];
+  assert.equal(orderSheet[1][orderSheet[0].indexOf('구매수량')],5,'stock edit must immediately refresh order-sheet purchase quantity');
+  assert.ok(calculationRows['구매업로드'].some(row=>row.includes('000001')&&row.includes(5)),'purchase export must agree with the order sheet');
+  await evaluate(client, `(() => {
+    const input=document.querySelector('.inventory-input[data-inventory-code="000001"]');
+    input.value='-4'; input.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  const negativeRows=await exportRows();
+  const negativeOrders=negativeRows['주문현황'];
+  assert.equal(negativeOrders[1][negativeOrders[0].indexOf('최종 구매수량(상품별)')],9,'signed stock -2 and order7 require replenishment9');
+  assert.ok(negativeRows['구매업로드'].some(row=>row.includes('000001')&&row.includes(9)));
+  // F06–F08 use the real four-file parser/analysis/UI/export path in the isolated browser.
+  const unitMatrices={
+    orders:[matrices.orders[0],
+      ['000001','단위상품','포장',2,'','','거래처A','일반','담당A','BOX',1000,'2026-09-07'],
+      ['000001','단위상품','낱개',30,'','','거래처A','일반','담당A','EA',1000,'2026-09-07']],
+    inventory:[matrices.inventory[0],['000001','단위상품','낱개','EA',20,20,0,0]],
+    purchases:[['품목코드','품목명','거래처','수량','단위','규격'],
+      ['000001','단위상품','매입처',3,'BOX','포장'],['ONLY-BUY','구매전용','매입처',3,'EA','낱개']],
+    sales:[['품목코드','품목명','거래처','수량','단위','규격'],['000001','단위상품','매출처',1,'BOX','포장']],
+  };
+  for(const [kind,matrix] of Object.entries(unitMatrices)){
+    await evaluate(client,`(() => {
+      const book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
+      const transfer=new DataTransfer(); transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}-units.xlsx'));
+      const input=document.querySelector('#${kind}Input');
+      Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    await waitFor(()=>evaluate(client,`document.querySelector('#${kind}FileName').textContent.includes('${kind}-units.xlsx')`),kind+' units parsed');
+  }
+  await waitFor(()=>evaluate(client,`!document.querySelector('#analyzeButton').disabled`),'unit analysis ready');
+  await click(client,'#analyzeButton');
+  await waitFor(()=>evaluate(client,`!document.querySelector('#downloadButton').disabled`),'unit analysis complete');
+  await click(client,'#ordersDrop');
+  const unitText=await evaluate(client,`document.querySelector('#previewTable').textContent`);
+  assert.match(unitText,/2 BOX/); assert.match(unitText,/30 EA/); assert.match(unitText,/단위/);
+  await click(client,'#inventoryDrop');
+  assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/단위.*(확인|보류)/);
+  await click(client,'#ledgerDrop');
+  assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/ONLY-BUY/);
+  calculationRows=await exportRows();
+  const ledger=calculationRows['재고수불부'];
+  const box=ledger.find(row=>row[0]==='000001'&&row[3]==='BOX');
+  const ea=ledger.find(row=>row[0]==='000001'&&row[3]==='EA');
+  const onlyBuy=ledger.find(row=>row[0]==='ONLY-BUY');
+  assert.deepEqual(box.slice(4,9),['',3,2,1,''],'BOX references must not consume EA stock');
+  assert.deepEqual(ea.slice(4,9),[20,0,30,0,-10]);
+  assert.equal(calculationRows['구매업로드'].some(row=>row.includes('000001')),false,'mixed units must not bypass final purchase selection');
+  assert.deepEqual(onlyBuy.slice(4,9),['',3,0,0,''],'purchase-only inventory is unknown, never a confirmed zero');
+  console.log('Baseline calculation browser F05/F06/F07/F08 actual Excel input/edit/render/output PASS');
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');
     host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value warning-value"><span class="manager-name">김담당</span></td><td class="information-value ordered-context-cell"><span class="order-information-badges"><span class="order-information-badge manager-color-badge" style="--manager-color:#dbeafe">우리식당(1)8,900</span><span class="order-information-badge manager-color-badge" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number ledger-negative-cell">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr><tr class="manager-color-row box-unit-row" style="--manager-color:#dcfce7"><td class="box-unit-cell">BOX 상품</td><td>이담당</td><td>박스 정보</td><td class="number">2,300</td></tr></tbody></table>';
@@ -305,6 +375,8 @@ try {
   await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   const dataOpsConsoleErrors = [];
+  collectOrderOpsDiagnostics = false;
+  assert.deepEqual(orderOpsDiagnostics, [], 'OrderOps browser console warning/error must remain empty');
   client.on('Runtime.consoleAPICalled', (event) => {
     if (event.type !== 'error') return;
     dataOpsConsoleErrors.push(event.args.map((argument) => argument.value ?? argument.description ?? '').join(' '));

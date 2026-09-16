@@ -318,8 +318,8 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260904-substitute-message") &&
-  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260904-substitute-message"),
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260916-baseline-calculation") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
@@ -718,8 +718,8 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.0");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.0");
+assert.equal(engine.ENGINE_VERSION, "3.19.1");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
@@ -763,9 +763,14 @@ assert.deepEqual(
   "every warehouse quantity cell for an order-only product must begin at numeric zero",
 );
 assert.equal(
-  engine.getPurchaseUploadSelection(edgeWorkspace).included.find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
-  3,
-  "an order-only product must become a purchase-upload target instead of being silently excluded",
+  engine.getPurchaseUploadSelection(edgeWorkspace).included.some((row) => row.productCode === "NO-STOCK"),
+  false,
+  "missing inventory must not become a final purchase-upload quantity derived from assumed zero stock",
+);
+assert.deepEqual(
+  engine.getPurchaseUploadSelection(edgeWorkspace).excluded.find((row) => row.productCode === "NO-STOCK"),
+  { productCode: "NO-STOCK", reason: "재고정보 없음·구매수량 근거 없음" },
+  "a missing-inventory product must remain explicitly excluded with its reason",
 );
 const orderOnlyOverrideWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
 const firstWarehouseColumn = engine.getInventoryColumnDescriptors(orderOnlyOverrideWorkspace)
@@ -779,9 +784,9 @@ assert.equal(
 );
 assert.equal(
   engine.getPurchaseUploadSelection(orderOnlyOverrideWorkspace).included
-    .find((row) => row.productCode === "NO-STOCK")?.purchaseNeed,
-  2,
-  "the corrected order-only stock must immediately recalculate the purchase-upload quantity",
+    .some((row) => row.productCode === "NO-STOCK"),
+  false,
+  "an isolated stock-cell override must not invent the missing inventory source required for final purchasing",
 );
 
 const signedOrders = parseOrders(buildOrderMatrix([
@@ -1011,11 +1016,15 @@ const baseInventoryMatrix = dynamicInventoryMatrix.map((row, rowIndex) => {
   }
   return copy;
 });
-const dynamicOrders = parseOrders(buildOrderMatrix([
+const dynamicOrderMatrix = buildOrderMatrix([
   { code: "000010", quantity: 2, spec: "EA", note: "긴급출고" },
   { code: "000010", quantity: 1, spec: "EA", customer: "반복거래처", note1: "오전배송" },
   { code: "000011", quantity: 1, spec: "BOX" },
-]));
+]);
+// This fixture isolates dynamic warehouse columns. Both inputs omit a unit;
+// specification text such as EA/BOX must not be inferred as a quantity unit.
+dynamicOrderMatrix.slice(2).forEach((row) => { row[ORDER_HEADERS.indexOf("단위")] = ""; });
+const dynamicOrders = parseOrders(dynamicOrderMatrix);
 const dynamicWorkspace = engine.analyze(dynamicOrders, parseInventory(dynamicInventoryMatrix), {
   sourceFingerprint: "e".repeat(64),
 });
@@ -1048,10 +1057,12 @@ assert.deepEqual(dynamicLedger.rows[0].values, ["000010", "동적상품", "EA", 
 const salesOnlyLedgerRow = dynamicLedger.rows.find((row) => row.productCode === "SALE-ONLY");
 assert.deepEqual(
   salesOnlyLedgerRow?.values,
-  ["SALE-ONLY", "재고목록 외 출고상품", "", "", 0, 0, 0, 6, 0, "", "", ""],
-  "sales-only product codes must remain visible instead of losing outbound quantities",
+  ["SALE-ONLY", "재고목록 외 출고상품", "", "", null, 0, 0, 6, null, "", "", "해당 단위의 재고자료 없음: 재고·잔량 미확정"],
+  "sales-only products must retain outbound quantities without inventing verified zero stock or balance",
 );
 assert.equal(salesOnlyLedgerRow?.salesOnly, true);
+assert.equal(salesOnlyLedgerRow?.inventoryMissing, true);
+assert.equal(salesOnlyLedgerRow?.quantityComparable, false);
 
 const editableWorkspace = engine.analyze(
   parseOrders(buildOrderMatrix([{ code: "EDIT-001", quantity: 2, price: 1000, note: "기존 전달" }])),
@@ -1208,8 +1219,29 @@ assert.equal(JSON.stringify(overrideWorkspace.sourceFiles.inventory.matrix), ove
 assert.equal(
   legacyCalculationSnapshot(overrideWorkspace),
   allocationBeforeOverrides,
-  "inspection overrides must never feed legacy allocation or purchase-need calculations",
+  "2전송 and metadata edits must preserve the baseline 1창고/3서울 allocation policy",
 );
+const allocationOverrideWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const allocationSourceBefore = JSON.stringify(allocationOverrideWorkspace.sourceFiles);
+const inventoryRowsBefore = JSON.stringify(allocationOverrideWorkspace.inventory);
+engine.setInventoryOverride(allocationOverrideWorkspace, "000100", columnByHeader.get("1창고").key, 0);
+assert.deepEqual(
+  allocationOverrideWorkspace.allocations.filter((row) => row.productCode === "000100")
+    .map((row) => [row.quantity, row.wholeAllocation, row.seoulAllocation, row.purchaseNeed,
+      row.wholeRemaining, row.seoulRemaining]),
+  [[4, 0, 3, 1, 0, 0], [4, 0, 0, 4, 0, 0], [2, 0, 0, 2, 0, 0]],
+  "editing an allocation warehouse must rebuild every affected order row using the same signed baseline policy",
+);
+const allocationOverrideSummary = allocationOverrideWorkspace.productSummaries.find((row) => row.productCode === "000100");
+assert.deepEqual(
+  [allocationOverrideSummary.wholeAllocation, allocationOverrideSummary.seoulAllocation, allocationOverrideSummary.purchaseNeed],
+  [0, 3, 7],
+  "product allocation totals must match the recomputed order rows",
+);
+assert.equal(JSON.stringify(allocationOverrideWorkspace.sourceFiles), allocationSourceBefore,
+  "recomputed allocations must not rewrite either original workbook source matrix");
+assert.equal(JSON.stringify(allocationOverrideWorkspace.inventory), inventoryRowsBefore,
+  "effective warehouse overrides must not overwrite parsed inventory source rows");
 const recoveredOverrideWorkspace = JSON.parse(JSON.stringify(overrideWorkspace));
 assert.deepEqual(
   engine.getInventoryViewRows(recoveredOverrideWorkspace).rows.find((row) => row.productCode === "000100"),
@@ -1273,6 +1305,7 @@ assert.equal(overrideInventorySheet["P2"].s.alignment.wrapText, true, "Excel inf
 assert.equal(overrideInventorySheet["Q2"].v, "원문 적요\n원문 적요 / 원문 적요1");
 assert.equal(overrideInventorySheet["F2"].s.fill.fgColor.rgb, "FFF200", "negative automatic balance must be highlighted");
 const purchaseContractWorkspace = JSON.parse(JSON.stringify(edgeWorkspace));
+const purchaseSourceBeforeOverride = JSON.stringify(purchaseContractWorkspace.sourceFiles);
 const purchaseShapeBeforeOverride = XLSX.utils.sheet_to_json(
   workbookTools.buildPurchaseUploadWorkbook(purchaseContractWorkspace, XLSX).Sheets["구매입력"],
   { header: 1, raw: true, defval: null },
@@ -1289,9 +1322,16 @@ const purchaseShapeAfterOverride = XLSX.utils.sheet_to_json(
 );
 assert.deepEqual(
   purchaseShapeAfterOverride,
-  purchaseShapeBeforeOverride,
-  "inventory overrides must not change the purchase-upload workbook shape or meaning",
+  purchaseShapeBeforeOverride.map((row, index) => index > 0 && row[8] === "000100"
+    ? row.map((value, column) => column === 11 ? 1001 : value)
+    : row),
+  "purchase export must update the effective signed-stock quantity while preserving every other template cell",
 );
+assert.equal(purchaseShapeBeforeOverride.find((row) => row[8] === "000100")[11], 12);
+assert.equal(purchaseShapeAfterOverride.find((row) => row[8] === "000100")[11], 1001,
+  "orders 10 minus edited signed stock -991 must export final purchase quantity 1001");
+assert.equal(JSON.stringify(purchaseContractWorkspace.sourceFiles), purchaseSourceBeforeOverride,
+  "recomputing the final purchase export must not modify either original workbook source");
 
 const edgeWorkbook = workbookTools.buildWorkbook(edgeWorkspace, XLSX);
 assert.deepEqual(
@@ -1313,20 +1353,38 @@ assert.deepEqual(
   ),
   [
     "창고", "상품코드", "품목명", "규격", "1창고", "2전송", "3서울", "4전송", "7진영",
-    "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
+    "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자", "단위", "단위 확인", "최종 구매수량(상품별)", "구매수량 기준",
   ],
+);
+assert.deepEqual(
+  [2, 3, 4, 5].map((row) => sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "최종 구매수량(상품별)", row).v),
+  [12, "", "", ""],
+  "final signed-stock purchase quantity must appear once per product and stay blank for missing inventory",
+);
+assert.deepEqual(
+  [2, 3, 4, 5].map((row) => sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "구매수량", row).v),
+  [0, 0, 2, ""],
+  "per-order allocation shortage must retain its separate baseline meaning",
+);
+assert.match(sheetCellByHeader(edgeWorkbook.Sheets["주문현황"], "구매수량 기준", 2).v,
+  /주문행 배분 부족분.*전체 창고 잔량 기준 상품별 1회/,
+  "the workbook must explain the two distinct purchasing quantities");
+assert.deepEqual(
+  workbookTools.getPurchaseUploadRows(edgeWorkspace).map((row) => [row.productCode, row.purchaseNeed]),
+  [["000100", 12]],
+  "the actual upload writer must use the same final selection and exclude missing-inventory products",
 );
 assert.equal(engine.parseOrderBasisDate("2026-08-04-17"), "2026-08-04");
 assert.equal(engine.parseOrderBasisDate("20260804-17"), "2026-08-04");
 assert.equal(engine.parseOrderBasisDate("2026.8.4 No.17"), "2026-08-04");
 
 for (const [purchase, expectedCount] of [
-  ["대체", 1],
-  ["소분", 1],
-  ["대채", 2],
-  ["대체 예정", 2],
-  ["소분작업", 2],
-  ["", 2],
+  ["대체", 0],
+  ["소분", 0],
+  ["대채", 1],
+  ["대체 예정", 1],
+  ["소분작업", 1],
+  ["", 1],
 ]) {
   engine.setPurchaseValue(edgeWorkspace, "000100", purchase);
   assert.equal(
@@ -1384,7 +1442,7 @@ assert.deepEqual(
     ["s", "상품 000100"], ["s", "EA"],
   ],
 );
-assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 2]);
+assert.deepEqual([purchaseUploadSheet.L2.t, purchaseUploadSheet.L2.v], ["n", 12]);
 assert.deepEqual([purchaseUploadSheet.M2.t, purchaseUploadSheet.M2.v], ["n", 0]);
 assert.equal(purchaseUploadSheet.L2.s.numFmt, "#,##0");
 assert.equal(purchaseUploadSheet.M2.s.numFmt, "#,##0");
@@ -1592,8 +1650,8 @@ try {
   globalThis.URL = originalUrl;
 }
 const allocationSheet = formatWorkbook.Sheets["주문현황"];
-assert.equal(allocationSheet["!ref"], "A1:V7");
-assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:V7" });
+assert.equal(allocationSheet["!ref"], "A1:Z7");
+assert.deepEqual(allocationSheet["!autofilter"], { ref: "A1:Z7" });
 assert.deepEqual(allocationSheet["!freeze"], { xSplit: 0, ySplit: 1 });
 assert.equal(allocationSheet["B2"].t, "s");
 assert.equal(allocationSheet["B2"].v, "PURCHASE");
@@ -1611,7 +1669,7 @@ assert.equal(allocationSheet["A2"].s.fill.fgColor.rgb, "FFFFFF", "stable tie win
 assert.equal(allocationSheet["A4"].s.fill.fgColor.rgb, "FFFFFF", "all rows for the dominant manager must remain white");
 assert.notEqual(allocationSheet["A2"].s.fill.fgColor.rgb, allocationSheet["A3"].s.fill.fgColor.rgb);
 assert.equal(allocationSheet["A5"].s.fill.fgColor.rgb, allocationSheet["A6"].s.fill.fgColor.rgb);
-for (let column = 0; column < 22; column += 1) {
+for (let column = 0; column < 26; column += 1) {
   const address = XLSX.utils.encode_cell({ r: 1, c: column });
   if (address === "I2") continue;
   assert.equal(
@@ -1626,7 +1684,7 @@ for (const row of [3, 4, 6]) {
   assert.equal(allocationSheet[`V${row}`].s.font.color.rgb, "B91C1C", `EA/소분 manager row ${row} must use red text`);
 }
 for (let row = 1; row <= 7; row += 1) {
-  for (let column = 0; column < 22; column += 1) {
+  for (let column = 0; column < 26; column += 1) {
     const cell = allocationSheet[XLSX.utils.encode_cell({ r: row - 1, c: column })];
     assert.ok(cell, `allocation table cell missing at row=${row} column=${column + 1}`);
     for (const edge of ["top", "bottom", "left", "right"]) {
@@ -1650,13 +1708,13 @@ assert.deepEqual(allocationSheet["!pageSetup"], {
   fitToWidth: 1,
   fitToHeight: 0,
 });
-assert.equal(allocationSheet["!printArea"], "A1:V7");
+assert.equal(allocationSheet["!printArea"], "A1:Z7");
 assert.equal(allocationSheet["!printTitles"], "$1:$1");
 const printNames = formatWorkbook.Workbook.Names.filter(
   (name) => name.Sheet === 1 && /^_xlnm\.Print_/.test(name.Name),
 );
 assert.deepEqual(printNames, [
-  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$V$7" },
+  { Name: "_xlnm.Print_Area", Sheet: 1, Ref: "'주문현황'!$A$1:$Z$7" },
   { Name: "_xlnm.Print_Titles", Sheet: 1, Ref: "'주문현황'!$1:$1" },
 ]);
 
@@ -1819,12 +1877,12 @@ const largeWorkspace = engine.analyze(largeOrders, largeInventory, {
   createdAt: "2026-08-03T00:00:00.000Z",
 });
 const largeWorkbook = workbookTools.buildWorkbook(largeWorkspace, XLSX);
-assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:V181");
+assert.equal(largeWorkbook.Sheets["주문현황"]["!printArea"], "A1:Z181");
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToWidth, 1);
 assert.equal(largeWorkbook.Sheets["주문현황"]["!pageSetup"].fitToHeight, 0);
 assert.ok(
   largeWorkbook.Workbook.Names.some(
-    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$V$181",
+    (name) => name.Name === "_xlnm.Print_Area" && name.Ref === "'주문현황'!$A$1:$Z$181",
   ),
 );
 
@@ -2108,7 +2166,7 @@ for (const transactionViewContract of [
   'function buildTransactionPreview(workspace, kind)',
   'purchases: buildTransactionPreview(workspace, "purchases")',
   'sales: buildTransactionPreview(workspace, "sales")',
-  'headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"]',
+  'headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량", "규격", "단위"]',
 ]) {
   assert.ok(html.includes(transactionViewContract), `purchase/sales result view is missing: ${transactionViewContract}`);
 }
@@ -2221,10 +2279,11 @@ assert.match(combinedCss, /\.order-information-quantity,[\s\S]*?\.order-informat
 assert.ok(html.includes("const allocationProductSummaries = new Map();") &&
   html.includes("summary.rowCount += 1;") &&
   html.includes("summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;") &&
-  html.includes("productCode && summary && !allocationAggregateShown.has(productCode)") &&
+  html.includes("const quantityGroupKey = engine.getQuantityGroupKey(row);") &&
+  html.includes("productCode && summary && !allocationAggregateShown.has(quantityGroupKey)") &&
   html.includes('allocations.columns[7].role = "productAggregateQuantity"') &&
   html.includes("row.productAggregateQuantity"),
-  "order information must show every product-code quantity total once on its first order row");
+  "order information must show each product-code/unit quantity total once without combining incompatible units");
 assert.ok(html.includes('elements.systemViewNote.textContent = viewNotes.join(" · ")') &&
   html.includes('elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;'),
   "dynamic view guidance must move to the System.IO top bar while the table toolbar keeps only the row count");
@@ -2864,7 +2923,7 @@ try {
     [
       "창고", "상품코드", "품목명", "규격",
       ...engine.getAllocationInventoryView(outputWorkspace).columns.map((column) => column.header),
-      "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자",
+      "주문수량", "주문수량 합계", "전재고", "서울잔량", "구매수량", "구매", "거래처", "그룹", "단가", "공급가액", "적요", "적요1", "담당자", "단위", "단위 확인", "최종 구매수량(상품별)", "구매수량 기준",
     ],
   );
   const reopenedPrintNames = (reopened.Workbook?.Names || []).filter(

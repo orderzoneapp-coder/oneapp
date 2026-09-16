@@ -236,6 +236,7 @@ jobs:
       - name: Test OrderOps allocation and workbook contracts
         run: |
           node scripts/test-shipping-management.mjs
+          node scripts/test-orderops-baseline-calculation.mjs
           node scripts/test-common-inventory-snapshot.mjs
 
       # OrderOps is restored to the approved a596cbbd Excel-first screen.

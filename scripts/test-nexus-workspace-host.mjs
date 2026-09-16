@@ -316,4 +316,129 @@ const createRecoveryHost = ({ historyMode = 'push', restoreTarget = empty, popst
   assert.equal(instance.currentTarget, empty);
 }
 
-console.log('PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, safe retry.');
+// Exercise the real class through the failed-popstate/reconnect interleaving.
+// Timers and browser history are driven explicitly; no elapsed-time race is needed.
+const createReconnectHost = () => {
+  const merch = host.validateRoute('merchops', '', siteRoot, 'https://example.test');
+  const data = host.validateRoute('dataops', '', siteRoot, 'https://example.test');
+  const elements = new Map();
+  const timers = new Map();
+  const messages = [];
+  const historyCalls = [];
+  const goCalls = [];
+  let sequence = 0;
+  const windowObject = {
+    location: new URL(host.workspaceUrlFor(merch, workspaceHref)),
+    crypto: { randomUUID: () => `reconnect-${++sequence}` },
+    setTimeout(callback) { const id = ++sequence; timers.set(id, callback); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    history: {
+      state: { nexusWorkspaceIndex: 2 },
+      go(delta) { goCalls.push(delta); },
+      replaceState(state, _, url) { historyCalls.push({ mode: 'replace', state, url }); windowObject.location = new URL(url); },
+      pushState(state, _, url) { historyCalls.push({ mode: 'push', state, url }); windowObject.location = new URL(url); },
+    },
+  };
+  const documentObject = {
+    documentElement: { dataset: {} },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, { hidden: true, textContent: '', href: '' });
+      return elements.get(id);
+    },
+  };
+  const instance = new host.WorkspaceHost(windowObject, documentObject);
+  instance.frame.classList = { add() {}, remove() {} };
+  instance.frame.focus = () => {};
+  instance.frame.hasAttribute = () => true;
+  instance.frame.contentWindow = {
+    location: { href: merch.url, replace(url) { this.href = url; } },
+    postMessage(message) { messages.push(message); },
+  };
+  instance.currentTarget = merch;
+  instance.frameReady = true;
+  const receive = (type, transitionId, target = merch) => instance.onMessage({
+    origin: 'https://example.test', source: instance.frame.contentWindow,
+    data: { schemaVersion: host.SCHEMA_VERSION, type, transitionId, appId: target.app.id, route: target.route },
+  });
+  const failAndReconnect = () => {
+    windowObject.location = new URL(host.workspaceUrlFor(data, workspaceHref));
+    instance.beginHandshake(data, { historyMode: 'none', restoreTarget: merch, popstate: { fromIndex: 2, toIndex: 1 } });
+    instance.failLoad('DataOps failed');
+    const recovery = instance.failedLoad;
+    instance.retryCurrentTarget();
+    assert.deepEqual(goCalls, [1], 'early retry must not race the history restoration');
+    assert.equal(instance.historyRetry, null);
+    windowObject.location = new URL(host.workspaceUrlFor(merch, workspaceHref));
+    instance.onPopState({ state: { nexusWorkspaceIndex: 2 } });
+    instance.onFrameLoad();
+    assert.equal(instance.pendingLoad.preserveFailedLoad, recovery);
+    assert.equal(instance.error.hidden, false);
+    assert.equal(instance.transitionRunning, false, 'the reconnect is not a queued navigation');
+    return recovery;
+  };
+  return { instance, merch, data, windowObject, timers, messages, historyCalls, goCalls, receive, failAndReconnect };
+};
+
+{
+  const { instance, data, windowObject, timers, historyCalls, goCalls, receive, failAndReconnect } = createReconnectHost();
+  const recovery = failAndReconnect();
+  const reconnectId = instance.loadTransitionId;
+  const staleTimeout = timers.get(instance.pendingLoad.timer);
+  assert.equal(instance.failedLoad, recovery, 'reconnect must keep the failed DataOps target available throughout the handshake');
+  assert.equal(instance.standalone.href, data.url, 'the error fallback must still address the failed app');
+  instance.retryCurrentTarget();
+  assert.deepEqual(goCalls, [1, -1], 'early reconnect retry must revisit the original failed history entry');
+  assert.equal(instance.pendingLoad, null, 'retry must cancel the restored-app handshake before moving browser history');
+  assert.equal(instance.historyRetry, recovery);
+  receive(host.MESSAGE_TYPES.APP_READY, reconnectId);
+  receive(host.MESSAGE_TYPES.ROUTE_CHANGED, reconnectId);
+  assert.deepEqual(historyCalls, [], 'late reconnect signals must not replace the entry being retried');
+  instance.retryCurrentTarget();
+  assert.deepEqual(goCalls, [1, -1], 'double retry must not issue a competing history traversal');
+  windowObject.location = new URL(host.workspaceUrlFor(data, workspaceHref));
+  instance.onPopState({ state: { nexusWorkspaceIndex: 1 } });
+  assert.equal(instance.loadingTarget, data);
+  assert.equal(instance.pendingLoad.historyMode, 'none');
+  staleTimeout();
+  receive(host.MESSAGE_TYPES.APP_ERROR, reconnectId);
+  receive(host.MESSAGE_TYPES.APP_READY, reconnectId);
+  assert.equal(instance.loadingTarget, data, 'stale reconnect timeout/error/ready must not alter the new retry');
+  receive(host.MESSAGE_TYPES.APP_READY, instance.loadTransitionId, data);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(instance.currentTarget, data);
+  assert.equal(instance.historyIndex, 1);
+  assert.equal(instance.failedLoad, null);
+  assert.equal(instance.error.hidden, true);
+  assert.deepEqual(historyCalls, [], 'retry success must preserve the original history entries');
+}
+
+{
+  const { instance, data, failAndReconnect } = createReconnectHost();
+  const recovery = failAndReconnect();
+  instance.failLoad('restored app reconnect failed');
+  assert.equal(instance.failedLoad, recovery, 'a reconnect failure must not replace the original failed target/history');
+  assert.equal(instance.standalone.href, data.url);
+}
+
+{
+  const { instance, receive, historyCalls, failAndReconnect } = createReconnectHost();
+  failAndReconnect();
+  const reconnectId = instance.loadTransitionId;
+  const navigation = instance.requestNavigation(order, 'push');
+  await Promise.resolve();
+  assert.equal(instance.loadingTarget, order, 'a competing tab selection must drain the queue after cancelling an unowned reconnect');
+  const newId = instance.loadTransitionId;
+  instance.retryCurrentTarget();
+  assert.equal(instance.loadTransitionId, newId, 'a stale retry click must not supersede the newer app selection');
+  receive(host.MESSAGE_TYPES.APP_READY, reconnectId);
+  assert.deepEqual(historyCalls, []);
+  receive(host.MESSAGE_TYPES.APP_READY, newId, order);
+  await navigation;
+  assert.equal(instance.currentTarget, order);
+  assert.equal(historyCalls.length, 1);
+  assert.equal(historyCalls[0].mode, 'push');
+}
+
+console.log('PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, deterministic reconnect/early retry and stale-signal safety.');
