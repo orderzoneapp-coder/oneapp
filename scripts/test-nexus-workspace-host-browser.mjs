@@ -560,6 +560,11 @@ try {
   await evaluate(client, `location.replace(${JSON.stringify(`${origin}/nexus/workspace.html?app=master-lookup&route=Master.html`)})`);
   await realAppsLoaded;
   for (const realAppId of appIds) {
+    // The restored OrderOps screen predates the shared app-header marker, but
+    // still must complete the real host handshake and safe navigation checks.
+    const realHeaderSelector = realAppId === 'orderops'
+      ? 'header.global-header'
+      : `[data-nexus-app-header="${realAppId}"]`;
     if (await evaluate(client, `new URL(location.href).searchParams.get('app')`) !== realAppId) {
       await evaluate(client, `document.querySelector('[data-nexus-ui-app-target="${realAppId}"]').click()`);
     }
@@ -571,7 +576,7 @@ try {
           && document.querySelector('#nexusWorkspaceLoading').hidden
           && child?.ONEAPP_NEXUS_WORKSPACE_CHILD?.connected === true
           && child.document.documentElement.dataset.nexusWorkspaceEmbedded === 'true'
-          && Boolean(child.document.querySelector('[data-nexus-app-header="${realAppId}"]'));
+          && Boolean(child.document.querySelector(${JSON.stringify(realHeaderSelector)}));
       })()`), `real integrated app ${realAppId}`, 60_000);
     } catch (error) {
       const diagnostic = await evaluate(client, `(() => {

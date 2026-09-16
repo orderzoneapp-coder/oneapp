@@ -216,11 +216,6 @@ const prepareWorkspace = async client => {
     }
     return true;
   })()`);
-  if (await evaluate(client, `Boolean(document.querySelector('#prepareApplyButton'))`)) {
-    await expr(client, `document.querySelectorAll('#prepareFileList button').length===2&&[...document.querySelectorAll('#prepareFileList button')].every(node=>node.querySelector('[data-prepare-state="READY"]'))`, 'OrderOps explicit file validation');
-    await evaluate(client, `window.confirm=()=>true;document.querySelector('#prepareApplyButton').click()`);
-    await expr(client, `[...document.querySelectorAll('#prepareFileList button')].every(node=>node.querySelector('[data-prepare-state="APPLIED"]'))`, 'OrderOps explicit batch application');
-  }
   await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'analysis readiness');
   await click(client, '#analyzeButton');
   await expr(client, `!document.querySelector('#resultsPanel').classList.contains('hidden')&&document.querySelectorAll('#previewTable tbody tr').length>0`, 'normal OrderOps result', 30_000);
@@ -228,8 +223,7 @@ const prepareWorkspace = async client => {
 const normalMetrics = client => evaluate(client, `(() => {
   const rect = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width)};};
   return {
-    appHeaderHeight:Math.round(document.querySelector('.global-header').getBoundingClientRect().height),
-    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>!['unresolvedReviewToggle','shipmentConfirmButton','shipmentHoldButton'].includes(id)).sort(),
+    existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>id!=='unresolvedReviewToggle').sort(),
     sourceTabs:[...document.querySelectorAll('#sourceSelector [role="tab"]')].map(node=>({id:node.id,label:node.getAttribute('aria-label')})),
     shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
     regions:{sourceSelector:rect('#sourceSelector'),resultsPanel:rect('#resultsPanel'),previewTable:rect('#previewTable')},
@@ -312,40 +306,17 @@ try {
   await navigate(client, `${origin}/orderops/list.html`);
   await prepareWorkspace(client);
   const current = await normalMetrics(client);
-  assert.equal(baseline.existingButtonIds.every(id => current.existingButtonIds.includes(id)), true,
-    'all existing button IDs must remain available after the approved OrderOps workbench addition');
-  assert.equal(new Set(current.existingButtonIds).size, current.existingButtonIds.length,
-    'current OrderOps button IDs must remain unique as approved controls are added');
-  assert.equal(baseline.sourceTabs.every(tab => current.sourceTabs.some(candidate => candidate.id === tab.id && candidate.label === tab.label)), true,
-    'existing source tabs must remain available as approved tabs are added');
-  assert.equal(baseline.shortcuts.every(shortcut => current.shortcuts.some(candidate => candidate.id === shortcut.id && candidate.key === shortcut.key)), true,
-    'existing shortcut contracts must remain available as approved shortcuts are added');
-  assert.equal(current.appHeaderHeight, 56, 'OrderOps must use the shared 56px app-header height');
-  const rebuiltPlacement = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const source=document.querySelector('#sourceSelector');const results=document.querySelector('#resultsPanel');const headerRect=header.getBoundingClientRect();const resultsRect=results.getBoundingClientRect();return {headerOwnsLoaders:header.contains(document.querySelector('#analyzeButton'))&&document.querySelector('#orderOpsFilePreparePane').contains(document.querySelector('#prepareFilesButton')),sourceRuntimeHidden:getComputedStyle(source).display==='none',resultsBelow:resultsRect.top>=headerRect.bottom,resultsWidth:resultsRect.width}})()`);
-  assert.equal(rebuiltPlacement.headerOwnsLoaders && rebuiltPlacement.sourceRuntimeHidden && rebuiltPlacement.resultsBelow && rebuiltPlacement.resultsWidth > 0, true,
-    'v1.2 keeps analysis in the header and file preparation on the left, hides the legacy source strip, and keeps the center below the header');
-  const rebuiltPanes = await evaluate(client, `(()=>{const workspace=document.querySelector('[data-nexus-workspace="orderops"]');return [...workspace.querySelectorAll(':scope > [data-nexus-pane]')].map(node=>node.dataset.nexusPane)})()`);
-  assert.deepEqual(rebuiltPanes, ['reference', 'work', 'result'],
-    'the rebuilt OrderOps panes must be direct children of the same workspace');
-  assert.ok(current.regions.previewTable.x >= current.regions.resultsPanel.x && current.regions.previewTable.width <= current.regions.resultsPanel.width,
-    'the central preview table must remain within the rebuilt center pane');
+  assert.deepEqual(current.existingButtonIds, baseline.existingButtonIds, 'all existing button IDs must remain unchanged');
+  assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
+  assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
+  assert.deepEqual(current.regions, baseline.regions, 'normal desktop layout regions must remain unchanged');
   assert.equal(current.normalClickCount, baseline.normalClickCount);
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
-  const currentMobileShell = await evaluate(client, `(()=>{const header=document.querySelector('[data-nexus-app-header="orderops"]');const primary=header.querySelector('.orderops-header-primary');const settings=document.querySelector('#headerSettingsButton');const moreMenu=document.querySelector('#orderOpsHeaderMoreMenu');const rect=node=>{const value=node.getBoundingClientRect();return {left:value.left,right:value.right,top:value.top,bottom:value.bottom,width:value.width,height:value.height}};const visibleHeaderControls=[...primary.querySelectorAll(':scope > button,:scope > .orderops-header-menu > button')].filter(node=>{const value=rect(node);const style=getComputedStyle(node);return style.display!=='none'&&value.width>0&&value.height>0});const overlaps=visibleHeaderControls.some((node,index)=>visibleHeaderControls.slice(index+1).some(other=>{const a=rect(node);const b=rect(other);return Math.min(a.right,b.right)>Math.max(a.left,b.left)&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)}));return {viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width),appHeaderHeight:Math.round(rect(header).height),settingsInMore:settings.parentElement===moreMenu,settingsMenuCollapsed:moreMenu.hidden,primarySingleRow:visibleHeaderControls.every(node=>Math.abs(rect(node).top-rect(visibleHeaderControls[0]).top)<1),overlaps}})()`);
+  const currentMobileShell = await evaluate(client, `({viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width)})`);
   assert.ok(currentMobileShell.documentScrollWidth <= baselineMobileShell.documentScrollWidth,
     `inactive 6B controls must not increase document overflow: ${JSON.stringify({ baselineMobileShell, currentMobileShell })}`);
-  assert.deepEqual({
-    appHeaderHeight: currentMobileShell.appHeaderHeight,
-    settingsInMore: currentMobileShell.settingsInMore,
-    settingsMenuCollapsed: currentMobileShell.settingsMenuCollapsed,
-    overlaps: currentMobileShell.overlaps,
-  }, { appHeaderHeight: 56, settingsInMore: false, settingsMenuCollapsed: true, overlaps: false },
-  'v1.2 keeps the 56px nonoverlapping horizontally scrollable header and its settings action');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await wait(150);
-  assert.equal(await evaluate(client, `document.querySelector('#headerSettingsButton').parentElement===document.querySelector('[data-nexus-app-header="orderops"] > .header-actions')`), true,
-    'returning to desktop must restore the same settings button to the app-header action position');
 
   await click(client, '#inventoryDrop');
   await input(client, '#tableSearchInput', '정상상품');
@@ -489,7 +460,7 @@ try {
 
   const evidence = {
     taskId: 'NEXUS-SI-V2-06B', baselineSha: BASE_SHA, status: 'PASS',
-    domAndLayout: { baseline, current, preservedExistingButtons: true, preservedExistingSourceTabs: true, preservedExistingShortcuts: true, unchangedNormalRegions: true },
+    domAndLayout: { baseline, current, unchangedExistingButtons: true, unchangedSourceTabs: true, unchangedShortcuts: true, unchangedNormalRegions: true },
     clickContract: { normalFlowBefore: 3, normalFlowAfter: 3, unresolvedListEntry: 1, listToImpactPreview: 2 },
     review: { listEvidence, detailBeforeSelection, impactEvidence, paginationEvidence, errorDistinctFromEmpty: true, companyIsolation: true },
     statePreservation: { before: hostBefore, after: hostAfter },

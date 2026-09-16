@@ -6,13 +6,15 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pages = [
   'Master.html', 'customer-master/index.html', 'SmartParser.html', 'MerchOps.html',
-  'smartinput/index.html', 'orderops/list.html', 'DataOps.html',
+  'smartinput/index.html', 'DataOps.html',
 ];
 for (const relative of pages) {
   const html = fs.readFileSync(path.join(root, relative), 'utf8');
   assert.match(html, /nexus-table-ux\.css\?v=\d+\.\d+\.\d+/, `${relative} must load versioned common table presentation`);
   assert.match(html, /nexus-table-ux\.js\?v=\d+\.\d+\.\d+/, `${relative} must load versioned common table interaction`);
 }
+assert.doesNotMatch(fs.readFileSync(path.join(root, 'orderops/list.html'), 'utf8'), /nexus-table-ux\.(?:css|js)/,
+  'the approved a596cbbd OrderOps rollback retains its app-owned table interaction');
 
 const css = fs.readFileSync(path.join(root, 'nexus/common/nexus-table-ux.css'), 'utf8');
 for (const token of ['#f5f6f7', '#ffffff', '#e5e7eb', '#1f2937', '#4b5563', '#d1d5db', '#e0f2f1', '#0f766e']) {

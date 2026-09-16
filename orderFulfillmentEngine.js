@@ -7,17 +7,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.29.0";
+  const ENGINE_VERSION = "3.19.0";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
-  const PREVIEW_WORKSPACE_MODE = "ORDEROPS_PREVIEW";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
-  const INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION = "shipping-inventory-source-reference/v1";
-  const INVENTORY_APPLICATION_MODES = Object.freeze(["LOCAL_FILE", "ERP_WAREHOUSE", "TOTAL_ONLY", "WAREHOUSE_MAPPED"]);
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
-  const SYSTEM_HISTORY_SCHEMA_VERSION = "shipping-system-history/v1";
   const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
-  const DUPLICATE_ORDER_REVIEW_MESSAGE = "주문서 중복 여부 확인";
-  const QUANTITY_INPUT_REVIEW_MESSAGE = "수량 입력 오류 확인";
   const HEADER_SCAN_LIMIT = 30;
   const ORDER_REQUIRED_COLUMNS = Object.freeze([
     "품목코드",
@@ -42,8 +36,6 @@
     "재고",
     "단가",
     "공급가액",
-    "거래처코드",
-    "지역",
   ]);
 
   const ORDER_CANONICAL_ALIASES = Object.freeze({
@@ -51,7 +43,7 @@
     "일자": Object.freeze(["일자"]),
     "주문일자": Object.freeze(["주문일자"]),
     "담당": Object.freeze(["담당"]),
-    "창고": Object.freeze(["창고", "출고창고", "창고코드"]),
+    "창고": Object.freeze(["창고", "출고창고"]),
     "단위": Object.freeze(["단위"]),
     "품목코드": Object.freeze(["품목코드", "상품코드", "코드"]),
     "품목명": Object.freeze(["품목명", "상품명", "제품명"]),
@@ -61,10 +53,8 @@
     "단가": Object.freeze(["단가", "판매단가", "출고단가"]),
     "공급가액": Object.freeze(["공급가액", "금액", "합계금액"]),
     "적요": Object.freeze(["적요", "메모", "비고"]),
-    "적요1": Object.freeze(["적요1", "적요(직원)", "직원적요"]),
+    "적요1": Object.freeze(["적요1"]),
     "거래처": Object.freeze(["거래처", "거래처명", "고객명"]),
-    "거래처코드": Object.freeze(["거래처코드", "고객코드", "거래처ID", "고객ID"]),
-    "지역": Object.freeze(["지역", "배송지역", "배송권역", "권역"]),
     "그룹": Object.freeze(["그룹"]),
   });
 
@@ -138,143 +128,6 @@
     return String(value).trim();
   }
 
-  function customerWorkKey(row = {}) {
-    const suppliedKey = cleanText(row.customerKey);
-    const ownerId = cleanText(row.customerId || row.customerCode);
-    if (suppliedKey && (ownerId || !suppliedKey.startsWith("DELIVERY:"))) return suppliedKey;
-    if (ownerId) return `CUSTOMER:${ownerId}`;
-    const customer = normalizeOrderHeader(row.customer);
-    const deliveryUnit = normalizeOrderHeader(row.orderNumber || row.group);
-    const warehouse = normalizeOrderHeader(row.warehouse);
-    if (customer && deliveryUnit) return `DELIVERY:${customer}:${deliveryUnit}:${warehouse || "warehouse-unassigned"}`;
-    const sourceRowNumber = Number(row.sourceRowNumber);
-    return sourceRowNumber > 0 ? `SOURCE_ROW:${sourceRowNumber}` : "";
-  }
-
-  function getDeliverySummaryRows(workspace) {
-    const groups = new Map();
-    (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((row) => {
-      const customerKey = customerWorkKey(row);
-      const warehouse = cleanText(row?.warehouse);
-      const orderNumber = cleanText(row?.orderNumber || row?.group);
-      const deliveryKey = canonicalStringify([customerKey, warehouse, orderNumber]);
-      if (!groups.has(deliveryKey)) {
-        groups.set(deliveryKey, {
-          deliveryKey,
-          customerKey,
-          stableCustomerIdentity: Boolean(cleanText(row?.customerId || row?.customerCode)),
-          warehouse,
-          customer: cleanText(row?.customer),
-          orderNumber,
-          managers: new Set(),
-          regions: new Set(),
-          employeeNotes: new Set(),
-          sourceRowNumbers: [],
-          items: [],
-          quantityGroups: new Map(),
-          amountTotal: 0,
-          amountValueCount: 0,
-          calculatedAmountTotal: 0,
-          calculatedAmountValueCount: 0,
-          amountBlankCount: 0,
-          amountInvalidCount: 0,
-          amountUnknownCount: 0,
-        });
-      }
-      const group = groups.get(deliveryKey);
-      group.managers.add(cleanText(row?.manager));
-      group.regions.add(cleanText(row?.region));
-      const employeeNote = originalText(row?.note1Original ?? row?.note1).trim();
-      if (employeeNote) group.employeeNotes.add(employeeNote);
-      const sourceRowNumber = Number(row?.sourceRowNumber);
-      if (sourceRowNumber > 0) group.sourceRowNumbers.push(sourceRowNumber);
-      group.items.push({
-        productCode: normalizeProductCode(row?.productCode),
-        productName: cleanText(row?.productName),
-        specification: cleanText(row?.specification),
-        unit: cleanText(row?.sourceUnit),
-      });
-
-      const unit = cleanText(row?.sourceUnit);
-      if (!group.quantityGroups.has(unit)) {
-        group.quantityGroups.set(unit, { unit, total: 0, valueCount: 0, blankCount: 0, invalidCount: 0 });
-      }
-      const quantityGroup = group.quantityGroups.get(unit);
-      const quantity = parseNumericCell(row?.quantity);
-      if (!quantity.ok) quantityGroup.invalidCount += 1;
-      else if (quantity.blank) quantityGroup.blankCount += 1;
-      else {
-        quantityGroup.total = roundQuantity(quantityGroup.total + quantity.value);
-        quantityGroup.valueCount += 1;
-      }
-
-      const amount = parseNumericCell(row?.supplyAmount);
-      if (!amount.ok) group.amountInvalidCount += 1;
-      else if (amount.blank) {
-        group.amountBlankCount += 1;
-        const quantity = parseNumericCell(row?.quantity);
-        const unitPrice = parseNumericCell(row?.unitPrice);
-        if (quantity.ok && !quantity.blank && unitPrice.ok && !unitPrice.blank) {
-          group.calculatedAmountTotal = roundQuantity(
-            group.calculatedAmountTotal + roundQuantity(quantity.value * unitPrice.value),
-          );
-          group.calculatedAmountValueCount += 1;
-        } else {
-          group.amountUnknownCount += 1;
-        }
-      }
-      else {
-        group.amountTotal = roundQuantity(group.amountTotal + amount.value);
-        group.amountValueCount += 1;
-      }
-    });
-
-    return [...groups.values()].map((group) => {
-      const managerValues = [...group.managers];
-      const namedManagers = managerValues.filter(Boolean);
-      const managerUnassigned = managerValues.includes("");
-      const managerMixed = managerValues.length > 1;
-      const managerParts = [...namedManagers, ...(managerUnassigned ? ["미지정"] : [])];
-      const regionValues = [...group.regions];
-      const namedRegions = regionValues.filter(Boolean);
-      const regionUnassigned = regionValues.includes("");
-      const regionMixed = regionValues.length > 1;
-      const regionParts = [...namedRegions, ...(regionUnassigned ? ["미지정"] : [])];
-      return {
-        deliveryKey: group.deliveryKey,
-        customerKey: group.customerKey,
-        stableCustomerIdentity: group.stableCustomerIdentity,
-        warehouse: group.warehouse,
-        customer: group.customer,
-        orderNumber: group.orderNumber,
-        manager: managerMixed ? "" : namedManagers[0] || "",
-        managerLabel: managerMixed ? `혼합(${managerParts.join(", ")})` : namedManagers[0] || "미지정",
-        managerValues,
-        managerMixed,
-        managerUnassigned,
-        region: regionMixed ? "" : namedRegions[0] || "",
-        regionLabel: regionMixed ? `혼합(${regionParts.join(", ")})` : namedRegions[0] || "미지정",
-        regionValues,
-        regionMixed,
-        regionUnassigned,
-        employeeNote: [...group.employeeNotes].join(" / "),
-        sourceRowNumbers: group.sourceRowNumbers,
-        representativeItem: group.items[0] || null,
-        items: group.items,
-        additionalItemCount: Math.max(0, group.items.length - 1),
-        itemCount: group.items.length,
-        quantityGroups: [...group.quantityGroups.values()],
-        amountTotal: group.amountValueCount > 0 ? group.amountTotal : null,
-        amountValueCount: group.amountValueCount,
-        calculatedAmountTotal: group.calculatedAmountValueCount > 0 ? group.calculatedAmountTotal : null,
-        calculatedAmountValueCount: group.calculatedAmountValueCount,
-        amountBlankCount: group.amountBlankCount,
-        amountInvalidCount: group.amountInvalidCount,
-        amountUnknownCount: group.amountUnknownCount,
-      };
-    });
-  }
-
   function normalizeCategoryCode(value) {
     return normalizeProductCode(value).replace(/\s+/g, "").toUpperCase();
   }
@@ -333,94 +186,6 @@
       ok: true,
       value: roundQuantity(negative ? -parsed : parsed),
       blank: false,
-    };
-  }
-
-  function orderReviewSource(input = {}) {
-    const rows = Array.isArray(input?.orders)
-      ? input.orders
-      : Array.isArray(input?.rows)
-        ? input.rows
-        : [];
-    const source = input?.sourceFiles?.orders || input || {};
-    return { rows, source };
-  }
-
-  function orderOriginalIdentityKey(row, source = {}) {
-    const orderId = cleanText(row?.orderId || source?.orderId);
-    const sourceDocumentKey = cleanText(row?.sourceDocumentKey || source?.sourceDocumentKey);
-    const orderItemId = cleanText(row?.orderItemId);
-    const sourceLineKey = cleanText(row?.sourceLineKey);
-    const rowNumber = Number(row?.sourceRowNumber) > 0 ? String(Number(row.sourceRowNumber)) : "";
-    const lineIdentity = orderItemId || sourceLineKey || rowNumber;
-
-    if (orderId && lineIdentity) return `order-id:${orderId}\u001fline:${lineIdentity}`;
-    if (sourceDocumentKey && lineIdentity) {
-      return `source-document:${sourceDocumentKey}\u001fline:${lineIdentity}`;
-    }
-
-    const orderNumber = cleanText(row?.orderNumber || source?.orderNo);
-    const sourceFingerprint = cleanText(
-      row?.sourceFingerprint || source?.orderSnapshotHash || source?.sha256 || source?.fileHash,
-    );
-    const originalLocation = sourceLineKey || rowNumber;
-    if (orderNumber && sourceFingerprint && originalLocation) {
-      return `order-number:${orderNumber}\u001ffingerprint:${sourceFingerprint}\u001fline:${originalLocation}`;
-    }
-    return "";
-  }
-
-  function getOrderWorkRowId(row = {}, source = {}, index = 0) {
-    const supplied = cleanText(row.workRowId);
-    if (supplied) return supplied;
-    const originalIdentity = orderOriginalIdentityKey(row, source);
-    if (originalIdentity) return `work-row:${originalIdentity}`;
-    const sourceFingerprint = cleanText(
-      row.sourceFingerprint || source.orderSnapshotHash || source.sha256 || source.fileHash,
-    );
-    const sheetName = cleanText(row.sheetName || source.sheetName);
-    const rowNumber = Number(row.originalSourceRowNumber || row.sourceRowNumber) || Number(index) + 1;
-    return `work-row:file:${sourceFingerprint || "unidentified"}\u001fsheet:${sheetName}\u001fline:${rowNumber}`;
-  }
-
-  function getOrderReviewState(input = {}) {
-    const { rows, source } = orderReviewSource(input);
-    const identityRows = new Map();
-    const quantityIssues = [];
-
-    rows.forEach((row, index) => {
-      const parsedQuantity = parseNumericCell(row?.quantity);
-      if (!parsedQuantity.ok || parsedQuantity.blank) {
-        quantityIssues.push({
-          sourceRowNumber: Number(row?.sourceRowNumber) || index + 1,
-          productCode: normalizeProductCode(row?.productCode),
-          value: row?.quantity,
-        });
-      }
-      const identityKey = orderOriginalIdentityKey(row, source);
-      if (!identityKey) return;
-      if (!identityRows.has(identityKey)) identityRows.set(identityKey, []);
-      identityRows.get(identityKey).push({
-        sourceRowNumber: Number(row?.sourceRowNumber) || index + 1,
-        productCode: normalizeProductCode(row?.productCode),
-        identityKey,
-      });
-    });
-
-    const duplicateGroups = [...identityRows.entries()]
-      .filter(([, occurrences]) => occurrences.length > 1)
-      .map(([identityKey, occurrences]) => ({ identityKey, occurrences }));
-    const duplicateRows = duplicateGroups.flatMap((group) => group.occurrences);
-    return {
-      hasDuplicateOrders: duplicateGroups.length > 0,
-      hasQuantityErrors: quantityIssues.length > 0,
-      duplicateOrderCount: duplicateGroups.length,
-      quantityErrorCount: quantityIssues.length,
-      duplicateGroups,
-      duplicateRows,
-      quantityIssues,
-      duplicateProductCodes: [...new Set(duplicateRows.map((row) => row.productCode).filter(Boolean))],
-      quantityErrorProductCodes: [...new Set(quantityIssues.map((row) => row.productCode).filter(Boolean))],
     };
   }
 
@@ -591,55 +356,6 @@
     };
   }
 
-  function orderSourceHeaderSignature(headerRow) {
-    return `orders:${(Array.isArray(headerRow) ? headerRow : [])
-      .map((header) => normalizeOrderHeader(header))
-      .join("\u001f")}`;
-  }
-
-  function describeOrderColumnConflict(conflict, matrix, headerRowIndex) {
-    const columns = (conflict?.columns || []).map((column) => {
-      const values = [];
-      let nonblankCount = 0;
-      for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
-        const value = originalText(matrix[rowIndex]?.[column.columnIndex]);
-        if (!cleanText(value)) continue;
-        nonblankCount += 1;
-        if (!values.includes(value) && values.length < 5) values.push(value);
-      }
-      return { ...column, nonblankCount, uniqueValueExamples: values };
-    });
-    const conflictingRows = [];
-    for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
-      const values = columns.map((column) => originalText(matrix[rowIndex]?.[column.columnIndex]));
-      if (new Set(values.map(cleanText)).size <= 1) continue;
-      conflictingRows.push({
-        rowNumber: rowIndex + 1,
-        values: columns.map((column, index) => ({
-          header: column.header,
-          columnIndex: column.columnIndex,
-          value: values[index],
-        })),
-      });
-      if (conflictingRows.length >= 20) break;
-    }
-    return {
-      canonical: conflict.canonical,
-      columns,
-      conflictingRows,
-      valuesEquivalent: conflictingRows.length === 0,
-    };
-  }
-
-  function resolveSelectedOrderColumn(conflict, selection, sourceHeaderSignature) {
-    if (!selection || selection.canonical !== conflict.canonical) return null;
-    if (cleanText(selection.sourceHeaderSignature) !== sourceHeaderSignature) return null;
-    const selectedIndex = Number(selection.columnIndex);
-    return conflict.columns.find((column) =>
-      column.columnIndex === selectedIndex && cleanText(column.header) === cleanText(selection.header),
-    ) || null;
-  }
-
   function resolveInventoryHeaders(headerRow, headerAliases = {}) {
     const lookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
     const columnMap = Object.create(null);
@@ -758,83 +474,14 @@
     return source;
   }
 
-  function explicitFileStructure(input, matrix, automaticHeaderRow) {
-    if (!input.explicitMapping) return null;
-    const { headerRowIndex, dataStartRowIndex, columns } = input.explicitMapping;
-    // Inclusive, zero-based. Legacy mappings retain their original full range.
-    const dataEndRowIndex = input.explicitMapping.dataEndRowIndex ?? matrix.length - 1;
-    if (!Number.isInteger(headerRowIndex) || headerRowIndex < 0 || headerRowIndex >= matrix.length ||
-        !Number.isInteger(dataStartRowIndex) || dataStartRowIndex <= headerRowIndex || dataStartRowIndex >= matrix.length || !Array.isArray(columns)) {
-      throw new Error("헤더행·데이터 시작행·열 매핑 범위를 확인하세요.");
-    }
-    if (!Number.isInteger(dataEndRowIndex) || dataEndRowIndex < dataStartRowIndex || dataEndRowIndex >= matrix.length) throw new Error("마지막 상품행은 헤더 다음 행부터 원본 마지막 행 사이에서 지정하세요.");
-    const originalHeaders = matrix[headerRowIndex] || [];
-    if (columns.length !== originalHeaders.length) throw new Error("원본 열 수와 매핑이 일치하지 않습니다.");
-    const selected = columns.map(value => String(value || ""));
-    const names = selected.filter(Boolean);
-    if (new Set(names.map(normalizeOrderHeader)).size !== names.length) throw new Error("같은 항목에 여러 원본 열이 연결되었습니다. 사용할 열 하나를 선택하세요.");
-    return { schemaVersion: "orderops-explicit-file-mapping/v1", headerRowIndex, dataStartRowIndex, dataEndRowIndex, columns: selected, originalHeaders: cloneMatrix([originalHeaders])[0], effectiveHeaders: selected.map(value => value.startsWith("warehouse:") ? value.slice(10) : value) };
-  }
-
-  function excelOrderRowIdentity(input, boundary, sourceRowNumber) {
-    const fingerprint = cleanText(input.fileHash).toLowerCase() || `name:${cleanText(input.fileName) || "unidentified"}`;
-    const sheetName = cleanText(input.sheetName);
-    const voucherBoundary = [
-      cleanText(boundary.orderNumber || boundary.group),
-      cleanText(boundary.basisDate),
-      cleanText(boundary.warehouse),
-      cleanText(boundary.customerCode || boundary.customer),
-    ];
-    const suffix = voucherBoundary.some(Boolean)
-      ? `voucher:${canonicalStringify(voucherBoundary)}`
-      : `unbounded-line:${sourceRowNumber}`;
-    const voucherId = `excel:${fingerprint}\u001fsheet:${sheetName}\u001f${suffix}`;
-    return {
-      voucherId,
-      sourceDocumentKey: voucherId,
-      sourceFingerprint: fingerprint,
-      originalSourceRowNumber: sourceRowNumber,
-      workRowId: `work-row:file:${fingerprint}\u001fsheet:${sheetName}\u001fline:${sourceRowNumber}`,
-    };
-  }
-
   function parseOrderWorkbook(input = {}) {
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const explicitMapping = explicitFileStructure(input, displayMatrix);
-    const headerRowIndex = explicitMapping?.headerRowIndex ?? findBestOrderHeaderRow(displayMatrix, headerAliases);
-    const headerRow = explicitMapping?.effectiveHeaders || (headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : []);
+    const headerRowIndex = findBestOrderHeaderRow(displayMatrix, headerAliases);
+    const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveOrderHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
-    const sourceHeaderSignature = orderSourceHeaderSignature(headerRow);
-    const columnConflicts = headerResolution.duplicateCanonicalFields.map((conflict) =>
-      describeOrderColumnConflict(conflict, displayMatrix, headerRowIndex));
-    const selectedSourceColumns = [];
-    const unresolvedCanonicalFields = [];
-    headerResolution.duplicateCanonicalFields.forEach((conflict, conflictIndex) => {
-      const described = columnConflicts[conflictIndex];
-      const explicit = conflict.canonical === "창고" ? resolveSelectedOrderColumn(
-        conflict,
-        input.sourceColumnSelection,
-        sourceHeaderSignature,
-      ) : null;
-      const selected = explicit || (conflict.canonical === "창고" && described.valuesEquivalent
-        ? [...described.columns].sort((left, right) => right.nonblankCount - left.nonblankCount)[0]
-        : null);
-      if (!selected) {
-        unresolvedCanonicalFields.push(described);
-        return;
-      }
-      columnMap[normalizeHeader(conflict.canonical)] = selected.columnIndex;
-      selectedSourceColumns.push({
-        canonical: conflict.canonical,
-        header: selected.header,
-        columnIndex: selected.columnIndex,
-        sourceHeaderSignature,
-        selectionMode: explicit ? "ADMIN_SELECTED" : "EQUIVALENT_VALUES",
-      });
-    });
     const missingColumns = ORDER_REQUIRED_COLUMNS.filter(
       (column) => !Array.isArray(headerResolution.matches[column]) || headerResolution.matches[column].length === 0,
     );
@@ -851,27 +498,15 @@
       );
     }
 
-    const warehouseColumnConflict = unresolvedCanonicalFields.find(({ canonical }) => canonical === "창고") || null;
-    if (warehouseColumnConflict) {
-      errors.push(
-        createIssue(
-          "ORDER_WAREHOUSE_COLUMN_CONFLICT",
-          "주문현황의 창고 원본 열이 둘 이상이며 값이 다릅니다. 사용할 원본 열을 선택하고 재검증하세요.",
-          { conflict: warehouseColumnConflict, sourceHeaderSignature },
-        ),
-      );
-    }
-
-    const otherUnresolvedCanonicalFields = unresolvedCanonicalFields.filter(({ canonical }) => canonical !== "창고");
-    if (otherUnresolvedCanonicalFields.length > 0) {
-      const conflictText = otherUnresolvedCanonicalFields.map(({ canonical, columns }) =>
+    if (headerResolution.duplicateCanonicalFields.length > 0) {
+      const conflictText = headerResolution.duplicateCanonicalFields.map(({ canonical, columns }) =>
         `${canonical}: ${columns.map((column) => `${column.header}(${column.columnNumber}열)`).join(", ")}`,
       ).join(" / ");
       errors.push(
         createIssue(
           "ORDER_DUPLICATE_CANONICAL_HEADERS",
           `주문현황 표준 항목에 둘 이상의 원본 열이 매칭되었습니다: ${conflictText}`,
-          { conflicts: otherUnresolvedCanonicalFields },
+          { conflicts: headerResolution.duplicateCanonicalFields },
         ),
       );
     }
@@ -890,9 +525,9 @@
 
     const rows = [];
     const canonicalMappingIsValid = missingColumns.length === 0 &&
-      unresolvedCanonicalFields.length === 0;
+      headerResolution.duplicateCanonicalFields.length === 0;
     if (headerRowIndex >= 0 && canonicalMappingIsValid) {
-      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex <= (explicitMapping?.dataEndRowIndex ?? displayMatrix.length - 1); rowIndex += 1) {
+      for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);
@@ -922,13 +557,14 @@
         const quantityCell = getField(row, columnMap, "수량");
         const quantity = parseNumericCell(quantityCell);
         if (!quantity.ok || quantity.blank) {
-          warnings.push(
+          errors.push(
             createIssue(
               "ORDER_QUANTITY_INVALID",
-              `${rowIndex + 1}행 주문수량은 공란이 아니고 유한한 숫자여야 합니다. 계산에서 제외되며 수정 전까지 저장·Excel 출력이 차단됩니다.`,
+              `${rowIndex + 1}행 주문수량은 빈값이 아닌 유한한 숫자여야 합니다.`,
               { rowNumber: rowIndex + 1, productCode: code, value: quantityCell },
             ),
           );
+          continue;
         }
 
         const price = parseNumericCell(getField(row, columnMap, "단가"));
@@ -955,42 +591,20 @@
             : rowBasisDates.length === 1
               ? "valid"
               : "missing";
-        const customerCode = cleanText(getField(row, columnMap, "거래처코드"));
-        const customer = cleanText(getField(row, columnMap, "거래처"));
-        const group = cleanText(getField(row, columnMap, "그룹"));
-        const orderNumber = cleanText(orderNumberValue);
-        const warehouse = cleanText(getField(row, columnMap, "창고"));
-        const customerIdentity = {
-          customerCode,
-          customer,
-          group,
-          orderNumber,
-          warehouse,
-          sourceRowNumber: rowIndex + 1,
-        };
-        const rowIdentity = excelOrderRowIdentity(input, {
-          orderNumber,
-          group,
-          basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
-          warehouse,
-          customerCode,
-          customer,
-        }, rowIndex + 1);
         rows.push({
           inputOrder: rows.length + 1,
           sourceRowNumber: rowIndex + 1,
-          ...rowIdentity,
-          orderNumber,
+          orderNumber: cleanText(orderNumberValue),
           basisDate: rowBasisDateStatus === "valid" ? rowBasisDates[0] : "",
           basisDateStatus: rowBasisDateStatus,
           basisDateCandidates,
           manager: cleanText(getField(row, columnMap, "담당")),
-          warehouse,
+          warehouse: cleanText(getField(row, columnMap, "창고")),
           sourceUnit: cleanText(getField(row, columnMap, "단위")),
           productCode: code,
           productName: cleanText(getField(row, columnMap, "품목명")),
           specification: cleanText(getField(row, columnMap, "규격")),
-          quantity: quantity.ok && !quantity.blank ? quantity.value : originalText(quantityCell),
+          quantity: quantity.value,
           sourceStock: getField(row, columnMap, "재고"),
           unitPrice: price.ok && !price.blank ? price.value : null,
           supplyAmount: isBlank(supplyAmountCell)
@@ -1002,11 +616,8 @@
           note1: cleanText(getField(row, columnMap, "적요1")),
           noteOriginal: originalText(getField(row, columnMap, "적요")),
           note1Original: originalText(getField(row, columnMap, "적요1")),
-          customer,
-          customerCode,
-          customerKey: customerWorkKey(customerIdentity),
-          region: cleanText(getField(row, columnMap, "지역")),
-          group,
+          customer: cleanText(getField(row, columnMap, "거래처")),
+          group: cleanText(getField(row, columnMap, "그룹")),
         });
       }
     }
@@ -1022,10 +633,6 @@
     const memoCount = rows.filter((row) => row.note || row.note1).length;
     const zeroQuantityCount = rows.filter((row) => row.quantity === 0).length;
     const negativeQuantityCount = rows.filter((row) => row.quantity < 0).length;
-    const invalidQuantityCount = rows.filter((row) => {
-      const parsed = parseNumericCell(row.quantity);
-      return !parsed.ok || parsed.blank;
-    }).length;
     if (zeroQuantityCount > 0 || negativeQuantityCount > 0) {
       warnings.push(
         createIssue(
@@ -1038,7 +645,6 @@
 
     return {
       kind: "orders",
-      ...(explicitMapping ? { explicitMapping } : {}),
       fileName: cleanText(input.fileName) || "주문현황.xlsx",
       sheetName: cleanText(input.sheetName),
       fileHash: cleanText(input.fileHash),
@@ -1053,18 +659,13 @@
       memoCount,
       zeroQuantityCount,
       negativeQuantityCount,
-      invalidQuantityCount,
       errors,
       warnings,
       headerMapping: {
         schemaVersion: "shipping-order-header-mapping/v1",
         normalization: "unicode-letters-numbers-case-insensitive/v1",
-        sourceHeaderSignature,
         columns: headerResolution.mappedColumns,
         duplicateCanonicalFields: headerResolution.duplicateCanonicalFields,
-        columnConflicts,
-        warehouseColumnConflict,
-        selectedSourceColumns,
         unmatchedHeaders: headerResolution.unmatchedHeaders,
       },
       sourceMatrix: prepareSourceMatrix(
@@ -1081,9 +682,8 @@
     const displayMatrix = cloneMatrix(input.displayMatrix || input.rawMatrix || []);
     const rawMatrix = cloneMatrix(input.rawMatrix || input.displayMatrix || []);
     const headerAliases = input.headerAliases || {};
-    const explicitMapping = explicitFileStructure(input, displayMatrix);
-    const headerRowIndex = explicitMapping?.headerRowIndex ?? findBestInventoryHeaderRow(displayMatrix, headerAliases);
-    const headerRow = explicitMapping?.effectiveHeaders || (headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : []);
+    const headerRowIndex = findBestInventoryHeaderRow(displayMatrix, headerAliases);
+    const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveInventoryHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
     const columns = describeInventoryColumns(headerRow, headerAliases);
@@ -1116,7 +716,7 @@
     const rows = [];
     const occurrences = new Map();
     if (headerRowIndex >= 0 && missingColumns.length === 0 && warehouseColumns.length > 0) {
-      for (let rowIndex = explicitMapping?.dataStartRowIndex ?? headerRowIndex + 1; rowIndex <= (explicitMapping?.dataEndRowIndex ?? displayMatrix.length - 1); rowIndex += 1) {
+      for (let rowIndex = headerRowIndex + 1; rowIndex < displayMatrix.length; rowIndex += 1) {
         const row = displayMatrix[rowIndex] || [];
         const code = normalizeProductCode(getField(row, columnMap, "품목코드"));
         const rowLabel = cleanText(row[0]);
@@ -1262,7 +862,6 @@
 
     return {
       kind: "inventory",
-      ...(explicitMapping ? { explicitMapping } : {}),
       fileName: cleanText(input.fileName) || "창고별재고.xlsx",
       sheetName: cleanText(input.sheetName),
       fileHash: cleanText(input.fileHash),
@@ -1347,24 +946,7 @@
       workspaceSchemaVersion: workspace.schemaVersion,
       updatedAt: cleanText(updatedAt) || new Date().toISOString(),
       workspace,
-      ui: {
-        activePreview: cleanText(ui.activePreview) || "validation",
-        selectedProductCode: normalizeProductCode(ui.selectedProductCode),
-        selectedDeliveryKey: cleanText(ui.selectedDeliveryKey),
-        selectedVoucherIds: Array.isArray(ui.selectedVoucherIds) ? ui.selectedVoucherIds.map(cleanText).filter(Boolean) : [],
-        voucherFilters: ui.voucherFilters && typeof ui.voucherFilters === "object"
-          ? {
-              fromDate: cleanText(ui.voucherFilters.fromDate),
-              toDate: cleanText(ui.voucherFilters.toDate),
-              warehouse: cleanText(ui.voucherFilters.warehouse),
-              manager: cleanText(ui.voucherFilters.manager),
-              query: cleanText(ui.voucherFilters.query),
-            }
-          : {},
-        voucherDraft: ui.voucherDraft && typeof ui.voucherDraft === "object"
-          ? JSON.parse(JSON.stringify(ui.voucherDraft))
-          : {},
-      },
+      ui: { activePreview: cleanText(ui.activePreview) || "validation" },
       settings: {
         cloudUrl: cleanText(settings.cloudUrl),
         savedBy: cleanText(settings.savedBy),
@@ -1411,21 +993,8 @@
     return reread;
   }
 
-  function isRecoveryPublicationCommitted(record, pointer = "", recoveryMeta = {}) {
-    const publicationState = cleanText(record?.publicationState || "PUBLISHED");
-    if (publicationState !== "PUBLISHED") return false;
-    const transactionId = cleanText(record?.inventoryApplyTransactionId);
-    if (!transactionId) return true;
-    if (cleanText(record?.inventoryApplyCommittedAt)) return true;
-    return cleanText(pointer) === cleanText(record?.recordId)
-      && cleanText(recoveryMeta?.recordId) === cleanText(record?.recordId)
-      && cleanText(recoveryMeta?.inventoryApplyTransactionId) === transactionId;
-  }
-
-  function selectLatestVerifiedRecovery(candidates, pointer = "", recoveryMeta = {}) {
-    const list = (Array.isArray(candidates) ? [...candidates] : []).filter((candidate) => {
-      return isRecoveryPublicationCommitted(candidate?.record, pointer, recoveryMeta);
-    });
+  function selectLatestVerifiedRecovery(candidates, pointer = "") {
+    const list = Array.isArray(candidates) ? [...candidates] : [];
     const timestamp = (candidate) => {
       const parsed = Date.parse(candidate?.record?.updatedAt || "");
       return Number.isFinite(parsed) ? parsed : 0;
@@ -1524,21 +1093,6 @@
     ];
     const notices = collectNotices(ordersParsed?.rows || []);
     const duplicateCodes = inventoryParsed?.duplicateCodes || [];
-    const orderReview = getOrderReviewState(ordersParsed || {});
-    if (orderReview.hasDuplicateOrders) {
-      warnings.push(createIssue(
-        "ORDER_DUPLICATE_REVIEW_REQUIRED",
-        `${orderReview.duplicateOrderCount}건의 주문 원본 식별정보가 중복되었습니다. 주문서 중복 여부를 확인하세요.`,
-        { duplicateGroups: orderReview.duplicateGroups },
-      ));
-    }
-    if (orderReview.hasQuantityErrors && !warnings.some((issue) => issue.code === "ORDER_QUANTITY_INVALID")) {
-      warnings.push(createIssue(
-        "ORDER_QUANTITY_INVALID",
-        `${orderReview.quantityErrorCount}행의 주문수량 입력 오류가 있습니다. 계산에서 제외되며 수정 전까지 저장·Excel 출력이 차단됩니다.`,
-        { quantityIssues: orderReview.quantityIssues },
-      ));
-    }
 
     return {
       canAnalyze: Boolean(ordersParsed && inventoryParsed && errors.length === 0),
@@ -1549,10 +1103,6 @@
       unmatchedCount: unmatchedCodes.length,
       duplicateCodes,
       duplicateCount: duplicateCodes.length,
-      duplicateOrderCount: orderReview.duplicateOrderCount,
-      quantityErrorCount: orderReview.quantityErrorCount,
-      hasDuplicateOrders: orderReview.hasDuplicateOrders,
-      hasQuantityErrors: orderReview.hasQuantityErrors,
       notices,
       noticeCount: notices.length,
       memoIssues: notices,
@@ -1669,10 +1219,6 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     if (!Array.isArray(workspace.purchaseManagement)) workspace.purchaseManagement = [];
-    if (workspace.inventoryApplicationMode === "TOTAL_ONLY") {
-      workspace.purchaseManagement = [];
-      return workspace;
-    }
     const mainCodes = new Set(
       workspace.purchaseManagement
         .filter((row) => row?.rowType === "main")
@@ -1695,7 +1241,7 @@
     const source = workspace?.sourceFiles?.inventory || {};
     const matrix = Array.isArray(source.matrix) ? source.matrix : [];
     const headerRowIndex = Math.max(0, Number(source.headerRowIndex) || 0);
-    const derived = describeInventoryColumns(source.explicitMapping?.effectiveHeaders || matrix[headerRowIndex] || []);
+    const derived = describeInventoryColumns(matrix[headerRowIndex] || []);
     const stored = Array.isArray(source.columns) ? source.columns : [];
     if (stored.length !== derived.length) return derived;
     const storedIsValid = stored.every((column, index) =>
@@ -1788,10 +1334,6 @@
   }
 
   function calculateInventoryTotal(workspace, inventory, columns, overrideMap) {
-    if (workspace?.inventoryApplicationMode === "TOTAL_ONLY") {
-      const total = Number(inventory?.inventoryTotal ?? inventory?.sourceInventoryTotal);
-      return Number.isFinite(total) ? roundQuantity(total) : 0;
-    }
     return roundQuantity(
       columns
         .filter((column) => column.role === "warehouseQuantity")
@@ -1857,82 +1399,6 @@
     return workspace.substitutionHistory;
   }
 
-  function ensureSystemHistory(workspace) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    const existing = workspace.systemHistory;
-    if (
-      !existing ||
-      existing.schemaVersion !== SYSTEM_HISTORY_SCHEMA_VERSION ||
-      !Array.isArray(existing.events)
-    ) {
-      workspace.systemHistory = {
-        schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION,
-        events: [],
-      };
-    }
-    return workspace.systemHistory;
-  }
-
-  function comparableHistoryValue(value) {
-    if (value === null || value === undefined) return "";
-    return String(value);
-  }
-
-  function displayHistoryValue(value) {
-    const text = comparableHistoryValue(value);
-    return text === "" ? "빈값" : text;
-  }
-
-  function appendSystemEditEvent(workspace, detail, options = {}) {
-    if (options.recordHistory !== true) return null;
-    const previousValue = comparableHistoryValue(detail.previousValue);
-    const nextValue = comparableHistoryValue(detail.nextValue);
-    if (previousValue === nextValue) return null;
-    const history = ensureSystemHistory(workspace);
-    const occurredAt = substitutionEventTime(options.occurredAt);
-    const productCode = normalizeProductCode(detail.productCode);
-    const field = cleanText(detail.field);
-    const event = {
-      eventId: `cell-edit-${stableTextHash([
-        occurredAt,
-        history.events.length + 1,
-        productCode,
-        field,
-        previousValue,
-        nextValue,
-      ].join("|"))}`,
-      kind: "CELL_EDITED",
-      occurredAt,
-      actor: cleanText(options.actor) || "사용자",
-      productCode,
-      sourceRowNumber: Number(detail.sourceRowNumber) || 0,
-      field,
-      fieldLabel: cleanText(detail.fieldLabel) || field || "정보",
-      previousValue,
-      nextValue,
-    };
-    history.events.push(event);
-    return event;
-  }
-
-  function getSystemEditMessages(workspace, productCode) {
-    const code = normalizeProductCode(productCode);
-    if (!code) return [];
-    return ensureSystemHistory(workspace).events
-      .filter((event) => event?.kind === "CELL_EDITED" && normalizeProductCode(event?.productCode) === code)
-      .slice()
-      .reverse()
-      .map((event) => ({
-        eventId: cleanText(event?.eventId),
-        kind: "CELL_EDITED",
-        occurredAt: cleanText(event?.occurredAt),
-        actor: cleanText(event?.actor) || "사용자",
-        message: `[정보수정] ${cleanText(event?.fieldLabel) || "정보"} · ${displayHistoryValue(event?.previousValue)} → ${displayHistoryValue(event?.nextValue)}`,
-      }));
-  }
-
   function productSnapshot(row) {
     return {
       productCode: normalizeProductCode(row?.productCode),
@@ -1984,29 +1450,12 @@
       });
   }
 
-  function getSystemMessages(workspace, productCode, reviewState = null) {
-    const code = normalizeProductCode(productCode);
-    if (!code) return [];
-    const review = reviewState || getOrderReviewState(workspace);
-    const duplicateCodes = new Set(review.duplicateProductCodes || []);
-    const quantityErrorCodes = new Set(review.quantityErrorProductCodes || []);
-    const messages = [];
-    if (duplicateCodes.has(code)) {
-      messages.push({ kind: "ORDER_DUPLICATE_REVIEW", message: DUPLICATE_ORDER_REVIEW_MESSAGE });
-    }
-    if (quantityErrorCodes.has(code)) {
-      messages.push({ kind: "ORDER_QUANTITY_REVIEW", message: QUANTITY_INPUT_REVIEW_MESSAGE });
-    }
-    return messages;
-  }
-
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const columns = getInventoryColumnDescriptors(workspace);
     const overrideMap = getInventoryOverrideMap(workspace, columns);
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryAliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
-    const orderReview = getOrderReviewState(workspace);
     const orderProducts = new Map();
     (Array.isArray(workspace?.orders) ? workspace.orders : []).forEach((order) => {
       const productCode = normalizeProductCode(order?.productCode);
@@ -2018,7 +1467,6 @@
           specification: cleanText(order?.specification),
           unit: cleanText(order?.sourceUnit),
           orderQuantity: 0,
-          unitGroups: new Map(),
         });
       }
       const product = orderProducts.get(productCode);
@@ -2026,38 +1474,18 @@
       if (!product.specification) product.specification = cleanText(order?.specification);
       if (!product.unit) product.unit = cleanText(order?.sourceUnit);
       const parsed = parseNumericCell(order?.quantity);
-      if (parsed.ok && !parsed.blank) {
-        product.orderQuantity = roundQuantity(product.orderQuantity + parsed.value);
-        const unit = cleanText(order?.sourceUnit);
-        const unitKey = normalizedUnit(unit) || "__UNIT_UNSPECIFIED__";
-        const group = product.unitGroups.get(unitKey) || { key: unitKey, unit, quantity: 0, rowCount: 0 };
-        group.quantity = roundQuantity(group.quantity + parsed.value);
-        group.rowCount += 1;
-        product.unitGroups.set(unitKey, group);
-      }
+      product.orderQuantity = roundQuantity(
+        product.orderQuantity + (parsed.ok ? parsed.value : 0),
+      );
     });
     const inventoryCodes = new Set();
     const rows = (Array.isArray(workspace.inventory) ? workspace.inventory : []).map((inventory) => {
       const productCode = normalizeProductCode(inventory.productCode);
-      const systemMessages = getSystemMessages(workspace, productCode, orderReview);
+      const systemMessages = getSubstitutionMessages(workspace, productCode);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
-      const orderProduct = orderProducts.get(productCode);
-      const unitComparison = orderProduct
-        ? productUnitComparison(orderProduct.unitGroups, inventory)
-        : {
-            orderUnit: "", inventoryUnit: cleanText(inventory?.unit), mixedOrderUnits: false,
-            orderUnitUnspecified: false,
-            inventoryUnitUnspecified: !normalizedUnit(inventory?.unit),
-            unitUnspecified: !normalizedUnit(inventory?.unit), inventoryUnitMismatch: false,
-            orderQuantityComparable: true, quantityComparable: true,
-          };
-      const orderQuantity = orderProduct
-        ? (unitComparison.orderQuantityComparable ? orderProduct.orderQuantity : null)
-        : 0;
-      const remainingQuantity = unitComparison.quantityComparable
-        ? roundQuantity(stockTotal - orderQuantity)
-        : null;
+      const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
+      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
       const values = columns.map((column) => {
         if (column.role === "orderQuantity") return orderQuantity;
         if (column.role === "calculatedQuantity") {
@@ -2069,17 +1497,12 @@
         productCode,
         productName: cleanText(inventory.productName),
         specification: cleanText(inventory.specification),
-        unit: cleanText(inventory.unit),
         values,
         inventoryTotal: stockTotal,
         stockTotal,
         orderQuantity,
         remainingQuantity,
-        purchaseNeed: typeof remainingQuantity === "number" && remainingQuantity < 0
-          ? roundQuantity(Math.abs(remainingQuantity))
-          : unitComparison.quantityComparable ? 0 : null,
-        ...unitComparison,
-        totalOrderQuantityDisplay: unitGroupDisplay(orderProduct?.unitGroups),
+        purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -2091,7 +1514,7 @@
     });
     orderProducts.forEach((product, productCode) => {
       if (inventoryCodes.has(productCode)) return;
-      const systemMessages = getSystemMessages(workspace, productCode, orderReview);
+      const systemMessages = getSubstitutionMessages(workspace, productCode);
       const inventory = {
         productCode,
         productName: product.productName,
@@ -2119,23 +1542,12 @@
         productCode,
         productName: product.productName,
         specification: product.specification,
-        unit: product.unit,
         values,
         inventoryTotal: stockTotal,
         stockTotal,
         orderQuantity,
         remainingQuantity,
         purchaseNeed: null,
-        quantityComparable: false,
-        orderQuantityComparable: product.unitGroups.size === 1 && Boolean(normalizedUnit(product.unit)),
-        mixedOrderUnits: product.unitGroups.size > 1,
-        orderUnitUnspecified: product.unitGroups.size !== 1 || !normalizedUnit(product.unit),
-        inventoryUnitUnspecified: true,
-        unitUnspecified: true,
-        inventoryUnitMismatch: false,
-        orderUnit: product.unit,
-        inventoryUnit: "",
-        totalOrderQuantityDisplay: unitGroupDisplay(product.unitGroups),
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
@@ -2145,7 +1557,7 @@
         inventoryMissing: true,
       });
     });
-    const negativeCount = rows.filter((row) => typeof row.remainingQuantity === "number" && row.remainingQuantity < 0).length;
+    const negativeCount = rows.filter((row) => row.remainingQuantity < 0).length;
     if (workspace.stats && typeof workspace.stats === "object") {
       workspace.stats.inventoryNegativeCount = negativeCount;
     }
@@ -2153,16 +1565,6 @@
   }
 
   function getShortageCategoryContext(workspace) {
-    if (workspace?.inventoryApplicationMode === "TOTAL_ONLY") {
-      return {
-        shortageCount: 0,
-        shortageProductCodes: [],
-        candidateProductCodes: [],
-        purchaseActionCount: 0,
-        purchaseActionProductCodes: [],
-        categories: [],
-      };
-    }
     const inventoryRows = getInventoryViewRows(workspace).rows;
     const shortageRows = inventoryRows.filter((row) =>
       row.orderQuantity > 0 && row.remainingQuantity < 0,
@@ -2366,7 +1768,7 @@
     return { columns, headers: columns.map((column) => column.header), rows };
   }
 
-  function setInventoryOverride(workspace, productCode, columnKey, value, options = {}) {
+  function setInventoryOverride(workspace, productCode, columnKey, value) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
@@ -2374,33 +1776,19 @@
     const columns = getInventoryColumnDescriptors(workspace);
     const column = columns.find((candidate) => candidate.key === String(columnKey || ""));
     if (!code || !column?.editable) throw new Error("수정할 수 없는 재고 셀입니다.");
-    const source = [
+    if (![
       ...(Array.isArray(workspace.inventory) ? workspace.inventory : []),
       ...(Array.isArray(workspace.orders) ? workspace.orders : []),
-    ].find((row) => normalizeProductCode(row?.productCode) === code);
-    if (!source) {
+    ].some((row) => normalizeProductCode(row?.productCode) === code)) {
       throw new Error("수정할 재고 품목을 찾지 못했습니다.");
     }
     const normalized = normalizeInventoryOverrideValue(column, value);
     if (!normalized.ok) throw new Error(`${column.header} 값은 숫자 또는 빈칸이어야 합니다.`);
-    const previousValue = getEffectiveInventoryCell(
-      workspace,
-      source,
-      column,
-      getInventoryOverrideMap(workspace, columns),
-    );
     const store = createInventoryOverrideStore(workspace);
     store.cells = store.cells.filter((cell) =>
       !(normalizeProductCode(cell?.productCode) === code && cell?.columnKey === column.key),
     );
     store.cells.push({ productCode: code, columnKey: column.key, value: normalized.value });
-    appendSystemEditEvent(workspace, {
-      productCode: code,
-      field: `inventory:${column.key}`,
-      fieldLabel: column.header,
-      previousValue,
-      nextValue: normalized.value,
-    }, options);
     getInventoryViewRows(workspace);
     return normalized.value;
   }
@@ -2429,386 +1817,13 @@
     return { columns: warehouseColumns, rows };
   }
 
-  function previewSourceFile(parsed, kind) {
-    if (!parsed) return null;
-    return {
-      fileName: parsed.fileName,
-      sheetName: parsed.sheetName,
-      headerRowIndex: parsed.headerRowIndex,
-      rowCount: parsed.rowCount,
-      sha256: parsed.fileHash,
-      matrix: parsed.sourceMatrix,
-      productCodeColumnIndex: parsed.productCodeColumnIndex,
-      headerMapping: parsed.headerMapping,
-      explicitMapping: parsed.explicitMapping,
-      columns: parsed.columns,
-      sourceKind: cleanText(parsed.sourceKind),
-      sourceSchemaVersion: cleanText(parsed.sourceSchemaVersion),
-      sourceEvidence: parsed.sourceEvidence ? JSON.parse(JSON.stringify(parsed.sourceEvidence)) : undefined,
-      orderId: cleanText(parsed.orderId),
-      orderNo: cleanText(parsed.orderNo),
-      orderRevision: Number(parsed.orderRevision) || 0,
-      orderSnapshotHash: cleanText(parsed.orderSnapshotHash),
-      orderUpdatedAt: cleanText(parsed.orderUpdatedAt),
-      sourceRegistry: parsed.sourceRegistry ? JSON.parse(JSON.stringify(parsed.sourceRegistry)) : undefined,
-      sourceDocuments: Array.isArray(parsed.sourceDocuments) ? JSON.parse(JSON.stringify(parsed.sourceDocuments)) : undefined,
-      coverage: parsed.coverage ? JSON.parse(JSON.stringify(parsed.coverage)) : undefined,
-      kind,
-    };
-  }
-
-  function previewSourceFingerprint(ordersParsed, inventoryParsed, options = {}) {
-    const supplied = cleanText(options.sourceFingerprint).toLowerCase();
-    if (/^[a-f0-9]{64}$/.test(supplied)) return supplied;
-    const candidates = [
-      ordersParsed?.fileHash,
-      ordersParsed?.orderSnapshotHash,
-      inventoryParsed?.fileHash,
-      options.purchases?.fileHash,
-      options.sales?.fileHash,
-    ];
-    return candidates
-      .map((value) => cleanText(value).toLowerCase())
-      .find((value) => /^[a-f0-9]{64}$/.test(value)) || "";
-  }
-
-  function normalizedUnit(value) {
-    return cleanText(value).replace(/\s+/g, "").toLocaleUpperCase("ko-KR");
-  }
-
-  function orderUnitSummary(rows) {
-    const groupsByCode = new Map();
-    (rows || []).forEach((row) => {
-      const productCode = normalizeProductCode(row?.productCode);
-      const parsed = parseNumericCell(row?.quantity);
-      if (!productCode || !parsed.ok || parsed.blank) return;
-      if (!groupsByCode.has(productCode)) groupsByCode.set(productCode, new Map());
-      const groups = groupsByCode.get(productCode);
-      const label = cleanText(row?.sourceUnit);
-      const key = normalizedUnit(label) || "__UNIT_UNSPECIFIED__";
-      const current = groups.get(key) || { key, unit: label, quantity: 0, rowCount: 0 };
-      current.quantity = roundQuantity(current.quantity + parsed.value);
-      current.rowCount += 1;
-      groups.set(key, current);
-    });
-    return groupsByCode;
-  }
-
-  function unitGroupDisplay(groups) {
-    return [...(groups?.values?.() || [])]
-      .map((group) => `${group.quantity}${group.unit ? ` ${group.unit}` : " (단위 미지정)"}`)
-      .join(" / ");
-  }
-
-  function productUnitComparison(groups, inventory) {
-    const orderUnits = [...(groups?.values?.() || [])];
-    const orderUnit = orderUnits.length === 1 ? cleanText(orderUnits[0].unit) : "";
-    const inventoryUnit = cleanText(inventory?.unit);
-    const mixedOrderUnits = orderUnits.length > 1;
-    const orderUnitUnspecified = orderUnits.length !== 1 || !normalizedUnit(orderUnit);
-    const inventoryUnitUnspecified = !normalizedUnit(inventoryUnit);
-    const unitUnspecified = orderUnitUnspecified || inventoryUnitUnspecified;
-    const inventoryUnitMismatch = Boolean(
-      orderUnits.length === 1 && orderUnit && inventoryUnit && normalizedUnit(orderUnit) !== normalizedUnit(inventoryUnit),
-    );
-    const orderQuantityComparable = Boolean(orderUnits.length === 1 && normalizedUnit(orderUnit));
-    return {
-      orderUnit,
-      inventoryUnit,
-      mixedOrderUnits,
-      orderUnitUnspecified,
-      inventoryUnitUnspecified,
-      unitUnspecified,
-      inventoryUnitMismatch,
-      orderQuantityComparable,
-      quantityComparable: Boolean(
-        inventory && orderQuantityComparable && !orderUnitUnspecified &&
-        !inventoryUnitUnspecified && !inventoryUnitMismatch
-      ),
-    };
-  }
-
-  function rebuildPreviewWorkspaceFromOrders(workspace) {
-    const inventoryByCode = new Map(
-      (workspace.inventory || []).map((row) => [normalizeProductCode(row?.productCode), row]),
-    );
-    const totalsByCode = new Map();
-    const unitsByCode = orderUnitSummary(workspace.orders || []);
-    let totalOrderQuantity = 0;
-    let zeroOrderQuantityCount = 0;
-    let negativeOrderQuantityCount = 0;
-    (workspace.orders || []).forEach((row) => {
-      const parsed = parseNumericCell(row?.quantity);
-      const quantity = parsed.ok && !parsed.blank ? parsed.value : null;
-      if (quantity !== null) {
-        totalOrderQuantity = roundQuantity(totalOrderQuantity + quantity);
-        if (quantity === 0) zeroOrderQuantityCount += 1;
-        if (quantity < 0) negativeOrderQuantityCount += 1;
-      }
-      const code = normalizeProductCode(row?.productCode);
-      if (code && quantity !== null) {
-        totalsByCode.set(code, roundQuantity((totalsByCode.get(code) || 0) + quantity));
-      }
-    });
-    workspace.allocations = (workspace.orders || []).map((row) => {
-      const code = normalizeProductCode(row?.productCode);
-      const inventory = inventoryByCode.get(code);
-      const quantity = parseNumericCell(row?.quantity);
-      const stockTotal = inventory && typeof inventory.inventoryTotal === "number"
-        ? inventory.inventoryTotal
-        : inventory && typeof inventory.sourceInventoryTotal === "number"
-          ? inventory.sourceInventoryTotal
-          : null;
-      const totalForProduct = totalsByCode.get(code);
-      const unitGroups = unitsByCode.get(code) || new Map();
-      const unitComparison = productUnitComparison(unitGroups, inventory);
-      const {
-        orderUnit, inventoryUnit, mixedOrderUnits, orderUnitUnspecified,
-        inventoryUnitUnspecified, unitUnspecified, inventoryUnitMismatch,
-      } = unitComparison;
-      const quantityComparable = Boolean(totalForProduct !== undefined && unitComparison.quantityComparable);
-      return {
-        ...row,
-        inventoryMatched: Boolean(inventory),
-        stockTotal,
-        remainingQuantity: stockTotal === null || !quantityComparable
-          ? null
-          : roundQuantity(stockTotal - totalForProduct),
-        totalOrderQuantity: unitComparison.orderQuantityComparable ? totalForProduct ?? null : null,
-        totalOrderQuantityDisplay: unitGroupDisplay(unitGroups),
-        orderUnit: cleanText(row?.sourceUnit),
-        inventoryUnit,
-        mixedOrderUnits,
-        orderUnitUnspecified,
-        inventoryUnitUnspecified,
-        unitUnspecified,
-        inventoryUnitMismatch,
-        quantityComparable,
-        status: !workspace.previewDataState.inventory
-          ? "재고자료 없음"
-          : !inventory
-            ? "재고 미등록"
-            : mixedOrderUnits || unitUnspecified || inventoryUnitMismatch
-              ? "단위 확인"
-              : "재고 비교 준비",
-        parsedQuantity: quantity.ok && !quantity.blank ? quantity.value : null,
-      };
-    });
-    workspace.productSummaries = [...totalsByCode.entries()].map(([productCode, total]) => ({
-      productCode,
-      totalOrderQuantity: productUnitComparison(unitsByCode.get(productCode), inventoryByCode.get(productCode)).orderQuantityComparable ? total : null,
-      totalOrderQuantityDisplay: unitGroupDisplay(unitsByCode.get(productCode)),
-      unitGroups: [...(unitsByCode.get(productCode)?.values?.() || [])],
-      inventoryMatched: inventoryByCode.has(productCode),
-    }));
-    workspace.notices = collectNotices(workspace.orders || []);
-    workspace.memoIssues = workspace.notices;
-    ensureNoticeState(workspace);
-    const orderReview = getOrderReviewState({
-      rows: workspace.orders || [],
-      source: workspace.sourceFiles?.orders || {},
-    });
-    workspace.inputValidation = {
-      canAnalyze: Boolean(workspace.previewDataState.orders && workspace.previewDataState.inventory && !orderReview.hasQuantityErrors),
-      blockingCount: orderReview.quantityErrorCount,
-      errors: [], warnings: [], unmatchedCodes: [], unmatchedCount: 0, duplicateCodes: [], duplicateCount: 0,
-      duplicateOrderCount: orderReview.duplicateOrderCount,
-      quantityErrorCount: orderReview.quantityErrorCount,
-      hasDuplicateOrders: orderReview.hasDuplicateOrders,
-      hasQuantityErrors: orderReview.hasQuantityErrors,
-      notices: workspace.notices,
-      noticeCount: workspace.notices.length,
-      memoIssues: workspace.notices,
-      memoCount: workspace.notices.length,
-    };
-    workspace.stats = {
-      orderRowCount: workspace.orders.length,
-      productCount: totalsByCode.size,
-      inventoryRowCount: workspace.inventory.length,
-      totalOrderQuantity,
-      totalPurchaseNeed: 0,
-      unmatchedCount: 0,
-      duplicateCount: 0,
-      duplicateOrderCount: orderReview.duplicateOrderCount,
-      quantityErrorCount: orderReview.quantityErrorCount,
-      noticeCount: workspace.notices.length,
-      memoCount: workspace.notices.length,
-      zeroOrderQuantityCount,
-      negativeOrderQuantityCount,
-      mixedUnitProductCount: [...unitsByCode.values()].filter((groups) => groups.size > 1).length,
-    };
-    return workspace;
-  }
-
-  function createPreviewWorkspace(ordersParsed = null, inventoryParsed = null, options = {}) {
-    const workspace = {
-      schemaVersion: WORKSPACE_SCHEMA_VERSION,
-      engineVersion: ENGINE_VERSION,
-      workspaceMode: PREVIEW_WORKSPACE_MODE,
-      createdAt: options.createdAt || new Date().toISOString(),
-      sourceFingerprint: previewSourceFingerprint(ordersParsed, inventoryParsed, options),
-      planId: "",
-      basisDate: "",
-      basisDateStatus: "missing",
-      sourceFiles: {
-        orders: previewSourceFile(ordersParsed, "orders"),
-        inventory: previewSourceFile(inventoryParsed, "inventory"),
-      },
-      previewDataState: {
-        orders: Boolean(ordersParsed?.rows),
-        inventory: Boolean(inventoryParsed?.rows),
-        purchases: Boolean(options.purchases?.rows),
-        sales: Boolean(options.sales?.rows),
-      },
-      // Parsed input is immutable evidence. Workbench edits must never mutate
-      // the baseline used by a later same-revision or changed-revision merge.
-      orders: Array.isArray(ordersParsed?.rows) ? JSON.parse(JSON.stringify(ordersParsed.rows)) : [],
-      inventory: Array.isArray(inventoryParsed?.rows) ? JSON.parse(JSON.stringify(inventoryParsed.rows)) : [],
-      inventoryOverrides: { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
-      substitutionHistory: { schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION, events: [] },
-      systemHistory: options.systemHistory && Array.isArray(options.systemHistory.events)
-        ? JSON.parse(JSON.stringify(options.systemHistory))
-        : { schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION, events: [] },
-      noticeAcknowledgements: { schemaVersion: "shipping-notice-acknowledgements/v1", acknowledgedIds: [] },
-      orderOpsInputs: {
-        schemaVersion: "orderops-analysis-inputs/v1",
-        purchases: options.purchases || null,
-        sales: options.sales || null,
-      },
-      purchaseManagement: [],
-      validationResults: [],
-    };
-    return rebuildPreviewWorkspaceFromOrders(workspace);
-  }
-
-  function replaceWorkspaceInventory(workspace, inventoryParsed, options = {}) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    if (!inventoryParsed || inventoryParsed.kind !== "inventory" || !Array.isArray(inventoryParsed.rows) || inventoryParsed.errors?.length) {
-      throw new Error("검증되지 않은 재고자료는 작업공간에 적용할 수 없습니다.");
-    }
-    const applicationMode = cleanText(options.applicationMode || "ERP_WAREHOUSE");
-    if (!INVENTORY_APPLICATION_MODES.includes(applicationMode)) throw new Error("지원하지 않는 재고 적용 모드입니다.");
-    const sourceFingerprint = cleanText(options.sourceFingerprint).toLowerCase();
-    if (!/^[a-f0-9]{64}$/.test(sourceFingerprint)) throw new Error("새 재고를 포함한 원본 식별정보가 올바르지 않습니다.");
-    const reference = JSON.parse(JSON.stringify(options.sourceReference || {}));
-    if (
-      reference.schemaVersion !== INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION ||
-      !/^[a-f0-9]{64}$/.test(cleanText(reference.hash).toLowerCase()) ||
-      !["ORDEROPS_ERP", "DATAOPS_FINALIZED"].includes(cleanText(reference.sourceType)) ||
-      (reference.applicationMode && cleanText(reference.applicationMode) !== applicationMode)
-    ) {
-      throw new Error("재고 출처 reference가 올바르지 않습니다.");
-    }
-    const previousInventory = new Map((workspace.inventory || []).map((row) => [normalizeProductCode(row?.productCode), row]));
-    const previousColumns = new Map(getInventoryColumnDescriptors(workspace).map((column) => [column.key, column]));
-    const previousOverrides = JSON.parse(JSON.stringify(
-      workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
-    ));
-    const candidate = JSON.parse(JSON.stringify(workspace));
-    const previousWorkspaceMode = candidate.inventoryPreviousWorkspaceMode ||
-      (candidate.workspaceMode === PREVIEW_WORKSPACE_MODE ? PREVIEW_WORKSPACE_MODE : "ANALYZED");
-    const orderQSourceRecovery = JSON.parse(JSON.stringify(candidate.orderQSourceRecovery || null));
-    candidate.sourceFingerprint = sourceFingerprint;
-    if (!candidate.sourceFiles || typeof candidate.sourceFiles !== "object") candidate.sourceFiles = {};
-    candidate.sourceFiles.inventory = previewSourceFile(inventoryParsed, "inventory");
-    candidate.inventory = inventoryParsed.rows.map((row) => ({ ...row }));
-    candidate.inventoryOverrides = { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] };
-    const overridePolicy = options.inventoryOverridePolicy === "PRESERVE_COMPATIBLE" ? "PRESERVE_COMPATIBLE" : "DISCARD";
-    if (overridePolicy === "PRESERVE_COMPATIBLE") {
-      const nextInventory = new Map(candidate.inventory.map((row) => [normalizeProductCode(row?.productCode), row]));
-      const nextColumns = new Map(getInventoryColumnDescriptors(candidate).map((column) => [column.key, column]));
-      candidate.inventoryOverrides.cells = (previousOverrides.cells || []).filter((cell) => {
-        const code = normalizeProductCode(cell?.productCode);
-        const previousRow = previousInventory.get(code);
-        const nextRow = nextInventory.get(code);
-        const previousColumn = previousColumns.get(String(cell?.columnKey || ""));
-        const nextColumn = nextColumns.get(String(cell?.columnKey || ""));
-        const previousUnit = normalizedUnit(previousRow?.unit);
-        const nextUnit = normalizedUnit(nextRow?.unit);
-        return Boolean(
-          previousRow && nextRow && previousUnit && previousUnit === nextUnit &&
-          previousColumn?.editable && nextColumn?.editable &&
-          previousColumn.role === nextColumn.role &&
-          previousColumn.header === nextColumn.header &&
-          previousColumn.sourceIndex === nextColumn.sourceIndex
-        );
-      });
-    }
-    candidate.inventoryOverrideDisposition = {
-      schemaVersion: "shipping-inventory-override-disposition/v1",
-      policy: overridePolicy,
-      sourceCount: (previousOverrides.cells || []).length,
-      preservedCount: candidate.inventoryOverrides.cells.length,
-      discardedCount: Math.max(0, (previousOverrides.cells || []).length - candidate.inventoryOverrides.cells.length),
-    };
-    const inventoryOverrideDisposition = candidate.inventoryOverrideDisposition;
-    candidate.inventoryApplicationMode = applicationMode;
-    candidate.inventorySourceReference = reference;
-    if (!candidate.previewDataState || typeof candidate.previewDataState !== "object") candidate.previewDataState = {};
-    candidate.previewDataState.inventory = true;
-
-    if (applicationMode === "TOTAL_ONLY") {
-      const referenceBasisDate = parseOrderBasisDate(reference.basisDate);
-      if (candidate.basisDateStatus !== "valid" && referenceBasisDate) {
-        candidate.basisDate = referenceBasisDate;
-        candidate.basisDateStatus = "valid";
-        candidate.uploadDate = referenceBasisDate.replace(/-/g, "");
-      }
-      candidate.planId = buildPlanId(candidate.basisDate, sourceFingerprint);
-      candidate.workspaceMode = PREVIEW_WORKSPACE_MODE;
-      candidate.inventoryPreviousWorkspaceMode = previousWorkspaceMode;
-      candidate.inventoryOverrides = { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] };
-      candidate.inventoryOverrideDisposition.preservedCount = 0;
-      candidate.inventoryOverrideDisposition.discardedCount = candidate.inventoryOverrideDisposition.sourceCount;
-      candidate.purchaseManagement = [];
-      candidate.validationResults = [];
-      rebuildPreviewWorkspaceFromOrders(candidate);
-      candidate.inventoryApplicationMode = applicationMode;
-      candidate.inventorySourceReference = reference;
-      candidate.purchaseManagement = [];
-      candidate.inputValidation.canAnalyze = false;
-      candidate.inputValidation.blockingCount = Math.max(1, Number(candidate.inputValidation.blockingCount) || 0);
-      candidate.inputValidation.errors = [{
-        code: "TOTAL_ONLY_NOT_ALLOCATABLE",
-        message: "총량 비교 재고는 창고별 출고배정·구매제안에 사용할 수 없습니다.",
-      }];
-      candidate.validationResults = [{
-        item: "재고 적용 모드",
-        result: "총량 비교",
-        expected: "창고별 재고",
-        status: "비교 전용",
-        description: "총재고와 총주문 비교만 제공하며 출고배정·구매제안을 만들지 않습니다.",
-      }];
-    } else if (candidate.workspaceMode === PREVIEW_WORKSPACE_MODE && previousWorkspaceMode !== "ANALYZED") {
-      rebuildPreviewWorkspaceFromOrders(candidate);
-      candidate.inventoryApplicationMode = applicationMode;
-      candidate.inventorySourceReference = reference;
-    } else {
-      delete candidate.workspaceMode;
-      rebuildWorkspaceFromOrders(candidate);
-      candidate.inventoryApplicationMode = applicationMode;
-      candidate.inventorySourceReference = reference;
-    }
-    if (applicationMode !== "TOTAL_ONLY") delete candidate.inventoryPreviousWorkspaceMode;
-    candidate.inventoryOverrideDisposition = inventoryOverrideDisposition;
-    if (orderQSourceRecovery) candidate.orderQSourceRecovery = orderQSourceRecovery;
-    return candidate;
-  }
-
   function rebuildWorkspaceFromOrders(workspace) {
-    const preservedWorkbench = {};
-    for (const key of ["orderQSourceRecovery", "shipmentExecutionDraft", "workbenchPreparedShipmentDrafts", "workbenchSourceBaselines", "workbenchUnapplied", "workbenchReconciliation", "workbenchConflicts", "inventorySourceReference", "inventoryApplicationMode", "inventoryOverrideDisposition"]) {
-      if (workspace[key] !== undefined) preservedWorkbench[key] = JSON.parse(JSON.stringify(workspace[key]));
-    }
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
     ));
     const orderOpsInputs = JSON.parse(JSON.stringify(workspace.orderOpsInputs || null));
     const substitutionHistory = JSON.parse(JSON.stringify(ensureSubstitutionHistory(workspace)));
-    const systemHistory = JSON.parse(JSON.stringify(ensureSystemHistory(workspace)));
     const acknowledgedIds = [...ensureNoticeState(workspace).acknowledgedIds];
     const orderSource = workspace.sourceFiles?.orders || {};
     const inventorySource = workspace.sourceFiles?.inventory || {};
@@ -2825,18 +1840,6 @@
       sourceMatrix: orderSource.matrix,
       productCodeColumnIndex: orderSource.productCodeColumnIndex,
       headerMapping: orderSource.headerMapping,
-      explicitMapping: orderSource.explicitMapping,
-      sourceEvidence: orderSource.sourceEvidence,
-      sourceKind: orderSource.sourceKind,
-      sourceSchemaVersion: orderSource.sourceSchemaVersion,
-      orderId: orderSource.orderId,
-      orderNo: orderSource.orderNo,
-      orderRevision: orderSource.orderRevision,
-      orderSnapshotHash: orderSource.orderSnapshotHash,
-      orderUpdatedAt: orderSource.orderUpdatedAt,
-      sourceRegistry: orderSource.sourceRegistry ? JSON.parse(JSON.stringify(orderSource.sourceRegistry)) : undefined,
-      sourceDocuments: Array.isArray(orderSource.sourceDocuments) ? JSON.parse(JSON.stringify(orderSource.sourceDocuments)) : undefined,
-      coverage: orderSource.coverage ? JSON.parse(JSON.stringify(orderSource.coverage)) : undefined,
     };
     const parsedInventory = {
       fileName: inventorySource.fileName,
@@ -2846,18 +1849,12 @@
       rowCount: workspace.inventory.length,
       rows: workspace.inventory.map((row) => ({ ...row })),
       columns: inventorySource.columns || [],
-      explicitMapping: inventorySource.explicitMapping,
       missingColumns: [],
       duplicateCodes: [],
       errors: [],
       warnings: [],
       sourceMatrix: inventorySource.matrix,
       productCodeColumnIndex: inventorySource.productCodeColumnIndex,
-      sourceKind: inventorySource.sourceKind,
-      sourceSchemaVersion: inventorySource.sourceSchemaVersion,
-      sourceEvidence: inventorySource.sourceEvidence
-        ? JSON.parse(JSON.stringify(inventorySource.sourceEvidence))
-        : undefined,
     };
     const rebuilt = analyze(parsedOrders, parsedInventory, {
       sourceFingerprint: workspace.sourceFingerprint,
@@ -2865,11 +1862,9 @@
     });
     rebuilt.inventoryOverrides = inventoryOverrides;
     rebuilt.substitutionHistory = substitutionHistory;
-    rebuilt.systemHistory = systemHistory;
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
-    Object.assign(workspace, preservedWorkbench);
     applyPurchaseInputs(workspace, purchaseInputs);
     const noticeState = ensureNoticeState(workspace);
     const validNoticeIds = new Set(workspace.notices.map((notice) => notice.noticeId));
@@ -2931,9 +1926,6 @@
       occurredAt,
       actor,
       sourceRowNumber: rowNumber,
-      orderId: cleanText(order.orderId),
-      orderRevision: Number(order.orderRevision) || 0,
-      orderItemId: cleanText(order.orderItemId),
       customer: cleanText(order.customer),
       quantity: order.quantity,
       unitPrice: typeof order.unitPrice === "number" ? order.unitPrice : null,
@@ -2979,7 +1971,7 @@
     const targetEvent = activeSubstitutionEvents(history).at(-1);
     if (!targetEvent) throw new Error("취소할 대체출고 작업이 없습니다.");
     const order = (workspace.orders || []).find(
-      (row) => targetEvent.orderItemId ? row.orderItemId === targetEvent.orderItemId : Number(row?.sourceRowNumber) === Number(targetEvent.sourceRowNumber),
+      (row) => Number(row?.sourceRowNumber) === Number(targetEvent.sourceRowNumber),
     );
     if (!order) throw new Error("대체출고를 복원할 주문행을 찾지 못했습니다.");
     if (normalizeProductCode(order.productCode) !== normalizeProductCode(targetEvent.toProduct?.productCode)) {
@@ -3002,9 +1994,6 @@
       occurredAt,
       actor,
       sourceRowNumber: Number(targetEvent.sourceRowNumber),
-      orderId: cleanText(order.orderId || targetEvent.orderId),
-      orderRevision: Number(order.orderRevision || targetEvent.orderRevision) || 0,
-      orderItemId: cleanText(order.orderItemId || targetEvent.orderItemId),
       customer: cleanText(order.customer),
       quantity: order.quantity,
       unitPrice: typeof order.unitPrice === "number" ? order.unitPrice : null,
@@ -3027,191 +2016,36 @@
     return undoEvent;
   }
 
-  function setOrderValue(workspace, sourceRowNumber, field, value, options = {}) {
+  function setOrderValue(workspace, sourceRowNumber, field, value) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     const rowNumber = Number(sourceRowNumber);
     const order = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
     if (!order) throw new Error("수정할 주문행을 찾지 못했습니다.");
-    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value, options);
-    const fieldLabels = {
-      warehouse: "창고",
-      customer: "거래처",
-      group: "그룹",
-      manager: "담당자",
-      quantity: "주문수량",
-      unitPrice: "단가",
-      deliveryNotice: "전달사항(직원)",
-      note: "적요",
-      note1: "적요1",
-    };
-    const previousValue = field === "deliveryNotice"
-      ? originalText(order.note1Original ?? order.note1)
-      : order[field];
+    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value);
     if (field === "quantity") {
       const parsed = parseNumericCell(value);
-      order.quantity = parsed.ok && !parsed.blank ? parsed.value : originalText(value);
+      if (!parsed.ok || parsed.blank) throw new Error("주문수량은 빈값이 아닌 숫자여야 합니다.");
+      order.quantity = parsed.value;
     } else if (field === "unitPrice") {
       const parsed = parseNumericCell(value);
       if (!parsed.ok) throw new Error("단가는 숫자 또는 빈칸이어야 합니다.");
       order.unitPrice = parsed.blank ? null : parsed.value;
     } else if (field === "warehouse") {
       order.warehouse = cleanText(value);
-    } else if (["customer", "group", "manager"].includes(field)) {
-      order[field] = cleanText(value);
-    } else if (field === "deliveryNotice") {
-      order.note1Original = originalText(value);
-      order.note1 = cleanText(value);
     } else if (field === "note") {
       order.noteOriginal = originalText(value);
       order.note = cleanText(value);
-    } else if (field === "note1") {
-      order.note1Original = originalText(value);
-      order.note1 = cleanText(value);
     } else {
       throw new Error("수정할 수 없는 주문 항목입니다.");
     }
     if (["quantity", "unitPrice"].includes(field)) {
-      const parsedQuantity = parseNumericCell(order.quantity);
-      order.supplyAmount = typeof order.unitPrice === "number" && parsedQuantity.ok && !parsedQuantity.blank
-        ? roundQuantity(parsedQuantity.value * order.unitPrice)
+      order.supplyAmount = typeof order.unitPrice === "number"
+        ? roundQuantity(order.quantity * order.unitPrice)
         : null;
     }
-    const nextValue = field === "deliveryNotice" ? order.note1 : order[field];
-    appendSystemEditEvent(workspace, {
-      productCode: order.productCode,
-      sourceRowNumber: rowNumber,
-      field,
-      fieldLabel: fieldLabels[field] || field,
-      previousValue,
-      nextValue,
-    }, options);
-    return workspace.workspaceMode === PREVIEW_WORKSPACE_MODE
-      ? rebuildPreviewWorkspaceFromOrders(workspace)
-      : rebuildWorkspaceFromOrders(workspace);
-  }
-
-  function setCustomerManager(workspace, customerKey, value, options = {}) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    const stableKey = cleanText(customerKey);
-    if (!stableKey) throw new Error("담당자를 변경할 거래처 식별값이 없습니다.");
-    const nextValue = cleanText(value);
-    const targets = (workspace.orders || []).filter((row) => customerWorkKey(row) === stableKey);
-    if (!targets.length) throw new Error("담당자를 변경할 거래처 주문을 찾지 못했습니다.");
-    let changedRowCount = 0;
-    targets.forEach((order) => {
-      const previousValue = cleanText(order.manager);
-      if (previousValue === nextValue) return;
-      changedRowCount += 1;
-      order.customerKey = stableKey;
-      order.manager = nextValue;
-      appendSystemEditEvent(workspace, {
-        productCode: order.productCode,
-        sourceRowNumber: Number(order.sourceRowNumber) || 0,
-        customerKey: stableKey,
-        field: "manager",
-        fieldLabel: "담당자(거래처 단위)",
-        previousValue,
-        nextValue,
-      }, options);
-    });
-    if (changedRowCount > 0) {
-      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
-      else rebuildWorkspaceFromOrders(workspace);
-    }
-    return {
-      customerKey: stableKey,
-      manager: nextValue,
-      affectedRowCount: targets.length,
-      changedRowCount,
-    };
-  }
-
-  function applyOrderPatches(workspace, patches, options = {}) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    if (!Array.isArray(patches) || patches.length === 0) {
-      throw new Error("적용할 주문행 변경이 없습니다.");
-    }
-    const source = workspace.sourceFiles?.orders || {};
-    const rowsById = new Map();
-    (workspace.orders || []).forEach((row, index) => {
-      const workRowId = getOrderWorkRowId(row, source, index);
-      if (rowsById.has(workRowId)) throw new Error("주문행 식별값이 중복되어 일괄 변경을 적용할 수 없습니다.");
-      rowsById.set(workRowId, row);
-    });
-    const allowedFields = new Set(["warehouse", "manager"]);
-    const normalized = [];
-    const seenPatchIds = new Set();
-    patches.forEach((patch) => {
-      const workRowId = cleanText(patch?.workRowId);
-      if (!workRowId || seenPatchIds.has(workRowId)) throw new Error("일괄 변경 대상 주문행이 없거나 중복되었습니다.");
-      seenPatchIds.add(workRowId);
-      const order = rowsById.get(workRowId);
-      if (!order) throw new Error("일괄 변경 대상 주문행이 현재 작업본과 일치하지 않습니다.");
-      const values = patch?.values && typeof patch.values === "object" ? patch.values : {};
-      const fields = Object.keys(values);
-      if (!fields.length || fields.some((field) => !allowedFields.has(field))) {
-        throw new Error("일괄 변경할 수 없는 주문 항목이 포함되었습니다.");
-      }
-      const expected = patch?.expected && typeof patch.expected === "object" ? patch.expected : {};
-      fields.forEach((field) => {
-        if (Object.prototype.hasOwnProperty.call(expected, field) &&
-          comparableHistoryValue(order[field]) !== comparableHistoryValue(expected[field])) {
-          const error = new Error("중앙 작업값이 변경되어 우측 입력을 자동 적용하지 않았습니다.");
-          error.code = "ORDER_PATCH_CONFLICT";
-          error.conflict = {
-            workRowId,
-            voucherId: cleanText(patch?.voucherId),
-            field,
-            expectedValue: expected[field],
-            currentValue: order[field],
-            requestedValue: values[field],
-          };
-          throw error;
-        }
-      });
-      normalized.push({ workRowId, voucherId: cleanText(patch?.voucherId), order, values });
-    });
-
-    let changedRowCount = 0;
-    let changedFieldCount = 0;
-    normalized.forEach(({ workRowId, voucherId, order, values }) => {
-      let rowChanged = false;
-      Object.entries(values).forEach(([field, value]) => {
-        const previousValue = cleanText(order[field]);
-        const nextValue = cleanText(value);
-        if (previousValue === nextValue) return;
-        order[field] = nextValue;
-        rowChanged = true;
-        changedFieldCount += 1;
-        appendSystemEditEvent(workspace, {
-          productCode: order.productCode,
-          sourceRowNumber: Number(order.sourceRowNumber) || 0,
-          workRowId,
-          voucherId,
-          field,
-          fieldLabel: field === "warehouse" ? "창고(선택 전표)" : "담당자(선택 전표)",
-          previousValue,
-          nextValue,
-        }, options);
-      });
-      if (rowChanged) changedRowCount += 1;
-    });
-    if (changedFieldCount > 0) {
-      if (workspace.workspaceMode === PREVIEW_WORKSPACE_MODE) rebuildPreviewWorkspaceFromOrders(workspace);
-      else rebuildWorkspaceFromOrders(workspace);
-    }
-    return {
-      requestedRowCount: normalized.length,
-      changedRowCount,
-      changedFieldCount,
-      recalculated: changedFieldCount > 0,
-    };
+    return rebuildWorkspaceFromOrders(workspace);
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
@@ -3229,7 +2063,6 @@
     const inventoryByCode = new Map(
       inventoryParsed.rows.map((row) => [row.productCode, row]),
     );
-    const unitsByCode = orderUnitSummary(ordersParsed.rows);
     const poolState = new Map(
       inventoryParsed.rows.map((row) => [
         row.productCode,
@@ -3244,45 +2077,36 @@
     for (const order of ordersParsed.rows) {
       const inventory = inventoryByCode.get(order.productCode);
       const matched = Boolean(inventory);
-      const unitGroups = unitsByCode.get(order.productCode) || new Map();
-      const unitComparison = productUnitComparison(unitGroups, inventory);
-      const parsedOrderQuantity = parseNumericCell(order.quantity);
-      const quantityInputValid = parsedOrderQuantity.ok && !parsedOrderQuantity.blank;
-      const calculationQuantity = quantityInputValid ? parsedOrderQuantity.value : 0;
       let wholeAllocation = 0;
       let seoulAllocation = 0;
       let purchaseNeed = null;
       let wholeRemaining = null;
       let seoulRemaining = null;
 
-      if (matched && unitComparison.quantityComparable) {
+      if (matched) {
         const state = poolState.get(order.productCode);
-        wholeAllocation = roundQuantity(Math.min(calculationQuantity, state.wholeRemaining));
+        wholeAllocation = roundQuantity(Math.min(order.quantity, state.wholeRemaining));
         state.wholeRemaining = roundQuantity(state.wholeRemaining - wholeAllocation);
-        const afterWhole = roundQuantity(calculationQuantity - wholeAllocation);
+        const afterWhole = roundQuantity(order.quantity - wholeAllocation);
         seoulAllocation = roundQuantity(Math.min(afterWhole, state.seoulRemaining));
         state.seoulRemaining = roundQuantity(state.seoulRemaining - seoulAllocation);
         purchaseNeed = Math.max(
           0,
-          roundQuantity(calculationQuantity - wholeAllocation - seoulAllocation),
+          roundQuantity(order.quantity - wholeAllocation - seoulAllocation),
         );
         wholeRemaining = state.wholeRemaining;
         seoulRemaining = state.seoulRemaining;
       }
 
-      const reconciliationDifference = matched && unitComparison.quantityComparable
+      const reconciliationDifference = matched
         ? roundQuantity(
-            calculationQuantity - wholeAllocation - seoulAllocation - purchaseNeed,
+            order.quantity - wholeAllocation - seoulAllocation - purchaseNeed,
           )
         : null;
       allocations.push({
         ...order,
-        calculationQuantity,
-        quantityInputValid,
         noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
-        ...unitComparison,
-        totalOrderQuantityDisplay: unitGroupDisplay(unitGroups),
         inventoryProductName: inventory?.productName || "",
         wholeStockRaw: matched ? inventory.wholeStockRaw : null,
         wholeStockAvailable: matched ? inventory.wholeStockAvailable : null,
@@ -3296,13 +2120,14 @@
         purchaseNeed,
         wholeRemaining,
         seoulRemaining,
-        status: matched && !unitComparison.quantityComparable
-          ? "단위 확인"
-          : classifyAllocation(wholeAllocation, seoulAllocation, purchaseNeed, matched),
+        status: classifyAllocation(
+          wholeAllocation,
+          seoulAllocation,
+          purchaseNeed,
+          matched,
+        ),
         reconciliationDifference,
-        matchStatus: matched
-          ? (unitComparison.quantityComparable ? "매칭완료" : "단위 확인")
-          : "재고정보 없음",
+        matchStatus: matched ? "매칭완료" : "재고정보 없음",
         purchase: "",
         supplierDisplay: uniqueSupplierPairs([order])[0]?.display || "",
       });
@@ -3333,37 +2158,22 @@
           managers: [],
           notes: [],
           notes1: [],
-          quantityComparable: allocation.quantityComparable,
-          orderQuantityComparable: allocation.orderQuantityComparable,
-          totalOrderQuantityDisplay: allocation.totalOrderQuantityDisplay,
-          orderUnit: allocation.orderUnit,
-          inventoryUnit: allocation.inventoryUnit,
-          mixedOrderUnits: allocation.mixedOrderUnits,
-          unitUnspecified: allocation.unitUnspecified,
-          inventoryUnitMismatch: allocation.inventoryUnitMismatch,
         });
       }
       const summary = summaryByCode.get(allocation.productCode);
-      if (summary.orderQuantityComparable && allocation.orderQuantityComparable) {
-        summary.totalOrderQuantity = roundQuantity(
-          summary.totalOrderQuantity + allocation.calculationQuantity,
-        );
-      } else {
-        summary.orderQuantityComparable = false;
-        summary.totalOrderQuantity = null;
-      }
+      summary.totalOrderQuantity = roundQuantity(
+        summary.totalOrderQuantity + allocation.quantity,
+      );
       summary.wholeAllocation = roundQuantity(
         summary.wholeAllocation + allocation.wholeAllocation,
       );
       summary.seoulAllocation = roundQuantity(
         summary.seoulAllocation + allocation.seoulAllocation,
       );
-      if (summary.inventoryMatched && summary.quantityComparable) {
+      if (summary.inventoryMatched) {
         summary.purchaseNeed = roundQuantity(
           summary.purchaseNeed + allocation.purchaseNeed,
         );
-      } else if (!summary.quantityComparable) {
-        summary.purchaseNeed = null;
       }
       summary.orderCount += 1;
       summary.customers.push(allocation.customer);
@@ -3375,7 +2185,7 @@
     }
 
     const productSummaries = [...summaryByCode.values()].map((summary) => {
-      const reconciliationDifference = summary.inventoryMatched && summary.quantityComparable
+      const reconciliationDifference = summary.inventoryMatched
         ? roundQuantity(
             summary.totalOrderQuantity -
               summary.wholeAllocation -
@@ -3402,9 +2212,12 @@
         supplierPairs,
         suppliers: supplierPairs.map((pair) => pair.display).join("\n"),
         purchase: "",
-        status: summary.inventoryMatched && !summary.quantityComparable
-          ? "단위 확인"
-          : classifyAllocation(summary.wholeAllocation, summary.seoulAllocation, summary.purchaseNeed, summary.inventoryMatched),
+        status: classifyAllocation(
+          summary.wholeAllocation,
+          summary.seoulAllocation,
+          summary.purchaseNeed,
+          summary.inventoryMatched,
+        ),
         reconciliationDifference,
       };
     });
@@ -3481,11 +2294,11 @@
     });
 
     const totalOrderQuantity = roundQuantity(
-      allocations.reduce((sum, row) => sum + row.calculationQuantity, 0),
+      allocations.reduce((sum, row) => sum + row.quantity, 0),
     );
     const totalMatchedOrderQuantity = roundQuantity(
       allocations.reduce(
-        (sum, row) => sum + (row.inventoryMatched && row.quantityComparable ? row.calculationQuantity : 0),
+        (sum, row) => sum + (row.inventoryMatched ? row.quantity : 0),
         0,
       ),
     );
@@ -3506,12 +2319,9 @@
         0,
       ),
     );
-    const comparableOrderQuantity = roundQuantity(
-      allocations.reduce((sum, row) => sum + (row.orderQuantityComparable ? row.calculationQuantity : 0), 0),
-    );
     const productQuantityDifference = roundQuantity(
-      comparableOrderQuantity -
-        productSummaries.reduce((sum, row) => sum + (typeof row.totalOrderQuantity === "number" ? row.totalOrderQuantity : 0), 0),
+      totalOrderQuantity -
+        productSummaries.reduce((sum, row) => sum + row.totalOrderQuantity, 0),
     );
     const allocationDifference = roundQuantity(
       totalMatchedOrderQuantity - totalAllocatedAndPurchase,
@@ -3519,15 +2329,11 @@
     const negativePurchaseCount = allocations.filter(
       (row) => typeof row.purchaseNeed === "number" && row.purchaseNeed < 0,
     ).length;
-    const zeroOrderQuantityCount = allocations.filter(
-      (row) => row.quantityInputValid && row.calculationQuantity === 0,
-    ).length;
-    const negativeOrderQuantityCount = allocations.filter(
-      (row) => row.quantityInputValid && row.calculationQuantity < 0,
-    ).length;
+    const zeroOrderQuantityCount = allocations.filter((row) => row.quantity === 0).length;
+    const negativeOrderQuantityCount = allocations.filter((row) => row.quantity < 0).length;
     const reconciliationErrorCount = allocations.filter(
       (row) =>
-        row.inventoryMatched && row.quantityComparable &&
+        row.inventoryMatched &&
         Math.abs(row.reconciliationDifference || 0) > 1e-9,
     ).length;
     const statusCounts = allocations.reduce((result, row) => {
@@ -3584,27 +2390,6 @@
         expected: 0,
         status: inputValidation.duplicateCount === 0 ? "정상" : "오류",
         description: "중복은 분석 전 차단",
-      },
-      {
-        item: "주문서 중복 의심",
-        result: inputValidation.duplicateOrderCount,
-        expected: 0,
-        status: inputValidation.duplicateOrderCount === 0 ? "정상" : "확인 필요",
-        description: "동일한 주문 원본 식별정보와 행 식별정보의 중복 건수",
-      },
-      {
-        item: "주문수량 입력 오류",
-        result: inputValidation.quantityErrorCount,
-        expected: 0,
-        status: inputValidation.quantityErrorCount === 0 ? "정상" : "확인 필요",
-        description: "계산 제외 및 수정 전 저장·Excel 출력 차단 대상 행 수",
-      },
-      {
-        item: "상품 단위 환산 기준",
-        result: productSummaries.filter((row) => row.inventoryMatched && !row.quantityComparable).length,
-        expected: 0,
-        status: productSummaries.some((row) => row.inventoryMatched && !row.quantityComparable) ? "확인 필요" : "정상",
-        description: "같은 상품코드의 주문단위와 재고단위를 직접 비교할 수 없는 상품 수",
       },
       {
         item: "상품별 주문수량 대사 차이",
@@ -3679,18 +2464,6 @@
           matrix: ordersParsed.sourceMatrix,
           productCodeColumnIndex: ordersParsed.productCodeColumnIndex,
           headerMapping: ordersParsed.headerMapping,
-          explicitMapping: ordersParsed.explicitMapping,
-          sourceEvidence: ordersParsed.sourceEvidence ? JSON.parse(JSON.stringify(ordersParsed.sourceEvidence)) : undefined,
-          sourceKind: cleanText(ordersParsed.sourceKind),
-          sourceSchemaVersion: cleanText(ordersParsed.sourceSchemaVersion),
-          orderId: cleanText(ordersParsed.orderId),
-          orderNo: cleanText(ordersParsed.orderNo),
-          orderRevision: Number(ordersParsed.orderRevision) || 0,
-          orderSnapshotHash: cleanText(ordersParsed.orderSnapshotHash),
-          orderUpdatedAt: cleanText(ordersParsed.orderUpdatedAt),
-          sourceRegistry: ordersParsed.sourceRegistry ? JSON.parse(JSON.stringify(ordersParsed.sourceRegistry)) : undefined,
-          sourceDocuments: Array.isArray(ordersParsed.sourceDocuments) ? JSON.parse(JSON.stringify(ordersParsed.sourceDocuments)) : undefined,
-          coverage: ordersParsed.coverage ? JSON.parse(JSON.stringify(ordersParsed.coverage)) : undefined,
         },
         inventory: {
           fileName: inventoryParsed.fileName,
@@ -3701,12 +2474,6 @@
           matrix: inventoryParsed.sourceMatrix,
           productCodeColumnIndex: inventoryParsed.productCodeColumnIndex,
           columns: inventoryParsed.columns,
-          explicitMapping: inventoryParsed.explicitMapping,
-          sourceKind: cleanText(inventoryParsed.sourceKind),
-          sourceSchemaVersion: cleanText(inventoryParsed.sourceSchemaVersion),
-          sourceEvidence: inventoryParsed.sourceEvidence
-            ? JSON.parse(JSON.stringify(inventoryParsed.sourceEvidence))
-            : undefined,
         },
       },
       inventoryOverrides: {
@@ -3715,10 +2482,6 @@
       },
       substitutionHistory: {
         schemaVersion: SUBSTITUTION_HISTORY_SCHEMA_VERSION,
-        events: [],
-      },
-      systemHistory: {
-        schemaVersion: SYSTEM_HISTORY_SCHEMA_VERSION,
         events: [],
       },
       inputValidation,
@@ -3742,8 +2505,6 @@
         totalPurchaseNeed,
         unmatchedCount: inputValidation.unmatchedCount,
         duplicateCount: inputValidation.duplicateCount,
-        duplicateOrderCount: inputValidation.duplicateOrderCount,
-        quantityErrorCount: inputValidation.quantityErrorCount,
         noticeCount: notices.length,
         memoCount: notices.length,
         allocationDifference,
@@ -3756,8 +2517,6 @@
         inventoryNegativeCount: inventoryParsed.rows.filter(
           (row) => typeof row.inventoryTotal === "number" && row.inventoryTotal < 0,
         ).length,
-        mixedUnitProductCount: productSummaries.filter((row) => row.mixedOrderUnits).length,
-        unitCheckProductCount: productSummaries.filter((row) => row.inventoryMatched && !row.quantityComparable).length,
         purchaseManagementMainCount: purchaseManagement.filter(
           (row) => row.rowType === "main" && row.inventoryShadow !== true,
         ).length,
@@ -3766,19 +2525,13 @@
     };
   }
 
-  function setPurchaseValue(workspace, productCode, value, options = {}) {
+  function setPurchaseValue(workspace, productCode, value) {
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     ensureInventoryPurchaseRows(workspace);
     const code = normalizeProductCode(productCode);
     const purchase = value === undefined || value === null ? "" : String(value);
-    const existingPurchase = (workspace.purchaseManagement || []).find(
-      (row) => row.rowType === "main" && normalizeProductCode(row.productCode) === code,
-    );
-    const previousValue = Object.prototype.hasOwnProperty.call(options, "previousValue")
-      ? options.previousValue
-      : existingPurchase?.purchase;
     [workspace.allocations, workspace.productSummaries].forEach((rows) => {
       (rows || []).forEach((row) => {
         if (row.productCode === code) row.purchase = purchase;
@@ -3787,13 +2540,6 @@
     (workspace.purchaseManagement || []).forEach((row) => {
       if (row.rowType === "main" && row.productCode === code) row.purchase = purchase;
     });
-    appendSystemEditEvent(workspace, {
-      productCode: code,
-      field: "purchase",
-      fieldLabel: "구매처",
-      previousValue,
-      nextValue: purchase,
-    }, options);
     return purchase;
   }
 
@@ -3832,10 +2578,6 @@
         excluded.push({ productCode: row.productCode, reason: "카테고리 대체 참고행" });
         return;
       }
-      if (row.inventoryShadow === true) {
-        excluded.push({ productCode: row.productCode, reason: "주문 없는 전체 재고 참고행" });
-        return;
-      }
       const productCode = normalizeProductCode(row.productCode);
       if (!purchaseNeedByCode.has(productCode)) {
         excluded.push({ productCode: row.productCode, reason: "재고정보 없음·구매수량 근거 없음" });
@@ -3855,48 +2597,12 @@
     return { included, excluded };
   }
 
-  // Output-only selection. Legacy purchaseManagement rows can retain a stale
-  // Seoul-only quantity, and getPurchaseUploadSelection alone also admits an
-  // inventory-missing order. Never repair those rows in the active workspace.
-  function getFinalPurchaseUploadSelection(workspace) {
-    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    const snapshot = JSON.parse(JSON.stringify(workspace));
-    const inventoryRows = getInventoryViewRows(snapshot).rows;
-    const blockedReason = snapshot.workspaceMode === PREVIEW_WORKSPACE_MODE ? "분석 미실행·구매업로드 제외"
-      : snapshot.inventoryApplicationMode === "TOTAL_ONLY" ? "총량 비교 전용·구매업로드 제외"
-      : snapshot.basisDateStatus !== "valid" ? "기준일 미확정·구매업로드 제외" : "";
-    if (blockedReason) return { included: [], excluded: inventoryRows.map(row => ({ productCode: row.productCode, reason: blockedReason })), inventoryRows, sourceFingerprint: snapshot.sourceFingerprint || "" };
-    const byCode = new Map(inventoryRows.map((row) => [normalizeProductCode(row.productCode), row]));
-    const selection = getPurchaseUploadSelection(snapshot);
-    const included = [];
-    const excluded = selection.excluded.map((row) => ({ ...row }));
-    for (const row of selection.included) {
-      const inventory = byCode.get(normalizeProductCode(row.productCode));
-      let reason = "";
-      if (snapshot.inventoryApplicationMode === "TOTAL_ONLY") reason = "총량 비교 전용·구매업로드 제외";
-      else if (!row.inventoryMatched || !inventory || inventory.inventoryMissing) reason = "재고정보 미확인·구매업로드 제외";
-      else if (inventory.quantityComparable !== true || !Number.isFinite(inventory.purchaseNeed)) reason = "단위 비교 불가·구매업로드 제외";
-      else if (!(inventory.purchaseNeed > 0)) reason = "창고별재고 부족 수량 없음";
-      if (reason) excluded.push({ productCode: row.productCode, reason });
-      else included.push({ ...row, purchaseNeed: inventory.purchaseNeed });
-    }
-    return { included, excluded, inventoryRows, sourceFingerprint: snapshot.sourceFingerprint || "" };
-  }
-
   return Object.freeze({
     ENGINE_VERSION,
     WORKSPACE_SCHEMA_VERSION,
-    PREVIEW_WORKSPACE_MODE,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
-    INVENTORY_SOURCE_REFERENCE_SCHEMA_VERSION,
-    INVENTORY_APPLICATION_MODES,
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,
-    SYSTEM_HISTORY_SCHEMA_VERSION,
     SUBSTITUTION_ORDER_SCHEMA_VERSION,
-    DUPLICATE_ORDER_REVIEW_MESSAGE,
-    QUANTITY_INPUT_REVIEW_MESSAGE,
     ORDER_REQUIRED_COLUMNS,
     INVENTORY_REQUIRED_COLUMNS,
     ORDER_DATE_COLUMNS,
@@ -3905,22 +2611,17 @@
     INVENTORY_OPTIONAL_COLUMNS,
     normalizeProductCode,
     normalizeOrderHeader,
-    customerWorkKey,
-    getOrderWorkRowId,
-    getDeliverySummaryRows,
     normalizeCategoryCode,
     canonicalStringify,
     containsCloudTokenKey,
     sanitizeCloudTokenKeys,
     buildLocalRecoveryPayload,
     commitVerifiedRecoveryRecord,
-    isRecoveryPublicationCommitted,
     selectLatestVerifiedRecovery,
     parseOrderBasisDate,
     buildPlanId,
     isPurchaseUploadExcluded,
     parseNumericCell,
-    getOrderReviewState,
     findHeaderRow,
     parseOrderWorkbook,
     parseInventoryWorkbook,
@@ -3930,28 +2631,20 @@
     isNoticeAcknowledged,
     setNoticeAcknowledged,
     analyze,
-    createPreviewWorkspace,
-    replaceWorkspaceInventory,
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,
     getPurchaseUploadSelection,
-    getFinalPurchaseUploadSelection,
     ensureInventoryPurchaseRows,
     getInventoryColumnDescriptors,
     getInventoryViewRows,
     ensureSubstitutionHistory,
     getSubstitutionMessages,
-    ensureSystemHistory,
-    getSystemMessages,
     substituteOrderProduct,
     undoLastSubstitution,
     getShortageCategoryContext,
     getStockLedgerView,
     setOrderValue,
-    applyOrderPatches,
-    setCustomerManager,
-    applyOrderPatches,
     setInventoryOverride,
     getAllocationInventoryView,
   });

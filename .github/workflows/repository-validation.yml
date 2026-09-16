@@ -237,28 +237,24 @@ jobs:
         run: |
           node scripts/test-shipping-management.mjs
           node scripts/test-common-inventory-snapshot.mjs
-          node scripts/test-orderops-dispatch-workbench.mjs
-          node scripts/test-orderops-three-section-preview.mjs
-          node scripts/test-orderops-three-area-rebuild.mjs
 
-      - name: Test OrderOps substitute shipment and unresolved system-message review
+      # OrderOps is restored to the approved a596cbbd Excel-first screen.
+      # Later dispatch/three-area, system-review, and workbook-v1.2 UI suites
+      # remain in Git history, but are not contracts of this restored screen.
+      - name: Test restored OrderOps substitute shipment and system-message history
         run: |
           node scripts/test-orderq-substitute-shipment.mjs
-          node scripts/test-orderq-system-message-review.mjs
-          node scripts/test-orderops-excel-cell-grid-browser.mjs
 
-      - name: Test ORDER Q to OrderOps shipment pipeline and operator recovery
+      - name: Test retained ORDER Q and shipment-result owner contracts
         run: |
           node scripts/test-orderq-shipment-read-model.mjs
           node scripts/test-orderops-orderq-source.mjs
           node scripts/test-orderops-shipment-result.mjs
           node scripts/test-orderops-pr544-operator-flow.mjs
-          node scripts/test-orderops-shipment-conflict-browser.mjs
 
       - name: Test OrderOps output and DataOps shared theme interaction
         run: |
           node scripts/test-orderops-theme-browser-e2e.mjs
-          node scripts/test-orderops-common-inventory-browser.mjs
 
       - name: Test OrderOps purchase-plan cloud failure safety
         run: node scripts/test-shipping-purchase-plan-cloud.mjs
@@ -339,55 +335,6 @@ jobs:
         run: |
           node scripts/test-smartinput-v2-unresolved-review-ui.mjs
           node scripts/test-smartinput-v2-unresolved-review-ui-browser.mjs
-
-  validate-orderops-workbench:
-    name: Validate OrderOps workbench v1.2
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-      - name: Install Korean font for OrderOps screen and print evidence
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y fonts-noto-cjk
-      - name: Verify purchase workbook and reconciliation contracts
-        run: |
-          node scripts/test-orderops-workbench-purchase-selection.mjs
-          node scripts/test-orderops-workbench-contract.mjs
-      - name: Verify isolated browser transactions and process-crash recovery
-        env:
-          ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench
-        run: node scripts/test-orderops-workbench-browser.mjs
-      - name: Verify file drop preparation and compact themed controls
-        env:
-          ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench/drop-visual
-        run: node scripts/test-orderops-file-drop-visual-browser.mjs
-      - name: Verify inventory purchase and information columns before and after analysis
-        env:
-          ORDEROPS_EVIDENCE_DIR: test-artifacts/orderops-workbench/inventory-columns
-        run: |
-          node scripts/test-orderops-inventory-purchase-info-columns.mjs
-          node scripts/test-orderops-negative-purchase-tab-browser.mjs
-      - name: Verify dark contrast and F9 print borders against the frozen baseline
-        run: |
-          cp orderops/workbench-v12.css "$RUNNER_TEMP/orderops-print-current.css"
-          trap 'cp "$RUNNER_TEMP/orderops-print-current.css" orderops/workbench-v12.css' EXIT
-          git show f90d5be0fe7f0941e147c28b04f427455355ebd7:orderops/workbench-v12.css > orderops/workbench-v12.css
-          ORDEROPS_READABILITY_BASELINE=1 ORDEROPS_READABILITY_DIR=test-artifacts/orderops-workbench/print-readability/before node scripts/test-orderops-print-readability.mjs
-          cp "$RUNNER_TEMP/orderops-print-current.css" orderops/workbench-v12.css
-          ORDEROPS_READABILITY_DIR=test-artifacts/orderops-workbench/print-readability/after node scripts/test-orderops-print-readability.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: orderops-workbench-v12
-          path: test-artifacts/orderops-workbench
-          if-no-files-found: ignore
-          retention-days: 14
 
   validate-initial-input-layout:
     name: Validate SmartInput initial input layout

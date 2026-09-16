@@ -161,25 +161,68 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/orderops/list.html` });
   await loaded;
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))`), 'common header');
-  assert.deepEqual(await evaluate(client, `({legacyShell:document.querySelector('main.page-shell')?.dataset.nexusWorkspace || '', resultRail:Boolean(document.querySelector('#orderOpsResultRail')), completionBar:Boolean(document.querySelector('[data-nexus-completion-bar="orderops"]'))})`), { legacyShell:'', resultRail:false, completionBar:false });
-  await click(client, '#inventoryMenuButton');
-  const inventoryMenuMetrics = await evaluate(client, `(() => { const menu=document.querySelector('#inventoryMenu'); const rect=menu.getBoundingClientRect(); const style=getComputedStyle(menu); return {hidden:menu.hidden, expanded:document.querySelector('#inventoryMenuButton').getAttribute('aria-expanded'), width:rect.width, rightGap:innerWidth-rect.right, background:style.backgroundColor, dataOps:Boolean(document.querySelector('#inventoryDataOpsLoadButton')), erp:Boolean(document.querySelector('#inventoryErpApplyButton'))}; })()`);
-  assert.equal(inventoryMenuMetrics.hidden, false, 'inventory menu must open from the single app-header entry');
-  assert.equal(inventoryMenuMetrics.expanded, 'true');
-  assert.ok(inventoryMenuMetrics.width <= 440 && inventoryMenuMetrics.rightGap >= 0, 'inventory menu must remain within the viewport');
-  assert.ok(inventoryMenuMetrics.dataOps && inventoryMenuMetrics.erp, 'inventory menu must expose both verified sources');
-  assert.notEqual(inventoryMenuMetrics.background, 'rgba(0, 0, 0, 0)', 'inventory menu must retain readable dark surface');
-  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-  assert.equal(await evaluate(client, `document.querySelector('#inventoryMenu').hidden`), true, 'Escape must close the inventory menu');
+  // Exercise the restored file workflow before the visual fixtures replace its table.
+  const matrices = {
+    orders: [['품목코드','품목명','규격','수량','적요','적요1','거래처','그룹','담당','단위','단가','일자'],
+      ['000001','기본상품','EA',2,'메모','','거래처A','일반','담당A','EA',1000,'2026-09-07']],
+    inventory: [['품목코드','품목명','규격','단위','수량','1창고','3서울','4전송'],
+      ['000001','기본상품','EA','EA',10,8,2,0]],
+  };
+  for (const [kind, matrix] of Object.entries(matrices)) {
+    await evaluate(client, `(() => {
+      const book=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
+      const transfer=new DataTransfer();
+      transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}.xlsx'));
+      const input=document.querySelector('#${kind}Input');
+      Object.defineProperty(input,'files',{configurable:true,value:transfer.files});
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes('${kind}.xlsx')`), `${kind} Excel parsed`);
+  }
+  await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'basic analysis ready');
+  await click(client, '#analyzeButton');
+  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled`), 'basic analysis complete');
+  await click(client, '#ordersDrop');
+  for (const [field,value] of [['quantity','7'],['unitPrice','1200']]) {
+    await evaluate(client, `(() => {
+      const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');
+      if(!input) throw new Error('Missing basic ${field} editor');
+      input.value='${value}'; input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+  }
+  await waitFor(() => evaluate(client, `document.querySelector('#localSaveStatus').textContent.includes('임시저장 · ') && !/대기|없음|실패/.test(document.querySelector('#localSaveStatus').textContent) && Boolean(localStorage.getItem('oneapp.shipping.recovery.pointer.v1'))`), 'basic recovery saved');
+  await wait(350);
+  const basicReload=client.once('Page.loadEventFired');
+  await client.send('Page.reload'); await basicReload;
+  await waitFor(() => evaluate(client, `document.querySelector('#recoveryRecordList input')`), 'saved recovery available');
+  await click(client, '#headerRestoreButton');
+  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled`), 'saved workspace restored');
+  await click(client, '#ordersDrop');
+  assert.deepEqual(await evaluate(client, `['quantity','unitPrice'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`), ['7','1200']);
+  for (const view of ['ledger','inventory']) {
+    await click(client, `#${view}Drop`);
+    assert.match(await evaluate(client, `document.querySelector('#previewTable').textContent`), /기본상품/);
+  }
+  const workbookResult=await evaluate(client, `(async () => {
+    let blob; const original=URL.createObjectURL;
+    URL.createObjectURL=(value)=>{blob=value;return original.call(URL,value);};
+    try {document.querySelector('#downloadButton').click();} finally {URL.createObjectURL=original;}
+    if(!blob) throw new Error('Expected actual Excel export');
+    const output=XLSX.read(await blob.arrayBuffer(),{type:'array'});
+    return {sheets:output.SheetNames,rows:Object.fromEntries(['주문현황','재고수불부','창고별재고'].map(name=>[name,XLSX.utils.sheet_to_json(output.Sheets[name],{header:1,defval:''})]))};
+  })()`);
+  for (const rows of Object.values(workbookResult.rows)) assert.ok(rows.some(row=>row.includes('000001')), 'export preserves leading-zero product identity');
+  assert.ok(workbookResult.rows['주문현황'].some(row=>row.includes(7)&&row.includes(1200)), 'Excel uses restored edits');
+  console.log('Basic Excel → analysis → quantity/price edit → save/reload → order/ledger/warehouse → Excel reopen PASS');
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');
-    host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value warning-value"><span class="manager-name">김담당</span></td><td class="information-value ordered-context-cell"><span class="order-information-cell"><span class="order-information-entry manager-color-entry" style="--manager-color:#dbeafe">우리식당(1)8,900</span> <span class="order-information-entry manager-color-entry" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number ledger-negative-cell">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr><tr class="manager-color-row box-unit-row" style="--manager-color:#dcfce7"><td class="box-unit-cell">BOX 상품</td><td>이담당</td><td>박스 정보</td><td class="number">2,300</td></tr></tbody></table>';
+    host.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>정보</th><th>단가</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe"><td class="primary-readable-cell">양배추_왕_3입</td><td class="manager-value warning-value"><span class="manager-name">김담당</span></td><td class="information-value ordered-context-cell"><span class="order-information-badges"><span class="order-information-badge manager-color-badge" style="--manager-color:#dbeafe">우리식당(1)8,900</span><span class="order-information-badge manager-color-badge" style="--manager-color:#fce7f3">한국리장원(1)24,800</span></span></td><td class="number ledger-negative-cell">4,000</td></tr><tr class="no-order-row"><td class="primary-readable-cell">보조 상품</td><td>미지정</td><td class="quantity-zero">0</td><td class="number">2,200</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7"><td class="unit-alert-cell">EA 상품</td><td>박담당</td><td>일반 정보</td><td class="number">1,700</td></tr><tr class="manager-color-row box-unit-row" style="--manager-color:#dcfce7"><td class="box-unit-cell">BOX 상품</td><td>이담당</td><td>박스 정보</td><td class="number">2,300</td></tr></tbody></table>';
     document.querySelector('tbody tr.manager-color-row').insertAdjacentHTML('beforeend','<td><input class="inventory-input ledger-price-input" value="8700"></td><td><input class="order-edit-input" value="5"></td><td><input class="purchase-input" data-negative-balance="true" value="거창"></td><td><span class="inventory-total-frame">8</span></td>');
     document.querySelector('.order-edit-input').focus();
     return true;
   })()`);
-  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('#previewTable tbody tr:first-child td:first-child'),inactive:read('#previewTable tr.no-order-row td:first-child'),managerCells:readAll('#previewTable tbody tr.manager-color-row:first-child > td'),managerControls:readAll('#previewTable tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('#previewTable tbody tr.unit-alert-row > td'),boxCells:readAll('#previewTable tbody tr.box-unit-row > td')}; })()`);
+  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(lightMetrics.theme, 'light');
   assert.notEqual(lightMetrics.primary.background, lightMetrics.inactive.background,
     'saved manager colors must restore a visible row surface in light mode');
@@ -197,7 +240,7 @@ try {
     'BOX text color must cover the complete light row');
   await click(client, '[data-nexus-ui-theme-set="dark"]');
   await wait(120);
-  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('#previewTable th'),primary:read('#previewTable tbody tr:first-child td:first-child'),inactive:read('#previewTable tr.no-order-row td:first-child'),warning:read('#previewTable td.unit-alert-cell'),manager:read('#previewTable .manager-name'),infoCell:read('#previewTable td.information-value'),entry1:read('#previewTable .manager-color-entry'),entry2:read('#previewTable .manager-color-entry:nth-child(2)'),managerCells:readAll('#previewTable tbody tr.manager-color-row:first-child > td'),managerControls:readAll('#previewTable tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('#previewTable tbody tr.unit-alert-row > td'),boxCells:readAll('#previewTable tbody tr.box-unit-row > td')}; })()`);
+  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(metrics.theme, 'dark');
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
   assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
@@ -206,7 +249,7 @@ try {
   assert.ok(contrast(metrics.warning.color, metrics.warning.background) >= 4.5,
     `dark warning units must remain readable: ${JSON.stringify(metrics.warning)} token=${metrics.unitTextToken} ratio=${contrast(metrics.warning.color, metrics.warning.background)}`);
   assert.ok(contrast(metrics.manager.color, metrics.manager.background) >= 4.5, 'dark manager labels must remain readable');
-  assert.ok(contrast(metrics.entry1.color, metrics.infoCell.background) >= 4.5, 'dark manager information text must remain readable');
+  assert.ok(contrast(metrics.badge1.color, metrics.badge1.background) >= 4.5, 'dark manager information badges must remain readable');
   assert.notEqual(metrics.primary.background, metrics.inactive.background,
     'saved manager colors must restore a visible row surface in dark mode');
   assert.equal(new Set(metrics.managerCells.map((cell) => cell.background)).size, 1,
@@ -219,8 +262,8 @@ try {
     'EA and 소분 warning text must cover the complete dark row');
   assert.equal(new Set(metrics.boxCells.map((cell) => cell.color)).size, 1,
     'BOX text color must cover the complete dark row');
-  assert.equal(metrics.entry1.background, metrics.entry2.background,
-    'information text must not draw badge backgrounds');
+  assert.notEqual(metrics.badge1.background, metrics.badge2.background,
+    'assigned manager information badges must remain visually distinct');
   assert.notEqual(metrics.primary.shadow, 'none', 'assigned manager rows must retain their color edge marker');
   await client.send('Emulation.setEmulatedMedia', { media: 'print' });
   const printMetrics = await evaluate(client, `(() => {
@@ -270,12 +313,6 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/DataOps.html` });
   await dataOpsLoaded;
   await waitFor(() => evaluate(client, `document.querySelectorAll('.bg-\\\\[\\\\#f8fafc\\\\]').length === 3 && Boolean(document.querySelector('[data-nexus-ui-theme-toggle]'))`), 'DataOps theme surfaces');
-  await waitFor(() => evaluate(client, `Boolean(document.querySelector('[data-nexus-workspace="dataops"]'))`), 'DataOps three-pane workspace');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('[data-nexus-workspace="dataops"] > [data-nexus-pane]')].map(element=>element.dataset.nexusPane)`), ['reference', 'work', 'result']);
-  await click(client, '[data-nexus-pane="result"] button[aria-label="결과 패널 닫기"]');
-  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-nexus-result-reopen="dataops"]'))`), true);
-  await click(client, '[data-nexus-result-reopen="dataops"]');
-  assert.equal(await evaluate(client, `Boolean(document.querySelector('[data-nexus-pane="result"]'))`), true);
 
   await click(client, '[data-nexus-ui-theme-set="light"]');
   await wait(100);

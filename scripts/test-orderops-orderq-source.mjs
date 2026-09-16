@@ -1,14 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createShipmentOrderSnapshot } from '../orderq/shipment-order-read-model.js';
 import { mapOrderQSnapshotToParsedOrders, orderQCandidateMatches } from '../orderops/orderq-order-source-adapter.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const require = createRequire(import.meta.url);
-const engine = require(path.join(root, 'orderFulfillmentEngine.js'));
 
 const snapshot = createShipmentOrderSnapshot({
   order: {
@@ -35,33 +32,13 @@ assert.equal(parsedOrders.rows[0].note, '일반 적요');
 assert.equal(parsedOrders.rows[0].note1, '직원 전달사항', 'ORDER Q description은 적요(직원) 경로로 분리해야 한다.');
 assert.equal(orderQCandidateMatches(snapshot, '남부'), true, '저장 주문 검색에서 배송지역을 찾을 수 있어야 한다.');
 
-const inventoryMatrix = [
-  ['품목코드', '품목명', '규격', '단위', '수량', '1창고', '3서울', '4전송'],
-  ['P-A', '원상품', 'BOX', 'BOX', 2, 2, 0, 0],
-  ['P-B', '대체상품', 'BOX', 'BOX', 10, 10, 0, 0]
-];
-const parsedInventory = engine.parseInventoryWorkbook({ fileName: '재고.xlsx', sheetName: '재고', rawMatrix: inventoryMatrix, displayMatrix: inventoryMatrix });
-assert.equal(engine.validateInputs(parsedOrders, parsedInventory).canAnalyze, true, 'ORDER Q 주문에도 창고재고 Excel 검증이 필요하다.');
-const workspace = engine.analyze(parsedOrders, parsedInventory, { sourceFingerprint: snapshot.snapshotHash });
-assert.equal(workspace.sourceFiles.orders.sourceKind, 'ORDERQ_READ_MODEL');
-assert.equal(workspace.sourceFiles.orders.orderId, 'ORD-Q-1');
-assert.equal(workspace.sourceFiles.orders.orderRevision, 7);
-assert.equal(workspace.sourceFiles.orders.orderSnapshotHash, snapshot.snapshotHash);
-assert.equal(workspace.orders[0].orderItemId, 'OI-Q-1');
-
-const event = engine.substituteOrderProduct(workspace, workspace.orders[0].sourceRowNumber, 'P-B', { actor: '김작업', occurredAt: '2026-09-07T02:00:00.000Z' });
-assert.equal(event.orderId, 'ORD-Q-1');
-assert.equal(event.orderRevision, 7);
-assert.equal(event.orderItemId, 'OI-Q-1');
-assert.equal(workspace.sourceFiles.orders.orderSnapshotHash, snapshot.snapshotHash, '재분석 후에도 동결 주문 식별정보를 보존한다.');
-
+// Keep the dormant source adapter and immutable ORDER Q model tested without
+// requiring the removed a596cbbd-after direct-order intake in the UI/engine.
 for (const relative of ['orderops/list.html', 'orderops_list.html']) {
   const html = fs.readFileSync(path.join(root, relative), 'utf8');
-  assert.match(html, /new URLSearchParams\(location\.search\)\.get\("orderId"\)/);
-  assert.match(html, /loadOrderQOrderSource/);
-  assert.match(html, /창고재고 Excel은 계속 필요합니다/);
-  assert.match(html, /id="ordersFileButton"/, '주문현황 Excel 수동 대체 경로는 유지한다.');
-  assert.match(html, /id="inventoryFileButton"/, '창고재고 Excel 입력은 유지한다.');
+  assert.doesNotMatch(html, /loadOrderQOrderSource/);
+  assert.match(html, /id="ordersFileButton"/, 'manual order Excel intake remains available');
+  assert.match(html, /id="inventoryFileButton"/, 'manual inventory Excel intake remains available');
 }
 
-console.log('OrderOps ORDER Q Read Model intake, Excel inventory requirement, fallback, lineage, and substitution preservation passed.');
+console.log('Retained ORDER Q source adapter mapping and restored Excel-only intake contracts passed.');

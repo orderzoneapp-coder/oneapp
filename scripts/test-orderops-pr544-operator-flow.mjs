@@ -97,12 +97,10 @@ for (const contract of [
   'data-orderq-candidate-action="load"',
   'data-shipment-source-action="apply-latest"',
   'data-shipment-source-action="keep-work"',
-  '주문수량',
-  '이번 실제 출고수량',
   'data-shipment-draft-line',
-]) assert.ok(orderOpsHtml.includes(contract), `PR #544 후속 작업자 흐름 계약 누락: ${contract}`);
-assert.match(orderOpsHtml, /listOrderQOrderSources/);
-assert.match(orderOpsHtml, /reconcileShipmentDraft/);
-assert.match(orderOpsHtml, /SHIPMENT_ORDER_REVISION_CONFLICT[\s\S]*shipmentSourceChanged/);
+]) {
+  assert.ok(!orderOpsHtml.includes(contract), `rollback must not reactivate PR #544 operator UI: ${contract}`);
+}
+assert.doesNotMatch(orderOpsHtml, /listOrderQOrderSources|reconcileShipmentDraft|SHIPMENT_ORDER_REVISION_CONFLICT/);
 
-console.log('PR #544 operator picker, quantity-axis handoff, partial shipment, and safe latest-order recovery contracts passed.');
+console.log('Retained PR #544 source adapter, shipment core, ORDER Q owner UI, and inactive OrderOps operator UI contracts passed.');

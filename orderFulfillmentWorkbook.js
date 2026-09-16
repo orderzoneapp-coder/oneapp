@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.9.1";
+  const WORKBOOK_VERSION = "4.9.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -64,22 +64,6 @@
     if (!XLSX?.utils?.book_new || !XLSX?.utils?.aoa_to_sheet) {
       throw new Error("XLSX 출력 라이브러리를 불러오지 못했습니다.");
     }
-  }
-
-  function assertExcelOutputAllowed(workspace) {
-    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
-      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
-    }
-    const review = engine.getOrderReviewState(workspace);
-    if (review.hasQuantityErrors) {
-      const error = new Error(
-        `주문수량 입력 오류 ${review.quantityErrorCount}행을 수정한 뒤 Excel을 출력하세요.`,
-      );
-      error.code = "ORDER_QUANTITY_REVIEW_REQUIRED";
-      error.review = review;
-      throw error;
-    }
-    return review;
   }
 
   function safeValue(value) {
@@ -1073,8 +1057,15 @@
   }
 
   function getPurchaseUploadRows(workspace) {
-    if (!engine?.getFinalPurchaseUploadSelection) throw new Error("최종 구매 선정 모듈을 불러오지 못했습니다.");
-    return engine.getFinalPurchaseUploadSelection(workspace).included;
+    return (workspace?.purchaseManagement || []).filter(
+      (row) =>
+        row.rowType !== "reference" &&
+        row.inventoryMatched &&
+        typeof row.purchaseNeed === "number" &&
+        row.purchaseNeed > 0 &&
+        row.purchase !== "대체" &&
+        row.purchase !== "소분",
+    );
   }
 
   function getSalesUploadRows(workspace) {
@@ -1294,7 +1285,6 @@
   }
 
   function buildPurchaseUploadWorkbook(workspace, XLSX) {
-    assertExcelOutputAllowed(workspace);
     const sheet = buildPurchaseUploadSheet(workspace, XLSX);
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
@@ -1334,8 +1324,10 @@
   }
 
   function buildWorkbook(workspace, XLSX) {
-    assertExcelOutputAllowed(workspace);
     requireXlsx(XLSX);
+    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
 
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
@@ -1408,7 +1400,6 @@
     PURCHASE_UPLOAD_HEADERS,
     SALES_UPLOAD_SCHEMA_VERSION,
     SALES_UPLOAD_HEADERS,
-    assertExcelOutputAllowed,
     isPurchaseUploadReady,
     getOutputFileName,
     getPurchaseUploadRows,

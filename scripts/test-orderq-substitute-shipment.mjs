@@ -86,19 +86,17 @@ assert.equal(afterInventory.get("P-B").orderQuantity, 2);
 assert.equal(afterInventory.get("P-B").remainingQuantity, 8);
 assert.equal(workspace.stats.totalOrderQuantity, 2);
 assert.equal(workspace.stats.totalPurchaseNeed, 0);
-assert.equal(afterInventory.get("P-A").systemMessage, "");
-assert.equal(afterInventory.get("P-B").systemMessage, "");
-assert.equal(workspace.substitutionHistory.events.length, 1,
-  "대체출고 이력은 보존하되 시스템 메시지 열에는 표시하지 않아야 합니다.");
+assert.match(afterInventory.get("P-A").systemMessage, /\[대체됨\].*거래처A\(2\).*대체상품 BOX/);
+assert.match(afterInventory.get("P-B").systemMessage, /\[대체받음\].*거래처A\(2\).*원상품 BOX/);
 
 const recoveryPayload = engine.buildLocalRecoveryPayload(workspace, { activePreview: "inventory" }, {}, "2026-09-04T01:24:00.000Z");
 const restoredWorkspace = JSON.parse(JSON.stringify(recoveryPayload.workspace));
 assert.equal(restoredWorkspace.substitutionHistory.schemaVersion, engine.SUBSTITUTION_HISTORY_SCHEMA_VERSION);
 assert.equal(restoredWorkspace.substitutionHistory.events.length, 1);
-assert.equal(
+assert.match(
   engine.getInventoryViewRows(restoredWorkspace).rows.find((row) => row.productCode === "P-B").systemMessage,
-  "",
-  "JSON round-trip 후에도 과거 대체 이력을 시스템 메시지 열에 투영하지 않아야 합니다.",
+  /대체받음/,
+  "JSON round-trip 후에도 시스템 메시지를 재구성해야 합니다.",
 );
 
 const undo = engine.undoLastSubstitution(workspace, {
@@ -115,8 +113,8 @@ const undoneInventory = new Map(engine.getInventoryViewRows(workspace).rows.map(
 assert.equal(undoneInventory.get("P-A").orderQuantity, 2);
 assert.equal(undoneInventory.get("P-A").remainingQuantity, -1);
 assert.equal(undoneInventory.get("P-B").orderQuantity, 0);
-assert.equal(undoneInventory.get("P-A").systemMessage, "");
-assert.equal(undoneInventory.get("P-B").systemMessage, "");
+assert.match(undoneInventory.get("P-A").systemMessage, /\[복원됨\]/);
+assert.match(undoneInventory.get("P-B").systemMessage, /\[대체취소\]/);
 assert.throws(() => engine.undoLastSubstitution(workspace), /취소할 대체출고 작업이 없습니다/);
 
 for (const relativePath of ["orderops/list.html", "orderops_list.html"]) {
@@ -130,23 +128,11 @@ for (const relativePath of ["orderops/list.html", "orderops_list.html"]) {
     'function handleSubstitutionTableClick',
     'engine.substituteOrderProduct(',
     'engine.undoLastSubstitution(',
-    relativePath === 'orderops_list.html'
-      ? '대체출고: 거래처 칩 선택 → Ctrl+대상 정보 셀 클릭'
-      : '대체출고: 정보 항목 Ctrl+클릭 → 대상 정보 셀 Ctrl+클릭',
-    'data-substitution-target-product=',
-    'substitution-target-cell',
+    '대체출고: 거래처 칩 선택 → Ctrl+상품 클릭',
     'substitution-target-mode',
   ]) {
     assert.ok(html.includes(contract), `${relativePath} 대체출고 UI 계약 누락: ${contract}`);
   }
-  const tableClickSource = html.slice(
-    html.indexOf('function handleSubstitutionTableClick'),
-    html.indexOf('function isNativeUndoTarget'),
-  );
-  assert.match(tableClickSource, /closest\("\[data-substitution-target-product\]"\)/,
-    `${relativePath} 대체출고는 명시적인 정보 셀만 대상으로 삼아야 합니다.`);
-  assert.doesNotMatch(tableClickSource, /closest\("tr\[data-product-code\]"\)/,
-    `${relativePath} 행 전체를 대체출고 대상으로 삼으면 안 됩니다.`);
 }
 
 console.log("ORDER Q substitute shipment and system-message tests passed.");
