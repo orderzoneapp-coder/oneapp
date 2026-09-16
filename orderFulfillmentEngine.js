@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.0";
+  const ENGINE_VERSION = "3.19.1";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -1450,6 +1450,14 @@
       });
   }
 
+  function quantityUnit(row) {
+    return cleanText(row?.sourceUnit ?? row?.unit).toUpperCase();
+  }
+
+  function getQuantityGroupKey(row) {
+    return JSON.stringify([normalizeProductCode(row?.productCode), quantityUnit(row)]);
+  }
+
   function getInventoryViewRows(workspace) {
     ensureInventoryPurchaseRows(workspace);
     const columns = getInventoryColumnDescriptors(workspace);
@@ -1466,10 +1474,12 @@
           productName: cleanText(order?.productName),
           specification: cleanText(order?.specification),
           unit: cleanText(order?.sourceUnit),
+          units: new Set(),
           orderQuantity: 0,
         });
       }
       const product = orderProducts.get(productCode);
+      product.units.add(quantityUnit(order));
       if (!product.productName) product.productName = cleanText(order?.productName);
       if (!product.specification) product.specification = cleanText(order?.specification);
       if (!product.unit) product.unit = cleanText(order?.sourceUnit);
@@ -1484,8 +1494,11 @@
       const systemMessages = getSubstitutionMessages(workspace, productCode);
       inventoryCodes.add(productCode);
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
-      const orderQuantity = orderProducts.get(productCode)?.orderQuantity || 0;
-      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
+      const product = orderProducts.get(productCode);
+      const quantityComparable = !product || [...product.units].every((unit) => unit === quantityUnit(inventory));
+      const orderQuantity = quantityComparable ? (product?.orderQuantity || 0) : null;
+      const remainingQuantity = quantityComparable ? roundQuantity(stockTotal - orderQuantity) : null;
+      const quantityMessage = quantityComparable ? "" : "주문·재고 단위가 달라 합계·잔량 계산을 보류합니다. 단위를 확인하세요.";
       const values = columns.map((column) => {
         if (column.role === "orderQuantity") return orderQuantity;
         if (column.role === "calculatedQuantity") {
@@ -1497,18 +1510,22 @@
         productCode,
         productName: cleanText(inventory.productName),
         specification: cleanText(inventory.specification),
+        unit: cleanText(inventory.unit),
+        quantityComparable,
+        quantityIssue: quantityComparable ? "" : "UNIT_MISMATCH",
+        quantityMessage,
         values,
         inventoryTotal: stockTotal,
         stockTotal,
         orderQuantity,
         remainingQuantity,
-        purchaseNeed: remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
+        purchaseNeed: !quantityComparable ? null : remainingQuantity < 0 ? roundQuantity(Math.abs(remainingQuantity)) : 0,
         purchase: String(purchaseInputs[productCode] || ""),
         suppliers: inventorySupplierDisplay(workspace, productCode),
         orderInformation: orderInformationDisplay(workspace, productCode),
         orderNotes: orderNoteDisplay(workspace, productCode),
         systemMessages,
-        systemMessage: systemMessages.map((message) => message.message).join("\n"),
+        systemMessage: [quantityMessage, ...systemMessages.map((message) => message.message)].filter(Boolean).join("\n"),
         inventoryMissing: false,
       };
     });
@@ -1523,8 +1540,9 @@
         sourceRowNumber: null,
       };
       const stockTotal = calculateInventoryTotal(workspace, inventory, columns, overrideMap);
-      const orderQuantity = product.orderQuantity;
-      const remainingQuantity = roundQuantity(stockTotal - orderQuantity);
+      const quantityComparable = product.units.size === 1;
+      const orderQuantity = quantityComparable ? product.orderQuantity : null;
+      const remainingQuantity = quantityComparable ? roundQuantity(stockTotal - orderQuantity) : null;
       const values = columns.map((column) => {
         if (column.role === "orderQuantity") return orderQuantity;
         if (column.role === "calculatedQuantity") return remainingQuantity;
@@ -1542,6 +1560,10 @@
         productCode,
         productName: product.productName,
         specification: product.specification,
+        unit: product.unit,
+        quantityComparable,
+        quantityIssue: quantityComparable ? "INVENTORY_MISSING" : "UNIT_MISMATCH",
+        quantityMessage: quantityComparable ? "재고자료 없음: 재고·잔량 미확정" : "주문 단위가 달라 합계 계산을 보류합니다.",
         values,
         inventoryTotal: stockTotal,
         stockTotal,
@@ -1625,53 +1647,41 @@
     if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
-    const inboundByCode = new Map();
-    const purchasePartnersByCode = new Map();
-    const purchaseRows = workspace?.orderOpsInputs?.purchases?.rows;
-    (Array.isArray(purchaseRows) ? purchaseRows : []).forEach((row) => {
-      const productCode = normalizeProductCode(row?.productCode);
-      const parsed = parseNumericCell(row?.quantity);
-      if (!productCode || !parsed.ok) return;
-      inboundByCode.set(
-        productCode,
-        roundQuantity((inboundByCode.get(productCode) || 0) + parsed.value),
-      );
-      const partner = cleanText(row?.partner);
-      if (partner) {
-        if (!purchasePartnersByCode.has(productCode)) purchasePartnersByCode.set(productCode, new Set());
-        purchasePartnersByCode.get(productCode).add(partner);
-      }
-    });
-    const salesByCode = new Map();
-    const salesMetadataByCode = new Map();
-    const salesRows = workspace?.orderOpsInputs?.sales?.rows;
-    (Array.isArray(salesRows) ? salesRows : []).forEach((row) => {
-      const productCode = normalizeProductCode(row?.productCode);
-      const parsed = parseNumericCell(row?.quantity);
-      if (!productCode || !parsed.ok) return;
-      salesByCode.set(
-        productCode,
-        roundQuantity((salesByCode.get(productCode) || 0) + parsed.value),
-      );
-      if (!salesMetadataByCode.has(productCode)) {
-        salesMetadataByCode.set(productCode, {
-          productName: cleanText(row?.productName),
-        });
-      }
-    });
     const inventoryView = getInventoryViewRows(workspace);
-    const unitPriceColumnIndex = inventoryView.columns.findIndex(
-      (column) => column.role === "warehousePrice" && normalizeHeader(column.header) === "창고단가",
-    );
-    const fallbackUnitPriceColumnIndex = inventoryView.columns.findIndex(
-      (column) => column.role === "warehousePrice",
-    );
-    const effectiveUnitPriceColumnIndex = unitPriceColumnIndex >= 0
-      ? unitPriceColumnIndex
-      : fallbackUnitPriceColumnIndex;
-    const unitPriceColumn = effectiveUnitPriceColumnIndex >= 0
-      ? inventoryView.columns[effectiveUnitPriceColumnIndex]
-      : null;
+    const groups = new Map();
+    const ensure = (row) => {
+      const key = getQuantityGroupKey(row);
+      if (!groups.has(key)) groups.set(key, {
+        productCode: normalizeProductCode(row.productCode),
+        productName: cleanText(row.productName), specification: cleanText(row.specification),
+        unit: cleanText(row.sourceUnit ?? row.unit),
+        orderQuantity: 0, inboundQuantity: 0, salesQuantity: 0, partners: new Set(),
+        inventory: null, source: null,
+      });
+      const group = groups.get(key);
+      if (!group.productName) group.productName = cleanText(row.productName);
+      if (!group.specification) group.specification = cleanText(row.specification);
+      return group;
+    };
+    (workspace.inventory || []).forEach((source) => {
+      const group = ensure(source);
+      group.source = source;
+      group.inventory = inventoryView.rows.find((row) => row.productCode === group.productCode);
+    });
+    const add = (rows, field) => (rows || []).forEach((row) => {
+      if (!normalizeProductCode(row?.productCode)) return;
+      const group = ensure(row);
+      const parsed = parseNumericCell(row.quantity);
+      if (!parsed.ok || parsed.blank) group[field] = null;
+      else if (group[field] !== null) group[field] = roundQuantity(group[field] + parsed.value);
+      if (field === "inboundQuantity" && cleanText(row.partner)) group.partners.add(cleanText(row.partner));
+    });
+    add(workspace.orders, "orderQuantity");
+    add(workspace.orderOpsInputs?.purchases?.rows, "inboundQuantity");
+    add(workspace.orderOpsInputs?.sales?.rows, "salesQuantity");
+    const preferred = inventoryView.columns.findIndex((column) => column.role === "warehousePrice" && normalizeHeader(column.header) === "창고단가");
+    const effectiveUnitPriceColumnIndex = preferred >= 0 ? preferred : inventoryView.columns.findIndex((column) => column.role === "warehousePrice");
+    const unitPriceColumn = inventoryView.columns[effectiveUnitPriceColumnIndex] || null;
     const columns = [
       { key: "ledger:product-code", header: "품목코드", role: "productCode", numeric: false },
       { key: "ledger:product-name", header: "품목명", role: "productName", numeric: false },
@@ -1693,77 +1703,31 @@
       { key: "ledger:purchase-place", header: "구매처", role: "purchasePlace", numeric: false },
       { key: "ledger:information", header: "정보", role: "orderInformation", numeric: false },
     ];
-    const rows = inventoryView.rows.map((inventory) => {
-      const source = (workspace.inventory || []).find(
-        (candidate) => normalizeProductCode(candidate?.productCode) === inventory.productCode,
-      ) || {};
-      const values = [
-        inventory.productCode,
-        inventory.productName,
-        inventory.specification,
-        cleanText(source.unit),
-        inventory.stockTotal,
-        inboundByCode.get(inventory.productCode) || 0,
-        inventory.orderQuantity,
-        salesByCode.get(inventory.productCode) || 0,
-        inventory.remainingQuantity,
-        effectiveUnitPriceColumnIndex >= 0 ? inventory.values[effectiveUnitPriceColumnIndex] : "",
-        inventory.purchase || [...(purchasePartnersByCode.get(inventory.productCode) || [])].join(", "),
-        inventory.orderInformation || "",
-      ];
-      return {
-        ...inventory,
-        sourceRow: source,
-        unitPriceColumnKey: unitPriceColumn?.key || "",
-        values,
-      };
-    });
-    const inventoryCodes = new Set(rows.map((row) => normalizeProductCode(row.productCode)));
     const purchaseInputs = getPurchaseInputs(workspace);
-    salesByCode.forEach((salesQuantity, productCode) => {
-      if (inventoryCodes.has(productCode)) return;
-      const orderQuantity = roundQuantity(
-        (Array.isArray(workspace?.orders) ? workspace.orders : [])
-          .filter((order) => normalizeProductCode(order?.productCode) === productCode)
-          .reduce((sum, order) => {
-            const parsed = parseNumericCell(order?.quantity);
-            return sum + (parsed.ok ? parsed.value : 0);
-          }, 0),
-      );
-      const remainingQuantity = roundQuantity(0 - orderQuantity);
-      const purchase = String(
-        purchaseInputs[productCode] || [...(purchasePartnersByCode.get(productCode) || [])].join(", "),
-      );
-      const productName = salesMetadataByCode.get(productCode)?.productName || "";
-      rows.push({
-        productCode,
-        productName,
-        specification: "",
-        sourceRow: null,
-        values: [
-          productCode,
-          productName,
-          "",
-          "",
-          0,
-          inboundByCode.get(productCode) || 0,
-          orderQuantity,
-          salesQuantity,
-          remainingQuantity,
-          "",
-          purchase,
-          orderInformationDisplay(workspace, productCode),
-        ],
-        inventoryTotal: 0,
-        stockTotal: 0,
-        orderQuantity,
-        remainingQuantity,
-        purchase,
-        suppliers: "",
-        orderInformation: orderInformationDisplay(workspace, productCode),
-        orderNotes: orderNoteDisplay(workspace, productCode),
-        salesOnly: true,
-      });
+    const rows = [...groups.values()].map((group) => {
+      const { productCode, productName, specification, unit, orderQuantity, inboundQuantity, salesQuantity, inventory, source } = group;
+      // Purchases and sales are reference movements. They do not change the baseline stock-minus-orders formula.
+      // An absent (or differently denominated) inventory record is unknown, not a verified zero.
+      const stockTotal = inventory?.stockTotal ?? null;
+      const remainingQuantity = stockTotal === null ? null : roundQuantity(stockTotal - orderQuantity);
+      const purchase = String(purchaseInputs[productCode] || [...group.partners].join(", "));
+      const quantityMessage = inventory ? "" : "해당 단위의 재고자료 없음: 재고·잔량 미확정";
+      const information = [orderInformationDisplay(workspace, productCode), quantityMessage].filter(Boolean).join("\n");
+      return {
+        ...(inventory || {}),
+        productCode, productName, specification, unit, sourceRow: source,
+        inventoryMissing: !inventory, inventoryTotal: stockTotal, stockTotal,
+        orderQuantity, inboundQuantity, salesQuantity, remainingQuantity,
+        purchaseNeed: remainingQuantity === null ? null : Math.max(0, -remainingQuantity),
+        quantityComparable: Boolean(inventory), quantityIssue: inventory ? "" : "INVENTORY_MISSING",
+        quantityMessage, purchase, orderInformation: information,
+        salesOnly: !inventory && salesQuantity !== 0 && orderQuantity === 0 && inboundQuantity === 0,
+        unitPriceColumnKey: inventory ? (unitPriceColumn?.key || "") : "",
+        values: [productCode, productName, specification, unit, stockTotal,
+          inboundQuantity, orderQuantity, salesQuantity, remainingQuantity,
+          inventory && effectiveUnitPriceColumnIndex >= 0 ? inventory.values[effectiveUnitPriceColumnIndex] : "",
+          purchase, information],
+      };
     });
     return { columns, headers: columns.map((column) => column.header), rows };
   }
@@ -1784,12 +1748,16 @@
     }
     const normalized = normalizeInventoryOverrideValue(column, value);
     if (!normalized.ok) throw new Error(`${column.header} 값은 숫자 또는 빈칸이어야 합니다.`);
-    const store = createInventoryOverrideStore(workspace);
+    // Rebuild on a candidate: failed recalculation must not partially alter a saved workspace.
+    const candidate = JSON.parse(JSON.stringify(workspace));
+    const store = createInventoryOverrideStore(candidate);
     store.cells = store.cells.filter((cell) =>
       !(normalizeProductCode(cell?.productCode) === code && cell?.columnKey === column.key),
     );
     store.cells.push({ productCode: code, columnKey: column.key, value: normalized.value });
-    getInventoryViewRows(workspace);
+    rebuildWorkspaceFromOrders(candidate);
+    Object.keys(workspace).forEach((key) => { delete workspace[key]; });
+    Object.assign(workspace, candidate);
     return normalized.value;
   }
 
@@ -1809,7 +1777,7 @@
       return {
         sourceRow: allocation,
         warehouseValues: warehouseColumns.map((column) => {
-          if (!inventory) return "";
+          if (!inventory || allocation.quantityComparable === false) return "";
           return inventory.values[sourceIndexByKey.get(column.key)];
         }),
       };
@@ -1856,9 +1824,25 @@
       sourceMatrix: inventorySource.matrix,
       productCodeColumnIndex: inventorySource.productCodeColumnIndex,
     };
+    const columns = getInventoryColumnDescriptors(workspace);
+    const overrideMap = getInventoryOverrideMap(workspace, columns);
+    const aliases = createAliasLookup(INVENTORY_CANONICAL_ALIASES);
+    const effectiveInventoryRows = workspace.inventory.map((row) => {
+      const amount = (header) => {
+        const column = columns.find((item) => normalizeOrderHeader(aliases.get(normalizeOrderHeader(item.header)) || item.header) === normalizeOrderHeader(header));
+        const parsed = parseNumericCell(column ? getEffectiveInventoryCell(workspace, row, column, overrideMap) : null);
+        return parsed.ok ? parsed.value : 0;
+      };
+      const whole = amount("1창고"), seoul = amount("3서울"), transfer = amount("4전송");
+      return { ...row, wholeStockRaw: whole, wholeStockAvailable: Math.max(0, whole),
+        seoulFirstPurchaseRaw: seoul, firstTransferRaw: transfer,
+        seoulFirstPurchaseRemaining: Math.max(0, roundQuantity(seoul + transfer)),
+        inventoryTotal: calculateInventoryTotal(workspace, row, columns, overrideMap) };
+    });
     const rebuilt = analyze(parsedOrders, parsedInventory, {
       sourceFingerprint: workspace.sourceFingerprint,
       createdAt: workspace.createdAt,
+      effectiveInventoryRows,
     });
     rebuilt.inventoryOverrides = inventoryOverrides;
     rebuilt.substitutionHistory = substitutionHistory;
@@ -2060,11 +2044,12 @@
       throw error;
     }
 
+    const effectiveInventoryRows = options.effectiveInventoryRows || inventoryParsed.rows;
     const inventoryByCode = new Map(
-      inventoryParsed.rows.map((row) => [row.productCode, row]),
+      effectiveInventoryRows.map((row) => [row.productCode, row]),
     );
     const poolState = new Map(
-      inventoryParsed.rows.map((row) => [
+      effectiveInventoryRows.map((row) => [
         row.productCode,
         {
           wholeRemaining: row.wholeStockAvailable,
@@ -2076,7 +2061,8 @@
     const allocations = [];
     for (const order of ordersParsed.rows) {
       const inventory = inventoryByCode.get(order.productCode);
-      const matched = Boolean(inventory);
+      const quantityComparable = !inventory || quantityUnit(order) === quantityUnit(inventory);
+      const matched = Boolean(inventory) && quantityComparable;
       let wholeAllocation = 0;
       let seoulAllocation = 0;
       let purchaseNeed = null;
@@ -2107,6 +2093,9 @@
         ...order,
         noticeId: order.note || order.note1 ? buildNoticeId(order) : "",
         inventoryMatched: matched,
+        quantityComparable,
+        quantityIssue: quantityComparable ? "" : "UNIT_MISMATCH",
+        quantityMessage: quantityComparable ? "" : "주문·재고 단위가 달라 자동 배정을 보류합니다.",
         inventoryProductName: inventory?.productName || "",
         wholeStockRaw: matched ? inventory.wholeStockRaw : null,
         wholeStockAvailable: matched ? inventory.wholeStockAvailable : null,
@@ -2127,7 +2116,7 @@
           matched,
         ),
         reconciliationDifference,
-        matchStatus: matched ? "매칭완료" : "재고정보 없음",
+        matchStatus: !quantityComparable ? "단위 확인 필요" : matched ? "매칭완료" : "재고정보 없음",
         purchase: "",
         supplierDisplay: uniqueSupplierPairs([order])[0]?.display || "",
       });
@@ -2135,11 +2124,16 @@
 
     const summaryByCode = new Map();
     for (const allocation of allocations) {
-      if (!summaryByCode.has(allocation.productCode)) {
-        summaryByCode.set(allocation.productCode, {
+      const quantityKey = getQuantityGroupKey(allocation);
+      if (!summaryByCode.has(quantityKey)) {
+        summaryByCode.set(quantityKey, {
           productCode: allocation.productCode,
           productName: allocation.productName,
           specification: allocation.specification,
+          sourceUnit: allocation.sourceUnit,
+          quantityComparable: allocation.quantityComparable,
+          quantityIssue: allocation.quantityIssue,
+          quantityMessage: allocation.quantityMessage,
           inventoryMatched: allocation.inventoryMatched,
           matchStatus: allocation.matchStatus,
           wholeStockRaw: allocation.wholeStockRaw,
@@ -2160,7 +2154,7 @@
           notes1: [],
         });
       }
-      const summary = summaryByCode.get(allocation.productCode);
+      const summary = summaryByCode.get(quantityKey);
       summary.totalOrderQuantity = roundQuantity(
         summary.totalOrderQuantity + allocation.quantity,
       );
@@ -2566,7 +2560,7 @@
     }
     ensureInventoryPurchaseRows(workspace);
     const purchaseNeedByCode = new Map(
-      getInventoryViewRows(workspace).rows.map((inventory) => [
+      getInventoryViewRows(workspace).rows.filter((inventory) => !inventory.inventoryMissing && inventory.quantityComparable !== false).map((inventory) => [
         normalizeProductCode(inventory.productCode),
         inventory.remainingQuantity < 0 ? roundQuantity(Math.abs(inventory.remainingQuantity)) : 0,
       ]),
@@ -2599,6 +2593,7 @@
 
   return Object.freeze({
     ENGINE_VERSION,
+    getQuantityGroupKey,
     WORKSPACE_SCHEMA_VERSION,
     INVENTORY_OVERRIDE_SCHEMA_VERSION,
     SUBSTITUTION_HISTORY_SCHEMA_VERSION,

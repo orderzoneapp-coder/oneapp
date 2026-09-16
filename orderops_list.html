@@ -8,8 +8,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260904-substitute-message"></script>
-  <script src="orderFulfillmentWorkbook.js?v=20260904-substitute-message"></script>
+  <script src="orderFulfillmentEngine.js?v=20260916-baseline-calculation"></script>
+  <script src="orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
   <style>
     :root {
       color-scheme: light;
@@ -2250,10 +2250,12 @@
         purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입", "전송구매"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
+          "규격": ["규격", "specification", "spec"], "단위": ["단위", "unit"],
         } },
         sales: { fileAliases: ["판매", "매출", "sales"], sheetAliases: ["판매", "판매입력", "전송출고"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["판매수량", "매출수량", "출고수량"], "거래처": ["거래처", "거래처명", "판매처", "고객명"],
+          "규격": ["규격", "specification", "spec"], "단위": ["단위", "unit"],
         } },
       });
       const PASTEL_COLOR_PALETTE = Object.freeze([
@@ -3259,7 +3261,10 @@
           return {
             productCode,
             productName,
-            quantity: parsedQuantity.value,
+            specification: String(cells[columnIndex("규격")] ?? ""),
+            sourceUnit: String(cells[columnIndex("단위")] ?? ""),
+            quantity: parsedQuantity.blank ? "" : parsedQuantity.value,
+            sourceQuantity: quantityCell ?? "",
             partner,
             sourceRowNumber: best.headerRowIndex + offset + 2,
           };
@@ -4659,6 +4664,7 @@
       }
 
       function inventoryRowState(row, shortageRole) {
+        if (row?.quantityComparable === false) return row.quantityMessage || "단위 확인 필요";
         if (shortageRole === "candidate") return "대체상품";
         if (row?.inventoryMissing || row?.salesOnly) return "재고정보 없음";
         if (shortageRole === "shortage") return "부족상품";
@@ -4681,11 +4687,14 @@
           ...row,
           shortageFocusRole,
           shortageCategory: shortageCategoryCode(productCode),
-          rowState: inventoryRowState(inventoryRow, shortageFocusRole),
+          rowState: inventoryRowState(row?.quantityComparable === false ? row : inventoryRow, shortageFocusRole),
           inventoryMissing: Boolean(inventoryRow?.inventoryMissing || row?.inventoryMissing),
-          stockTotal: row?.stockTotal ?? inventoryRow?.stockTotal,
-          orderQuantity: row?.orderQuantity ?? inventoryRow?.orderQuantity,
-          remainingQuantity: row?.remainingQuantity ?? inventoryRow?.remainingQuantity,
+          quantityComparable: row?.quantityComparable ?? inventoryRow?.quantityComparable,
+          quantityIssue: row?.quantityIssue || inventoryRow?.quantityIssue || "",
+          quantityMessage: row?.quantityMessage || inventoryRow?.quantityMessage || "",
+          stockTotal: row?.inventoryMissing || row?.quantityComparable === false ? row.stockTotal : row?.stockTotal ?? inventoryRow?.stockTotal,
+          orderQuantity: row?.quantityComparable === false ? null : row?.orderQuantity ?? inventoryRow?.orderQuantity,
+          remainingQuantity: row?.quantityComparable === false ? null : row?.remainingQuantity ?? inventoryRow?.remainingQuantity,
         };
       }
 
@@ -4764,7 +4773,9 @@
               return sum + (parsed.ok ? parsed.value : 0);
             }, 0);
             const remainingIndex = baseColumns.findIndex((column) => column.role === "calculatedQuantity");
-            row.displayRemainingQuantity = selectedStock - Number(row?.orderQuantity || 0);
+            row.displayRemainingQuantity = row.quantityComparable === false
+              ? null
+              : selectedStock - Number(row?.orderQuantity || 0);
             if (remainingIndex >= 0) values[remainingIndex] = row.displayRemainingQuantity;
           }
           values.splice(statusIndex, 0, row?.rowState ?? "");
@@ -4878,7 +4889,7 @@
           : [];
         const preview = {
           label: isPurchase ? "구매현황" : "판매현황",
-          headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량"],
+          headers: ["원본행", "상품코드", "품명", isPurchase ? "구매처" : "거래처", "수량", "규격", "단위"],
           numeric: [0, 4],
           inventory: [],
           purchase: -1,
@@ -4891,16 +4902,20 @@
             row.productName || "",
             row.partner || "",
             typeof row.quantity === "number" ? row.quantity : "",
+            row.specification ?? "",
+            row.sourceUnit ?? row.unit ?? "",
           ]),
           sortByProductCode: true,
         };
         preview.columns = createPreviewColumns(kind, preview.headers, preview.numeric);
-        [72, 110, 200, 180, 90].forEach((width, index) => {
+        [72, 110, 200, 180, 90, 100, 70].forEach((width, index) => {
           if (preview.columns[index]) preview.columns[index].defaultWidth = width;
         });
         preview.columns[1].role = "productCode";
         preview.columns[2].role = "productName";
         preview.columns[4].role = isPurchase ? "inboundQuantity" : "salesQuantity";
+        preview.columns[5].role = "specification";
+        preview.columns[6].role = "unit";
         return preview;
       }
 
@@ -4941,26 +4956,34 @@
         const allocationWarehouseStart = 10;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocationProductSummaries = new Map();
+        const allocationUnitGroups = new Map();
         workspace.allocations.forEach((row) => {
           const productCode = engine.normalizeProductCode(row?.productCode);
           if (!productCode) return;
+          const quantityGroupKey = engine.getQuantityGroupKey(row);
+          if (!allocationUnitGroups.has(productCode)) allocationUnitGroups.set(productCode, new Set());
+          allocationUnitGroups.get(productCode).add(quantityGroupKey);
           const parsedQuantity = engine.parseNumericCell(row?.quantity);
-          const summary = allocationProductSummaries.get(productCode) || { rowCount: 0, quantity: 0 };
+          const summary = allocationProductSummaries.get(quantityGroupKey) || { rowCount: 0, quantity: 0 };
           summary.rowCount += 1;
           summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;
-          allocationProductSummaries.set(productCode, summary);
+          allocationProductSummaries.set(quantityGroupKey, summary);
         });
         const allocationAggregateShown = new Set();
         const allocationSourceRows = workspace.allocations.map((row) => {
           const productCode = engine.normalizeProductCode(row?.productCode);
-          const summary = allocationProductSummaries.get(productCode);
-          const showAggregate = Boolean(productCode && summary && !allocationAggregateShown.has(productCode));
-          if (productCode) allocationAggregateShown.add(productCode);
+          const quantityGroupKey = engine.getQuantityGroupKey(row);
+          const summary = allocationProductSummaries.get(quantityGroupKey);
+          const showAggregate = Boolean(productCode && summary && !allocationAggregateShown.has(quantityGroupKey));
+          if (productCode) allocationAggregateShown.add(quantityGroupKey);
+          const aggregateQuantity = showAggregate ? Math.round(summary.quantity * 1000000) / 1000000 : "";
+          const showUnit = (allocationUnitGroups.get(productCode)?.size || 0) > 1;
+          const unitLabel = String(row?.sourceUnit ?? row?.unit ?? "").trim() || "단위 미입력";
           return {
             ...decorateShortageRow(row, shortageSets, inventoryByCode),
-            productAggregateQuantity: showAggregate
-              ? Math.round(summary.quantity * 1000000) / 1000000
-              : "",
+            productAggregateQuantity: showAggregate && showUnit
+              ? `${aggregateQuantity} ${unitLabel}`
+              : aggregateQuantity,
           };
         });
         const allocations = {
@@ -5601,7 +5624,7 @@
                 focusCandidate ? "shortage-candidate-row" : "",
                 shortageCategory ? "shortage-category-row" : "",
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
-                Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
+                sourceRow?.quantityComparable !== false && Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
                 exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
                 exactBoxUnit(sourceRow) ? "box-unit-row" : "",
@@ -5710,7 +5733,11 @@
                                 style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(displayValue)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
                             : column.role === "rowState"
-                              ? ""
+                              ? sourceRow?.quantityComparable === false
+                                ? `<span class="warning-value">${escapeHtml(sourceRow.quantityMessage || "단위 확인 필요")}</span>`
+                                : ""
+                            : column.role === "productAggregateQuantity" && sourceRow?.quantityIssue === "UNIT_MISMATCH"
+                              ? `<span title="${escapeHtml(sourceRow.quantityMessage || "단위 확인 필요")}">${escapeHtml(formatNumber(displayValue))}<span class="warning-value"> · 단위 확인</span></span>`
                             : column.role === "orderInformation"
                               ? renderOrderInformationBadges(displayValue, sourceRow)
                             : column.role === "systemMessages"

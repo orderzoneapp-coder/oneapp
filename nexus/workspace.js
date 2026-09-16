@@ -477,6 +477,7 @@
         this.queuedNavigation = { target: this.currentTarget, historyMode: 'replace', navigationOptions: {} };
         this.setPendingHeader(this.currentTarget);
         this.cancelPendingLoad();
+        if (!this.transitionRunning) return this.runNavigationQueue();
         return Promise.resolve();
       }
       if (selectsCurrentTarget && this.frameReady) {
@@ -489,6 +490,7 @@
       this.setPendingHeader(target);
       if (this.pendingLoad) {
         this.cancelPendingLoad();
+        if (!this.transitionRunning) return this.runNavigationQueue();
         return Promise.resolve();
       }
       if (this.transitionRunning) return Promise.resolve();
@@ -572,9 +574,12 @@
     beginHandshake(target, options = {}) {
       if (this.pendingLoad?.timer) this.window.clearTimeout(this.pendingLoad.timer);
       this.loadingTarget = target;
-      this.retryTarget = target;
-      this.failedLoad = null;
-      this.loadTransitionId = createTransitionId(this.window.crypto);
+      // Reconnecting the restored document must not change what the visible
+      // failure screen retries, even before the reconnect acknowledges READY.
+      this.failedLoad = options.preserveFailedLoad || null;
+      this.retryTarget = this.failedLoad?.target || target;
+      const transitionId = createTransitionId(this.window.crypto);
+      this.loadTransitionId = transitionId;
       this.hostReadyTransitionId = '';
       this.frameReady = false;
       this.frameDocumentLoaded = false;
@@ -583,17 +588,17 @@
       this.loadingText.textContent = `${target.app.label} 앱을 준비하고 있습니다.`;
       if (!options.preserveFailedLoad) this.error.hidden = true;
       this.notice.hidden = true;
-      this.updateStandalone(target);
+      this.updateStandalone(this.failedLoad?.target || target);
       this.document.documentElement.dataset.nexusUiApp = target.app.id;
       this.document.documentElement.dataset.nexusApp = target.app.id;
 
       return new Promise((resolve) => {
         const timer = this.window.setTimeout(() => {
-          if (this.pendingLoad?.transitionId !== this.loadTransitionId) return;
+          if (this.pendingLoad?.transitionId !== transitionId) return;
           this.failLoad('앱 연결 신호를 받지 못했습니다. 현재 앱은 독립 주소로 열 수 있습니다.');
         }, HANDSHAKE_TIMEOUT_MS);
         this.pendingLoad = {
-          transitionId: this.loadTransitionId,
+          transitionId,
           historyMode: options.historyMode || 'push',
           restoreTarget: options.restoreTarget === undefined ? this.currentTarget : options.restoreTarget,
           popstate: options.popstate || null,
@@ -612,6 +617,7 @@
       if (pending.timer) this.window.clearTimeout(pending.timer);
       this.pendingLoad = null;
       this.loadingTarget = null;
+      this.loadTransitionId = '';
       this.hostReadyTransitionId = '';
       pending.resolve('cancelled');
       return true;
@@ -662,30 +668,34 @@
       this.loadingTarget = null;
       this.frameReady = false;
       this.hostReadyTransitionId = '';
-      this.failedLoad = failedTarget ? {
+      this.failedLoad = pending?.preserveFailedLoad || (failedTarget ? {
         target: failedTarget,
         historyMode: pending?.historyMode || 'replace',
         restoreTarget: restoreTarget || null,
         popstate: pending?.popstate || null,
-      } : null;
+      } : null);
       if (pending?.historyMode === 'none' && restoreTarget) {
         if (!this.restorePopState(pending.popstate, restoreTarget)) this.commitHistory(restoreTarget, 'replace');
       }
       this.restoreCurrentTarget(restoreTarget);
       this.loading.hidden = true;
       this.setPendingHeader(null);
-      this.showLoadError(message, failedTarget);
+      this.showLoadError(message, this.failedLoad?.target || failedTarget);
       pending?.resolve?.('failed');
     }
 
     retryCurrentTarget() {
-      if (this.transitionRunning) return;
+      if (this.transitionRunning || this.historyRestore || this.historyRetry) return;
       const recovery = this.failedLoad || (this.currentTarget ? {
         target: this.currentTarget,
         historyMode: 'replace',
         restoreTarget: this.currentTarget,
       } : null);
       if (!recovery?.target) return;
+      if (this.pendingLoad) {
+        if (this.pendingLoad.preserveFailedLoad !== recovery) return;
+        this.cancelPendingLoad();
+      }
       if (recovery.historyMode === 'none' && recovery.popstate) {
         const delta = recovery.popstate.toIndex - this.historyIndex;
         if (delta !== 0) {

@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.9.0";
+  const WORKBOOK_VERSION = "4.9.1";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -351,10 +351,13 @@
       throw new Error("Shipping Management 재고 엔진을 불러오지 못했습니다.");
     }
     const inventoryView = engine.getAllocationInventoryView(workspace);
+    const finalPurchaseByCode = new Map(engine.getPurchaseUploadSelection(workspace).included.map(row => [row.productCode, row.purchaseNeed]));
+    const purchaseShown = new Set();
+    const purchaseBasisByCode = new Map(engine.getInventoryViewRows(workspace).rows.map(row => [row.productCode, row]));
     const warehouseHeaders = inventoryView.columns.map((column) => column.header);
     const orderQuantityTotals = new Map();
     workspace.allocations.forEach((row) => {
-      const productCode = engine.normalizeProductCode(row.productCode);
+      const productCode = engine.getQuantityGroupKey(row);
       const quantity = typeof row.quantity === "number" && Number.isFinite(row.quantity)
         ? row.quantity
         : 0;
@@ -379,15 +382,24 @@
       "적요",
       "적요1",
       "담당자",
+      "단위",
+      "단위 확인",
+      "최종 구매수량(상품별)",
+      "구매수량 기준",
     ];
-    const rows = workspace.allocations.map((row, index) => [
+    const rows = workspace.allocations.map((row, index) => {
+      const firstPurchase = !purchaseShown.has(row.productCode);
+      purchaseShown.add(row.productCode);
+      const finalPurchase = finalPurchaseByCode.get(row.productCode);
+      const basis = purchaseBasisByCode.get(row.productCode);
+      return [
       row.warehouse || "",
       row.productCode,
       row.productName,
       row.specification,
       ...inventoryView.rows[index].warehouseValues,
       row.quantity,
-      orderQuantityTotals.get(engine.normalizeProductCode(row.productCode)) || 0,
+      orderQuantityTotals.get(engine.getQuantityGroupKey(row)) || 0,
       row.inventoryMatched ? row.wholeStockRaw : "",
       row.inventoryMatched ? row.seoulFirstPurchaseRemaining : "",
       row.inventoryMatched ? row.purchaseNeed : "",
@@ -399,7 +411,12 @@
       row.note,
       row.note1,
       row.manager,
-    ]);
+      row.sourceUnit ?? "",
+      row.quantityMessage || "",
+      firstPurchase && finalPurchase !== undefined ? finalPurchase : "",
+      firstPurchase ? (basis?.quantityIssue === "UNIT_MISMATCH" ? basis.quantityMessage
+        : "구매수량은 주문행 배분 부족분, 최종 구매수량은 전체 창고 잔량 기준 상품별 1회 값입니다.") : "",
+    ]; });
     const warehouseStart = 4;
     const orderQuantityColumn = warehouseStart + warehouseHeaders.length;
     const purchaseColumn = orderQuantityColumn + 5;
@@ -414,6 +431,7 @@
       orderQuantityColumn + 4,
       priceColumn,
       supplyAmountColumn,
+      headers.indexOf("최종 구매수량(상품별)"),
     ]);
     const whiteManager = dominantManager(workspace.allocations);
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -1057,15 +1075,7 @@
   }
 
   function getPurchaseUploadRows(workspace) {
-    return (workspace?.purchaseManagement || []).filter(
-      (row) =>
-        row.rowType !== "reference" &&
-        row.inventoryMatched &&
-        typeof row.purchaseNeed === "number" &&
-        row.purchaseNeed > 0 &&
-        row.purchase !== "대체" &&
-        row.purchase !== "소분",
-    );
+    return engine.getPurchaseUploadSelection(workspace).included;
   }
 
   function getSalesUploadRows(workspace) {

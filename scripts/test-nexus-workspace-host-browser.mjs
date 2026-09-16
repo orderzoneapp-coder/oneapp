@@ -498,6 +498,22 @@ try {
     && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'merchops'
     && document.querySelector('#nexusWorkspaceLoading').hidden`), 'popstate-failure source');
   const beforePopFailure = await evaluate(client, `({href:location.href,length:history.length})`);
+  // Hold only the restored-document READY message. This makes retry run
+  // inside the reconnect window deterministically, without a timing delay.
+  await evaluate(client, `(() => {
+    const prototype=ONEAPP_NEXUS_WORKSPACE.WorkspaceHost.prototype;
+    const originalFail=prototype.failLoad;
+    const originalMessage=prototype.onMessage;
+    window.reconnectRace={held:[],restore(){prototype.failLoad=originalFail;prototype.onMessage=originalMessage;}};
+    prototype.failLoad=function(...args){window.reconnectRace.host=this;return originalFail.apply(this,args);};
+    prototype.onMessage=function(event){
+      if(this.pendingLoad?.preserveFailedLoad && event.data?.type===ONEAPP_NEXUS_WORKSPACE.MESSAGE_TYPES.APP_READY){
+        window.reconnectRace.held.push(event);
+        return;
+      }
+      return originalMessage.call(this,event);
+    };
+  })()`);
   failNext.set('/DataOps.html', 1);
   await evaluate(client, 'history.back()');
   await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceError')?.hidden === false && location.href === ${JSON.stringify(beforePopFailure.href)}`), 'popstate load failure and index restoration', 12_000);
@@ -505,7 +521,32 @@ try {
   assert.equal(popFailure.href, beforePopFailure.href, 'a failed popstate load must restore the previous parent URL');
   assert.equal(popFailure.length, beforePopFailure.length, 'popstate failure restoration must not add history');
   assert.equal(popFailure.app, 'merchops');
+  await evaluate(client, `(() => {
+    const host=window.reconnectRace.host;
+    if(!host.pendingLoad?.preserveFailedLoad){
+      document.querySelector('#nexusWorkspaceFrame').contentWindow.location.replace(host.currentTarget.url);
+    }
+  })()`);
+  const reconnectWindow = await waitFor(() => evaluate(client, `(() => {
+    const race=window.reconnectRace;
+    const host=race.host;
+    if(!race.held.length || !host.pendingLoad?.preserveFailedLoad || host.historyRestore || host.transitionRunning) return null;
+    return {
+      current:host.currentTarget.app.id,
+      reconnecting:host.loadingTarget.app.id,
+      failed:host.failedLoad?.target.app.id,
+      mode:host.failedLoad?.historyMode,
+      errorVisible:!document.querySelector('#nexusWorkspaceError').hidden,
+      standalone:new URL(document.querySelector('#nexusWorkspaceStandalone').href).pathname,
+    };
+  })()`), 'controlled restored-app reconnect before retry');
+  assert.deepEqual(reconnectWindow, { current: 'merchops', reconnecting: 'merchops', failed: 'dataops', mode: 'none', errorVisible: true, standalone: '/DataOps.html' }, 'the visible failure must retain DataOps while MerchOps reconnect is unfinished');
   await evaluate(client, `document.querySelector('#nexusWorkspaceRetry').click()`);
+  await evaluate(client, `(() => {
+    const race=window.reconnectRace;
+    race.restore();
+    for(const event of race.held) race.host.onMessage(event);
+  })()`);
   await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'dataops'
     && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'dataops'
     && document.querySelector('#nexusWorkspaceLoading').hidden`), 'popstate retry success');
@@ -611,7 +652,7 @@ try {
   }
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
-  console.log('PASS NEXUS workspace browser: exact header-link blocking, queued and started-navigation supersession, current-tab cancellation, seven real apps, 42 directed transitions, persistent header, adapter handshake, indexed history retry, failure recovery, theme/print, compact reveal.');
+  console.log('PASS NEXUS workspace browser: exact header-link blocking, queued and started-navigation supersession, current-tab cancellation, seven real apps, 42 directed transitions, persistent header, adapter handshake, controlled reconnect/early indexed-history retry, failure recovery, theme/print, compact reveal.');
 } finally {
   client?.close();
   if (browser && !browser.killed) {
