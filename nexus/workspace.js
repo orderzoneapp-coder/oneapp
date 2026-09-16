@@ -12,7 +12,7 @@
 })(typeof window === 'object' ? window : globalThis, () => {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.2';
   const SCHEMA_VERSION = 'nexus-workspace-message/v1';
   const HANDSHAKE_TIMEOUT_MS = 8000;
   const LEAVE_TIMEOUT_MS = 12000;
@@ -177,7 +177,10 @@
       this.loadTransitionId = '';
       this.frameReady = false;
       this.frameDocumentLoaded = false;
+      this.loadedDocument = null;
       this.hostReadyTransitionId = '';
+      this.hostReadyDocument = null;
+      this.connectedDocument = null;
       this.transitionRunning = false;
       this.pendingExit = null;
       this.queuedNavigation = null;
@@ -238,17 +241,41 @@
     onFrameLoad() {
       if (!this.loadingTarget) {
         if (this.historyRetry) return;
+        if (this.frameReady && this.connectedDocument === this.frame.contentDocument) return;
         this.reconnectUnexpectedFrameLoad();
         return;
       }
+      const document = this.targetDocument(this.loadingTarget);
+      if (!document) return;
+      this.loadedDocument = document;
       this.frameDocumentLoaded = true;
       this.frame.classList.add('is-document-loaded');
       this.sendHostReady();
+      this.completeLoad();
+    }
+
+    targetDocument(target) {
+      try {
+        if (this.frame.contentWindow.location.href !== target?.url) return null;
+        return this.frame.contentDocument;
+      } catch { return null; }
     }
 
     sendHostReady() {
-      if (!this.loadingTarget || !this.loadTransitionId || this.hostReadyTransitionId === this.loadTransitionId) return false;
+      if (!this.loadingTarget || !this.loadTransitionId) return false;
+      const document = this.targetDocument(this.loadingTarget);
+      if (!document || (this.hostReadyTransitionId === this.loadTransitionId && this.hostReadyDocument === document)) return false;
+      if (this.hostReadyDocument && this.hostReadyDocument !== document && this.pendingLoad) {
+        // WindowProxy survives reloads. Give a replacement document its own
+        // transition so the old document's queued READY cannot acknowledge it.
+        this.window.clearTimeout(this.pendingLoad.timer);
+        this.loadTransitionId = createTransitionId(this.window.crypto);
+        this.pendingLoad.transitionId = this.loadTransitionId;
+        this.pendingLoad.readyDocument = null;
+        this.pendingLoad.timer = this.loadTimeout(this.loadTransitionId);
+      }
       this.hostReadyTransitionId = this.loadTransitionId;
+      this.hostReadyDocument = document;
       return this.post(MESSAGE_TYPES.HOST_READY, this.loadTransitionId, this.loadingTarget, {
         theme: this.theme(),
         hostVersion: VERSION,
@@ -285,6 +312,7 @@
         restoreTarget: this.currentTarget,
         preserveFailedLoad: this.failedLoad,
       });
+      this.loadedDocument = this.targetDocument(target);
       this.frameDocumentLoaded = true;
       this.frame.classList.add('is-document-loaded');
       this.sendHostReady();
@@ -312,7 +340,6 @@
           || data.appId !== this.loadingTarget.app.id) return;
         const bridgeTarget = validateRoute(data.appId, data.route, this.siteRoot, this.origin);
         if (!bridgeTarget.ok || bridgeTarget.url !== this.loadingTarget.url) return;
-        this.frameDocumentLoaded = true;
         this.sendHostReady();
         return;
       }
@@ -327,6 +354,9 @@
 
       if (data.type === MESSAGE_TYPES.APP_READY) {
         if (!this.loadingTarget || data.appId !== this.loadingTarget.app.id) return;
+        const document = this.targetDocument(this.loadingTarget);
+        if (!document || document !== this.hostReadyDocument || !this.pendingLoad) return;
+        this.pendingLoad.readyDocument = document;
         this.completeLoad();
         return;
       }
@@ -581,8 +611,10 @@
       const transitionId = createTransitionId(this.window.crypto);
       this.loadTransitionId = transitionId;
       this.hostReadyTransitionId = '';
+      this.hostReadyDocument = null;
       this.frameReady = false;
       this.frameDocumentLoaded = false;
+      this.loadedDocument = null;
       this.frame.classList.remove('is-document-loaded');
       this.loading.hidden = false;
       this.loadingText.textContent = `${target.app.label} 앱을 준비하고 있습니다.`;
@@ -593,10 +625,7 @@
       this.document.documentElement.dataset.nexusApp = target.app.id;
 
       return new Promise((resolve) => {
-        const timer = this.window.setTimeout(() => {
-          if (this.pendingLoad?.transitionId !== transitionId) return;
-          this.failLoad('앱 연결 신호를 받지 못했습니다. 현재 앱은 독립 주소로 열 수 있습니다.');
-        }, HANDSHAKE_TIMEOUT_MS);
+        const timer = this.loadTimeout(transitionId);
         this.pendingLoad = {
           transitionId,
           historyMode: options.historyMode || 'push',
@@ -607,6 +636,13 @@
           resolve,
         };
       });
+    }
+
+    loadTimeout(transitionId) {
+      return this.window.setTimeout(() => {
+        if (this.pendingLoad?.transitionId !== transitionId) return;
+        this.failLoad('앱 연결 신호를 받지 못했습니다. 현재 앱은 독립 주소로 열 수 있습니다.');
+      }, HANDSHAKE_TIMEOUT_MS);
     }
 
     cancelPendingLoad() {
@@ -635,8 +671,12 @@
 
     completeLoad() {
       const pending = this.pendingLoad;
-      if (!pending || !this.loadingTarget) return;
+      // The bridge can reply before native iframe load. Commit parent history
+      // only after both signals belong to the same target document.
+      const document = this.loadingTarget && this.targetDocument(this.loadingTarget);
+      if (!pending || !document || this.loadedDocument !== document || pending.readyDocument !== document) return;
       this.window.clearTimeout(pending.timer);
+      this.connectedDocument = document;
       this.currentTarget = this.loadingTarget;
       this.loadingTarget = null;
       this.retryTarget = this.currentTarget;

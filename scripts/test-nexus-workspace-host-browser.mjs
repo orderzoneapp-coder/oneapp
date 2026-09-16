@@ -57,7 +57,26 @@ const server = createServer((request, response) => {
     if (file !== root && !file.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
     if (!existsSync(file) || !statSync(file).isFile()) return response.writeHead(404).end('Not found');
     response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(file).toLowerCase()] || 'application/octet-stream' });
-    response.end(readFileSync(file));
+    if (pathname === '/nexus/workspace.js') {
+      // Trace only host/fixture connection metadata, never app workspace data.
+      const diagnostic = `
+      root.workspaceTrace = [];
+      for (const name of ['onFrameLoad','onMessage','sendHostReady','beginHandshake','completeLoad','failLoad','onPopState','beforeLeave']) {
+        const original = api.WorkspaceHost.prototype[name];
+        api.WorkspaceHost.prototype[name] = function (...args) {
+          let frameUrl = '';
+          try { frameUrl = this.frame.contentWindow.location.href; } catch {}
+          root.workspaceTrace.push({name, type:args[0]?.data?.type || '',
+            transition:this.loadTransitionId, sent:this.hostReadyTransitionId,
+            current:this.currentTarget?.app.id, loading:this.loadingTarget?.app.id,
+            ready:this.frameReady, frameUrl, parentUrl:location.href});
+          if(root.workspaceTrace.length > 80) root.workspaceTrace.shift();
+          return original.apply(this,args);
+        };
+      }
+      `;
+      response.end(readFileSync(file, 'utf8').replace('  api.mount();', `${diagnostic}\n  api.mount();`));
+    } else response.end(readFileSync(file));
   } catch (error) {
     response.writeHead(500).end(String(error));
   }
@@ -252,7 +271,18 @@ try {
   const loaded = client.once('Page.loadEventFired');
   await client.send('Page.navigate', { url: `${origin}/nexus/workspace.html` });
   await loaded;
-  await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceFrame')?.contentDocument?.documentElement.dataset.fixtureReady === 'true'`), 'initial fixture ready');
+  await waitFor(() => evaluate(client, `document.querySelector('#nexusWorkspaceFrame')?.contentDocument?.documentElement.dataset.fixtureReady === 'true'
+    && document.querySelector('#nexusWorkspaceLoading')?.hidden`), 'initial fixture ready');
+  const completedHandshake = await evaluate(client, `(() => {
+    const frame=document.querySelector('#nexusWorkspaceFrame');
+    const count=frame.contentWindow.fixtureState.hostReadyCount;
+    const length=history.length;
+    frame.dispatchEvent(new Event('load'));
+    return {count,length,loading:document.querySelector('#nexusWorkspaceLoading').hidden};
+  })()`);
+  assert.equal(completedHandshake.loading, true, 'the same completed document must not reconnect on a late load event');
+  assert.deepEqual(await evaluate(client, `({count:document.querySelector('#nexusWorkspaceFrame').contentWindow.fixtureState.hostReadyCount,length:history.length})`),
+    {count:completedHandshake.count,length:completedHandshake.length}, 'late load must not issue another handshake or alter history');
 
   const initial = await evaluate(client, `(() => ({
     headers: document.querySelectorAll('.nexus-ui-header').length,
@@ -574,7 +604,8 @@ try {
   assert.equal(invalid.standalone, '/Master.html');
   assert.match(invalid.text, /허용되지 않은/);
   await evaluate(client, `document.querySelector('#nexusWorkspaceRetry').click()`);
-  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'master-lookup' && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'master-lookup'`), 'safe retry fallback');
+  await waitFor(() => evaluate(client, `new URL(location.href).searchParams.get('app') === 'master-lookup' && document.querySelector('#nexusWorkspaceFrame')?.contentWindow.fixtureState?.appId === 'master-lookup'
+    && document.querySelector('#nexusWorkspaceLoading')?.hidden`), 'safe retry fallback');
 
   const appIds = ['master-lookup', 'customer-master', 'smart-input', 'smart-parser', 'merchops', 'orderops', 'dataops'];
   let directedTransitions = 0;
@@ -653,6 +684,11 @@ try {
 
   assert.deepEqual(runtimeExceptions, [], `workspace runtime must not throw: ${runtimeExceptions.join('; ')}`);
   console.log('PASS NEXUS workspace browser: exact header-link blocking, queued and started-navigation supersession, current-tab cancellation, seven real apps, 42 directed transitions, persistent header, adapter handshake, controlled reconnect/early indexed-history retry, failure recovery, theme/print, compact reveal.');
+} catch (error) {
+  if (client) {
+    try { console.error('Workspace transition diagnostic:', JSON.stringify(await evaluate(client, 'window.workspaceTrace || []'))); } catch {}
+  }
+  throw error;
 } finally {
   client?.close();
   if (browser && !browser.killed) {
