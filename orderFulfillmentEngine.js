@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.1";
+  const ENGINE_VERSION = "3.19.2";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -1785,6 +1785,16 @@
     return { columns: warehouseColumns, rows };
   }
 
+  function recalculateWorkspace(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    // Recalculate a candidate only. Failure must leave the active work untouched.
+    const candidate = JSON.parse(JSON.stringify(workspace));
+    const preserved = { ...candidate };
+    return { ...preserved, ...rebuildWorkspaceFromOrders(candidate) };
+  }
+
   function rebuildWorkspaceFromOrders(workspace) {
     const purchaseInputs = getPurchaseInputs(workspace);
     const inventoryOverrides = JSON.parse(JSON.stringify(
@@ -2033,6 +2043,9 @@
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
+    // Parsed files are immutable source evidence, not the editable work rows.
+    ordersParsed = ordersParsed == null ? ordersParsed : JSON.parse(JSON.stringify(ordersParsed));
+    inventoryParsed = inventoryParsed == null ? inventoryParsed : JSON.parse(JSON.stringify(inventoryParsed));
     const inputValidation = validateInputs(ordersParsed, inventoryParsed);
     if (!inputValidation.canAnalyze) {
       const error = new Error(
@@ -2626,6 +2639,7 @@
     isNoticeAcknowledged,
     setNoticeAcknowledged,
     analyze,
+    recalculateWorkspace,
     setPurchaseValue,
     applyPurchaseInputs,
     getPurchaseInputs,

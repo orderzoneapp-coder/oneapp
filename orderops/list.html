@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260916-baseline-calculation"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260917-work-preservation"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
   <style>
     :root {
@@ -2413,7 +2413,8 @@
         searchQuery: "",
         shortageFocus: false,
         specificationFilters: new Set(),
-        loading: { orders: false, inventory: false, purchases: false, sales: false, integrated: false },
+        loading: { orders: false, inventory: false, purchases: false, sales: false, integrated: false, bundle: false },
+        analysisRunning: false,
         integratedFile: null,
         db: null,
         legacyDb: null,
@@ -3321,17 +3322,25 @@
       }
 
       async function replaceRecoveryWithCurrentFiles() {
+        if (isInputOperationBusy()) throw new Error("파일 읽기·분석이 끝난 뒤 다시 시도하세요.");
         if (!state.validation?.canAnalyze) {
           throw new Error("교체할 주문현황·창고별재고 파일을 먼저 선택하세요.");
         }
-        const candidateWorkspace = await analyzeCurrentInputs();
-        await persistLocalWorkspace(candidateWorkspace, { activePreview: "validation" });
-        clearSubstitutionSelection();
-        state.workspace = candidateWorkspace;
-        state.activePreview = "validation";
-        resetResultViewFilters();
-        renderResults();
-        showToast("새 분석·저장·재읽기·SHA-256 검산 후 복구 포인터를 안전하게 교체했습니다.");
+        state.analysisRunning = true;
+        elements.analyzeButton.disabled = true;
+        try {
+          const candidateWorkspace = await analyzeCurrentInputs({ fromSources: true });
+          await persistLocalWorkspace(candidateWorkspace, { activePreview: "validation" });
+          clearSubstitutionSelection();
+          state.workspace = candidateWorkspace;
+          state.activePreview = "validation";
+          resetResultViewFilters();
+          renderResults();
+          showToast("새 분석·저장·재읽기·SHA-256 검산 후 복구 포인터를 안전하게 교체했습니다.");
+        } finally {
+          state.analysisRunning = false;
+          refreshInputState();
+        }
       }
 
       function normalizeCloudUrl(value) {
@@ -3506,7 +3515,7 @@
       }
 
       function integratedCandidateScore(kind, parsed) {
-        if (!parsed || (parsed.missingColumns?.length || 0) > 0 || (parsed.rowCount || 0) < 1) return 0;
+        if (!parsed || (parsed.errors?.length || 0) > 0 || (parsed.missingColumns?.length || 0) > 0 || (parsed.rowCount || 0) < 1) return 0;
         if (kind === "orders") {
           const mapped = new Set((parsed.headerMapping?.columns || [])
             .map((column) => String(column.canonical || "").trim()));
@@ -3619,15 +3628,16 @@
       }
 
       async function handleBundleFiles(fileList) {
+        if (isInputOperationBusy()) return;
         const files = Array.from(fileList || []).filter(Boolean);
         if (files.length < 1 || files.length > 4) {
           showToast("자동분류 드롭은 1~4개 Excel 파일을 넣어주세요.", true);
           return;
         }
 
-        resetResults();
-        state.analysisEnterLocked = true;
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        state.loading.bundle = true;
+        state.analysisEnterLocked = true;
         elements.analyzeButton.disabled = true;
         setSystemMessage("파일 자동분류 중 · 시트 구조와 열 이름을 확인합니다");
 
@@ -3635,9 +3645,11 @@
           const classified = await Promise.all(files.map(classifyBundleFile));
           const byKind = new Map();
           classified.forEach((item) => {
+            validateFileCandidate(item.kind, item.parsed);
             if (byKind.has(item.kind)) throw new Error(`${FILE_KIND_LABELS[item.kind]} 파일이 둘 이상 판별되었습니다.`);
             byKind.set(item.kind, item.parsed);
           });
+          resetResults();
           byKind.forEach((parsed, kind) => { state[kind] = parsed; });
           refreshInputState();
 
@@ -3654,6 +3666,20 @@
           refreshInputState();
           setSystemMessage("자동분류 실패 · 기존 파일 선택은 유지됩니다");
           showToast(`${error.message || "묶음 파일을 처리하지 못했습니다."} · 기존 선택은 유지됩니다.`, true);
+        } finally {
+          state.loading.bundle = false;
+          refreshInputState();
+        }
+      }
+
+      function isInputOperationBusy() {
+        return Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean));
+      }
+
+      function validateFileCandidate(kind, parsed) {
+        if (!parsed || parsed.errors?.length || parsed.missingColumns?.length || !(parsed.rowCount > 0)) {
+          const detail = parsed?.errors?.map((issue) => issue.message).filter(Boolean).join(" · ");
+          throw new Error(detail || `${FILE_KIND_LABELS[kind]} 필수 열과 데이터행을 확인하세요.`);
         }
       }
 
@@ -3703,7 +3729,7 @@
       }
 
       async function handleFile(kind, file) {
-        if (!file) return;
+        if (!file || isInputOperationBusy()) return;
         if (!isSupportedFile(file)) {
           showToast(".xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
           return;
@@ -3713,16 +3739,18 @@
           return;
         }
 
-        resetResults();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         setLoading(kind, true);
         try {
-          state[kind] = ["orders", "inventory"].includes(kind)
+          const candidate = ["orders", "inventory"].includes(kind)
             ? await parseExcelFile(file, kind)
             : await parseGenericExcelFile(file, kind);
+          validateFileCandidate(kind, candidate);
+          resetResults();
+          state[kind] = candidate;
           showToast(`${file.name} 파일을 읽었습니다.`);
         } catch (error) {
-          state[kind] = null;
-          showToast(error.message || "Excel 파일을 읽지 못했습니다.", true);
+          showToast(`${error.message || "Excel 파일을 읽지 못했습니다."} · 기존 파일과 수정 작업은 유지됩니다.`, true);
         } finally {
           setLoading(kind, false);
           refreshInputState();
@@ -3730,7 +3758,7 @@
       }
 
       async function handleIntegratedFile(file) {
-        if (!file) return;
+        if (!file || isInputOperationBusy()) return;
         if (!isSupportedFile(file)) {
           showToast("통합파일은 .xlsx 또는 .xls 파일만 선택할 수 있습니다.", true);
           return;
@@ -3739,6 +3767,7 @@
           showToast("통합파일 크기는 25MB 이하여야 합니다.", true);
           return;
         }
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         state.loading.integrated = true;
         renderIntegratedFileCard();
         state.analysisEnterLocked = true;
@@ -3747,9 +3776,9 @@
         try {
           const result = await parseIntegratedExcelFile(file);
           if (result.applied.size === 0) {
-            state.integratedFile = result;
             throw new Error("적용 가능한 시트가 없습니다. 환경설정의 시트명 별칭과 필수 열을 확인하세요.");
           }
+          result.applied.forEach((parsed, kind) => validateFileCandidate(kind, parsed));
           resetResults();
           result.applied.forEach((parsed, kind) => { state[kind] = parsed; });
           state.integratedFile = result;
@@ -3769,6 +3798,7 @@
         } finally {
           state.loading.integrated = false;
           renderIntegratedFileCard();
+          refreshInputState();
         }
       }
 
@@ -3844,7 +3874,7 @@
         FILE_KINDS.forEach(renderFileCard);
         renderIntegratedFileCard();
         renderValidation();
-        elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+        elements.analyzeButton.disabled = isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze);
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
@@ -6389,6 +6419,7 @@
         const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
         elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
+        elements.analyzeButton.disabled = isInputOperationBusy();
         setSystemMessage(`분석 완료 · 주문 ${formatNumber(stats.orderRowCount)}행·상품 ${formatNumber(stats.productCount)}개 · 결과 확인 후 저장(F8)하세요`);
       }
 
@@ -6430,56 +6461,60 @@
         showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
 
-      async function analyzeCurrentInputs() {
+      async function analyzeCurrentInputs({ fromSources = false } = {}) {
+        if (!fromSources && state.workspace) return engine.recalculateWorkspace(state.workspace);
         if (!state.validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        const { orders, inventory, purchases, sales } = state;
         const sourceFingerprint = await sha256Hex(JSON.stringify({
           schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
           orders: {
-            sha256: state.orders.fileHash,
-            fileName: state.orders.fileName,
-            sheetName: state.orders.sheetName,
-            rowCount: state.orders.rowCount,
+            sha256: orders.fileHash,
+            fileName: orders.fileName,
+            sheetName: orders.sheetName,
+            rowCount: orders.rowCount,
           },
           inventory: {
-            sha256: state.inventory.fileHash,
-            fileName: state.inventory.fileName,
-            sheetName: state.inventory.sheetName,
-            rowCount: state.inventory.rowCount,
+            sha256: inventory.fileHash,
+            fileName: inventory.fileName,
+            sheetName: inventory.sheetName,
+            rowCount: inventory.rowCount,
           },
-          purchases: state.purchases ? {
-            sha256: state.purchases.fileHash,
-            fileName: state.purchases.fileName,
-            sheetName: state.purchases.sheetName,
-            rowCount: state.purchases.rowCount,
+          purchases: purchases ? {
+            sha256: purchases.fileHash,
+            fileName: purchases.fileName,
+            sheetName: purchases.sheetName,
+            rowCount: purchases.rowCount,
           } : null,
-          sales: state.sales ? {
-            sha256: state.sales.fileHash,
-            fileName: state.sales.fileName,
-            sheetName: state.sales.sheetName,
-            rowCount: state.sales.rowCount,
+          sales: sales ? {
+            sha256: sales.fileHash,
+            fileName: sales.fileName,
+            sheetName: sales.sheetName,
+            rowCount: sales.rowCount,
           } : null,
         }));
-        const workspace = engine.analyze(state.orders, state.inventory, { sourceFingerprint });
+        const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
-          purchases: state.purchases ? {
-            fileName: state.purchases.fileName,
-            sheetName: state.purchases.sheetName,
-            fileHash: state.purchases.fileHash,
-            rows: state.purchases.rows || [],
+          purchases: purchases ? {
+            fileName: purchases.fileName,
+            sheetName: purchases.sheetName,
+            fileHash: purchases.fileHash,
+            rows: JSON.parse(JSON.stringify(purchases.rows || [])),
           } : null,
-          sales: state.sales ? {
-            fileName: state.sales.fileName,
-            sheetName: state.sales.sheetName,
-            fileHash: state.sales.fileHash,
-            rows: state.sales.rows || [],
+          sales: sales ? {
+            fileName: sales.fileName,
+            sheetName: sales.sheetName,
+            fileHash: sales.fileHash,
+            rows: JSON.parse(JSON.stringify(sales.rows || [])),
           } : null,
         };
         return workspace;
       }
 
       async function runAnalysis() {
-        if (!state.validation?.canAnalyze) return;
+        if (isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze)) return;
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        state.analysisRunning = true;
         state.analysisEnterLocked = false;
         setAnalysisEnterReady(false);
         elements.analyzeButton.disabled = true;
@@ -6487,8 +6522,9 @@
         setSystemMessage("출고분석 중 · 주문·재고·발주수량을 계산합니다");
         try {
           await new Promise((resolve) => window.setTimeout(resolve, 20));
+          const candidateWorkspace = await analyzeCurrentInputs();
           clearSubstitutionSelection();
-          state.workspace = await analyzeCurrentInputs();
+          state.workspace = candidateWorkspace;
           state.activePreview = "validation";
           resetResultViewFilters();
           renderResults();
@@ -6499,8 +6535,9 @@
           setSystemMessage("분석 실패 · 오류 안내를 확인하세요");
           showToast(error.message || "분석 중 오류가 발생했습니다.", true);
         } finally {
+          state.analysisRunning = false;
           elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span><span>출고분석 Enter</span>';
-          elements.analyzeButton.disabled = !state.validation?.canAnalyze;
+          elements.analyzeButton.disabled = isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze);
         }
       }
 
@@ -7327,6 +7364,10 @@
       }
 
       function refreshCurrentSession() {
+        if (isInputOperationBusy()) {
+          showToast("파일 읽기·분석이 끝난 뒤 초기화하세요.", true);
+          return;
+        }
         FILE_KINDS.forEach((kind) => { state[kind] = null; state.loading[kind] = false; });
         state.integratedFile = null;
         state.loading.integrated = false;

@@ -318,7 +318,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260916-baseline-calculation") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260917-work-preservation") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -718,7 +718,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.1");
+assert.equal(engine.ENGINE_VERSION, "3.19.2");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
@@ -2551,11 +2551,16 @@ for (const requiredSource of [
   "setLoading(kind, true);",
   '["orders", "inventory"].includes(kind)',
   "await parseGenericExcelFile(file, kind)",
-  "state[kind] = null;",
+  "validateFileCandidate(kind, candidate);",
+  "state[kind] = candidate;",
   "refreshInputState();",
 ]) {
   assert.ok(individualSource.includes(requiredSource), `individual upload flow is missing: ${requiredSource}`);
 }
+assert.ok(!individualSource.includes("state[kind] = null;"),
+  "failed file replacement must not clear the previous input");
+assert.ok(individualSource.indexOf("validateFileCandidate(kind, candidate)") < individualSource.indexOf("resetResults();"),
+  "the candidate must pass validation before the current work is replaced");
 const integratedParseStart = html.indexOf("async function parseIntegratedExcelFile");
 const integratedParseEnd = html.indexOf("async function classifyBundleFile", integratedParseStart);
 assert.ok(integratedParseStart >= 0 && integratedParseEnd > integratedParseStart,
