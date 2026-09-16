@@ -188,46 +188,61 @@ const navigate = async (client, url) => {
   await client.send('Page.navigate', { url });
   await loaded;
 };
-const prepareWorkspace = async client => {
+const prepareWorkspace = async (client, { automatic = false } = {}) => {
   await expr(client, `Boolean(window.XLSX?.utils?.aoa_to_sheet)`, 'local XLSX runtime');
-  await evaluate(client, `(async()=>{
-    const files = [
-      { selector:'#ordersInput', name:'주문현황_브라우저.xlsx', sheet:'미판매현황', matrix:${JSON.stringify([
+  const files = [
+      { kind:'orders', name:'주문현황_브라우저.xlsx', sheet:'미판매현황', matrix:[
         ['회사명 : 테스트 / 주문현황'],
         ['일자-No.', '담당', '단위', '품목코드', '품목명', '규격', '수량', '재고', '단가', '적요', '적요1', '거래처', '그룹'],
         ['2026-09-03-1', '담당A', 'EA', 'NORMAL-1', '정상상품', 'EA', 2, '', 1000, '', '', '거래처A', '기본그룹']
-      ])} },
-      { selector:'#inventoryInput', name:'창고별재고_브라우저.xlsx', sheet:'재고현황', matrix:${JSON.stringify([
+      ] },
+      { kind:'inventory', name:'창고별재고_브라우저.xlsx', sheet:'재고현황', matrix:[
         ['회사명 : 테스트 / 창고별재고'],
         ['사용', '품목코드', '단위', '품목명', '규격', '수량', '1창고', '2전송', '3서울', '4전송', '7진영', '기본', '전송', '창고'],
         ['Yes', 'NORMAL-1', 'EA', '정상상품', 'EA', 8, 8, '', '', '', '', '', '', '']
-      ])} }
+      ] }
     ];
-    for (const source of files) {
+  for (const source of files) {
+    await evaluate(client, `(() => {
+      const source=${JSON.stringify(source)};
       const workbook=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(source.matrix),source.sheet);
       const bytes=XLSX.write(workbook,{type:'array',bookType:'xlsx'});
       const transfer=new DataTransfer();
       transfer.items.add(new File([bytes],source.name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
-      const target=document.querySelector(source.selector);
+      const target=document.querySelector('#'+source.kind+'Input');
       Object.defineProperty(target,'files',{configurable:true,value:transfer.files});
       target.dispatchEvent(new Event('change',{bubbles:true}));
-      await new Promise(resolve=>setTimeout(resolve,250));
-    }
-    return true;
-  })()`);
-  await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'analysis readiness');
-  await click(client, '#analyzeButton');
-  await expr(client, `!document.querySelector('#resultsPanel').classList.contains('hidden')&&document.querySelectorAll('#previewTable tbody tr').length>0`, 'normal OrderOps result', 30_000);
+      return true;
+    })()`);
+    await expr(client, `document.querySelector('#${source.kind}FileName').textContent.includes(${JSON.stringify(source.name)})${automatic ? "&&document.querySelector('#prepDropZone').getAttribute('aria-busy')==='false'&&!document.querySelector('#prepFileButton').disabled" : ''}`, source.kind+' accepted and settled');
+  }
+  if (!automatic) {
+    await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'baseline analysis readiness');
+    await click(client, '#analyzeButton');
+  }
+  await expr(client, `!document.querySelector('#analyzeButton').disabled&&!document.querySelector('#downloadButton').disabled&&!document.querySelector('#resultsPanel').classList.contains('hidden')&&document.querySelectorAll('#previewTable tbody tr').length>0`, 'normal OrderOps result', 30_000);
+  await evaluate(client, `(async()=>{window.scrollTo({top:0,left:0,behavior:'instant'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return true;})()`);
+  return { fileSelections: files.length, analysisActions: automatic ? 0 : 1 };
 };
 const normalMetrics = client => evaluate(client, `(() => {
-  const rect = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width)};};
+  const rect = selector => {const node=document.querySelector(selector);if(!node)return null;const r=node.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height),right:Math.round(r.right),bottom:Math.round(r.bottom)};};
+  const prep=document.querySelector('.excel-preparation-panel');
   return {
+    viewportWidth:document.documentElement.clientWidth,
     existingButtonIds:[...document.querySelectorAll('button[id]')].map(node=>node.id).filter(id=>id!=='unresolvedReviewToggle').sort(),
     sourceTabs:[...document.querySelectorAll('#sourceSelector [role="tab"]')].map(node=>({id:node.id,label:node.getAttribute('aria-label')})),
-    shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
-    regions:{sourceSelector:rect('#sourceSelector'),resultsPanel:rect('#resultsPanel'),previewTable:rect('#previewTable')},
-    normalClickCount:3
+    shortcuts:[...document.querySelectorAll('[aria-keyshortcuts]')].filter(node=>!node.closest('#prepPreviewTabs')).map(node=>({id:node.id,key:node.getAttribute('aria-keyshortcuts')})).sort((a,b)=>a.id.localeCompare(b.id)),
+    regions:{sourceSelector:rect('#sourceSelector'),resultsPanel:rect('#resultsPanel'),previewTable:rect('#previewTable'),globalHeader:rect('.nexus-ui-header'),preparation:rect('.excel-preparation-panel')},
+    preparation:prep?{
+      compatibilityHidden:document.querySelector('#sourceSelector').getClientRects().length===0,
+      kindButtons:[...document.querySelectorAll('#prepKindButtons [data-prep-kind]')].map(node=>({kind:node.dataset.prepKind,label:node.textContent.trim(),rect:rect('[data-prep-kind="'+node.dataset.prepKind+'"]')})),
+      fileButtonInsideDrop:document.querySelector('#prepDropZone').contains(document.querySelector('#prepFileButton')),
+      details:[...prep.querySelectorAll('details')].map(node=>({id:node.id,label:node.querySelector('summary').textContent.trim()})),
+      actions:[...prep.querySelectorAll('.prep-mapping-actions button')].map(node=>({id:node.id,label:node.textContent.trim()})),
+      previewTabs:[...document.querySelectorAll('#prepPreviewTabs [data-preview]')].map(node=>({view:node.dataset.preview,key:node.getAttribute('aria-keyshortcuts'),visible:node.getClientRects().length>0})),
+      overflowY:getComputedStyle(prep).overflowY
+    }:null
   };
 })()`);
 
@@ -290,7 +305,7 @@ try {
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await navigate(client, `${origin}/orderops/list-baseline.html`);
-  await prepareWorkspace(client);
+  const baselineFlow = await prepareWorkspace(client);
   const baseline = await normalMetrics(client);
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'baseline dark theme');
@@ -304,24 +319,53 @@ try {
   await navigate(client, `${origin}/fixture.html`);
   await evaluate(client, `(async()=>{localStorage.clear();sessionStorage.clear();for(const info of await indexedDB.databases())await new Promise(resolve=>{const request=indexedDB.deleteDatabase(info.name);request.onsuccess=request.onerror=request.onblocked=resolve;});return true;})()`);
   await navigate(client, `${origin}/orderops/list.html`);
-  await prepareWorkspace(client);
+  const currentFlow = await prepareWorkspace(client, { automatic: true });
   const current = await normalMetrics(client);
-  assert.deepEqual(current.existingButtonIds, baseline.existingButtonIds, 'all existing button IDs must remain unchanged');
-  assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'existing source tabs must remain unchanged');
+  const addedPreparationButtonIds = ['prepApplyButton', 'prepFileButton', 'prepSaveTemplateButton'];
+  assert.deepEqual(current.existingButtonIds.filter(id => !addedPreparationButtonIds.includes(id)), baseline.existingButtonIds, 'all legacy button IDs must remain; only the approved preparation actions may be added');
+  assert.deepEqual(current.existingButtonIds.filter(id => addedPreparationButtonIds.includes(id)), addedPreparationButtonIds, 'the approved preparation actions must all exist exactly once');
+  assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'legacy source tab contracts must remain available for compatibility');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
-  assert.deepEqual(current.regions, baseline.regions, 'normal desktop layout regions must remain unchanged');
-  assert.equal(current.normalClickCount, baseline.normalClickCount);
+  for (const key of ['x', 'y', 'height', 'bottom']) assert.equal(current.regions.globalHeader[key], baseline.regions.globalHeader[key], 'the local layout must not move or change NEXUS header height');
+  assert.equal(current.regions.globalHeader.width, current.viewportWidth, 'NEXUS header must fill the viewport excluding its native scrollbar');
+  assert.equal(baseline.preparation, null);
+  assert.equal(current.preparation.compatibilityHidden, true, 'the old upload selector must not duplicate the visible preparation controls');
+  assert.deepEqual(current.preparation.kindButtons.map(({ kind, label }) => ({ kind, label })), [
+    { kind: 'orders', label: '주문서' }, { kind: 'purchases', label: '구매' }, { kind: 'sales', label: '판매' }, { kind: 'inventory', label: '재고' }
+  ]);
+  const kindRects = current.preparation.kindButtons.map(button => button.rect);
+  assert.equal(kindRects[0].y, kindRects[1].y, 'first-row kind controls must share a row');
+  assert.equal(kindRects[2].y, kindRects[3].y, 'second-row kind controls must share a row');
+  assert.equal(kindRects[0].x, kindRects[2].x);
+  assert.equal(kindRects[1].x, kindRects[3].x);
+  assert.ok(kindRects[0].right < kindRects[1].x && kindRects[0].bottom < kindRects[2].y, 'kind controls must form a non-overlapping 2×2 grid');
+  assert.equal(current.preparation.fileButtonInsideDrop, true);
+  assert.deepEqual(current.preparation.details, [{ id: 'prepFileDetails', label: '① 파일·양식 확인' }, { id: 'prepMappingDetails', label: '② 항목명 매핑' }]);
+  assert.deepEqual(current.preparation.actions, [{ id: 'prepSaveTemplateButton', label: '매핑 저장' }, { id: 'prepApplyButton', label: '자료 반영' }]);
+  assert.deepEqual(current.preparation.previewTabs, [
+    { view: 'allocations', key: 'F5', visible: true }, { view: 'ledger', key: 'F6', visible: true }, { view: 'inventory', key: 'F7', visible: true },
+    { view: 'purchases', key: null, visible: true }, { view: 'sales', key: null, visible: true }
+  ]);
+  assert.ok(['auto', 'scroll'].includes(current.preparation.overflowY), 'the preparation panel must own its vertical scroll');
+  const { preparation, resultsPanel, previewTable } = current.regions;
+  assert.ok(preparation.width > 0 && preparation.right < resultsPanel.x && Math.abs(preparation.y - resultsPanel.y) <= 1, 'desktop preparation and results must remain separate, aligned columns');
+  assert.ok(resultsPanel.right <= 1440 && previewTable.width > 0 && previewTable.x >= resultsPanel.x && previewTable.right <= resultsPanel.right + 1, 'the existing worktable must stay inside the right result region');
+  assert.deepEqual(baselineFlow, { fileSelections: 2, analysisActions: 1 });
+  assert.deepEqual(currentFlow, { fileSelections: 2, analysisActions: 0 }, 'normal files must show results without a new analysis or apply action');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
-  const currentMobileShell = await evaluate(client, `({viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width)})`);
+  const currentMobileShell = await evaluate(client, `(() => {const prep=document.querySelector('.excel-preparation-panel');const p=prep.getBoundingClientRect();const r=document.querySelector('#resultsPanel').getBoundingClientRect();return {viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(r.width),preparationWidth:Math.round(p.width),preparationHeight:Math.round(p.height),stacked:p.bottom<=r.top+1,internalScroll:['auto','scroll'].includes(getComputedStyle(prep).overflowY)};})()`);
   assert.ok(currentMobileShell.documentScrollWidth <= baselineMobileShell.documentScrollWidth,
-    `inactive 6B controls must not increase document overflow: ${JSON.stringify({ baselineMobileShell, currentMobileShell })}`);
+    `approved preparation controls must not increase document overflow: ${JSON.stringify({ baselineMobileShell, currentMobileShell })}`);
+  assert.ok(currentMobileShell.documentScrollWidth <= 390 && currentMobileShell.resultsWidth > 0 && currentMobileShell.resultsWidth <= 390 && currentMobileShell.preparationWidth > 0 && currentMobileShell.preparationWidth <= 390,
+    'both preparation and the result region must fit the 390px shell');
+  assert.ok(currentMobileShell.stacked && currentMobileShell.internalScroll && currentMobileShell.preparationHeight <= 521, 'mobile preparation must stack above results with bounded internal scrolling');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
-  await click(client, '#inventoryDrop');
+  await click(client, '#prepPreviewTabs [data-preview="inventory"]');
   await input(client, '#tableSearchInput', '정상상품');
   await click(client, '#specFilterGroup input[value="EA"]');
-  const hostBefore = await evaluate(client, `(() => {const table=document.querySelector('#previewTable');table.scrollLeft=80;document.querySelector('#tableSearchInput').focus();return {search:document.querySelector('#tableSearchInput').value,spec:document.querySelector('#specFilterGroup input[value="EA"]').checked,scrollLeft:table.scrollLeft,activeCard:document.querySelector('#inventoryDrop').getAttribute('aria-selected'),focus:document.activeElement.id,output:{print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled}};})()`);
+  const hostBefore = await evaluate(client, `(() => {const table=document.querySelector('#previewTable');table.scrollLeft=80;document.querySelector('#tableSearchInput').focus();return {search:document.querySelector('#tableSearchInput').value,spec:document.querySelector('#specFilterGroup input[value="EA"]').checked,scrollLeft:table.scrollLeft,activeCard:document.querySelector('#prepPreviewTabs [data-preview="inventory"]').getAttribute('aria-selected'),focus:document.activeElement.id,output:{print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled}};})()`);
   const warmBeforeEntry = await evaluate(client, `({reviewCalls:__unresolvedTestState.reviewCalls.length,impactCalls:__unresolvedTestState.impactCalls.length,orderQDbOpens:__unresolvedTestState.dbOpens.filter(name=>name.includes('orderq')).length})`);
   assert.deepEqual(warmBeforeEntry, { reviewCalls: 0, impactCalls: 0, orderQDbOpens: 0 }, 'warm local display must perform no review gateway/network access before entry');
 
@@ -339,8 +383,8 @@ try {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
   await wait(150);
   const listMobile = await evaluate(client, `(() => {const preview=document.querySelector('#previewTable');const scroller=document.querySelector('[data-unresolved-list-table]');const style=getComputedStyle(preview);const rect=preview.getBoundingClientRect();return {documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width),pageStatus:document.querySelector('[data-unresolved-page-status]')?.textContent.trim(),preview:{left:Math.round(rect.left),right:Math.round(rect.right),width:Math.round(rect.width),clientWidth:preview.clientWidth,scrollWidth:preview.scrollWidth,overflowX:style.overflowX,contain:style.contain},innerTableScroller:{clientWidth:scroller.clientWidth,scrollWidth:scroller.scrollWidth,horizontal:scroller.scrollWidth>scroller.clientWidth}};})()`);
-  assert.ok(listMobile.documentScrollWidth <= baselineMobileShell.documentScrollWidth,
-    `unresolved list must not increase document overflow: ${JSON.stringify({ baselineMobileShell, listMobile })}`);
+  assert.ok(listMobile.documentScrollWidth <= currentMobileShell.documentScrollWidth,
+    `unresolved list must not increase document overflow: ${JSON.stringify({ currentMobileShell, listMobile })}`);
   assert.equal(listMobile.innerTableScroller.horizontal, true, 'unresolved list must scroll only inside its table scroller');
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
@@ -375,15 +419,15 @@ try {
   await evaluate(client, `document.querySelector('#resultsPanel').scrollIntoView({block:'start'});document.querySelector('#previewTable').scrollTop=0;true`);
   const mobile = await evaluate(client, `(() => {const scroller=document.querySelector('.unresolved-table-scroll');return {viewportWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,resultsWidth:Math.round(document.querySelector('#resultsPanel').getBoundingClientRect().width),horizontalScroller:scroller.scrollWidth>scroller.clientWidth,focusableCandidate:document.querySelector('[data-unresolved-candidate]')?.tabIndex>=0};})()`);
   assert.ok(mobile.viewportWidth >= 375 && mobile.viewportWidth <= 390, `390px emulation content width must account only for the browser scrollbar: ${mobile.viewportWidth}`);
-  assert.ok(baselineMobileShell.resultsWidth <= 390 && mobile.resultsWidth <= 390 && mobile.horizontalScroller && mobile.focusableCandidate,
-    `390px result area must stay contained and preserve feature table horizontal scroll: ${JSON.stringify({ baselineMobileShell, mobile })}`);
-  assert.ok(mobile.documentScrollWidth <= baselineMobileShell.documentScrollWidth,
-    `unresolved detail must not increase document overflow: ${JSON.stringify({ baselineMobileShell, mobile })}`);
+  assert.ok(currentMobileShell.resultsWidth <= 390 && mobile.resultsWidth <= 390 && mobile.horizontalScroller && mobile.focusableCandidate,
+    `390px result area must stay contained and preserve feature table horizontal scroll: ${JSON.stringify({ currentMobileShell, mobile })}`);
+  assert.ok(mobile.documentScrollWidth <= currentMobileShell.documentScrollWidth,
+    `unresolved detail must not increase document overflow: ${JSON.stringify({ currentMobileShell, mobile })}`);
   const mobileScreenshot = await capture(client, 'orderops-unresolved-review-mobile-390.png');
 
   await click(client, '#unresolvedReviewToggle');
-  await expr(client, `document.querySelector('#tableSearchInput').value==='정상상품'&&document.querySelector('#inventoryDrop').getAttribute('aria-selected')==='true'&&document.querySelector('#previewTable').scrollLeft===80&&document.activeElement.id==='tableSearchInput'`, 'host view restoration');
-  const hostAfter = await evaluate(client, `({search:document.querySelector('#tableSearchInput').value,spec:document.querySelector('#specFilterGroup input[value="EA"]').checked,scrollLeft:document.querySelector('#previewTable').scrollLeft,activeCard:document.querySelector('#inventoryDrop').getAttribute('aria-selected'),focus:document.activeElement.id,output:{print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled}})`);
+  await expr(client, `document.querySelector('#tableSearchInput').value==='정상상품'&&document.querySelector('#prepPreviewTabs [data-preview="inventory"]').getAttribute('aria-selected')==='true'&&document.querySelector('#previewTable').scrollLeft===80&&document.activeElement.id==='tableSearchInput'`, 'host view restoration');
+  const hostAfter = await evaluate(client, `({search:document.querySelector('#tableSearchInput').value,spec:document.querySelector('#specFilterGroup input[value="EA"]').checked,scrollLeft:document.querySelector('#previewTable').scrollLeft,activeCard:document.querySelector('#prepPreviewTabs [data-preview="inventory"]').getAttribute('aria-selected'),focus:document.activeElement.id,output:{print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled}})`);
   assert.deepEqual(hostAfter, hostBefore, 'search, selection, scroll, active view, and focus must restore on exit');
 
   await evaluate(client, `__unresolvedTestState.mode='ERROR';true`);
@@ -403,7 +447,7 @@ try {
   await click(client, '#unresolvedReviewToggle');
   await expr(client, `document.querySelector('#previewCount').textContent.includes('3/3')`, 'shortcut exit setup');
   await evaluate(client, `document.dispatchEvent(new KeyboardEvent('keydown',{key:'F7',bubbles:true,cancelable:true}));true`);
-  await expr(client, `document.querySelector('#inventoryDrop').getAttribute('aria-selected')==='true'&&document.querySelector('#unresolvedReviewToggle').getAttribute('aria-pressed')==='false'`, 'F7 exit to inventory');
+  await expr(client, `document.querySelector('#prepPreviewTabs [data-preview="inventory"]').getAttribute('aria-selected')==='true'&&document.querySelector('#unresolvedReviewToggle').getAttribute('aria-pressed')==='false'`, 'F7 exit to inventory');
   assert.deepEqual(await evaluate(client, `({print:document.querySelector('#printButton').disabled,download:document.querySelector('#downloadButton').disabled,cloud:document.querySelector('#cloudSaveButton').disabled,headerCloud:document.querySelector('#headerCloudSaveButton').disabled})`), hostBefore.output,
     'normal output button state must restore when a legacy shortcut exits review');
 
@@ -460,8 +504,8 @@ try {
 
   const evidence = {
     taskId: 'NEXUS-SI-V2-06B', baselineSha: BASE_SHA, status: 'PASS',
-    domAndLayout: { baseline, current, unchangedExistingButtons: true, unchangedSourceTabs: true, unchangedShortcuts: true, unchangedNormalRegions: true },
-    clickContract: { normalFlowBefore: 3, normalFlowAfter: 3, unresolvedListEntry: 1, listToImpactPreview: 2 },
+    domAndLayout: { baseline, current, unchangedExistingButtons: true, addedPreparationButtonIds, unchangedSourceTabs: true, unchangedShortcuts: true, preservedGlobalHeader: true, approvedPreparationLayout: true },
+    clickContract: { baselineFlow, currentFlow, normalFlowBefore: baselineFlow.fileSelections + baselineFlow.analysisActions, normalFlowAfter: currentFlow.fileSelections + currentFlow.analysisActions, unresolvedListEntry: 1, listToImpactPreview: 2 },
     review: { listEvidence, detailBeforeSelection, impactEvidence, paginationEvidence, errorDistinctFromEmpty: true, companyIsolation: true },
     statePreservation: { before: hostBefore, after: hostAfter },
     isolation: { ...runtimeIsolation, warmBeforeEntry, actualExternalMutatingRequests: 0, fixtureServerWrites: 0, productionOrderQIndexedDbWrites: 0 },

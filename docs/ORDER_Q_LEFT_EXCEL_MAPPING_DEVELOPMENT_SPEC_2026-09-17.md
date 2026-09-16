@@ -250,6 +250,7 @@ PR #623 문서의 ‘정상 교체 후 결과를 비우고 새 분석 준비’ 
 - 파일 해제 중 구매처를 편집하면 오래된 해제 후보를 거부하고 현재 수정값 유지. 복구 직후 원본 File 객체 없이 주문만 교체·해제·재업로드해도 재고 보정 2와 원본 4가 각각 유지됨.
 - 1366/390px 및 밝은/어두운 테마, 브라우저 console warning/error 0, 외부 쓰기 요청 0.
 - 기존 Shipping, NEXUS 앱 이동·재시도, 테마·인쇄, 공통 재고 snapshot 및 출고 read-model/OrderOps source/result/Cloud 구매계획 회귀 통과. client safety 통과, repository validation 24 checks/0 warnings, diff check 통과.
+- Phase 6B 미매칭 브라우저 검사의 과거 화면 전체 동일성 조건을 승인된 좌측 배치로 갱신. 기존 버튼·단축키 보존, 신규 3개 버튼만 허용, 미매칭 읽기 전용·회사 격리·오류/빈 결과 구분·페이지 이동·기존 표 복원 검사는 그대로 유지하고 실제 Chromium 통과.
 
 브라우저 증거는 `output/orderq-left-excel-mapping-20260917/verification.json`, 화면 PNG 및 실제 생성 XLSX로 작업 저장소 밖에 보관했다. 이는 합성 자료를 사용하는 개발자 자체 검사이며 운영 자료·운영 사이트 직접 검수 또는 독립 PM 승인이 아니다. OS 파일 선택창 자동 조작 대신 실제 Chromium의 File 객체와 DOM 입력 이벤트를 사용했다.
 
