@@ -285,6 +285,42 @@ try {
   }
   await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled && (${inputIdleExpression})`), 'basic automatic analysis complete');
   await selectPreview('allocations');
+  const editableGrid = await evaluate(client, `(() => {
+    const row=document.querySelector('#previewTable table.preview-allocations tbody tr[data-grid-row-key]');
+    const fields=[...row.querySelectorAll('.order-edit-input')].map(input=>input.dataset.orderField);
+    const name=row.querySelector('.order-edit-input[data-order-field="productName"]');
+    name.focus();
+    const cell=name.closest('td');
+    return {
+      fields,
+      inputBorder:getComputedStyle(name).borderTopWidth,
+      cellBorder:getComputedStyle(cell).borderTopWidth,
+      cellBackground:getComputedStyle(cell).backgroundColor,
+      activeCellShadow:getComputedStyle(cell).boxShadow,
+      activeRowOutline:getComputedStyle(row).outlineWidth,
+    };
+  })()`);
+  assert.deepEqual(editableGrid.fields,
+    ['warehouse','customer','group','manager','productCode','productName','specification','quantity','unitPrice','note'],
+    'every direct order-work field must be editable in the central table');
+  assert.equal(editableGrid.inputBorder,'0px','editable cells must have no inner input line');
+  assert.equal(editableGrid.cellBorder,'0px','the light-gray Excel sheet must have no cell border line');
+  assert.match(editableGrid.cellBackground,/rgb\((248, 251, 255|219, 234, 254)\)/,
+    'the focused cell must use the light Excel selection surface');
+  assert.notEqual(editableGrid.activeCellShadow,'none','the active cell must have a visible cursor highlight');
+  assert.equal(editableGrid.activeRowOutline,'2px','the selected row must be visibly emphasized');
+  await editOrder('productName','수정 상품명');
+  await editOrder('specification','수정 규격');
+  assert.deepEqual(await evaluate(client, `['productName','specification'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`),
+    ['수정 상품명','수정 규격'],'product name and specification edits must round-trip through recalculation');
+  await editOrder('productName','기본상품');
+  await editOrder('specification','EA');
+  await evaluate(client, `(() => {
+    const input=document.querySelector('.order-edit-input[data-order-field="productName"]');
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
+  })()`);
+  await waitFor(() => evaluate(client, `document.activeElement?.dataset?.orderField==='specification'`), 'Excel ArrowRight cell navigation');
   for (const [field,value] of [['quantity','7'],['unitPrice','1200']]) {
     await evaluate(client, `(() => {
       const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');
@@ -439,8 +475,8 @@ try {
     'saved manager colors must restore a visible row surface in light mode');
   assert.ok(contrast(lightMetrics.primary.color, lightMetrics.primary.background) >= 7,
     'restored light manager rows must preserve strong text contrast');
-  assert.equal(new Set(lightMetrics.managerCells.map((cell) => cell.background)).size, 1,
-    'light manager color must cover every cell even when cells carry semantic state classes');
+  assert.ok(new Set(lightMetrics.managerCells.map((cell) => cell.background)).size <= 2,
+    'light manager color may differ only for the currently selected Excel cell');
   assert.equal(new Set(lightMetrics.managerCells.map((cell) => cell.color)).size, 1,
     'light manager text color must cover the complete row');
   assert.ok(lightMetrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),
@@ -456,15 +492,16 @@ try {
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
   assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
     `dark primary table information must have strong text contrast: ${JSON.stringify(metrics.primary)} ratio=${contrast(metrics.primary.color, metrics.primary.background)}`);
-  assert.ok(contrast(metrics.inactive.color, metrics.inactive.background) >= 4.5, 'inactive dark rows must remain readable');
+  assert.ok(contrast(metrics.inactive.color, metrics.inactive.background) >= 4.5,
+    `inactive dark rows must remain readable: ${JSON.stringify(metrics.inactive)} ratio=${contrast(metrics.inactive.color, metrics.inactive.background)}`);
   assert.ok(contrast(metrics.warning.color, metrics.warning.background) >= 4.5,
     `dark warning units must remain readable: ${JSON.stringify(metrics.warning)} token=${metrics.unitTextToken} ratio=${contrast(metrics.warning.color, metrics.warning.background)}`);
   assert.ok(contrast(metrics.manager.color, metrics.manager.background) >= 4.5, 'dark manager labels must remain readable');
   assert.ok(contrast(metrics.badge1.color, metrics.badge1.background) >= 4.5, 'dark manager information badges must remain readable');
   assert.notEqual(metrics.primary.background, metrics.inactive.background,
     'saved manager colors must restore a visible row surface in dark mode');
-  assert.equal(new Set(metrics.managerCells.map((cell) => cell.background)).size, 1,
-    'dark manager color must cover every cell even when cells carry semantic state classes');
+  assert.ok(new Set(metrics.managerCells.map((cell) => cell.background)).size <= 2,
+    'dark manager color may differ only for the currently selected Excel cell');
   assert.equal(new Set(metrics.managerCells.map((cell) => cell.color)).size, 1,
     'dark manager text color must cover the complete row');
   assert.ok(metrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),

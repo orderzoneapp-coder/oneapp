@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.3";
+  const ENGINE_VERSION = "3.19.4";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -2084,9 +2084,15 @@
       throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
     }
     const rowNumber = Number(sourceRowNumber);
-    const order = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
-    if (!order) throw new Error("수정할 주문행을 찾지 못했습니다.");
-    if (field === "purchase") return setPurchaseValue(workspace, order.productCode, value);
+    const currentOrder = (workspace.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
+    if (!currentOrder) throw new Error("수정할 주문행을 찾지 못했습니다.");
+    if (field === "purchase") return setPurchaseValue(workspace, currentOrder.productCode, value);
+
+    // Work on a candidate so a failed recalculation never leaves a half-edited row.
+    const candidate = JSON.parse(JSON.stringify(workspace));
+    const order = (candidate.orders || []).find((row) => Number(row?.sourceRowNumber) === rowNumber);
+    const previousProductCode = normalizeProductCode(order.productCode);
+    const previousPurchase = getPurchaseInputs(candidate)[previousProductCode] || "";
     if (field === "quantity") {
       const parsed = parseNumericCell(value);
       if (!parsed.ok || parsed.blank) throw new Error("주문수량은 빈값이 아닌 숫자여야 합니다.");
@@ -2097,6 +2103,12 @@
       order.unitPrice = parsed.blank ? null : parsed.value;
     } else if (field === "warehouse") {
       order.warehouse = cleanText(value);
+    } else if (["customer", "group", "manager", "productName", "specification"].includes(field)) {
+      order[field] = cleanText(value);
+    } else if (field === "productCode") {
+      const productCode = normalizeProductCode(value);
+      if (!productCode) throw new Error("상품코드는 빈칸으로 둘 수 없습니다.");
+      order.productCode = productCode;
     } else if (field === "note") {
       order.noteOriginal = originalText(value);
       order.note = cleanText(value);
@@ -2108,7 +2120,13 @@
         ? roundQuantity(order.quantity * order.unitPrice)
         : null;
     }
-    return rebuildWorkspaceFromOrders(workspace);
+    rebuildWorkspaceFromOrders(candidate);
+    if (field === "productCode" && previousPurchase) {
+      setPurchaseValue(candidate, order.productCode, previousPurchase);
+    }
+    Object.keys(workspace).forEach((key) => { delete workspace[key]; });
+    Object.assign(workspace, candidate);
+    return workspace;
   }
 
   function analyze(ordersParsed, inventoryParsed, options = {}) {
