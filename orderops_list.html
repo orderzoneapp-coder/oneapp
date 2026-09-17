@@ -8,8 +8,10 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260917-work-preservation"></script>
+  <script src="orderFulfillmentEngine.js?v=20260917-left-excel-mapping"></script>
   <script src="orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
+  <script src="orderops/excel-preparation.js?v=20260917-left-excel-mapping"></script>
+  <script src="orderops/excel-preparation-ui.js?v=20260917-left-excel-mapping"></script>
   <style>
     :root {
       color-scheme: light;
@@ -1863,6 +1865,7 @@
       .view-controls .preview-tabs { display: flex; }
     }
   </style>
+  <link rel="stylesheet" href="orderops/excel-preparation.css?v=20260917-left-excel-mapping">
 </head>
 <body>
   <header class="global-header">
@@ -1922,17 +1925,10 @@
         </div>
       </div>
 
-      <section class="panel input-panel" aria-label="입력 파일과 실행">
-        <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
+      <section class="panel input-panel prep-execution-strip" aria-label="기존 작업 실행">
+        <div class="source-selector excel-preparation-compat" id="sourceSelector" aria-label="기존 Excel 입력 호환 영역" hidden>
           <div class="data-source-label">
             <span aria-hidden="true">▣</span><span>데이터 소스:</span>
-            <span class="integrated-compact-slot" id="integratedCard">
-              <button class="integrated-file-button" id="integratedFileButton" type="button"
-                aria-label="통합 Excel 파일 불러오기" title="통합 Excel 파일 불러오기">
-                <span aria-hidden="true">📁</span><span>통합</span>
-              </button>
-              <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
-            </span>
           </div>
 
           <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
@@ -2003,11 +1999,101 @@
 
     </section>
 
+    <div class="excel-workspace-layout">
+      <aside class="excel-preparation-panel" aria-labelledby="prepHeading">
+        <header class="prep-panel-heading">
+          <h2 id="prepHeading">자료 준비</h2>
+          <p>Excel 불러오기 · 매핑</p>
+        </header>
+
+        <div class="prep-kind-buttons" id="prepKindButtons" role="group" aria-label="불러올 자료 종류">
+          <button class="prep-kind-button active" type="button" data-prep-kind="orders" aria-pressed="true">
+            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12l6 5M15 12l-6 5"/></svg>
+            <span>주문서</span>
+          </button>
+          <button class="prep-kind-button" type="button" data-prep-kind="purchases" aria-pressed="false">
+            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4h3l2 11h10l3-8H7M9 18h9"/><circle cx="9" cy="21" r="1"/><circle cx="18" cy="21" r="1"/></svg>
+            <span>구매</span>
+          </button>
+          <button class="prep-kind-button" type="button" data-prep-kind="sales" aria-pressed="false">
+            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 20V12M12 20V7M19 20V3"/></svg>
+            <span>판매</span>
+          </button>
+          <button class="prep-kind-button" type="button" data-prep-kind="inventory" aria-pressed="false">
+            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M7 5.8l9 5v5"/></svg>
+            <span>재고</span>
+          </button>
+        </div>
+
+        <div class="prep-drop-zone" id="prepDropZone" tabindex="0" role="group" aria-label="Excel 파일 드롭 또는 불러오기" aria-describedby="prepDropHelp">
+          <svg class="prep-excel-icon" viewBox="0 0 40 48" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2h17l9 10v31a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3ZM24 2v12h10M14 23l12 13M26 23 14 36"/></svg>
+          <p id="prepDropHelp">엑셀 파일을 여기에 드래그하거나 클릭하여 불러오세요.</p>
+          <button class="prep-file-button" id="prepFileButton" type="button"><span aria-hidden="true">↥</span> 엑셀 불러오기</button>
+          <small>지원 파일: .xls, .xlsx</small>
+        </div>
+
+        <div class="prep-integrated-slot" id="integratedCard">
+          <button class="integrated-file-button" id="integratedFileButton" type="button"
+            aria-label="통합 Excel 파일 불러오기" title="주문·구매·판매·재고가 시트별로 담긴 기존 통합 파일">
+            <span aria-hidden="true">📁</span><span>통합 Excel 불러오기</span>
+          </button>
+          <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
+        </div>
+
+        <section class="prep-files-section" aria-labelledby="prepFilesHeading">
+          <h3 id="prepFilesHeading">불러온 파일</h3>
+          <div class="prep-file-list" id="prepFileList" role="list" aria-label="현재 준비한 Excel 파일">
+            <p class="prep-empty">아직 불러온 파일이 없습니다.</p>
+          </div>
+        </section>
+
+        <details class="prep-details" id="prepFileDetails">
+          <summary>① 파일·양식 확인</summary>
+          <div class="prep-details-body">
+            <div class="prep-field"><span>원본 파일명</span><p class="prep-file-name-value" id="prepFileName">파일을 선택하세요.</p></div>
+            <label class="prep-field" for="prepKindSelect"><span>자료 종류</span>
+              <select id="prepKindSelect"><option value="orders">주문서</option><option value="purchases">구매</option><option value="sales">판매</option><option value="inventory">재고</option></select>
+            </label>
+            <label class="prep-field" for="prepTemplateName"><span>양식명</span><input id="prepTemplateName" type="text" autocomplete="off" placeholder="다음 파일에 재사용할 양식명"></label>
+            <label class="prep-field" for="prepSheetSelect"><span>시트</span><select id="prepSheetSelect"><option value="">파일을 선택하세요</option></select></label>
+            <label class="prep-field" for="prepHeaderRow"><span>항목명 행</span><input id="prepHeaderRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
+            <div class="prep-row-range">
+              <label class="prep-field" for="prepStartRow"><span>자료 시작 행</span><input id="prepStartRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
+              <label class="prep-field" for="prepEndRow"><span>자료 끝 행</span><input id="prepEndRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
+            </div>
+            <p class="prep-field-help" id="prepRowHelp">Excel 원본의 행 번호로 지정합니다.</p>
+            <div class="prep-source-preview" id="prepSourcePreview" tabindex="0" role="region" aria-label="선택 시트 원본 미리보기"><p class="prep-empty">파일과 시트를 선택하면 원본을 표시합니다.</p></div>
+          </div>
+        </details>
+
+        <details class="prep-details" id="prepMappingDetails">
+          <summary>② 항목명 매핑</summary>
+          <div class="prep-details-body">
+            <p class="prep-field-help">원본 열을 작업 항목에 연결합니다. 사용하지 않는 열은 제외할 수 있습니다.</p>
+            <div class="prep-column-mappings" id="prepColumnMappings"><p class="prep-empty">파일을 선택하면 연결 항목을 표시합니다.</p></div>
+          </div>
+        </details>
+
+        <div class="prep-mapping-actions" aria-label="매핑 설정과 자료 반영">
+          <button id="prepSaveTemplateButton" type="button" disabled>매핑 저장</button>
+          <button class="prep-apply-button" id="prepApplyButton" type="button" disabled>자료 반영</button>
+        </div>
+        <p class="prep-mapping-status" id="prepMappingStatus" role="status" aria-live="polite">정상 자료는 불러오는 즉시 중앙에 표시됩니다.</p>
+      </aside>
+
     <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
       <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
       <p class="hidden" id="resultSubtitle"></p>
       <div class="hidden" id="summaryGrid"></div>
       <div class="hidden" id="purchaseUploadNotice"></div>
+
+      <div class="prep-preview-tabs" id="prepPreviewTabs" role="tablist" aria-label="중앙 자료 조회">
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="allocations" aria-keyshortcuts="F5">주문현황 F5</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="ledger" aria-keyshortcuts="F6">수불현황 F6</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="inventory" aria-keyshortcuts="F7">창고재고 F7</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="purchases">구매현황</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="sales">판매현황</button>
+      </div>
 
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <label class="search-field">
@@ -2076,6 +2162,7 @@
 
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
     </section>
+    </div>
 
     <footer class="page-footer">
       <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
@@ -2326,6 +2413,7 @@
         substitutionCtrlActive: false,
       };
 
+      let preparationController = null;
       const elements = {
         sourceSelector: document.getElementById("sourceSelector"),
         ordersInput: document.getElementById("ordersInput"),
@@ -3181,7 +3269,8 @@
         );
       }
 
-      async function parseExcelFile(file, kind) {
+      async function parseExcelFile(file, kind, parseOptions = {}) {
+        if (typeof preparationController !== "undefined" && preparationController) return preparationController.parse(file, kind, parseOptions);
         if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
         const bytes = new Uint8Array(await file.arrayBuffer());
         const fileHash = await sha256Hex(bytes);
@@ -3236,7 +3325,7 @@
         return 0;
       }
 
-      function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
+      function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind, rawMatrix: providedRaw, displayMatrix: providedDisplay, headerRowIndex: selectedHeader }) {
         const mapping = state.excelMappings[kind];
         const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
         const lookup = new Map();
@@ -3245,14 +3334,15 @@
           [canonical, ...defaultAliases, ...(aliases || [])]
             .forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
         });
-        const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
+        const matrix = providedDisplay || window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
         let best = null;
-        for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+        if (selectedHeader !== undefined && (!Number.isInteger(selectedHeader) || selectedHeader < 0 || selectedHeader >= matrix.length)) throw new Error("항목명 행을 원본 범위 안에서 선택하세요.");
+        for (let rowIndex = selectedHeader ?? 0; rowIndex < (selectedHeader === undefined ? Math.min(matrix.length, 30) : selectedHeader + 1); rowIndex += 1) {
           const canonicalHeaders = (matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header)) || "");
           const mapped = new Set(canonicalHeaders.filter(Boolean));
           const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
           const candidate = { kind, fileName, sheetName, fileHash, headerRowIndex: rowIndex,
-            headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
+            headers: (matrix[rowIndex] || []).map((value) => String(value ?? "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
             canonicalHeaders, matrix, missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
           if (!best || candidate.structureScore > best.structureScore) best = candidate;
         }
@@ -3262,8 +3352,8 @@
         const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
         best.rows = best.matrix.slice(best.headerRowIndex + 1).map((cells, offset) => {
           const productCode = engine.normalizeProductCode(cells[columnIndex("품목코드")]);
-          const productName = String(cells[columnIndex("품목명")] || "").trim();
-          const partner = String(cells[columnIndex(partnerCanonical)] || "").trim();
+          const productName = String(cells[columnIndex("품목명")] ?? "").trim();
+          const partner = String(cells[columnIndex(partnerCanonical)] ?? "").trim();
           const quantityCell = cells[columnIndex("수량")];
           const parsedQuantity = engine.parseNumericCell(quantityCell);
           if (!productCode || !parsedQuantity.ok || (!productName && !partner)) return null;
@@ -3280,11 +3370,11 @@
         }).filter(Boolean);
         best.rowCount = best.rows.length;
         delete best.matrix;
-        delete best.canonicalHeaders;
         return best;
       }
 
-      async function parseGenericExcelFile(file, kind) {
+      async function parseGenericExcelFile(file, kind, parseOptions = {}) {
+        if (typeof preparationController !== "undefined" && preparationController) return preparationController.parse(file, kind, parseOptions);
         const bytes = new Uint8Array(await file.arrayBuffer());
         const fileHash = await sha256Hex(bytes);
         const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
@@ -3297,21 +3387,21 @@
         return best;
       }
 
-      function parsePrimaryWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
+      function parsePrimaryWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind, rawMatrix: providedRaw, displayMatrix: providedDisplay, columnMappings, headerRowIndex }) {
         const sheet = workbook.Sheets[sheetName];
-        const rawMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+        const rawMatrix = providedRaw || window.XLSX.utils.sheet_to_json(sheet, {
           header: 1, raw: true, defval: null, blankrows: true,
         });
-        const displayMatrix = window.XLSX.utils.sheet_to_json(sheet, {
+        const displayMatrix = providedDisplay || window.XLSX.utils.sheet_to_json(sheet, {
           header: 1, raw: false, defval: "", blankrows: true,
         });
         const headerAliases = state.excelMappings?.[kind]?.columns || {};
         const parsed = kind === "orders"
           ? engine.parseOrderWorkbook({
               fileName, sheetName, rawMatrix,
-              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases,
+              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases, headerRowIndex,
             })
-          : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases });
+          : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases, columnMappings, headerRowIndex });
         parsed.fileHash = fileHash;
         return parsed;
       }
@@ -3333,47 +3423,65 @@
 
       async function parseIntegratedExcelFile(file) {
         if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const fileHash = await sha256Hex(bytes);
-        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+        const prep = typeof preparationController !== "undefined" ? preparationController : null;
+        const cached = prep ? await prep.read(file) : null;
+        const bytes = cached ? null : new Uint8Array(await file.arrayBuffer());
+        const fileHash = cached?.fileHash || await sha256Hex(bytes);
+        const workbook = cached?.workbook || window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
         if (!workbook.SheetNames.length) throw new Error(`${file.name}: 읽을 수 있는 시트가 없습니다.`);
         const applied = new Map();
         const failures = [];
         const ignored = [];
+        const duplicateKinds = new Set();
 
-        workbook.SheetNames.forEach((sheetName) => {
-          const kindScores = FILE_KINDS.map((kind) => ({ kind, score: sheetAliasMatchScore(sheetName, state.excelMappings?.[kind]?.sheetAliases) }));
+        for (const sheetName of workbook.SheetNames) {
+          const kindScores = FILE_KINDS.map((kind) => ({
+            kind,
+            score: sheetAliasMatchScore(sheetName, state.excelMappings?.[kind]?.sheetAliases),
+          }));
           const bestAliasScore = Math.max(...kindScores.map((item) => item.score));
-          const matchedKinds = bestAliasScore > 0 ? kindScores.filter((item) => item.score === bestAliasScore).map((item) => item.kind) : [];
+          const matchedKinds = bestAliasScore > 0
+            ? kindScores.filter((item) => item.score === bestAliasScore).map((item) => item.kind)
+            : [];
           if (matchedKinds.length === 0) {
             ignored.push(sheetName);
-            return;
+            continue;
           }
-          const candidates = matchedKinds.map((kind) => {
+          const inspected = await Promise.all(matchedKinds.map(async (kind) => {
             try {
-              const parsed = ["orders", "inventory"].includes(kind)
+              const parsed = prep ? await prep.parse(file, kind, { probe: true, sheetName }) : ["orders", "inventory"].includes(kind)
                 ? parsePrimaryWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind })
                 : parseGenericWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind });
               return { kind, parsed, score: integratedCandidateScore(kind, parsed) };
             } catch (error) {
               return { kind, parsed: null, score: 0, error };
             }
-          }).filter((candidate) => candidate.score > 0)
+          }));
+          const candidates = inspected.filter((candidate) => candidate.score > 0)
             .sort((left, right) => right.score - left.score);
 
           if (candidates.length === 0) {
             failures.push({ sheetName, message: "시트명은 매칭됐지만 필수 열·헤더 구조 검증에 실패했습니다." });
-            return;
+            inspected.forEach((item) => { if (item.parsed) prep?.rememberParsed(item.parsed); });
+            continue;
           }
           if (candidates.length > 1 && candidates[0].score === candidates[1].score) {
             failures.push({ sheetName, message: "둘 이상의 데이터 종류로 판별됩니다. 시트명 별칭을 구분하세요." });
-            return;
+            continue;
           }
           const selected = candidates[0];
           selected.parsed.integratedSource = true;
           selected.parsed.sourceLabel = `${file.name} · ${sheetName}`;
+          if (applied.has(selected.kind) || duplicateKinds.has(selected.kind)) {
+            failures.push({ sheetName, message: `${FILE_KIND_LABELS[selected.kind]} 시트가 둘 이상입니다. 좌측에서 사용할 시트를 선택하세요.` });
+            duplicateKinds.add(selected.kind);
+            applied.delete(selected.kind);
+            prep?.rememberParsed(selected.parsed);
+            prep?.markFailed(selected.kind, new Error("같은 종류의 시트가 둘 이상입니다. 시트를 선택한 뒤 반영하세요."));
+            continue;
+          }
           applied.set(selected.kind, selected.parsed);
-        });
+        }
         return { fileName: file.name, sheetCount: workbook.SheetNames.length, applied, failures, ignored };
       }
 
@@ -3386,10 +3494,10 @@
         }
 
         const [asOrders, asInventory, asPurchases, asSales] = await Promise.all([
-          parseExcelFile(file, "orders"),
-          parseExcelFile(file, "inventory"),
-          parseGenericExcelFile(file, "purchases"),
-          parseGenericExcelFile(file, "sales"),
+          parseExcelFile(file, "orders", { probe: true }),
+          parseExcelFile(file, "inventory", { probe: true }),
+          parseGenericExcelFile(file, "purchases", { probe: true }),
+          parseGenericExcelFile(file, "sales", { probe: true }),
         ]);
 
         const orderMapped = new Set(
@@ -3438,27 +3546,36 @@
         elements.analyzeButton.disabled = true;
         setSystemMessage("파일 자동분류 중 · 시트 구조와 열 이름을 확인합니다");
 
+        let classifiedResults = [];
         try {
-          const classified = await Promise.all(files.map(classifyBundleFile));
+          classifiedResults = await Promise.allSettled(files.map(classifyBundleFile));
+          const rejected = classifiedResults.find((result) => result.status === "rejected");
+          if (rejected) throw rejected.reason;
+          const classified = classifiedResults.map((result) => result.value);
           const byKind = new Map();
           classified.forEach((item) => {
             validateFileCandidate(item.kind, item.parsed);
             if (byKind.has(item.kind)) throw new Error(`${FILE_KIND_LABELS[item.kind]} 파일이 둘 이상 판별되었습니다.`);
             byKind.set(item.kind, item.parsed);
           });
-          resetResults();
-          byKind.forEach((parsed, kind) => { state[kind] = parsed; });
-          refreshInputState();
-
-          if (state.validation?.canAnalyze) {
-            setAnalysisEnterReady(true);
-            setSystemMessage("분석 준비 완료 · Enter 또는 출고분석 버튼을 누르세요");
-            showToast(`${classified.length}개 파일을 구조 기준으로 자동 배정했습니다.`);
-          } else {
-            state.analysisEnterLocked = false;
-            showToast(`${classified.length}개 파일을 자동 배정했습니다. 주문현황과 창고재고가 준비되면 분석할 수 있습니다.`);
-          }
+          await commitInputCandidates(byKind, { preferredKind: classified[0]?.kind });
+          if (typeof preparationController !== "undefined") preparationController?.markApplied(byKind);
+          showToast(`${classified.length}개 파일을 자동 처리했습니다.`);
         } catch (error) {
+          // Probe parsing never installs inputs. Keep eligible selected sources as
+          // editable candidates when the batch cannot be applied atomically.
+          const prep = typeof preparationController !== "undefined" ? preparationController : null;
+          if (prep) {
+            for (let index = 0; index < files.length; index += 1) {
+              const result = classifiedResults[index];
+              if (result?.status === "fulfilled") {
+                prep.rememberParsed(result.value.parsed);
+                prep.markFailed(result.value.kind, error);
+              } else if (isSupportedFile(files[index]) && files[index].size <= MAX_FILE_SIZE) {
+                await prep.retainCandidate(files[index], { error: result?.reason || error });
+              }
+            }
+          }
           state.analysisEnterLocked = false;
           refreshInputState();
           setSystemMessage("자동분류 실패 · 기존 파일 선택은 유지됩니다");
@@ -3470,13 +3587,121 @@
       }
 
       function isInputOperationBusy() {
-        return Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean));
+        return Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean) ||
+          (typeof preparationController !== "undefined" && preparationController?.isBusy()));
       }
 
       function validateFileCandidate(kind, parsed) {
         if (!parsed || parsed.errors?.length || parsed.missingColumns?.length || !(parsed.rowCount > 0)) {
           const detail = parsed?.errors?.map((issue) => issue.message).filter(Boolean).join(" · ");
           throw new Error(detail || `${FILE_KIND_LABELS[kind]} 필수 열과 데이터행을 확인하세요.`);
+        }
+      }
+
+      async function commitInputCandidates(byKind, { preferredKind } = {}) {
+        const candidates = new Map(typeof byKind?.entries === "function" ? byKind.entries() : Object.entries(byKind || {}));
+        if (!candidates.size) throw new Error("반영할 자료가 없습니다.");
+        candidates.forEach((parsed, kind) => {
+          if (!FILE_KINDS.includes(kind)) throw new Error("지원하지 않는 자료 종류입니다.");
+          validateFileCandidate(kind, parsed);
+        });
+        if (state.analysisRunning) throw new Error("자료 처리가 끝난 뒤 다시 시도하세요.");
+        state.analysisRunning = true;
+        try {
+          // Work rows and source evidence have different lifetimes. Never replace
+          // an unchanged source with its old parsed rows after the user edited it.
+          const activeWorkspace = state.workspace;
+          const previousJson = activeWorkspace ? JSON.stringify(activeWorkspace) : null;
+          const previous = previousJson ? JSON.parse(previousJson) : null;
+          const activeInputs = Object.fromEntries(FILE_KINDS.map((kind) => [kind, state[kind]]));
+          const inputs = { ...activeInputs };
+          if (previous) {
+            ["orders", "inventory"].forEach((kind) => {
+              const source = previous.sourceFiles?.[kind] || {};
+              inputs[kind] = {
+                fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
+                headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? previous[kind].length,
+                sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
+                headerMapping: source.headerMapping, columns: source.columns,
+                ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
+                rows: previous[kind], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
+              };
+            });
+            ["purchases", "sales"].forEach((kind) => {
+              const source = previous.orderOpsInputs?.[kind];
+              inputs[kind] = source ? { ...source, rowCount: source.rows?.length || 0 } : null;
+            });
+          }
+          candidates.forEach((parsed, kind) => { inputs[kind] = parsed; });
+          const previewKind = candidates.has(preferredKind) ? preferredKind : candidates.keys().next().value;
+          let candidateWorkspace = null;
+          if (inputs.orders && inputs.inventory) {
+            candidateWorkspace = await analyzeCurrentInputs({ fromSources: true, inputs });
+            if (!previous) {
+              if (!candidates.has("inventory") && inputs.inventory.preservedOverrides) {
+                candidateWorkspace.inventoryOverrides = JSON.parse(JSON.stringify(inputs.inventory.preservedOverrides));
+              }
+              if (!candidates.has("orders")) {
+                if (inputs.orders.preservedSubstitutionHistory) candidateWorkspace.substitutionHistory = inputs.orders.preservedSubstitutionHistory;
+                if (inputs.orders.preservedNoticeAcknowledgements) candidateWorkspace.noticeAcknowledgements = inputs.orders.preservedNoticeAcknowledgements;
+                engine.applyPurchaseInputs(candidateWorkspace, inputs.orders.preservedPurchaseInputs);
+              }
+              candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
+            }
+            if (previous) {
+              if (!candidates.has("inventory")) {
+                candidateWorkspace.inventoryOverrides = previous.inventoryOverrides;
+              }
+              if (!candidates.has("orders")) {
+                candidateWorkspace.substitutionHistory = previous.substitutionHistory;
+                candidateWorkspace.noticeAcknowledgements = previous.noticeAcknowledgements;
+                engine.applyPurchaseInputs(candidateWorkspace, engine.getPurchaseInputs(previous));
+              }
+              candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
+              // The engine rebuilds calculation fields, not every recovery-era
+              // metadata field. Keep evidence for unchanged sources verbatim.
+              candidateWorkspace.sourceFiles = { ...previous.sourceFiles, ...candidateWorkspace.sourceFiles };
+              ["orders", "inventory"].forEach((kind) => {
+                if (!candidates.has(kind) && previous.sourceFiles?.[kind]) {
+                  candidateWorkspace.sourceFiles[kind] = previous.sourceFiles[kind];
+                }
+              });
+              candidateWorkspace.orderOpsInputs = { ...previous.orderOpsInputs, ...candidateWorkspace.orderOpsInputs };
+              ["purchases", "sales"].forEach((kind) => {
+                if (!candidates.has(kind)) candidateWorkspace.orderOpsInputs[kind] = previous.orderOpsInputs?.[kind] || null;
+              });
+              if (Object.prototype.hasOwnProperty.call(previous, "systemHistory")) {
+                candidateWorkspace.systemHistory = previous.systemHistory;
+              }
+            }
+          }
+
+          if (state.workspace !== activeWorkspace ||
+              (activeWorkspace && JSON.stringify(activeWorkspace) !== previousJson) ||
+              FILE_KINDS.some((kind) => state[kind] !== activeInputs[kind])) {
+            throw new Error("자료 처리 중 기존 작업이 변경되었습니다. 현재 작업을 유지했으니 다시 반영하세요.");
+          }
+
+          // Only a fully computed candidate may replace the active work. A valid
+          // single source remains available for raw preview without fake stock.
+          candidates.forEach((parsed, kind) => { state[kind] = parsed; });
+          state.analysisEnterLocked = false;
+          setAnalysisEnterReady(false);
+          if (candidateWorkspace) {
+            if (typeof leaveUnresolvedReview === "function") leaveUnresolvedReview({ render: false });
+            clearSubstitutionSelection();
+            state.workspace = candidateWorkspace;
+            state.activePreview = FILE_KIND_PREVIEWS[previewKind];
+            resetResultViewFilters();
+            renderResults();
+            scheduleLocalSave();
+          } else if (!state.workspace) {
+            renderPreparedInputPreview(previewKind);
+          }
+          return { workspace: state.workspace, previewKind };
+        } finally {
+          state.analysisRunning = false;
+          refreshInputState();
         }
       }
 
@@ -3542,10 +3767,11 @@
             ? await parseExcelFile(file, kind)
             : await parseGenericExcelFile(file, kind);
           validateFileCandidate(kind, candidate);
-          resetResults();
-          state[kind] = candidate;
-          showToast(`${file.name} 파일을 읽었습니다.`);
+          await commitInputCandidates(new Map([[kind, candidate]]), { preferredKind: kind });
+          if (typeof preparationController !== "undefined") preparationController?.markApplied(new Map([[kind, candidate]]));
+          showToast(`${file.name} 파일을 처리했습니다.`);
         } catch (error) {
+          if (typeof preparationController !== "undefined") preparationController?.markFailed(kind, error);
           showToast(`${error.message || "Excel 파일을 읽지 못했습니다."} · 기존 파일과 수정 작업은 유지됩니다.`, true);
         } finally {
           setLoading(kind, false);
@@ -3575,12 +3801,11 @@
             throw new Error("적용 가능한 시트가 없습니다. 환경설정의 시트명 별칭과 필수 열을 확인하세요.");
           }
           result.applied.forEach((parsed, kind) => validateFileCandidate(kind, parsed));
-          resetResults();
-          result.applied.forEach((parsed, kind) => { state[kind] = parsed; });
+          await commitInputCandidates(result.applied, { preferredKind: "orders" });
+          if (typeof preparationController !== "undefined") preparationController?.markApplied(result.applied);
           state.integratedFile = result;
           const appliedLabels = [...result.applied.keys()].map((kind) => FILE_KIND_LABELS[kind]);
           refreshInputState();
-          if (state.validation?.canAnalyze) setAnalysisEnterReady(true);
           const failureText = result.failures.length > 0
             ? ` · 오류 ${result.failures.length}개 시트는 기존 데이터 유지`
             : "";
@@ -3633,7 +3858,7 @@
 
       function renderValidation() {
         const bothReady = Boolean(state.orders && state.inventory);
-        if (!bothReady) {
+        if (!bothReady && !state.workspace) {
           elements.validationBox.className = "validation-box";
           elements.validationBox.innerHTML = `
             <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기 · 필수 열/수량/중복코드 자동검증</p>
@@ -3641,7 +3866,7 @@
           return;
         }
 
-        const validation = state.validation;
+        const validation = state.validation || state.workspace.inputValidation;
         if (validation.canAnalyze) {
           const matchSummary = validation.unmatchedCount > 0
             ? `재고정보 없음 ${formatNumber(validation.unmatchedCount)}개 상품`
@@ -3674,13 +3899,149 @@
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
-        if (!bothSelected) {
-          setSystemMessage(`파일 선택 중 · ${selectedCount}/4 선택 · 주문현황·창고재고 필수`);
+        if (isInputOperationBusy()) {
+          setSystemMessage("자료 처리 중 · 읽기·검증·계산이 끝나면 자동으로 표시합니다");
+        } else if (state.workspace) {
+          setSystemMessage("작업 표시 중 · 수정 작업은 유지되며 정상 자료는 자동 처리됩니다");
+        } else if (!bothSelected) {
+          setSystemMessage(`자료 ${selectedCount}/4 준비 · 조회 가능 · 주문·재고가 준비되면 자동 계산합니다`);
         } else if (state.validation?.canAnalyze) {
-          setSystemMessage("분석 준비 완료 · Enter 또는 출고분석 버튼을 누르세요");
+          setSystemMessage("자료 준비 완료 · 정상 자료는 자동으로 표시됩니다");
         } else {
           setSystemMessage("입력 오류 · 필수 열과 파일 내용을 확인하세요");
         }
+        if (typeof preparationController !== "undefined") preparationController?.refresh();
+      }
+
+      function buildPreparedInputPreview(kind, parsed = state[kind]) {
+        if (!parsed) return null;
+        if (["purchases", "sales"].includes(kind)) {
+          return buildTransactionPreview({ orderOpsInputs: { [kind]: { rows: parsed.rows || [] } } }, kind);
+        }
+        if (kind === "orders") {
+          const headers = ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", "전달사항"];
+          const preview = {
+            label: "주문현황", headers, numeric: [8, 9], inventory: [], purchase: -1,
+            purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
+            rows: (parsed.rows || []).map((row) => [
+              row.warehouse || "", row.customer || "", row.group || "", row.manager || "",
+              row.productCode || "", row.productName || "", row.specification || "", "",
+              typeof row.quantity === "number" ? row.quantity : "",
+              typeof row.unitPrice === "number" ? row.unitPrice : "",
+              formatDeliveryNotice(row),
+            ]),
+            sortByProductCode: true,
+          };
+          preview.columns = createPreviewColumns("allocations", headers, preview.numeric);
+          [76, 138, 82, 92, 94, 160, 62, 112, 62, 72, 160].forEach((width, index) => {
+            if (preview.columns[index]) preview.columns[index].defaultWidth = width;
+          });
+          ["warehouse", "customer", "group", "manager", "productCode", "productName", "specification", "productAggregateQuantity", "orderQuantity", "unitPrice"]
+            .forEach((role, index) => { preview.columns[index].role = role; });
+          return preview;
+        }
+        const columns = (parsed.columns || []).map((column) => ({
+          ...column,
+          header: column.role === "calculatedQuantity" ? "잔량"
+            : String(column.header || "") === "품목명" ? "품명"
+              : String(column.header || "") === "주문수량" ? "주문" : String(column.header || ""),
+          editable: false,
+        }));
+        return {
+          label: "창고재고", columns, headers: columns.map((column) => column.header),
+          numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+          inventory: columns.map((column, index) => column.role === "warehouseQuantity" ? index : -1).filter((index) => index >= 0),
+          purchase: -1, purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
+          rows: (parsed.rows || []).map((row) => columns.map((column) => Number.isInteger(column.sourceIndex)
+            ? parsed.sourceMatrix?.[row.sourceRowNumber - 1]?.[column.sourceIndex] ?? "" : "")),
+          sortByProductCode: true,
+        };
+      }
+
+      function getActivePreviewDefinitions(previewId = state.activePreview) {
+        if (state.workspace) return getPreviewDefinitions(state.workspace);
+        const kind = FILE_KINDS.find((candidate) => FILE_KIND_PREVIEWS[candidate] === previewId && state[candidate]);
+        const preview = kind ? buildPreparedInputPreview(kind, state[kind]) : null;
+        return preview ? { [previewId]: preview } : {};
+      }
+
+      function hasActivePreviewDefinition(previewId = state.activePreview) {
+        if (previewId === "unresolved" && state.unresolvedReview.active) {
+          return Boolean(state.workspace);
+        }
+        return Boolean(getActivePreviewDefinitions(previewId)[previewId]);
+      }
+
+      function renderPreparedInputPreview(kind) {
+        if (state.workspace || !state[kind]) return false;
+        const parsed = state[kind];
+        state.activePreview = FILE_KIND_PREVIEWS[kind];
+        renderPreview();
+        elements.summaryGrid.innerHTML = "";
+        elements.purchaseUploadNotice.textContent = "";
+        elements.resultSubtitle.textContent = `${FILE_KIND_LABELS[kind]} ${parsed.rowCount}건 · 준비된 원본 자료 (재고가 필요한 계산값은 미확인)`;
+        elements.resultsPanel.classList.remove("hidden");
+        elements.printButton.disabled = true;
+        elements.downloadButton.disabled = true;
+        elements.cloudSaveButton.disabled = true;
+        elements.headerCloudSaveButton.disabled = true;
+        return true;
+      }
+
+      async function removePreparedKind(kind) {
+        if (!FILE_KINDS.includes(kind) || state.analysisRunning) throw new Error("자료 처리가 끝난 뒤 다시 시도하세요.");
+        const activeWorkspace = state.workspace;
+        const activeJson = activeWorkspace ? JSON.stringify(activeWorkspace) : null;
+        let candidate = null;
+        if (state.workspace && ["purchases", "sales"].includes(kind)) {
+          candidate = JSON.parse(JSON.stringify(state.workspace));
+          if (candidate.orderOpsInputs) candidate.orderOpsInputs[kind] = null;
+          candidate.sourceFingerprint = await sha256Hex(JSON.stringify({ previous: candidate.sourceFingerprint, removedKind: kind, inputs: candidate.orderOpsInputs }));
+          candidate = engine.recalculateWorkspace(candidate);
+        }
+        if (state.workspace !== activeWorkspace || (activeWorkspace && JSON.stringify(activeWorkspace) !== activeJson)) {
+          throw new Error("자료 해제 중 작업이 변경되었습니다. 현재 작업을 유지했으니 다시 시도하세요.");
+        }
+        // Recovery can restore a workspace without live File inputs. Detaching
+        // one source must retain every other source and its editable values.
+        if (activeWorkspace && ["orders", "inventory"].includes(kind)) {
+          const retainedInputs = {};
+          FILE_KINDS.filter((type) => type !== kind).forEach((type) => {
+            if (["orders", "inventory"].includes(type)) {
+              const source = activeWorkspace.sourceFiles?.[type] || {};
+              retainedInputs[type] = {
+                fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
+                headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? activeWorkspace[type].length,
+                sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
+                headerMapping: source.headerMapping, columns: source.columns,
+                ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
+                rows: activeWorkspace[type], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
+                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {} } : {
+                  preservedPurchaseInputs: engine.getPurchaseInputs(JSON.parse(activeJson)),
+                  preservedSubstitutionHistory: activeWorkspace.substitutionHistory,
+                  preservedNoticeAcknowledgements: activeWorkspace.noticeAcknowledgements,
+                }),
+              };
+            } else {
+              const source = activeWorkspace.orderOpsInputs?.[type];
+              retainedInputs[type] = source ? { ...source, rowCount: source.rows?.length || 0 } : null;
+            }
+          });
+          // Clone before assignment so an invalid recovered source cannot leave
+          // only part of the retained input set installed.
+          Object.assign(state, JSON.parse(JSON.stringify(retainedInputs)));
+        }
+        state[kind] = null;
+        if (candidate) {
+          state.workspace = candidate;
+          renderResults();
+          scheduleLocalSave();
+        } else {
+          resetResults();
+          const remaining = FILE_KINDS.find((type) => state[type]);
+          if (remaining) renderPreparedInputPreview(remaining);
+        }
+        refreshInputState();
       }
 
       function isPlainRecord(value) {
@@ -3821,6 +4182,7 @@
       }
 
       function renderOrderViewPresetOptions() {
+        const tableAvailable = hasActivePreviewDefinition();
         const activePresets = VIEW_PRESET_TABS.has(state.activePreview)
           ? state.orderViewPresets.filter((preset) => preset.previewId === state.activePreview)
           : [];
@@ -3831,12 +4193,12 @@
           `<option value="${escapeHtml(preset.id)}">${preset.isDefault ? "★ " : ""}${escapeHtml(preset.name)}</option>`,
         ).join("")}`;
         elements.viewPresetSelect.value = selectedId;
-        elements.viewPresetSelect.disabled = !state.workspace || activePresets.length === 0;
-        elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview);
-        elements.viewPresetDefaultButton.disabled = !state.workspace || !selectedPreset;
+        elements.viewPresetSelect.disabled = !tableAvailable || activePresets.length === 0;
+        elements.viewPresetSaveButton.disabled = !tableAvailable || !VIEW_PRESET_TABS.has(state.activePreview);
+        elements.viewPresetDefaultButton.disabled = !tableAvailable || !selectedPreset;
         elements.viewPresetDefaultButton.textContent = selectedPreset?.isDefault ? "기본해제" : "기본지정";
         elements.viewPresetDefaultButton.setAttribute("aria-pressed", String(selectedPreset?.isDefault === true));
-        elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
+        elements.viewPresetDeleteButton.disabled = !tableAvailable || !selectedId;
       }
 
       function markOrderViewPresetCustom() {
@@ -3847,7 +4209,7 @@
 
       function captureOrderViewPreset() {
         const previewId = state.activePreview;
-        const preview = getPreviewDefinitions(state.workspace)[previewId];
+        const preview = getActivePreviewDefinitions(previewId)[previewId];
         const sortSetting = state.sortSettings[previewId];
         const columnWidths = Object.create(null);
         preview.columns.forEach((column) => {
@@ -3891,9 +4253,9 @@
 
       function applyOrderViewPreset(presetId, options = {}) {
         const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
-        if (!preset || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!preset) return;
         const previewId = preset.previewId;
+        const definitions = getActivePreviewDefinitions(previewId);
         const preview = definitions[previewId];
         if (!VIEW_PRESET_TABS.has(previewId) || !preview) return;
         const previewKeys = new Set(preview.columns.map((column) => column.key));
@@ -3974,7 +4336,7 @@
       }
 
       function openOrderViewPresetDialog() {
-        if (!state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)) {
+        if (!hasActivePreviewDefinition() || !VIEW_PRESET_TABS.has(state.activePreview)) {
           showToast("결과 화면을 연 뒤 양식을 저장하세요.", true);
           return;
         }
@@ -4229,7 +4591,7 @@
         elements.managerFilterToggle.classList.toggle("active", showManager);
         elements.warehouseFilterToggle.setAttribute("aria-expanded", String(showWarehouse));
         elements.managerFilterToggle.setAttribute("aria-expanded", String(showManager));
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       }
 
       function defaultColumnWidth(column) {
@@ -4337,8 +4699,8 @@
       }
 
       function persistActiveColumnWidths() {
-        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
 
@@ -4372,7 +4734,7 @@
       }
 
       function resetActiveColumnWidths() {
-        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
         const nextTabs = Object.create(null);
         TABLE_WIDTH_TABS.forEach((tabId) => {
           if (tabId === state.activePreview) return;
@@ -4572,8 +4934,8 @@
 
       function beginColumnResize(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !state.workspace || (event.pointerType === "mouse" && event.button !== 0)) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!handle || !hasActivePreviewDefinition() || (event.pointerType === "mouse" && event.button !== 0)) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -4597,8 +4959,8 @@
 
       function handleColumnResizeKeydown(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !hasActivePreviewDefinition()) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -4647,7 +5009,7 @@
         const drag = state.activeColumnDrag;
         if (!target || !drag || drag.tabId !== state.activePreview) return;
         event.preventDefault();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const sourceKey = drag.columnKey;
@@ -5444,8 +5806,7 @@
       }
 
       function previewDefinitionById(previewId) {
-        if (!state.workspace) return null;
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions(previewId);
         return previewId === "notices" ? definitions.validation?.noticesPreview : definitions[previewId];
       }
 
@@ -5793,7 +6154,7 @@
       }
 
       function renderSourceViewCards(definitions = null) {
-        const activeKind = state.workspace ? SOURCE_VIEW_CARDS[state.activePreview] : "";
+        const activeKind = definitions?.[state.activePreview] ? SOURCE_VIEW_CARDS[state.activePreview] : "";
         [...FILE_KINDS, "ledger"].forEach((kind) => {
           const card = elements[kind + "Card"];
           const drop = elements[kind + "Drop"];
@@ -5807,21 +6168,27 @@
             ? `재고수불부 · ${formatNumber(rowCount)}개 상품`
             : "재고수불부 · 자동 생성";
         }
+        document.getElementById?.("prepPreviewTabs")?.querySelectorAll("[data-preview]").forEach((button) => {
+          const active = button.dataset.preview === state.activePreview;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-selected", String(active));
+        });
       }
 
       function renderPreview() {
         closePurchaseAutocomplete();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions();
         if (!definitions[state.activePreview]) state.activePreview = "validation";
         const validationDefinition = definitions.validation;
-        elements.previewTabs.innerHTML = `
+        elements.previewTabs.innerHTML = validationDefinition ? `
           <button class="tab-button ${state.activePreview === "validation" ? "active" : ""}" type="button" role="tab"
             aria-selected="${state.activePreview === "validation"}" data-preview="validation">
             ${escapeHtml(validationDefinition.label)}
-          </button>`;
+          </button>` : "";
         renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
+        if (!preview) return;
         renderOrderViewPresetOptions();
         renderWarehouseColorBar(definitions);
         const shortageEligible = ["allocations", "ledger", "inventory"].includes(state.activePreview);
@@ -5857,7 +6224,7 @@
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
-        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: Boolean(state.workspace), resizable: true });
         if (state.activePreview === "validation") {
           const noticePreview = preview.noticesPreview;
           const noticePairs = filteredSortedPreviewPairs("notices", noticePreview);
@@ -5963,6 +6330,8 @@
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
         elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         elements.analyzeButton.disabled = isInputOperationBusy();
+        renderValidation();
+        if (typeof preparationController !== "undefined") preparationController?.refresh();
         setSystemMessage(`분석 완료 · 주문 ${formatNumber(stats.orderRowCount)}행·상품 ${formatNumber(stats.productCount)}개 · 결과 확인 후 저장(F8)하세요`);
       }
 
@@ -5984,17 +6353,19 @@
       }
 
       function runResultFilterReset() {
-        if (!state.workspace) return;
+        if (!hasActivePreviewDefinition()) return;
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
         showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
 
-      async function analyzeCurrentInputs({ fromSources = false } = {}) {
-        if (!fromSources && state.workspace) return engine.recalculateWorkspace(state.workspace);
-        if (!state.validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
-        const { orders, inventory, purchases, sales } = state;
+      async function analyzeCurrentInputs({ fromSources = false, inputs = state } = {}) {
+        if (!fromSources && inputs === state && state.workspace) return engine.recalculateWorkspace(state.workspace);
+        const validation = inputs === state ? state.validation
+          : inputs.orders && inputs.inventory ? engine.validateInputs(inputs.orders, inputs.inventory) : null;
+        if (!validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        const { orders, inventory, purchases, sales } = inputs;
         const sourceFingerprint = await sha256Hex(JSON.stringify({
           schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
           orders: {
@@ -6002,27 +6373,35 @@
             fileName: orders.fileName,
             sheetName: orders.sheetName,
             rowCount: orders.rowCount,
+            ...(orders.intakeMapping ? { mapping: orders.intakeMapping.draft } : {}),
           },
           inventory: {
             sha256: inventory.fileHash,
             fileName: inventory.fileName,
             sheetName: inventory.sheetName,
             rowCount: inventory.rowCount,
+            ...(inventory.intakeMapping ? { mapping: inventory.intakeMapping.draft } : {}),
           },
           purchases: purchases ? {
             sha256: purchases.fileHash,
             fileName: purchases.fileName,
             sheetName: purchases.sheetName,
             rowCount: purchases.rowCount,
+            ...(purchases.intakeMapping ? { mapping: purchases.intakeMapping.draft } : {}),
           } : null,
           sales: sales ? {
             sha256: sales.fileHash,
             fileName: sales.fileName,
             sheetName: sales.sheetName,
             rowCount: sales.rowCount,
+            ...(sales.intakeMapping ? { mapping: sales.intakeMapping.draft } : {}),
           } : null,
         }));
         const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
+        for (const kind of ["orders", "inventory"]) {
+          const parsed = kind === "orders" ? orders : inventory;
+          if (parsed.intakeMapping) workspace.sourceFiles[kind].intakeMapping = JSON.parse(JSON.stringify(parsed.intakeMapping));
+        }
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
           purchases: purchases ? {
@@ -6030,12 +6409,14 @@
             sheetName: purchases.sheetName,
             fileHash: purchases.fileHash,
             rows: JSON.parse(JSON.stringify(purchases.rows || [])),
+            ...(purchases.intakeMapping ? { intakeMapping: JSON.parse(JSON.stringify(purchases.intakeMapping)) } : {}),
           } : null,
           sales: sales ? {
             fileName: sales.fileName,
             sheetName: sales.sheetName,
             fileHash: sales.fileHash,
             rows: JSON.parse(JSON.stringify(sales.rows || [])),
+            ...(sales.intakeMapping ? { intakeMapping: JSON.parse(JSON.stringify(sales.intakeMapping)) } : {}),
           } : null,
         };
         return workspace;
@@ -6055,8 +6436,7 @@
           const candidateWorkspace = await analyzeCurrentInputs();
           clearSubstitutionSelection();
           state.workspace = candidateWorkspace;
-          state.activePreview = "validation";
-          resetResultViewFilters();
+          if (!getPreviewDefinitions(candidateWorkspace)[state.activePreview]) state.activePreview = "validation";
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -6068,6 +6448,7 @@
           state.analysisRunning = false;
           elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span><span>출고분석 Enter</span>';
           elements.analyzeButton.disabled = isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze);
+          if (typeof preparationController !== "undefined") preparationController?.refresh();
         }
       }
 
@@ -6905,6 +7286,7 @@
         resetResults();
         resetResultViewFilters();
         refreshInputState();
+        preparationController?.clear();
         showToast("현재 선택 파일과 화면 분석 결과를 초기화했습니다.");
       }
 
@@ -6919,6 +7301,22 @@
       state.managerColorSettings = recoverManagerColorSettings(loadManagerColorSettings(), state.orderViewPresets);
       saveManagerColorSettings();
       renderOrderViewPresetOptions();
+
+      preparationController = window.OrderOpsExcelPreparationUI?.mount({
+        document, isBusy: () => Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean)),
+        sha256: sha256Hex, getMappings: () => state.excelMappings,
+        sheetAliasScore: sheetAliasMatchScore, validate: validateFileCandidate, toast: showToast,
+        onFile: handleFile, onBundle: handleBundleFiles, applyCandidates: commitInputCandidates, removeKind: removePreparedKind,
+        onSettled: refreshInputState,
+        getWorkspace: () => state.workspace,
+        parseSheet: (input) => ["orders", "inventory"].includes(input.kind) ? parsePrimaryWorkbookSheet(input) : parseGenericWorkbookSheet(input),
+        preview: (view) => {
+          if (!activatePreview(view)) {
+            const kind = FILE_KINDS.find((type) => FILE_KIND_PREVIEWS[type] === view);
+            if (kind) renderPreparedInputPreview(kind);
+          }
+        },
+      }) || null;
 
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
@@ -6954,7 +7352,7 @@
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
@@ -6962,7 +7360,7 @@
         if (input.checked) state.specificationFilters.add(input.value);
         else state.specificationFilters.delete(input.value);
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
       });
       elements.warehouseFilterToggle.addEventListener("click", () => {
         setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
@@ -6976,7 +7374,7 @@
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
           else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
           markOrderViewPresetCustom();
-          if (state.workspace) renderPreview();
+          if (hasActivePreviewDefinition()) renderPreview();
           return;
         }
         const managerFilter = event.target.closest("[data-manager-filter]");
@@ -6984,7 +7382,7 @@
           if (managerFilter.checked) state.managerFilters.add(managerFilter.dataset.managerFilter);
           else state.managerFilters.delete(managerFilter.dataset.managerFilter);
           markOrderViewPresetCustom();
-          if (state.workspace) renderPreview();
+          if (hasActivePreviewDefinition()) renderPreview();
           return;
         }
       }
@@ -6994,11 +7392,11 @@
       elements.colorTargetSelect.addEventListener("change", () => {
         if (!state.activeFilterPanel) return;
         state.colorTargetKeys[state.activeFilterPanel] = elements.colorTargetSelect.value;
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       });
       elements.vividColorToggle.addEventListener("click", () => {
         state.vividPaletteExpanded = !state.vividPaletteExpanded;
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       });
       elements.colorAssignmentPanel.addEventListener("click", (event) => {
         const swatch = event.target.closest("[data-palette-color]");
@@ -7028,7 +7426,7 @@
         state.managerFilters.clear();
         state.warehouseFilters.clear();
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
         showToast("창고·담당자 필터를 해제했습니다. 저장된 배색은 유지됩니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
@@ -7038,8 +7436,8 @@
       });
       elements.columnVisibilityMenu.addEventListener("change", (event) => {
         const input = event.target.closest("[data-column-visible]");
-        if (!input || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!input || !hasActivePreviewDefinition()) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const hidden = hiddenColumnSet(state.activePreview);
@@ -7079,15 +7477,14 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
       function activatePreview(previewId) {
-        if (!state.workspace) return false;
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions(previewId);
         if (!definitions[previewId]) return false;
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (previewId !== "inventory") clearSubstitutionSelection();
         if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
-        scheduleLocalSave();
+        if (state.workspace) scheduleLocalSave();
         return true;
       }
 
@@ -7107,7 +7504,7 @@
           return;
         }
         if (event.key === "F3") {
-          if (!state.workspace) return;
+          if (!hasActivePreviewDefinition()) return;
           elements.tableSearchInput.focus({ preventScroll: true });
           const caret = elements.tableSearchInput.value.length;
           elements.tableSearchInput.setSelectionRange(caret, caret);
@@ -7143,7 +7540,7 @@
       elements.previewTable.addEventListener("click", (event) => {
         if (handleSubstitutionTableClick(event)) return;
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
-        if (trigger && state.workspace) {
+        if (trigger && hasActivePreviewDefinition(trigger.dataset.sortPreviewId)) {
           event.preventDefault();
           event.stopPropagation();
           const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
@@ -7155,7 +7552,7 @@
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !state.workspace) return;
+        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
         if (event.target.closest("[data-cancel-column-values]")) {
           closeColumnSortMenu();
           return;
@@ -7192,7 +7589,7 @@
       });
       elements.columnSortMenu.addEventListener("change", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !state.workspace) return;
+        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
         const selectAll = event.target.closest("[data-column-value-select-all]");
         if (selectAll && context.textSelection instanceof Set) {
           (context.visibleTextValueKeys || []).forEach((key) => {
@@ -7220,7 +7617,7 @@
       elements.columnSortMenu.addEventListener("input", (event) => {
         const searchInput = event.target.closest("[data-column-value-search]");
         const context = state.activeColumnMenu;
-        if (!searchInput || !context || !state.workspace) return;
+        if (!searchInput || !context || !hasActivePreviewDefinition(context.previewId)) return;
         context.textSearch = searchInput.value;
         renderColumnTextValueOptions();
       });

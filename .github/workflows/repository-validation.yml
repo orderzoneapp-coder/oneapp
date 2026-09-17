@@ -238,7 +238,11 @@ jobs:
           node scripts/test-shipping-management.mjs
           node scripts/test-orderops-baseline-calculation.mjs
           node scripts/test-orderops-work-preservation.mjs
+          node scripts/test-orderops-excel-preparation.mjs
           node scripts/test-common-inventory-snapshot.mjs
+
+      - name: Test OrderOps left Excel mapping and automatic display in Chromium
+        run: node scripts/test-orderops-excel-preparation-browser.mjs
 
       # OrderOps is restored to the approved a596cbbd Excel-first screen.
       # Later dispatch/three-area, system-review, and workbook-v1.2 UI suites

@@ -18,6 +18,7 @@ const XLSX = require(path.join(ROOT, "customer-master/vendor/xlsx.full.min.js"))
 const HTML_PATHS = ["orderops/list.html", "orderops_list.html"];
 const FILE_KINDS = ["orders", "inventory", "purchases", "sales"];
 const FILE_KIND_LABELS = { orders: "주문", inventory: "재고", purchases: "구매", sales: "판매" };
+const FILE_KIND_PREVIEWS = { orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" };
 const WHEN = "2026-09-17T01:00:00.000Z";
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
@@ -84,21 +85,33 @@ async function harness(htmlPath) {
   const html = fs.readFileSync(path.join(ROOT, htmlPath), "utf8");
   const state = {
     ...inputs(), workspace: null, validation: null, activePreview: "allocations",
+    searchQuery: "", selectedOrderViewPresetId: "", activeFilterPanel: "",
     loading: Object.fromEntries([...FILE_KINDS, "bundle", "integrated"].map((kind) => [kind, false])),
     analysisEnterLocked: false, analysisEnterReady: false, analysisRunning: false,
   };
   state.validation = engine.validateInputs(state.orders, state.inventory);
   const elements = new Proxy({}, { get: (target, key) => target[key] || (target[key] = element()) });
-  const log = { toasts: [], messages: [], saves: [], exports: [], reads: [], classifications: [], integratedReads: 0, recovery: null };
+  const log = { toasts: [], messages: [], saves: [], exports: [], reads: [], classifications: [], integratedReads: 0, recovery: null, viewResets: 0 };
   const env = {
-    engine, state, elements, FILE_KINDS, FILE_KIND_LABELS, MAX_FILE_SIZE: 25 * 1024 * 1024,
+    engine, state, elements, FILE_KINDS, FILE_KIND_LABELS, FILE_KIND_PREVIEWS, MAX_FILE_SIZE: 25 * 1024 * 1024,
     window: { XLSX, setTimeout: (callback) => { callback(); return 0; } },
     document: { activeElement: null }, HTMLElement: class TestHTMLElement {},
     sha256Hex: async (value) => hash(value),
     showToast: (message, error) => log.toasts.push({ message, error: Boolean(error) }),
     setSystemMessage: (message) => log.messages.push(message),
     leaveUnresolvedReview() {}, clearSubstitutionSelection() {}, renderSourceViewCards() {},
-    renderFileCard() {}, renderIntegratedFileCard() {}, renderValidation() {}, resetResultViewFilters() {},
+    renderFileCard() {}, renderIntegratedFileCard() {}, renderValidation() {},
+    getPreviewDefinitions: () => ({ validation: {}, allocations: {}, inventory: {}, ledger: {}, purchases: {}, sales: {} }),
+    renderPreview() {
+      const kind = FILE_KINDS.find((candidate) => FILE_KIND_PREVIEWS[candidate] === state.activePreview) || "workspace";
+      elements.previewTable.innerHTML = `<table data-prepared-preview="${kind}"><thead><tr><th>자료</th></tr></thead></table>`;
+    },
+    resetResultViewFilters() {
+      log.viewResets += 1;
+      state.searchQuery = "";
+      state.selectedOrderViewPresetId = "";
+      state.activeFilterPanel = "";
+    },
     renderResults() {
       elements.downloadButton.disabled = !state.workspace;
       elements.printButton.disabled = !state.workspace;
@@ -128,7 +141,7 @@ async function harness(htmlPath) {
   const context = vm.createContext(env);
   vm.runInContext([
     "isSupportedFile", "isInputOperationBusy", "validateFileCandidate", "setLoading", "setAnalysisEnterReady", "resetResults", "refreshInputState",
-    "analyzeCurrentInputs", "runAnalysis", "handleFile", "handleBundleFiles", "handleIntegratedFile", "refreshCurrentSession", "downloadResult",
+    "escapeHtml", "renderPreparedInputPreview", "removePreparedKind", "analyzeCurrentInputs", "commitInputCandidates", "runAnalysis", "handleFile", "handleBundleFiles", "handleIntegratedFile", "refreshCurrentSession", "downloadResult",
   ].map((name) => extractFunction(html, name)).join("\n"), context, { filename: `${htmlPath}:work-preservation` });
   const call = async (name, ...args) => {
     env.callArgs = args;
@@ -238,11 +251,20 @@ for (const htmlPath of HTML_PATHS) {
     h.state.validation = null;
     await h.call("refreshInputState");
     assert.equal(h.elements.analyzeButton.disabled, false);
+    h.state.activePreview = "inventory";
+    h.state.searchQuery = "합성";
+    h.state.selectedOrderViewPresetId = "saved-inventory-view";
+    h.state.activeFilterPanel = "warehouse";
     await h.call("runAnalysis");
     assertWork(h.state.workspace, POSITIVE);
     assertRecoveryAndOutput(h.state.workspace, POSITIVE);
     assert.equal(h.log.saves.length, 1);
     assert.equal(h.state.analysisRunning, false);
+    assert.equal(h.state.activePreview, "inventory");
+    assert.equal(h.state.searchQuery, "합성");
+    assert.equal(h.state.selectedOrderViewPresetId, "saved-inventory-view");
+    assert.equal(h.state.activeFilterPanel, "warehouse");
+    assert.equal(h.log.viewResets, 0, "수동 재분석이 현재 보기 상태를 초기화하면 안 됩니다.");
   });
 
   await test(`${htmlPath}: explicit fromSources creates source-based replacement without mutating reviewed work`, async () => {
@@ -345,7 +367,7 @@ for (const htmlPath of HTML_PATHS) {
       });
     }
 
-    await test(`${htmlPath}: valid ${kind} read alone replaces its input after validation`, async () => {
+    await test(`${htmlPath}: valid ${kind} read automatically replaces only its source and displays reviewed work`, async () => {
       const h = await harness(htmlPath);
       edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
       h.env.scheduleLocalSave();
@@ -357,14 +379,166 @@ for (const htmlPath of HTML_PATHS) {
       assert.equal(h.state[kind].fileName, replacement.fileName);
       assert.equal(h.state[kind].fileHash, replacement.fileHash);
       FILE_KINDS.filter((type) => type !== kind).forEach((type) => assert.strictEqual(h.state[type], previousInputs[type]));
-      assert.equal(h.state.workspace, null, "정상 새 입력을 선택한 뒤 이전 결과를 새 파일의 결과로 오인하면 안 됩니다.");
-      assert.equal(h.elements.downloadButton.disabled, true);
-      assert.deepEqual(h.log.recovery, previousRecovery, "새 파일 선택만으로 마지막 정상 복구자료를 없애면 안 됩니다.");
-      assert.equal(h.log.saves.length, 1);
+      const expected = kind === "orders" ? { ...POSITIVE, quantity: 10, unitPrice: 1000, purchase: "" }
+        : kind === "inventory" ? { ...POSITIVE, inventory: 10 } : POSITIVE;
+      assertWork(h.state.workspace, expected);
+      assertRecoveryAndOutput(h.state.workspace, expected);
+      assert.equal(h.state.activePreview, FILE_KIND_PREVIEWS[kind], "정상 새 자료는 추가 분석 없이 해당 종류의 현황을 표시해야 합니다.");
+      assert.equal(h.elements.downloadButton.disabled, false);
+      assert.deepEqual(h.log.saves[0], previousRecovery, "새 작업 저장이 이전 정상 복구자료를 삭제하면 안 됩니다.");
+      assertWork(h.log.recovery.workspace, expected);
+      assert.equal(h.log.saves.length, 2);
       assert.equal(h.state.loading[kind], false);
       assert.ok(h.log.toasts.some((toast) => !toast.error));
     });
   }
+
+  for (const kind of ["inventory", "purchases"]) {
+    await test(`${htmlPath}: ${kind} candidate preserves recovery source metadata and audit history`, async () => {
+      const h = await harness(htmlPath);
+      edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+      const replacement = { ...clone(h.state[kind]), fileName: `replacement-${kind}.xlsx`, fileHash: hash(`replacement-${kind}`) };
+      h.state.workspace.systemHistory = {
+        schemaVersion: "shipping-system-history/v1",
+        events: [{ eventId: "review-edit-1", kind: "CELL_EDITED", field: "quantity", previousValue: 10, nextValue: 7, occurredAt: WHEN }],
+      };
+      h.state.workspace.substitutionHistory.events.push({
+        eventId: "review-substitution-1", kind: "SUBSTITUTED", occurredAt: WHEN,
+        fromProduct: { productCode: "0002", productName: "이전 상품" },
+        toProduct: { productCode: "0001", productName: "합성상품" }, quantity: 7, customer: "거래처A",
+      });
+      const noticeId = h.state.workspace.notices[0]?.noticeId;
+      assert.ok(noticeId, "전달사항 확인 보존용 fixture가 있어야 합니다.");
+      engine.setNoticeAcknowledged(h.state.workspace, noticeId, true);
+      h.state.workspace.sourceFiles.orders.sourceMetadata = { originalSheet: "주문", headerRow: 1, sourceColumns: [4, 5, 7], rawEvidence: ["", 0, "0", -2] };
+      h.state.workspace.sourceFiles.inventory.sourceMetadata = { originalSheet: "재고", sourceColumns: [5, 6, 7] };
+      h.state.workspace.orderOpsInputs.sales.sourceMetadata = { originalSheet: "판매", sourceRows: [2] };
+      h.state.workspace = clone(engine.buildLocalRecoveryPayload(h.state.workspace, {}, {}, WHEN)).workspace;
+      const previous = h.state.workspace;
+      const before = clone(previous);
+      // Old recovery records must not require the original File objects again.
+      FILE_KINDS.forEach((type) => { h.state[type] = null; });
+      h.state.validation = null;
+      const result = await h.call("commitInputCandidates", new Map([[kind, replacement]]), { preferredKind: kind });
+      const expected = kind === "inventory" ? { ...POSITIVE, inventory: 10 } : POSITIVE;
+      assert.notStrictEqual(h.state.workspace, previous);
+      assert.deepEqual(previous, before, "입력으로 쓴 복구 작업본도 불변이어야 합니다.");
+      assertWork(h.state.workspace, expected);
+      assertRecoveryAndOutput(h.state.workspace, expected);
+      assert.deepEqual(clone(h.state.workspace.systemHistory), before.systemHistory);
+      assert.deepEqual(clone(h.state.workspace.substitutionHistory), before.substitutionHistory);
+      assert.deepEqual(clone(h.state.workspace.noticeAcknowledgements), before.noticeAcknowledgements);
+      assert.deepEqual(clone(h.state.workspace.sourceFiles.orders), before.sourceFiles.orders);
+      assert.deepEqual(clone(h.state.workspace.orderOpsInputs.sales), before.orderOpsInputs.sales);
+      if (kind === "inventory") {
+        assert.equal(h.state.workspace.sourceFiles.inventory.fileName, replacement.fileName);
+        assert.equal(h.state.workspace.sourceFiles.inventory.sha256, replacement.fileHash);
+        assert.equal(h.state.workspace.sourceFiles.inventory.sourceMetadata, undefined, "교체된 원본의 옛 좌표를 새 원본으로 이월하면 안 됩니다.");
+        assert.deepEqual(clone(h.state.workspace.inventoryOverrides.cells), []);
+      } else {
+        assert.deepEqual(clone(h.state.workspace.sourceFiles.inventory), before.sourceFiles.inventory);
+        assert.deepEqual(clone(h.state.workspace.inventoryOverrides), before.inventoryOverrides);
+        assert.equal(h.state.workspace.orderOpsInputs.purchases.fileName, replacement.fileName);
+      }
+      assert.equal(result.workspace, h.state.workspace);
+      assert.equal(result.previewKind, kind);
+      assert.equal(h.state.activePreview, FILE_KIND_PREVIEWS[kind]);
+      assert.equal(h.state.analysisRunning, false);
+      assert.equal(h.log.saves.length, 1);
+      assert.deepEqual(h.log.recovery.workspace.systemHistory, before.systemHistory);
+      assert.deepEqual(h.log.recovery.workspace.sourceFiles.orders, before.sourceFiles.orders);
+    });
+  }
+
+  await test(`${htmlPath}: recovered inventory removal and reinput preserve reviewed orders, suppliers and original sources`, async () => {
+    const h = await harness(htmlPath);
+    edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+    h.state.workspace.substitutionHistory.events.push({
+      eventId: "retained-substitution-1", kind: "SUBSTITUTED", occurredAt: WHEN,
+      fromProduct: { productCode: "0002", productName: "이전 상품" },
+      toProduct: { productCode: "0001", productName: "합성상품" }, quantity: 7, customer: "거래처A",
+    });
+    const noticeId = h.state.workspace.notices[0]?.noticeId;
+    assert.ok(noticeId, "전달사항 확인 보존용 fixture가 있어야 합니다.");
+    engine.setNoticeAcknowledged(h.state.workspace, noticeId, true);
+    h.state.workspace.sourceFiles.orders.intakeMapping = { draft: { sheetName: "주문", headerRow: 1, startRow: 2 } };
+    h.state.workspace = clone(engine.buildLocalRecoveryPayload(h.state.workspace, {}, {}, WHEN)).workspace;
+    const original = h.state.workspace;
+    const before = clone(original);
+    const purchaseInputs = clone(engine.getPurchaseInputs(original));
+    FILE_KINDS.forEach((kind) => { h.state[kind] = null; });
+    h.state.validation = null;
+    h.env.scheduleLocalSave();
+    const recoveryBefore = clone(h.log.recovery);
+
+    await h.call("removePreparedKind", "inventory");
+    assert.equal(h.state.workspace, null);
+    assert.equal(h.state.inventory, null);
+    assert.equal(h.state.activePreview, "allocations");
+    assert.deepEqual(clone(h.state.orders.rows), before.orders);
+    assert.deepEqual(clone(h.state.orders.sourceMatrix), before.sourceFiles.orders.matrix);
+    assert.equal(h.state.orders.fileHash, before.sourceFiles.orders.sha256);
+    assert.equal(h.state.orders.headerRowIndex, before.sourceFiles.orders.headerRowIndex);
+    assert.deepEqual(clone(h.state.orders.headerMapping), before.sourceFiles.orders.headerMapping);
+    assert.deepEqual(clone(h.state.orders.intakeMapping), before.sourceFiles.orders.intakeMapping);
+    assert.deepEqual(clone(h.state.orders.preservedPurchaseInputs), purchaseInputs);
+    for (const kind of ["purchases", "sales"]) {
+      assert.deepEqual(clone(h.state[kind]), { ...before.orderOpsInputs[kind], rowCount: before.orderOpsInputs[kind].rows.length });
+    }
+    assert.notStrictEqual(h.state.orders.rows, original.orders);
+    assert.notStrictEqual(h.state.orders.sourceMatrix, original.sourceFiles.orders.matrix);
+    assert.match(h.elements.previewTable.innerHTML, /data-prepared-preview="orders"/);
+    assert.doesNotMatch(h.elements.previewTable.innerHTML, /<th>(재고|잔량|구매수량)<\/th>/, "재고 해제 뒤 원자료 조회에 확정 계산값을 만들어내면 안 됩니다.");
+    assert.match(h.elements.resultSubtitle.textContent, /미확인/);
+    assert.equal(h.elements.downloadButton.disabled, true);
+    assert.deepEqual(h.log.recovery, recoveryBefore, "재고 해제가 이전 정상 복구 작업을 덮어쓰면 안 됩니다.");
+
+    const replacement = { ...inputs().inventory, fileName: "reinput-inventory.xlsx", fileHash: hash("reinput-inventory") };
+    h.env.readOperation = async () => replacement;
+    await h.call("handleFile", "inventory", { name: replacement.fileName, size: 32 });
+    const expected = { ...POSITIVE, inventory: 10 };
+    assertWork(h.state.workspace, expected);
+    assertRecoveryAndOutput(h.state.workspace, expected);
+    assert.deepEqual(clone(engine.getPurchaseInputs(h.state.workspace)), purchaseInputs);
+    assert.deepEqual(clone(h.state.workspace.substitutionHistory), before.substitutionHistory);
+    assert.deepEqual(clone(h.state.workspace.noticeAcknowledgements), before.noticeAcknowledgements);
+    assert.deepEqual(clone(h.state.workspace.sourceFiles.orders), before.sourceFiles.orders);
+    assert.deepEqual(clone(h.state.workspace.orderOpsInputs), before.orderOpsInputs);
+    assert.equal(h.state.workspace.sourceFiles.inventory.fileName, replacement.fileName);
+    assert.equal(h.state.workspace.sourceFiles.inventory.sha256, replacement.fileHash);
+    assert.deepEqual(clone(h.state.workspace.inventoryOverrides.cells), [], "해제한 재고의 보정값이 새 재고로 이월되면 안 됩니다.");
+    assert.equal(h.state.activePreview, "inventory");
+    assert.equal(h.log.saves.length, 2);
+    assert.deepEqual(h.log.saves[0], recoveryBefore);
+    assertWork(h.log.recovery.workspace, expected);
+    assert.deepEqual(original, before, "해제·재입력에 사용한 복구 원본은 변경되면 안 됩니다.");
+  });
+
+  await test(`${htmlPath}: candidate calculation throw leaves inputs/work/export/recovery untouched`, async () => {
+    const h = await harness(htmlPath);
+    edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+    h.env.scheduleLocalSave();
+    await h.call("downloadResult");
+    const current = h.state.workspace;
+    const before = clone(current);
+    const previousInputs = Object.fromEntries(FILE_KINDS.map((kind) => [kind, h.state[kind]]));
+    const recovery = clone(h.log.recovery);
+    const replacement = { ...clone(h.state.inventory), fileName: "candidate-inventory.xlsx", fileHash: hash("candidate-inventory") };
+    h.env.engine = { ...engine, recalculateWorkspace() { throw new Error("INJECTED_CANDIDATE_CALCULATION_FAILURE"); } };
+    await assert.rejects(h.call("commitInputCandidates", new Map([["inventory", replacement]])), /INJECTED_CANDIDATE_CALCULATION_FAILURE/);
+    assert.strictEqual(h.state.workspace, current);
+    assert.deepEqual(current, before);
+    FILE_KINDS.forEach((kind) => assert.strictEqual(h.state[kind], previousInputs[kind]));
+    assert.deepEqual(h.log.recovery, recovery);
+    assert.equal(h.log.saves.length, 1);
+    assert.equal(h.elements.downloadButton.disabled, false);
+    assert.equal(h.elements.printButton.disabled, false);
+    assert.equal(h.state.analysisRunning, false);
+    h.env.engine = engine;
+    await h.call("downloadResult");
+    assert.deepEqual(h.log.exports[1], h.log.exports[0]);
+    assertRecoveryAndOutput(current, POSITIVE);
+  });
 
   await test(`${htmlPath}: pending read blocks double-file, reanalysis and refresh without clearing active work`, async () => {
     const h = await harness(htmlPath);
@@ -421,6 +595,51 @@ for (const htmlPath of HTML_PATHS) {
     });
   }
 
+  for (const [scenario, rejectedFile, shouldRetain] of [
+    ["unsupported-extension", { name: "renamed-workbook.txt", size: 32 }, false],
+    ["oversized-workbook", { name: "oversized.xlsx", size: 25 * 1024 * 1024 + 1 }, false],
+    ["supported-mapping-error", { name: "mapping-review.xlsx", size: 32 }, true],
+  ]) {
+    await test(`${htmlPath}: bundle ${scenario} respects candidate intake limits without discarding current work`, async () => {
+      const h = await harness(htmlPath);
+      edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
+      h.env.scheduleLocalSave();
+      const recovery = clone(h.log.recovery);
+      const current = h.state.workspace;
+      const before = clone(current);
+      const previous = Object.fromEntries(FILE_KINDS.map((kind) => [kind, h.state[kind]]));
+      const retained = [];
+      const remembered = [];
+      let applied = 0;
+      const rejection = new Error(`INJECTED_${scenario}`);
+      h.env.preparationController = {
+        isBusy: () => false, refresh() {}, markFailed() {},
+        markApplied() { applied += 1; },
+        rememberParsed(parsed) { remembered.push(parsed.fileName); },
+        async retainCandidate(file, { error }) { retained.push(file); assert.strictEqual(error, rejection); },
+      };
+      // Only classification outcomes are injected; the actual extracted batch
+      // handler must decide which rejected File may enter the re-read pathway.
+      h.env.classifyOperation = async (file) => {
+        if (file === rejectedFile) throw rejection;
+        return { kind: "inventory", parsed: { ...clone(previous.inventory), fileName: file.name, fileHash: hash(file.name) } };
+      };
+      await h.call("handleBundleFiles", [rejectedFile, { name: "valid-inventory.xlsx", size: 32 }]);
+      assert.deepEqual(retained, shouldRetain ? [rejectedFile] : [], "형식·크기 거부 파일은 재읽기·수동 반영 후보로 들어가면 안 됩니다.");
+      assert.deepEqual(remembered, ["valid-inventory.xlsx"], "같이 선택한 정상 파일의 후보는 남아야 합니다.");
+      assert.equal(applied, 0);
+      assert.strictEqual(h.state.workspace, current);
+      assert.deepEqual(current, before);
+      FILE_KINDS.forEach((kind) => assert.strictEqual(h.state[kind], previous[kind]));
+      assert.deepEqual(h.log.recovery, recovery);
+      assert.equal(h.log.saves.length, 1);
+      assert.equal(h.elements.downloadButton.disabled, false);
+      assert.equal(h.state.loading.bundle, false);
+      assert.ok(h.log.toasts.some((toast) => toast.error && toast.message.includes(rejection.message)));
+      assertRecoveryAndOutput(current, POSITIVE);
+    });
+  }
+
   await test(`${htmlPath}: integrated all-failed read preserves metadata, work and recovery`, async () => {
     const h = await harness(htmlPath);
     edit(h.state.workspace, POSITIVE, EDIT_ORDERS[1][1]);
@@ -458,10 +677,13 @@ for (const htmlPath of HTML_PATHS) {
     assert.strictEqual(h.state.purchases, purchases);
     for (const kind of ["orders", "inventory", "sales"]) assert.strictEqual(h.state[kind], previous[kind]);
     assert.strictEqual(h.state.integratedFile, result);
-    assert.equal(h.state.workspace, null);
-    assert.equal(h.elements.downloadButton.disabled, true);
-    assert.deepEqual(h.log.recovery, recovery);
-    assert.equal(h.log.saves.length, 1);
+    assertWork(h.state.workspace, POSITIVE);
+    assertRecoveryAndOutput(h.state.workspace, POSITIVE);
+    assert.equal(h.state.activePreview, "purchases", "통합파일의 주문 시트가 없으면 실제로 반영된 구매 현황을 표시해야 합니다.");
+    assert.equal(h.elements.downloadButton.disabled, false);
+    assert.deepEqual(h.log.saves[0], recovery);
+    assertWork(h.log.recovery.workspace, POSITIVE);
+    assert.equal(h.log.saves.length, 2);
     assert.equal(h.state.loading.integrated, false);
     assert.ok(h.log.toasts.some((toast) => /기존 데이터 유지/.test(toast.message)));
   });
