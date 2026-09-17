@@ -12,7 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260917-left-excel-mapping"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260918-excel-grid-editing"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
   <script src="../orderops/excel-preparation.js?v=20260917-left-excel-mapping"></script>
   <script src="../orderops/excel-preparation-ui.js?v=20260917-left-excel-mapping"></script>
@@ -1561,6 +1561,99 @@
       border: 1px solid #e1e7ee;
       vertical-align: middle;
     }
+    @media screen {
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations {
+        border: 0;
+        background: #e5e7eb;
+        color: #1f2937;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations th {
+        border: 0 !important;
+        color: #25313f !important;
+        background: #d7dce2 !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr:not(.manager-color-row) > td {
+        border: 0 !important;
+        color: #1f2937 !important;
+        background: #eceff2 !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr:not(.manager-color-row):nth-child(even) > td {
+        background: #e5e9ed !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.manager-color-row[style*="--manager-color"] > td {
+        color: #172033 !important;
+        background: color-mix(in srgb, var(--manager-color) 42%, #eceff2) !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.manager-color-row > td * {
+        color: #172033 !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations .manager-name {
+        border-color: #94a3b8 !important;
+        color: #172033 !important;
+        background: rgba(255, 255, 255, .72) !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations .order-information-badge.manager-color-badge {
+        border-color: color-mix(in srgb, var(--manager-color) 65%, #64748b) !important;
+        color: #172033 !important;
+        background: color-mix(in srgb, var(--manager-color) 45%, #fff) !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.no-order-row > td,
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.no-order-row > td.primary-readable-cell,
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.no-order-row > td * {
+        color: #475569 !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.unit-alert-row.unit-alert-row > td,
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.unit-alert-row.unit-alert-row > td * {
+        color: #b91c1c !important;
+      }
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.box-unit-row > td,
+      html[data-nexus-ui-theme][data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr.box-unit-row > td * {
+        color: #0f172a !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations td[data-column-role="orderQuantity"],
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations td[data-column-role="unitPrice"] {
+        background: #e4edf8 !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations td[data-column-role="warehouseQuantity"] {
+        background: #e2efe7 !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations td[data-column-role="deliveryNotice"] {
+        background: #f3eddc !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations td[data-column-role="purchase"] {
+        background: #eee6f4 !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations :is(
+        .order-edit-input,
+        .inventory-input,
+        .purchase-input
+      ) {
+        width: 100%;
+        min-width: 0;
+        height: 25px;
+        padding: 1px 5px;
+        border: 0 !important;
+        border-radius: 0;
+        outline: 0;
+        color: #1f2937 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        text-align: inherit;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr:focus-within > td {
+        color: #172554 !important;
+        background: #dbeafe !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr:focus-within > td:focus-within {
+        position: relative;
+        background: #f8fbff !important;
+        box-shadow: inset 0 0 0 2px #2563eb !important;
+      }
+      html[data-nexus-ui-app="orderops"] body .results-panel table.preview-allocations tbody tr:focus-within {
+        outline: 2px solid #60a5fa;
+        outline-offset: -2px;
+      }
+    }
 
     .page-footer {
       display: flex;
@@ -2683,6 +2776,7 @@
         if (gridInput) {
           return {
             productCode: gridInput.closest("tr[data-product-code]")?.dataset.productCode || "",
+            gridRowKey: gridInput.closest("tr[data-grid-row-key]")?.dataset.gridRowKey || "",
             gridColumn: gridInput.dataset.gridColumn || "",
           };
         }
@@ -2694,7 +2788,9 @@
         if (!target && descriptor?.gridColumn) {
           target = Array.from(elements.previewTable.querySelectorAll("[data-grid-column]"))
             .find((candidate) => candidate.dataset.gridColumn === descriptor.gridColumn &&
-              candidate.closest("tr[data-product-code]")?.dataset.productCode === descriptor.productCode);
+              (descriptor.gridRowKey
+                ? candidate.closest("tr[data-grid-row-key]")?.dataset.gridRowKey === descriptor.gridRowKey
+                : candidate.closest("tr[data-product-code]")?.dataset.productCode === descriptor.productCode));
         }
         (target || elements.unresolvedReviewToggle)?.focus?.({ preventScroll: true });
       }
@@ -5615,12 +5711,19 @@
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
         allocations.columns[0].role = "warehouse";
+        allocations.columns[0].orderField = "warehouse";
         allocations.columns[1].role = "customer";
+        allocations.columns[1].orderField = "customer";
         allocations.columns[2].role = "group";
+        allocations.columns[2].orderField = "group";
         allocations.columns[3].role = "manager";
+        allocations.columns[3].orderField = "manager";
         allocations.columns[4].role = "productCode";
+        allocations.columns[4].orderField = "productCode";
         allocations.columns[5].role = "productName";
+        allocations.columns[5].orderField = "productName";
         allocations.columns[6].role = "specification";
+        allocations.columns[6].orderField = "specification";
         allocations.columns[7].role = "productAggregateQuantity";
         allocations.columns[8].role = "orderQuantity";
         allocations.columns[8].orderField = "quantity";
@@ -5638,6 +5741,8 @@
           if (column) column.defaultWidth = width;
         });
         allocations.columns[allocationTailStart].orderField = "note";
+        allocations.columns[allocationTailStart].role = "deliveryNotice";
+        allocations.columns[allocationTailStart + 1].role = "purchase";
         allocations.shortageCount = shortageContext.shortageCount || 0;
 
         const notices = {
@@ -6240,6 +6345,7 @@
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
+                  ${previewId === "allocations" && sourceRow?.sourceRowNumber ? `data-grid-row-key="order:${escapeHtml(sourceRow.sourceRowNumber)}"` : ""}
                   style="${rowStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
@@ -6278,6 +6384,7 @@
                     );
                     const purchaseNegative = preview.purchase === index && negativeBalance;
                     const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn;
+                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const warningUnitContext = exactWarningUnit(sourceRow) && (
                       ["productName", "specification"].includes(column.role) || quantityColumn
                     );
@@ -6303,13 +6410,13 @@
                       column.role === "orderInformation" ? "information-value" : "",
                       column.role === "systemMessages" ? "system-message-value" : "",
                       column.role === "manager" && managerColor ? "manager-value" : "",
+                      editableOrder ? "order-editable-cell" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
-                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
                     const unresolvedReviewAction = previewId === "unresolved" && column.role === "unresolvedReviewAction";
                     const unresolvedOfficialInventory = previewId === "unresolved" && column.role === "unresolvedOfficialInventory";
                     const unresolvedIntegrity = previewId === "unresolved" && column.role === "unresolvedIntegrity";
@@ -6333,7 +6440,7 @@
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
                       : editableOrder
                         ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
-                            data-order-field="${escapeHtml(column.orderField)}"
+                            data-order-field="${escapeHtml(column.orderField)}" data-grid-column="${escapeHtml(column.key)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
@@ -6360,7 +6467,7 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    return `<td class="${classes}"
+                    return `<td class="${classes}" data-column-role="${escapeHtml(column.role || "")}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
@@ -7306,6 +7413,50 @@
         }
       }
 
+      function focusOrderGridInput(input) {
+        if (!input) return;
+        input.closest("tr")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        window.requestAnimationFrame(() => {
+          input.focus({ preventScroll: true });
+          input.select?.();
+        });
+      }
+
+      function handleOrderGridNavigation(event) {
+        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field][data-grid-column]");
+        if (!input || !state.workspace || state.activePreview !== "allocations" || event.isComposing) return;
+        if (!["Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"));
+        const row = input.closest("tr[data-grid-row-key]");
+        const rowIndex = rows.indexOf(row);
+        const rowInputs = Array.from(row?.querySelectorAll("[data-grid-column]") || []);
+        const columnIndex = rowInputs.indexOf(input);
+        if (rowIndex < 0 || columnIndex < 0) return;
+        event.preventDefault();
+
+        const vertical = event.key === "Enter" || event.key === "ArrowUp" || event.key === "ArrowDown";
+        const direction = event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1 : 1;
+        const nextRowIndex = vertical
+          ? Math.max(0, Math.min(rows.length - 1, rowIndex + direction))
+          : rowIndex;
+        const nextColumnIndex = event.key === "ArrowLeft"
+          ? Math.max(0, columnIndex - 1)
+          : event.key === "ArrowRight"
+            ? Math.min(rowInputs.length - 1, columnIndex + 1)
+            : columnIndex;
+        const targetRowKey = rows[nextRowIndex]?.dataset.gridRowKey || row.dataset.gridRowKey;
+        const targetColumn = vertical
+          ? input.dataset.gridColumn
+          : rowInputs[nextColumnIndex]?.dataset.gridColumn || input.dataset.gridColumn;
+
+        if (!commitOrderInput(input)) return;
+        const targetRow = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"))
+          .find((candidate) => candidate.dataset.gridRowKey === targetRowKey);
+        const target = Array.from(targetRow?.querySelectorAll("[data-grid-column]") || [])
+          .find((candidate) => candidate.dataset.gridColumn === targetColumn);
+        focusOrderGridInput(target);
+      }
+
       function substitutionActor() {
         return String(elements.cloudSavedByInput?.value || "").trim() || "사용자";
       }
@@ -8217,18 +8368,13 @@
         if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         commitPurchaseInput(input);
       });
-      elements.previewTable.addEventListener("keydown", (event) => {
-        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
-        if (!input || event.key !== "Enter" || event.isComposing) return;
-        event.preventDefault();
-        input.blur();
-      });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("dragstart", handleColumnDragStart);
       elements.previewTable.addEventListener("dragover", handleColumnDragOver);
       elements.previewTable.addEventListener("drop", handleColumnDrop);
       elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
+      elements.previewTable.addEventListener("keydown", handleOrderGridNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);

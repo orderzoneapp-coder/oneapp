@@ -315,12 +315,22 @@ assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>
 assert.ok(orderOpsHtml.includes(
   'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the public order table must include the source customer group in the approved sequence");
-assert.doesNotMatch(orderOpsHtml, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
-  "the order warehouse column must remain read-only");
+for (const [index, field] of [
+  [0, "warehouse"], [1, "customer"], [2, "group"], [3, "manager"],
+  [4, "productCode"], [5, "productName"], [6, "specification"],
+  [8, "quantity"], [9, "unitPrice"],
+]) {
+  assert.ok(orderOpsHtml.includes(`allocations.columns[${index}].orderField = "${field}"`),
+    `the order table must expose ${field} as an editable Excel-style cell`);
+}
 assert.match(orderOpsHtml, /table\s*\{[^}]*border-collapse:\s*collapse;[^}]*border:\s*1px solid #d9e2ec;/,
   "public preview tables must use a light Excel-like grid");
 assert.match(orderOpsHtml, /\.order-edit-input\s*\{[^}]*border:\s*0;/,
   "public editable cells must not draw an inner input border");
+assert.match(orderOpsHtml, /table\.preview-allocations th\s*\{[\s\S]*?border:\s*0\s*!important;/,
+  "the central Excel worktable must not draw cell border lines");
+assert.match(orderOpsHtml, /table\.preview-allocations tbody tr:focus-within > td:focus-within\s*\{[\s\S]*?box-shadow:\s*inset 0 0 0 2px #2563eb\s*!important;/,
+  "the central Excel worktable must emphasize the active cell");
 assert.match(orderOpsHtml, /\.table-wrap td:focus-within\s*\{[^}]*background:\s*#edf9f7 !important;/,
   "public editable cells must show a light focus fill");
 assert.doesNotMatch(orderOpsHtml, /id="bundleDrop"|id="bundleInput"|Excel 묶음파일을 여기에 크게 던지기/,
@@ -349,7 +359,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260917-left-excel-mapping") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260918-excel-grid-editing") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -749,7 +759,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.3");
+assert.equal(engine.ENGINE_VERSION, "3.19.4");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
@@ -1102,20 +1112,39 @@ const editableWorkspace = engine.analyze(
 );
 const editableOrderRow = editableWorkspace.orders[0].sourceRowNumber;
 engine.setOrderValue(editableWorkspace, editableOrderRow, "warehouse", "1창고");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "customer", "거래처 수정");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "group", "그룹 수정");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "담당 수정");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "productName", "상품명 수정");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "specification", "규격 수정");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "7");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "unitPrice", "1200");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "note", "변경 전달");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "purchase", "구매처B");
 assert.deepEqual(
-  [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].quantity,
+  [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].customer,
+    editableWorkspace.orders[0].group, editableWorkspace.orders[0].manager,
+    editableWorkspace.orders[0].productName, editableWorkspace.orders[0].specification,
+    editableWorkspace.orders[0].quantity,
     editableWorkspace.orders[0].unitPrice, editableWorkspace.orders[0].supplyAmount,
     editableWorkspace.orders[0].note, editableWorkspace.allocations[0].purchase],
-  ["1창고", 7, 1200, 8400, "변경 전달", "구매처B"],
+  ["1창고", "거래처 수정", "그룹 수정", "담당 수정", "상품명 수정", "규격 수정",
+    7, 1200, 8400, "변경 전달", "구매처B"],
   "editable order values must survive the workspace recalculation",
 );
 assert.equal(engine.getInventoryViewRows(editableWorkspace).rows[0].remainingQuantity, -2);
 assert.equal(engine.getPurchaseUploadSelection(editableWorkspace).included[0].purchaseNeed, 2);
 assert.equal(editableWorkspace.notices[0].warehouse, "1창고");
+const productCodeWorkspace = JSON.parse(JSON.stringify(editableWorkspace));
+engine.setOrderValue(productCodeWorkspace, editableOrderRow, "productCode", "000001");
+assert.equal(productCodeWorkspace.orders[0].productCode, "000001",
+  "an edited product code must preserve leading zeroes");
+assert.equal(productCodeWorkspace.allocations[0].purchase, "구매처B",
+  "changing product identity must preserve the operator's purchase entry");
+const beforeRejectedProductCode = JSON.stringify(productCodeWorkspace);
+assert.throws(() => engine.setOrderValue(productCodeWorkspace, editableOrderRow, "productCode", ""), /빈칸/);
+assert.equal(JSON.stringify(productCodeWorkspace), beforeRejectedProductCode,
+  "a rejected product-code edit must leave the complete workspace unchanged");
 assert.equal(
   dynamicView.rows[0].orderInformation,
   "거래처 1(2)1,000\n반복거래처(1)1,000",
@@ -2112,8 +2141,14 @@ assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
 assert.ok(html.includes(
   'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the canonical order table must include the source customer group in the approved sequence");
-assert.doesNotMatch(html, /allocations\.columns\[0\]\.orderField\s*=\s*"warehouse"/,
-  "the canonical order warehouse column must remain read-only");
+for (const [index, field] of [
+  [0, "warehouse"], [1, "customer"], [2, "group"], [3, "manager"],
+  [4, "productCode"], [5, "productName"], [6, "specification"],
+  [8, "quantity"], [9, "unitPrice"],
+]) {
+  assert.ok(html.includes(`allocations.columns[${index}].orderField = "${field}"`),
+    `the canonical order table must expose ${field} as an editable Excel-style cell`);
+}
 assert.match(combinedCss, /\.purchase-input\s*\{[^}]*border:\s*0;/,
   "canonical purchase editors must not draw an inner input border");
 assert.match(combinedCss, /table\.preview-inventory \.inventory-input\s*\{[^}]*border:\s*0;/,
