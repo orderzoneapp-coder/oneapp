@@ -3966,6 +3966,9 @@
       }
 
       function hasActivePreviewDefinition(previewId = state.activePreview) {
+        if (previewId === "unresolved" && state.unresolvedReview.active) {
+          return Boolean(state.workspace);
+        }
         return Boolean(getActivePreviewDefinitions(previewId)[previewId]);
       }
 
