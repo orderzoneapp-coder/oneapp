@@ -85,12 +85,13 @@ async function harness(htmlPath) {
   const html = fs.readFileSync(path.join(ROOT, htmlPath), "utf8");
   const state = {
     ...inputs(), workspace: null, validation: null, activePreview: "allocations",
+    searchQuery: "", selectedOrderViewPresetId: "", activeFilterPanel: "",
     loading: Object.fromEntries([...FILE_KINDS, "bundle", "integrated"].map((kind) => [kind, false])),
     analysisEnterLocked: false, analysisEnterReady: false, analysisRunning: false,
   };
   state.validation = engine.validateInputs(state.orders, state.inventory);
   const elements = new Proxy({}, { get: (target, key) => target[key] || (target[key] = element()) });
-  const log = { toasts: [], messages: [], saves: [], exports: [], reads: [], classifications: [], integratedReads: 0, recovery: null };
+  const log = { toasts: [], messages: [], saves: [], exports: [], reads: [], classifications: [], integratedReads: 0, recovery: null, viewResets: 0 };
   const env = {
     engine, state, elements, FILE_KINDS, FILE_KIND_LABELS, FILE_KIND_PREVIEWS, MAX_FILE_SIZE: 25 * 1024 * 1024,
     window: { XLSX, setTimeout: (callback) => { callback(); return 0; } },
@@ -99,7 +100,18 @@ async function harness(htmlPath) {
     showToast: (message, error) => log.toasts.push({ message, error: Boolean(error) }),
     setSystemMessage: (message) => log.messages.push(message),
     leaveUnresolvedReview() {}, clearSubstitutionSelection() {}, renderSourceViewCards() {},
-    renderFileCard() {}, renderIntegratedFileCard() {}, renderValidation() {}, resetResultViewFilters() {},
+    renderFileCard() {}, renderIntegratedFileCard() {}, renderValidation() {},
+    getPreviewDefinitions: () => ({ validation: {}, allocations: {}, inventory: {}, ledger: {}, purchases: {}, sales: {} }),
+    renderPreview() {
+      const kind = FILE_KINDS.find((candidate) => FILE_KIND_PREVIEWS[candidate] === state.activePreview) || "workspace";
+      elements.previewTable.innerHTML = `<table data-prepared-preview="${kind}"><thead><tr><th>자료</th></tr></thead></table>`;
+    },
+    resetResultViewFilters() {
+      log.viewResets += 1;
+      state.searchQuery = "";
+      state.selectedOrderViewPresetId = "";
+      state.activeFilterPanel = "";
+    },
     renderResults() {
       elements.downloadButton.disabled = !state.workspace;
       elements.printButton.disabled = !state.workspace;
@@ -239,11 +251,20 @@ for (const htmlPath of HTML_PATHS) {
     h.state.validation = null;
     await h.call("refreshInputState");
     assert.equal(h.elements.analyzeButton.disabled, false);
+    h.state.activePreview = "inventory";
+    h.state.searchQuery = "합성";
+    h.state.selectedOrderViewPresetId = "saved-inventory-view";
+    h.state.activeFilterPanel = "warehouse";
     await h.call("runAnalysis");
     assertWork(h.state.workspace, POSITIVE);
     assertRecoveryAndOutput(h.state.workspace, POSITIVE);
     assert.equal(h.log.saves.length, 1);
     assert.equal(h.state.analysisRunning, false);
+    assert.equal(h.state.activePreview, "inventory");
+    assert.equal(h.state.searchQuery, "합성");
+    assert.equal(h.state.selectedOrderViewPresetId, "saved-inventory-view");
+    assert.equal(h.state.activeFilterPanel, "warehouse");
+    assert.equal(h.log.viewResets, 0, "수동 재분석이 현재 보기 상태를 초기화하면 안 됩니다.");
   });
 
   await test(`${htmlPath}: explicit fromSources creates source-based replacement without mutating reviewed work`, async () => {

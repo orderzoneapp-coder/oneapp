@@ -2245,10 +2245,11 @@ assert.ok(html.includes('data-shortage-category="${escapeHtml(shortageCategory)}
 assert.ok(html.includes('column.role === "rowState"') &&
   html.includes('? ""') && !html.includes("renderRowStateBadges"),
   "the 구분 column must keep filter values in row data without rendering any state chips");
-assert.ok(html.includes('elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)') &&
+assert.ok(html.includes('const tableAvailable = hasActivePreviewDefinition();') &&
+  html.includes('elements.viewPresetSaveButton.disabled = !tableAvailable || !VIEW_PRESET_TABS.has(state.activePreview)') &&
   html.includes('columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)') &&
   html.includes('columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)'),
-  "all five result screens must save their filters, widths, and column positions as one layout");
+  "all available result tables, including single-source views, must save filters, widths, and column positions as one layout");
 assert.ok(html.includes('isDefault: value.isDefault === true') &&
   html.includes('preset.isDefault ? "★ " : ""') &&
   html.includes('candidate.previewId === previewId && candidate.isDefault === true') &&

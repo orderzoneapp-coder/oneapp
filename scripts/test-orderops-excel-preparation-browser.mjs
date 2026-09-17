@@ -205,6 +205,11 @@ try {
   await upload("orders");
   check("orders alone: raw rows visible, no invented workspace/stock", await ev(`!__ops.state.workspace && __ops.state.orders.rows[0].quantity===10 && !document.querySelector('#resultsPanel').classList.contains('hidden') && document.querySelector('#previewTable').textContent.includes('합성상품')`));
   await assertPreview("allocations", "order upload opens order preview without a calculation workspace");
+  check("orders alone expose the shared column and view-preset tools", await ev(`!document.querySelector('#viewPresetSaveButton').disabled && document.querySelectorAll('#columnVisibilityMenu [data-column-visible]').length>=10`));
+  await ev(`(()=>{const search=document.querySelector('#tableSearchInput');search.value='합성';search.dispatchEvent(new Event('input',{bubbles:true}));const group=[...document.querySelectorAll('#columnVisibilityMenu .column-menu-item')].find(label=>label.querySelector('span')?.textContent.trim()==='그룹')?.querySelector('[data-column-visible]');if(!group)throw Error('Missing standalone order group column');group.checked=false;group.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#viewPresetSaveButton').click();document.querySelector('#viewPresetNameInput').value='단독 주문 양식';document.querySelector('[data-save-view-preset]').click();return true;})()`);
+  await until(() => ev("__ops.state.selectedOrderViewPresetId && document.querySelector('#viewPresetSelect').value===__ops.state.selectedOrderViewPresetId"), "orders-only view preset saved");
+  const orderOnlyPresetId = await ev("__ops.state.selectedOrderViewPresetId");
+  check("orders-only preset applies search and hides group without inventing stock", await ev(`!__ops.state.workspace && __ops.state.searchQuery==='합성' && ![...document.querySelectorAll('#previewTable thead th')].some(th=>th.textContent.includes('그룹')) && !document.querySelector('#previewTable').textContent.includes('재고수량')`));
   await shot("01-orders-only");
   await upload("inventory");
   await until(() => ev("__ops.state.workspace?.orders?.length===1 && __ops.state.activePreview==='inventory'"), "automatic inventory preview");
@@ -213,6 +218,9 @@ try {
   check("valid input changes require no apply/analyze click", await ev("__extraActions.length===0 && !document.querySelector('#downloadButton').disabled"));
 
   await selectPreview("allocations");
+  await ev(`(()=>{const select=document.querySelector('#viewPresetSelect');select.value=${JSON.stringify(orderOnlyPresetId)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await settled("apply the orders-only preset to the calculated order view");
+  check("orders-only preset can be selected after inventory creates a calculation workspace", await ev(`__ops.state.selectedOrderViewPresetId===${JSON.stringify(orderOnlyPresetId)} && document.querySelector('#tableSearchInput').value==='합성' && ![...document.querySelectorAll('#previewTable thead th')].some(th=>th.textContent.includes('그룹'))`));
   await change('.order-edit-input[data-order-field="quantity"]', 7);
   await change('.order-edit-input[data-order-field="unitPrice"]', 1200);
   await change('.purchase-input[data-purchase-code="0001"]', "수정 구매처");
@@ -220,6 +228,16 @@ try {
   assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "수정 구매처", stock: 4, preview: "inventory" });
   await assertPreview("inventory", "replacement inventory upload keeps its own result view");
   check("inventory replacement preserves order7 / price1200 / supplier", await ev("__ops.state.workspace.sourceFiles.orders.matrix[1][7]===10 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
+
+  await selectPreview("allocations");
+  await ev(`(()=>{const select=document.querySelector('#viewPresetSelect');select.value=${JSON.stringify(orderOnlyPresetId)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await settled("restore the saved order view before manual reanalysis");
+  const beforeReanalysisView = await ev("JSON.stringify({preview:__ops.state.activePreview,search:__ops.state.searchQuery,preset:__ops.state.selectedOrderViewPresetId,hidden:__ops.state.hiddenColumnSettings.tabs.allocations})");
+  await ev("document.querySelector('#analyzeButton').click();true");
+  await settled("manual reanalysis preserves the current result view");
+  assert.equal(await ev("JSON.stringify({preview:__ops.state.activePreview,search:__ops.state.searchQuery,preset:__ops.state.selectedOrderViewPresetId,hidden:__ops.state.hiddenColumnSettings.tabs.allocations})"), beforeReanalysisView);
+  check("manual reanalysis preserves the current table, search and saved preset", await ev(`__ops.state.activePreview==='allocations' && document.querySelector('#tableSearchInput').value==='합성' && document.querySelector('#viewPresetSelect').value===${JSON.stringify(orderOnlyPresetId)} && ![...document.querySelectorAll('#previewTable thead th')].some(th=>th.textContent.includes('그룹'))`));
+  await selectPreview("inventory");
 
   const existingDownloads = new Set(readdirSync(downloads));
   await ev("document.querySelector('#downloadButton').click(); true");
@@ -344,6 +362,10 @@ try {
   await assertPreview("inventory", "saved inventory template opens its raw inventory preview");
   check("saved warehouse template accepts inventory-only input without apply", await ev("!__ops.state.workspace && __ops.state.inventory.rowCount===1 && __extraActions.length===0 && document.querySelector('#prepMappingStatus').dataset.state==='applied'"));
   check("inventory-only preview displays warehouse names and original quantities", await ev("document.querySelector('#previewTable').textContent.includes('신선A') && document.querySelector('#previewTable').textContent.includes('가격표') && document.querySelector('#previewTable').textContent.includes('12')"));
+  check("inventory alone exposes the shared column and view-preset tools", await ev(`!document.querySelector('#viewPresetSaveButton').disabled && document.querySelectorAll('#columnVisibilityMenu [data-column-visible]').length>=8`));
+  await ev(`(()=>{document.querySelector('#viewPresetSaveButton').click();document.querySelector('#viewPresetNameInput').value='단독 재고 양식';document.querySelector('[data-save-view-preset]').click();return true;})()`);
+  await until(() => ev("__ops.state.selectedOrderViewPresetId && document.querySelector('#viewPresetSelect').value===__ops.state.selectedOrderViewPresetId"), "inventory-only view preset saved");
+  check("inventory-only view preset is saved without creating orders", await ev("!__ops.state.workspace && !__ops.state.orders && __ops.state.orderViewPresets.some(item=>item.name==='단독 재고 양식'&&item.previewId==='inventory')"));
   await upload("orders", { quantity: 8, name: "fresh-order8.xlsx" });
   await assertExplicitWarehouse("first fresh workspace retains saved explicit warehouse roles");
   check("fresh template processing requires no extra action", await ev("__extraActions.length===0 && __ops.state.activePreview==='allocations'"));

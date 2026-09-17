@@ -3913,28 +3913,75 @@
         if (typeof preparationController !== "undefined") preparationController?.refresh();
       }
 
+      function buildPreparedInputPreview(kind, parsed = state[kind]) {
+        if (!parsed) return null;
+        if (["purchases", "sales"].includes(kind)) {
+          return buildTransactionPreview({ orderOpsInputs: { [kind]: { rows: parsed.rows || [] } } }, kind);
+        }
+        if (kind === "orders") {
+          const headers = ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", "전달사항"];
+          const preview = {
+            label: "주문현황", headers, numeric: [8, 9], inventory: [], purchase: -1,
+            purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
+            rows: (parsed.rows || []).map((row) => [
+              row.warehouse || "", row.customer || "", row.group || "", row.manager || "",
+              row.productCode || "", row.productName || "", row.specification || "", "",
+              typeof row.quantity === "number" ? row.quantity : "",
+              typeof row.unitPrice === "number" ? row.unitPrice : "",
+              formatDeliveryNotice(row),
+            ]),
+            sortByProductCode: true,
+          };
+          preview.columns = createPreviewColumns("allocations", headers, preview.numeric);
+          [76, 138, 82, 92, 94, 160, 62, 112, 62, 72, 160].forEach((width, index) => {
+            if (preview.columns[index]) preview.columns[index].defaultWidth = width;
+          });
+          ["warehouse", "customer", "group", "manager", "productCode", "productName", "specification", "productAggregateQuantity", "orderQuantity", "unitPrice"]
+            .forEach((role, index) => { preview.columns[index].role = role; });
+          return preview;
+        }
+        const columns = (parsed.columns || []).map((column) => ({
+          ...column,
+          header: column.role === "calculatedQuantity" ? "잔량"
+            : String(column.header || "") === "품목명" ? "품명"
+              : String(column.header || "") === "주문수량" ? "주문" : String(column.header || ""),
+          editable: false,
+        }));
+        return {
+          label: "창고재고", columns, headers: columns.map((column) => column.header),
+          numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+          inventory: columns.map((column, index) => column.role === "warehouseQuantity" ? index : -1).filter((index) => index >= 0),
+          purchase: -1, purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
+          rows: (parsed.rows || []).map((row) => columns.map((column) => Number.isInteger(column.sourceIndex)
+            ? parsed.sourceMatrix?.[row.sourceRowNumber - 1]?.[column.sourceIndex] ?? "" : "")),
+          sortByProductCode: true,
+        };
+      }
+
+      function getActivePreviewDefinitions(previewId = state.activePreview) {
+        if (state.workspace) return getPreviewDefinitions(state.workspace);
+        const kind = FILE_KINDS.find((candidate) => FILE_KIND_PREVIEWS[candidate] === previewId && state[candidate]);
+        const preview = kind ? buildPreparedInputPreview(kind, state[kind]) : null;
+        return preview ? { [previewId]: preview } : {};
+      }
+
+      function hasActivePreviewDefinition(previewId = state.activePreview) {
+        return Boolean(getActivePreviewDefinitions(previewId)[previewId]);
+      }
+
       function renderPreparedInputPreview(kind) {
         if (state.workspace || !state[kind]) return false;
         const parsed = state[kind];
         state.activePreview = FILE_KIND_PREVIEWS[kind];
-        const labels = { productCode: "품목코드", productName: "품목명", specification: "규격", sourceUnit: "단위", unit: "단위", quantity: "수량", unitPrice: "단가", supplyAmount: "공급가액", customer: "거래처", partner: kind === "purchases" ? "구매처" : "거래처", note: "적요", note1: "적요1", group: "그룹" };
-        const keys = Object.keys(labels).filter((key) => (parsed.rows || []).some((row) => Object.hasOwn(row, key)));
-        const columns = kind === "inventory"
-          ? (parsed.columns || []).filter((column) => Number.isInteger(column.sourceIndex)).map((column) => ({
-            label: parsed.sourceMatrix?.[parsed.headerRowIndex]?.[column.sourceIndex] ?? column.header,
-            value: (row) => parsed.sourceMatrix?.[row.sourceRowNumber - 1]?.[column.sourceIndex],
-          })) : keys.map((key) => ({ label: labels[key], value: (row) => row[key] }));
-        elements.previewTable.innerHTML = `<table data-prepared-preview="${escapeHtml(kind)}"><thead><tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr></thead><tbody>${(parsed.rows || []).map((row) => `<tr>${columns.map((column) => `<td>${escapeHtml(column.value(row))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+        renderPreview();
         elements.summaryGrid.innerHTML = "";
         elements.purchaseUploadNotice.textContent = "";
         elements.resultSubtitle.textContent = `${FILE_KIND_LABELS[kind]} ${parsed.rowCount}건 · 준비된 원본 자료 (재고가 필요한 계산값은 미확인)`;
-        elements.previewCount.textContent = `${parsed.rowCount}건`;
         elements.resultsPanel.classList.remove("hidden");
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
-        renderSourceViewCards();
         return true;
       }
 
@@ -4132,6 +4179,7 @@
       }
 
       function renderOrderViewPresetOptions() {
+        const tableAvailable = hasActivePreviewDefinition();
         const activePresets = VIEW_PRESET_TABS.has(state.activePreview)
           ? state.orderViewPresets.filter((preset) => preset.previewId === state.activePreview)
           : [];
@@ -4142,12 +4190,12 @@
           `<option value="${escapeHtml(preset.id)}">${preset.isDefault ? "★ " : ""}${escapeHtml(preset.name)}</option>`,
         ).join("")}`;
         elements.viewPresetSelect.value = selectedId;
-        elements.viewPresetSelect.disabled = !state.workspace || activePresets.length === 0;
-        elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview);
-        elements.viewPresetDefaultButton.disabled = !state.workspace || !selectedPreset;
+        elements.viewPresetSelect.disabled = !tableAvailable || activePresets.length === 0;
+        elements.viewPresetSaveButton.disabled = !tableAvailable || !VIEW_PRESET_TABS.has(state.activePreview);
+        elements.viewPresetDefaultButton.disabled = !tableAvailable || !selectedPreset;
         elements.viewPresetDefaultButton.textContent = selectedPreset?.isDefault ? "기본해제" : "기본지정";
         elements.viewPresetDefaultButton.setAttribute("aria-pressed", String(selectedPreset?.isDefault === true));
-        elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
+        elements.viewPresetDeleteButton.disabled = !tableAvailable || !selectedId;
       }
 
       function markOrderViewPresetCustom() {
@@ -4158,7 +4206,7 @@
 
       function captureOrderViewPreset() {
         const previewId = state.activePreview;
-        const preview = getPreviewDefinitions(state.workspace)[previewId];
+        const preview = getActivePreviewDefinitions(previewId)[previewId];
         const sortSetting = state.sortSettings[previewId];
         const columnWidths = Object.create(null);
         preview.columns.forEach((column) => {
@@ -4202,9 +4250,9 @@
 
       function applyOrderViewPreset(presetId, options = {}) {
         const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
-        if (!preset || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!preset) return;
         const previewId = preset.previewId;
+        const definitions = getActivePreviewDefinitions(previewId);
         const preview = definitions[previewId];
         if (!VIEW_PRESET_TABS.has(previewId) || !preview) return;
         const previewKeys = new Set(preview.columns.map((column) => column.key));
@@ -4285,7 +4333,7 @@
       }
 
       function openOrderViewPresetDialog() {
-        if (!state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)) {
+        if (!hasActivePreviewDefinition() || !VIEW_PRESET_TABS.has(state.activePreview)) {
           showToast("결과 화면을 연 뒤 양식을 저장하세요.", true);
           return;
         }
@@ -4540,7 +4588,7 @@
         elements.managerFilterToggle.classList.toggle("active", showManager);
         elements.warehouseFilterToggle.setAttribute("aria-expanded", String(showWarehouse));
         elements.managerFilterToggle.setAttribute("aria-expanded", String(showManager));
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       }
 
       function defaultColumnWidth(column) {
@@ -4648,8 +4696,8 @@
       }
 
       function persistActiveColumnWidths() {
-        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
 
@@ -4683,7 +4731,7 @@
       }
 
       function resetActiveColumnWidths() {
-        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
         const nextTabs = Object.create(null);
         TABLE_WIDTH_TABS.forEach((tabId) => {
           if (tabId === state.activePreview) return;
@@ -4883,8 +4931,8 @@
 
       function beginColumnResize(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !state.workspace || (event.pointerType === "mouse" && event.button !== 0)) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!handle || !hasActivePreviewDefinition() || (event.pointerType === "mouse" && event.button !== 0)) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -4908,8 +4956,8 @@
 
       function handleColumnResizeKeydown(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !hasActivePreviewDefinition()) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -4958,7 +5006,7 @@
         const drag = state.activeColumnDrag;
         if (!target || !drag || drag.tabId !== state.activePreview) return;
         event.preventDefault();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const sourceKey = drag.columnKey;
@@ -5755,8 +5803,7 @@
       }
 
       function previewDefinitionById(previewId) {
-        if (!state.workspace) return null;
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions(previewId);
         return previewId === "notices" ? definitions.validation?.noticesPreview : definitions[previewId];
       }
 
@@ -6104,7 +6151,7 @@
       }
 
       function renderSourceViewCards(definitions = null) {
-        const activeKind = state.workspace ? SOURCE_VIEW_CARDS[state.activePreview] : "";
+        const activeKind = definitions?.[state.activePreview] ? SOURCE_VIEW_CARDS[state.activePreview] : "";
         [...FILE_KINDS, "ledger"].forEach((kind) => {
           const card = elements[kind + "Card"];
           const drop = elements[kind + "Drop"];
@@ -6127,17 +6174,18 @@
 
       function renderPreview() {
         closePurchaseAutocomplete();
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions();
         if (!definitions[state.activePreview]) state.activePreview = "validation";
         const validationDefinition = definitions.validation;
-        elements.previewTabs.innerHTML = `
+        elements.previewTabs.innerHTML = validationDefinition ? `
           <button class="tab-button ${state.activePreview === "validation" ? "active" : ""}" type="button" role="tab"
             aria-selected="${state.activePreview === "validation"}" data-preview="validation">
             ${escapeHtml(validationDefinition.label)}
-          </button>`;
+          </button>` : "";
         renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
+        if (!preview) return;
         renderOrderViewPresetOptions();
         renderWarehouseColorBar(definitions);
         const shortageEligible = ["allocations", "ledger", "inventory"].includes(state.activePreview);
@@ -6173,7 +6221,7 @@
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
-        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: Boolean(state.workspace), resizable: true });
         if (state.activePreview === "validation") {
           const noticePreview = preview.noticesPreview;
           const noticePairs = filteredSortedPreviewPairs("notices", noticePreview);
@@ -6302,7 +6350,7 @@
       }
 
       function runResultFilterReset() {
-        if (!state.workspace) return;
+        if (!hasActivePreviewDefinition()) return;
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
@@ -6385,8 +6433,7 @@
           const candidateWorkspace = await analyzeCurrentInputs();
           clearSubstitutionSelection();
           state.workspace = candidateWorkspace;
-          state.activePreview = "validation";
-          resetResultViewFilters();
+          if (!getPreviewDefinitions(candidateWorkspace)[state.activePreview]) state.activePreview = "validation";
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -7302,7 +7349,7 @@
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
@@ -7310,7 +7357,7 @@
         if (input.checked) state.specificationFilters.add(input.value);
         else state.specificationFilters.delete(input.value);
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
       });
       elements.warehouseFilterToggle.addEventListener("click", () => {
         setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
@@ -7324,7 +7371,7 @@
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
           else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
           markOrderViewPresetCustom();
-          if (state.workspace) renderPreview();
+          if (hasActivePreviewDefinition()) renderPreview();
           return;
         }
         const managerFilter = event.target.closest("[data-manager-filter]");
@@ -7332,7 +7379,7 @@
           if (managerFilter.checked) state.managerFilters.add(managerFilter.dataset.managerFilter);
           else state.managerFilters.delete(managerFilter.dataset.managerFilter);
           markOrderViewPresetCustom();
-          if (state.workspace) renderPreview();
+          if (hasActivePreviewDefinition()) renderPreview();
           return;
         }
       }
@@ -7342,11 +7389,11 @@
       elements.colorTargetSelect.addEventListener("change", () => {
         if (!state.activeFilterPanel) return;
         state.colorTargetKeys[state.activeFilterPanel] = elements.colorTargetSelect.value;
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       });
       elements.vividColorToggle.addEventListener("click", () => {
         state.vividPaletteExpanded = !state.vividPaletteExpanded;
-        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
+        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
       });
       elements.colorAssignmentPanel.addEventListener("click", (event) => {
         const swatch = event.target.closest("[data-palette-color]");
@@ -7376,7 +7423,7 @@
         state.managerFilters.clear();
         state.warehouseFilters.clear();
         markOrderViewPresetCustom();
-        if (state.workspace) renderPreview();
+        if (hasActivePreviewDefinition()) renderPreview();
         showToast("창고·담당자 필터를 해제했습니다. 저장된 배색은 유지됩니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
@@ -7386,8 +7433,8 @@
       });
       elements.columnVisibilityMenu.addEventListener("change", (event) => {
         const input = event.target.closest("[data-column-visible]");
-        if (!input || !state.workspace) return;
-        const definitions = getPreviewDefinitions(state.workspace);
+        if (!input || !hasActivePreviewDefinition()) return;
+        const definitions = getActivePreviewDefinitions();
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const hidden = hiddenColumnSet(state.activePreview);
@@ -7427,15 +7474,14 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
       function activatePreview(previewId) {
-        if (!state.workspace) return false;
-        const definitions = getPreviewDefinitions(state.workspace);
+        const definitions = getActivePreviewDefinitions(previewId);
         if (!definitions[previewId]) return false;
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (previewId !== "inventory") clearSubstitutionSelection();
         if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
-        scheduleLocalSave();
+        if (state.workspace) scheduleLocalSave();
         return true;
       }
 
@@ -7455,7 +7501,7 @@
           return;
         }
         if (event.key === "F3") {
-          if (!state.workspace) return;
+          if (!hasActivePreviewDefinition()) return;
           elements.tableSearchInput.focus({ preventScroll: true });
           const caret = elements.tableSearchInput.value.length;
           elements.tableSearchInput.setSelectionRange(caret, caret);
@@ -7491,7 +7537,7 @@
       elements.previewTable.addEventListener("click", (event) => {
         if (handleSubstitutionTableClick(event)) return;
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
-        if (trigger && state.workspace) {
+        if (trigger && hasActivePreviewDefinition(trigger.dataset.sortPreviewId)) {
           event.preventDefault();
           event.stopPropagation();
           const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
@@ -7503,7 +7549,7 @@
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !state.workspace) return;
+        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
         if (event.target.closest("[data-cancel-column-values]")) {
           closeColumnSortMenu();
           return;
@@ -7540,7 +7586,7 @@
       });
       elements.columnSortMenu.addEventListener("change", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !state.workspace) return;
+        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
         const selectAll = event.target.closest("[data-column-value-select-all]");
         if (selectAll && context.textSelection instanceof Set) {
           (context.visibleTextValueKeys || []).forEach((key) => {
@@ -7568,7 +7614,7 @@
       elements.columnSortMenu.addEventListener("input", (event) => {
         const searchInput = event.target.closest("[data-column-value-search]");
         const context = state.activeColumnMenu;
-        if (!searchInput || !context || !state.workspace) return;
+        if (!searchInput || !context || !hasActivePreviewDefinition(context.previewId)) return;
         context.textSearch = searchInput.value;
         renderColumnTextValueOptions();
       });
