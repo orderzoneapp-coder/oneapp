@@ -313,12 +313,12 @@ for (const shortcutContract of [
 assert.doesNotMatch(orderOpsHtml, /F12|새로고침 F5|aria-keyshortcuts="F5"[^>]*refreshButton/,
   "retired F12 and refresh-F5 shortcuts must not remain");
 assert.ok(orderOpsHtml.includes(
-  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "단위", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the public order table must include the source customer group in the approved sequence");
 for (const [index, field] of [
   [0, "warehouse"], [1, "customer"], [2, "group"], [3, "manager"],
   [4, "productCode"], [5, "productName"], [6, "specification"],
-  [8, "quantity"], [9, "unitPrice"],
+  [7, "sourceUnit"], [9, "quantity"], [10, "unitPrice"],
 ]) {
   assert.ok(orderOpsHtml.includes(`allocations.columns[${index}].orderField = "${field}"`),
     `the order table must expose ${field} as an editable Excel-style cell`);
@@ -359,7 +359,7 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260918-excel-grid-editing") &&
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260918-order-unit-column") &&
   orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
@@ -759,7 +759,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   createdAt: "2026-07-30T00:00:00.000Z",
   sourceFingerprint: "a".repeat(64),
 });
-assert.equal(engine.ENGINE_VERSION, "3.19.4");
+assert.equal(engine.ENGINE_VERSION, "3.19.5");
 assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
@@ -1117,6 +1117,10 @@ engine.setOrderValue(editableWorkspace, editableOrderRow, "group", "그룹 수�
 engine.setOrderValue(editableWorkspace, editableOrderRow, "manager", "담당 수정");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "productName", "상품명 수정");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "specification", "규격 수정");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "sourceUnit", "BOX");
+assert.equal(editableWorkspace.orders[0].sourceUnit, "BOX",
+  "the displayed order unit must be directly editable");
+engine.setOrderValue(editableWorkspace, editableOrderRow, "sourceUnit", "EA");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "quantity", "7");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "unitPrice", "1200");
 engine.setOrderValue(editableWorkspace, editableOrderRow, "note", "변경 전달");
@@ -1125,10 +1129,11 @@ assert.deepEqual(
   [editableWorkspace.orders[0].warehouse, editableWorkspace.orders[0].customer,
     editableWorkspace.orders[0].group, editableWorkspace.orders[0].manager,
     editableWorkspace.orders[0].productName, editableWorkspace.orders[0].specification,
+    editableWorkspace.orders[0].sourceUnit,
     editableWorkspace.orders[0].quantity,
     editableWorkspace.orders[0].unitPrice, editableWorkspace.orders[0].supplyAmount,
     editableWorkspace.orders[0].note, editableWorkspace.allocations[0].purchase],
-  ["1창고", "거래처 수정", "그룹 수정", "담당 수정", "상품명 수정", "규격 수정",
+  ["1창고", "거래처 수정", "그룹 수정", "담당 수정", "상품명 수정", "규격 수정", "EA",
     7, 1200, 8400, "변경 전달", "구매처B"],
   "editable order values must survive the workspace recalculation",
 );
@@ -2139,12 +2144,12 @@ assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
 assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
   "System.IO status text must increase by one pixel");
 assert.ok(html.includes(
-  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
+  'headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "단위", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"]',
 ), "the canonical order table must include the source customer group in the approved sequence");
 for (const [index, field] of [
   [0, "warehouse"], [1, "customer"], [2, "group"], [3, "manager"],
   [4, "productCode"], [5, "productName"], [6, "specification"],
-  [8, "quantity"], [9, "unitPrice"],
+  [7, "sourceUnit"], [9, "quantity"], [10, "unitPrice"],
 ]) {
   assert.ok(html.includes(`allocations.columns[${index}].orderField = "${field}"`),
     `the canonical order table must expose ${field} as an editable Excel-style cell`);
@@ -2322,21 +2327,28 @@ assert.match(combinedCss, /\.purchase-input\[data-negative-balance="true"\]\s*\{
   "negative purchase cells must retain only the pale fill without an internal horizontal rule");
 assert.match(combinedCss, /td\.ledger-negative-cell \.inventory-total-frame\s*\{[^}]*background:\s*#fef9c3\s*!important;[^}]*box-shadow:\s*none;/,
   "negative balance cells must retain only the pale fill without an internal vertical rule");
-assert.ok(html.includes('specification === "EA" || specification === "소분"') &&
-  html.includes('exactWarningUnit(sourceRow) ? "unit-alert-row"') &&
-  html.includes('const warningUnitContext = exactWarningUnit(sourceRow)') &&
+assert.ok(html.includes('"품명", "규격", "단위", "정보", "주문", "단가"') &&
+  html.includes('allocations.columns[7].role = "sourceUnit"') &&
+  html.includes('allocations.columns[7].orderField = "sourceUnit"'),
+  "order status must expose an editable unit column between specification and information");
+assert.ok(html.includes('function allocationUsesBoxUnit(sourceRow)') &&
+  html.includes('sourceRow?.sourceUnit ?? sourceRow?.unit ?? ""') &&
+  html.includes('const unitAlertRow = previewId === "allocations"') &&
+  html.includes('? !boxUnitRow') &&
+  html.includes('unitAlertRow ? "unit-alert-row"') &&
+  html.includes('const warningUnitContext = unitAlertRow') &&
   html.includes('["productName", "specification"].includes(column.role) || quantityColumn') &&
   html.includes('warningUnitContext ? "unit-alert-cell"'),
-  "EA and 소분 rows must mark the complete row while retaining detailed cell classes");
+  "every non-BOX order-status row must mark the complete row while retaining detailed cell classes");
 assert.match(combinedCss, /td\.unit-alert-cell \.inventory-total-frame\s*\{[^}]*color:\s*#b91c1c\s*!important;/,
   "EA and 소분 quantity frames must keep red text even when quantity-zero styling is also present");
 assert.match(combinedCss, /td\.unit-alert-cell[\s\S]*?\.inventory-total-frame\s*\{[^}]*font-weight:\s*400\s*!important;/,
   "EA and 소분 emphasis must use normal font weight");
-assert.ok(html.includes('const boxUnitContext = exactBoxUnit(sourceRow) &&') &&
-  html.includes('exactBoxUnit(sourceRow) ? "box-unit-row"') &&
+assert.ok(html.includes('const boxUnitContext = boxUnitRow &&') &&
+  html.includes('boxUnitRow ? "box-unit-row"') &&
   html.includes('["productName", "specification"].includes(column.role)') &&
   html.includes('boxUnitContext ? "box-unit-cell"'),
-  "exact BOX rows must mark the complete row while retaining bold product and specification cells");
+  "BOX order-status rows must remain distinct while retaining bold product and specification cells");
 assert.match(combinedCss, /td\.box-unit-cell\s*\{[^}]*color:\s*#0f172a\s*!important;[^}]*font-weight:\s*900;/,
   "BOX product-name and specification text must be bold black");
 assert.ok(html.includes('const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn') &&
@@ -2353,7 +2365,7 @@ assert.ok(html.includes("const allocationProductSummaries = new Map();") &&
   html.includes("summary.quantity += parsedQuantity.ok ? parsedQuantity.value : 0;") &&
   html.includes("const quantityGroupKey = engine.getQuantityGroupKey(row);") &&
   html.includes("productCode && summary && !allocationAggregateShown.has(quantityGroupKey)") &&
-  html.includes('allocations.columns[7].role = "productAggregateQuantity"') &&
+  html.includes('allocations.columns[8].role = "productAggregateQuantity"') &&
   html.includes("row.productAggregateQuantity"),
   "order information must show each product-code/unit quantity total once without combining incompatible units");
 assert.ok(html.includes('elements.systemViewNote.textContent = viewNotes.join(" · ")') &&

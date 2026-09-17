@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260918-excel-grid-editing"></script>
+  <script src="orderFulfillmentEngine.js?v=20260918-order-unit-column"></script>
   <script src="orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
   <script src="orderops/excel-preparation.js?v=20260917-left-excel-mapping"></script>
   <script src="orderops/excel-preparation-ui.js?v=20260917-left-excel-mapping"></script>
@@ -1415,25 +1415,25 @@
     @media screen {
       .results-panel table.preview-allocations {
         border: 0;
-        background: #e5e7eb;
+        background: #fffff0;
         color: #1f2937;
       }
       .results-panel table.preview-allocations th {
         border: 0 !important;
         color: #25313f !important;
-        background: #d7dce2 !important;
+        background: #ede8d4 !important;
       }
       .results-panel table.preview-allocations tbody tr:not(.manager-color-row) > td {
         border: 0 !important;
         color: #1f2937 !important;
-        background: #eceff2 !important;
+        background: #fffff0 !important;
       }
       .results-panel table.preview-allocations tbody tr:not(.manager-color-row):nth-child(even) > td {
-        background: #e5e9ed !important;
+        background: #faf8e8 !important;
       }
       .results-panel table.preview-allocations tbody tr.manager-color-row[style*="--manager-color"] > td {
         color: #172033 !important;
-        background: color-mix(in srgb, var(--manager-color) 42%, #eceff2) !important;
+        background: color-mix(in srgb, var(--manager-color) 42%, #fffff0) !important;
       }
       .results-panel table.preview-allocations tbody tr.manager-color-row > td * { color: #172033 !important; }
       .results-panel table.preview-allocations .manager-name {
@@ -1481,6 +1481,10 @@
       .results-panel table.preview-allocations tbody tr:focus-within {
         outline: 2px solid #60a5fa;
         outline-offset: -2px;
+      }
+      .results-panel table.preview-allocations tbody tr.unit-alert-row > td,
+      .results-panel table.preview-allocations tbody tr.unit-alert-row > td * {
+        color: #b91c1c !important;
       }
     }
 
@@ -1616,7 +1620,7 @@
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color: #172033 !important;
-        background: var(--manager-print-color, var(--manager-color)) !important;
+        background: #fff !important;
       }
       body.printing-table .print-area tbody tr.manager-color-row > td *,
       body.printing-table .print-area tbody tr.manager-color-row > td { color: #172033 !important; }
@@ -1641,12 +1645,13 @@
         font-size: 11.9px;
       }
       body.printing-table .print-area table.preview-allocations th {
-        color: #fff !important;
-        background: #147f75 !important;
+        color: #0f172a !important;
+        background: #fff !important;
         text-align: center;
       }
       body.printing-table .print-area th,
       body.printing-table .print-area td {
+        background: #fff !important;
         padding: 2px 3px;
         overflow: visible !important;
         text-overflow: clip !important;
@@ -5416,7 +5421,7 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 10;
+        const allocationWarehouseStart = 11;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocationProductSummaries = new Map();
         const allocationUnitGroups = new Map();
@@ -5452,11 +5457,11 @@
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "단위", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
-            7,
             8,
             9,
+            10,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
           ],
           inventory: [],
@@ -5472,6 +5477,7 @@
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
+            row.sourceUnit ?? row.unit ?? "",
             row.productAggregateQuantity,
             row.quantity,
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
@@ -5483,7 +5489,7 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 138, 82, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
+        [76, 138, 82, 92, 94, 160, 100, 54, 112, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
         allocations.columns[0].role = "warehouse";
@@ -5500,11 +5506,13 @@
         allocations.columns[5].orderField = "productName";
         allocations.columns[6].role = "specification";
         allocations.columns[6].orderField = "specification";
-        allocations.columns[7].role = "productAggregateQuantity";
-        allocations.columns[8].role = "orderQuantity";
-        allocations.columns[8].orderField = "quantity";
-        allocations.columns[9].role = "unitPrice";
-        allocations.columns[9].orderField = "unitPrice";
+        allocations.columns[7].role = "sourceUnit";
+        allocations.columns[7].orderField = "sourceUnit";
+        allocations.columns[8].role = "productAggregateQuantity";
+        allocations.columns[9].role = "orderQuantity";
+        allocations.columns[9].orderField = "quantity";
+        allocations.columns[10].role = "unitPrice";
+        allocations.columns[10].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -5630,6 +5638,10 @@
 
       function exactBoxUnit(sourceRow) {
         return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
+      }
+
+      function allocationUsesBoxUnit(sourceRow) {
+        return String(sourceRow?.sourceUnit ?? sourceRow?.unit ?? "").trim().toUpperCase() === "BOX";
       }
 
       function previewRowFill(previewId, sourceRow) {
@@ -6089,6 +6101,12 @@
               const managerPrintColorStyle = options.printOutput === true && managerColor
                 ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
               const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
+              const boxUnitRow = previewId === "allocations"
+                ? allocationUsesBoxUnit(sourceRow)
+                : exactBoxUnit(sourceRow);
+              const unitAlertRow = previewId === "allocations"
+                ? !boxUnitRow
+                : exactWarningUnit(sourceRow);
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
@@ -6097,8 +6115,8 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 sourceRow?.quantityComparable !== false && Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
-                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
-                exactBoxUnit(sourceRow) ? "box-unit-row" : "",
+                unitAlertRow ? "unit-alert-row" : "",
+                boxUnitRow ? "box-unit-row" : "",
                 previewId === "inventory" && Number(state.selectedSubstitutionOrderRow) > 0 &&
                   orderInformationOrders(sourceRow).some((order) =>
                     Number(order?.sourceRowNumber) === Number(state.selectedSubstitutionOrderRow))
@@ -6146,10 +6164,10 @@
                     const purchaseNegative = preview.purchase === index && negativeBalance;
                     const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn;
                     const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const warningUnitContext = exactWarningUnit(sourceRow) && (
+                    const warningUnitContext = unitAlertRow && (
                       ["productName", "specification"].includes(column.role) || quantityColumn
                     );
-                    const boxUnitContext = exactBoxUnit(sourceRow) &&
+                    const boxUnitContext = boxUnitRow &&
                       ["productName", "specification"].includes(column.role);
                     const classes = [
                       isNumber ? "number" : "",
