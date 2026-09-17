@@ -221,7 +221,11 @@ try {
       document.querySelector('#toast').classList.add('hidden');
       Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`);
-    if(expectSuccess) await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && (${inputIdleExpression})`), name+' automatically accepted and settled');
+    if(expectSuccess) {
+      await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && (${inputIdleExpression})`), name+' automatically accepted and settled');
+      const preview = { orders: 'allocations', inventory: 'inventory', purchases: 'purchases', sales: 'sales' }[kind];
+      assert.equal(await evaluate(client, `document.querySelector('#prepPreviewTabs [data-preview="${preview}"]')?.getAttribute('aria-selected')`), 'true', name+' must automatically display its own source kind before any tab click');
+    }
   };
   const editOrder = async (field, value) => {
     await selectPreview('allocations');

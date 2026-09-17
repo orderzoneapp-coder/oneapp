@@ -14,6 +14,7 @@
     const ids = ["KindButtons", "DropZone", "FileButton", "FileList", "FileDetails", "MappingDetails", "FileName", "KindSelect", "TemplateName", "SheetSelect", "HeaderRow", "StartRow", "EndRow", "SourcePreview", "ColumnMappings", "MappingStatus", "SaveTemplateButton", "ApplyButton", "PreviewTabs"];
     const el = Object.fromEntries(ids.map((name) => [name, doc.getElementById(`prep${name}`)]));
     const cache = new WeakMap();
+    const attempts = new WeakMap();
     const records = [];
     let selectedId = "";
     let selectedKind = "orders";
@@ -50,15 +51,18 @@
     }
 
     function makeRecord(file, kind) {
-      const record = { id: `excel-${++serial}`, kind, file, fileName: file.name, sheetName: "", drafts: Object.create(null), status: "reading", error: "", dirty: false, context: null, parsed: null, templateName: "" };
+      const prior = attempts.get(file)?.get(kind);
+      const record = { id: `excel-${++serial}`, kind, file, fileName: file.name, sheetName: "", drafts: prior ? copy(prior.drafts) : Object.create(null), status: "reading", error: "", dirty: false, context: prior?.context || null, parsed: null, templateName: "" };
+      if (!attempts.has(file)) attempts.set(file, new Map());
+      attempts.get(file).set(kind, record);
       return record;
     }
 
     function remember(record) {
       if (!records.includes(record)) {
-        // Retain an active source and at most its newest pending replacement per kind.
+        // A new candidate never erases another file's unresolved mapping work.
         for (let index = records.length - 1; index >= 0; index -= 1) {
-          if (records[index].kind === record.kind && records[index].status !== "applied") records.splice(index, 1);
+          if (records[index].file === record.file && records[index].kind === record.kind && records[index].status !== "applied") records.splice(index, 1);
         }
         records.push(record);
       }
@@ -69,9 +73,13 @@
 
     function nativeParse(record, sheetName, matrices) {
       try {
-        return options.parseSheet({ workbook: record.context.workbook, fileName: record.fileName, fileHash: record.context.fileHash,
+        const parsed = options.parseSheet({ workbook: record.context.workbook, fileName: record.fileName, fileHash: record.context.fileHash,
           sheetName, kind: record.kind, rawMatrix: matrices.rawMatrix, displayMatrix: matrices.displayMatrix, columnMappings: matrices.columns,
           headerRowIndex: matrices.sourceMetadata ? matrices.sourceMetadata.headerRow - 1 : undefined });
+        const draft = helper.createDraft({ kind: record.kind, sheetName, ...matrices, parsed, headerAliases: options.getMappings()?.[record.kind]?.columns || {} });
+        const validation = helper.validateDraft({ ...matrices, draft });
+        if (!validation.ok) parsed.errors = [...(parsed.errors || []), ...validation.errors];
+        return parsed;
       } catch (error) {
         return { kind: record.kind, fileName: record.fileName, fileHash: record.context.fileHash, sheetName,
           headerRowIndex: 0, rows: [], rowCount: 0, missingColumns: ["필수 항목"], errors: [{ message: error.message }] };
@@ -133,6 +141,34 @@
         if (!probe) { remember(record); el.FileDetails.open = true; el.MappingDetails.open = true; }
         throw error;
       }
+    }
+
+    async function retainCandidate(file, { kind, error } = {}) {
+      const initialKind = helper.KINDS.includes(kind) ? kind : selectedKind;
+      let record = [...records].reverse().find((item) => item.file === file && item.status !== "applied" && (!kind || item.kind === initialKind));
+      record ||= attempts.get(file)?.get(initialKind);
+      if (!record || record.status === "applied") record = makeRecord(file, initialKind);
+      const reason = error?.message || (error ? String(error) : "자료 종류·시트·항목 연결을 확인하세요.");
+      try {
+        record.context ||= await read(file);
+        record.sheetName ||= record.context.workbook.SheetNames[0];
+        for (const sheetName of record.context.workbook.SheetNames) {
+          if (record.drafts[sheetName]) continue;
+          const matrices = record.context.sheets[sheetName];
+          const parsed = nativeParse(record, sheetName, matrices);
+          record.drafts[sheetName] = helper.createDraft({ kind: record.kind, sheetName, ...matrices, parsed,
+            headerAliases: options.getMappings()?.[record.kind]?.columns || {} });
+          if (sheetName === record.sheetName && !record.parsed) record.parsed = parsed;
+        }
+        record.error = reason;
+      } catch (readError) {
+        record.error = error ? `${reason} · ${readError.message}` : readError.message;
+      }
+      record.status = "review";
+      remember(record);
+      el.FileDetails.open = true;
+      el.MappingDetails.open = true;
+      return record;
     }
 
     function markApplied(byKind) {
@@ -199,14 +235,15 @@
       });
       el.FileButton.disabled = busy();
       el.DropZone.setAttribute("aria-busy", String(busy()));
-      el.FileList.innerHTML = records.length ? records.map((record) => `<div class="prep-file-item${record.id === selectedId ? " is-selected" : ""}" data-state="${record.status}"><button type="button" class="prep-file-name" data-prep-file="${record.id}">${html(record.fileName)}<span class="prep-file-status">${KIND_NAMES[record.kind]} · ${record.status === "applied" ? `반영 ${record.parsed?.rowCount || 0}건` : record.status === "reading" ? "읽는 중" : "확인 필요"}</span></button><button type="button" class="prep-file-remove" data-prep-remove="${record.id}" aria-label="${html(record.fileName)} ${record.status === "applied" ? "자료 해제" : "후보 제거"}"${busy() ? " disabled" : ""}>×</button></div>`).join("") : "<p class='prep-empty'>불러온 파일이 없습니다.</p>";
-      if (!records.length && options.getWorkspace?.()) {
-        const work = options.getWorkspace();
-        el.FileList.innerHTML = Object.entries(KIND_NAMES).flatMap(([kind, label]) => {
-          const source = work.sourceFiles?.[kind] || work.orderOpsInputs?.[kind];
-          return source ? [`<div class="prep-file-item" data-state="applied"><span class="prep-file-name">${html(source.fileName)}<span class="prep-file-status">${label} · 복구 ${source.rowCount ?? source.rows?.length ?? work[kind]?.length ?? 0}건</span></span></div>`] : [];
-        }).join("") + "<p class='prep-empty'>저장된 작업을 표시합니다. 원본을 바꾸려면 파일을 불러오세요.</p>";
-      }
+      const work = options.getWorkspace?.();
+      const appliedKinds = new Set(records.filter((record) => record.status === "applied").map((record) => record.kind));
+      const restored = work ? Object.entries(KIND_NAMES).flatMap(([kind, label]) => {
+        const source = work.sourceFiles?.[kind] || work.orderOpsInputs?.[kind];
+        return source && !appliedKinds.has(kind) ? [`<div class="prep-file-item" data-state="applied" data-prep-restored-kind="${kind}"><span class="prep-file-name">${html(source.fileName)}<span class="prep-file-status">${label} · 복구 ${source.rowCount ?? source.rows?.length ?? work[kind]?.length ?? 0}건</span></span></div>`] : [];
+      }) : [];
+      const pendingAndApplied = records.map((record) => `<div class="prep-file-item${record.id === selectedId ? " is-selected" : ""}" data-state="${record.status}"><button type="button" class="prep-file-name" data-prep-file="${record.id}">${html(record.fileName)}<span class="prep-file-status">${KIND_NAMES[record.kind]} · ${record.status === "applied" ? `반영 ${record.parsed?.rowCount || 0}건` : record.status === "reading" ? "읽는 중" : "확인 필요"}</span></button><button type="button" class="prep-file-remove" data-prep-remove="${record.id}" aria-label="${html(record.fileName)} ${record.status === "applied" ? "자료 해제" : "후보 제거"}"${busy() ? " disabled" : ""}>×</button></div>`);
+      el.FileList.innerHTML = [...restored, ...pendingAndApplied].join("") || "<p class='prep-empty'>불러온 파일이 없습니다.</p>";
+      if (restored.length) el.FileList.innerHTML += "<p class='prep-empty'>저장된 작업을 함께 표시합니다. 원본을 바꾸려면 파일을 불러오세요.</p>";
       renderFields(selected());
     }
 
@@ -355,7 +392,7 @@
       if (button) options.preview(button.dataset.preview);
     });
     render();
-    return { parse, read, refresh: render, markApplied, markFailed, isBusy: () => applying, rememberParsed(parsed) { if (parsed?.preparationRecord) remember(parsed.preparationRecord); },
+    return { parse, read, retainCandidate, refresh: render, markApplied, markFailed, isBusy: () => applying, rememberParsed(parsed) { if (parsed?.preparationRecord) remember(parsed.preparationRecord); },
       clear() { records.length = 0; selectedId = ""; render(); } };
   }
   root.OrderOpsExcelPreparationUI = Object.freeze({ mount });

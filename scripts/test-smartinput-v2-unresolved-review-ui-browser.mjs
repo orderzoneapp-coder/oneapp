@@ -216,6 +216,10 @@ const prepareWorkspace = async (client, { automatic = false } = {}) => {
       return true;
     })()`);
     await expr(client, `document.querySelector('#${source.kind}FileName').textContent.includes(${JSON.stringify(source.name)})${automatic ? "&&document.querySelector('#prepDropZone').getAttribute('aria-busy')==='false'&&!document.querySelector('#prepFileButton').disabled" : ''}`, source.kind+' accepted and settled');
+    if (automatic) {
+      const preview = source.kind === 'orders' ? 'allocations' : source.kind;
+      assert.equal(await evaluate(client, `document.querySelector('#prepPreviewTabs [data-preview="${preview}"]')?.getAttribute('aria-selected')`), 'true', source.kind+' upload must display its own source kind without analysis or tab selection');
+    }
   }
   if (!automatic) {
     await expr(client, `!document.querySelector('#analyzeButton').disabled`, 'baseline analysis readiness');

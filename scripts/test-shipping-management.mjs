@@ -2555,7 +2555,10 @@ assert.ok(bundleStart >= 0 && bundleEnd > bundleStart, "bundle handler must exis
 const bundleSource = html.slice(bundleStart, bundleEnd);
 for (const requiredSource of [
   "files.length < 1 || files.length > 4",
-  "Promise.all(files.map(classifyBundleFile))",
+  "Promise.allSettled(files.map(classifyBundleFile))",
+  "if (rejected) throw rejected.reason;",
+  "prep.rememberParsed(result.value.parsed);",
+  "await prep.retainCandidate(files[index], { error: result?.reason || error });",
   "const byKind = new Map();",
   "byKind.has(item.kind)",
   "validateFileCandidate(item.kind, item.parsed);",
@@ -2606,8 +2609,10 @@ const commitSource = html.slice(commitStart, commitEnd);
 for (const contract of [
   "validateFileCandidate(kind, parsed)", "await analyzeCurrentInputs({ fromSources: true, inputs })",
   "engine.recalculateWorkspace(candidateWorkspace)", "state.workspace = candidateWorkspace",
-  'state.activePreview = "allocations"', "renderResults();", "scheduleLocalSave();", "renderPreparedInputPreview(previewKind)",
+  "state.activePreview = FILE_KIND_PREVIEWS[previewKind]", "renderResults();", "scheduleLocalSave();", "renderPreparedInputPreview(previewKind)",
 ]) assert.ok(commitSource.includes(contract), `automatic input pipeline is missing: ${contract}`);
+assert.ok(!commitSource.includes('state.activePreview = "allocations"'),
+  "automatic input must display the accepted source kind rather than force every upload to orders");
 assert.ok(commitSource.indexOf("await analyzeCurrentInputs") < commitSource.indexOf("state[kind] = parsed"),
   "candidate calculation must finish before active input replacement");
 assert.ok(commitSource.indexOf("await analyzeCurrentInputs") < commitSource.indexOf("state.workspace = candidateWorkspace"),

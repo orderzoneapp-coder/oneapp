@@ -390,4 +390,179 @@ for (const [kind, parse, matrix] of [
   });
 }
 
+// Exercise the real preparation controller and canonical generic parser without a browser.
+const uiSource = await readFile(new URL('../orderops/excel-preparation-ui.js', import.meta.url), 'utf8');
+const pageSource = await readFile(new URL('../orderops/list.html', import.meta.url), 'utf8');
+const extractFunction = (start, end) => {
+  const from = pageSource.indexOf(start);
+  const to = pageSource.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `canonical function boundary: ${start}`);
+  return pageSource.slice(from, to);
+};
+const genericParserSource = extractFunction('function parseGenericWorkbookSheet(', 'async function parseGenericExcelFile(');
+const candidateValidatorSource = extractFunction('function validateFileCandidate(', 'async function commitInputCandidates(');
+function mountPreparation({ workspace = null, templates = [] } = {}) {
+  const nodes = new Map();
+  const getNode = (id) => {
+    if (!nodes.has(id)) nodes.set(id, {
+      id, value: '', innerHTML: '', textContent: '', dataset: {}, listeners: {}, attributes: {},
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener(type, listener) { this.listeners[type] = listener; },
+      setAttribute(name, value) { this.attributes[name] = value; },
+      querySelectorAll() { return []; },
+    });
+    return nodes.get(id);
+  };
+  const workbooks = new Map();
+  const mapping = Object.fromEntries(helper.KINDS.map((kind) => [kind, {
+    columns: Object.fromEntries(helper.FIELDS[kind].map((field) => [field, []])), sheetAliases: [],
+  }]));
+  const calls = { read: 0, apply: 0 };
+  const context = vm.createContext({
+    OrderOpsExcelPreparation: helper, engine, FILE_KIND_LABELS: helper.KIND_LABELS,
+    state: { excelMappings: mapping }, DEFAULT_EXCEL_MAPPINGS: mapping,
+    normalizeMappingText: (value) => String(value ?? '').replace(/[^\p{L}\p{N}]+/gu, '').toLocaleLowerCase('ko-KR'),
+    document: { getElementById: getNode },
+    localStorage: { getItem: () => JSON.stringify({ schemaVersion: 'orderops-excel-templates/v1', items: templates }) },
+    XLSX: {
+      read: (bytes) => workbooks.get(bytes[0]),
+      utils: { sheet_to_json: (matrix, options) => options.raw ? clone(matrix) : matrix.map((row) => row.map((cell) => cell == null ? '' : String(cell))) },
+    },
+  });
+  vm.runInContext(`${genericParserSource}\n${candidateValidatorSource}\n${uiSource}`, context);
+  const controller = context.OrderOpsExcelPreparationUI.mount({
+    isBusy: () => false, sha256: async (bytes) => `hash-${bytes[0]}`, getMappings: () => mapping,
+    sheetAliasScore: (name) => name === 'preferred-invalid' ? 2 : 0,
+    validate: context.validateFileCandidate, getWorkspace: () => workspace,
+    parseSheet: (input) => input.kind === 'orders' ? engine.parseOrderWorkbook(input)
+      : input.kind === 'inventory' ? engine.parseInventoryWorkbook(input) : context.parseGenericWorkbookSheet(input),
+    applyCandidates: async () => { calls.apply += 1; }, toast() {}, preview() {},
+  });
+  const file = (name, sheets) => {
+    const id = workbooks.size + 1;
+    workbooks.set(id, { SheetNames: Object.keys(sheets), Sheets: sheets });
+    return { name, async arrayBuffer() { calls.read += 1; return Uint8Array.of(id).buffer; } };
+  };
+  return { controller, nodes, calls, file, validate: context.validateFileCandidate };
+}
+const uiTest = async (name, run) => { await run(); checks += 1; console.log(`PASS ${name}`); };
+
+for (const [kind, partner, first, second] of [['purchases', '구매처', 2, 20], ['sales', '거래처', 1, 11]]) {
+  await uiTest(`${kind} native duplicate quantities block auto-commit and keep both original columns for repair`, async () => {
+    const fixture = mountPreparation();
+    const matrix = [['품목코드', '품목명', '수량', '수량', partner], ['0007', '상품', first, second, '거래처A']];
+    const file = fixture.file(`${kind}-ambiguous.xlsx`, { 업무: matrix });
+    const parsed = await fixture.controller.parse(file, kind);
+    assert.ok(parsed.errors.some((error) => error.code === 'DUPLICATE_TARGET' && error.target === '수량'));
+    assert.throws(() => fixture.validate(kind, parsed), /수량/);
+    const record = parsed.preparationRecord;
+    assert.equal(record.status, 'review');
+    assert.deepEqual(record.context.sheets.업무.rawMatrix, matrix);
+    assert.deepEqual(Array.from(record.drafts.업무.columns.filter((column) => column.target === '수량'), (column) => column.sourceIndex), [2, 3]);
+    assert.ok(fixture.nodes.get('prepFileList').innerHTML.includes(file.name));
+    assert.equal(fixture.calls.apply, 0);
+  });
+}
+
+await uiTest('mapping-invalid preferred sheet cannot outrank a valid native sheet or force it into manual review', async () => {
+  const fixture = mountPreparation();
+  const parsed = await fixture.controller.parse(fixture.file('mixed-sheets.xlsx', {
+    'preferred-invalid': [['품목코드', '품목명', '수량', '수량', '구매처'], ['0007', '상품', 2, 20, '거래처A']],
+    정상: [['품목코드', '품목명', '수량', '구매처'], ['0007', '상품', 2, '거래처A']],
+  }), 'purchases');
+  assert.equal(parsed.sheetName, '정상');
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.preparationRecord.status, 'ready');
+  assert.equal(parsed.intakeMapping, undefined, 'normal native data must not be silently converted to a manual mapping');
+  assert.equal(parsed.rows[0].quantity, 2);
+  fixture.validate('purchases', parsed);
+});
+
+await uiTest('failed probes retain cached raw/display, selected sheet and draft edits without erasing another file', async () => {
+  const fixture = mountPreparation();
+  const matrix = [['품목코드', '품목명', '수량', '수량', '구매처'], ['0007', '상품', 0, '0', '거래처A']];
+  const firstFile = fixture.file('same-name.xlsx', { 원본: matrix });
+  const secondFile = fixture.file('same-name.xlsx', { 원본: matrix });
+  const probed = await fixture.controller.parse(firstFile, 'purchases', { probe: true });
+  assert.throws(() => fixture.validate('purchases', probed), /수량/);
+  probed.preparationRecord.drafts.원본.columns[2].enabled = false;
+  probed.preparationRecord.dirty = true;
+  const retained = await fixture.controller.retainCandidate(firstFile, { kind: 'purchases', error: new Error('분류 확인 필요') });
+  assert.equal(retained, probed.preparationRecord);
+  assert.equal(retained.drafts.원본.columns[2].enabled, false);
+  assert.equal(retained.context, probed.preparationRecord.context);
+  assert.equal(retained.context.sheets.원본.rawMatrix[1][2], 0);
+  assert.equal(retained.context.sheets.원본.displayMatrix[1][2], '0');
+  const other = await fixture.controller.retainCandidate(secondFile, { kind: 'purchases', error: new Error('두 번째 후보') });
+  assert.notEqual(other.id, retained.id);
+  assert.equal(fixture.calls.read, 2, 'retain must reuse an already-read File even when probe failed validation');
+  const list = fixture.nodes.get('prepFileList').innerHTML;
+  assert.ok(list.includes(`data-prep-file="${retained.id}"`) && list.includes(`data-prep-file="${other.id}"`));
+  assert.equal(fixture.calls.apply, 0);
+});
+
+await uiTest('a valid saved mapping resolves native alias ambiguity without blocking normal automatic readiness', async () => {
+  const matrix = [['품목코드', '품목명', '수량', '구매수량', '구매처'], ['0007', '상품', 2, 20, '거래처A']];
+  const mapped = helper.createDraft({ kind: 'purchases', sheetName: '구매', rawMatrix: matrix });
+  mapped.columns[3].target = '';
+  mapped.columns[3].enabled = false;
+  const saved = helper.createTemplate({ name: '확정 수량 열', draft: mapped });
+  assert.equal(saved.ok, true);
+  const fixture = mountPreparation({ templates: [saved.template] });
+  const parsed = await fixture.controller.parse(fixture.file('template.xlsx', { 구매: matrix }), 'purchases');
+  fixture.validate('purchases', parsed);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.preparationRecord.status, 'ready');
+  assert.equal(parsed.rows[0].quantity, 2);
+  assert.equal(parsed.preparationRecord.templateName, '확정 수량 열');
+  assert.equal(parsed.intakeMapping.originalRawMatrix[1][3], 20);
+});
+
+await uiTest('unclassified candidates use the current kind only as an editable initial choice and retain all sheets', async () => {
+  const fixture = mountPreparation();
+  await fixture.controller.retainCandidate(fixture.file('purchase-review.xlsx', { 후보: [['항목'], [0]] }), { kind: 'purchases' });
+  const unclassified = fixture.file('unclassified.xlsx', { 설명: [['설명'], ['원문']], 자료: [['외부코드', '수량'], ['0007', -1]] });
+  const retained = await fixture.controller.retainCandidate(unclassified, { error: new Error('종류 확인 필요') });
+  assert.equal(retained.kind, 'purchases');
+  assert.equal(retained.status, 'review');
+  assert.equal(retained.error, '종류 확인 필요');
+  assert.deepEqual(Object.keys(retained.drafts), ['설명', '자료']);
+  assert.equal(fixture.nodes.get('prepKindSelect').disabled, false);
+  assert.equal(fixture.nodes.get('prepSheetSelect').disabled, false);
+  assert.equal(fixture.calls.apply, 0);
+});
+
+await uiTest('unreadable files remain failed review candidates without applying or hiding another pending file', async () => {
+  const fixture = mountPreparation();
+  const previous = await fixture.controller.retainCandidate(fixture.file('previous.xlsx', { 자료: [['원문'], [0]] }), { kind: 'orders' });
+  const unreadable = { name: 'read-rejected.xlsx', async arrayBuffer() { throw new Error('read rejected'); } };
+  const retained = await fixture.controller.retainCandidate(unreadable, { error: new Error('bundle failed') });
+  assert.equal(retained.status, 'review');
+  assert.equal(retained.context, null);
+  assert.match(retained.error, /bundle failed.*read rejected/);
+  const list = fixture.nodes.get('prepFileList').innerHTML;
+  assert.ok(list.includes(`data-prep-file="${previous.id}"`) && list.includes('read-rejected.xlsx'));
+  assert.equal(fixture.calls.apply, 0);
+});
+
+await uiTest('restored sources and multiple pending files coexist; only an applied record hides its own kind', async () => {
+  const workspace = freeze({
+    sourceFiles: { orders: { fileName: 'restored-orders.xlsx', rowCount: 1 }, inventory: { fileName: 'restored-inventory.xlsx', rowCount: 1 } },
+    orderOpsInputs: { purchases: { fileName: 'restored-purchases.xlsx', rows: [{}] }, sales: { fileName: 'restored-sales.xlsx', rows: [{}] } },
+  });
+  const before = JSON.stringify(workspace);
+  const fixture = mountPreparation({ workspace });
+  const pending = await fixture.controller.retainCandidate(fixture.file('pending.xlsx', { 설명: [['확인'], [1]] }), { kind: 'purchases' });
+  let list = fixture.nodes.get('prepFileList').innerHTML;
+  for (const kind of helper.KINDS) assert.ok(list.includes(`data-prep-restored-kind="${kind}"`));
+  assert.ok(list.includes(`data-prep-file="${pending.id}"`));
+  const parsed = await fixture.controller.parse(fixture.file('new-purchases.xlsx', { 구매: [['품목코드', '품목명', '수량', '구매처'], ['0007', '상품', 2, 'A']] }), 'purchases');
+  fixture.controller.markApplied(new Map([['purchases', parsed]]));
+  list = fixture.nodes.get('prepFileList').innerHTML;
+  assert.equal(list.includes('data-prep-restored-kind="purchases"'), false);
+  for (const kind of ['orders', 'inventory', 'sales']) assert.ok(list.includes(`data-prep-restored-kind="${kind}"`));
+  assert.ok(list.includes(`data-prep-file="${pending.id}"`) && list.includes('new-purchases.xlsx'));
+  assert.equal(JSON.stringify(workspace), before);
+});
+
 console.log(`PASS ORDER Q Excel preparation: ${checks} deterministic source-preservation/mapping/template checks.`);

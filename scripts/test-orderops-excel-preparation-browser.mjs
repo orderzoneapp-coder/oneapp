@@ -138,10 +138,19 @@ try {
     await ev(`(() => { const input = document.querySelector(${JSON.stringify(selector)}); if (!input || input.disabled) throw Error('Missing/disabled editor: ' + ${JSON.stringify(selector)}); input.value = ${JSON.stringify(String(value))}; input.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
     await settled(`change ${selector}`);
   };
+  const assertPreview = async (view, label) => {
+    await until(() => ev(`__ops.state.activePreview===${JSON.stringify(view)}`), label);
+    check(label, await ev(`document.querySelector('#prepPreviewTabs [data-preview="${view}"]').getAttribute('aria-selected')==='true' && !document.querySelector('#resultsPanel').classList.contains('hidden')`));
+  };
+  const selectPreview = async (view) => {
+    await ev(`document.querySelector('#prepPreviewTabs [data-preview="${view}"]').click();true`);
+    await settled(`select ${view} preview`);
+    await assertPreview(view, `explicit ${view} preview selection`);
+  };
   const snapshot = () => ev(`JSON.stringify({workspace:__ops.state.workspace,inputs:['orders','inventory','purchases','sales'].map(kind=>__ops.state[kind]),pointer:localStorage.getItem('oneapp.shipping.recovery.pointer.v1'),downloadDisabled:document.querySelector('#downloadButton').disabled})`);
   const installFixtures = () => ev(`(() => {
     globalThis.__fixture = (kind, options = {}) => {
-      const headers = ['일자','창고','담당','단위','품목코드','품목명','규격',options.custom ? '주문량X' : '수량','단가','공급가액','적요','적요1','거래처','그룹'];
+      const headers = ['일자','창고','담당','단위','품목코드','품목명','규격',options.quantityHeader || (options.custom ? '주문량X' : '수량'),'단가','공급가액','적요','적요1','거래처','그룹'];
       const quantity = options.quantity ?? 10, price = options.price ?? 1000;
       let matrix = kind === 'inventory'
         ? [['품목코드','품목명','규격','단위','수량','1창고','3서울','4전송'],['0001','합성상품','원본규격','EA',quantity,quantity,0,0]]
@@ -154,6 +163,9 @@ try {
         ['품목코드','품목명','규격','단위','수량',kind==='purchases'?'구매처':'거래처'],
         ['0001','합성상품','원본규격','EA',quantity,kind==='purchases'?'참고 구매처':'참고 판매처']
       ];
+      if ((kind === 'purchases' || kind === 'sales') && options.duplicateQuantity !== undefined) {
+        matrix[0].splice(5,0,'수량');matrix[1].splice(5,0,options.duplicateQuantity);
+      }
       if (options.reorder) { const indices = [7,4,0,2,1,3,5,6,8,9,10,11,12,13]; matrix = matrix.map(row=>indices.map(index=>row[index])); }
       const book = XLSX.utils.book_new();
       if (options.instruction) XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([['업로드 안내'],['합계 행을 제외하세요']]),'설명');
@@ -166,7 +178,9 @@ try {
       input.dispatchEvent(new Event('change',{bubbles:true})); return true;
     };
     globalThis.__extraActions = [];
+    globalThis.__sourceInputChanges = [];
     document.addEventListener('click',event=>{if(event.target.closest('#analyzeButton,#prepApplyButton')) __extraActions.push(event.target.closest('button').id);},true);
+    document.addEventListener('change',event=>{if(['ordersInput','inventoryInput','purchasesInput','salesInput','integratedInput'].includes(event.target.id)) __sourceInputChanges.push(event.target.id);},true);
     return true;
   })()`);
   const upload = async (kind, options = {}) => {
@@ -190,17 +204,21 @@ try {
 
   await upload("orders");
   check("orders alone: raw rows visible, no invented workspace/stock", await ev(`!__ops.state.workspace && __ops.state.orders.rows[0].quantity===10 && !document.querySelector('#resultsPanel').classList.contains('hidden') && document.querySelector('#previewTable').textContent.includes('합성상품')`));
+  await assertPreview("allocations", "order upload opens order preview without a calculation workspace");
   await shot("01-orders-only");
   await upload("inventory");
-  await until(() => ev("__ops.state.workspace?.orders?.length===1 && __ops.state.activePreview==='allocations'"), "automatic allocations");
-  assert.deepEqual(await workValues(), { quantity: 10, price: 1000, purchase: "", stock: 10, preview: "allocations" });
-  check("valid input changes show allocations with no apply/analyze click", await ev("__extraActions.length===0 && !document.querySelector('#downloadButton').disabled"));
+  await until(() => ev("__ops.state.workspace?.orders?.length===1 && __ops.state.activePreview==='inventory'"), "automatic inventory preview");
+  assert.deepEqual(await workValues(), { quantity: 10, price: 1000, purchase: "", stock: 10, preview: "inventory" });
+  await assertPreview("inventory", "inventory upload opens inventory even when orders are already available");
+  check("valid input changes require no apply/analyze click", await ev("__extraActions.length===0 && !document.querySelector('#downloadButton').disabled"));
 
+  await selectPreview("allocations");
   await change('.order-edit-input[data-order-field="quantity"]', 7);
   await change('.order-edit-input[data-order-field="unitPrice"]', 1200);
   await change('.purchase-input[data-purchase-code="0001"]', "수정 구매처");
   await upload("inventory", { quantity: 4, name: "재고-교체4.xlsx" });
-  assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "수정 구매처", stock: 4, preview: "allocations" });
+  assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "수정 구매처", stock: 4, preview: "inventory" });
+  await assertPreview("inventory", "replacement inventory upload keeps its own result view");
   check("inventory replacement preserves order7 / price1200 / supplier", await ev("__ops.state.workspace.sourceFiles.orders.matrix[1][7]===10 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
 
   const existingDownloads = new Set(readdirSync(downloads));
@@ -223,7 +241,7 @@ try {
   await until(() => ev(`performance.timeOrigin!==${previousTimeOrigin} && document.readyState==='complete' && Boolean(globalThis.__ops?.state.db && __ops.preparationController && __ops.state.recoveryRecords.some(item=>item.valid && item.record.recordId===${JSON.stringify(savedId)}))`), "verified IndexedDB record after reload");
   await ev("document.querySelector('#headerRestoreButton').click(); true");
   await until(() => ev("__ops.state.workspace?.orders?.[0]?.quantity===7"), "restore through header action");
-  assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "수정 구매처", stock: 4, preview: "allocations" });
+  assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "수정 구매처", stock: 4, preview: "inventory" });
   check("IndexedDB recovery restores work without source File objects", await ev("!__ops.state.orders && !__ops.state.inventory"));
   await installFixtures();
 
@@ -311,6 +329,7 @@ try {
   assert.equal(await ev("JSON.stringify(__ops.state.workspace)"), beforeWarehouseMapping);
   await ev("document.querySelector('#prepApplyButton').click();true");
   await assertApplyReleased("manual warehouse mapping apply");
+  await assertPreview("inventory", "manual inventory mapping opens inventory results");
   await assertExplicitWarehouse("manual warehouse role includes 가격표6, excludes numeric metadata999");
   await shot("03-explicit-warehouse");
 
@@ -322,6 +341,7 @@ try {
   check("saved templates do not auto-restore or invent a workspace", await ev("!__ops.state.workspace"));
   await installFixtures();
   await upload("inventory", { explicitWarehouse: true, name: "explicit-warehouse-next.xlsx" });
+  await assertPreview("inventory", "saved inventory template opens its raw inventory preview");
   check("saved warehouse template accepts inventory-only input without apply", await ev("!__ops.state.workspace && __ops.state.inventory.rowCount===1 && __extraActions.length===0 && document.querySelector('#prepMappingStatus').dataset.state==='applied'"));
   check("inventory-only preview displays warehouse names and original quantities", await ev("document.querySelector('#previewTable').textContent.includes('신선A') && document.querySelector('#previewTable').textContent.includes('가격표') && document.querySelector('#previewTable').textContent.includes('12')"));
   await upload("orders", { quantity: 8, name: "fresh-order8.xlsx" });
@@ -329,10 +349,12 @@ try {
   check("fresh template processing requires no extra action", await ev("__extraActions.length===0 && __ops.state.activePreview==='allocations'"));
   const preservedInventorySource = await ev("JSON.stringify(__ops.state.workspace.sourceFiles.inventory)");
   await upload("purchases", { quantity: 2, name: "unrelated-purchases.xlsx" });
+  await assertPreview("purchases", "purchase upload opens purchase results with complete primary inputs");
   await assertExplicitWarehouse("unrelated purchase replacement retains mapped warehouses");
   assert.equal(await ev("JSON.stringify(__ops.state.workspace.sourceFiles.inventory)"), preservedInventorySource);
   check("legacy saved sales sheet alias wins even when transaction structures tie", await ev("__ops.state.excelMappings.sales.sheetAliases.includes('저장판매') && __ops.state.excelMappings.purchases.columns['구매처'].includes('거래처')"));
   await uploadIntegrated("sales", { quantity: 3, sheets: ["저장판매"], name: "legacy-sales-alias.xlsx" });
+  await assertPreview("sales", "sales-only integrated upload opens sales results");
   check("legacy sales alias routes valid integrated transaction to sales only", await ev("__ops.state.integratedFile.applied.size===1 && __ops.state.integratedFile.applied.has('sales') && __ops.state.sales.rows[0].quantity===3 && __ops.state.purchases.fileName==='unrelated-purchases.xlsx'"));
   await assertExplicitWarehouse("sales alias application also preserves mapped inventory");
 
@@ -376,7 +398,7 @@ try {
   await installFixtures();
   await upload("orders", { quantity: 3, name: "removable-order.xlsx" });
   await upload("inventory", { quantity: 4, name: "kept-stock.xlsx" });
-  await ev("document.querySelector('#prepPreviewTabs [data-preview=inventory]').click();true");
+  await selectPreview("inventory");
   await ev(`(()=>{const cell=[...document.querySelectorAll('.inventory-input')].find(node=>decodeURIComponent(node.dataset.inventoryColumn?.split(':').at(-1)||'')==='1창고');if(!cell)throw Error('Missing stock editor');cell.value='2';cell.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
   await ev(`(()=>{const file=[...document.querySelectorAll('[data-prep-file]')].find(node=>node.textContent.includes('removable-order.xlsx'));file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
   await until(() => ev("!__ops.state.workspace && !__ops.state.orders && !__ops.preparationController.isBusy()"), "detach only the selected order input");
@@ -404,6 +426,8 @@ try {
   assert.equal(await ev("JSON.stringify(__ops.state.workspace.inventoryOverrides)"), recoveredStockOverrides);
 
   await upload("purchases", { quantity: 2, name: "purchase-removal-race.xlsx" });
+  await assertPreview("purchases", "purchase removal fixture upload opens purchase results");
+  await selectPreview("allocations");
   const beforePurchaseRemoval = await ev("JSON.stringify(__ops.state.purchases)");
   const beforePurchaseRemovalSource = await ev("JSON.stringify(__ops.state.workspace.orderOpsInputs.purchases)");
   // Pause only the removal fingerprint. Autosave digests and all other hashing
@@ -440,6 +464,102 @@ try {
   assert.equal(await ev("JSON.stringify(__ops.state.purchases)"), beforePurchaseRemoval);
   assert.equal(await ev("JSON.stringify(__ops.state.workspace.orderOpsInputs.purchases)"), beforePurchaseRemovalSource);
   check("concurrent supplier edit rejects stale purchase removal and retains its file", await ev("__ops.state.workspace===__purchaseRemovalRace.workspace && __ops.state.purchases===__purchaseRemovalRace.purchases && ShippingManagementEngine.getPurchaseInputs(__ops.state.workspace)['0001']==='제거 중 수정 구매처' && document.querySelector('#prepFileList').textContent.includes('purchase-removal-race.xlsx') && document.querySelector('#toast').textContent.includes('자료 해제 중 작업이 변경') && !document.querySelector('#downloadButton').disabled"));
+
+  for (const [kind, first, second] of [["purchases", 2, 20], ["sales", 1, 11]]) {
+    for (const [excludedIndex, expectedQuantity] of [[5, first], [4, second]]) {
+      const name = `duplicate-${kind}-exclude-${excludedIndex}.xlsx`;
+      const beforeDuplicateQuantity = await ev("JSON.stringify(__ops.state.workspace)");
+      const beforeDuplicateInput = await ev(`JSON.stringify(__ops.state[${JSON.stringify(kind)}])`);
+      const beforeDuplicateTable = await ev("document.querySelector('#previewTable').innerHTML");
+      await upload(kind, { quantity: first, duplicateQuantity: second, name });
+      assert.equal(await ev("JSON.stringify(__ops.state.workspace)"), beforeDuplicateQuantity);
+      assert.equal(await ev(`JSON.stringify(__ops.state[${JSON.stringify(kind)}])`), beforeDuplicateInput);
+      assert.equal(await ev("document.querySelector('#previewTable').innerHTML"), beforeDuplicateTable);
+      check(`${kind} duplicate quantity ${first}/${second} stays in left review without changing work`, await ev(`document.querySelector('#prepFileName').textContent===${JSON.stringify(name)} && document.querySelector('#prepMappingStatus').dataset.state==='review' && document.querySelector('#prepColumnMappings [data-prep-column="4"]') && document.querySelector('#prepColumnMappings [data-prep-column="5"]')`));
+      const beforeDuplicateApplyInputCount = await ev("__sourceInputChanges.length");
+      await change(`#prepColumnMappings select[data-prep-column="${excludedIndex}"]`, "");
+      await ev("document.querySelector('#prepApplyButton').click();true");
+      await assertApplyReleased(`${kind} duplicate quantity exclude column ${excludedIndex}`);
+      await assertPreview(kind, `${kind} duplicate quantity apply opens its own result view`);
+      assert.equal(await ev(`__ops.state[${JSON.stringify(kind)}].rows[0].quantity`), expectedQuantity);
+      assert.equal(await ev(`__ops.state.workspace.orderOpsInputs[${JSON.stringify(kind)}].rows[0].quantity`), expectedQuantity);
+      const duplicateEvidence = await ev(`(()=>{const source=__ops.state.workspace.orderOpsInputs[${JSON.stringify(kind)}];return {headers:source.intakeMapping.originalRawMatrix[0],values:source.intakeMapping.originalRawMatrix[1],excluded:source.intakeMapping.draft.columns.find(column=>column.sourceIndex===${excludedIndex}).enabled};})()`);
+      assert.deepEqual(duplicateEvidence.headers.slice(4, 6), ["수량", "수량"]);
+      assert.deepEqual(duplicateEvidence.values.slice(4, 6), [first, second]);
+      assert.equal(duplicateEvidence.excluded, false);
+      assert.equal(await ev("__sourceInputChanges.length"), beforeDuplicateApplyInputCount);
+      check(`${kind} explicit duplicate-column choice yields exactly ${expectedQuantity} without re-upload`, true);
+    }
+  }
+
+  const beforeRejectedFiles = await ev("JSON.stringify({workspace:__ops.state.workspace,inputs:['orders','inventory','purchases','sales'].map(kind=>__ops.state[kind])})");
+  await ev(`(()=>{const original=File.prototype.arrayBuffer;window.__rejectedFileReads=[];window.__restoreFileRead=()=>{File.prototype.arrayBuffer=original;};File.prototype.arrayBuffer=function(){if(this.name.startsWith('rejected-'))__rejectedFileReads.push(this.name);return original.call(this);};const data=new DataTransfer();data.items.add(__fixture('inventory',{quantity:8,name:'valid-beside-rejected.xlsx'}));data.items.add(new File([__fixture('orders')],'rejected-format.txt'));data.items.add(new File([new Uint8Array(25*1024*1024+1)],'rejected-oversize.xlsx'));document.querySelector('#prepDropZone').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return true;})()`);
+  try {
+    await settled("unsupported and oversized batch files stay rejected");
+    assert.deepEqual(await ev("__rejectedFileReads"), []);
+    assert.equal(await ev("JSON.stringify({workspace:__ops.state.workspace,inputs:['orders','inventory','purchases','sales'].map(kind=>__ops.state[kind])})"), beforeRejectedFiles);
+    check("batch failure never re-reads or offers mapping apply for format/25MB rejected files", await ev("!document.querySelector('#prepFileList').textContent.includes('rejected-format.txt') && !document.querySelector('#prepFileList').textContent.includes('rejected-oversize.xlsx') && document.querySelector('#prepFileList').textContent.includes('valid-beside-rejected.xlsx')"));
+  } finally {
+    await ev("__restoreFileRead();true");
+  }
+
+  const beforeBundleReview = await ev("JSON.stringify(__ops.state.workspace)");
+  const beforeBundleTable = await ev("document.querySelector('#previewTable').innerHTML");
+  const beforeBundleInputChanges = await ev("__sourceInputChanges.length");
+  await ev(`(()=>{const data=new DataTransfer();data.items.add(__fixture('orders',{quantity:9,quantityHeader:'묶음주문량미확인X',name:'묶음미확인-주문.xlsx'}));data.items.add(__fixture('inventory',{quantity:8,name:'묶음정상-재고.xlsx'}));document.querySelector('#prepDropZone').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return true;})()`);
+  await settled("two-file drop classification failure");
+  assert.equal(await ev("JSON.stringify(__ops.state.workspace)"), beforeBundleReview);
+  assert.equal(await ev("document.querySelector('#previewTable').innerHTML"), beforeBundleTable);
+  check("failed mixed-validity bundle keeps both candidates in the left file list", await ev("['묶음미확인-주문.xlsx','묶음정상-재고.xlsx'].every(name=>[...document.querySelectorAll('#prepFileList [data-prep-file]')].some(node=>node.textContent.includes(name)))"));
+  await ev(`(()=>{const file=[...document.querySelectorAll('#prepFileList [data-prep-file]')].find(node=>node.textContent.includes('묶음미확인-주문.xlsx'));if(!file)throw Error('Missing failed bundle order candidate');file.click();return true;})()`);
+  await until(() => ev("document.querySelector('#prepFileName').textContent==='묶음미확인-주문.xlsx'"), "select failed bundle order candidate");
+  await change("#prepKindSelect", "orders");
+  await change('#prepColumnMappings select[data-prep-column="7"]', "수량");
+  await ev("document.querySelector('#prepApplyButton').click();true");
+  await assertApplyReleased("failed bundle order mapping repaired in place");
+  await assertPreview("allocations", "repaired bundle order opens order results");
+  check("bundle order can be repaired and applied without another file selection", await ev("__ops.state.workspace.orders[0].quantity===9 && __ops.state.workspace.sourceFiles.orders.fileName==='묶음미확인-주문.xlsx'"));
+  assert.equal(await ev("__sourceInputChanges.length"), beforeBundleInputChanges);
+
+  await upload("inventory", { quantity: 4, name: "inventory-detach-with-order-edits.xlsx" });
+  await assertPreview("inventory", "inventory detach fixture opens inventory results");
+  await selectPreview("allocations");
+  await change('.order-edit-input[data-order-field="quantity"]', 7);
+  await change('.order-edit-input[data-order-field="unitPrice"]', 1200);
+  await change('.purchase-input[data-purchase-code="0001"]', "재고 해제 전 구매처");
+  await selectPreview("inventory");
+  await ev(`(()=>{const cell=[...document.querySelectorAll('.inventory-input')].find(node=>decodeURIComponent(node.dataset.inventoryColumn?.split(':').at(-1)||'')==='1창고');if(!cell)throw Error('Missing inventory detach stock editor');cell.value='2';cell.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await settled("edit inventory before detaching it");
+  check("inventory detach starts from edited stock2 and raw stock4", await ev("ShippingManagementEngine.getInventoryViewRows(__ops.state.workspace).rows[0].stockTotal===2 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4 && __ops.state.workspace.inventoryOverrides.cells.length>0"));
+  await ev(`(()=>{const file=[...document.querySelectorAll('#prepFileList [data-prep-file]')].find(node=>node.textContent.includes('inventory-detach-with-order-edits.xlsx'));if(!file)throw Error('Missing removable inventory fixture');file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
+  await until(() => ev("!__ops.state.workspace && __ops.state.inventory===null && !__ops.preparationController.isBusy()"), "detach inventory while retaining edited orders");
+  check("inventory detach retains order quantity7 and price1200 as prepared input", await ev("__ops.state.orders.rows[0].quantity===7 && __ops.state.orders.rows[0].unitPrice===1200"));
+  await upload("inventory", { quantity: 9, name: "inventory-after-detach-new9.xlsx" });
+  await assertPreview("inventory", "new inventory after detach opens inventory results");
+  assert.deepEqual(await workValues(), { quantity: 7, price: 1200, purchase: "재고 해제 전 구매처", stock: 9, preview: "inventory" });
+  check("new inventory keeps order edits and supplier without carrying old stock overrides", await ev("__ops.state.workspace.sourceFiles.inventory.matrix[1][5]===9 && __ops.state.workspace.inventoryOverrides.cells.length===0"));
+
+  const fourSourceNames = { orders: "recovery-four-orders.xlsx", inventory: "recovery-four-inventory.xlsx", purchases: "recovery-four-purchases.xlsx", sales: "recovery-four-sales.xlsx" };
+  for (const kind of ["orders", "inventory", "purchases", "sales"]) {
+    await upload(kind, { quantity: { orders: 7, inventory: 9, purchases: 2, sales: 1 }[kind], name: fourSourceNames[kind] });
+    await assertPreview(kind === "orders" ? "allocations" : kind, `four-source ${kind} upload opens its matching view`);
+  }
+  const fourSourceSavedId = await ev("__ops.persistLocalWorkspace().then(record=>record.recordId)");
+  const beforeFourSourceReload = await ev("performance.timeOrigin");
+  await send("Page.reload", { ignoreCache: true });
+  await until(() => ev(`performance.timeOrigin!==${beforeFourSourceReload} && document.readyState==='complete' && Boolean(globalThis.__ops?.state.db && __ops.preparationController && __ops.state.recoveryRecords.some(item=>item.valid && item.record.recordId===${JSON.stringify(fourSourceSavedId)}))`), "four-source IndexedDB record after reload");
+  await ev("document.querySelector('#headerRestoreButton').click();true");
+  await until(() => ev("__ops.state.workspace?.orders?.[0]?.quantity===7 && Boolean(__ops.state.workspace.orderOpsInputs?.purchases && __ops.state.workspace.orderOpsInputs?.sales)"), "restore all four source attachments");
+  await settled("four-source restore");
+  check("four-source recovery has no live File inputs and shows all recovered filenames", await ev(`['orders','inventory','purchases','sales'].every(kind=>__ops.state[kind]===null) && ${JSON.stringify(Object.values(fourSourceNames))}.every(name=>[...document.querySelectorAll('#prepFileList .prep-file-item')].some(node=>node.textContent.includes(name)&&node.textContent.includes('복구')))`));
+  const beforeBadRestoredOrder = await ev("JSON.stringify(__ops.state.workspace)");
+  const beforeBadRestoredTable = await ev("document.querySelector('#previewTable').innerHTML");
+  await installFixtures();
+  await upload("orders", { quantity: 88, quantityHeader: "복구후미확인주문량X", name: "failed-after-four-source-recovery.xlsx" });
+  assert.equal(await ev("JSON.stringify(__ops.state.workspace)"), beforeBadRestoredOrder);
+  assert.equal(await ev("document.querySelector('#previewTable').innerHTML"), beforeBadRestoredTable);
+  check("failed replacement remains visible beside all four recovered sources", await ev(`(()=>{const items=[...document.querySelectorAll('#prepFileList .prep-file-item')];return items.length===5 && ${JSON.stringify(Object.values(fourSourceNames))}.every(name=>items.filter(node=>node.textContent.includes(name)&&node.textContent.includes('복구')).length===1) && items.some(node=>node.textContent.includes('failed-after-four-source-recovery.xlsx')&&node.dataset.state==='review') && document.querySelector('#prepMappingStatus').dataset.state==='review';})()`));
+  await assertPreview("sales", "failed order replacement preserves the recovered sales view");
   await settled("final state");
   assert.deepEqual(report.externalWrites, [], "No external write attempts");
   assert.deepEqual(report.errors, [], "No browser runtime errors");

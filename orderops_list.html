@@ -3546,8 +3546,12 @@
         elements.analyzeButton.disabled = true;
         setSystemMessage("파일 자동분류 중 · 시트 구조와 열 이름을 확인합니다");
 
+        let classifiedResults = [];
         try {
-          const classified = await Promise.all(files.map(classifyBundleFile));
+          classifiedResults = await Promise.allSettled(files.map(classifyBundleFile));
+          const rejected = classifiedResults.find((result) => result.status === "rejected");
+          if (rejected) throw rejected.reason;
+          const classified = classifiedResults.map((result) => result.value);
           const byKind = new Map();
           classified.forEach((item) => {
             validateFileCandidate(item.kind, item.parsed);
@@ -3558,6 +3562,20 @@
           if (typeof preparationController !== "undefined") preparationController?.markApplied(byKind);
           showToast(`${classified.length}개 파일을 자동 처리했습니다.`);
         } catch (error) {
+          // Probe parsing never installs inputs. Keep eligible selected sources as
+          // editable candidates when the batch cannot be applied atomically.
+          const prep = typeof preparationController !== "undefined" ? preparationController : null;
+          if (prep) {
+            for (let index = 0; index < files.length; index += 1) {
+              const result = classifiedResults[index];
+              if (result?.status === "fulfilled") {
+                prep.rememberParsed(result.value.parsed);
+                prep.markFailed(result.value.kind, error);
+              } else if (isSupportedFile(files[index]) && files[index].size <= MAX_FILE_SIZE) {
+                await prep.retainCandidate(files[index], { error: result?.reason || error });
+              }
+            }
+          }
           state.analysisEnterLocked = false;
           refreshInputState();
           setSystemMessage("자동분류 실패 · 기존 파일 선택은 유지됩니다");
@@ -3619,8 +3637,15 @@
           let candidateWorkspace = null;
           if (inputs.orders && inputs.inventory) {
             candidateWorkspace = await analyzeCurrentInputs({ fromSources: true, inputs });
-            if (!previous && inputs.inventory.preservedOverrides) {
-              candidateWorkspace.inventoryOverrides = JSON.parse(JSON.stringify(inputs.inventory.preservedOverrides));
+            if (!previous) {
+              if (!candidates.has("inventory") && inputs.inventory.preservedOverrides) {
+                candidateWorkspace.inventoryOverrides = JSON.parse(JSON.stringify(inputs.inventory.preservedOverrides));
+              }
+              if (!candidates.has("orders")) {
+                if (inputs.orders.preservedSubstitutionHistory) candidateWorkspace.substitutionHistory = inputs.orders.preservedSubstitutionHistory;
+                if (inputs.orders.preservedNoticeAcknowledgements) candidateWorkspace.noticeAcknowledgements = inputs.orders.preservedNoticeAcknowledgements;
+                engine.applyPurchaseInputs(candidateWorkspace, inputs.orders.preservedPurchaseInputs);
+              }
               candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
             }
             if (previous) {
@@ -3666,7 +3691,7 @@
             if (typeof leaveUnresolvedReview === "function") leaveUnresolvedReview({ render: false });
             clearSubstitutionSelection();
             state.workspace = candidateWorkspace;
-            state.activePreview = "allocations";
+            state.activePreview = FILE_KIND_PREVIEWS[previewKind];
             resetResultViewFilters();
             renderResults();
             scheduleLocalSave();
@@ -3941,7 +3966,11 @@
                 headerMapping: source.headerMapping, columns: source.columns,
                 ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
                 rows: activeWorkspace[type], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
-                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {} } : {}),
+                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {} } : {
+                  preservedPurchaseInputs: engine.getPurchaseInputs(JSON.parse(activeJson)),
+                  preservedSubstitutionHistory: activeWorkspace.substitutionHistory,
+                  preservedNoticeAcknowledgements: activeWorkspace.noticeAcknowledgements,
+                }),
               };
             } else {
               const source = activeWorkspace.orderOpsInputs?.[type];
