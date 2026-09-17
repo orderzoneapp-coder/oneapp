@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const ENGINE_VERSION = "3.19.4";
+  const ENGINE_VERSION = "3.19.5";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
@@ -2103,7 +2103,7 @@
       order.unitPrice = parsed.blank ? null : parsed.value;
     } else if (field === "warehouse") {
       order.warehouse = cleanText(value);
-    } else if (["customer", "group", "manager", "productName", "specification"].includes(field)) {
+    } else if (["customer", "group", "manager", "productName", "specification", "sourceUnit"].includes(field)) {
       order[field] = cleanText(value);
     } else if (field === "productCode") {
       const productCode = normalizeProductCode(value);

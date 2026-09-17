@@ -301,10 +301,10 @@ try {
     };
   })()`);
   assert.deepEqual(editableGrid.fields,
-    ['warehouse','customer','group','manager','productCode','productName','specification','quantity','unitPrice','note'],
+    ['warehouse','customer','group','manager','productCode','productName','specification','sourceUnit','quantity','unitPrice','note'],
     'every direct order-work field must be editable in the central table');
   assert.equal(editableGrid.inputBorder,'0px','editable cells must have no inner input line');
-  assert.equal(editableGrid.cellBorder,'0px','the light-gray Excel sheet must have no cell border line');
+  assert.equal(editableGrid.cellBorder,'0px','the ivory Excel sheet must have no cell border line');
   assert.match(editableGrid.cellBackground,/rgb\((248, 251, 255|219, 234, 254)\)/,
     'the focused cell must use the light Excel selection surface');
   assert.notEqual(editableGrid.activeCellShadow,'none','the active cell must have a visible cursor highlight');
@@ -447,6 +447,17 @@ try {
   await selectPreview('allocations');
   const unitText=await evaluate(client,`document.querySelector('#previewTable').textContent`);
   assert.match(unitText,/2 BOX/); assert.match(unitText,/30 EA/); assert.match(unitText,/단위/);
+  const orderUnitRows=await evaluate(client,`(() => {
+    const headers=[...document.querySelectorAll('#previewTable thead th')].map(node=>node.textContent.trim());
+    const rows=[...document.querySelectorAll('#previewTable tbody tr')].map(row=>{
+      const input=row.querySelector('[data-order-field="sourceUnit"]');
+      return input?{value:input.value,alert:row.classList.contains('unit-alert-row'),box:row.classList.contains('box-unit-row'),allRed:[...row.querySelectorAll('td, td *')].every(node=>getComputedStyle(node).color==='rgb(185, 28, 28)')} : null;
+    }).filter(Boolean);
+    return {headers,rows};
+  })()`);
+  assert.ok(orderUnitRows.headers.some(header=>header.includes('단위')),'order status must show the unit column');
+  assert.deepEqual(orderUnitRows.rows.find(row=>row.value==='BOX'),{value:'BOX',alert:false,box:true,allRed:false});
+  assert.deepEqual(orderUnitRows.rows.find(row=>row.value==='EA'),{value:'EA',alert:true,box:false,allRed:true},'every visible element in a non-BOX order row must use red text');
   await selectPreview('inventory');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/단위.*(확인|보류)/);
   await selectPreview('ledger');
@@ -469,8 +480,10 @@ try {
     document.querySelector('.order-edit-input').focus();
     return true;
   })()`);
-  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,sheet:read('table.preview-allocations'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(lightMetrics.theme, 'light');
+  assert.equal(lightMetrics.sheet.background, 'rgb(255, 255, 240)',
+    'the on-screen Excel worktable must use ivory as its base palette');
   assert.notEqual(lightMetrics.primary.background, lightMetrics.inactive.background,
     'saved manager colors must restore a visible row surface in light mode');
   assert.ok(contrast(lightMetrics.primary.color, lightMetrics.primary.background) >= 7,
@@ -487,8 +500,10 @@ try {
     'BOX text color must cover the complete light row');
   await click(client, '[data-nexus-ui-theme-set="dark"]');
   await wait(120);
-  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,sheet:read('table.preview-allocations'),unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(metrics.theme, 'dark');
+  assert.equal(metrics.sheet.background, 'rgb(255, 255, 240)',
+    'the Excel worktable must retain its ivory screen palette in dark app mode');
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
   assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
     `dark primary table information must have strong text contrast: ${JSON.stringify(metrics.primary)} ratio=${contrast(metrics.primary.color, metrics.primary.background)}`);
@@ -527,6 +542,7 @@ try {
       printPaddingTop:parseFloat(printStyle.paddingTop),
       printTop:printArea.getBoundingClientRect().top,
       tableTop:printArea.querySelector('table').getBoundingClientRect().top,
+      headerBackground:getComputedStyle(printArea.querySelector('th')).backgroundColor,
       managerCells:[...printArea.querySelectorAll('tbody tr.manager-color-row:first-child > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
       unitCells:[...printArea.querySelectorAll('tbody tr.unit-alert-row > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
     };
@@ -547,8 +563,10 @@ try {
     'printed EA and 소분 warning text must cover the complete row');
   assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',
     'printed EA and 소분 rows must retain the paper-safe red text');
-  assert.equal(printMetrics.managerCells[0].background, 'rgb(219, 234, 254)',
-    'print-only manager token must preserve the selected pastel without screen-theme dilution');
+  assert.equal(printMetrics.headerBackground, 'rgb(255, 255, 255)',
+    'printed table headers must use a white paper background');
+  assert.ok([...printMetrics.managerCells, ...printMetrics.unitCells].every((cell) => cell.background === 'rgb(255, 255, 255)'),
+    'every printed information cell must use a white paper background');
 
   await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });

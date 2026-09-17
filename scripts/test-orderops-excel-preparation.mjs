@@ -317,7 +317,7 @@ const multiplePriceParsed = engine.parseInventoryWorkbook({ rawMatrix: multipleP
 const multiplePriceDraft = helper.createDraft({ kind: 'inventory', rawMatrix: multiplePriceRaw, parsed: multiplePriceParsed });
 
 test('distinct warehouse price columns retain their labels and values without becoming quantities', () => {
-  assert.equal(engine.ENGINE_VERSION, '3.19.4');
+  assert.equal(engine.ENGINE_VERSION, '3.19.5');
   assert.equal(helper.WAREHOUSE_PRICE_TARGET, 'warehousePrice');
   assert.equal(helper.FIELD_LABELS[helper.WAREHOUSE_PRICE_TARGET], '창고 단가');
   assert.equal(helper.FIELDS.orders.includes(helper.WAREHOUSE_PRICE_TARGET), false);
