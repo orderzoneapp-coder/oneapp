@@ -531,3 +531,22 @@
     margin: 0;
   }
 }
+
+/* Order-status column headings: inherit readable theme ink, not app-header white.
+   Scoped to the on-screen order table; other tabs and print tables are untouched. */
+#previewTable table.preview-allocations thead th {
+  color: var(--nexus-ui-text, #292b2f) !important;
+  font-weight: 800;
+  border-bottom: 2px solid var(--nexus-ui-border-strong, #c9beae);
+}
+
+#previewTable table.preview-allocations thead .column-header-content,
+#previewTable table.preview-allocations thead .column-header-label {
+  color: inherit !important;
+  font-weight: inherit;
+}
+
+#previewTable table.preview-allocations thead th:is(.column-sorted, .column-filtered) {
+  color: var(--nexus-ui-cyan, #3f5f62) !important;
+  font-weight: 900;
+}
