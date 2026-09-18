@@ -68,7 +68,7 @@ h1 {
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -104,6 +104,12 @@ footer a:focus-visible {
   color: #fff;
 }
 
+.button--copy {
+  background: #e8f3ec;
+  color: #0c5d31;
+  box-shadow: inset 0 0 0 1px rgba(12, 93, 49, 0.22);
+}
+
 .button--share {
   background: #fee500;
   color: #191919;
@@ -115,6 +121,10 @@ footer a:focus-visible {
   text-align: center;
   color: #9b1c1c;
   font-size: 0.9rem;
+}
+
+.status[data-tone="success"] {
+  color: #0c5d31;
 }
 
 footer {
