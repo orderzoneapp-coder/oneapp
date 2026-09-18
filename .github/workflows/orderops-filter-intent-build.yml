@@ -37,6 +37,10 @@ jobs:
           assert set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())==set(expected)
           for p,h in expected.items(): assert hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h,p
           pathlib.Path('/tmp/filter-evidence/source-hashes.json').write_text(json.dumps(expected,indent=2))
+          p=pathlib.Path('/tmp/test_filter_browser.py');s=p.read_text()
+          a='  def visible(): return [s.strip() for s in page.locator(\'#previewTable tbody td[data-column-role="customer"]\').all_text_contents()]'
+          b='  def visible(): return page.locator(\'#previewTable tbody td[data-column-role="customer"]\').evaluate_all("cells=>cells.map(c=>(c.querySelector(\'input,textarea\')?.value ?? c.textContent).trim())")'
+          assert s.count(a)==1;s=s.replace(a,b);p.write_text(s)
           PY
           git diff --check
       - name: Run shipment and filter regression suites
