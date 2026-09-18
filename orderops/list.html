@@ -14,8 +14,8 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="../orderFulfillmentEngine.js?v=20260918-order-unit-column"></script>
   <script src="../orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
-  <script src="../orderops/excel-preparation.js?v=20260917-left-excel-mapping"></script>
-  <script src="../orderops/excel-preparation-ui.js?v=20260917-left-excel-mapping"></script>
+  <script src="../orderops/excel-preparation.js?v=20260919-relative-footer-range"></script>
+  <script src="../orderops/excel-preparation-ui.js?v=20260919-relative-footer-range"></script>
   <style>
     :root {
       color-scheme: light;
@@ -2094,7 +2094,7 @@
       .view-controls .preview-tabs { display: flex; }
     }
   </style>
-  <link rel="stylesheet" href="../orderops/excel-preparation.css?v=20260917-left-excel-mapping">
+  <link rel="stylesheet" href="../orderops/excel-preparation.css?v=20260919-relative-footer-range">
 </head>
 <body>
   <header class="global-header">
@@ -2291,6 +2291,7 @@
               <label class="prep-field" for="prepEndRow"><span>자료 끝 행</span><input id="prepEndRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
             </div>
             <p class="prep-field-help" id="prepRowHelp">Excel 원본의 행 번호로 지정합니다.</p>
+            <p class="prep-field-help" id="prepRangeRule" data-state="empty">끝 행을 지정하면 하단 제외 규칙으로 저장됩니다.</p>
             <div class="prep-source-preview" id="prepSourcePreview" tabindex="0" role="region" aria-label="선택 시트 원본 미리보기"><p class="prep-empty">파일과 시트를 선택하면 원본을 표시합니다.</p></div>
           </div>
         </details>

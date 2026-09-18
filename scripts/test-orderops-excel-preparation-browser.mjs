@@ -202,7 +202,23 @@ try {
   await until(() => ev("Boolean(globalThis.__ops?.state.db && __ops.preparationController && globalThis.XLSX)"), "page + preparation controller + IndexedDB");
   await installFixtures();
 
+  const relativeFooterRange = await ev(`(()=>{
+    const helper=OrderOpsExcelPreparation;
+    const header=['일자','품목코드','품목명','규격','단위','수량','단가','공급가액','적요','적요1','거래처','그룹','원본참고'];
+    const row=index=>['2026-09-18',String(index).padStart(4,'0'),'상품'+index,'','EA',1,1200,1200,'','','거래처','G','유지'];
+    const original=[['주문 원본'],header,...Array.from({length:101},(_,index)=>row(index+1)),['생성일','2026-09-18']];
+    const draft=helper.createDraft({kind:'orders',rawMatrix:original,parsed:{headerRowIndex:1}});draft.endRow=103;
+    const saved=helper.createTemplate({name:'하단 날짜 제외',draft,rawMatrix:original});
+    const next=[['다음 주문'],header,...Array.from({length:157},(_,index)=>row(index+1)),['생성일','2026-09-19']];
+    const matched=helper.matchTemplate({template:saved.template,kind:'orders',rawMatrix:next});
+    const applied=matched.ok&&helper.applyDraft({rawMatrix:next,draft:matched.draft});
+    return {saved:saved.ok,footerRows:saved.template?.rangePolicy?.footerRowCount,absoluteEndStored:Object.hasOwn(saved.template||{},'endRow'),matched:matched.ok,endRow:matched.draft?.endRow,applied:applied.ok,count:applied.sourceMetadata?.sourceRowNumbers?.length,last:applied.sourceMetadata?.sourceRowNumbers?.at(-1)};
+  })()`);
+  assert.deepEqual(relativeFooterRange, { saved: true, footerRows: 1, absoluteEndStored: false, matched: true, endRow: 159, applied: true, count: 157, last: 159 });
+  check("actual Chromium applies saved bottom-1 rule from row 104/103 through row 160/159", true);
+
   await upload("orders");
+  check("left range status explains the currently applied end row and relative footer rule", await ev("document.querySelector('#prepRangeRule').textContent.includes('현재 적용 끝 행: 2행') && document.querySelector('#prepRangeRule').textContent.includes('하단 0행 제외')"));
   check("orders alone: raw rows visible, no invented workspace/stock", await ev(`!__ops.state.workspace && __ops.state.orders.rows[0].quantity===10 && !document.querySelector('#resultsPanel').classList.contains('hidden') && document.querySelector('#previewTable').textContent.includes('합성상품')`));
   await assertPreview("allocations", "order upload opens order preview without a calculation workspace");
   check("orders alone expose the shared column and view-preset tools", await ev(`!document.querySelector('#viewPresetSaveButton').disabled && document.querySelectorAll('#columnVisibilityMenu [data-column-visible]').length>=10`));

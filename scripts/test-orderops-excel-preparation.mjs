@@ -34,7 +34,7 @@ const parsed = engine.parseOrderWorkbook({ rawMatrix, displayMatrix, fileName: '
 const draft = helper.createDraft({ kind: 'orders', sheetName: '주문', rawMatrix, displayMatrix, parsed });
 
 test('UMD browser and Node exports share the supported local API', () => {
-  assert.equal(helper.VERSION, '1.0.0');
+  assert.equal(helper.VERSION, '1.1.0');
   assert.deepEqual(helper.KINDS, ['orders', 'purchases', 'sales', 'inventory']);
   for (const kind of helper.KINDS) assert.ok(helper.FIELDS[kind].every((field) => typeof field === 'string'));
   assert.deepEqual(helper.REQUIRED_FIELDS.orders, engine.ORDER_REQUIRED_COLUMNS);
@@ -179,7 +179,9 @@ test('custom aliases work but a conflicting alias is not silently assigned to th
 const saved = helper.createTemplate({ name: '일일 주문 양식', draft });
 test('template is configuration only and does not contain file data or overwrite the draft', () => {
   assert.equal(saved.ok, true);
-  assert.equal(saved.template.endRow, null, 'the default full-file range must remain full-file on the next date');
+  assert.equal(saved.template.schemaVersion, 'orderops-excel-template/v2');
+  assert.equal(saved.template.rangePolicy.footerRowCount, 0, 'the default full-file range must remain full-file on the next date');
+  assert.equal(saved.template.endRow, undefined, 'v2 must not persist an absolute end row');
   assert.equal(saved.template.fileName, undefined);
   assert.equal(saved.template.rawMatrix, undefined);
   assert.equal(saved.template.sourceMetadata, undefined);
@@ -203,13 +205,110 @@ test('reordered columns and shifted title rows reuse a unique header structure, 
   assert.equal(helper.applyDraft({ rawMatrix: reordered, draft: matched.draft }).ok, true);
 });
 
-test('explicit row bounds are retained relative to a shifted header', () => {
-  const bounded = helper.createTemplate({ name: '범위 지정', draft: { ...clone(draft), startRow: 4, endRow: 5 } });
-  const shifted = [[], ...clone(rawMatrix)];
-  const matched = helper.matchTemplate({ template: bounded.template, kind: 'orders', rawMatrix: shifted });
+test('104→103 is saved as one footer row and a 160-row file applies through row 159', () => {
+  const makeDataRow = (index) => ['2026-09-17', String(index).padStart(4, '0'), `상품${index}`, '', 'EA', 1, 1200, 1200, '', '', '거래처', 'G', '유지'];
+  const original = [['주문 원본'], header, ...Array.from({ length: 101 }, (_, index) => makeDataRow(index + 1)), ['생성일', '2026-09-18']];
+  assert.equal(original.length, 104);
+  const originalDraft = helper.createDraft({ kind: 'orders', rawMatrix: original, parsed: { headerRowIndex: 1 } });
+  originalDraft.endRow = 103;
+  const bounded = helper.createTemplate({ name: '하단 날짜 제외', draft: originalDraft, rawMatrix: original });
+  assert.equal(bounded.ok, true);
+  assert.equal(bounded.template.rangePolicy.footerRowCount, 1);
+  assert.equal(bounded.template.endRow, undefined);
+  const next = [['다음 주문'], header, ...Array.from({ length: 157 }, (_, index) => makeDataRow(index + 1)), ['생성일', '2026-09-19']];
+  assert.equal(next.length, 160);
+  const matched = helper.matchTemplate({ template: bounded.template, kind: 'orders', rawMatrix: next });
   assert.equal(matched.ok, true);
-  assert.equal(matched.draft.startRow, 5);
-  assert.equal(matched.draft.endRow, 6);
+  assert.equal(matched.draft.startRow, 3);
+  assert.equal(matched.draft.endRow, 159);
+  const applied = helper.applyDraft({ rawMatrix: next, draft: matched.draft });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.sourceMetadata.sourceRowNumbers.length, 157);
+  assert.equal(applied.sourceMetadata.sourceRowNumbers.at(-1), 159);
+});
+
+test('relative footer rules support shorter files, two footer rows, and ignore trailing formatted blanks', () => {
+  const makeDataRow = (index) => ['2026-09-17', String(index).padStart(4, '0'), `상품${index}`, '', 'EA', 1, 1200, 1200, '', '', '거래처', 'G', '유지'];
+  const original = [['주문 원본'], header, ...Array.from({ length: 5 }, (_, index) => makeDataRow(index + 1)), ['합계', 5], ['생성일', '2026-09-18']];
+  const originalDraft = helper.createDraft({ kind: 'orders', rawMatrix: original, parsed: { headerRowIndex: 1 } });
+  originalDraft.endRow = original.length - 2;
+  const savedTwo = helper.createTemplate({ name: '하단 2행', draft: originalDraft, rawMatrix: original });
+  assert.equal(savedTwo.template.rangePolicy.footerRowCount, 2);
+  const shorterContent = [['다음 주문'], header, ...Array.from({ length: 2 }, (_, index) => makeDataRow(index + 1)), ['합계', 2], ['생성일', '2026-09-19']];
+  const withTrailingBlanks = [...shorterContent, [], Array(header.length).fill(null)];
+  assert.equal(helper.lastContentRow(withTrailingBlanks), shorterContent.length);
+  const matched = helper.matchTemplate({ template: savedTwo.template, kind: 'orders', rawMatrix: withTrailingBlanks });
+  assert.equal(matched.ok, true);
+  assert.equal(matched.draft.endRow, 4);
+});
+
+test('orders, purchases, sales and inventory all retain every next-file data row before the verified footer', () => {
+  const fixtures = {
+    orders: {
+      header,
+      row: (index) => ['2026-09-17', String(index).padStart(4, '0'), `주문상품${index}`, '', 'EA', index, 100, index * 100, '', '', '주문처', 'G', ''],
+      parsed: { headerRowIndex: 1 }, quantityIndex: 5,
+    },
+    purchases: {
+      header: ['품목코드', '품목명', '수량', '구매처'], row: (index) => [String(index).padStart(4, '0'), `구매상품${index}`, index, '구매처'],
+      parsed: { headerRowIndex: 1 }, quantityIndex: 2,
+    },
+    sales: {
+      header: ['품목코드', '품목명', '수량', '거래처'], row: (index) => [String(index).padStart(4, '0'), `판매상품${index}`, index, '판매처'],
+      parsed: { headerRowIndex: 1 }, quantityIndex: 2,
+    },
+    inventory: {
+      header: ['품목코드', '품목명', '규격', '단위', '수량', '1창고'], row: (index) => [String(index).padStart(4, '0'), `재고상품${index}`, '', 'EA', index, index],
+      quantityIndex: 4,
+    },
+  };
+  for (const [kind, fixture] of Object.entries(fixtures)) {
+    const original = [['보고서'], fixture.header, fixture.row(1), fixture.row(2), ['생성일', '2026-09-18']];
+    const parsed = kind === 'inventory' ? engine.parseInventoryWorkbook({ rawMatrix: original, headerRowIndex: 1 }) : fixture.parsed;
+    const originalDraft = helper.createDraft({ kind, rawMatrix: original, parsed });
+    originalDraft.endRow = 4;
+    const template = helper.createTemplate({ name: `${kind} 하단 제외`, draft: originalDraft, rawMatrix: original }).template;
+    const next = [['다음 보고서'], fixture.header, fixture.row(1), fixture.row(2), fixture.row(3), ['생성일', '2026-09-19']];
+    const matched = helper.matchTemplate({ template, kind, rawMatrix: next });
+    assert.equal(matched.ok, true, kind);
+    assert.equal(matched.draft.endRow, 5, kind);
+    const applied = helper.applyDraft({ rawMatrix: next, draft: matched.draft });
+    assert.deepEqual(applied.sourceMetadata.sourceRowNumbers, [3, 4, 5], kind);
+    assert.equal(applied.rawMatrix.slice(2, 5).reduce((sum, row) => sum + Number(row[fixture.quantityIndex]), 0), 6, kind);
+  }
+});
+
+test('changed, missing, extra or product-shaped footer rows require review instead of auto-apply', () => {
+  const dataRow = ['2026-09-17', '0001', '상품', '', 'EA', 1, 1200, 1200, '', '', '거래처', 'G', '유지'];
+  const original = [['주문 원본'], header, dataRow, ['생성일', '2026-09-18']];
+  const originalDraft = helper.createDraft({ kind: 'orders', rawMatrix: original, parsed: { headerRowIndex: 1 } });
+  originalDraft.endRow = 3;
+  const template = helper.createTemplate({ name: '날짜행', draft: originalDraft, rawMatrix: original }).template;
+  const changed = [['주문 원본'], header, dataRow, ['승인자', '관리자']];
+  const missing = [['주문 원본'], header, dataRow];
+  const extra = [['주문 원본'], header, dataRow, ['합계', 1], ['생성일', '2026-09-19']];
+  const productAtEnd = [['주문 원본'], header, dataRow, [...dataRow]];
+  for (const matrix of [changed, missing, extra, productAtEnd]) {
+    const result = helper.matchTemplate({ template, kind: 'orders', rawMatrix: matrix });
+    assert.equal(result.ok, false);
+    assert.equal(result.requiresReview, true);
+    assert.equal(result.draft.rangeReviewRequired, true);
+  }
+  const excludesProduct = helper.createDraft({ kind: 'orders', rawMatrix: productAtEnd, parsed: { headerRowIndex: 1 } });
+  excludesProduct.endRow = 3;
+  errorCode(helper.createTemplate({ name: '상품 누락 금지', draft: excludesProduct, rawMatrix: productAtEnd }), 'FOOTER_CONTAINS_BUSINESS_DATA');
+});
+
+test('legacy full-file templates remain usable but a numeric legacy end row requires one-time review', () => {
+  const legacyFull = { ...clone(saved.template), schemaVersion: 'orderops-excel-template/v1', endRow: null };
+  delete legacyFull.rangePolicy;
+  assert.equal(helper.matchTemplate({ template: legacyFull, kind: 'orders', rawMatrix }).ok, true);
+  const legacyBounded = { ...legacyFull, endRow: 5 };
+  const review = helper.matchTemplate({ template: legacyBounded, kind: 'orders', rawMatrix });
+  assert.equal(review.ok, false);
+  assert.equal(review.requiresReview, true);
+  assert.equal(review.draft.endRow, 5);
+  errorCode(review, 'LEGACY_END_RANGE_REVIEW_REQUIRED');
 });
 
 test('templates reject kind mismatch, changed structure, duplicate header rows and malformed saved columns', () => {
@@ -446,6 +545,22 @@ function mountPreparation({ workspace = null, templates = [] } = {}) {
   return { controller, nodes, calls, file, validate: context.validateFileCandidate };
 }
 const uiTest = async (name, run) => { await run(); checks += 1; console.log(`PASS ${name}`); };
+
+await uiTest('numeric legacy end-row template is surfaced for one-time range review and never auto-applied', async () => {
+  const legacy = { ...clone(saved.template), schemaVersion: 'orderops-excel-template/v1', endRow: 5 };
+  delete legacy.rangePolicy;
+  const fixture = mountPreparation({ templates: [legacy] });
+  const file = fixture.file('legacy-bounded.xlsx', { 주문: clone(rawMatrix) });
+  const parsed = await fixture.controller.parse(file, 'orders');
+  const record = parsed.preparationRecord;
+  assert.equal(record.status, 'review');
+  assert.equal(record.drafts.주문.rangeReviewRequired, true);
+  assert.match(record.error, /고정 끝 행/);
+  assert.equal(fixture.nodes.get('prepApplyButton').disabled, true);
+  assert.equal(fixture.nodes.get('prepSaveTemplateButton').disabled, true);
+  assert.match(fixture.nodes.get('prepRangeRule').textContent, /범위 재확인 필요/);
+  assert.equal(fixture.calls.apply, 0);
+});
 
 for (const [kind, partner, first, second] of [['purchases', '구매처', 2, 20], ['sales', '거래처', 1, 11]]) {
   await uiTest(`${kind} native duplicate quantities block auto-commit and keep both original columns for repair`, async () => {

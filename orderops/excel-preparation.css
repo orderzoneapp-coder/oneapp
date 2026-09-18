@@ -203,6 +203,11 @@
   line-height: 1.5;
 }
 
+#prepRangeRule[data-state="review"] {
+  color: var(--danger-700, #b91c1c);
+  font-weight: 700;
+}
+
 .excel-preparation-panel .prep-integrated-slot {
   display: flex;
   justify-content: flex-end;
