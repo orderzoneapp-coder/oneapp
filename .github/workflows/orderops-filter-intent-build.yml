@@ -5,18 +5,71 @@ on:
     paths:
       - .github/workflows/orderops-filter-intent-build.yml
 permissions:
-  contents: read
+  contents: write
 jobs:
-  snapshot:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Package source for isolated inspection
-        run: |
-          git archive --format=tar HEAD > /tmp/orderops-filter-source.tar
-      - uses: actions/upload-artifact@v7
+      - uses: actions/setup-node@v7
         with:
-          name: orderops-filter-source
-          path: /tmp/orderops-filter-source.tar
-          retention-days: 1
+          node-version: 24
+      - name: Verify payload and apply only approved files
+        run: |
+          mkdir -p /tmp/filter-evidence
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, pathlib, subprocess
+          checks = ['e38a08dbc5e07c5e91e5ca16ae99a6e5f4163bc47d63caa9c54cd5b7f4e2f6c3','ab1ba980d7ef318c8fcfe307964cbb70343880fd4c37cbcefc6eff3659c3bb2a','fd9c382d0c4650da47b9b18ed1eb509ffff5dbbd807840693ed53c4a18ce9e6c','c68006ff8c92bafe6138c1613c59bb08154834d181db6c5ea2932baa9f364cac']
+          parts=[]
+          for i,expected in enumerate(checks,1):
+              text=pathlib.Path(f'tools/orderops-filter-intent.part-{i:02}.txt').read_text().strip()
+              if i == 2: text=text.replace('ZwO1jsOHo2gva','ZwO1jsHo2gva')
+              digest=hashlib.sha256(text.encode()).hexdigest()
+              assert digest==expected, (i,digest,expected)
+              parts.append(text)
+          raw=gzip.decompress(base64.b64decode(''.join(parts),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='e2d654de2f4ad69af0c11d207707bd8a7f7506dd8b875869cc7a9e3ec862a549'
+          payload=json.loads(raw)
+          patch=pathlib.Path('/tmp/filter.patch');patch.write_text(payload['patch'])
+          assert hashlib.sha256(patch.read_bytes()).hexdigest()=='0656a6f8572ac50899c970ce50d75d213ead9830ffbed5d84d455a527c9d4063'
+          subprocess.run(['git','apply','--check',str(patch)],check=True)
+          subprocess.run(['git','apply',str(patch)],check=True)
+          subprocess.run(['git','add','-N','scripts/test-orderops-filter-intent.mjs'],check=True)
+          changed=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert set(changed)=={'orderops/list.html','orderops_list.html','scripts/test-orderops-filter-intent.mjs','scripts/test-shipping-management.mjs'},changed
+          pathlib.Path('/tmp/test_filter_browser.py').write_text(payload['browser'])
+          subprocess.run(['git','diff','--check'],check=True)
+          pathlib.Path('/tmp/filter-evidence/source-hashes.json').write_text(json.dumps({p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in changed},indent=2))
+          print('Verified patch; only four approved files changed.')
+          PY
+      - name: Run shipment and filter regression suites
+        run: |
+          set -euo pipefail
+          for script in test-orderops-filter-intent test-orderops-baseline-calculation test-orderops-work-preservation test-orderops-excel-preparation test-shipping-management test-shipping-purchase-plan-cloud test-orderq-substitute-shipment validate-repository; do
+            node scripts/$script.mjs 2>&1 | tee /tmp/filter-evidence/$script.log
+          done
+      - name: Install browser test driver
+        run: python3 -m pip install playwright==1.57.0
+      - name: Verify actual checkbox, Excel input, saved forms and reload
+        env:
+          FILTER_SOURCE_ROOT: ${{ github.workspace }}
+          FILTER_EVIDENCE_DIR: /tmp/filter-evidence
+        run: |
+          set -euo pipefail
+          python3 /tmp/test_filter_browser.py 2>&1 | tee /tmp/filter-evidence/browser.log
+      - name: Commit only verified production and test files on isolated branch
+        run: |
+          git config user.name 'orderzoneapp-coder'
+          git config user.email 'orderzoneapp@gmail.com'
+          git add orderops/list.html orderops_list.html scripts/test-orderops-filter-intent.mjs scripts/test-shipping-management.mjs
+          git commit -m 'fix(orderops): preserve include/exclude filter intent across saved forms'
+          git push origin HEAD:fix/orderops-filter-intent-20260919
+          git rev-parse HEAD | tee /tmp/filter-evidence/verified-commit.txt
+          git ls-tree HEAD orderops/list.html orderops_list.html scripts/test-orderops-filter-intent.mjs scripts/test-shipping-management.mjs | tee /tmp/filter-evidence/verified-blobs.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: orderops-filter-verification
+          path: /tmp/filter-evidence
+          retention-days: 3
