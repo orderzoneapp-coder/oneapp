@@ -2477,6 +2477,7 @@
     <div class="column-sort-menu-section" data-text-filter-section data-value-filter-section aria-label="셀 값 선택 필터">
       <input class="column-filter-search" type="search" data-column-value-search autocomplete="off" placeholder="검색">
       <label class="column-value-option"><input type="checkbox" data-column-value-select-all><span>(모두 선택)</span></label>
+      <div class="column-value-empty" data-column-value-mode aria-live="polite"></div>
       <div class="column-value-list" data-column-value-list></div>
       <div class="column-filter-actions">
         <button type="button" data-apply-column-values>확인</button>
@@ -3995,7 +3996,8 @@
             clearSubstitutionSelection();
             state.workspace = candidateWorkspace;
             state.activePreview = FILE_KIND_PREVIEWS[previewKind];
-            resetResultViewFilters();
+            // Replacing input data must not erase the selected form's filter intent.
+            closeColumnSortMenu();
             renderResults();
             scheduleLocalSave();
           } else if (!state.workspace) {
@@ -4385,10 +4387,17 @@
           const next = Object.create(null);
           if (setting.excludeBlank === true) next.excludeBlank = true;
           if (setting.excludeZero === true) next.excludeZero = true;
-          if (Array.isArray(setting.allowedValues)) {
-            next.allowedValues = normalizeStringList(setting.allowedValues, 500);
+          // Legacy allowedValues are inclusion rules. Never infer the user's
+          // intent from today's option count, and never truncate saved rules.
+          if (setting.valueMode === "exclude" && Array.isArray(setting.excludedValues)) {
+            next.valueMode = "exclude";
+            next.excludedValues = normalizeStringList(setting.excludedValues, setting.excludedValues.length);
+          } else if (Array.isArray(setting.allowedValues)) {
+            next.valueMode = "include";
+            next.allowedValues = normalizeStringList(setting.allowedValues, setting.allowedValues.length);
           }
-          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues)) filters[columnKey] = next;
+          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues) ||
+              Array.isArray(next.excludedValues)) filters[columnKey] = next;
         });
         return filters;
       }
@@ -5983,7 +5992,8 @@
       }
 
       function columnFilterIsActive(setting) {
-        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues));
+        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues) ||
+          (setting?.valueMode === "exclude" && setting.excludedValues?.length > 0));
       }
 
       function hasColumnFilters(previewId) {
@@ -6037,7 +6047,10 @@
           const value = pair.row?.[index];
           if (setting?.excludeBlank && isBlankCell(value)) return false;
           if (setting?.excludeZero && isZeroCell(value)) return false;
-          if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(textFilterValueKey(value))) return false;
+          const valueKey = textFilterValueKey(value);
+          if (setting?.valueMode === "exclude" && Array.isArray(setting.excludedValues)) {
+            if (setting.excludedValues.includes(valueKey)) return false;
+          } else if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(valueKey)) return false;
           return true;
         });
       }
@@ -6172,12 +6185,7 @@
         elements.columnSortMenu.querySelector("[data-text-filter-section]").classList.remove("hidden");
         context.textOptions = columnTextValueOptions(preview, context.columnKey);
         if (!(context.textSelection instanceof Set)) {
-          const selected = Array.isArray(filter?.allowedValues)
-            ? filter.allowedValues
-            : context.textOptions
-              .filter((option) => !(filter?.excludeZero && option.zero))
-              .map((option) => option.key);
-          context.textSelection = new Set(selected);
+          initializeColumnTextSelection(context, filter);
         }
         const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
         searchInput.value = context.textSearch || "";
@@ -6203,11 +6211,17 @@
         const selectAll = elements.columnSortMenu.querySelector("[data-column-value-select-all]");
         const selectedVisibleCount = context.visibleTextValueKeys
           .filter((key) => context.textSelection.has(key)).length;
+        // Individually selecting every current value must remain inclusion.
         selectAll.checked = context.visibleTextValueKeys.length > 0 &&
-          selectedVisibleCount === context.visibleTextValueKeys.length;
-        selectAll.indeterminate = selectedVisibleCount > 0 &&
-          selectedVisibleCount < context.visibleTextValueKeys.length;
+          selectedVisibleCount === context.visibleTextValueKeys.length &&
+          (Boolean(query) || context.textMode === "exclude");
+        selectAll.indeterminate = selectedVisibleCount > 0 && !selectAll.checked;
         selectAll.disabled = context.visibleTextValueKeys.length === 0;
+        const modeLabel = elements.columnSortMenu.querySelector("[data-column-value-mode]");
+        modeLabel.textContent = context.textMode === "exclude"
+          ? "전체 기준 · 제외 항목 외 새 항목도 표시"
+          : "선택 기준 · 선택 항목만 표시";
+        selectAll.title = query ? "검색 결과에만 적용 · 기존 기준 유지" : "전체 기준 선택 / 선택 기준으로 전환";
       }
 
       function openColumnSortMenu(trigger) {
@@ -6233,8 +6247,8 @@
 
       function setColumnCondition(previewId, columnKey, condition, enabled) {
         if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
+        // Numeric conditions must not discard a saved include/exclude rule.
         const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
-        delete next.allowedValues;
         if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
@@ -6243,26 +6257,72 @@
         }
       }
 
+      function initializeColumnTextSelection(context, filter) {
+        context.textMode = filter?.valueMode === "exclude" || !Array.isArray(filter?.allowedValues)
+          ? "exclude" : "include";
+        context.textExcludedValues = new Set(context.textMode === "exclude" ? filter?.excludedValues || [] : []);
+        const selected = context.textMode === "include"
+          ? filter.allowedValues
+          : context.textOptions.filter((option) => !context.textExcludedValues.has(option.key)).map((option) => option.key);
+        context.textSelection = new Set(selected);
+        context.textOptions.forEach((option) => {
+          if (context.textMode === "exclude" &&
+              ((filter?.excludeZero && option.zero) || (filter?.excludeBlank && option.blank))) {
+            context.textSelection.delete(option.key);
+          }
+        });
+      }
+
+      function setColumnTextSelection(keys, checked, selectAll = false) {
+        const context = state.activeColumnMenu;
+        if (!context || !(context.textSelection instanceof Set)) return;
+        if (selectAll && !String(context.textSearch || "").trim()) {
+          // Only an explicit, unsearched select-all action changes the mode.
+          context.textMode = checked ? "exclude" : "include";
+          context.textSelection.clear();
+          context.textExcludedValues.clear();
+        }
+        keys.forEach((key) => {
+          if (checked) context.textSelection.add(key);
+          else context.textSelection.delete(key);
+          if (context.textMode === "exclude") {
+            if (checked) context.textExcludedValues.delete(key);
+            else context.textExcludedValues.add(key);
+          }
+        });
+      }
+
       function applyColumnTextFilter() {
         const context = state.activeColumnMenu;
         if (!context || !Array.isArray(context.textOptions) || !(context.textSelection instanceof Set)) return;
         if (!state.columnFilters[context.previewId]) state.columnFilters[context.previewId] = Object.create(null);
         const allKeys = context.textOptions.map((option) => option.key);
-        const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
         const zeroKeys = new Set(context.textOptions.filter((option) => option.zero).map((option) => option.key));
-        const allExceptZeroSelected = zeroKeys.size > 0 && allKeys.every((key) =>
-          zeroKeys.has(key) ? !context.textSelection.has(key) : context.textSelection.has(key));
+        const blankKeys = new Set(context.textOptions.filter((option) => option.blank).map((option) => option.key));
         const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
-        if (allExceptZeroSelected) {
-          next.excludeZero = true;
+        next.valueMode = context.textMode;
+        if (context.textMode === "exclude") {
+          // Keep excluded values absent from this file so they stay excluded
+          // when they return. New values are admitted unless explicitly excluded.
+          const excluded = new Set(context.textExcludedValues);
+          allKeys.forEach((key) => {
+            if (context.textSelection.has(key)) excluded.delete(key);
+            else excluded.add(key);
+          });
+          const allExceptZeroSelected = zeroKeys.size > 0 && allKeys.every((key) =>
+            zeroKeys.has(key) ? !context.textSelection.has(key) : context.textSelection.has(key));
+          if (allExceptZeroSelected) next.excludeZero = true;
+          if (next.excludeZero) zeroKeys.forEach((key) => excluded.delete(key));
+          if (next.excludeBlank) blankKeys.forEach((key) => excluded.delete(key));
+          next.excludedValues = [...excluded];
           delete next.allowedValues;
         } else {
-          if (selectedKeys.length === allKeys.length) delete next.allowedValues;
-          else next.allowedValues = selectedKeys;
+          // Do not intersect with today's options or collapse "all selected"
+          // into an unrestricted filter. An empty inclusion list means no rows.
+          next.allowedValues = [...context.textSelection];
+          delete next.excludedValues;
         }
-        if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
-        else delete state.columnFilters[context.previewId][context.columnKey];
-        if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
+        state.columnFilters[context.previewId][context.columnKey] = next;
       }
 
       function visibleColumnEntries(preview, previewId = state.activePreview, options = {}) {
@@ -8268,17 +8328,13 @@
         if (!context || !hasActivePreviewDefinition(context.previewId)) return;
         const selectAll = event.target.closest("[data-column-value-select-all]");
         if (selectAll && context.textSelection instanceof Set) {
-          (context.visibleTextValueKeys || []).forEach((key) => {
-            if (selectAll.checked) context.textSelection.add(key);
-            else context.textSelection.delete(key);
-          });
+          setColumnTextSelection(context.visibleTextValueKeys || [], selectAll.checked, true);
           renderColumnTextValueOptions();
           return;
         }
         const valueInput = event.target.closest("[data-column-value]");
         if (valueInput && context.textSelection instanceof Set) {
-          if (valueInput.checked) context.textSelection.add(valueInput.dataset.columnValue);
-          else context.textSelection.delete(valueInput.dataset.columnValue);
+          setColumnTextSelection([valueInput.dataset.columnValue], valueInput.checked);
           renderColumnTextValueOptions();
           return;
         }
