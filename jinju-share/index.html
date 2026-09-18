@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0c5d31" />
+    <meta
+      name="description"
+      content="진주중앙청과 전송판매 오픈채팅 입장 및 카카오톡 공유"
+    />
+    <meta property="og:title" content="진주중앙청과 전송판매" />
+    <meta
+      property="og:description"
+      content="닉네임은 중도매인번호로 부탁합니다. 확인되지 않는 이름은 추방될 수 있습니다."
+    />
+    <meta
+      property="og:image"
+      content="https://oneapp.orderz.co.kr/jinju-share/share-card-800x600.png"
+    />
+    <title>진주중앙청과 전송판매</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script
+      src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.3/kakao.min.js"
+      integrity="sha384-oroumrnFVE0xtgqyDZJARgERibXg2C28380uaUZz2kHDS5CR7tu20eGiOU6GkTpy"
+      crossorigin="anonymous"
+      defer
+    ></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main class="share-card" aria-labelledby="page-title">
+      <h1 id="page-title">진주중앙청과 전송판매</h1>
+
+      <a
+        class="image-link"
+        href="https://open.kakao.com/o/gCsEJ4Ni"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="진주중앙청과 전송판매 오픈채팅 입장"
+      >
+        <img
+          src="./share-card-800x600.png"
+          width="800"
+          height="600"
+          alt="진주중앙청과 전송판매. 닉네임은 중도매인번호로 부탁합니다. 확인되지 않는 이름은 추방될 수 있습니다."
+        />
+      </a>
+
+      <p class="notice">
+        닉네임은 <strong>중도매인번호</strong>로 부탁합니다.<br />
+        <span>※ 확인되지 않는 이름은 추방될 수 있습니다.</span>
+      </p>
+
+      <div class="actions">
+        <a
+          class="button button--chat"
+          href="https://open.kakao.com/o/gCsEJ4Ni"
+          target="_blank"
+          rel="noopener noreferrer"
+        >오픈채팅 입장</a>
+        <button class="button button--share" id="kakao-share" type="button">
+          카카오톡 공유
+        </button>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <footer>
+        <a href="https://oneapp.orderz.co.kr/jinju-share/">
+          진주중앙청과 전송판매
+        </a>
+      </footer>
+    </main>
+  </body>
+</html>
