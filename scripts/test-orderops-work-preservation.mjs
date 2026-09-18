@@ -99,7 +99,7 @@ async function harness(htmlPath) {
     sha256Hex: async (value) => hash(value),
     showToast: (message, error) => log.toasts.push({ message, error: Boolean(error) }),
     setSystemMessage: (message) => log.messages.push(message),
-    leaveUnresolvedReview() {}, clearSubstitutionSelection() {}, renderSourceViewCards() {},
+    leaveUnresolvedReview() {}, clearSubstitutionSelection() {}, renderSourceViewCards() {}, closeColumnSortMenu() {},
     renderFileCard() {}, renderIntegratedFileCard() {}, renderValidation() {},
     getPreviewDefinitions: () => ({ validation: {}, allocations: {}, inventory: {}, ledger: {}, purchases: {}, sales: {} }),
     renderPreview() {
