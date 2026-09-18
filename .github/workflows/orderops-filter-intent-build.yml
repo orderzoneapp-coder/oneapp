@@ -40,6 +40,13 @@ jobs:
           EXPECTED_COMMIT: 79b4ce525b45156ee52bca0544c4ed20c5ad2134
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/orderops-filter-live-check.py');s=p.read_text()
+          a='    page.locator(\'button[aria-label="거래처 정렬 및 조건 필터"]\').click()'
+          b='    button=page.locator(\'button[aria-label="거래처 정렬 및 조건 필터"]\')\n    button.locator("xpath=ancestor::th").hover()\n    button.click()'
+          assert s.count(a)==1;s=s.replace(a,b);p.write_text(s)
+          PY
           python3 tools/orderops-filter-live-check.py 2>&1 | tee /tmp/filter-live-evidence/live.log
       - uses: actions/upload-artifact@v7
         if: always()
