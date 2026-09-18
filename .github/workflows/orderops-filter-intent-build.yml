@@ -1,0 +1,22 @@
+name: OrderOps filter intent isolated workspace
+on:
+  push:
+    branches: [fix/orderops-filter-intent-20260919]
+    paths:
+      - .github/workflows/orderops-filter-intent-build.yml
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Package source for isolated inspection
+        run: |
+          git archive --format=tar HEAD > /tmp/orderops-filter-source.tar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: orderops-filter-source
+          path: /tmp/orderops-filter-source.tar
+          retention-days: 1
