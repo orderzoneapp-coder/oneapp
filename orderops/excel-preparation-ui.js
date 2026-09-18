@@ -11,7 +11,7 @@
     const doc = options.document || root.document;
     const helper = root.OrderOpsExcelPreparation;
     if (!helper || !doc.getElementById("prepDropZone")) return null;
-    const ids = ["KindButtons", "DropZone", "FileButton", "FileList", "FileDetails", "MappingDetails", "FileName", "KindSelect", "TemplateName", "SheetSelect", "HeaderRow", "StartRow", "EndRow", "SourcePreview", "ColumnMappings", "MappingStatus", "SaveTemplateButton", "ApplyButton", "PreviewTabs"];
+    const ids = ["KindButtons", "DropZone", "FileButton", "FileList", "FileDetails", "MappingDetails", "FileName", "KindSelect", "TemplateName", "SheetSelect", "HeaderRow", "StartRow", "EndRow", "RangeRule", "SourcePreview", "ColumnMappings", "MappingStatus", "SaveTemplateButton", "ApplyButton", "PreviewTabs"];
     const el = Object.fromEntries(ids.map((name) => [name, doc.getElementById(`prep${name}`)]));
     const cache = new WeakMap();
     const attempts = new WeakMap();
@@ -111,26 +111,36 @@
           let draft = helper.createDraft({ kind, sheetName, ...matrices, parsed, headerAliases: options.getMappings()?.[kind]?.columns || {} });
           record.sheetName = sheetName;
           record.drafts[sheetName] = draft;
-          const matches = templates.map((template) => ({ template, match: helper.matchTemplate({ template, kind, sheetName, ...matrices, parsed }) })).filter((item) => item.match.ok);
+          const matches = templates.map((template) => ({ template, match: helper.matchTemplate({ template, kind, sheetName, ...matrices, parsed }) }))
+            .filter((item) => item.match.ok || item.match.requiresReview);
           if (matches.length > 1) fail("같은 항목 구조의 양식이 둘 이상입니다. 사용할 매핑을 확인하세요.");
+          let rangeReview = null;
           if (matches.length === 1) {
             draft = matches[0].match.draft;
-            parsed = mappedParse(record, draft);
             record.templateName = matches[0].template.name;
+            if (matches[0].match.requiresReview) {
+              rangeReview = matches[0].match.errors;
+              parsed.errors = [...(parsed.errors || []), ...rangeReview];
+            } else parsed = mappedParse(record, draft);
           }
           record.drafts[sheetName] = draft;
           candidates.push({ parsed, sheetName, score: (parsed.missingColumns?.length || 0) * 1000 + (parsed.errors?.length || 0) * 100 + (parsed.rowCount > 0 ? 0 : 10),
-            alias: options.sheetAliasScore(sheetName, options.getMappings()?.[kind]?.sheetAliases) });
+            alias: options.sheetAliasScore(sheetName, options.getMappings()?.[kind]?.sheetAliases), rangeReview });
         }
         candidates.sort((left, right) => left.score - right.score || right.alias - left.alias);
-        const first = candidates[0];
+        const rangeReviews = candidates.filter((item) => item.rangeReview);
+        if (rangeReviews.length > 1) fail("범위를 다시 확인할 양식 시트가 둘 이상입니다. 시트를 하나 선택하세요.");
+        const first = rangeReviews[0] || candidates[0];
         record.sheetName = first.sheetName;
         record.parsed = first.parsed;
-        record.status = "ready";
+        record.status = first.rangeReview ? "review" : "ready";
+        record.error = first.rangeReview ? messageOf(first.rangeReview) : "";
         const equal = candidates.filter((item) => item.score === 0 && item.alias === first.alias);
         if (first.score === 0 && equal.length > 1) fail("같은 종류로 사용할 수 있는 시트가 둘 이상입니다. 시트를 하나 선택하세요.");
-        try { options.validate(kind, first.parsed); }
-        catch (error) { record.status = "review"; record.error = error.message; }
+        if (!first.rangeReview) {
+          try { options.validate(kind, first.parsed); }
+          catch (error) { record.status = "review"; record.error = error.message; }
+        }
         Object.defineProperty(first.parsed, "preparationRecord", { value: record, configurable: true, enumerable: false });
         if (!probe) render();
         return first.parsed;
@@ -208,6 +218,12 @@
       el.SheetSelect.innerHTML = record?.context ? record.context.workbook.SheetNames.map((name) => `<option value="${html(name)}">${html(name)}</option>`).join("") : "<option value=''>시트 없음</option>";
       el.SheetSelect.value = record?.sheetName || "";
       for (const [control, key] of [["HeaderRow", "headerRow"], ["StartRow", "startRow"], ["EndRow", "endRow"]]) el[control].value = draft?.[key] ?? "";
+      if (el.RangeRule) {
+        const lastRow = draft?.contentLastRow ?? draft?.rowCount;
+        const footerRows = draft && Number.isInteger(lastRow) && Number.isInteger(draft.endRow) ? Math.max(0, lastRow - draft.endRow) : null;
+        el.RangeRule.textContent = draft ? `현재 적용 끝 행: ${draft.endRow}행 · 저장 규칙: 하단 ${footerRows}행 제외${draft.rangeReviewRequired ? " · 범위 재확인 필요" : ""}` : "끝 행을 지정하면 하단 제외 규칙으로 저장됩니다.";
+        el.RangeRule.dataset.state = draft?.rangeReviewRequired ? "review" : draft ? "ready" : "empty";
+      }
       const matrices = record?.context?.sheets[record.sheetName];
       const rows = matrices?.displayMatrix?.slice(Math.max(0, (draft?.headerRow || 1) - 1), Math.max(0, (draft?.headerRow || 1) - 1) + 6) || [];
       el.SourcePreview.innerHTML = rows.length ? `<table aria-label="원본 미리보기"><tbody>${rows.map((cells, index) => `<tr><th scope="row">${(draft?.headerRow || 1) + index}</th>${cells.map((value) => `<td>${html(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "원본 미리보기";
@@ -220,8 +236,8 @@
       const status = record ? record.error || (record.dirty ? "수정한 매핑을 자료에 반영하세요." : record.status === "applied" ? `반영 완료 · ${record.parsed?.rowCount || 0}건` : record.status === "reading" ? "파일 읽는 중…" : "항목 연결을 확인하세요.") : "정상 매핑 자료는 불러오면 바로 표시됩니다.";
       el.MappingStatus.textContent = status;
       el.MappingStatus.dataset.state = record?.status || "empty";
-      el.ApplyButton.disabled = busy() || !draft || (record.status === "applied" && !record.dirty);
-      el.SaveTemplateButton.disabled = busy() || !draft;
+      el.ApplyButton.disabled = busy() || !draft || draft.rangeReviewRequired === true || (record.status === "applied" && !record.dirty);
+      el.SaveTemplateButton.disabled = busy() || !draft || draft.rangeReviewRequired === true;
       ["KindSelect", "TemplateName", "SheetSelect", "HeaderRow", "StartRow", "EndRow"].forEach((name) => { el[name].disabled = busy() || !record?.context; });
       el.ColumnMappings.querySelectorAll("select").forEach((node) => { node.disabled = busy(); });
     }
@@ -351,7 +367,7 @@
         record.drafts[record.sheetName] = helper.createDraft({ kind: record.kind, sheetName: record.sheetName, ...matrices, parsed: { headerRowIndex: value - 1 }, headerAliases: options.getMappings()?.[record.kind]?.columns || {} });
       });
     });
-    for (const [control, key] of [["StartRow", "startRow"], ["EndRow", "endRow"]]) el[control].addEventListener("change", () => { const value = Number(el[control].value); editDraft((draft) => { draft[key] = value; }); });
+    for (const [control, key] of [["StartRow", "startRow"], ["EndRow", "endRow"]]) el[control].addEventListener("change", () => { const value = Number(el[control].value); editDraft((draft) => { draft[key] = value; if (key === "endRow") draft.rangeReviewRequired = false; }); });
     el.ColumnMappings.addEventListener("change", (event) => {
       if (!event.target.matches("[data-prep-column]")) return;
       const index = Number(event.target.dataset.prepColumn), target = event.target.value;
@@ -361,7 +377,8 @@
       if (busy()) return;
       const record = selected();
       if (!draftOf(record)) return;
-      const result = helper.createTemplate({ name: record.templateName, draft: draftOf(record) });
+      const matrices = record.context?.sheets?.[record.sheetName];
+      const result = helper.createTemplate({ name: record.templateName, draft: draftOf(record), ...matrices });
       if (!result.ok) { options.toast(messageOf(result.errors), true); return; }
       const next = templates.filter((template) => !(template.kind === result.template.kind && template.name === result.template.name));
       next.push(result.template);
