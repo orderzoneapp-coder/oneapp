@@ -4,70 +4,46 @@ on:
     branches: [fix/orderops-filter-intent-20260919]
     paths: [.github/workflows/orderops-filter-intent-build.yml]
 permissions:
-  contents: write
+  contents: read
+  actions: read
 jobs:
-  verify:
+  live:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-      - name: Apply checksum-verified patch
+          persist-credentials: false
+      - name: Confirm successful Pages deployment at merged SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p /tmp/filter-evidence
+          mkdir -p /tmp/filter-live-evidence
           python3 - <<'PY'
-          import base64,gzip,hashlib,json,pathlib,subprocess
-          parts=[pathlib.Path(f'tools/orderops-filter-intent.part-{i:02}.txt').read_text().strip() for i in range(1,5)]
-          parts[1]=parts[1].replace('ZwO1jsOHo2gva','ZwO1jsHo2gva')
-          raw=gzip.decompress(base64.b64decode(''.join(parts),validate=True))
-          assert hashlib.sha256(raw).hexdigest()=='e2d654de2f4ad69af0c11d207707bd8a7f7506dd8b875869cc7a9e3ec862a549'
-          payload=json.loads(raw);pathlib.Path('/tmp/filter.patch').write_text(payload['patch'])
-          subprocess.run(['git','apply','--check','/tmp/filter.patch'],check=True)
-          subprocess.run(['git','apply','/tmp/filter.patch'],check=True)
-          pathlib.Path('/tmp/test_filter_browser.py').write_text(payload['browser'])
+          import urllib.request,json,os,time,pathlib
+          url='https://api.github.com/repos/orderzoneapp-coder/oneapp/actions/runs/35385767901'
+          for attempt in range(30):
+              req=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=20) as response: result=json.load(response)
+              assert result['head_sha']=='79b4ce525b45156ee52bca0544c4ed20c5ad2134'
+              if result['status']=='completed': break
+              time.sleep(5)
+          assert result['conclusion']=='success', (result['status'],result['conclusion'])
+          summary={k:result[k] for k in ['id','head_sha','status','conclusion','html_url','updated_at']}
+          pathlib.Path('/tmp/filter-live-evidence/deployment.json').write_text(json.dumps(summary,indent=2))
+          print('Pages deployment PASS',summary)
           PY
-          FILTER_SOURCE_ROOT="$PWD" python3 tools/orderops-filter-intent-delta.py
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('/tmp/test_filter_browser.py');s=p.read_text()
-          a='  def visible(): return [s.strip() for s in page.locator(\'#previewTable tbody td[data-column-role="customer"]\').all_text_contents()]'
-          b='  def visible(): return page.locator(\'#previewTable tbody td[data-column-role="customer"]\').evaluate_all("cells=>cells.map(c=>(c.querySelector(\'input,textarea\')?.value ?? c.textContent).trim())")'
-          assert s.count(a)==1;s=s.replace(a,b).replace("page.locator('#restoreButton').click()","page.locator('#headerRestoreButton').click()")
-          p.write_text(s)
-          PY
-          git add -N scripts/test-orderops-filter-intent.mjs
-          git diff --check
-          git diff --name-only | tee /tmp/filter-evidence/changed-files.txt
-          sha256sum orderops/list.html orderops_list.html scripts/test-orderops-filter-intent.mjs scripts/test-orderops-work-preservation.mjs scripts/test-shipping-management.mjs | tee /tmp/filter-evidence/source-hashes.txt
-      - name: Run shipment and filter regression suites
-        run: |
-          set -euo pipefail
-          for script in test-orderops-filter-intent test-orderops-baseline-calculation test-orderops-work-preservation test-orderops-excel-preparation test-shipping-management test-shipping-purchase-plan-cloud test-orderq-substitute-shipment validate-repository; do
-            node scripts/$script.mjs 2>&1 | tee /tmp/filter-evidence/$script.log
-          done
       - name: Install browser driver
         run: python3 -m pip install playwright==1.57.0
-      - name: Verify real checkbox Excel replacement and IndexedDB recovery
+      - name: Verify real operating URLs and actual checkbox input
         env:
-          FILTER_SOURCE_ROOT: ${{ github.workspace }}
-          FILTER_EVIDENCE_DIR: /tmp/filter-evidence
+          EXPECTED_COMMIT: 79b4ce525b45156ee52bca0544c4ed20c5ad2134
         run: |
           set -euo pipefail
-          python3 /tmp/test_filter_browser.py 2>&1 | tee /tmp/filter-evidence/browser.log
-      - name: Commit verified files on isolated branch only
-        run: |
-          git config user.name 'orderzoneapp-coder'
-          git config user.email 'orderzoneapp@gmail.com'
-          git add orderops/list.html orderops_list.html scripts/test-orderops-filter-intent.mjs scripts/test-orderops-work-preservation.mjs scripts/test-shipping-management.mjs
-          git commit -m 'fix(orderops): retain include/exclude filter intent on new files and saved forms'
-          git push origin HEAD:fix/orderops-filter-intent-20260919
-          git rev-parse HEAD | tee /tmp/filter-evidence/verified-commit.txt
-          git ls-tree HEAD orderops/list.html orderops_list.html scripts/test-orderops-filter-intent.mjs scripts/test-orderops-work-preservation.mjs scripts/test-shipping-management.mjs | tee /tmp/filter-evidence/verified-blobs.txt
+          python3 tools/orderops-filter-live-check.py 2>&1 | tee /tmp/filter-live-evidence/live.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: orderops-filter-verification
-          path: /tmp/filter-evidence
+          name: orderops-filter-live-verification
+          path: /tmp/filter-live-evidence
           retention-days: 3
