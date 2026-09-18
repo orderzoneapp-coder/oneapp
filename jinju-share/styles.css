@@ -1,0 +1,150 @@
+:root {
+  color-scheme: light;
+  font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  background: #edf4ef;
+  color: #17231c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 28px 16px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top, rgba(24, 127, 70, 0.14), transparent 42%),
+    #edf4ef;
+}
+
+.share-card {
+  width: min(100%, 860px);
+  padding: clamp(18px, 4vw, 30px);
+  border: 1px solid rgba(12, 93, 49, 0.14);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(10, 54, 30, 0.14);
+}
+
+h1 {
+  margin: 0 0 18px;
+  text-align: center;
+  font-size: clamp(1.45rem, 5vw, 2.15rem);
+  color: #0c5d31;
+}
+
+.image-link {
+  display: block;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #f4f7f5;
+}
+
+.image-link img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+}
+
+.notice {
+  margin: 18px 0;
+  text-align: center;
+  font-size: clamp(1rem, 2.8vw, 1.2rem);
+  line-height: 1.7;
+}
+
+.notice strong {
+  color: #d71920;
+}
+
+.notice span {
+  color: #4c5650;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.button {
+  min-height: 54px;
+  border: 0;
+  border-radius: 14px;
+  display: inline-grid;
+  place-items: center;
+  padding: 12px 18px;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(23, 35, 28, 0.14);
+}
+
+.button:focus-visible,
+.image-link:focus-visible,
+footer a:focus-visible {
+  outline: 3px solid #1188ff;
+  outline-offset: 3px;
+}
+
+.button--chat {
+  background: #0c5d31;
+  color: #fff;
+}
+
+.button--share {
+  background: #fee500;
+  color: #191919;
+}
+
+.status {
+  min-height: 1.4em;
+  margin: 12px 0 0;
+  text-align: center;
+  color: #9b1c1c;
+  font-size: 0.9rem;
+}
+
+footer {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+footer a {
+  color: #738078;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  body {
+    padding: 14px 10px;
+  }
+
+  .share-card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}
