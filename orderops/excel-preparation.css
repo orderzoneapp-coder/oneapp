@@ -532,21 +532,28 @@
   }
 }
 
-/* Order-status column headings: inherit readable theme ink, not app-header white.
-   Scoped to the on-screen order table; other tabs and print tables are untouched. */
-#previewTable table.preview-allocations thead th {
-  color: var(--nexus-ui-text, #292b2f) !important;
-  font-weight: 800;
-  border-bottom: 2px solid var(--nexus-ui-border-strong, #c9beae);
-}
+/* The order table keeps an ivory body in both themes. Pair the heading ink
+   with its own dark surface instead of inheriting the page's dark-theme ink.
+   Screen-only scope preserves the existing paper/export palette. */
+@media screen {
+  #previewTable table.preview-allocations thead th {
+    height: 34px;
+    background: #16324f !important;
+    color: #ffffff !important;
+    border: 1px solid #38536d !important;
+    border-bottom: 3px solid #2dd4bf !important;
+    font-size: 13px;
+    font-weight: 900;
+  }
 
-#previewTable table.preview-allocations thead .column-header-content,
-#previewTable table.preview-allocations thead .column-header-label {
-  color: inherit !important;
-  font-weight: inherit;
-}
+  #previewTable table.preview-allocations thead .column-header-content,
+  #previewTable table.preview-allocations thead .column-header-label {
+    color: inherit !important;
+    font-weight: inherit;
+  }
 
-#previewTable table.preview-allocations thead th:is(.column-sorted, .column-filtered) {
-  color: var(--nexus-ui-cyan, #3f5f62) !important;
-  font-weight: 900;
+  #previewTable table.preview-allocations thead th:is(.column-sorted, .column-filtered) {
+    background: #164451 !important;
+    color: #a7f3d0 !important;
+  }
 }
