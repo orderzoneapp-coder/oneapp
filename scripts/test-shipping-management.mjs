@@ -34,7 +34,7 @@ function assertExcelPreparationLayout(page, label) {
   assert.match(tabs, /role="tablist" aria-label="중앙 자료 조회"/,
     `${label}: result navigation must remain accessible outside the hidden source strip`);
   assert.deepEqual([...tabs.matchAll(/data-preview="([^"]+)"/g)].map((match) => match[1]),
-    ["allocations", "ledger", "inventory", "purchases", "sales"], `${label}: all five central result views must remain available`);
+    ["movement", "allocations", "ledger", "inventory", "purchases", "sales"], `${label}: all existing views and the inventory movement grid must remain available`);
   assert.match(page, /class="source-selector excel-preparation-compat"[^>]*id="sourceSelector"[^>]*hidden/,
     `${label}: old source IDs must remain compatibility controls, not duplicate visible inputs`);
 }
@@ -214,7 +214,7 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.order-view-presets.v1',
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
-  'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
+  'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "movement", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
   'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
@@ -360,8 +360,8 @@ assert.match(orderOpsHtml, /elements\.downloadButton\.disabled = false;/,
   "integrated output must remain available when only ERP upload dates need confirmation");
 assert.doesNotMatch(orderOpsHtml, /elements\.downloadButton\.disabled = state\.workspace\.basisDateStatus !== "valid";/,
   "ERP upload date validation must not block OrderQ-owned output sheets");
-assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260918-order-unit-column") &&
-  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"),
+assert.ok(orderOpsHtml.includes("orderFulfillmentEngine.js?v=20260920-inventory-movement") &&
+  orderOpsHtml.includes("orderFulfillmentWorkbook.js?v=20260920-inventory-movement"),
   "the deployed OrderQ entry must reload the matching engine and workbook versions");
 assert.doesNotMatch(orderOpsHtml, /<datalist[^>]+purchaseSupplierHistory|list="purchaseSupplierHistory"|title="\$\{escapeHtml\(value\)\}"/,
   "public purchase entry and data cells must not open cell-obscuring bubbles");
@@ -668,22 +668,12 @@ const stockCloseInventory = parseInventory([
   ["BOX", "01", "CLOSE-001", "수불마감 상품 1", "BOX", 4, "2026-08-10", "거창", 16000, "1", ""],
   ["EA", "01", "CLOSE-002", "수불마감 상품 2", "EA", -1.5, "2026-08-10", "경매", 9000, "1", "확인"],
 ], "수불마감_20260810.xlsx");
-assert.equal(stockCloseInventory.rowCount, 0, "row-based stock-closing input must not be parsed as aggregate inventory");
-assert.ok(
-  stockCloseInventory.errors.some(
-    (issue) => issue.code === "INVENTORY_REQUIRED_COLUMNS" && issue.missingColumns.includes("수량"),
-  ),
-  "row-based stock-closing input must be rejected when aggregate 수량 is absent",
-);
-assert.ok(
-  stockCloseInventory.errors.some((issue) => issue.code === "INVENTORY_WAREHOUSE_COLUMNS_REQUIRED"),
-  "row-based stock-closing input must be rejected when warehouse breakdown columns are absent",
-);
-assert.notEqual(
-  stockCloseInventory.columns.find((column) => column.header === "재고")?.role,
-  "warehouseQuantity",
-  "a row-based 재고 value must not be treated as a warehouse breakdown",
-);
+assert.equal(stockCloseInventory.rowCount, 2, "single-balance inventory must now be accepted without a warehouse breakdown");
+assert.equal(stockCloseInventory.inventoryLayout, "snapshot");
+assert.deepEqual(stockCloseInventory.errors, []);
+assert.deepEqual(stockCloseInventory.rows.map((row) => row.openingQuantity), [4, -1.5]);
+assert.deepEqual(stockCloseInventory.rows.map((row) => row.wholeStockRaw), [0, 0],
+  "a single-balance inventory must not fabricate warehouse allocations");
 const mismatchedAggregateInventory = parseInventory(buildInventoryMatrix([{
   code: "TOTAL-MISMATCH",
   quantity: 99,
@@ -761,7 +751,7 @@ const edgeWorkspace = engine.analyze(edgeOrders, edgeInventory, {
   sourceFingerprint: "a".repeat(64),
 });
 assert.equal(engine.ENGINE_VERSION, "3.19.5");
-assert.equal(workbookTools.WORKBOOK_VERSION, "4.9.1");
+assert.equal(workbookTools.WORKBOOK_VERSION, "4.10.0");
 assert.equal(workbookTools.SALES_UPLOAD_SCHEMA_VERSION, "shipping-sales-upload/v2");
 assert.equal(edgeWorkspace.schemaVersion, "shipping-workspace/v2");
 const edgeShortageContext = engine.getShortageCategoryContext(edgeWorkspace);
@@ -871,7 +861,7 @@ assert.equal(
 assert.equal(signedInventoryView.rows[0].orderNotes, "0 수량 전달\n음수 전달");
 const signedWorkbook = workbookTools.buildWorkbook(signedWorkspace, XLSX);
 assert.deepEqual(Array.from(signedWorkbook.SheetNames), [
-  "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드", "판매업로드",
+  "전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "구매업로드", "판매업로드", "재고변동표",
 ]);
 const signedNoticeSheet = signedWorkbook.Sheets["전달사항(적요보기)"];
 assert.deepEqual(
@@ -1412,6 +1402,7 @@ assert.deepEqual(Array.from(workbookTools.REQUIRED_SHEETS), [
   "창고별재고",
   "구매업로드",
   "판매업로드",
+  "재고변동표",
 ]);
 assert.deepEqual(
   Array.from(
@@ -1607,7 +1598,7 @@ assert.throws(
 const conflictingIntegratedWorkbook = workbookTools.buildWorkbook(conflictingWorkspace, XLSX);
 assert.deepEqual(
   Array.from(conflictingIntegratedWorkbook.SheetNames),
-  ["전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고"],
+  ["전달사항(적요보기)", "주문현황", "재고수불부", "창고별재고", "재고변동표"],
   "a purchase-upload date conflict must not block the other app-owned outputs",
 );
 assert.equal(
@@ -2105,7 +2096,7 @@ for (const requiredInteractionContract of [
   'oneapp.orderops.order-view-presets.v1',
   'orderops-order-view-presets/v4',
   'const PREVIOUS_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v3"',
-  'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"])',
+  'const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "movement", "purchases", "sales"])',
   'columnWidths: normalizeStoredColumnWidths(value.view.columnWidths)',
   'columnOrder: normalizeStoredColumnOrder(value.view.columnOrder)',
   'hiddenColumns: normalizeStoredColumnOrder(value.view.hiddenColumns)',
@@ -2315,8 +2306,8 @@ assert.ok(html.includes('column.role === "salesQuantity" ? "출고"') &&
 assert.ok(html.includes('column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0') &&
   (html.match(/\? "잔량"/g) || []).length >= 2,
   "warehouse inventory must use the 잔량 header with or without a warehouse filter");
-assert.ok(html.includes('const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;'),
-  "zero quantity cells must render as blank without changing the underlying value");
+assert.ok(html.includes('const displayValue = previewId !== "movement" && quantityColumn && numericQuantityValue === 0 ? "" : value;'),
+  "movement must show explicit zero while existing quantity views preserve blank display without changing underlying values");
 assert.ok(html.includes('["productCode", "productName", "specification", "orderQuantity"].includes(column.role)') &&
   html.includes('orderedContext ? "ordered-context-cell"'),
   "ordered rows must share one context fill from product code through order quantity");
@@ -2334,7 +2325,8 @@ assert.ok(html.includes('"품명", "규격", "단위", "정보", "주문", "단�
   "order status must expose an editable unit column between specification and information");
 assert.ok(html.includes('function allocationUsesBoxUnit(sourceRow)') &&
   html.includes('sourceRow?.sourceUnit ?? sourceRow?.unit ?? ""') &&
-  html.includes('const unitAlertRow = previewId === "allocations"') &&
+  html.includes('const unitAlertRow = previewId === "movement"') &&
+  html.includes(': previewId === "allocations"') &&
   html.includes('? !boxUnitRow') &&
   html.includes('unitAlertRow ? "unit-alert-row"') &&
   html.includes('const warningUnitContext = unitAlertRow') &&
@@ -2658,7 +2650,7 @@ const commitSource = html.slice(commitStart, commitEnd);
 for (const contract of [
   "validateFileCandidate(kind, parsed)", "await analyzeCurrentInputs({ fromSources: true, inputs })",
   "engine.recalculateWorkspace(candidateWorkspace)", "state.workspace = candidateWorkspace",
-  "state.activePreview = FILE_KIND_PREVIEWS[previewKind]", "renderResults();", "scheduleLocalSave();", "renderPreparedInputPreview(previewKind)",
+  'state.activePreview = candidateWorkspace.inventoryOnly || (previewKind === "inventory" && ["snapshot", "movement"].includes(inputs.inventory.inventoryLayout)) ? "movement" : FILE_KIND_PREVIEWS[previewKind]', "renderResults();", "scheduleLocalSave();", "renderPreparedInputPreview(previewKind)",
 ]) assert.ok(commitSource.includes(contract), `automatic input pipeline is missing: ${contract}`);
 assert.ok(!commitSource.includes('state.activePreview = "allocations"'),
   "automatic input must display the accepted source kind rather than force every upload to orders");
@@ -2689,7 +2681,7 @@ assert.ok(integratedHandleSource.includes("result.applied.forEach") &&
   "integrated upload must replace only successfully validated data kinds and preserve failed active data");
 for (const integratedMappingContract of [
   'sheetAliases: ["주문", "미출고", "주문현황"]',
-  'sheetAliases: ["재고", "전체재고", "창고재고"]',
+  'sheetAliases: ["재고", "전체재고", "창고재고", "전일재고현황", "재고변동표"]',
   'sheetAliases: ["구매", "매입", "전송구매"]',
   'sheetAliases: ["판매", "판매입력", "전송출고"]',
   "시트명 매칭 <span>→</span> 헤더·필수열 검증 <span>→</span> 데이터 종류 확정",

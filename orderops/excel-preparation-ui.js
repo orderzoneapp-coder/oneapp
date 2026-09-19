@@ -255,7 +255,7 @@
       const appliedKinds = new Set(records.filter((record) => record.status === "applied").map((record) => record.kind));
       const restored = work ? Object.entries(KIND_NAMES).flatMap(([kind, label]) => {
         const source = work.sourceFiles?.[kind] || work.orderOpsInputs?.[kind];
-        return source && !appliedKinds.has(kind) ? [`<div class="prep-file-item" data-state="applied" data-prep-restored-kind="${kind}"><span class="prep-file-name">${html(source.fileName)}<span class="prep-file-status">${label} · 복구 ${source.rowCount ?? source.rows?.length ?? work[kind]?.length ?? 0}건</span></span></div>`] : [];
+        return source?.fileName && !appliedKinds.has(kind) ? [`<div class="prep-file-item" data-state="applied" data-prep-restored-kind="${kind}"><span class="prep-file-name">${html(source.fileName)}<span class="prep-file-status">${label} · 복구 ${source.rowCount ?? source.rows?.length ?? work[kind]?.length ?? 0}건</span></span></div>`] : [];
       }) : [];
       const pendingAndApplied = records.map((record) => `<div class="prep-file-item${record.id === selectedId ? " is-selected" : ""}" data-state="${record.status}"><button type="button" class="prep-file-name" data-prep-file="${record.id}">${html(record.fileName)}<span class="prep-file-status">${KIND_NAMES[record.kind]} · ${record.status === "applied" ? `반영 ${record.parsed?.rowCount || 0}건` : record.status === "reading" ? "읽는 중" : "확인 필요"}</span></button><button type="button" class="prep-file-remove" data-prep-remove="${record.id}" aria-label="${html(record.fileName)} ${record.status === "applied" ? "자료 해제" : "후보 제거"}"${busy() ? " disabled" : ""}>×</button></div>`);
       el.FileList.innerHTML = [...restored, ...pendingAndApplied].join("") || "<p class='prep-empty'>불러온 파일이 없습니다.</p>";
