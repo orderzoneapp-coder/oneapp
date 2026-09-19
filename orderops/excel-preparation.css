@@ -557,3 +557,41 @@
     color: #a7f3d0 !important;
   }
 }
+
+/* Keep the screen grid independent of the neutral-row border reset. */
+@media screen {
+  #previewTable table.preview-allocations tbody td {
+    border: 1px solid #94a3b8 !important;
+    background-clip: padding-box;
+  }
+}
+
+/* F9: each edge is drawn once. Collapsed borders and sticky headings can be
+   clipped by colored cells or pagination; neither is needed on paper. */
+@media print {
+  #printArea table.preview-allocations {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border: 0 !important;
+    empty-cells: show;
+  }
+
+  #printArea table.preview-allocations th,
+  #printArea table.preview-allocations td {
+    border: 0 !important;
+    border-right: 0.75pt solid #64748b !important;
+    border-bottom: 0.75pt solid #64748b !important;
+    background-clip: padding-box;
+    box-shadow: none !important;
+  }
+
+  #printArea table.preview-allocations thead th {
+    position: static !important;
+    top: auto !important;
+    border-top: 0.75pt solid #64748b !important;
+  }
+
+  #printArea table.preview-allocations tr > :first-child {
+    border-left: 0.75pt solid #64748b !important;
+  }
+}
