@@ -1,0 +1,60 @@
+name: OrderOps manager print verification
+on:
+  push:
+    branches: [fix/orderops-manager-print-work-20260919]
+    paths: [.github/workflows/orderops-manager-print-build.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Apply reviewed print-only patch
+        run: |
+          mkdir -p /tmp/manager-print-evidence
+          python3 tools/orderops-print-patch.py
+          git diff --check
+          git diff --stat
+      - name: Verify filter, calculations, work preservation and repository contracts
+        run: |
+          set -euo pipefail
+          for suite in test-orderops-filter-intent test-orderops-baseline-calculation test-orderops-work-preservation test-shipping-management validate-repository; do
+            node scripts/$suite.mjs 2>&1 | tee /tmp/manager-print-evidence/$suite.log
+          done
+      - name: Verify existing theme and print regression in Chromium
+        run: |
+          set -euo pipefail
+          node scripts/test-orderops-theme-browser-e2e.mjs 2>&1 | tee /tmp/manager-print-evidence/theme-print.log
+      - name: Verify real Excel input to print handler in both routes and themes
+        run: |
+          set -euo pipefail
+          python3 -m pip install playwright==1.57.0
+          python3 tools/orderops-print-smoke.py 2>&1 | tee /tmp/manager-print-evidence/actual-print.log
+      - name: Publish validated files to isolated branch only
+        run: |
+          python3 - <<'PY'
+          import subprocess,json,pathlib,hashlib
+          paths=['orderops/list.html','orderops_list.html','scripts/test-orderops-theme-browser-e2e.mjs']
+          changed=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert set(changed)==set(paths),changed
+          blobs={p:subprocess.check_output(['git','hash-object',p],text=True).strip() for p in paths}
+          pathlib.Path('/tmp/manager-print-evidence/blobs.json').write_text(json.dumps(blobs,indent=2))
+          print(json.dumps(blobs,indent=2))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orderops/list.html orderops_list.html scripts/test-orderops-theme-browser-e2e.mjs
+          git commit -m 'fix(orderops): preserve manager colors in printed order rows'
+          git push origin HEAD:refs/heads/fix/orderops-manager-print-work-20260919
+          git rev-parse HEAD | tee /tmp/manager-print-evidence/verified-commit.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: orderops-manager-print-evidence
+          path: /tmp/manager-print-evidence
+          retention-days: 7
