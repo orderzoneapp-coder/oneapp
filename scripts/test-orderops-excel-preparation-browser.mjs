@@ -442,7 +442,7 @@ try {
   await selectPreview("inventory");
   await ev(`(()=>{const cell=[...document.querySelectorAll('.inventory-input')].find(node=>decodeURIComponent(node.dataset.inventoryColumn?.split(':').at(-1)||'')==='1창고');if(!cell)throw Error('Missing stock editor');cell.value='2';cell.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
   await ev(`(()=>{const file=[...document.querySelectorAll('[data-prep-file]')].find(node=>node.textContent.includes('removable-order.xlsx'));file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
-  await until(() => ev("!__ops.state.workspace && !__ops.state.orders && !__ops.preparationController.isBusy()"), "detach only the selected order input");
+  await until(() => ev("__ops.state.workspace?.inventoryOnly && __ops.state.workspace.orders.length===0 && !__ops.state.orders && !__ops.preparationController.isBusy()"), "detach only the selected order input and retain inventory work");
   await upload("orders", { quantity: 3, name: "new-order.xlsx" });
   check("detaching an order and loading another preserves retained stock edits", await ev("ShippingManagementEngine.getInventoryViewRows(__ops.state.workspace).rows[0].stockTotal===2 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
 
@@ -459,7 +459,7 @@ try {
   check("order-only replacement preserves recovered stock edits without a live inventory input", await ev("__ops.state.inventory===null && __ops.state.workspace.orders[0].quantity===6 && ShippingManagementEngine.getInventoryViewRows(__ops.state.workspace).rows[0].stockTotal===2 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
   assert.equal(await ev("JSON.stringify(__ops.state.workspace.inventoryOverrides)"), recoveredStockOverrides);
   await ev(`(()=>{const file=[...document.querySelectorAll('[data-prep-file]')].find(node=>node.textContent.includes('recovered-removable-order.xlsx'));if(!file)throw Error('Missing recovered replacement order');file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
-  await until(() => ev("!__ops.state.workspace && __ops.state.orders===null && !__ops.preparationController.isBusy()"), "detach recovered replacement order");
+  await until(() => ev("__ops.state.workspace?.inventoryOnly && __ops.state.workspace.orders.length===0 && __ops.state.orders===null && !__ops.preparationController.isBusy()"), "detach recovered replacement order and retain inventory work");
   check("detaching recovered order reconstructs retained inventory input from its source", await ev("__ops.state.inventory?.sourceMatrix?.[1]?.[5]===4 && __ops.state.inventory.rows.length===1"));
   assert.equal(await ev("JSON.stringify(__ops.state.inventory.preservedOverrides)"), recoveredStockOverrides);
   await upload("orders", { quantity: 5, name: "recovered-reuploaded-order.xlsx" });

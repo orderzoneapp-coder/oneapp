@@ -325,8 +325,8 @@ try {
   await navigate(client, `${origin}/orderops/list.html`);
   const currentFlow = await prepareWorkspace(client, { automatic: true });
   const current = await normalMetrics(client);
-  const addedPreparationButtonIds = ['prepApplyButton', 'prepFileButton', 'prepSaveTemplateButton'];
-  assert.deepEqual(current.existingButtonIds.filter(id => !addedPreparationButtonIds.includes(id)), baseline.existingButtonIds, 'all legacy button IDs must remain; only the approved preparation actions may be added');
+  const addedPreparationButtonIds = ['movementDownloadButton', 'prepApplyButton', 'prepFileButton', 'prepSaveTemplateButton'];
+  assert.deepEqual(current.existingButtonIds.filter(id => !addedPreparationButtonIds.includes(id)), baseline.existingButtonIds, 'all legacy button IDs must remain; only the approved preparation and inventory movement export actions may be added');
   assert.deepEqual(current.existingButtonIds.filter(id => addedPreparationButtonIds.includes(id)), addedPreparationButtonIds, 'the approved preparation actions must all exist exactly once');
   assert.deepEqual(current.sourceTabs, baseline.sourceTabs, 'legacy source tab contracts must remain available for compatibility');
   assert.deepEqual(current.shortcuts, baseline.shortcuts, 'existing shortcut contracts must remain unchanged');
@@ -347,6 +347,7 @@ try {
   assert.deepEqual(current.preparation.details, [{ id: 'prepFileDetails', label: '① 파일·양식 확인' }, { id: 'prepMappingDetails', label: '② 항목명 매핑' }]);
   assert.deepEqual(current.preparation.actions, [{ id: 'prepSaveTemplateButton', label: '매핑 저장' }, { id: 'prepApplyButton', label: '자료 반영' }]);
   assert.deepEqual(current.preparation.previewTabs, [
+    { view: 'movement', key: null, visible: true },
     { view: 'allocations', key: 'F5', visible: true }, { view: 'ledger', key: 'F6', visible: true }, { view: 'inventory', key: 'F7', visible: true },
     { view: 'purchases', key: null, visible: true }, { view: 'sales', key: null, visible: true }
   ]);
