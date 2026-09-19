@@ -4,72 +4,58 @@ on:
     branches: [fix/orderops-manager-print-work-20260919]
     paths: [.github/workflows/orderops-manager-print-build.yml]
 permissions:
-  contents: write
+  contents: read
 jobs:
-  verify:
+  live:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      EXPECTED_COMMIT: d0065f611cc192cf38be733c185af2357b8062db
+      PRINT_BASE_URL: https://oneapp.orderz.co.kr
+      PRINT_EVIDENCE_DIR: /tmp/manager-print-evidence
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
         with:
-          node-version: 24
-      - name: Apply reviewed print-only patch
+          persist-credentials: false
+      - name: Prepare isolated print verification
         run: |
           mkdir -p /tmp/manager-print-evidence
-          python3 tools/orderops-print-patch.py
+          python3 -m pip install playwright==1.57.0
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
           python3 - <<'PY'
           from pathlib import Path
-          import subprocess
-          p=Path('scripts/test-orderops-theme-browser-e2e.mjs');s=p.read_text()
-          old="assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',\n        'printed EA and 소분 rows must retain the paper-safe red text');"
-          new="assert.equal(printMetrics.unitCells[0].color, printPath === 'orderops/list.html' ? 'rgb(185, 28, 28)' : 'rgb(23, 32, 51)',\n        'each entrypoint must retain its existing warning-row text color');"
-          assert s.count(old)==1
-          p.write_text(s.replace(old,new))
-          assert subprocess.check_output(['git','hash-object',str(p)],text=True).strip()=='4e270ae770687fff06e663bf423db4885a177462'
           s=Path('tools/orderops-print-smoke.py').read_text()
           old="color='rgb(185, 28, 28)' if 'unit-alert-row' in row['classes'] else 'rgb(15, 23, 42)'"
           new="color='rgb(23, 32, 51)' if path=='orderops_list.html' else ('rgb(185, 28, 28)' if 'unit-alert-row' in row['classes'] else 'rgb(15, 23, 42)')"
           assert s.count(old)==1
           Path('/tmp/orderops-print-smoke.py').write_text(s.replace(old,new))
           PY
-          git diff --check
-          git diff --stat
-      - name: Verify filter, calculations, work preservation and repository contracts
-        run: |
-          set -euo pipefail
-          for suite in test-orderops-filter-intent test-orderops-baseline-calculation test-orderops-work-preservation test-shipping-management validate-repository; do
-            node scripts/$suite.mjs 2>&1 | tee /tmp/manager-print-evidence/$suite.log
-          done
-      - name: Verify existing theme and print regression in Chromium
-        run: |
-          set -euo pipefail
-          node scripts/test-orderops-theme-browser-e2e.mjs 2>&1 | tee /tmp/manager-print-evidence/theme-print.log
-      - name: Verify real Excel input to print handler in both routes and themes
-        run: |
-          set -euo pipefail
-          python3 -m pip install playwright==1.57.0
-          python3 /tmp/orderops-print-smoke.py 2>&1 | tee /tmp/manager-print-evidence/actual-print.log
-      - name: Publish validated files to isolated branch only
+      - name: Wait for exact reviewed HTML at both operating URLs
         run: |
           python3 - <<'PY'
-          import subprocess,json,pathlib
-          paths=['orderops/list.html','orderops_list.html','scripts/test-orderops-theme-browser-e2e.mjs']
-          changed=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
-          assert set(changed)==set(paths),changed
-          blobs={p:subprocess.check_output(['git','hash-object',p],text=True).strip() for p in paths}
-          pathlib.Path('/tmp/manager-print-evidence/blobs.json').write_text(json.dumps(blobs,indent=2))
-          print(json.dumps(blobs,indent=2))
+          import urllib.request,time,os,pathlib,json,hashlib
+          sha=os.environ['EXPECTED_COMMIT'];base=os.environ['PRINT_BASE_URL']
+          paths=['orderops/list.html','orderops_list.html']
+          expected={p:urllib.request.urlopen(f'https://raw.githubusercontent.com/orderzoneapp-coder/oneapp/{sha}/{p}',timeout=30).read() for p in paths}
+          for attempt in range(80):
+            try:
+              actual={p:urllib.request.urlopen(urllib.request.Request(base+'/'+p,headers={'Cache-Control':'no-cache'}),timeout=20).read() for p in paths}
+              if all(actual[p]==expected[p] for p in paths): break
+            except Exception as error: print(type(error).__name__,str(error),flush=True)
+            time.sleep(5)
+          else: raise RuntimeError('Reviewed source was not deployed within the verification window')
+          report={'expected_commit':sha,'source_hashes':{p:hashlib.sha256(actual[p]).hexdigest() for p in paths},'urls':{p:base+'/'+p for p in paths}}
+          pathlib.Path('/tmp/manager-print-evidence/deployed-source.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
           PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add orderops/list.html orderops_list.html scripts/test-orderops-theme-browser-e2e.mjs
-          git commit -m 'fix(orderops): preserve manager colors in printed order rows'
-          git push origin HEAD:refs/heads/fix/orderops-manager-print-work-20260919
-          git rev-parse HEAD | tee /tmp/manager-print-evidence/verified-commit.txt
+      - name: Verify actual operating print output without server writes
+        run: |
+          set -euo pipefail
+          python3 /tmp/orderops-print-smoke.py 2>&1 | tee /tmp/manager-print-evidence/live-print.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: orderops-manager-print-evidence
+          name: orderops-manager-print-live-evidence
           path: /tmp/manager-print-evidence
           retention-days: 7
