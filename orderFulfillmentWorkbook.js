@@ -10,7 +10,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (engine) {
   "use strict";
 
-  const WORKBOOK_VERSION = "4.9.1";
+  const WORKBOOK_VERSION = "4.10.0";
   const REQUIRED_SHEETS = Object.freeze([
     "전달사항(적요보기)",
     "주문현황",
@@ -18,6 +18,7 @@
     "창고별재고",
     "구매업로드",
     "판매업로드",
+    "재고변동표",
   ]);
   const PURCHASE_UPLOAD_SCHEMA_VERSION = "shipping-purchase-upload/v1";
   const PURCHASE_UPLOAD_HEADERS = Object.freeze([
@@ -552,6 +553,56 @@
       };
     });
     return sheet;
+  }
+
+  function buildInventoryMovementSheet(workspace, XLSX) {
+    requireXlsx(XLSX);
+    if (!workspace || workspace.schemaVersion !== "shipping-workspace/v2") {
+      throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    }
+    const movement = engine.getInventoryMovementView(workspace);
+    const isBox = (row) => /^(?:box|박스)$/i.test(String(row.unit || row.specification || "").trim());
+    const sheet = buildTableSheet(XLSX, {
+      title: "재고변동표",
+      subtitle: "잔량 = 기초재고 + 입고 − 출고. 실사수량을 입력하면 실사차이와 최종재고에 반영됩니다. 공란은 미확정 수량입니다.",
+      headers: movement.headers,
+      rows: movement.rows.map((row) => row.values),
+      widths: movement.columns.map((column) => column.role === "productName" ? 34
+        : /note|issue|status/i.test(column.role || column.key) ? 38
+          : column.role === "productCode" ? 18 : 14),
+      headerFill: COLORS.teal,
+      numericColumns: movement.columns.flatMap((column, index) => column.numeric ? [index] : []),
+      textColumns: movement.columns.flatMap((column, index) => column.role === "productCode" ? [index] : []),
+      rowStyleResolver: (_, index) => isBox(movement.rows[index]) ? {} : { fontColor: COLORS.red },
+    });
+    // Editable values are visually distinct in the export as well as in the grid.
+    movement.rows.forEach((row, rowIndex) => {
+      movement.columns.forEach((column, columnIndex) => {
+        const cell = ensureCell(sheet, XLSX, rowIndex + 4, columnIndex);
+        const negative = column.numeric && typeof row.values[columnIndex] === "number" && row.values[columnIndex] < 0;
+        cell.s = {
+          ...(cell.s || {}),
+          ...(column.editable ? { fill: { fgColor: { rgb: COLORS.blueSoft } } } : {}),
+          ...(negative ? { fill: { fgColor: { rgb: "FFF200" } } } : {}),
+          font: { ...(cell.s?.font || BASE_FONT), color: { rgb: isBox(row) ? COLORS.text : COLORS.red } },
+        };
+      });
+    });
+    return sheet;
+  }
+
+  function buildInventoryMovementWorkbook(workspace, XLSX) {
+    requireXlsx(XLSX);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, buildInventoryMovementSheet(workspace, XLSX), "재고변동표");
+    workbook.Props = { Title: "ORDER Q 재고변동표", Author: "ONEAPP ORDER Q" };
+    return workbook;
+  }
+
+  function downloadInventoryMovementWorkbook(workspace, XLSX, fileName) {
+    const workbook = buildInventoryMovementWorkbook(workspace, XLSX);
+    downloadBytes(writeStandardWorkbook(workbook, XLSX), fileName || `재고변동표_${localDateStamp(workspace.createdAt)}.xlsx`);
+    return workbook;
   }
 
   function buildPurchaseManagementSheet(workspace, XLSX) {
@@ -1342,7 +1393,7 @@
     const workbook = XLSX.utils.book_new();
     workbook.Props = {
       Title: "ORDER Q 통합 출력",
-      Subject: "전달사항·주문현황·재고수불부·창고별재고·구매업로드·판매업로드",
+      Subject: "전달사항·주문현황·재고수불부·창고별재고·구매업로드·판매업로드·재고변동표",
       Author: "ONEAPP ORDER Q",
       Company: "ONEAPP",
       Comments: `workspace=${workspace.schemaVersion}; workbook=${WORKBOOK_VERSION}`,
@@ -1377,6 +1428,7 @@
         "판매업로드",
       );
     }
+    XLSX.utils.book_append_sheet(workbook, buildInventoryMovementSheet(workspace, XLSX), "재고변동표");
     const allocationLastColumn = columnName(
       XLSX.utils.decode_range(allocationSheet["!ref"]).e.c,
     );
@@ -1420,6 +1472,9 @@
     buildPurchaseUploadSheet,
     buildPurchaseUploadWorkbook,
     buildSalesUploadSheet,
+    buildInventoryMovementSheet,
+    buildInventoryMovementWorkbook,
+    downloadInventoryMovementWorkbook,
     writeWorkbook,
     writeStandardWorkbook,
     downloadWorkbook,

@@ -10,6 +10,7 @@
   const ENGINE_VERSION = "3.19.5";
   const WORKSPACE_SCHEMA_VERSION = "shipping-workspace/v2";
   const INVENTORY_OVERRIDE_SCHEMA_VERSION = "shipping-inventory-overrides/v1";
+  const INVENTORY_MOVEMENT_EDIT_SCHEMA_VERSION = "shipping-inventory-movement-edits/v1";
   const SUBSTITUTION_HISTORY_SCHEMA_VERSION = "shipping-substitution-history/v1";
   const SUBSTITUTION_ORDER_SCHEMA_VERSION = "shipping-substitution-order/v1";
   const HEADER_SCAN_LIMIT = 30;
@@ -189,12 +190,40 @@
     };
   }
 
+  function inventoryLayoutOf(headerRow, headerAliases = {}) {
+    const headers = (headerRow || []).map(normalizeHeader);
+    const resolution = resolveInventoryHeaders(headerRow, headerAliases);
+    const opening = headers.findIndex((header) => /^(재고|현재고|기말재고|기초재고)$/.test(header));
+    const inbound = headers.indexOf("입고"), outbound = headers.indexOf("출고");
+    const closing = headers.indexOf("잔량");
+    if (opening >= 0 && inbound >= 0 && outbound >= 0 && closing >= 0) return "movement";
+    if (opening >= 0 && resolution.columnMap["수량"] === undefined) return "snapshot";
+    return "warehouse";
+  }
+
+  function movementHeaderIndexes(headerRow) {
+    const headers = (headerRow || []).map(normalizeHeader);
+    return {
+      opening: headers.findIndex((header) => /^(재고|현재고|기말재고|기초재고)$/.test(header)),
+      inbound: headers.indexOf("입고"), sales: headers.indexOf("출고"),
+      closing: headers.indexOf("잔량"), final: headers.indexOf("확정재고"),
+      stocktake: headers.indexOf("재고실사"),
+      note: headers.findIndex((header) => /^(조정사유|비고)$/.test(header)),
+      price: headers.findIndex((header) => /^(단가|입고가|구매가|창고단가)$/.test(header)),
+    };
+  }
+
   function describeInventoryColumns(headerRow, headerAliases = {}) {
     const headers = Array.isArray(headerRow) ? headerRow : [];
     const normalized = headers.map(normalizeHeader);
     const aliasLookup = createAliasLookup(INVENTORY_CANONICAL_ALIASES, headerAliases);
     const canonicals = headers.map((header) => aliasLookup.get(normalizeOrderHeader(header)) || "");
     const quantityIndex = canonicals.indexOf("수량");
+    const inventoryLayout = inventoryLayoutOf(headers, headerAliases);
+    const movementIndexes = movementHeaderIndexes(headers);
+    const balanceIndex = inventoryLayout === "movement"
+      ? (movementIndexes.final >= 0 ? movementIndexes.final : movementIndexes.closing)
+      : movementIndexes.opening;
     let quantityBoundary = headers.length;
     if (quantityIndex >= 0) {
       for (let index = quantityIndex + 1; index < normalized.length; index += 1) {
@@ -219,13 +248,15 @@
       else if (canonical === "품목명") role = "productName";
       else if (canonical === "규격") role = "specification";
       else if (canonical === "단위") role = "unit";
+      else if (inventoryLayout !== "warehouse" && sourceIndex === balanceIndex) role = "warehouseQuantity";
+      else if (inventoryLayout !== "warehouse" && sourceIndex === movementIndexes.price) role = "warehousePrice";
       else if (canonical === "수량") role = "calculatedQuantity";
       else if (canonical === "창고" || /^(?:창고|창고단가)$/.test(normalizedLabel) || /창고.*(?:단가|가격|금액|원가)/.test(normalizedLabel)) {
         role = "warehousePrice";
       } else if (["기본", "전송"].includes(canonical) || /^(?:기본|전송)$/.test(normalizedLabel)) {
         role = "editableText";
       } else if (
-        !/단가|가격|금액|원가|메모|비고|적요/.test(normalizedLabel) &&
+        !/단가|가격|금액|원가|메모|비고|적요|코드/.test(normalizedLabel) &&
         (
           /^\d+[^\d].*$/.test(normalizedLabel) ||
           /창고|서울|진영/.test(normalizedLabel) ||
@@ -741,6 +772,10 @@
     const headerRow = headerRowIndex >= 0 ? displayMatrix[headerRowIndex] || [] : [];
     const headerResolution = resolveInventoryHeaders(headerRow, headerAliases);
     const columnMap = headerResolution.columnMap;
+    const inventoryLayout = inventoryLayoutOf(headerRow, headerAliases);
+    if (inventoryLayout !== "warehouse") {
+      return parseInventoryBalanceWorkbook(input, rawMatrix, displayMatrix, headerRowIndex, headerResolution, inventoryLayout);
+    }
     const explicitColumns = applyInventoryColumnMappings(headerRow, describeInventoryColumns(headerRow, headerAliases), input.columnMappings, headerAliases);
     const columns = explicitColumns.columns;
     const warehouseColumns = columns.filter((column) => column.role === "warehouseQuantity");
@@ -918,6 +953,7 @@
 
     return {
       kind: "inventory",
+      inventoryLayout: "warehouse",
       fileName: cleanText(input.fileName) || "창고별재고.xlsx",
       sheetName: cleanText(input.sheetName),
       fileHash: cleanText(input.fileHash),
@@ -940,6 +976,76 @@
       ),
       productCodeColumnIndex,
       columns,
+    };
+  }
+
+  function parseInventoryBalanceWorkbook(input, rawMatrix, displayMatrix, headerRowIndex, resolution, inventoryLayout) {
+    const headerRow = displayMatrix[headerRowIndex] || [];
+    const columnMap = resolution.columnMap;
+    const indexes = movementHeaderIndexes(headerRow);
+    const requiredColumns = ["품목코드", "품목명", "규격"];
+    const missingColumns = requiredColumns.filter((name) => columnMap[name] === undefined);
+    const errors = [], warnings = [], rows = [], occurrences = new Map();
+    if (missingColumns.length) errors.push(createIssue("INVENTORY_REQUIRED_COLUMNS", `재고 필수 열이 없습니다: ${missingColumns.join(", ")}`, { missingColumns }));
+    for (let rowIndex = headerRowIndex + 1; missingColumns.length === 0 && rowIndex < displayMatrix.length; rowIndex += 1) {
+      const row = displayMatrix[rowIndex] || [];
+      const productCode = normalizeProductCode(getField(row, columnMap, "품목코드"));
+      const label = row.map(cleanText).find(Boolean) || "";
+      if (!productCode && /^(합계|총계|소계|total)(?:$|\s|:)/i.test(label)) continue;
+      if (!productCode && !hasAnyField(row, columnMap, ["품목명", "규격"])) continue;
+      if (!productCode) {
+        errors.push(createIssue("INVENTORY_PRODUCT_CODE_MISSING", `${rowIndex + 1}행 재고에 상품코드가 없습니다.`, { rowNumber: rowIndex + 1 }));
+        continue;
+      }
+      const numeric = (index) => {
+        if (index < 0) return null;
+        const parsed = parseNumericCell(row[index]);
+        if (!parsed.ok) errors.push(createIssue("INVENTORY_QUANTITY_INVALID", `${rowIndex + 1}행 ${headerRow[index]}을 숫자로 해석할 수 없습니다.`, { rowNumber: rowIndex + 1, productCode, value: row[index] }));
+        return parsed.ok && !parsed.blank ? parsed.value : null;
+      };
+      const openingQuantity = numeric(indexes.opening);
+      const inboundQuantity = inventoryLayout === "movement" ? numeric(indexes.inbound) : 0;
+      const salesQuantity = inventoryLayout === "movement" ? numeric(indexes.sales) : 0;
+      const sourceClosingQuantity = inventoryLayout === "movement" ? numeric(indexes.closing) : openingQuantity;
+      const stocktakeQuantity = numeric(indexes.stocktake);
+      const sourceFinalQuantity = numeric(indexes.final);
+      const inventoryTotal = sourceFinalQuantity ?? stocktakeQuantity ?? sourceClosingQuantity;
+      const rawCells = (rawMatrix[rowIndex] || row).map(toSerializableCell);
+      const duplicateClosings = headerRow.map((header, index) => normalizeHeader(header) === "잔량" ? index : -1).filter((index) => index >= 0);
+      const distinctClosings = duplicateClosings.map(numeric);
+      if (new Set(distinctClosings).size > 1) warnings.push(createIssue("INVENTORY_CLOSING_CONFLICT", `${rowIndex + 1}행의 중복 잔량 열이 다릅니다. 첫 번째 잔량을 사용하고 원본을 보존합니다.`, { productCode, rowNumber: rowIndex + 1, values: distinctClosings }));
+      if (inventoryLayout === "movement" && [openingQuantity, inboundQuantity, salesQuantity, sourceClosingQuantity].every((value) => value !== null)
+        && roundQuantity(openingQuantity + inboundQuantity - salesQuantity) !== sourceClosingQuantity) {
+        warnings.push(createIssue("INVENTORY_MOVEMENT_SOURCE_DIFFERENCE", `${rowIndex + 1}행 원본 잔량과 재고 + 입고 - 출고가 다릅니다.`, { productCode, rowNumber: rowIndex + 1 }));
+      }
+      rows.push({
+        sourceRowNumber: rowIndex + 1, productCode,
+        productName: cleanText(getField(row, columnMap, "품목명")),
+        specification: cleanText(getField(row, columnMap, "규격")), unit: cleanText(getField(row, columnMap, "단위")),
+        // These sources contain a total balance, not an asserted warehouse allocation.
+        wholeStockRaw: 0, wholeStockAvailable: 0, seoulFirstPurchaseRaw: 0,
+        firstTransferRaw: 0, seoulFirstPurchaseRemaining: 0,
+        sourceInventoryTotal: inventoryTotal, inventoryTotal, inventoryLayout,
+        openingQuantity, inboundQuantity, salesQuantity, sourceClosingQuantity,
+        stocktakeQuantity, sourceFinalQuantity, unitPrice: numeric(indexes.price),
+        movementNote: indexes.note < 0 ? "" : originalText(row[indexes.note]),
+        rawCells,
+      });
+      if (!occurrences.has(productCode)) occurrences.set(productCode, []);
+      occurrences.get(productCode).push(rowIndex + 1);
+    }
+    const duplicateCodes = [...occurrences].filter(([, rowNumbers]) => rowNumbers.length > 1).map(([productCode, rowNumbers]) => ({ productCode, rowNumbers }));
+    duplicateCodes.forEach((duplicate) => errors.push(createIssue("INVENTORY_DUPLICATE_PRODUCT_CODE", `재고 상품코드 ${duplicate.productCode}가 중복되어 있습니다.`, duplicate)));
+    if (!missingColumns.length && !rows.length) errors.push(createIssue("INVENTORY_NO_DATA", "분석할 재고 데이터행이 없습니다."));
+    const productCodeColumnIndex = columnMap["품목코드"] ?? -1;
+    return {
+      kind: "inventory", inventoryLayout, fileName: cleanText(input.fileName) || "재고현황.xlsx",
+      sheetName: cleanText(input.sheetName), fileHash: cleanText(input.fileHash),
+      headerRowIndex, headerRowNumber: headerRowIndex + 1, headers: headerRow.map(cleanText),
+      requiredColumns, optionalColumns: [...INVENTORY_OPTIONAL_COLUMNS], missingColumns,
+      rows, rowCount: rows.length, duplicateCodes, errors, warnings,
+      sourceMatrix: prepareSourceMatrix(rawMatrix, displayMatrix, headerRowIndex, productCodeColumnIndex),
+      productCodeColumnIndex, columns: describeInventoryColumns(headerRow, input.headerAliases || {}),
     };
   }
 
@@ -1823,6 +1929,155 @@
     return normalized.value;
   }
 
+  function getInventoryMovementView(workspace) {
+    if (!workspace || workspace.schemaVersion !== WORKSPACE_SCHEMA_VERSION) throw new Error("지원하지 않는 Shipping Management 작업공간입니다.");
+    const columns = [
+      ["product-code", "품목코드", "productCode", false, false],
+      ["product-name", "품목명", "productName", false, false],
+      ["specification", "규격", "specification", false, false],
+      ["unit", "단위", "unit", false, false],
+      ["opening", "재고", "openingQuantity", true, true],
+      ["inbound", "입고", "inboundQuantity", true, true],
+      ["sales", "출고", "salesQuantity", true, true],
+      ["remaining", "잔량", "calculatedQuantity", true, false],
+      ["stocktake", "재고실사", "stocktakeQuantity", true, true],
+      ["adjustment", "실사차이", "adjustmentQuantity", true, false],
+      ["final", "확정재고", "finalQuantity", true, false],
+      ["unit-price", "단가", "unitPrice", true, true],
+      ["note", "조정사유", "note", false, true],
+      ["information", "정보", "quantityMessage", false, false],
+    ].map(([key, header, role, numeric, editable]) => ({ key: `movement:${key}`, header, role, field: role === "calculatedQuantity" ? "remainingQuantity" : role, numeric, editable }));
+    const groups = new Map(), baselineByCode = new Map();
+    const inventoryColumns = getInventoryColumnDescriptors(workspace);
+    const overrideMap = getInventoryOverrideMap(workspace, inventoryColumns);
+    const ensure = (source, inferUnit = false) => {
+      const productCode = normalizeProductCode(source.productCode);
+      let rowKey = getQuantityGroupKey(source);
+      let inferredUnit = false;
+      if (inferUnit && !quantityUnit(source) && baselineByCode.has(productCode)) {
+        const candidates = baselineByCode.get(productCode);
+        if (candidates.length === 1) { rowKey = candidates[0]; inferredUnit = true; }
+      }
+      if (!groups.has(rowKey)) groups.set(rowKey, {
+        rowKey, productCode, productName: cleanText(source.productName), specification: cleanText(source.specification),
+        unit: cleanText(source.sourceUnit ?? source.unit), source: null, purchases: [], sales: [],
+        inboundQuantity: 0, salesQuantity: 0, inferredUnit,
+      });
+      const group = groups.get(rowKey);
+      if (!group.productName) group.productName = cleanText(source.productName);
+      if (!group.specification) group.specification = cleanText(source.specification);
+      group.inferredUnit ||= inferredUnit;
+      return group;
+    };
+    (workspace.inventory || []).forEach((source) => {
+      const group = ensure(source);
+      group.source = source;
+      if (!baselineByCode.has(group.productCode)) baselineByCode.set(group.productCode, []);
+      baselineByCode.get(group.productCode).push(group.rowKey);
+    });
+    const add = (input, kind, field) => (input?.rows || []).forEach((source) => {
+      if (!normalizeProductCode(source?.productCode)) return;
+      const group = ensure(source, true);
+      const quantity = parseNumericCell(source.quantity);
+      group[kind].push({ sourceRowNumber: source.sourceRowNumber, quantity: source.quantity,
+        sourceUnit: source.sourceUnit ?? source.unit ?? "", rawCells: source.rawCells || source.values || null });
+      if (!quantity.ok || quantity.blank) group[field] = null;
+      else if (group[field] !== null) group[field] = roundQuantity(group[field] + quantity.value);
+    });
+    const purchaseInput = workspace.orderOpsInputs?.purchases, salesInput = workspace.orderOpsInputs?.sales;
+    add(purchaseInput, "purchases", "inboundQuantity");
+    add(salesInput, "sales", "salesQuantity");
+    const edits = new Map();
+    if (workspace.inventoryMovementEdits?.schemaVersion === INVENTORY_MOVEMENT_EDIT_SCHEMA_VERSION) {
+      (workspace.inventoryMovementEdits.cells || []).forEach((cell) => {
+        const column = columns.find((item) => item.key === cell.columnKey && item.editable);
+        if (!column || !groups.has(cell.rowKey)) return;
+        const parsed = normalizeInventoryOverrideValue(column, cell.value);
+        if (parsed.ok) edits.set(`${cell.rowKey}\u001f${cell.columnKey}`, column.numeric && parsed.value === "" ? null : parsed.value);
+      });
+    }
+    const rows = [...groups.values()].map((group) => {
+      const source = group.source;
+      const layout = source?.inventoryLayout || workspace.sourceFiles.inventory.inventoryLayout || "warehouse";
+      const sourceOpeningQuantity = source ? (layout === "warehouse"
+        ? calculateInventoryTotal(workspace, source, inventoryColumns, overrideMap) : source.openingQuantity) : null;
+      const initial = {
+        openingQuantity: !source || layout === "movement" ? (sourceOpeningQuantity ?? 0) : sourceOpeningQuantity,
+        inboundQuantity: purchaseInput ? group.inboundQuantity : (source?.inboundQuantity ?? 0),
+        salesQuantity: salesInput ? group.salesQuantity : (source?.salesQuantity ?? 0),
+        stocktakeQuantity: source?.stocktakeQuantity ?? null,
+        unitPrice: source?.unitPrice ?? null, note: source?.movementNote || "",
+      };
+      const effective = { ...initial }, changedFields = [];
+      columns.filter((column) => column.editable).forEach((column) => {
+        const key = `${group.rowKey}\u001f${column.key}`;
+        if (edits.has(key)) { effective[column.role] = edits.get(key); changedFields.push(column.role); }
+      });
+      const { openingQuantity, inboundQuantity, salesQuantity, stocktakeQuantity } = effective;
+      const remainingQuantity = [openingQuantity, inboundQuantity, salesQuantity].every((value) => typeof value === "number" && Number.isFinite(value))
+        ? roundQuantity(openingQuantity + inboundQuantity - salesQuantity) : null;
+      const adjustmentQuantity = stocktakeQuantity !== null && remainingQuantity !== null ? roundQuantity(stocktakeQuantity - remainingQuantity) : null;
+      const finalQuantity = stocktakeQuantity ?? remainingQuantity;
+      const messages = [];
+      if (sourceOpeningQuantity === null && initial.openingQuantity === 0) messages.push("기초재고 없음 · 0 적용");
+      if (source && sourceOpeningQuantity === null && initial.openingQuantity === null) messages.push("원본 재고 공란 · 확인 필요");
+      if (remainingQuantity === null) messages.push("수량 공란 또는 오류 · 잔량 미확정");
+      if (group.inferredUnit) messages.push("거래자료 단위 공란 · 동일 품목코드의 재고 단위 사용");
+      const sourceClosingQuantity = source?.sourceClosingQuantity ?? null;
+      if (layout === "movement" && sourceClosingQuantity !== null && remainingQuantity !== null && sourceClosingQuantity !== remainingQuantity) messages.push(`원본 잔량 ${sourceClosingQuantity} · 재계산 차이 ${roundQuantity(remainingQuantity - sourceClosingQuantity)}`);
+      const row = {
+        rowKey: group.rowKey, productCode: group.productCode, productName: group.productName,
+        specification: group.specification, unit: group.unit || (/^(?:BOX|박스|EA|소분)$/i.test(group.specification) ? group.specification : ""),
+        ...effective, stockTotal: openingQuantity, inventoryTotal: openingQuantity,
+        remainingQuantity, adjustmentQuantity, finalQuantity, sourceClosingQuantity,
+        sourceRow: source, sourceOpeningQuantity, inventoryMissing: !source,
+        quantityComparable: remainingQuantity !== null,
+        quantityIssue: remainingQuantity === null ? "QUANTITY_UNKNOWN" : sourceOpeningQuantity === null ? "OPENING_ASSUMED_ZERO" : "",
+        quantityMessage: messages.join(" / "), changedFields,
+        sourceEvidence: {
+          inventoryLayout: layout, inventoryRowNumber: source?.sourceRowNumber ?? null,
+          inventoryFileName: workspace.sourceFiles.inventory.fileName,
+          rawInventoryCells: source?.rawCells || (source ? getInventorySourceRow(workspace, source) : null),
+          original: initial, sourceClosingQuantity, purchases: group.purchases, sales: group.sales,
+          purchaseFileName: purchaseInput?.fileName || "", salesFileName: salesInput?.fileName || "",
+          inboundSource: purchaseInput ? "uploaded-purchases" : layout === "movement" ? "inventory-movement" : "none",
+          salesSource: salesInput ? "uploaded-sales" : layout === "movement" ? "inventory-movement" : "none",
+        },
+      };
+      row.values = columns.map((column) => column.role === "calculatedQuantity" ? remainingQuantity : row[column.role]);
+      return row;
+    });
+    return { columns, headers: columns.map((column) => column.header), rows };
+  }
+
+  function setInventoryMovementCell(workspace, rowKey, columnKey, value) {
+    const view = getInventoryMovementView(workspace);
+    const row = view.rows.find((item) => item.rowKey === rowKey);
+    const column = view.columns.find((item) => item.key === columnKey && item.editable);
+    if (!row || !column) throw new Error("수정할 재고변동표 셀을 찾을 수 없습니다.");
+    if (column.numeric && !["string", "number"].includes(typeof value) && value !== null && value !== undefined) throw new Error("재고 수량은 숫자 또는 빈칸이어야 합니다.");
+    const normalized = normalizeInventoryOverrideValue(column, value);
+    if (!normalized.ok) throw new Error("재고 수량은 숫자 또는 빈칸이어야 합니다.");
+    const nextValue = column.numeric && normalized.value === "" ? null : normalized.value;
+    if (row[column.field] === nextValue) return workspace;
+    const currentStore = workspace.inventoryMovementEdits?.schemaVersion === INVENTORY_MOVEMENT_EDIT_SCHEMA_VERSION ? workspace.inventoryMovementEdits : { cells: [] };
+    workspace.inventoryMovementEdits = {
+      schemaVersion: INVENTORY_MOVEMENT_EDIT_SCHEMA_VERSION,
+      cells: [...currentStore.cells.filter((cell) => cell.rowKey !== rowKey || cell.columnKey !== columnKey),
+        { rowKey, productCode: row.productCode, columnKey, value: nextValue, updatedAt: new Date().toISOString() }],
+    };
+    return workspace;
+  }
+
+  function analyzeInventory(inventoryParsed, options = {}) {
+    const workspace = analyze({ kind: "orders", fileName: "", sheetName: "", fileHash: "", headerRowIndex: 0,
+      headers: [...ORDER_REQUIRED_COLUMNS], rows: [], rowCount: 0, missingColumns: [], errors: [], warnings: [],
+      sourceMatrix: [[...ORDER_REQUIRED_COLUMNS]], productCodeColumnIndex: 0,
+    }, inventoryParsed, options);
+    workspace.inventoryOnly = true;
+    return workspace;
+  }
+
   function getAllocationInventoryView(workspace) {
     const inventoryView = getInventoryViewRows(workspace);
     const warehouseColumns = inventoryView.columns.filter(
@@ -1863,6 +2118,8 @@
       workspace.inventoryOverrides || { schemaVersion: INVENTORY_OVERRIDE_SCHEMA_VERSION, cells: [] },
     ));
     const orderOpsInputs = JSON.parse(JSON.stringify(workspace.orderOpsInputs || null));
+    const inventoryMovementEdits = JSON.parse(JSON.stringify(workspace.inventoryMovementEdits || null));
+    const inventoryOnly = workspace.inventoryOnly === true;
     const substitutionHistory = JSON.parse(JSON.stringify(ensureSubstitutionHistory(workspace)));
     const acknowledgedIds = [...ensureNoticeState(workspace).acknowledgedIds];
     const orderSource = workspace.sourceFiles?.orders || {};
@@ -1889,6 +2146,7 @@
       rowCount: workspace.inventory.length,
       rows: workspace.inventory.map((row) => ({ ...row })),
       columns: inventorySource.columns || [],
+      inventoryLayout: inventorySource.inventoryLayout,
       missingColumns: [],
       duplicateCodes: [],
       errors: [],
@@ -1926,6 +2184,8 @@
       }
     }
     if (orderOpsInputs) rebuilt.orderOpsInputs = orderOpsInputs;
+    if (inventoryMovementEdits) rebuilt.inventoryMovementEdits = inventoryMovementEdits;
+    if (inventoryOnly) rebuilt.inventoryOnly = true;
     Object.keys(workspace).forEach((key) => { delete workspace[key]; });
     Object.assign(workspace, rebuilt);
     applyPurchaseInputs(workspace, purchaseInputs);
@@ -2568,6 +2828,7 @@
           matrix: inventoryParsed.sourceMatrix,
           productCodeColumnIndex: inventoryParsed.productCodeColumnIndex,
           columns: inventoryParsed.columns,
+          inventoryLayout: inventoryParsed.inventoryLayout || "warehouse",
         },
       },
       inventoryOverrides: {
@@ -2740,6 +3001,9 @@
     undoLastSubstitution,
     getShortageCategoryContext,
     getStockLedgerView,
+    getInventoryMovementView,
+    setInventoryMovementCell,
+    analyzeInventory,
     setOrderValue,
     setInventoryOverride,
     getAllocationInventoryView,

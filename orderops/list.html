@@ -12,10 +12,10 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="../orderFulfillmentEngine.js?v=20260918-order-unit-column"></script>
-  <script src="../orderFulfillmentWorkbook.js?v=20260916-baseline-calculation"></script>
-  <script src="../orderops/excel-preparation.js?v=20260919-relative-footer-range"></script>
-  <script src="../orderops/excel-preparation-ui.js?v=20260919-relative-footer-range"></script>
+  <script src="../orderFulfillmentEngine.js?v=20260920-inventory-movement"></script>
+  <script src="../orderFulfillmentWorkbook.js?v=20260920-inventory-movement"></script>
+  <script src="../orderops/excel-preparation.js?v=20260920-inventory-movement"></script>
+  <script src="../orderops/excel-preparation-ui.js?v=20260920-inventory-movement"></script>
   <style>
     :root {
       color-scheme: light;
@@ -2093,8 +2093,19 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
+
+    #previewTable table.preview-movement .movement-input { width: 100%; min-width: 0; height: 28px; border: 0; border-radius: 0; padding: 3px 6px; background: transparent; color: inherit; }
+    #previewTable table.preview-movement .movement-input:focus { outline: 2px solid #0f766e; outline-offset: -2px; }
+    #previewTable table.preview-movement tr.unit-alert-row > td,
+    #previewTable table.preview-movement tr.unit-alert-row > td *,
+    #printArea table.preview-movement tr.unit-alert-row > td,
+    #printArea table.preview-movement tr.unit-alert-row > td * { color: #b91c1c !important; font-weight: 400; }
+    #previewTable table.preview-movement td.movement-negative-cell,
+    #previewTable table.preview-movement td.movement-negative-cell:focus-within,
+    #previewTable table.preview-movement td.movement-negative-cell input,
+    #printArea table.preview-movement td.movement-negative-cell { background: #fef9c3 !important; }
   </style>
-  <link rel="stylesheet" href="../orderops/excel-preparation.css?v=20260919-relative-footer-range">
+  <link rel="stylesheet" href="../orderops/excel-preparation.css?v=20260920-inventory-movement">
 </head>
 <body>
   <header class="global-header">
@@ -2118,6 +2129,7 @@
         aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled>
         <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
       </button>
+      <button class="header-link header-output-button" id="movementDownloadButton" type="button" disabled aria-label="재고변동표 Excel 다운로드">재고변동표 Excel</button>
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
@@ -2318,6 +2330,7 @@
       <div class="hidden" id="purchaseUploadNotice"></div>
 
       <div class="prep-preview-tabs" id="prepPreviewTabs" role="tablist" aria-label="중앙 자료 조회">
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="movement">재고변동표</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="allocations" aria-keyshortcuts="F5">주문현황 F5</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="ledger" aria-keyshortcuts="F6">수불현황 F6</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="inventory" aria-keyshortcuts="F7">창고재고 F7</button>
@@ -2534,7 +2547,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger", "purchases", "sales"]);
+      const COLUMN_ORDER_TABS = new Set(["inventory", "movement", "allocations", "ledger", "purchases", "sales"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -2551,9 +2564,9 @@
       const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
       const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
-      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
+      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "movement", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
-        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
+        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고", movement: "재고변동표",
         purchases: "구매현황", sales: "판매현황",
       });
       const SHORTAGE_CATEGORY_COLORS = Object.freeze([
@@ -2561,12 +2574,12 @@
         "#5eead4", "#7dd3fc", "#a5b4fc", "#d8b4fe",
       ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
-      const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
+      const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "재고", purchases: "구매현황", sales: "판매현황" });
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
-      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
+      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", movement: "inventory", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger", unresolved: "inventory" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
-        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고"], columns: {} },
+        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고", "전일재고현황", "재고변동표"], columns: {} },
         purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입", "전송구매"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
@@ -2590,7 +2603,7 @@
       const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "movement", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -2736,6 +2749,7 @@
         purchaseAutocomplete: document.getElementById("purchaseAutocomplete"),
         purchaseCompletionCoachmark: document.getElementById("purchaseCompletionCoachmark"),
         downloadButton: document.getElementById("downloadButton"),
+        movementDownloadButton: document.getElementById("movementDownloadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
         recoveryRecordList: document.getElementById("recoveryRecordList"),
@@ -3655,6 +3669,8 @@
         const columnIndex = (canonical) => best.canonicalHeaders.indexOf(canonical);
         const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
         best.rows = best.matrix.slice(best.headerRowIndex + 1).map((cells, offset) => {
+          const firstCell = String(cells.find((cell) => String(cell ?? "").trim()) ?? "").trim();
+          if (/^(?:[0-9]{4}[/.-][0-9]{1,2}(?:[/.-][0-9]{1,2})?\s*)?(?:계|합계|총계|소계|월계|누계|total)\s*$/i.test(firstCell)) return null;
           const productCode = engine.normalizeProductCode(cells[columnIndex("품목코드")]);
           const productName = String(cells[columnIndex("품목명")] ?? "").trim();
           const partner = String(cells[columnIndex(partnerCanonical)] ?? "").trim();
@@ -3720,7 +3736,7 @@
         }
         if (kind === "inventory") {
           const warehouseCount = (parsed.columns || []).filter((column) => column?.role === "warehouseQuantity").length;
-          return warehouseCount > 0 ? 1000 + warehouseCount : 0;
+          return warehouseCount > 0 || ["snapshot", "movement"].includes(parsed.inventoryLayout) ? 1000 + warehouseCount : 0;
         }
         return (parsed.errors?.length || 0) === 0 ? 704 : 0;
       }
@@ -3814,8 +3830,8 @@
         const inventoryWarehouseColumns = (asInventory.columns || []).filter(
           (column) => column?.role === "warehouseQuantity",
         );
-        const inventorySignature = (asInventory.missingColumns?.length || 0) === 0 &&
-          inventoryWarehouseColumns.length > 0;
+        const inventorySignature = (asInventory.errors?.length || 0) === 0 && (asInventory.missingColumns?.length || 0) === 0 &&
+          (inventoryWarehouseColumns.length > 0 || ["snapshot", "movement"].includes(asInventory.inventoryLayout));
 
         const candidates = [
           { kind: "orders", parsed: asOrders, structureScore: orderSignature ? 1008 : 0 },
@@ -3926,7 +3942,7 @@
                 fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
                 headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? previous[kind].length,
                 sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
-                headerMapping: source.headerMapping, columns: source.columns,
+                headerMapping: source.headerMapping, columns: source.columns, inventoryLayout: source.inventoryLayout,
                 ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
                 rows: previous[kind], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
               };
@@ -3939,22 +3955,24 @@
           candidates.forEach((parsed, kind) => { inputs[kind] = parsed; });
           const previewKind = candidates.has(preferredKind) ? preferredKind : candidates.keys().next().value;
           let candidateWorkspace = null;
-          if (inputs.orders && inputs.inventory) {
+          if (inputs.inventory) {
             candidateWorkspace = await analyzeCurrentInputs({ fromSources: true, inputs });
             if (!previous) {
               if (!candidates.has("inventory") && inputs.inventory.preservedOverrides) {
                 candidateWorkspace.inventoryOverrides = JSON.parse(JSON.stringify(inputs.inventory.preservedOverrides));
+                candidateWorkspace.inventoryMovementEdits = inputs.inventory.preservedMovementEdits;
               }
               if (!candidates.has("orders")) {
-                if (inputs.orders.preservedSubstitutionHistory) candidateWorkspace.substitutionHistory = inputs.orders.preservedSubstitutionHistory;
-                if (inputs.orders.preservedNoticeAcknowledgements) candidateWorkspace.noticeAcknowledgements = inputs.orders.preservedNoticeAcknowledgements;
-                engine.applyPurchaseInputs(candidateWorkspace, inputs.orders.preservedPurchaseInputs);
+                if (inputs.orders?.preservedSubstitutionHistory) candidateWorkspace.substitutionHistory = inputs.orders.preservedSubstitutionHistory;
+                if (inputs.orders?.preservedNoticeAcknowledgements) candidateWorkspace.noticeAcknowledgements = inputs.orders.preservedNoticeAcknowledgements;
+                engine.applyPurchaseInputs(candidateWorkspace, inputs.orders?.preservedPurchaseInputs);
               }
               candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
             }
             if (previous) {
               if (!candidates.has("inventory")) {
                 candidateWorkspace.inventoryOverrides = previous.inventoryOverrides;
+                candidateWorkspace.inventoryMovementEdits = previous.inventoryMovementEdits;
               }
               if (!candidates.has("orders")) {
                 candidateWorkspace.substitutionHistory = previous.substitutionHistory;
@@ -3995,7 +4013,7 @@
             leaveUnresolvedReview({ render: false });
             clearSubstitutionSelection();
             state.workspace = candidateWorkspace;
-            state.activePreview = FILE_KIND_PREVIEWS[previewKind];
+            state.activePreview = candidateWorkspace.inventoryOnly || (previewKind === "inventory" && ["snapshot", "movement"].includes(inputs.inventory.inventoryLayout)) ? "movement" : FILE_KIND_PREVIEWS[previewKind];
             // Replacing input data must not erase the selected form's filter intent.
             closeColumnSortMenu();
             renderResults();
@@ -4051,6 +4069,7 @@
         elements.resultsPanel.classList.add("hidden");
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
+        elements.movementDownloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
       }
@@ -4289,6 +4308,7 @@
         elements.resultsPanel.classList.remove("hidden");
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
+        elements.movementDownloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
         return true;
@@ -4319,10 +4339,10 @@
                 fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
                 headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? activeWorkspace[type].length,
                 sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
-                headerMapping: source.headerMapping, columns: source.columns,
+                headerMapping: source.headerMapping, columns: source.columns, inventoryLayout: source.inventoryLayout,
                 ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
                 rows: activeWorkspace[type], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
-                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {} } : {
+                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {}, preservedMovementEdits: activeWorkspace.inventoryMovementEdits } : {
                   preservedPurchaseInputs: engine.getPurchaseInputs(JSON.parse(activeJson)),
                   preservedSubstitutionHistory: activeWorkspace.substitutionHistory,
                   preservedNoticeAcknowledgements: activeWorkspace.noticeAcknowledgements,
@@ -4335,11 +4355,20 @@
           });
           // Clone before assignment so an invalid recovered source cannot leave
           // only part of the retained input set installed.
+          if (kind === "orders" && retainedInputs.inventory) {
+            candidate = engine.analyzeInventory(retainedInputs.inventory, { sourceFingerprint: activeWorkspace.sourceFingerprint });
+            candidate.orderOpsInputs = JSON.parse(JSON.stringify(activeWorkspace.orderOpsInputs || {}));
+            candidate.inventoryOverrides = JSON.parse(JSON.stringify(activeWorkspace.inventoryOverrides || {}));
+            if (activeWorkspace.inventoryMovementEdits) candidate.inventoryMovementEdits = JSON.parse(JSON.stringify(activeWorkspace.inventoryMovementEdits));
+            if (activeWorkspace.systemHistory) candidate.systemHistory = JSON.parse(JSON.stringify(activeWorkspace.systemHistory));
+            candidate = engine.recalculateWorkspace(candidate);
+          }
           Object.assign(state, JSON.parse(JSON.stringify(retainedInputs)));
         }
         state[kind] = null;
         if (candidate) {
           state.workspace = candidate;
+          if (candidate.inventoryOnly) state.activePreview = "movement";
           renderResults();
           scheduleLocalSave();
         } else {
@@ -5858,6 +5887,18 @@
           inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
           definitions.inventory = inventory;
         }
+        if (typeof engine.getInventoryMovementView === "function") {
+          const movement = engine.getInventoryMovementView(workspace);
+          const columns = movement.columns;
+          definitions.movement = {
+            label: "재고변동표", columns, headers: columns.map((column) => column.header),
+            numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
+            inventory: [], purchase: -1, purchaseEditable: false, status: -1,
+            sourceRows: movement.rows,
+            rows: movement.rows.map((row) => row.values || columns.map((column) => row[column.field] ?? "")),
+            sortByProductCode: true,
+          };
+        }
         return definitions;
       }
 
@@ -6406,7 +6447,9 @@
               const boxUnitRow = previewId === "allocations"
                 ? allocationUsesBoxUnit(sourceRow)
                 : exactBoxUnit(sourceRow);
-              const unitAlertRow = previewId === "allocations"
+              const unitAlertRow = previewId === "movement"
+                ? !/^(BOX|박스)$/i.test(String(sourceRow?.sourceUnit || sourceRow?.unit || sourceRow?.specification || "").trim())
+                : previewId === "allocations"
                 ? !boxUnitRow
                 : exactWarningUnit(sourceRow);
               const rowClasses = [
@@ -6444,7 +6487,7 @@
                     const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
-                    const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
+                    const displayValue = previewId !== "movement" && quantityColumn && numericQuantityValue === 0 ? "" : value;
                     const negativeRemaining = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && negativeNumericValue;
                     const orderedContext = ["ledger", "inventory"].includes(previewId) &&
@@ -6455,6 +6498,7 @@
                       : "";
                     const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
                     const editableInventory = editable && warehouseQuantity;
+                    const editableMovement = editable && previewId === "movement" && column.editable === true;
                     const editableLedgerPrice = editable && previewId === "ledger" &&
                       column.role === "unitPrice" && column.editable === true &&
                       Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
@@ -6485,6 +6529,7 @@
                       orderedContext ? "ordered-context-cell" : "",
                       numericQuantityValue === 0 ? "quantity-zero" : "",
                       numericQuantityValue < 0 ? "quantity-negative" : "",
+                      previewId === "movement" && negativeNumericValue ? "movement-negative-cell" : "",
                       numericQuantityValue > 0 ? "quantity-positive" : "",
                       readablePrimary ? "primary-readable-cell" : "",
                       warningUnitContext ? "unit-alert-cell" : "",
@@ -6502,7 +6547,12 @@
                     const unresolvedReviewAction = previewId === "unresolved" && column.role === "unresolvedReviewAction";
                     const unresolvedOfficialInventory = previewId === "unresolved" && column.role === "unresolvedOfficialInventory";
                     const unresolvedIntegrity = previewId === "unresolved" && column.role === "unresolvedIntegrity";
-                    const content = unresolvedReviewAction
+                    const content = editableMovement
+                      ? `<input class="inventory-input movement-input" data-movement-row="${escapeHtml(sourceRow.rowKey)}"
+                          data-movement-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
+                          ${column.numeric ? 'inputmode="decimal"' : ""} autocomplete="off" value="${escapeHtml(value ?? "")}"
+                          aria-label="${escapeHtml(sourceRow.productCode)} ${escapeHtml(column.header)} 수정">`
+                      : unresolvedReviewAction
                       ? `<button class="table-tool-button unresolved-review-action" type="button"
                           data-unresolved-detail="${escapeHtml(sourceRow?.unresolvedProductId || "")}">원전표·후보 보기</button>`
                       : unresolvedOfficialInventory
@@ -6621,6 +6671,7 @@
         elements.columnWidthResetButton.disabled = true;
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
+        elements.movementDownloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
       }
@@ -6799,6 +6850,7 @@
         elements.columnWidthResetButton.disabled = false;
         elements.printButton.disabled = Boolean(host.outputDisabled?.print);
         elements.downloadButton.disabled = Boolean(host.outputDisabled?.download);
+        elements.movementDownloadButton.disabled = !state.workspace;
         elements.cloudSaveButton.disabled = Boolean(host.outputDisabled?.cloud);
         elements.headerCloudSaveButton.disabled = Boolean(host.outputDisabled?.headerCloud);
         if (!render || !state.workspace) return;
@@ -6859,6 +6911,7 @@
             ? "대체할 주문 선택됨 · Ctrl+상품 클릭"
             : "대체출고: 거래처 칩 선택 → Ctrl+상품 클릭");
         }
+        if (state.activePreview === "movement") viewNotes.push("전일재고 + 입고 − 출고 = 장부재고 · 재고실사 공란은 미실사, 0은 실사 0 · Enter ↓ · Tab → · Excel 붙여넣기");
         elements.systemViewNote.textContent = viewNotes.join(" · ");
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
@@ -6932,7 +6985,18 @@
         engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
-        const summaryItems = [
+        const movementRows = state.workspace.inventoryOnly ? engine.getInventoryMovementView(state.workspace).rows : null;
+        const movementTotal = (field) => movementRows.reduce((sum, row) => sum + (typeof row[field] === "number" ? row[field] : 0), 0);
+        const summaryItems = movementRows ? [
+          { label: "상품", value: movementRows.length },
+          { label: "기초재고", value: movementTotal("openingQuantity") },
+          { label: "입고", value: movementTotal("inboundQuantity") },
+          { label: "출고", value: movementTotal("salesQuantity") },
+          { label: "장부재고", value: movementTotal("remainingQuantity") },
+          { label: "실사완료", value: movementRows.filter((row) => row.stocktakeQuantity !== null).length },
+          { label: "음수잔량 상품", value: movementRows.filter((row) => row.remainingQuantity < 0).length },
+          { label: "확정재고", value: movementTotal("finalQuantity") },
+        ] : [
           { label: "주문행", value: stats.orderRowCount },
           { label: "0 수량", value: stats.zeroOrderQuantityCount || 0, tone: stats.zeroOrderQuantityCount > 0 ? "warn" : "" },
           { label: "음수 수량", value: stats.negativeOrderQuantityCount || 0, tone: stats.negativeOrderQuantityCount > 0 ? "warn" : "" },
@@ -6956,17 +7020,19 @@
           .map(([reason, count]) => `${reason} ${formatNumber(count)}행`)
           .join(" · ");
         const uploadBlocked = state.workspace.basisDateStatus !== "valid";
+        elements.purchaseUploadNotice.classList.toggle("hidden", Boolean(state.workspace.inventoryOnly));
         elements.purchaseUploadNotice.classList.toggle("bad", uploadBlocked);
         elements.purchaseUploadNotice.textContent = uploadBlocked
           ? `구매업로드 차단: 일자-No.·일자·주문일자에서 유효한 단일 기준일을 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
           : `구매업로드 ${formatNumber(purchaseUpload.included.length)}행 · 제외: ${exclusionText || "없음"}`;
-        elements.resultSubtitle.textContent = stats.unmatchedCount > 0
+        elements.resultSubtitle.textContent = state.workspace.inventoryOnly ? "기초재고 + 입고 − 출고 · 실사값을 입력하면 확정재고에 반영됩니다" : stats.unmatchedCount > 0
           ? `재고정보 없음 ${formatNumber(stats.unmatchedCount)}개 상품`
           : "재고 매칭 이상 없음";
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
         elements.printButton.disabled = false;
         elements.downloadButton.disabled = false;
+        elements.movementDownloadButton.disabled = false;
         const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
         elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
@@ -7018,17 +7084,18 @@
         if (!fromSources && inputs === state && state.workspace) return engine.recalculateWorkspace(state.workspace);
         const validation = inputs === state ? state.validation
           : inputs.orders && inputs.inventory ? engine.validateInputs(inputs.orders, inputs.inventory) : null;
-        if (!validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        if (inputs.orders?.rowCount > 0 && !validation?.canAnalyze) throw new Error("분석 가능한 주문·재고 파일을 먼저 선택하세요.");
+        if (!inputs.inventory) throw new Error("재고 파일을 먼저 선택하세요.");
         const { orders, inventory, purchases, sales } = inputs;
         const sourceFingerprint = await sha256Hex(JSON.stringify({
           schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
-          orders: {
+          orders: orders ? {
             sha256: orders.fileHash,
             fileName: orders.fileName,
             sheetName: orders.sheetName,
             rowCount: orders.rowCount,
             ...(orders.intakeMapping ? { mapping: orders.intakeMapping.draft } : {}),
-          },
+          } : null,
           inventory: {
             sha256: inventory.fileHash,
             fileName: inventory.fileName,
@@ -7051,10 +7118,12 @@
             ...(sales.intakeMapping ? { mapping: sales.intakeMapping.draft } : {}),
           } : null,
         }));
-        const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
+        const workspace = orders?.rowCount > 0
+          ? engine.analyze(orders, inventory, { sourceFingerprint })
+          : engine.analyzeInventory(inventory, { sourceFingerprint });
         for (const kind of ["orders", "inventory"]) {
           const parsed = kind === "orders" ? orders : inventory;
-          if (parsed.intakeMapping) workspace.sourceFiles[kind].intakeMapping = JSON.parse(JSON.stringify(parsed.intakeMapping));
+          if (parsed?.intakeMapping) workspace.sourceFiles[kind].intakeMapping = JSON.parse(JSON.stringify(parsed.intakeMapping));
         }
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
@@ -7104,6 +7173,15 @@
           elements.analyzeButton.disabled = isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze);
           if (typeof preparationController !== "undefined") preparationController?.refresh();
         }
+      }
+
+      function downloadInventoryMovement() {
+        if (!state.workspace || !window.XLSX) return;
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        try {
+          workbookTools.downloadInventoryMovementWorkbook(state.workspace, window.XLSX);
+          showToast("재고변동표 Excel을 출력했습니다.");
+        } catch (error) { showToast(error.message || "재고변동표를 출력하지 못했습니다.", true); }
       }
 
       function downloadResult() {
@@ -7825,6 +7903,80 @@
         return true;
       }
 
+      function commitMovementInput(input, { render = true } = {}) {
+        if (!input || !state.workspace || state.activePreview !== "movement") return false;
+        try {
+          engine.setInventoryMovementCell(state.workspace, input.dataset.movementRow, input.dataset.movementColumn, input.value);
+          scheduleLocalSave();
+          if (render) renderResults();
+          return true;
+        } catch (error) {
+          showToast(error.message || "재고변동표 입력값을 확인하세요.", true);
+          renderPreview();
+          return false;
+        }
+      }
+
+      function focusMovementCell(rowKey, columnKey) {
+        const target = Array.from(elements.previewTable.querySelectorAll(".movement-input"))
+          .find((input) => input.dataset.movementRow === rowKey && input.dataset.movementColumn === columnKey);
+        focusInventoryInput(target);
+      }
+
+      function handleMovementNavigation(event) {
+        const input = event.target.closest?.(".movement-input");
+        if (!input || state.activePreview !== "movement" || event.isComposing || event.keyCode === 229) return;
+        if (event.key === "Escape") { event.preventDefault(); renderPreview(); focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn); return; }
+        if (!["Enter", "Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr"));
+        const rowIndex = rows.indexOf(input.closest("tr"));
+        const rowInputs = Array.from(rows[rowIndex]?.querySelectorAll(".movement-input") || []);
+        const columnIndex = rowInputs.indexOf(input);
+        const allInputs = Array.from(elements.previewTable.querySelectorAll(".movement-input"));
+        let target;
+        if (event.key === "Tab") {
+          target = allInputs[allInputs.indexOf(input) + (event.shiftKey ? -1 : 1)];
+        } else if (["Enter", "ArrowUp", "ArrowDown"].includes(event.key)) {
+          const direction = event.key === "ArrowUp" || event.key === "Enter" && event.shiftKey ? -1 : 1;
+          target = Array.from(rows[rowIndex + direction]?.querySelectorAll(".movement-input") || [])
+            .find((candidate) => candidate.dataset.movementColumn === input.dataset.movementColumn);
+        } else target = rowInputs[columnIndex + (event.key === "ArrowLeft" ? -1 : 1)];
+        const next = target ? { row: target.dataset.movementRow, column: target.dataset.movementColumn } : null;
+        event.preventDefault();
+        if (!commitMovementInput(input, { render: false })) return;
+        renderResults();
+        if (next) focusMovementCell(next.row, next.column);
+        else if (event.key === "Tab") focusOutsideInventoryTable(event.shiftKey ? -1 : 1);
+        else focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn);
+      }
+
+      function handleMovementPaste(event) {
+        const input = event.target.closest?.(".movement-input");
+        if (!input || state.activePreview !== "movement" || !state.workspace) return;
+        const text = event.clipboardData?.getData("text/plain");
+        if (typeof text !== "string" || !/[\t\r\n]/.test(text)) return;
+        event.preventDefault();
+        const data = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "").split("\n").map((row) => row.split("\t"));
+        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr"));
+        const startRow = rows.indexOf(input.closest("tr"));
+        const startColumn = Array.from(rows[startRow].cells).indexOf(input.closest("td"));
+        try {
+          const candidate = JSON.parse(JSON.stringify(state.workspace));
+          let count = 0;
+          data.forEach((values, rowOffset) => values.forEach((value, columnOffset) => {
+            const target = rows[startRow + rowOffset]?.cells[startColumn + columnOffset]?.querySelector(".movement-input");
+            if (!target) throw new Error("붙여넣을 범위에 계산 열이나 표 밖의 셀이 있습니다. 수정 가능한 셀 범위를 선택하세요.");
+            engine.setInventoryMovementCell(candidate, target.dataset.movementRow, target.dataset.movementColumn, value);
+            count += 1;
+          }));
+          state.workspace = candidate;
+          scheduleLocalSave();
+          renderResults();
+          focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn);
+          showToast(count + "개 셀을 반영했습니다.");
+        } catch (error) { showToast(error.message || "붙여넣기 값을 확인하세요. 기존 값은 유지됩니다.", true); }
+      }
+
       function focusInventoryInput(input) {
         if (!input) return;
         input.focus({ preventScroll: true });
@@ -8019,6 +8171,7 @@
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.downloadButton.addEventListener("click", downloadResult);
+      elements.movementDownloadButton.addEventListener("click", downloadInventoryMovement);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
@@ -8453,6 +8606,12 @@
       elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
       elements.previewTable.addEventListener("keydown", handleOrderGridNavigation);
+      elements.previewTable.addEventListener("keydown", handleMovementNavigation);
+      elements.previewTable.addEventListener("paste", handleMovementPaste);
+      elements.previewTable.addEventListener("change", (event) => {
+        const input = event.target.closest(".movement-input");
+        if (input) commitMovementInput(input);
+      });
       elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);

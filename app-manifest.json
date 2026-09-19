@@ -471,7 +471,7 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Operate the basic Excel/parser shipment workflow with order status, stock ledger, warehouse inventory, local recovery and explicit Shipping Cloud saves. The 2026-09-16 rollback restores the 2026-09-07 baseline a596cbbdc1f8df52ee2b7f8f0dcf094cc372a8ab with minimal NEXUS host integration and retains the Phase 6B read-only unresolved-review result state; expanded source workbench and official shipment-result commands are not active UI consumers.",
+      "purpose": "Operate the basic Excel/parser shipment workflow with order status, stock ledger, warehouse inventory, editable inventory movement and stocktake, local recovery and explicit Shipping Cloud saves. Single-balance and movement inventory files can be combined with purchase/sales history without order input. The 2026-09-16 rollback restores the 2026-09-07 baseline a596cbbdc1f8df52ee2b7f8f0dcf094cc372a8ab with minimal NEXUS host integration and retains the Phase 6B read-only unresolved-review result state; expanded source workbench and official shipment-result commands are not active UI consumers.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [

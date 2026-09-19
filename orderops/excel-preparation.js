@@ -15,6 +15,7 @@
   const EXCLUDE_TARGET = "";
   const WAREHOUSE_TARGET = "warehouseQuantity";
   const WAREHOUSE_PRICE_TARGET = "warehousePrice";
+  const SOURCE_VALUE_TARGET = "sourceValue";
   // These are the existing parser contracts, not a new common required schema.
   const REQUIRED_FIELDS = Object.freeze({
     orders: Object.freeze(["품목코드", "품목명", "규격", "수량", "적요", "적요1", "거래처", "그룹"]),
@@ -24,11 +25,11 @@
   });
   const FIELDS = Object.freeze({
     orders: Object.freeze([...REQUIRED_FIELDS.orders, "일자-No.", "일자", "주문일자", "담당", "창고", "단위", "재고", "단가", "공급가액"]),
-    inventory: Object.freeze([...REQUIRED_FIELDS.inventory, "사용", "단위", "재고", "기본", "전송", "창고", WAREHOUSE_TARGET, WAREHOUSE_PRICE_TARGET]),
+    inventory: Object.freeze([...REQUIRED_FIELDS.inventory, "사용", "단위", "재고", "기본", "전송", "창고", WAREHOUSE_TARGET, WAREHOUSE_PRICE_TARGET, SOURCE_VALUE_TARGET]),
     purchases: Object.freeze([...REQUIRED_FIELDS.purchases, "규격", "단위"]),
     sales: Object.freeze([...REQUIRED_FIELDS.sales, "규격", "단위"]),
   });
-  const FIELD_LABELS = Object.freeze({ [WAREHOUSE_TARGET]: "창고 수량", [WAREHOUSE_PRICE_TARGET]: "창고 단가", [EXCLUDE_TARGET]: "제외" });
+  const FIELD_LABELS = Object.freeze({ [WAREHOUSE_TARGET]: "재고 수량", [WAREHOUSE_PRICE_TARGET]: "창고 단가", [SOURCE_VALUE_TARGET]: "원본 항목 유지", [EXCLUDE_TARGET]: "제외" });
   const DEFAULT_ALIASES = {
     orders: {
       "품목코드": ["상품코드", "코드"], "품목명": ["상품명", "제품명"], "수량": ["주문수량", "미출고수량"],
@@ -116,7 +117,7 @@
       const rawValue = rawRow[column.sourceIndex], displayValue = displayRow[column.sourceIndex];
       if (populated(rawValue) || populated(displayValue)) targetValues.set(column.target, true);
     }
-    return (targetValues.has("품목코드") || targetValues.has("품목명")) && targetValues.has("수량");
+    return (targetValues.has("품목코드") || targetValues.has("품목명")) && (targetValues.has("수량") || targetValues.has(WAREHOUSE_TARGET) || targetValues.has("재고"));
   }
   function footerContainsBusinessData(draft, rawMatrix, displayMatrix, startRow, endRow) {
     for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
@@ -145,6 +146,7 @@
       const mapped = (parsed.headerMapping?.columns || []).find((column) => column.columnIndex === sourceIndex);
       const inventory = (parsed.columns || []).find((column) => column.sourceIndex === sourceIndex);
       let target = candidates.length === 1 ? candidates[0] : EXCLUDE_TARGET;
+      if (kind === "inventory" && ["snapshot", "movement"].includes(parsed.inventoryLayout)) target = sourceHeader ? SOURCE_VALUE_TARGET : EXCLUDE_TARGET;
       // Parser metadata is authoritative; warehouse names are never guessed here.
       if (mapped && FIELDS[kind].includes(mapped.canonical)) target = mapped.canonical;
       if (FIELDS[kind].includes(parsed.canonicalHeaders?.[sourceIndex])) target = parsed.canonicalHeaders[sourceIndex];
@@ -157,6 +159,7 @@
     });
     return {
       schemaVersion: DRAFT_SCHEMA, kind, sheetName: text(sheetName || parsed.sheetName), headerRow: headerIndex + 1,
+      ...(kind === "inventory" ? { inventoryLayout: parsed.inventoryLayout || "warehouse" } : {}),
       startRow: headerIndex + 2, endRow: lastContentRow(source.raw, source.display), rowCount: source.raw.length,
       contentLastRow: lastContentRow(source.raw, source.display), columns,
       sourceMetadata: { fileName: text(parsed.fileName), fileHash: text(parsed.fileHash), sheetName: text(sheetName || parsed.sheetName) },
@@ -201,6 +204,7 @@
         errors.push(issue("INVALID_TARGET", "현재 자료 종류에서 지원하지 않는 작업 항목입니다.", { sourceIndex, target }));
         continue;
       }
+      if (target === SOURCE_VALUE_TARGET) continue;
       if (target === WAREHOUSE_TARGET || target === WAREHOUSE_PRICE_TARGET) {
         const names = target === WAREHOUSE_TARGET ? warehouses : warehousePrices;
         const name = headerKey(target === WAREHOUSE_TARGET ? column.warehouseName ?? sourceHeader : sourceHeader);
@@ -211,10 +215,11 @@
         targets.set(target, sourceIndex);
       }
     }
-    REQUIRED_FIELDS[draft.kind].forEach((target) => {
+    const inventorySnapshot = draft.kind === "inventory" && ["snapshot", "movement"].includes(draft.inventoryLayout);
+    REQUIRED_FIELDS[draft.kind].filter((target) => !(inventorySnapshot && target === "수량")).forEach((target) => {
       if (!targets.has(target)) errors.push(issue("MISSING_REQUIRED_FIELD", `필수 항목을 연결해 주세요: ${target}`, { target }));
     });
-    if (draft.kind === "inventory" && !warehouses.size) errors.push(issue("MISSING_WAREHOUSE", "창고 수량 열을 하나 이상 연결해 주세요."));
+    if (draft.kind === "inventory" && !warehouses.size && !(inventorySnapshot && targets.has("재고"))) errors.push(issue("MISSING_WAREHOUSE", "재고 수량 열을 하나 이상 연결해 주세요."));
     return { ok: errors.length === 0, errors };
   }
 
@@ -227,7 +232,7 @@
     const mappedHeader = Array.from({ length: Math.max(...columns.map((column) => column.sourceIndex)) + 1 }, () => "");
     for (const column of columns) {
       if (!column.enabled || !column.target) continue;
-      mappedHeader[column.sourceIndex] = column.target === WAREHOUSE_TARGET ? text(column.warehouseName ?? column.sourceHeader)
+      mappedHeader[column.sourceIndex] = column.target === SOURCE_VALUE_TARGET ? column.sourceHeader : column.target === WAREHOUSE_TARGET ? text(column.warehouseName ?? column.sourceHeader)
         : column.target === WAREHOUSE_PRICE_TARGET ? column.sourceHeader : column.target;
     }
     const prepare = (matrix) => matrix.map((row, index) => index === draft.headerRow - 1 ? mappedHeader.slice()

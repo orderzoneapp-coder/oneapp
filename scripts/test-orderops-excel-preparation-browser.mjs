@@ -375,13 +375,16 @@ try {
   check("saved templates do not auto-restore or invent a workspace", await ev("!__ops.state.workspace"));
   await installFixtures();
   await upload("inventory", { explicitWarehouse: true, name: "explicit-warehouse-next.xlsx" });
-  await assertPreview("inventory", "saved inventory template opens its raw inventory preview");
-  check("saved warehouse template accepts inventory-only input without apply", await ev("!__ops.state.workspace && __ops.state.inventory.rowCount===1 && __extraActions.length===0 && document.querySelector('#prepMappingStatus').dataset.state==='applied'"));
+  await assertPreview("movement", "saved inventory template opens a computed inventory movement workspace");
+  check("saved warehouse template calculates inventory-only input without apply or invented orders", await ev("__ops.state.workspace?.inventoryOnly && !__ops.state.orders && __ops.state.workspace.orders.length===0 && __ops.state.inventory.rowCount===1 && __extraActions.length===0 && document.querySelector('#prepMappingStatus').dataset.state==='applied'"));
+  check("inventory-only movement retains the explicitly mapped stock total", await ev("ShippingManagementEngine.getInventoryMovementView(__ops.state.workspace).rows[0].openingQuantity===12"));
+  await ev("document.querySelector('[data-preview=inventory]').click();true");
+  await assertPreview("inventory", "inventory-only workspace retains its warehouse view");
   check("inventory-only preview displays warehouse names and original quantities", await ev("document.querySelector('#previewTable').textContent.includes('신선A') && document.querySelector('#previewTable').textContent.includes('가격표') && document.querySelector('#previewTable').textContent.includes('12')"));
   check("inventory alone exposes the shared column and view-preset tools", await ev(`!document.querySelector('#viewPresetSaveButton').disabled && document.querySelectorAll('#columnVisibilityMenu [data-column-visible]').length>=8`));
   await ev(`(()=>{document.querySelector('#viewPresetSaveButton').click();document.querySelector('#viewPresetNameInput').value='단독 재고 양식';document.querySelector('[data-save-view-preset]').click();return true;})()`);
   await until(() => ev("__ops.state.selectedOrderViewPresetId && document.querySelector('#viewPresetSelect').value===__ops.state.selectedOrderViewPresetId"), "inventory-only view preset saved");
-  check("inventory-only view preset is saved without creating orders", await ev("!__ops.state.workspace && !__ops.state.orders && __ops.state.orderViewPresets.some(item=>item.name==='단독 재고 양식'&&item.previewId==='inventory')"));
+  check("inventory-only view preset is saved without creating orders", await ev("__ops.state.workspace?.inventoryOnly && !__ops.state.orders && __ops.state.workspace.orders.length===0 && __ops.state.orderViewPresets.some(item=>item.name==='단독 재고 양식'&&item.previewId==='inventory')"));
   await upload("orders", { quantity: 8, name: "fresh-order8.xlsx" });
   await assertExplicitWarehouse("first fresh workspace retains saved explicit warehouse roles");
   check("fresh template processing requires no extra action", await ev("__extraActions.length===0 && __ops.state.activePreview==='allocations'"));
@@ -439,7 +442,7 @@ try {
   await selectPreview("inventory");
   await ev(`(()=>{const cell=[...document.querySelectorAll('.inventory-input')].find(node=>decodeURIComponent(node.dataset.inventoryColumn?.split(':').at(-1)||'')==='1창고');if(!cell)throw Error('Missing stock editor');cell.value='2';cell.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
   await ev(`(()=>{const file=[...document.querySelectorAll('[data-prep-file]')].find(node=>node.textContent.includes('removable-order.xlsx'));file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
-  await until(() => ev("!__ops.state.workspace && !__ops.state.orders && !__ops.preparationController.isBusy()"), "detach only the selected order input");
+  await until(() => ev("__ops.state.workspace?.inventoryOnly && __ops.state.workspace.orders.length===0 && !__ops.state.orders && !__ops.preparationController.isBusy()"), "detach only the selected order input and retain inventory work");
   await upload("orders", { quantity: 3, name: "new-order.xlsx" });
   check("detaching an order and loading another preserves retained stock edits", await ev("ShippingManagementEngine.getInventoryViewRows(__ops.state.workspace).rows[0].stockTotal===2 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
 
@@ -456,7 +459,7 @@ try {
   check("order-only replacement preserves recovered stock edits without a live inventory input", await ev("__ops.state.inventory===null && __ops.state.workspace.orders[0].quantity===6 && ShippingManagementEngine.getInventoryViewRows(__ops.state.workspace).rows[0].stockTotal===2 && __ops.state.workspace.sourceFiles.inventory.matrix[1][5]===4"));
   assert.equal(await ev("JSON.stringify(__ops.state.workspace.inventoryOverrides)"), recoveredStockOverrides);
   await ev(`(()=>{const file=[...document.querySelectorAll('[data-prep-file]')].find(node=>node.textContent.includes('recovered-removable-order.xlsx'));if(!file)throw Error('Missing recovered replacement order');file.closest('.prep-file-item').querySelector('[data-prep-remove]').click();return true;})()`);
-  await until(() => ev("!__ops.state.workspace && __ops.state.orders===null && !__ops.preparationController.isBusy()"), "detach recovered replacement order");
+  await until(() => ev("__ops.state.workspace?.inventoryOnly && __ops.state.workspace.orders.length===0 && __ops.state.orders===null && !__ops.preparationController.isBusy()"), "detach recovered replacement order and retain inventory work");
   check("detaching recovered order reconstructs retained inventory input from its source", await ev("__ops.state.inventory?.sourceMatrix?.[1]?.[5]===4 && __ops.state.inventory.rows.length===1"));
   assert.equal(await ev("JSON.stringify(__ops.state.inventory.preservedOverrides)"), recoveredStockOverrides);
   await upload("orders", { quantity: 5, name: "recovered-reuploaded-order.xlsx" });
