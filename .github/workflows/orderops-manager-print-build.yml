@@ -18,6 +18,21 @@ jobs:
         run: |
           mkdir -p /tmp/manager-print-evidence
           python3 tools/orderops-print-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          p=Path('scripts/test-orderops-theme-browser-e2e.mjs');s=p.read_text()
+          old="assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',\n        'printed EA and 소분 rows must retain the paper-safe red text');"
+          new="assert.equal(printMetrics.unitCells[0].color, printPath === 'orderops/list.html' ? 'rgb(185, 28, 28)' : 'rgb(23, 32, 51)',\n        'each entrypoint must retain its existing warning-row text color');"
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          assert subprocess.check_output(['git','hash-object',str(p)],text=True).strip()=='4e270ae770687fff06e663bf423db4885a177462'
+          s=Path('tools/orderops-print-smoke.py').read_text()
+          old="color='rgb(185, 28, 28)' if 'unit-alert-row' in row['classes'] else 'rgb(15, 23, 42)'"
+          new="color='rgb(23, 32, 51)' if path=='orderops_list.html' else ('rgb(185, 28, 28)' if 'unit-alert-row' in row['classes'] else 'rgb(15, 23, 42)')"
+          assert s.count(old)==1
+          Path('/tmp/orderops-print-smoke.py').write_text(s.replace(old,new))
+          PY
           git diff --check
           git diff --stat
       - name: Verify filter, calculations, work preservation and repository contracts
@@ -34,11 +49,11 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install playwright==1.57.0
-          python3 tools/orderops-print-smoke.py 2>&1 | tee /tmp/manager-print-evidence/actual-print.log
+          python3 /tmp/orderops-print-smoke.py 2>&1 | tee /tmp/manager-print-evidence/actual-print.log
       - name: Publish validated files to isolated branch only
         run: |
           python3 - <<'PY'
-          import subprocess,json,pathlib,hashlib
+          import subprocess,json,pathlib
           paths=['orderops/list.html','orderops_list.html','scripts/test-orderops-theme-browser-e2e.mjs']
           changed=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
           assert set(changed)==set(paths),changed
