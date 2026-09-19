@@ -557,3 +557,35 @@
     color: #a7f3d0 !important;
   }
 }
+
+/* Print the order grid with one solid edge per boundary. Collapsed screen
+   borders, sticky headings and row shadows must not leak into paginated output. */
+@media print {
+  body.printing-table #printArea table.preview-allocations {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border: 0 !important;
+  }
+
+  body.printing-table #printArea table.preview-allocations :is(thead, tbody, tr, th, td) {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+
+  body.printing-table #printArea table.preview-allocations :is(th, td) {
+    border: 0 solid #475569 !important;
+    border-right-width: .75pt !important;
+    border-bottom-width: .75pt !important;
+  }
+
+  body.printing-table #printArea table.preview-allocations tr > :first-child {
+    border-left-width: .75pt !important;
+  }
+
+  body.printing-table #printArea table.preview-allocations thead tr:first-child > th {
+    border-top-width: .75pt !important;
+  }
+}
