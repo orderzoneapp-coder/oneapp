@@ -528,45 +528,66 @@ try {
   assert.notEqual(metrics.badge1.background, metrics.badge2.background,
     'assigned manager information badges must remain visually distinct');
   assert.notEqual(metrics.primary.shadow, 'none', 'assigned manager rows must retain their color edge marker');
-  await client.send('Emulation.setEmulatedMedia', { media: 'print' });
-  const printMetrics = await evaluate(client, `(() => {
-    const printArea=document.querySelector('#printArea');
-    printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe;--manager-print-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7;--manager-print-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr></tbody></table>';
-    document.body.classList.add('printing-table');
-    const bodyStyle=getComputedStyle(document.body);
-    const printStyle=getComputedStyle(printArea);
-    return {
-      bodyMarginTop:parseFloat(bodyStyle.marginTop),
-      bodyPaddingTop:parseFloat(bodyStyle.paddingTop),
-      printMarginTop:parseFloat(printStyle.marginTop),
-      printPaddingTop:parseFloat(printStyle.paddingTop),
-      printTop:printArea.getBoundingClientRect().top,
-      tableTop:printArea.querySelector('table').getBoundingClientRect().top,
-      headerBackground:getComputedStyle(printArea.querySelector('th')).backgroundColor,
-      managerCells:[...printArea.querySelectorAll('tbody tr.manager-color-row:first-child > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
-      unitCells:[...printArea.querySelectorAll('tbody tr.unit-alert-row > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
-    };
-  })()`);
-  assert.equal(printMetrics.bodyMarginTop, 0, 'print body must not reserve a top margin');
-  assert.equal(printMetrics.bodyPaddingTop, 0, 'print body must remove the common-header top offset');
-  assert.equal(printMetrics.printMarginTop, 0, 'print area must not reserve a top margin');
-  assert.equal(printMetrics.printPaddingTop, 0, 'print area must not reserve top padding');
-  assert.ok(Math.abs(printMetrics.printTop) <= 0.5 && Math.abs(printMetrics.tableTop) <= 0.5,
-    `printed table must start at the printable origin, got print=${printMetrics.printTop}, table=${printMetrics.tableTop}`);
-  assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.background)).size, 1,
-    'printed manager background must cover the complete row');
-  assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.color)).size, 1,
-    'printed manager text color must cover the complete row');
-  assert.equal(printMetrics.managerCells[0].color, 'rgb(23, 32, 51)',
-    'dark screen text tokens must not leak into the printed manager row');
-  assert.equal(new Set(printMetrics.unitCells.map((cell) => cell.color)).size, 1,
-    'printed EA and 소분 warning text must cover the complete row');
-  assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',
-    'printed EA and 소분 rows must retain the paper-safe red text');
-  assert.equal(printMetrics.headerBackground, 'rgb(255, 255, 255)',
-    'printed table headers must use a white paper background');
-  assert.ok([...printMetrics.managerCells, ...printMetrics.unitCells].every((cell) => cell.background === 'rgb(255, 255, 255)'),
-    'every printed information cell must use a white paper background');
+  // Print colors must survive both entrypoints and both screen themes.
+  for (const printPath of ['orderops/list.html', 'orderops_list.html']) {
+    if (printPath === 'orderops_list.html') {
+      await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
+      const printLoaded = client.once('Page.loadEventFired');
+      await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/${printPath}` });
+      await printLoaded;
+    }
+    for (const printTheme of ['light', 'dark']) {
+      await evaluate(client, `document.documentElement.dataset.nexusUiTheme=${JSON.stringify(printTheme)}`);
+      await client.send('Emulation.setEmulatedMedia', { media: 'print' });
+      const printMetrics = await evaluate(client, `(() => {
+        const printArea=document.querySelector('#printArea');
+        printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe;--manager-print-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7;--manager-print-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr><tr class="manager-color-row" style="--manager-color:#102030;--manager-print-color:#8c949c"><td>진한색</td><td>최담당</td><td>3</td></tr><tr class="manager-color-row" style="--manager-color:#dcfce7"><td>호환</td><td>이담당</td><td>1</td></tr></tbody></table>';
+        document.body.classList.add('printing-table');
+        const bodyStyle=getComputedStyle(document.body);
+        const printStyle=getComputedStyle(printArea);
+        return {
+          bodyMarginTop:parseFloat(bodyStyle.marginTop),
+          bodyPaddingTop:parseFloat(bodyStyle.paddingTop),
+          printMarginTop:parseFloat(printStyle.marginTop),
+          printPaddingTop:parseFloat(printStyle.paddingTop),
+          printTop:printArea.getBoundingClientRect().top,
+          tableTop:printArea.querySelector('table').getBoundingClientRect().top,
+          headerBackground:getComputedStyle(printArea.querySelector('th')).backgroundColor,
+          managerCells:[...printArea.querySelectorAll('tbody tr.manager-color-row:first-child > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
+          unitCells:[...printArea.querySelectorAll('tbody tr.unit-alert-row > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
+          vividCells:[...printArea.querySelectorAll('tbody tr:nth-child(3) > td')].map((node)=>({background:getComputedStyle(node).backgroundColor})),
+          fallbackCells:[...printArea.querySelectorAll('tbody tr:nth-child(4) > td')].map((node)=>({background:getComputedStyle(node).backgroundColor})),
+        };
+      })()`);
+      assert.equal(printMetrics.bodyMarginTop, 0, 'print body must not reserve a top margin');
+      assert.equal(printMetrics.bodyPaddingTop, 0, 'print body must remove the common-header top offset');
+      assert.equal(printMetrics.printMarginTop, 0, 'print area must not reserve a top margin');
+      assert.equal(printMetrics.printPaddingTop, 0, 'print area must not reserve top padding');
+      assert.ok(Math.abs(printMetrics.printTop) <= 0.5 && Math.abs(printMetrics.tableTop) <= 0.5,
+        `printed table must start at the printable origin, got print=${printMetrics.printTop}, table=${printMetrics.tableTop}`);
+      assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.background)).size, 1,
+        'printed manager background must cover the complete row');
+      assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.color)).size, 1,
+        'printed manager text color must cover the complete row');
+      assert.equal(printMetrics.managerCells[0].color, 'rgb(23, 32, 51)',
+        'dark screen text tokens must not leak into the printed manager row');
+      assert.equal(new Set(printMetrics.unitCells.map((cell) => cell.color)).size, 1,
+        'printed EA and 소분 warning text must cover the complete row');
+      assert.equal(printMetrics.unitCells[0].color, printPath === 'orderops/list.html' ? 'rgb(185, 28, 28)' : 'rgb(23, 32, 51)',
+        'each entrypoint must retain its existing warning-row text color');
+      assert.equal(printMetrics.headerBackground, 'rgb(255, 255, 255)',
+        'printed table headers must use a white paper background');
+      assert.ok(printMetrics.managerCells.every((cell) => cell.background === 'rgb(219, 234, 254)'),
+        'printed manager cells must retain the assigned pastel color, not be reset to white');
+      assert.ok(printMetrics.unitCells.every((cell) => cell.background === 'rgb(254, 243, 199)'),
+        'printed warning rows must retain their assigned color as well as red text');
+      assert.ok(printMetrics.vividCells.every((cell) => cell.background === 'rgb(140, 148, 156)'),
+        'vivid manager colors must use the existing lightened print color');
+      assert.ok(printMetrics.fallbackCells.every((cell) => cell.background === 'rgb(220, 252, 231)'),
+        'a missing print-color variable must fall back to the saved manager color');
+      console.log(`PASS manager print colors: ${printPath} / ${printTheme}`);
+    }
+  }
 
   await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
