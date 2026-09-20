@@ -46,6 +46,7 @@ const report = {
     commonLayer: 'nexusUiReadyMs is diagnostic wall time, not common-layer blocking. Optional trace is separate from KPI sampling and requires attribution review; it cannot produce a 150 ms PASS automatically.'
   },
   commonLayerWarmBlocking: { status: 'UNMEASURED', limitMs: 150, reason: 'No validated attribution of common-only synchronous intervals and gate waits. APP_READY, UI-ready wall time and total navigation are not substitutes.' },
+  relativeRegression: { status: 'UNMEASURED', reason: 'No before-change sample set exists for this exact real-host fixture. Absolute KPI results do not establish the architecture relative-regression condition. Unchanged host/common source is not evidence of a 150 ms time budget.' },
   transitions: [], checks: [], exceptions: [], forbiddenNetworkRequests: [], externalRequestsAttempted: [], blockedTransports: [], status: 'RUNNING'
 };
 const persist = () => writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -120,12 +121,20 @@ try {
     const response = await fetch(new URL(path, baseUrl), { signal: AbortSignal.timeout(20000) });
     assert.equal(response.status, 200, `${path} must be available`);
     const bytes = Buffer.from(await response.arrayBuffer());
-    const localSha256 = hash(readFileSync(join(root, path.split('?')[0])));
+    const sourcePath = path.split('?')[0];
+    const localSha256 = hash(readFileSync(join(root, sourcePath)));
+    let expectedBytes;
+    if (option('--base-url')) {
+      const blob = spawnSync('git', ['show', `HEAD:${sourcePath}`], { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+      assert.equal(blob.status, 0, `Git blob HEAD:${sourcePath} must be readable`);
+      expectedBytes = blob.stdout;
+    } else expectedBytes = readFileSync(join(root, sourcePath));
+    const expectedSha256 = hash(expectedBytes);
     const servedSha256 = hash(bytes);
-    report.assets.push({ path, servedSha256, localSha256, matchesCheckout: servedSha256 === localSha256, etag: response.headers.get('etag'), lastModified: response.headers.get('last-modified') });
+    report.assets.push({ path, servedSha256, localSha256, expectedSha256, expectedSource: option('--base-url') ? 'git blob HEAD' : 'working file', matchesExpected: servedSha256 === expectedSha256, matchesCheckout: servedSha256 === localSha256, etag: response.headers.get('etag'), lastModified: response.headers.get('last-modified') });
   }
-  report.assetIdentityStatus = report.assets.every(asset => asset.matchesCheckout) ? 'PASS' : 'FAIL';
-  assert.equal(report.assetIdentityStatus, 'PASS', 'served entry and principal app/host assets must match this checkout before behavior is attributed to it');
+  report.assetIdentityStatus = report.assets.every(asset => asset.matchesExpected) ? 'PASS' : 'FAIL';
+  assert.equal(report.assetIdentityStatus, 'PASS', 'served entry and principal app/host assets must match the expected source bytes before behavior is attributed to them');
   const browserCandidates = [process.env.CHROME_PATH, process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Google/Chrome/Application/chrome.exe'), process.env['ProgramFiles(x86)'] && join(process.env['ProgramFiles(x86)'], 'Microsoft/Edge/Application/msedge.exe'), process.env.PROGRAMFILES && join(process.env.PROGRAMFILES, 'Microsoft/Edge/Application/msedge.exe')].filter(Boolean);
   for (const name of ['google-chrome', 'chromium', 'msedge']) {
     const result = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], { encoding: 'utf8', windowsHide: true });
@@ -199,13 +208,15 @@ try {
   }
   report.checks.push({ name: 'standalone four voucher tabs', status: 'PASS', modes: ['order', 'purchase', 'sale', 'estimate'] });
   const fixture = await client.eval(`(() => {const c=window.SMART_INPUT_CONTRACT,d=c.createDraft();d.activeMode='order';d.updatedAt=new Date().toISOString();const current=d.modes.order;current.updatedAt=d.updatedAt;current.activeMethod='direct';current.sourceText='';current.rows=Array.from({length:20},(_,index)=>c.normalizeRow({rowId:'SI-HOST-ROW-'+index,itemName:'HOST FIXTURE '+index,itemCode:'SYNTHETIC-'+index,quantity:2,unit:'EA',unitPrice:10,inputOwnership:'USER'}));return {key:c.DRAFT_STORAGE_KEY,value:JSON.stringify(d)};})()`);
-  // Seed once at document creation, after the previous app's unload save. Writing
-  // its compatibility key while it is running would race its real save handlers.
-  const fixtureScript = await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.origin===${JSON.stringify(baseUrl.origin)}&&/\/smartinput\/index\.html$/.test(location.pathname)){localStorage.setItem(${JSON.stringify(fixture.key)},${JSON.stringify(fixture.value)});}` });
-  await client.send('Page.reload', {});
+  // Leave the running app before seeding its compatibility key. A same-origin
+  // static text resource has no app handlers that could overwrite the fixture.
+  const seedUrl = new URL('smartinput/smartinput-contract.js', baseUrl).href;
+  await client.send('Page.navigate', { url: seedUrl });
+  await until(() => client.eval(`location.href===${JSON.stringify(seedUrl)}&&document.readyState==='complete'&&!window.SMART_INPUT_CONTRACT`), 'inert same-origin seed document');
+  await client.eval(`localStorage.setItem(${JSON.stringify(fixture.key)},${JSON.stringify(fixture.value)});true`);
+  await client.send('Page.navigate', { url: new URL('smartinput/index.html', baseUrl).href });
   await until(() => client.eval(`document.querySelector('[data-row-id="SI-HOST-ROW-0"] [data-field="quantity"]')?.value==='2'`), 'standalone synthetic rows');
-  await client.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: fixtureScript.identifier });
-  report.fixtureSeed = 'One synthetic compatibility draft installed before the reloaded document executes, after the prior document unload save. The seeding hook is then removed; subsequent edits and recovery use actual app handlers.';
+  report.fixtureSeed = 'One synthetic compatibility draft installed from an inert same-origin static-text document after the prior app unloads. Subsequent edits and recovery use actual app handlers; no synthetic draft is written into a running app.';
   await client.eval(`(()=>{const input=document.querySelector('[data-row-id="SI-HOST-ROW-0"] [data-field="quantity"]');input.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'3');input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
   await until(() => client.eval(`JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')||'{}').modes?.order?.rows?.[0]?.quantity===3`), 'standalone actual autosave');
   await client.send('Page.reload', {});

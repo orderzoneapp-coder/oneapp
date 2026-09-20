@@ -196,7 +196,7 @@ import {
   shoppingCustomerSelectionKey,
   shoppingProductSelectionKey,
   shoppingUploadTotals
-} from './shopping-order-upload.js?v=0.1.2';
+} from './shopping-order-upload.js?v=0.1.3';
 
 const contract = window.SMART_INPUT_CONTRACT;
 if (!contract) throw new Error('SMART_INPUT_CONTRACT_NOT_LOADED');
@@ -6847,6 +6847,8 @@ async function completeShoppingOrderImport() {
   }
 }
 
+let renderedInputCustomFieldsSignature = null;
+
 function renderRows({ restoreFocus = true, deferLayout = false } = {}) {
   if (sourceTableViewActive() && renderMappingRows()) return;
   applyMappingHeaderLocks(inputMappingSession());
@@ -6870,6 +6872,14 @@ function renderRows({ restoreFocus = true, deferLayout = false } = {}) {
   };
   const renderedRows = state.inputListSearch.open ? visibleRows : [...visibleRows, defaultRow];
   const sequenceById = new Map(rows.map((row, index) => [row.rowId, index + 1]));
+  const customRowFields = customFieldsFor('voucher');
+  const customFieldsSignature = JSON.stringify(customRowFields.map(field => [field.id, field.label, field.valueType]));
+  if (customFieldsSignature !== renderedInputCustomFieldsSignature) {
+    // A focused row still needs new/removed custom cells after settings hydrate.
+    // Invalidation remains deferred by the viewport while IME is composing.
+    inputViewport.invalidate();
+    renderedInputCustomFieldsSignature = customFieldsSignature;
+  }
   // Keep the mapping lookup with this render, including later virtual-row paints.
   const rowFieldDisplayValue = createRowFieldDisplayReader();
   inputViewport.render(renderedRows, row => {
@@ -6887,7 +6897,7 @@ function renderRows({ restoreFocus = true, deferLayout = false } = {}) {
       const numericAttributes = excelNumber ? ' inputmode="decimal"' : (inputType === 'number' ? ' step="any"' : '');
       return `<td data-column="${esc(field.id)}"><input data-field="${esc(field.id)}" type="${inputType}"${numericAttributes} value="${esc(rowFieldDisplayValue(row, field.id, row[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`;
     }).join('');
-    const customCells = customFieldsFor('voucher').map(field => (
+    const customCells = customRowFields.map(field => (
       `<td data-column="${esc(field.id)}"><input data-custom-row-field="${esc(field.id)}" type="text"${field.valueType === 'NUMBER' ? ' inputmode="decimal"' : ''} value="${esc(row.fieldValues?.[field.id]?.edited === false ? row.fieldValues[field.id].currentDisplayValue : (row.customValues?.[field.id] ?? ''))}" aria-label="${esc(field.label)}"></td>`
     )).join('');
     const rowClasses = [

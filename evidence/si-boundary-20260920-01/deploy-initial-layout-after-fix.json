@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "SMARTINPUT_INITIAL_INPUT_LAYOUT_BROWSER_V1",
+  "recordedAt": "2026-09-20T19:33:09.319Z",
+  "modes": [
+    "order",
+    "purchase",
+    "sale",
+    "estimate"
+  ],
+  "firstUse": true,
+  "legacyDefaultAutoMigration": true,
+  "preservedExistingLayout": true,
+  "restoreCancel": true,
+  "restoredOnlySelectedMode": true,
+  "userChangesSurviveReload": true,
+  "rowsCustomFieldsDeliveryPreserved": true,
+  "estimateIndependentValues": {
+    "purchasePriceB": "0",
+    "wholesaleA": "120",
+    "wholesaleB": "130",
+    "memo": "적요 원문",
+    "promoPrice": "90",
+    "memo2": "두 번째 적요"
+  },
+  "estimateEnterNavigation": true,
+  "saleRestoreEnabled": true,
+  "saleIndependentValues": {
+    "memo": "적요 원문",
+    "erp.sale.current.line.unmapped_3396a63d": "냉장 출고 지시",
+    "saleAmount1": "0",
+    "saleMemo3": "판매 적요3 구매처",
+    "saleAmount2": "-125"
+  },
+  "saleEnterNavigation": true,
+  "saleCustomTextDatePreserved": true,
+  "saleOccupiedCustomFieldPreserved": true,
+  "runtimeExceptions": 0,
+  "settingsViewports": [
+    {
+      "width": 1920,
+      "height": 1080,
+      "theme": "light",
+      "dialog": {
+        "x": 370,
+        "y": 110,
+        "right": 1550,
+        "bottom": 970,
+        "width": 1180,
+        "height": 860
+      },
+      "button": {
+        "x": 400,
+        "y": 357,
+        "right": 523.390625,
+        "bottom": 387,
+        "width": 123.390625,
+        "height": 30
+      },
+      "footer": {
+        "x": 370,
+        "y": 912,
+        "right": 1550,
+        "bottom": 970,
+        "width": 1180,
+        "height": 58
+      },
+      "enabled": true,
+      "overflow": 0,
+      "display": "block"
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "theme": "dark",
+      "dialog": {
+        "x": 370,
+        "y": 110,
+        "right": 1550,
+        "bottom": 970,
+        "width": 1180,
+        "height": 860
+      },
+      "button": {
+        "x": 400,
+        "y": 357,
+        "right": 523.390625,
+        "bottom": 387,
+        "width": 123.390625,
+        "height": 30
+      },
+      "footer": {
+        "x": 370,
+        "y": 912,
+        "right": 1550,
+        "bottom": 970,
+        "width": 1180,
+        "height": 58
+      },
+      "enabled": true,
+      "overflow": 0,
+      "display": "block"
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "dialog": {
+        "x": 0,
+        "y": 0,
+        "right": 390,
+        "bottom": 844,
+        "width": 390,
+        "height": 844
+      },
+      "button": {
+        "x": 22,
+        "y": 303,
+        "right": 139.546875,
+        "bottom": 341,
+        "width": 117.546875,
+        "height": 38
+      },
+      "footer": {
+        "x": 0,
+        "y": 790,
+        "right": 390,
+        "bottom": 844,
+        "width": 390,
+        "height": 54
+      },
+      "enabled": true,
+      "overflow": 0,
+      "display": "block"
+    }
+  ],
+  "screenshots": [
+    "smartinput-initial-settings-1920-light.png",
+    "smartinput-initial-settings-1920-dark.png",
+    "smartinput-initial-settings-390-light.png",
+    "smartinput-estimate-initial-layout.png",
+    "smartinput-sale-initial-layout.png"
+  ]
+}

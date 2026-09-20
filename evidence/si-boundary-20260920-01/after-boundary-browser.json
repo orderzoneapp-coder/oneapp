@@ -1,6 +1,6 @@
 {
   "taskId": "SI-BOUNDARY-20260920-01",
-  "mainSourceSha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
+  "mainSourceSha256": "23fb22c1d6d8001fe090e05981233782875708d404d9a6f1e50aad7cd96b547b",
   "fixture": "Synthetic local-only data and host fixture; real child bridge and application source",
   "checks": [
     {

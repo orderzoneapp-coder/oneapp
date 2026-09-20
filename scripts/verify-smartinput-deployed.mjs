@@ -17,7 +17,7 @@ const base = args['--base'];
 assert.ok(base, '--base is required');
 const origin = new URL(args['--origin'] || 'https://oneapp.orderz.co.kr/');
 const output = resolve(root, args['--output'] || 'evidence/si-boundary-20260920-01/deployed-assets.json');
-const paths = git('diff', '--name-only', '--diff-filter=ACMR', `${base}..${expected}`, '--', 'smartinput', 'orderq/input-matching-read-adapter.js')
+const paths = git('diff', '--name-only', '--diff-filter=ACMR', `${base}..${expected}`, '--', 'smartinput', 'orderq')
   .split(/\r?\n/).filter(path => /\.(?:html|js|css)$/.test(path));
 assert.ok(paths.includes('smartinput/smartinput.js'), 'Expected SmartInput deployment assets');
 const sha256 = text => createHash('sha256').update(text).digest('hex');

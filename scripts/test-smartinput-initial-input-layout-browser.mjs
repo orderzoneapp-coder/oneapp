@@ -7,8 +7,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const mainSourceSha256 = createHash('sha256').update(readFileSync(join(root, 'smartinput/smartinput.js'))).digest('hex');
 const profile = mkdtempSync(join(tmpdir(), 'oneapp-smartinput-initial-layout-'));
 const screenshotDir = resolve(process.env.SMARTINPUT_INITIAL_LAYOUT_SCREENSHOT_DIR || join(tmpdir(), 'oneapp-smartinput-initial-layout-screenshots'));
 const evidenceFile = process.env.SMARTINPUT_INITIAL_LAYOUT_EVIDENCE_FILE ? resolve(process.env.SMARTINPUT_INITIAL_LAYOUT_EVIDENCE_FILE) : '';
@@ -506,6 +508,8 @@ try {
   await expr(client, `Boolean(document.querySelector('#inputRows [data-row-id="PRESERVE-sale"]'))`, 'reloaded sale');
   await waitForSettingsHydration(client);
   assert.deepEqual(await visibleWorktableColumns(client), restoredPresets.sale.fields, 'sale layout must survive reload');
+  await expr(client, `Boolean(document.querySelector('#inputRows [data-row-id="PRESERVE-sale"] [data-custom-row-field="custom.text.02"]'))&&document.activeElement?.dataset.field==='saleAmount2'`,
+    'hydrated custom date cell must exist in the restored active row while its saved focus is preserved');
   assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('#inputRows [data-row-id="PRESERVE-sale"]');return {
     amount1:row.querySelector('[data-field="saleAmount1"]').value,
     amount2:row.querySelector('[data-field="saleAmount2"]').value,
@@ -531,18 +535,30 @@ try {
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   const evidence = {
     schemaVersion: 'SMARTINPUT_INITIAL_INPUT_LAYOUT_BROWSER_V1',
+    mainSourceSha256,
     recordedAt: new Date().toISOString(), modes: Object.keys(presets),
     firstUse: true, legacyDefaultAutoMigration: true, preservedExistingLayout: true, restoreCancel: true,
     restoredOnlySelectedMode: true, userChangesSurviveReload: true,
     rowsCustomFieldsDeliveryPreserved: true, estimateIndependentValues: estimateValues,
     estimateEnterNavigation: true, saleRestoreEnabled: true,
     saleIndependentValues: saleValues, saleEnterNavigation: true,
-    saleCustomTextDatePreserved: true, saleOccupiedCustomFieldPreserved: true,
+    saleCustomTextDatePreserved: true, saleOccupiedCustomFieldPreserved: true, restoredActiveCustomCell: true,
     runtimeExceptions: exceptions.length, settingsViewports, screenshots: screenshots.map(file => basename(file))
   };
   if (evidenceFile) writeFileSync(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify(evidence, null, 2));
   console.log('SmartInput initial input layout browser PASS');
+} catch (error) {
+  const diagnostic = client && await evaluate(client, `(() => {
+    const active=document.activeElement;
+    return {active:{field:active?.dataset.field||active?.dataset.customRowField,rowId:active?.closest('tr')?.dataset.rowId},
+      columns:[...document.querySelectorAll('#voucherInputTable thead th[data-column]:not(.is-column-hidden)')].map(node=>node.dataset.column),
+      rows:[...document.querySelectorAll('#inputRows tr[data-row-id]')].map(row=>({rowId:row.dataset.rowId,customInputs:[...row.querySelectorAll('[data-custom-row-field]')].map(input=>({field:input.dataset.customRowField,value:input.value})),cachedHasDate:row.__virtualHtml?.includes('data-custom-row-field="custom.text.02"')})),
+      savedSale:JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')||'{}').modes?.sale};
+  })()`);
+  if (evidenceFile) writeFileSync(evidenceFile, `${JSON.stringify({ status: 'FAIL', mainSourceSha256, error: error.stack, diagnostic, settings: client && await storedSettings(client), exceptions }, null, 2)}\n`);
+  console.error('Initial layout failure diagnostic', JSON.stringify({ active: diagnostic?.active, columns: diagnostic?.columns, rows: diagnostic?.rows }));
+  throw error;
 } finally {
   client?.close();
   if (browser && !browser.killed) browser.kill();

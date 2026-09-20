@@ -1,24 +1,15 @@
-import {
-  SHOPPING_ORDER_DEDUPE_SCHEMA,
-  buildShoppingOrderCandidates,
-  validateShoppingOrderHeaders
-} from '../orderq/shopping-order-dedupe-core.js?v=0.2.1';
+import { ONEAPP_ORDERQ_SHOPPING_ORDER_SOURCE_ADAPTER as sourceContract } from '../orderq/shopping-order-source-adapter.js?v=0.1.0';
 import { createOptionalOperationLoader, OPTIONAL_OPERATION_TIMEOUT_MS } from './optional-operation-loader.js?v=0.1.0';
 
 // The existing pure source/payload contract has no repository, readiness or I/O.
 // Reuse its exact signatures and ordering; only explicit inspection/commit loads
 // the owner command adapter and its ledger repository.
-const sourceContract = Object.freeze({
-  capability: () => ({ schemaVersion: SHOPPING_ORDER_DEDUPE_SCHEMA }),
-  isExactSource: headers => validateShoppingOrderHeaders(headers).length === 0,
-  createCandidates: buildShoppingOrderCandidates
-});
 const ownerLoader = createOptionalOperationLoader({ importModule: path => import(path) });
 async function loadOwnerAdapter() {
   const module = await ownerLoader.loadModule({
     feature: 'shopping-order-owner-command',
-    assetVersion: '0.2.1',
-    specifier: '../orderq/shopping-order-command-adapter.js?v=0.2.1',
+    assetVersion: '0.2.2',
+    specifier: '../orderq/shopping-order-command-adapter.js?v=0.2.2',
     timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.localModule
   });
   return module.ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER;

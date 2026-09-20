@@ -3,13 +3,14 @@
   "phase": "after",
   "sourceFileCount": 53,
   "javascriptCount": 51,
-  "initialStaticModuleCount": 41,
-  "initialStaticBytes": 1406334,
+  "initialStaticModuleCount": 42,
+  "initialStaticBytes": 1407758,
   "initialStaticModules": [
     "orderq/canonical-hash.js",
     "orderq/official-voucher-core.js",
     "orderq/official-voucher-v2-contract.js",
     "orderq/shopping-order-dedupe-core.js",
+    "orderq/shopping-order-source-adapter.js",
     "orderq/stocktake-conflict-v2.js",
     "reference-data/change-request-contract.js",
     "reference-data/merchops-settings-read-adapter.js",
@@ -378,11 +379,11 @@
     },
     {
       "path": "smartinput/shopping-order-upload.js",
-      "bytes": 8728,
-      "sha256": "5cf44c84ff0c3b344b04efaf93ec11492ca1c29d6d8848927e3b8a072da34e37",
-      "lines": 202,
+      "bytes": 8455,
+      "sha256": "224841ffc8533806453c55a6e4f318397a018f9777531fb400485429858749ee",
+      "lines": 193,
       "imports": [
-        "../orderq/shopping-order-dedupe-core.js?v=0.2.1",
+        "../orderq/shopping-order-source-adapter.js?v=0.1.0",
         "./optional-operation-loader.js?v=0.1.0"
       ]
     },
@@ -411,9 +412,9 @@
     },
     {
       "path": "smartinput/smartinput.js",
-      "bytes": 686910,
-      "sha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
-      "lines": 12914,
+      "bytes": 687449,
+      "sha256": "23fb22c1d6d8001fe090e05981233782875708d404d9a6f1e50aad7cd96b547b",
+      "lines": 12924,
       "imports": [
         "./virtual-table-body.js?v=0.2.0",
         "./smartinput-data-store.js?v=0.15.0",
@@ -447,7 +448,7 @@
         "./linked-estimate-source-edit.js?v=0.1.2",
         "./field-registry.js?v=0.3.0",
         "./table-view-state.js?v=0.1.0",
-        "./shopping-order-upload.js?v=0.1.2"
+        "./shopping-order-upload.js?v=0.1.3"
       ]
     },
     {
