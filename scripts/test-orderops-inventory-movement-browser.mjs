@@ -8,7 +8,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-// Real Chromium + canonical page in an isolated profile and loopback origin.
+// Real Chromium + standalone development page in an isolated profile and loopback origin.
 // No production storage or network writes. DOM drag/paste events exercise the
 // actual handlers; these checks do not claim OS file-picker/clipboard coverage.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -74,9 +74,9 @@ if (!realFixtures) {
   assert.equal(expected.prior.count, 4); assert.equal(expected.movement.count, 4);
 }
 report.sourceControls = expected;
-const anchor = "      // Keep the current NEXUS host handshake";
-const original = readFileSync(join(ROOT, "orderops/list.html"), "utf8");
-assert.equal(original.split(anchor).length, 2, "canonical test injection point");
+const anchor = "      FILE_KINDS.forEach(bindDropZone);";
+const original = readFileSync(join(ROOT, "orderops_list.html"), "utf8");
+assert.equal(original.split(anchor).length, 2, "standalone test injection point");
 const html = original.replace(anchor, `      globalThis.__inventoryTest = { state, get preparationController() { return preparationController; }, persistLocalWorkspace };\n${anchor}`)
   .replace("https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js", "/customer-master/vendor/xlsx.full.min.js");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" };
@@ -87,7 +87,7 @@ const server = createServer((request, response) => {
   const path = resolve(ROOT, `.${pathname}`);
   if (!path.startsWith(ROOT + sep) || !existsSync(path) || !statSync(path).isFile()) return response.writeHead(404).end();
   response.writeHead(200, { "Content-Type": mime[extname(path)] || "application/octet-stream", "Cache-Control": "no-store" });
-  response.end(pathname === "/orderops/list.html" ? html : readFileSync(path));
+  response.end(pathname === "/orderops_list.html" ? html : readFileSync(path));
 });
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 async function until(action, label, timeout = 30000) {
@@ -169,8 +169,8 @@ try {
   const screenshot = async (name) => { const result = await send("Page.captureScreenshot", { format: "png" }); writeFileSync(join(evidence, `${name}.png`), Buffer.from(result.data, "base64")); };
 
   for (const inventoryKind of ["prior", "movement"]) {
-    if (inventoryKind !== "prior") { await send("Page.navigate", { url: "about:blank" }); await send("Storage.clearDataForOrigin", { origin, storageTypes: "all" }); }
-    await send("Page.navigate", { url: `${origin}/orderops/list.html?inventory-acceptance=${inventoryKind}` });
+    if (inventoryKind !== "prior") { await send("Page.navigate", { url: "about:blank" }); await until(() => ev("location.href === 'about:blank'"), "previous fixture unloaded"); await send("Storage.clearDataForOrigin", { origin, storageTypes: "all" }); }
+    await send("Page.navigate", { url: `${origin}/orderops_list.html?inventory-acceptance=${inventoryKind}` });
     await ready();
     await upload(inventoryKind);
     check(`${inventoryKind}: inventory applies without orders`, await ev(`!__inventoryTest.state.orders && __inventoryTest.state.inventory.rows.length===${expected[inventoryKind].rows} && __inventoryTest.state.workspace?.orders?.length===0`));

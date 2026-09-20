@@ -236,6 +236,9 @@ jobs:
       - name: Test Master registration, edit, legacy safety, and reload persistence
         run: node scripts/test-itemmaster-browser-e2e.mjs
 
+      - name: Verify frozen operational OrderOps backup
+        run: node scripts/test-orderops-stable-rollback.mjs
+
       - name: Test OrderOps allocation and workbook contracts
         run: |
           node scripts/test-shipping-management.mjs

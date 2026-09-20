@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 
-// Actual canonical page + Chromium. Only the local test server exposes __ops.
+// Actual standalone development page + Chromium. Only the local test server exposes __ops.
 // Files and failures are synthetic; no production profile, external POST or
 // inactive workbench module is used. DOM file events are not an OS picker claim.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +18,7 @@ const evidence = resolve(process.env.ORDEROPS_PREPARATION_EVIDENCE_DIR || join(t
 const profile = mkdtempSync(join(tmpdir(), "orderops-excel-preparation-browser-"));
 mkdirSync(evidence, { recursive: true });
 const downloads = mkdtempSync(join(evidence, "downloads-"));
-const sourcePaths = ["orderops/list.html", "orderops/excel-preparation.js", "orderops/excel-preparation-ui.js", "orderops/excel-preparation.css", "orderFulfillmentEngine.js", "orderFulfillmentWorkbook.js"];
+const sourcePaths = ["orderops_list.html", "orderops/excel-preparation.js", "orderops/excel-preparation-ui.js", "orderops/excel-preparation.css", "orderFulfillmentEngine.js", "orderFulfillmentWorkbook.js"];
 const sources = new Map(sourcePaths.map((path) => [path, readFileSync(join(ROOT, path))]));
 const report = {
   startedAt: new Date().toISOString(), result: "running", evidence, profile,
@@ -26,9 +26,9 @@ const report = {
   sourceHashes: Object.fromEntries([...sources].map(([path, bytes]) => [path, createHash("sha256").update(bytes).digest("hex")])),
   checks: [], consoleProblems: [], errors: [], externalRequests: [], externalWrites: [],
 };
-const originalHtml = String(sources.get("orderops/list.html"));
-const anchor = "      // Keep the current NEXUS host handshake";
-assert.equal(originalHtml.split(anchor).length, 2, "Expected one canonical test injection point");
+const originalHtml = String(sources.get("orderops_list.html"));
+const anchor = "      FILE_KINDS.forEach(bindDropZone);";
+assert.equal(originalHtml.split(anchor).length, 2, "Expected one standalone test injection point");
 const html = originalHtml.replace(anchor, `      globalThis.__ops = { state, get preparationController() { return preparationController; }, handleFile, handleBundleFiles, handleIntegratedFile, commitInputCandidates, runAnalysis, renderResults, persistLocalWorkspace, restoreLocalRecord };\n${anchor}`);
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" };
 const server = createServer((request, response) => {
@@ -42,7 +42,7 @@ const server = createServer((request, response) => {
   const file = resolve(ROOT, `.${pathname}`);
   if (!file.startsWith(ROOT + sep) || !existsSync(file)) { response.writeHead(404).end(); return; }
   response.writeHead(200, { "Content-Type": mime[extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
-  response.end(pathname === "/orderops/list.html" ? html : sources.get(pathname.slice(1)) || readFileSync(file));
+  response.end(pathname === "/orderops_list.html" ? html : sources.get(pathname.slice(1)) || readFileSync(file));
 });
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 async function until(action, label, timeout = 30000) {
@@ -198,7 +198,7 @@ try {
   await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
   report.browser = await send("Browser.getVersion");
   report.origin = origin;
-  await send("Page.navigate", { url: `${origin}/orderops/list.html?isolated=excel-preparation` });
+  await send("Page.navigate", { url: `${origin}/orderops_list.html?isolated=excel-preparation` });
   await until(() => ev("Boolean(globalThis.__ops?.state.db && __ops.preparationController && globalThis.XLSX)"), "page + preparation controller + IndexedDB");
   await installFixtures();
 
