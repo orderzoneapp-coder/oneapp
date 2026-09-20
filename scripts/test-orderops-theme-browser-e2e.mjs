@@ -166,6 +166,21 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/orderops/list.html` });
   await loaded;
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))`), 'common header');
+  await evaluate(client, `(() => {
+    localStorage.setItem('oneapp.orderops.hidden-columns.v1', JSON.stringify({
+      schemaVersion: 'orderops-hidden-columns/v1',
+      tabs: { inventory: ['inventory:3:%EB%8B%A8%EC%9C%84'] },
+    }));
+    localStorage.setItem('oneapp.orderops.column-order.v1', JSON.stringify({
+      schemaVersion: 'orderops-column-order/v1',
+      tabs: {
+        allocations: ['shipping:allocations:6:%EA%B7%9C%EA%B2%A9', 'shipping:allocations:7:%EC%A0%95%EB%B3%B4'],
+        inventory: ['inventory:2:%EA%B7%9C%EA%B2%A9', 'shipping:inventory:row-state'],
+      },
+    }));
+  })()`);
+  const layoutReloaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload'); await layoutReloaded;
   // Exercise the restored file workflow before the visual fixtures replace its table.
   const matrices = {
     orders: [['품목코드','품목명','규격','수량','적요','적요1','거래처','그룹','담당','단위','단가','일자'],
@@ -278,6 +293,29 @@ try {
   await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'basic analysis ready');
   await click(client, '#analyzeButton');
   await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled`), 'basic analysis complete');
+  await click(client, '#ordersDrop');
+  const visibleUnit = async () => evaluate(client, `(() => {
+    const table = document.querySelector('#previewTable table');
+    const headers = [...table.querySelectorAll('thead th .column-header-label')].map(node => node.textContent.trim());
+    const index = headers.indexOf('단위');
+    const row = table.querySelector('tbody tr[data-product-code="000001"]');
+    const productIndex = headers.indexOf('품명');
+    return { headers, index, text: index < 0 ? '' : row?.cells[index]?.textContent.trim(),
+      color: index < 0 ? '' : getComputedStyle(row.cells[index]).color,
+      productColor: productIndex < 0 ? '' : getComputedStyle(row.cells[productIndex]).color };
+  })()`);
+  const orderUnit = await visibleUnit();
+  assert.equal(orderUnit.headers[orderUnit.index - 1], '규격', 'order status unit must follow specification');
+  assert.equal(orderUnit.text, 'EA', 'order status must show the source order unit');
+  assert.equal(orderUnit.color, 'rgb(185, 28, 28)', 'non-BOX order unit must be red');
+  assert.equal(orderUnit.productColor, 'rgb(185, 28, 28)', 'non-BOX order row text must be red');
+  await click(client, '#inventoryDrop');
+  const inventoryUnit = await visibleUnit();
+  assert.ok(inventoryUnit.index >= 0, 'warehouse inventory must display a unit column');
+  assert.equal(inventoryUnit.headers[inventoryUnit.index - 1], '규격', 'new inventory unit must follow specification in a saved layout');
+  assert.equal(inventoryUnit.text, 'EA', 'warehouse inventory must show its source unit');
+  assert.equal(inventoryUnit.color, 'rgb(185, 28, 28)', 'non-BOX inventory unit must be red');
+  assert.equal(inventoryUnit.productColor, 'rgb(185, 28, 28)', 'non-BOX inventory row text must be red');
   await click(client, '#ordersDrop');
   for (const [field,value] of [['quantity','7'],['unitPrice','1200']]) {
     await evaluate(client, `(() => {
@@ -407,6 +445,17 @@ try {
   await click(client,'#ordersDrop');
   const unitText=await evaluate(client,`document.querySelector('#previewTable').textContent`);
   assert.match(unitText,/2 BOX/); assert.match(unitText,/30 EA/); assert.match(unitText,/단위/);
+  const mixedUnits = await evaluate(client, `(() => {
+    const table = document.querySelector('#previewTable table.preview-allocations');
+    const headers = [...table.querySelectorAll('thead th .column-header-label')].map(node => node.textContent.trim());
+    const index = headers.indexOf('단위');
+    return [...table.querySelectorAll('tbody tr[data-product-code="000001"]')].map(row => ({
+      unit: row.cells[index].textContent.trim(), color: getComputedStyle(row.cells[index]).color,
+    }));
+  })()`);
+  assert.deepEqual(mixedUnits.map(row => row.unit), ['BOX', 'EA']);
+  assert.notEqual(mixedUnits[0].color, 'rgb(185, 28, 28)', 'BOX order unit must not be red');
+  assert.equal(mixedUnits[1].color, 'rgb(185, 28, 28)', 'non-BOX order unit must be red even when specification is not EA');
   await click(client,'#inventoryDrop');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/단위.*(확인|보류)/);
   await click(client,'#ledgerDrop');
@@ -421,6 +470,25 @@ try {
   assert.deepEqual([box[10],onlyBuy[10]],['매입처','매입처'],'the valid purchase source must preserve its explicit 구매처 in ledger output');
   assert.equal(calculationRows['구매업로드'].some(row=>row.includes('000001')),false,'mixed units must not bypass final purchase selection');
   assert.deepEqual(onlyBuy.slice(4,9),['',3,0,0,''],'purchase-only inventory is unknown, never a confirmed zero');
+  await uploadMatrix('inventory', [matrices.inventory[0],
+    ['000001','단위상품','포장','BOX',20,20,0,0],
+  ], 'inventory-box-unit.xlsx');
+  await analyzeAgain('inventory BOX unit');
+  await click(client, '#inventoryDrop');
+  const boxInventoryUnit = await visibleUnit();
+  assert.equal(boxInventoryUnit.text, 'BOX');
+  assert.notEqual(boxInventoryUnit.color, 'rgb(185, 28, 28)', 'BOX inventory unit must not be red');
+  assert.notEqual(boxInventoryUnit.productColor, 'rgb(185, 28, 28)', 'BOX inventory row text must not be red');
+  await uploadMatrix('inventory', [
+    ['품목코드','품목명','규격','수량','1창고','3서울','4전송'],
+    ['000001','단위상품','낱개',20,20,0,0],
+  ], 'inventory-without-unit.xlsx');
+  await analyzeAgain('inventory without source unit column');
+  await click(client, '#inventoryDrop');
+  const missingSourceUnit = await visibleUnit();
+  assert.ok(missingSourceUnit.index >= 0, 'inventory must retain a unit column when the source omits it');
+  assert.equal(missingSourceUnit.text, '', 'missing source unit must remain blank rather than be inferred');
+  assert.equal(missingSourceUnit.color, 'rgb(185, 28, 28)', 'missing unit must be flagged as non-BOX');
   console.log('Baseline calculation browser F05/F06/F07/F08 actual Excel input/edit/render/output PASS');
   await evaluate(client, `(() => {
     const host=document.querySelector('#previewTable');

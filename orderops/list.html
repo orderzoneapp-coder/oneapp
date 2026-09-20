@@ -4661,6 +4661,14 @@
         const byKey = new Map(preview.columns.map((column) => [column.key, column]));
         const ordered = saved.map((key) => byKey.get(key)).filter(Boolean);
         const included = new Set(ordered.map((column) => column.key));
+        if (["allocations", "inventory"].includes(tabId)) {
+          const unit = preview.columns.find((column) => column.role === "unit");
+          const specificationIndex = ordered.findIndex((column) => column.role === "specification");
+          if (unit && !included.has(unit.key) && specificationIndex >= 0) {
+            ordered.splice(specificationIndex + 1, 0, unit);
+            included.add(unit.key);
+          }
+        }
         preview.columns.forEach((column) => {
           if (!included.has(column.key)) ordered.push(column);
         });
@@ -4938,7 +4946,9 @@
         if (!inventoryView || !Array.isArray(inventoryView.columns) || !Array.isArray(inventoryView.rows)) return null;
 
         const baseColumns = inventoryView.columns.map((column, index) => ({
-          key: isSafeColumnKey(column?.key)
+          key: column?.role === "unit"
+            ? "shipping:inventory:display-unit"
+            : isSafeColumnKey(column?.key)
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
           header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
@@ -4952,7 +4962,24 @@
                 : String(column?.header || ""),
           numeric: Boolean(column?.numeric),
           role: column?.role || "",
+          defaultWidth: column?.role === "unit" ? 54 : undefined,
         }));
+
+        const unitAnchor = ["specification", "productName", "productCode"]
+          .map((role) => baseColumns.findIndex((column) => column.role === role))
+          .find((index) => index >= 0);
+        const fallbackUnitIndex = baseColumns.some((column) => column.role === "unit")
+          ? -1
+          : (unitAnchor ?? -1) + 1;
+        if (fallbackUnitIndex >= 0) {
+          baseColumns.splice(fallbackUnitIndex, 0, {
+            key: "shipping:inventory:display-unit",
+            header: "단위",
+            numeric: false,
+            role: "unit",
+            defaultWidth: 54,
+          });
+        }
 
         let statusIndex = baseColumns.findIndex((column) => String(column.header).trim() === "규격");
         statusIndex = statusIndex >= 0 ? statusIndex + 1 : Math.min(3, baseColumns.length);
@@ -5000,6 +5027,7 @@
         }));
         const rows = sourceRows.map((row) => {
           const values = Array.isArray(row?.values) ? [...row.values] : [];
+          if (fallbackUnitIndex >= 0) values.splice(fallbackUnitIndex, 0, row?.unit ?? "");
           if (state.warehouseFilters.size > 0) {
             const selectedStock = baseColumns.reduce((sum, column, index) => {
               if (column.role !== "warehouseQuantity" || !state.warehouseFilters.has(column.key)) return sum;
@@ -5187,7 +5215,7 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 10;
+        const allocationWarehouseStart = 11;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocationProductSummaries = new Map();
         const allocationUnitGroups = new Map();
@@ -5223,11 +5251,11 @@
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "단위", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
-            7,
             8,
             9,
+            10,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
           ],
           inventory: [],
@@ -5243,6 +5271,7 @@
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
+            row.sourceUnit ?? row.unit ?? "",
             row.productAggregateQuantity,
             row.quantity,
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
@@ -5254,7 +5283,11 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 138, 82, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
+        allocations.columns.forEach((column, index) => {
+          if (index === 7) column.key = "shipping:allocations:source-unit";
+          else if (index > 7) column.key = `shipping:allocations:${index - 1}:${encodeURIComponent(column.header)}`;
+        });
+        [76, 138, 82, 92, 94, 160, 62, 54, 112, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
         allocations.columns[0].role = "warehouse";
@@ -5264,11 +5297,12 @@
         allocations.columns[4].role = "productCode";
         allocations.columns[5].role = "productName";
         allocations.columns[6].role = "specification";
-        allocations.columns[7].role = "productAggregateQuantity";
-        allocations.columns[8].role = "orderQuantity";
-        allocations.columns[8].orderField = "quantity";
-        allocations.columns[9].role = "unitPrice";
-        allocations.columns[9].orderField = "unitPrice";
+        allocations.columns[7].role = "unit";
+        allocations.columns[8].role = "productAggregateQuantity";
+        allocations.columns[9].role = "orderQuantity";
+        allocations.columns[9].orderField = "quantity";
+        allocations.columns[10].role = "unitPrice";
+        allocations.columns[10].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -5392,6 +5426,10 @@
 
       function exactBoxUnit(sourceRow) {
         return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
+      }
+
+      function displayedUnitIsBox(sourceRow) {
+        return String(sourceRow?.sourceUnit ?? sourceRow?.unit ?? "").trim().toUpperCase() === "BOX";
       }
 
       function previewRowFill(previewId, sourceRow) {
@@ -5866,6 +5904,9 @@
               const managerPrintColorStyle = options.printOutput === true && managerColor
                 ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
               const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
+              const unitBySource = ["allocations", "inventory"].includes(previewId);
+              const unitAlertRow = unitBySource ? !displayedUnitIsBox(sourceRow) : exactWarningUnit(sourceRow);
+              const boxUnitRow = unitBySource ? displayedUnitIsBox(sourceRow) : exactBoxUnit(sourceRow);
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 previewId === "unresolved" && sourceRow?.integrity?.status !== "READY" ? "unresolved-review-required-row" : "",
@@ -5875,8 +5916,8 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 sourceRow?.quantityComparable !== false && Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
-                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
-                exactBoxUnit(sourceRow) ? "box-unit-row" : "",
+                unitAlertRow ? "unit-alert-row" : "",
+                boxUnitRow ? "box-unit-row" : "",
                 previewId === "inventory" && Number(state.selectedSubstitutionOrderRow) > 0 &&
                   orderInformationOrders(sourceRow).some((order) =>
                     Number(order?.sourceRowNumber) === Number(state.selectedSubstitutionOrderRow))
@@ -5922,11 +5963,11 @@
                     );
                     const purchaseNegative = preview.purchase === index && negativeBalance;
                     const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn;
-                    const warningUnitContext = exactWarningUnit(sourceRow) && (
-                      ["productName", "specification"].includes(column.role) || quantityColumn
+                    const warningUnitContext = unitAlertRow && (
+                      ["productName", "specification", "unit"].includes(column.role) || quantityColumn
                     );
-                    const boxUnitContext = exactBoxUnit(sourceRow) &&
-                      ["productName", "specification"].includes(column.role);
+                    const boxUnitContext = boxUnitRow &&
+                      ["productName", "specification", "unit"].includes(column.role);
                     const classes = [
                       isNumber ? "number" : "",
                       isStatus ? "status" : "",
