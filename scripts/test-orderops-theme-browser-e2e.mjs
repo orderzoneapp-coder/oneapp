@@ -166,6 +166,19 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/orderops/list.html` });
   await loaded;
   await waitFor(() => evaluate(client, `Boolean(document.querySelector('.nexus-ui-header'))`), 'common header');
+  // A previously hidden "주문" column and a saved layout must not suppress the restored product total.
+  await evaluate(client, `(() => {
+    localStorage.setItem('oneapp.orderops.hidden-columns.v1', JSON.stringify({
+      schemaVersion: 'orderops-hidden-columns/v1',
+      tabs: { inventory: ['shipping:inventory:order-quantity'] },
+    }));
+    localStorage.setItem('oneapp.orderops.column-order.v1', JSON.stringify({
+      schemaVersion: 'orderops-column-order/v1',
+      tabs: { inventory: ['inventory:0:%ED%92%88%EB%AA%A9%EC%BD%94%EB%93%9C', 'shipping:inventory:order-quantity', 'inventory:4:%EC%88%98%EB%9F%89'] },
+    }));
+  })()`);
+  const layoutReloaded = client.once('Page.loadEventFired');
+  await client.send('Page.reload'); await layoutReloaded;
   // Exercise the restored file workflow before the visual fixtures replace its table.
   const matrices = {
     orders: [['품목코드','품목명','규격','수량','적요','적요1','거래처','그룹','담당','단위','단가','일자'],
@@ -352,6 +365,16 @@ try {
     await click(client, `#${view}Drop`);
     assert.match(await evaluate(client, `document.querySelector('#previewTable').textContent`), /기본상품/);
   }
+  const orderTotal = await evaluate(client, `(() => {
+    const table = document.querySelector('#previewTable table.preview-inventory');
+    const headers = [...table.querySelectorAll('thead th .column-header-label')].map(node => node.textContent.trim());
+    const index = headers.indexOf('상품별 주문 합계');
+    const row = table.querySelector('tbody tr[data-product-code="000001"]');
+    return { index, value: index < 0 ? '' : row?.cells[index]?.textContent.trim(), headers };
+  })()`);
+  assert.ok(orderTotal.index >= 0, `inventory must show the product order total despite a legacy hidden column: ${orderTotal.headers}`);
+  assert.equal(orderTotal.value, '7', 'inventory product order total must match the edited order quantity');
+  assert.equal(orderTotal.headers[orderTotal.index + 1], '잔량', 'the restored total must appear before remaining stock in a saved layout');
   const workbookResult=await evaluate(client, `(async () => {
     let blob; const original=URL.createObjectURL;
     URL.createObjectURL=(value)=>{blob=value;return original.call(URL,value);};

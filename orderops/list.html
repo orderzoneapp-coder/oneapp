@@ -4661,6 +4661,14 @@
         const byKey = new Map(preview.columns.map((column) => [column.key, column]));
         const ordered = saved.map((key) => byKey.get(key)).filter(Boolean);
         const included = new Set(ordered.map((column) => column.key));
+        if (tabId === "inventory" && ordered.length > 0) {
+          const orderTotal = preview.columns.find((column) => column.role === "orderQuantity");
+          const remainingIndex = ordered.findIndex((column) => column.role === "calculatedQuantity");
+          if (orderTotal && !included.has(orderTotal.key) && remainingIndex >= 0) {
+            ordered.splice(remainingIndex, 0, orderTotal);
+            included.add(orderTotal.key);
+          }
+        }
         preview.columns.forEach((column) => {
           if (!included.has(column.key)) ordered.push(column);
         });
@@ -4938,10 +4946,14 @@
         if (!inventoryView || !Array.isArray(inventoryView.columns) || !Array.isArray(inventoryView.rows)) return null;
 
         const baseColumns = inventoryView.columns.map((column, index) => ({
-          key: isSafeColumnKey(column?.key)
+          key: column?.role === "orderQuantity"
+            ? "shipping:inventory:product-order-total"
+            : isSafeColumnKey(column?.key)
             ? column.key
             : `shipping:inventory:${index}:${encodeURIComponent(String(column?.header || index))}`,
-          header: column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
+          header: column?.role === "orderQuantity"
+            ? "상품별 주문 합계"
+            : column?.role === "calculatedQuantity" && state.warehouseFilters.size > 0
             ? "잔량"
             : column?.role === "calculatedQuantity"
               ? "잔량"
@@ -4952,6 +4964,7 @@
                 : String(column?.header || ""),
           numeric: Boolean(column?.numeric),
           role: column?.role || "",
+          defaultWidth: column?.role === "orderQuantity" ? 150 : undefined,
         }));
 
         let statusIndex = baseColumns.findIndex((column) => String(column.header).trim() === "규격");

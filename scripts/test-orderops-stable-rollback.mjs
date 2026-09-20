@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -13,11 +14,12 @@ const pinned = 'orderops/stable/20260917';
 const historical = (file) => execFileSync('git', ['show', `${baseline}:${file}`], {
   cwd: root, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024,
 });
-const expectedHtml = historical('orderops/list.html')
-  .replace('../orderFulfillmentEngine.js?v=20260917-work-preservation', 'stable/20260917/orderFulfillmentEngine.js')
-  .replace('../orderFulfillmentWorkbook.js?v=20260916-baseline-calculation', 'stable/20260917/orderFulfillmentWorkbook.js');
-assert.equal(readFileSync(join(root, 'orderops/list.html'), 'utf8').replaceAll('\r\n', '\n'), expectedHtml.replaceAll('\r\n', '\n'),
-  'The operational fallback must remain the approved baseline; ORDER Q development must not update it implicitly');
+// The approved screen includes the later user-requested inventory order-total label.
+// Pin that complete screen while keeping the calculation and export modules at the historical baseline.
+const approvedScreenSha256 = '72b35e3b4129af0b3649b3af18077ee440f98406bafdd0a5f6608383465cf22f';
+const screen = readFileSync(join(root, 'orderops/list.html'), 'utf8').replaceAll('\r\n', '\n');
+assert.equal(createHash('sha256').update(screen).digest('hex'), approvedScreenSha256,
+  'The operational fallback screen must remain the user-approved version; ORDER Q development must not update it implicitly');
 for (const name of ['orderFulfillmentEngine.js', 'orderFulfillmentWorkbook.js']) {
   assert.equal(readFileSync(join(root, pinned, name), 'utf8').replaceAll('\r\n', '\n'), historical(name).replaceAll('\r\n', '\n'),
     `${name}: the fallback must load its matching frozen module`);
