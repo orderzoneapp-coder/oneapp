@@ -16,6 +16,7 @@ import {
   loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.4.0';
 import { captureTextIntake, analyzeSingleOrderDocument, rematchExtractedLinesForCustomer, extractOrderProductLines, isSelectableMasterProduct, hasEnteredValue, rowHasMeaningfulInput, rowHasLinkedSource, compactRowBlankValues, pruneEmptyWorkRows, manualLinkedRows } from './input.js?v=0.1.0';
+import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from './input-matching-snapshot.js?v=0.1.0';
 import {
   OPTIONAL_OPERATION_TIMEOUT_MS,
   createHydrationWriteGate,
@@ -382,6 +383,7 @@ const state = {
   draft: initialDraft,
   customers: [],
   products: [],
+  inputMatching: { status: 'LOADING', snapshot: null, error: null },
   productMatchIndex: createProductMatchIndex([]),
   catalogStatus: 'LOADING',
   customerStatus: 'LOADING',
@@ -612,11 +614,14 @@ function resetResumedShoppingInspection(draft) {
 }
 
 function inputMatchingContext() {
-  return {
+  const fallback = {
     products: state.products,
     companyId: state.companyId,
+    actorId: state.actorId,
     revision: state.references.product.active?.revision || ''
   };
+  return { ...inputContextFromMatchingSnapshot(state.inputMatching.snapshot, fallback),
+    analysisRevision: inputMatchingAnalysisRevision(state.inputMatching.snapshot, fallback) };
 }
 
 function modeUi() {
@@ -1456,6 +1461,29 @@ function renderReferenceDomain(domain) {
   }
 }
 
+function renderInputMatchingStatus() {
+  const matching = state.inputMatching;
+  const snapshot = matching.snapshot;
+  const status = $('inputMatchingStatus');
+  if (status) { status.textContent = matching.status; status.dataset.status = matching.status; }
+  const prepared = snapshot && snapshot.companyId === state.companyId && snapshot.actorId === state.actorId;
+  const message = prepared
+    ? `별칭 ${snapshot.mappings.length}건 · 고객별 이력 ${snapshot.history.length}건 · ${referenceTimeText(snapshot.readAt)}`
+    : (matching.status === 'LOADING' ? '저장된 입력 기준 확인 중' : '기존 별칭·이력 미준비 · 전체 기준정보 새로고침으로 가져오세요.');
+  if ($('inputMatchingSummary')) $('inputMatchingSummary').textContent = message;
+  const notice = $('inputMatchingNotice');
+  if (!notice) return;
+  const matchingRevision = inputMatchingAnalysisRevision(snapshot, { companyId: state.companyId, actorId: state.actorId,
+    revision: state.references.product.active?.revision || '' });
+  const needsReanalysis = prepared && state.draft.activeMode === 'order'
+    && modeDraft().batches.some(batch => batch.sourceRole === 'LIVE_SOURCE' && batch.inputMatchingRevision !== matchingRevision);
+  notice.hidden = Boolean(prepared && matching.status !== 'ERROR' && !needsReanalysis);
+  const stateMessage = matching.status === 'ERROR'
+    ? (prepared ? '별칭·이력 갱신 실패 · 마지막 정상 입력 기준을 사용합니다.' : '별칭·이력을 불러오지 못했습니다. 원문 입력은 가능하며 이전 매칭 결과와 다를 수 있습니다. 기준정보 새로고침을 실행하세요.')
+    : (prepared ? '' : (matching.status === 'LOADING' ? '저장된 별칭·이력 확인 중 · 원문 입력은 계속할 수 있습니다.' : '기존 별칭·이력이 아직 준비되지 않아 원문·현재 상품 기준으로 표시합니다. 이전 입력 기준을 사용하려면 기준정보의 전체 새로고침을 실행하세요.'));
+  notice.textContent = [stateMessage, needsReanalysis ? '현재 행은 이전 입력 기준으로 분석되었습니다. 새 별칭·이력을 적용하려면 같은 원문의 분석 버튼을 누르세요. 직접 수정한 값은 유지합니다.' : ''].filter(Boolean).join(' ');
+}
+
 function renderReferenceControls() {
   $('analyzeButton').disabled = state.busy;
   $('customerSearchButton').disabled = state.busy || modeDraft().estimateKind === 'LINKED_GROUP' || estimateCreation()?.kind === 'LINKED_GROUP';
@@ -1469,6 +1497,7 @@ function renderReferenceControls() {
   refreshReferenceAggregate();
   renderReferenceDomain('product');
   renderReferenceDomain('customer');
+  renderInputMatchingStatus();
   const overview = $('referenceOverviewSummary');
   if (overview) overview.textContent = state.referenceMessage;
   const pendingApply = $('referencePendingApply');
@@ -7656,7 +7685,8 @@ async function analyzeSource({ automatic = false } = {}) {
     existingLiveBatch = [...current.batches].reverse().find(batch => batch.rawText === rawText) || null;
     if (existingLiveBatch) existingLiveBatch.sourceRole = 'LIVE_SOURCE';
   }
-  if (existingLiveBatch?.contentHash && existingLiveBatch.contentHash === contentHash) {
+  const matchingContext = inputMatchingContext();
+  if (canReuseInputAnalysis(existingLiveBatch, { contentHash, matchingRevision: matchingContext.analysisRevision, automatic })) {
     renderSourceAnalysis();
     return;
   }
@@ -7695,7 +7725,8 @@ async function analyzeSource({ automatic = false } = {}) {
     sourceRole: 'LIVE_SOURCE',
     automatic,
     rawText,
-    contentHash
+    contentHash,
+    inputMatchingRevision: matchingContext.analysisRevision
   });
   if (pendingOcr?.status === 'VERIFIED') {
     batch.ocrStatus = pendingOcr.status;
@@ -7783,7 +7814,7 @@ async function analyzeSource({ automatic = false } = {}) {
           sourcePart: captured.sourcePart,
           rawText,
           customerOverride: selectedCustomer,
-          matchingContext: inputMatchingContext(),
+          matchingContext,
           headerDraft: {
             orderDate: current.header.orderDate,
             deliveryExpectedDate: current.header.deliveryDate,
@@ -10708,6 +10739,7 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
   dialog.addEventListener('cancel', event => { event.preventDefault(); finish(); });
   const submit = async () => {
+    if (dialog.querySelector('[data-confirm-save]').disabled) return;
     const catalogName = dialog.querySelector('[data-estimate-name]').value.trim();
     if (!catalogName) {
       dialog.querySelector('[data-estimate-name]').focus();
@@ -10780,20 +10812,21 @@ async function saveSelectedEstimateTable() {
 }
 
 async function saveEstimateDocument(catalogName) {
+  if (state.busy) return false;
   if (!validateEstimateDocument()) return false;
   const current = modeDraft();
   const requestedName = String(catalogName || '').trim();
   if (!requestedName) return false;
-  try { await ensureEstimateBodies(state.estimates.filter(record => record.estimateId === current.catalogRecordId || estimateTitle(record) === requestedName).map(record => record.estimateId)); } catch (error) { toast(error.message, 'error'); return false; }
-  const loaded = state.estimates.find(record => record.estimateId === current.catalogRecordId && estimateTitle(record) === requestedName);
-  const collision = state.estimates.find(record => estimateTitle(record) === requestedName && record.estimateId !== loaded?.estimateId);
-  if (collision && !window.confirm(`“${requestedName}” 견적서만 현재 내용으로 변경할까요?`)) return false;
-  const previous = loaded || collision || null;
-  if (previous && previous.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) {
-    toast('기존 자료 전환에서 백업과 소속을 확인한 뒤 저장하세요.', 'warn'); return false;
-  }
   state.busy = true; renderDelivery();
   try {
+    await ensureEstimateBodies(state.estimates.filter(record => record.estimateId === current.catalogRecordId || estimateTitle(record) === requestedName).map(record => record.estimateId));
+    const loaded = state.estimates.find(record => record.estimateId === current.catalogRecordId && estimateTitle(record) === requestedName);
+    const collision = state.estimates.find(record => estimateTitle(record) === requestedName && record.estimateId !== loaded?.estimateId);
+    if (collision && !window.confirm(`“${requestedName}” 견적서만 현재 내용으로 변경할까요?`)) return false;
+    const previous = loaded || collision || null;
+    if (previous && previous.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) {
+      toast('기존 자료 전환에서 백업과 소속을 확인한 뒤 저장하세요.', 'warn'); return false;
+    }
     if ((await estimateWorkspace.pending()).some(entry => entry.kind !== 'master')) throw new Error('이전 저장 결과를 견적서 재시도로 확인한 뒤 저장하세요.');
     const timestamp = new Date().toISOString();
     const estimateId = previous?.estimateId || createRecordId('SIEST');
@@ -11639,6 +11672,7 @@ async function retrySmartAuxiliaryData() {
 
 async function hydrateReferences() {
   const companyId = state.companyId;
+  const actorId = state.actorId;
   const modeId = state.draft.activeMode;
   const settingsAtHydrationStart = cloneGridValue(state.settings);
   const smartDataToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.SMART_DATA_READ, { assetVersion: 'smartinput-db-v5' });
@@ -11656,8 +11690,16 @@ async function hydrateReferences() {
   setAppStatus(state.referenceMessage);
   const smartDataResult = await Promise.allSettled([
     withTimeout(loadSmartInputData({ includeEstimates: false, includeSourceImages: false }), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '스마트입력 설정 로딩 시간 초과'),
-    withTimeout(loadInputTemplates(companyId, modeId), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '입력 양식 로딩 시간 초과')
+    withTimeout(loadInputTemplates(companyId, modeId), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '입력 양식 로딩 시간 초과'),
+    withTimeout(loadLocalInputMatchingSnapshot({ companyId, actorId }, {
+      isCurrent: () => state.companyId === companyId && state.actorId === actorId && optionalOperationIsLatest(referenceToken)
+    }), OPTIONAL_OPERATION_TIMEOUT_MS.localModule, '저장된 별칭·이력 로딩 시간 초과')
   ]);
+  if (state.companyId === companyId && state.actorId === actorId && optionalOperationIsLatest(referenceToken)) {
+    const loaded = smartDataResult[2];
+    state.inputMatching = loaded.status === 'fulfilled' ? loaded.value : { status: 'ERROR', snapshot: null, error: loaded.reason };
+    renderInputMatchingStatus();
+  }
   if (optionalOperationIsLatest(templateToken) && state.companyId === companyId && state.draft.activeMode === modeId) {
     state.inputTemplates = smartDataResult[1].status === 'fulfilled' && Array.isArray(smartDataResult[1].value)
       ? smartDataResult[1].value
@@ -11809,6 +11851,7 @@ async function persistFieldRegistryLayout(settings) {
 async function refreshAllReferencesFromToolbar() {
   if (state.busy) return false;
   const companyId = state.companyId;
+  const actorId = state.actorId;
   const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.REFERENCE_READ, { assetVersion: 'reference-generation-v1' });
   const productReferenceToken = beginOptionalOperation(referenceOperationFeature('product'), { assetVersion: 'reference-generation-v1' });
   const customerReferenceToken = beginOptionalOperation(referenceOperationFeature('customer'), { assetVersion: 'reference-generation-v1' });
@@ -11817,16 +11860,29 @@ async function refreshAllReferencesFromToolbar() {
   const selectionStart = typeof focused?.selectionStart === 'number' ? focused.selectionStart : null;
   const selectionEnd = typeof focused?.selectionEnd === 'number' ? focused.selectionEnd : null;
   const retainedInputListSearch = { ...state.inputListSearch };
+  let matchingRefreshOpen = true, matchingRefresh = null, generationUpdated = false;
+  const matchingScopeCurrent = () => matchingRefreshOpen && state.companyId === companyId && state.actorId === actorId
+    && optionalOperationIsLatest(operationToken);
   state.busy = true;
   setActiveActivity('기준정보 전체 새로고침');
   renderReferenceControls();
-  setAppStatus('상품·거래처·창고·담당자·프로젝트·필드명을 한 번에 새로고침하고 있습니다.');
+  setAppStatus('기준정보와 기존 별칭·고객별 입력 이력을 새로고침하고 있습니다. 현재 입력행은 유지됩니다.');
   try {
-    const result = await withTimeout(
-      refreshAllReferenceData({ companyId }),
-      OPTIONAL_OPERATION_TIMEOUT_MS.externalReference,
-      '전체 기준정보 새로고침 시간이 초과되었습니다.'
-    );
+    const [generationResult, matchingResult] = await Promise.allSettled([
+      withTimeout(refreshAllReferenceData({ companyId }), OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '전체 기준정보 새로고침 시간이 초과되었습니다.'),
+      withTimeout(refreshInputMatchingSnapshot({ companyId, actorId }, { isCurrent: matchingScopeCurrent }),
+        OPTIONAL_OPERATION_TIMEOUT_MS.externalReference, '별칭·이력 새로고침 시간이 초과되었습니다.')
+    ]);
+    matchingRefreshOpen = false;
+    if (state.companyId !== companyId || state.actorId !== actorId || !optionalOperationIsLatest(operationToken)) return false;
+    matchingRefresh = matchingResult.status === 'fulfilled' ? matchingResult.value
+      : { status: 'ERROR', error: { message: matchingResult.reason?.message || '별칭·이력 갱신 실패' } };
+    if (matchingRefresh.status !== 'STALE') state.inputMatching = matchingRefresh.snapshot
+      ? matchingRefresh : { ...state.inputMatching, status: matchingRefresh.status, error: matchingRefresh.error };
+    renderInputMatchingStatus();
+    if (generationResult.status === 'rejected') throw generationResult.reason;
+    const result = generationResult.value;
+    generationUpdated = true;
     if (![operationToken, productReferenceToken, customerReferenceToken].every(optionalOperationIsLatest)) return false;
     const registries = await withTimeout(
       Promise.all([state.draft.activeMode, ...Object.keys(contract.MODES).filter(mode => mode !== state.draft.activeMode)].map(voucherMode => loadVoucherFieldRegistry({
@@ -11879,8 +11935,13 @@ async function refreshAllReferencesFromToolbar() {
         target.setSelectionRange(selectionStart, selectionEnd ?? selectionStart);
       }
     }
-    setAppStatus(`기준정보 전체 새로고침 완료 · ${result.generation.generationId}`, 'normal');
-    toast('전체 기준정보를 갱신하고 현재 검색어로 다시 검색했습니다.', 'success');
+    if (!['READY', 'EMPTY'].includes(matchingRefresh.status)) {
+      setAppStatus('기준정보 갱신 완료 · 별칭·이력 갱신 실패. 기존 입력 기준과 현재 입력행은 유지됩니다.', 'warn');
+      toast(matchingRefresh.error?.message || '별칭·이력을 준비하지 못했습니다. 전체 새로고침을 다시 실행하세요.', 'warn');
+      return false;
+    }
+    setAppStatus(`기준정보·별칭·이력 새로고침 완료 · ${result.generation.generationId}`, 'normal');
+    toast('기준정보와 입력 기준을 갱신했습니다. 현재 입력행은 유지되며 새 기준은 다음 분석부터 적용됩니다.', 'success');
     return true;
   } catch (error) {
     if (!optionalOperationIsLatest(operationToken)) return false;
@@ -11897,10 +11958,12 @@ async function refreshAllReferencesFromToolbar() {
       }
     });
     state.fieldRegistryError = error;
-    setAppStatus('전체 새로고침에 실패했습니다. 기존 기준정보와 입력 내용은 그대로 유지됩니다.', 'warn');
+    const partial = ['READY', 'EMPTY'].includes(matchingRefresh?.status) ? '별칭·이력 준비 완료 · ' : (generationUpdated ? '기준정보 저장 완료 · ' : '');
+    setAppStatus(`${partial}나머지 새로고침에 실패했습니다. 현재 입력 내용은 유지됩니다.`, 'warn');
     toast(error.message || '전체 기준정보를 새로고침하지 못했습니다.', 'error');
     return false;
   } finally {
+    matchingRefreshOpen = false;
     if (optionalOperationIsLatest(operationToken)) {
       [
         ['product', productReferenceToken],

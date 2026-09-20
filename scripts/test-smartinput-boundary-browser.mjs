@@ -144,6 +144,37 @@ try {
   await app(`document.querySelector(${JSON.stringify(firstQuantity)}).value='99';true`);
   await click('#restoreAutosaveButton'); await check(`document.querySelector(${JSON.stringify(firstQuantity)}).value==='11'`, 'explicit local restore during shared UI outage');
   await assertIndependent('shared UI and external-server outage input/save/recovery');
+  assert.deepEqual(deniedRequests, [], 'ordinary local work must not attempt external requests');
+
+  // Existing aliases are prepared only by the real explicit toolbar action.
+  // Seed synthetic owner rows in this test profile, then exclude fixture writes.
+  blockCommon = false;
+  await navigate(`${origin}/smartinput/index.html?matchingPreparation=1`);
+  await click('#resetDraftButton');
+  await setInput('#sourceTextInput', '테스트 고객\n노란거 2개'); await click('#analyzeButton');
+  await check(`document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="itemName"]')?.value==='노란거'&&!document.querySelector('#analyzeButton').disabled`, 'unprepared alias keeps original text');
+  await check(`document.querySelector('#inputMatchingStatus')?.textContent==='NOT_PREPARED'`, 'first profile reports missing preparation');
+  assert.equal(await app(`document.querySelector('#inputMatchingNotice').hidden`), false);
+  await assertIndependent('unprepared alias remains local');
+  const rowsBeforePreparation = await app('window.__boundaryReadModel().rows');
+  await app(`(async()=>{const {openOrderQDb}=await import('/orderq/orderq-db.js');const db=await openOrderQDb();await new Promise((resolve,reject)=>{const tx=db.transaction(['products','productMappings'],'readwrite');tx.objectStore('products').put({productId:'BOUNDARY-ALIAS-P1',itemCode:'001',itemName:'수입바나나',specification:'13kg',unit:'BOX'});tx.objectStore('productMappings').put({mappingId:'BOUNDARY-ALIAS-M1',productId:'BOUNDARY-ALIAS-P1',rawText:'노란거'});tx.oncomplete=resolve;tx.onerror=tx.onabort=()=>reject(tx.error);});db.close();window.__boundary.reads=[];window.__boundary.writes=[];return true;})()`);
+  await click('#allReferenceReload');
+  await check(`document.querySelector('#inputMatchingStatus')?.textContent==='READY'&&!document.querySelector('#allReferenceReload').disabled`, 'explicit toolbar prepares matching snapshot');
+  assert.deepEqual(await app('window.__boundaryReadModel().rows'), rowsBeforePreparation, 'reference preparation must not overwrite active rows');
+  const preparationReads = await ledgerReads();
+  assert.ok(preparationReads.some(read => read.store === 'orders') && preparationReads.some(read => read.store === 'orderItems'));
+  record('explicit matching preparation preserves active rows', { ledgerReads: preparationReads.length, externalAttemptsBlocked: deniedRequests.length });
+  deniedRequests.length = 0;
+  await app('window.__boundary.reads=[];window.__boundary.writes=[];window.__boundary.external=[];true');
+  await click('#analyzeButton');
+  await check(`document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="itemName"]')?.value==='수입바나나'&&!document.querySelector('#analyzeButton').disabled`, 'same source reanalysis uses prepared alias');
+  const aliasRow = await app(`(()=>{const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');return Object.fromEntries(['itemCode','itemName','specification','quantity','unit'].map(field=>[field,row.querySelector('[data-field="'+field+'"]')?.value]));})()`);
+  assert.deepEqual(aliasRow, { itemCode: '001', itemName: '수입바나나', specification: '13kg', quantity: '2', unit: '개' });
+  await assertIndependent('prepared alias reanalysis uses local snapshot');
+  await navigate(`${origin}/smartinput/index.html?matchingCached=1`);
+  await check(`document.querySelector('#inputMatchingStatus')?.textContent==='READY'&&document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="itemName"]')?.value==='수입바나나'`, 'prepared alias cache and document survive reload');
+  await assertIndependent('prepared alias reload uses cache without owner reads');
+  record('preserved alias final row values', aliasRow);
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(deniedRequests, [], 'normal local paths must not even attempt external requests');
   report.isolation = { temporaryProfile: true, externalNetworkBlocked: true, actualExternalRequestsSent: 0, productionDataUsed: false };

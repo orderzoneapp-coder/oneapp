@@ -1,6 +1,6 @@
 {
   "taskId": "SI-BOUNDARY-20260920-01",
-  "mainSourceSha256": "db7f1dbc044e1c23051505cefcc07444b1dee049927f5a8218930cc429d5641f",
+  "mainSourceSha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
   "fixture": "Synthetic local-only data and host fixture; real child bridge and application source",
   "checks": [
     {
@@ -240,6 +240,52 @@
         "ledgerReads": 0,
         "ownerWrites": 0,
         "externalRequests": 0
+      }
+    },
+    {
+      "name": "unprepared alias remains local",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "explicit matching preparation preserves active rows",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 3,
+        "externalAttemptsBlocked": 0
+      }
+    },
+    {
+      "name": "prepared alias reanalysis uses local snapshot",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "prepared alias reload uses cache without owner reads",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "preserved alias final row values",
+      "status": "PASS",
+      "detail": {
+        "itemCode": "001",
+        "itemName": "수입바나나",
+        "specification": "13kg",
+        "quantity": "2",
+        "unit": "개"
       }
     }
   ],

@@ -1,0 +1,210 @@
+{
+  "schema": "SMARTINPUT_REAL_HOST_NAVIGATION_V1",
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "label": "local-host-smoke",
+  "recordedAt": "2026-09-20T19:24:04.924Z",
+  "samplePairs": 1,
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "cpu": "Intel(R) Pentium(R) Gold G6400 CPU @ 4.00GHz",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+  },
+  "fixture": "20 synthetic direct-input order rows in a newly created browser profile. Real workspace.html, workspace.js, SmartInput and customer-master are used without source replacement. No authentication session, personal profile, production database, external command or owner transmission is used.",
+  "methodology": {
+    "warmup": "One unrecorded real roundtrip, with the last synthetic quantity edited immediately before leaving SmartInput to verify beforeLeave persistence.",
+    "appUsable": "From captured trusted click timestamp to the first painted state with the correct host route, connected/ready child adapter, hidden host loading/error, expected SmartInput row name and quantity plus enabled input/analyze controls; customer-master requires its ready bridge, visible header and enabled search.",
+    "clickFeedback": "From captured click timestamp to a requestAnimationFrame in which the pending/active target is visible, followed by a second animation frame. A conservative paint-opportunity upper bound, not screenshot-confirmed compositor presentation.",
+    "statistics": "Nearest-rank p95. Each recorded pair contains SmartInput -> customer-master -> SmartInput. No artificial source mutations, cache disabling or all-request Fetch interception are used.",
+    "commonLayer": "nexusUiReadyMs is diagnostic wall time, not common-layer blocking. Optional trace is separate from KPI sampling and requires attribution review; it cannot produce a 150 ms PASS automatically."
+  },
+  "commonLayerWarmBlocking": {
+    "status": "UNMEASURED",
+    "limitMs": 150,
+    "reason": "No validated attribution of common-only synchronous intervals and gate waits. APP_READY, UI-ready wall time and total navigation are not substitutes."
+  },
+  "transitions": [
+    {
+      "sample": 1,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 2740.399999976158,
+      "feedbackMs": 35.60000002384186,
+      "usableMs": 264.89999997615814,
+      "localDataMs": null,
+      "messagesFrom": 8,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 87.9
+    },
+    {
+      "sample": 1,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 3063.0999999046326,
+      "feedbackMs": 22.40000009536743,
+      "usableMs": 361.3000000715256,
+      "localDataMs": 223.70000004768372,
+      "messagesFrom": 11,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 158.5
+    }
+  ],
+  "checks": [
+    {
+      "name": "standalone direct entry",
+      "status": "PASS"
+    },
+    {
+      "name": "standalone four voucher tabs",
+      "status": "PASS",
+      "modes": [
+        "order",
+        "purchase",
+        "sale",
+        "estimate"
+      ]
+    },
+    {
+      "name": "standalone input, automatic local save and reload recovery",
+      "status": "PASS",
+      "row": "SI-HOST-ROW-0",
+      "restoredQuantity": 3
+    },
+    {
+      "name": "real NEXUS host entry with recovered work",
+      "status": "PASS"
+    },
+    {
+      "name": "embedded four voucher tabs",
+      "status": "PASS",
+      "modes": [
+        "order",
+        "purchase",
+        "sale",
+        "estimate"
+      ]
+    }
+  ],
+  "exceptions": [],
+  "forbiddenNetworkRequests": [],
+  "externalRequestsAttempted": [],
+  "blockedTransports": [],
+  "status": "SMOKE_ONLY",
+  "baseUrl": "http://127.0.0.1:50393/",
+  "assets": [
+    {
+      "path": "smartinput/index.html",
+      "servedSha256": "cd440d734410630b130519ede3e749ddeb8ceb57f30c94628a6152a2cb940e46",
+      "localSha256": "cd440d734410630b130519ede3e749ddeb8ceb57f30c94628a6152a2cb940e46",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "smartinput/smartinput.js?v=0.15.0",
+      "servedSha256": "1d28dea979abf9e79c869e12149434f4256e5facc15008cb0e082a3f20d71147",
+      "localSha256": "1d28dea979abf9e79c869e12149434f4256e5facc15008cb0e082a3f20d71147",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/workspace.html",
+      "servedSha256": "54b7cdff003f728f9b5a1a65c9346bfff06ab33e110b74b5103bc14b56c29e80",
+      "localSha256": "54b7cdff003f728f9b5a1a65c9346bfff06ab33e110b74b5103bc14b56c29e80",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/workspace.js?v=1.2.2",
+      "servedSha256": "222bb044c2fb68b4ba170e07699eadcb7fc1f65f45136342541b715501500c9e",
+      "localSha256": "222bb044c2fb68b4ba170e07699eadcb7fc1f65f45136342541b715501500c9e",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/common/nexus-ui.js?v=1.8.0",
+      "servedSha256": "db926f03f50dec3fea3bbaebeb385fbdc755beae8e9d48cbc5605926c039a8dd",
+      "localSha256": "db926f03f50dec3fea3bbaebeb385fbdc755beae8e9d48cbc5605926c039a8dd",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    }
+  ],
+  "beforeLeaveSyntheticEditRestored": true,
+  "metrics": {
+    "smartInputUsable": {
+      "count": 1,
+      "samples": [
+        361.3
+      ],
+      "p50Ms": 361.3,
+      "p95Ms": 361.3,
+      "maxMs": 361.3,
+      "limitMs": 1000,
+      "status": "INSUFFICIENT_SAMPLES"
+    },
+    "customerMasterUsable": {
+      "count": 1,
+      "samples": [
+        264.9
+      ],
+      "p50Ms": 264.9,
+      "p95Ms": 264.9,
+      "maxMs": 264.9,
+      "limitMs": 1000,
+      "status": "INSUFFICIENT_SAMPLES"
+    },
+    "clickVisualFeedback": {
+      "count": 2,
+      "samples": [
+        35.6,
+        22.4
+      ],
+      "p50Ms": 22.4,
+      "p95Ms": 35.6,
+      "maxMs": 35.6,
+      "limitMs": 100,
+      "status": "INSUFFICIENT_SAMPLES"
+    },
+    "smartInputDataFromHostClick": {
+      "count": 1,
+      "samples": [
+        223.7
+      ],
+      "p50Ms": 223.7,
+      "p95Ms": 223.7,
+      "maxMs": 223.7,
+      "note": "Includes leaving the prior app; not the separate direct-entry local-data KPI."
+    }
+  },
+  "isolation": {
+    "temporaryProfile": true,
+    "applicationTransportsBlockedBeforeDispatch": true,
+    "externalHostResolutionBlocked": true,
+    "blockedTransportCount": 0,
+    "nonGetHeadRequestCount": 0,
+    "externalRequestAttemptCount": 0,
+    "productionDataUsed": false,
+    "productionWrites": false,
+    "personalProfileUsed": false
+  },
+  "functionalStatus": "PASS",
+  "profileCleanup": "Temporary profile removal deferred because the browser still held a file"
+}

@@ -1,10 +1,10 @@
 {
   "taskId": "SI-BOUNDARY-20260920-01",
   "phase": "after",
-  "sourceFileCount": 52,
-  "javascriptCount": 50,
-  "initialStaticModuleCount": 40,
-  "initialStaticBytes": 1395288,
+  "sourceFileCount": 53,
+  "javascriptCount": 51,
+  "initialStaticModuleCount": 41,
+  "initialStaticBytes": 1406334,
   "initialStaticModules": [
     "orderq/canonical-hash.js",
     "orderq/official-voucher-core.js",
@@ -26,6 +26,7 @@
     "smartinput/grid-clipboard.js",
     "smartinput/independent-estimate.js",
     "smartinput/input-list-search.js",
+    "smartinput/input-matching-snapshot.js",
     "smartinput/input-template-mapper.js",
     "smartinput/input.js",
     "smartinput/legacy-integration-adapter.js",
@@ -162,9 +163,9 @@
     },
     {
       "path": "smartinput/index.html",
-      "bytes": 38491,
-      "sha256": "a243092dead0c50616dcc5ab53f681e77cd20513cdd77fbbea829f34698112c9",
-      "lines": 528,
+      "bytes": 38968,
+      "sha256": "cd440d734410630b130519ede3e749ddeb8ceb57f30c94628a6152a2cb940e46",
+      "lines": 533,
       "imports": []
     },
     {
@@ -173,6 +174,16 @@
       "sha256": "39b6599bd9c30400d86bb1911b1c0cfc86047d95c009708ab2b7eaf82a56dea1",
       "lines": 139,
       "imports": []
+    },
+    {
+      "path": "smartinput/input-matching-snapshot.js",
+      "bytes": 5459,
+      "sha256": "1e1eec247a2a273ecab5d7a165e500f1f821dc7460aed2c8080257c673a38ee6",
+      "lines": 91,
+      "imports": [
+        "../reference-data/change-request-contract.js",
+        "./smartinput-data-store.js?v=0.15.0"
+      ]
     },
     {
       "path": "smartinput/input-template-mapper.js",
@@ -400,9 +411,9 @@
     },
     {
       "path": "smartinput/smartinput.js",
-      "bytes": 681323,
-      "sha256": "db7f1dbc044e1c23051505cefcc07444b1dee049927f5a8218930cc429d5641f",
-      "lines": 12851,
+      "bytes": 686910,
+      "sha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
+      "lines": 12914,
       "imports": [
         "./virtual-table-body.js?v=0.2.0",
         "./smartinput-data-store.js?v=0.15.0",
@@ -412,6 +423,7 @@
         "../reference-data/product-master-read-adapter.js?v=0.1.0",
         "./legacy-integration-adapter.js?v=0.4.0",
         "./input.js?v=0.1.0",
+        "./input-matching-snapshot.js?v=0.1.0",
         "./optional-operation-loader.js?v=0.1.0",
         "./grid-clipboard.js?v=0.1.2",
         "./smartinput-data-store.js?v=0.15.0",

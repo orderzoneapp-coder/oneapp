@@ -21,6 +21,7 @@ const baselineEvidenceFile = process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE
   ? resolve(process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE)
   : '';
 const diagnosticFile = process.env.SMARTINPUT_DIAGNOSTIC_FILE ? resolve(process.env.SMARTINPUT_DIAGNOSTIC_FILE) : '';
+const estimateOnly = process.env.SMARTINPUT_ESTIMATE_ONLY === '1';
 mkdirSync(screenshotDir, { recursive: true });
 if (baselineEvidenceFile) mkdirSync(dirname(baselineEvidenceFile), { recursive: true });
 const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -132,6 +133,52 @@ const recordDiagnostic = async phase => {
   if (!diagnosticFile) return;
   diagnosticSnapshots.push(await evaluate(client, `(() => {const describe=input=>input?({tag:input.tagName,field:input.dataset?.field,value:input.value,rowId:input.closest('tr')?.dataset?.rowId,defaultRow:input.closest('tr')?.dataset?.defaultRow,connected:input.isConnected}):null;const dialog=document.querySelector('.product-picker-dialog');return {phase:${JSON.stringify(phase)},time:performance.now(),active:describe(document.activeElement),rows:[...document.querySelectorAll('#inputRows tr[data-row-id]')].map(row=>({rowId:row.dataset.rowId,defaultRow:row.dataset.defaultRow,itemCode:row.querySelector('[data-field="itemCode"]')?.value,itemCodeAttribute:row.querySelector('[data-field="itemCode"]')?.getAttribute('value'),itemName:row.querySelector('[data-field="itemName"]')?.value,cacheHtml:row.__virtualHtml?.slice(0,1800)})),savedRows:JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')||'{}').modes?.order?.rows?.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,matchStatus:row.matchStatus})),dialog:dialog?{open:dialog.open,count:dialog.querySelectorAll('.product-picker-result').length,query:dialog.querySelector('[data-product-search]')?.value,text:dialog.textContent?.slice(0,1200)}:null,toast:document.querySelector('#toast')?.textContent,appStatus:document.querySelector('#appStatus')?.textContent,completeButton:{disabled:document.querySelector('#completeButton')?.disabled,title:document.querySelector('#completeButton')?.title,text:document.querySelector('#completeButton')?.textContent},dialogs:[...document.querySelectorAll('dialog')].map(dialog=>({open:dialog.open,className:dialog.className,text:dialog.textContent?.slice(0,1800)})),runtimeState:window.__siDiagnosticState?.()};})()`));
 };
+const runEstimateSaveSequence = async () => {
+  await click(client, '[data-mode="estimate"]');
+  await click(client, '#addRowButton');
+  await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
+  await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
+  await input(client, '#inputRows [data-field="quantity"]', '1');
+  await input(client, '#inputRows [data-field="unitPrice"]', '1500');
+  await recordDiagnostic('before-first-estimate-complete');
+  await click(client, '#completeButton');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'first estimate save dialog');
+  await input(client, '[data-estimate-name]', '격리 견적');
+  await click(client, '[data-confirm-save]');
+  await expr(client, `document.querySelector('#catalogPickerList [data-select-estimate-card]')?.textContent.includes('격리 견적')`, 'first estimate persisted');
+  await recordDiagnostic('after-first-estimate-save');
+  const savedEstimateId = await evaluate(client, `document.querySelector('#catalogPickerList [data-estimate-id]').dataset.estimateId`);
+  await input(client, '#inputRows [data-field="unitPrice"]', '1750');
+  assert.equal(await evaluate(client, `(() => {document.querySelector('#completeButton').click();return document.querySelector('#completeButton').disabled;})()`), true, 'estimate save must become busy synchronously before its preparatory read');
+  await recordDiagnostic('after-in-place-save-click');
+  await expr(client, `!document.querySelector('#completeButton').disabled&&!document.querySelector('[data-estimate-name]')&&document.querySelector('#catalogPickerList [data-estimate-id="${savedEstimateId}"]')?.classList.contains('is-selected')`, 'existing estimate in-place save');
+  await recordDiagnostic('after-in-place-save-wait');
+  await click(client, '#resetDraftButton');
+  await recordDiagnostic('after-estimate-reset');
+  await click(client, '#addRowButton');
+  await typeTrailingProductQuery(client, 'EST-2');
+  await input(client, '#inputRows [data-field="itemName"]', '행사 견적 상품');
+  await input(client, '#inputRows [data-field="quantity"]', '3');
+  await input(client, '#inputRows [data-field="unitPrice"]', '2400');
+  await input(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', 'EST-1');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="itemName"]', '견적 상품');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="quantity"]', '3');
+  await input(client, '#inputRows tr:nth-last-child(2) [data-field="unitPrice"]', '1500');
+  await recordDiagnostic('before-second-estimate-complete');
+  await click(client, '#completeButton');
+  await recordDiagnostic('after-second-estimate-complete');
+  await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'second estimate save dialog');
+  await input(client, '[data-estimate-name]', '행사 원본 견적');
+  await click(client, '[data-confirm-save]');
+  await expr(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length===2&&!document.querySelector('#completeButton').disabled&&!document.querySelector('[data-estimate-name]')`, 'second estimate persisted');
+  await recordDiagnostic('after-second-estimate-save');
+  assert.deepEqual(exceptions, [], 'estimate-only runtime exceptions');
+  if (diagnosticFile) {
+    mkdirSync(dirname(diagnosticFile), { recursive: true });
+    writeFileSync(diagnosticFile, `${JSON.stringify({ status: 'PASS', scope: 'isolated-estimate-save-sequence', recordedAt: new Date().toISOString(), mainSourceSha256, snapshots: diagnosticSnapshots, exceptions, consoleErrors }, null, 2)}\n`);
+  }
+  console.log('SmartInput isolated estimate save sequence PASS');
+};
 try {
   const address = await listen();
   const executable = browserExecutable();
@@ -148,6 +195,13 @@ try {
   client = new CdpClient(targets[0].webSocketDebuggerUrl);
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable'), client.send('Network.enable')]);
+  if (estimateOnly) {
+    client.on('Fetch.requestPaused', event => {
+      const local = new URL(event.request.url).origin === `http://127.0.0.1:${address.port}`;
+      void client.send(local ? 'Fetch.continueRequest' : 'Fetch.failRequest', local ? { requestId: event.requestId } : { requestId: event.requestId, errorReason: 'BlockedByClient' });
+    });
+    await client.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+  }
   await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
     const nativeFetch = globalThis.fetch?.bind(globalThis);
     if (!nativeFetch) return;
@@ -198,6 +252,8 @@ try {
     throw new Error(`${error.message} · ${JSON.stringify(diagnostic)} · ${exceptions.join(' | ')}`);
   }
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  if (estimateOnly) await runEstimateSaveSequence();
+  else {
   await wait(260);
   const metrics = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right};};return {title:document.title,global:q('.nexus-ui-header'),app:q('.app-bar'),parser:q('.parser-card'),resizer:q('#photoResizer'),workbench:q('.workbench'),grid:q('.grid-card'),related:q('.related-panel'),columns:getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns};})()`);
   console.log('SmartInput desktop metrics', metrics);
@@ -1108,8 +1164,10 @@ try {
   await input(client, '#inputRows [data-field="unitPrice"]', '1750');
   await click(client, '#completeButton');
   await expr(client, `!document.querySelector('#completeButton').disabled&&!document.querySelector('[data-estimate-name]')&&document.querySelector('#catalogPickerList [data-estimate-id="${savedEstimateId}"]')?.classList.contains('is-selected')`, 'existing estimate in-place save without a new-name dialog');
+  await recordDiagnostic('full-after-in-place-estimate-save');
   assert.equal(await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length`), 1, 'in-place estimate save must not create a duplicate record');
   await click(client, '#resetDraftButton');
+  await recordDiagnostic('full-after-estimate-reset');
   await click(client, '#addRowButton');
   await evaluate(client, `(() => {const element=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');element.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,'EST-2');element.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
   assert.equal(await evaluate(client, `document.activeElement?.dataset?.field==='itemCode'&&document.activeElement?.closest('tr')?.dataset.defaultRow!=='true'&&document.querySelectorAll('#inputRows tr[data-default-row="true"]').length===1`), true, 'materializing the trailing row must preserve keyboard focus and append one new manual row without rerendering the active cell');
@@ -1121,6 +1179,7 @@ try {
   await input(client, '#inputRows tr:nth-last-child(2) [data-field="quantity"]', '3');
   await input(client, '#inputRows tr:nth-last-child(2) [data-field="unitPrice"]', '1500');
   assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'manual entry must materialize the row and immediately append exactly one new trailing row');
+  await recordDiagnostic('full-before-second-estimate-complete');
   await click(client, '#completeButton');
   await recordDiagnostic('after-second-estimate-complete');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'second estimate save dialog');
@@ -1281,6 +1340,7 @@ try {
   }
   console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, ...baselineScreenshots, estimateCardsShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height }, baselineEvidenceFile }, null, 2));
   console.log('SmartInput protected desktop workspace browser E2E PASS');
+  }
 } catch (error) {
   if (diagnosticFile) {
     try { await recordDiagnostic('failure'); } catch (snapshotError) { diagnosticSnapshots.push({ phase: 'failure-snapshot-error', message: snapshotError.message }); }
