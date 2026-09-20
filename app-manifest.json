@@ -471,7 +471,7 @@
       "path": "orderops/list.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Operational fallback at orderops/list.html is frozen to 13c83a23a330f3319ae67005f7ff0d67dfae4d54 (2026-09-17): basic Excel order status, stock ledger, warehouse inventory, local recovery and explicit Shipping Cloud saves, with matching calculation/export modules under orderops/stable/20260917. The later Excel-preparation and inventory-movement workbench remains at orderops_list.html. ORDER Q development must not update the fallback implicitly; existing storage contracts remain unchanged.",
+      "purpose": "Operational fallback at orderops/list.html uses the 13c83a23a330f3319ae67005f7ff0d67dfae4d54 (2026-09-17) basic Excel order-status, stock-ledger, warehouse-inventory, local-recovery and explicit Shipping Cloud-save flow, with user-requested unit columns and non-BOX unit text highlighting in order status and warehouse inventory. Matching calculation/export modules remain frozen under orderops/stable/20260917. The later Excel-preparation and inventory-movement workbench remains at orderops_list.html. ORDER Q development must not update the fallback implicitly; existing storage contracts remain unchanged.",
       "owner": "shipping-operations",
       "productionWrites": true,
       "services": [
