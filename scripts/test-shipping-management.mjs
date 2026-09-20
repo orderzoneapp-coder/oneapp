@@ -1943,13 +1943,13 @@ assert.ok(
   ),
 );
 
-const html = fs.readFileSync(path.join(ROOT, "orderops", "list.html"), "utf8");
-assertExcelPreparationLayout(html, "canonical OrderOps");
+const html = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
+assertExcelPreparationLayout(html, "current standalone OrderOps");
 const inlineScriptMatch = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/);
-assert.ok(inlineScriptMatch, "canonical ORDER Q inline application script must exist");
-new vm.Script(inlineScriptMatch[1], { filename: "orderops/list.html:inline" });
-assert.match(html, /brand-badge">v1\.55</, "canonical ORDER Q visible version must be v1.55");
-assert.match(html, /class="brand-logo" src="\.\.\/assets\/order-q-logo\.png"/,
+assert.ok(inlineScriptMatch, "current standalone ORDER Q inline application script must exist");
+new vm.Script(inlineScriptMatch[1], { filename: "orderops_list.html:inline" });
+assert.match(html, /brand-badge">v1\.55</, "current standalone ORDER Q visible version must be v1.55");
+assert.match(html, /class="brand-logo" src="assets\/order-q-logo\.png"/,
   "the canonical header must use the shared ORDER Q logo asset");
 assert.match(html, /<h2 id="settingsModalTitle">ORDER Q 환경설정<\/h2>/,
   "the settings title must use the ORDER Q brand");
@@ -1967,7 +1967,7 @@ assert.ok(
   "new operational defaults must remain active when a browser still has older saved aliases",
 );
 const styleBlocks = [...html.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi)].map((match) => match[1]);
-assert.ok(styleBlocks.length > 0, "orderops/list.html must contain a style block");
+assert.ok(styleBlocks.length > 0, "orderops_list.html must contain a style block");
 
 function assertBalancedCssBraces(css) {
   let depth = 0;
@@ -1999,27 +1999,27 @@ function assertBalancedCssBraces(css) {
       depth += 1;
     } else if (character === "}") {
       depth -= 1;
-      assert.ok(depth >= 0, "orderops/list.html CSS must not contain an unmatched closing brace");
+      assert.ok(depth >= 0, "orderops_list.html CSS must not contain an unmatched closing brace");
     }
   }
-  assert.equal(inComment, false, "orderops/list.html CSS comment must be closed");
-  assert.equal(quote, "", "orderops/list.html CSS string must be closed");
-  assert.equal(depth, 0, "orderops/list.html CSS braces must be balanced");
+  assert.equal(inComment, false, "orderops_list.html CSS comment must be closed");
+  assert.equal(quote, "", "orderops_list.html CSS string must be closed");
+  assert.equal(depth, 0, "orderops_list.html CSS braces must be balanced");
 }
 
 styleBlocks.forEach(assertBalancedCssBraces);
 assertBalancedCssBraces(preparationCss);
 const combinedCss = styleBlocks.join("\n");
 assert.match(combinedCss, /table\.column-width-managed\s*\{[^}]*min-width:\s*0;/,
-  "the canonical OrderOps table must allow unused space on the right");
+  "the current standalone OrderOps table must allow unused space on the right");
 assert.doesNotMatch(combinedCss, /table\.column-width-managed\s*\{[^}]*min-width:\s*100%;/,
-  "the canonical OrderOps table must not stretch to the full viewport width");
+  "the current standalone OrderOps table must not stretch to the full viewport width");
 assert.match(html, /const TABLE_WIDTH_MIN = 32;/,
-  "the canonical OrderOps columns must support compact manual widths");
+  "the current standalone OrderOps columns must support compact manual widths");
 assert.match(html, /const tableWidth = visibleEntries\.reduce\(/,
-  "the canonical OrderOps table width must equal the sum of visible column widths");
+  "the current standalone OrderOps table width must equal the sum of visible column widths");
 assert.match(html, /table\.style\.width = `\$\{renderedWidth\}px`;/,
-  "the canonical OrderOps table must shrink with a resized column");
+  "the current standalone OrderOps table must shrink with a resized column");
 assert.doesNotMatch(combinedCss, /\.print-area col\s*\{[^}]*width:\s*auto\s*!important/,
   "canonical screen print must preserve saved column-width proportions");
 for (const printWidthContract of [
@@ -2042,7 +2042,7 @@ for (const requiredWarehouseColorContract of [
   'class="inventory-total-frame"',
 ]) {
   assert.ok(html.includes(requiredWarehouseColorContract),
-    `canonical OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
+    `current standalone OrderOps warehouse color contract is missing: ${requiredWarehouseColorContract}`);
 }
 for (const requiredInteractionContract of [
   'id="managerColorOptions"',
@@ -2115,7 +2115,7 @@ for (const requiredInteractionContract of [
   'function handleIntegratedFile',
 ]) {
   assert.ok(html.includes(requiredInteractionContract),
-    `canonical ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
+    `current standalone ORDER Q v1.55 interaction contract is missing: ${requiredInteractionContract}`);
 }
 const canonicalApplyViewPresetSource = html.slice(
   html.indexOf("function applyOrderViewPreset"),
@@ -2124,7 +2124,7 @@ const canonicalApplyViewPresetSource = html.slice(
 assert.doesNotMatch(canonicalApplyViewPresetSource, /state\.(?:warehouse|manager)ColorSettings\s*=/,
   "canonical saved view presets must not overwrite persistent warehouse or manager colors");
 assert.doesNotMatch(html, /<input[^>]+type="color"|data-warehouse-color|data-manager-color/,
-  "canonical OrderOps filter options must remain separate from color assignment");
+  "current standalone OrderOps filter options must remain separate from color assignment");
 const canonicalViewControls = html.slice(
   html.indexOf('<div class="view-controls"'),
   html.indexOf('<div class="warehouse-color-bar"'),
@@ -2132,7 +2132,7 @@ const canonicalViewControls = html.slice(
 assert.ok(canonicalViewControls.indexOf('id="columnWidthResetButton"') < canonicalViewControls.indexOf('id="warehouseFilterToggle"'),
   "canonical filter buttons must remain at the right edge after the column tools");
 assert.match(combinedCss, /body\s*\{[^}]*font-size:\s*14px;/,
-  "canonical OrderOps base text must increase by one pixel");
+  "current standalone OrderOps base text must increase by one pixel");
 assert.match(combinedCss, /\.system-console\s*\{[^}]*font:\s*700 11px\/1\.3/,
   "System.IO status text must increase by one pixel");
 assert.ok(html.includes(
@@ -2185,11 +2185,11 @@ for (const requiredText of [
   "shipping-table-widths/v1",
   "oneapp.orderops.hidden-columns.v1",
   "orderops-hidden-columns/v1",
-  "../orderFulfillmentEngine.js",
-  "../orderFulfillmentWorkbook.js",
-  "../SHIPPING_MANAGEMENT_GUIDANCE.md",
+  "orderFulfillmentEngine.js",
+  "orderFulfillmentWorkbook.js",
+  "SHIPPING_MANAGEMENT_GUIDANCE.md",
 ]) {
-  assert.ok(html.includes(requiredText), `orderops/list.html is missing: ${requiredText}`);
+  assert.ok(html.includes(requiredText), `orderops_list.html is missing: ${requiredText}`);
 }
 
 for (const id of [
@@ -2369,9 +2369,9 @@ assert.match(combinedCss, /\.print-area table\s*\{[\s\S]*?font-size:\s*10\.6px;/
 assert.match(combinedCss, /table\.preview-allocations\s*\{[\s\S]*?font-size:\s*11\.9px;/,
   "canonical order-status print text must be twenty percent larger than v1.35");
 assert.match(combinedCss, /body\.printing-table\s*\{[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
-  "canonical OrderOps screen print must remove the shared header offset before printing");
+  "current standalone OrderOps screen print must remove the shared header offset before printing");
 assert.match(combinedCss, /body\.printing-table \.print-area\s*\{[^}]*position:\s*static\s*!important;[^}]*margin:\s*0\s*!important;[^}]*padding:\s*0\s*!important;/s,
-  "canonical OrderOps print area must start at the printable page origin without reserved space");
+  "current standalone OrderOps print area must start at the printable page origin without reserved space");
 assert.match(html, /if \(sourceRow\.rowType === "reference"\) return "";/,
   "canonical reference rows must not be mistaken for manager-colored rows");
 assert.match(combinedCss, /tr\.reference-row td\s*\{[^}]*background:\s*var\(--slate-100\)\s*!important;/,
@@ -2793,7 +2793,7 @@ assert.ok(html.includes('const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLA
 assert.ok(orderOpsHtml.includes("<strong>임시저장</strong> · 완료 후 저장"),
   "the public OrderOps local autosave must be described as temporary work storage");
 assert.ok(html.includes('id="localSaveStatus">임시저장 준비'),
-  "the canonical OrderOps local autosave must be described as temporary work storage");
+  "the current standalone OrderOps local autosave must be described as temporary work storage");
 assert.ok(html.includes('postCloudAction("shipping_plan_save"'),
   "the explicit save button must commit a cloud revision");
 assert.ok(html.includes('postCloudAction("shipping_plan_list"'),

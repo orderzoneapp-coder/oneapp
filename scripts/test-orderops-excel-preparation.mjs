@@ -491,7 +491,7 @@ for (const [kind, parse, matrix] of [
 
 // Exercise the real preparation controller and canonical generic parser without a browser.
 const uiSource = await readFile(new URL('../orderops/excel-preparation-ui.js', import.meta.url), 'utf8');
-const pageSource = await readFile(new URL('../orderops/list.html', import.meta.url), 'utf8');
+const pageSource = await readFile(new URL('../orderops_list.html', import.meta.url), 'utf8');
 const extractFunction = (start, end) => {
   const from = pageSource.indexOf(start);
   const to = pageSource.indexOf(end, from);
