@@ -8,6 +8,7 @@
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
 - Review scope: NEXUS 공통 UI·호스트와 다른 앱의 기존 계약은 유지한다. 2026-09-16 승인 ORDER Q 기본단계 롤백은 `orderops/list.html`, `orderops_list.html`, `orderFulfillmentEngine.js`, `orderFulfillmentWorkbook.js`를 API/source workbench 확장 전인 `a596cbbdc1f8df52ee2b7f8f0dcf094cc372a8ab` (2026-09-07)로 복원하며 최소 NEXUS host adapter만 유지한다.
 - Runtime verification: ORDER Q는 복원된 Excel·parser·주문현황·수불현황·창고재고·저장/복구·출력과 NEXUS host 진입/이동을 검증 대상으로 한다. 다른 앱의 기존 공통 UI 검증 범위는 유지하며 과거 OrderOps 3영역/API 확장 검증을 현재 제품 동작으로 간주하지 않는다. 운영 배포 버전은 CI와 Pages에서 별도 대조한다.
+- 2026-09-21 운영 백업: `/orderops/list.html`은 `13c83a23a330f3319ae67005f7ff0d67dfae4d54`의 기본 흐름으로 복구하고 계산·출력 모듈을 `orderops/stable/20260917/`에 고정한다. 최신 Excel 준비·재고변동 기능은 `orderops_list.html`에 유지한다. 두 경로의 코드를 자동 동반 수정하지 않는다. 기존 저장소는 그대로이며 데이터 격리·이관은 아니다. 상세 범위는 `docs/ORDEROPS_BACKUP_ROLLBACK_2026-09-21.md`를 따른다.
 - Machine-readable companion: app-manifest.json
 
 ## 1. 문서 목적

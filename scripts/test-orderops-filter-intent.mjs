@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // Execute the actual entrypoint functions and checkbox listener. Synthetic
 // inputs/storage only; this suite makes no production or browser-E2E claim.
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-const paths = ["orderops/list.html", "orderops_list.html"];
+const paths = ["orderops_list.html"];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 let cases = 0;
 function extract(html, name) {
@@ -183,4 +183,4 @@ for (const path of paths) {
     assert.deepEqual(clone(h.state.columnFilters), before);
   });
 }
-console.log(`OrderOps filter intent passed (${cases} behavioral cases, both HTML scripts syntax-checked).`);
+console.log(`OrderOps filter intent passed (${cases} behavioral cases, current standalone HTML syntax-checked; frozen route checked separately).`);

@@ -182,14 +182,14 @@ try {
     return Object.fromEntries(book.SheetNames.map(name=>[name,XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:''})]));
   })()`);
   const fileNames = () => evaluate(client, `Object.fromEntries(['orders','inventory','purchases','sales'].map(kind=>[kind,document.querySelector('#'+kind+'FileName').textContent]))`);
-  const readRecovery = (recordId = null) => evaluate(client, `(async () => {
+  const readRecovery = () => evaluate(client, `(async () => {
     const pointer=localStorage.getItem('oneapp.shipping.recovery.pointer.v1');
     if(!pointer) throw new Error('Missing verified recovery pointer');
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('ONEAPPShippingRecoveryDB');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     let records;
     try {records=await new Promise((resolve,reject)=>{const request=db.transaction('recoveryRecords','readonly').objectStore('recoveryRecords').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
     finally {db.close();}
-    const record=records.find(item=>item.recordId===(${JSON.stringify(recordId)} || pointer));
+    const record=records.find(item=>item.recordId===pointer);
     if(!record) throw new Error('Recovery pointer does not address a stored record');
     const canonical=ShippingManagementEngine.canonicalStringify(record.payload);
     const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical));
@@ -202,17 +202,6 @@ try {
     await waitFor(() => evaluate(client, `document.querySelector('#localSaveStatus').textContent.includes('임시저장 · ') && !/대기|없음|실패/.test(document.querySelector('#localSaveStatus').textContent) && Boolean(localStorage.getItem('oneapp.shipping.recovery.pointer.v1'))`), label);
     return readRecovery();
   };
-  const inputIdleExpression = `document.querySelector('#prepDropZone')?.getAttribute('aria-busy')==='false' && !document.querySelector('#prepFileButton')?.disabled`;
-  const waitInputIdle = (label) => waitFor(() => evaluate(client, inputIdleExpression), label);
-  const selectPreview = async (view) => {
-    await waitInputIdle(view+' preview input settled');
-    await evaluate(client, `(() => {
-      const button=document.querySelector('#prepPreviewTabs [data-preview="${view}"]');
-      if(!button || !button.getClientRects().length || button.disabled) throw new Error('Missing visible ${view} preview control');
-      button.click();
-    })()`);
-    await waitFor(() => evaluate(client, `document.querySelector('#prepPreviewTabs [data-preview="${view}"]')?.getAttribute('aria-selected')==='true' && Boolean(document.querySelector('#previewTable table'))`), view+' preview selected');
-  };
   const uploadMatrix = async (kind, matrix, name, expectSuccess = true) => {
     await evaluate(client, `(() => {
       const book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
@@ -221,35 +210,29 @@ try {
       document.querySelector('#toast').classList.add('hidden');
       Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
     })()`);
-    if(expectSuccess) {
-      await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && (${inputIdleExpression})`), name+' automatically accepted and settled');
-      const preview = { orders: 'allocations', inventory: 'inventory', purchases: 'purchases', sales: 'sales' }[kind];
-      assert.equal(await evaluate(client, `document.querySelector('#prepPreviewTabs [data-preview="${preview}"]')?.getAttribute('aria-selected')`), 'true', name+' must automatically display its own source kind before any tab click');
-    }
+    if(expectSuccess) await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes(${JSON.stringify(name)}) && !document.querySelector('#analyzeButton').disabled`), name+' accepted');
   };
   const editOrder = async (field, value) => {
-    await selectPreview('allocations');
+    await click(client, '#ordersDrop');
     await evaluate(client, `(() => {const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');if(!input)throw new Error('Missing ${field} editor');input.value=${JSON.stringify(String(value))};input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const editWholeStock = async (value) => {
-    await selectPreview('inventory');
+    await click(client, '#inventoryDrop');
     await evaluate(client, `(() => {const input=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');if(!input)throw new Error('Missing whole-stock editor');input.value=${JSON.stringify(String(value))};input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const editSupplier = async () => {
-    await selectPreview('inventory');
+    await click(client, '#inventoryDrop');
     await evaluate(client, `(() => {const input=document.querySelector('.purchase-input[data-purchase-code="000001"]');if(!input)throw new Error('Missing supplier editor');input.value='보존검증구매처';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   };
   const analyzeAgain = async (label) => {
-    await waitInputIdle(label+' input settled');
     assert.equal(await evaluate(client, `document.querySelector('#analyzeButton').disabled`), false, label+' must be available');
     await click(client, '#analyzeButton');
     await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled && !document.querySelector('#downloadButton').disabled`), label);
-    await waitInputIdle(label+' completed');
   };
   const assertEditedValues = async (label) => {
-    await selectPreview('allocations');
+    await click(client, '#ordersDrop');
     assert.deepEqual(await evaluate(client, `['quantity','unitPrice'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`), ['7','1200'], label+' order editors');
-    await selectPreview('inventory');
+    await click(client, '#inventoryDrop');
     assert.deepEqual(await evaluate(client, `(() => {const stock=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');return [stock?.value,document.querySelector('.purchase-input[data-purchase-code="000001"]')?.value];})()`), ['4','보존검증구매처'], label+' inventory and supplier editors');
     const rows=await exportRows();
     const value=(sheet,header)=>{
@@ -281,46 +264,21 @@ try {
     return after;
   };
   for (const [kind, matrix] of Object.entries(matrices)) {
-    await uploadMatrix(kind, matrix, `${kind}.xlsx`);
+    await evaluate(client, `(() => {
+      const book=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
+      const transfer=new DataTransfer();
+      transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}.xlsx'));
+      const input=document.querySelector('#${kind}Input');
+      Object.defineProperty(input,'files',{configurable:true,value:transfer.files});
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    await waitFor(() => evaluate(client, `document.querySelector('#${kind}FileName').textContent.includes('${kind}.xlsx')`), `${kind} Excel parsed`);
   }
-  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled && (${inputIdleExpression})`), 'basic automatic analysis complete');
-  await selectPreview('allocations');
-  const editableGrid = await evaluate(client, `(() => {
-    const row=document.querySelector('#previewTable table.preview-allocations tbody tr[data-grid-row-key]');
-    const fields=[...row.querySelectorAll('.order-edit-input')].map(input=>input.dataset.orderField);
-    const name=row.querySelector('.order-edit-input[data-order-field="productName"]');
-    name.focus();
-    const cell=name.closest('td');
-    return {
-      fields,
-      inputBorder:getComputedStyle(name).borderTopWidth,
-      cellBorder:getComputedStyle(cell).borderTopWidth,
-      cellBackground:getComputedStyle(cell).backgroundColor,
-      activeCellShadow:getComputedStyle(cell).boxShadow,
-      activeRowOutline:getComputedStyle(row).outlineWidth,
-    };
-  })()`);
-  assert.deepEqual(editableGrid.fields,
-    ['warehouse','customer','group','manager','productCode','productName','specification','sourceUnit','quantity','unitPrice','note'],
-    'every direct order-work field must be editable in the central table');
-  assert.equal(editableGrid.inputBorder,'0px','editable cells must have no inner input line');
-  assert.equal(editableGrid.cellBorder,'0px','the ivory Excel sheet must have no cell border line');
-  assert.match(editableGrid.cellBackground,/rgb\((248, 251, 255|219, 234, 254)\)/,
-    'the focused cell must use the light Excel selection surface');
-  assert.notEqual(editableGrid.activeCellShadow,'none','the active cell must have a visible cursor highlight');
-  assert.equal(editableGrid.activeRowOutline,'2px','the selected row must be visibly emphasized');
-  await editOrder('productName','수정 상품명');
-  await editOrder('specification','수정 규격');
-  assert.deepEqual(await evaluate(client, `['productName','specification'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`),
-    ['수정 상품명','수정 규격'],'product name and specification edits must round-trip through recalculation');
-  await editOrder('productName','기본상품');
-  await editOrder('specification','EA');
-  await evaluate(client, `(() => {
-    const input=document.querySelector('.order-edit-input[data-order-field="productName"]');
-    input.focus();
-    input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
-  })()`);
-  await waitFor(() => evaluate(client, `document.activeElement?.dataset?.orderField==='specification'`), 'Excel ArrowRight cell navigation');
+  await waitFor(() => evaluate(client, `!document.querySelector('#analyzeButton').disabled`), 'basic analysis ready');
+  await click(client, '#analyzeButton');
+  await waitFor(() => evaluate(client, `!document.querySelector('#downloadButton').disabled`), 'basic analysis complete');
+  await click(client, '#ordersDrop');
   for (const [field,value] of [['quantity','7'],['unitPrice','1200']]) {
     await evaluate(client, `(() => {
       const input=document.querySelector('.order-edit-input[data-order-field="${field}"]');
@@ -364,19 +322,13 @@ try {
   const replacementNames=await fileNames();
   assert.match(replacementNames.orders,/accepted-replacement.xlsx/);
   for(const kind of ['inventory','purchases','sales']) assert.equal(replacementNames[kind],beforeReplacementNames[kind], 'valid replacement must change only the selected input kind');
-  await selectPreview('allocations');
-  assert.deepEqual(await evaluate(client, `['quantity','unitPrice','note'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]')?.value)`), ['3','900','새 파일'], 'accepted replacement must automatically show the new order values without another analysis action');
+  assert.deepEqual(await readRecovery(),beforeReplacement,'accepting a new file must retain the previous verified recovery until new analysis is saved');
+  await analyzeAgain('accepted replacement analysis');
   const replacementRows=await exportRows();
   assert.deepEqual(['주문수량','단가','적요'].map(header=>replacementRows['주문현황'][1][replacementRows['주문현황'][0].indexOf(header)]),[3,900,'새 파일'],'only an accepted new file may replace current order values');
-  await waitFor(async () => {
-    const recovery=await readRecovery();
-    const order=recovery.workspace.orders[0];
-    return recovery.pointer!==beforeReplacement.pointer && recovery.workspace.sourceFiles.orders.fileName==='accepted-replacement.xlsx' && order.quantity===3 && order.unitPrice===900 && order.note==='새 파일';
-  }, 'accepted replacement automatically saved');
-  const afterReplacement=await savedRecovery('accepted replacement saved');
-  assert.ok(afterReplacement.records.some(([recordId,hash])=>recordId===beforeReplacement.pointer&&hash===beforeReplacement.payloadSha256), 'automatic replacement save must retain the previous verified recovery record');
-  assert.deepEqual((await readRecovery(beforeReplacement.pointer)).workspace,beforeReplacement.workspace,'the retained prior recovery must still verify and preserve the complete previous work');
+  await savedRecovery('accepted replacement saved');
   await uploadMatrix('orders',matrices.orders,'orders.xlsx');
+  await analyzeAgain('restore original input fixture');
   // Reverse edit order: stock/supplier first, then quantity/price.
   await editWholeStock(4);
   await editSupplier();
@@ -394,10 +346,10 @@ try {
   assert.deepEqual(businessState(await readRecovery()),businessState(beforeReload),'reload must recover the edited workspace and immutable input matrices');
   await analyzeAgain('recovered workspace reanalysis');
   await assertEditedValues('recovered workspace after reanalysis');
-  await selectPreview('allocations');
+  await click(client, '#ordersDrop');
   assert.deepEqual(await evaluate(client, `['quantity','unitPrice'].map(field=>document.querySelector('.order-edit-input[data-order-field="'+field+'"]').value)`), ['7','1200']);
   for (const view of ['ledger','inventory']) {
-    await selectPreview(view);
+    await click(client, `#${view}Drop`);
     assert.match(await evaluate(client, `document.querySelector('#previewTable').textContent`), /기본상품/);
   }
   const workbookResult=await evaluate(client, `(async () => {
@@ -412,7 +364,7 @@ try {
   assert.ok(workbookResult.rows['주문현황'].some(row=>row.includes(7)&&row.includes(1200)), 'Excel uses restored edits');
   console.log('Basic Excel → both edit orders → reanalysis → read/validation/cancel failures preserve work → accepted replacement → verified save/reload/reanalysis → Excel reopen PASS');
   // F05: edit the actual warehouse cell, then verify the downloadable workbook, not a synthetic model.
-  await selectPreview('inventory');
+  await click(client, '#inventoryDrop');
   await evaluate(client, `(() => {
     const input=[...document.querySelectorAll('.inventory-input[data-inventory-code="000001"]')].find(node=>decodeURIComponent(node.dataset.inventoryColumn.split(':').at(-1))==='1창고');
     if(!input) throw new Error('Missing whole-stock editor');
@@ -441,26 +393,23 @@ try {
     sales:[['품목코드','품목명','거래처','수량','단위','규격'],['000001','단위상품','매출처',1,'BOX','포장']],
   };
   for(const [kind,matrix] of Object.entries(unitMatrices)){
-    await uploadMatrix(kind,matrix,`${kind}-units.xlsx`);
+    await evaluate(client,`(() => {
+      const book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet(${JSON.stringify(matrix)}),'자료');
+      const transfer=new DataTransfer(); transfer.items.add(new File([XLSX.write(book,{type:'array',bookType:'xlsx'})],'${kind}-units.xlsx'));
+      const input=document.querySelector('#${kind}Input');
+      Object.defineProperty(input,'files',{configurable:true,value:transfer.files}); input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()`);
+    await waitFor(()=>evaluate(client,`document.querySelector('#${kind}FileName').textContent.includes('${kind}-units.xlsx')`),kind+' units parsed');
   }
-  await waitFor(()=>evaluate(client,`!document.querySelector('#downloadButton').disabled && (${inputIdleExpression})`),'unit automatic analysis complete');
-  await selectPreview('allocations');
+  await waitFor(()=>evaluate(client,`!document.querySelector('#analyzeButton').disabled`),'unit analysis ready');
+  await click(client,'#analyzeButton');
+  await waitFor(()=>evaluate(client,`!document.querySelector('#downloadButton').disabled`),'unit analysis complete');
+  await click(client,'#ordersDrop');
   const unitText=await evaluate(client,`document.querySelector('#previewTable').textContent`);
   assert.match(unitText,/2 BOX/); assert.match(unitText,/30 EA/); assert.match(unitText,/단위/);
-  const orderUnitRows=await evaluate(client,`(() => {
-    const headers=[...document.querySelectorAll('#previewTable thead th')].map(node=>node.textContent.trim());
-    const rows=[...document.querySelectorAll('#previewTable tbody tr')].map(row=>{
-      const input=row.querySelector('[data-order-field="sourceUnit"]');
-      return input?{value:input.value,alert:row.classList.contains('unit-alert-row'),box:row.classList.contains('box-unit-row'),allRed:[...row.querySelectorAll('td, td *')].every(node=>getComputedStyle(node).color==='rgb(185, 28, 28)')} : null;
-    }).filter(Boolean);
-    return {headers,rows};
-  })()`);
-  assert.ok(orderUnitRows.headers.some(header=>header.includes('단위')),'order status must show the unit column');
-  assert.deepEqual(orderUnitRows.rows.find(row=>row.value==='BOX'),{value:'BOX',alert:false,box:true,allRed:false});
-  assert.deepEqual(orderUnitRows.rows.find(row=>row.value==='EA'),{value:'EA',alert:true,box:false,allRed:true},'every visible element in a non-BOX order row must use red text');
-  await selectPreview('inventory');
+  await click(client,'#inventoryDrop');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/단위.*(확인|보류)/);
-  await selectPreview('ledger');
+  await click(client,'#ledgerDrop');
   assert.match(await evaluate(client,`document.querySelector('#previewTable').textContent`),/ONLY-BUY/);
   calculationRows=await exportRows();
   const ledger=calculationRows['재고수불부'];
@@ -480,16 +429,14 @@ try {
     document.querySelector('.order-edit-input').focus();
     return true;
   })()`);
-  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,sheet:read('table.preview-allocations'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const lightMetrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(lightMetrics.theme, 'light');
-  assert.equal(lightMetrics.sheet.background, 'rgb(255, 255, 240)',
-    'the on-screen Excel worktable must use ivory as its base palette');
   assert.notEqual(lightMetrics.primary.background, lightMetrics.inactive.background,
     'saved manager colors must restore a visible row surface in light mode');
   assert.ok(contrast(lightMetrics.primary.color, lightMetrics.primary.background) >= 7,
     'restored light manager rows must preserve strong text contrast');
-  assert.ok(new Set(lightMetrics.managerCells.map((cell) => cell.background)).size <= 2,
-    'light manager color may differ only for the currently selected Excel cell');
+  assert.equal(new Set(lightMetrics.managerCells.map((cell) => cell.background)).size, 1,
+    'light manager color must cover every cell even when cells carry semantic state classes');
   assert.equal(new Set(lightMetrics.managerCells.map((cell) => cell.color)).size, 1,
     'light manager text color must cover the complete row');
   assert.ok(lightMetrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),
@@ -500,23 +447,20 @@ try {
     'BOX text color must cover the complete light row');
   await click(client, '[data-nexus-ui-theme-set="dark"]');
   await wait(120);
-  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,sheet:read('table.preview-allocations'),unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
+  const metrics = await evaluate(client, `(() => { const read=(selector)=>{const style=getComputedStyle(document.querySelector(selector));return {color:style.color,background:style.backgroundColor,border:style.borderColor,shadow:style.boxShadow};}; const readAll=(selector)=>[...document.querySelectorAll(selector)].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}); return {theme:document.documentElement.dataset.nexusUiTheme,unitTextToken:getComputedStyle(document.documentElement).getPropertyValue('--orderops-unit-row-text').trim(),header:read('th'),primary:read('tbody tr:first-child td:first-child'),inactive:read('tr.no-order-row td:first-child'),warning:read('td.unit-alert-cell'),manager:read('.manager-name'),badge1:read('.manager-color-badge'),badge2:read('.manager-color-badge:nth-child(2)'),managerCells:readAll('tbody tr.manager-color-row:first-child > td'),managerControls:readAll('tbody tr.manager-color-row:first-child :is(.purchase-input,.order-edit-input,.inventory-input,.inventory-total-frame)'),unitCells:readAll('tbody tr.unit-alert-row > td'),boxCells:readAll('tbody tr.box-unit-row > td')}; })()`);
   assert.equal(metrics.theme, 'dark');
-  assert.equal(metrics.sheet.background, 'rgb(255, 255, 240)',
-    'the Excel worktable must retain its ivory screen palette in dark app mode');
   assert.ok(contrast(metrics.header.color, metrics.header.background) >= 7, 'dark table headers must have strong text contrast');
   assert.ok(contrast(metrics.primary.color, metrics.primary.background) >= 7,
     `dark primary table information must have strong text contrast: ${JSON.stringify(metrics.primary)} ratio=${contrast(metrics.primary.color, metrics.primary.background)}`);
-  assert.ok(contrast(metrics.inactive.color, metrics.inactive.background) >= 4.5,
-    `inactive dark rows must remain readable: ${JSON.stringify(metrics.inactive)} ratio=${contrast(metrics.inactive.color, metrics.inactive.background)}`);
+  assert.ok(contrast(metrics.inactive.color, metrics.inactive.background) >= 4.5, 'inactive dark rows must remain readable');
   assert.ok(contrast(metrics.warning.color, metrics.warning.background) >= 4.5,
     `dark warning units must remain readable: ${JSON.stringify(metrics.warning)} token=${metrics.unitTextToken} ratio=${contrast(metrics.warning.color, metrics.warning.background)}`);
   assert.ok(contrast(metrics.manager.color, metrics.manager.background) >= 4.5, 'dark manager labels must remain readable');
   assert.ok(contrast(metrics.badge1.color, metrics.badge1.background) >= 4.5, 'dark manager information badges must remain readable');
   assert.notEqual(metrics.primary.background, metrics.inactive.background,
     'saved manager colors must restore a visible row surface in dark mode');
-  assert.ok(new Set(metrics.managerCells.map((cell) => cell.background)).size <= 2,
-    'dark manager color may differ only for the currently selected Excel cell');
+  assert.equal(new Set(metrics.managerCells.map((cell) => cell.background)).size, 1,
+    'dark manager color must cover every cell even when cells carry semantic state classes');
   assert.equal(new Set(metrics.managerCells.map((cell) => cell.color)).size, 1,
     'dark manager text color must cover the complete row');
   assert.ok(metrics.managerControls.every((control) => control.background === 'rgba(0, 0, 0, 0)'),
@@ -528,66 +472,42 @@ try {
   assert.notEqual(metrics.badge1.background, metrics.badge2.background,
     'assigned manager information badges must remain visually distinct');
   assert.notEqual(metrics.primary.shadow, 'none', 'assigned manager rows must retain their color edge marker');
-  // Print colors must survive both entrypoints and both screen themes.
-  for (const printPath of ['orderops/list.html', 'orderops_list.html']) {
-    if (printPath === 'orderops_list.html') {
-      await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
-      const printLoaded = client.once('Page.loadEventFired');
-      await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/${printPath}` });
-      await printLoaded;
-    }
-    for (const printTheme of ['light', 'dark']) {
-      await evaluate(client, `document.documentElement.dataset.nexusUiTheme=${JSON.stringify(printTheme)}`);
-      await client.send('Emulation.setEmulatedMedia', { media: 'print' });
-      const printMetrics = await evaluate(client, `(() => {
-        const printArea=document.querySelector('#printArea');
-        printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe;--manager-print-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7;--manager-print-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr><tr class="manager-color-row" style="--manager-color:#102030;--manager-print-color:#8c949c"><td>진한색</td><td>최담당</td><td>3</td></tr><tr class="manager-color-row" style="--manager-color:#dcfce7"><td>호환</td><td>이담당</td><td>1</td></tr></tbody></table>';
-        document.body.classList.add('printing-table');
-        const bodyStyle=getComputedStyle(document.body);
-        const printStyle=getComputedStyle(printArea);
-        return {
-          bodyMarginTop:parseFloat(bodyStyle.marginTop),
-          bodyPaddingTop:parseFloat(bodyStyle.paddingTop),
-          printMarginTop:parseFloat(printStyle.marginTop),
-          printPaddingTop:parseFloat(printStyle.paddingTop),
-          printTop:printArea.getBoundingClientRect().top,
-          tableTop:printArea.querySelector('table').getBoundingClientRect().top,
-          headerBackground:getComputedStyle(printArea.querySelector('th')).backgroundColor,
-          managerCells:[...printArea.querySelectorAll('tbody tr.manager-color-row:first-child > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
-          unitCells:[...printArea.querySelectorAll('tbody tr.unit-alert-row > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
-          vividCells:[...printArea.querySelectorAll('tbody tr:nth-child(3) > td')].map((node)=>({background:getComputedStyle(node).backgroundColor})),
-          fallbackCells:[...printArea.querySelectorAll('tbody tr:nth-child(4) > td')].map((node)=>({background:getComputedStyle(node).backgroundColor})),
-        };
-      })()`);
-      assert.equal(printMetrics.bodyMarginTop, 0, 'print body must not reserve a top margin');
-      assert.equal(printMetrics.bodyPaddingTop, 0, 'print body must remove the common-header top offset');
-      assert.equal(printMetrics.printMarginTop, 0, 'print area must not reserve a top margin');
-      assert.equal(printMetrics.printPaddingTop, 0, 'print area must not reserve top padding');
-      assert.ok(Math.abs(printMetrics.printTop) <= 0.5 && Math.abs(printMetrics.tableTop) <= 0.5,
-        `printed table must start at the printable origin, got print=${printMetrics.printTop}, table=${printMetrics.tableTop}`);
-      assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.background)).size, 1,
-        'printed manager background must cover the complete row');
-      assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.color)).size, 1,
-        'printed manager text color must cover the complete row');
-      assert.equal(printMetrics.managerCells[0].color, 'rgb(23, 32, 51)',
-        'dark screen text tokens must not leak into the printed manager row');
-      assert.equal(new Set(printMetrics.unitCells.map((cell) => cell.color)).size, 1,
-        'printed EA and 소분 warning text must cover the complete row');
-      assert.equal(printMetrics.unitCells[0].color, printPath === 'orderops/list.html' ? 'rgb(185, 28, 28)' : 'rgb(23, 32, 51)',
-        'each entrypoint must retain its existing warning-row text color');
-      assert.equal(printMetrics.headerBackground, 'rgb(255, 255, 255)',
-        'printed table headers must use a white paper background');
-      assert.ok(printMetrics.managerCells.every((cell) => cell.background === 'rgb(219, 234, 254)'),
-        'printed manager cells must retain the assigned pastel color, not be reset to white');
-      assert.ok(printMetrics.unitCells.every((cell) => cell.background === 'rgb(254, 243, 199)'),
-        'printed warning rows must retain their assigned color as well as red text');
-      assert.ok(printMetrics.vividCells.every((cell) => cell.background === 'rgb(140, 148, 156)'),
-        'vivid manager colors must use the existing lightened print color');
-      assert.ok(printMetrics.fallbackCells.every((cell) => cell.background === 'rgb(220, 252, 231)'),
-        'a missing print-color variable must fall back to the saved manager color');
-      console.log(`PASS manager print colors: ${printPath} / ${printTheme}`);
-    }
-  }
+  await client.send('Emulation.setEmulatedMedia', { media: 'print' });
+  const printMetrics = await evaluate(client, `(() => {
+    const printArea=document.querySelector('#printArea');
+    printArea.innerHTML='<table class="preview-allocations"><thead><tr><th>품명</th><th>담당자</th><th>수량</th></tr></thead><tbody><tr class="manager-color-row" style="--manager-color:#dbeafe;--manager-print-color:#dbeafe"><td>첫 출력 행</td><td class="warning-value">김담당</td><td class="ordered-context-cell">4</td></tr><tr class="manager-color-row unit-alert-row" style="--manager-color:#fef3c7;--manager-print-color:#fef3c7"><td>EA 상품</td><td>박담당</td><td>2</td></tr></tbody></table>';
+    document.body.classList.add('printing-table');
+    const bodyStyle=getComputedStyle(document.body);
+    const printStyle=getComputedStyle(printArea);
+    return {
+      bodyMarginTop:parseFloat(bodyStyle.marginTop),
+      bodyPaddingTop:parseFloat(bodyStyle.paddingTop),
+      printMarginTop:parseFloat(printStyle.marginTop),
+      printPaddingTop:parseFloat(printStyle.paddingTop),
+      printTop:printArea.getBoundingClientRect().top,
+      tableTop:printArea.querySelector('table').getBoundingClientRect().top,
+      managerCells:[...printArea.querySelectorAll('tbody tr.manager-color-row:first-child > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
+      unitCells:[...printArea.querySelectorAll('tbody tr.unit-alert-row > td')].map((node)=>{const style=getComputedStyle(node);return {color:style.color,background:style.backgroundColor};}),
+    };
+  })()`);
+  assert.equal(printMetrics.bodyMarginTop, 0, 'print body must not reserve a top margin');
+  assert.equal(printMetrics.bodyPaddingTop, 0, 'print body must remove the common-header top offset');
+  assert.equal(printMetrics.printMarginTop, 0, 'print area must not reserve a top margin');
+  assert.equal(printMetrics.printPaddingTop, 0, 'print area must not reserve top padding');
+  assert.ok(Math.abs(printMetrics.printTop) <= 0.5 && Math.abs(printMetrics.tableTop) <= 0.5,
+    `printed table must start at the printable origin, got print=${printMetrics.printTop}, table=${printMetrics.tableTop}`);
+  assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.background)).size, 1,
+    'printed manager background must cover the complete row');
+  assert.equal(new Set(printMetrics.managerCells.map((cell) => cell.color)).size, 1,
+    'printed manager text color must cover the complete row');
+  assert.equal(printMetrics.managerCells[0].color, 'rgb(23, 32, 51)',
+    'dark screen text tokens must not leak into the printed manager row');
+  assert.equal(new Set(printMetrics.unitCells.map((cell) => cell.color)).size, 1,
+    'printed EA and 소분 warning text must cover the complete row');
+  assert.equal(printMetrics.unitCells[0].color, 'rgb(185, 28, 28)',
+    'printed EA and 소분 rows must retain the paper-safe red text');
+  assert.equal(printMetrics.managerCells[0].background, 'rgb(219, 234, 254)',
+    'print-only manager token must preserve the selected pastel without screen-theme dilution');
 
   await client.send('Emulation.setEmulatedMedia', { media: 'screen' });
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });

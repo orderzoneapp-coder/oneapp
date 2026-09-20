@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const engine = require(path.join(ROOT, "orderFulfillmentEngine.js"));
 const workbook = require(path.join(ROOT, "orderFulfillmentWorkbook.js"));
 const XLSX = require(path.join(ROOT, "customer-master/vendor/xlsx.full.min.js"));
-const html = fs.readFileSync(path.join(ROOT, "orderops/list.html"), "utf8");
+const html = fs.readFileSync(path.join(ROOT, "orderops_list.html"), "utf8");
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const FINGERPRINT = "b".repeat(64);
 const WHEN = "2026-09-16T09:00:00.000Z";

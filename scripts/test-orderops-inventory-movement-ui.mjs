@@ -31,7 +31,7 @@ function extractFunction(html, name) {
   const end = /\r?\n      }\r?\n/.exec(rest);
   return html.slice(match.index, match.index + match[0].length + end.index + end[0].length);
 }
-for (const path of ["../orderops/list.html", "../orderops_list.html"]) {
+for (const path of ["../orderops_list.html"]) {
   const html = fs.readFileSync(new URL(path, import.meta.url), "utf8");
   for (const match of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) if (match[1].trim()) new vm.Script(match[1]);
   const env = vm.createContext({});
