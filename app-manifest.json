@@ -510,6 +510,7 @@
       ],
       "ownedContracts": [
         "orderq-official-voucher-core",
+        "orderq-input-matching-snapshot",
         "orderq-official-sync",
         "orderq-unresolved-review-read-model",
         "orderq-shopping-order-import",
@@ -519,6 +520,7 @@
         "cloud-url",
         "orderq-vnext-sync",
         "voucher-activity-snapshot",
+        "orderq-input-matching-snapshot",
         "product-master",
         "orderq-unresolved-review-read-model",
         "orderq-shopping-order-import",
@@ -535,7 +537,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Create order, purchase, sale, and estimate work through one automatically updated local recovery state while consuming owner-issued product, customer, pricing-rule, and mapping Snapshots, recognizing the exact shopping-order 17-column source, and requesting shopping-order plus official purchase/sale changes through ORDER Q owner command boundaries without direct writes to owner stores.",
+      "purpose": "Independently complete input documents, estimates, local recovery, and Excel output using validated local reference Snapshots. Explicit delivery and result-query actions prepare the existing owner integration; normal entry, input, autosave, and Excel output do not query ledgers or start synchronization. Preserve host ready, beforeLeave, theme, and print contracts separately from optional business integration.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -553,7 +555,8 @@
         "local estimate catalog",
         "MerchOps-compatible estimate report pricing from Settings-owned margin rules and mappings, including grouped duplicate-code price resolution",
         "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
-        "company-partitioned background official-voucher synchronization",
+        "company-partitioned official-voucher synchronization after explicit owner mutations",
+        "cached owner-issued input aliases and customer matching history, refreshed only by explicit reference refresh",
         "independent same-ID estimates with selected-only atomic updates and last Excel exclusions",
         "optional selected-estimate product-master commands with separate durable retry",
         "v5 estimate-summary projections and bounded on-demand body/photo cache",
@@ -571,6 +574,7 @@
         "product-reference-change-request",
         "customer-reference-change-request",
         "voucher-activity-snapshot",
+        "orderq-input-matching-snapshot",
         "orderq-official-voucher-core",
         "orderq-official-sync",
         "orderq-vnext-sync",
@@ -585,7 +589,8 @@
         "referenceRevisionCheck": "BACKGROUND_SYNC",
         "orderSaveThenSync": "BACKGROUND_SYNC",
         "purchaseAndSaleFinalize": "LOCAL_OPERATION",
-        "shoppingOrderActualLedgerDedupe": "LOCAL_OPERATION through ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1; candidate inspection is advisory and every save rechecks the actual ORDER Q count in the owner transaction",
+        "shoppingOrderActualLedgerDedupe": "Explicit delivery action through ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1; local file preparation does not inspect ledgers, candidate inspection is advisory and every save rechecks the actual ORDER Q count in the owner transaction",
+        "inputMatching": "LOCAL_OPERATION from a company-and-actor scoped validated SmartInput cache; explicit full reference refresh invokes the owner read-only publication, without changing existing candidate scoring or automatically reanalyzing active rows",
         "estimateReportPricing": "LOCAL_OPERATION through ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1; SmartInput reads current margin rules and estimate mappings without writing Settings-owned keys, groups duplicate product codes for an explicit representative inbound-price decision, and preserves every customer transaction row in the estimate-upload sheet",
         "officialVoucherRemoteSync": "BACKGROUND_SYNC through ONEAPP_ORDERQ_OFFICIAL_SYNC_V1; unsupported or unavailable server keeps WAITING_SERVER_CONTRACT without blocking local finalize",
         "estimateMasterApply": "Authenticated company.profile_read evidence and product-master owner commands; unavailable owner does not block local estimate work"
@@ -598,6 +603,7 @@
         "product-reference-change-request",
         "customer-reference-change-request",
         "voucher-activity-snapshot",
+        "orderq-input-matching-snapshot",
         "smartinput-reference-generation",
         "smartinput-related-voucher-import",
         "orderq-official-voucher-core",
@@ -846,6 +852,23 @@
       }
     },
     {
+      "id": "orderq-input-matching-snapshot",
+      "owner": "orderq-vnext",
+      "consumers": ["smart-input"],
+      "schemaVersion": "ONEAPP_ORDERQ_INPUT_MATCHING_SNAPSHOT_V1",
+      "writerPolicy": "The owner publishes products, aliases and customer-joined matching history through one read-only transaction, without database creation, schema upgrades, migration, ledger mutation or synchronization. SmartInput stores only its scoped local copy in its existing settings store. Missing preparation and failed refresh remain explicit states; failures preserve the last verified snapshot and current work.",
+      "activationPolicy": "Only explicit full reference refresh invokes the owner reader. Startup and ordinary input read the validated local copy. Legacy records without companyId are eligible only for ONEAPP, matching the existing owner compatibility rule. No cross-company inference or new matching policy is introduced.",
+      "resources": {
+        "adapterAsset": "orderq/input-matching-read-adapter.js",
+        "consumerAsset": "smartinput/input-matching-snapshot.js",
+        "localDatabase": "oneapp-orderq-pre-m1-v6",
+        "readOnlyStores": ["products", "productMappings", "orders", "orderItems"],
+        "cacheDatabase": "oneapp-smartinput",
+        "cacheStore": "settings"
+      },
+      "rollback": "Revert SmartInput and this read adapter together. Retain all owner records and existing local draft/estimate stores; no data migration or schema downgrade is required."
+    },
+    {
       "id": "smartinput-reference-generation",
       "owner": "smart-input",
       "consumers": [
@@ -946,10 +969,11 @@
       "identityPolicy": "The signature uses company, owner-resolved customer, delivery date, owner-resolved shipment warehouse, and a duplicate-preserving item multiset of product identity, specification, unit, quantity, unit price and amount. A candidate is scorable and writable only when customerId, warehouseId and every item productId plus its stored code and name are resolved; otherwise that candidate is REVIEW_REQUIRED with isDuplicate=null and zero writes. Source order status, group, filename, upload time, absolute row number, memo, address and phone remain immutable evidence but do not change isDuplicate. Existing manual ORDER Q orders count when the same actual signature can be derived; a potentially matching legacy bundle with incomplete owner identity fails closed as EXISTING_LEDGER_BUNDLE_INVALID.",
       "occurrencePolicy": "For source occurrence n and actual-ledger count m, isDuplicate is n <= m and the surplus is max(0,n-m). The sourceMessageKey is an internal signature-plus-occurrence idempotency key, never a fabricated external order number. Each write transaction rechecks m before insertion and resolves a matching unique-key race to the existing order.",
       "boundaryPolicy": "The fixed 17-column shopping source has no order number. Group is not an order identifier. A changed company/customer/delivery-date/warehouse scope or an explicit upstream source boundary starts a candidate; non-contiguous same-customer runs stay separate. Repeated adjacent order-content sequences inside one otherwise unbounded customer run fail closed as AMBIGUOUS_SOURCE_ORDER_BOUNDARY.",
-      "activationPolicy": "SmartInput order-mode Excel intake recognizes only the exact 17-column source and delegates candidate construction, inspection and commit to the ORDER Q owner command Adapter. Candidate-level results are displayed as new, actual-ledger duplicate or review-required; only surplus new candidates can be committed. This is local actual-ledger idempotency and does not claim multi-device global duplicate prevention.",
+      "activationPolicy": "SmartInput order-mode Excel intake recognizes only the exact 17-column source through the owner pure source Adapter. Candidate construction has no repository or I/O dependency; explicit delivery loads the existing owner command Adapter for inspection and commit. Candidate-level results are displayed as new, actual-ledger duplicate or review-required; only surplus new candidates can be committed. This is local actual-ledger idempotency and does not claim multi-device global duplicate prevention.",
       "migrationPolicy": "Reuse oneapp-orderq-pre-m1-v6 DB version 7 and the existing orders, orderItems, orderEvents, syncQueue and meta Stores plus the existing unique orders.bySourceMessageKey index. No DB version, Store, key, index, migration, reset or existing record rewrite is introduced.",
       "resources": {
         "coreAsset": "orderq/shopping-order-dedupe-core.js",
+        "sourceAdapterAsset": "orderq/shopping-order-source-adapter.js",
         "adapterAsset": "orderq/shopping-order-command-adapter.js",
         "repositoryAsset": "orderq/shopping-order-import-repository.js",
         "consumerAsset": "smartinput/shopping-order-upload.js",

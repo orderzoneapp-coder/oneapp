@@ -1,0 +1,1034 @@
+{
+  "schema": "SMARTINPUT_REAL_HOST_NAVIGATION_V1",
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "label": "final-local-host",
+  "recordedAt": "2026-09-20T19:28:58.541Z",
+  "samplePairs": 20,
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "cpu": "Intel(R) Pentium(R) Gold G6400 CPU @ 4.00GHz",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+  },
+  "fixture": "20 synthetic direct-input order rows in a newly created browser profile. Real workspace.html, workspace.js, SmartInput and customer-master are used without source replacement. No authentication session, personal profile, production database, external command or owner transmission is used.",
+  "methodology": {
+    "warmup": "One unrecorded real roundtrip, with the last synthetic quantity edited immediately before leaving SmartInput to verify beforeLeave persistence.",
+    "appUsable": "From captured trusted click timestamp to the first painted state with the correct host route, connected/ready child adapter, hidden host loading/error, expected SmartInput row name and quantity plus enabled input/analyze controls; customer-master requires its ready bridge, completed initialization, ready status, visible header and enabled search.",
+    "clickFeedback": "From captured click timestamp to a requestAnimationFrame in which the pending/active target is visible, followed by a second animation frame. A conservative paint-opportunity upper bound, not screenshot-confirmed compositor presentation.",
+    "statistics": "Nearest-rank p95. Each recorded pair contains SmartInput -> customer-master -> SmartInput. No artificial source mutations, cache disabling or all-request Fetch interception are used.",
+    "commonLayer": "nexusUiReadyMs is diagnostic wall time, not common-layer blocking. Optional trace is separate from KPI sampling and requires attribution review; it cannot produce a 150 ms PASS automatically."
+  },
+  "commonLayerWarmBlocking": {
+    "status": "UNMEASURED",
+    "limitMs": 150,
+    "reason": "No validated attribution of common-only synchronous intervals and gate waits. APP_READY, UI-ready wall time and total navigation are not substitutes.",
+    "traceFile": "C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\evidence\\si-boundary-20260920-01\\final-local-host-common-diagnostic-trace.json",
+    "traceNote": "One additional actual-app roundtrip, excluded from sampled metrics. Attribute non-overlapping common script intervals and explicit common gate waits; app-owned save waits and other-app work must remain separate. No automatic common KPI verdict."
+  },
+  "relativeRegression": {
+    "status": "UNMEASURED",
+    "reason": "No before-change sample set exists for this exact real-host fixture. Absolute KPI results do not establish the architecture relative-regression condition. Unchanged host/common source is not evidence of a 150 ms time budget."
+  },
+  "transitions": [
+    {
+      "sample": 1,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 2462,
+      "feedbackMs": 25.600000023841858,
+      "usableMs": 259.90000009536743,
+      "localDataMs": null,
+      "messagesFrom": 8,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 85
+    },
+    {
+      "sample": 1,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 2835.3000000715256,
+      "feedbackMs": 24.299999952316284,
+      "usableMs": 393.60000002384186,
+      "localDataMs": 238.5,
+      "messagesFrom": 11,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 164.4
+    },
+    {
+      "sample": 2,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 3461.2000000476837,
+      "feedbackMs": 25.799999952316284,
+      "usableMs": 327.2000000476837,
+      "localDataMs": null,
+      "messagesFrom": 14,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 84.3
+    },
+    {
+      "sample": 2,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 3878.8000000715256,
+      "feedbackMs": 26.299999952316284,
+      "usableMs": 450.39999997615814,
+      "localDataMs": 262.7999999523163,
+      "messagesFrom": 17,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 168.9
+    },
+    {
+      "sample": 3,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 4474.400000095367,
+      "feedbackMs": 39.5,
+      "usableMs": 246.19999992847443,
+      "localDataMs": null,
+      "messagesFrom": 20,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 75.4
+    },
+    {
+      "sample": 3,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 4841.900000095367,
+      "feedbackMs": 29.399999976158142,
+      "usableMs": 361,
+      "localDataMs": 214.69999992847443,
+      "messagesFrom": 23,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 140.9
+    },
+    {
+      "sample": 4,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 5413.5,
+      "feedbackMs": 24.200000047683716,
+      "usableMs": 240.60000002384186,
+      "localDataMs": null,
+      "messagesFrom": 26,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 78
+    },
+    {
+      "sample": 4,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 5740.600000023842,
+      "feedbackMs": 32.300000071525574,
+      "usableMs": 400.5,
+      "localDataMs": 252.89999997615814,
+      "messagesFrom": 29,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 162
+    },
+    {
+      "sample": 5,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 6376.400000095367,
+      "feedbackMs": 28.09999990463257,
+      "usableMs": 228.19999992847443,
+      "localDataMs": null,
+      "messagesFrom": 32,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 81.8
+    },
+    {
+      "sample": 5,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 6667.5,
+      "feedbackMs": 22.90000009536743,
+      "usableMs": 368.40000009536743,
+      "localDataMs": 224.60000002384186,
+      "messagesFrom": 35,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 158.4
+    },
+    {
+      "sample": 6,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 7304.900000095367,
+      "feedbackMs": 29.799999952316284,
+      "usableMs": 259.6999999284744,
+      "localDataMs": null,
+      "messagesFrom": 38,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 78.8
+    },
+    {
+      "sample": 6,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 7588.900000095367,
+      "feedbackMs": 15.299999952316284,
+      "usableMs": 369.6999999284744,
+      "localDataMs": 226.69999992847443,
+      "messagesFrom": 41,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 152.4
+    },
+    {
+      "sample": 7,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 8154.600000023842,
+      "feedbackMs": 41.39999997615814,
+      "usableMs": 254.30000007152557,
+      "localDataMs": null,
+      "messagesFrom": 44,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 79.2
+    },
+    {
+      "sample": 7,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 8429.800000071526,
+      "feedbackMs": 25,
+      "usableMs": 403.2999999523163,
+      "localDataMs": 250.5,
+      "messagesFrom": 47,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 169.3
+    },
+    {
+      "sample": 8,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 9047.400000095367,
+      "feedbackMs": 23.799999952316284,
+      "usableMs": 223.19999992847443,
+      "localDataMs": null,
+      "messagesFrom": 50,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 90.2
+    },
+    {
+      "sample": 8,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 9308.600000023842,
+      "feedbackMs": 13.700000047683716,
+      "usableMs": 388.10000002384186,
+      "localDataMs": 222.30000007152557,
+      "messagesFrom": 53,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 152.1
+    },
+    {
+      "sample": 9,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 9912.400000095367,
+      "feedbackMs": 24.5,
+      "usableMs": 224.89999997615814,
+      "localDataMs": null,
+      "messagesFrom": 56,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 93
+    },
+    {
+      "sample": 9,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 10200.800000071526,
+      "feedbackMs": 21.899999976158142,
+      "usableMs": 387.5,
+      "localDataMs": 239.60000002384186,
+      "messagesFrom": 59,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 154.4
+    },
+    {
+      "sample": 10,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 10760,
+      "feedbackMs": 33.10000002384186,
+      "usableMs": 194,
+      "localDataMs": null,
+      "messagesFrom": 62,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 74.9
+    },
+    {
+      "sample": 10,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 11006.900000095367,
+      "feedbackMs": 15,
+      "usableMs": 341.6999999284744,
+      "localDataMs": 215,
+      "messagesFrom": 65,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 146.4
+    },
+    {
+      "sample": 11,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 11530.800000071526,
+      "feedbackMs": 23.699999928474426,
+      "usableMs": 240.19999992847443,
+      "localDataMs": null,
+      "messagesFrom": 68,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 82
+    },
+    {
+      "sample": 11,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 11812.600000023842,
+      "feedbackMs": 25.399999976158142,
+      "usableMs": 380.10000002384186,
+      "localDataMs": 237,
+      "messagesFrom": 71,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 162.7
+    },
+    {
+      "sample": 12,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 12372.600000023842,
+      "feedbackMs": 39.700000047683716,
+      "usableMs": 215.20000004768372,
+      "localDataMs": null,
+      "messagesFrom": 74,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 77.6
+    },
+    {
+      "sample": 12,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 12600.400000095367,
+      "feedbackMs": 28.399999976158142,
+      "usableMs": 396.89999997615814,
+      "localDataMs": 242.09999990463257,
+      "messagesFrom": 77,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 152.3
+    },
+    {
+      "sample": 13,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 13308.5,
+      "feedbackMs": 32.90000009536743,
+      "usableMs": 386.8000000715256,
+      "localDataMs": null,
+      "messagesFrom": 80,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 88.9
+    },
+    {
+      "sample": 13,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 13728.700000047684,
+      "feedbackMs": 28.200000047683716,
+      "usableMs": 387.89999997615814,
+      "localDataMs": 235.79999995231628,
+      "messagesFrom": 83,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 165.4
+    },
+    {
+      "sample": 14,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 14315.400000095367,
+      "feedbackMs": 24.799999952316284,
+      "usableMs": 233.09999990463257,
+      "localDataMs": null,
+      "messagesFrom": 86,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 81.4
+    },
+    {
+      "sample": 14,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 14589.5,
+      "feedbackMs": 20,
+      "usableMs": 389.10000002384186,
+      "localDataMs": 238.10000002384186,
+      "messagesFrom": 89,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 167.8
+    },
+    {
+      "sample": 15,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 15148.600000023842,
+      "feedbackMs": 22.800000071525574,
+      "usableMs": 221.70000004768372,
+      "localDataMs": null,
+      "messagesFrom": 92,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 86
+    },
+    {
+      "sample": 15,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 15413.600000023842,
+      "feedbackMs": 25.899999976158142,
+      "usableMs": 385.60000002384186,
+      "localDataMs": 234.80000007152557,
+      "messagesFrom": 95,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 146.7
+    },
+    {
+      "sample": 16,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 15967.900000095367,
+      "feedbackMs": 19.799999952316284,
+      "usableMs": 204.69999992847443,
+      "localDataMs": null,
+      "messagesFrom": 98,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 72.4
+    },
+    {
+      "sample": 16,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 16197.900000095367,
+      "feedbackMs": 41.39999997615814,
+      "usableMs": 404.7999999523163,
+      "localDataMs": 251.09999990463257,
+      "messagesFrom": 101,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 149.2
+    },
+    {
+      "sample": 17,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 16798.400000095367,
+      "feedbackMs": 32.699999928474426,
+      "usableMs": 222,
+      "localDataMs": null,
+      "messagesFrom": 104,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 84.5
+    },
+    {
+      "sample": 17,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 17040.100000023842,
+      "feedbackMs": 30.700000047683716,
+      "usableMs": 389.8000000715256,
+      "localDataMs": 252.20000004768372,
+      "messagesFrom": 107,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 166.2
+    },
+    {
+      "sample": 18,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 17604.600000023842,
+      "feedbackMs": 32.60000002384186,
+      "usableMs": 249.10000002384186,
+      "localDataMs": null,
+      "messagesFrom": 110,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 79.5
+    },
+    {
+      "sample": 18,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 17902.700000047684,
+      "feedbackMs": 19.299999952316284,
+      "usableMs": 390.10000002384186,
+      "localDataMs": 243.79999995231628,
+      "messagesFrom": 113,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 162.4
+    },
+    {
+      "sample": 19,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 18452.400000095367,
+      "feedbackMs": 17.799999952316284,
+      "usableMs": 218.09999990463257,
+      "localDataMs": null,
+      "messagesFrom": 116,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 79.1
+    },
+    {
+      "sample": 19,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 18731.200000047684,
+      "feedbackMs": 29.299999952316284,
+      "usableMs": 361.89999997615814,
+      "localDataMs": 216.89999997615814,
+      "messagesFrom": 119,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 152.1
+    },
+    {
+      "sample": 20,
+      "direction": "smart-input-to-customer-master",
+      "target": "customer-master",
+      "startedAt": 19278.400000095367,
+      "feedbackMs": 25.299999952316284,
+      "usableMs": 207.89999997615814,
+      "localDataMs": null,
+      "messagesFrom": 122,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 83.3
+    },
+    {
+      "sample": 20,
+      "direction": "customer-master-to-smart-input",
+      "target": "smart-input",
+      "startedAt": 19521.600000023842,
+      "feedbackMs": 29.700000047683716,
+      "usableMs": 397.10000002384186,
+      "localDataMs": 245.20000004768372,
+      "messagesFrom": 125,
+      "feedbackPending": true,
+      "usablePending": true,
+      "headerCount": 1,
+      "childHeaderCount": 0,
+      "frameCount": 1,
+      "childIsolation": {
+        "blocked": []
+      },
+      "uiReadyWallMs": 168.5
+    }
+  ],
+  "checks": [
+    {
+      "name": "standalone direct entry",
+      "status": "PASS"
+    },
+    {
+      "name": "standalone four voucher tabs",
+      "status": "PASS",
+      "modes": [
+        "order",
+        "purchase",
+        "sale",
+        "estimate"
+      ]
+    },
+    {
+      "name": "standalone input, automatic local save and reload recovery",
+      "status": "PASS",
+      "row": "SI-HOST-ROW-0",
+      "restoredQuantity": 3
+    },
+    {
+      "name": "real NEXUS host entry with recovered work",
+      "status": "PASS"
+    },
+    {
+      "name": "embedded four voucher tabs",
+      "status": "PASS",
+      "modes": [
+        "order",
+        "purchase",
+        "sale",
+        "estimate"
+      ]
+    }
+  ],
+  "exceptions": [],
+  "forbiddenNetworkRequests": [],
+  "externalRequestsAttempted": [],
+  "blockedTransports": [],
+  "status": "MEASURED",
+  "baseUrl": "http://127.0.0.1:50618/",
+  "assets": [
+    {
+      "path": "smartinput/index.html",
+      "servedSha256": "cd440d734410630b130519ede3e749ddeb8ceb57f30c94628a6152a2cb940e46",
+      "localSha256": "cd440d734410630b130519ede3e749ddeb8ceb57f30c94628a6152a2cb940e46",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "smartinput/smartinput.js?v=0.15.0",
+      "servedSha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
+      "localSha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/workspace.html",
+      "servedSha256": "54b7cdff003f728f9b5a1a65c9346bfff06ab33e110b74b5103bc14b56c29e80",
+      "localSha256": "54b7cdff003f728f9b5a1a65c9346bfff06ab33e110b74b5103bc14b56c29e80",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/workspace.js?v=1.2.2",
+      "servedSha256": "222bb044c2fb68b4ba170e07699eadcb7fc1f65f45136342541b715501500c9e",
+      "localSha256": "222bb044c2fb68b4ba170e07699eadcb7fc1f65f45136342541b715501500c9e",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    },
+    {
+      "path": "nexus/common/nexus-ui.js?v=1.8.0",
+      "servedSha256": "db926f03f50dec3fea3bbaebeb385fbdc755beae8e9d48cbc5605926c039a8dd",
+      "localSha256": "db926f03f50dec3fea3bbaebeb385fbdc755beae8e9d48cbc5605926c039a8dd",
+      "matchesCheckout": true,
+      "etag": null,
+      "lastModified": null
+    }
+  ],
+  "assetIdentityStatus": "PASS",
+  "fixtureSeed": "One synthetic compatibility draft installed from an inert same-origin static-text document after the prior app unloads. Subsequent edits and recovery use actual app handlers; no synthetic draft is written into a running app.",
+  "beforeLeaveSyntheticEditRestored": true,
+  "metrics": {
+    "smartInputUsable": {
+      "count": 20,
+      "samples": [
+        393.6,
+        450.4,
+        361,
+        400.5,
+        368.4,
+        369.7,
+        403.3,
+        388.1,
+        387.5,
+        341.7,
+        380.1,
+        396.9,
+        387.9,
+        389.1,
+        385.6,
+        404.8,
+        389.8,
+        390.1,
+        361.9,
+        397.1
+      ],
+      "p50Ms": 388.1,
+      "p95Ms": 404.8,
+      "maxMs": 450.4,
+      "limitMs": 1000,
+      "status": "PASS"
+    },
+    "customerMasterUsable": {
+      "count": 20,
+      "samples": [
+        259.9,
+        327.2,
+        246.2,
+        240.6,
+        228.2,
+        259.7,
+        254.3,
+        223.2,
+        224.9,
+        194,
+        240.2,
+        215.2,
+        386.8,
+        233.1,
+        221.7,
+        204.7,
+        222,
+        249.1,
+        218.1,
+        207.9
+      ],
+      "p50Ms": 228.2,
+      "p95Ms": 327.2,
+      "maxMs": 386.8,
+      "limitMs": 1000,
+      "status": "PASS"
+    },
+    "clickVisualFeedback": {
+      "count": 40,
+      "samples": [
+        25.6,
+        24.3,
+        25.8,
+        26.3,
+        39.5,
+        29.4,
+        24.2,
+        32.3,
+        28.1,
+        22.9,
+        29.8,
+        15.3,
+        41.4,
+        25,
+        23.8,
+        13.7,
+        24.5,
+        21.9,
+        33.1,
+        15,
+        23.7,
+        25.4,
+        39.7,
+        28.4,
+        32.9,
+        28.2,
+        24.8,
+        20,
+        22.8,
+        25.9,
+        19.8,
+        41.4,
+        32.7,
+        30.7,
+        32.6,
+        19.3,
+        17.8,
+        29.3,
+        25.3,
+        29.7
+      ],
+      "p50Ms": 25.6,
+      "p95Ms": 39.7,
+      "maxMs": 41.4,
+      "limitMs": 100,
+      "status": "PASS"
+    },
+    "smartInputDataFromHostClick": {
+      "count": 20,
+      "samples": [
+        238.5,
+        262.8,
+        214.7,
+        252.9,
+        224.6,
+        226.7,
+        250.5,
+        222.3,
+        239.6,
+        215,
+        237,
+        242.1,
+        235.8,
+        238.1,
+        234.8,
+        251.1,
+        252.2,
+        243.8,
+        216.9,
+        245.2
+      ],
+      "p50Ms": 238.1,
+      "p95Ms": 252.9,
+      "maxMs": 262.8,
+      "note": "Includes leaving the prior app; not the separate direct-entry local-data KPI."
+    }
+  },
+  "isolation": {
+    "temporaryProfile": true,
+    "applicationTransportsBlockedBeforeDispatch": true,
+    "externalHostResolutionBlocked": true,
+    "blockedTransportCount": 0,
+    "nonGetHeadRequestCount": 0,
+    "externalRequestAttemptCount": 0,
+    "productionDataUsed": false,
+    "productionWrites": false,
+    "personalProfileUsed": false
+  },
+  "functionalStatus": "PASS"
+}

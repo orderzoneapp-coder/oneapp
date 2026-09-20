@@ -1,0 +1,416 @@
+{
+  "status": "FAILED_DIAGNOSTIC",
+  "recordedAt": "2026-09-20T18:49:05.286Z",
+  "error": "AssertionError [ERR_ASSERTION]: estimate mode must restore the dedicated estimate-list rail without the voucher activity view\n+ actual - expected\n\n  {\n    contextHidden: true,\n    estimateHeadingVisible: true,\n+   individualText: '견적서 목록',\n-   individualText: '견적서 목록 · 0개 선택',\n    label: '견적 작성일',\n    linkedText: '전체 해제',\n    multiLabel: '전체 선택',\n    transactionHidden: false,\n    transactionVisibility: 'hidden',\n\n    at file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/scripts/test-smartinput-browser-e2e.mjs:1075:10",
+  "snapshots": [
+    {
+      "phase": "before-keyboard-type",
+      "time": 8759.099999904633,
+      "active": {
+        "tag": "INPUT",
+        "field": "itemName",
+        "value": "마스터 사과",
+        "rowId": "SIROW-mua66bjs-0q3wk",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"3번 행 선택\" disabled><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": null,
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "after-keyboard-type",
+      "time": 8856.699999928474,
+      "active": {
+        "tag": "BODY",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "마스터",
+          "itemCodeAttribute": "마스터",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66byi-4td8y\"  data-status=\"SIMILAR\" class=\"is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66byi-4td8y\" aria-label=\"3번 행 선택\" ><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"마스터\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-lab"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"4번 행 선택\" disabled><span class=\"row-sequence-number\">4</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": null,
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "after-keyboard-enter",
+      "time": 8924.099999904633,
+      "active": {
+        "tag": "INPUT",
+        "value": "마스터",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "마스터",
+          "itemCodeAttribute": "마스터",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66byi-4td8y\"  data-status=\"SIMILAR\" class=\"is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66byi-4td8y\" aria-label=\"3번 행 선택\" ><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"마스터\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-lab"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"4번 행 선택\" disabled><span class=\"row-sequence-number\">4</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": {
+        "open": true,
+        "count": 2,
+        "query": "마스터",
+        "text": "\n    Product Master상품 후보 선택×\n    상품명 또는 품목코드\n    2개 후보 · 1번째 항목 선택 · ↑↓ 이동 · Enter 확정\n    마스터 사과MASTER-110kg · BOX마스터 포도MASTER-25kg · EA\n    ↑↓ 이동 · Enter 선택 · Esc 닫기기준정보 새로고침취소\n  "
+      },
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "after-cancel-partial-type",
+      "time": 9187.199999928474,
+      "active": {
+        "tag": "BODY",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemCodeAttribute": "MASTER-2",
+          "itemName": "마스터 포도",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66byi-4td8y\"  data-status=\"MATCHED\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66byi-4td8y\" aria-label=\"3번 행 선택\" ><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-2\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 포도\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"5kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"EA\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"1800\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" ar"
+        },
+        {
+          "rowId": "SIROW-mua66c6i-247tv",
+          "itemCode": "마",
+          "itemCodeAttribute": "마",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66c6i-247tv\"  data-status=\"SIMILAR\" class=\"is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66c6i-247tv\" aria-label=\"4번 행 선택\" ><span class=\"row-sequence-number\">4</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"마\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"5번 행 선택\" disabled><span class=\"row-sequence-number\">5</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemName": "마스터 포도",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": null,
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "after-cancel-complete-type",
+      "time": 9264.099999904633,
+      "active": {
+        "tag": "INPUT",
+        "field": "itemCode",
+        "value": "마스터",
+        "rowId": "SIROW-mua66c6i-247tv",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemCodeAttribute": "MASTER-2",
+          "itemName": "마스터 포도",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66byi-4td8y\"  data-status=\"MATCHED\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66byi-4td8y\" aria-label=\"3번 행 선택\" ><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-2\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 포도\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"5kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"EA\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"1800\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" ar"
+        },
+        {
+          "rowId": "SIROW-mua66c6i-247tv",
+          "itemCode": "마스터",
+          "itemCodeAttribute": "마",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66c6i-247tv\"  data-status=\"SIMILAR\" class=\"is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66c6i-247tv\" aria-label=\"4번 행 선택\" ><span class=\"row-sequence-number\">4</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"마\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"5번 행 선택\" disabled><span class=\"row-sequence-number\">5</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemName": "마스터 포도",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": null,
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "after-cancel-close",
+      "time": 9632.299999952316,
+      "active": {
+        "tag": "INPUT",
+        "field": "itemCode",
+        "value": "마스터",
+        "rowId": "SIROW-mua66c6i-247tv",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bci-3oisa\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bci-3oisa\" aria-label=\"1번 행 선택\" ><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemCodeAttribute": "MASTER-1",
+          "itemName": "마스터 사과",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66bjs-0q3wk\"  data-status=\"MATCHED\" class=\"is-duplicate\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66bjs-0q3wk\" aria-label=\"2번 행 선택\" ><span class=\"row-sequence-number\">2</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-1\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 사과\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"10kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"BOX\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"3200\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"tex"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemCodeAttribute": "MASTER-2",
+          "itemName": "마스터 포도",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66byi-4td8y\"  data-status=\"MATCHED\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66byi-4td8y\" aria-label=\"3번 행 선택\" ><span class=\"row-sequence-number\">3</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"MASTER-2\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"마스터 포도\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"5kg\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"EA\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"1800\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" ar"
+        },
+        {
+          "rowId": "SIROW-mua66c6i-247tv",
+          "itemCode": "마스터",
+          "itemCodeAttribute": "마",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"SIROW-mua66c6i-247tv\"  data-status=\"SIMILAR\" class=\"is-grid-active\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"SIROW-mua66c6i-247tv\" aria-label=\"4번 행 선택\" ><span class=\"row-sequence-number\">4</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"마\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        },
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"5번 행 선택\" disabled><span class=\"row-sequence-number\">5</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      \n      <td data-column=\"erp.sale.current.line.unmapped_3396a63d\"><input data-custom-row-field=\"erp.sale.current.line.unmapped_3396a63d\" type=\"text\" value=\"\" aria-label"
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66bci-3oisa",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66bjs-0q3wk",
+          "itemCode": "MASTER-1",
+          "itemName": "마스터 사과",
+          "matchStatus": "MATCHED"
+        },
+        {
+          "rowId": "SIROW-mua66byi-4td8y",
+          "itemCode": "MASTER-2",
+          "itemName": "마스터 포도",
+          "matchStatus": "MATCHED"
+        }
+      ],
+      "dialog": null,
+      "toast": "새 입력을 시작합니다."
+    },
+    {
+      "phase": "failure",
+      "time": 10324.799999952316,
+      "active": {
+        "tag": "BODY",
+        "connected": true
+      },
+      "rows": [
+        {
+          "rowId": "__SMARTINPUT_DEFAULT_ROW__",
+          "defaultRow": "true",
+          "itemCode": "",
+          "itemCodeAttribute": "",
+          "itemName": "",
+          "cacheHtml": "<tr data-row-id=\"__SMARTINPUT_DEFAULT_ROW__\" data-default-row=\"true\" data-status=\"EMPTY\" class=\"\">\n      <td class=\"row-sequence-cell row-sequence-select-cell\"><label class=\"sequence-checkbox\"><input type=\"checkbox\" data-select-row=\"\" aria-label=\"1번 행 선택\" disabled><span class=\"row-sequence-number\">1</span></label></td>\n      <td data-column=\"itemCode\" class=\"product-code-search-cell product-search-cell\"><input data-field=\"itemCode\" type=\"text\" enterkeyhint=\"search\" value=\"\" placeholder=\"코드·품명·검색어\" aria-label=\"품목코드 및 상품 검색\" title=\"품목코드, 품명, 규격 또는 검색어 입력 후 Enter\"></td>\n      <td data-column=\"itemName\"><input data-field=\"itemName\" type=\"text\" enterkeyhint=\"search\" value=\"\" aria-label=\"품목명\" title=\"입력 후 Enter로 상품 검색\"></td>\n      <td data-column=\"specification\"><input data-field=\"specification\" value=\"\" aria-label=\"규격\"></td>\n      <td data-column=\"quantity\"><input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"수량\"></td>\n      <td data-column=\"unit\"><input data-field=\"unit\" value=\"\" aria-label=\"단위\"></td>\n      <td data-column=\"unitPrice\" class=\"price-cell\"><input data-field=\"unitPrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"단가\"></td>\n      <td data-column=\"supplyAmount\"><input data-supply-amount value=\"\" aria-label=\"공급가액\" readonly tabindex=\"-1\"></td>\n      <td data-column=\"memo\"><input data-field=\"memo\" value=\"\" aria-label=\"메모\"></td>\n      <td data-column=\"description\"><input data-field=\"description\" value=\"\" aria-label=\"적요(직원)\"></td>\n      <td data-column=\"noticePrice\"><input data-field=\"noticePrice\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"공지단가\"></td>\n      <td data-column=\"purchasePriceB\"><input data-field=\"purchasePriceB\" type=\"text\" inputmode=\"decimal\" value=\"\" aria-label=\"B단가\"></td><td data-column=\"wholesaleA\"><input "
+        }
+      ],
+      "savedRows": [
+        {
+          "rowId": "SIROW-mua66i9l-6dceo",
+          "itemCode": "등록되지않은상품XYZ",
+          "itemName": "",
+          "matchStatus": "UNRESOLVED"
+        }
+      ],
+      "dialog": null,
+      "toast": "판매전표 1건을 저장했습니다."
+    }
+  ],
+  "exceptions": [],
+  "consoleErrors": [],
+  "mainSourceSha256": "760207ce88e2570545cdadd50e331668d8d3e5a495c26541ffefc47ea5501843",
+  "sourceNote": "Main file hash captured during the source freeze used for this run; added after the running test finished."
+}

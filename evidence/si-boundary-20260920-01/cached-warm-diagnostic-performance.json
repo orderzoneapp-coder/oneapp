@@ -1,0 +1,3646 @@
+{
+  "schema": "SMARTINPUT_BOUNDARY_BENCHMARK_V1",
+  "label": "cached-warm-diagnostic",
+  "recordedAt": "2026-09-20T18:37:13.688Z",
+  "head": "21eaf44d50883c68f6c40a6eca9d368df1eff09f",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "cpu": "Intel(R) Pentium(R) Gold G6400 CPU @ 4.00GHz",
+    "logicalCpus": 4,
+    "totalMemoryBytes": 16807936000
+  },
+  "fixture": "Synthetic fixture derived from test-smartinput-stage5-compute.mjs; not user or production data",
+  "statistics": "Nearest-rank p95; 3 unrecorded warmups for pure matrices; warm navigation follows seeded local save",
+  "diagnosticOnly": true,
+  "pureCompute": [],
+  "browser": {
+    "initial": {
+      "marks": {
+        "storage": {
+          "oneapp-smartinput/autosave/get": 5,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 6,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+          "oneapp-smartinput/estimates/openCursor": 1
+        },
+        "getItem": 7,
+        "readyMs": 1060.6999999284744,
+        "localDataMs": null,
+        "longTasks": [
+          {
+            "startTime": 121.69999992847443,
+            "duration": 170
+          },
+          {
+            "startTime": 297.7999999523163,
+            "duration": 118
+          },
+          {
+            "startTime": 803,
+            "duration": 176
+          },
+          {
+            "startTime": 1060.6000000238419,
+            "duration": 82
+          },
+          {
+            "startTime": 1146.7999999523163,
+            "duration": 77
+          },
+          {
+            "startTime": 1251.3999999761581,
+            "duration": 93
+          },
+          {
+            "startTime": 1361.3999999761581,
+            "duration": 92
+          },
+          {
+            "startTime": 1539.6999999284744,
+            "duration": 70
+          },
+          {
+            "startTime": 1611.6000000238419,
+            "duration": 101
+          }
+        ]
+      },
+      "resources": [
+        {
+          "path": "/nexus/common/nexus-ui-theme-init.js",
+          "initiatorType": "script",
+          "transferSize": 3373,
+          "encodedBodySize": 3073,
+          "decodedBodySize": 3073,
+          "durationMs": 60.60000002384186
+        },
+        {
+          "path": "/nexus/common/nexus-ui.css",
+          "initiatorType": "link",
+          "transferSize": 12897,
+          "encodedBodySize": 12597,
+          "decodedBodySize": 12597,
+          "durationMs": 55.800000071525574
+        },
+        {
+          "path": "/nexus/common/nexus-ui-app-themes.css",
+          "initiatorType": "link",
+          "transferSize": 52536,
+          "encodedBodySize": 52236,
+          "decodedBodySize": 52236,
+          "durationMs": 62.799999952316284
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.css",
+          "initiatorType": "link",
+          "transferSize": 8815,
+          "encodedBodySize": 8515,
+          "decodedBodySize": 8515,
+          "durationMs": 62.89999997615814
+        },
+        {
+          "path": "/smartinput/smartinput.css",
+          "initiatorType": "link",
+          "transferSize": 148533,
+          "encodedBodySize": 148233,
+          "decodedBodySize": 148233,
+          "durationMs": 68.5
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+          "initiatorType": "img",
+          "transferSize": 247719,
+          "encodedBodySize": 247419,
+          "decodedBodySize": 247419,
+          "durationMs": 71
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+          "initiatorType": "img",
+          "transferSize": 271992,
+          "encodedBodySize": 271692,
+          "decodedBodySize": 271692,
+          "durationMs": 80.70000004768372
+        },
+        {
+          "path": "/smartinput/smartinput.js",
+          "initiatorType": "script",
+          "transferSize": 681867,
+          "encodedBodySize": 681567,
+          "decodedBodySize": 681567,
+          "durationMs": 86
+        },
+        {
+          "path": "/smartinput/smartinput-contract.js",
+          "initiatorType": "script",
+          "transferSize": 71844,
+          "encodedBodySize": 71544,
+          "decodedBodySize": 71544,
+          "durationMs": 139.20000004768372
+        },
+        {
+          "path": "/smartinput/source-preparation-ui-v2.js",
+          "initiatorType": "script",
+          "transferSize": 14350,
+          "encodedBodySize": 14050,
+          "decodedBodySize": 14050,
+          "durationMs": 141.60000002384186
+        },
+        {
+          "path": "/nexus/common/nexus-ui.js",
+          "initiatorType": "script",
+          "transferSize": 23636,
+          "encodedBodySize": 23336,
+          "decodedBodySize": 23336,
+          "durationMs": 141.79999995231628
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.js",
+          "initiatorType": "script",
+          "transferSize": 29071,
+          "encodedBodySize": 28771,
+          "decodedBodySize": 28771,
+          "durationMs": 144.29999995231628
+        },
+        {
+          "path": "/smartinput/virtual-table-body.js",
+          "initiatorType": "script",
+          "transferSize": 8288,
+          "encodedBodySize": 7988,
+          "decodedBodySize": 7988,
+          "durationMs": 41.90000009536743
+        },
+        {
+          "path": "/smartinput/smartinput-data-store.js",
+          "initiatorType": "script",
+          "transferSize": 88106,
+          "encodedBodySize": 87806,
+          "decodedBodySize": 87806,
+          "durationMs": 42.799999952316284
+        },
+        {
+          "path": "/smartinput/estimate-workspace.js",
+          "initiatorType": "script",
+          "transferSize": 20008,
+          "encodedBodySize": 19708,
+          "decodedBodySize": 19708,
+          "durationMs": 67.89999997615814
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 68
+        },
+        {
+          "path": "/reference-data/product-master-command-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 65444,
+          "encodedBodySize": 65144,
+          "decodedBodySize": 65144,
+          "durationMs": 75.30000007152557
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 75.70000004768372
+        },
+        {
+          "path": "/smartinput/legacy-integration-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 6771,
+          "encodedBodySize": 6471,
+          "decodedBodySize": 6471,
+          "durationMs": 126.79999995231628
+        },
+        {
+          "path": "/smartinput/input.js",
+          "initiatorType": "script",
+          "transferSize": 27298,
+          "encodedBodySize": 26998,
+          "decodedBodySize": 26998,
+          "durationMs": 134.59999990463257
+        },
+        {
+          "path": "/smartinput/optional-operation-loader.js",
+          "initiatorType": "script",
+          "transferSize": 21015,
+          "encodedBodySize": 20715,
+          "decodedBodySize": 20715,
+          "durationMs": 140.60000002384186
+        },
+        {
+          "path": "/smartinput/grid-clipboard.js",
+          "initiatorType": "script",
+          "transferSize": 7241,
+          "encodedBodySize": 6941,
+          "decodedBodySize": 6941,
+          "durationMs": 141.20000004768372
+        },
+        {
+          "path": "/smartinput/input-template-mapper.js",
+          "initiatorType": "script",
+          "transferSize": 33797,
+          "encodedBodySize": 33497,
+          "decodedBodySize": 33497,
+          "durationMs": 144.10000002384186
+        },
+        {
+          "path": "/smartinput/order-document-number.js",
+          "initiatorType": "script",
+          "transferSize": 7070,
+          "encodedBodySize": 6770,
+          "decodedBodySize": 6770,
+          "durationMs": 156.70000004768372
+        },
+        {
+          "path": "/smartinput/purchase-stage3.js",
+          "initiatorType": "script",
+          "transferSize": 9345,
+          "encodedBodySize": 9045,
+          "decodedBodySize": 9045,
+          "durationMs": 157.40000009536743
+        },
+        {
+          "path": "/smartinput/sale-stage4.js",
+          "initiatorType": "script",
+          "transferSize": 9122,
+          "encodedBodySize": 8822,
+          "decodedBodySize": 8822,
+          "durationMs": 204.10000002384186
+        },
+        {
+          "path": "/smartinput/multivoucher-stage1.js",
+          "initiatorType": "script",
+          "transferSize": 29333,
+          "encodedBodySize": 29033,
+          "decodedBodySize": 29033,
+          "durationMs": 204.20000004768372
+        },
+        {
+          "path": "/smartinput/estimate-price-snapshot.js",
+          "initiatorType": "script",
+          "transferSize": 1381,
+          "encodedBodySize": 1081,
+          "decodedBodySize": 1081,
+          "durationMs": 193.89999997615814
+        },
+        {
+          "path": "/smartinput/input-list-search.js",
+          "initiatorType": "script",
+          "transferSize": 5826,
+          "encodedBodySize": 5526,
+          "decodedBodySize": 5526,
+          "durationMs": 204.19999992847443
+        },
+        {
+          "path": "/smartinput/estimate-f8-source-plan.js",
+          "initiatorType": "script",
+          "transferSize": 16702,
+          "encodedBodySize": 16402,
+          "decodedBodySize": 16402,
+          "durationMs": 204.29999995231628
+        },
+        {
+          "path": "/smartinput/estimate-f8-recovery.js",
+          "initiatorType": "script",
+          "transferSize": 16290,
+          "encodedBodySize": 15990,
+          "decodedBodySize": 15990,
+          "durationMs": 196.20000004768372
+        },
+        {
+          "path": "/smartinput/estimate-workbook-selector.js",
+          "initiatorType": "script",
+          "transferSize": 3279,
+          "encodedBodySize": 2979,
+          "decodedBodySize": 2979,
+          "durationMs": 210.10000002384186
+        },
+        {
+          "path": "/smartinput/reference-data-controller.js",
+          "initiatorType": "script",
+          "transferSize": 29917,
+          "encodedBodySize": 29617,
+          "decodedBodySize": 29617,
+          "durationMs": 211.10000002384186
+        },
+        {
+          "path": "/reference-data/merchops-settings-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 3342,
+          "encodedBodySize": 3042,
+          "decodedBodySize": 3042,
+          "durationMs": 210.29999995231628
+        },
+        {
+          "path": "/smartinput/field-registry.js",
+          "initiatorType": "script",
+          "transferSize": 23804,
+          "encodedBodySize": 23504,
+          "decodedBodySize": 23504,
+          "durationMs": 211.40000009536743
+        },
+        {
+          "path": "/smartinput/reference-refresh-controller.js",
+          "initiatorType": "script",
+          "transferSize": 6467,
+          "encodedBodySize": 6167,
+          "decodedBodySize": 6167,
+          "durationMs": 211.39999997615814
+        },
+        {
+          "path": "/smartinput/related-voucher-import.js",
+          "initiatorType": "script",
+          "transferSize": 7989,
+          "encodedBodySize": 7689,
+          "decodedBodySize": 7689,
+          "durationMs": 211.70000004768372
+        },
+        {
+          "path": "/smartinput/table-view-state.js",
+          "initiatorType": "script",
+          "transferSize": 2177,
+          "encodedBodySize": 1877,
+          "decodedBodySize": 1877,
+          "durationMs": 232.29999995231628
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 232.70000004768372
+        },
+        {
+          "path": "/smartinput/shopping-order-upload.js",
+          "initiatorType": "script",
+          "transferSize": 9028,
+          "encodedBodySize": 8728,
+          "decodedBodySize": 8728,
+          "durationMs": 232.69999992847443
+        },
+        {
+          "path": "/smartinput/table-viewport.js",
+          "initiatorType": "script",
+          "transferSize": 9319,
+          "encodedBodySize": 9019,
+          "decodedBodySize": 9019,
+          "durationMs": 85.5
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 85.19999992847443
+        },
+        {
+          "path": "/smartinput/estimate-master-apply.js",
+          "initiatorType": "script",
+          "transferSize": 12383,
+          "encodedBodySize": 12083,
+          "decodedBodySize": 12083,
+          "durationMs": 85.20000004768372
+        },
+        {
+          "path": "/reference-data/change-request-contract.js",
+          "initiatorType": "script",
+          "transferSize": 8389,
+          "encodedBodySize": 8089,
+          "decodedBodySize": 8089,
+          "durationMs": 85.30000007152557
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 85.60000002384186
+        },
+        {
+          "path": "/smartinput/structured-sheet-parser.js",
+          "initiatorType": "script",
+          "transferSize": 7616,
+          "encodedBodySize": 7316,
+          "decodedBodySize": 7316,
+          "durationMs": 98.69999992847443
+        },
+        {
+          "path": "/smartinput/canonical-hash-compat.js",
+          "initiatorType": "script",
+          "transferSize": 4027,
+          "encodedBodySize": 3727,
+          "decodedBodySize": 3727,
+          "durationMs": 111.69999992847443
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 81.29999995231628
+        },
+        {
+          "path": "/smartinput/reference-generation-repository.js",
+          "initiatorType": "script",
+          "transferSize": 5177,
+          "encodedBodySize": 4877,
+          "decodedBodySize": 4877,
+          "durationMs": 69.40000009536743
+        },
+        {
+          "path": "/orderq/shopping-order-dedupe-core.js",
+          "initiatorType": "script",
+          "transferSize": 28733,
+          "encodedBodySize": 28433,
+          "decodedBodySize": 28433,
+          "durationMs": 58.200000047683716
+        },
+        {
+          "path": "/orderq/official-voucher-core.js",
+          "initiatorType": "script",
+          "transferSize": 27508,
+          "encodedBodySize": 27208,
+          "decodedBodySize": 27208,
+          "durationMs": 10.5
+        },
+        {
+          "path": "/orderq/canonical-hash.js",
+          "initiatorType": "script",
+          "transferSize": 4334,
+          "encodedBodySize": 4034,
+          "decodedBodySize": 4034,
+          "durationMs": 11.799999952316284
+        },
+        {
+          "path": "/orderq/stocktake-conflict-v2.js",
+          "initiatorType": "script",
+          "transferSize": 32059,
+          "encodedBodySize": 31759,
+          "decodedBodySize": 31759,
+          "durationMs": 14.400000095367432
+        },
+        {
+          "path": "/orderq/official-voucher-v2-contract.js",
+          "initiatorType": "script",
+          "transferSize": 34317,
+          "encodedBodySize": 34017,
+          "decodedBodySize": 34017,
+          "durationMs": 14
+        },
+        {
+          "path": "/nexus/common/nexus-workbench.css",
+          "initiatorType": "link",
+          "transferSize": 2191,
+          "encodedBodySize": 1891,
+          "decodedBodySize": 1891,
+          "durationMs": 24.800000071525574
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+          "initiatorType": "img",
+          "transferSize": 3326,
+          "encodedBodySize": 3026,
+          "decodedBodySize": 3026,
+          "durationMs": 20.300000071525574
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+          "initiatorType": "img",
+          "transferSize": 3324,
+          "encodedBodySize": 3024,
+          "decodedBodySize": 3024,
+          "durationMs": 21.700000047683716
+        },
+        {
+          "path": "/nexus/assets/nexus-favicon.svg",
+          "initiatorType": "other",
+          "transferSize": 809,
+          "encodedBodySize": 509,
+          "decodedBodySize": 509,
+          "durationMs": 22.600000023841858
+        },
+        {
+          "path": "/smartinput/field-catalog-seed.v2.json",
+          "initiatorType": "fetch",
+          "transferSize": 2361258,
+          "encodedBodySize": 2360958,
+          "decodedBodySize": 2360958,
+          "durationMs": 34.10000002384186
+        }
+      ],
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+      "moduleResourceCount": 48,
+      "totalEncodedResourceBytes": 4738269
+    },
+    "firstTextAnalysis": {
+      "durationMs": 1243,
+      "storage": {},
+      "renderedRows": 20
+    },
+    "warmDirectEntry": {
+      "localDataDisplay": {
+        "samples": [
+          2423.3,
+          1773.3,
+          2542.5
+        ],
+        "count": 3,
+        "p50Ms": 2423.3,
+        "p95Ms": 2542.5,
+        "maxMs": 2542.5
+      },
+      "shellUsable": {
+        "samples": [
+          2555,
+          1840,
+          2642.4
+        ],
+        "count": 3,
+        "p50Ms": 2555,
+        "p95Ms": 2642.4,
+        "maxMs": 2642.4
+      },
+      "localDataLimitMs": 500,
+      "appUsableReferenceLimitMs": 1000,
+      "localDataPass": false,
+      "directEntryPass": false,
+      "storageReadsByRun": [
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        }
+      ],
+      "resourcesByRun": [
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        }
+      ],
+      "cacheControl": "public, max-age=3600 (unchanged since baseline)",
+      "note": "Direct entry of warmed static assets and saved 20-row local draft. Does not verify NEXUS host switching."
+    },
+    "diagnostic": {
+      "note": "Serve-time performance marks and long-task observer only; no production files altered. Same profile and dataset, three cache-warm navigations with Fetch interception followed by three without it. This diagnoses instrumentation and does not replace the 20-sample before/after comparison.",
+      "withFetch": [
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 2555,
+            "localDataMs": 2423.2999999523163,
+            "longTasks": [
+              {
+                "startTime": 1236.1000000238419,
+                "duration": 1187
+              },
+              {
+                "startTime": 2554.6999999284744,
+                "duration": 984
+              },
+              {
+                "startTime": 3540.7999999523163,
+                "duration": 867
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siBenchmark=0",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3539.600000023842,
+            "navigationId": 7760,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.6000000238418579,
+            "domainLookupStart": 0.6000000238418579,
+            "domainLookupEnd": 0.6000000238418579,
+            "connectStart": 0.6000000238418579,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.6000000238418579,
+            "requestStart": 23.5,
+            "responseStart": 24.899999976158142,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 24.899999976158142,
+            "responseEnd": 25.699999928474426,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 1198.6000000238419,
+            "domContentLoadedEventStart": 2501.1999999284744,
+            "domContentLoadedEventEnd": 2501.1999999284744,
+            "domComplete": 3539.600000023842,
+            "loadEventStart": 3539.600000023842,
+            "loadEventEnd": 3539.600000023842,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1237.8999999761581
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 2421.899999976158
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 2422.899999976158
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 5087.600000023842
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 1167.6999999284744,
+              "responseEnd": 1167.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 1167.8999999761581,
+              "responseEnd": 1167.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 1168,
+              "responseEnd": 1168,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 1168,
+              "responseEnd": 1168,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 1168.1999999284744,
+              "responseEnd": 1168.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 1168.1999999284744,
+              "responseEnd": 1168.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 1168.2999999523163,
+              "responseEnd": 1168.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 1168.3999999761581,
+              "responseEnd": 1168.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 1168.5,
+              "responseEnd": 1168.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 1168.6000000238419,
+              "responseEnd": 1168.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 1168.7999999523163,
+              "responseEnd": 1168.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 1168.8999999761581,
+              "responseEnd": 1168.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 1199.1000000238419,
+              "responseEnd": 1199.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 1199.2999999523163,
+              "responseEnd": 1199.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 1199.2999999523163,
+              "responseEnd": 1199.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1199.5,
+              "responseEnd": 1199.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 1199.6000000238419,
+              "responseEnd": 1199.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1199.6000000238419,
+              "responseEnd": 1199.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 1199.7999999523163,
+              "responseEnd": 1199.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 1199.8999999761581,
+              "responseEnd": 1199.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 1199.8999999761581,
+              "responseEnd": 1199.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 1200,
+              "responseEnd": 1200,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 1200,
+              "responseEnd": 1200,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 1200.1999999284744,
+              "responseEnd": 1200.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 1200.3999999761581,
+              "responseEnd": 1200.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 1200.5,
+              "responseEnd": 1200.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 1200.6000000238419,
+              "responseEnd": 1200.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 1200.6999999284744,
+              "responseEnd": 1200.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 1200.7999999523163,
+              "responseEnd": 1200.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 1200.7999999523163,
+              "responseEnd": 1200.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 1200.8999999761581,
+              "responseEnd": 1200.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 1201,
+              "responseEnd": 1201,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 1201.1000000238419,
+              "responseEnd": 1201.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 1201.1999999284744,
+              "responseEnd": 1201.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 1201.2999999523163,
+              "responseEnd": 1201.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 1201.3999999761581,
+              "responseEnd": 1201.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 1201.5,
+              "responseEnd": 1201.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1201.6000000238419,
+              "responseEnd": 1201.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 1201.6999999284744,
+              "responseEnd": 1201.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 1201.7999999523163,
+              "responseEnd": 1201.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 1230,
+              "responseEnd": 1230,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1230.3999999761581,
+              "responseEnd": 1230.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 1230.6999999284744,
+              "responseEnd": 1230.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 1231.8999999761581,
+              "responseEnd": 1231.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1232,
+              "responseEnd": 1232,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 1232.5,
+              "responseEnd": 1232.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 1232.8999999761581,
+              "responseEnd": 1232.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1233.1999999284744,
+              "responseEnd": 1233.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 1233.6999999284744,
+              "responseEnd": 1233.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 1233.8999999761581,
+              "responseEnd": 1233.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1234.2999999523163,
+              "responseEnd": 1234.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1234.6000000238419,
+              "responseEnd": 1234.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1234.6999999284744,
+              "responseEnd": 1234.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1234.6999999284744,
+              "responseEnd": 1234.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2463.100000023842,
+              "responseEnd": 2463.100000023842,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2498.399999976158,
+              "responseEnd": 2498.399999976158,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2498.6999999284744,
+              "responseEnd": 2498.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 1840,
+            "localDataMs": 1773.2999999523163,
+            "longTasks": [
+              {
+                "startTime": 1005,
+                "duration": 768
+              },
+              {
+                "startTime": 1839.7999999523163,
+                "duration": 817
+              },
+              {
+                "startTime": 2659.1999999284744,
+                "duration": 727
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siBenchmark=1",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 2657.899999976158,
+            "navigationId": 2653,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.7999999523162842,
+            "domainLookupStart": 0.7999999523162842,
+            "domainLookupEnd": 0.7999999523162842,
+            "connectStart": 0.7999999523162842,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.7999999523162842,
+            "requestStart": 11.699999928474426,
+            "responseStart": 13,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 13,
+            "responseEnd": 14.199999928474426,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 973.5999999046326,
+            "domContentLoadedEventStart": 1818.5999999046326,
+            "domContentLoadedEventEnd": 1818.5999999046326,
+            "domComplete": 2657.899999976158,
+            "loadEventStart": 2657.899999976158,
+            "loadEventEnd": 2657.899999976158,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1006
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 1772.2999999523163
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 1773.1999999284744
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 4512.199999928474
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 951.1999999284744,
+              "responseEnd": 951.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 951.2999999523163,
+              "responseEnd": 951.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 951.2999999523163,
+              "responseEnd": 951.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 951.3999999761581,
+              "responseEnd": 951.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 951.5,
+              "responseEnd": 951.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 951.5,
+              "responseEnd": 951.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 951.5999999046326,
+              "responseEnd": 951.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 951.5999999046326,
+              "responseEnd": 951.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 951.6999999284744,
+              "responseEnd": 951.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 951.6999999284744,
+              "responseEnd": 951.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 951.6999999284744,
+              "responseEnd": 951.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 951.7999999523163,
+              "responseEnd": 951.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 970.0999999046326,
+              "responseEnd": 970.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 970.1999999284744,
+              "responseEnd": 970.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 970.3999999761581,
+              "responseEnd": 970.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 970.5,
+              "responseEnd": 970.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 970.5999999046326,
+              "responseEnd": 970.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 970.5999999046326,
+              "responseEnd": 970.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 970.6999999284744,
+              "responseEnd": 970.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 970.7999999523163,
+              "responseEnd": 970.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 970.8999999761581,
+              "responseEnd": 970.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 970.8999999761581,
+              "responseEnd": 970.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 971,
+              "responseEnd": 971,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 971.1999999284744,
+              "responseEnd": 971.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 971.2999999523163,
+              "responseEnd": 971.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 971.3999999761581,
+              "responseEnd": 971.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 971.5,
+              "responseEnd": 971.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 971.5,
+              "responseEnd": 971.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 971.5999999046326,
+              "responseEnd": 971.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 971.6999999284744,
+              "responseEnd": 971.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 971.6999999284744,
+              "responseEnd": 971.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 971.7999999523163,
+              "responseEnd": 971.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 971.8999999761581,
+              "responseEnd": 971.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 972,
+              "responseEnd": 972,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 972.0999999046326,
+              "responseEnd": 972.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 972.1999999284744,
+              "responseEnd": 972.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 972.2999999523163,
+              "responseEnd": 972.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 972.2999999523163,
+              "responseEnd": 972.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 972.3999999761581,
+              "responseEnd": 972.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 972.5,
+              "responseEnd": 972.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 974,
+              "responseEnd": 974,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 974.5,
+              "responseEnd": 974.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 974.5999999046326,
+              "responseEnd": 974.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 975.0999999046326,
+              "responseEnd": 975.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 975.1999999284744,
+              "responseEnd": 975.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 975.3999999761581,
+              "responseEnd": 975.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 975.5999999046326,
+              "responseEnd": 975.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 976,
+              "responseEnd": 976,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 976.2999999523163,
+              "responseEnd": 976.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 976.5,
+              "responseEnd": 976.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1002.5999999046326,
+              "responseEnd": 1002.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1003.0999999046326,
+              "responseEnd": 1003.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1003.2999999523163,
+              "responseEnd": 1003.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1003.5,
+              "responseEnd": 1003.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 1794.5999999046326,
+              "responseEnd": 1794.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 1817.6999999284744,
+              "responseEnd": 1817.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 1817.7999999523163,
+              "responseEnd": 1817.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 2642.399999976158,
+            "localDataMs": 2542.5,
+            "longTasks": [
+              {
+                "startTime": 1320.5,
+                "duration": 1221
+              },
+              {
+                "startTime": 2642.2000000476837,
+                "duration": 982
+              },
+              {
+                "startTime": 3648.100000023842,
+                "duration": 827
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siBenchmark=2",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3625,
+            "navigationId": 7416,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.6000000238418579,
+            "domainLookupStart": 0.6000000238418579,
+            "domainLookupEnd": 0.6000000238418579,
+            "connectStart": 0.6000000238418579,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.6000000238418579,
+            "requestStart": 11,
+            "responseStart": 13.100000023841858,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 13.100000023841858,
+            "responseEnd": 23.399999976158142,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 1316.2000000476837,
+            "domContentLoadedEventStart": 2608.600000023842,
+            "domContentLoadedEventEnd": 2608.600000023842,
+            "domComplete": 3624.899999976158,
+            "loadEventStart": 3625,
+            "loadEventEnd": 3625,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1321.3999999761581
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 2541.399999976158
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 2542.2000000476837
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 5615.899999976158
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 1281.3999999761581,
+              "responseEnd": 1281.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 1281.3999999761581,
+              "responseEnd": 1281.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 1281.6000000238419,
+              "responseEnd": 1281.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 1281.6000000238419,
+              "responseEnd": 1281.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 1281.7000000476837,
+              "responseEnd": 1281.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 1281.7999999523163,
+              "responseEnd": 1281.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 1281.8999999761581,
+              "responseEnd": 1281.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 1282,
+              "responseEnd": 1282,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 1282,
+              "responseEnd": 1282,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 1282,
+              "responseEnd": 1282,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 1282.1000000238419,
+              "responseEnd": 1282.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 1282.2000000476837,
+              "responseEnd": 1282.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 1312.6000000238419,
+              "responseEnd": 1312.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 1312.7000000476837,
+              "responseEnd": 1312.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 1312.7999999523163,
+              "responseEnd": 1312.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1312.8999999761581,
+              "responseEnd": 1312.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 1313,
+              "responseEnd": 1313,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1313,
+              "responseEnd": 1313,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 1313.2000000476837,
+              "responseEnd": 1313.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 1313.2000000476837,
+              "responseEnd": 1313.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 1313.2999999523163,
+              "responseEnd": 1313.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 1313.3999999761581,
+              "responseEnd": 1313.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 1313.5,
+              "responseEnd": 1313.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 1313.6000000238419,
+              "responseEnd": 1313.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 1313.7000000476837,
+              "responseEnd": 1313.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 1313.7999999523163,
+              "responseEnd": 1313.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 1314,
+              "responseEnd": 1314,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 1314.1000000238419,
+              "responseEnd": 1314.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 1314.2000000476837,
+              "responseEnd": 1314.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 1314.2999999523163,
+              "responseEnd": 1314.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 1314.3999999761581,
+              "responseEnd": 1314.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 1314.3999999761581,
+              "responseEnd": 1314.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 1314.5,
+              "responseEnd": 1314.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 1314.6000000238419,
+              "responseEnd": 1314.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 1314.7000000476837,
+              "responseEnd": 1314.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 1314.7000000476837,
+              "responseEnd": 1314.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 1314.7999999523163,
+              "responseEnd": 1314.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1314.8999999761581,
+              "responseEnd": 1314.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 1315,
+              "responseEnd": 1315,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 1315.1000000238419,
+              "responseEnd": 1315.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 1316.7999999523163,
+              "responseEnd": 1316.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1317,
+              "responseEnd": 1317,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 1317.1000000238419,
+              "responseEnd": 1317.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 1317.2999999523163,
+              "responseEnd": 1317.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1317.3999999761581,
+              "responseEnd": 1317.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 1317.6000000238419,
+              "responseEnd": 1317.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 1317.7000000476837,
+              "responseEnd": 1317.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1318.2000000476837,
+              "responseEnd": 1318.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 1318.6000000238419,
+              "responseEnd": 1318.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 1318.7999999523163,
+              "responseEnd": 1318.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1319.1000000238419,
+              "responseEnd": 1319.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1319.2000000476837,
+              "responseEnd": 1319.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1319.2999999523163,
+              "responseEnd": 1319.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1319.3999999761581,
+              "responseEnd": 1319.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2573.600000023842,
+              "responseEnd": 2573.600000023842,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2607.2999999523163,
+              "responseEnd": 2607.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2607.399999976158,
+              "responseEnd": 2607.399999976158,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        }
+      ],
+      "withoutFetch": [
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 1450.3999999761581,
+            "localDataMs": 1324.5,
+            "longTasks": [
+              {
+                "startTime": 94.89999997615814,
+                "duration": 1229
+              },
+              {
+                "startTime": 1450.1999999284744,
+                "duration": 712
+              },
+              {
+                "startTime": 2163.7999999523163,
+                "duration": 583
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siDiagnosticNoFetch=0",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 2162.5,
+            "navigationId": 9223,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.5999999046325684,
+            "domainLookupStart": 0.5999999046325684,
+            "domainLookupEnd": 0.5999999046325684,
+            "connectStart": 0.5999999046325684,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.5999999046325684,
+            "requestStart": 12.199999928474426,
+            "responseStart": 13.799999952316284,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 13.799999952316284,
+            "responseEnd": 19.5,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 45.09999990463257,
+            "domContentLoadedEventStart": 1412.6999999284744,
+            "domContentLoadedEventEnd": 1412.6999999284744,
+            "domComplete": 2162.5,
+            "loadEventStart": 2162.5,
+            "loadEventEnd": 2162.5,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 96.19999992847443
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 1322.1999999284744
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 1324.0999999046326
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 25.899999976158142,
+              "responseEnd": 25.899999976158142,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 26.299999952316284,
+              "responseEnd": 26.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 26.399999976158142,
+              "responseEnd": 26.399999976158142,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 26.5,
+              "responseEnd": 26.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 26.699999928474426,
+              "responseEnd": 26.699999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 26.799999952316284,
+              "responseEnd": 26.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 27,
+              "responseEnd": 27,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 27.09999990463257,
+              "responseEnd": 27.09999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 27.199999928474426,
+              "responseEnd": 27.199999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 27.299999952316284,
+              "responseEnd": 27.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 27.299999952316284,
+              "responseEnd": 27.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 27.399999976158142,
+              "responseEnd": 27.399999976158142,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 45.5,
+              "responseEnd": 45.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 45.59999990463257,
+              "responseEnd": 45.59999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 45.699999928474426,
+              "responseEnd": 45.699999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 45.89999997615814,
+              "responseEnd": 45.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 45.89999997615814,
+              "responseEnd": 45.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 46,
+              "responseEnd": 46,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 46.09999990463257,
+              "responseEnd": 46.09999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 46.5,
+              "responseEnd": 46.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 46.59999990463257,
+              "responseEnd": 46.59999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 46.799999952316284,
+              "responseEnd": 46.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 46.89999997615814,
+              "responseEnd": 46.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 47,
+              "responseEnd": 47,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 47.199999928474426,
+              "responseEnd": 47.199999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 47.299999952316284,
+              "responseEnd": 47.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 47.5,
+              "responseEnd": 47.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 47.5,
+              "responseEnd": 47.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 47.59999990463257,
+              "responseEnd": 47.59999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 47.699999928474426,
+              "responseEnd": 47.699999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 47.799999952316284,
+              "responseEnd": 47.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 47.799999952316284,
+              "responseEnd": 47.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 48,
+              "responseEnd": 48,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 48.09999990463257,
+              "responseEnd": 48.09999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 48.199999928474426,
+              "responseEnd": 48.199999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 48.299999952316284,
+              "responseEnd": 48.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 48.39999997615814,
+              "responseEnd": 48.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 48.5,
+              "responseEnd": 48.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 48.5,
+              "responseEnd": 48.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 48.59999990463257,
+              "responseEnd": 48.59999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 50.5,
+              "responseEnd": 50.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 50.699999928474426,
+              "responseEnd": 50.699999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 50.699999928474426,
+              "responseEnd": 50.699999928474426,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 51,
+              "responseEnd": 51,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 51,
+              "responseEnd": 51,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 84.19999992847443,
+              "responseEnd": 84.19999992847443,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 84.69999992847443,
+              "responseEnd": 84.69999992847443,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 85.59999990463257,
+              "responseEnd": 85.59999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 86.09999990463257,
+              "responseEnd": 86.09999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 88.5,
+              "responseEnd": 88.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 90,
+              "responseEnd": 90,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 91.09999990463257,
+              "responseEnd": 91.09999990463257,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 91.69999992847443,
+              "responseEnd": 91.69999992847443,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 92.5,
+              "responseEnd": 92.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 1371.2999999523163,
+              "responseEnd": 1371.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 1411.0999999046326,
+              "responseEnd": 1411.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 1411.2999999523163,
+              "responseEnd": 1411.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 2601.899999976158,
+            "localDataMs": 2535,
+            "longTasks": [
+              {
+                "startTime": 1749.2999999523163,
+                "duration": 785
+              },
+              {
+                "startTime": 2601.7000000476837,
+                "duration": 618
+              },
+              {
+                "startTime": 3221.100000023842,
+                "duration": 617
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siDiagnosticNoFetch=1",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3220.100000023842,
+            "navigationId": 5550,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.7999999523162842,
+            "domainLookupStart": 0.7999999523162842,
+            "domainLookupEnd": 0.7999999523162842,
+            "connectStart": 0.7999999523162842,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.7999999523162842,
+            "requestStart": 2.600000023841858,
+            "responseStart": 4.200000047683716,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 4.200000047683716,
+            "responseEnd": 8.700000047683716,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 1716.3999999761581,
+            "domContentLoadedEventStart": 2580.100000023842,
+            "domContentLoadedEventEnd": 2580.100000023842,
+            "domComplete": 3220.100000023842,
+            "loadEventStart": 3220.100000023842,
+            "loadEventEnd": 3220.100000023842,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1750.5
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 2534.2999999523163
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 2534.7999999523163
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 955.2000000476837,
+              "responseEnd": 955.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 955.2999999523163,
+              "responseEnd": 955.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 955.3999999761581,
+              "responseEnd": 955.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 955.3999999761581,
+              "responseEnd": 955.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 955.5,
+              "responseEnd": 955.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 955.5,
+              "responseEnd": 955.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 955.7000000476837,
+              "responseEnd": 955.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 955.7000000476837,
+              "responseEnd": 955.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 955.7999999523163,
+              "responseEnd": 955.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 955.8999999761581,
+              "responseEnd": 955.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 955.8999999761581,
+              "responseEnd": 955.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 955.8999999761581,
+              "responseEnd": 955.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 1713.2999999523163,
+              "responseEnd": 1713.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 1713.5,
+              "responseEnd": 1713.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 1713.6000000238419,
+              "responseEnd": 1713.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1713.6000000238419,
+              "responseEnd": 1713.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 1713.7000000476837,
+              "responseEnd": 1713.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1713.7999999523163,
+              "responseEnd": 1713.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 1713.8999999761581,
+              "responseEnd": 1713.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 1713.8999999761581,
+              "responseEnd": 1713.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 1714,
+              "responseEnd": 1714,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 1714.1000000238419,
+              "responseEnd": 1714.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 1714.2000000476837,
+              "responseEnd": 1714.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 1714.2000000476837,
+              "responseEnd": 1714.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 1714.2999999523163,
+              "responseEnd": 1714.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 1714.3999999761581,
+              "responseEnd": 1714.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 1714.3999999761581,
+              "responseEnd": 1714.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 1714.5,
+              "responseEnd": 1714.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 1714.5,
+              "responseEnd": 1714.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 1714.6000000238419,
+              "responseEnd": 1714.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 1714.7000000476837,
+              "responseEnd": 1714.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 1714.7000000476837,
+              "responseEnd": 1714.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 1714.7999999523163,
+              "responseEnd": 1714.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 1714.7999999523163,
+              "responseEnd": 1714.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 1714.8999999761581,
+              "responseEnd": 1714.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 1715,
+              "responseEnd": 1715,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 1715.1000000238419,
+              "responseEnd": 1715.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1715.2000000476837,
+              "responseEnd": 1715.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 1715.2999999523163,
+              "responseEnd": 1715.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 1715.2999999523163,
+              "responseEnd": 1715.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 1742.7000000476837,
+              "responseEnd": 1742.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1743.1000000238419,
+              "responseEnd": 1743.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 1743.2999999523163,
+              "responseEnd": 1743.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 1743.7999999523163,
+              "responseEnd": 1743.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1743.8999999761581,
+              "responseEnd": 1743.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 1744.5,
+              "responseEnd": 1744.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 1744.7999999523163,
+              "responseEnd": 1744.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1745.1000000238419,
+              "responseEnd": 1745.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 1745.2000000476837,
+              "responseEnd": 1745.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 1745.5,
+              "responseEnd": 1745.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1746.1000000238419,
+              "responseEnd": 1746.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1746.6000000238419,
+              "responseEnd": 1746.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1746.7000000476837,
+              "responseEnd": 1746.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1746.8999999761581,
+              "responseEnd": 1746.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2556.7000000476837,
+              "responseEnd": 2556.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2579,
+              "responseEnd": 2579,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2579,
+              "responseEnd": 2579,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 2501.899999976158,
+            "localDataMs": 2430.8000000715256,
+            "longTasks": [
+              {
+                "startTime": 1697.3999999761581,
+                "duration": 733
+              },
+              {
+                "startTime": 2501.8000000715256,
+                "duration": 627
+              },
+              {
+                "startTime": 3130.399999976158,
+                "duration": 575
+              }
+            ]
+          },
+          "timing": {
+            "name": "http://127.0.0.1:64492/smartinput/?siDiagnosticNoFetch=2",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3129.3000000715256,
+            "navigationId": 2497,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.6000000238418579,
+            "domainLookupStart": 0.6000000238418579,
+            "domainLookupEnd": 0.6000000238418579,
+            "connectStart": 0.6000000238418579,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.6000000238418579,
+            "requestStart": 18.5,
+            "responseStart": 20.200000047683716,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 20.200000047683716,
+            "responseEnd": 22.300000071525574,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 1656.3000000715256,
+            "domContentLoadedEventStart": 2475.3000000715256,
+            "domContentLoadedEventEnd": 2475.399999976158,
+            "domComplete": 3129.2000000476837,
+            "loadEventStart": 3129.2000000476837,
+            "loadEventEnd": 3129.3000000715256,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1698.8000000715256
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 2430.100000023842
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 2430.7000000476837
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 846.6000000238419,
+              "responseEnd": 846.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 846.7000000476837,
+              "responseEnd": 846.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 846.8000000715256,
+              "responseEnd": 846.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 846.8999999761581,
+              "responseEnd": 846.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 847,
+              "responseEnd": 847,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 847,
+              "responseEnd": 847,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 847.1000000238419,
+              "responseEnd": 847.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 847.2000000476837,
+              "responseEnd": 847.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 847.3000000715256,
+              "responseEnd": 847.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 847.3999999761581,
+              "responseEnd": 847.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 847.3999999761581,
+              "responseEnd": 847.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 847.5,
+              "responseEnd": 847.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 1685.7000000476837,
+              "responseEnd": 1685.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 1686,
+              "responseEnd": 1686,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 1686.1000000238419,
+              "responseEnd": 1686.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1686.3000000715256,
+              "responseEnd": 1686.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 1686.5,
+              "responseEnd": 1686.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1686.6000000238419,
+              "responseEnd": 1686.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 1686.7000000476837,
+              "responseEnd": 1686.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 1686.8000000715256,
+              "responseEnd": 1686.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 1687,
+              "responseEnd": 1687,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 1687.1000000238419,
+              "responseEnd": 1687.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 1687.1000000238419,
+              "responseEnd": 1687.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 1687.2000000476837,
+              "responseEnd": 1687.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 1687.3999999761581,
+              "responseEnd": 1687.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 1687.3999999761581,
+              "responseEnd": 1687.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 1687.6000000238419,
+              "responseEnd": 1687.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 1687.7000000476837,
+              "responseEnd": 1687.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 1687.8000000715256,
+              "responseEnd": 1687.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 1687.8999999761581,
+              "responseEnd": 1687.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 1688,
+              "responseEnd": 1688,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 1688.1000000238419,
+              "responseEnd": 1688.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 1688.3000000715256,
+              "responseEnd": 1688.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 1688.5,
+              "responseEnd": 1688.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 1688.6000000238419,
+              "responseEnd": 1688.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 1688.8000000715256,
+              "responseEnd": 1688.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 1688.8999999761581,
+              "responseEnd": 1688.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1689,
+              "responseEnd": 1689,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 1689.1000000238419,
+              "responseEnd": 1689.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 1689.2000000476837,
+              "responseEnd": 1689.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 1692.2000000476837,
+              "responseEnd": 1692.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1692.3999999761581,
+              "responseEnd": 1692.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 1692.6000000238419,
+              "responseEnd": 1692.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 1692.7000000476837,
+              "responseEnd": 1692.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1692.8000000715256,
+              "responseEnd": 1692.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 1693,
+              "responseEnd": 1693,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 1693.2000000476837,
+              "responseEnd": 1693.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1693.3000000715256,
+              "responseEnd": 1693.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 1694.1000000238419,
+              "responseEnd": 1694.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 1694.7000000476837,
+              "responseEnd": 1694.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1695.3000000715256,
+              "responseEnd": 1695.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1695.7000000476837,
+              "responseEnd": 1695.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1695.8000000715256,
+              "responseEnd": 1695.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1695.8999999761581,
+              "responseEnd": 1695.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2451.2000000476837,
+              "responseEnd": 2451.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2473.8000000715256,
+              "responseEnd": 2473.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2473.8000000715256,
+              "responseEnd": 2473.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        }
+      ]
+    },
+    "externalRequestsBlocked": [],
+    "runtimeExceptions": [],
+    "isolation": {
+      "temporaryProfile": true,
+      "productionNetworkRequestsSent": 0,
+      "externalNetworkBlocked": true,
+      "localFixtureOnly": true
+    },
+    "status": "completed"
+  },
+  "unmeasured": [
+    "Real user workload",
+    "NEXUS host app-to-app navigation",
+    "Common-layer blocking time",
+    "Actual XLSX file serialization/download",
+    "Click visual feedback p95"
+  ]
+}

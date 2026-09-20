@@ -1,3 +1,9 @@
+export {
+  chooseEstimateWorkbookCandidate,
+  inspectEstimateWorkbookCandidate,
+  isEstimateWorkbookItemRow
+} from './estimate-workbook-selector.js?v=0.1.1';
+
 const text = value => String(value ?? '');
 
 function serializableRawValue(value) {

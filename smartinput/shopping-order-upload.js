@@ -1,4 +1,19 @@
-import { ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER } from '../orderq/shopping-order-command-adapter.js?v=0.2.1';
+import { ONEAPP_ORDERQ_SHOPPING_ORDER_SOURCE_ADAPTER as sourceContract } from '../orderq/shopping-order-source-adapter.js?v=0.1.0';
+import { createOptionalOperationLoader, OPTIONAL_OPERATION_TIMEOUT_MS } from './optional-operation-loader.js?v=0.1.0';
+
+// The existing pure source/payload contract has no repository, readiness or I/O.
+// Reuse its exact signatures and ordering; only explicit inspection/commit loads
+// the owner command adapter and its ledger repository.
+const ownerLoader = createOptionalOperationLoader({ importModule: path => import(path) });
+async function loadOwnerAdapter() {
+  const module = await ownerLoader.loadModule({
+    feature: 'shopping-order-owner-command',
+    assetVersion: '0.2.2',
+    specifier: '../orderq/shopping-order-command-adapter.js?v=0.2.2',
+    timeoutMs: OPTIONAL_OPERATION_TIMEOUT_MS.localModule
+  });
+  return module.ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER;
+}
 
 export const SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA = 'ONEAPP_SMARTINPUT_SHOPPING_ORDER_UPLOAD_V1';
 
@@ -24,7 +39,7 @@ function meaningfulRow(row = []) {
   return row.some(value => value === 0 || exactText(value) !== '');
 }
 
-export function isExactShoppingOrderMatrix(matrix = [], adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
+export function isExactShoppingOrderMatrix(matrix = [], adapter = sourceContract) {
   return Array.isArray(matrix) && matrix.length > 0 && adapter.isExactSource(matrix[0]);
 }
 
@@ -38,7 +53,7 @@ export function shoppingProductSelectionKey(sourceRowNumber) {
 
 export function createShoppingOrderUpload({
   matrix = [], sourceCellMatrix = [], fileName = '', sheetName = '', fileFingerprint = '', uploadedAt = ''
-} = {}, adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
+} = {}, adapter = sourceContract) {
   if (!isExactShoppingOrderMatrix(matrix, adapter)) return null;
   const headers = matrix[0].map(value => String(value ?? ''));
   const rows = matrix.slice(1).map((sourceCells, offset) => ({
@@ -106,7 +121,7 @@ export function selectShoppingProduct(upload, sourceRowNumber, product) {
 
 export function buildShoppingOrderUploadRequest(upload, {
   companyId = '', warehouse = {}, assignee = {}, actor = 'SMART_INPUT_ADMIN'
-} = {}, adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
+} = {}, adapter = sourceContract) {
   if (!upload || upload.schemaVersion !== SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA) {
     throw new Error('SMARTINPUT_SHOPPING_ORDER_UPLOAD_INVALID');
   }
@@ -140,23 +155,25 @@ export function buildShoppingOrderUploadRequest(upload, {
   };
 }
 
-export async function inspectShoppingOrderUpload(upload, context = {}, adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
-  const prepared = buildShoppingOrderUploadRequest(upload, context, adapter);
+export async function inspectShoppingOrderUpload(upload, context = {}, adapter = null) {
+  const prepared = buildShoppingOrderUploadRequest(upload, context, adapter || sourceContract);
   if (prepared.built.issues.length) {
     return {
-      schemaVersion: adapter.capability().schemaVersion,
+      schemaVersion: (adapter || sourceContract).capability().schemaVersion,
       results: [],
       summary: { candidateCount: 0, duplicateCount: 0, newCount: 0, reviewRequiredCount: 0 },
       sourceIssues: prepared.built.issues
     };
   }
-  return adapter.inspect(prepared.request);
+  const owner = adapter || await loadOwnerAdapter();
+  return owner.inspect(prepared.request);
 }
 
-export async function commitShoppingOrderUpload(upload, context = {}, adapter = ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER) {
-  const prepared = buildShoppingOrderUploadRequest(upload, context, adapter);
+export async function commitShoppingOrderUpload(upload, context = {}, adapter = null) {
+  const prepared = buildShoppingOrderUploadRequest(upload, context, adapter || sourceContract);
   if (prepared.built.issues.length) throw new Error(prepared.built.issues[0].message || prepared.built.issues[0].code);
-  return adapter.commit(prepared.request);
+  const owner = adapter || await loadOwnerAdapter();
+  return owner.commit(prepared.request);
 }
 
 export function shoppingUploadTotals(upload = {}) {

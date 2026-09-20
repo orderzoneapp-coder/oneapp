@@ -1,0 +1,31 @@
+{
+  "schema": "SMARTINPUT_REVIEW_SYNTHETIC_FINAL_ROW_COMPARISON_V1",
+  "baseline": "21eaf44d50883c68f6c40a6eca9d368df1eff09f",
+  "scope": "Synthetic customer dictionary fixture; no user data, database, browser, network or owner runtime executed",
+  "method": [
+    "Read baseline legacy-integration-adapter.js through git show HEAD",
+    "Evaluate its actual pure helpers, matchLine and analyzeSingleOrderDocument with repository loads replaced by supplied synthetic candidate-generator and matching-engine modules",
+    "Evaluate current input.js analyzeSingleOrderDocument with the same product snapshot and actual main inputMatchingContext shape (products/companyId only)",
+    "Pass both results through actual contract.applyParserResults and exact current main referenceQueryForRow/enrichRowFromUnifiedCatalog function bodies",
+    "Assert no product snapshot auto-confirm occurs in this raw-alias fixture; resolveStage1RowReferences touches customer-role fields only"
+  ],
+  "fixture": {
+    "product": { "productId": "P1", "masterProductId": "MASTER1", "itemCode": "001", "itemName": "수입바나나", "specification": "13kg", "unit": "BOX", "finalUnit": "BOX" },
+    "ownerMapping": { "productId": "P1", "rawText": "노란거", "customerId": "C1" },
+    "customer": { "customerId": "C1", "customerName": "테스트" },
+    "rawText": "[테스트] [오전 9:00] 노란거 2개",
+    "companyId": "COMPANY-A"
+  },
+  "before": {
+    "productText": "노란거", "productId": "", "masterProductId": "", "itemCode": "001",
+    "itemName": "수입바나나", "specification": "13kg", "quantity": 2, "unit": "개",
+    "matchStatus": "SIMILAR", "referenceResolution": "MISSING"
+  },
+  "after": {
+    "productText": "노란거", "productId": "", "masterProductId": "", "itemCode": "",
+    "itemName": "노란거", "specification": "", "quantity": 2, "unit": "개",
+    "matchStatus": "UNRESOLVED", "referenceResolution": "MISSING"
+  },
+  "conclusion": "The old final unified-catalog pass already cleared legacy product identity but retained its item code, displayed item name and specification. Removing the dictionary supply therefore changes final local row values, not only internal candidate scores. The change is correctly independent of owner ledgers, but unconditional output equivalence is not established.",
+  "limitations": "This is a source-level synthetic execution, not a full UI, Excel download or user-data test. Quantity and unit are equal for this fixture. It does not claim every alias or customer is affected."
+}

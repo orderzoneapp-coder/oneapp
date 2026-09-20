@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "SI_BOUNDARY_TEST_RESULTS_V1",
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "stage": "owned text input/parser and local matching after structural consolidation",
+  "nodeVersion": "v24.19.0",
+  "startedAt": "2026-09-20T18:20:42.215Z",
+  "results": [
+    {
+      "script": "scripts/test-smartinput-empty-source-rows.mjs",
+      "durationMs": 149.53,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput empty source-row regression tests passed.\n",
+      "stderr": "(node:41640) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/grid-clipboard.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-mapped-row-sync.mjs",
+      "durationMs": 191.94,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput mapped-row mutation synchronization tests passed.\n",
+      "stderr": "(node:19392) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/input-template-mapper.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-grid-clipboard.mjs",
+      "durationMs": 1064.83,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput Excel grid clipboard tests passed.\n",
+      "stderr": "(node:33060) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/grid-clipboard.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-grid-bulk-edit.mjs",
+      "durationMs": 906.96,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput selected-row bulk unit-price application and source-value preservation passed.\n",
+      "stderr": "(node:32232) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/input-template-mapper.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-input-template-mapping.mjs",
+      "durationMs": 3597.21,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput input-template mapping tests passed (10,000 rows in 1645.2ms).\n",
+      "stderr": "(node:38996) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/input-template-mapper.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-xlsx-source-reader.mjs",
+      "durationMs": 558.22,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput XLSX display/raw/formula/format source preservation passed.\n",
+      "stderr": "(node:31344) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/xlsx-source-reader.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-estimate-workbook-selection.mjs",
+      "durationMs": 261.77,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput ERP estimate workbook selection tests passed.\n",
+      "stderr": "(node:15872) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/estimate-workbook-selector.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-initial-input-mapping.mjs",
+      "durationMs": 467.62,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput actual mapping targets: approved labels, distinct price/note projections, source preservation, registry deduplication and saved template identities PASS\n",
+      "stderr": "(node:47980) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/field-registry.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-structured-sheet-parser.mjs",
+      "durationMs": 160.69,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput structured sheet parser tests passed.\n",
+      "stderr": "(node:46348) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/structured-sheet-parser.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-order-document-number.mjs",
+      "durationMs": 128.69,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput order document-number date derivation contracts PASS\n",
+      "stderr": "(node:42712) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/order-document-number.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-multivoucher-stage1.mjs",
+      "durationMs": 206.78,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput multi-voucher stage 1 PASS\n",
+      "stderr": "(node:13352) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/structured-sheet-parser.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-independent-recovery.mjs",
+      "durationMs": 269.53,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput 0a rollback and independent compatibility contracts PASS\n",
+      "stderr": "(node:42888) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/legacy-integration-adapter.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-purchase-sales-output.mjs",
+      "durationMs": 312.51,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput 구매전표 DataOps 판매업로드 7시트 및 XLSX 재열기 검증이 통과했습니다.\n",
+      "stderr": "(node:47012) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/purchase-sales-output.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-estimate-f8.mjs",
+      "durationMs": 442.84,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput estimate F8 adapter and XLSX contract tests passed.\n",
+      "stderr": "(node:33212) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/estimate-output.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-f8-upload-contract.mjs",
+      "durationMs": 1282.64,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "PASS S01-existing-subdivision\nPASS S02-new-subdivision\nPASS S03-nonpositive-subdivision\nPASS B01-blank-first-middle-last\nPASS B02-code-required-and-B04-empty\nPASS B03-B05-duplicate-original-identity\nPASS B06-source-owned-blank-and-code\nPASS E01-E04-E06-ERP11-promo-zero-blank\nPASS W01-real-worker-and-fallback-parity\nSmartInput F8 upload contract passed (9 cases).\n",
+      "stderr": "(node:30108) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/estimate-output.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    },
+    {
+      "script": "scripts/test-smartinput-input-boundary.mjs",
+      "durationMs": 201.17,
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "stdout": "SmartInput owned text intake, parser equivalence, supplied-snapshot matching and failure isolation passed.\n",
+      "stderr": "(node:42672) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/input.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "error": null
+    }
+  ],
+  "completedAt": "2026-09-20T18:20:52.425Z",
+  "summary": {
+    "total": 16,
+    "passed": 16,
+    "failed": 0
+  }
+}

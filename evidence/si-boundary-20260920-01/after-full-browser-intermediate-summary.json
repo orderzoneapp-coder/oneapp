@@ -1,0 +1,16 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "command": "node scripts/test-smartinput-browser-e2e.mjs",
+  "status": "PARTIAL_FAIL_UNRESOLVED",
+  "fixtureChanges": ["Approved order/purchase/sale action label NEXUS 전달 and estimate label 견적서 저장", "Moved draft recovery import uses smartinput-data-store.js"],
+  "passed": ["Existing desktop layout and responsive assertions", "Text intake, optional XLSX error/retry, reordered clipboard behavior", "Original baseline failure at line 432: exact-structure paste undo now passes", "First product chooser and mouse candidate selection"],
+  "failure": {
+    "location": "scripts/test-smartinput-browser-e2e.mjs:487",
+    "message": "Timed out waiting for keyboard product candidate modal",
+    "condition": "Two product candidates expected after entering 마스터 into the new trailing row and pressing Enter",
+    "classification": "Unresolved; baseline stopped earlier at line 432, so this failure is not proven to predate this task",
+    "diagnosticLimit": "Existing test closes the temporary browser in finally; no failure DOM snapshot was captured"
+  },
+  "unverified": ["All subsequent full-suite checks", "Full browser E2E completion"],
+  "independentBoundaryEvidence": "after-boundary-browser.json"
+}

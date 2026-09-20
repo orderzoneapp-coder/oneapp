@@ -1,0 +1,60 @@
+{
+  "baseline": "21eaf44d50883c68f6c40a6eca9d368df1eff09f",
+  "scope": "storage integration",
+  "results": [
+    {
+      "name": "syntax",
+      "chunk_id": "d8871f",
+      "wall_time_seconds": 3.6418941,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": "",
+      "task": "syntax"
+    },
+    {
+      "name": "autosave",
+      "chunk_id": "53d107",
+      "wall_time_seconds": 3.6222352,
+      "exit_code": 0,
+      "original_token_count": 258,
+      "output": "(node:41268) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/smartinput-data-store.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput document journal/autosave coordinator tests passed.\nPASS: flush waits for the successor commit\nPASS: flush captures its target instead of chasing later edits\nPASS: failed successor remains pending and explicitly retries\nPASS: workspace flush preserves independent documents and coalesced pending edits\nPASS: old ACK never reports an unqueued edit as saved\nPASS: queued newer edit is not cleared by an old ACK\nSmartInput save race regressions passed (6/6).\n",
+      "task": "autosave"
+    },
+    {
+      "name": "save-races",
+      "chunk_id": "75d6be",
+      "wall_time_seconds": 3.5215319000000003,
+      "exit_code": 0,
+      "original_token_count": 242,
+      "output": "(node:47528) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/smartinput-data-store.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nPASS: flush waits for the successor commit\nPASS: flush captures its target instead of chasing later edits\nPASS: failed successor remains pending and explicitly retries\nPASS: workspace flush preserves independent documents and coalesced pending edits\nPASS: old ACK never reports an unqueued edit as saved\nPASS: queued newer edit is not cleared by an old ACK\nSmartInput save race regressions passed (6/6).\n",
+      "task": "save-races"
+    },
+    {
+      "name": "read-cache",
+      "chunk_id": "f558dc",
+      "wall_time_seconds": 3.9942823,
+      "exit_code": 0,
+      "original_token_count": 700,
+      "output": "(node:24040) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/smartinput-data-store.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ summary whitelist preserves existing metadata and omits all body/receipt/photo data (4.8159ms)\n✔ unknown company/revision stays unknown, without assignment from current company (0.3868ms)\n✔ summary escaping isolates unresolved scope and reserved-looking real IDs (0.8054ms)\n✔ typed read keys isolate leading zero, string/number revision, company and photo tokens (2.0857ms)\n✔ NOT_LOADED to LOADING to READY deduplicates the same in-flight read (22.573ms)\n✔ cached bodies are isolated from input mutations and shared as read-only values (1.3194ms)\n✔ only explicit successful absence is NOT_FOUND and can be invalidated after creation (2.5006ms)\n✔ undefined/null/EMPTY/invalid READY are errors rather than empty estimates (1.9783ms)\n✔ read rejection is retryable and a failed promise is not reused forever (1.418ms)\n✔ wrong actual revision is STALE without exposing its body (0.8952ms)\n✔ invalidate prevents a late old read from overwriting a new entry with the same key (1.0867ms)\n✔ cancelled physical reads retain concurrency permits until they really settle (5.6194ms)\n✔ timeout is ERROR, not NOT_FOUND, and a late response is never republished (41.7275ms)\n✔ bounded full selection reads all selected IDs in order, not just a rendered subset (10.7125ms)\n✔ empty selection causes zero reads and duplicate selected IDs are not extra targets (1.2586ms)\n✔ selection/revision inputs are captured before await; invalidation never clears the caller Set (1.0867ms)\n✔ caller generation change masks all late bodies, preserving caller-owned dirty work (1.667ms)\n✔ photo intent invalidation and a new photo token reject the old photo result (1.2071ms)\n✔ LRU eviction respects protected data, with honest over-budget statistics (1.9355ms)\n✔ Blob byte accounting and count eviction do not re-encode the photo (8.6781ms)\n✔ dispose settles queued callers, prevents new reads, and does not leak old results (2.5075ms)\n✔ invalid cache limits and unsupported kinds fail before touching the reader (0.399ms)\n✔ nested metadata cannot accidentally smuggle the body into its summary (0.4602ms)\nℹ tests 23\nℹ suites 0\nℹ pass 23\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 151.4899\n",
+      "task": "read-cache"
+    },
+    {
+      "name": "atomicity",
+      "chunk_id": "b1fd83",
+      "wall_time_seconds": 3.4176969,
+      "exit_code": 0,
+      "original_token_count": 168,
+      "output": "(node:46052) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/smartinput-data-store.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput estimate and mapping connected-bundle preimage, expected-missing, and rollback contracts passed.\n",
+      "task": "atomicity"
+    },
+    {
+      "name": "reference-generation",
+      "chunk_id": "7e3cd1",
+      "wall_time_seconds": 3.7693349,
+      "exit_code": 0,
+      "original_token_count": 169,
+      "output": "(node:47684) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/reference-generation-repository.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput six-domain immutable reference generation validation and atomic activation contract passed.\n",
+      "task": "reference-generation"
+    }
+  ]
+}

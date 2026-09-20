@@ -1,0 +1,45 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "command": "node scripts/test-smartinput-browser-e2e.mjs",
+  "status": "PARTIAL_FAIL_UNRESOLVED",
+  "recordedAt": "2026-09-20T19:12:06.681Z",
+  "latestWideRunMainSourceSha256": "1f8501c84adc0df385e98111b2df0f8d9b193e45efef2dc3f697019d6fcf7fdb",
+  "finalSourceMainSha256": "db7f1dbc044e1c23051505cefcc07444b1dee049927f5a8218930cc429d5641f",
+  "sourceCoverageNote": "The wide suite has not completed on the final source. The final frozen source passed the independent boundary browser suite and 20-sample performance run; those do not substitute for the remaining wide-suite checks.",
+  "fixtureChanges": [
+    "Approved action labels and consolidated store import paths",
+    "Keyboard product input focuses the actual input and sends Enter to the materialized row id",
+    "Incremental typing verifies focus and latest value through candidate cancellation",
+    "Date-scoped owner lookup is started by an explicit reload",
+    "Owner fixture warehouse creation is followed by explicit reference refresh",
+    "Contradictory retired linked-creation footer expectation is aligned with the same test's current independent-action and linked-UI-removal assertions"
+  ],
+  "passedBeforeRemainingBlockers": [
+    "Existing protected desktop and responsive layout checks",
+    "Text intake, local save and restore, clipboard zero/negative values and exact-structure undo",
+    "Focused exact/candidate/unmatched product paths and incremental typing with cancel",
+    "Official order/purchase/sale writes and transactional rollback cases in the temporary fixture",
+    "Stocktake and remote payload fixture cases",
+    "First independent estimate creation and an existing estimate update"
+  ],
+  "remainingFailures": [
+    {
+      "check": "second estimate save dialog",
+      "evidence": "full-browser-before-estimate-runtime-diagnostic.json",
+      "classification": "Unresolved; source review does not justify replacing reset/new-save with Save As, and the failed snapshot did not contain the active estimate model."
+    },
+    {
+      "check": "explicit reference refresh before official purchase and sale",
+      "evidence": "full-browser-estimate-runtime-diagnostic.json",
+      "classification": "The bounded follow-up run stopped earlier because the explicit full reference refresh timed out. The runtime getter was callable and recorded activeMode, draft, busy state and selections, but did not reach the second-estimate branch."
+    }
+  ],
+  "baselineNote": "The original baseline stopped at exact-structure paste undo. Later failures are not proven to predate this work.",
+  "unverified": [
+    "Wide-suite completion",
+    "Second independent estimate creation in this broad sequence and all checks following it",
+    "Actual NEXUS host-to-host switch p95"
+  ],
+  "finalBoundaryEvidence": "after-boundary-browser.json",
+  "finalPerformanceEvidence": "after-final-performance.json"
+}

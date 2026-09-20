@@ -50,6 +50,10 @@ jobs:
 
       - name: Test SmartInput independent recovery
         run: |
+          node scripts/test-smartinput-input-boundary.mjs
+          node scripts/test-smartinput-input-matching-snapshot.mjs
+          node scripts/test-smartinput-boundary.mjs
+          node scripts/test-smartinput-estimate-save-lifecycle.mjs
           node scripts/test-smartinput-independent-recovery.mjs
           node scripts/test-smartinput-appheader-workspace.mjs
           node scripts/test-smartinput-settings-ux.mjs
@@ -88,6 +92,7 @@ jobs:
 
       - name: Test SmartInput browser isolation and persistence
         run: |
+          node scripts/test-smartinput-boundary-browser.mjs
           node scripts/test-smartinput-settings-ux-browser.mjs
           node scripts/test-smartinput-right-panel-touch-browser.mjs
           node scripts/test-smartinput-stage3-plans.mjs

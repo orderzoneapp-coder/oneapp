@@ -1,0 +1,26 @@
+{
+  "schema": "SMARTINPUT_BOUNDARY_BROWSER_BASELINE_V1",
+  "head": "21eaf44",
+  "command": "node scripts/test-smartinput-browser-e2e.mjs",
+  "status": "failed-at-existing-assertion",
+  "sourceMutationsAtRun": false,
+  "isolation": "Existing test creates a temporary browser profile and local fixture server; test guards external mutating requests; no user profile/data used",
+  "environment": { "node": "v24.19.0", "viewport": { "width": 1920, "height": 1080 } },
+  "passedBeforeFailure": [
+    "Desktop shell and responsive layout assertions",
+    "Direct source text to two input rows (quantity 2 and 3)",
+    "Optional XLSX dependency failure preserves source, retry outputs one report",
+    "Reordered field-name grid paste and zero/negative/blank behavior",
+    "First grid-paste undo restores original rows"
+  ],
+  "failure": {
+    "location": "scripts/test-smartinput-browser-e2e.mjs:432",
+    "message": "grid paste undo must restore the prior row",
+    "expected": "2",
+    "actual": "8",
+    "diagnostic": { "quantity": "8", "undoDisabled": false, "pendingHidden": true, "afterQuantity": "8", "afterDisabled": true, "toast": "Excel 붙여넣기를 취소했습니다." },
+    "interpretation": "Baseline failure, not attributed to this task. The immediately preceding fixture changes quantity to 8. Full-suite later scenarios were not reached."
+  },
+  "unverified": ["Remaining full-suite scenarios after line 432", "Full browser suite pass"],
+  "supplement": "baseline-performance.json records separate isolated warm-entry/text-analysis smoke; it does not override this failure"
+}

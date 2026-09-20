@@ -1,0 +1,50 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "kind": "common-contract-regressions",
+  "results": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "test-client-safety.mjs",
+        "chunk_id": "3f3f8a",
+        "wall_time_seconds": 1.951771,
+        "exit_code": 0,
+        "original_token_count": 7,
+        "output": "Client safety tests passed.\n"
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "test-history-settings-export-owner-boundaries.mjs",
+        "chunk_id": "328ffa",
+        "wall_time_seconds": 2.0965258,
+        "exit_code": 0,
+        "original_token_count": 159,
+        "output": "(node:9988) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/reference-data/change-history-read-adapter.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nHistory · Settings · Export owner-boundary contracts passed.\n"
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "test-nexus-common-ui-recovery.mjs",
+        "chunk_id": "3453d0",
+        "wall_time_seconds": 2.0835889,
+        "exit_code": 0,
+        "original_token_count": 14,
+        "output": "NEXUS common UI recovery contracts passed (18 pages).\n"
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "name": "test-nexus-workspace-host.mjs",
+        "chunk_id": "0a8a65",
+        "wall_time_seconds": 1.9837315,
+        "exit_code": 0,
+        "original_token_count": 53,
+        "output": "PASS NEXUS workspace host contracts: one iframe, canonical routes, same-origin messaging, indexed history recovery, deterministic reconnect/early retry, native-load readiness ordering and stale-document safety.\n"
+      }
+    }
+  ]
+}

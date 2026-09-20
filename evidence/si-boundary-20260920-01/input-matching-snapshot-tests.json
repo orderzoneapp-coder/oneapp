@@ -1,0 +1,45 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "checkedAt": "2026-09-20T19:26:59.114Z",
+  "nodeVersion": "v24.19.0",
+  "scope": "Owner readonly input matching snapshot, SmartInput cache and explicit analysis revision",
+  "smartinputSha256": "14c8e4166b064b6fe26c165e6f5523219b41ce85f3aeb5e08706651e839ecf6b",
+  "results": [
+    {
+      "test": "test-smartinput-input-matching-snapshot.mjs",
+      "exit_code": 0,
+      "wall_time_seconds": 0.7500364,
+      "output": "Input matching snapshots: readonly owner publication, cache-only entry, scope/hash/error/stale guards, and preserved alias/history/final-row values passed.",
+      "warning": "Node MODULE_TYPELESS_PACKAGE_JSON existing repository ESM warning"
+    },
+    {
+      "test": "test-smartinput-input-boundary.mjs",
+      "exit_code": 0,
+      "wall_time_seconds": 3.0971998,
+      "output": "(node:49300) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/input.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput owned text intake, parser equivalence, supplied-snapshot matching and failure isolation passed.\n"
+    },
+    {
+      "test": "test-smartinput-independent-recovery.mjs",
+      "exit_code": 0,
+      "wall_time_seconds": 3.1702494,
+      "output": "(node:47712) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/legacy-integration-adapter.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput 0a rollback and independent compatibility contracts PASS\n"
+    },
+    {
+      "test": "test-smartinput-boundary.mjs",
+      "exit_code": 0,
+      "wall_time_seconds": 2.7953335,
+      "output": "(node:45652) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/Documents/ChatGPT/NEXUS/work/oneapp-smartinput-boundary-20260920-01/smartinput/reference-generation-repository.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to \\\\?\\C:\\Users\\USER\\Documents\\ChatGPT\\NEXUS\\work\\oneapp-smartinput-boundary-20260920-01\\package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\nSmartInput independent local references, settings failure, and render isolation passed.\n"
+    },
+    {
+      "test": "test-smartinput-draft-bootstrap.mjs",
+      "exit_code": 0,
+      "wall_time_seconds": 2.101332,
+      "output": "SmartInput draft bootstrap reuse tests passed.\n"
+    }
+  ],
+  "limitations": [
+    "Browser verification is performed separately by root; this file reports direct Node verification.",
+    "First profile without a SmartInput matching snapshot must explicitly refresh all reference data before old owner aliases/history can be used.",
+    "Unscoped legacy owner rows remain ONEAPP only; they are not reassigned to other companies."
+  ]
+}

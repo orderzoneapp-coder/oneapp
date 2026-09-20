@@ -56,12 +56,12 @@ assert.equal(coreSnapshotsEqual(buildCoreSnapshot(rows), buildCoreSnapshot(rows)
 assert.equal(reportSnapshotsEqual(buildReportSnapshot(rows), buildReportSnapshot(rows)), true);
 
 const [fileFeature, ocrFeature, reportFeature, voucherFeature, officialFeature, estimateBulkFeature] = await Promise.all([
-  import('../smartinput/file-intake-feature.js'),
-  import('../smartinput/ocr-feature.js'),
-  import('../smartinput/estimate-report-feature.js'),
-  import('../smartinput/voucher-output-feature.js'),
+  import('../smartinput/xlsx-source-reader.js'),
+  import('../smartinput/ocr-document-parser.js'),
+  import('../smartinput/estimate-output.js'),
+  import('../smartinput/purchase-sales-output.js'),
   import('../smartinput/official-voucher-feature.js'),
-  import('../smartinput/estimate-bulk-feature.js')
+  import('../smartinput/estimate-bulk-update.js')
 ]);
 assert.equal(typeof fileFeature.readWorksheetSource, 'function');
 assert.equal(typeof ocrFeature.recognizeOcrDocument, 'function');
@@ -72,4 +72,4 @@ assert.equal(typeof officialFeature.PurchaseFinalizeService.finalize, 'function'
 assert.equal(typeof officialFeature.SaleFinalizeService.finalize, 'function');
 assert.equal(typeof estimateBulkFeature.classifyEstimateBulkRows, 'function');
 
-console.log('SmartInput Stage5 optional feature boundaries and facade exports passed.');
+console.log('SmartInput Stage5 optional feature boundaries and implementation exports passed.');

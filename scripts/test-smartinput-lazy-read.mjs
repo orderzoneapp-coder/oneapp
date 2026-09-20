@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEstimateReadCache, estimateReadKey, estimateSummaryKey, projectEstimateSummary,
-  ESTIMATE_SUMMARY_SCHEMA } from '../smartinput/estimate-read-cache.js';
+  ESTIMATE_SUMMARY_SCHEMA } from '../smartinput/smartinput-data-store.js';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };

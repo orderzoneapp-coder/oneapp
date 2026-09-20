@@ -1,7 +1,7 @@
 import {
   hasMeaningfulSourceValue,
   sourceRowHasMeaningfulValue
-} from './source-row-values.js?v=0.1.0';
+} from './input-template-mapper.js?v=0.3.0';
 
 const DUPLICATED_FIELD_TERM = /(코드|번호|수량|단가|가격|품목|상품|이름|규격|메모)\1+/g;
 const SUMMARY_LABEL = /^(?:합계|총계|소계)\s*[:：]?\s*$/;

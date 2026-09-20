@@ -1,0 +1,3051 @@
+{
+  "taskId": "NEXUS-ORDERQ-SHOP-ACTUAL-LEDGER-20260904-01",
+  "status": "PASS",
+  "evidence": {
+    "capability": {
+      "ready": true,
+      "adapterVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1_1",
+      "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+      "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+      "sourceHeaders": [
+        "배송일자",
+        "거래처명",
+        "그룹",
+        "주문상태",
+        "전하실말씀",
+        "상점메모",
+        "상품코드",
+        "상품명",
+        "규격",
+        "수량",
+        "단가",
+        "금액",
+        "복사원코드",
+        "주소",
+        "전화2",
+        "원코드",
+        "유통그룹관리코드"
+      ],
+      "localActualLedgerOnly": true,
+      "multiDeviceGlobalDedupe": false
+    },
+    "evidence": {
+      "commit": {
+        "candidateCount": 1,
+        "createdCount": 1,
+        "duplicateCount": 0,
+        "reviewRequiredCount": 0,
+        "failedCount": 0
+      },
+      "counts": {
+        "orders": 1,
+        "orderItems": 1,
+        "orderEvents": 1,
+        "syncQueue": 2,
+        "meta": 1
+      },
+      "sourceStatus": "입금",
+      "sourceMessage": "원본 전달사항",
+      "sourceAddress": "원본 주소",
+      "sourceRowNumber": 2,
+      "externalOrderNo": "",
+      "internalOrderNo": "20260904-001",
+      "signature": "1450b95ff6586166e577984306e9bdfc2eecd5f6a1553e62bfe2c79cdc3c6d93"
+    },
+    "duplicateZeroWrite": {
+      "result": {
+        "candidateId": "SHOPPING-CANDIDATE-0001",
+        "status": "DUPLICATE",
+        "isDuplicate": true,
+        "canonicalSignature": "1450b95ff6586166e577984306e9bdfc2eecd5f6a1553e62bfe2c79cdc3c6d93",
+        "occurrenceNo": 1,
+        "existingCount": 1,
+        "existingOrderId": "ORD-8ccff7f4-190e-4596-b515-2ef8522b89bb",
+        "existingOrderNo": "20260904-001",
+        "reason": "SOURCE_MESSAGE_KEY",
+        "writes": 0
+      },
+      "unchanged": true
+    },
+    "race": {
+      "finalOrders": 2,
+      "created": 1,
+      "duplicates": 3,
+      "sourceKeys": [
+        "SHOPPING_ORDER_V1:09b764cfae4b49db6f950c8505559818d9a81c020ff187b4bf11d7f4a13ed1e8:2"
+      ]
+    },
+    "stale": {
+      "plannedDuplicate": false,
+      "committed": {
+        "candidateId": "SHOPPING-CANDIDATE-0002",
+        "status": "DUPLICATE",
+        "isDuplicate": true,
+        "canonicalSignature": "5839d6f7f8a3f921b22275d253edd02ad37242891641725081121eb29e186ead",
+        "occurrenceNo": 2,
+        "existingCount": 2,
+        "existingOrderId": "ORD-f7bc05a7-dc48-4017-adf6-6220eb0d73cc",
+        "existingOrderNo": "20260904-002",
+        "reason": "ACTUAL_LEDGER_COUNT",
+        "writes": 0
+      },
+      "finalOrders": 2
+    },
+    "rollback": {
+      "itemFailure": {
+        "injected": true,
+        "result": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "FAILED",
+              "isDuplicate": null,
+              "code": "Error",
+              "message": "INJECTED_ITEM_FAILURE",
+              "writes": 0
+            }
+          ],
+          "summary": {
+            "candidateCount": 1,
+            "createdCount": 0,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 0,
+            "failedCount": 1
+          }
+        },
+        "before": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        },
+        "after": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        }
+      },
+      "eventFailure": {
+        "injected": true,
+        "result": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "FAILED",
+              "isDuplicate": null,
+              "code": "Error",
+              "message": "INJECTED_EVENT_FAILURE",
+              "writes": 0
+            }
+          ],
+          "summary": {
+            "candidateCount": 1,
+            "createdCount": 0,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 0,
+            "failedCount": 1
+          }
+        },
+        "before": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        },
+        "after": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        }
+      },
+      "queueFailure": {
+        "injected": true,
+        "result": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "FAILED",
+              "isDuplicate": null,
+              "code": "Error",
+              "message": "INJECTED_QUEUE_FAILURE",
+              "writes": 0
+            }
+          ],
+          "summary": {
+            "candidateCount": 1,
+            "createdCount": 0,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 0,
+            "failedCount": 1
+          }
+        },
+        "before": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        },
+        "after": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        }
+      }
+    },
+    "candidateIsolation": {
+      "injectedFailure": {
+        "injected": true,
+        "result": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "FAILED",
+              "isDuplicate": null,
+              "code": "Error",
+              "message": "INJECTED_FIRST_CANDIDATE_FAILURE",
+              "writes": 0
+            },
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0002",
+              "status": "CREATED",
+              "isDuplicate": false,
+              "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+              "occurrenceNo": 1,
+              "existingCount": 0,
+              "order": {
+                "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                "orderNo": "20260904-001",
+                "revision": 1,
+                "companyId": "ONEAPP",
+                "orderDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "customerId": "CUS:정상후보",
+                "customerName": "정상후보",
+                "customerCode": "",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "warehouse": "본사창고",
+                "orderMessage": "",
+                "transactionType": "",
+                "sourceType": "SHOPPING_MALL_ORIGINAL",
+                "sourceId": "browser-source.xls",
+                "sourceMessageKey": "SHOPPING_ORDER_V1:7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa:1",
+                "sourceDocumentKey": "",
+                "externalOrderNo": "",
+                "externalOriginalStatus": "입금",
+                "orderStatus": "PAID",
+                "adminStatus": "UNCHECKED",
+                "opsStatus": "ACTIVE",
+                "inputChannel": "SHOPPING_MALL",
+                "assigneeId": "",
+                "assigneeName": "",
+                "status": "CONFIRMED",
+                "matchingStatus": "CONFIRMED",
+                "supplyAmountTotal": 1200,
+                "vatAmountTotal": 0,
+                "orderAmount": 1200,
+                "matchedCount": 1,
+                "matchFailedCount": 0,
+                "shoppingOrderDedupe": {
+                  "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                  "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                  "canonicalBasis": {
+                    "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                    "companyId": "ONEAPP",
+                    "customer": {
+                      "kind": "CUSTOMER_ID",
+                      "value": "CUS:정상후보"
+                    },
+                    "deliveryDate": "2026-09-04",
+                    "warehouse": {
+                      "kind": "WAREHOUSE_ID",
+                      "value": "WH-01"
+                    },
+                    "items": [
+                      {
+                        "identity": {
+                          "kind": "PRODUCT_ID",
+                          "value": "PRODUCT:OK"
+                        },
+                        "specification": "BOX",
+                        "unit": "BOX",
+                        "quantity": 1,
+                        "unitPrice": 1200,
+                        "amount": 1200
+                      }
+                    ]
+                  },
+                  "occurrenceNo": 1,
+                  "existingCountAtCommit": 0
+                },
+                "shoppingSourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 3,
+                      "sourceRelativeRowNumber": 2,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "정상후보",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "OK",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "OK",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "OK",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "정상후보",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "OK",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "OK",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "OK",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "createdAt": "2026-09-20T19:33:51.794Z",
+                "updatedAt": "2026-09-20T19:33:51.794Z"
+              },
+              "items": [
+                {
+                  "orderItemId": "OI-6783574b-d415-4775-882b-9db846190c32",
+                  "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                  "lineNo": 1,
+                  "productId": "PRODUCT:OK",
+                  "itemCode": "OK",
+                  "sourceProductCode": "OK",
+                  "itemName": "브라우저상품",
+                  "specification": "BOX",
+                  "rawText": "브라우저상품",
+                  "rawQuantity": 1,
+                  "rawUnit": "BOX",
+                  "finalQuantity": 1,
+                  "finalUnit": "BOX",
+                  "boxQuantity": null,
+                  "price": 1200,
+                  "priceType": "SHOPPING_SOURCE",
+                  "supplyAmount": 1200,
+                  "vatAmount": null,
+                  "memo": "",
+                  "description": "",
+                  "noticePrice": null,
+                  "matchStatus": "MATCHED",
+                  "matchSource": "SHOPPING_SOURCE_PRODUCT_MATCH",
+                  "sourceLineKey": "SHOPPING-CANDIDATE-0002:1",
+                  "shoppingSourceEvidence": {
+                    "sourceRowNumber": 3,
+                    "sourceRelativeRowNumber": 2,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "정상후보",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "OK",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "OK",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "OK",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "정상후보",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "OK",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "OK",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "OK",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  },
+                  "updatedAt": "2026-09-20T19:33:51.794Z",
+                  "createdAt": "2026-09-20T19:33:51.794Z"
+                }
+              ],
+              "event": {
+                "eventId": "OE-6a22a8ef-9d3c-4cf3-a573-f958f9fb1a78",
+                "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                "revision": 1,
+                "eventType": "ORDER_CREATED",
+                "actor": "BROWSER_TEST",
+                "detail": {
+                  "sourceType": "SHOPPING_MALL_ORIGINAL",
+                  "inputChannel": "SHOPPING_MALL",
+                  "orderNo": "20260904-001",
+                  "itemCount": 1,
+                  "assignee": {
+                    "assigneeId": "",
+                    "assigneeName": ""
+                  },
+                  "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                  "occurrenceNo": 1,
+                  "existingCountAtCommit": 0,
+                  "sourceEvidence": {
+                    "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                    "fileName": "browser-source.xls",
+                    "sheetName": "Worksheet",
+                    "sourceRowNumbers": [
+                      3
+                    ]
+                  }
+                },
+                "createdAt": "2026-09-20T19:33:51.794Z"
+              },
+              "writes": 5
+            }
+          ],
+          "summary": {
+            "candidateCount": 2,
+            "createdCount": 1,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 0,
+            "failedCount": 1
+          }
+        },
+        "before": {
+          "orders": [],
+          "orderItems": [],
+          "orderEvents": [],
+          "syncQueue": [],
+          "meta": []
+        },
+        "after": {
+          "orders": [
+            {
+              "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+              "orderNo": "20260904-001",
+              "revision": 1,
+              "companyId": "ONEAPP",
+              "orderDate": "2026-09-04",
+              "deliveryExpectedDate": "2026-09-04",
+              "customerId": "CUS:정상후보",
+              "customerName": "정상후보",
+              "customerCode": "",
+              "warehouseId": "WH-01",
+              "warehouseCode": "01",
+              "warehouseName": "본사창고",
+              "warehouse": "본사창고",
+              "orderMessage": "",
+              "transactionType": "",
+              "sourceType": "SHOPPING_MALL_ORIGINAL",
+              "sourceId": "browser-source.xls",
+              "sourceMessageKey": "SHOPPING_ORDER_V1:7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa:1",
+              "sourceDocumentKey": "",
+              "externalOrderNo": "",
+              "externalOriginalStatus": "입금",
+              "orderStatus": "PAID",
+              "adminStatus": "UNCHECKED",
+              "opsStatus": "ACTIVE",
+              "inputChannel": "SHOPPING_MALL",
+              "assigneeId": "",
+              "assigneeName": "",
+              "status": "CONFIRMED",
+              "matchingStatus": "CONFIRMED",
+              "supplyAmountTotal": 1200,
+              "vatAmountTotal": 0,
+              "orderAmount": 1200,
+              "matchedCount": 1,
+              "matchFailedCount": 0,
+              "shoppingOrderDedupe": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                "canonicalBasis": {
+                  "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                  "companyId": "ONEAPP",
+                  "customer": {
+                    "kind": "CUSTOMER_ID",
+                    "value": "CUS:정상후보"
+                  },
+                  "deliveryDate": "2026-09-04",
+                  "warehouse": {
+                    "kind": "WAREHOUSE_ID",
+                    "value": "WH-01"
+                  },
+                  "items": [
+                    {
+                      "identity": {
+                        "kind": "PRODUCT_ID",
+                        "value": "PRODUCT:OK"
+                      },
+                      "specification": "BOX",
+                      "unit": "BOX",
+                      "quantity": 1,
+                      "unitPrice": 1200,
+                      "amount": 1200
+                    }
+                  ]
+                },
+                "occurrenceNo": 1,
+                "existingCountAtCommit": 0
+              },
+              "shoppingSourceEvidence": {
+                "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                "fileName": "browser-source.xls",
+                "sheetName": "Worksheet",
+                "uploadedAt": "2026-09-04T09:00:00+09:00",
+                "headers": [
+                  "배송일자",
+                  "거래처명",
+                  "그룹",
+                  "주문상태",
+                  "전하실말씀",
+                  "상점메모",
+                  "상품코드",
+                  "상품명",
+                  "규격",
+                  "수량",
+                  "단가",
+                  "금액",
+                  "복사원코드",
+                  "주소",
+                  "전화2",
+                  "원코드",
+                  "유통그룹관리코드"
+                ],
+                "rows": [
+                  {
+                    "sourceRowNumber": 3,
+                    "sourceRelativeRowNumber": 2,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "정상후보",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "OK",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "OK",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "OK",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "정상후보",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "OK",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "OK",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "OK",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ]
+              },
+              "createdAt": "2026-09-20T19:33:51.794Z",
+              "updatedAt": "2026-09-20T19:33:51.794Z"
+            }
+          ],
+          "orderItems": [
+            {
+              "orderItemId": "OI-6783574b-d415-4775-882b-9db846190c32",
+              "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+              "lineNo": 1,
+              "productId": "PRODUCT:OK",
+              "itemCode": "OK",
+              "sourceProductCode": "OK",
+              "itemName": "브라우저상품",
+              "specification": "BOX",
+              "rawText": "브라우저상품",
+              "rawQuantity": 1,
+              "rawUnit": "BOX",
+              "finalQuantity": 1,
+              "finalUnit": "BOX",
+              "boxQuantity": null,
+              "price": 1200,
+              "priceType": "SHOPPING_SOURCE",
+              "supplyAmount": 1200,
+              "vatAmount": null,
+              "memo": "",
+              "description": "",
+              "noticePrice": null,
+              "matchStatus": "MATCHED",
+              "matchSource": "SHOPPING_SOURCE_PRODUCT_MATCH",
+              "sourceLineKey": "SHOPPING-CANDIDATE-0002:1",
+              "shoppingSourceEvidence": {
+                "sourceRowNumber": 3,
+                "sourceRelativeRowNumber": 2,
+                "sourceCells": [
+                  "2026-09-04",
+                  "정상후보",
+                  "88",
+                  "입금",
+                  "원본 전달사항",
+                  "원본 상점메모",
+                  "OK",
+                  "브라우저상품",
+                  "BOX",
+                  1,
+                  1200,
+                  1200,
+                  "OK",
+                  "원본 주소",
+                  "010-1234-5678",
+                  "OK",
+                  "a4579"
+                ],
+                "sourceCellEvidence": [],
+                "sourceValues": {
+                  "배송일자": "2026-09-04",
+                  "거래처명": "정상후보",
+                  "그룹": "88",
+                  "주문상태": "입금",
+                  "전하실말씀": "원본 전달사항",
+                  "상점메모": "원본 상점메모",
+                  "상품코드": "OK",
+                  "상품명": "브라우저상품",
+                  "규격": "BOX",
+                  "수량": 1,
+                  "단가": 1200,
+                  "금액": 1200,
+                  "복사원코드": "OK",
+                  "주소": "원본 주소",
+                  "전화2": "010-1234-5678",
+                  "원코드": "OK",
+                  "유통그룹관리코드": "a4579"
+                }
+              },
+              "updatedAt": "2026-09-20T19:33:51.794Z",
+              "createdAt": "2026-09-20T19:33:51.794Z"
+            }
+          ],
+          "orderEvents": [
+            {
+              "eventId": "OE-6a22a8ef-9d3c-4cf3-a573-f958f9fb1a78",
+              "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+              "revision": 1,
+              "eventType": "ORDER_CREATED",
+              "actor": "BROWSER_TEST",
+              "detail": {
+                "sourceType": "SHOPPING_MALL_ORIGINAL",
+                "inputChannel": "SHOPPING_MALL",
+                "orderNo": "20260904-001",
+                "itemCount": 1,
+                "assignee": {
+                  "assigneeId": "",
+                  "assigneeName": ""
+                },
+                "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                "occurrenceNo": 1,
+                "existingCountAtCommit": 0,
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "sourceRowNumbers": [
+                    3
+                  ]
+                }
+              },
+              "createdAt": "2026-09-20T19:33:51.794Z"
+            }
+          ],
+          "syncQueue": [
+            {
+              "queueId": "SQ-2bf3bcdf-efe4-4a36-af55-cc6a2f92860d",
+              "entityType": "ORDER_EVENT",
+              "entityId": "OE-6a22a8ef-9d3c-4cf3-a573-f958f9fb1a78",
+              "operation": "UPSERT",
+              "revision": 1,
+              "baseRevision": 0,
+              "payload": {
+                "eventId": "OE-6a22a8ef-9d3c-4cf3-a573-f958f9fb1a78",
+                "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                "revision": 1,
+                "eventType": "ORDER_CREATED",
+                "actor": "BROWSER_TEST",
+                "detail": {
+                  "sourceType": "SHOPPING_MALL_ORIGINAL",
+                  "inputChannel": "SHOPPING_MALL",
+                  "orderNo": "20260904-001",
+                  "itemCount": 1,
+                  "assignee": {
+                    "assigneeId": "",
+                    "assigneeName": ""
+                  },
+                  "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                  "occurrenceNo": 1,
+                  "existingCountAtCommit": 0,
+                  "sourceEvidence": {
+                    "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                    "fileName": "browser-source.xls",
+                    "sheetName": "Worksheet",
+                    "sourceRowNumbers": [
+                      3
+                    ]
+                  }
+                },
+                "createdAt": "2026-09-20T19:33:51.794Z"
+              },
+              "status": "PENDING",
+              "createdAt": "2026-09-20T19:33:51.794Z",
+              "updatedAt": "2026-09-20T19:33:51.794Z"
+            },
+            {
+              "queueId": "SQ-e96b5f97-af23-4605-b970-c3ccf154eedc",
+              "entityType": "ORDER",
+              "entityId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+              "operation": "UPSERT",
+              "revision": 1,
+              "baseRevision": 0,
+              "payload": {
+                "order": {
+                  "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                  "orderNo": "20260904-001",
+                  "revision": 1,
+                  "companyId": "ONEAPP",
+                  "orderDate": "2026-09-04",
+                  "deliveryExpectedDate": "2026-09-04",
+                  "customerId": "CUS:정상후보",
+                  "customerName": "정상후보",
+                  "customerCode": "",
+                  "warehouseId": "WH-01",
+                  "warehouseCode": "01",
+                  "warehouseName": "본사창고",
+                  "warehouse": "본사창고",
+                  "orderMessage": "",
+                  "transactionType": "",
+                  "sourceType": "SHOPPING_MALL_ORIGINAL",
+                  "sourceId": "browser-source.xls",
+                  "sourceMessageKey": "SHOPPING_ORDER_V1:7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa:1",
+                  "sourceDocumentKey": "",
+                  "externalOrderNo": "",
+                  "externalOriginalStatus": "입금",
+                  "orderStatus": "PAID",
+                  "adminStatus": "UNCHECKED",
+                  "opsStatus": "ACTIVE",
+                  "inputChannel": "SHOPPING_MALL",
+                  "assigneeId": "",
+                  "assigneeName": "",
+                  "status": "CONFIRMED",
+                  "matchingStatus": "CONFIRMED",
+                  "supplyAmountTotal": 1200,
+                  "vatAmountTotal": 0,
+                  "orderAmount": 1200,
+                  "matchedCount": 1,
+                  "matchFailedCount": 0,
+                  "shoppingOrderDedupe": {
+                    "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                    "canonicalSignature": "7ea277a7f03dd5a0ec86f656e357a6d4f255229b434c9e2714e9619e4352dbfa",
+                    "canonicalBasis": {
+                      "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                      "companyId": "ONEAPP",
+                      "customer": {
+                        "kind": "CUSTOMER_ID",
+                        "value": "CUS:정상후보"
+                      },
+                      "deliveryDate": "2026-09-04",
+                      "warehouse": {
+                        "kind": "WAREHOUSE_ID",
+                        "value": "WH-01"
+                      },
+                      "items": [
+                        {
+                          "identity": {
+                            "kind": "PRODUCT_ID",
+                            "value": "PRODUCT:OK"
+                          },
+                          "specification": "BOX",
+                          "unit": "BOX",
+                          "quantity": 1,
+                          "unitPrice": 1200,
+                          "amount": 1200
+                        }
+                      ]
+                    },
+                    "occurrenceNo": 1,
+                    "existingCountAtCommit": 0
+                  },
+                  "shoppingSourceEvidence": {
+                    "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                    "fileName": "browser-source.xls",
+                    "sheetName": "Worksheet",
+                    "uploadedAt": "2026-09-04T09:00:00+09:00",
+                    "headers": [
+                      "배송일자",
+                      "거래처명",
+                      "그룹",
+                      "주문상태",
+                      "전하실말씀",
+                      "상점메모",
+                      "상품코드",
+                      "상품명",
+                      "규격",
+                      "수량",
+                      "단가",
+                      "금액",
+                      "복사원코드",
+                      "주소",
+                      "전화2",
+                      "원코드",
+                      "유통그룹관리코드"
+                    ],
+                    "rows": [
+                      {
+                        "sourceRowNumber": 3,
+                        "sourceRelativeRowNumber": 2,
+                        "sourceCells": [
+                          "2026-09-04",
+                          "정상후보",
+                          "88",
+                          "입금",
+                          "원본 전달사항",
+                          "원본 상점메모",
+                          "OK",
+                          "브라우저상품",
+                          "BOX",
+                          1,
+                          1200,
+                          1200,
+                          "OK",
+                          "원본 주소",
+                          "010-1234-5678",
+                          "OK",
+                          "a4579"
+                        ],
+                        "sourceCellEvidence": [],
+                        "sourceValues": {
+                          "배송일자": "2026-09-04",
+                          "거래처명": "정상후보",
+                          "그룹": "88",
+                          "주문상태": "입금",
+                          "전하실말씀": "원본 전달사항",
+                          "상점메모": "원본 상점메모",
+                          "상품코드": "OK",
+                          "상품명": "브라우저상품",
+                          "규격": "BOX",
+                          "수량": 1,
+                          "단가": 1200,
+                          "금액": 1200,
+                          "복사원코드": "OK",
+                          "주소": "원본 주소",
+                          "전화2": "010-1234-5678",
+                          "원코드": "OK",
+                          "유통그룹관리코드": "a4579"
+                        }
+                      }
+                    ]
+                  },
+                  "createdAt": "2026-09-20T19:33:51.794Z",
+                  "updatedAt": "2026-09-20T19:33:51.794Z"
+                },
+                "items": [
+                  {
+                    "orderItemId": "OI-6783574b-d415-4775-882b-9db846190c32",
+                    "orderId": "ORD-34134618-39a4-4c26-91f8-99ff58a16e3d",
+                    "lineNo": 1,
+                    "productId": "PRODUCT:OK",
+                    "itemCode": "OK",
+                    "sourceProductCode": "OK",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "rawText": "브라우저상품",
+                    "rawQuantity": 1,
+                    "rawUnit": "BOX",
+                    "finalQuantity": 1,
+                    "finalUnit": "BOX",
+                    "boxQuantity": null,
+                    "price": 1200,
+                    "priceType": "SHOPPING_SOURCE",
+                    "supplyAmount": 1200,
+                    "vatAmount": null,
+                    "memo": "",
+                    "description": "",
+                    "noticePrice": null,
+                    "matchStatus": "MATCHED",
+                    "matchSource": "SHOPPING_SOURCE_PRODUCT_MATCH",
+                    "sourceLineKey": "SHOPPING-CANDIDATE-0002:1",
+                    "shoppingSourceEvidence": {
+                      "sourceRowNumber": 3,
+                      "sourceRelativeRowNumber": 2,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "정상후보",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "OK",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "OK",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "OK",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "정상후보",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "OK",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "OK",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "OK",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    },
+                    "updatedAt": "2026-09-20T19:33:51.794Z",
+                    "createdAt": "2026-09-20T19:33:51.794Z"
+                  }
+                ]
+              },
+              "status": "PENDING",
+              "createdAt": "2026-09-20T19:33:51.794Z",
+              "updatedAt": "2026-09-20T19:33:51.794Z"
+            }
+          ],
+          "meta": [
+            {
+              "key": "orderNoSequence:20260904",
+              "value": 1,
+              "updatedAt": "2026-09-20T19:33:51.794Z"
+            }
+          ]
+        }
+      },
+      "reviewResult": {
+        "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+        "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+        "results": [
+          {
+            "candidateId": "INVALID-CUSTOMER",
+            "status": "REVIEW_REQUIRED",
+            "isDuplicate": null,
+            "issues": [
+              {
+                "code": "SHOPPING_CUSTOMER_REQUIRED",
+                "message": "거래처를 확인하세요."
+              },
+              {
+                "code": "SHOPPING_CUSTOMER_OWNER_ID_REQUIRED",
+                "message": "거래처 owner ID를 확인하세요."
+              }
+            ],
+            "writes": 0
+          },
+          {
+            "candidateId": "VALID-AFTER-REVIEW",
+            "status": "CREATED",
+            "isDuplicate": false,
+            "canonicalSignature": "ecb7784b2d8df120d9bd23cb78eb61e77708d057ca0449872d5b535269219007",
+            "occurrenceNo": 1,
+            "existingCount": 0,
+            "order": {
+              "orderId": "ORD-437f6fd4-b046-4fb7-88a5-d8427f905be3",
+              "orderNo": "20260904-001",
+              "revision": 1,
+              "companyId": "ONEAPP",
+              "orderDate": "2026-09-04",
+              "deliveryExpectedDate": "2026-09-04",
+              "customerId": "CUS:정상후보",
+              "customerName": "정상후보",
+              "customerCode": "",
+              "warehouseId": "WH-01",
+              "warehouseCode": "01",
+              "warehouseName": "본사창고",
+              "warehouse": "본사창고",
+              "orderMessage": "",
+              "transactionType": "",
+              "sourceType": "SHOPPING_MALL_ORIGINAL",
+              "sourceId": "browser-source.xls",
+              "sourceMessageKey": "SHOPPING_ORDER_V1:ecb7784b2d8df120d9bd23cb78eb61e77708d057ca0449872d5b535269219007:1",
+              "sourceDocumentKey": "",
+              "externalOrderNo": "",
+              "externalOriginalStatus": "입금",
+              "orderStatus": "PAID",
+              "adminStatus": "UNCHECKED",
+              "opsStatus": "ACTIVE",
+              "inputChannel": "SHOPPING_MALL",
+              "assigneeId": "",
+              "assigneeName": "",
+              "status": "CONFIRMED",
+              "matchingStatus": "CONFIRMED",
+              "supplyAmountTotal": 1200,
+              "vatAmountTotal": 0,
+              "orderAmount": 1200,
+              "matchedCount": 1,
+              "matchFailedCount": 0,
+              "shoppingOrderDedupe": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "canonicalSignature": "ecb7784b2d8df120d9bd23cb78eb61e77708d057ca0449872d5b535269219007",
+                "canonicalBasis": {
+                  "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                  "companyId": "ONEAPP",
+                  "customer": {
+                    "kind": "CUSTOMER_ID",
+                    "value": "CUS:정상후보"
+                  },
+                  "deliveryDate": "2026-09-04",
+                  "warehouse": {
+                    "kind": "WAREHOUSE_ID",
+                    "value": "WH-01"
+                  },
+                  "items": [
+                    {
+                      "identity": {
+                        "kind": "PRODUCT_ID",
+                        "value": "PRODUCT:GOOD"
+                      },
+                      "specification": "BOX",
+                      "unit": "BOX",
+                      "quantity": 1,
+                      "unitPrice": 1200,
+                      "amount": 1200
+                    }
+                  ]
+                },
+                "occurrenceNo": 1,
+                "existingCountAtCommit": 0
+              },
+              "shoppingSourceEvidence": {
+                "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                "fileName": "browser-source.xls",
+                "sheetName": "Worksheet",
+                "uploadedAt": "2026-09-04T09:00:00+09:00",
+                "headers": [
+                  "배송일자",
+                  "거래처명",
+                  "그룹",
+                  "주문상태",
+                  "전하실말씀",
+                  "상점메모",
+                  "상품코드",
+                  "상품명",
+                  "규격",
+                  "수량",
+                  "단가",
+                  "금액",
+                  "복사원코드",
+                  "주소",
+                  "전화2",
+                  "원코드",
+                  "유통그룹관리코드"
+                ],
+                "rows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "정상후보",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "GOOD",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "GOOD",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "GOOD",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "정상후보",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "GOOD",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "GOOD",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "GOOD",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ]
+              },
+              "createdAt": "2026-09-20T19:33:51.844Z",
+              "updatedAt": "2026-09-20T19:33:51.844Z"
+            },
+            "items": [
+              {
+                "orderItemId": "OI-c84466cd-6ae8-4095-a075-263969000d02",
+                "orderId": "ORD-437f6fd4-b046-4fb7-88a5-d8427f905be3",
+                "lineNo": 1,
+                "productId": "PRODUCT:GOOD",
+                "itemCode": "GOOD",
+                "sourceProductCode": "GOOD",
+                "itemName": "브라우저상품",
+                "specification": "BOX",
+                "rawText": "브라우저상품",
+                "rawQuantity": 1,
+                "rawUnit": "BOX",
+                "finalQuantity": 1,
+                "finalUnit": "BOX",
+                "boxQuantity": null,
+                "price": 1200,
+                "priceType": "SHOPPING_SOURCE",
+                "supplyAmount": 1200,
+                "vatAmount": null,
+                "memo": "",
+                "description": "",
+                "noticePrice": null,
+                "matchStatus": "MATCHED",
+                "matchSource": "SHOPPING_SOURCE_PRODUCT_MATCH",
+                "sourceLineKey": "VALID-AFTER-REVIEW:1",
+                "shoppingSourceEvidence": {
+                  "sourceRowNumber": 2,
+                  "sourceRelativeRowNumber": 1,
+                  "sourceCells": [
+                    "2026-09-04",
+                    "정상후보",
+                    "88",
+                    "입금",
+                    "원본 전달사항",
+                    "원본 상점메모",
+                    "GOOD",
+                    "브라우저상품",
+                    "BOX",
+                    1,
+                    1200,
+                    1200,
+                    "GOOD",
+                    "원본 주소",
+                    "010-1234-5678",
+                    "GOOD",
+                    "a4579"
+                  ],
+                  "sourceCellEvidence": [],
+                  "sourceValues": {
+                    "배송일자": "2026-09-04",
+                    "거래처명": "정상후보",
+                    "그룹": "88",
+                    "주문상태": "입금",
+                    "전하실말씀": "원본 전달사항",
+                    "상점메모": "원본 상점메모",
+                    "상품코드": "GOOD",
+                    "상품명": "브라우저상품",
+                    "규격": "BOX",
+                    "수량": 1,
+                    "단가": 1200,
+                    "금액": 1200,
+                    "복사원코드": "GOOD",
+                    "주소": "원본 주소",
+                    "전화2": "010-1234-5678",
+                    "원코드": "GOOD",
+                    "유통그룹관리코드": "a4579"
+                  }
+                },
+                "updatedAt": "2026-09-20T19:33:51.844Z",
+                "createdAt": "2026-09-20T19:33:51.844Z"
+              }
+            ],
+            "event": {
+              "eventId": "OE-05475032-4acd-43a2-8944-7acbda142872",
+              "orderId": "ORD-437f6fd4-b046-4fb7-88a5-d8427f905be3",
+              "revision": 1,
+              "eventType": "ORDER_CREATED",
+              "actor": "BROWSER_TEST",
+              "detail": {
+                "sourceType": "SHOPPING_MALL_ORIGINAL",
+                "inputChannel": "SHOPPING_MALL",
+                "orderNo": "20260904-001",
+                "itemCount": 1,
+                "assignee": {
+                  "assigneeId": "",
+                  "assigneeName": ""
+                },
+                "canonicalSignature": "ecb7784b2d8df120d9bd23cb78eb61e77708d057ca0449872d5b535269219007",
+                "occurrenceNo": 1,
+                "existingCountAtCommit": 0,
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "sourceRowNumbers": [
+                    2
+                  ]
+                }
+              },
+              "createdAt": "2026-09-20T19:33:51.844Z"
+            },
+            "writes": 5
+          }
+        ],
+        "summary": {
+          "candidateCount": 2,
+          "createdCount": 1,
+          "duplicateCount": 0,
+          "reviewRequiredCount": 1,
+          "failedCount": 0
+        }
+      },
+      "reviewOrderCount": 1,
+      "ownerResolution": {
+        "inspect": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "results": [
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "UNRESOLVED-PRODUCT",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "NO-PRODUCT-ID",
+                "companyId": "ONEAPP",
+                "customerId": "CUS:상품미해소",
+                "customerCode": "",
+                "customerName": "상품미해소",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "",
+                    "sourceProductCode": "NO-PRODUCT-ID",
+                    "itemCode": "NO-PRODUCT-ID",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "상품미해소",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "NO-PRODUCT-ID",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "NO-PRODUCT-ID",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "NO-PRODUCT-ID",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "상품미해소",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "NO-PRODUCT-ID",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "NO-PRODUCT-ID",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "NO-PRODUCT-ID",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "상품미해소",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "NO-PRODUCT-ID",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "NO-PRODUCT-ID",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "NO-PRODUCT-ID",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "상품미해소",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "NO-PRODUCT-ID",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "NO-PRODUCT-ID",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "NO-PRODUCT-ID",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": [
+                  {
+                    "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                    "message": "상품 owner ID를 확인하세요.",
+                    "sourceRowNumber": 2
+                  }
+                ]
+              },
+              "candidateId": "UNRESOLVED-PRODUCT",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "canonicalSignature": "",
+              "occurrenceNo": 0,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": [
+                {
+                  "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                  "message": "상품 owner ID를 확인하세요.",
+                  "sourceRowNumber": 2
+                }
+              ]
+            },
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "PARTIAL-UNRESOLVED-PRODUCT",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "PARTIAL",
+                "companyId": "ONEAPP",
+                "customerId": "CUS:부분상품미해소",
+                "customerCode": "",
+                "customerName": "부분상품미해소",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "PRODUCT:RESOLVED",
+                    "sourceProductCode": "RESOLVED",
+                    "itemCode": "RESOLVED",
+                    "itemName": "정상상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  },
+                  {
+                    "productId": "",
+                    "sourceProductCode": "UNRESOLVED",
+                    "itemCode": "UNRESOLVED",
+                    "itemName": "미해소상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 3,
+                    "sourceRelativeRowNumber": 2
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "부분상품미해소",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "RESOLVED",
+                      "정상상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "RESOLVED",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "RESOLVED",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "부분상품미해소",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "RESOLVED",
+                      "상품명": "정상상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "RESOLVED",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "RESOLVED",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  },
+                  {
+                    "sourceRowNumber": 3,
+                    "sourceRelativeRowNumber": 2,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "부분상품미해소",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "UNRESOLVED",
+                      "미해소상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "UNRESOLVED",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "UNRESOLVED",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "부분상품미해소",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "UNRESOLVED",
+                      "상품명": "미해소상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "UNRESOLVED",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "UNRESOLVED",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "부분상품미해소",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "RESOLVED",
+                        "정상상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "RESOLVED",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "RESOLVED",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "부분상품미해소",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "RESOLVED",
+                        "상품명": "정상상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "RESOLVED",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "RESOLVED",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    },
+                    {
+                      "sourceRowNumber": 3,
+                      "sourceRelativeRowNumber": 2,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "부분상품미해소",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "UNRESOLVED",
+                        "미해소상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "UNRESOLVED",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "UNRESOLVED",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "부분상품미해소",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "UNRESOLVED",
+                        "상품명": "미해소상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "UNRESOLVED",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "UNRESOLVED",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": [
+                  {
+                    "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                    "message": "상품 owner ID를 확인하세요.",
+                    "sourceRowNumber": 3
+                  }
+                ]
+              },
+              "candidateId": "PARTIAL-UNRESOLVED-PRODUCT",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "canonicalSignature": "",
+              "occurrenceNo": 0,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": [
+                {
+                  "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                  "message": "상품 owner ID를 확인하세요.",
+                  "sourceRowNumber": 3
+                }
+              ]
+            },
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "UNRESOLVED-CUSTOMER",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "NO-CUSTOMER-ID",
+                "companyId": "ONEAPP",
+                "customerId": "",
+                "customerCode": "",
+                "customerName": "거래처미해소",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "PRODUCT:NO-CUSTOMER-ID",
+                    "sourceProductCode": "NO-CUSTOMER-ID",
+                    "itemCode": "NO-CUSTOMER-ID",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "거래처미해소",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "NO-CUSTOMER-ID",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "NO-CUSTOMER-ID",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "NO-CUSTOMER-ID",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "거래처미해소",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "NO-CUSTOMER-ID",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "NO-CUSTOMER-ID",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "NO-CUSTOMER-ID",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "거래처미해소",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "NO-CUSTOMER-ID",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "NO-CUSTOMER-ID",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "NO-CUSTOMER-ID",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "거래처미해소",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "NO-CUSTOMER-ID",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "NO-CUSTOMER-ID",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "NO-CUSTOMER-ID",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": [
+                  {
+                    "code": "SHOPPING_CUSTOMER_OWNER_ID_REQUIRED",
+                    "message": "거래처 owner ID를 확인하세요."
+                  }
+                ]
+              },
+              "candidateId": "UNRESOLVED-CUSTOMER",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "canonicalSignature": "",
+              "occurrenceNo": 0,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": [
+                {
+                  "code": "SHOPPING_CUSTOMER_OWNER_ID_REQUIRED",
+                  "message": "거래처 owner ID를 확인하세요."
+                }
+              ]
+            },
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "UNRESOLVED-WAREHOUSE",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "NO-WAREHOUSE-ID",
+                "companyId": "ONEAPP",
+                "customerId": "CUS:창고미해소",
+                "customerCode": "",
+                "customerName": "창고미해소",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "",
+                "warehouseCode": "",
+                "warehouseName": "미해소창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "PRODUCT:NO-WAREHOUSE-ID",
+                    "sourceProductCode": "NO-WAREHOUSE-ID",
+                    "itemCode": "NO-WAREHOUSE-ID",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "창고미해소",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "NO-WAREHOUSE-ID",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "NO-WAREHOUSE-ID",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "NO-WAREHOUSE-ID",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "창고미해소",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "NO-WAREHOUSE-ID",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "NO-WAREHOUSE-ID",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "NO-WAREHOUSE-ID",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "창고미해소",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "NO-WAREHOUSE-ID",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "NO-WAREHOUSE-ID",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "NO-WAREHOUSE-ID",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "창고미해소",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "NO-WAREHOUSE-ID",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "NO-WAREHOUSE-ID",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "NO-WAREHOUSE-ID",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": [
+                  {
+                    "code": "SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED",
+                    "message": "출하창고 owner ID를 확인하세요."
+                  }
+                ]
+              },
+              "candidateId": "UNRESOLVED-WAREHOUSE",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "canonicalSignature": "",
+              "occurrenceNo": 0,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": [
+                {
+                  "code": "SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED",
+                  "message": "출하창고 owner ID를 확인하세요."
+                }
+              ]
+            },
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "OWNER-RESOLVED-NORMAL",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "OWNER-OK",
+                "companyId": "ONEAPP",
+                "customerId": "CUS:해소정상",
+                "customerCode": "",
+                "customerName": "해소정상",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "PRODUCT:OWNER-OK",
+                    "sourceProductCode": "OWNER-OK",
+                    "itemCode": "OWNER-OK",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "해소정상",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "OWNER-OK",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "OWNER-OK",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "OWNER-OK",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "해소정상",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "OWNER-OK",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "OWNER-OK",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "OWNER-OK",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "해소정상",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "OWNER-OK",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "OWNER-OK",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "OWNER-OK",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "해소정상",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "OWNER-OK",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "OWNER-OK",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "OWNER-OK",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": []
+              },
+              "candidateId": "OWNER-RESOLVED-NORMAL",
+              "status": "NEW",
+              "isDuplicate": false,
+              "canonicalSignature": "84ff240830afe1f9d8afa32e7becb5883fb30a0e0e8e78cf035b01e257338b0a",
+              "occurrenceNo": 1,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": []
+            }
+          ],
+          "summary": {
+            "candidateCount": 5,
+            "duplicateCount": 0,
+            "newCount": 1,
+            "reviewRequiredCount": 4,
+            "invalidExistingCount": 0
+          },
+          "invalidExisting": []
+        },
+        "directGuard": [
+          {
+            "candidateId": "UNRESOLVED-PRODUCT",
+            "status": "REVIEW_REQUIRED",
+            "isDuplicate": null,
+            "issues": [
+              {
+                "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                "message": "상품 owner ID를 확인하세요.",
+                "sourceRowNumber": 2
+              }
+            ],
+            "writes": 0
+          },
+          {
+            "candidateId": "PARTIAL-UNRESOLVED-PRODUCT",
+            "status": "REVIEW_REQUIRED",
+            "isDuplicate": null,
+            "issues": [
+              {
+                "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                "message": "상품 owner ID를 확인하세요.",
+                "sourceRowNumber": 3
+              }
+            ],
+            "writes": 0
+          },
+          {
+            "candidateId": "UNRESOLVED-CUSTOMER",
+            "status": "REVIEW_REQUIRED",
+            "isDuplicate": null,
+            "issues": [
+              {
+                "code": "SHOPPING_CUSTOMER_OWNER_ID_REQUIRED",
+                "message": "거래처 owner ID를 확인하세요."
+              }
+            ],
+            "writes": 0
+          },
+          {
+            "candidateId": "UNRESOLVED-WAREHOUSE",
+            "status": "REVIEW_REQUIRED",
+            "isDuplicate": null,
+            "issues": [
+              {
+                "code": "SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED",
+                "message": "출하창고 owner ID를 확인하세요."
+              }
+            ],
+            "writes": 0
+          }
+        ],
+        "directGuardUnchanged": true,
+        "commit": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "UNRESOLVED-PRODUCT",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "issues": [
+                {
+                  "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                  "message": "상품 owner ID를 확인하세요.",
+                  "sourceRowNumber": 2
+                }
+              ],
+              "writes": 0
+            },
+            {
+              "candidateId": "PARTIAL-UNRESOLVED-PRODUCT",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "issues": [
+                {
+                  "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                  "message": "상품 owner ID를 확인하세요.",
+                  "sourceRowNumber": 3
+                }
+              ],
+              "writes": 0
+            },
+            {
+              "candidateId": "UNRESOLVED-CUSTOMER",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "issues": [
+                {
+                  "code": "SHOPPING_CUSTOMER_OWNER_ID_REQUIRED",
+                  "message": "거래처 owner ID를 확인하세요."
+                }
+              ],
+              "writes": 0
+            },
+            {
+              "candidateId": "UNRESOLVED-WAREHOUSE",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "issues": [
+                {
+                  "code": "SHOPPING_WAREHOUSE_OWNER_ID_REQUIRED",
+                  "message": "출하창고 owner ID를 확인하세요."
+                }
+              ],
+              "writes": 0
+            },
+            {
+              "candidateId": "OWNER-RESOLVED-NORMAL",
+              "status": "CREATED",
+              "isDuplicate": false,
+              "canonicalSignature": "84ff240830afe1f9d8afa32e7becb5883fb30a0e0e8e78cf035b01e257338b0a",
+              "occurrenceNo": 1,
+              "existingCount": 0,
+              "order": {
+                "orderId": "ORD-034e67cd-2d6e-40dc-af07-a75b2fc13bc6",
+                "orderNo": "20260904-001",
+                "revision": 1,
+                "companyId": "ONEAPP",
+                "orderDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "customerId": "CUS:해소정상",
+                "customerName": "해소정상",
+                "customerCode": "",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "warehouse": "본사창고",
+                "orderMessage": "",
+                "transactionType": "",
+                "sourceType": "SHOPPING_MALL_ORIGINAL",
+                "sourceId": "browser-source.xls",
+                "sourceMessageKey": "SHOPPING_ORDER_V1:84ff240830afe1f9d8afa32e7becb5883fb30a0e0e8e78cf035b01e257338b0a:1",
+                "sourceDocumentKey": "",
+                "externalOrderNo": "",
+                "externalOriginalStatus": "입금",
+                "orderStatus": "PAID",
+                "adminStatus": "UNCHECKED",
+                "opsStatus": "ACTIVE",
+                "inputChannel": "SHOPPING_MALL",
+                "assigneeId": "",
+                "assigneeName": "",
+                "status": "CONFIRMED",
+                "matchingStatus": "CONFIRMED",
+                "supplyAmountTotal": 1200,
+                "vatAmountTotal": 0,
+                "orderAmount": 1200,
+                "matchedCount": 1,
+                "matchFailedCount": 0,
+                "shoppingOrderDedupe": {
+                  "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                  "canonicalSignature": "84ff240830afe1f9d8afa32e7becb5883fb30a0e0e8e78cf035b01e257338b0a",
+                  "canonicalBasis": {
+                    "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                    "companyId": "ONEAPP",
+                    "customer": {
+                      "kind": "CUSTOMER_ID",
+                      "value": "CUS:해소정상"
+                    },
+                    "deliveryDate": "2026-09-04",
+                    "warehouse": {
+                      "kind": "WAREHOUSE_ID",
+                      "value": "WH-01"
+                    },
+                    "items": [
+                      {
+                        "identity": {
+                          "kind": "PRODUCT_ID",
+                          "value": "PRODUCT:OWNER-OK"
+                        },
+                        "specification": "BOX",
+                        "unit": "BOX",
+                        "quantity": 1,
+                        "unitPrice": 1200,
+                        "amount": 1200
+                      }
+                    ]
+                  },
+                  "occurrenceNo": 1,
+                  "existingCountAtCommit": 0
+                },
+                "shoppingSourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "해소정상",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "OWNER-OK",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "OWNER-OK",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "OWNER-OK",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "해소정상",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "OWNER-OK",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "OWNER-OK",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "OWNER-OK",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "createdAt": "2026-09-20T19:33:51.904Z",
+                "updatedAt": "2026-09-20T19:33:51.904Z"
+              },
+              "items": [
+                {
+                  "orderItemId": "OI-da73d62d-6dbb-4d6f-9b34-6661a56e3350",
+                  "orderId": "ORD-034e67cd-2d6e-40dc-af07-a75b2fc13bc6",
+                  "lineNo": 1,
+                  "productId": "PRODUCT:OWNER-OK",
+                  "itemCode": "OWNER-OK",
+                  "sourceProductCode": "OWNER-OK",
+                  "itemName": "브라우저상품",
+                  "specification": "BOX",
+                  "rawText": "브라우저상품",
+                  "rawQuantity": 1,
+                  "rawUnit": "BOX",
+                  "finalQuantity": 1,
+                  "finalUnit": "BOX",
+                  "boxQuantity": null,
+                  "price": 1200,
+                  "priceType": "SHOPPING_SOURCE",
+                  "supplyAmount": 1200,
+                  "vatAmount": null,
+                  "memo": "",
+                  "description": "",
+                  "noticePrice": null,
+                  "matchStatus": "MATCHED",
+                  "matchSource": "SHOPPING_SOURCE_PRODUCT_MATCH",
+                  "sourceLineKey": "OWNER-RESOLVED-NORMAL:1",
+                  "shoppingSourceEvidence": {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "해소정상",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "OWNER-OK",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "OWNER-OK",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "OWNER-OK",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "해소정상",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "OWNER-OK",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "OWNER-OK",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "OWNER-OK",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  },
+                  "updatedAt": "2026-09-20T19:33:51.904Z",
+                  "createdAt": "2026-09-20T19:33:51.904Z"
+                }
+              ],
+              "event": {
+                "eventId": "OE-f464056d-70bd-443a-902a-34633d682ba2",
+                "orderId": "ORD-034e67cd-2d6e-40dc-af07-a75b2fc13bc6",
+                "revision": 1,
+                "eventType": "ORDER_CREATED",
+                "actor": "BROWSER_TEST",
+                "detail": {
+                  "sourceType": "SHOPPING_MALL_ORIGINAL",
+                  "inputChannel": "SHOPPING_MALL",
+                  "orderNo": "20260904-001",
+                  "itemCount": 1,
+                  "assignee": {
+                    "assigneeId": "",
+                    "assigneeName": ""
+                  },
+                  "canonicalSignature": "84ff240830afe1f9d8afa32e7becb5883fb30a0e0e8e78cf035b01e257338b0a",
+                  "occurrenceNo": 1,
+                  "existingCountAtCommit": 0,
+                  "sourceEvidence": {
+                    "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                    "fileName": "browser-source.xls",
+                    "sheetName": "Worksheet",
+                    "sourceRowNumbers": [
+                      2
+                    ]
+                  }
+                },
+                "createdAt": "2026-09-20T19:33:51.904Z"
+              },
+              "writes": 5
+            }
+          ],
+          "summary": {
+            "candidateCount": 5,
+            "createdCount": 1,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 4,
+            "failedCount": 0
+          }
+        },
+        "beforeCounts": {
+          "orders": 0,
+          "orderItems": 0,
+          "orderEvents": 0,
+          "syncQueue": 0,
+          "meta": 0
+        },
+        "afterCounts": {
+          "orders": 1,
+          "orderItems": 1,
+          "orderEvents": 1,
+          "syncQueue": 2,
+          "meta": 1
+        },
+        "storedCustomerName": "해소정상"
+      },
+      "legacyCodeOnly": {
+        "inspect": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "results": [
+            {
+              "candidate": {
+                "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+                "candidateId": "SHOPPING-CANDIDATE-0001",
+                "sourceOrder": 1,
+                "boundaryMode": "EXPLICIT_SOURCE_KEY",
+                "sourceBoundaryKey": "LEGACY-CODE",
+                "companyId": "ONEAPP",
+                "customerId": "CUS-bcc794eb-6661-4012-96ae-c71fed57daf4",
+                "customerCode": "",
+                "customerName": "레거시코드상품",
+                "assigneeId": "",
+                "assigneeName": "",
+                "deliveryDate": "2026-09-04",
+                "deliveryExpectedDate": "2026-09-04",
+                "warehouseId": "WH-01",
+                "warehouseCode": "01",
+                "warehouseName": "본사창고",
+                "orderDate": "2026-09-04",
+                "items": [
+                  {
+                    "productId": "PRODUCT:LEGACY-CODE",
+                    "sourceProductCode": "LEGACY-CODE",
+                    "itemCode": "LEGACY-CODE",
+                    "itemName": "브라우저상품",
+                    "specification": "BOX",
+                    "unit": "BOX",
+                    "quantity": 1,
+                    "unitPrice": 1200,
+                    "amount": 1200,
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1
+                  }
+                ],
+                "sourceStatuses": [
+                  "입금"
+                ],
+                "sourceRows": [
+                  {
+                    "sourceRowNumber": 2,
+                    "sourceRelativeRowNumber": 1,
+                    "sourceCells": [
+                      "2026-09-04",
+                      "레거시코드상품",
+                      "88",
+                      "입금",
+                      "원본 전달사항",
+                      "원본 상점메모",
+                      "LEGACY-CODE",
+                      "브라우저상품",
+                      "BOX",
+                      1,
+                      1200,
+                      1200,
+                      "LEGACY-CODE",
+                      "원본 주소",
+                      "010-1234-5678",
+                      "LEGACY-CODE",
+                      "a4579"
+                    ],
+                    "sourceCellEvidence": [],
+                    "sourceValues": {
+                      "배송일자": "2026-09-04",
+                      "거래처명": "레거시코드상품",
+                      "그룹": "88",
+                      "주문상태": "입금",
+                      "전하실말씀": "원본 전달사항",
+                      "상점메모": "원본 상점메모",
+                      "상품코드": "LEGACY-CODE",
+                      "상품명": "브라우저상품",
+                      "규격": "BOX",
+                      "수량": 1,
+                      "단가": 1200,
+                      "금액": 1200,
+                      "복사원코드": "LEGACY-CODE",
+                      "주소": "원본 주소",
+                      "전화2": "010-1234-5678",
+                      "원코드": "LEGACY-CODE",
+                      "유통그룹관리코드": "a4579"
+                    }
+                  }
+                ],
+                "sourceEvidence": {
+                  "schemaVersion": "ONEAPP_SHOPPING_ORDER_SOURCE_EVIDENCE_V1",
+                  "fileName": "browser-source.xls",
+                  "sheetName": "Worksheet",
+                  "uploadedAt": "2026-09-04T09:00:00+09:00",
+                  "headers": [
+                    "배송일자",
+                    "거래처명",
+                    "그룹",
+                    "주문상태",
+                    "전하실말씀",
+                    "상점메모",
+                    "상품코드",
+                    "상품명",
+                    "규격",
+                    "수량",
+                    "단가",
+                    "금액",
+                    "복사원코드",
+                    "주소",
+                    "전화2",
+                    "원코드",
+                    "유통그룹관리코드"
+                  ],
+                  "rows": [
+                    {
+                      "sourceRowNumber": 2,
+                      "sourceRelativeRowNumber": 1,
+                      "sourceCells": [
+                        "2026-09-04",
+                        "레거시코드상품",
+                        "88",
+                        "입금",
+                        "원본 전달사항",
+                        "원본 상점메모",
+                        "LEGACY-CODE",
+                        "브라우저상품",
+                        "BOX",
+                        1,
+                        1200,
+                        1200,
+                        "LEGACY-CODE",
+                        "원본 주소",
+                        "010-1234-5678",
+                        "LEGACY-CODE",
+                        "a4579"
+                      ],
+                      "sourceCellEvidence": [],
+                      "sourceValues": {
+                        "배송일자": "2026-09-04",
+                        "거래처명": "레거시코드상품",
+                        "그룹": "88",
+                        "주문상태": "입금",
+                        "전하실말씀": "원본 전달사항",
+                        "상점메모": "원본 상점메모",
+                        "상품코드": "LEGACY-CODE",
+                        "상품명": "브라우저상품",
+                        "규격": "BOX",
+                        "수량": 1,
+                        "단가": 1200,
+                        "금액": 1200,
+                        "복사원코드": "LEGACY-CODE",
+                        "주소": "원본 주소",
+                        "전화2": "010-1234-5678",
+                        "원코드": "LEGACY-CODE",
+                        "유통그룹관리코드": "a4579"
+                      }
+                    }
+                  ]
+                },
+                "issues": [
+                  {
+                    "code": "EXISTING_LEDGER_BUNDLE_INVALID",
+                    "message": "같은 주문일 가능성이 있는 기존 ORDER Q 주문·품목을 안전하게 판정할 수 없습니다.",
+                    "existingOrderIds": [
+                      "ORD-db50003a-51cd-4176-8b48-e54aa24778ad"
+                    ]
+                  }
+                ]
+              },
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "canonicalSignature": "e9d831e92532af2d03009b5425c8a87d60206cbf1e2d4beec64f801f0607bda4",
+              "occurrenceNo": 1,
+              "existingCount": 0,
+              "existingOrderIds": [],
+              "existingOrderId": "",
+              "existingOrderNo": "",
+              "issues": [
+                {
+                  "code": "EXISTING_LEDGER_BUNDLE_INVALID",
+                  "message": "같은 주문일 가능성이 있는 기존 ORDER Q 주문·품목을 안전하게 판정할 수 없습니다.",
+                  "existingOrderIds": [
+                    "ORD-db50003a-51cd-4176-8b48-e54aa24778ad"
+                  ]
+                }
+              ]
+            }
+          ],
+          "summary": {
+            "candidateCount": 1,
+            "duplicateCount": 0,
+            "newCount": 0,
+            "reviewRequiredCount": 1,
+            "invalidExistingCount": 1
+          },
+          "invalidExisting": [
+            {
+              "orderId": "ORD-db50003a-51cd-4176-8b48-e54aa24778ad",
+              "issues": [
+                {
+                  "code": "SHOPPING_PRODUCT_OWNER_ID_REQUIRED",
+                  "message": "상품 owner ID를 확인하세요.",
+                  "sourceRowNumber": 1
+                }
+              ]
+            }
+          ]
+        },
+        "commit": {
+          "schemaVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_DEDUPE_V1",
+          "repositoryVersion": "ONEAPP_ORDERQ_SHOPPING_ORDER_IMPORT_REPOSITORY_V1_1",
+          "results": [
+            {
+              "candidateId": "SHOPPING-CANDIDATE-0001",
+              "status": "REVIEW_REQUIRED",
+              "isDuplicate": null,
+              "issues": [
+                {
+                  "code": "EXISTING_LEDGER_BUNDLE_INVALID",
+                  "message": "같은 주문일 가능성이 있는 기존 ORDER Q 주문·품목을 안전하게 판정할 수 없습니다.",
+                  "existingOrderIds": [
+                    "ORD-db50003a-51cd-4176-8b48-e54aa24778ad"
+                  ]
+                }
+              ],
+              "writes": 0
+            }
+          ],
+          "summary": {
+            "candidateCount": 1,
+            "createdCount": 0,
+            "duplicateCount": 0,
+            "reviewRequiredCount": 1,
+            "failedCount": 0
+          }
+        },
+        "beforeOrderCount": 1,
+        "afterOrderCount": 1,
+        "unchanged": true
+      }
+    },
+    "readwriteTransactions": [
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "customers",
+        "customerAliases",
+        "warehouses",
+        "warehouseAliases",
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "customers",
+        "customerAliases",
+        "warehouses",
+        "warehouseAliases",
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "customers",
+        "customerAliases",
+        "warehouses",
+        "warehouseAliases",
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ],
+      [
+        "customers",
+        "customerAliases",
+        "warehouses",
+        "warehouseAliases",
+        "orders",
+        "orderItems",
+        "orderEvents",
+        "syncQueue",
+        "meta"
+      ]
+    ]
+  },
+  "isolation": {
+    "externalMutatingRequests": 0,
+    "localMutatingRequests": 0,
+    "browserExceptions": 0
+  }
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -14,6 +15,7 @@ import {
 } from '../orderq/shopping-order-dedupe-core.js';
 import {
   buildShoppingOrderUploadRequest,
+  commitShoppingOrderUpload,
   createShoppingOrderUpload,
   inspectShoppingOrderUpload,
   isExactShoppingOrderMatrix,
@@ -24,6 +26,26 @@ import {
 import { readWorksheetSource } from '../smartinput/xlsx-source-reader.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const isolatedBoundary = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  import assert from 'node:assert/strict';
+  globalThis.window = {};
+  Object.defineProperty(globalThis, 'indexedDB', { get() { throw new Error('TEST_OWNER_STORAGE_NOT_AVAILABLE'); } });
+  const local = await import(${JSON.stringify(new URL('../smartinput/shopping-order-upload.js', import.meta.url).href)});
+  const { SHOPPING_ORDER_HEADERS } = await import(${JSON.stringify(new URL('../orderq/shopping-order-source-adapter.js?v=0.1.0', import.meta.url).href)});
+  const upload = local.createShoppingOrderUpload({ matrix: [SHOPPING_ORDER_HEADERS, ['2026-09-04','고객','','입금','','','P1','상품','EA',0,0,0,'P1','','','P1','']] });
+  const before = JSON.stringify(upload);
+  const prepared = local.buildShoppingOrderUploadRequest(upload, { companyId: 'ONEAPP' });
+  assert.equal(prepared.built.candidates.length, 1);
+  assert.equal(window.ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER, undefined, 'ordinary local preparation must not import the command/repository');
+  const invalid = { ...upload, headers: [] };
+  const invalidInspection = await local.inspectShoppingOrderUpload(invalid, { companyId: 'ONEAPP' });
+  assert.ok(invalidInspection.sourceIssues.length);
+  assert.equal(window.ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER, undefined, 'invalid source must fail before loading the owner');
+  await assert.rejects(local.inspectShoppingOrderUpload(upload, { companyId: 'ONEAPP' }));
+  assert.ok(window.ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER, 'explicit inspection prepares the owner command connection');
+  assert.equal(JSON.stringify(upload), before, 'owner-storage failure must preserve the entire source');
+`], { cwd: root, encoding: 'utf8', windowsHide: true });
+assert.equal(isolatedBoundary.status, 0, isolatedBoundary.stderr || isolatedBoundary.stdout);
 const require = createRequire(import.meta.url);
 const XLSX = require(path.join(root, 'customer-master', 'vendor', 'xlsx.full.min.js'));
 const source = relative => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -175,6 +197,17 @@ const synthetic = createShoppingOrderUpload({
   fileName: 'synthetic.xls', sheetName: 'Worksheet', fileFingerprint: 'fixture'
 }, coreAdapter);
 const prepared = resolvedUpload(synthetic, coreAdapter, { assigneeId: 'MGR-001', assigneeName: '김담당' });
+const localPrepared = buildShoppingOrderUploadRequest(synthetic, {
+  companyId: 'ONEAPP',
+  warehouse: { warehouseId: 'WH-01', warehouseCode: '01', warehouseName: '본사창고' },
+  assignee: { assigneeId: 'MGR-001', assigneeName: '김담당' }
+});
+assert.deepEqual(localPrepared, prepared,
+  'local source preparation must preserve the owner contract candidate IDs, signatures, source evidence and ordering');
+assert.equal(isExactShoppingOrderMatrix([SHOPPING_ORDER_HEADERS, row().sourceCells]), true);
+assert.deepEqual(createShoppingOrderUpload({ matrix: [SHOPPING_ORDER_HEADERS, row().sourceCells] }),
+  createShoppingOrderUpload({ matrix: [SHOPPING_ORDER_HEADERS, row().sourceCells] }, coreAdapter),
+  'default local source parsing must match the existing owner adapter source contract');
 const base = prepared.built.candidates[0];
 assert.equal(base.issues.length, 0);
 assert.deepEqual({ assigneeId: base.assigneeId, assigneeName: base.assigneeName }, { assigneeId: 'MGR-001', assigneeName: '김담당' });
@@ -248,12 +281,37 @@ const inspected = await inspectShoppingOrderUpload(synthetic, {
 assert.equal(inspected.results[0].status, 'DUPLICATE');
 assert.equal(inspected.results[0].existingOrderNo, '20260904-777');
 
+const uploadBeforeFailure = clone(synthetic);
+await assert.rejects(commitShoppingOrderUpload(synthetic, { companyId: 'ONEAPP' }, {
+  ...coreAdapter, commit: async () => { throw new Error('OWNER_TEMPORARILY_UNAVAILABLE'); }
+}), /OWNER_TEMPORARILY_UNAVAILABLE/);
+assert.deepEqual(synthetic, uploadBeforeFailure, 'owner failure must preserve upload source and selections for retry');
+let explicitCommitRequest;
+const committed = await commitShoppingOrderUpload(synthetic, { companyId: 'ONEAPP' }, {
+  ...coreAdapter, commit: async request => { explicitCommitRequest = request; return { status: 'COMMITTED_FIXTURE' }; }
+});
+assert.equal(committed.status, 'COMMITTED_FIXTURE');
+assert.deepEqual(explicitCommitRequest, buildShoppingOrderUploadRequest(synthetic, { companyId: 'ONEAPP' }).request,
+  'explicit commit must pass the unchanged owner command payload');
+
 const smartInputSource = source('smartinput/smartinput.js');
 const integrationSource = source('smartinput/shopping-order-upload.js');
 assert.match(smartInputSource, /from '\.\/shopping-order-upload\.js\?v=/);
 assert.doesNotMatch(smartInputSource, /shopping-order-(?:dedupe-core|import-repository|command-adapter)/,
   'SmartInput UI must consume only its command-boundary integration module');
-assert.match(integrationSource, /from '\.\.\/orderq\/shopping-order-command-adapter\.js\?v=/);
+assert.match(integrationSource, /specifier: '\.\.\/orderq\/shopping-order-command-adapter\.js\?v=/);
+assert.doesNotMatch(integrationSource, /from '\.\.\/orderq\/shopping-order-command-adapter\.js/,
+  'local input preparation must not load the owner command/repository graph');
+assert.match(integrationSource, /from '\.\.\/orderq\/shopping-order-source-adapter\.js\?v=/,
+  'local preparation must use the public owner source adapter');
+assert.doesNotMatch(integrationSource, /shopping-order-(?:dedupe-core|import-repository)/,
+  'the consumer must not import owner core or repository directly');
+assert.doesNotMatch(source('orderq/shopping-order-source-adapter.js'), /shopping-order-(?:command-adapter|import-repository)|openOrderQDb|indexedDB|fetch\s*\(/,
+  'the public source adapter must remain pure without the command or storage graph');
+const publicSourceAdapter = await import('../orderq/shopping-order-source-adapter.js?v=0.1.0');
+assert.equal(core.createShoppingOrderCandidates, publicSourceAdapter.createShoppingOrderCandidates,
+  'command adapter preserves its public export by sharing the exact source function');
+assert.equal(core.isExactShoppingOrderSource, publicSourceAdapter.isExactShoppingOrderSource);
 assert.doesNotMatch(integrationSource, /openOrderQDb|indexedDB|objectStore\s*\(|shopping-order-import-repository/);
 assert.match(smartInputSource, /if \(shoppingOrderImport\(\)\) \{[\s\S]*?invalidateOptionalOperations\(\);[\s\S]*?return completeShoppingOrderImport\(\);[\s\S]*?\}/,
   'shopping-order commit must invalidate older optional results before crossing the write boundary');

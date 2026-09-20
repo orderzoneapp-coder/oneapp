@@ -1,0 +1,375 @@
+{
+  "source": "initial-functions-diagnostic-performance.json",
+  "diagnosticOnly": true,
+  "method": "Three cached navigations with Fetch interception. Serve-time wrappers measure only synchronous execution of top-level function declarations until the first renderMode return, with inclusive and child-subtracted self time. Promise wait time, imported functions, and module-level expressions are not independently attributed; wrapper overhead is included. No production files altered. This diagnoses initialization and does not replace the 20-sample comparison.",
+  "runs": [
+    {
+      "run": 1,
+      "localMs": 1983.5,
+      "wrapped": 483,
+      "firstRenderEnd": 1981.7,
+      "topInclusive": [
+        {
+          "name": "renderMode",
+          "count": 1,
+          "inclusiveMs": 1272.8,
+          "selfMs": 0.6,
+          "maxMs": 1272.8
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 1204.2,
+          "selfMs": 15.1,
+          "maxMs": 1204.2
+        },
+        {
+          "name": "rowFieldDisplayValue",
+          "count": 168,
+          "inclusiveMs": 1120.2,
+          "selfMs": 0.3,
+          "maxMs": 8.9
+        },
+        {
+          "name": "mappingTargetByProjection",
+          "count": 168,
+          "inclusiveMs": 1119.9,
+          "selfMs": 0.7,
+          "maxMs": 8.9
+        },
+        {
+          "name": "inputMappingDefinitions",
+          "count": 168,
+          "inclusiveMs": 1119.2,
+          "selfMs": 0.3,
+          "maxMs": 8.9
+        },
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 1118.9,
+          "selfMs": 732.8,
+          "maxMs": 8.9
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 316.3,
+          "selfMs": 316.3,
+          "maxMs": 2.6
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 78.8,
+          "selfMs": 78.8,
+          "maxMs": 0.5
+        }
+      ],
+      "topSelf": [
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 1118.9,
+          "selfMs": 732.8,
+          "maxMs": 8.9
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 316.3,
+          "selfMs": 316.3,
+          "maxMs": 2.6
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 78.8,
+          "selfMs": 78.8,
+          "maxMs": 0.5
+        },
+        {
+          "name": "applyVoucherColumnOrder",
+          "count": 2,
+          "inclusiveMs": 47,
+          "selfMs": 43.8,
+          "maxMs": 23.9
+        },
+        {
+          "name": "renderSourceAnalysis",
+          "count": 2,
+          "inclusiveMs": 41.3,
+          "selfMs": 41.3,
+          "maxMs": 30.2
+        },
+        {
+          "name": "applyRelatedPanelState",
+          "count": 1,
+          "inclusiveMs": 21,
+          "selfMs": 21,
+          "maxMs": 21
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 1204.2,
+          "selfMs": 15.1,
+          "maxMs": 1204.2
+        },
+        {
+          "name": "loadDraft",
+          "count": 1,
+          "inclusiveMs": 9,
+          "selfMs": 9,
+          "maxMs": 9
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "localMs": 1042.3999999761581,
+      "wrapped": 483,
+      "firstRenderEnd": 1041,
+      "topInclusive": [
+        {
+          "name": "renderMode",
+          "count": 1,
+          "inclusiveMs": 969.3,
+          "selfMs": 0.4,
+          "maxMs": 969.3
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 914.3,
+          "selfMs": 22.9,
+          "maxMs": 914.3
+        },
+        {
+          "name": "rowFieldDisplayValue",
+          "count": 168,
+          "inclusiveMs": 837,
+          "selfMs": 0.5,
+          "maxMs": 8.5
+        },
+        {
+          "name": "mappingTargetByProjection",
+          "count": 168,
+          "inclusiveMs": 836.5,
+          "selfMs": 0.1,
+          "maxMs": 8.5
+        },
+        {
+          "name": "inputMappingDefinitions",
+          "count": 168,
+          "inclusiveMs": 836.4,
+          "selfMs": 0.3,
+          "maxMs": 8.5
+        },
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 836.1,
+          "selfMs": 555.8,
+          "maxMs": 8.5
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 228.5,
+          "selfMs": 228.5,
+          "maxMs": 2.5
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 58.9,
+          "selfMs": 58.9,
+          "maxMs": 0.3
+        }
+      ],
+      "topSelf": [
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 836.1,
+          "selfMs": 555.8,
+          "maxMs": 8.5
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 228.5,
+          "selfMs": 228.5,
+          "maxMs": 2.5
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 58.9,
+          "selfMs": 58.9,
+          "maxMs": 0.3
+        },
+        {
+          "name": "applyVoucherColumnOrder",
+          "count": 2,
+          "inclusiveMs": 38.9,
+          "selfMs": 36.6,
+          "maxMs": 21.1
+        },
+        {
+          "name": "renderSourceAnalysis",
+          "count": 2,
+          "inclusiveMs": 32.2,
+          "selfMs": 32.2,
+          "maxMs": 23.2
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 914.3,
+          "selfMs": 22.9,
+          "maxMs": 914.3
+        },
+        {
+          "name": "applyRelatedPanelState",
+          "count": 1,
+          "inclusiveMs": 16,
+          "selfMs": 15.9,
+          "maxMs": 16
+        },
+        {
+          "name": "loadDraft",
+          "count": 1,
+          "inclusiveMs": 4.1,
+          "selfMs": 4.1,
+          "maxMs": 4.1
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "localMs": 2421.8000000715256,
+      "wrapped": 483,
+      "firstRenderEnd": 2419.8,
+      "topInclusive": [
+        {
+          "name": "renderMode",
+          "count": 1,
+          "inclusiveMs": 1208.6,
+          "selfMs": 0.4,
+          "maxMs": 1208.6
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 1134.2,
+          "selfMs": 25,
+          "maxMs": 1134.2
+        },
+        {
+          "name": "rowFieldDisplayValue",
+          "count": 168,
+          "inclusiveMs": 1041.8,
+          "selfMs": 0.6,
+          "maxMs": 10.9
+        },
+        {
+          "name": "mappingTargetByProjection",
+          "count": 168,
+          "inclusiveMs": 1041.2,
+          "selfMs": 0.2,
+          "maxMs": 10.9
+        },
+        {
+          "name": "inputMappingDefinitions",
+          "count": 168,
+          "inclusiveMs": 1041,
+          "selfMs": 0.1,
+          "maxMs": 10.9
+        },
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 1040.9,
+          "selfMs": 684,
+          "maxMs": 10.9
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 291.5,
+          "selfMs": 291.5,
+          "maxMs": 3.7
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 77,
+          "selfMs": 77,
+          "maxMs": 0.4
+        }
+      ],
+      "topSelf": [
+        {
+          "name": "inputMappingTargets",
+          "count": 168,
+          "inclusiveMs": 1040.9,
+          "selfMs": 684,
+          "maxMs": 10.9
+        },
+        {
+          "name": "layoutDefinitions",
+          "count": 342,
+          "inclusiveMs": 291.5,
+          "selfMs": 291.5,
+          "maxMs": 3.7
+        },
+        {
+          "name": "normalizedMappingSearch",
+          "count": 75264,
+          "inclusiveMs": 77,
+          "selfMs": 77,
+          "maxMs": 0.4
+        },
+        {
+          "name": "applyVoucherColumnOrder",
+          "count": 2,
+          "inclusiveMs": 50.1,
+          "selfMs": 44.6,
+          "maxMs": 28
+        },
+        {
+          "name": "renderSourceAnalysis",
+          "count": 2,
+          "inclusiveMs": 40.9,
+          "selfMs": 40.9,
+          "maxMs": 29.8
+        },
+        {
+          "name": "renderRows",
+          "count": 1,
+          "inclusiveMs": 1134.2,
+          "selfMs": 25,
+          "maxMs": 1134.2
+        },
+        {
+          "name": "applyRelatedPanelState",
+          "count": 1,
+          "inclusiveMs": 23.8,
+          "selfMs": 23.8,
+          "maxMs": 23.8
+        },
+        {
+          "name": "loadDraft",
+          "count": 1,
+          "inclusiveMs": 4.5,
+          "selfMs": 4.5,
+          "maxMs": 4.5
+        }
+      ]
+    }
+  ],
+  "externalRequestAttempts": 0,
+  "exceptions": []
+}

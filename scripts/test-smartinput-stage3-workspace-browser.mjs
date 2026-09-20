@@ -153,7 +153,7 @@ try {
       record.draft=pure.projectIndependentEstimateDraft(record);return record;
     };
     await store.saveEstimate(make('EST-A',10)); await store.saveEstimate(make('EST-B',20));
-    const fields=await import('/smartinput/field-definition-contract.js');
+    const fields=await import('/smartinput/field-registry.js?v=0.3.0');
     const mapper=await import('/smartinput/input-template-mapper.js');
     const headers=['거래처코드','품목코드','품목명','단위','수량','입고B'];
     const projections=['rowCustomerCode','itemCode','itemName','unit','quantity','purchasePriceB'];

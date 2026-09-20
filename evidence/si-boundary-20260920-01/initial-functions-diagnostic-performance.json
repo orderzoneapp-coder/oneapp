@@ -1,0 +1,4026 @@
+{
+  "schema": "SMARTINPUT_BOUNDARY_BENCHMARK_V1",
+  "label": "initial-functions-diagnostic",
+  "recordedAt": "2026-09-20T18:39:52.555Z",
+  "head": "21eaf44d50883c68f6c40a6eca9d368df1eff09f",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "cpu": "Intel(R) Pentium(R) Gold G6400 CPU @ 4.00GHz",
+    "logicalCpus": 4,
+    "totalMemoryBytes": 16807936000
+  },
+  "fixture": "Synthetic fixture derived from test-smartinput-stage5-compute.mjs; not user or production data",
+  "statistics": "Nearest-rank p95; 3 unrecorded warmups for pure matrices; warm navigation follows seeded local save",
+  "diagnosticOnly": true,
+  "pureCompute": [],
+  "browser": {
+    "initial": {
+      "marks": {
+        "storage": {
+          "oneapp-smartinput/autosave/get": 5,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 6,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+          "oneapp-smartinput/estimates/openCursor": 1
+        },
+        "getItem": 7,
+        "readyMs": 908.1999999284744,
+        "localDataMs": null,
+        "longTasks": [
+          {
+            "startTime": 71.39999997615814,
+            "duration": 174
+          },
+          {
+            "startTime": 683.0999999046326,
+            "duration": 173
+          },
+          {
+            "startTime": 908.0999999046326,
+            "duration": 74
+          },
+          {
+            "startTime": 989.2999999523163,
+            "duration": 93
+          },
+          {
+            "startTime": 1118.0999999046326,
+            "duration": 93
+          },
+          {
+            "startTime": 1230.0999999046326,
+            "duration": 92
+          },
+          {
+            "startTime": 1389.5,
+            "duration": 65
+          },
+          {
+            "startTime": 1456.1999999284744,
+            "duration": 82
+          }
+        ]
+      },
+      "resources": [
+        {
+          "path": "/nexus/common/nexus-ui-theme-init.js",
+          "initiatorType": "script",
+          "transferSize": 3373,
+          "encodedBodySize": 3073,
+          "decodedBodySize": 3073,
+          "durationMs": 29
+        },
+        {
+          "path": "/nexus/common/nexus-ui.css",
+          "initiatorType": "link",
+          "transferSize": 12897,
+          "encodedBodySize": 12597,
+          "decodedBodySize": 12597,
+          "durationMs": 30.199999928474426
+        },
+        {
+          "path": "/nexus/common/nexus-ui-app-themes.css",
+          "initiatorType": "link",
+          "transferSize": 52536,
+          "encodedBodySize": 52236,
+          "decodedBodySize": 52236,
+          "durationMs": 34.39999997615814
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.css",
+          "initiatorType": "link",
+          "transferSize": 8815,
+          "encodedBodySize": 8515,
+          "decodedBodySize": 8515,
+          "durationMs": 37.700000047683716
+        },
+        {
+          "path": "/smartinput/smartinput.css",
+          "initiatorType": "link",
+          "transferSize": 148533,
+          "encodedBodySize": 148233,
+          "decodedBodySize": 148233,
+          "durationMs": 46.5
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+          "initiatorType": "img",
+          "transferSize": 247719,
+          "encodedBodySize": 247419,
+          "decodedBodySize": 247419,
+          "durationMs": 43.5
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+          "initiatorType": "img",
+          "transferSize": 271992,
+          "encodedBodySize": 271692,
+          "decodedBodySize": 271692,
+          "durationMs": 62.800000071525574
+        },
+        {
+          "path": "/smartinput/smartinput-contract.js",
+          "initiatorType": "script",
+          "transferSize": 71844,
+          "encodedBodySize": 71544,
+          "decodedBodySize": 71544,
+          "durationMs": 105
+        },
+        {
+          "path": "/smartinput/smartinput.js",
+          "initiatorType": "script",
+          "transferSize": 725784,
+          "encodedBodySize": 725484,
+          "decodedBodySize": 725484,
+          "durationMs": 71.5
+        },
+        {
+          "path": "/smartinput/source-preparation-ui-v2.js",
+          "initiatorType": "script",
+          "transferSize": 14350,
+          "encodedBodySize": 14050,
+          "decodedBodySize": 14050,
+          "durationMs": 103.5
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.js",
+          "initiatorType": "script",
+          "transferSize": 29071,
+          "encodedBodySize": 28771,
+          "decodedBodySize": 28771,
+          "durationMs": 104.39999997615814
+        },
+        {
+          "path": "/nexus/common/nexus-ui.js",
+          "initiatorType": "script",
+          "transferSize": 23636,
+          "encodedBodySize": 23336,
+          "decodedBodySize": 23336,
+          "durationMs": 103.59999990463257
+        },
+        {
+          "path": "/smartinput/virtual-table-body.js",
+          "initiatorType": "script",
+          "transferSize": 8288,
+          "encodedBodySize": 7988,
+          "decodedBodySize": 7988,
+          "durationMs": 66.5
+        },
+        {
+          "path": "/smartinput/estimate-workspace.js",
+          "initiatorType": "script",
+          "transferSize": 20008,
+          "encodedBodySize": 19708,
+          "decodedBodySize": 19708,
+          "durationMs": 66.70000004768372
+        },
+        {
+          "path": "/smartinput/smartinput-data-store.js",
+          "initiatorType": "script",
+          "transferSize": 88106,
+          "encodedBodySize": 87806,
+          "decodedBodySize": 87806,
+          "durationMs": 67.90000009536743
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 67.40000009536743
+        },
+        {
+          "path": "/reference-data/product-master-command-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 65444,
+          "encodedBodySize": 65144,
+          "decodedBodySize": 65144,
+          "durationMs": 67.60000002384186
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 79
+        },
+        {
+          "path": "/smartinput/legacy-integration-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 6771,
+          "encodedBodySize": 6471,
+          "decodedBodySize": 6471,
+          "durationMs": 80.89999997615814
+        },
+        {
+          "path": "/smartinput/input.js",
+          "initiatorType": "script",
+          "transferSize": 27298,
+          "encodedBodySize": 26998,
+          "decodedBodySize": 26998,
+          "durationMs": 86.39999997615814
+        },
+        {
+          "path": "/smartinput/optional-operation-loader.js",
+          "initiatorType": "script",
+          "transferSize": 21015,
+          "encodedBodySize": 20715,
+          "decodedBodySize": 20715,
+          "durationMs": 180.19999992847443
+        },
+        {
+          "path": "/smartinput/grid-clipboard.js",
+          "initiatorType": "script",
+          "transferSize": 7241,
+          "encodedBodySize": 6941,
+          "decodedBodySize": 6941,
+          "durationMs": 180.5
+        },
+        {
+          "path": "/smartinput/input-template-mapper.js",
+          "initiatorType": "script",
+          "transferSize": 33797,
+          "encodedBodySize": 33497,
+          "decodedBodySize": 33497,
+          "durationMs": 185.5
+        },
+        {
+          "path": "/smartinput/purchase-stage3.js",
+          "initiatorType": "script",
+          "transferSize": 9345,
+          "encodedBodySize": 9045,
+          "decodedBodySize": 9045,
+          "durationMs": 186
+        },
+        {
+          "path": "/smartinput/order-document-number.js",
+          "initiatorType": "script",
+          "transferSize": 7070,
+          "encodedBodySize": 6770,
+          "decodedBodySize": 6770,
+          "durationMs": 185.60000002384186
+        },
+        {
+          "path": "/smartinput/sale-stage4.js",
+          "initiatorType": "script",
+          "transferSize": 9122,
+          "encodedBodySize": 8822,
+          "decodedBodySize": 8822,
+          "durationMs": 186.10000002384186
+        },
+        {
+          "path": "/smartinput/multivoucher-stage1.js",
+          "initiatorType": "script",
+          "transferSize": 29333,
+          "encodedBodySize": 29033,
+          "decodedBodySize": 29033,
+          "durationMs": 197.70000004768372
+        },
+        {
+          "path": "/smartinput/input-list-search.js",
+          "initiatorType": "script",
+          "transferSize": 5826,
+          "encodedBodySize": 5526,
+          "decodedBodySize": 5526,
+          "durationMs": 197.79999995231628
+        },
+        {
+          "path": "/smartinput/estimate-price-snapshot.js",
+          "initiatorType": "script",
+          "transferSize": 1381,
+          "encodedBodySize": 1081,
+          "decodedBodySize": 1081,
+          "durationMs": 226.09999990463257
+        },
+        {
+          "path": "/smartinput/estimate-f8-source-plan.js",
+          "initiatorType": "script",
+          "transferSize": 16702,
+          "encodedBodySize": 16402,
+          "decodedBodySize": 16402,
+          "durationMs": 227.39999997615814
+        },
+        {
+          "path": "/smartinput/estimate-f8-recovery.js",
+          "initiatorType": "script",
+          "transferSize": 16290,
+          "encodedBodySize": 15990,
+          "decodedBodySize": 15990,
+          "durationMs": 227.5
+        },
+        {
+          "path": "/smartinput/estimate-workbook-selector.js",
+          "initiatorType": "script",
+          "transferSize": 3279,
+          "encodedBodySize": 2979,
+          "decodedBodySize": 2979,
+          "durationMs": 226.40000009536743
+        },
+        {
+          "path": "/reference-data/merchops-settings-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 3342,
+          "encodedBodySize": 3042,
+          "decodedBodySize": 3042,
+          "durationMs": 236.80000007152557
+        },
+        {
+          "path": "/smartinput/reference-data-controller.js",
+          "initiatorType": "script",
+          "transferSize": 29917,
+          "encodedBodySize": 29617,
+          "decodedBodySize": 29617,
+          "durationMs": 239.70000004768372
+        },
+        {
+          "path": "/smartinput/field-registry.js",
+          "initiatorType": "script",
+          "transferSize": 23804,
+          "encodedBodySize": 23504,
+          "decodedBodySize": 23504,
+          "durationMs": 246.70000004768372
+        },
+        {
+          "path": "/smartinput/reference-refresh-controller.js",
+          "initiatorType": "script",
+          "transferSize": 6467,
+          "encodedBodySize": 6167,
+          "decodedBodySize": 6167,
+          "durationMs": 247
+        },
+        {
+          "path": "/smartinput/related-voucher-import.js",
+          "initiatorType": "script",
+          "transferSize": 7989,
+          "encodedBodySize": 7689,
+          "decodedBodySize": 7689,
+          "durationMs": 274.7999999523163
+        },
+        {
+          "path": "/smartinput/table-view-state.js",
+          "initiatorType": "script",
+          "transferSize": 2177,
+          "encodedBodySize": 1877,
+          "decodedBodySize": 1877,
+          "durationMs": 271.5
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 275
+        },
+        {
+          "path": "/smartinput/shopping-order-upload.js",
+          "initiatorType": "script",
+          "transferSize": 9028,
+          "encodedBodySize": 8728,
+          "decodedBodySize": 8728,
+          "durationMs": 275.10000002384186
+        },
+        {
+          "path": "/smartinput/table-viewport.js",
+          "initiatorType": "script",
+          "transferSize": 9319,
+          "encodedBodySize": 9019,
+          "decodedBodySize": 9019,
+          "durationMs": 189
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 187.69999992847443
+        },
+        {
+          "path": "/smartinput/estimate-master-apply.js",
+          "initiatorType": "script",
+          "transferSize": 12383,
+          "encodedBodySize": 12083,
+          "decodedBodySize": 12083,
+          "durationMs": 198.29999995231628
+        },
+        {
+          "path": "/reference-data/change-request-contract.js",
+          "initiatorType": "script",
+          "transferSize": 8389,
+          "encodedBodySize": 8089,
+          "decodedBodySize": 8089,
+          "durationMs": 202.40000009536743
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 203.20000004768372
+        },
+        {
+          "path": "/smartinput/structured-sheet-parser.js",
+          "initiatorType": "script",
+          "transferSize": 7616,
+          "encodedBodySize": 7316,
+          "decodedBodySize": 7316,
+          "durationMs": 109.5
+        },
+        {
+          "path": "/smartinput/canonical-hash-compat.js",
+          "initiatorType": "script",
+          "transferSize": 4027,
+          "encodedBodySize": 3727,
+          "decodedBodySize": 3727,
+          "durationMs": 88.89999997615814
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 68.79999995231628
+        },
+        {
+          "path": "/smartinput/reference-generation-repository.js",
+          "initiatorType": "script",
+          "transferSize": 5177,
+          "encodedBodySize": 4877,
+          "decodedBodySize": 4877,
+          "durationMs": 63.89999997615814
+        },
+        {
+          "path": "/orderq/shopping-order-dedupe-core.js",
+          "initiatorType": "script",
+          "transferSize": 28733,
+          "encodedBodySize": 28433,
+          "decodedBodySize": 28433,
+          "durationMs": 58.40000009536743
+        },
+        {
+          "path": "/orderq/official-voucher-core.js",
+          "initiatorType": "script",
+          "transferSize": 27508,
+          "encodedBodySize": 27208,
+          "decodedBodySize": 27208,
+          "durationMs": 34.200000047683716
+        },
+        {
+          "path": "/orderq/canonical-hash.js",
+          "initiatorType": "script",
+          "transferSize": 4334,
+          "encodedBodySize": 4034,
+          "decodedBodySize": 4034,
+          "durationMs": 19.5
+        },
+        {
+          "path": "/orderq/official-voucher-v2-contract.js",
+          "initiatorType": "script",
+          "transferSize": 34317,
+          "encodedBodySize": 34017,
+          "decodedBodySize": 34017,
+          "durationMs": 23
+        },
+        {
+          "path": "/orderq/stocktake-conflict-v2.js",
+          "initiatorType": "script",
+          "transferSize": 32059,
+          "encodedBodySize": 31759,
+          "decodedBodySize": 31759,
+          "durationMs": 25.5
+        },
+        {
+          "path": "/nexus/common/nexus-workbench.css",
+          "initiatorType": "link",
+          "transferSize": 2191,
+          "encodedBodySize": 1891,
+          "decodedBodySize": 1891,
+          "durationMs": 81
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+          "initiatorType": "img",
+          "transferSize": 3326,
+          "encodedBodySize": 3026,
+          "decodedBodySize": 3026,
+          "durationMs": 78.59999990463257
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+          "initiatorType": "img",
+          "transferSize": 3324,
+          "encodedBodySize": 3024,
+          "decodedBodySize": 3024,
+          "durationMs": 79.80000007152557
+        },
+        {
+          "path": "/nexus/assets/nexus-favicon.svg",
+          "initiatorType": "other",
+          "transferSize": 809,
+          "encodedBodySize": 509,
+          "decodedBodySize": 509,
+          "durationMs": 17.399999976158142
+        },
+        {
+          "path": "/smartinput/field-catalog-seed.v2.json",
+          "initiatorType": "fetch",
+          "transferSize": 2361258,
+          "encodedBodySize": 2360958,
+          "decodedBodySize": 2360958,
+          "durationMs": 27.5
+        }
+      ],
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+      "moduleResourceCount": 48,
+      "totalEncodedResourceBytes": 4782186
+    },
+    "firstTextAnalysis": {
+      "durationMs": 1169.1999999284744,
+      "storage": {},
+      "renderedRows": 20
+    },
+    "warmDirectEntry": {
+      "localDataDisplay": {
+        "samples": [
+          1983.5,
+          1042.4,
+          2421.8
+        ],
+        "count": 3,
+        "p50Ms": 1983.5,
+        "p95Ms": 2421.8,
+        "maxMs": 2421.8
+      },
+      "shellUsable": {
+        "samples": [
+          2104.9,
+          1147.7,
+          2539
+        ],
+        "count": 3,
+        "p50Ms": 2104.9,
+        "p95Ms": 2539,
+        "maxMs": 2539
+      },
+      "localDataLimitMs": 500,
+      "appUsableReferenceLimitMs": 1000,
+      "localDataPass": false,
+      "directEntryPass": false,
+      "storageReadsByRun": [
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        }
+      ],
+      "resourcesByRun": [
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        }
+      ],
+      "cacheControl": "public, max-age=3600 (unchanged since baseline)",
+      "note": "Direct entry of warmed static assets and saved 20-row local draft. Does not verify NEXUS host switching."
+    },
+    "diagnostic": {
+      "note": "Three cached navigations with Fetch interception. Serve-time wrappers measure only synchronous execution of top-level function declarations until the first renderMode return, with inclusive and child-subtracted self time. Promise wait time, imported functions, and module-level expressions are not independently attributed; wrapper overhead is included. No production files altered. This diagnoses initialization and does not replace the 20-sample comparison.",
+      "withFetch": [
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 6,
+            "readyMs": 2104.899999976158,
+            "localDataMs": 1983.5,
+            "longTasks": [
+              {
+                "startTime": 696.0999999046326,
+                "duration": 1287
+              },
+              {
+                "startTime": 2104.6999999284744,
+                "duration": 1033
+              },
+              {
+                "startTime": 3140.7999999523163,
+                "duration": 1019
+              }
+            ]
+          },
+          "functionProfile": {
+            "endedAtMs": 1981.6999999284744,
+            "totals": {
+              "resetResumedShoppingInspection": {
+                "name": "resetResumedShoppingInspection",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "loadDraft": {
+                "name": "loadDraft",
+                "count": 1,
+                "inclusiveMs": 9,
+                "selfMs": 9,
+                "maxMs": 9
+              },
+              "registerSmartInputWorkspaceAdapter": {
+                "name": "registerSmartInputWorkspaceAdapter",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "resumePendingSourceImageDeletes": {
+                "name": "resumePendingSourceImageDeletes",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "syncReferenceOverviewPopup": {
+                "name": "syncReferenceOverviewPopup",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "modeDraft": {
+                "name": "modeDraft",
+                "count": 57,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "shoppingOrderImport": {
+                "name": "shoppingOrderImport",
+                "count": 9,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.10000002384185791
+              },
+              "groupForCustomer": {
+                "name": "groupForCustomer",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "customerName": {
+                "name": "customerName",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "temporaryMeta": {
+                "name": "temporaryMeta",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyCustomerRelationship": {
+                "name": "applyCustomerRelationship",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateDeliveryPolicy": {
+                "name": "updateDeliveryPolicy",
+                "count": 1,
+                "inclusiveMs": 4.300000071525574,
+                "selfMs": 4.300000071525574,
+                "maxMs": 4.300000071525574
+              },
+              "hydrateHeader": {
+                "name": "hydrateHeader",
+                "count": 1,
+                "inclusiveMs": 4.600000023841858,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 4.600000023841858
+              },
+              "renderEstimateHeaderFields": {
+                "name": "renderEstimateHeaderFields",
+                "count": 1,
+                "inclusiveMs": 0.19999992847442627,
+                "selfMs": 0.19999992847442627,
+                "maxMs": 0.19999992847442627
+              },
+              "inputMappingSession": {
+                "name": "inputMappingSession",
+                "count": 18,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "sourceTableViewActive": {
+                "name": "sourceTableViewActive",
+                "count": 8,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderInputListSearch": {
+                "name": "renderInputListSearch",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "isParserArtifactLine": {
+                "name": "isParserArtifactLine",
+                "count": 20,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "removeParserArtifactRows": {
+                "name": "removeParserArtifactRows",
+                "count": 1,
+                "inclusiveMs": 0.5,
+                "selfMs": 0.40000009536743164,
+                "maxMs": 0.5
+              },
+              "modeUi": {
+                "name": "modeUi",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "currentSourceImage": {
+                "name": "currentSourceImage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderSourceSurface": {
+                "name": "renderSourceSurface",
+                "count": 1,
+                "inclusiveMs": 0.19999992847442627,
+                "selfMs": 0.19999992847442627,
+                "maxMs": 0.19999992847442627
+              },
+              "updateMethod": {
+                "name": "updateMethod",
+                "count": 1,
+                "inclusiveMs": 0.19999992847442627,
+                "selfMs": 0,
+                "maxMs": 0.19999992847442627
+              },
+              "applyMappingHeaderLocks": {
+                "name": "applyMappingHeaderLocks",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "currentTableView": {
+                "name": "currentTableView",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderTableViewSwitch": {
+                "name": "renderTableViewSwitch",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderInputMappingStatus": {
+                "name": "renderInputMappingStatus",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "inputListSourceRows": {
+                "name": "inputListSourceRows",
+                "count": 4,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "inputListSearchIndex": {
+                "name": "inputListSearchIndex",
+                "count": 2,
+                "inclusiveMs": 3.600000023841858,
+                "selfMs": 3.600000023841858,
+                "maxMs": 2
+              },
+              "visibleInputListRows": {
+                "name": "visibleInputListRows",
+                "count": 2,
+                "inclusiveMs": 3.700000047683716,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 2.100000023841858
+              },
+              "voucherColumnsForMode": {
+                "name": "voucherColumnsForMode",
+                "count": 195,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.10000002384185791
+              },
+              "optionalProductFields": {
+                "name": "optionalProductFields",
+                "count": 23,
+                "inclusiveMs": 1.5000001192092896,
+                "selfMs": 1.5000001192092896,
+                "maxMs": 0.20000004768371582
+              },
+              "customFieldsFor": {
+                "name": "customFieldsFor",
+                "count": 25,
+                "inclusiveMs": 0.6999999284744263,
+                "selfMs": 0.6999999284744263,
+                "maxMs": 0.10000002384185791
+              },
+              "esc": {
+                "name": "esc",
+                "count": 480,
+                "inclusiveMs": 1.100000023841858,
+                "selfMs": 1.100000023841858,
+                "maxMs": 0.10000002384185791
+              },
+              "headerFieldsForMode": {
+                "name": "headerFieldsForMode",
+                "count": 170,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0.3999999761581421,
+                "maxMs": 0.10000002384185791
+              },
+              "layoutDefinitions": {
+                "name": "layoutDefinitions",
+                "count": 342,
+                "inclusiveMs": 316.30000030994415,
+                "selfMs": 316.30000030994415,
+                "maxMs": 2.600000023841858
+              },
+              "availableRegistryFields": {
+                "name": "availableRegistryFields",
+                "count": 336,
+                "inclusiveMs": 0.5000001192092896,
+                "selfMs": 0.5000001192092896,
+                "maxMs": 0.10000002384185791
+              },
+              "normalizedMappingSearch": {
+                "name": "normalizedMappingSearch",
+                "count": 75264,
+                "inclusiveMs": 78.79999935626984,
+                "selfMs": 78.79999935626984,
+                "maxMs": 0.5
+              },
+              "inputMappingTargets": {
+                "name": "inputMappingTargets",
+                "count": 168,
+                "inclusiveMs": 1118.899999499321,
+                "selfMs": 732.7999997138977,
+                "maxMs": 8.899999976158142
+              },
+              "inputMappingDefinitions": {
+                "name": "inputMappingDefinitions",
+                "count": 168,
+                "inclusiveMs": 1119.1999995708466,
+                "selfMs": 0.30000007152557373,
+                "maxMs": 8.899999976158142
+              },
+              "mappingTargetByProjection": {
+                "name": "mappingTargetByProjection",
+                "count": 168,
+                "inclusiveMs": 1119.8999996185303,
+                "selfMs": 0.7000000476837158,
+                "maxMs": 8.899999976158142
+              },
+              "rowFieldDisplayValue": {
+                "name": "rowFieldDisplayValue",
+                "count": 168,
+                "inclusiveMs": 1120.1999996900558,
+                "selfMs": 0.30000007152557373,
+                "maxMs": 8.899999976158142
+              },
+              "rowStatusText": {
+                "name": "rowStatusText",
+                "count": 21,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderEstimateExclusions": {
+                "name": "renderEstimateExclusions",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "selectionScopeRows": {
+                "name": "selectionScopeRows",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "selectionScopeRowIds": {
+                "name": "selectionScopeRowIds",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.20000004768371582
+              },
+              "reconcileRowSelectionToScope": {
+                "name": "reconcileRowSelectionToScope",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0,
+                "maxMs": 0.20000004768371582
+              },
+              "syncRowSelectionControls": {
+                "name": "syncRowSelectionControls",
+                "count": 1,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0.19999992847442627,
+                "maxMs": 0.3999999761581421
+              },
+              "syncGridPasteUndoButton": {
+                "name": "syncGridPasteUndoButton",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "visibleActivityBatches": {
+                "name": "visibleActivityBatches",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "activityLabel": {
+                "name": "activityLabel",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderActivityTrail": {
+                "name": "renderActivityTrail",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "voucherActivityDate": {
+                "name": "voucherActivityDate",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "voucherActivityTitle": {
+                "name": "voucherActivityTitle",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderVoucherActivitySnapshot": {
+                "name": "renderVoucherActivitySnapshot",
+                "count": 2,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.20000004768371582
+              },
+              "renderVoucherContext": {
+                "name": "renderVoucherContext",
+                "count": 2,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0,
+                "maxMs": 0.20000004768371582
+              },
+              "renderInlineValidation": {
+                "name": "renderInlineValidation",
+                "count": 2,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.10000002384185791
+              },
+              "updateSummaries": {
+                "name": "updateSummaries",
+                "count": 1,
+                "inclusiveMs": 3.600000023841858,
+                "selfMs": 1.600000023841858,
+                "maxMs": 3.600000023841858
+              },
+              "ensureColumnResizeHandles": {
+                "name": "ensureColumnResizeHandles",
+                "count": 2,
+                "inclusiveMs": 0.6999999284744263,
+                "selfMs": 0.6999999284744263,
+                "maxMs": 0.3999999761581421
+              },
+              "renderCustomLayoutFields": {
+                "name": "renderCustomLayoutFields",
+                "count": 2,
+                "inclusiveMs": 5.899999976158142,
+                "selfMs": 1.7000000476837158,
+                "maxMs": 3.100000023841858
+              },
+              "applyVoucherColumnOrder": {
+                "name": "applyVoucherColumnOrder",
+                "count": 2,
+                "inclusiveMs": 47.00000011920929,
+                "selfMs": 43.800000071525574,
+                "maxMs": 23.90000009536743
+              },
+              "columnWidth": {
+                "name": "columnWidth",
+                "count": 70,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyColumnWidths": {
+                "name": "applyColumnWidths",
+                "count": 2,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.20000004768371582
+              },
+              "updateTableWidth": {
+                "name": "updateTableWidth",
+                "count": 2,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "applyFormLayout": {
+                "name": "applyFormLayout",
+                "count": 2,
+                "inclusiveMs": 58.799999952316284,
+                "selfMs": 1.8000000715255737,
+                "maxMs": 29.399999976158142
+              },
+              "renderSourceAnalysis": {
+                "name": "renderSourceAnalysis",
+                "count": 2,
+                "inclusiveMs": 41.300000071525574,
+                "selfMs": 41.300000071525574,
+                "maxMs": 30.200000047683716
+              },
+              "renderRows": {
+                "name": "renderRows",
+                "count": 1,
+                "inclusiveMs": 1204.2000000476837,
+                "selfMs": 15.100000143051147,
+                "maxMs": 1204.2000000476837
+              },
+              "renderShoppingOrderPanel": {
+                "name": "renderShoppingOrderPanel",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "syncEstimateLibraryActionState": {
+                "name": "syncEstimateLibraryActionState",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderEstimateWorkspace": {
+                "name": "renderEstimateWorkspace",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderCatalogControls": {
+                "name": "renderCatalogControls",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "estimateCreation": {
+                "name": "estimateCreation",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateAutosaveButton": {
+                "name": "updateAutosaveButton",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderDelivery": {
+                "name": "renderDelivery",
+                "count": 1,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.3999999761581421
+              },
+              "referenceDomainLabel": {
+                "name": "referenceDomainLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "refreshReferenceAggregate": {
+                "name": "refreshReferenceAggregate",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "referenceTimeText": {
+                "name": "referenceTimeText",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderReferenceDomain": {
+                "name": "renderReferenceDomain",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderReferenceControls": {
+                "name": "renderReferenceControls",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "resizeSource": {
+                "name": "resizeSource",
+                "count": 1,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "applyRelatedPanelWidth": {
+                "name": "applyRelatedPanelWidth",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "relatedPanelButtonLabel": {
+                "name": "relatedPanelButtonLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyRelatedPanelState": {
+                "name": "applyRelatedPanelState",
+                "count": 1,
+                "inclusiveMs": 21,
+                "selfMs": 21,
+                "maxMs": 21
+              },
+              "referencesReady": {
+                "name": "referencesReady",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "referenceStatusMessage": {
+                "name": "referenceStatusMessage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "setAppStatus": {
+                "name": "setAppStatus",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "scheduleAutoAnalysis": {
+                "name": "scheduleAutoAnalysis",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderMode": {
+                "name": "renderMode",
+                "count": 1,
+                "inclusiveMs": 1272.7999999523163,
+                "selfMs": 0.6000000238418579,
+                "maxMs": 1272.7999999523163
+              }
+            }
+          },
+          "wrappedFunctionCount": 483,
+          "timing": {
+            "name": "http://127.0.0.1:64562/smartinput/?siBenchmark=0",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3139.1999999284744,
+            "navigationId": 9060,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.6999999284744263,
+            "domainLookupStart": 0.6999999284744263,
+            "domainLookupEnd": 0.6999999284744263,
+            "connectStart": 0.6999999284744263,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.6999999284744263,
+            "requestStart": 16.09999990463257,
+            "responseStart": 17.299999952316284,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 17.299999952316284,
+            "responseEnd": 30.199999928474426,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 658.7999999523163,
+            "domContentLoadedEventStart": 2057.5999999046326,
+            "domContentLoadedEventEnd": 2057.6999999284744,
+            "domComplete": 3139.1999999284744,
+            "loadEventStart": 3139.1999999284744,
+            "loadEventEnd": 3139.1999999284744,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 697.0999999046326
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 1982
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 1983.2999999523163
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 5053.699999928474
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 5739.299999952316
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 616,
+              "responseEnd": 616,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 616.0999999046326,
+              "responseEnd": 616.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 616.0999999046326,
+              "responseEnd": 616.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 616.1999999284744,
+              "responseEnd": 616.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 616.2999999523163,
+              "responseEnd": 616.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 616.2999999523163,
+              "responseEnd": 616.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 616.3999999761581,
+              "responseEnd": 616.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 616.5,
+              "responseEnd": 616.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 616.5,
+              "responseEnd": 616.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 616.5999999046326,
+              "responseEnd": 616.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 616.6999999284744,
+              "responseEnd": 616.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 616.7999999523163,
+              "responseEnd": 616.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 659.2999999523163,
+              "responseEnd": 659.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 659.3999999761581,
+              "responseEnd": 659.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 659.5999999046326,
+              "responseEnd": 659.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 659.7999999523163,
+              "responseEnd": 659.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 660,
+              "responseEnd": 660,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 660.1999999284744,
+              "responseEnd": 660.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 660.3999999761581,
+              "responseEnd": 660.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 660.5999999046326,
+              "responseEnd": 660.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 660.6999999284744,
+              "responseEnd": 660.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 660.8999999761581,
+              "responseEnd": 660.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 661,
+              "responseEnd": 661,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 661.0999999046326,
+              "responseEnd": 661.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 661.1999999284744,
+              "responseEnd": 661.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 661.2999999523163,
+              "responseEnd": 661.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 661.2999999523163,
+              "responseEnd": 661.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 661.3999999761581,
+              "responseEnd": 661.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 661.5,
+              "responseEnd": 661.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 661.5999999046326,
+              "responseEnd": 661.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 661.6999999284744,
+              "responseEnd": 661.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 661.8999999761581,
+              "responseEnd": 661.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 662,
+              "responseEnd": 662,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 662.0999999046326,
+              "responseEnd": 662.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 662.2999999523163,
+              "responseEnd": 662.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 662.5,
+              "responseEnd": 662.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 662.5999999046326,
+              "responseEnd": 662.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 662.6999999284744,
+              "responseEnd": 662.6999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 662.7999999523163,
+              "responseEnd": 662.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 663,
+              "responseEnd": 663,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 665.0999999046326,
+              "responseEnd": 665.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 665.2999999523163,
+              "responseEnd": 665.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 665.3999999761581,
+              "responseEnd": 665.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 692.7999999523163,
+              "responseEnd": 692.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 692.8999999761581,
+              "responseEnd": 692.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 693.1999999284744,
+              "responseEnd": 693.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 693.2999999523163,
+              "responseEnd": 693.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 693.5999999046326,
+              "responseEnd": 693.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 693.8999999761581,
+              "responseEnd": 693.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 694.2999999523163,
+              "responseEnd": 694.2999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 694.7999999523163,
+              "responseEnd": 694.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 695,
+              "responseEnd": 695,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 695.0999999046326,
+              "responseEnd": 695.0999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 695.1999999284744,
+              "responseEnd": 695.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2022.1999999284744,
+              "responseEnd": 2022.1999999284744,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2055.5999999046326,
+              "responseEnd": 2055.5999999046326,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2055.7999999523163,
+              "responseEnd": 2055.7999999523163,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 1147.7000000476837,
+            "localDataMs": 1042.3999999761581,
+            "longTasks": [
+              {
+                "startTime": 63.89999997615814,
+                "duration": 978
+              },
+              {
+                "startTime": 1147.5,
+                "duration": 740
+              },
+              {
+                "startTime": 1907.6000000238419,
+                "duration": 728
+              }
+            ]
+          },
+          "functionProfile": {
+            "endedAtMs": 1041,
+            "totals": {
+              "resetResumedShoppingInspection": {
+                "name": "resetResumedShoppingInspection",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "loadDraft": {
+                "name": "loadDraft",
+                "count": 1,
+                "inclusiveMs": 4.099999904632568,
+                "selfMs": 4.099999904632568,
+                "maxMs": 4.099999904632568
+              },
+              "registerSmartInputWorkspaceAdapter": {
+                "name": "registerSmartInputWorkspaceAdapter",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "resumePendingSourceImageDeletes": {
+                "name": "resumePendingSourceImageDeletes",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "syncReferenceOverviewPopup": {
+                "name": "syncReferenceOverviewPopup",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "modeDraft": {
+                "name": "modeDraft",
+                "count": 57,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "shoppingOrderImport": {
+                "name": "shoppingOrderImport",
+                "count": 9,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "groupForCustomer": {
+                "name": "groupForCustomer",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "customerName": {
+                "name": "customerName",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "temporaryMeta": {
+                "name": "temporaryMeta",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "applyCustomerRelationship": {
+                "name": "applyCustomerRelationship",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "updateDeliveryPolicy": {
+                "name": "updateDeliveryPolicy",
+                "count": 1,
+                "inclusiveMs": 3.299999952316284,
+                "selfMs": 3.299999952316284,
+                "maxMs": 3.299999952316284
+              },
+              "hydrateHeader": {
+                "name": "hydrateHeader",
+                "count": 1,
+                "inclusiveMs": 3.600000023841858,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 3.600000023841858
+              },
+              "renderEstimateHeaderFields": {
+                "name": "renderEstimateHeaderFields",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "inputMappingSession": {
+                "name": "inputMappingSession",
+                "count": 18,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "sourceTableViewActive": {
+                "name": "sourceTableViewActive",
+                "count": 8,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderInputListSearch": {
+                "name": "renderInputListSearch",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "isParserArtifactLine": {
+                "name": "isParserArtifactLine",
+                "count": 20,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "removeParserArtifactRows": {
+                "name": "removeParserArtifactRows",
+                "count": 1,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.2999999523162842
+              },
+              "modeUi": {
+                "name": "modeUi",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "currentSourceImage": {
+                "name": "currentSourceImage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderSourceSurface": {
+                "name": "renderSourceSurface",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "updateMethod": {
+                "name": "updateMethod",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "applyMappingHeaderLocks": {
+                "name": "applyMappingHeaderLocks",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "currentTableView": {
+                "name": "currentTableView",
+                "count": 1,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "renderTableViewSwitch": {
+                "name": "renderTableViewSwitch",
+                "count": 1,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0,
+                "maxMs": 0.09999990463256836
+              },
+              "renderInputMappingStatus": {
+                "name": "renderInputMappingStatus",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "inputListSourceRows": {
+                "name": "inputListSourceRows",
+                "count": 4,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "inputListSearchIndex": {
+                "name": "inputListSearchIndex",
+                "count": 2,
+                "inclusiveMs": 3.1999999284744263,
+                "selfMs": 3.1999999284744263,
+                "maxMs": 2.100000023841858
+              },
+              "visibleInputListRows": {
+                "name": "visibleInputListRows",
+                "count": 2,
+                "inclusiveMs": 3.399999976158142,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 2.200000047683716
+              },
+              "voucherColumnsForMode": {
+                "name": "voucherColumnsForMode",
+                "count": 195,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "optionalProductFields": {
+                "name": "optionalProductFields",
+                "count": 23,
+                "inclusiveMs": 1.2000001668930054,
+                "selfMs": 1.2000001668930054,
+                "maxMs": 0.19999992847442627
+              },
+              "customFieldsFor": {
+                "name": "customFieldsFor",
+                "count": 25,
+                "inclusiveMs": 0.8999998569488525,
+                "selfMs": 0.8999998569488525,
+                "maxMs": 0.10000002384185791
+              },
+              "esc": {
+                "name": "esc",
+                "count": 480,
+                "inclusiveMs": 0.5000001192092896,
+                "selfMs": 0.5000001192092896,
+                "maxMs": 0.10000002384185791
+              },
+              "headerFieldsForMode": {
+                "name": "headerFieldsForMode",
+                "count": 170,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "layoutDefinitions": {
+                "name": "layoutDefinitions",
+                "count": 342,
+                "inclusiveMs": 228.4999998807907,
+                "selfMs": 228.4999998807907,
+                "maxMs": 2.5
+              },
+              "availableRegistryFields": {
+                "name": "availableRegistryFields",
+                "count": 336,
+                "inclusiveMs": 0.5,
+                "selfMs": 0.5,
+                "maxMs": 0.10000002384185791
+              },
+              "normalizedMappingSearch": {
+                "name": "normalizedMappingSearch",
+                "count": 75264,
+                "inclusiveMs": 58.89999997615814,
+                "selfMs": 58.89999997615814,
+                "maxMs": 0.30000007152557373
+              },
+              "inputMappingTargets": {
+                "name": "inputMappingTargets",
+                "count": 168,
+                "inclusiveMs": 836.0999999046326,
+                "selfMs": 555.7999999523163,
+                "maxMs": 8.5
+              },
+              "inputMappingDefinitions": {
+                "name": "inputMappingDefinitions",
+                "count": 168,
+                "inclusiveMs": 836.3999998569489,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 8.5
+              },
+              "mappingTargetByProjection": {
+                "name": "mappingTargetByProjection",
+                "count": 168,
+                "inclusiveMs": 836.4999998807907,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 8.5
+              },
+              "rowFieldDisplayValue": {
+                "name": "rowFieldDisplayValue",
+                "count": 168,
+                "inclusiveMs": 836.9999998807907,
+                "selfMs": 0.5,
+                "maxMs": 8.5
+              },
+              "rowStatusText": {
+                "name": "rowStatusText",
+                "count": 21,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderEstimateExclusions": {
+                "name": "renderEstimateExclusions",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "selectionScopeRows": {
+                "name": "selectionScopeRows",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "selectionScopeRowIds": {
+                "name": "selectionScopeRowIds",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "reconcileRowSelectionToScope": {
+                "name": "reconcileRowSelectionToScope",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "syncRowSelectionControls": {
+                "name": "syncRowSelectionControls",
+                "count": 1,
+                "inclusiveMs": 0.30000007152557373,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.30000007152557373
+              },
+              "syncGridPasteUndoButton": {
+                "name": "syncGridPasteUndoButton",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "visibleActivityBatches": {
+                "name": "visibleActivityBatches",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "activityLabel": {
+                "name": "activityLabel",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderActivityTrail": {
+                "name": "renderActivityTrail",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "voucherActivityDate": {
+                "name": "voucherActivityDate",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "voucherActivityTitle": {
+                "name": "voucherActivityTitle",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderVoucherActivitySnapshot": {
+                "name": "renderVoucherActivitySnapshot",
+                "count": 2,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.20000004768371582
+              },
+              "renderVoucherContext": {
+                "name": "renderVoucherContext",
+                "count": 2,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0,
+                "maxMs": 0.20000004768371582
+              },
+              "renderInlineValidation": {
+                "name": "renderInlineValidation",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateSummaries": {
+                "name": "updateSummaries",
+                "count": 1,
+                "inclusiveMs": 2.799999952316284,
+                "selfMs": 1.399999976158142,
+                "maxMs": 2.799999952316284
+              },
+              "ensureColumnResizeHandles": {
+                "name": "ensureColumnResizeHandles",
+                "count": 2,
+                "inclusiveMs": 0.5,
+                "selfMs": 0.5,
+                "maxMs": 0.3999999761581421
+              },
+              "renderCustomLayoutFields": {
+                "name": "renderCustomLayoutFields",
+                "count": 2,
+                "inclusiveMs": 5,
+                "selfMs": 1.5,
+                "maxMs": 3.399999976158142
+              },
+              "applyVoucherColumnOrder": {
+                "name": "applyVoucherColumnOrder",
+                "count": 2,
+                "inclusiveMs": 38.90000009536743,
+                "selfMs": 36.60000014305115,
+                "maxMs": 21.100000023841858
+              },
+              "columnWidth": {
+                "name": "columnWidth",
+                "count": 70,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyColumnWidths": {
+                "name": "applyColumnWidths",
+                "count": 2,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.19999992847442627
+              },
+              "updateTableWidth": {
+                "name": "updateTableWidth",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyFormLayout": {
+                "name": "applyFormLayout",
+                "count": 2,
+                "inclusiveMs": 48.10000002384186,
+                "selfMs": 1.2999999523162842,
+                "maxMs": 24.899999976158142
+              },
+              "renderSourceAnalysis": {
+                "name": "renderSourceAnalysis",
+                "count": 2,
+                "inclusiveMs": 32.199999928474426,
+                "selfMs": 32.199999928474426,
+                "maxMs": 23.199999928474426
+              },
+              "renderRows": {
+                "name": "renderRows",
+                "count": 1,
+                "inclusiveMs": 914.2999999523163,
+                "selfMs": 22.899999976158142,
+                "maxMs": 914.2999999523163
+              },
+              "renderShoppingOrderPanel": {
+                "name": "renderShoppingOrderPanel",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "syncEstimateLibraryActionState": {
+                "name": "syncEstimateLibraryActionState",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderEstimateWorkspace": {
+                "name": "renderEstimateWorkspace",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderCatalogControls": {
+                "name": "renderCatalogControls",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "estimateCreation": {
+                "name": "estimateCreation",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateAutosaveButton": {
+                "name": "updateAutosaveButton",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderDelivery": {
+                "name": "renderDelivery",
+                "count": 1,
+                "inclusiveMs": 0.19999992847442627,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.19999992847442627
+              },
+              "referenceDomainLabel": {
+                "name": "referenceDomainLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "refreshReferenceAggregate": {
+                "name": "refreshReferenceAggregate",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "referenceTimeText": {
+                "name": "referenceTimeText",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderReferenceDomain": {
+                "name": "renderReferenceDomain",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderReferenceControls": {
+                "name": "renderReferenceControls",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "resizeSource": {
+                "name": "resizeSource",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "applyRelatedPanelWidth": {
+                "name": "applyRelatedPanelWidth",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "relatedPanelButtonLabel": {
+                "name": "relatedPanelButtonLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyRelatedPanelState": {
+                "name": "applyRelatedPanelState",
+                "count": 1,
+                "inclusiveMs": 16,
+                "selfMs": 15.899999976158142,
+                "maxMs": 16
+              },
+              "referencesReady": {
+                "name": "referencesReady",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "referenceStatusMessage": {
+                "name": "referenceStatusMessage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "setAppStatus": {
+                "name": "setAppStatus",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "scheduleAutoAnalysis": {
+                "name": "scheduleAutoAnalysis",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderMode": {
+                "name": "renderMode",
+                "count": 1,
+                "inclusiveMs": 969.2999999523163,
+                "selfMs": 0.3999999761581421,
+                "maxMs": 969.2999999523163
+              }
+            }
+          },
+          "wrappedFunctionCount": 483,
+          "timing": {
+            "name": "http://127.0.0.1:64562/smartinput/?siBenchmark=1",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 1888.2999999523163,
+            "navigationId": 7249,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.7000000476837158,
+            "domainLookupStart": 0.7000000476837158,
+            "domainLookupEnd": 0.7000000476837158,
+            "connectStart": 0.7000000476837158,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.7000000476837158,
+            "requestStart": 11.5,
+            "responseStart": 13.299999952316284,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 13.299999952316284,
+            "responseEnd": 19.5,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 56.200000047683716,
+            "domContentLoadedEventStart": 1108.6000000238419,
+            "domContentLoadedEventEnd": 1108.6000000238419,
+            "domComplete": 1888.2000000476837,
+            "loadEventStart": 1888.2999999523163,
+            "loadEventEnd": 1888.2999999523163,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 64.89999997615814
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 1041.2000000476837
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 1042.1000000238419
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 3472.899999976158
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 35.89999997615814,
+              "responseEnd": 35.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 36,
+              "responseEnd": 36,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 36,
+              "responseEnd": 36,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 36.10000002384186,
+              "responseEnd": 36.10000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 36.200000047683716,
+              "responseEnd": 36.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 36.200000047683716,
+              "responseEnd": 36.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 36.299999952316284,
+              "responseEnd": 36.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 36.39999997615814,
+              "responseEnd": 36.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 36.39999997615814,
+              "responseEnd": 36.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 36.5,
+              "responseEnd": 36.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 36.5,
+              "responseEnd": 36.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 36.5,
+              "responseEnd": 36.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 52.799999952316284,
+              "responseEnd": 52.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 52.89999997615814,
+              "responseEnd": 52.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 53,
+              "responseEnd": 53,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 53.10000002384186,
+              "responseEnd": 53.10000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 53.200000047683716,
+              "responseEnd": 53.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 53.200000047683716,
+              "responseEnd": 53.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 53.39999997615814,
+              "responseEnd": 53.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 53.39999997615814,
+              "responseEnd": 53.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 53.5,
+              "responseEnd": 53.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 53.5,
+              "responseEnd": 53.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 53.60000002384186,
+              "responseEnd": 53.60000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 53.700000047683716,
+              "responseEnd": 53.700000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 53.799999952316284,
+              "responseEnd": 53.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 54.10000002384186,
+              "responseEnd": 54.10000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 54.200000047683716,
+              "responseEnd": 54.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 54.299999952316284,
+              "responseEnd": 54.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 54.299999952316284,
+              "responseEnd": 54.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 54.39999997615814,
+              "responseEnd": 54.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 54.5,
+              "responseEnd": 54.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 54.60000002384186,
+              "responseEnd": 54.60000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 54.700000047683716,
+              "responseEnd": 54.700000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 54.799999952316284,
+              "responseEnd": 54.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 54.799999952316284,
+              "responseEnd": 54.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 54.89999997615814,
+              "responseEnd": 54.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 55,
+              "responseEnd": 55,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 55,
+              "responseEnd": 55,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 55.10000002384186,
+              "responseEnd": 55.10000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 55.200000047683716,
+              "responseEnd": 55.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 61,
+              "responseEnd": 61,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 61.10000002384186,
+              "responseEnd": 61.10000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 61.299999952316284,
+              "responseEnd": 61.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 61.39999997615814,
+              "responseEnd": 61.39999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 61.5,
+              "responseEnd": 61.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 61.700000047683716,
+              "responseEnd": 61.700000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 61.799999952316284,
+              "responseEnd": 61.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 62,
+              "responseEnd": 62,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 62.200000047683716,
+              "responseEnd": 62.200000047683716,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 62.299999952316284,
+              "responseEnd": 62.299999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 62.60000002384186,
+              "responseEnd": 62.60000002384186,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 62.799999952316284,
+              "responseEnd": 62.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 62.799999952316284,
+              "responseEnd": 62.799999952316284,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 62.89999997615814,
+              "responseEnd": 62.89999997615814,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 1076.3999999761581,
+              "responseEnd": 1076.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 1107.3999999761581,
+              "responseEnd": 1107.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 1107.6000000238419,
+              "responseEnd": 1107.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        },
+        {
+          "marks": {
+            "storage": {
+              "oneapp-smartinput/autosave/get": 1,
+              "oneapp-smartinput/autosave/getAll": 1,
+              "oneapp-smartinput/settings/get": 5,
+              "oneapp-smartinput/customerLinkGroups/getAll": 1,
+              "oneapp-smartinput/temporaryCustomers/getAll": 1,
+              "oneapp-smartinput/customerAliasMappings/getAll": 1,
+              "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+              "oneapp-smartinput/settings/getAll": 1
+            },
+            "getItem": 5,
+            "readyMs": 2539,
+            "localDataMs": 2421.8000000715256,
+            "longTasks": [
+              {
+                "startTime": 1202.8999999761581,
+                "duration": 1218
+              },
+              {
+                "startTime": 2538.7000000476837,
+                "duration": 837
+              },
+              {
+                "startTime": 3423.399999976158,
+                "duration": 782
+              }
+            ]
+          },
+          "functionProfile": {
+            "endedAtMs": 2419.8000000715256,
+            "totals": {
+              "resetResumedShoppingInspection": {
+                "name": "resetResumedShoppingInspection",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "loadDraft": {
+                "name": "loadDraft",
+                "count": 1,
+                "inclusiveMs": 4.5,
+                "selfMs": 4.5,
+                "maxMs": 4.5
+              },
+              "registerSmartInputWorkspaceAdapter": {
+                "name": "registerSmartInputWorkspaceAdapter",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "resumePendingSourceImageDeletes": {
+                "name": "resumePendingSourceImageDeletes",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "syncReferenceOverviewPopup": {
+                "name": "syncReferenceOverviewPopup",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "modeDraft": {
+                "name": "modeDraft",
+                "count": 57,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "shoppingOrderImport": {
+                "name": "shoppingOrderImport",
+                "count": 9,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "groupForCustomer": {
+                "name": "groupForCustomer",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "customerName": {
+                "name": "customerName",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "temporaryMeta": {
+                "name": "temporaryMeta",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyCustomerRelationship": {
+                "name": "applyCustomerRelationship",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateDeliveryPolicy": {
+                "name": "updateDeliveryPolicy",
+                "count": 1,
+                "inclusiveMs": 3.299999952316284,
+                "selfMs": 3.299999952316284,
+                "maxMs": 3.299999952316284
+              },
+              "hydrateHeader": {
+                "name": "hydrateHeader",
+                "count": 1,
+                "inclusiveMs": 3.5,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 3.5
+              },
+              "renderEstimateHeaderFields": {
+                "name": "renderEstimateHeaderFields",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.20000004768371582
+              },
+              "inputMappingSession": {
+                "name": "inputMappingSession",
+                "count": 18,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "sourceTableViewActive": {
+                "name": "sourceTableViewActive",
+                "count": 8,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderInputListSearch": {
+                "name": "renderInputListSearch",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "isParserArtifactLine": {
+                "name": "isParserArtifactLine",
+                "count": 20,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "removeParserArtifactRows": {
+                "name": "removeParserArtifactRows",
+                "count": 1,
+                "inclusiveMs": 0.3999999761581421,
+                "selfMs": 0.3999999761581421,
+                "maxMs": 0.3999999761581421
+              },
+              "modeUi": {
+                "name": "modeUi",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "currentSourceImage": {
+                "name": "currentSourceImage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderSourceSurface": {
+                "name": "renderSourceSurface",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "updateMethod": {
+                "name": "updateMethod",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "applyMappingHeaderLocks": {
+                "name": "applyMappingHeaderLocks",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "currentTableView": {
+                "name": "currentTableView",
+                "count": 1,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "renderTableViewSwitch": {
+                "name": "renderTableViewSwitch",
+                "count": 1,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0,
+                "maxMs": 0.09999990463256836
+              },
+              "renderInputMappingStatus": {
+                "name": "renderInputMappingStatus",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "inputListSourceRows": {
+                "name": "inputListSourceRows",
+                "count": 4,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "inputListSearchIndex": {
+                "name": "inputListSearchIndex",
+                "count": 2,
+                "inclusiveMs": 3.200000047683716,
+                "selfMs": 3.200000047683716,
+                "maxMs": 1.600000023841858
+              },
+              "visibleInputListRows": {
+                "name": "visibleInputListRows",
+                "count": 2,
+                "inclusiveMs": 3.3000000715255737,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 1.7000000476837158
+              },
+              "voucherColumnsForMode": {
+                "name": "voucherColumnsForMode",
+                "count": 195,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.10000002384185791
+              },
+              "optionalProductFields": {
+                "name": "optionalProductFields",
+                "count": 23,
+                "inclusiveMs": 0.9999995231628418,
+                "selfMs": 0.9999995231628418,
+                "maxMs": 0.10000002384185791
+              },
+              "customFieldsFor": {
+                "name": "customFieldsFor",
+                "count": 25,
+                "inclusiveMs": 1.3000001907348633,
+                "selfMs": 1.3000001907348633,
+                "maxMs": 0.10000002384185791
+              },
+              "esc": {
+                "name": "esc",
+                "count": 480,
+                "inclusiveMs": 0.6999998092651367,
+                "selfMs": 0.6999998092651367,
+                "maxMs": 0.10000002384185791
+              },
+              "headerFieldsForMode": {
+                "name": "headerFieldsForMode",
+                "count": 170,
+                "inclusiveMs": 0.6000001430511475,
+                "selfMs": 0.6000001430511475,
+                "maxMs": 0.10000002384185791
+              },
+              "layoutDefinitions": {
+                "name": "layoutDefinitions",
+                "count": 342,
+                "inclusiveMs": 291.49999964237213,
+                "selfMs": 291.49999964237213,
+                "maxMs": 3.700000047683716
+              },
+              "availableRegistryFields": {
+                "name": "availableRegistryFields",
+                "count": 336,
+                "inclusiveMs": 0.5,
+                "selfMs": 0.5,
+                "maxMs": 0.10000002384185791
+              },
+              "normalizedMappingSearch": {
+                "name": "normalizedMappingSearch",
+                "count": 75264,
+                "inclusiveMs": 76.99999976158142,
+                "selfMs": 76.99999976158142,
+                "maxMs": 0.3999999761581421
+              },
+              "inputMappingTargets": {
+                "name": "inputMappingTargets",
+                "count": 168,
+                "inclusiveMs": 1040.9000002145767,
+                "selfMs": 684.0000007152557,
+                "maxMs": 10.899999976158142
+              },
+              "inputMappingDefinitions": {
+                "name": "inputMappingDefinitions",
+                "count": 168,
+                "inclusiveMs": 1041.0000002384186,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 10.899999976158142
+              },
+              "mappingTargetByProjection": {
+                "name": "mappingTargetByProjection",
+                "count": 168,
+                "inclusiveMs": 1041.200000166893,
+                "selfMs": 0.19999992847442627,
+                "maxMs": 10.899999976158142
+              },
+              "rowFieldDisplayValue": {
+                "name": "rowFieldDisplayValue",
+                "count": 168,
+                "inclusiveMs": 1041.8000001907349,
+                "selfMs": 0.6000000238418579,
+                "maxMs": 10.899999976158142
+              },
+              "rowStatusText": {
+                "name": "rowStatusText",
+                "count": 21,
+                "inclusiveMs": 0.09999990463256836,
+                "selfMs": 0.09999990463256836,
+                "maxMs": 0.09999990463256836
+              },
+              "renderEstimateExclusions": {
+                "name": "renderEstimateExclusions",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "selectionScopeRows": {
+                "name": "selectionScopeRows",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "selectionScopeRowIds": {
+                "name": "selectionScopeRowIds",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "reconcileRowSelectionToScope": {
+                "name": "reconcileRowSelectionToScope",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0,
+                "maxMs": 0.10000002384185791
+              },
+              "syncRowSelectionControls": {
+                "name": "syncRowSelectionControls",
+                "count": 1,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.19999992847442627,
+                "maxMs": 0.2999999523162842
+              },
+              "syncGridPasteUndoButton": {
+                "name": "syncGridPasteUndoButton",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "visibleActivityBatches": {
+                "name": "visibleActivityBatches",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "activityLabel": {
+                "name": "activityLabel",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderActivityTrail": {
+                "name": "renderActivityTrail",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.20000004768371582,
+                "maxMs": 0.20000004768371582
+              },
+              "voucherActivityDate": {
+                "name": "voucherActivityDate",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "voucherActivityTitle": {
+                "name": "voucherActivityTitle",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderVoucherActivitySnapshot": {
+                "name": "renderVoucherActivitySnapshot",
+                "count": 2,
+                "inclusiveMs": 0.39999985694885254,
+                "selfMs": 0.29999983310699463,
+                "maxMs": 0.2999999523162842
+              },
+              "renderVoucherContext": {
+                "name": "renderVoucherContext",
+                "count": 2,
+                "inclusiveMs": 0.39999985694885254,
+                "selfMs": 0,
+                "maxMs": 0.2999999523162842
+              },
+              "renderInlineValidation": {
+                "name": "renderInlineValidation",
+                "count": 2,
+                "inclusiveMs": 0.30000007152557373,
+                "selfMs": 0.30000007152557373,
+                "maxMs": 0.20000004768371582
+              },
+              "updateSummaries": {
+                "name": "updateSummaries",
+                "count": 1,
+                "inclusiveMs": 3.8000000715255737,
+                "selfMs": 1.5,
+                "maxMs": 3.8000000715255737
+              },
+              "ensureColumnResizeHandles": {
+                "name": "ensureColumnResizeHandles",
+                "count": 2,
+                "inclusiveMs": 0.6000000238418579,
+                "selfMs": 0.6000000238418579,
+                "maxMs": 0.3999999761581421
+              },
+              "renderCustomLayoutFields": {
+                "name": "renderCustomLayoutFields",
+                "count": 2,
+                "inclusiveMs": 6.799999952316284,
+                "selfMs": 2.1999998092651367,
+                "maxMs": 3.5999999046325684
+              },
+              "applyVoucherColumnOrder": {
+                "name": "applyVoucherColumnOrder",
+                "count": 2,
+                "inclusiveMs": 50.10000002384186,
+                "selfMs": 44.59999990463257,
+                "maxMs": 28
+              },
+              "columnWidth": {
+                "name": "columnWidth",
+                "count": 70,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyColumnWidths": {
+                "name": "applyColumnWidths",
+                "count": 2,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.2999999523162842,
+                "maxMs": 0.19999992847442627
+              },
+              "updateTableWidth": {
+                "name": "updateTableWidth",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyFormLayout": {
+                "name": "applyFormLayout",
+                "count": 2,
+                "inclusiveMs": 62.60000002384186,
+                "selfMs": 1.8000001907348633,
+                "maxMs": 33.90000009536743
+              },
+              "renderSourceAnalysis": {
+                "name": "renderSourceAnalysis",
+                "count": 2,
+                "inclusiveMs": 40.89999997615814,
+                "selfMs": 40.89999997615814,
+                "maxMs": 29.800000071525574
+              },
+              "renderRows": {
+                "name": "renderRows",
+                "count": 1,
+                "inclusiveMs": 1134.1999999284744,
+                "selfMs": 25.00000035762787,
+                "maxMs": 1134.1999999284744
+              },
+              "renderShoppingOrderPanel": {
+                "name": "renderShoppingOrderPanel",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "syncEstimateLibraryActionState": {
+                "name": "syncEstimateLibraryActionState",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderEstimateWorkspace": {
+                "name": "renderEstimateWorkspace",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderCatalogControls": {
+                "name": "renderCatalogControls",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.20000004768371582
+              },
+              "estimateCreation": {
+                "name": "estimateCreation",
+                "count": 3,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "updateAutosaveButton": {
+                "name": "updateAutosaveButton",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderDelivery": {
+                "name": "renderDelivery",
+                "count": 1,
+                "inclusiveMs": 0.2999999523162842,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.2999999523162842
+              },
+              "referenceDomainLabel": {
+                "name": "referenceDomainLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "refreshReferenceAggregate": {
+                "name": "refreshReferenceAggregate",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "referenceTimeText": {
+                "name": "referenceTimeText",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderReferenceDomain": {
+                "name": "renderReferenceDomain",
+                "count": 2,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "renderReferenceControls": {
+                "name": "renderReferenceControls",
+                "count": 1,
+                "inclusiveMs": 0.20000004768371582,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.20000004768371582
+              },
+              "resizeSource": {
+                "name": "resizeSource",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "applyRelatedPanelWidth": {
+                "name": "applyRelatedPanelWidth",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "relatedPanelButtonLabel": {
+                "name": "relatedPanelButtonLabel",
+                "count": 2,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "applyRelatedPanelState": {
+                "name": "applyRelatedPanelState",
+                "count": 1,
+                "inclusiveMs": 23.799999952316284,
+                "selfMs": 23.799999952316284,
+                "maxMs": 23.799999952316284
+              },
+              "referencesReady": {
+                "name": "referencesReady",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "referenceStatusMessage": {
+                "name": "referenceStatusMessage",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "setAppStatus": {
+                "name": "setAppStatus",
+                "count": 1,
+                "inclusiveMs": 0.10000002384185791,
+                "selfMs": 0.10000002384185791,
+                "maxMs": 0.10000002384185791
+              },
+              "scheduleAutoAnalysis": {
+                "name": "scheduleAutoAnalysis",
+                "count": 1,
+                "inclusiveMs": 0,
+                "selfMs": 0,
+                "maxMs": 0
+              },
+              "renderMode": {
+                "name": "renderMode",
+                "count": 1,
+                "inclusiveMs": 1208.6000000238419,
+                "selfMs": 0.3999999761581421,
+                "maxMs": 1208.6000000238419
+              }
+            }
+          },
+          "wrappedFunctionCount": 483,
+          "timing": {
+            "name": "http://127.0.0.1:64562/smartinput/?siBenchmark=2",
+            "entryType": "navigation",
+            "startTime": 0,
+            "duration": 3376.7000000476837,
+            "navigationId": 2223,
+            "initiatorType": "navigation",
+            "deliveryType": "",
+            "nextHopProtocol": "http/1.1",
+            "renderBlockingStatus": "non-blocking",
+            "contentType": "text/html",
+            "contentEncoding": "",
+            "workerStart": 0,
+            "workerRouterEvaluationStart": 0,
+            "workerCacheLookupStart": 0,
+            "workerMatchedSourceType": "",
+            "workerFinalSourceType": "",
+            "redirectStart": 0,
+            "redirectEnd": 0,
+            "fetchStart": 0.7000000476837158,
+            "domainLookupStart": 0.7000000476837158,
+            "domainLookupEnd": 0.7000000476837158,
+            "connectStart": 0.7000000476837158,
+            "secureConnectionStart": 0,
+            "connectEnd": 0.7000000476837158,
+            "requestStart": 18.5,
+            "responseStart": 20,
+            "firstInterimResponseStart": 0,
+            "finalResponseHeadersStart": 20,
+            "responseEnd": 28.600000023841858,
+            "transferSize": 38731,
+            "encodedBodySize": 38431,
+            "decodedBodySize": 38431,
+            "responseStatus": 200,
+            "serverTiming": [],
+            "unloadEventStart": 0,
+            "unloadEventEnd": 0,
+            "domInteractive": 1199.7000000476837,
+            "domContentLoadedEventStart": 2499.8000000715256,
+            "domContentLoadedEventEnd": 2499.8000000715256,
+            "domComplete": 3376.7000000476837,
+            "loadEventStart": 3376.7000000476837,
+            "loadEventEnd": 3376.7000000476837,
+            "type": "navigate",
+            "redirectCount": 0,
+            "activationStart": 0,
+            "criticalCHRestart": 0,
+            "notRestoredReasons": null,
+            "confidence": {}
+          },
+          "mainMarks": [
+            {
+              "name": "si-main-start",
+              "startTime": 1203.8999999761581
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 2420
+            },
+            {
+              "name": "si-main-end",
+              "startTime": 2421.2000000476837
+            },
+            {
+              "name": "si-renderMode-return",
+              "startTime": 4936.800000071526
+            }
+          ],
+          "resources": [
+            {
+              "path": "/nexus/common/nexus-ui-theme-init.js",
+              "startTime": 1176.1000000238419,
+              "responseEnd": 1176.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.css",
+              "startTime": 1176.1000000238419,
+              "responseEnd": 1176.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui-app-themes.css",
+              "startTime": 1176.2000000476837,
+              "responseEnd": 1176.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.css",
+              "startTime": 1176.3000000715256,
+              "responseEnd": 1176.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.css",
+              "startTime": 1176.3000000715256,
+              "responseEnd": 1176.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+              "startTime": 1176.3999999761581,
+              "responseEnd": 1176.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+              "startTime": 1176.3999999761581,
+              "responseEnd": 1176.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-contract.js",
+              "startTime": 1176.5,
+              "responseEnd": 1176.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput.js",
+              "startTime": 1176.5,
+              "responseEnd": 1176.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/source-preparation-ui-v2.js",
+              "startTime": 1176.6000000238419,
+              "responseEnd": 1176.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-ui.js",
+              "startTime": 1176.6000000238419,
+              "responseEnd": 1176.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-table-ux.js",
+              "startTime": 1176.7000000476837,
+              "responseEnd": 1176.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/virtual-table-body.js",
+              "startTime": 1196.7000000476837,
+              "responseEnd": 1196.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/smartinput-data-store.js",
+              "startTime": 1196.8000000715256,
+              "responseEnd": 1196.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workspace.js",
+              "startTime": 1196.8999999761581,
+              "responseEnd": 1196.8999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1197,
+              "responseEnd": 1197,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-command-adapter.js",
+              "startTime": 1197,
+              "responseEnd": 1197,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1197.1000000238419,
+              "responseEnd": 1197.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/legacy-integration-adapter.js",
+              "startTime": 1197.3000000715256,
+              "responseEnd": 1197.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input.js",
+              "startTime": 1197.3000000715256,
+              "responseEnd": 1197.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/optional-operation-loader.js",
+              "startTime": 1197.3000000715256,
+              "responseEnd": 1197.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/grid-clipboard.js",
+              "startTime": 1197.3999999761581,
+              "responseEnd": 1197.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-template-mapper.js",
+              "startTime": 1197.5,
+              "responseEnd": 1197.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/order-document-number.js",
+              "startTime": 1197.5,
+              "responseEnd": 1197.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/purchase-stage3.js",
+              "startTime": 1197.6000000238419,
+              "responseEnd": 1197.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/sale-stage4.js",
+              "startTime": 1197.7000000476837,
+              "responseEnd": 1197.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/multivoucher-stage1.js",
+              "startTime": 1197.8000000715256,
+              "responseEnd": 1197.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/input-list-search.js",
+              "startTime": 1197.8000000715256,
+              "responseEnd": 1197.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-price-snapshot.js",
+              "startTime": 1197.8000000715256,
+              "responseEnd": 1197.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-source-plan.js",
+              "startTime": 1198,
+              "responseEnd": 1198,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-f8-recovery.js",
+              "startTime": 1198.1000000238419,
+              "responseEnd": 1198.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-workbook-selector.js",
+              "startTime": 1198.1000000238419,
+              "responseEnd": 1198.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-data-controller.js",
+              "startTime": 1198.1000000238419,
+              "responseEnd": 1198.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/merchops-settings-read-adapter.js",
+              "startTime": 1198.2000000476837,
+              "responseEnd": 1198.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/field-registry.js",
+              "startTime": 1198.2000000476837,
+              "responseEnd": 1198.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-refresh-controller.js",
+              "startTime": 1198.3999999761581,
+              "responseEnd": 1198.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/related-voucher-import.js",
+              "startTime": 1198.3999999761581,
+              "responseEnd": 1198.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1198.3999999761581,
+              "responseEnd": 1198.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-view-state.js",
+              "startTime": 1198.5,
+              "responseEnd": 1198.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/shopping-order-upload.js",
+              "startTime": 1198.6000000238419,
+              "responseEnd": 1198.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/table-viewport.js",
+              "startTime": 1200.2000000476837,
+              "responseEnd": 1200.2000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/independent-estimate.js",
+              "startTime": 1200.3000000715256,
+              "responseEnd": 1200.3000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/estimate-master-apply.js",
+              "startTime": 1200.5,
+              "responseEnd": 1200.5,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/change-request-contract.js",
+              "startTime": 1200.6000000238419,
+              "responseEnd": 1200.6000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/reference-data/product-master-read-adapter.js",
+              "startTime": 1200.8000000715256,
+              "responseEnd": 1200.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/structured-sheet-parser.js",
+              "startTime": 1201,
+              "responseEnd": 1201,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/canonical-hash-compat.js",
+              "startTime": 1201,
+              "responseEnd": 1201,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/linked-estimate-source-edit.js",
+              "startTime": 1201.1000000238419,
+              "responseEnd": 1201.1000000238419,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/smartinput/reference-generation-repository.js",
+              "startTime": 1201.3999999761581,
+              "responseEnd": 1201.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/shopping-order-dedupe-core.js",
+              "startTime": 1201.3999999761581,
+              "responseEnd": 1201.3999999761581,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-core.js",
+              "startTime": 1201.7000000476837,
+              "responseEnd": 1201.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/canonical-hash.js",
+              "startTime": 1201.8000000715256,
+              "responseEnd": 1201.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/official-voucher-v2-contract.js",
+              "startTime": 1201.8000000715256,
+              "responseEnd": 1201.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/orderq/stocktake-conflict-v2.js",
+              "startTime": 1202,
+              "responseEnd": 1202,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/common/nexus-workbench.css",
+              "startTime": 2466.7000000476837,
+              "responseEnd": 2466.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+              "startTime": 2498.7000000476837,
+              "responseEnd": 2498.7000000476837,
+              "duration": 0,
+              "transferSize": 0
+            },
+            {
+              "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+              "startTime": 2498.8000000715256,
+              "responseEnd": 2498.8000000715256,
+              "duration": 0,
+              "transferSize": 0
+            }
+          ]
+        }
+      ],
+      "withoutFetch": []
+    },
+    "externalRequestsBlocked": [],
+    "runtimeExceptions": [],
+    "isolation": {
+      "temporaryProfile": true,
+      "productionNetworkRequestsSent": 0,
+      "externalNetworkBlocked": true,
+      "localFixtureOnly": true
+    },
+    "status": "completed"
+  },
+  "unmeasured": [
+    "Real user workload",
+    "NEXUS host app-to-app navigation",
+    "Common-layer blocking time",
+    "Actual XLSX file serialization/download",
+    "Click visual feedback p95"
+  ]
+}

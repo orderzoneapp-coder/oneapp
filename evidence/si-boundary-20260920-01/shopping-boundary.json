@@ -1,0 +1,74 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "scope": "SmartInput shopping-order upload boundary only; no owner application files changed",
+  "mapping": [
+    {
+      "before": "shopping-order-upload.js static import of shopping-order-command-adapter.js and its repository graph",
+      "after": "shopping-order-upload.js local preparation consumes the existing pure source/payload contract; inspect/commit lazily loads the owner command adapter",
+      "consumers": [
+        "SmartInput synchronous upload recognition and candidate preview",
+        "Explicit shopping-order inspection and commit"
+      ],
+      "retainedException": "Existing shared pure shopping-order-dedupe-core.js preserves candidateId/signature/source-evidence identity and ordering. It has no I/O, owner readiness or repository imports. This narrowly retained contract is distinct from SmartInput general text processing.",
+      "deleted": "Initial static owner command-adapter import",
+      "storageContract": "Unchanged; only owner command methods inspect and commit actual owner ledgers"
+    }
+  ],
+  "verification": {
+    "command": "node scripts/test-smartinput-shopping-order-upload.mjs",
+    "status": "PASS",
+    "checks": [
+      "Fresh Node subprocess with unavailable-storage tripwire: importing and preparing a local upload does not load the command adapter",
+      "Malformed source inspection returns source issues without loading the owner",
+      "Explicit inspection loads the owner adapter; unavailable owner storage fails and preserves the upload",
+      "Default local candidate and payload results exactly equal the existing owner adapter results",
+      "Explicit commit failure preserves source and selections; a subsequent commit can retry with the same payload",
+      "Existing synthetic multiset, duplicate-order, candidate issue isolation and source-evidence tests pass"
+    ],
+    "browser": {
+      "command": "node scripts/test-smartinput-shopping-order-upload-browser.mjs",
+      "status": "PASS",
+      "ordinaryUploadLedgerReadIncrease": [
+        0,
+        0,
+        0
+      ],
+      "explicitFirstTransfer": {
+        "created": 4,
+        "reviewRequired": 1
+      },
+      "explicitSecondTransfer": {
+        "priorDuplicates": 4,
+        "created": 1
+      },
+      "explicitThirdInspection": {
+        "duplicates": 5,
+        "newWrites": 0
+      },
+      "stored": {
+        "orders": 5,
+        "items": 14,
+        "events": 5,
+        "queue": 10
+      },
+      "checks": [
+        "Customer/product refresh success and failure retain query and focus",
+        "Original 17-cell evidence and assignee preserved",
+        "1920, 1440 and 390px in light and dark themes fit their viewport"
+      ],
+      "isolation": {
+        "temporaryProfile": true,
+        "externalNetworkBlocked": true,
+        "externalMutations": 0,
+        "localServerMutations": 0,
+        "runtimeExceptions": 0,
+        "consoleErrors": 0
+      },
+      "visualNote": "After correcting only the test server SVG MIME, the desktop capture was inspected again and the NEXUS logo rendered normally. The browser report retains all six viewport/theme checks.",
+      "reportFile": "after-shopping-browser-complete.json"
+    },
+    "unverified": [
+      "Optional external real fixture files were absent"
+    ]
+  }
+}

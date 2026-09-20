@@ -2,8 +2,8 @@ import {
   buildEstimateF8Data,
   buildEstimateDuplicateGroups,
   validateEstimateRows
-} from './estimate-output.js?v=0.2.8';
-import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.1';
+} from './estimate-output.js?v=0.2.9';
+import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.2';
 
 const now = () => globalThis.performance?.now?.() ?? Date.now();
 

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { coreFieldByProjection } from '../smartinput/field-definition-contract.js';
+import { coreFieldByProjection } from '../smartinput/field-registry.js';
 import { stage1RowFieldDefinitions, structuredFieldsForMode } from '../smartinput/multivoucher-stage1.js';
 import {
   DECISION,

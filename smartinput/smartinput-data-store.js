@@ -1,7 +1,436 @@
-import { createEstimateReadCache, projectEstimateSummary, estimateSummaryKey, ESTIMATE_SUMMARY_PREFIX } from './estimate-read-cache.js?v=0.1.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, LAST_ESTIMATE_EXCEL_RESULT_SCHEMA, estimateTechnicalKey,
   estimateValuesEqual, hashEstimatePlan, validateIndependentEstimate, applyIndependentEstimatePatches,
   createLastEstimateExcelResult, projectIndependentEstimateDraft } from './independent-estimate.js?v=0.2.0';
+
+// Local autosave journal and save coordination.
+export const AUTOSAVE_JOURNAL_SCHEMA = 'ONEAPP_SMART_INPUT_AUTOSAVE_JOURNAL_V2';
+
+const clone = value => globalThis.structuredClone
+  ? globalThis.structuredClone(value)
+  : JSON.parse(JSON.stringify(value));
+const pathKey = path => path.map(part => String(part).replaceAll('~', '~0').replaceAll('/', '~1')).join('/');
+const pathParts = path => String(path || '').split('/').filter(Boolean)
+  .map(part => part.replaceAll('~1', '/').replaceAll('~0', '~'));
+
+export function createAutosaveDocumentKey({ companyId = '', mode = '', documentId = '' } = {}) {
+  if (!companyId || !mode || !documentId) throw new Error('SMARTINPUT_AUTOSAVE_DOCUMENT_KEY_INCOMPLETE');
+  return [companyId, mode, documentId].map(value => encodeURIComponent(String(value))).join(':');
+}
+
+export function createAutosavePatch(before, after) {
+  const operations = [];
+  const visit = (left, right, path = []) => {
+    if (Object.is(left, right)) return;
+    const leftObject = left && typeof left === 'object';
+    const rightObject = right && typeof right === 'object';
+    if (Array.isArray(left) && Array.isArray(right)) {
+      const stableShape = left.length === right.length && left.every((item, index) => {
+        const leftId = item && typeof item === 'object' ? item.rowId : null;
+        const rightId = right[index] && typeof right[index] === 'object' ? right[index].rowId : null;
+        return leftId || rightId ? leftId === rightId : true;
+      });
+      if (stableShape) {
+        right.forEach((value, index) => visit(left[index], value, [...path, index]));
+        return;
+      }
+      operations.push({ op: 'set', path: pathKey(path), value: clone(right) });
+      return;
+    }
+    if (!leftObject || !rightObject || Array.isArray(left) || Array.isArray(right)) {
+      operations.push({ op: 'set', path: pathKey(path), value: clone(right) });
+      return;
+    }
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    keys.forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(right, key)) operations.push({ op: 'delete', path: pathKey([...path, key]) });
+      else visit(left[key], right[key], [...path, key]);
+    });
+  };
+  visit(before, after);
+  return operations;
+}
+
+export function applyAutosavePatch(snapshot, operations = []) {
+  let result = clone(snapshot);
+  operations.forEach(operation => {
+    const parts = pathParts(operation.path);
+    if (!parts.length) {
+      result = operation.op === 'delete' ? null : clone(operation.value);
+      return;
+    }
+    let target = result;
+    parts.slice(0, -1).forEach(part => {
+      if (!target[part] || typeof target[part] !== 'object') target[part] = {};
+      target = target[part];
+    });
+    const leaf = parts.at(-1);
+    if (operation.op === 'delete') delete target[leaf];
+    else target[leaf] = clone(operation.value);
+  });
+  return result;
+}
+
+function recordsByKey(records = []) {
+  return new Map(records.filter(record => record?.key).map(record => [record.key, record]));
+}
+
+export function recoverAutosaveDocuments(records = []) {
+  const byKey = recordsByKey(records);
+  const recovered = new Map();
+  records.filter(record => record?.recordType === 'head').forEach(head => {
+    const base = byKey.get(head.baseKey);
+    if (!base || base.recordType !== 'base' || base.docKey !== head.docKey) return;
+    let snapshot = clone(base.snapshot);
+    let version = Number(base.version || 0);
+    for (const patchKey of head.patchKeys || []) {
+      const patch = byKey.get(patchKey);
+      if (!patch || patch.recordType !== 'patch' || patch.docKey !== head.docKey || Number(patch.fromVersion) !== version) return;
+      snapshot = applyAutosavePatch(snapshot, patch.operations);
+      version = Number(patch.toVersion);
+    }
+    if (version !== Number(head.durableVersion)) return;
+    const previous = recovered.get(head.docKey);
+    if (!previous || Number(previous.durableVersion) < version) {
+      recovered.set(head.docKey, { snapshot, durableVersion: version, head: clone(head) });
+    }
+  });
+  return recovered;
+}
+
+export function createDraftSaveCoordinator({ commit, cleanup = async () => {}, now = () => new Date().toISOString(), compactAfter = 40 } = {}) {
+  if (typeof commit !== 'function') throw new Error('SMARTINPUT_AUTOSAVE_COMMIT_REQUIRED');
+  const documents = new Map();
+
+  const stateFor = docKey => {
+    if (!documents.has(docKey)) documents.set(docKey, {
+      nextVersion: 0,
+      durableVersion: 0,
+      durableSnapshot: null,
+      head: null,
+      pending: null,
+      inFlight: null,
+      waiters: []
+    });
+    return documents.get(docKey);
+  };
+
+  const settle = state => {
+    state.waiters = state.waiters.filter(waiter => {
+      if (waiter.version > state.durableVersion) return true;
+      waiter.resolve({ durableVersion: state.durableVersion });
+      return false;
+    });
+  };
+
+  const pump = async (docKey, state) => {
+    if (state.inFlight || !state.pending) return state.inFlight;
+    const pending = state.pending;
+    state.pending = null;
+    const write = (async () => {
+      const timestamp = now();
+      const createBase = !state.head || (state.head.patchKeys || []).length >= compactAfter;
+      const base = createBase ? {
+        key: `base:${docKey}:${pending.version}`,
+        schemaVersion: AUTOSAVE_JOURNAL_SCHEMA,
+        recordType: 'base', docKey, companyId: pending.companyId,
+        version: pending.version, snapshot: pending.snapshot, updatedAt: timestamp
+      } : null;
+      const patch = createBase ? null : {
+        key: `patch:${docKey}:${pending.version}`,
+        schemaVersion: AUTOSAVE_JOURNAL_SCHEMA,
+        recordType: 'patch', docKey, companyId: pending.companyId,
+        fromVersion: state.durableVersion, toVersion: pending.version,
+        operations: createAutosavePatch(state.durableSnapshot, pending.snapshot), updatedAt: timestamp
+      };
+      const head = {
+        key: `head:${docKey}`,
+        schemaVersion: AUTOSAVE_JOURNAL_SCHEMA,
+        recordType: 'head', docKey, companyId: pending.companyId,
+        durableVersion: pending.version,
+        baseKey: base?.key || state.head.baseKey,
+        patchKeys: base ? [] : [...(state.head.patchKeys || []), patch.key],
+        updatedAt: timestamp
+      };
+      await commit({ base, patch, head, workspace: pending.workspace, expectedDurableVersion: state.durableVersion });
+      const obsoleteKeys = base && state.head ? [state.head.baseKey, ...(state.head.patchKeys || [])] : [];
+      state.durableVersion = pending.version;
+      state.durableSnapshot = pending.snapshot;
+      state.head = head;
+      settle(state);
+      if (obsoleteKeys.length) void Promise.resolve(cleanup(obsoleteKeys)).catch(() => undefined);
+      return { docKey, durableVersion: pending.version, updatedAt: timestamp };
+    })();
+    state.inFlight = write;
+    let committed = false;
+    try {
+      const result = await write;
+      committed = true;
+      return result;
+    } catch (error) {
+      if (!state.pending || state.pending.version < pending.version) state.pending = pending;
+      state.waiters.filter(waiter => waiter.version <= pending.version).forEach(waiter => waiter.reject(error));
+      state.waiters = state.waiters.filter(waiter => waiter.version > pending.version);
+      throw error;
+    } finally {
+      state.inFlight = null;
+      if (committed && state.pending) void pump(docKey, state).catch(() => undefined);
+    }
+  };
+
+  return Object.freeze({
+    hydrate(records = []) {
+      const recovered = recoverAutosaveDocuments(records);
+      recovered.forEach((value, docKey) => {
+        const state = stateFor(docKey);
+        state.nextVersion = value.durableVersion;
+        state.durableVersion = value.durableVersion;
+        state.durableSnapshot = value.snapshot;
+        state.head = value.head;
+      });
+      return recovered;
+    },
+    queue({
+      companyId,
+      mode,
+      documentId,
+      snapshot,
+      workspace = null,
+      snapshotOwned = false,
+      workspaceOwned = false
+    }) {
+      const docKey = createAutosaveDocumentKey({ companyId, mode, documentId });
+      const state = stateFor(docKey);
+      const version = ++state.nextVersion;
+      state.pending = {
+        companyId,
+        version,
+        snapshot: snapshotOwned ? snapshot : clone(snapshot),
+        workspace: workspace ? (workspaceOwned ? workspace : clone(workspace)) : null
+      };
+      const promise = new Promise((resolve, reject) => state.waiters.push({ version, resolve, reject }));
+      void pump(docKey, state).catch(() => undefined);
+      return { docKey, version, promise };
+    },
+    async flushDocument(docKey) {
+      const state = stateFor(docKey);
+      // Capture the leave boundary; edits queued later keep their own save tickets.
+      const targetVersion = state.nextVersion;
+      if (state.inFlight) await state.inFlight.catch(() => undefined);
+      while (state.durableVersion < targetVersion) {
+        // Completing one write can synchronously start its successor and clear pending.
+        if (state.inFlight) await state.inFlight;
+        else if (state.pending) await pump(docKey, state);
+        else throw new Error('SMARTINPUT_AUTOSAVE_FLUSH_INCOMPLETE');
+      }
+      return { docKey, durableVersion: state.durableVersion };
+    },
+    async flushWorkspace() {
+      return Promise.all([...documents.keys()].map(docKey => this.flushDocument(docKey)));
+    },
+    recoveredSnapshot(docKey) {
+      const state = stateFor(docKey);
+      return state.durableSnapshot ? clone(state.durableSnapshot) : null;
+    },
+    status(docKey) {
+      const state = stateFor(docKey);
+      return { nextVersion: state.nextVersion, durableVersion: state.durableVersion, pending: Boolean(state.pending), inFlight: Boolean(state.inFlight) };
+    }
+  });
+}
+
+// Estimate summary projection and bounded immutable read cache.
+/* Stage 4 read-only primitives. No DB, app state, selection, or owner writes.
+   The stage 3 datastore/UI must supply and adopt authoritative read results. */
+export const ESTIMATE_SUMMARY_SCHEMA = 'SMARTINPUT_ESTIMATE_SUMMARY_V1';
+export const ESTIMATE_SUMMARY_PREFIX = 'smartinput:estimateSummary:v1:';
+export const READ_STATE = Object.freeze(Object.fromEntries(
+  ['NOT_LOADED', 'LOADING', 'READY', 'NOT_FOUND', 'ERROR', 'STALE'].map(key => [key, key])
+));
+const identifier = (value, name) => {
+  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${name} is required`);
+  return value; // Do not coerce codes, drop leading zeroes, or normalize IDs.
+};
+const revision = value => {
+  if (value !== null && typeof value !== 'string' && !(typeof value === 'number' && Number.isFinite(value))) {
+    throw new TypeError('A string, finite number, or null revision is required');
+  }
+  return value;
+};
+const text = value => String(value ?? '').trim();
+const metadataScalar = value => {
+  if (value == null) return null;
+  if (['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value))) return value;
+  throw new TypeError('Summary metadata must be scalar, not a body object');
+};
+
+export function estimateSummaryKey(companyId, estimateId) {
+  if (companyId !== null) identifier(companyId, 'companyId');
+  return `${ESTIMATE_SUMMARY_PREFIX}${encodeURIComponent(JSON.stringify(companyId))}:${encodeURIComponent(identifier(estimateId, 'estimateId'))}`;
+}
+
+/** Derived list metadata only; missing company/revision stays unknown. */
+export function projectEstimateSummary(record) {
+  identifier(record?.estimateId, 'estimateId');
+  const companyId = record.companyId == null || record.companyId === '' ? null : record.companyId;
+  if (companyId !== null) identifier(companyId, 'companyId');
+  const customerName = text(record.customerName || record.draft?.header?.customerName);
+  return Object.freeze({
+    summarySchemaVersion: ESTIMATE_SUMMARY_SCHEMA,
+    companyId,
+    estimateId: record.estimateId,
+    title: text(record.catalogName) || customerName || '견적서명 미지정',
+    customerId: text(record.customerId || record.draft?.header?.customerId),
+    customerCode: text(record.customerCode || record.draft?.header?.customerCode),
+    customerName,
+    createdAt: metadataScalar(record.createdAt),
+    updatedAt: metadataScalar(record.updatedAt),
+    sortOrder: metadataScalar(record.sortOrder),
+    sourceRevision: revision(record.dataRevision ?? null),
+    status: typeof record.status === 'string' ? record.status : null
+  });
+}
+
+function normalizeRequest(input) {
+  if (!['body', 'image'].includes(input?.kind)) throw new TypeError('Unknown read kind');
+  return Object.freeze({ kind: input.kind, companyId: identifier(input.companyId, 'companyId'),
+    id: identifier(input.id, 'id'), revision: revision(input.revision ?? null) });
+}
+export function estimateReadKey(input) {
+  const r = normalizeRequest(input);
+  return JSON.stringify([r.kind, r.companyId, r.id, [typeof r.revision, Object.is(r.revision, -0) ? '-0' : r.revision]]);
+}
+
+function freezeValue(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  // Blob is immutable. JSON bodies and image metadata have no mutable buffers.
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) throw new TypeError('Use Blob for binary images');
+  Object.values(value).forEach(child => freezeValue(child, seen));
+  return Object.freeze(value);
+}
+function payloadBytes(value, seen = new WeakSet()) {
+  if (typeof value === 'string') return value.length * 2;
+  if (!value || typeof value !== 'object') return 8;
+  if (seen.has(value)) return 0;
+  seen.add(value);
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return value.size;
+  return Object.entries(value).reduce((total, [key, item]) => total + key.length * 2 + payloadBytes(item, seen), 0);
+}
+const result = (status, fields = {}) => Object.freeze({ status, ...fields });
+
+/**
+ * read(request, {signal}) must return {status:'READY', value, revision},
+ * {status:'NOT_FOUND'}, or {status:'ERROR', error}. A null response is an error,
+ * not absence. Callers retain dirty working copies outside this disposable cache.
+ * Timeout abort is advisory: a permit is held until the physical reader settles.
+ */
+export function createEstimateReadCache({ read, maxConcurrent = 4, maxEntries = 32,
+  maxBytes = 64 * 1024 * 1024, timeoutMs = 30000, isProtected = () => false } = {}) {
+  if (typeof read !== 'function' || typeof isProtected !== 'function') throw new TypeError('Read callbacks required');
+  if (![maxConcurrent, maxEntries].every(Number.isInteger) || maxConcurrent < 1 || maxEntries < 0 ||
+      !Number.isFinite(maxBytes) || maxBytes < 0 || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new TypeError('Invalid cache limits');
+  }
+  const entries = new Map(), queue = [];
+  let active = 0, clock = 0, bytes = 0, disposed = false;
+  const current = entry => !disposed && entries.get(entry.key) === entry && !entry.done;
+  const snapshot = entry => entry ? result(entry.status, entry.outcome || {}) : result(READ_STATE.NOT_LOADED);
+  function finish(entry, status, fields = {}) {
+    if (entry.done) return;
+    entry.done = true;
+    clearTimeout(entry.timer);
+    entry.status = status;
+    entry.outcome = fields;
+    entry.resolve(snapshot(entry));
+  }
+  function remove(entry) {
+    if (entries.get(entry.key) !== entry) return;
+    bytes -= entry.bytes;
+    entries.delete(entry.key);
+  }
+  function prune() {
+    // LRU covers clean cached data and negative/error metadata, not in-flight reads.
+    const candidates = [...entries.values()].filter(e => e.done && !isProtected(e.request))
+      .sort((a, b) => a.used - b.used);
+    while ((entries.size > maxEntries || bytes > maxBytes) && candidates.length) remove(candidates.shift());
+  }
+  function pump() {
+    while (!disposed && active < maxConcurrent && queue.length) {
+      const entry = queue.shift();
+      if (!current(entry)) continue;
+      active++;
+      Promise.resolve().then(() => current(entry) ? read(entry.request, { signal: entry.controller.signal }) : null)
+        .then(response => {
+          if (!current(entry)) return;
+          if (response?.status === READ_STATE.NOT_FOUND) return finish(entry, READ_STATE.NOT_FOUND);
+          if (response?.status === READ_STATE.ERROR) throw response.error || new Error('Read failed');
+          if (response?.status !== READ_STATE.READY || response.value == null) throw new Error('Invalid read response');
+          const actual = revision(response.revision ?? null);
+          if (entry.request.revision !== null && !Object.is(actual, entry.request.revision)) {
+            return finish(entry, READ_STATE.STALE, { reason: 'REVISION_MISMATCH' });
+          }
+          const value = freezeValue(structuredClone(response.value));
+          entry.bytes = payloadBytes(value);
+          bytes += entry.bytes;
+          finish(entry, READ_STATE.READY, { value, revision: actual });
+        }).catch(error => {
+          if (current(entry)) finish(entry, READ_STATE.ERROR, { error });
+        }).finally(() => { active--; prune(); pump(); });
+    }
+  }
+  function load(input) {
+    if (disposed) return Promise.resolve(result(READ_STATE.STALE, { reason: 'DISPOSED' }));
+    const request = normalizeRequest(input), key = estimateReadKey(request), prior = entries.get(key);
+    if (prior && [READ_STATE.READY, READ_STATE.NOT_FOUND, READ_STATE.LOADING].includes(prior.status)) {
+      prior.used = ++clock;
+      return prior.promise;
+    }
+    if (prior) remove(prior);
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    const entry = { request, key, promise, resolve, status: READ_STATE.LOADING, bytes: 0, used: ++clock,
+      controller: new AbortController(), done: false };
+    entries.set(key, entry);
+    entry.timer = setTimeout(() => {
+      if (!current(entry)) return;
+      const error = Object.assign(new Error('Read timed out; absence is not established'), { code: 'READ_TIMEOUT' });
+      finish(entry, READ_STATE.ERROR, { error });
+      entry.controller.abort();
+      prune(); pump();
+    }, timeoutMs);
+    queue.push(entry);
+    pump();
+    return promise;
+  }
+  function invalidate(predicate = () => true) {
+    for (const entry of entries.values()) {
+      if (!predicate(entry.request)) continue;
+      remove(entry);
+      finish(entry, READ_STATE.STALE, { reason: 'INVALIDATED' });
+      entry.controller.abort();
+    }
+    // Drop queued references as well, without cancelling unrelated reads.
+    for (let i = queue.length - 1; i >= 0; i--) if (queue[i].done) queue.splice(i, 1);
+  }
+  async function prepareSelectedEstimateBodies({ companyId, selectedIds, revisions = new Map(), isCurrent = () => true }) {
+    identifier(companyId, 'companyId');
+    const ids = Object.freeze([...new Set([...selectedIds].map(id => identifier(id, 'estimateId')))]);
+    // Snapshot revision lookup too; an in-flight caller must not change this plan.
+    const requests = ids.map(id => normalizeRequest({ kind: 'body', companyId, id, revision: revisions.get(id) ?? null }));
+    const outcomes = await Promise.all(requests.map(request => isCurrent() ? load(request)
+      : Promise.resolve(result(READ_STATE.STALE, { reason: 'CALLER_CHANGED' }))));
+    const valid = isCurrent();
+    return Object.freeze({ selectedIds: ids, results: Object.freeze(ids.map((estimateId, index) =>
+      Object.freeze({ estimateId, ...(valid ? outcomes[index] : result(READ_STATE.STALE, { reason: 'CALLER_CHANGED' })) }))) });
+  }
+  return Object.freeze({
+    load, invalidate, prune, prepareSelectedEstimateBodies,
+    peek: input => snapshot(entries.get(estimateReadKey(input))),
+    stats: () => Object.freeze({ entries: entries.size, activeReads: active, queuedReads: queue.filter(e => !e.done).length,
+      estimatedPayloadBytes: bytes, protectedEntries: [...entries.values()].filter(e => isProtected(e.request)).length }),
+    dispose: () => { if (disposed) return; invalidate(); disposed = true; queue.length = 0; }
+  });
+}
 
 export const SMARTINPUT_DB_NAME = 'oneapp-smartinput';
 export const SMARTINPUT_DB_VERSION = 5;

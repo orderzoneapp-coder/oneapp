@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const indexSource = fs.readFileSync(new URL('../smartinput/index.html', import.meta.url), 'utf8');
-const appSource = fs.readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');
+const indexSource = fs.readFileSync(new URL('../smartinput/index.html', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const appSource = fs.readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const startMarker = "    (() => {\n      const validModes = ['order', 'purchase', 'sale', 'estimate'];";
 const start = indexSource.indexOf(startMarker);
 const end = indexSource.indexOf('\n  </script>', start);
@@ -25,6 +25,7 @@ function createBootstrap(rawValue) {
     }
   };
   const context = vm.createContext({
+    resetResumedShoppingInspection: value => value,
     AbortController,
     Boolean,
     Event,
@@ -48,6 +49,7 @@ function createBootstrap(rawValue) {
 function runMainLoadDraft(shell, rawValue) {
   let readCount = 0;
   const context = vm.createContext({
+    resetResumedShoppingInspection: value => value,
     contract: {
       DRAFT_STORAGE_KEY: 'oneapp.smartinput.draft.v1',
       createDraft: () => ({ activeMode: 'order', fallback: true }),

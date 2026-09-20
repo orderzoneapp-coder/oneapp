@@ -1,0 +1,18 @@
+{
+  "schema": "SMARTINPUT_REVIEW_HOST_PREFLIGHT_VM_V1",
+  "scope": "Synthetic Node VM verification only; no production data, database, browser, owner runtime or network was used.",
+  "method": "Extract and execute the actual waitForSmartInputIdle, refreshShoppingOrderInspection and completeShoppingOrderImport function bodies from smartinput/smartinput.js. Supply a LOADED upload, a controllably delayed synthetic inspectShoppingOrderUpload Promise, an already-resolved estimateSelectionQueue, and no-op rendering/save notification functions. Race waitForSmartInputIdle against 80 ms while inspection remains unresolved, then resolve inspection with summary.newCount=0.",
+  "beforeFix": {
+    "duringInspection": { "busy": false, "inspectionStatus": "ANALYZING" },
+    "idleResult": "RESOLVED_WHILE_INSPECTION_PENDING",
+    "finding": "The host idle boundary resolved before the explicitly requested transmission preflight finished."
+  },
+  "afterFix": {
+    "duringInspection": { "busy": true, "inspectionStatus": "ANALYZING" },
+    "idleResultDuring80msPendingInspection": "WAITED",
+    "afterEmptyResult": { "busy": false, "inspectionStatus": "READY", "hostIdleResolved": true },
+    "result": "PASS"
+  },
+  "verifiedChange": "Move busy=true and the enclosing try/finally before the awaited inspection. The explicit operation remains inside the host idle boundary throughout preflight and releases it on the zero-new-candidate return.",
+  "limitations": "This independently verifies the actual main-function busy/idle behavior with a synthetic delayed dependency. It does not simulate the complete NEXUS iframe transition, exercise a real owner command, or constitute browser or production validation."
+}

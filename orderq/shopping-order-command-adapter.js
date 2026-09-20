@@ -1,9 +1,9 @@
 import {
   SHOPPING_ORDER_DEDUPE_SCHEMA,
   SHOPPING_ORDER_HEADERS,
-  buildShoppingOrderCandidates,
-  validateShoppingOrderHeaders
-} from './shopping-order-dedupe-core.js?v=0.2.1';
+  createShoppingOrderCandidates,
+  isExactShoppingOrderSource
+} from './shopping-order-source-adapter.js?v=0.1.0';
 import {
   SHOPPING_ORDER_IMPORT_REPOSITORY_VERSION,
   commitShoppingOrderCandidates,
@@ -32,13 +32,7 @@ function requestOptions(request, companyId) {
   };
 }
 
-export function createShoppingOrderCandidates(sourceRows = [], options = {}) {
-  return buildShoppingOrderCandidates(sourceRows, options);
-}
-
-export function isExactShoppingOrderSource(headers = []) {
-  return validateShoppingOrderHeaders(headers).length === 0;
-}
+export { createShoppingOrderCandidates, isExactShoppingOrderSource };
 
 export async function inspectShoppingOrderImport(request = {}) {
   const companyId = validateRequest(request);

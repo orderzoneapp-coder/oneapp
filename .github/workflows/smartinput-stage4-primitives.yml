@@ -2,8 +2,9 @@ name: SmartInput Stage 4 read and viewport primitives
 on:
   pull_request:
     paths:
-      - smartinput/estimate-read-cache.js
+      - smartinput/smartinput-data-store.js
       - smartinput/table-viewport.js
+      - smartinput/virtual-table-body.js
       - scripts/test-smartinput-lazy-read.mjs
       - scripts/test-smartinput-table-viewport.mjs
       - .github/workflows/smartinput-stage4-primitives.yml
