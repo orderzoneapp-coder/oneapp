@@ -11,7 +11,7 @@ import {
   settingsFieldGroupId,
   settingsInputOrderPreview,
   sortSettingsFields
-} from '../smartinput/settings-input-order.js';
+} from '../smartinput/field-registry.js';
 
 const root = process.cwd();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');

@@ -7,7 +7,7 @@ import {
   applyMappedFieldUpdates,
   mappedRowMutationPlan,
   projectedRowValue
-} from '../smartinput/mapped-row-sync.js';
+} from '../smartinput/input-template-mapper.js';
 import { synchronizeWorkingRow } from '../smartinput/input-template-mapper.js';
 
 const targets = [

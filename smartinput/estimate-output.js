@@ -1,3 +1,5 @@
+export { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS } from './stage5-compute-runner.js?v=0.1.1';
+
 const SHOP_HEADERS = Object.freeze([
   '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
   'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부',

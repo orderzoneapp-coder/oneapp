@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTableViewport, createViewportFrameScheduler } from '../smartinput/table-viewport.js';
+import { createVirtualTableBody } from '../smartinput/virtual-table-body.js';
 const keys = count => Array.from({ length: count }, (_, i) => `r${i}`);
 const rendered = view => view.segments.filter(s => s.kind === 'rows').flatMap(s => s.keys);
 
-// Tests pure logical row/height/range plans. Actual UI, IME and IDB are separate.
+// Logical row/height/range plans and DOM reconciliation contracts. Real browser
+// layout, native IME events and IDB are verified separately.
 for (const count of [0, 1, 80, 200, 201, 1000, 5000]) test(`logical ${count} rows survive window slicing`, () => {
   const model = createTableViewport(), all = keys(count); model.setRows(all);
   const view = model.windowFor(0, 320);
@@ -115,4 +117,130 @@ test('rAF coalescing uses latest scroll once and releases scheduled work on disp
   const callback = callbacks.get(0); callbacks.delete(0); callback(); assert.deepEqual(received, [3]);
   scheduler.schedule(4); scheduler.dispose(); assert.deepEqual(cancelled, [1]); assert.equal(callbacks.size, 0);
   scheduler.schedule(5); assert.equal(callbacks.size, 0); assert.deepEqual(received, [3]);
+});
+
+// Small DOM surface for exercising the real renderer without a browser package.
+// The fixture HTML has one row/input; layout and native focus behavior are not simulated.
+function tableBodyFixture(t) {
+  const original = new Map(['document', 'ResizeObserver', 'requestAnimationFrame', 'cancelAnimationFrame']
+    .map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  t.after(() => {
+    for (const [name, descriptor] of original) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else delete globalThis[name];
+    }
+  });
+  class Element {
+    constructor(tag) {
+      this.tagName = tag; this.children = []; this.attributes = new Map();
+      this.dataset = {}; this.style = {}; this.listeners = new Map(); this.parentElement = null;
+    }
+    get firstElementChild() { return this.children[0] || null; }
+    get nextElementSibling() {
+      return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null;
+    }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
+    hasAttribute(name) { return this.attributes.has(name); }
+    contains(node) { return this === node || this.children.some(child => child.contains(node)); }
+    closest(selector) {
+      const name = selector.match(/\[([^\]]+)\]/)?.[1];
+      return name && this.hasAttribute(name) ? this : this.parentElement?.closest(selector) || null;
+    }
+    remove() {
+      if (!this.parentElement) return;
+      this.parentElement.children.splice(this.parentElement.children.indexOf(this), 1);
+      this.parentElement = null;
+    }
+    insertBefore(node, cursor) {
+      node.remove();
+      const index = cursor ? this.children.indexOf(cursor) : this.children.length;
+      assert.ok(index >= 0); this.children.splice(index, 0, node); node.parentElement = this;
+    }
+    append(...nodes) { for (const node of nodes) this.insertBefore(node, null); }
+    getBoundingClientRect() { return { top: 0, height: 34 }; }
+    addEventListener(type, listener) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(listener);
+    }
+    emit(type, target = this) { for (const listener of this.listeners.get(type) || []) listener({ target }); }
+    set innerHTML(html) {
+      assert.equal(this.tagName, 'tbody');
+      const row = new Element('tr'), input = new Element('input');
+      row.setAttribute('data-row-id', html.match(/data-row-id="([^"]*)"/)[1]);
+      input.value = html.match(/value="([^"]*)"/)[1]; input.setAttribute('value', input.value);
+      row.append(input); this.append(row);
+    }
+  }
+  const document = { activeElement: null, createElement: tag => new Element(tag) };
+  const frames = new Map(); let frameId = 0;
+  Object.assign(globalThis, {
+    document, ResizeObserver: class { observe() {} disconnect() {} },
+    requestAnimationFrame: callback => { frames.set(++frameId, callback); return frameId; },
+    cancelAnimationFrame: id => frames.delete(id)
+  });
+  const table = new Element('table'), body = new Element('tbody'), scroller = new Element('div');
+  table.append(body); scroller.append(table); scroller.scrollTop = 0; scroller.clientHeight = 320;
+  const view = createVirtualTableBody({ body, scroller, rowAttribute: 'data-row-id', keyOf: row => row.rowId });
+  return {
+    view, body, document,
+    render: quantity => view.render([{ rowId: 'r1', quantity }],
+      row => `<tr data-row-id="${row.rowId}"><input value="${row.quantity}"></tr>`, 1),
+    focus: () => { document.activeElement = body.firstElementChild.firstElementChild; body.emit('focusin', document.activeElement); },
+    flushFrames: () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(); } }
+  };
+}
+
+test('ordinary rendering preserves an active editor; explicit restoration replaces it', t => {
+  const fixture = tableBodyFixture(t); fixture.render(8); fixture.focus();
+  const previous = fixture.body.firstElementChild;
+  fixture.render(0);
+  assert.equal(fixture.body.firstElementChild, previous);
+  assert.equal(previous.firstElementChild.value, '8');
+  fixture.view.invalidate();
+  assert.equal(fixture.body.firstElementChild, previous, 'invalidation waits for the caller to render restored data');
+  fixture.render(0);
+  const restored = fixture.body.firstElementChild;
+  assert.notEqual(restored, previous); assert.equal(restored.firstElementChild.value, '0');
+  fixture.focus(); fixture.render(3);
+  assert.equal(fixture.body.firstElementChild, restored, 'ordinary focus protection resumes after the reset');
+  assert.equal(restored.firstElementChild.value, '0');
+});
+
+test('explicit restoration resets live input values even when cached model HTML is unchanged', t => {
+  const fixture = tableBodyFixture(t); fixture.render(0); fixture.focus();
+  const previous = fixture.body.firstElementChild, html = previous.__virtualHtml;
+  previous.firstElementChild.value = '8';
+  fixture.render(0);
+  assert.equal(fixture.body.firstElementChild, previous);
+  assert.equal(previous.firstElementChild.value, '8');
+  fixture.view.invalidate(); fixture.render(0);
+  const restored = fixture.body.firstElementChild;
+  assert.notEqual(restored, previous); assert.equal(restored.__virtualHtml, html);
+  assert.equal(restored.firstElementChild.value, '0');
+  assert.equal(restored.firstElementChild.getAttribute('value'), '0');
+});
+
+test('IME composition defers explicit restoration and retains its reset until composition ends', async t => {
+  const fixture = tableBodyFixture(t); fixture.render(8); fixture.focus();
+  const previous = fixture.body.firstElementChild;
+  fixture.body.emit('compositionstart'); fixture.view.invalidate(); fixture.render(0);
+  fixture.render(3); // The latest deferred model wins; the requested DOM reset must survive.
+  fixture.view.ensure('r1');
+  assert.equal(fixture.body.firstElementChild, previous); assert.equal(previous.firstElementChild.value, '8');
+  fixture.body.emit('compositionend'); await Promise.resolve();
+  const restored = fixture.body.firstElementChild;
+  assert.notEqual(restored, previous); assert.equal(restored.firstElementChild.value, '3');
+  fixture.focus(); fixture.render(4);
+  assert.equal(fixture.body.firstElementChild, restored, 'composition completion consumes the explicit reset once');
+});
+
+test('hidden bodies retain restoration until they can paint, including without another model render', t => {
+  const fixture = tableBodyFixture(t); fixture.render(8); fixture.focus();
+  const previous = fixture.body.firstElementChild;
+  fixture.body.setAttribute('hidden', ''); fixture.view.invalidate(); fixture.render(0);
+  assert.equal(fixture.body.firstElementChild, previous);
+  fixture.body.attributes.delete('hidden'); fixture.view.ensure('r1');
+  assert.notEqual(fixture.body.firstElementChild, previous);
+  assert.equal(fixture.body.firstElementChild.firstElementChild.value, '0');
 });

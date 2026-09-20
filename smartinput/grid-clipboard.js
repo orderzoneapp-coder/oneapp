@@ -1,11 +1,11 @@
 import {
   buildStructuredFieldIndex,
   normalizeStructuredFieldName
-} from './structured-sheet-parser.js?v=0.1.1';
+} from './structured-sheet-parser.js?v=0.1.2';
 import {
   hasMeaningfulSourceValue,
   sourceRowHasMeaningfulValue
-} from './source-row-values.js?v=0.1.0';
+} from './input-template-mapper.js?v=0.3.0';
 
 function cellText(value) {
   return String(value ?? '');

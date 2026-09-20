@@ -52,7 +52,7 @@ writeWorkbook(issueFile, issueRows);
 const requests = [];
 const mime = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json', '.png': 'image/png', '.xls': 'application/vnd.ms-excel'
+  '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.xls': 'application/vnd.ms-excel'
 };
 const server = createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
@@ -216,6 +216,19 @@ try {
   client = new CdpClient(targets[0].webSocketDebuggerUrl);
   await client.connect();
   await Promise.all([client.send('Page.enable'), client.send('Runtime.enable'), client.send('Network.enable'), client.send('DOM.enable')]);
+  await client.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+  client.on('Fetch.requestPaused', event => {
+    const external = /^https?:/.test(event.request.url) && !event.request.url.startsWith(origin);
+    void client.send(external ? 'Fetch.failRequest' : 'Fetch.continueRequest', external
+      ? { requestId: event.requestId, errorReason: 'BlockedByClient' }
+      : { requestId: event.requestId });
+  });
+  await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    window.__shoppingLedgerReads=0;
+    for(const [prototype,storeFor] of [[IDBObjectStore.prototype,value=>value],[IDBIndex.prototype,value=>value.objectStore]]) {
+      for(const method of ['get','getAll','openCursor','count']) {const original=prototype[method];prototype[method]=function(...args){const store=storeFor(this);if(/^(orders|orderItems|syncQueue|officialCommands)$/.test(store.name))window.__shoppingLedgerReads++;return original.apply(this,args);};}
+    }
+  })();` });
   client.on('Runtime.exceptionThrown', event => exceptions.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'exception'));
   client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') consoleErrors.push(event.args?.map(arg => arg.value || arg.description || '').join(' ')); });
   client.on('Network.requestWillBeSent', event => networkRequests.push({ method: event.request?.method || '', url: event.request?.url || '' }));
@@ -246,16 +259,21 @@ try {
   await client.send('Page.navigate', { url: `${origin}/smartinput/` });
   await loaded;
   await expr(client, `document.querySelector('#productReferenceStatus')?.textContent==='READY'&&document.querySelector('#customerReferenceStatus')?.textContent==='READY'`, 'owner references ready');
+  await click(client, '#allReferenceReload');
+  await expr(client, `document.querySelector('#allReferenceReload')?.textContent==='전체 기준정보 새로고침'&&!document.querySelector('#allReferenceReload').disabled`, 'explicit six-domain reference refresh');
   await input(client, '#warehouseInput', '본사창고');
   await expr(client, `document.querySelector('#warehouseInput').value==='본사창고'`, 'owner warehouse selected');
   await input(client, '#assigneeInput', '김담당');
   await expr(client, `document.querySelector('#assigneeInput').value==='김담당'`, 'order assignee entered');
   await evaluate(client, `new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/customer-master/vendor/xlsx.full.min.js';script.onload=()=>resolve(true);script.onerror=()=>reject(new Error('XLSX_LOAD_FAILED'));document.head.append(script);})`);
 
+  const readsBeforeFirstUpload = await evaluate(client, 'window.__shoppingLedgerReads');
   await upload(client, issueFile);
-  await expr(client, `document.querySelectorAll('.shopping-order-candidate').length===5&&document.querySelectorAll('.shopping-order-candidate[data-status="NEW"]').length===4&&document.querySelectorAll('.shopping-order-candidate[data-status="REVIEW_REQUIRED"]').length===1`, 'one review candidate and four normal candidates', 30_000);
-  assert.match(await evaluate(client, `document.querySelector('.shopping-order-candidate[data-status="REVIEW_REQUIRED"] .shopping-order-issues').textContent`), /금액/);
-  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '신규 주문 저장 4건');
+  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 'five local candidates wait for explicit owner inspection', 30_000);
+  assert.match(await evaluate(client, `document.querySelector('#shoppingOrderCandidates').textContent`), /금액/);
+  assert.match(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), /주문 확인/);
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeFirstUpload,
+    'ordinary shopping upload must not read the owner ledger');
   const pickerRefresh = {
     customerSuccess: await refreshPicker(client, {
       openSelector: '[data-shopping-customer]', dialogSelector: 'dialog.smart-customer-dialog',
@@ -292,9 +310,11 @@ try {
   await click(client, '#completeButton');
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=1');return (await db.getAll(db.STORE.ORDERS)).length===4;})()`, 'four isolated normal candidates saved', 30_000);
 
+  const readsBeforeSecondUpload = await evaluate(client, 'window.__shoppingLedgerReads');
   await upload(client, validFile);
-  await expr(client, `document.querySelectorAll('.shopping-order-candidate').length===5&&document.querySelectorAll('.shopping-order-candidate[data-status="NEW"]').length===1&&document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===4`, 'one surplus and four actual-ledger duplicates', 30_000);
-  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '신규 주문 저장 1건');
+  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 're-upload prepares local candidates without automatic dedupe', 30_000);
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeSecondUpload,
+    're-upload must not read the owner ledger');
   const screenshots = [];
   for (const [width, height, mobile] of [[1920, 1080, false], [1440, 1000, false], [390, 844, true]]) {
     await client.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
@@ -323,7 +343,12 @@ try {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   await click(client, '#completeButton');
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=2');return (await db.getAll(db.STORE.ORDERS)).length===5;})()`, 'fifth surplus saved', 30_000);
+  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="CREATED"]').length===1&&document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===4`, 'explicit transfer isolates the one surplus from four duplicates');
+  const readsBeforeThirdUpload = await evaluate(client, 'window.__shoppingLedgerReads');
   await upload(client, validFile);
+  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 'third upload waits for explicit inspection');
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeThirdUpload);
+  await click(client, '#completeButton');
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===5&&document.querySelector('#completeButton').disabled`, 'all existing orders excluded with zero-write action', 30_000);
   const finalEvidence = await evaluate(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-final=1');const orders=await db.getAll(db.STORE.ORDERS);const items=await db.getAll(db.STORE.ORDER_ITEMS);const events=await db.getAll(db.STORE.ORDER_EVENTS);const queue=await db.getAll(db.STORE.SYNC_QUEUE);return {orders:orders.length,items:items.length,events:events.length,queue:queue.length,externalOrderNos:orders.map(order=>order.externalOrderNo),sourceType:[...new Set(orders.map(order=>order.sourceType))],assignees:orders.map(order=>({assigneeId:order.assigneeId,assigneeName:order.assigneeName})),eventAssignees:events.map(event=>event.detail?.assignee),firstEvidence:orders[0].shoppingSourceEvidence.rows[0]};})()`);
   assert.equal(finalEvidence.orders, 5);
@@ -367,7 +392,7 @@ try {
   assert.deepEqual(localMutations, []);
   assert.deepEqual(exceptions, []);
   assert.deepEqual(consoleErrors, []);
-  console.log(JSON.stringify({
+  const browserEvidence = {
     taskId: 'NEXUS-SMARTINPUT-SHOPPING-UPLOAD-20260904-01',
     status: 'PASS',
     candidates: 5,
@@ -380,7 +405,13 @@ try {
     viewports: ['1920 light/dark', '1440 light/dark', '390 light/dark'],
     screenshots,
     isolation: { externalMutations: 0, localMutations: 0, exceptions: 0, consoleErrors: 0, temporaryProfile: true }
-  }, null, 2));
+  };
+  if (process.env.SMARTINPUT_SHOPPING_EVIDENCE_FILE) {
+    const evidenceFile = resolve(process.env.SMARTINPUT_SHOPPING_EVIDENCE_FILE);
+    mkdirSync(dirname(evidenceFile), { recursive: true });
+    writeFileSync(evidenceFile, `${JSON.stringify(browserEvidence, null, 2)}\n`);
+  }
+  console.log(JSON.stringify(browserEvidence, null, 2));
 } finally {
   client?.close();
   browser?.kill();

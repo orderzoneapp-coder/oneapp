@@ -1,0 +1,369 @@
+{
+  "taskId": "NEXUS-SMARTINPUT-SHOPPING-UPLOAD-20260904-01",
+  "status": "PASS",
+  "candidates": 5,
+  "firstCommit": {
+    "created": 4,
+    "reviewRequired": 1
+  },
+  "secondCommit": {
+    "priorDuplicates": 4,
+    "created": 1
+  },
+  "finalDuplicateZeroWrite": 5,
+  "stored": {
+    "orders": 5,
+    "items": 14,
+    "events": 5,
+    "queue": 10,
+    "externalOrderNos": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "sourceType": [
+      "SHOPPING_MALL_ORIGINAL"
+    ],
+    "assignees": [
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      }
+    ],
+    "eventAssignees": [
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      },
+      {
+        "assigneeId": "MGR-%EA%B9%80%EB%8B%B4%EB%8B%B9",
+        "assigneeName": "김담당"
+      }
+    ],
+    "firstEvidence": {
+      "sourceRowNumber": 7,
+      "sourceRelativeRowNumber": 6,
+      "sourceCells": [
+        "2026-09-04",
+        "온라인거래처 다",
+        "G-3",
+        "입금",
+        "전달 6",
+        "메모 6",
+        "SHOP-006",
+        "쇼핑 상품 6",
+        "6BOX",
+        "1",
+        "1600",
+        "1600",
+        "COPY-6",
+        "원본 주소 3",
+        "010-0000-0003",
+        "ORIGIN-6",
+        "DIST-3"
+      ],
+      "sourceCellEvidence": [
+        {
+          "address": "A7",
+          "rowIndex": 6,
+          "columnIndex": 0,
+          "displayValue": "2026-09-04",
+          "rawValue": "2026-09-04",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "B7",
+          "rowIndex": 6,
+          "columnIndex": 1,
+          "displayValue": "온라인거래처 다",
+          "rawValue": "온라인거래처 다",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "C7",
+          "rowIndex": 6,
+          "columnIndex": 2,
+          "displayValue": "G-3",
+          "rawValue": "G-3",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "D7",
+          "rowIndex": 6,
+          "columnIndex": 3,
+          "displayValue": "입금",
+          "rawValue": "입금",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "E7",
+          "rowIndex": 6,
+          "columnIndex": 4,
+          "displayValue": "전달 6",
+          "rawValue": "전달 6",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "F7",
+          "rowIndex": 6,
+          "columnIndex": 5,
+          "displayValue": "메모 6",
+          "rawValue": "메모 6",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "G7",
+          "rowIndex": 6,
+          "columnIndex": 6,
+          "displayValue": "SHOP-006",
+          "rawValue": "SHOP-006",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "H7",
+          "rowIndex": 6,
+          "columnIndex": 7,
+          "displayValue": "쇼핑 상품 6",
+          "rawValue": "쇼핑 상품 6",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "I7",
+          "rowIndex": 6,
+          "columnIndex": 8,
+          "displayValue": "6BOX",
+          "rawValue": "6BOX",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "J7",
+          "rowIndex": 6,
+          "columnIndex": 9,
+          "displayValue": "1",
+          "rawValue": 1,
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "n",
+          "blank": false
+        },
+        {
+          "address": "K7",
+          "rowIndex": 6,
+          "columnIndex": 10,
+          "displayValue": "1600",
+          "rawValue": 1600,
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "n",
+          "blank": false
+        },
+        {
+          "address": "L7",
+          "rowIndex": 6,
+          "columnIndex": 11,
+          "displayValue": "1600",
+          "rawValue": 1600,
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "n",
+          "blank": false
+        },
+        {
+          "address": "M7",
+          "rowIndex": 6,
+          "columnIndex": 12,
+          "displayValue": "COPY-6",
+          "rawValue": "COPY-6",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "N7",
+          "rowIndex": 6,
+          "columnIndex": 13,
+          "displayValue": "원본 주소 3",
+          "rawValue": "원본 주소 3",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "O7",
+          "rowIndex": 6,
+          "columnIndex": 14,
+          "displayValue": "010-0000-0003",
+          "rawValue": "010-0000-0003",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "P7",
+          "rowIndex": 6,
+          "columnIndex": 15,
+          "displayValue": "ORIGIN-6",
+          "rawValue": "ORIGIN-6",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        },
+        {
+          "address": "Q7",
+          "rowIndex": 6,
+          "columnIndex": 16,
+          "displayValue": "DIST-3",
+          "rawValue": "DIST-3",
+          "formula": "",
+          "numberFormat": "",
+          "cellType": "s",
+          "blank": false
+        }
+      ],
+      "sourceValues": {
+        "배송일자": "2026-09-04",
+        "거래처명": "온라인거래처 다",
+        "그룹": "G-3",
+        "주문상태": "입금",
+        "전하실말씀": "전달 6",
+        "상점메모": "메모 6",
+        "상품코드": "SHOP-006",
+        "상품명": "쇼핑 상품 6",
+        "규격": "6BOX",
+        "수량": "1",
+        "단가": "1600",
+        "금액": "1600",
+        "복사원코드": "COPY-6",
+        "주소": "원본 주소 3",
+        "전화2": "010-0000-0003",
+        "원코드": "ORIGIN-6",
+        "유통그룹관리코드": "DIST-3"
+      }
+    }
+  },
+  "erpOrderAssignees": [
+    {
+      "externalOrderNo": "ERP-A-001",
+      "customerName": "거래처 A",
+      "assigneeId": "MGR-a%EB%8B%B4%EB%8B%B9",
+      "assigneeName": "A담당"
+    },
+    {
+      "externalOrderNo": "ERP-B-001",
+      "customerName": "거래처 B",
+      "assigneeId": "MGR-b%EB%8B%B4%EB%8B%B9",
+      "assigneeName": "B담당"
+    }
+  ],
+  "pickerRefresh": {
+    "customerSuccess": {
+      "clickCount": 1,
+      "query": "온라인거래처 가",
+      "focused": true,
+      "resultCount": 1,
+      "message": "1개 거래처 · 한 곳만 체크할 수 있습니다."
+    },
+    "productSuccess": {
+      "clickCount": 1,
+      "query": "SHOP-001",
+      "focused": true,
+      "resultCount": 1,
+      "message": "1개 후보 · 1번째 항목 선택 · ↑↓ 이동 · Enter 확정"
+    },
+    "customerFailure": {
+      "clickCount": 1,
+      "query": "온라인거래처 가",
+      "focused": true,
+      "resultCount": 1,
+      "message": "기준정보 새로고침에 실패했습니다. 검색어와 기존 검색 결과를 유지했습니다."
+    },
+    "productFailure": {
+      "clickCount": 1,
+      "query": "SHOP-001",
+      "focused": true,
+      "resultCount": 1,
+      "message": "기준정보 새로고침에 실패했습니다. 검색어와 기존 검색 결과를 유지했습니다."
+    }
+  },
+  "viewports": [
+    "1920 light/dark",
+    "1440 light/dark",
+    "390 light/dark"
+  ],
+  "screenshots": [
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-1920-light.png",
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-1920-dark.png",
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-1440-light.png",
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-1440-dark.png",
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-390-light.png",
+    "C:\\Users\\USER\\AppData\\Local\\Temp\\oneapp-smartinput-shopping-screenshots\\smartinput-shopping-390-dark.png"
+  ],
+  "isolation": {
+    "externalMutations": 0,
+    "localMutations": 0,
+    "exceptions": 0,
+    "consoleErrors": 0,
+    "temporaryProfile": true
+  }
+}

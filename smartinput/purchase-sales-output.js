@@ -1,3 +1,5 @@
+export { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS } from './stage5-compute-runner.js?v=0.1.1';
+
 const CHECK_HEADERS = Object.freeze(['그룹', '거래처', '품목코드', '품명', '수량', '확인사항']);
 const SALES_HEADERS = Object.freeze([
   '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항',

@@ -10,6 +10,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const html = read('smartinput/index.html');
 const appSource = read('smartinput/smartinput.js').replace(/\r\n/g, '\n');
 const adapterSource = read('smartinput/legacy-integration-adapter.js');
+const inputSource = read('smartinput/input.js');
 const optionalLoaderSource = read('smartinput/optional-operation-loader.js');
 const extractorSource = read('orderq/smartparser/order-text-extractor.js');
 const storeSource = read('smartinput/smartinput-data-store.js');
@@ -83,9 +84,9 @@ assert.doesNotMatch(appSource, /toast\(`\$\{records\.length\}개 견적서 · �
 assert.match(appSource, /data-estimate-name[^>]*placeholder="견적서명을 입력하세요"[^>]*autofocus/, 'estimate naming must be immediately ready for direct keyboard input');
 assert.match(appSource, /dialog\.showModal\(\);[\s\S]*focusNameInput\(\);[\s\S]*setTimeout\(focusNameInput, 0\)/, 'estimate naming focus must be immediate and restored after native modal focus handling');
 assert.doesNotMatch(appSource, /if \(current\.estimateKind !== 'LINKED_GROUP'\) current\.catalogRecordId = ''/, 'saving an individual estimate must retain its identity for subsequent in-place updates');
-assert.match(appSource, /from '\.\.\/orderq\/voucher-activity-read-adapter\.js/, 'SmartInput may consume the owner-issued read-only voucher activity adapter');
-assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\/(?!voucher-activity-read-adapter)/,
-  'SmartInput core must not statically import ORDER Q writer modules');
+assert.match(appSource, /specifier: '\.\.\/orderq\/voucher-activity-read-adapter\.js/, 'explicit voucher lookup must use the owner-issued read-only adapter');
+assert.doesNotMatch(appSource, /from\s+['"]\.\.\/orderq\//,
+  'SmartInput core must not statically import the optional ORDER Q integration');
 assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_READ_ADAPTER_V1/);
 assert.match(voucherActivitySource, /ONEAPP_VOUCHER_ACTIVITY_SNAPSHOT_V1/);
 for (const status of ['READY', 'EMPTY', 'ERROR']) assert.match(voucherActivitySource, new RegExp(`['"]${status}['"]`));
@@ -128,7 +129,7 @@ assert.match(appSource, /async function waitForSmartInputIdle[\s\S]*state\.activ
 assert.match(appSource, /async function refreshAllReferencesFromToolbar[\s\S]*withTimeout\([\s\S]*refreshAllReferenceData[\s\S]*withTimeout\([\s\S]*loadVoucherFieldRegistry/, 'manual full reference refresh must have bounded reference and registry waits');
 assert.match(appSource, /async function rematchRowsForCustomer[\s\S]*withTimeout\([\s\S]*rematchExtractedLinesForCustomer/, 'customer rematching must leave its save block through a bounded failure path');
 assert.match(appSource, /async function ensureOfficialCapability[\s\S]*loadPurchaseStage3Capability[\s\S]*loadSaleStage4Capability[\s\S]*async function completeSaleOfficial[\s\S]*ensureOfficialCapability\('sale'\)[\s\S]*async function completePurchaseOfficial[\s\S]*ensureOfficialCapability\('purchase'\)/, 'official save must retry a transient capability failure in the same screen');
-assert.match(appSource, /function discardStaleResult|const discardStaleResult[\s\S]*scheduleShoppingOrderInspection\(0\)/, 'a stale shopping inspection must schedule a current replacement instead of staying ANALYZING');
+assert.match(appSource, /const discardStaleResult[\s\S]*invalidateShoppingOrderInspection\(\)/, 'a stale shopping inspection must return to local input instead of querying the ledger automatically');
 for (const mutationContract of [
   /function applyMappingGridPaste[\s\S]*invalidateOptionalOperations\(\);[\s\S]*captureGridPasteUndo\(\)/,
   /function activatePendingReferences[\s\S]*window\.confirm[\s\S]*invalidateOptionalOperations\(\);[\s\S]*domains\.forEach/,
@@ -137,10 +138,10 @@ for (const mutationContract of [
   assert.match(appSource, mutationContract, 'user row mutations must invalidate an older customer rematch before it can replace current rows');
 }
 assert.match(read('smartinput/estimate-workspace.js'), /rebaseIndependentEstimateWork/, 'selected commits preserve per-estimate working edits');
-assert.match(adapterSource, /from ['"]\.\.\/orderq\/smartparser\/order-text-extractor\.js\?v=0\.8\.1['"]/,
-  'the adapter must use the exact 0a order text extractor');
-assert.doesNotMatch(adapterSource, /function splitSourceMessages|function parseOrderLine|function looksLikeOrder/,
-  'the adapter must not replace the legacy parser chain with a reduced parser');
+assert.doesNotMatch(inputSource, /from ['"]\.\.\/orderq\//,
+  'independent input must own the preserved pure parser without loading another app engine');
+assert.doesNotMatch(adapterSource, /function captureTextIntake|function analyzeSingleOrderDocument|function extractOrderProductLines/,
+  'input implementations must actually leave the optional integration adapter');
 for (const dependency of ['source-parser', 'order-event-detector', 'order-line-parser']) {
   assert.match(extractorSource, new RegExp(`from ['"]\\./${dependency}\\.js\\?v=0\\.8\\.1['"]`));
 }
@@ -215,10 +216,13 @@ assert.equal(linkedDraft.estimateKind, 'LINKED_GROUP');
 assert.equal(linkedDraft.linkedEstimateSources[0].estimateId, 'E-1');
 assert.equal(linkedDraft.rows[0].linkedSourceRowId, 'R-1');
 
-const adapter = await import('../smartinput/legacy-integration-adapter.js');
+const adapter = { ...await import('../smartinput/legacy-integration-adapter.js'), ...await import('../smartinput/input.js') };
 const legacyExtractor = await import('../orderq/smartparser/order-text-extractor.js?v=0.8.1');
-assert.equal(adapter.extractOrderProductLines, legacyExtractor.extractOrderProductLines,
-  'the compatibility adapter must re-export the canonical 0a extractor');
+for (const sourceType of ['GENERAL_TEXT', 'KAKAO_TEXT']) {
+  const fixture = { sourceType, sourceId: 'PARITY', rawText: '[테스트] [오후 1:00] 사과 좋은 거 2박스\n2번 감자 3개\n[테스트] [오후 1:01] 주문 취소\n[테스트] [오후 1:02] 단가 3000원' };
+  assert.deepEqual(adapter.extractOrderProductLines(fixture), legacyExtractor.extractOrderProductLines(fixture),
+    'the independent parser must preserve canonical rows and source keys');
+}
 const captured = await adapter.captureTextIntake({ sourceType: 'GENERAL_TEXT', sourceId: 'TEST', rawText: '테스트 거래처\n사과 2박스\n배 3개' });
 assert.match(captured.session.intakeSessionId, /^SI-LOCAL-/);
 assert.equal(captured.session.localOnly, true, 'pure text parsing must not write the removed raw intake store');

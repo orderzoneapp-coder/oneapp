@@ -1,0 +1,1190 @@
+{
+  "schema": "SMARTINPUT_BOUNDARY_BENCHMARK_V1",
+  "label": "after-intermediate",
+  "recordedAt": "2026-09-20T18:33:07.526Z",
+  "head": "21eaf44d50883c68f6c40a6eca9d368df1eff09f",
+  "environment": {
+    "node": "v24.19.0",
+    "platform": "win32",
+    "cpu": "Intel(R) Pentium(R) Gold G6400 CPU @ 4.00GHz",
+    "logicalCpus": 4,
+    "totalMemoryBytes": 16807936000
+  },
+  "fixture": "Synthetic fixture derived from test-smartinput-stage5-compute.mjs; not user or production data",
+  "statistics": "Nearest-rank p95; 3 unrecorded warmups for pure matrices; warm navigation follows seeded local save",
+  "pureCompute": [
+    {
+      "name": "estimateMatrix",
+      "rows": 20,
+      "samples": [
+        1.076,
+        0.901,
+        0.976,
+        1.832,
+        1.441,
+        1.29,
+        0.888,
+        0.829,
+        0.733,
+        1.098,
+        0.741,
+        0.74,
+        0.847,
+        0.939,
+        0.726,
+        0.706,
+        0.71,
+        0.877,
+        1.52,
+        1.015
+      ],
+      "count": 20,
+      "p50Ms": 0.888,
+      "p95Ms": 1.52,
+      "maxMs": 1.832,
+      "outputSha256": "81b81004d14fc7e03b739a5fe1af0f19432da8ba5c97195402576a2623ac910e",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 20,
+      "samples": [
+        1.131,
+        1.067,
+        1.375,
+        1.399,
+        1.892,
+        1.935,
+        2.334,
+        1.925,
+        1.93,
+        2.147,
+        1.286,
+        1.032,
+        1.853,
+        2.38,
+        1.932,
+        1.898,
+        1.965,
+        2.168,
+        2.091,
+        1.712
+      ],
+      "count": 20,
+      "p50Ms": 1.898,
+      "p95Ms": 2.334,
+      "maxMs": 2.38,
+      "outputSha256": "54ec1052ee921f3bbafac0830a8d8f7eb47e9a0a3c7333d24f12a970b008583e",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    },
+    {
+      "name": "estimateMatrix",
+      "rows": 600,
+      "samples": [
+        67.059,
+        69.599,
+        68.74,
+        68.253,
+        68.329,
+        66.985,
+        67.612,
+        67.755,
+        66.877,
+        67.068,
+        64.519,
+        68.023,
+        68.49,
+        69.18,
+        79.632,
+        70.607,
+        76.983,
+        78.14,
+        71.493,
+        63.086
+      ],
+      "count": 20,
+      "p50Ms": 68.253,
+      "p95Ms": 78.14,
+      "maxMs": 79.632,
+      "outputSha256": "d394f5f58a9c1d205590c8e7363e67d6dd184de820f45076c6f1fb6789a82729",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 600,
+      "samples": [
+        29.433,
+        27.62,
+        27.145,
+        27.687,
+        26.692,
+        26.601,
+        26.702,
+        30.051,
+        28.989,
+        31.026,
+        28.126,
+        26.644,
+        26.889,
+        27.644,
+        28.083,
+        26.956,
+        26.719,
+        26.579,
+        28.083,
+        30.583
+      ],
+      "count": 20,
+      "p50Ms": 27.62,
+      "p95Ms": 30.583,
+      "maxMs": 31.026,
+      "outputSha256": "47b78068c1200772c5ea176c22c5bdb331f88119be1e78fc5e2809903b8b7d34",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    },
+    {
+      "name": "estimateMatrix",
+      "rows": 3000,
+      "samples": [
+        928.068,
+        834.268,
+        519.757,
+        452.982,
+        555.851,
+        392.118,
+        395.817,
+        426.694,
+        426.346,
+        460.244,
+        401.195,
+        396.768,
+        393.451,
+        373.919,
+        377.931,
+        363.917,
+        385.248,
+        384.051,
+        407.397,
+        455.001
+      ],
+      "count": 20,
+      "p50Ms": 401.195,
+      "p95Ms": 834.268,
+      "maxMs": 928.068,
+      "outputSha256": "5135ee7b46fa38553c7919cf161be74967e633f1bfc25e9a1fb412c01213752f",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 3000,
+      "samples": [
+        145.669,
+        143.495,
+        138.946,
+        140.552,
+        155.502,
+        138.551,
+        149.841,
+        250.683,
+        401.775,
+        411.888,
+        243.31,
+        175.715,
+        155.535,
+        181.709,
+        168.809,
+        187.035,
+        190.977,
+        224.784,
+        154.501,
+        135.223
+      ],
+      "count": 20,
+      "p50Ms": 155.535,
+      "p95Ms": 401.775,
+      "maxMs": 411.888,
+      "outputSha256": "230c18437b587ef2c9424c75b6440972888cd808a18c2b2cbcd9d61761827ce2",
+      "path": "Node main-thread pure computation (not Worker or browser KPI)"
+    }
+  ],
+  "browser": {
+    "initial": {
+      "marks": {
+        "storage": {
+          "oneapp-smartinput/autosave/get": 5,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 6,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+          "oneapp-smartinput/estimates/openCursor": 1
+        },
+        "getItem": 7,
+        "readyMs": 1257.2999999523163,
+        "localDataMs": null
+      },
+      "resources": [
+        {
+          "path": "/nexus/common/nexus-ui-theme-init.js",
+          "initiatorType": "script",
+          "transferSize": 3373,
+          "encodedBodySize": 3073,
+          "decodedBodySize": 3073,
+          "durationMs": 47.200000047683716
+        },
+        {
+          "path": "/nexus/common/nexus-ui.css",
+          "initiatorType": "link",
+          "transferSize": 12897,
+          "encodedBodySize": 12597,
+          "decodedBodySize": 12597,
+          "durationMs": 51.5
+        },
+        {
+          "path": "/nexus/common/nexus-ui-app-themes.css",
+          "initiatorType": "link",
+          "transferSize": 52536,
+          "encodedBodySize": 52236,
+          "decodedBodySize": 52236,
+          "durationMs": 52.5
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.css",
+          "initiatorType": "link",
+          "transferSize": 8815,
+          "encodedBodySize": 8515,
+          "decodedBodySize": 8515,
+          "durationMs": 76.29999995231628
+        },
+        {
+          "path": "/smartinput/smartinput.css",
+          "initiatorType": "link",
+          "transferSize": 148533,
+          "encodedBodySize": 148233,
+          "decodedBodySize": 148233,
+          "durationMs": 124.40000009536743
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-light.png",
+          "initiatorType": "img",
+          "transferSize": 247719,
+          "encodedBodySize": 247419,
+          "decodedBodySize": 247419,
+          "durationMs": 162.30000007152557
+        },
+        {
+          "path": "/nexus/assets/brand/apps/smart-input/logo-dark.png",
+          "initiatorType": "img",
+          "transferSize": 271992,
+          "encodedBodySize": 271692,
+          "decodedBodySize": 271692,
+          "durationMs": 167.20000004768372
+        },
+        {
+          "path": "/smartinput/smartinput-contract.js",
+          "initiatorType": "script",
+          "transferSize": 71844,
+          "encodedBodySize": 71544,
+          "decodedBodySize": 71544,
+          "durationMs": 204.20000004768372
+        },
+        {
+          "path": "/smartinput/smartinput.js",
+          "initiatorType": "script",
+          "transferSize": 680203,
+          "encodedBodySize": 679903,
+          "decodedBodySize": 679903,
+          "durationMs": 147.10000002384186
+        },
+        {
+          "path": "/smartinput/source-preparation-ui-v2.js",
+          "initiatorType": "script",
+          "transferSize": 14350,
+          "encodedBodySize": 14050,
+          "decodedBodySize": 14050,
+          "durationMs": 226.79999995231628
+        },
+        {
+          "path": "/nexus/common/nexus-ui.js",
+          "initiatorType": "script",
+          "transferSize": 23636,
+          "encodedBodySize": 23336,
+          "decodedBodySize": 23336,
+          "durationMs": 229.80000007152557
+        },
+        {
+          "path": "/nexus/common/nexus-table-ux.js",
+          "initiatorType": "script",
+          "transferSize": 29071,
+          "encodedBodySize": 28771,
+          "decodedBodySize": 28771,
+          "durationMs": 242.40000009536743
+        },
+        {
+          "path": "/smartinput/virtual-table-body.js",
+          "initiatorType": "script",
+          "transferSize": 8288,
+          "encodedBodySize": 7988,
+          "decodedBodySize": 7988,
+          "durationMs": 93.89999997615814
+        },
+        {
+          "path": "/smartinput/smartinput-data-store.js",
+          "initiatorType": "script",
+          "transferSize": 88106,
+          "encodedBodySize": 87806,
+          "decodedBodySize": 87806,
+          "durationMs": 101.60000002384186
+        },
+        {
+          "path": "/smartinput/estimate-workspace.js",
+          "initiatorType": "script",
+          "transferSize": 20008,
+          "encodedBodySize": 19708,
+          "decodedBodySize": 19708,
+          "durationMs": 108.39999997615814
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 110.79999995231628
+        },
+        {
+          "path": "/reference-data/product-master-command-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 65444,
+          "encodedBodySize": 65144,
+          "decodedBodySize": 65144,
+          "durationMs": 111
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 119
+        },
+        {
+          "path": "/smartinput/legacy-integration-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 6771,
+          "encodedBodySize": 6471,
+          "decodedBodySize": 6471,
+          "durationMs": 151
+        },
+        {
+          "path": "/smartinput/input.js",
+          "initiatorType": "script",
+          "transferSize": 27298,
+          "encodedBodySize": 26998,
+          "decodedBodySize": 26998,
+          "durationMs": 165.10000002384186
+        },
+        {
+          "path": "/smartinput/optional-operation-loader.js",
+          "initiatorType": "script",
+          "transferSize": 21015,
+          "encodedBodySize": 20715,
+          "decodedBodySize": 20715,
+          "durationMs": 239.39999997615814
+        },
+        {
+          "path": "/smartinput/grid-clipboard.js",
+          "initiatorType": "script",
+          "transferSize": 7241,
+          "encodedBodySize": 6941,
+          "decodedBodySize": 6941,
+          "durationMs": 239.5
+        },
+        {
+          "path": "/smartinput/input-template-mapper.js",
+          "initiatorType": "script",
+          "transferSize": 33797,
+          "encodedBodySize": 33497,
+          "decodedBodySize": 33497,
+          "durationMs": 240.30000007152557
+        },
+        {
+          "path": "/smartinput/order-document-number.js",
+          "initiatorType": "script",
+          "transferSize": 7070,
+          "encodedBodySize": 6770,
+          "decodedBodySize": 6770,
+          "durationMs": 272.60000002384186
+        },
+        {
+          "path": "/smartinput/purchase-stage3.js",
+          "initiatorType": "script",
+          "transferSize": 9345,
+          "encodedBodySize": 9045,
+          "decodedBodySize": 9045,
+          "durationMs": 300.5
+        },
+        {
+          "path": "/smartinput/sale-stage4.js",
+          "initiatorType": "script",
+          "transferSize": 9122,
+          "encodedBodySize": 8822,
+          "decodedBodySize": 8822,
+          "durationMs": 316.10000002384186
+        },
+        {
+          "path": "/smartinput/multivoucher-stage1.js",
+          "initiatorType": "script",
+          "transferSize": 29333,
+          "encodedBodySize": 29033,
+          "decodedBodySize": 29033,
+          "durationMs": 320.60000002384186
+        },
+        {
+          "path": "/smartinput/input-list-search.js",
+          "initiatorType": "script",
+          "transferSize": 5826,
+          "encodedBodySize": 5526,
+          "decodedBodySize": 5526,
+          "durationMs": 323.89999997615814
+        },
+        {
+          "path": "/smartinput/estimate-price-snapshot.js",
+          "initiatorType": "script",
+          "transferSize": 1381,
+          "encodedBodySize": 1081,
+          "decodedBodySize": 1081,
+          "durationMs": 323
+        },
+        {
+          "path": "/smartinput/estimate-f8-source-plan.js",
+          "initiatorType": "script",
+          "transferSize": 16702,
+          "encodedBodySize": 16402,
+          "decodedBodySize": 16402,
+          "durationMs": 349.89999997615814
+        },
+        {
+          "path": "/smartinput/estimate-f8-recovery.js",
+          "initiatorType": "script",
+          "transferSize": 16290,
+          "encodedBodySize": 15990,
+          "decodedBodySize": 15990,
+          "durationMs": 414.39999997615814
+        },
+        {
+          "path": "/smartinput/estimate-workbook-selector.js",
+          "initiatorType": "script",
+          "transferSize": 3279,
+          "encodedBodySize": 2979,
+          "decodedBodySize": 2979,
+          "durationMs": 409.5
+        },
+        {
+          "path": "/smartinput/reference-data-controller.js",
+          "initiatorType": "script",
+          "transferSize": 29917,
+          "encodedBodySize": 29617,
+          "decodedBodySize": 29617,
+          "durationMs": 414.8000000715256
+        },
+        {
+          "path": "/reference-data/merchops-settings-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 3342,
+          "encodedBodySize": 3042,
+          "decodedBodySize": 3042,
+          "durationMs": 411.5
+        },
+        {
+          "path": "/smartinput/field-registry.js",
+          "initiatorType": "script",
+          "transferSize": 23804,
+          "encodedBodySize": 23504,
+          "decodedBodySize": 23504,
+          "durationMs": 416.5
+        },
+        {
+          "path": "/smartinput/reference-refresh-controller.js",
+          "initiatorType": "script",
+          "transferSize": 6467,
+          "encodedBodySize": 6167,
+          "decodedBodySize": 6167,
+          "durationMs": 418.39999997615814
+        },
+        {
+          "path": "/smartinput/related-voucher-import.js",
+          "initiatorType": "script",
+          "transferSize": 7989,
+          "encodedBodySize": 7689,
+          "decodedBodySize": 7689,
+          "durationMs": 427.1999999284744
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 430.39999997615814
+        },
+        {
+          "path": "/smartinput/table-view-state.js",
+          "initiatorType": "script",
+          "transferSize": 2177,
+          "encodedBodySize": 1877,
+          "decodedBodySize": 1877,
+          "durationMs": 429.8000000715256
+        },
+        {
+          "path": "/smartinput/shopping-order-upload.js",
+          "initiatorType": "script",
+          "transferSize": 9028,
+          "encodedBodySize": 8728,
+          "decodedBodySize": 8728,
+          "durationMs": 430.3000000715256
+        },
+        {
+          "path": "/smartinput/table-viewport.js",
+          "initiatorType": "script",
+          "transferSize": 9319,
+          "encodedBodySize": 9019,
+          "decodedBodySize": 9019,
+          "durationMs": 307.5
+        },
+        {
+          "path": "/smartinput/independent-estimate.js",
+          "initiatorType": "script",
+          "transferSize": 45365,
+          "encodedBodySize": 45065,
+          "decodedBodySize": 45065,
+          "durationMs": 200.10000002384186
+        },
+        {
+          "path": "/smartinput/estimate-master-apply.js",
+          "initiatorType": "script",
+          "transferSize": 12383,
+          "encodedBodySize": 12083,
+          "decodedBodySize": 12083,
+          "durationMs": 205.5
+        },
+        {
+          "path": "/reference-data/change-request-contract.js",
+          "initiatorType": "script",
+          "transferSize": 8389,
+          "encodedBodySize": 8089,
+          "decodedBodySize": 8089,
+          "durationMs": 186.10000002384186
+        },
+        {
+          "path": "/reference-data/product-master-read-adapter.js",
+          "initiatorType": "script",
+          "transferSize": 9425,
+          "encodedBodySize": 9125,
+          "decodedBodySize": 9125,
+          "durationMs": 186.39999997615814
+        },
+        {
+          "path": "/smartinput/structured-sheet-parser.js",
+          "initiatorType": "script",
+          "transferSize": 7616,
+          "encodedBodySize": 7316,
+          "decodedBodySize": 7316,
+          "durationMs": 129.60000002384186
+        },
+        {
+          "path": "/smartinput/canonical-hash-compat.js",
+          "initiatorType": "script",
+          "transferSize": 4027,
+          "encodedBodySize": 3727,
+          "decodedBodySize": 3727,
+          "durationMs": 98.29999995231628
+        },
+        {
+          "path": "/smartinput/linked-estimate-source-edit.js",
+          "initiatorType": "script",
+          "transferSize": 37973,
+          "encodedBodySize": 37673,
+          "decodedBodySize": 37673,
+          "durationMs": 90.20000004768372
+        },
+        {
+          "path": "/smartinput/reference-generation-repository.js",
+          "initiatorType": "script",
+          "transferSize": 5177,
+          "encodedBodySize": 4877,
+          "decodedBodySize": 4877,
+          "durationMs": 86.5
+        },
+        {
+          "path": "/orderq/shopping-order-dedupe-core.js",
+          "initiatorType": "script",
+          "transferSize": 28733,
+          "encodedBodySize": 28433,
+          "decodedBodySize": 28433,
+          "durationMs": 37.699999928474426
+        },
+        {
+          "path": "/orderq/official-voucher-core.js",
+          "initiatorType": "script",
+          "transferSize": 27508,
+          "encodedBodySize": 27208,
+          "decodedBodySize": 27208,
+          "durationMs": 25.600000023841858
+        },
+        {
+          "path": "/orderq/canonical-hash.js",
+          "initiatorType": "script",
+          "transferSize": 4334,
+          "encodedBodySize": 4034,
+          "decodedBodySize": 4034,
+          "durationMs": 17
+        },
+        {
+          "path": "/orderq/official-voucher-v2-contract.js",
+          "initiatorType": "script",
+          "transferSize": 34317,
+          "encodedBodySize": 34017,
+          "decodedBodySize": 34017,
+          "durationMs": 17.199999928474426
+        },
+        {
+          "path": "/orderq/stocktake-conflict-v2.js",
+          "initiatorType": "script",
+          "transferSize": 32059,
+          "encodedBodySize": 31759,
+          "decodedBodySize": 31759,
+          "durationMs": 24.90000009536743
+        },
+        {
+          "path": "/nexus/common/nexus-workbench.css",
+          "initiatorType": "link",
+          "transferSize": 2191,
+          "encodedBodySize": 1891,
+          "decodedBodySize": 1891,
+          "durationMs": 161.80000007152557
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-light.svg",
+          "initiatorType": "img",
+          "transferSize": 3326,
+          "encodedBodySize": 3026,
+          "decodedBodySize": 3026,
+          "durationMs": 158.80000007152557
+        },
+        {
+          "path": "/nexus/assets/brand/oneapp-nexus-dark.svg",
+          "initiatorType": "img",
+          "transferSize": 3324,
+          "encodedBodySize": 3024,
+          "decodedBodySize": 3024,
+          "durationMs": 159.20000004768372
+        },
+        {
+          "path": "/nexus/assets/nexus-favicon.svg",
+          "initiatorType": "other",
+          "transferSize": 809,
+          "encodedBodySize": 509,
+          "decodedBodySize": 509,
+          "durationMs": 45.10000002384186
+        },
+        {
+          "path": "/smartinput/field-catalog-seed.v2.json",
+          "initiatorType": "fetch",
+          "transferSize": 2361258,
+          "encodedBodySize": 2360958,
+          "decodedBodySize": 2360958,
+          "durationMs": 48.200000047683716
+        }
+      ],
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36",
+      "moduleResourceCount": 48,
+      "totalEncodedResourceBytes": 4736605
+    },
+    "firstTextAnalysis": {
+      "durationMs": 1178.2000000476837,
+      "storage": {},
+      "renderedRows": 20
+    },
+    "warmDirectEntry": {
+      "localDataDisplay": {
+        "samples": [
+          2335.7,
+          3771,
+          3753.5,
+          3665.9,
+          1070.8,
+          1077.1,
+          3045.1,
+          2934.4,
+          2443.9,
+          1080.9,
+          1043.1,
+          1027.1,
+          1104.8,
+          2357.1,
+          2318.3,
+          3118.9,
+          2344,
+          2557.1,
+          2403.6,
+          2314.2
+        ],
+        "count": 20,
+        "p50Ms": 2344,
+        "p95Ms": 3753.5,
+        "maxMs": 3771
+      },
+      "shellUsable": {
+        "samples": [
+          2482.4,
+          3891.4,
+          3898.1,
+          3747,
+          1136.5,
+          1157.4,
+          3124.7,
+          3028.3,
+          2523.6,
+          1155.8,
+          1112.4,
+          1096.1,
+          1191.1,
+          2420.8,
+          2383.8,
+          3184.7,
+          2407.8,
+          2646.7,
+          2490.9,
+          2382
+        ],
+        "count": 20,
+        "p50Ms": 2420.8,
+        "p95Ms": 3891.4,
+        "maxMs": 3898.1
+      },
+      "localDataLimitMs": 500,
+      "appUsableReferenceLimitMs": 1000,
+      "localDataPass": false,
+      "directEntryPass": false,
+      "storageReadsByRun": [
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+          "oneapp-smartinput/settings/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1,
+          "oneapp-smartinput/settings/getAll": 1
+        },
+        {
+          "oneapp-smartinput/autosave/get": 1,
+          "oneapp-smartinput/autosave/getAll": 1,
+          "oneapp-smartinput/settings/get": 5,
+          "oneapp-smartinput/customerLinkGroups/getAll": 1,
+          "oneapp-smartinput/temporaryCustomers/getAll": 1,
+          "oneapp-smartinput/customerAliasMappings/getAll": 1,
+          "oneapp-smartinput/inputTemplatesV2/getAll": 1
+        }
+      ],
+      "resourcesByRun": [
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        },
+        {
+          "count": 57,
+          "transferBytes": 0,
+          "zeroTransferResources": 57,
+          "jsCount": 48,
+          "jsTransferBytes": 0
+        }
+      ],
+      "cacheControl": "public, max-age=3600 (unchanged since baseline)",
+      "note": "Direct entry of warmed static assets and saved 20-row local draft. Does not verify NEXUS host switching."
+    },
+    "warmTextAnalysis": {
+      "rows": 20,
+      "catalogProducts": 600,
+      "samples": [
+        650.6,
+        752,
+        668.1,
+        715,
+        786.1,
+        639.6,
+        652.1,
+        780.2,
+        661.9,
+        611.1,
+        658.8,
+        771.5,
+        639.9,
+        895,
+        701.4,
+        1029.7,
+        872.3,
+        731.2,
+        824.9,
+        1060.1
+      ],
+      "count": 20,
+      "p50Ms": 715,
+      "p95Ms": 1029.7,
+      "maxMs": 1060.1,
+      "storageReadsByRun": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "renderedRowsByRun": [
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20,
+        20
+      ]
+    },
+    "externalRequestsBlocked": [],
+    "runtimeExceptions": [],
+    "isolation": {
+      "temporaryProfile": true,
+      "productionNetworkRequestsSent": 0,
+      "externalNetworkBlocked": true,
+      "localFixtureOnly": true
+    },
+    "status": "completed"
+  },
+  "unmeasured": [
+    "Real user workload",
+    "NEXUS host app-to-app navigation",
+    "Common-layer blocking time",
+    "Actual XLSX file serialization/download",
+    "Click visual feedback p95"
+  ]
+}

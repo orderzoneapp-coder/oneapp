@@ -1,6 +1,13 @@
-import {
-  hasMeaningfulSourceValue
-} from './source-row-values.js?v=0.1.0';
+const SOURCE_WHITESPACE = /[\s\u00a0\u200b\u200c\u200d\u2060\ufeff]+/gu;
+
+export function hasMeaningfulSourceValue(value) {
+  if (value === null || value === undefined) return false;
+  return String(value).replace(SOURCE_WHITESPACE, '') !== '';
+}
+
+export function sourceRowHasMeaningfulValue(row = []) {
+  return (Array.isArray(row) ? row : [row]).some(hasMeaningfulSourceValue);
+}
 
 const DECISION = Object.freeze({
   UNDECIDED: 'UNDECIDED',
@@ -664,3 +671,132 @@ export function mappingSummary(session) {
 }
 
 export { DECISION, SESSION_STATUS };
+
+const MAPPED_STATES = new Set(['MAPPED', 'RECOMMENDED']);
+
+function hasEnteredValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function blankValue(value) {
+  return value === null || value === undefined || String(value).trim() === '';
+}
+
+function sameProjectedValue(left, right) {
+  if (blankValue(left) && blankValue(right)) return true;
+  return Object.is(left, right);
+}
+
+function ownValue(values, key) {
+  return values && Object.prototype.hasOwnProperty.call(values, key);
+}
+
+export function projectedRowValue(row, target = {}) {
+  if (!row) return undefined;
+  const projectionFieldId = target.projectionFieldId || target.id;
+  if (projectionFieldId === 'supplyAmount') {
+    if (!hasEnteredValue(row.quantity) || !hasEnteredValue(row.unitPrice)) return '';
+    const amount = Number(row.quantity) * Number(row.unitPrice);
+    return Object.is(amount, -0) ? 0 : amount;
+  }
+  if (target.custom) return row.customValues?.[target.id] ?? '';
+  return row[projectionFieldId] ?? '';
+}
+
+export function mappedRowMutationPlan({
+  beforeRow = null,
+  afterRow = null,
+  targetDefinitions = [],
+  mappings = [],
+  displayValues = {},
+  forceFieldIds = []
+} = {}) {
+  if (!afterRow?.rowId) return [];
+  const targetById = new Map(targetDefinitions.map(target => [target.id, target]));
+  const forced = new Set(forceFieldIds);
+  return mappings
+    .filter(mapping => MAPPED_STATES.has(mapping?.state))
+    .map(mapping => {
+      const target = targetById.get(mapping.targetFieldId);
+      if (!target || target.scope !== 'voucher') return null;
+      const projectionFieldId = target.projectionFieldId || target.id;
+      const beforeValue = projectedRowValue(beforeRow, target);
+      const afterValue = projectedRowValue(afterRow, target);
+      if (!forced.has(target.id) && !forced.has(projectionFieldId) && sameProjectedValue(beforeValue, afterValue)) return null;
+      const displayValue = ownValue(displayValues, target.id)
+        ? displayValues[target.id]
+        : (ownValue(displayValues, projectionFieldId) ? displayValues[projectionFieldId] : afterValue);
+      return {
+        targetFieldId: target.id,
+        projectionFieldId,
+        columnIndex: Number(mapping.columnIndex),
+        displayValue: String(displayValue ?? ''),
+        parsedValue: afterValue
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.columnIndex - right.columnIndex);
+}
+
+export function applyMappedFieldUpdates(row, updates = []) {
+  if (!row?.fieldValues || !updates.length) return row;
+  let fieldValues = row.fieldValues;
+  updates.forEach(update => {
+    const tracked = fieldValues[update.targetFieldId];
+    if (!tracked) return;
+    if (fieldValues === row.fieldValues) fieldValues = { ...row.fieldValues };
+    fieldValues[update.targetFieldId] = {
+      ...tracked,
+      currentDisplayValue: update.displayValue,
+      parsedValue: update.parsedValue,
+      edited: true
+    };
+  });
+  return fieldValues === row.fieldValues ? row : { ...row, fieldValues };
+}
+
+const bulkPriceText = value => String(value ?? '').trim();
+
+export function parseBulkUnitPrice(displayValue) {
+  const source = bulkPriceText(displayValue);
+  if (!source) throw new Error('SMARTINPUT_BULK_PRICE_REQUIRED');
+  const value = Number(source.replace(/[,원₩\s]/g, ''));
+  if (!Number.isFinite(value)) throw new Error('SMARTINPUT_BULK_PRICE_INVALID');
+  return Object.is(value, -0) ? 0 : value;
+}
+
+export function applyBulkUnitPrice(rows = [], selectedRowIds = [], displayValue = '', options = {}) {
+  const selected = new Set(selectedRowIds);
+  const unitPrice = parseBulkUnitPrice(displayValue);
+  const occurredAt = bulkPriceText(options.occurredAt) || new Date().toISOString();
+  const actor = bulkPriceText(options.actor) || 'SMART_INPUT_ADMIN';
+  const targetFieldId = bulkPriceText(options.targetFieldId);
+  let affectedCount = 0;
+  const nextRows = rows.map(source => {
+    if (!selected.has(source.rowId)) return source;
+    affectedCount += 1;
+    const row = {
+      ...source,
+      unitPrice,
+      sourceUnitPrice: bulkPriceText(displayValue),
+      editedFields: { ...(source.editedFields || {}), unitPrice: true },
+      bulkEditHistory: [
+        ...(source.bulkEditHistory || []),
+        { action: 'APPLY_UNIT_PRICE', before: source.unitPrice ?? null, after: unitPrice, displayValue: bulkPriceText(displayValue), occurredAt, actor }
+      ]
+    };
+    if (targetFieldId && source.fieldValues?.[targetFieldId]) {
+      row.fieldValues = {
+        ...source.fieldValues,
+        [targetFieldId]: {
+          ...source.fieldValues[targetFieldId],
+          currentDisplayValue: bulkPriceText(displayValue),
+          parsedValue: unitPrice,
+          edited: true
+        }
+      };
+    }
+    return row;
+  });
+  return { rows: nextRows, affectedCount, unitPrice };
+}

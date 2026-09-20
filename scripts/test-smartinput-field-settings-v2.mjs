@@ -9,8 +9,15 @@ import {
   defaultCompanyVoucherFieldSettings,
   effectiveFieldDefinitions,
   normalizeCompanyVoucherFieldSettings,
+  resolveSmartInputCompanyId,
+  resolveSmartInputActor,
   validateFieldCatalog
-} from '../smartinput/field-definition-contract.js';
+} from '../smartinput/field-registry.js';
+
+// Definition labels/settings normalize NFKC; session scope and actor retain their original characters.
+assert.equal(defaultCompanyVoucherFieldSettings(' Ｃ００１ ', 'sale')[0].companyId, 'C001');
+assert.equal(resolveSmartInputCompanyId({ session: { companyId: ' Ｃ００１ ' } }), 'Ｃ００１');
+assert.equal(resolveSmartInputActor({ session: { user: { loginId: ' ＡＤＭＩＮ ' } } }), 'ＡＤＭＩＮ');
 
 const seed = validateFieldCatalog(JSON.parse(fs.readFileSync(new URL('../smartinput/field-catalog-seed.v2.json', import.meta.url), 'utf8')));
 assert.equal(seed.occurrenceCount, 2178);

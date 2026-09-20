@@ -1,4 +1,4 @@
-import { validatePurchaseGroup } from './legacy-integration-adapter.js?v=0.3.2';
+import { validatePurchaseGroup } from './legacy-integration-adapter.js?v=0.4.0';
 import {
   inspectPurchaseGroupStocktake,
   postPurchaseGroup,

@@ -5,7 +5,7 @@ import {
   AUTOSAVE_JOURNAL_SCHEMA,
   createAutosaveDocumentKey,
   createDraftSaveCoordinator
-} from '../smartinput/draft-save-coordinator.js';
+} from '../smartinput/smartinput-data-store.js';
 
 const deferred = () => {
   let resolve;

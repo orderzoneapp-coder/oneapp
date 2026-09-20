@@ -7,8 +7,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const mainSourceSha256 = createHash('sha256').update(readFileSync(join(root, 'smartinput/smartinput.js'))).digest('hex');
 for (const logo of ['logo-light.png', 'logo-dark.png']) {
   const bytes = readFileSync(join(root, 'nexus', 'assets', 'brand', 'apps', 'smart-input', logo));
   assert.equal(bytes[25], 6, `${logo} must keep an RGBA alpha channel`);
@@ -18,6 +20,7 @@ const screenshotDir = resolve(process.env.SMARTINPUT_SCREENSHOT_DIR || join(tmpd
 const baselineEvidenceFile = process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE
   ? resolve(process.env.SMARTINPUT_BASELINE_EVIDENCE_FILE)
   : '';
+const diagnosticFile = process.env.SMARTINPUT_DIAGNOSTIC_FILE ? resolve(process.env.SMARTINPUT_DIAGNOSTIC_FILE) : '';
 mkdirSync(screenshotDir, { recursive: true });
 if (baselineEvidenceFile) mkdirSync(dirname(baselineEvidenceFile), { recursive: true });
 const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -30,7 +33,9 @@ const server = createServer((request, response) => {
   if (target !== root && !target.startsWith(`${root}${sep}`)) return response.writeHead(403).end('Forbidden');
   if (!existsSync(target) || !statSync(target).isFile()) return response.writeHead(404).end('<!doctype html><title>fixture</title>');
   response.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': mime[extname(target)] || 'application/octet-stream' });
-  response.end(readFileSync(target));
+  if (diagnosticFile && target === join(root, 'smartinput', 'smartinput.js')) {
+    response.end(`${readFileSync(target, 'utf8')}\nwindow.__siDiagnosticState=()=>({activeMode:state.draft.activeMode,draft:structuredClone(state.draft.modes.estimate),busy:state.busy,activeFileInputAttemptId:state.activeFileInputAttemptId,activeCustomerRematchAttemptId:state.activeCustomerRematchAttemptId,selectedEstimateIds:estimateWorkspace.selected(),estimateCreation:structuredClone(estimateCreation()),hasEstimateExcelFile:Boolean(estimateExcelFile(state.draft.modes.estimate)),hasInputMappingSession:Boolean(inputMappingSession()),smartDataReady:state.smartDataReady,smartDataError:state.smartDataError?.message||'',smartAuxiliaryDataError:state.smartAuxiliaryDataError?.message||''});`);
+  } else response.end(readFileSync(target));
 });
 
 const wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds));
@@ -104,7 +109,9 @@ const evaluate = async (client, expression) => {
 const expr = (client, expression, label, timeout) => waitFor(() => evaluate(client, expression), label, timeout);
 const click = (client, selector) => evaluate(client, `(() => { const element=document.querySelector(${JSON.stringify(selector)}); if(!element)throw new Error('missing ${selector}');element.click();return true;})()`);
 const input = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');const proto=element instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));element.dispatchEvent(new Event('change',{bubbles:true}));return element.value;})()`);
-const typeWithoutBlur = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.value;})()`);
+const typeProductQuery = (client, selector, value) => evaluate(client, `(() => {const element=document.querySelector(${JSON.stringify(selector)});if(!element)throw new Error('missing ${selector}');element.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,${JSON.stringify(value)});element.dispatchEvent(new Event('input',{bubbles:true}));return element.closest('tr').dataset.rowId;})()`);
+const typeTrailingProductQuery = (client, value) => evaluate(client, `(() => {const input=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');if(!input)throw new Error('missing default product row');input.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event('input',{bubbles:true}));return input.closest('tr').dataset.rowId;})()`);
+const enterProductRow = (client, rowId) => evaluate(client, `(() => {const row=document.querySelector('#inputRows tr[data-row-id="'+CSS.escape(${JSON.stringify(rowId)})+'"]');if(!row)throw new Error('typed product row disappeared before Enter');row.querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
 const capture = async (client, name) => {
   const result = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, fromSurface: true });
   const target = join(screenshotDir, name);
@@ -118,6 +125,13 @@ const networkRequests = [];
 const flowTimings = {};
 const officialSaveEntryEvidence = [];
 const baselineScreenshots = [];
+const exceptions = [];
+const consoleErrors = [];
+const diagnosticSnapshots = [];
+const recordDiagnostic = async phase => {
+  if (!diagnosticFile) return;
+  diagnosticSnapshots.push(await evaluate(client, `(() => {const describe=input=>input?({tag:input.tagName,field:input.dataset?.field,value:input.value,rowId:input.closest('tr')?.dataset?.rowId,defaultRow:input.closest('tr')?.dataset?.defaultRow,connected:input.isConnected}):null;const dialog=document.querySelector('.product-picker-dialog');return {phase:${JSON.stringify(phase)},time:performance.now(),active:describe(document.activeElement),rows:[...document.querySelectorAll('#inputRows tr[data-row-id]')].map(row=>({rowId:row.dataset.rowId,defaultRow:row.dataset.defaultRow,itemCode:row.querySelector('[data-field="itemCode"]')?.value,itemCodeAttribute:row.querySelector('[data-field="itemCode"]')?.getAttribute('value'),itemName:row.querySelector('[data-field="itemName"]')?.value,cacheHtml:row.__virtualHtml?.slice(0,1800)})),savedRows:JSON.parse(localStorage.getItem('oneapp.smartinput.draft.v1')||'{}').modes?.order?.rows?.map(row=>({rowId:row.rowId,itemCode:row.itemCode,itemName:row.itemName,matchStatus:row.matchStatus})),dialog:dialog?{open:dialog.open,count:dialog.querySelectorAll('.product-picker-result').length,query:dialog.querySelector('[data-product-search]')?.value,text:dialog.textContent?.slice(0,1200)}:null,toast:document.querySelector('#toast')?.textContent,appStatus:document.querySelector('#appStatus')?.textContent,completeButton:{disabled:document.querySelector('#completeButton')?.disabled,title:document.querySelector('#completeButton')?.title,text:document.querySelector('#completeButton')?.textContent},dialogs:[...document.querySelectorAll('dialog')].map(dialog=>({open:dialog.open,className:dialog.className,text:dialog.textContent?.slice(0,1800)})),runtimeState:window.__siDiagnosticState?.()};})()`));
+};
 try {
   const address = await listen();
   const executable = browserExecutable();
@@ -161,8 +175,6 @@ try {
     };
   })();` });
   client.on('Page.javascriptDialogOpening', () => { void client.send('Page.handleJavaScriptDialog', { accept: true }); });
-  const exceptions = [];
-  const consoleErrors = [];
   client.on('Runtime.exceptionThrown', event => exceptions.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'exception'));
   client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') consoleErrors.push(event.args?.map(arg => arg.value || arg.description || '').join(' ')); });
   client.on('Network.requestWillBeSent', event => networkRequests.push({
@@ -180,6 +192,7 @@ try {
   await loaded;
   try {
     await expr(client, `Boolean(document.querySelector('.nexus-ui-header'))&&Boolean(document.querySelector('#inputRows tr'))`, 'restored SmartInput shell');
+    if (diagnosticFile) assert.deepEqual(await evaluate(client, `({type:typeof window.__siDiagnosticState,activeMode:window.__siDiagnosticState?.().activeMode})`), { type: 'function', activeMode: 'order' }, 'serve-time diagnostic getter must be callable before the full flow starts');
   } catch (error) {
     const diagnostic = await evaluate(client, `({title:document.title,body:document.body?.innerText?.slice(0,800),rows:document.querySelectorAll('#inputRows tr').length,header:Boolean(document.querySelector('.nexus-ui-header')),scripts:[...document.scripts].map(script=>script.src),html:document.documentElement.outerHTML.slice(0,500)})`);
     throw new Error(`${error.message} · ${JSON.stringify(diagnostic)} · ${exceptions.join(' | ')}`);
@@ -224,7 +237,7 @@ try {
   assert.equal(visualZones.coachmark, false, 'reference status must not use a coachmark or outlined annotation surface');
   assert.equal(visualZones.referenceBeforeSettings, true, 'reference status must sit immediately before settings');
   assert.equal(visualZones.legacyButtons, 0, 'manual draft-list, duplicate save, and top upload-template controls must be removed');
-  assert.equal(visualZones.completeText, '저장');
+  assert.equal(visualZones.completeText, 'NEXUS 전달');
   assert.equal(visualZones.completeInFooter, true, 'the all-voucher completion action must be in the table footer');
   assert.equal(visualZones.deliveryCardVisible, false, 'the footer left side must expose only the Save action');
   assert.deepEqual({ share: visualZones.shareText, excel: visualZones.excelText, footer: visualZones.outputsInFooter }, { share: '카톡 공유', excel: '보고서', footer: true }, 'voucher output actions must remain in the table footer for every mode');
@@ -440,7 +453,7 @@ try {
   assert.ok(handleWidthAfter > handleWidthBefore);
 
   await expr(client, `!document.querySelector('#restoreAutosaveButton').disabled`, 'latest autosave ready');
-  const autosave = await evaluate(client, `(async()=>{const records=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};});const journal=await import('/smartinput/draft-save-coordinator.js');const recovered=journal.recoverAutosaveDocuments(records);const workspace=records.filter(record=>record.recordType==='workspace').sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0];return {current:records.filter(record=>record.key==='current').map(record=>({schemaVersion:record.schemaVersion,sourceText:record.draft?.modes?.order?.sourceText})),heads:records.filter(record=>record.recordType==='head').map(record=>({docKey:record.docKey,durableVersion:record.durableVersion})),orderSourceText:recovered.get(workspace.docKeys.order)?.snapshot?.sourceText,complete:workspace&&Object.values(workspace.docKeys).every(docKey=>recovered.has(docKey))};})()`);
+  const autosave = await evaluate(client, `(async()=>{const records=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;const tx=db.transaction('autosave','readonly');const get=tx.objectStore('autosave').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{resolve(get.result);db.close();};};});const journal=await import('/smartinput/smartinput-data-store.js?v=0.15.0');const recovered=journal.recoverAutosaveDocuments(records);const workspace=records.filter(record=>record.recordType==='workspace').sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0];return {current:records.filter(record=>record.key==='current').map(record=>({schemaVersion:record.schemaVersion,sourceText:record.draft?.modes?.order?.sourceText})),heads:records.filter(record=>record.recordType==='head').map(record=>({docKey:record.docKey,durableVersion:record.durableVersion})),orderSourceText:recovered.get(workspace.docKeys.order)?.snapshot?.sourceText,complete:workspace&&Object.values(workspace.docKeys).every(docKey=>recovered.has(docKey))};})()`);
   assert.equal(autosave.current.length, 1, 'the V1 compatibility checkpoint must continue to overwrite the single current record');
   assert.equal(autosave.current[0].schemaVersion, 'ONEAPP_SMART_INPUT_AUTOSAVE_V1');
   assert.equal(autosave.heads.length, 4, 'each voucher document must have one durable journal head');
@@ -461,15 +474,15 @@ try {
   await expr(client, `document.querySelector('#sourceTextInput').value.includes('사과 2박스')`, 'reset round-trip recovery');
   await evaluate(client, `window.confirm=()=>true;document.querySelector('#resetDraftButton').click();true`);
   await expr(client, `document.querySelector('#inputRows tr[data-default-row="true"]')`, 'empty default row');
-  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터 사과');
-  await evaluate(client, `document.querySelector('#inputRows [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+  const exactProductRowId = await typeProductQuery(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터 사과');
+  await enterProductRow(client, exactProductRowId);
   await expr(client, `document.querySelector('#inputRows [data-field="itemCode"]')?.value==='MASTER-1'`, 'public master product selection');
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="specification"]').value`), '10kg');
   await evaluate(client, `(() => {const input=document.querySelector('#inputRows tr:not([data-default-row="true"]) [data-field="itemCode"]');input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true}));return true;})()`);
   assert.equal(await evaluate(client, `document.activeElement?.dataset?.field==='itemCode'&&document.activeElement?.closest('tr')?.dataset?.defaultRow==='true'`), true,
     'Tab from itemCode must move to the next row itemCode search entry');
-  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
-  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  const mouseCandidateRowId = await typeTrailingProductQuery(client, '마스터');
+  await enterProductRow(client, mouseCandidateRowId);
   await expr(client, `Boolean(document.querySelector('.product-picker-dialog[open] .product-picker-result'))`, 'quality product candidate modal');
   const productModal = await evaluate(client, `(() => {const dialog=document.querySelector('.product-picker-dialog');const shell=dialog.querySelector('.smart-dialog__shell');const results=dialog.querySelector('.product-picker-results');const options=dialog.querySelectorAll('.product-picker-result');const option=options[0];const footer=dialog.querySelector('footer');const cancel=footer.querySelector('button');const dr=dialog.getBoundingClientRect();const rr=results.getBoundingClientRect();const or=option.getBoundingClientRect();const fr=footer.getBoundingClientRect();const cr=cancel.getBoundingClientRect();return {width:dr.width,shellHeight:shell.getBoundingClientRect().height,resultsHeight:rr.height,optionWidth:or.width,optionCount:options.length,optionShadow:getComputedStyle(option).boxShadow,footerHeight:fr.height,footerButtonAligned:Math.abs((fr.top+fr.height/2)-(cr.top+cr.height/2))<2,nativeSearchClear:dialog.querySelectorAll('input[type="search"]').length};})()`);
   assert.ok(productModal.width >= 560 && productModal.shellHeight >= 460 && productModal.resultsHeight >= 220, 'product modal must have a full shared-dialog layout and scrollable result area');
@@ -482,19 +495,29 @@ try {
   assert.deepEqual(exceptions, [], `mouse product selection runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `mouse product selection console errors: ${consoleErrors.join('\n')}`);
 
-  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
-  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  await recordDiagnostic('before-keyboard-type');
+  const keyboardCandidateRowId = await typeTrailingProductQuery(client, '마스터');
+  await recordDiagnostic('after-keyboard-type');
+  await enterProductRow(client, keyboardCandidateRowId);
+  await recordDiagnostic('after-keyboard-enter');
   await expr(client, `document.querySelectorAll('.product-picker-dialog[open] .product-picker-result').length===2`, 'keyboard product candidate modal');
   await evaluate(client, `(() => {const search=document.querySelector('.product-picker-dialog [data-product-search]');search.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
   await expr(client, `!document.querySelector('.product-picker-dialog')&&(()=>{const row=[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].at(-1);return row?.querySelector('[data-field="itemCode"]')?.value==='MASTER-2'&&row?.querySelector('[data-field="itemName"]')?.value==='마스터 포도'&&row?.querySelector('[data-field="specification"]')?.value==='5kg'&&row?.querySelector('[data-field="unit"]')?.value==='EA';})()`, 'keyboard candidate selection applies the highlighted product and closes the dialog');
   assert.deepEqual(exceptions, [], `keyboard product selection runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `keyboard product selection console errors: ${consoleErrors.join('\n')}`);
 
-  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '마스터');
-  await evaluate(client, `(() => {const rows=[...document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])')];rows.at(-1).querySelector('[data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`);
+  const cancelCandidateRowId = await typeTrailingProductQuery(client, '마');
+  await evaluate(client, 'new Promise(resolve=>queueMicrotask(resolve))');
+  await recordDiagnostic('after-cancel-partial-type');
+  assert.equal(await evaluate(client, `document.activeElement?.closest('tr')?.dataset?.rowId`), cancelCandidateRowId, 'materializing a typed default row must preserve keyboard focus after its microtask');
+  assert.equal(await evaluate(client, `(() => {const input=document.activeElement;if(input?.dataset?.field!=='itemCode')throw new Error('partial product input lost keyboard focus');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'마스터');input.dispatchEvent(new Event('input',{bubbles:true}));return input.closest('tr').dataset.rowId;})()`), cancelCandidateRowId);
+  await recordDiagnostic('after-cancel-complete-type');
+  await enterProductRow(client, cancelCandidateRowId);
   await expr(client, `document.querySelectorAll('.product-picker-dialog[open] .product-picker-result').length===2`, 'cancel product candidate modal');
   await click(client, '.product-picker-dialog [data-close]');
+  await recordDiagnostic('after-cancel-close');
   await expr(client, `!document.querySelector('.product-picker-dialog')&&[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"])')].at(-1)?.querySelector('[data-field="itemCode"]')?.value==='마스터'`, 'candidate cancel keeps the current query and closes the dialog');
+  assert.equal(await evaluate(client, `document.querySelector('#inputRows tr[data-row-id="'+CSS.escape(${JSON.stringify(cancelCandidateRowId)})+'"] [data-field="itemCode"]')?.value`), '마스터', 'incremental typing and cancel must preserve the same row identity and latest value');
   assert.equal(await evaluate(client, `document.querySelector('#productReferenceStatus').textContent`), 'READY', 'product Snapshot must expose READY independently');
   assert.equal(await evaluate(client, `document.querySelector('#productReferenceCount').textContent`), '2건');
   assert.match(await evaluate(client, `document.querySelector('#productReferenceSource').textContent`), /상품관리 Snapshot Adapter/);
@@ -524,7 +547,7 @@ try {
   assert.equal(await evaluate(client, `document.querySelector('#inputRows [data-field="itemName"]').value`), '마스터 사과', 'new snapshot must preserve current values');
   await click(client, '#resetDraftButton');
   await expr(client, `document.querySelector('#productReferenceRevision').textContent==='3'&&document.querySelector('#inputRows tr[data-default-row="true"]')`, 'pending revision promoted for next work');
-  await typeWithoutBlur(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '등록되지않은상품XYZ');
+  await typeProductQuery(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', '등록되지않은상품XYZ');
   await evaluate(client, `document.querySelector('#inputRows [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
   await expr(client, `document.querySelector('#inputRows .row-owner-register')?.textContent==='상품관리에서 등록'`, 'missing product owner path');
   const missingBefore = await evaluate(client, `({rows:document.querySelectorAll('#inputRows tr:not([data-default-row="true"])').length,query:document.querySelector('#inputRows [data-field="itemCode"]').value,master:localStorage.getItem('merchMaster_v870'),href:document.querySelector('#inputRows .row-owner-register').getAttribute('href')})`);
@@ -931,6 +954,7 @@ try {
   assert.deepEqual(remoteResolutionResult, { movement: 2, status: 'MATCHED', duplicate: true },
     'remote unmatched-product resolution must apply its authoritative inventory decision once');
   await input(client, '#deliveryDateInput', '2026-08-29');
+  await click(client, '#voucherActivityReload');
   await expr(client, `document.querySelector('#voucherContextDelivery').textContent.includes('READY')&&document.querySelector('#voucherContextList').textContent.includes('격리 검증 거래처')`, 'date-scoped order activity adapter');
   assert.match(await evaluate(client, `document.querySelector('#voucherContextList .voucher-activity-item a')?.getAttribute('href')||''`), new RegExp(`index\\.html\\?view=query&focus=${orderResult.orderId}`), 'activity card must route to the integrated order query without replacing the worktable');
   await wait(350);
@@ -968,6 +992,10 @@ try {
     `[...document.querySelectorAll('.brand__logo')].every(image => image.complete && image.naturalWidth > 0)`,
     'brand logos loaded after source-image reload',
   );
+  // The isolated owner fixture created warehouse 88 after the previous Snapshot generation.
+  // Explicit refresh is required to bring that external change into local SmartInput data.
+  await click(client, '#allReferenceReload');
+  await expr(client, `document.querySelector('#productReferenceStatus').textContent==='READY'&&[...document.querySelectorAll('#warehouseOptions option')].some(option=>option.label.includes('88')&&option.label.includes('격리 검증 창고'))`, 'explicit reference refresh before official purchase and sale');
   for (const mode of ['purchase', 'sale']) {
     const modeFlowStartedAt = performance.now();
     let dateDeleteEvidence = null;
@@ -989,8 +1017,8 @@ try {
       await input(client, '#deliveryDateInput', '2026-09-02');
     }
     await input(client, '#warehouseInput', '격리 검증 창고');
-    await typeWithoutBlur(client, '#inputRows [data-field="itemCode"]', '마스터 최신 사과');
-    await evaluate(client, `document.querySelector('#inputRows [data-field="itemCode"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));true`);
+    const modeProductRowId = await typeProductQuery(client, '#inputRows [data-field="itemCode"]', '마스터 최신 사과');
+    await enterProductRow(client, modeProductRowId);
     await expr(client, `document.querySelector('#inputRows [data-field="itemCode"]')?.value==='MASTER-1'`, `${mode} exact product selected`);
     await input(client, '#inputRows [data-field="quantity"]', '2');
     await input(client, '#inputRows [data-field="unitPrice"]', '1500');
@@ -1007,7 +1035,7 @@ try {
     }))()`);
     assert.equal(modeDom.mode, mode);
     assert.equal(modeDom.dateLabel, mode === 'purchase' ? '구매일자' : '판매일자');
-    assert.equal(modeDom.saveLabel, '저장');
+    assert.equal(modeDom.saveLabel, 'NEXUS 전달');
     assert.equal(modeDom.amount, '3,000');
     const modeEntryReadyMs = Number((performance.now() - modeFlowStartedAt).toFixed(2));
     await evaluate(client, `document.querySelector('#toast').hidden=true;true`);
@@ -1048,7 +1076,7 @@ try {
   const headerBeforeEstimate = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};return {customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
   await click(client, '[data-mode="estimate"]');
   const estimateHeader = await evaluate(client, `(() => {const q=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:Math.round(r.x),width:Math.round(r.width),height:Math.round(r.height)};};const warehouse=document.querySelector('[data-header-field="warehouse"]');const transaction=document.querySelector('[data-header-field="transactionType"]');return {label:document.querySelector('[data-header-field="deliveryDate"]>span').textContent.trim(),warehouseLabel:warehouse.querySelector('span').textContent.trim(),warehouseHidden:warehouse.hidden,transactionHidden:transaction.hidden,transactionVisibility:getComputedStyle(transaction).visibility,contextHidden:document.querySelector('#voucherContextView').hidden,estimateHeadingVisible:!document.querySelector('#estimateLibraryHeading').hidden,individualText:document.querySelector('#estimateLibraryIndividualButton').textContent.trim(),linkedText:document.querySelector('#estimateDeselectAllButton').textContent.trim(),multiLabel:document.querySelector('#estimateMultiSelectButton').textContent.trim(),customer:q('.header-customer-group'),fields:q('.header-fields')};})()`);
-  assert.deepEqual({ label: estimateHeader.label, warehouseLabel: estimateHeader.warehouseLabel, warehouseHidden: estimateHeader.warehouseHidden, transactionHidden: estimateHeader.transactionHidden, transactionVisibility: estimateHeader.transactionVisibility, contextHidden: estimateHeader.contextHidden, estimateHeadingVisible: estimateHeader.estimateHeadingVisible, individualText: estimateHeader.individualText, linkedText: estimateHeader.linkedText, multiLabel: estimateHeader.multiLabel }, { label: '견적 작성일', warehouseLabel: '최종수정일', warehouseHidden: false, transactionHidden: false, transactionVisibility: 'hidden', contextHidden: true, estimateHeadingVisible: true, individualText: '견적서 목록 · 0개 선택', linkedText: '전체 해제', multiLabel: '전체 선택' }, 'estimate mode must restore the dedicated estimate-list rail without the voucher activity view');
+  assert.deepEqual({ label: estimateHeader.label, warehouseLabel: estimateHeader.warehouseLabel, warehouseHidden: estimateHeader.warehouseHidden, transactionHidden: estimateHeader.transactionHidden, transactionVisibility: estimateHeader.transactionVisibility, contextHidden: estimateHeader.contextHidden, estimateHeadingVisible: estimateHeader.estimateHeadingVisible, individualText: estimateHeader.individualText, linkedText: estimateHeader.linkedText, multiLabel: estimateHeader.multiLabel }, { label: '견적 작성일', warehouseLabel: '최종수정일', warehouseHidden: false, transactionHidden: false, transactionVisibility: 'hidden', contextHidden: true, estimateHeadingVisible: true, individualText: '견적서 목록', linkedText: '전체 해제', multiLabel: '전체 선택' }, 'estimate mode must restore the dedicated estimate-list rail without the voucher activity view');
   assert.deepEqual(estimateHeader.customer, headerBeforeEstimate.customer, 'customer entry position and size must stay fixed across voucher switching');
   assert.deepEqual(estimateHeader.fields, headerBeforeEstimate.fields, 'header field shell must stay fixed across voucher switching');
   assert.equal(await evaluate(client, `!document.querySelector('#estimateEditorView').hidden&&!document.querySelector('#sourceInputPanel').hidden&&document.querySelector('#tableScroll').offsetWidth>0&&!document.querySelector('#estimateLibraryButton')&&!document.querySelector('#estimateEditorButton')`), true, 'estimate mode must always preserve the parser and table beside the right list');
@@ -1058,13 +1086,15 @@ try {
   assert.deepEqual(estimateRailFooter.buttons.map(button => button.id), ['selectedEstimateDeleteButton', 'estimateRenameButton'], 'right rail footer must contain only deletion and information change');
   assert.equal(await evaluate(client, `document.querySelector('#estimateRenameButton').textContent.trim()`), '정보 변경', 'the selected-estimate action must be labeled information change');
   assert.equal(new Set(estimateRailFooter.buttons.map(button => button.y)).size, 1, 'right rail actions must remain horizontal');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#estimateOutputActions .button')].map(button=>button.id)`), ['estimateCreateButton', 'saveEstimateAsButton', 'estimateNoticeButton', 'estimateExcelButton'], 'estimate table footer must keep linked creation, Save As, Kakao, and Excel in the approved order');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#estimateOutputActions .button[id]')].map(button=>button.id)`), domBaseline.footerOrder.filter(id => id !== 'completeButton'), 'estimate table footer must preserve the independent estimate actions and output order');
+  assert.deepEqual(await evaluate(client, `[...document.querySelector('#estimateOutputActions').children].map(element=>element.id)`), ['saveEstimateAsButton', 'estimateUpdateMenu', 'estimateNoticeButton', 'estimateExcelButton'], 'primary estimate actions must keep Save As, update menu, Kakao, and report in order');
+  assert.equal(await evaluate(client, `(() => {const buttons=[...document.querySelectorAll('#estimateOutputActions > button')].filter(button=>button.getClientRects().length);return buttons.every((button,index)=>index===0||buttons[index-1].getBoundingClientRect().right<=button.getBoundingClientRect().left);})()`), true, 'visible primary estimate buttons must retain their visual left-to-right order');
   await click(client, '#addRowButton');
   await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '1');
   await input(client, '#inputRows [data-field="unitPrice"]', '1500');
-  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '저장');
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '견적서 저장');
   await click(client, '#completeButton');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'estimate save dialog');
   await expr(client, `document.activeElement?.matches('[data-estimate-name]')`, 'estimate name direct-input focus');
@@ -1092,6 +1122,7 @@ try {
   await input(client, '#inputRows tr:nth-last-child(2) [data-field="unitPrice"]', '1500');
   assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr[data-default-row="true"]').length`), 1, 'manual entry must materialize the row and immediately append exactly one new trailing row');
   await click(client, '#completeButton');
+  await recordDiagnostic('after-second-estimate-complete');
   await expr(client, `Boolean(document.querySelector('[data-estimate-name]'))`, 'second estimate save dialog');
   await input(client, '[data-estimate-name]', '행사 원본 견적');
   await click(client, '[data-confirm-save]');
@@ -1183,6 +1214,7 @@ try {
   }))()`);
   const baselineEvidence = {
     schemaVersion: 'NEXUS_SMARTINPUT_V2_PHASE1_BASELINE_V1',
+    mainSourceSha256,
     recordedAt: new Date().toISOString(),
     isolation: {
       browserProfile: 'mkdtemp isolated profile, removed after run',
@@ -1243,8 +1275,19 @@ try {
 
   assert.deepEqual(exceptions, [], `runtime exceptions: ${exceptions.join('\n')}`);
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join('\n')}`);
+  if (diagnosticFile) {
+    mkdirSync(dirname(diagnosticFile), { recursive: true });
+    writeFileSync(diagnosticFile, `${JSON.stringify({ status: 'PASS', recordedAt: new Date().toISOString(), mainSourceSha256, snapshots: diagnosticSnapshots, exceptions, consoleErrors }, null, 2)}\n`);
+  }
   console.log(JSON.stringify({ orderId: orderResult.orderId, screenshots: [lightShot, darkShot, photoShot, ...baselineScreenshots, estimateCardsShot, mobileReferenceShot, mobileShot], metrics: { parserWidth: metrics.parser.width, workbenchWidth: metrics.workbench.width, resizedParserWidth: afterResize, mobileHeaderHeight: mobile.header.height }, baselineEvidenceFile }, null, 2));
   console.log('SmartInput protected desktop workspace browser E2E PASS');
+} catch (error) {
+  if (diagnosticFile) {
+    try { await recordDiagnostic('failure'); } catch (snapshotError) { diagnosticSnapshots.push({ phase: 'failure-snapshot-error', message: snapshotError.message }); }
+    mkdirSync(dirname(diagnosticFile), { recursive: true });
+    writeFileSync(diagnosticFile, `${JSON.stringify({ status: 'FAILED_DIAGNOSTIC', recordedAt: new Date().toISOString(), mainSourceSha256, error: error.stack, snapshots: diagnosticSnapshots, exceptions, consoleErrors }, null, 2)}\n`);
+  }
+  throw error;
 } finally {
   client?.close();
   if (browser && !browser.killed) browser.kill();

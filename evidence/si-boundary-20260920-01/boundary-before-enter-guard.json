@@ -1,0 +1,259 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "mainSourceSha256": "1f8501c84adc0df385e98111b2df0f8d9b193e45efef2dc3f697019d6fcf7fdb",
+  "fixture": "Synthetic local-only data and host fixture; real child bridge and application source",
+  "checks": [
+    {
+      "name": "direct entry",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "text analysis and autosave",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "local Excel output",
+      "status": "PASS",
+      "detail": {
+        "name": "스마트입력_주문서_2026-09-21.xlsx",
+        "bytes": 17149,
+        "sheets": [
+          {
+            "name": "주문서",
+            "rows": [
+              [
+                "주문서 출력",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "주문일자",
+                "2026-09-21",
+                "거래처",
+                "",
+                "창고",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "거래유형",
+                "기타",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "No.",
+                "품목코드",
+                "품목명",
+                "규격",
+                "수량",
+                "단가",
+                "공급가액",
+                "메모",
+                "적요(직원)",
+                "공지단가"
+              ],
+              [
+                1,
+                "",
+                "사과",
+                "",
+                0,
+                "",
+                "",
+                "",
+                "",
+                0
+              ],
+              [
+                2,
+                "",
+                "배",
+                "",
+                3,
+                "",
+                "",
+                "",
+                "",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Excel output boundary",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "paste undo displayed row recovery",
+      "status": "PASS",
+      "detail": {
+        "beforePaste": {
+          "value": "0",
+          "modelQuantity": 0,
+          "attribute": "2",
+          "activeTag": "INPUT",
+          "activeField": "quantity",
+          "activeInRow": true,
+          "undoDisabled": true,
+          "cachedQuantity": "<input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"2\" aria-label=\"수량\">"
+        },
+        "afterPaste": {
+          "value": "8",
+          "modelQuantity": 8,
+          "attribute": "8",
+          "activeTag": "INPUT",
+          "activeField": "itemCode",
+          "activeInRow": true,
+          "undoDisabled": false,
+          "cachedQuantity": "<input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"8\" aria-label=\"수량\">"
+        },
+        "immediateValue": "0",
+        "afterRender": {
+          "value": "0",
+          "modelQuantity": 0,
+          "attribute": "0",
+          "activeTag": "BODY",
+          "activeInRow": false,
+          "undoDisabled": true,
+          "cachedQuantity": "<input data-field=\"quantity\" type=\"text\" inputmode=\"decimal\" value=\"0\" aria-label=\"수량\">"
+        },
+        "expectedValue": "0"
+      }
+    },
+    {
+      "name": "paste undo local boundary",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "all four local voucher tabs",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "explicit voucher list prepares owner read",
+      "status": "PASS",
+      "detail": [
+        {
+          "database": "oneapp-orderq-pre-m1-v6",
+          "store": "orders",
+          "index": "byOrderDate",
+          "method": "getAll"
+        }
+      ]
+    },
+    {
+      "name": "embedded initial entry",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "host adapter contracts",
+      "status": "PASS",
+      "detail": {
+        "appReady": true,
+        "beforeLeave": {
+          "schemaVersion": "nexus-workspace-message/v1",
+          "type": "NEXUS_WORKSPACE_LEAVE_RESULT_V1",
+          "transitionId": "BOUNDARY-HOST-1",
+          "appId": "smart-input",
+          "route": "smartinput/index.html",
+          "result": "READY",
+          "message": ""
+        },
+        "savedUnblurredQuantity": 9,
+        "theme": "dark",
+        "printCalls": 1
+      }
+    },
+    {
+      "name": "host bridge does not enable business integration",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    },
+    {
+      "name": "shared UI and external-server outage input/save/recovery",
+      "status": "PASS",
+      "detail": {
+        "ledgerReads": 0,
+        "ownerWrites": 0,
+        "externalRequests": 0
+      }
+    }
+  ],
+  "unverified": [
+    "Actual NEXUS app-to-app transition KPI",
+    "Production user data or authentication service"
+  ],
+  "explicitReadFixture": "Empty ORDER Q database created in the temporary profile only after absent-owner independent checks; fixture setup reads/writes are excluded from the next action",
+  "isolation": {
+    "temporaryProfile": true,
+    "externalNetworkBlocked": true,
+    "actualExternalRequestsSent": 0,
+    "productionDataUsed": false
+  },
+  "status": "PASS",
+  "sourceObservationNote": "Run began at the recorded main hash and the Enter-only invalidation guard was changed while it was running; later loads were not individually hashed. A separate final frozen-source run follows."
+}

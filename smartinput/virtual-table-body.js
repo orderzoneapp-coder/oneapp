@@ -5,6 +5,7 @@ export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, de
   const viewport = createTableViewport({ threshold: 200, overscan: 10, estimatedRowHeight: 34 });
   let rows = [], records = new Map(), indices = new Map(), rowRenderer, columns = 1, composing = false, deferred = null;
   let focusKey = null, painting = false, lastWindow = null;
+  let resetMountedRows = false;
   let baseRows = [], baseIndices = new Map(), cellValue = () => '', viewState = null, viewSignature = '';
   const metrics = { renders: 0, logicalRows: 0, mountedRows: 0, lastRenderMs: 0 };
   const keyFrom = element => element?.closest?.(`tr[${rowAttribute}]`)?.getAttribute(rowAttribute);
@@ -24,7 +25,7 @@ export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, de
   function paint(force = false) {
     if (!rowRenderer || painting || composing || body.closest('[hidden]')) return;
     const window = viewport.windowFor(Math.max(0, scroller.scrollTop - offset()), height());
-    if (!force && window === lastWindow) return;
+    if (!force && !resetMountedRows && window === lastWindow) return;
     lastWindow = window; painting = true;
     const start = performance.now();
     try {
@@ -38,7 +39,7 @@ export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, de
           const row = records.get(key); const html = rowRenderer(row, indices.get(key));
           let node = mounted.get(key);
           const active = node?.contains(document.activeElement);
-          if (!node || (!active && node.__virtualHtml !== html)) {
+          if (!node || resetMountedRows || (!active && node.__virtualHtml !== html)) {
             const holder = document.createElement('tbody'); holder.innerHTML = html; node = holder.firstElementChild;
             decorate(node);
             node.__virtualHtml = html;
@@ -58,10 +59,14 @@ export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, de
       metrics.lastRenderMs = performance.now() - start;
       body.dataset.logicalRowCount = String(rows.length);
       body.dataset.virtualized = String(window.virtual);
+      resetMountedRows = false;
       onRender();
     } finally { painting = false; }
   }
   const api = {
+    // Explicit model restoration may replace even a focused row. Keep this
+    // pending through hidden/composing renders; ordinary edits retain their DOM.
+    invalidate() { resetMountedRows = true; lastWindow = null; },
     render(nextRows, renderer, columnCount, readCell = cellValue) {
       if (composing) { deferred = [nextRows, renderer, columnCount, readCell]; return; }
       if (focusKey) viewport.unpin(focusKey);

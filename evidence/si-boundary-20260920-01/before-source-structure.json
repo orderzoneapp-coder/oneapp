@@ -1,0 +1,585 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "phase": "before",
+  "sourceFileCount": 65,
+  "javascriptCount": 63,
+  "initialStaticModuleCount": 54,
+  "initialStaticBytes": 1445147,
+  "initialStaticModules": [
+    "orderq/canonical-hash.js",
+    "orderq/official-voucher-core.js",
+    "orderq/official-voucher-v2-contract.js",
+    "orderq/order-document-model.js",
+    "orderq/orderq-db.js",
+    "orderq/shopping-order-command-adapter.js",
+    "orderq/shopping-order-dedupe-core.js",
+    "orderq/shopping-order-import-repository.js",
+    "orderq/smartparser/order-event-detector.js",
+    "orderq/smartparser/order-line-parser.js",
+    "orderq/smartparser/order-text-extractor.js",
+    "orderq/smartparser/source-parser.js",
+    "orderq/stocktake-conflict-v2.js",
+    "orderq/voucher-activity-read-adapter.js",
+    "reference-data/change-request-contract.js",
+    "reference-data/merchops-settings-read-adapter.js",
+    "reference-data/product-master-command-adapter.js",
+    "reference-data/product-master-read-adapter.js",
+    "smartinput/canonical-hash-compat.js",
+    "smartinput/draft-save-coordinator.js",
+    "smartinput/estimate-f8-recovery.js",
+    "smartinput/estimate-f8-source-plan.js",
+    "smartinput/estimate-master-apply.js",
+    "smartinput/estimate-price-snapshot.js",
+    "smartinput/estimate-read-cache.js",
+    "smartinput/estimate-workbook-selector.js",
+    "smartinput/estimate-workspace.js",
+    "smartinput/field-definition-contract.js",
+    "smartinput/field-registry.js",
+    "smartinput/grid-clipboard.js",
+    "smartinput/independent-estimate.js",
+    "smartinput/input-list-search.js",
+    "smartinput/input-template-mapper.js",
+    "smartinput/legacy-integration-adapter.js",
+    "smartinput/linked-estimate-source-edit.js",
+    "smartinput/mapped-row-sync.js",
+    "smartinput/multivoucher-stage1.js",
+    "smartinput/optional-operation-loader.js",
+    "smartinput/order-document-number.js",
+    "smartinput/purchase-stage3.js",
+    "smartinput/reference-data-controller.js",
+    "smartinput/reference-generation-repository.js",
+    "smartinput/reference-refresh-controller.js",
+    "smartinput/related-voucher-import.js",
+    "smartinput/sale-stage4.js",
+    "smartinput/settings-input-order.js",
+    "smartinput/shopping-order-upload.js",
+    "smartinput/smartinput-data-store.js",
+    "smartinput/smartinput.js",
+    "smartinput/source-row-values.js",
+    "smartinput/structured-sheet-parser.js",
+    "smartinput/table-view-state.js",
+    "smartinput/table-viewport.js",
+    "smartinput/virtual-table-body.js"
+  ],
+  "files": [
+    {
+      "path": "smartinput/canonical-hash-compat.js",
+      "bytes": 3727,
+      "lines": 58,
+      "imports": []
+    },
+    {
+      "path": "smartinput/draft-save-coordinator.js",
+      "bytes": 9982,
+      "lines": 235,
+      "imports": []
+    },
+    {
+      "path": "smartinput/estimate-bulk-feature.js",
+      "bytes": 52,
+      "lines": 2,
+      "imports": [
+        "./estimate-bulk-update.js?v=0.3.1"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-bulk-update.js",
+      "bytes": 58352,
+      "lines": 1222,
+      "imports": [
+        "./linked-estimate-source-edit.js?v=0.1.2"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-f8-recovery.js",
+      "bytes": 15990,
+      "lines": 374,
+      "imports": [
+        "./linked-estimate-source-edit.js"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-f8-source-plan.js",
+      "bytes": 16402,
+      "lines": 297,
+      "imports": []
+    },
+    {
+      "path": "smartinput/estimate-master-apply.js",
+      "bytes": 12083,
+      "lines": 186,
+      "imports": [
+        "./independent-estimate.js"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-migration.js",
+      "bytes": 4920,
+      "lines": 66,
+      "imports": [
+        "./independent-estimate.js",
+        "./estimate-f8-source-plan.js?v=0.1.1",
+        "./estimate-output.js?v=0.2.8"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-output.js",
+      "bytes": 46903,
+      "lines": 965,
+      "imports": [
+        "./estimate-price-snapshot.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-price-snapshot.js",
+      "bytes": 1081,
+      "lines": 30,
+      "imports": []
+    },
+    {
+      "path": "smartinput/estimate-read-cache.js",
+      "bytes": 10354,
+      "lines": 193,
+      "imports": []
+    },
+    {
+      "path": "smartinput/estimate-report-feature.js",
+      "bytes": 762,
+      "lines": 20,
+      "imports": [
+        "./estimate-output.js?v=0.2.8",
+        "./estimate-f8-source-plan.js?v=0.1.1",
+        "./estimate-f8-recovery.js?v=0.1.1",
+        "./estimate-migration.js?v=0.1.1",
+        "./stage5-compute-runner.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/estimate-workbook-selector.js",
+      "bytes": 2979,
+      "lines": 59,
+      "imports": []
+    },
+    {
+      "path": "smartinput/estimate-workspace.js",
+      "bytes": 19708,
+      "lines": 308,
+      "imports": [
+        "./independent-estimate.js",
+        "./estimate-master-apply.js"
+      ]
+    },
+    {
+      "path": "smartinput/field-definition-contract.js",
+      "bytes": 12561,
+      "lines": 219,
+      "imports": []
+    },
+    {
+      "path": "smartinput/field-registry.js",
+      "bytes": 5952,
+      "lines": 133,
+      "imports": [
+        "./smartinput-data-store.js?v=0.7.0",
+        "./field-definition-contract.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/file-intake-feature.js",
+      "bytes": 235,
+      "lines": 7,
+      "imports": [
+        "./xlsx-source-reader.js?v=0.1.0",
+        "./estimate-workbook-selector.js?v=0.1.1"
+      ]
+    },
+    {
+      "path": "smartinput/grid-bulk-edit.js",
+      "bytes": 1769,
+      "lines": 46,
+      "imports": []
+    },
+    {
+      "path": "smartinput/grid-clipboard.js",
+      "bytes": 7129,
+      "lines": 193,
+      "imports": [
+        "./structured-sheet-parser.js?v=0.1.1",
+        "./source-row-values.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/independent-estimate.js",
+      "bytes": 45065,
+      "lines": 640,
+      "imports": []
+    },
+    {
+      "path": "smartinput/index.html",
+      "bytes": 38431,
+      "lines": 527,
+      "imports": []
+    },
+    {
+      "path": "smartinput/input-list-search.js",
+      "bytes": 5526,
+      "lines": 139,
+      "imports": []
+    },
+    {
+      "path": "smartinput/input-template-mapper.js",
+      "bytes": 29031,
+      "lines": 667,
+      "imports": [
+        "./source-row-values.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/legacy-integration-adapter.js",
+      "bytes": 17821,
+      "lines": 376,
+      "imports": [
+        "../orderq/smartparser/order-text-extractor.js?v=0.8.1",
+        "./optional-operation-loader.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/linked-estimate-source-edit.js",
+      "bytes": 37673,
+      "lines": 815,
+      "imports": []
+    },
+    {
+      "path": "smartinput/mapped-row-sync.js",
+      "bytes": 3111,
+      "lines": 83,
+      "imports": []
+    },
+    {
+      "path": "smartinput/multivoucher-stage1.js",
+      "bytes": 29033,
+      "lines": 616,
+      "imports": []
+    },
+    {
+      "path": "smartinput/ocr-document-parser.js",
+      "bytes": 22019,
+      "lines": 520,
+      "imports": []
+    },
+    {
+      "path": "smartinput/ocr-feature.js",
+      "bytes": 108,
+      "lines": 5,
+      "imports": [
+        "./ocr-document-parser.js?v=0.1.1"
+      ]
+    },
+    {
+      "path": "smartinput/official-voucher-feature.js",
+      "bytes": 245,
+      "lines": 4,
+      "imports": [
+        "./purchase-finalize-service.js?v=0.6.2",
+        "./sale-finalize-service.js?v=0.6.1",
+        "./stocktake-conflict-dialog.js?v=0.2.0"
+      ]
+    },
+    {
+      "path": "smartinput/official-voucher-reference-resolver.js",
+      "bytes": 8766,
+      "lines": 246,
+      "imports": []
+    },
+    {
+      "path": "smartinput/optional-operation-loader.js",
+      "bytes": 20715,
+      "lines": 562,
+      "imports": []
+    },
+    {
+      "path": "smartinput/order-document-number.js",
+      "bytes": 6770,
+      "lines": 175,
+      "imports": []
+    },
+    {
+      "path": "smartinput/purchase-finalize-service.js",
+      "bytes": 6612,
+      "lines": 135,
+      "imports": [
+        "./legacy-integration-adapter.js?v=0.3.2",
+        "./purchase-official-stage3.js?v=0.9.1",
+        "../orderq/official-voucher-v2-contract.js?v=0.5.0",
+        "./official-voucher-reference-resolver.js?v=0.2.0",
+        "../orderq/stocktake-conflict-v2.js?v=0.2.0"
+      ]
+    },
+    {
+      "path": "smartinput/purchase-official-stage3.js",
+      "bytes": 22784,
+      "lines": 381,
+      "imports": [
+        "../orderq/official-command-adapter.js?v=0.6.0",
+        "../orderq/official-voucher-core.js?v=0.24.0",
+        "../orderq/official-voucher-v2-contract.js?v=0.5.0",
+        "./optional-operation-loader.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/purchase-sales-output.js",
+      "bytes": 25418,
+      "lines": 466,
+      "imports": []
+    },
+    {
+      "path": "smartinput/purchase-stage3.js",
+      "bytes": 9045,
+      "lines": 149,
+      "imports": [
+        "./canonical-hash-compat.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/reference-bootstrap.js",
+      "bytes": 1431,
+      "lines": 40,
+      "imports": []
+    },
+    {
+      "path": "smartinput/reference-data-controller.js",
+      "bytes": 29617,
+      "lines": 651,
+      "imports": []
+    },
+    {
+      "path": "smartinput/reference-generation-repository.js",
+      "bytes": 4876,
+      "lines": 120,
+      "imports": [
+        "../orderq/official-voucher-core.js?v=0.20.0",
+        "./smartinput-data-store.js?v=0.7.0"
+      ]
+    },
+    {
+      "path": "smartinput/reference-readiness.js",
+      "bytes": 1952,
+      "lines": 55,
+      "imports": []
+    },
+    {
+      "path": "smartinput/reference-refresh-controller.js",
+      "bytes": 3855,
+      "lines": 85,
+      "imports": [
+        "./legacy-integration-adapter.js?v=0.3.2",
+        "./smartinput-data-store.js?v=0.7.0",
+        "./field-registry.js?v=0.2.0",
+        "./reference-data-controller.js?v=0.1.1",
+        "./reference-generation-repository.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/related-voucher-import.js",
+      "bytes": 7689,
+      "lines": 166,
+      "imports": []
+    },
+    {
+      "path": "smartinput/sale-finalize-service.js",
+      "bytes": 8689,
+      "lines": 154,
+      "imports": [
+        "./sale-official-stage4.js?v=1.1.1",
+        "../orderq/official-voucher-v2-contract.js?v=0.5.0",
+        "./official-voucher-reference-resolver.js?v=0.2.0",
+        "../orderq/stocktake-conflict-v2.js?v=0.2.0"
+      ]
+    },
+    {
+      "path": "smartinput/sale-official-stage4.js",
+      "bytes": 21940,
+      "lines": 333,
+      "imports": [
+        "../orderq/official-command-adapter.js?v=0.6.0",
+        "../orderq/official-voucher-core.js?v=0.24.0",
+        "../orderq/official-voucher-v2-contract.js?v=0.5.0",
+        "./optional-operation-loader.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/sale-stage4.js",
+      "bytes": 8822,
+      "lines": 106,
+      "imports": [
+        "./canonical-hash-compat.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/settings-input-order.js",
+      "bytes": 4828,
+      "lines": 106,
+      "imports": []
+    },
+    {
+      "path": "smartinput/shopping-order-upload.js",
+      "bytes": 7678,
+      "lines": 176,
+      "imports": [
+        "../orderq/shopping-order-command-adapter.js?v=0.2.1"
+      ]
+    },
+    {
+      "path": "smartinput/smartinput-contract.js",
+      "bytes": 71544,
+      "lines": 1190,
+      "imports": []
+    },
+    {
+      "path": "smartinput/smartinput-data-store.js",
+      "bytes": 67502,
+      "lines": 1196,
+      "imports": [
+        "./estimate-read-cache.js?v=0.1.0",
+        "./independent-estimate.js?v=0.2.0"
+      ]
+    },
+    {
+      "path": "smartinput/smartinput.css",
+      "bytes": 148233,
+      "lines": 1640,
+      "imports": []
+    },
+    {
+      "path": "smartinput/smartinput.js",
+      "bytes": 678945,
+      "lines": 12829,
+      "imports": [
+        "./virtual-table-body.js?v=0.1.0",
+        "./smartinput-data-store.js?v=0.7.0",
+        "./estimate-workspace.js?v=0.1.0",
+        "./independent-estimate.js?v=0.2.0",
+        "../reference-data/product-master-command-adapter.js?v=0.3.0",
+        "../reference-data/product-master-read-adapter.js?v=0.1.0",
+        "./legacy-integration-adapter.js?v=0.3.2",
+        "./optional-operation-loader.js?v=0.1.0",
+        "./grid-clipboard.js?v=0.1.1",
+        "./draft-save-coordinator.js?v=0.1.1",
+        "./input-template-mapper.js?v=0.2.6",
+        "./order-document-number.js?v=0.1.0",
+        "./purchase-stage3.js?v=0.1.0",
+        "./sale-stage4.js?v=0.1.0",
+        "./multivoucher-stage1.js?v=0.2.3",
+        "./input-list-search.js?v=0.1.3",
+        "./estimate-price-snapshot.js?v=0.1.0",
+        "./estimate-f8-source-plan.js?v=0.1.1",
+        "./estimate-f8-recovery.js?v=0.1.1",
+        "./estimate-workbook-selector.js?v=0.1.1",
+        "./smartinput-data-store.js?v=0.7.0",
+        "./reference-data-controller.js?v=0.1.1",
+        "../orderq/voucher-activity-read-adapter.js?v=0.3.0",
+        "../reference-data/merchops-settings-read-adapter.js?v=0.1.0",
+        "./field-definition-contract.js?v=0.1.0",
+        "./field-registry.js?v=0.2.0",
+        "./reference-refresh-controller.js?v=0.1.2",
+        "./related-voucher-import.js?v=0.1.0",
+        "./linked-estimate-source-edit.js?v=0.1.2",
+        "./settings-input-order.js?v=0.1.0",
+        "./source-row-values.js?v=0.1.0",
+        "./table-view-state.js?v=0.1.0",
+        "./mapped-row-sync.js?v=0.1.0",
+        "./shopping-order-upload.js?v=0.1.1"
+      ]
+    },
+    {
+      "path": "smartinput/source-preparation-ui-contract.js",
+      "bytes": 226,
+      "lines": 8,
+      "imports": []
+    },
+    {
+      "path": "smartinput/source-preparation-ui-v2.js",
+      "bytes": 14050,
+      "lines": 214,
+      "imports": []
+    },
+    {
+      "path": "smartinput/source-preparation-ui.js",
+      "bytes": 15813,
+      "lines": 288,
+      "imports": []
+    },
+    {
+      "path": "smartinput/source-row-values.js",
+      "bytes": 392,
+      "lines": 11,
+      "imports": []
+    },
+    {
+      "path": "smartinput/stage5-compute-runner.js",
+      "bytes": 3270,
+      "lines": 83,
+      "imports": []
+    },
+    {
+      "path": "smartinput/stage5-compute-worker.js",
+      "bytes": 1609,
+      "lines": 39,
+      "imports": [
+        "./estimate-output.js?v=0.2.8",
+        "./purchase-sales-output.js?v=0.1.1"
+      ]
+    },
+    {
+      "path": "smartinput/stocktake-conflict-dialog.js",
+      "bytes": 5876,
+      "lines": 121,
+      "imports": [
+        "../orderq/stocktake-conflict-v2.js?v=0.2.0"
+      ]
+    },
+    {
+      "path": "smartinput/structured-sheet-parser.js",
+      "bytes": 7514,
+      "lines": 203,
+      "imports": [
+        "./source-row-values.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/table-view-state.js",
+      "bytes": 1877,
+      "lines": 58,
+      "imports": []
+    },
+    {
+      "path": "smartinput/table-viewport.js",
+      "bytes": 9019,
+      "lines": 170,
+      "imports": []
+    },
+    {
+      "path": "smartinput/virtual-table-body.js",
+      "bytes": 7667,
+      "lines": 124,
+      "imports": [
+        "./table-viewport.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/voucher-output-feature.js",
+      "bytes": 187,
+      "lines": 3,
+      "imports": [
+        "./purchase-sales-output.js?v=0.1.1",
+        "./stage5-compute-runner.js?v=0.1.0"
+      ]
+    },
+    {
+      "path": "smartinput/xlsx-source-reader.js",
+      "bytes": 1923,
+      "lines": 54,
+      "imports": []
+    }
+  ]
+}

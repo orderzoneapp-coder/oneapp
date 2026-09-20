@@ -1,0 +1,211 @@
+{
+  "schema": "SMARTINPUT_WARM_DIAGNOSTIC_SUMMARY_V1",
+  "source": "cached-warm-diagnostic-performance.json",
+  "diagnosticOnly": true,
+  "recordedAt": "2026-09-20T18:37:13.688Z",
+  "conditions": "Serve-time performance marks and long-task observer only; no production files altered. Same profile and dataset, three cache-warm navigations with Fetch interception followed by three without it. This diagnoses instrumentation and does not replace the 20-sample before/after comparison.",
+  "externalRequestAttempts": 0,
+  "runtimeExceptions": [],
+  "runs": [
+    {
+      "mode": "withFetch",
+      "run": 1,
+      "localDataMs": 2423.3,
+      "readyMs": 2555,
+      "documentResponseEndMs": 25.7,
+      "firstResourceStartMs": 1167.7,
+      "domInteractiveMs": 1198.6,
+      "domContentLoadedMs": 2501.2,
+      "mainStartMs": 1237.9,
+      "initialRenderReturnMs": 2421.9,
+      "mainEndMs": 2422.9,
+      "mainStartToInitialRenderMs": 1184,
+      "lastObservedRenderReturnMs": 5087.6,
+      "longTaskSumMs": 3038,
+      "longTasks": [
+        {
+          "startMs": 1236.1,
+          "durationMs": 1187
+        },
+        {
+          "startMs": 2554.7,
+          "durationMs": 984
+        },
+        {
+          "startMs": 3540.8,
+          "durationMs": 867
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    },
+    {
+      "mode": "withFetch",
+      "run": 2,
+      "localDataMs": 1773.3,
+      "readyMs": 1840,
+      "documentResponseEndMs": 14.2,
+      "firstResourceStartMs": 951.2,
+      "domInteractiveMs": 973.6,
+      "domContentLoadedMs": 1818.6,
+      "mainStartMs": 1006,
+      "initialRenderReturnMs": 1772.3,
+      "mainEndMs": 1773.2,
+      "mainStartToInitialRenderMs": 766.3,
+      "lastObservedRenderReturnMs": 4512.2,
+      "longTaskSumMs": 2312,
+      "longTasks": [
+        {
+          "startMs": 1005,
+          "durationMs": 768
+        },
+        {
+          "startMs": 1839.8,
+          "durationMs": 817
+        },
+        {
+          "startMs": 2659.2,
+          "durationMs": 727
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    },
+    {
+      "mode": "withFetch",
+      "run": 3,
+      "localDataMs": 2542.5,
+      "readyMs": 2642.4,
+      "documentResponseEndMs": 23.4,
+      "firstResourceStartMs": 1281.4,
+      "domInteractiveMs": 1316.2,
+      "domContentLoadedMs": 2608.6,
+      "mainStartMs": 1321.4,
+      "initialRenderReturnMs": 2541.4,
+      "mainEndMs": 2542.2,
+      "mainStartToInitialRenderMs": 1220,
+      "lastObservedRenderReturnMs": 5615.9,
+      "longTaskSumMs": 3030,
+      "longTasks": [
+        {
+          "startMs": 1320.5,
+          "durationMs": 1221
+        },
+        {
+          "startMs": 2642.2,
+          "durationMs": 982
+        },
+        {
+          "startMs": 3648.1,
+          "durationMs": 827
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    },
+    {
+      "mode": "withoutFetch",
+      "run": 1,
+      "localDataMs": 1324.5,
+      "readyMs": 1450.4,
+      "documentResponseEndMs": 19.5,
+      "firstResourceStartMs": 25.9,
+      "domInteractiveMs": 45.1,
+      "domContentLoadedMs": 1412.7,
+      "mainStartMs": 96.2,
+      "initialRenderReturnMs": 1322.2,
+      "mainEndMs": 1324.1,
+      "mainStartToInitialRenderMs": 1226,
+      "lastObservedRenderReturnMs": 1322.2,
+      "longTaskSumMs": 2524,
+      "longTasks": [
+        {
+          "startMs": 94.9,
+          "durationMs": 1229
+        },
+        {
+          "startMs": 1450.2,
+          "durationMs": 712
+        },
+        {
+          "startMs": 2163.8,
+          "durationMs": 583
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    },
+    {
+      "mode": "withoutFetch",
+      "run": 2,
+      "localDataMs": 2535,
+      "readyMs": 2601.9,
+      "documentResponseEndMs": 8.7,
+      "firstResourceStartMs": 955.2,
+      "domInteractiveMs": 1716.4,
+      "domContentLoadedMs": 2580.1,
+      "mainStartMs": 1750.5,
+      "initialRenderReturnMs": 2534.3,
+      "mainEndMs": 2534.8,
+      "mainStartToInitialRenderMs": 783.8,
+      "lastObservedRenderReturnMs": 2534.3,
+      "longTaskSumMs": 2020,
+      "longTasks": [
+        {
+          "startMs": 1749.3,
+          "durationMs": 785
+        },
+        {
+          "startMs": 2601.7,
+          "durationMs": 618
+        },
+        {
+          "startMs": 3221.1,
+          "durationMs": 617
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    },
+    {
+      "mode": "withoutFetch",
+      "run": 3,
+      "localDataMs": 2430.8,
+      "readyMs": 2501.9,
+      "documentResponseEndMs": 22.3,
+      "firstResourceStartMs": 846.6,
+      "domInteractiveMs": 1656.3,
+      "domContentLoadedMs": 2475.3,
+      "mainStartMs": 1698.8,
+      "initialRenderReturnMs": 2430.1,
+      "mainEndMs": 2430.7,
+      "mainStartToInitialRenderMs": 731.3,
+      "lastObservedRenderReturnMs": 2430.1,
+      "longTaskSumMs": 1935,
+      "longTasks": [
+        {
+          "startMs": 1697.4,
+          "durationMs": 733
+        },
+        {
+          "startMs": 2501.8,
+          "durationMs": 627
+        },
+        {
+          "startMs": 3130.4,
+          "durationMs": 575
+        }
+      ],
+      "resourceCount": 57,
+      "cachedZeroTransferResourceCount": 57
+    }
+  ],
+  "findings": [
+    "All six navigations read all 57 resources from cache with transferSize 0; the document itself responded within 9–26 ms.",
+    "Disabling Fetch did not consistently remove the delay: local display remained 1324.5–2535.0 ms and exceeded 500 ms on all three diagnostic runs.",
+    "The main module first-execution to initial render-return interval consumed 731.3–1226.0 ms across six runs and aligned with a 733–1229 ms long task. This is a directly observed main-thread initialization/render cost, not an external I/O wait.",
+    "The delay before initial main execution varied widely even with Fetch disabled. This experiment does not attribute that gap to an exact browser, parser, instrumentation, or application task.",
+    "Additional long tasks occurred after initial local display. Long-task sums cover the diagnostic collection interval and must not be interpreted as time before local display.",
+    "Three diagnostic samples do not replace the 20-sample before/after benchmark or establish a production p95. Actual NEXUS host app switching remains unmeasured."
+  ]
+}

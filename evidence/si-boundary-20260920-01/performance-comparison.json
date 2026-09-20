@@ -1,0 +1,101 @@
+{
+  "taskId": "SI-BOUNDARY-20260920-01",
+  "status": "INTERMEDIATE_NOT_ACCEPTED",
+  "mainSourceSha256": "db7f1dbc044e1c23051505cefcc07444b1dee049927f5a8218930cc429d5641f",
+  "scope": "Same synthetic fixture and machine; alias policy and full-workflow validation remain open",
+  "matrixComparisons": [
+    {
+      "name": "estimateMatrix",
+      "rows": 20,
+      "sameOutput": true,
+      "beforeP95Ms": 2.27,
+      "afterP95Ms": 1.52,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 20,
+      "sameOutput": true,
+      "beforeP95Ms": 3.746,
+      "afterP95Ms": 2.334,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    },
+    {
+      "name": "estimateMatrix",
+      "rows": 600,
+      "sameOutput": true,
+      "beforeP95Ms": 119.631,
+      "afterP95Ms": 78.14,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 600,
+      "sameOutput": true,
+      "beforeP95Ms": 91.119,
+      "afterP95Ms": 30.583,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    },
+    {
+      "name": "estimateMatrix",
+      "rows": 3000,
+      "sameOutput": true,
+      "beforeP95Ms": 1219.552,
+      "afterP95Ms": 834.268,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    },
+    {
+      "name": "purchaseSalesMatrix",
+      "rows": 3000,
+      "sameOutput": true,
+      "beforeP95Ms": 336.316,
+      "afterP95Ms": 401.775,
+      "afterEvidence": "after-intermediate-performance.json",
+      "rerunInFinalBrowserPass": false
+    }
+  ],
+  "browserComparisons": [
+    {
+      "metric": "Warm local draft display",
+      "beforeP95Ms": 4283.8,
+      "afterP95Ms": 458.1,
+      "changePercent": -89.31,
+      "limitMs": 500,
+      "pass": true
+    },
+    {
+      "metric": "Warm direct entry usable",
+      "beforeP95Ms": 4453.3,
+      "afterP95Ms": 638.3,
+      "changePercent": -85.67,
+      "limitMs": null,
+      "pass": null
+    },
+    {
+      "metric": "20-row analysis with 600 products",
+      "beforeP95Ms": 1592.5,
+      "afterP95Ms": 183.8,
+      "changePercent": -88.46,
+      "limitMs": null,
+      "pass": null
+    }
+  ],
+  "unverified": [
+    "Actual NEXUS host app switch p95 <= 1 second",
+    "Common-layer blocking p95 <= 150ms",
+    "Click feedback p95 <= 100ms",
+    "Production workload"
+  ],
+  "notes": [
+    "All six pure output hashes match. Their calculation implementation is unchanged and they were not rerun during the final browser pass; timing differences are not attributed to this refactor.",
+    "Warm direct entry is not the NEXUS app-to-app switching KPI.",
+    "Analysis owner-store reads fell from 80 to zero; existing alias output equivalence is still not satisfied.",
+    "Main startup/render marks were injected only by the measurement server; final comparison used 20 samples without function wrappers.",
+    "Source remains in an isolated development worktree; full E2E and deployment have not passed."
+  ]
+}

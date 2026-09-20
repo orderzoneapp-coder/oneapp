@@ -8,7 +8,7 @@ import {
   createAutosavePatch,
   createDraftSaveCoordinator,
   recoverAutosaveDocuments
-} from '../smartinput/draft-save-coordinator.js';
+} from '../smartinput/smartinput-data-store.js';
 
 const storeSource = readFileSync(new URL('../smartinput/smartinput-data-store.js', import.meta.url), 'utf8');
 assert.match(storeSource, /SMARTINPUT_DB_VERSION = 5/, 'stage 2 must reuse the existing autosave store without a DB version bump');
