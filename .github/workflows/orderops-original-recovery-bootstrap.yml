@@ -1,0 +1,64 @@
+name: Prepare isolated original OrderOps recovery
+
+on:
+  push:
+    branches: [chat/orderops-original-recovery-20260921]
+
+# Temporary branch-only preparation. It never updates a ref, merges, deploys,
+# reads user storage, or sends business files. Removed from the final PR tree.
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Generate exact historical screen with pinned module URLs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const cp = require('node:child_process');
+            const assert = require('node:assert/strict');
+            const crypto = require('node:crypto');
+            const baseline = '13c83a23a330f3319ae67005f7ff0d67dfae4d54';
+            const base = '67251bbb68b8cb12c1e70a88ae8cd326aa0807eb';
+            const historical = (ref, path) => cp.execFileSync('git', ['show', `${ref}:${path}`], {encoding:'utf8', maxBuffer: 20*1024*1024});
+            const output = '/tmp/orderops-original-recovery';
+            fs.mkdirSync(output, {recursive:true});
+            let html = historical(baseline, 'orderops_list.html');
+            const replacements = [
+              ['orderFulfillmentEngine.js?v=20260917-work-preservation', '/orderops/stable/20260917/orderFulfillmentEngine.js'],
+              ['orderFulfillmentWorkbook.js?v=20260916-baseline-calculation', '/orderops/stable/20260917/orderFulfillmentWorkbook.js'],
+            ];
+            for (const [from,to] of replacements) {
+              assert.equal(html.split(from).length, 2, `unique reference: ${from}`);
+              html = html.replace(from,to);
+            }
+            for (const name of ['orderFulfillmentEngine.js','orderFulfillmentWorkbook.js']) {
+              assert.equal(historical(base, `orderops/stable/20260917/${name}`), historical(baseline,name), `pinned ${name}`);
+            }
+            assert.ok(!html.includes('excel-preparation'));
+            fs.writeFileSync(`${output}/orderops_list.html`, html);
+            const blob = await github.rest.git.createBlob({...context.repo, content:html, encoding:'utf-8'});
+            const report = {base,baseline,path:'orderops_list.html',blob_sha:blob.data.sha,sha256:crypto.createHash('sha256').update(html).digest('hex'),bytes:Buffer.byteLength(html),changes:'Historical root screen; only two module URLs changed; no refs or production data written'};
+            fs.writeFileSync(`${output}/candidate.json`, JSON.stringify(report,null,2)+'\n');
+            core.info(JSON.stringify(report));
+            cp.execFileSync('git', ['bundle','create',`${output}/source.bundle`,'refs/remotes/origin/main'], {maxBuffer:20*1024*1024});
+      - name: Obtain the exact existing browser XLSX dependency for offline verification
+        run: curl --fail --location --retry 2 --max-time 45 https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js -o /tmp/orderops-original-recovery/xlsx.bundle.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orderops-original-recovery-candidate
+          path: /tmp/orderops-original-recovery
+          retention-days: 2
+          if-no-files-found: error
