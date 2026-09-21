@@ -1,0 +1,63 @@
+name: SmartInput source view restore build
+on:
+  push:
+    branches: ['chat/smartinput-source-view-restore-20260921']
+    paths:
+      - 'scripts/apply-smartinput-source-view-restore.mjs'
+      - '.github/workflows/si-source-view-restore-build.yml'
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/chat/smartinput-source-view-restore-20260921'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Source boundary and scoped implementation
+        run: |
+          git status --short
+          sed -n '1,75p' APP_ARCHITECTURE.md
+          cat roles/DEVELOPER.md
+          node -e 'const m=require("./app-manifest.json");function walk(v){if(v&&typeof v==="object"){if(v.id==="smart-input")console.log(JSON.stringify(v,null,2));else Object.values(v).forEach(walk)}}walk(m)'
+          node scripts/apply-smartinput-source-view-restore.mjs
+          git diff --check
+          node --check smartinput/source-preparation-ui-v2.js
+          node --check scripts/test-smartinput-estimate-report-preset-browser.mjs
+      - name: Reproduce hidden-view regression on original CSS
+        run: |
+          cp smartinput/source-preparation-ui-v2.js /tmp/si-source-view-fixed.js
+          git show HEAD:smartinput/source-preparation-ui-v2.js > smartinput/source-preparation-ui-v2.js
+          set +e
+          node scripts/test-smartinput-estimate-report-preset-browser.mjs > /tmp/si-view-baseline.log 2>&1
+          result=$?
+          set -e
+          cp /tmp/si-source-view-fixed.js smartinput/source-preparation-ui-v2.js
+          cat /tmp/si-view-baseline.log
+          test "$result" -ne 0
+          grep -q 'input/source view switch must be visible' /tmp/si-view-baseline.log
+      - name: Actual XLSX source/input view and edit preservation
+        run: node scripts/test-smartinput-estimate-report-preset-browser.mjs
+      - name: Related regression tests
+        run: |
+          node scripts/test-smartinput-estimate-report-preset.mjs
+          node scripts/test-smartinput-input-template-mapping.mjs
+          node scripts/test-smartinput-estimate-workbook-selection.mjs
+          node scripts/test-smartinput-estimate-f8.mjs
+          node scripts/test-smartinput-stage5-feature-loading.mjs
+          node scripts/validate-repository.mjs
+      - name: Commit verified implementation to isolated branch only
+        run: |
+          test "$(git branch --show-current)" = 'chat/smartinput-source-view-restore-20260921'
+          test "$(git ls-remote origin refs/heads/chat/smartinput-source-view-restore-20260921 | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'orderzoneapp-coder'
+          git config user.email 'orderzoneapp@gmail.com'
+          git rm .github/workflows/si-source-view-restore-build.yml scripts/apply-smartinput-source-view-restore.mjs
+          git add smartinput/source-preparation-ui-v2.js smartinput/index.html smartinput/SOURCE_VIEW_RESTORE.md scripts/test-smartinput-stage5-feature-loading.mjs scripts/test-smartinput-estimate-report-preset-browser.mjs .github/workflows/smartinput-source-view.yml
+          git diff --cached --check
+          git commit -m 'fix(smartinput): restore source/input view controls without changing data'
+          git push origin HEAD:refs/heads/chat/smartinput-source-view-restore-20260921
+          git rev-parse HEAD
