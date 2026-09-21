@@ -61,8 +61,16 @@ try {
       assert.equal(expected.split(from).length, 2, `Unique original dependency: ${from}`);
       expected = expected.replace(from, to);
     }
+    // Approved presentation-only delta: retain saved colors on the whole TD, not its input.
+    for (const [from, to] of [
+      ["style=\"${warehouseFill ? `background-color:${warehouseFill}` : \"\"}\" value=", "value="],
+      ["return `<td class=\"${classes}\"\n", "return `<td class=\"${classes}\"\n                      ${warehouseFill ? `style=\"background-color:${warehouseFill}\"` : \"\"}\n"],
+    ]) {
+      assert.equal(expected.split(from).length, 2, 'Unique original warehouse color anchor');
+      expected = expected.replace(from, to);
+    }
     assert.equal(text('orderops_list.html'), expected,
-      'Restore the original ROOT screen exactly; only its two module URLs are changed');
+      'Original ROOT remains exact except pinned module URLs and the approved warehouse full-cell fill');
     assert.ok(!expected.includes('excel-preparation'), 'The original must not depend on the modern preparation gate');
     put('orderops_list.html', text('orderops_list.html'));
     for (const name of ['orderFulfillmentEngine.js', 'orderFulfillmentWorkbook.js']) {

@@ -5760,7 +5760,7 @@
                             ? `<input class="inventory-input" data-inventory-code="${escapeHtml(sourceRow?.productCode || "")}"
                                 data-inventory-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
                                 inputmode="decimal" autocomplete="off" data-negative-value="${negativeNumericValue ? "true" : "false"}"
-                                style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value="${escapeHtml(displayValue)}"
+                                value="${escapeHtml(displayValue)}"
                                 aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 재고수량">`
                             : column.role === "rowState"
                               ? sourceRow?.quantityComparable === false
@@ -5776,6 +5776,7 @@
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
                     return `<td class="${classes}"
+                      ${warehouseFill ? `style="background-color:${warehouseFill}"` : ""}
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
