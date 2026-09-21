@@ -120,6 +120,8 @@
     productField('outsourcingStandardCost', '외주비표준원가', 'COST', { valueType: 'NUMBER', masterAliases: ['outsourcingStandardCost', '외주비표준원가'] }),
 
     productField('brand', '브랜드', 'ADDITIONAL', { masterAliases: ['brand', '브랜드'] }),
+    productField('type1InboundPrice', '1입고', 'ADDITIONAL', { valueType: 'NUMBER', voucherModes: ['estimate'], inputAliases: ['1입고'] }),
+    productField('type1OutPrice', '1출고', 'ADDITIONAL', { valueType: 'NUMBER', voucherModes: ['estimate'], inputAliases: ['1출고'] }),
     productField('type1Code', '1종코드', 'ADDITIONAL', { masterAliases: ['type1Code', '1종코드'] }),
     productField('type1Specification', '1종규격', 'ADDITIONAL', { masterAliases: ['type1Specification', '1종규격'] }),
     productField('type2Code', '2종코드', 'ADDITIONAL', { masterAliases: ['type2Code', '2종코드'] }),
