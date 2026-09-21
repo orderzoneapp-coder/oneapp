@@ -1,0 +1,48 @@
+name: SmartInput estimate report preset build
+on:
+  push:
+    branches: ['chat/smartinput-estimate-report-preset-20260921']
+    paths:
+      - '.github/workflows/si-estimate-report-preset-build.yml'
+      - 'scripts/apply-si-estimate-report-preset.mjs'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read exact integration points
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          base=pathlib.Path('.')
+          print('=== relevant scripts ===')
+          for p in sorted((base/'scripts').glob('*')):
+              if any(s in p.name for s in ['input-template','estimate','source-preparation','smartinput-browser','xlsx-source']): print(p)
+          print('=== manifest SmartInput ===')
+          m=json.loads((base/'app-manifest.json').read_text())
+          def walk(obj):
+              if isinstance(obj,dict):
+                  if obj.get('id')=='smart-input' or obj.get('appId')=='smart-input': print(json.dumps(obj,ensure_ascii=False,indent=2))
+                  else:
+                      for v in obj.values(): walk(v)
+              elif isinstance(obj,list):
+                  for v in obj: walk(v)
+          walk(m)
+          for name, needles, before, after in [
+              ('smartinput/smartinput.js',['createMappingSession({','createTemplateRecord(','estimateErpSummary ='],8,48),
+              ('smartinput/smartinput-contract.js',['function normalizeRow('],0,82),
+              ('smartinput/estimate-workbook-selector.js',[''],0,100),
+              ('scripts/test-smartinput-browser-e2e.mjs',[''],0,95),
+              ('package.json',[''],0,60)]:
+              p=base/name
+              if not p.exists(): continue
+              lines=p.read_text().splitlines(); emitted=set()
+              for n,line in enumerate(lines):
+                  if (needles==[''] and n==0) or (needles!=[''] and any(k in line for k in needles)):
+                      print('\n=== '+name+':'+str(n+1)+' ===')
+                      for j in range(max(0,n-before), min(len(lines),n+after)):
+                          if j not in emitted: print(str(j+1)+': '+lines[j]); emitted.add(j)
+          PY
