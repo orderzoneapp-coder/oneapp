@@ -51,7 +51,7 @@ import {
   updateWorkingCell,
   updateWorkingCells,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.3.0';
+} from './input-template-mapper.js?v=0.3.1';
 import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
@@ -98,7 +98,7 @@ import {
 } from './estimate-f8-recovery.js?v=0.1.1';
 import {
   isEstimateWorkbookItemRow
-} from './estimate-workbook-selector.js?v=0.1.1';
+} from './estimate-workbook-selector.js?v=0.1.2';
 import {
   createRecordId,
   commitEstimateBundle,
@@ -229,7 +229,7 @@ const OPTIONAL_OPERATION_FEATURES = Object.freeze([
 const referenceOperationFeature = domain => `${OPTIONAL_OPERATION_FEATURE.REFERENCE_READ}:${domain}`;
 const optionalOperationLoader = createOptionalOperationLoader({ globalScope: window, documentRef: document });
 const OPTIONAL_FEATURE_MODULES = Object.freeze({
-  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.2.0', specifier: './xlsx-source-reader.js?v=0.2.0', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
+  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.2.1', specifier: './xlsx-source-reader.js?v=0.2.1', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
   ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.1', specifier: './ocr-document-parser.js?v=0.1.1', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
   estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.2.9', specifier: './estimate-output.js?v=0.2.9', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
   estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.1.2', specifier: './estimate-migration.js?v=0.1.2', unavailableMessage: '기존 견적서 전환 기능을 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),
@@ -2154,6 +2154,66 @@ function mappingTargetSearchText(target) {
   ].filter(Boolean).join(' '));
 }
 
+// Left preparation uses mapping data directly; it never opens a hidden dialog
+// or depends on the source-table view having been rendered first.
+function sourcePreparationSnapshot() {
+  const current=modeDraft();
+  const session=inputMappingSession(current);
+  if (!session || current.activeMethod !== 'excel') return null;
+  const selected=new Set(session.mappings.map(mapping=>mapping.targetFieldId));
+  const targets=inputMappingDefinitions().filter(target=>selected.has(target.id)
+    || (target.pickerVisible !== false && !target.registryField));
+  return {
+    key: [state.draft.activeMode,current.documentId,session.sessionId].join(':'),
+    fileName: session.fileName, templateName: session.templateName,
+    headers: [...session.headers], mappings: session.mappings.map(mapping=>({...mapping})),
+    targets: targets.map(target=>({id:target.id,label:target.label,projectionFieldId:target.projectionFieldId||target.id,
+      scope:target.scope,advancedLabel:target.advancedLabel})),
+    busy: Boolean(state.busy || state.activeFileInputAttemptId)
+  };
+}
+
+function applySourcePreparationMappings(key, decisions) {
+  const model=sourcePreparationSnapshot();
+  if (!model || key !== model.key) throw new Error('원본 자료가 변경되었습니다. 현재 파일의 매핑을 확인하세요.');
+  if (model.busy) throw new Error('진행 중인 작업이 끝난 뒤 적용하세요.');
+  const current=modeDraft(), session=inputMappingSession(current);
+  if (!Array.isArray(decisions) || decisions.length !== session.headers.length
+    || new Set(decisions.map(item=>item.columnIndex)).size !== session.headers.length) {
+    throw new Error('전체 원본 열의 매핑을 확인하세요.');
+  }
+  const byColumn=new Map(decisions.map(item=>[item.columnIndex,item]));
+  const mappings=session.mappings.map(mapping=>{
+    const choice=byColumn.get(mapping.columnIndex);
+    if (!choice || !['MAPPED','UNMAPPED'].includes(choice.state)) throw new Error('사용할 항목 또는 사용 안 함을 선택하세요.');
+    return {...mapping,state:choice.state,targetFieldId:choice.state==='MAPPED'?String(choice.targetFieldId||''):'',reviewed:true};
+  });
+  const targetDefinitions=inputMappingDefinitions();
+  const next={...session,mappings};
+  const validation=validateTemplateDraft(next,targetDefinitions);
+  if (!validation.valid) throw new Error('연결 대상 누락 또는 중복 매핑을 확인하세요.');
+  if (['INVALID_TEMPLATE','TEMPLATE_CONFLICT'].includes(session.status)) throw new Error('저장된 양식 연결 오류를 먼저 수정하세요.');
+  const changed=mappings.some((mapping,index)=>mapping.state!==session.mappings[index].state
+    || mapping.targetFieldId!==session.mappings[index].targetFieldId || session.mappings[index].reviewed!==true);
+  if (!changed) return {applied:true,changed:false};
+  next.templateDirty=Boolean(session.templateId) || Boolean(session.templateDirty);
+  next.updatedAt=new Date().toISOString();
+  const previous={inputMapping:current.inputMapping,rows:current.rows,batches:current.batches,delivery:current.delivery};
+  try {
+    current.inputMapping=next;
+    projectInputMappingToVoucherRows();
+  } catch(error) {
+    Object.assign(current,previous);
+    state.inputListSearchIndexes.delete(state.draft.activeMode);
+    throw error;
+  }
+  renderRows({restoreFocus:false});
+  saveDraftNow();
+  return {applied:true,changed:true};
+}
+
+window.SMARTINPUT_SOURCE_PREPARATION=Object.freeze({snapshot:sourcePreparationSnapshot,apply:applySourcePreparationMappings});
+
 function mappingTargetById(fieldId) {
   return inputMappingDefinitions().find(target => target.id === fieldId) || null;
 }
@@ -2269,7 +2329,7 @@ function projectInputMappingToVoucherRows({ preserveProductEdits = true, changed
   const projectionSession = session.estimateErpSummary?.recognized
     ? {
       ...session,
-      workingRows: (session.workingRows || []).filter(row => row.manual || isEstimateWorkbookItemRow(row.cells))
+      workingRows: (session.workingRows || []).filter(row => row.manual || isEstimateWorkbookItemRow(row.cells, session.headers))
     }
     : session;
   let projectedSources = projectMappedRows(projectionSession, targetDefinitions, { rowIds: changed });
@@ -2390,9 +2450,9 @@ function restoreInputMappingSession({ applyLatestTemplate = false } = {}) {
     companyId: state.companyId,
     voucherMode: state.draft.activeMode
   });
-  if (!applyLatestTemplate && existing.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE
+  if (!applyLatestTemplate && (existing.status === MAPPING_SESSION_STATUS.NEW_TEMPLATE || existing.templateDirty)
     && existing.signature === restored.signature && Array.isArray(existing.mappings)) {
-    restored = { ...restored, status: existing.status, mappings: existing.mappings.map(mapping => ({ ...mapping })), issues: [...(existing.issues || [])] };
+    restored = { ...restored, status: existing.status, templateId: existing.templateId, templateName: existing.templateName, templateRevision: existing.templateRevision, builtinPresetId: existing.builtinPresetId, templateDirty: existing.templateDirty, mappings: existing.mappings.map(mapping => ({ ...mapping })), issues: [...(existing.issues || [])] };
   }
   restored.batchId = existing.batchId || mappingSessionWithBatch(restored).batchId;
   restored.purchaseMetaRows = existing.purchaseMetaRows || null;
@@ -2891,6 +2951,7 @@ function renderSourceSheet() {
 }
 
 function renderSourceSurface() {
+  window.dispatchEvent(new Event('smartinput:source-preparation-changed'));
   const evidence = currentSourceImage();
   const photoMode = modeDraft().activeMethod === 'photo';
   const sheetMode = modeDraft().activeMethod === 'excel' && Boolean(inputMappingSession() || shoppingOrderImport());
@@ -4131,7 +4192,7 @@ async function saveAppliedInputTemplateChanges() {
   const session = inputMappingSession();
   if (!session?.templateId || ![MAPPING_SESSION_STATUS.TEMPLATE_APPLIED, MAPPING_SESSION_STATUS.INVALID_TEMPLATE, MAPPING_SESSION_STATUS.TEMPLATE_CONFLICT].includes(session.status)) return;
   const previous = state.inputTemplates.find(template => template.templateId === session.templateId);
-  if (!previous) {
+  if (!previous && session.builtinPresetId !== 'SMARTINPUT_ESTIMATE_REPORT_V1') {
     toast('적용된 입력 양식을 찾지 못했습니다. 양식 목록을 다시 불러오세요.', 'error');
     return;
   }
@@ -4143,12 +4204,16 @@ async function saveAppliedInputTemplateChanges() {
   const button = $('inputTemplateSaveButton');
   button.disabled = true;
   try {
-    const updated = createTemplateRecord(session, previous.templateName, inputMappingDefinitions(), previous);
-    const next = state.inputTemplates.map(template => template.templateId === updated.templateId ? updated : template);
+    const updated = createTemplateRecord(session, previous?.templateName || session.templateName, inputMappingDefinitions(), previous || null);
+    const next = previous
+      ? state.inputTemplates.map(template => template.templateId === updated.templateId ? updated : template)
+      : [...state.inputTemplates, updated];
     await saveInputTemplates(next, { companyId: state.companyId, voucherMode: state.draft.activeMode });
     state.inputTemplates = next;
     modeDraft().inputMapping = {
       ...session,
+      templateId: updated.templateId,
+      builtinPresetId: '',
       templateName: updated.templateName,
       templateRevision: updated.revision,
       templateDirty: false,
@@ -4255,6 +4320,7 @@ function openInputTemplateManager() {
       return;
     }
     list.innerHTML = state.inputTemplates.length ? state.inputTemplates.map(template => `<article class="template-manager-row" data-template-id="${esc(template.templateId)}"><div><strong>${esc(template.templateName)}</strong><small>${template.fieldCount || template.headers?.length || 0}열 · revision ${Number(template.revision || 1)} · ${esc(template.updatedAt || '')}</small></div><span><button type="button" class="button button--quiet button--small" data-edit-template>수정</button><button type="button" class="button button--danger button--small" data-delete-template>삭제</button></span></article>`).join('') : '<div class="smart-dialog__empty">저장된 입력 양식이 없습니다.</div>';
+    if (state.draft.activeMode === 'estimate') list.insertAdjacentHTML('afterbegin', '<article class="template-manager-row" data-builtin-template="SMARTINPUT_ESTIMATE_REPORT_V1"><div><strong>견적서현황</strong><small>기본 양식 · 24열 · 전표정보·품목 입력정보·상품 참조정보</small></div><span>자동 매핑</span></article>');
     message.textContent = state.inputTemplates.length ? '기존 양식의 변경은 다음 파일부터 적용됩니다.' : '신규 파일의 매핑을 확인하고 입력 양식으로 저장하세요.';
   };
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', finish));
@@ -6294,6 +6360,8 @@ function renderMappingRows() {
   const tableWidth = 58 + visibleColumns.reduce((sum, index) => sum + Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70)), 0);
   table.style.setProperty('--mapping-table-width', `${tableWidth}px`);
   $('mappingTableColumns').innerHTML = `<col style="width:58px">${visibleColumns.map(index => `<col style="width:${Math.max(110, Math.min(240, (session.headers[index]?.length || 0) * 11 + 70))}px">`).join('')}`;
+  $('mappingTableHeaders').dataset.mappingSessionId = session.sessionId;
+  $('mappingTableHeaders').dataset.mappingTemplateName = session.templateName || '';
   $('mappingTableHeaders').innerHTML = `<th class="sequence-column sequence-select-column" scope="col"><label class="sequence-checkbox sequence-checkbox--all"><input id="mappingSelectAllRows" type="checkbox" aria-label="전체 원본 행 선택"><span>No.</span></label></th>${visibleColumns.map(columnIndex => {
     const mapping = session.mappings[columnIndex];
     const sourceHeader = session.headers[columnIndex] || `(빈 필드명 · ${columnIndex + 1}열)`;
@@ -6302,7 +6370,7 @@ function renderMappingRows() {
     const issue = issueIndex >= 0 ? validation.issues[issueIndex] : null;
     const errorClass = issue ? ` is-validation-error${issueIndex === validation.index ? ' is-validation-current' : ''}` : '';
     const stateLabel = issue ? mappingValidationIssueText(issue, session) : mappingStateText(mapping);
-    return `<th class="mapping-column-heading${errorClass}" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}" ${issue ? `data-validation-error="${esc(issue.code)}"` : ''}><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(stateLabel)}"><strong>${esc(sourceHeader)}</strong><small>${esc(stateLabel)}</small></button></th>`;
+    return `<th class="mapping-column-heading${errorClass}" data-mapping-state="${esc(mapping?.state || MAPPING_DECISION.UNDECIDED)}" data-mapping-column="${columnIndex}" data-mapping-target-id="${esc(mapping?.targetFieldId || '')}" data-mapping-target-label="${esc(mappingTargetById(mapping?.targetFieldId)?.label || '')}" ${issue ? `data-validation-error="${esc(issue.code)}"` : ''}><button class="mapping-header-button" type="button" data-open-field-mapping="${columnIndex}" title="${esc(stateLabel)}"><strong>${esc(sourceHeader)}</strong><small>${esc(stateLabel)}</small></button></th>`;
   }).join('')}`;
   const rows = visibleMappingRows(session);
   const renderedRows = state.inputListSearch.open

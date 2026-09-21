@@ -1,3 +1,5 @@
+import { createEstimateReportPreset, isEstimateReportHeaders, isEstimateReportMetadataRow, estimateReportField } from './estimate-report-preset.js?v=0.1.0';
+
 const SOURCE_WHITESPACE = /[\s\u00a0\u200b\u200c\u200d\u2060\ufeff]+/gu;
 
 export function hasMeaningfulSourceValue(value) {
@@ -223,6 +225,8 @@ function resolveTemplate(companyId, voucherMode, headers, templates = [], target
     };
   }
   if (!matches.length) {
+    const builtin = createEstimateReportPreset(headers, targetDefinitions, voucherMode);
+    if (builtin) return builtin;
     return {
       status: SESSION_STATUS.NEW_TEMPLATE,
       template: null,
@@ -241,7 +245,7 @@ function resolveTemplate(companyId, voucherMode, headers, templates = [], target
   };
 }
 
-function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, editJournal = {}, manualRows = []) {
+function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, editJournal = {}, manualRows = [], voucherMode = '') {
   optimizationMetrics.fullWorkingRowBuilds += 1;
   const width = headers.length;
   const sourceRows = sourceMatrix.slice(headerRowIndex + 1).map((sourceRow, offset) => {
@@ -262,7 +266,8 @@ function workingRows(sourceMatrix, sourceCellMatrix, headerRowIndex, headers, ed
       })),
       manual: false
     };
-  }).filter(row => row.cells.some(hasMeaningfulSourceValue));
+  }).filter(row => row.cells.some(hasMeaningfulSourceValue)
+    && !(isEstimateReportHeaders(headers, voucherMode) && isEstimateReportMetadataRow(row.cells, headers)));
   const manual = (manualRows || []).map((row, index) => ({
     rowId: cellText(row?.rowId) || `manual-${index + 1}`,
     sourceRowIndex: null,
@@ -281,7 +286,8 @@ function activeWorkingRows(session, editJournal = session?.editJournal, manualRo
     session?.headerRowIndex || 0,
     session?.headers || [],
     editJournal || {},
-    manualRows || []
+    manualRows || [],
+    session?.voucherMode
   ).filter(row => row.manual || !deletedSourceRows.has(row.sourceRowIndex));
 }
 
@@ -325,12 +331,13 @@ export function createMappingSession({
     templateId: cellText(resolved.template?.templateId),
     templateName: cellText(resolved.template?.templateName),
     templateRevision: Number(resolved.template?.revision || 0),
+    ...(resolved.template?.builtinPresetId ? { builtinPresetId: resolved.template.builtinPresetId } : {}),
     mappings: resolved.mappings,
     issues: resolved.issues,
     editJournal: { ...(editJournal || {}) },
     manualRows: (manualRows || []).map(row => ({ ...row, cells: [...(row.cells || [])] })),
     hiddenColumns: [...new Set((hiddenColumns || []).map(Number).filter(Number.isInteger))],
-    workingRows: workingRows(sourceMatrix, cellMatrix, safeIndex, headers, editJournal, manualRows),
+    workingRows: workingRows(sourceMatrix, cellMatrix, safeIndex, headers, editJournal, manualRows, voucherMode),
     updatedAt: new Date().toISOString()
   };
   rememberWorkingRowIndex(session);
@@ -554,7 +561,7 @@ export function deleteWorkingRows(session, rowIds = []) {
     .filter(row => selected.has(row.rowId) && !row.manual)
     .map(row => row.sourceRowIndex)]);
   const manualRows = (session.manualRows || []).filter(row => !selected.has(row.rowId));
-  const rows = workingRows(session.sourceMatrix, session.sourceCellMatrix || [], session.headerRowIndex, session.headers, session.editJournal, manualRows)
+  const rows = workingRows(session.sourceMatrix, session.sourceCellMatrix || [], session.headerRowIndex, session.headers, session.editJournal, manualRows, session.voucherMode)
     .filter(row => row.manual || !deletedSourceRows.has(row.sourceRowIndex));
   return {
     ...session,
@@ -646,6 +653,8 @@ export function projectMappedRows(session, targetDefinitions = [], { rowIds = nu
         const evidence = row.manual ? null : (row.sourceCells?.[mapping.columnIndex] || null);
         projected.fieldValues[target.id] = {
           fieldId: target.id,
+          ...(isEstimateReportHeaders(session.headers, session.voucherMode)
+            ? { informationGroup: estimateReportField(session.headers, mapping.columnIndex)?.informationGroup, valueSource: 'SOURCE_FILE' } : {}),
           sourceDisplayValue: cellText(evidence?.displayValue),
           currentDisplayValue,
           parsedValue: value,

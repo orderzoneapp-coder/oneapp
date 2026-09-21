@@ -1,3 +1,5 @@
+import { isEstimateReportHeaders, isEstimateReportMetadataRow } from './estimate-report-preset.js?v=0.1.0';
+
 const ERP_ESTIMATE_SHEET_NAME = '견적서현황내역';
 
 export const ERP_ESTIMATE_HEADERS = Object.freeze([
@@ -14,7 +16,8 @@ function meaningful(value) {
   return cellText(value) !== '';
 }
 
-export function isEstimateWorkbookItemRow(row = []) {
+export function isEstimateWorkbookItemRow(row = [], headers = ERP_ESTIMATE_HEADERS) {
+  if (isEstimateReportHeaders(headers)) return Array.isArray(row) && row.some(meaningful) && !isEstimateReportMetadataRow(row, headers);
   return Array.isArray(row) && ERP_ESTIMATE_HEADERS.slice(0, 6).every((unused, index) => meaningful(row[index]));
 }
 
@@ -26,12 +29,13 @@ export function inspectEstimateWorkbookCandidate(candidate = {}, voucherMode = '
     : null;
   const recognized = String(voucherMode || '').toLowerCase() === 'estimate'
     && Array.isArray(header)
-    && ERP_ESTIMATE_HEADERS.every((expected, index) => cellText(header[index]) === expected)
-    && header.slice(ERP_ESTIMATE_HEADERS.length).every(value => !meaningful(value));
+    && (isEstimateReportHeaders(header) || (ERP_ESTIMATE_HEADERS.every((expected, index) => cellText(header[index]) === expected)
+      && header.slice(ERP_ESTIMATE_HEADERS.length).every(value => !meaningful(value))));
   if (!recognized) return Object.freeze({ recognized: false, preferred: false });
 
-  const itemRows = matrix.slice(headerRowIndex + 1).filter(isEstimateWorkbookItemRow);
-  const customerNames = new Set(itemRows.map(row => cellText(row[2])).filter(Boolean));
+  const itemRows = matrix.slice(headerRowIndex + 1).filter(row => isEstimateWorkbookItemRow(row, header));
+  const customerColumn = header.map(cellText).indexOf('거래처명');
+  const customerNames = new Set(itemRows.map(row => cellText(row[customerColumn])).filter(Boolean));
   return Object.freeze({
     schemaVersion: 'ONEAPP_SMARTINPUT_ERP_ESTIMATE_STATUS_SUMMARY_V1',
     recognized: true,
