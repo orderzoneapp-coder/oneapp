@@ -1,0 +1,77 @@
+name: SmartInput source view live check
+on:
+  push:
+    branches: ['chat/smartinput-source-view-restore-20260921']
+    paths: ['.github/workflows/si-source-view-live-check.yml']
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: addde6121b9c36ee52b6bb5c92654f518f6c9424
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Check deployed file identity
+        run: |
+          python3 - <<'PY'
+          import pathlib,hashlib,urllib.request,time
+          for name in ['smartinput/index.html','smartinput/source-preparation-ui-v2.js','smartinput/table-view-state.js','smartinput/smartinput.js']:
+              expected=pathlib.Path(name).read_bytes()
+              for attempt in range(10):
+                  request=urllib.request.Request('https://oneapp.orderz.co.kr/'+name+'?verify=addde612-'+str(attempt),headers={'Cache-Control':'no-cache'})
+                  with urllib.request.urlopen(request,timeout=15) as response: actual=response.read()
+                  if actual==expected: break
+                  time.sleep(5)
+              else: raise SystemExit('Deployed asset mismatch: '+name)
+              print('PASS live asset',name,hashlib.sha256(actual).hexdigest())
+          PY
+      - name: Check actual live controls using a fresh synthetic browser profile
+        run: |
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const harness=fs.readFileSync('scripts/test-smartinput-estimate-report-preset-browser.mjs','utf8').split('let browser;')[0];
+          fs.writeFileSync('scripts/.source-view-live-check.mjs',harness+String.raw`
+          let browser,client;
+          const writes=[];
+          try {
+            browser=spawn(browserExecutable(),['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{stdio:'ignore'});
+            const port=await waitFor(()=>{try{return readFileSync(join(profile,'DevToolsActivePort'),'utf8').trim().split(/\r?\n/)[0];}catch{return null;}},'live Chrome');
+            const pages=await(await fetch('http://127.0.0.1:'+port+'/json/list')).json();
+            client=new CdpClient(pages.find(p=>p.type==='page').webSocketDebuggerUrl);await client.connect();
+            await Promise.all([client.send('Page.enable'),client.send('Runtime.enable'),client.send('Network.enable')]);
+            await client.send('Emulation.setDeviceMetricsOverride',{width:1693,height:900,deviceScaleFactor:1,mobile:false});
+            await client.send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'}]});
+            client.on('Fetch.requestPaused',event=>{
+              const write=!['GET','HEAD','OPTIONS'].includes(event.request.method);
+              if(write)writes.push(event.request.url);
+              void client.send(write?'Fetch.failRequest':'Fetch.continueRequest',write?{requestId:event.requestId,errorReason:'BlockedByClient'}:{requestId:event.requestId}).catch(()=>{});
+            });
+            await client.send('Page.navigate',{url:'https://oneapp.orderz.co.kr/smartinput/'});
+            await expr(client,'Boolean(window.SMARTINPUT_SOURCE_PREPARATION && document.querySelector("#inputRows tr"))','live app ready',60000);
+            await click(client,'.mode-tab[data-mode="estimate"]');
+            await expr(client,'document.querySelector(".mode-tab[data-mode=estimate]").getAttribute("aria-selected")==="true"','live estimate mode');
+            const {ESTIMATE_REPORT_HEADERS:H}=await import('../smartinput/estimate-report-preset.js');
+            const record={일자:'2026/09/02',창고:'01',거래처명:'VIEW_TEST',품목명:'VIEW_TEST_ITEM',규격:'BOX',품목코드:'VIEWTEST001',입고가:'3200',출고가:'3800',도매A:'3800',외주비:'200',노무비:'100',단위:'BOX'};
+            const csv='\uFEFF'+[H,...Array.from({length:3},(_,i)=>H.map(h=>h==='품목코드'?'VIEWTEST00'+i:(record[h]??'')))].map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');
+            await evaluate(client,'(()=>{const dt=new DataTransfer();dt.items.add(new File(['+JSON.stringify(csv)+'],"view-verification.csv",{type:"text/csv"}));const input=document.querySelector("#fileInput");input.files=dt.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()');
+            await expr(client,'window.SMARTINPUT_SOURCE_PREPARATION.snapshot()?.headers.length===24 && !window.SMARTINPUT_SOURCE_PREPARATION.snapshot().busy','live 24-column import',60000);
+            const clickView=async view=>{
+              const point=await evaluate(client,'(()=>{const b=document.querySelector("[data-table-view='+view+']");b.scrollIntoView({block:"nearest"});const r=b.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,ok:!b.disabled&&r.width>0&&r.height>0};})()');
+              assert.equal(point.ok,true);await pointerClick(client,point.x,point.y);
+            };
+            await clickView('source');
+            await expr(client,'!document.querySelector("#mappingWorktable").hidden && getComputedStyle(document.querySelector("#mappingWorktable")).display!=="none"','live source table visible');
+            assert.deepEqual(await evaluate(client,'[...document.querySelectorAll("#mappingTableHeaders th[data-mapping-column]")].map(th=>th.querySelector("strong").textContent.trim())'),H);
+            await clickView('input');
+            await expr(client,'!document.querySelector("#voucherInputTable").hidden && document.querySelector("#mappingWorktable").hidden','live input table restored');
+            assert.deepEqual(writes,[],'live verification makes no HTTP writes');
+            console.log('PASS actual live site: desktop 1693x900, synthetic CSV via real fileInput, 24 source headings, physical source/input clicks, no HTTP writes.');
+          } finally {client?.close();browser?.kill();rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+          `);
+          JS
+          node scripts/.source-view-live-check.mjs
