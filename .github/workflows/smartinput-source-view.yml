@@ -1,0 +1,66 @@
+name: SmartInput source view
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'smartinput/**'
+      - 'scripts/test-smartinput-estimate-report-preset*.mjs'
+      - '.github/workflows/smartinput-source-view.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'smartinput/**'
+      - 'scripts/test-smartinput-estimate-report-preset*.mjs'
+      - '.github/workflows/smartinput-source-view.yml'
+  workflow_run:
+    workflows: ['pages build and deployment']
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  source-view:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Verify preset, mapping and source-view preservation
+        run: |
+          node scripts/test-smartinput-estimate-report-preset.mjs
+          node scripts/test-smartinput-input-template-mapping.mjs
+          node scripts/test-smartinput-estimate-workbook-selection.mjs
+          node scripts/test-smartinput-estimate-f8.mjs
+          node scripts/test-smartinput-estimate-report-preset-browser.mjs
+  deployed-assets:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Compare deployed SmartInput entry and view assets to the deployed commit
+        env:
+          DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, hashlib, time, urllib.request
+          domain=pathlib.Path('CNAME').read_text().strip()
+          if domain != 'oneapp.orderz.co.kr': raise SystemExit('Unexpected deployment domain')
+          for name in ['smartinput/index.html','smartinput/source-preparation-ui-v2.js','smartinput/table-view-state.js','smartinput/smartinput.js']:
+              expected=pathlib.Path(name).read_bytes()
+              for attempt in range(12):
+                  try:
+                      request=urllib.request.Request('https://'+domain+'/'+name+'?verify='+os.environ['DEPLOYED_SHA']+'-'+str(attempt),headers={'Cache-Control':'no-cache'})
+                      with urllib.request.urlopen(request,timeout=15) as response: actual=response.read()
+                      if actual==expected: break
+                  except Exception as error: print(type(error).__name__,str(error))
+                  time.sleep(5)
+              else: raise SystemExit('Deployed source mismatch: '+name)
+              print('PASS deployed asset',name,hashlib.sha256(actual).hexdigest())
+          print('Deployed SmartInput source matches',os.environ['DEPLOYED_SHA'])
+          PY
