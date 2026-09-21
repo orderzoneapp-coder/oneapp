@@ -9,8 +9,6 @@
     const style = document.createElement('style');
     style.id = 'smartInputSourcePreparationStyle';
     style.textContent = `
-      #mappingWorktable { display:none !important; }
-      #tableViewSwitch { display:none !important; }
       .smartinput-mapping-probe .field-mapping-dialog { visibility:hidden !important; pointer-events:none !important; }
       .source-preparation-mapping { margin-top:8px; min-height:0; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--border-strong); border-radius:9px; background:var(--surface-muted); }
       .source-preparation-mapping[hidden] { display:none !important; }
