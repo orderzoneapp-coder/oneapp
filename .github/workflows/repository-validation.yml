@@ -241,22 +241,25 @@ jobs:
       - name: Verify frozen operational OrderOps backup
         run: node scripts/test-orderops-stable-rollback.mjs
 
+      - name: Verify restored original OrderOps root
+        run: node scripts/test-orderops-original-recovery.mjs
+
       - name: Test OrderOps allocation and workbook contracts
         run: |
-          node scripts/test-shipping-management.mjs
+          node scripts/test-orderops-original-recovery.mjs --modern test-shipping-management.mjs
           node scripts/test-orderops-baseline-calculation.mjs
-          node scripts/test-orderops-work-preservation.mjs
-          node scripts/test-orderops-excel-preparation.mjs
+          node scripts/test-orderops-original-recovery.mjs --modern test-orderops-work-preservation.mjs
+          node scripts/test-orderops-original-recovery.mjs --modern test-orderops-excel-preparation.mjs
           node scripts/test-common-inventory-snapshot.mjs
           node scripts/test-orderq-inventory-movement.mjs
-          node scripts/test-orderops-inventory-movement-ui.mjs
+          node scripts/test-orderops-original-recovery.mjs --modern test-orderops-inventory-movement-ui.mjs
           node scripts/test-orderops-inventory-movement-workbook.mjs
 
-      - name: Test OrderOps left Excel mapping and automatic display in Chromium
-        run: node scripts/test-orderops-excel-preparation-browser.mjs
+      - name: Test retained modern Excel mapping in isolated Chromium
+        run: node scripts/test-orderops-original-recovery.mjs --modern test-orderops-excel-preparation-browser.mjs
 
-      - name: Test OrderOps inventory movement and stocktake in Chromium
-        run: node scripts/test-orderops-inventory-movement-browser.mjs
+      - name: Test retained modern inventory movement in isolated Chromium
+        run: node scripts/test-orderops-original-recovery.mjs --modern test-orderops-inventory-movement-browser.mjs
 
       # OrderOps is restored to the approved a596cbbd Excel-first screen.
       # Later dispatch/three-area, system-review, and workbook-v1.2 UI suites
