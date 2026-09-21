@@ -1,0 +1,61 @@
+name: Original OrderOps recovery
+
+on:
+  pull_request:
+    paths:
+      - orderops_list.html
+      - orderops/stable/**
+      - scripts/test-orderops-original-recovery*
+      - .github/workflows/orderops-original-recovery.yml
+  push:
+    branches: [main]
+    paths:
+      - orderops_list.html
+      - orderops/stable/**
+      - scripts/test-orderops-original-recovery*
+      - .github/workflows/orderops-original-recovery.yml
+  workflow_run:
+    workflows: [pages build and deployment]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      verify_live:
+        description: Verify the deployed original URL with isolated synthetic data
+        type: boolean
+        default: false
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: Verify original root in Chromium
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check exact source, fixed modules and recovery contracts
+        run: node scripts/test-orderops-original-recovery.mjs
+      - name: Install pinned browser driver
+        run: python -m pip install playwright==1.57.0
+      - name: Exercise original root without production data
+        env:
+          ORDEROPS_LIVE_ORIGIN: ${{ (github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.verify_live)) && 'https://oneapp.orderz.co.kr' || '' }}
+        run: python scripts/test-orderops-original-recovery-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-orderops-browser
+          path: /tmp/orderops-original-browser
+          retention-days: 7
+          if-no-files-found: error

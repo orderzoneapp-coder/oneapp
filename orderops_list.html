@@ -8,10 +8,8 @@
   <link rel="icon" type="image/svg+xml" href="/nexus/assets/nexus-favicon.svg">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="orderFulfillmentEngine.js?v=20260920-inventory-movement"></script>
-  <script src="orderFulfillmentWorkbook.js?v=20260920-inventory-movement"></script>
-  <script src="orderops/excel-preparation.js?v=20260920-inventory-movement"></script>
-  <script src="orderops/excel-preparation-ui.js?v=20260920-inventory-movement"></script>
+  <script src="/orderops/stable/20260917/orderFulfillmentEngine.js"></script>
+  <script src="/orderops/stable/20260917/orderFulfillmentWorkbook.js"></script>
   <style>
     :root {
       color-scheme: light;
@@ -1412,81 +1410,6 @@
       border: 1px solid #e1e7ee;
       vertical-align: middle;
     }
-    @media screen {
-      .results-panel table.preview-allocations {
-        border: 0;
-        background: #fffff0;
-        color: #1f2937;
-      }
-      .results-panel table.preview-allocations th {
-        border: 0 !important;
-        color: #25313f !important;
-        background: #ede8d4 !important;
-      }
-      .results-panel table.preview-allocations tbody tr:not(.manager-color-row) > td {
-        border: 0 !important;
-        color: #1f2937 !important;
-        background: #fffff0 !important;
-      }
-      .results-panel table.preview-allocations tbody tr:not(.manager-color-row):nth-child(even) > td {
-        background: #faf8e8 !important;
-      }
-      .results-panel table.preview-allocations tbody tr.manager-color-row[style*="--manager-color"] > td {
-        color: #172033 !important;
-        background: color-mix(in srgb, var(--manager-color) 42%, #fffff0) !important;
-      }
-      .results-panel table.preview-allocations tbody tr.manager-color-row > td * { color: #172033 !important; }
-      .results-panel table.preview-allocations .manager-name {
-        border-color: #94a3b8 !important;
-        color: #172033 !important;
-        background: rgba(255, 255, 255, .72) !important;
-      }
-      .results-panel table.preview-allocations .order-information-badge.manager-color-badge {
-        color: #172033 !important;
-        background: color-mix(in srgb, var(--manager-color) 45%, #fff) !important;
-      }
-      .results-panel table.preview-allocations tbody tr.no-order-row > td,
-      .results-panel table.preview-allocations tbody tr.no-order-row > td * { color: #475569 !important; }
-      .results-panel table.preview-allocations tbody tr.unit-alert-row > td,
-      .results-panel table.preview-allocations tbody tr.unit-alert-row > td * { color: #b91c1c !important; }
-      .results-panel table.preview-allocations tbody tr.box-unit-row > td,
-      .results-panel table.preview-allocations tbody tr.box-unit-row > td * { color: #0f172a !important; }
-      .results-panel table.preview-allocations td[data-column-role="orderQuantity"],
-      .results-panel table.preview-allocations td[data-column-role="unitPrice"] { background: #e4edf8 !important; }
-      .results-panel table.preview-allocations td[data-column-role="warehouseQuantity"] { background: #e2efe7 !important; }
-      .results-panel table.preview-allocations td[data-column-role="deliveryNotice"] { background: #f3eddc !important; }
-      .results-panel table.preview-allocations td[data-column-role="purchase"] { background: #eee6f4 !important; }
-      .results-panel table.preview-allocations :is(.order-edit-input, .inventory-input, .purchase-input) {
-        width: 100%;
-        min-width: 0;
-        height: 25px;
-        padding: 1px 5px;
-        border: 0 !important;
-        border-radius: 0;
-        outline: 0;
-        color: #1f2937 !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        text-align: inherit;
-      }
-      .results-panel table.preview-allocations tbody tr:focus-within > td {
-        color: #172554 !important;
-        background: #dbeafe !important;
-      }
-      .results-panel table.preview-allocations tbody tr:focus-within > td:focus-within {
-        position: relative;
-        background: #f8fbff !important;
-        box-shadow: inset 0 0 0 2px #2563eb !important;
-      }
-      .results-panel table.preview-allocations tbody tr:focus-within {
-        outline: 2px solid #60a5fa;
-        outline-offset: -2px;
-      }
-      .results-panel table.preview-allocations tbody tr.unit-alert-row > td,
-      .results-panel table.preview-allocations tbody tr.unit-alert-row > td * {
-        color: #b91c1c !important;
-      }
-    }
 
     .page-footer {
       display: flex;
@@ -1645,13 +1568,12 @@
         font-size: 11.9px;
       }
       body.printing-table .print-area table.preview-allocations th {
-        color: #0f172a !important;
-        background: #fff !important;
+        color: #fff !important;
+        background: #147f75 !important;
         text-align: center;
       }
       body.printing-table .print-area th,
       body.printing-table .print-area td {
-        background: #fff !important;
         padding: 2px 3px;
         overflow: visible !important;
         text-overflow: clip !important;
@@ -1940,19 +1862,7 @@
       .data-source-label { min-height: 22px; }
       .view-controls .preview-tabs { display: flex; }
     }
-
-    #previewTable table.preview-movement .movement-input { width: 100%; min-width: 0; height: 28px; border: 0; border-radius: 0; padding: 3px 6px; background: transparent; color: inherit; }
-    #previewTable table.preview-movement .movement-input:focus { outline: 2px solid #0f766e; outline-offset: -2px; }
-    #previewTable table.preview-movement tr.unit-alert-row > td,
-    #previewTable table.preview-movement tr.unit-alert-row > td *,
-    #printArea table.preview-movement tr.unit-alert-row > td,
-    #printArea table.preview-movement tr.unit-alert-row > td * { color: #b91c1c !important; font-weight: 400; }
-    #previewTable table.preview-movement td.movement-negative-cell,
-    #previewTable table.preview-movement td.movement-negative-cell:focus-within,
-    #previewTable table.preview-movement td.movement-negative-cell input,
-    #printArea table.preview-movement td.movement-negative-cell { background: #fef9c3 !important; }
   </style>
-  <link rel="stylesheet" href="orderops/excel-preparation.css?v=20260920-inventory-movement">
 </head>
 <body>
   <header class="global-header">
@@ -1976,7 +1886,6 @@
         aria-label="전체 통합 Excel 출력 F10" aria-keyshortcuts="F10" disabled>
         <span aria-hidden="true">↓</span><span>엑셀출력 F10</span>
       </button>
-      <button class="header-link header-output-button" id="movementDownloadButton" type="button" disabled aria-label="재고변동표 Excel 다운로드">재고변동표 Excel</button>
       <button class="header-link" id="headerCloudLoadButton" type="button" aria-label="클라우드 확정본 불러오기">
         <span aria-hidden="true">⇩</span><span>불러오기</span>
       </button>
@@ -2013,10 +1922,17 @@
         </div>
       </div>
 
-      <section class="panel input-panel prep-execution-strip" aria-label="기존 작업 실행">
-        <div class="source-selector excel-preparation-compat" id="sourceSelector" aria-label="기존 Excel 입력 호환 영역" hidden>
+      <section class="panel input-panel" aria-label="입력 파일과 실행">
+        <div class="source-selector" id="sourceSelector" aria-label="Excel 파일 선택 및 자동분류 드롭 영역">
           <div class="data-source-label">
             <span aria-hidden="true">▣</span><span>데이터 소스:</span>
+            <span class="integrated-compact-slot" id="integratedCard">
+              <button class="integrated-file-button" id="integratedFileButton" type="button"
+                aria-label="통합 Excel 파일 불러오기" title="통합 Excel 파일 불러오기">
+                <span aria-hidden="true">📁</span><span>통합</span>
+              </button>
+              <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
+            </span>
           </div>
 
           <div class="upload-grid" role="tablist" aria-label="업로드 자료 및 결과 화면">
@@ -2087,103 +2003,11 @@
 
     </section>
 
-    <div class="excel-workspace-layout">
-      <aside class="excel-preparation-panel" aria-labelledby="prepHeading">
-        <header class="prep-panel-heading">
-          <h2 id="prepHeading">자료 준비</h2>
-          <p>Excel 불러오기 · 매핑</p>
-        </header>
-
-        <div class="prep-kind-buttons" id="prepKindButtons" role="group" aria-label="불러올 자료 종류">
-          <button class="prep-kind-button active" type="button" data-prep-kind="orders" aria-pressed="true">
-            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12l6 5M15 12l-6 5"/></svg>
-            <span>주문서</span>
-          </button>
-          <button class="prep-kind-button" type="button" data-prep-kind="purchases" aria-pressed="false">
-            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 4h3l2 11h10l3-8H7M9 18h9"/><circle cx="9" cy="21" r="1"/><circle cx="18" cy="21" r="1"/></svg>
-            <span>구매</span>
-          </button>
-          <button class="prep-kind-button" type="button" data-prep-kind="sales" aria-pressed="false">
-            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 20V12M12 20V7M19 20V3"/></svg>
-            <span>판매</span>
-          </button>
-          <button class="prep-kind-button" type="button" data-prep-kind="inventory" aria-pressed="false">
-            <svg class="prep-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M7 5.8l9 5v5"/></svg>
-            <span>재고</span>
-          </button>
-        </div>
-
-        <div class="prep-drop-zone" id="prepDropZone" tabindex="0" role="group" aria-label="Excel 파일 드롭 또는 불러오기" aria-describedby="prepDropHelp">
-          <svg class="prep-excel-icon" viewBox="0 0 40 48" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 2h17l9 10v31a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3ZM24 2v12h10M14 23l12 13M26 23 14 36"/></svg>
-          <p id="prepDropHelp">엑셀 파일을 여기에 드래그하거나 클릭하여 불러오세요.</p>
-          <button class="prep-file-button" id="prepFileButton" type="button"><span aria-hidden="true">↥</span> 엑셀 불러오기</button>
-          <small>지원 파일: .xls, .xlsx</small>
-        </div>
-
-        <div class="prep-integrated-slot" id="integratedCard">
-          <button class="integrated-file-button" id="integratedFileButton" type="button"
-            aria-label="통합 Excel 파일 불러오기" title="주문·구매·판매·재고가 시트별로 담긴 기존 통합 파일">
-            <span aria-hidden="true">📁</span><span>통합 Excel 불러오기</span>
-          </button>
-          <input class="hidden" id="integratedInput" type="file" accept=".xlsx,.xls">
-        </div>
-
-        <section class="prep-files-section" aria-labelledby="prepFilesHeading">
-          <h3 id="prepFilesHeading">불러온 파일</h3>
-          <div class="prep-file-list" id="prepFileList" role="list" aria-label="현재 준비한 Excel 파일">
-            <p class="prep-empty">아직 불러온 파일이 없습니다.</p>
-          </div>
-        </section>
-
-        <details class="prep-details" id="prepFileDetails">
-          <summary>① 파일·양식 확인</summary>
-          <div class="prep-details-body">
-            <div class="prep-field"><span>원본 파일명</span><p class="prep-file-name-value" id="prepFileName">파일을 선택하세요.</p></div>
-            <label class="prep-field" for="prepKindSelect"><span>자료 종류</span>
-              <select id="prepKindSelect"><option value="orders">주문서</option><option value="purchases">구매</option><option value="sales">판매</option><option value="inventory">재고</option></select>
-            </label>
-            <label class="prep-field" for="prepTemplateName"><span>양식명</span><input id="prepTemplateName" type="text" autocomplete="off" placeholder="다음 파일에 재사용할 양식명"></label>
-            <label class="prep-field" for="prepSheetSelect"><span>시트</span><select id="prepSheetSelect"><option value="">파일을 선택하세요</option></select></label>
-            <label class="prep-field" for="prepHeaderRow"><span>항목명 행</span><input id="prepHeaderRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
-            <div class="prep-row-range">
-              <label class="prep-field" for="prepStartRow"><span>자료 시작 행</span><input id="prepStartRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
-              <label class="prep-field" for="prepEndRow"><span>자료 끝 행</span><input id="prepEndRow" type="number" min="1" step="1" inputmode="numeric" aria-describedby="prepRowHelp"></label>
-            </div>
-            <p class="prep-field-help" id="prepRowHelp">Excel 원본의 행 번호로 지정합니다.</p>
-            <p class="prep-field-help" id="prepRangeRule" data-state="empty">끝 행을 지정하면 하단 제외 규칙으로 저장됩니다.</p>
-            <div class="prep-source-preview" id="prepSourcePreview" tabindex="0" role="region" aria-label="선택 시트 원본 미리보기"><p class="prep-empty">파일과 시트를 선택하면 원본을 표시합니다.</p></div>
-          </div>
-        </details>
-
-        <details class="prep-details" id="prepMappingDetails">
-          <summary>② 항목명 매핑</summary>
-          <div class="prep-details-body">
-            <p class="prep-field-help">원본 열을 작업 항목에 연결합니다. 사용하지 않는 열은 제외할 수 있습니다.</p>
-            <div class="prep-column-mappings" id="prepColumnMappings"><p class="prep-empty">파일을 선택하면 연결 항목을 표시합니다.</p></div>
-          </div>
-        </details>
-
-        <div class="prep-mapping-actions" aria-label="매핑 설정과 자료 반영">
-          <button id="prepSaveTemplateButton" type="button" disabled>매핑 저장</button>
-          <button class="prep-apply-button" id="prepApplyButton" type="button" disabled>자료 반영</button>
-        </div>
-        <p class="prep-mapping-status" id="prepMappingStatus" role="status" aria-live="polite">정상 자료는 불러오는 즉시 중앙에 표시됩니다.</p>
-      </aside>
-
     <section class="panel results-panel hidden" id="resultsPanel" aria-label="분석 결과 상세">
       <h2 class="hidden" id="resultsHeading">분석 결과 상세</h2>
       <p class="hidden" id="resultSubtitle"></p>
       <div class="hidden" id="summaryGrid"></div>
       <div class="hidden" id="purchaseUploadNotice"></div>
-
-      <div class="prep-preview-tabs" id="prepPreviewTabs" role="tablist" aria-label="중앙 자료 조회">
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="movement">재고변동표</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="allocations" aria-keyshortcuts="F5">주문현황 F5</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="ledger" aria-keyshortcuts="F6">수불현황 F6</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="inventory" aria-keyshortcuts="F7">창고재고 F7</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="purchases">구매현황</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="previewTable" data-preview="sales">판매현황</button>
-      </div>
 
       <div class="view-controls" aria-label="현재 탭 검색, 필터, 열 설정">
         <label class="search-field">
@@ -2252,7 +2076,6 @@
 
       <div class="table-wrap" id="previewTable" role="tabpanel"></div>
     </section>
-    </div>
 
     <footer class="page-footer">
       <span>ORDER Q v1.55 · 출고관리 · workspace shipping-workspace/v2 · cloud plan v1</span>
@@ -2335,7 +2158,6 @@
     <div class="column-sort-menu-section" data-text-filter-section data-value-filter-section aria-label="셀 값 선택 필터">
       <input class="column-filter-search" type="search" data-column-value-search autocomplete="off" placeholder="검색">
       <label class="column-value-option"><input type="checkbox" data-column-value-select-all><span>(모두 선택)</span></label>
-      <div class="column-value-empty" data-column-value-mode aria-live="polite"></div>
       <div class="column-value-list" data-column-value-list></div>
       <div class="column-filter-actions">
         <button type="button" data-apply-column-values>확인</button>
@@ -2392,7 +2214,7 @@
       const HIDDEN_COLUMNS_SCHEMA = "orderops-hidden-columns/v1";
       const COLUMN_ORDER_KEY = "oneapp.orderops.column-order.v1";
       const COLUMN_ORDER_SCHEMA = "orderops-column-order/v1";
-      const COLUMN_ORDER_TABS = new Set(["inventory", "movement", "allocations", "ledger", "purchases", "sales"]);
+      const COLUMN_ORDER_TABS = new Set(["inventory", "allocations", "ledger", "purchases", "sales"]);
       const WAREHOUSE_COLORS_KEY = "oneapp.orderops.warehouse-colors.v1";
       const WAREHOUSE_COLORS_SCHEMA = "orderops-warehouse-colors/v1";
       const MANAGER_COLORS_KEY = "oneapp.orderops.manager-colors.v1";
@@ -2409,9 +2231,9 @@
       const LEGACY_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v2";
       const ORIGINAL_ORDER_VIEW_PRESETS_SCHEMA = "orderops-order-view-presets/v1";
       const ORDER_VIEW_PRESET_LIMIT = 20;
-      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "movement", "purchases", "sales"]);
+      const VIEW_PRESET_TABS = new Set(["allocations", "ledger", "inventory", "purchases", "sales"]);
       const VIEW_PRESET_LABELS = Object.freeze({
-        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고", movement: "재고변동표",
+        allocations: "주문현황", ledger: "수불현황", inventory: "창고재고",
         purchases: "구매현황", sales: "판매현황",
       });
       const SHORTAGE_CATEGORY_COLORS = Object.freeze([
@@ -2419,12 +2241,12 @@
         "#5eead4", "#7dd3fc", "#a5b4fc", "#d8b4fe",
       ]);
       const FILE_KINDS = Object.freeze(["orders", "inventory", "purchases", "sales"]);
-      const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "재고", purchases: "구매현황", sales: "판매현황" });
+      const FILE_KIND_LABELS = Object.freeze({ orders: "주문현황", inventory: "창고재고", purchases: "구매현황", sales: "판매현황" });
       const FILE_KIND_PREVIEWS = Object.freeze({ orders: "allocations", inventory: "inventory", purchases: "purchases", sales: "sales" });
-      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", movement: "inventory", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger" });
+      const SOURCE_VIEW_CARDS = Object.freeze({ allocations: "orders", inventory: "inventory", purchases: "purchases", sales: "sales", ledger: "ledger" });
       const DEFAULT_EXCEL_MAPPINGS = Object.freeze({
         orders: { fileAliases: ["주문", "미출고", "order"], sheetAliases: ["주문", "미출고", "주문현황"], columns: {} },
-        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고", "전일재고현황", "재고변동표"], columns: {} },
+        inventory: { fileAliases: ["재고", "창고", "inventory", "stock"], sheetAliases: ["재고", "전체재고", "창고재고"], columns: {} },
         purchases: { fileAliases: ["구매", "매입", "purchase"], sheetAliases: ["구매", "매입", "전송구매"], columns: {
           "품목코드": ["품목코드", "상품코드", "제품코드", "코드"], "품목명": ["품목명", "품명", "상품명", "제품명"],
           "수량": ["구매수량", "매입수량", "입고수량"], "구매처": ["구매처", "매입처", "공급처"],
@@ -2448,7 +2270,7 @@
       const COLOR_CANCEL_COLOR = "#ffffff";
       const TABLE_WIDTH_MIN = 32;
       const TABLE_WIDTH_MAX = 720;
-      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "movement", "allocations", "notices", "ledger", "purchases", "sales"]);
+      const TABLE_WIDTH_TABS = new Set(["validation", "inventory", "allocations", "notices", "ledger", "purchases", "sales"]);
       const CLOUD_PLAN_SCHEMA = "ONEAPP_SHIPPING_PURCHASE_PLAN_V1";
       const state = {
         orders: null,
@@ -2504,7 +2326,6 @@
         substitutionCtrlActive: false,
       };
 
-      let preparationController = null;
       const elements = {
         sourceSelector: document.getElementById("sourceSelector"),
         ordersInput: document.getElementById("ordersInput"),
@@ -2580,7 +2401,6 @@
         purchaseAutocomplete: document.getElementById("purchaseAutocomplete"),
         purchaseCompletionCoachmark: document.getElementById("purchaseCompletionCoachmark"),
         downloadButton: document.getElementById("downloadButton"),
-        movementDownloadButton: document.getElementById("movementDownloadButton"),
         recoveryBanner: document.getElementById("recoveryBanner"),
         recoveryMessage: document.getElementById("recoveryMessage"),
         recoveryRecordList: document.getElementById("recoveryRecordList"),
@@ -3361,8 +3181,7 @@
         );
       }
 
-      async function parseExcelFile(file, kind, parseOptions = {}) {
-        if (typeof preparationController !== "undefined" && preparationController) return preparationController.parse(file, kind, parseOptions);
+      async function parseExcelFile(file, kind) {
         if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
         const bytes = new Uint8Array(await file.arrayBuffer());
         const fileHash = await sha256Hex(bytes);
@@ -3417,7 +3236,7 @@
         return 0;
       }
 
-      function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind, rawMatrix: providedRaw, displayMatrix: providedDisplay, headerRowIndex: selectedHeader }) {
+      function parseGenericWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
         const mapping = state.excelMappings[kind];
         const required = kind === "purchases" ? ["품목코드", "품목명", "수량", "구매처"] : ["품목코드", "품목명", "수량", "거래처"];
         const lookup = new Map();
@@ -3426,15 +3245,14 @@
           [canonical, ...defaultAliases, ...(aliases || [])]
             .forEach((alias) => lookup.set(normalizeMappingText(alias), canonical));
         });
-        const matrix = providedDisplay || window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
+        const matrix = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "", blankrows: true });
         let best = null;
-        if (selectedHeader !== undefined && (!Number.isInteger(selectedHeader) || selectedHeader < 0 || selectedHeader >= matrix.length)) throw new Error("항목명 행을 원본 범위 안에서 선택하세요.");
-        for (let rowIndex = selectedHeader ?? 0; rowIndex < (selectedHeader === undefined ? Math.min(matrix.length, 30) : selectedHeader + 1); rowIndex += 1) {
+        for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
           const canonicalHeaders = (matrix[rowIndex] || []).map((header) => lookup.get(normalizeMappingText(header)) || "");
           const mapped = new Set(canonicalHeaders.filter(Boolean));
           const requiredCount = required.filter((canonical) => mapped.has(canonical)).length;
           const candidate = { kind, fileName, sheetName, fileHash, headerRowIndex: rowIndex,
-            headers: (matrix[rowIndex] || []).map((value) => String(value ?? "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
+            headers: (matrix[rowIndex] || []).map((value) => String(value || "").trim()), rowCount: Math.max(0, matrix.length - rowIndex - 1),
             canonicalHeaders, matrix, missingColumns: required.filter((canonical) => !mapped.has(canonical)), errors: [], warnings: [], structureScore: requiredCount * 100 + mapped.size };
           if (!best || candidate.structureScore > best.structureScore) best = candidate;
         }
@@ -3443,11 +3261,9 @@
         const columnIndex = (canonical) => best.canonicalHeaders.indexOf(canonical);
         const partnerCanonical = kind === "purchases" ? "구매처" : "거래처";
         best.rows = best.matrix.slice(best.headerRowIndex + 1).map((cells, offset) => {
-          const firstCell = String(cells.find((cell) => String(cell ?? "").trim()) ?? "").trim();
-          if (/^(?:[0-9]{4}[/.-][0-9]{1,2}(?:[/.-][0-9]{1,2})?\s*)?(?:계|합계|총계|소계|월계|누계|total)\s*$/i.test(firstCell)) return null;
           const productCode = engine.normalizeProductCode(cells[columnIndex("품목코드")]);
-          const productName = String(cells[columnIndex("품목명")] ?? "").trim();
-          const partner = String(cells[columnIndex(partnerCanonical)] ?? "").trim();
+          const productName = String(cells[columnIndex("품목명")] || "").trim();
+          const partner = String(cells[columnIndex(partnerCanonical)] || "").trim();
           const quantityCell = cells[columnIndex("수량")];
           const parsedQuantity = engine.parseNumericCell(quantityCell);
           if (!productCode || !parsedQuantity.ok || (!productName && !partner)) return null;
@@ -3464,11 +3280,11 @@
         }).filter(Boolean);
         best.rowCount = best.rows.length;
         delete best.matrix;
+        delete best.canonicalHeaders;
         return best;
       }
 
-      async function parseGenericExcelFile(file, kind, parseOptions = {}) {
-        if (typeof preparationController !== "undefined" && preparationController) return preparationController.parse(file, kind, parseOptions);
+      async function parseGenericExcelFile(file, kind) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const fileHash = await sha256Hex(bytes);
         const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
@@ -3481,21 +3297,21 @@
         return best;
       }
 
-      function parsePrimaryWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind, rawMatrix: providedRaw, displayMatrix: providedDisplay, columnMappings, headerRowIndex }) {
+      function parsePrimaryWorkbookSheet({ workbook, fileName, fileHash, sheetName, kind }) {
         const sheet = workbook.Sheets[sheetName];
-        const rawMatrix = providedRaw || window.XLSX.utils.sheet_to_json(sheet, {
+        const rawMatrix = window.XLSX.utils.sheet_to_json(sheet, {
           header: 1, raw: true, defval: null, blankrows: true,
         });
-        const displayMatrix = providedDisplay || window.XLSX.utils.sheet_to_json(sheet, {
+        const displayMatrix = window.XLSX.utils.sheet_to_json(sheet, {
           header: 1, raw: false, defval: "", blankrows: true,
         });
         const headerAliases = state.excelMappings?.[kind]?.columns || {};
         const parsed = kind === "orders"
           ? engine.parseOrderWorkbook({
               fileName, sheetName, rawMatrix,
-              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases, headerRowIndex,
+              displayMatrix: normalizeOrderDateMatrix(displayMatrix), headerAliases,
             })
-          : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases, columnMappings, headerRowIndex });
+          : engine.parseInventoryWorkbook({ fileName, sheetName, rawMatrix, displayMatrix, headerAliases });
         parsed.fileHash = fileHash;
         return parsed;
       }
@@ -3510,72 +3326,54 @@
         }
         if (kind === "inventory") {
           const warehouseCount = (parsed.columns || []).filter((column) => column?.role === "warehouseQuantity").length;
-          return warehouseCount > 0 || ["snapshot", "movement"].includes(parsed.inventoryLayout) ? 1000 + warehouseCount : 0;
+          return warehouseCount > 0 ? 1000 + warehouseCount : 0;
         }
         return (parsed.errors?.length || 0) === 0 ? 704 : 0;
       }
 
       async function parseIntegratedExcelFile(file) {
         if (!window.XLSX) throw new Error("Excel 라이브러리를 불러오지 못했습니다. 네트워크 연결 후 다시 시도하세요.");
-        const prep = typeof preparationController !== "undefined" ? preparationController : null;
-        const cached = prep ? await prep.read(file) : null;
-        const bytes = cached ? null : new Uint8Array(await file.arrayBuffer());
-        const fileHash = cached?.fileHash || await sha256Hex(bytes);
-        const workbook = cached?.workbook || window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const fileHash = await sha256Hex(bytes);
+        const workbook = window.XLSX.read(bytes, { type: "array", cellDates: false, cellNF: true, cellText: true });
         if (!workbook.SheetNames.length) throw new Error(`${file.name}: 읽을 수 있는 시트가 없습니다.`);
         const applied = new Map();
         const failures = [];
         const ignored = [];
-        const duplicateKinds = new Set();
 
-        for (const sheetName of workbook.SheetNames) {
-          const kindScores = FILE_KINDS.map((kind) => ({
-            kind,
-            score: sheetAliasMatchScore(sheetName, state.excelMappings?.[kind]?.sheetAliases),
-          }));
+        workbook.SheetNames.forEach((sheetName) => {
+          const kindScores = FILE_KINDS.map((kind) => ({ kind, score: sheetAliasMatchScore(sheetName, state.excelMappings?.[kind]?.sheetAliases) }));
           const bestAliasScore = Math.max(...kindScores.map((item) => item.score));
-          const matchedKinds = bestAliasScore > 0
-            ? kindScores.filter((item) => item.score === bestAliasScore).map((item) => item.kind)
-            : [];
+          const matchedKinds = bestAliasScore > 0 ? kindScores.filter((item) => item.score === bestAliasScore).map((item) => item.kind) : [];
           if (matchedKinds.length === 0) {
             ignored.push(sheetName);
-            continue;
+            return;
           }
-          const inspected = await Promise.all(matchedKinds.map(async (kind) => {
+          const candidates = matchedKinds.map((kind) => {
             try {
-              const parsed = prep ? await prep.parse(file, kind, { probe: true, sheetName }) : ["orders", "inventory"].includes(kind)
+              const parsed = ["orders", "inventory"].includes(kind)
                 ? parsePrimaryWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind })
                 : parseGenericWorkbookSheet({ workbook, fileName: file.name, fileHash, sheetName, kind });
               return { kind, parsed, score: integratedCandidateScore(kind, parsed) };
             } catch (error) {
               return { kind, parsed: null, score: 0, error };
             }
-          }));
-          const candidates = inspected.filter((candidate) => candidate.score > 0)
+          }).filter((candidate) => candidate.score > 0)
             .sort((left, right) => right.score - left.score);
 
           if (candidates.length === 0) {
             failures.push({ sheetName, message: "시트명은 매칭됐지만 필수 열·헤더 구조 검증에 실패했습니다." });
-            inspected.forEach((item) => { if (item.parsed) prep?.rememberParsed(item.parsed); });
-            continue;
+            return;
           }
           if (candidates.length > 1 && candidates[0].score === candidates[1].score) {
             failures.push({ sheetName, message: "둘 이상의 데이터 종류로 판별됩니다. 시트명 별칭을 구분하세요." });
-            continue;
+            return;
           }
           const selected = candidates[0];
           selected.parsed.integratedSource = true;
           selected.parsed.sourceLabel = `${file.name} · ${sheetName}`;
-          if (applied.has(selected.kind) || duplicateKinds.has(selected.kind)) {
-            failures.push({ sheetName, message: `${FILE_KIND_LABELS[selected.kind]} 시트가 둘 이상입니다. 좌측에서 사용할 시트를 선택하세요.` });
-            duplicateKinds.add(selected.kind);
-            applied.delete(selected.kind);
-            prep?.rememberParsed(selected.parsed);
-            prep?.markFailed(selected.kind, new Error("같은 종류의 시트가 둘 이상입니다. 시트를 선택한 뒤 반영하세요."));
-            continue;
-          }
           applied.set(selected.kind, selected.parsed);
-        }
+        });
         return { fileName: file.name, sheetCount: workbook.SheetNames.length, applied, failures, ignored };
       }
 
@@ -3588,10 +3386,10 @@
         }
 
         const [asOrders, asInventory, asPurchases, asSales] = await Promise.all([
-          parseExcelFile(file, "orders", { probe: true }),
-          parseExcelFile(file, "inventory", { probe: true }),
-          parseGenericExcelFile(file, "purchases", { probe: true }),
-          parseGenericExcelFile(file, "sales", { probe: true }),
+          parseExcelFile(file, "orders"),
+          parseExcelFile(file, "inventory"),
+          parseGenericExcelFile(file, "purchases"),
+          parseGenericExcelFile(file, "sales"),
         ]);
 
         const orderMapped = new Set(
@@ -3604,8 +3402,8 @@
         const inventoryWarehouseColumns = (asInventory.columns || []).filter(
           (column) => column?.role === "warehouseQuantity",
         );
-        const inventorySignature = (asInventory.errors?.length || 0) === 0 && (asInventory.missingColumns?.length || 0) === 0 &&
-          (inventoryWarehouseColumns.length > 0 || ["snapshot", "movement"].includes(asInventory.inventoryLayout));
+        const inventorySignature = (asInventory.missingColumns?.length || 0) === 0 &&
+          inventoryWarehouseColumns.length > 0;
 
         const candidates = [
           { kind: "orders", parsed: asOrders, structureScore: orderSignature ? 1008 : 0 },
@@ -3640,36 +3438,27 @@
         elements.analyzeButton.disabled = true;
         setSystemMessage("파일 자동분류 중 · 시트 구조와 열 이름을 확인합니다");
 
-        let classifiedResults = [];
         try {
-          classifiedResults = await Promise.allSettled(files.map(classifyBundleFile));
-          const rejected = classifiedResults.find((result) => result.status === "rejected");
-          if (rejected) throw rejected.reason;
-          const classified = classifiedResults.map((result) => result.value);
+          const classified = await Promise.all(files.map(classifyBundleFile));
           const byKind = new Map();
           classified.forEach((item) => {
             validateFileCandidate(item.kind, item.parsed);
             if (byKind.has(item.kind)) throw new Error(`${FILE_KIND_LABELS[item.kind]} 파일이 둘 이상 판별되었습니다.`);
             byKind.set(item.kind, item.parsed);
           });
-          await commitInputCandidates(byKind, { preferredKind: classified[0]?.kind });
-          if (typeof preparationController !== "undefined") preparationController?.markApplied(byKind);
-          showToast(`${classified.length}개 파일을 자동 처리했습니다.`);
-        } catch (error) {
-          // Probe parsing never installs inputs. Keep eligible selected sources as
-          // editable candidates when the batch cannot be applied atomically.
-          const prep = typeof preparationController !== "undefined" ? preparationController : null;
-          if (prep) {
-            for (let index = 0; index < files.length; index += 1) {
-              const result = classifiedResults[index];
-              if (result?.status === "fulfilled") {
-                prep.rememberParsed(result.value.parsed);
-                prep.markFailed(result.value.kind, error);
-              } else if (isSupportedFile(files[index]) && files[index].size <= MAX_FILE_SIZE) {
-                await prep.retainCandidate(files[index], { error: result?.reason || error });
-              }
-            }
+          resetResults();
+          byKind.forEach((parsed, kind) => { state[kind] = parsed; });
+          refreshInputState();
+
+          if (state.validation?.canAnalyze) {
+            setAnalysisEnterReady(true);
+            setSystemMessage("분석 준비 완료 · Enter 또는 출고분석 버튼을 누르세요");
+            showToast(`${classified.length}개 파일을 구조 기준으로 자동 배정했습니다.`);
+          } else {
+            state.analysisEnterLocked = false;
+            showToast(`${classified.length}개 파일을 자동 배정했습니다. 주문현황과 창고재고가 준비되면 분석할 수 있습니다.`);
           }
+        } catch (error) {
           state.analysisEnterLocked = false;
           refreshInputState();
           setSystemMessage("자동분류 실패 · 기존 파일 선택은 유지됩니다");
@@ -3681,124 +3470,13 @@
       }
 
       function isInputOperationBusy() {
-        return Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean) ||
-          (typeof preparationController !== "undefined" && preparationController?.isBusy()));
+        return Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean));
       }
 
       function validateFileCandidate(kind, parsed) {
         if (!parsed || parsed.errors?.length || parsed.missingColumns?.length || !(parsed.rowCount > 0)) {
           const detail = parsed?.errors?.map((issue) => issue.message).filter(Boolean).join(" · ");
           throw new Error(detail || `${FILE_KIND_LABELS[kind]} 필수 열과 데이터행을 확인하세요.`);
-        }
-      }
-
-      async function commitInputCandidates(byKind, { preferredKind } = {}) {
-        const candidates = new Map(typeof byKind?.entries === "function" ? byKind.entries() : Object.entries(byKind || {}));
-        if (!candidates.size) throw new Error("반영할 자료가 없습니다.");
-        candidates.forEach((parsed, kind) => {
-          if (!FILE_KINDS.includes(kind)) throw new Error("지원하지 않는 자료 종류입니다.");
-          validateFileCandidate(kind, parsed);
-        });
-        if (state.analysisRunning) throw new Error("자료 처리가 끝난 뒤 다시 시도하세요.");
-        state.analysisRunning = true;
-        try {
-          // Work rows and source evidence have different lifetimes. Never replace
-          // an unchanged source with its old parsed rows after the user edited it.
-          const activeWorkspace = state.workspace;
-          const previousJson = activeWorkspace ? JSON.stringify(activeWorkspace) : null;
-          const previous = previousJson ? JSON.parse(previousJson) : null;
-          const activeInputs = Object.fromEntries(FILE_KINDS.map((kind) => [kind, state[kind]]));
-          const inputs = { ...activeInputs };
-          if (previous) {
-            ["orders", "inventory"].forEach((kind) => {
-              const source = previous.sourceFiles?.[kind] || {};
-              inputs[kind] = {
-                fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
-                headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? previous[kind].length,
-                sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
-                headerMapping: source.headerMapping, columns: source.columns, inventoryLayout: source.inventoryLayout,
-                ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
-                rows: previous[kind], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
-              };
-            });
-            ["purchases", "sales"].forEach((kind) => {
-              const source = previous.orderOpsInputs?.[kind];
-              inputs[kind] = source ? { ...source, rowCount: source.rows?.length || 0 } : null;
-            });
-          }
-          candidates.forEach((parsed, kind) => { inputs[kind] = parsed; });
-          const previewKind = candidates.has(preferredKind) ? preferredKind : candidates.keys().next().value;
-          let candidateWorkspace = null;
-          if (inputs.inventory) {
-            candidateWorkspace = await analyzeCurrentInputs({ fromSources: true, inputs });
-            if (!previous) {
-              if (!candidates.has("inventory") && inputs.inventory.preservedOverrides) {
-                candidateWorkspace.inventoryOverrides = JSON.parse(JSON.stringify(inputs.inventory.preservedOverrides));
-                candidateWorkspace.inventoryMovementEdits = inputs.inventory.preservedMovementEdits;
-              }
-              if (!candidates.has("orders")) {
-                if (inputs.orders?.preservedSubstitutionHistory) candidateWorkspace.substitutionHistory = inputs.orders.preservedSubstitutionHistory;
-                if (inputs.orders?.preservedNoticeAcknowledgements) candidateWorkspace.noticeAcknowledgements = inputs.orders.preservedNoticeAcknowledgements;
-                engine.applyPurchaseInputs(candidateWorkspace, inputs.orders?.preservedPurchaseInputs);
-              }
-              candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
-            }
-            if (previous) {
-              if (!candidates.has("inventory")) {
-                candidateWorkspace.inventoryOverrides = previous.inventoryOverrides;
-                candidateWorkspace.inventoryMovementEdits = previous.inventoryMovementEdits;
-              }
-              if (!candidates.has("orders")) {
-                candidateWorkspace.substitutionHistory = previous.substitutionHistory;
-                candidateWorkspace.noticeAcknowledgements = previous.noticeAcknowledgements;
-                engine.applyPurchaseInputs(candidateWorkspace, engine.getPurchaseInputs(previous));
-              }
-              candidateWorkspace = engine.recalculateWorkspace(candidateWorkspace);
-              // The engine rebuilds calculation fields, not every recovery-era
-              // metadata field. Keep evidence for unchanged sources verbatim.
-              candidateWorkspace.sourceFiles = { ...previous.sourceFiles, ...candidateWorkspace.sourceFiles };
-              ["orders", "inventory"].forEach((kind) => {
-                if (!candidates.has(kind) && previous.sourceFiles?.[kind]) {
-                  candidateWorkspace.sourceFiles[kind] = previous.sourceFiles[kind];
-                }
-              });
-              candidateWorkspace.orderOpsInputs = { ...previous.orderOpsInputs, ...candidateWorkspace.orderOpsInputs };
-              ["purchases", "sales"].forEach((kind) => {
-                if (!candidates.has(kind)) candidateWorkspace.orderOpsInputs[kind] = previous.orderOpsInputs?.[kind] || null;
-              });
-              if (Object.prototype.hasOwnProperty.call(previous, "systemHistory")) {
-                candidateWorkspace.systemHistory = previous.systemHistory;
-              }
-            }
-          }
-
-          if (state.workspace !== activeWorkspace ||
-              (activeWorkspace && JSON.stringify(activeWorkspace) !== previousJson) ||
-              FILE_KINDS.some((kind) => state[kind] !== activeInputs[kind])) {
-            throw new Error("자료 처리 중 기존 작업이 변경되었습니다. 현재 작업을 유지했으니 다시 반영하세요.");
-          }
-
-          // Only a fully computed candidate may replace the active work. A valid
-          // single source remains available for raw preview without fake stock.
-          candidates.forEach((parsed, kind) => { state[kind] = parsed; });
-          state.analysisEnterLocked = false;
-          setAnalysisEnterReady(false);
-          if (candidateWorkspace) {
-            if (typeof leaveUnresolvedReview === "function") leaveUnresolvedReview({ render: false });
-            clearSubstitutionSelection();
-            state.workspace = candidateWorkspace;
-            state.activePreview = candidateWorkspace.inventoryOnly || (previewKind === "inventory" && ["snapshot", "movement"].includes(inputs.inventory.inventoryLayout)) ? "movement" : FILE_KIND_PREVIEWS[previewKind];
-            // Replacing input data must not erase the selected form's filter intent.
-            closeColumnSortMenu();
-            renderResults();
-            scheduleLocalSave();
-          } else if (!state.workspace) {
-            renderPreparedInputPreview(previewKind);
-          }
-          return { workspace: state.workspace, previewKind };
-        } finally {
-          state.analysisRunning = false;
-          refreshInputState();
         }
       }
 
@@ -3842,7 +3520,6 @@
         elements.resultsPanel.classList.add("hidden");
         elements.printButton.disabled = true;
         elements.downloadButton.disabled = true;
-        elements.movementDownloadButton.disabled = true;
         elements.cloudSaveButton.disabled = true;
         elements.headerCloudSaveButton.disabled = true;
       }
@@ -3865,11 +3542,10 @@
             ? await parseExcelFile(file, kind)
             : await parseGenericExcelFile(file, kind);
           validateFileCandidate(kind, candidate);
-          await commitInputCandidates(new Map([[kind, candidate]]), { preferredKind: kind });
-          if (typeof preparationController !== "undefined") preparationController?.markApplied(new Map([[kind, candidate]]));
-          showToast(`${file.name} 파일을 처리했습니다.`);
+          resetResults();
+          state[kind] = candidate;
+          showToast(`${file.name} 파일을 읽었습니다.`);
         } catch (error) {
-          if (typeof preparationController !== "undefined") preparationController?.markFailed(kind, error);
           showToast(`${error.message || "Excel 파일을 읽지 못했습니다."} · 기존 파일과 수정 작업은 유지됩니다.`, true);
         } finally {
           setLoading(kind, false);
@@ -3899,11 +3575,12 @@
             throw new Error("적용 가능한 시트가 없습니다. 환경설정의 시트명 별칭과 필수 열을 확인하세요.");
           }
           result.applied.forEach((parsed, kind) => validateFileCandidate(kind, parsed));
-          await commitInputCandidates(result.applied, { preferredKind: "orders" });
-          if (typeof preparationController !== "undefined") preparationController?.markApplied(result.applied);
+          resetResults();
+          result.applied.forEach((parsed, kind) => { state[kind] = parsed; });
           state.integratedFile = result;
           const appliedLabels = [...result.applied.keys()].map((kind) => FILE_KIND_LABELS[kind]);
           refreshInputState();
+          if (state.validation?.canAnalyze) setAnalysisEnterReady(true);
           const failureText = result.failures.length > 0
             ? ` · 오류 ${result.failures.length}개 시트는 기존 데이터 유지`
             : "";
@@ -3956,7 +3633,7 @@
 
       function renderValidation() {
         const bothReady = Boolean(state.orders && state.inventory);
-        if (!bothReady && !state.workspace) {
+        if (!bothReady) {
           elements.validationBox.className = "validation-box";
           elements.validationBox.innerHTML = `
             <p class="validation-title"><span aria-hidden="true">○</span>파일 선택 대기 · 필수 열/수량/중복코드 자동검증</p>
@@ -3964,7 +3641,7 @@
           return;
         }
 
-        const validation = state.validation || state.workspace.inputValidation;
+        const validation = state.validation;
         if (validation.canAnalyze) {
           const matchSummary = validation.unmatchedCount > 0
             ? `재고정보 없음 ${formatNumber(validation.unmatchedCount)}개 상품`
@@ -3997,159 +3674,13 @@
         elements.replaceRecoveryButton.disabled = !state.validation?.canAnalyze;
         const bothSelected = Boolean(state.orders && state.inventory);
         const selectedCount = FILE_KINDS.filter((kind) => Boolean(state[kind])).length;
-        if (isInputOperationBusy()) {
-          setSystemMessage("자료 처리 중 · 읽기·검증·계산이 끝나면 자동으로 표시합니다");
-        } else if (state.workspace) {
-          setSystemMessage("작업 표시 중 · 수정 작업은 유지되며 정상 자료는 자동 처리됩니다");
-        } else if (!bothSelected) {
-          setSystemMessage(`자료 ${selectedCount}/4 준비 · 조회 가능 · 주문·재고가 준비되면 자동 계산합니다`);
+        if (!bothSelected) {
+          setSystemMessage(`파일 선택 중 · ${selectedCount}/4 선택 · 주문현황·창고재고 필수`);
         } else if (state.validation?.canAnalyze) {
-          setSystemMessage("자료 준비 완료 · 정상 자료는 자동으로 표시됩니다");
+          setSystemMessage("분석 준비 완료 · Enter 또는 출고분석 버튼을 누르세요");
         } else {
           setSystemMessage("입력 오류 · 필수 열과 파일 내용을 확인하세요");
         }
-        if (typeof preparationController !== "undefined") preparationController?.refresh();
-      }
-
-      function buildPreparedInputPreview(kind, parsed = state[kind]) {
-        if (!parsed) return null;
-        if (["purchases", "sales"].includes(kind)) {
-          return buildTransactionPreview({ orderOpsInputs: { [kind]: { rows: parsed.rows || [] } } }, kind);
-        }
-        if (kind === "orders") {
-          const headers = ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", "전달사항"];
-          const preview = {
-            label: "주문현황", headers, numeric: [8, 9], inventory: [], purchase: -1,
-            purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
-            rows: (parsed.rows || []).map((row) => [
-              row.warehouse || "", row.customer || "", row.group || "", row.manager || "",
-              row.productCode || "", row.productName || "", row.specification || "", "",
-              typeof row.quantity === "number" ? row.quantity : "",
-              typeof row.unitPrice === "number" ? row.unitPrice : "",
-              formatDeliveryNotice(row),
-            ]),
-            sortByProductCode: true,
-          };
-          preview.columns = createPreviewColumns("allocations", headers, preview.numeric);
-          [76, 138, 82, 92, 94, 160, 62, 112, 62, 72, 160].forEach((width, index) => {
-            if (preview.columns[index]) preview.columns[index].defaultWidth = width;
-          });
-          ["warehouse", "customer", "group", "manager", "productCode", "productName", "specification", "productAggregateQuantity", "orderQuantity", "unitPrice"]
-            .forEach((role, index) => { preview.columns[index].role = role; });
-          return preview;
-        }
-        const columns = (parsed.columns || []).map((column) => ({
-          ...column,
-          header: column.role === "calculatedQuantity" ? "잔량"
-            : String(column.header || "") === "품목명" ? "품명"
-              : String(column.header || "") === "주문수량" ? "주문" : String(column.header || ""),
-          editable: false,
-        }));
-        return {
-          label: "창고재고", columns, headers: columns.map((column) => column.header),
-          numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
-          inventory: columns.map((column, index) => column.role === "warehouseQuantity" ? index : -1).filter((index) => index >= 0),
-          purchase: -1, purchaseEditable: false, status: -1, sourceRows: parsed.rows || [],
-          rows: (parsed.rows || []).map((row) => columns.map((column) => Number.isInteger(column.sourceIndex)
-            ? parsed.sourceMatrix?.[row.sourceRowNumber - 1]?.[column.sourceIndex] ?? "" : "")),
-          sortByProductCode: true,
-        };
-      }
-
-      function getActivePreviewDefinitions(previewId = state.activePreview) {
-        if (state.workspace) return getPreviewDefinitions(state.workspace);
-        const kind = FILE_KINDS.find((candidate) => FILE_KIND_PREVIEWS[candidate] === previewId && state[candidate]);
-        const preview = kind ? buildPreparedInputPreview(kind, state[kind]) : null;
-        return preview ? { [previewId]: preview } : {};
-      }
-
-      function hasActivePreviewDefinition(previewId = state.activePreview) {
-        if (previewId === "unresolved" && state.unresolvedReview.active) {
-          return Boolean(state.workspace);
-        }
-        return Boolean(getActivePreviewDefinitions(previewId)[previewId]);
-      }
-
-      function renderPreparedInputPreview(kind) {
-        if (state.workspace || !state[kind]) return false;
-        const parsed = state[kind];
-        state.activePreview = FILE_KIND_PREVIEWS[kind];
-        renderPreview();
-        elements.summaryGrid.innerHTML = "";
-        elements.purchaseUploadNotice.textContent = "";
-        elements.resultSubtitle.textContent = `${FILE_KIND_LABELS[kind]} ${parsed.rowCount}건 · 준비된 원본 자료 (재고가 필요한 계산값은 미확인)`;
-        elements.resultsPanel.classList.remove("hidden");
-        elements.printButton.disabled = true;
-        elements.downloadButton.disabled = true;
-        elements.movementDownloadButton.disabled = true;
-        elements.cloudSaveButton.disabled = true;
-        elements.headerCloudSaveButton.disabled = true;
-        return true;
-      }
-
-      async function removePreparedKind(kind) {
-        if (!FILE_KINDS.includes(kind) || state.analysisRunning) throw new Error("자료 처리가 끝난 뒤 다시 시도하세요.");
-        const activeWorkspace = state.workspace;
-        const activeJson = activeWorkspace ? JSON.stringify(activeWorkspace) : null;
-        let candidate = null;
-        if (state.workspace && ["purchases", "sales"].includes(kind)) {
-          candidate = JSON.parse(JSON.stringify(state.workspace));
-          if (candidate.orderOpsInputs) candidate.orderOpsInputs[kind] = null;
-          candidate.sourceFingerprint = await sha256Hex(JSON.stringify({ previous: candidate.sourceFingerprint, removedKind: kind, inputs: candidate.orderOpsInputs }));
-          candidate = engine.recalculateWorkspace(candidate);
-        }
-        if (state.workspace !== activeWorkspace || (activeWorkspace && JSON.stringify(activeWorkspace) !== activeJson)) {
-          throw new Error("자료 해제 중 작업이 변경되었습니다. 현재 작업을 유지했으니 다시 시도하세요.");
-        }
-        // Recovery can restore a workspace without live File inputs. Detaching
-        // one source must retain every other source and its editable values.
-        if (activeWorkspace && ["orders", "inventory"].includes(kind)) {
-          const retainedInputs = {};
-          FILE_KINDS.filter((type) => type !== kind).forEach((type) => {
-            if (["orders", "inventory"].includes(type)) {
-              const source = activeWorkspace.sourceFiles?.[type] || {};
-              retainedInputs[type] = {
-                fileName: source.fileName, sheetName: source.sheetName, fileHash: source.sha256,
-                headerRowIndex: source.headerRowIndex, rowCount: source.rowCount ?? activeWorkspace[type].length,
-                sourceMatrix: source.matrix, productCodeColumnIndex: source.productCodeColumnIndex,
-                headerMapping: source.headerMapping, columns: source.columns, inventoryLayout: source.inventoryLayout,
-                ...(source.intakeMapping ? { intakeMapping: source.intakeMapping } : {}),
-                rows: activeWorkspace[type], missingColumns: [], duplicateCodes: [], errors: [], warnings: [],
-                ...(type === "inventory" ? { preservedOverrides: activeWorkspace.inventoryOverrides || {}, preservedMovementEdits: activeWorkspace.inventoryMovementEdits } : {
-                  preservedPurchaseInputs: engine.getPurchaseInputs(JSON.parse(activeJson)),
-                  preservedSubstitutionHistory: activeWorkspace.substitutionHistory,
-                  preservedNoticeAcknowledgements: activeWorkspace.noticeAcknowledgements,
-                }),
-              };
-            } else {
-              const source = activeWorkspace.orderOpsInputs?.[type];
-              retainedInputs[type] = source ? { ...source, rowCount: source.rows?.length || 0 } : null;
-            }
-          });
-          // Clone before assignment so an invalid recovered source cannot leave
-          // only part of the retained input set installed.
-          if (kind === "orders" && retainedInputs.inventory) {
-            candidate = engine.analyzeInventory(retainedInputs.inventory, { sourceFingerprint: activeWorkspace.sourceFingerprint });
-            candidate.orderOpsInputs = JSON.parse(JSON.stringify(activeWorkspace.orderOpsInputs || {}));
-            candidate.inventoryOverrides = JSON.parse(JSON.stringify(activeWorkspace.inventoryOverrides || {}));
-            if (activeWorkspace.inventoryMovementEdits) candidate.inventoryMovementEdits = JSON.parse(JSON.stringify(activeWorkspace.inventoryMovementEdits));
-            if (activeWorkspace.systemHistory) candidate.systemHistory = JSON.parse(JSON.stringify(activeWorkspace.systemHistory));
-            candidate = engine.recalculateWorkspace(candidate);
-          }
-          Object.assign(state, JSON.parse(JSON.stringify(retainedInputs)));
-        }
-        state[kind] = null;
-        if (candidate) {
-          state.workspace = candidate;
-          if (candidate.inventoryOnly) state.activePreview = "movement";
-          renderResults();
-          scheduleLocalSave();
-        } else {
-          resetResults();
-          const remaining = FILE_KINDS.find((type) => state[type]);
-          if (remaining) renderPreparedInputPreview(remaining);
-        }
-        refreshInputState();
       }
 
       function isPlainRecord(value) {
@@ -4189,17 +3720,10 @@
           const next = Object.create(null);
           if (setting.excludeBlank === true) next.excludeBlank = true;
           if (setting.excludeZero === true) next.excludeZero = true;
-          // Legacy allowedValues are inclusion rules. Never infer the user's
-          // intent from today's option count, and never truncate saved rules.
-          if (setting.valueMode === "exclude" && Array.isArray(setting.excludedValues)) {
-            next.valueMode = "exclude";
-            next.excludedValues = normalizeStringList(setting.excludedValues, setting.excludedValues.length);
-          } else if (Array.isArray(setting.allowedValues)) {
-            next.valueMode = "include";
-            next.allowedValues = normalizeStringList(setting.allowedValues, setting.allowedValues.length);
+          if (Array.isArray(setting.allowedValues)) {
+            next.allowedValues = normalizeStringList(setting.allowedValues, 500);
           }
-          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues) ||
-              Array.isArray(next.excludedValues)) filters[columnKey] = next;
+          if (next.excludeBlank || next.excludeZero || Array.isArray(next.allowedValues)) filters[columnKey] = next;
         });
         return filters;
       }
@@ -4297,7 +3821,6 @@
       }
 
       function renderOrderViewPresetOptions() {
-        const tableAvailable = hasActivePreviewDefinition();
         const activePresets = VIEW_PRESET_TABS.has(state.activePreview)
           ? state.orderViewPresets.filter((preset) => preset.previewId === state.activePreview)
           : [];
@@ -4308,12 +3831,12 @@
           `<option value="${escapeHtml(preset.id)}">${preset.isDefault ? "★ " : ""}${escapeHtml(preset.name)}</option>`,
         ).join("")}`;
         elements.viewPresetSelect.value = selectedId;
-        elements.viewPresetSelect.disabled = !tableAvailable || activePresets.length === 0;
-        elements.viewPresetSaveButton.disabled = !tableAvailable || !VIEW_PRESET_TABS.has(state.activePreview);
-        elements.viewPresetDefaultButton.disabled = !tableAvailable || !selectedPreset;
+        elements.viewPresetSelect.disabled = !state.workspace || activePresets.length === 0;
+        elements.viewPresetSaveButton.disabled = !state.workspace || !VIEW_PRESET_TABS.has(state.activePreview);
+        elements.viewPresetDefaultButton.disabled = !state.workspace || !selectedPreset;
         elements.viewPresetDefaultButton.textContent = selectedPreset?.isDefault ? "기본해제" : "기본지정";
         elements.viewPresetDefaultButton.setAttribute("aria-pressed", String(selectedPreset?.isDefault === true));
-        elements.viewPresetDeleteButton.disabled = !tableAvailable || !selectedId;
+        elements.viewPresetDeleteButton.disabled = !state.workspace || !selectedId;
       }
 
       function markOrderViewPresetCustom() {
@@ -4324,7 +3847,7 @@
 
       function captureOrderViewPreset() {
         const previewId = state.activePreview;
-        const preview = getActivePreviewDefinitions(previewId)[previewId];
+        const preview = getPreviewDefinitions(state.workspace)[previewId];
         const sortSetting = state.sortSettings[previewId];
         const columnWidths = Object.create(null);
         preview.columns.forEach((column) => {
@@ -4368,9 +3891,9 @@
 
       function applyOrderViewPreset(presetId, options = {}) {
         const preset = state.orderViewPresets.find((candidate) => candidate.id === presetId);
-        if (!preset) return;
+        if (!preset || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
         const previewId = preset.previewId;
-        const definitions = getActivePreviewDefinitions(previewId);
         const preview = definitions[previewId];
         if (!VIEW_PRESET_TABS.has(previewId) || !preview) return;
         const previewKeys = new Set(preview.columns.map((column) => column.key));
@@ -4451,7 +3974,7 @@
       }
 
       function openOrderViewPresetDialog() {
-        if (!hasActivePreviewDefinition() || !VIEW_PRESET_TABS.has(state.activePreview)) {
+        if (!state.workspace || !VIEW_PRESET_TABS.has(state.activePreview)) {
           showToast("결과 화면을 연 뒤 양식을 저장하세요.", true);
           return;
         }
@@ -4706,7 +4229,7 @@
         elements.managerFilterToggle.classList.toggle("active", showManager);
         elements.warehouseFilterToggle.setAttribute("aria-expanded", String(showWarehouse));
         elements.managerFilterToggle.setAttribute("aria-expanded", String(showManager));
-        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
+        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
       }
 
       function defaultColumnWidth(column) {
@@ -4814,8 +4337,8 @@
       }
 
       function persistActiveColumnWidths() {
-        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
-        const definitions = getActivePreviewDefinitions();
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
         const preview = definitions[state.activePreview];
         if (!preview) return;
 
@@ -4849,7 +4372,7 @@
       }
 
       function resetActiveColumnWidths() {
-        if (!hasActivePreviewDefinition() || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
+        if (!state.workspace || !TABLE_WIDTH_TABS.has(state.activePreview)) return;
         const nextTabs = Object.create(null);
         TABLE_WIDTH_TABS.forEach((tabId) => {
           if (tabId === state.activePreview) return;
@@ -5049,8 +4572,8 @@
 
       function beginColumnResize(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !hasActivePreviewDefinition() || (event.pointerType === "mouse" && event.button !== 0)) return;
-        const definitions = getActivePreviewDefinitions();
+        if (!handle || !state.workspace || (event.pointerType === "mouse" && event.button !== 0)) return;
+        const definitions = getPreviewDefinitions(state.workspace);
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -5074,8 +4597,8 @@
 
       function handleColumnResizeKeydown(event) {
         const handle = event.target.closest(".column-resize-handle");
-        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !hasActivePreviewDefinition()) return;
-        const definitions = getActivePreviewDefinitions();
+        if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key) || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
         const preview = definitions[state.activePreview];
         const column = preview?.columns.find((candidate) => candidate.key === handle.dataset.columnKey);
         if (!column) return;
@@ -5124,7 +4647,7 @@
         const drag = state.activeColumnDrag;
         if (!target || !drag || drag.tabId !== state.activePreview) return;
         event.preventDefault();
-        const definitions = getActivePreviewDefinitions();
+        const definitions = getPreviewDefinitions(state.workspace);
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const sourceKey = drag.columnKey;
@@ -5460,7 +4983,7 @@
           ? engine.getAllocationInventoryView(workspace)
           : { columns: [], rows: [] };
         const allocationWarehouseHeaders = allocationInventoryView.columns.map((column) => column.header);
-        const allocationWarehouseStart = 11;
+        const allocationWarehouseStart = 10;
         const allocationTailStart = allocationWarehouseStart + allocationWarehouseHeaders.length;
         const allocationProductSummaries = new Map();
         const allocationUnitGroups = new Map();
@@ -5496,11 +5019,11 @@
         const allocations = {
           label: "주문현황",
           shortcut: "F5",
-          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "단위", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
+          headers: ["창고", "거래처", "그룹", "담당자", "상품코드", "품명", "규격", "정보", "주문", "단가", ...allocationWarehouseHeaders, "전달사항", "구매"],
           numeric: [
+            7,
             8,
             9,
-            10,
             ...allocationWarehouseHeaders.map((_, index) => allocationWarehouseStart + index),
           ],
           inventory: [],
@@ -5516,7 +5039,6 @@
             row.productCode,
             row.productName,
             row.specification || row.spec || "",
-            row.sourceUnit ?? row.unit ?? "",
             row.productAggregateQuantity,
             row.quantity,
             typeof row.unitPrice === "number" && Number.isFinite(row.unitPrice) ? row.unitPrice : "",
@@ -5528,30 +5050,21 @@
           notice: allocationTailStart,
         };
         allocations.columns = createPreviewColumns("allocations", allocations.headers, allocations.numeric);
-        [76, 138, 82, 92, 94, 160, 100, 54, 112, 62, 72].forEach((width, index) => {
+        [76, 138, 82, 92, 94, 160, 62, 112, 62, 72].forEach((width, index) => {
           if (allocations.columns[index]) allocations.columns[index].defaultWidth = width;
         });
         allocations.columns[0].role = "warehouse";
-        allocations.columns[0].orderField = "warehouse";
         allocations.columns[1].role = "customer";
-        allocations.columns[1].orderField = "customer";
         allocations.columns[2].role = "group";
-        allocations.columns[2].orderField = "group";
         allocations.columns[3].role = "manager";
-        allocations.columns[3].orderField = "manager";
         allocations.columns[4].role = "productCode";
-        allocations.columns[4].orderField = "productCode";
         allocations.columns[5].role = "productName";
-        allocations.columns[5].orderField = "productName";
         allocations.columns[6].role = "specification";
-        allocations.columns[6].orderField = "specification";
-        allocations.columns[7].role = "sourceUnit";
-        allocations.columns[7].orderField = "sourceUnit";
-        allocations.columns[8].role = "productAggregateQuantity";
-        allocations.columns[9].role = "orderQuantity";
-        allocations.columns[9].orderField = "quantity";
-        allocations.columns[10].role = "unitPrice";
-        allocations.columns[10].orderField = "unitPrice";
+        allocations.columns[7].role = "productAggregateQuantity";
+        allocations.columns[8].role = "orderQuantity";
+        allocations.columns[8].orderField = "quantity";
+        allocations.columns[9].role = "unitPrice";
+        allocations.columns[9].orderField = "unitPrice";
         allocationWarehouseHeaders.forEach((_, index) => {
           const column = allocations.columns[allocationWarehouseStart + index];
           if (column) {
@@ -5564,8 +5077,6 @@
           if (column) column.defaultWidth = width;
         });
         allocations.columns[allocationTailStart].orderField = "note";
-        allocations.columns[allocationTailStart].role = "deliveryNotice";
-        allocations.columns[allocationTailStart + 1].role = "purchase";
         allocations.shortageCount = shortageContext.shortageCount || 0;
 
         const notices = {
@@ -5660,18 +5171,6 @@
           inventory.shortageCount = shortageContext.purchaseActionCount || shortageContext.shortageCount || 0;
           definitions.inventory = inventory;
         }
-        if (typeof engine.getInventoryMovementView === "function") {
-          const movement = engine.getInventoryMovementView(workspace);
-          const columns = movement.columns;
-          definitions.movement = {
-            label: "재고변동표", columns, headers: columns.map((column) => column.header),
-            numeric: columns.map((column, index) => column.numeric ? index : -1).filter((index) => index >= 0),
-            inventory: [], purchase: -1, purchaseEditable: false, status: -1,
-            sourceRows: movement.rows,
-            rows: movement.rows.map((row) => row.values || columns.map((column) => row[column.field] ?? "")),
-            sortByProductCode: true,
-          };
-        }
         return definitions;
       }
 
@@ -5689,10 +5188,6 @@
 
       function exactBoxUnit(sourceRow) {
         return String(sourceRow?.specification || sourceRow?.spec || "").trim() === "BOX";
-      }
-
-      function allocationUsesBoxUnit(sourceRow) {
-        return String(sourceRow?.sourceUnit ?? sourceRow?.unit ?? "").trim().toUpperCase() === "BOX";
       }
 
       function previewRowFill(previewId, sourceRow) {
@@ -5806,8 +5301,7 @@
       }
 
       function columnFilterIsActive(setting) {
-        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues) ||
-          (setting?.valueMode === "exclude" && setting.excludedValues?.length > 0));
+        return Boolean(setting?.excludeBlank || setting?.excludeZero || Array.isArray(setting?.allowedValues));
       }
 
       function hasColumnFilters(previewId) {
@@ -5841,7 +5335,6 @@
             key,
             label: isBlankCell(value) ? "(공백)" : String(value),
             blank: isBlankCell(value),
-            zero: numericColumn && isZeroCell(value),
           });
         });
         return [...unique.values()].sort((left, right) => {
@@ -5861,10 +5354,7 @@
           const value = pair.row?.[index];
           if (setting?.excludeBlank && isBlankCell(value)) return false;
           if (setting?.excludeZero && isZeroCell(value)) return false;
-          const valueKey = textFilterValueKey(value);
-          if (setting?.valueMode === "exclude" && Array.isArray(setting.excludedValues)) {
-            if (setting.excludedValues.includes(valueKey)) return false;
-          } else if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(valueKey)) return false;
+          if (Array.isArray(setting?.allowedValues) && !setting.allowedValues.includes(textFilterValueKey(value))) return false;
           return true;
         });
       }
@@ -5954,7 +5444,8 @@
       }
 
       function previewDefinitionById(previewId) {
-        const definitions = getActivePreviewDefinitions(previewId);
+        if (!state.workspace) return null;
+        const definitions = getPreviewDefinitions(state.workspace);
         return previewId === "notices" ? definitions.validation?.noticesPreview : definitions[previewId];
       }
 
@@ -5996,7 +5487,10 @@
         elements.columnSortMenu.querySelector("[data-text-filter-section]").classList.remove("hidden");
         context.textOptions = columnTextValueOptions(preview, context.columnKey);
         if (!(context.textSelection instanceof Set)) {
-          initializeColumnTextSelection(context, filter);
+          const selected = Array.isArray(filter?.allowedValues)
+            ? filter.allowedValues
+            : context.textOptions.map((option) => option.key);
+          context.textSelection = new Set(selected);
         }
         const searchInput = elements.columnSortMenu.querySelector("[data-column-value-search]");
         searchInput.value = context.textSearch || "";
@@ -6022,17 +5516,11 @@
         const selectAll = elements.columnSortMenu.querySelector("[data-column-value-select-all]");
         const selectedVisibleCount = context.visibleTextValueKeys
           .filter((key) => context.textSelection.has(key)).length;
-        // Individually selecting every current value must remain inclusion.
         selectAll.checked = context.visibleTextValueKeys.length > 0 &&
-          selectedVisibleCount === context.visibleTextValueKeys.length &&
-          (Boolean(query) || context.textMode === "exclude");
-        selectAll.indeterminate = selectedVisibleCount > 0 && !selectAll.checked;
+          selectedVisibleCount === context.visibleTextValueKeys.length;
+        selectAll.indeterminate = selectedVisibleCount > 0 &&
+          selectedVisibleCount < context.visibleTextValueKeys.length;
         selectAll.disabled = context.visibleTextValueKeys.length === 0;
-        const modeLabel = elements.columnSortMenu.querySelector("[data-column-value-mode]");
-        modeLabel.textContent = context.textMode === "exclude"
-          ? "전체 기준 · 제외 항목 외 새 항목도 표시"
-          : "선택 기준 · 선택 항목만 표시";
-        selectAll.title = query ? "검색 결과에만 적용 · 기존 기준 유지" : "전체 기준 선택 / 선택 기준으로 전환";
       }
 
       function openColumnSortMenu(trigger) {
@@ -6058,8 +5546,8 @@
 
       function setColumnCondition(previewId, columnKey, condition, enabled) {
         if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
-        // Numeric conditions must not discard a saved include/exclude rule.
         const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
+        delete next.allowedValues;
         if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
@@ -6068,72 +5556,18 @@
         }
       }
 
-      function initializeColumnTextSelection(context, filter) {
-        context.textMode = filter?.valueMode === "exclude" || !Array.isArray(filter?.allowedValues)
-          ? "exclude" : "include";
-        context.textExcludedValues = new Set(context.textMode === "exclude" ? filter?.excludedValues || [] : []);
-        const selected = context.textMode === "include"
-          ? filter.allowedValues
-          : context.textOptions.filter((option) => !context.textExcludedValues.has(option.key)).map((option) => option.key);
-        context.textSelection = new Set(selected);
-        context.textOptions.forEach((option) => {
-          if (context.textMode === "exclude" &&
-              ((filter?.excludeZero && option.zero) || (filter?.excludeBlank && option.blank))) {
-            context.textSelection.delete(option.key);
-          }
-        });
-      }
-
-      function setColumnTextSelection(keys, checked, selectAll = false) {
-        const context = state.activeColumnMenu;
-        if (!context || !(context.textSelection instanceof Set)) return;
-        if (selectAll && !String(context.textSearch || "").trim()) {
-          // Only an explicit, unsearched select-all action changes the mode.
-          context.textMode = checked ? "exclude" : "include";
-          context.textSelection.clear();
-          context.textExcludedValues.clear();
-        }
-        keys.forEach((key) => {
-          if (checked) context.textSelection.add(key);
-          else context.textSelection.delete(key);
-          if (context.textMode === "exclude") {
-            if (checked) context.textExcludedValues.delete(key);
-            else context.textExcludedValues.add(key);
-          }
-        });
-      }
-
       function applyColumnTextFilter() {
         const context = state.activeColumnMenu;
         if (!context || !Array.isArray(context.textOptions) || !(context.textSelection instanceof Set)) return;
         if (!state.columnFilters[context.previewId]) state.columnFilters[context.previewId] = Object.create(null);
         const allKeys = context.textOptions.map((option) => option.key);
-        const zeroKeys = new Set(context.textOptions.filter((option) => option.zero).map((option) => option.key));
-        const blankKeys = new Set(context.textOptions.filter((option) => option.blank).map((option) => option.key));
+        const selectedKeys = allKeys.filter((key) => context.textSelection.has(key));
         const next = { ...(state.columnFilters[context.previewId][context.columnKey] || {}) };
-        next.valueMode = context.textMode;
-        if (context.textMode === "exclude") {
-          // Keep excluded values absent from this file so they stay excluded
-          // when they return. New values are admitted unless explicitly excluded.
-          const excluded = new Set(context.textExcludedValues);
-          allKeys.forEach((key) => {
-            if (context.textSelection.has(key)) excluded.delete(key);
-            else excluded.add(key);
-          });
-          const allExceptZeroSelected = zeroKeys.size > 0 && allKeys.every((key) =>
-            zeroKeys.has(key) ? !context.textSelection.has(key) : context.textSelection.has(key));
-          if (allExceptZeroSelected) next.excludeZero = true;
-          if (next.excludeZero) zeroKeys.forEach((key) => excluded.delete(key));
-          if (next.excludeBlank) blankKeys.forEach((key) => excluded.delete(key));
-          next.excludedValues = [...excluded];
-          delete next.allowedValues;
-        } else {
-          // Do not intersect with today's options or collapse "all selected"
-          // into an unrestricted filter. An empty inclusion list means no rows.
-          next.allowedValues = [...context.textSelection];
-          delete next.excludedValues;
-        }
-        state.columnFilters[context.previewId][context.columnKey] = next;
+        if (selectedKeys.length === allKeys.length) delete next.allowedValues;
+        else next.allowedValues = selectedKeys;
+        if (columnFilterIsActive(next)) state.columnFilters[context.previewId][context.columnKey] = next;
+        else delete state.columnFilters[context.previewId][context.columnKey];
+        if (Object.keys(state.columnFilters[context.previewId]).length === 0) delete state.columnFilters[context.previewId];
       }
 
       function visibleColumnEntries(preview, previewId = state.activePreview, options = {}) {
@@ -6214,14 +5648,6 @@
               const managerPrintColorStyle = options.printOutput === true && managerColor
                 ? `--manager-print-color:${managerPrintColorFor(managerColor)}` : "";
               const rowStyle = [shortageCategoryStyle, managerColorStyle, managerPrintColorStyle].filter(Boolean).join(";");
-              const boxUnitRow = previewId === "allocations"
-                ? allocationUsesBoxUnit(sourceRow)
-                : exactBoxUnit(sourceRow);
-              const unitAlertRow = previewId === "movement"
-                ? !/^(BOX|박스)$/i.test(String(sourceRow?.sourceUnit || sourceRow?.unit || sourceRow?.specification || "").trim())
-                : previewId === "allocations"
-                ? !boxUnitRow
-                : exactWarningUnit(sourceRow);
               const rowClasses = [
                 referenceRow ? "reference-row" : "",
                 sourceRow?.shortageFocusRole === "shortage" ? "shortage-main-row" : "",
@@ -6230,8 +5656,8 @@
                 sourceRow?.inventoryMissing || sourceRow?.salesOnly ? "inventory-missing-row" : "",
                 sourceRow?.quantityComparable !== false && Number(sourceRow?.orderQuantity || 0) === 0 ? "no-order-row" : "",
                 managerColor ? "manager-color-row" : "",
-                unitAlertRow ? "unit-alert-row" : "",
-                boxUnitRow ? "box-unit-row" : "",
+                exactWarningUnit(sourceRow) ? "unit-alert-row" : "",
+                exactBoxUnit(sourceRow) ? "box-unit-row" : "",
                 previewId === "inventory" && Number(state.selectedSubstitutionOrderRow) > 0 &&
                   orderInformationOrders(sourceRow).some((order) =>
                     Number(order?.sourceRowNumber) === Number(state.selectedSubstitutionOrderRow))
@@ -6239,7 +5665,6 @@
               ].filter(Boolean).join(" ");
               return `
                 <tr class="${rowClasses}" data-product-code="${escapeHtml(sourceRow?.productCode || "")}" data-shortage-category="${escapeHtml(shortageCategory)}"
-                  ${previewId === "allocations" && sourceRow?.sourceRowNumber ? `data-grid-row-key="order:${escapeHtml(sourceRow.sourceRowNumber)}"` : ""}
                   style="${rowStyle}" ${sourceRow?.noticeId ? `data-notice-id="${escapeHtml(sourceRow.noticeId)}"` : ""}>
                   ${visibleEntries.map(({ column, index }) => {
                     const value = row[index];
@@ -6256,7 +5681,7 @@
                     const numericQuantityValue = quantityColumn && isNonblankNumericValue(value)
                       ? Number(String(value).replace(/,/g, ""))
                       : null;
-                    const displayValue = previewId !== "movement" && quantityColumn && numericQuantityValue === 0 ? "" : value;
+                    const displayValue = quantityColumn && numericQuantityValue === 0 ? "" : value;
                     const negativeRemaining = ["inventory", "ledger"].includes(previewId) &&
                       column.role === "calculatedQuantity" && negativeNumericValue;
                     const orderedContext = ["ledger", "inventory"].includes(previewId) &&
@@ -6267,7 +5692,6 @@
                       : "";
                     const isWarning = isStatus && statusTone(value) === "bad" && String(value).includes("오류");
                     const editableInventory = editable && warehouseQuantity;
-                    const editableMovement = editable && previewId === "movement" && column.editable === true;
                     const editableLedgerPrice = editable && previewId === "ledger" &&
                       column.role === "unitPrice" && column.editable === true &&
                       Boolean(column.inventoryColumnKey) && !referenceRow && !sourceRow?.salesOnly;
@@ -6279,11 +5703,10 @@
                     );
                     const purchaseNegative = preview.purchase === index && negativeBalance;
                     const readablePrimary = ["productName", "specification"].includes(column.role) || quantityColumn;
-                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
-                    const warningUnitContext = unitAlertRow && (
+                    const warningUnitContext = exactWarningUnit(sourceRow) && (
                       ["productName", "specification"].includes(column.role) || quantityColumn
                     );
-                    const boxUnitContext = boxUnitRow &&
+                    const boxUnitContext = exactBoxUnit(sourceRow) &&
                       ["productName", "specification"].includes(column.role);
                     const classes = [
                       isNumber ? "number" : "",
@@ -6298,7 +5721,6 @@
                       orderedContext ? "ordered-context-cell" : "",
                       numericQuantityValue === 0 ? "quantity-zero" : "",
                       numericQuantityValue < 0 ? "quantity-negative" : "",
-                      previewId === "movement" && negativeNumericValue ? "movement-negative-cell" : "",
                       numericQuantityValue > 0 ? "quantity-positive" : "",
                       readablePrimary ? "primary-readable-cell" : "",
                       warningUnitContext ? "unit-alert-cell" : "",
@@ -6306,19 +5728,14 @@
                       column.role === "orderInformation" ? "information-value" : "",
                       column.role === "systemMessages" ? "system-message-value" : "",
                       column.role === "manager" && managerColor ? "manager-value" : "",
-                      editableOrder ? "order-editable-cell" : "",
                     ].filter(Boolean).join(" ");
                     const editablePurchase = editable && preview.purchaseEditable === true &&
                       preview.purchase === index && !referenceRow && !(previewId === "ledger" && sourceRow?.salesOnly);
                     const noticeLink = preview.notice === index && sourceRow?.noticeId;
                     const noticeText = preview.noticeText === index;
                     const acknowledgement = editable && preview.acknowledgement === index && sourceRow?.noticeId;
-                    const content = editableMovement
-                      ? `<input class="inventory-input movement-input" data-movement-row="${escapeHtml(sourceRow.rowKey)}"
-                          data-movement-column="${escapeHtml(column.key)}" data-grid-column="${escapeHtml(column.key)}"
-                          ${column.numeric ? 'inputmode="decimal"' : ""} autocomplete="off" value="${escapeHtml(value ?? "")}"
-                          aria-label="${escapeHtml(sourceRow.productCode)} ${escapeHtml(column.header)} 수정">`
-                      : editablePurchase
+                    const editableOrder = editable && previewId === "allocations" && column.orderField && sourceRow?.sourceRowNumber;
+                    const content = editablePurchase
                       ? `<input class="purchase-input" data-purchase-code="${escapeHtml(sourceRow?.productCode || "")}"
                           data-grid-column="${escapeHtml(column.key)}" data-negative-balance="${negativeBalance ? "true" : "false"}"
                           autocomplete="off"
@@ -6331,7 +5748,7 @@
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} 발주 단가">`
                       : editableOrder
                         ? `<input class="order-edit-input" data-order-row="${escapeHtml(sourceRow.sourceRowNumber)}"
-                            data-order-field="${escapeHtml(column.orderField)}" data-grid-column="${escapeHtml(column.key)}"
+                            data-order-field="${escapeHtml(column.orderField)}"
                             ${["quantity", "unitPrice"].includes(column.orderField) ? 'inputmode="decimal"' : ""}
                             autocomplete="off" value="${escapeHtml(displayValue)}"
                             aria-label="${escapeHtml(sourceRow?.productCode || "")} ${escapeHtml(column.header)} 수정">`
@@ -6358,7 +5775,7 @@
                             : orderQuantity || calculatedQuantity
                               ? `<span class="inventory-total-frame" data-negative-value="${negativeNumericValue ? "true" : "false"}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`
                               : `<span class="${[noticeText ? "notice-text" : "", column.role === "manager" && managerColor ? "manager-name" : ""].filter(Boolean).join(" ")}">${escapeHtml(displayValue === "" ? "" : isNumber ? formatNumber(displayValue) : displayValue)}</span>`;
-                    return `<td class="${classes}" data-column-role="${escapeHtml(column.role || "")}"
+                    return `<td class="${classes}"
                       ${isStatus ? `data-tone="${statusTone(value)}"` : ""}>${content}</td>`;
                   }).join("")}
                 </tr>`;
@@ -6376,7 +5793,7 @@
       }
 
       function renderSourceViewCards(definitions = null) {
-        const activeKind = definitions?.[state.activePreview] ? SOURCE_VIEW_CARDS[state.activePreview] : "";
+        const activeKind = state.workspace ? SOURCE_VIEW_CARDS[state.activePreview] : "";
         [...FILE_KINDS, "ledger"].forEach((kind) => {
           const card = elements[kind + "Card"];
           const drop = elements[kind + "Drop"];
@@ -6390,27 +5807,21 @@
             ? `재고수불부 · ${formatNumber(rowCount)}개 상품`
             : "재고수불부 · 자동 생성";
         }
-        document.getElementById?.("prepPreviewTabs")?.querySelectorAll("[data-preview]").forEach((button) => {
-          const active = button.dataset.preview === state.activePreview;
-          button.classList.toggle("active", active);
-          button.setAttribute("aria-selected", String(active));
-        });
       }
 
       function renderPreview() {
         closePurchaseAutocomplete();
-        const definitions = getActivePreviewDefinitions();
+        const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[state.activePreview]) state.activePreview = "validation";
         const validationDefinition = definitions.validation;
-        elements.previewTabs.innerHTML = validationDefinition ? `
+        elements.previewTabs.innerHTML = `
           <button class="tab-button ${state.activePreview === "validation" ? "active" : ""}" type="button" role="tab"
             aria-selected="${state.activePreview === "validation"}" data-preview="validation">
             ${escapeHtml(validationDefinition.label)}
-          </button>` : "";
+          </button>`;
         renderSourceViewCards(definitions);
 
         const preview = definitions[state.activePreview];
-        if (!preview) return;
         renderOrderViewPresetOptions();
         renderWarehouseColorBar(definitions);
         const shortageEligible = ["allocations", "ledger", "inventory"].includes(state.activePreview);
@@ -6440,14 +5851,13 @@
             ? "대체할 주문 선택됨 · Ctrl+상품 클릭"
             : "대체출고: 거래처 칩 선택 → Ctrl+상품 클릭");
         }
-        if (state.activePreview === "movement") viewNotes.push("전일재고 + 입고 − 출고 = 장부재고 · 재고실사 공란은 미실사, 0은 실사 0 · Enter ↓ · Tab → · Excel 붙여넣기");
         elements.systemViewNote.textContent = viewNotes.join(" · ");
         elements.systemViewNote.classList.toggle("hidden", viewNotes.length === 0);
         elements.previewCount.textContent = `${formatNumber(pairs.length)}/${formatNumber(preview.rows.length)}행`;
 
         elements.specFilterGroup.disabled = state.activePreview === "validation" || state.activePreview === "notices";
         renderColumnVisibilityMenu(preview);
-        const previewMarkup = renderTableMarkup(preview, pairs, { editable: Boolean(state.workspace), resizable: true });
+        const previewMarkup = renderTableMarkup(preview, pairs, { editable: true, resizable: true });
         if (state.activePreview === "validation") {
           const noticePreview = preview.noticesPreview;
           const noticePairs = filteredSortedPreviewPairs("notices", noticePreview);
@@ -6514,18 +5924,7 @@
         engine.ensureNoticeState(state.workspace);
         const stats = state.workspace.stats;
         const purchaseUpload = engine.getPurchaseUploadSelection(state.workspace);
-        const movementRows = state.workspace.inventoryOnly ? engine.getInventoryMovementView(state.workspace).rows : null;
-        const movementTotal = (field) => movementRows.reduce((sum, row) => sum + (typeof row[field] === "number" ? row[field] : 0), 0);
-        const summaryItems = movementRows ? [
-          { label: "상품", value: movementRows.length },
-          { label: "기초재고", value: movementTotal("openingQuantity") },
-          { label: "입고", value: movementTotal("inboundQuantity") },
-          { label: "출고", value: movementTotal("salesQuantity") },
-          { label: "장부재고", value: movementTotal("remainingQuantity") },
-          { label: "실사완료", value: movementRows.filter((row) => row.stocktakeQuantity !== null).length },
-          { label: "음수잔량 상품", value: movementRows.filter((row) => row.remainingQuantity < 0).length },
-          { label: "확정재고", value: movementTotal("finalQuantity") },
-        ] : [
+        const summaryItems = [
           { label: "주문행", value: stats.orderRowCount },
           { label: "0 수량", value: stats.zeroOrderQuantityCount || 0, tone: stats.zeroOrderQuantityCount > 0 ? "warn" : "" },
           { label: "음수 수량", value: stats.negativeOrderQuantityCount || 0, tone: stats.negativeOrderQuantityCount > 0 ? "warn" : "" },
@@ -6549,25 +5948,21 @@
           .map(([reason, count]) => `${reason} ${formatNumber(count)}행`)
           .join(" · ");
         const uploadBlocked = state.workspace.basisDateStatus !== "valid";
-        elements.purchaseUploadNotice.classList.toggle("hidden", Boolean(state.workspace.inventoryOnly));
         elements.purchaseUploadNotice.classList.toggle("bad", uploadBlocked);
         elements.purchaseUploadNotice.textContent = uploadBlocked
           ? `구매업로드 차단: 일자-No.·일자·주문일자에서 유효한 단일 기준일을 확정할 수 없습니다. 제외: ${exclusionText || "없음"}`
           : `구매업로드 ${formatNumber(purchaseUpload.included.length)}행 · 제외: ${exclusionText || "없음"}`;
-        elements.resultSubtitle.textContent = state.workspace.inventoryOnly ? "기초재고 + 입고 − 출고 · 실사값을 입력하면 확정재고에 반영됩니다" : stats.unmatchedCount > 0
+        elements.resultSubtitle.textContent = stats.unmatchedCount > 0
           ? `재고정보 없음 ${formatNumber(stats.unmatchedCount)}개 상품`
           : "재고 매칭 이상 없음";
         renderPreview();
         elements.resultsPanel.classList.remove("hidden");
         elements.printButton.disabled = false;
         elements.downloadButton.disabled = false;
-        elements.movementDownloadButton.disabled = false;
         const cloudSaveDisabled = !state.workspace.planId || state.workspace.basisDateStatus !== "valid";
         elements.cloudSaveButton.disabled = cloudSaveDisabled;
         elements.headerCloudSaveButton.disabled = cloudSaveDisabled;
         elements.analyzeButton.disabled = isInputOperationBusy();
-        renderValidation();
-        if (typeof preparationController !== "undefined") preparationController?.refresh();
         setSystemMessage(`분석 완료 · 주문 ${formatNumber(stats.orderRowCount)}행·상품 ${formatNumber(stats.productCount)}개 · 결과 확인 후 저장(F8)하세요`);
       }
 
@@ -6589,58 +5984,45 @@
       }
 
       function runResultFilterReset() {
-        if (!hasActivePreviewDefinition()) return;
+        if (!state.workspace) return;
         resetResultViewFilters();
         markOrderViewPresetCustom();
         renderPreview();
         showToast("검색어·정렬·열 조건과 모든 보기 필터를 초기화했습니다. 지정 배색은 유지됩니다.");
       }
 
-      async function analyzeCurrentInputs({ fromSources = false, inputs = state } = {}) {
-        if (!fromSources && inputs === state && state.workspace) return engine.recalculateWorkspace(state.workspace);
-        const validation = inputs === state ? state.validation
-          : inputs.orders && inputs.inventory ? engine.validateInputs(inputs.orders, inputs.inventory) : null;
-        if (inputs.orders?.rowCount > 0 && !validation?.canAnalyze) throw new Error("분석 가능한 주문·재고 파일을 먼저 선택하세요.");
-        if (!inputs.inventory) throw new Error("재고 파일을 먼저 선택하세요.");
-        const { orders, inventory, purchases, sales } = inputs;
+      async function analyzeCurrentInputs({ fromSources = false } = {}) {
+        if (!fromSources && state.workspace) return engine.recalculateWorkspace(state.workspace);
+        if (!state.validation?.canAnalyze) throw new Error("분석 가능한 주문현황·창고별재고 파일을 먼저 선택하세요.");
+        const { orders, inventory, purchases, sales } = state;
         const sourceFingerprint = await sha256Hex(JSON.stringify({
           schemaVersion: engine.WORKSPACE_SCHEMA_VERSION,
-          orders: orders ? {
+          orders: {
             sha256: orders.fileHash,
             fileName: orders.fileName,
             sheetName: orders.sheetName,
             rowCount: orders.rowCount,
-            ...(orders.intakeMapping ? { mapping: orders.intakeMapping.draft } : {}),
-          } : null,
+          },
           inventory: {
             sha256: inventory.fileHash,
             fileName: inventory.fileName,
             sheetName: inventory.sheetName,
             rowCount: inventory.rowCount,
-            ...(inventory.intakeMapping ? { mapping: inventory.intakeMapping.draft } : {}),
           },
           purchases: purchases ? {
             sha256: purchases.fileHash,
             fileName: purchases.fileName,
             sheetName: purchases.sheetName,
             rowCount: purchases.rowCount,
-            ...(purchases.intakeMapping ? { mapping: purchases.intakeMapping.draft } : {}),
           } : null,
           sales: sales ? {
             sha256: sales.fileHash,
             fileName: sales.fileName,
             sheetName: sales.sheetName,
             rowCount: sales.rowCount,
-            ...(sales.intakeMapping ? { mapping: sales.intakeMapping.draft } : {}),
           } : null,
         }));
-        const workspace = orders?.rowCount > 0
-          ? engine.analyze(orders, inventory, { sourceFingerprint })
-          : engine.analyzeInventory(inventory, { sourceFingerprint });
-        for (const kind of ["orders", "inventory"]) {
-          const parsed = kind === "orders" ? orders : inventory;
-          if (parsed?.intakeMapping) workspace.sourceFiles[kind].intakeMapping = JSON.parse(JSON.stringify(parsed.intakeMapping));
-        }
+        const workspace = engine.analyze(orders, inventory, { sourceFingerprint });
         workspace.orderOpsInputs = {
           schemaVersion: "orderops-analysis-inputs/v1",
           purchases: purchases ? {
@@ -6648,14 +6030,12 @@
             sheetName: purchases.sheetName,
             fileHash: purchases.fileHash,
             rows: JSON.parse(JSON.stringify(purchases.rows || [])),
-            ...(purchases.intakeMapping ? { intakeMapping: JSON.parse(JSON.stringify(purchases.intakeMapping)) } : {}),
           } : null,
           sales: sales ? {
             fileName: sales.fileName,
             sheetName: sales.sheetName,
             fileHash: sales.fileHash,
             rows: JSON.parse(JSON.stringify(sales.rows || [])),
-            ...(sales.intakeMapping ? { intakeMapping: JSON.parse(JSON.stringify(sales.intakeMapping)) } : {}),
           } : null,
         };
         return workspace;
@@ -6675,7 +6055,8 @@
           const candidateWorkspace = await analyzeCurrentInputs();
           clearSubstitutionSelection();
           state.workspace = candidateWorkspace;
-          if (!getPreviewDefinitions(candidateWorkspace)[state.activePreview]) state.activePreview = "validation";
+          state.activePreview = "validation";
+          resetResultViewFilters();
           renderResults();
           scheduleLocalSave();
           elements.resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -6687,17 +6068,7 @@
           state.analysisRunning = false;
           elements.analyzeButton.innerHTML = '<span aria-hidden="true">▸</span><span>출고분석 Enter</span>';
           elements.analyzeButton.disabled = isInputOperationBusy() || !(state.workspace || state.validation?.canAnalyze);
-          if (typeof preparationController !== "undefined") preparationController?.refresh();
         }
-      }
-
-      function downloadInventoryMovement() {
-        if (!state.workspace || !window.XLSX) return;
-        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        try {
-          workbookTools.downloadInventoryMovementWorkbook(state.workspace, window.XLSX);
-          showToast("재고변동표 Excel을 출력했습니다.");
-        } catch (error) { showToast(error.message || "재고변동표를 출력하지 못했습니다.", true); }
       }
 
       function downloadResult() {
@@ -7089,42 +6460,6 @@
         }
       }
 
-      function focusOrderGridInput(input) {
-        if (!input) return;
-        input.closest("tr")?.scrollIntoView({ block: "nearest", inline: "nearest" });
-        window.requestAnimationFrame(() => {
-          input.focus({ preventScroll: true });
-          input.select?.();
-        });
-      }
-
-      function handleOrderGridNavigation(event) {
-        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field][data-grid-column]");
-        if (!input || !state.workspace || state.activePreview !== "allocations" || event.isComposing) return;
-        if (!["Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"));
-        const row = input.closest("tr[data-grid-row-key]");
-        const rowIndex = rows.indexOf(row);
-        const rowInputs = Array.from(row?.querySelectorAll("[data-grid-column]") || []);
-        const columnIndex = rowInputs.indexOf(input);
-        if (rowIndex < 0 || columnIndex < 0) return;
-        event.preventDefault();
-        const vertical = event.key === "Enter" || event.key === "ArrowUp" || event.key === "ArrowDown";
-        const direction = event.key === "ArrowUp" || (event.key === "Enter" && event.shiftKey) ? -1 : 1;
-        const nextRowIndex = vertical ? Math.max(0, Math.min(rows.length - 1, rowIndex + direction)) : rowIndex;
-        const nextColumnIndex = event.key === "ArrowLeft" ? Math.max(0, columnIndex - 1)
-          : event.key === "ArrowRight" ? Math.min(rowInputs.length - 1, columnIndex + 1) : columnIndex;
-        const targetRowKey = rows[nextRowIndex]?.dataset.gridRowKey || row.dataset.gridRowKey;
-        const targetColumn = vertical ? input.dataset.gridColumn
-          : rowInputs[nextColumnIndex]?.dataset.gridColumn || input.dataset.gridColumn;
-        if (!commitOrderInput(input)) return;
-        const targetRow = Array.from(elements.previewTable.querySelectorAll("tbody tr[data-grid-row-key]"))
-          .find((candidate) => candidate.dataset.gridRowKey === targetRowKey);
-        const target = Array.from(targetRow?.querySelectorAll("[data-grid-column]") || [])
-          .find((candidate) => candidate.dataset.gridColumn === targetColumn);
-        focusOrderGridInput(target);
-      }
-
       function substitutionActor() {
         return String(elements.cloudSavedByInput?.value || "").trim() || "사용자";
       }
@@ -7411,80 +6746,6 @@
         return true;
       }
 
-      function commitMovementInput(input, { render = true } = {}) {
-        if (!input || !state.workspace || state.activePreview !== "movement") return false;
-        try {
-          engine.setInventoryMovementCell(state.workspace, input.dataset.movementRow, input.dataset.movementColumn, input.value);
-          scheduleLocalSave();
-          if (render) renderResults();
-          return true;
-        } catch (error) {
-          showToast(error.message || "재고변동표 입력값을 확인하세요.", true);
-          renderPreview();
-          return false;
-        }
-      }
-
-      function focusMovementCell(rowKey, columnKey) {
-        const target = Array.from(elements.previewTable.querySelectorAll(".movement-input"))
-          .find((input) => input.dataset.movementRow === rowKey && input.dataset.movementColumn === columnKey);
-        focusInventoryInput(target);
-      }
-
-      function handleMovementNavigation(event) {
-        const input = event.target.closest?.(".movement-input");
-        if (!input || state.activePreview !== "movement" || event.isComposing || event.keyCode === 229) return;
-        if (event.key === "Escape") { event.preventDefault(); renderPreview(); focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn); return; }
-        if (!["Enter", "Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
-        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr"));
-        const rowIndex = rows.indexOf(input.closest("tr"));
-        const rowInputs = Array.from(rows[rowIndex]?.querySelectorAll(".movement-input") || []);
-        const columnIndex = rowInputs.indexOf(input);
-        const allInputs = Array.from(elements.previewTable.querySelectorAll(".movement-input"));
-        let target;
-        if (event.key === "Tab") {
-          target = allInputs[allInputs.indexOf(input) + (event.shiftKey ? -1 : 1)];
-        } else if (["Enter", "ArrowUp", "ArrowDown"].includes(event.key)) {
-          const direction = event.key === "ArrowUp" || event.key === "Enter" && event.shiftKey ? -1 : 1;
-          target = Array.from(rows[rowIndex + direction]?.querySelectorAll(".movement-input") || [])
-            .find((candidate) => candidate.dataset.movementColumn === input.dataset.movementColumn);
-        } else target = rowInputs[columnIndex + (event.key === "ArrowLeft" ? -1 : 1)];
-        const next = target ? { row: target.dataset.movementRow, column: target.dataset.movementColumn } : null;
-        event.preventDefault();
-        if (!commitMovementInput(input, { render: false })) return;
-        renderResults();
-        if (next) focusMovementCell(next.row, next.column);
-        else if (event.key === "Tab") focusOutsideInventoryTable(event.shiftKey ? -1 : 1);
-        else focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn);
-      }
-
-      function handleMovementPaste(event) {
-        const input = event.target.closest?.(".movement-input");
-        if (!input || state.activePreview !== "movement" || !state.workspace) return;
-        const text = event.clipboardData?.getData("text/plain");
-        if (typeof text !== "string" || !/[\t\r\n]/.test(text)) return;
-        event.preventDefault();
-        const data = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "").split("\n").map((row) => row.split("\t"));
-        const rows = Array.from(elements.previewTable.querySelectorAll("tbody tr"));
-        const startRow = rows.indexOf(input.closest("tr"));
-        const startColumn = Array.from(rows[startRow].cells).indexOf(input.closest("td"));
-        try {
-          const candidate = JSON.parse(JSON.stringify(state.workspace));
-          let count = 0;
-          data.forEach((values, rowOffset) => values.forEach((value, columnOffset) => {
-            const target = rows[startRow + rowOffset]?.cells[startColumn + columnOffset]?.querySelector(".movement-input");
-            if (!target) throw new Error("붙여넣을 범위에 계산 열이나 표 밖의 셀이 있습니다. 수정 가능한 셀 범위를 선택하세요.");
-            engine.setInventoryMovementCell(candidate, target.dataset.movementRow, target.dataset.movementColumn, value);
-            count += 1;
-          }));
-          state.workspace = candidate;
-          scheduleLocalSave();
-          renderResults();
-          focusMovementCell(input.dataset.movementRow, input.dataset.movementColumn);
-          showToast(count + "개 셀을 반영했습니다.");
-        } catch (error) { showToast(error.message || "붙여넣기 값을 확인하세요. 기존 값은 유지됩니다.", true); }
-      }
-
       function focusInventoryInput(input) {
         if (!input) return;
         input.focus({ preventScroll: true });
@@ -7644,7 +6905,6 @@
         resetResults();
         resetResultViewFilters();
         refreshInputState();
-        preparationController?.clear();
         showToast("현재 선택 파일과 화면 분석 결과를 초기화했습니다.");
       }
 
@@ -7660,26 +6920,9 @@
       saveManagerColorSettings();
       renderOrderViewPresetOptions();
 
-      preparationController = window.OrderOpsExcelPreparationUI?.mount({
-        document, isBusy: () => Boolean(state.analysisRunning || Object.values(state.loading).some(Boolean)),
-        sha256: sha256Hex, getMappings: () => state.excelMappings,
-        sheetAliasScore: sheetAliasMatchScore, validate: validateFileCandidate, toast: showToast,
-        onFile: handleFile, onBundle: handleBundleFiles, applyCandidates: commitInputCandidates, removeKind: removePreparedKind,
-        onSettled: refreshInputState,
-        getWorkspace: () => state.workspace,
-        parseSheet: (input) => ["orders", "inventory"].includes(input.kind) ? parsePrimaryWorkbookSheet(input) : parseGenericWorkbookSheet(input),
-        preview: (view) => {
-          if (!activatePreview(view)) {
-            const kind = FILE_KINDS.find((type) => FILE_KIND_PREVIEWS[type] === view);
-            if (kind) renderPreparedInputPreview(kind);
-          }
-        },
-      }) || null;
-
       elements.analyzeButton.addEventListener("click", runAnalysis);
       elements.refreshButton.addEventListener("click", refreshCurrentSession);
       elements.downloadButton.addEventListener("click", downloadResult);
-      elements.movementDownloadButton.addEventListener("click", downloadInventoryMovement);
       elements.printButton.addEventListener("click", printActiveTable);
       elements.columnWidthSaveButton.addEventListener("click", persistActiveColumnWidths);
       elements.columnWidthResetButton.addEventListener("click", resetActiveColumnWidths);
@@ -7711,7 +6954,7 @@
       elements.tableSearchInput.addEventListener("input", () => {
         state.searchQuery = elements.tableSearchInput.value;
         markOrderViewPresetCustom();
-        if (hasActivePreviewDefinition()) renderPreview();
+        if (state.workspace) renderPreview();
       });
       elements.specFilterGroup.addEventListener("change", (event) => {
         const input = event.target.closest("input[type='checkbox']");
@@ -7719,7 +6962,7 @@
         if (input.checked) state.specificationFilters.add(input.value);
         else state.specificationFilters.delete(input.value);
         markOrderViewPresetCustom();
-        if (hasActivePreviewDefinition()) renderPreview();
+        if (state.workspace) renderPreview();
       });
       elements.warehouseFilterToggle.addEventListener("click", () => {
         setActiveFilterPanel(state.activeFilterPanel === "warehouse" ? "" : "warehouse");
@@ -7733,7 +6976,7 @@
           if (filter.checked) state.warehouseFilters.add(filter.dataset.warehouseFilter);
           else state.warehouseFilters.delete(filter.dataset.warehouseFilter);
           markOrderViewPresetCustom();
-          if (hasActivePreviewDefinition()) renderPreview();
+          if (state.workspace) renderPreview();
           return;
         }
         const managerFilter = event.target.closest("[data-manager-filter]");
@@ -7741,7 +6984,7 @@
           if (managerFilter.checked) state.managerFilters.add(managerFilter.dataset.managerFilter);
           else state.managerFilters.delete(managerFilter.dataset.managerFilter);
           markOrderViewPresetCustom();
-          if (hasActivePreviewDefinition()) renderPreview();
+          if (state.workspace) renderPreview();
           return;
         }
       }
@@ -7751,11 +6994,11 @@
       elements.colorTargetSelect.addEventListener("change", () => {
         if (!state.activeFilterPanel) return;
         state.colorTargetKeys[state.activeFilterPanel] = elements.colorTargetSelect.value;
-        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
+        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
       });
       elements.vividColorToggle.addEventListener("click", () => {
         state.vividPaletteExpanded = !state.vividPaletteExpanded;
-        if (hasActivePreviewDefinition()) renderWarehouseColorBar(getActivePreviewDefinitions());
+        if (state.workspace) renderWarehouseColorBar(getPreviewDefinitions(state.workspace));
       });
       elements.colorAssignmentPanel.addEventListener("click", (event) => {
         const swatch = event.target.closest("[data-palette-color]");
@@ -7785,7 +7028,7 @@
         state.managerFilters.clear();
         state.warehouseFilters.clear();
         markOrderViewPresetCustom();
-        if (hasActivePreviewDefinition()) renderPreview();
+        if (state.workspace) renderPreview();
         showToast("창고·담당자 필터를 해제했습니다. 저장된 배색은 유지됩니다.");
       });
       elements.columnVisibilityButton.addEventListener("click", () => {
@@ -7795,8 +7038,8 @@
       });
       elements.columnVisibilityMenu.addEventListener("change", (event) => {
         const input = event.target.closest("[data-column-visible]");
-        if (!input || !hasActivePreviewDefinition()) return;
-        const definitions = getActivePreviewDefinitions();
+        if (!input || !state.workspace) return;
+        const definitions = getPreviewDefinitions(state.workspace);
         const preview = definitions[state.activePreview];
         if (!preview) return;
         const hidden = hiddenColumnSet(state.activePreview);
@@ -7836,14 +7079,15 @@
         elements.columnVisibilityButton.setAttribute("aria-expanded", "false");
       });
       function activatePreview(previewId) {
-        const definitions = getActivePreviewDefinitions(previewId);
+        if (!state.workspace) return false;
+        const definitions = getPreviewDefinitions(state.workspace);
         if (!definitions[previewId]) return false;
         const selectedPreset = state.orderViewPresets.find((preset) => preset.id === state.selectedOrderViewPresetId);
         if (selectedPreset?.previewId !== previewId) state.selectedOrderViewPresetId = "";
         state.activePreview = previewId;
         if (previewId !== "inventory") clearSubstitutionSelection();
         if (!applyDefaultOrderViewPreset(previewId, { render: true })) renderPreview();
-        if (state.workspace) scheduleLocalSave();
+        scheduleLocalSave();
         return true;
       }
 
@@ -7863,7 +7107,7 @@
           return;
         }
         if (event.key === "F3") {
-          if (!hasActivePreviewDefinition()) return;
+          if (!state.workspace) return;
           elements.tableSearchInput.focus({ preventScroll: true });
           const caret = elements.tableSearchInput.value.length;
           elements.tableSearchInput.setSelectionRange(caret, caret);
@@ -7899,7 +7143,7 @@
       elements.previewTable.addEventListener("click", (event) => {
         if (handleSubstitutionTableClick(event)) return;
         const trigger = event.target.closest(".column-sort-trigger[data-sort-preview-id][data-sort-column-key]");
-        if (trigger && hasActivePreviewDefinition(trigger.dataset.sortPreviewId)) {
+        if (trigger && state.workspace) {
           event.preventDefault();
           event.stopPropagation();
           const sameMenu = !elements.columnSortMenu.classList.contains("hidden") &&
@@ -7911,7 +7155,7 @@
       });
       elements.columnSortMenu.addEventListener("click", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
+        if (!context || !state.workspace) return;
         if (event.target.closest("[data-cancel-column-values]")) {
           closeColumnSortMenu();
           return;
@@ -7948,16 +7192,20 @@
       });
       elements.columnSortMenu.addEventListener("change", (event) => {
         const context = state.activeColumnMenu;
-        if (!context || !hasActivePreviewDefinition(context.previewId)) return;
+        if (!context || !state.workspace) return;
         const selectAll = event.target.closest("[data-column-value-select-all]");
         if (selectAll && context.textSelection instanceof Set) {
-          setColumnTextSelection(context.visibleTextValueKeys || [], selectAll.checked, true);
+          (context.visibleTextValueKeys || []).forEach((key) => {
+            if (selectAll.checked) context.textSelection.add(key);
+            else context.textSelection.delete(key);
+          });
           renderColumnTextValueOptions();
           return;
         }
         const valueInput = event.target.closest("[data-column-value]");
         if (valueInput && context.textSelection instanceof Set) {
-          setColumnTextSelection([valueInput.dataset.columnValue], valueInput.checked);
+          if (valueInput.checked) context.textSelection.add(valueInput.dataset.columnValue);
+          else context.textSelection.delete(valueInput.dataset.columnValue);
           renderColumnTextValueOptions();
           return;
         }
@@ -7972,7 +7220,7 @@
       elements.columnSortMenu.addEventListener("input", (event) => {
         const searchInput = event.target.closest("[data-column-value-search]");
         const context = state.activeColumnMenu;
-        if (!searchInput || !context || !hasActivePreviewDefinition(context.previewId)) return;
+        if (!searchInput || !context || !state.workspace) return;
         context.textSearch = searchInput.value;
         renderColumnTextValueOptions();
       });
@@ -8064,19 +7312,18 @@
         if (!input || !state.workspace || !["inventory", "ledger", "allocations"].includes(state.activePreview)) return;
         commitPurchaseInput(input);
       });
+      elements.previewTable.addEventListener("keydown", (event) => {
+        const input = event.target.closest?.(".order-edit-input[data-order-row][data-order-field]");
+        if (!input || event.key !== "Enter" || event.isComposing) return;
+        event.preventDefault();
+        input.blur();
+      });
       elements.previewTable.addEventListener("pointerdown", beginColumnResize);
       elements.previewTable.addEventListener("dragstart", handleColumnDragStart);
       elements.previewTable.addEventListener("dragover", handleColumnDragOver);
       elements.previewTable.addEventListener("drop", handleColumnDrop);
       elements.previewTable.addEventListener("dragend", handleColumnDragEnd);
       elements.previewTable.addEventListener("keydown", handlePurchaseAutocompleteKeyboard, true);
-      elements.previewTable.addEventListener("keydown", handleOrderGridNavigation);
-      elements.previewTable.addEventListener("keydown", handleMovementNavigation);
-      elements.previewTable.addEventListener("paste", handleMovementPaste);
-      elements.previewTable.addEventListener("change", (event) => {
-        const input = event.target.closest(".movement-input");
-        if (input) commitMovementInput(input);
-      });
       elements.previewTable.addEventListener("keydown", handleInventoryGridArrowNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryQuantityNavigation);
       elements.previewTable.addEventListener("keydown", handleInventoryPurchaseNavigation);
