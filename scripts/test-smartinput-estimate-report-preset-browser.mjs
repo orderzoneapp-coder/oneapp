@@ -126,6 +126,8 @@ try {
   await expr(client,'Boolean(window.__presetTest?.snapshot().ready)','SmartInput ready',60000);
   await click(client,'.mode-tab[data-mode="estimate"]');
   await expr(client,'window.__presetTest.snapshot().mode==="estimate" && !window.__presetTest.snapshot().busy && ["READY","EMPTY"].includes(window.__presetTest.snapshot().templatesStatus)','estimate templates ready',60000);
+  assert.equal(await evaluate(client,'(()=>{const c=document.querySelector("#tableViewSwitch");return !c.hidden && getComputedStyle(c).display!=="none" && c.getBoundingClientRect().height>0;})()'),true,'input/source view switch must be visible');
+  assert.equal(await evaluate(client,'document.querySelector("[data-table-view=source]").disabled'),true,'no original source means source view is unavailable');
   const { ESTIMATE_REPORT_HEADERS:H }=await import('../smartinput/estimate-report-preset.js');
   const source={일자:'2026/09/02',창고:'01',거래처명:'테스트 거래처',품목명:'테스트 상품',규격:'EA',품목코드:'001234',입고가:2800,출고가:3800,입고B:'',도매A:3300,도매B:0,행사가:'21500',적요2:'0012',간단설명:'참조',단위:'소분','1종연산':'8.5',외주비:200,경비:100,노무비:200,재료비:0,'1종규격':'','1종코드':'','1입고':'','1출고':200};
   const data=Array.from({length:273},(_,i)=>H.map(h=>h==='품목코드'?'00'+String(i).padStart(5,'0'):source[h]));
@@ -141,6 +143,50 @@ try {
   assert.equal(snapshot.draft.rows[0].rowWarehouseCode,'01'); assert.equal(snapshot.draft.rows[0].itemCode,'0000000');
   assert.equal(snapshot.draft.rows[0].quantity,null); assert.equal(snapshot.draft.rows[0].purchasePriceB,null); assert.equal(snapshot.draft.rows[0].wholesaleB,0);
   assert.equal(snapshot.draft.rows[0].type1OutPrice,200); assert.equal(snapshot.draft.rows[0].type1Code,'');
+  // A view switch must change presentation, not remap or rebuild business data.
+  const visibleClick=async selector=>{
+    const point=await evaluate(client,'(()=>{const el=document.querySelector('+JSON.stringify(selector)+');el.scrollIntoView({block:"nearest",inline:"nearest"});const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,visible:!el.disabled&&r.width>0&&r.height>0&&getComputedStyle(el).display!=="none"};})()');
+    assert.equal(point.visible,true,'view button must be reachable');
+    await pointerClick(client,point.x,point.y);
+  };
+  const dataSnapshot=()=>evaluate(client,'(()=>{const d=window.__presetTest.snapshot().draft;return JSON.stringify({rows:d.rows,source:d.inputMapping.sourceMatrix,mappings:d.inputMapping.mappings,journal:d.inputMapping.editJournal});})()');
+  const beforeView=await dataSnapshot();
+  await visibleClick('[data-table-view="source"]');
+  await expr(client,'document.querySelector("#tableScroll").dataset.tableView==="source" && !document.querySelector("#mappingWorktable").hidden && getComputedStyle(document.querySelector("#mappingWorktable")).display!=="none"','source view actually visible');
+  assert.equal(await evaluate(client,'document.querySelector("#voucherInputTable").hidden'),true);
+  assert.deepEqual(await evaluate(client,'[...document.querySelectorAll("#mappingTableHeaders th[data-mapping-column]")].map(th=>th.querySelector("strong").textContent.trim())'),H,'all 24 original labels and column order');
+  assert.equal(await dataSnapshot(),beforeView,'source switch preserves rows, source, mappings, edits');
+  await visibleClick('[data-table-view="input"]');
+  await expr(client,'!document.querySelector("#voucherInputTable").hidden && document.querySelector("#mappingWorktable").hidden','input view restored');
+  assert.equal(await dataSnapshot(),beforeView,'round trip is presentation-only');
+  const firstRowId=snapshot.draft.rows[0].rowId;
+  const inputPrice='[data-row-id="'+firstRowId+'"] input[data-field="unitPrice"]';
+  await input(client,inputPrice,'3100');
+  await expr(client,'window.__presetTest.snapshot().draft.rows[0].unitPrice===3100','input price edited');
+  const afterInputEdit=await dataSnapshot();
+  await visibleClick('[data-table-view="source"]');
+  await expr(client,'!document.querySelector("#mappingWorktable").hidden','source after input edit');
+  assert.equal(await dataSnapshot(),afterInputEdit,'switch must not revert an input edit');
+  const sourcePrice='[data-mapping-row-id="'+firstRowId+'"] [data-mapping-column="7"] input';
+  await input(client,sourcePrice,'4200');
+  await expr(client,'window.__presetTest.snapshot().draft.rows[0].outPrice===4200','source work-copy price edited');
+  const afterSourceEdit=await dataSnapshot();
+  await visibleClick('[data-table-view="input"]');
+  await expr(client,'!document.querySelector("#voucherInputTable").hidden','input after source edit');
+  assert.equal(await dataSnapshot(),afterSourceEdit,'switch must not revert a source work-copy edit');
+  assert.equal(await evaluate(client,'window.__presetTest.snapshot().draft.rows[0].unitPrice'),3100);
+  assert.equal(await evaluate(client,'JSON.stringify(window.__presetTest.snapshot().draft.inputMapping.sourceMatrix)'),JSON.stringify(snapshot.draft.inputMapping.sourceMatrix),'original evidence remains immutable');
+  await visibleClick('[data-table-view="source"]');
+  await click(client,'#sourcePreparationApply');
+  assert.equal(await evaluate(client,'document.querySelector("#tableScroll").dataset.tableView'),'source','mapping apply does not change selected view');
+  await click(client,'#inputTemplateReloadButton');
+  await expr(client,'["READY","EMPTY"].includes(window.__presetTest.snapshot().templatesStatus)','template reload completed',60000);
+  assert.equal(await evaluate(client,'document.querySelector("#tableScroll").dataset.tableView'),'source','template reload preserves selected source view');
+  assert.equal(await evaluate(client,'window.__presetTest.snapshot().draft.rows[0].unitPrice'),3100,'template reload retains work-copy edits');
+  assert.equal(await evaluate(client,'window.__presetTest.snapshot().draft.rows[0].outPrice'),4200);
+  await visibleClick('[data-table-view="input"]');
+  await expr(client,'!document.querySelector("#voucherInputTable").hidden','return to input for preset regression');
+
   await click(client,'#sourcePreparationApply');
   await expr(client,'!document.querySelector("#sourcePreparationApply").disabled','apply unchanged preset');
   const priorSource=JSON.stringify(snapshot.draft.inputMapping.sourceMatrix);
@@ -160,7 +206,7 @@ try {
   await expr(client,'window.__presetTest.snapshot().draft.inputMapping.mappings[7].state==="UNMAPPED"','saved override wins',60000);
   assert.equal((await evaluate(client,'window.__presetTest.snapshot().draft.rows.length')),273);
   assert.deepEqual(exceptions,[]); assert.deepEqual(writes,[],'No production or master writes');
-  console.log('PASS browser: actual XLSX upload, 273 synthetic items, all 24 mappings, enabled apply, user override save/reupload, no HTTP writes.');
+  console.log('PASS browser: actual XLSX 273 rows/24 columns, visible source-input round trips, bidirectional edits preserved, original evidence immutable, template reload and mapping apply keep selected view, custom template save/reupload, no HTTP writes.');
 } catch(error) {
   console.error('BROWSER FAILURE',error.stack);
   if(client) console.error('BROWSER DIAGNOSTIC',JSON.stringify(await evaluate(client,'(()=>{const s=window.__presetTest?.snapshot();return {ready:s?.ready,mode:s?.mode,rowCount:s?.draft.rows.length,firstRow:s?.draft.rows[0],mappings:s?.draft.inputMapping?.mappings,preparation:document.querySelector("#sourcePreparationMapping")?.innerText,headers:document.querySelectorAll("#mappingTableHeaders th").length};})()').catch(()=>null)));
