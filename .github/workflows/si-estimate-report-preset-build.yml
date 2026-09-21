@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/si-estimate-report-preset-build.yml'
       - 'scripts/apply-si-estimate-report-preset.mjs'
+      - 'scripts/fix-si-estimate-report-preset-ui.mjs'
       - 'smartinput/estimate-report-preset.js'
 permissions:
   contents: write
@@ -18,15 +19,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Baseline related regressions
-        run: |
-          mkdir -p /tmp/si-preset-baseline
-          for test in test-smartinput-input-template-mapping test-smartinput-estimate-workbook-selection test-smartinput-xlsx-source-reader test-smartinput-estimate-f8 test-smartinput-estimate-save-lifecycle validate-repository; do
-            if node scripts/$test.mjs > /tmp/si-preset-baseline/$test.log 2>&1; then echo "$test PASS"; else echo "$test BASELINE_FAIL"; tail -n 18 /tmp/si-preset-baseline/$test.log; fi
-          done
       - name: Apply exact scoped implementation
         run: |
           node scripts/apply-si-estimate-report-preset.mjs
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const p='scripts/fix-si-estimate-report-preset-ui.mjs';
+          const s=fs.readFileSync(p,'utf8');
+          const old='function mappingTargetWorkerLabel(target) {';
+          assert.equal(s.split(old).length,2);
+          fs.writeFileSync(p,s.replace(old,'function mappingTargetById(fieldId) {'));
+          JS
+          node scripts/fix-si-estimate-report-preset-ui.mjs
           git diff --check
           for file in smartinput/estimate-report-preset.js smartinput/input-template-mapper.js smartinput/estimate-workbook-selector.js smartinput/smartinput-contract.js smartinput/smartinput.js smartinput/source-preparation-ui-v2.js smartinput/xlsx-source-reader.js scripts/test-smartinput-estimate-report-preset.mjs scripts/test-smartinput-estimate-report-preset-browser.mjs; do node --check "$file"; done
       - name: Preset contract and related regressions
@@ -43,7 +48,7 @@ jobs:
           test "$(git ls-remote origin refs/heads/chat/smartinput-estimate-report-preset-20260921 | cut -f1)" = "$GITHUB_SHA"
           git config user.name 'orderzoneapp-coder'
           git config user.email 'orderzoneapp@gmail.com'
-          git rm .github/workflows/si-estimate-report-preset-build.yml scripts/apply-si-estimate-report-preset.mjs
+          git rm -f .github/workflows/si-estimate-report-preset-build.yml scripts/apply-si-estimate-report-preset.mjs scripts/fix-si-estimate-report-preset-ui.mjs
           git add smartinput/estimate-report-preset.js smartinput/input-template-mapper.js smartinput/estimate-workbook-selector.js smartinput/smartinput-contract.js smartinput/smartinput.js smartinput/source-preparation-ui-v2.js smartinput/xlsx-source-reader.js smartinput/index.html smartinput/ESTIMATE_REPORT_PRESET.md scripts/test-smartinput-estimate-report-preset.mjs scripts/test-smartinput-estimate-report-preset-browser.mjs
           git diff --cached --check
           git commit -m 'feat(smartinput): auto-map the built-in 24-column estimate report'
