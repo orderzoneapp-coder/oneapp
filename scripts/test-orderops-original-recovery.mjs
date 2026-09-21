@@ -21,6 +21,7 @@ const modernTests = new Set([
   'test-orderops-work-preservation.mjs', 'test-orderops-excel-preparation.mjs',
   'test-orderops-excel-preparation-browser.mjs', 'test-orderops-inventory-movement-ui.mjs',
   'test-orderops-inventory-movement-browser.mjs',
+  'test-orderops-heading-contrast-browser.mjs', 'test-orderops-print-grid-browser.mjs',
 ]);
 const modernMode = process.argv[2] === '--modern';
 const requested = process.argv.slice(3);
@@ -34,14 +35,21 @@ const put = (name, contents) => {
   mkdirSync(dirname(join(temp, name)), { recursive: true });
   writeFileSync(join(temp, name), contents);
 };
+let childEnv = process.env;
 const run = (name) => execFileSync(process.execPath, [join(temp, 'scripts', name)], {
-  cwd: temp, stdio: 'inherit', timeout: 120000,
+  cwd: temp, stdio: 'inherit', env: childEnv,
+  // The retained visual suites already allow 240 seconds for PDF/browser work.
+  timeout: ['test-orderops-heading-contrast-browser.mjs', 'test-orderops-print-grid-browser.mjs'].includes(name) ? 260000 : 120000,
 });
 try {
   if (modernMode) {
     cpSync(root, temp, { recursive: true, filter: (source) =>
       !['.git', 'node_modules', 'evidence', 'test-artifacts'].includes(basename(source)) });
     put('orderops_list.html', historical(modernRef, 'orderops_list.html'));
+    // These allowlisted tests only read historical CSS with git show. Keep that
+    // baseline available without copying credentials or changing the checkout.
+    const gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, encoding: 'utf8' }).trim();
+    childEnv = { ...process.env, GIT_DIR: gitDir, GIT_WORK_TREE: temp, GIT_OPTIONAL_LOCKS: '0' };
     console.log(`Retained modern UI regression: frozen HTML ${modernRef.slice(0, 8)} + current modern modules; NOT the restored production root`);
     requested.forEach(run);
   } else {
