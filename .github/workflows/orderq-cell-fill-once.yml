@@ -1,0 +1,151 @@
+name: ORDER Q full-cell fill one-time verification
+
+on:
+  push:
+    branches: ['fix/orderq-warehouse-cell-fill-20260922']
+    paths: ['.github/workflows/orderq-cell-fill-once.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/orderq-warehouse-cell-fill-20260922
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Apply the two presentation-only replacements
+        shell: python
+        run: |
+          from pathlib import Path
+          import json, subprocess
+          path = Path('orderops_list.html')
+          assert subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip() == 'e9995e73affafb693c246e4f0b79014343f54aa7', 'Unexpected source version; stop instead of overwriting concurrent changes'
+          changes = [
+            ('style="${warehouseFill ? `background-color:${warehouseFill}` : ""}" value=', 'value='),
+            ('return `<td class="${classes}"\n', 'return `<td class="${classes}"\n                      ${warehouseFill ? `style="background-color:${warehouseFill}"` : ""}\n'),
+          ]
+          original = path.read_text()
+          source = original
+          for old, new in changes:
+            assert source.count(old) == 1, 'Expected one color-rendering anchor'
+            source = source.replace(old, new, 1)
+          path.write_text(source)
+          Path('/tmp/orderq-cell-fill-baseline.html').write_text(original)
+          test_path = Path('scripts/test-orderops-original-recovery.mjs')
+          test = test_path.read_text()
+          old_assert = "    assert.equal(text('orderops_list.html'), expected,\n      'Restore the original ROOT screen exactly; only its two module URLs are changed');"
+          assert test.count(old_assert) == 1
+          delta = '\n'.join('      [' + json.dumps(old) + ', ' + json.dumps(new) + '],' for old, new in changes)
+          replacement = "    // Approved presentation-only delta: retain saved colors on the whole TD, not its input.\n    for (const [from, to] of [\n" + delta + "\n    ]) {\n      assert.equal(expected.split(from).length, 2, 'Unique original warehouse color anchor');\n      expected = expected.replace(from, to);\n    }\n    assert.equal(text('orderops_list.html'), expected,\n      'Original ROOT remains exact except pinned module URLs and the approved warehouse full-cell fill');"
+          test_path.write_text(test.replace(old_assert, replacement, 1))
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          changed = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          assert sorted(changed) == ['orderops_list.html', 'scripts/test-orderops-original-recovery.mjs']
+      - name: Verify original calculations, recovery, failure preservation and XLSX output
+        run: node scripts/test-orderops-original-recovery.mjs
+      - name: Install isolated browser verification dependency
+        run: |
+          mkdir -p /tmp/orderq-cell-fill-browser
+          npm install --prefix /tmp/orderq-cell-fill-browser --no-save --package-lock=false playwright
+          /tmp/orderq-cell-fill-browser/node_modules/.bin/playwright install chromium --with-deps
+      - name: Verify actual renderer and CSS in Chromium
+        run: |
+          cat > /tmp/orderq-cell-fill-browser/check.mjs <<'JS'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import vm from 'node:vm';
+          import { chromium } from 'playwright';
+          const html = fs.readFileSync('orderops_list.html', 'utf8');
+          const baseline = fs.readFileSync('/tmp/orderq-cell-fill-baseline.html', 'utf8');
+          const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+          const extract = text => text.slice(text.indexOf('      function renderTableMarkup('), text.indexOf('      function renderSourceViewCards('));
+          const columns = [
+            { key:'product', role:'productName', header:'Product', numeric:false },
+            { key:'stock', role:'warehouseQuantity', header:'Warehouse', numeric:true },
+            { key:'info', role:'orderInformation', header:'Info', numeric:false },
+          ];
+          const esc = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+          function render(source, value, color, editable=true, tall=false) {
+            const context = vm.createContext({
+              state:{ activePreview:'inventory', shortageFocus:false },
+              COLUMN_ORDER_TABS:new Set(), TABLE_WIDTH_MIN:32, TABLE_WIDTH_MAX:720,
+              visibleColumnEntries:()=>columns.map((column,index)=>({column,index})),
+              currentColumnWidth:()=>100, savedColumnWidth:()=>100,
+              columnSortSetting:()=>null, columnFilterSetting:()=>null, columnFilterIsActive:()=>false,
+              previewRowFill:()=>'', exactWarningUnit:()=>false, exactBoxUnit:()=>false,
+              isNonblankNumericValue:v=>v!=='' && v!==null && Number.isFinite(Number(v)),
+              isQuantityColumn:c=>c.role==='warehouseQuantity', warehouseColorFor:()=>color,
+              escapeHtml:esc, formatNumber:v=>String(v),
+              renderOrderInformationBadges:()=>tall ? '<div style="height:90px">Tall row</div>' : '',
+            });
+            vm.runInContext(extract(source), context);
+            return context.renderTableMarkup({ columns, purchase:-1, status:-1 }, [{ row:['Product',value,''], sourceRow:{ productCode:'0001',orderQuantity:1 } }], { previewId:'inventory', editable, resizable:false, sortable:false });
+          }
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage();
+          const show = async markup => page.setContent('<style>'+css+'</style><div class="table-wrap">'+markup+'</div>');
+          const metrics = () => page.locator('tbody td').nth(1).evaluate(td=>({
+            background:getComputedStyle(td).backgroundColor,
+            inner:td.querySelector('input') ? getComputedStyle(td.querySelector('input')).backgroundColor : null,
+            text:td.querySelector('input')?.value ?? td.textContent,
+            color:td.querySelector('input') ? getComputedStyle(td.querySelector('input')).color : getComputedStyle(td).color,
+            height:td.getBoundingClientRect().height,
+          }));
+          await show(render(baseline,5,'#dbeafe'));
+          assert.equal((await metrics()).background,'rgb(255, 255, 255)');
+          assert.equal((await metrics()).inner,'rgb(219, 234, 254)');
+          let cases=0;
+          for (const [value,color,rgb] of [[5,'#dbeafe','rgb(219, 234, 254)'],[500,'#fef9c3','rgb(254, 249, 195)'],[-300,'#e0f2fe','rgb(224, 242, 254)'],[0.5,'#dbeafe','rgb(219, 234, 254)'],[0,'#dbeafe','rgb(219, 234, 254)'],[5,'#ffffff','rgb(255, 255, 255)'],[5,'#45ab67','rgb(69, 171, 103)']]) {
+            for (const editable of [true,false]) {
+              for (const tall of [false,true]) {
+                await show(render(html,value,color,editable,tall));
+                const result=await metrics();
+                assert.equal(result.background,rgb);
+                assert.equal(result.text,value===0?'':String(value));
+                if (editable) assert.equal(result.inner,'rgba(0, 0, 0, 0)');
+                if (tall) assert.ok(result.height>=90);
+                if (value<0) assert.equal(result.color,'rgb(185, 28, 28)');
+                cases++;
+              }
+            }
+          }
+          await show(render(html,'','#dbeafe'));
+          assert.equal((await metrics()).background,'rgb(255, 255, 255)');
+          await show(render(html,5,'#dbeafe'));
+          const input=page.locator('.inventory-input');
+          await input.focus();
+          assert.equal((await metrics()).background,'rgb(237, 249, 247)');
+          await input.fill('0.5');
+          assert.equal(await input.inputValue(),'0.5');
+          await input.blur();
+          assert.equal((await metrics()).background,'rgb(219, 234, 254)');
+          await show(render(html,-300,'#e0f2fe',true,true));
+          await page.screenshot({path:'/tmp/orderq-cell-fill-browser/verified.png'});
+          await browser.close();
+          console.log(`PASS: baseline nested-box defect reproduced; ${cases} full-cell cases; blank/zero/negative/decimal, custom/cancel colors, tall rows, readonly output, focus and input preserved`);
+          JS
+          node /tmp/orderq-cell-fill-browser/check.mjs
+      - name: Publish only verified application and strict contract changes to the feature branch
+        run: |
+          git diff --check
+          git diff --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orderops_list.html scripts/test-orderops-original-recovery.mjs
+          git commit -m 'fix(orderq): apply warehouse colors to full table cells'
+          git push origin HEAD:refs/heads/fix/orderq-warehouse-cell-fill-20260922
+      - name: Keep browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orderq-full-cell-fill-evidence
+          path: /tmp/orderq-cell-fill-browser/verified.png
+          if-no-files-found: ignore
+          retention-days: 7
