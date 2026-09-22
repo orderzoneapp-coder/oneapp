@@ -2151,9 +2151,9 @@
       <button type="button" data-sort-direction="desc" role="menuitem"><span data-sort-label="desc">↓ 내림차순</span></button>
       <button type="button" data-sort-direction="default" role="menuitem">↕ 기본순서</button>
     </div>
-    <div class="column-sort-menu-section" data-numeric-filter-section aria-label="숫자 열 조건">
+    <div class="column-sort-menu-section" data-column-condition-section aria-label="선택 값에 우선 적용할 제외 조건">
       <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeBlank">공백 제외</label>
-      <label class="column-sort-condition"><input type="checkbox" data-column-condition="excludeZero">0 제외</label>
+      <label class="column-sort-condition" data-numeric-filter-section><input type="checkbox" data-column-condition="excludeZero">0 제외</label>
     </div>
     <div class="column-sort-menu-section" data-text-filter-section data-value-filter-section aria-label="셀 값 선택 필터">
       <input class="column-filter-search" type="search" data-column-value-search autocomplete="off" placeholder="검색">
@@ -5483,7 +5483,7 @@
           input.checked = Boolean(filter?.[input.dataset.columnCondition]);
         });
         elements.columnSortMenu.querySelector("[data-numeric-filter-section]")
-          .classList.toggle("hidden", !numericColumn);
+          .classList.toggle("hidden", !isQuantityColumn(column));
         elements.columnSortMenu.querySelector("[data-text-filter-section]").classList.remove("hidden");
         context.textOptions = columnTextValueOptions(preview, context.columnKey);
         if (!(context.textSelection instanceof Set)) {
@@ -5546,14 +5546,11 @@
 
       function setColumnCondition(previewId, columnKey, condition, enabled) {
         if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);
+        // Exclusions are independent of both saved values and the pending checkbox selection.
         const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };
-        delete next.allowedValues;
         if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];
         else state.columnFilters[previewId][columnKey] = next;
         if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];
-        if (state.activeColumnMenu?.previewId === previewId && state.activeColumnMenu?.columnKey === columnKey) {
-          state.activeColumnMenu.textSelection = null;
-        }
       }
 
       function applyColumnTextFilter() {
