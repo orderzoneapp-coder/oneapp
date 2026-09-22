@@ -69,8 +69,52 @@ try {
       assert.equal(expected.split(from).length, 2, 'Unique original warehouse color anchor');
       expected = expected.replace(from, to);
     }
+    // Approved column-filter delta: universal blanks, quantity-only zeros,
+    // and exclusions independent of committed and pending value selections.
+    for (const [from, to] of [
+      [
+            "<div class=\"column-sort-menu-section\" data-numeric-filter-section aria-label=\"숫자 열 조건\">",
+            "<div class=\"column-sort-menu-section\" data-column-condition-section aria-label=\"선택 값에 우선 적용할 제외 조건\">"
+      ],
+      [
+            "<label class=\"column-sort-condition\"><input type=\"checkbox\" data-column-condition=\"excludeZero\">0 제외</label>",
+            "<label class=\"column-sort-condition\" data-numeric-filter-section><input type=\"checkbox\" data-column-condition=\"excludeZero\">0 제외</label>"
+      ],
+      [
+            "        elements.columnSortMenu.querySelector(\"[data-numeric-filter-section]\")\n          .classList.toggle(\"hidden\", !numericColumn);",
+            "        elements.columnSortMenu.querySelector(\"[data-numeric-filter-section]\")\n          .classList.toggle(\"hidden\", !isQuantityColumn(column));"
+      ],
+      [
+            "      function setColumnCondition(previewId, columnKey, condition, enabled) {\n        if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);\n        const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };\n        delete next.allowedValues;\n        if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];\n        else state.columnFilters[previewId][columnKey] = next;\n        if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];\n        if (state.activeColumnMenu?.previewId === previewId && state.activeColumnMenu?.columnKey === columnKey) {\n          state.activeColumnMenu.textSelection = null;\n        }\n      }",
+            "      function setColumnCondition(previewId, columnKey, condition, enabled) {\n        if (!state.columnFilters[previewId]) state.columnFilters[previewId] = Object.create(null);\n        // Exclusions are independent of both saved values and the pending checkbox selection.\n        const next = { ...(state.columnFilters[previewId][columnKey] || {}), [condition]: enabled };\n        if (!columnFilterIsActive(next)) delete state.columnFilters[previewId][columnKey];\n        else state.columnFilters[previewId][columnKey] = next;\n        if (Object.keys(state.columnFilters[previewId]).length === 0) delete state.columnFilters[previewId];\n      }"
+      ]
+]) {
+      assert.equal(expected.split(from).length, 2, 'Unique original column-filter anchor');
+      expected = expected.replace(from, to);
+    }
     assert.equal(text('orderops_list.html'), expected,
-      'Original ROOT remains exact except pinned module URLs and the approved warehouse full-cell fill');
+      'Original ROOT remains exact except pinned module URLs, full-cell fill and approved column-filter exclusions');
+
+    // Exercise actual production predicates without a browser or replacing their code.
+    const predicates = ['isBlankCell', 'isZeroCell', 'textFilterValueKey'].map((name) => {
+      const match = expected.match(new RegExp('      function ' + name + '\\([^]*?\\n      \\}'));
+      assert.ok(match, 'Production predicate found: ' + name);
+      return match[0];
+    }).join('\n');
+    const { isBlankCell, isZeroCell } = new Function(predicates + '\nreturn { isBlankCell, isZeroCell };')();
+    for (const value of [null, undefined, '', ' ', '\u3000', '\t\n']) {
+      assert.equal(isBlankCell(value), true);
+      assert.equal(isZeroCell(value), false, 'Blank must not be numeric zero');
+    }
+    for (const value of [0, -0, '0', '0.0', '-0', ' 0 ', '0,000']) {
+      assert.equal(isBlankCell(value), false);
+      assert.equal(isZeroCell(value), true);
+    }
+    for (const value of [-2, -0.5, 0.5, 3, '-2', '0.5', 'text']) {
+      assert.equal(isBlankCell(value), false);
+      assert.equal(isZeroCell(value), false, 'Nonzero numbers and text must survive');
+    }
+    console.log('PASS original column-filter blank/zero predicates: 20 cases');
     assert.ok(!expected.includes('excel-preparation'), 'The original must not depend on the modern preparation gate');
     put('orderops_list.html', text('orderops_list.html'));
     for (const name of ['orderFulfillmentEngine.js', 'orderFulfillmentWorkbook.js']) {
