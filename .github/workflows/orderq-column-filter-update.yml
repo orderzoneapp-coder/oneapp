@@ -27,11 +27,11 @@ jobs:
           p = Path('scripts/test-orderops-original-recovery-browser.py')
           s = p.read_text()
           before = "    page.get_by_role('button', name=label + ' 정렬 및 조건 필터', exact=True).click()"
-          after = "    trigger = page.locator('#previewTable .column-sort-trigger[aria-label=' + json.dumps(label + ' 정렬 및 조건 필터') + ']')\n    trigger.locator('xpath=ancestor::th').hover()\n    trigger.click()"
+          after = "    trigger = page.locator('#previewTable .column-sort-trigger[aria-label=' + json.dumps(label + ' 정렬 및 조건 필터', ensure_ascii=False) + ']')\n    trigger.locator('xpath=ancestor::th').hover()\n    trigger.click()"
           assert s.count(before) == 1
           s = s.replace(before, after)
           before = "                p.get_by_role('button', name=label, exact=True).click()"
-          after = "                trigger = p.locator('#previewTable .column-sort-trigger[aria-label=' + json.dumps(label) + ']')\n                trigger.locator('xpath=ancestor::th').hover()\n                trigger.click()"
+          after = "                trigger = p.locator('#previewTable .column-sort-trigger[aria-label=' + json.dumps(label, ensure_ascii=False) + ']')\n                trigger.locator('xpath=ancestor::th').hover()\n                trigger.click()"
           assert s.count(before) == 1
           p.write_text(s.replace(before, after))
           PY
