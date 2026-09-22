@@ -48,47 +48,45 @@ jobs:
           assert s.count(old)>=1, 'Unexpected SmartInput entry version'
           print('Updated SmartInput entry references:',s.count(old))
           p.write_text(s.replace(old,'smartinput.js?v=0.15.2'))
-          p=Path('scripts/test-smartinput-estimate-f8.mjs')
-          with p.open('a') as f:
-              f.write('''
-
-// Shop sale status follows the actual exported price, including a promotion-only price.
-const shopSaleRegressionCases = [
-  ['promotion-only', 15800, '', 15800, '1'],
-  ['promotion-zero-out', '15,800원', 0, 15800, '1'],
-  ['out-only', '', 18000, 18000, '1'],
-  ['both-prices', 15800, 18000, 15800, '1'],
-  ['empty-prices', '', '', '', '0'],
-  ['zero-prices', 0, 0, 0, '0'],
-  ['negative-promotion', -100, 18000, 18000, '1'],
-  ['invalid-promotion', '확인', 18000, 18000, '1'],
-  ['invalid-out', '', '확인', 0, '0'],
-  ['negative-out', '', -100, -100, '0'],
-  ['missing-prices', undefined, undefined, '', '0']
-];
-for (const [label, promoPrice, outPrice, expectedPrice, expectedSale] of shopSaleRegressionCases) {
-  const direct = [{ itemCode: `SALE-${label}`, itemName: label, promoPrice, outPrice }];
-  const source = ERP_SOURCE_HEADERS.map(header => ({
-    품목코드: `SALE-${label}`, 품목명: label, 행사가: promoPrice, 출고가: outPrice
-  })[header] ?? '');
-  const mapped = buildEstimateF8RowsFromDraft(buildMappedDraft([source]));
-  for (const [mode, rows] of [['direct', direct], ['mapped', mapped]]) {
-    const before = structuredClone(rows);
-    const result = buildEstimateF8Data(rows);
-    const message = `${mode}: ${label}`;
-    assert.equal(result.ok, true, message);
-    assert.equal(result.shopData[1][3], expectedPrice, `${message}: final shop price`);
-    assert.equal(result.shopData[1][14], expectedSale, `${message}: sale status`);
-    assert.equal(result.shopData[1][15], 999, `${message}: existing stock policy`);
-    const parsedOut = Number(String(outPrice ?? '').replace(/[,원₩]/g, '').trim());
-    const expectedErpOut = outPrice === '' || outPrice == null ? '' : (Number.isFinite(parsedOut) ? parsedOut : 0);
-    assert.equal(result.erpData[1][3], expectedErpOut, `${message}: ERP price must not use promotion price`);
-    assert.deepEqual(rows, before, `${message}: input rows must remain unchanged`);
-  }
-}
-console.log('PASS shop-sale final-price regression: 22 direct/mapped cases; ERP, stock and input preservation');
-''')
           PY
+          cat >> scripts/test-smartinput-estimate-f8.mjs <<'JS'
+          
+          // Sale status follows the actual exported shop price, including a promotion-only price.
+          const shopSaleRegressionCases = [
+            ['promotion-only', 15800, '', 15800, '1'],
+            ['promotion-zero-out', '15,800원', 0, 15800, '1'],
+            ['out-only', '', 18000, 18000, '1'],
+            ['both-prices', 15800, 18000, 15800, '1'],
+            ['empty-prices', '', '', '', '0'],
+            ['zero-prices', 0, 0, 0, '0'],
+            ['negative-promotion', -100, 18000, 18000, '1'],
+            ['invalid-promotion', '확인', 18000, 18000, '1'],
+            ['invalid-out', '', '확인', 0, '0'],
+            ['negative-out', '', -100, -100, '0'],
+            ['missing-prices', undefined, undefined, '', '0']
+          ];
+          for (const [label, promoPrice, outPrice, expectedPrice, expectedSale] of shopSaleRegressionCases) {
+            const direct = [{ itemCode: `SALE-${label}`, itemName: label, promoPrice, outPrice }];
+            const source = ERP_SOURCE_HEADERS.map(header => ({
+              품목코드: `SALE-${label}`, 품목명: label, 행사가: promoPrice, 출고가: outPrice
+            })[header] ?? '');
+            const mapped = buildEstimateF8RowsFromDraft(buildMappedDraft([source]));
+            for (const [mode, rows] of [['direct', direct], ['mapped', mapped]]) {
+              const before = structuredClone(rows);
+              const result = buildEstimateF8Data(rows);
+              const message = `${mode}: ${label}`;
+              assert.equal(result.ok, true, message);
+              assert.equal(result.shopData[1][3], expectedPrice, `${message}: final shop price`);
+              assert.equal(result.shopData[1][14], expectedSale, `${message}: sale status`);
+              assert.equal(result.shopData[1][15], 999, `${message}: existing stock policy`);
+              const parsedOut = Number(String(outPrice ?? '').replace(/[,원₩]/g, '').trim());
+              const expectedErpOut = outPrice === '' || outPrice == null ? '' : (Number.isFinite(parsedOut) ? parsedOut : 0);
+              assert.equal(result.erpData[1][3], expectedErpOut, `${message}: ERP price must not use promotion price`);
+              assert.deepEqual(rows, before, `${message}: input rows must remain unchanged`);
+            }
+          }
+          console.log('PASS shop-sale final-price regression: 22 direct/mapped cases; ERP, stock and input preservation');
+          JS
           git diff --check
           git diff --stat
       - name: Verify report, mapping, ERP and repository contracts
