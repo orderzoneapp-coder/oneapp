@@ -97,3 +97,22 @@ assert.equal(fallback, 'FALLBACK');
 assert.equal(metrics.at(-1).path, 'fallback-direct');
 
 console.log('SmartInput Stage5 Worker/direct parity, threshold, and fallback passed.');
+
+// A promotion-only price must also activate sale in the large-report Worker path.
+const promotionOnlyRows = rows.map(row => ({ ...row, outPrice: '', promoPrice: 15800 }));
+const promotionMetrics = [];
+const promotionOutput = await runStage5Compute({
+  feature: 'estimate-report', phase: 'ESTIMATE_F8_BUILD',
+  payload: { rows: promotionOnlyRows, options: {}, duplicateResolutionEntries: [] },
+  rowCount: promotionOnlyRows.length,
+  direct: () => buildEstimateF8Data(promotionOnlyRows),
+  workerFactory: () => new InlineModuleWorker(),
+  onMetric: metric => promotionMetrics.push(metric)
+});
+assert.equal(promotionMetrics.at(-1).path, 'worker');
+assert.equal(promotionOutput.ok, true);
+assert.deepEqual(promotionOutput, buildEstimateF8Data(promotionOnlyRows));
+assert.equal(promotionOutput.shopData.length, 601);
+assert.equal(promotionOutput.shopData.slice(1).every(row => row[3] === 15800 && row[14] === '1' && row[15] === 999), true);
+assert.equal(promotionOutput.erpData.slice(1).every(row => row[3] === ''), true);
+console.log('PASS: 600 promotion-only rows use Worker and retain ERP/stock policy');
