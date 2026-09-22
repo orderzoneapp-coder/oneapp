@@ -1,0 +1,44 @@
+name: Verify deployed ORDER Q filter exclusions
+on:
+  push:
+    branches: ['verify/orderq-filter-exclusions-live-20260923']
+    paths: ['.github/workflows/verify-orderq-filter-exclusions-live.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: a80467f45cf5e1ff59c740254d58febb3a955f39
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate deployed candidate and unchanged calculation contracts
+        run: node scripts/test-orderops-original-recovery.mjs
+      - name: Install pinned browser driver
+        run: python -m pip install playwright==1.57.0
+      - name: Verify actual operating URL with no external writes
+        env:
+          ORDEROPS_LIVE_ORIGIN: https://oneapp.orderz.co.kr
+        run: python scripts/test-orderops-original-recovery-browser.py
+      - name: Publish compact verification result
+        if: always()
+        run: |
+          if test -f /tmp/orderops-original-browser/result.json; then
+            cat /tmp/orderops-original-browser/result.json
+            echo '## Deployed ORDER Q verification' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Candidate: a80467f45cf5e1ff59c740254d58febb3a955f39' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Operating URL: https://oneapp.orderz.co.kr/orderops_list.html' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deployed-orderq-filter-exclusions
+          path: /tmp/orderops-original-browser
+          retention-days: 7
+          if-no-files-found: error
