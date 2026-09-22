@@ -771,7 +771,7 @@ export function buildEstimateF8Data(rows = [], {
       0,
       outputText(row, ['브랜드'], ['brand']),
       outputText(row, ['간단설명', '기본설명'], ['productDescription']),
-      saleCodeFromOutPrice(outPrice),
+      saleCodeFromOutPrice(shopSalePrice),
       999,
       ...themes,
       outputText(row, ['검색어등록', '상품태그'], ['searchInfo', 'productTags'])
