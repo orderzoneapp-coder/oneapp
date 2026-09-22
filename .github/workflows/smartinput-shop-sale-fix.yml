@@ -13,102 +13,74 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: fix/smartinput-shop-sale-20260922
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Verify baseline and report import scope
-        run: |
-          git diff --exit-code 9786f465b2a6b9761c4490ecf3754729015194d3 -- smartinput/estimate-output.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-estimate-f8.mjs
-          git grep -n 'estimate-output.js' -- '*.js' '*.html' '*.mjs' || true
-          node scripts/test-smartinput-estimate-f8.mjs
-          node --input-type=module <<'JS'
-          import assert from 'node:assert/strict';
-          import { buildEstimateF8Data } from './smartinput/estimate-output.js';
-          const r = buildEstimateF8Data([{itemCode:'TEST-PROMO', itemName:'Regression fixture', outPrice:'', promoPrice:15800}]);
-          assert.equal(r.ok, true);
-          assert.equal(r.shopData[1][3],15800);
-          assert.equal(r.shopData[1][14],'0');
-          console.log('REPRODUCED: final shop price 15800 but sale flag 0 on unchanged baseline');
-          JS
-      - name: Apply minimal price-flag fix and cache versions
+      - name: Refresh only the affected report cache chain
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('smartinput/estimate-output.js'); s=p.read_text()
-          old='      saleCodeFromOutPrice(outPrice),'
-          assert s.count(old)==1, 'Unexpected sale flag call sites'
-          p.write_text(s.replace(old,'      saleCodeFromOutPrice(shopSalePrice),'))
-          p=Path('smartinput/smartinput.js'); s=p.read_text()
-          old="assetVersion: '0.2.9', specifier: './estimate-output.js?v=0.2.9'"
-          assert s.count(old)==1, 'Unexpected estimate report descriptor'
-          p.write_text(s.replace(old,"assetVersion: '0.2.10', specifier: './estimate-output.js?v=0.2.10'"))
-          p=Path('smartinput/index.html'); s=p.read_text()
-          old='smartinput.js?v=0.15.1'
-          assert s.count(old)>=1, 'Unexpected SmartInput entry version'
-          print('Updated SmartInput entry references:',s.count(old))
-          p.write_text(s.replace(old,'smartinput.js?v=0.15.2'))
+          changes=[
+            ('smartinput/estimate-output.js','stage5-compute-runner.js?v=0.1.1','stage5-compute-runner.js?v=0.1.2'),
+            ('smartinput/stage5-compute-runner.js','stage5-compute-worker.js?v=0.1.1','stage5-compute-worker.js?v=0.1.2'),
+            ('smartinput/stage5-compute-worker.js','estimate-output.js?v=0.2.9','estimate-output.js?v=0.2.10'),
+            ('smartinput/estimate-migration.js','estimate-output.js?v=0.2.9','estimate-output.js?v=0.2.10'),
+            ('smartinput/smartinput.js',"assetVersion: '0.1.2', specifier: './estimate-migration.js?v=0.1.2'","assetVersion: '0.1.3', specifier: './estimate-migration.js?v=0.1.3'")
+          ]
+          for filename,old,new in changes:
+              p=Path(filename); s=p.read_text()
+              assert s.count(old)==1, (filename,'unexpected reference count')
+              p.write_text(s.replace(old,new))
           PY
-          cat >> scripts/test-smartinput-estimate-f8.mjs <<'JS'
+          cat >> scripts/test-smartinput-stage5-compute.mjs <<'JS'
           
-          // Sale status follows the actual exported shop price, including a promotion-only price.
-          const shopSaleRegressionCases = [
-            ['promotion-only', 15800, '', 15800, '1'],
-            ['promotion-zero-out', '15,800원', 0, 15800, '1'],
-            ['out-only', '', 18000, 18000, '1'],
-            ['both-prices', 15800, 18000, 15800, '1'],
-            ['empty-prices', '', '', '', '0'],
-            ['zero-prices', 0, 0, 0, '0'],
-            ['negative-promotion', -100, 18000, 18000, '1'],
-            ['invalid-promotion', '확인', 18000, 18000, '1'],
-            ['invalid-out', '', '확인', 0, '0'],
-            ['negative-out', '', -100, -100, '0'],
-            ['missing-prices', undefined, undefined, '', '0']
-          ];
-          for (const [label, promoPrice, outPrice, expectedPrice, expectedSale] of shopSaleRegressionCases) {
-            const direct = [{ itemCode: `SALE-${label}`, itemName: label, promoPrice, outPrice }];
-            const source = ERP_SOURCE_HEADERS.map(header => ({
-              품목코드: `SALE-${label}`, 품목명: label, 행사가: promoPrice, 출고가: outPrice
-            })[header] ?? '');
-            const mapped = buildEstimateF8RowsFromDraft(buildMappedDraft([source]));
-            for (const [mode, rows] of [['direct', direct], ['mapped', mapped]]) {
-              const before = structuredClone(rows);
-              const result = buildEstimateF8Data(rows);
-              const message = `${mode}: ${label}`;
-              assert.equal(result.ok, true, message);
-              assert.equal(result.shopData[1][3], expectedPrice, `${message}: final shop price`);
-              assert.equal(result.shopData[1][14], expectedSale, `${message}: sale status`);
-              assert.equal(result.shopData[1][15], 999, `${message}: existing stock policy`);
-              const parsedOut = Number(String(outPrice ?? '').replace(/[,원₩]/g, '').trim());
-              const expectedErpOut = outPrice === '' || outPrice == null ? '' : (Number.isFinite(parsedOut) ? parsedOut : 0);
-              assert.equal(result.erpData[1][3], expectedErpOut, `${message}: ERP price must not use promotion price`);
-              assert.deepEqual(rows, before, `${message}: input rows must remain unchanged`);
-            }
-          }
-          console.log('PASS shop-sale final-price regression: 22 direct/mapped cases; ERP, stock and input preservation');
+          // A promotion-only price must also activate sale in the large-report Worker path.
+          const promotionOnlyRows = rows.map(row => ({ ...row, outPrice: '', promoPrice: 15800 }));
+          const promotionMetrics = [];
+          const promotionOutput = await runStage5Compute({
+            feature: 'estimate-report', phase: 'ESTIMATE_F8_BUILD',
+            payload: { rows: promotionOnlyRows, options: {}, duplicateResolutionEntries: [] },
+            rowCount: promotionOnlyRows.length,
+            direct: () => buildEstimateF8Data(promotionOnlyRows),
+            workerFactory: () => new InlineModuleWorker(),
+            onMetric: metric => promotionMetrics.push(metric)
+          });
+          assert.equal(promotionMetrics.at(-1).path, 'worker');
+          assert.equal(promotionOutput.ok, true);
+          assert.deepEqual(promotionOutput, buildEstimateF8Data(promotionOnlyRows));
+          assert.equal(promotionOutput.shopData.length, 601);
+          assert.equal(promotionOutput.shopData.slice(1).every(row => row[3] === 15800 && row[14] === '1' && row[15] === 999), true);
+          assert.equal(promotionOutput.erpData.slice(1).every(row => row[3] === ''), true);
+          console.log('PASS: 600 promotion-only rows use Worker and retain ERP/stock policy');
           JS
           git diff --check
           git diff --stat
-      - name: Verify report, mapping, ERP and repository contracts
+      - name: Verify all affected report and Worker consumers
         run: |
           node scripts/test-smartinput-estimate-f8.mjs
+          node scripts/test-smartinput-stage5-compute.mjs
+          node scripts/test-smartinput-stage5-feature-loading.mjs
+          node scripts/test-smartinput-f8-upload-contract.mjs
+          node scripts/test-smartinput-stage3-f8-baseline.mjs
           node scripts/test-smartinput-estimate-report-preset.mjs
           node scripts/test-smartinput-input-template-mapping.mjs
           node scripts/test-smartinput-estimate-workbook-selection.mjs
           node scripts/test-smartinput-purchase-sales-output.mjs
-          node scripts/test-smartinput-input-boundary.mjs
           node scripts/validate-repository.mjs
-      - name: Verify SmartInput report browser workflow
-        run: node scripts/test-smartinput-estimate-report-preset-browser.mjs
-      - name: Commit only approved app and regression changes
+      - name: Verify report and migration browser contracts
+        run: |
+          node scripts/test-smartinput-estimate-report-preset-browser.mjs
+          node scripts/test-smartinput-stage3-migration-browser.mjs
+      - name: Commit cache references and Worker regression only
         run: |
           python3 - <<'PY'
           import subprocess
-          expected={'smartinput/estimate-output.js','smartinput/smartinput.js','smartinput/index.html','scripts/test-smartinput-estimate-f8.mjs'}
+          expected={'smartinput/estimate-output.js','smartinput/smartinput.js','smartinput/stage5-compute-runner.js','smartinput/stage5-compute-worker.js','smartinput/estimate-migration.js','scripts/test-smartinput-stage5-compute.mjs'}
           actual=set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
           assert actual==expected, (actual,expected)
           PY
-          git add smartinput/estimate-output.js smartinput/smartinput.js smartinput/index.html scripts/test-smartinput-estimate-f8.mjs
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(smartinput): determine shop sale status from final sale price'
+          git add smartinput/estimate-output.js smartinput/smartinput.js smartinput/stage5-compute-runner.js smartinput/stage5-compute-worker.js smartinput/estimate-migration.js scripts/test-smartinput-stage5-compute.mjs
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(smartinput): refresh report worker cache and test promotion-only bulk output'
           git push origin HEAD:fix/smartinput-shop-sale-20260922
           git rev-parse HEAD
