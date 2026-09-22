@@ -1,0 +1,27 @@
+name: Verify deployed SmartInput shop sale
+on:
+  push:
+    branches: ['verify/smartinput-shop-sale-live-20260922']
+    paths: ['.github/workflows/smartinput-shop-sale-live.yml']
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOYED_SHA: 2917f487cc4d84d67bc42b0ca5db4b6b51b3f31f
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Ensure expected assets match the actual merged commit
+        run: |
+          git fetch --depth=1 origin "$DEPLOYED_SHA"
+          git diff --exit-code "$DEPLOYED_SHA" -- smartinput/estimate-output.js smartinput/smartinput.js smartinput/index.html smartinput/estimate-migration.js smartinput/stage5-compute-runner.js smartinput/stage5-compute-worker.js
+          node --check scripts/verify-smartinput-shop-sale-live.mjs
+      - name: Verify live bytes, actual Chromium, and real production Worker without HTTP writes
+        run: node scripts/verify-smartinput-shop-sale-live.mjs
