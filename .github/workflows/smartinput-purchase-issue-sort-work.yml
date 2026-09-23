@@ -1,0 +1,47 @@
+name: SmartInput purchase issue sort work
+on:
+  push:
+    branches: ['fix/smartinput-purchase-issue-sort-20260923']
+    paths: ['.github/workflows/smartinput-purchase-issue-sort-work.yml']
+permissions:
+  contents: write
+jobs:
+  preserve-code-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/smartinput-purchase-issue-sort-20260923
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Keep numerically equivalent but distinct product codes adjacent to their own rows
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('smartinput/purchase-sales-output.js');s=p.read_text()
+          old="  return rows.sort((left, right) => compare(left['이슈'], right['이슈'])\n    || compare(left['품목코드'], right['품목코드'])"
+          new="  // Numeric collation equates 001 and 1; retain exact SKU identity before sorting customers.\n  const compareCode = (left, right) => compare(left, right) || (left < right ? -1 : left > right ? 1 : 0);\n  return rows.sort((left, right) => compare(left['이슈'], right['이슈'])\n    || compareCode(left['품목코드'], right['품목코드'])"
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          PY
+          cat >> scripts/test-smartinput-purchase-sales-output.mjs <<'JS'
+
+          const exactCodeIssues = buildPurchaseSalesUploadData([
+            row('3우리','거래처A','001',1,{입고가:1000,도매A:4000}),
+            row('1마산','거래처B','1',1,{입고가:1000,도매A:4000}),
+            row('1마산','거래처B','001',1,{입고가:1000,도매A:4000}),
+            row('3우리','거래처A','1',1,{입고가:1000,도매A:4000})
+          ]).matrices['확인요청'].slice(1);
+          assert.deepEqual(exactCodeIssues.map(r=>r[3]),['001','001','1','1'],
+            'Distinct SKU codes must not interleave just because numeric collation treats them as equal.');
+          console.log('PASS: exact SKU identity retained across multiple customer groups');
+          JS
+          node scripts/test-smartinput-purchase-sales-output.mjs
+          node scripts/test-smartinput-stage5-compute.mjs
+          node scripts/validate-repository.mjs
+          git diff --check
+          git add smartinput/purchase-sales-output.js scripts/test-smartinput-purchase-sales-output.mjs
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(smartinput): preserve exact SKU grouping after issue sort'
+          git push origin HEAD:fix/smartinput-purchase-issue-sort-20260923
