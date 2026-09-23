@@ -348,8 +348,10 @@ function purchaseIssueRows(entry, fatal = false) {
 
 function sortPurchaseIssueRows(rows) {
   const compare = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' }).compare;
+  // Numeric collation equates 001 and 1; retain exact SKU identity before sorting customers.
+  const compareCode = (left, right) => compare(left, right) || (left < right ? -1 : left > right ? 1 : 0);
   return rows.sort((left, right) => compare(left['이슈'], right['이슈'])
-    || compare(left['품목코드'], right['품목코드'])
+    || compareCode(left['품목코드'], right['품목코드'])
     || compare(left['그룹'], right['그룹'])
     || compare(left['거래처'], right['거래처']));
 }

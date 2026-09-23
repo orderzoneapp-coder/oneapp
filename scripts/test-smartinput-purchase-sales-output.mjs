@@ -213,3 +213,13 @@ assert.deepEqual(noIssues[1],['','','','','','','확인필요 항목 없음']);
 const confirmationReopened = XLSX.utils.sheet_to_json(reopened.Sheets['확인요청'],{header:1,raw:true,defval:'',blankrows:false});
 assert.deepEqual(JSON.parse(JSON.stringify(confirmationReopened)),output.matrices['확인요청'],'The emitted XLSX must retain the sorted issue matrix.');
 console.log('PASS: issue/product/group/customer order, multi-issue rows, duplicate preservation, zero/negative quantities, unchanged reasons, and XLSX round trip');
+
+const exactCodeIssues = buildPurchaseSalesUploadData([
+  row('3우리','거래처A','001',1,{입고가:1000,도매A:4000}),
+  row('1마산','거래처B','1',1,{입고가:1000,도매A:4000}),
+  row('1마산','거래처B','001',1,{입고가:1000,도매A:4000}),
+  row('3우리','거래처A','1',1,{입고가:1000,도매A:4000})
+]).matrices['확인요청'].slice(1);
+assert.deepEqual(exactCodeIssues.map(r=>r[3]),['001','001','1','1'],
+  'Distinct SKU codes must not interleave just because numeric collation treats them as equal.');
+console.log('PASS: exact SKU identity retained across multiple customer groups');
