@@ -1,0 +1,45 @@
+name: Verify deployed purchase issue sorting
+on:
+  push:
+    branches: ['verify/smartinput-purchase-issues-live-20260923']
+    paths: ['.github/workflows/smartinput-purchase-issues-live.yml']
+permissions:
+  contents: read
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DEPLOYED_SHA: f65512230d1ca6414aaa475d45b5798a96be14cd
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Pin expected production files and reuse verified read-only browser harness
+        run: |
+          git fetch --depth=1 origin "$DEPLOYED_SHA" c9399b42687cf19722af8da55e7221ff441579ae
+          git diff --exit-code "$DEPLOYED_SHA" -- smartinput/index.html smartinput/smartinput.js smartinput/purchase-sales-output.js smartinput/stage5-compute-runner.js smartinput/stage5-compute-worker.js
+          git show c9399b42687cf19722af8da55e7221ff441579ae:scripts/verify-smartinput-shop-sale-live.mjs > /tmp/purchase-live-base.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/purchase-live-base.mjs').read_text()
+          start=s.index('const assets = ['); end=s.index('\nfor (const [name, version]',start)
+          s=s[:start]+'''const assets = [
+            ['smartinput/index.html', ''],
+            ['smartinput/smartinput.js', '0.15.3'],
+            ['smartinput/purchase-sales-output.js', '0.1.3'],
+            ['smartinput/stage5-compute-runner.js', '0.1.3'],
+            ['smartinput/stage5-compute-worker.js', '0.1.3']
+          ];'''+s[end:]
+          start=s.index('async function checkActualReport()'); end=s.index('\nconst profile = ',start)
+          s=s[:start]+Path('scripts/verify-smartinput-purchase-issues-body.txt').read_text()+s[end:]
+          s=s.replace('smartinput.js?v=0.15.2','smartinput.js?v=0.15.3')
+          s=s.replace('data-mode="estimate"','data-mode="purchase"')
+          s=s.replace('oneapp-live-shop-sale-','oneapp-live-purchase-issue-')
+          s=s.replace('runtimeErrors,blockedWrites,failedResources,loadedResources','runtimeErrors,blockedWrites,failedResources')
+          Path('/tmp/verify-purchase-live.mjs').write_text(s)
+          PY
+          node --check /tmp/verify-purchase-live.mjs
+      - name: Verify deployed bytes and actual Chromium direct Worker and seven-sheet XLSX output
+        run: node /tmp/verify-purchase-live.mjs
