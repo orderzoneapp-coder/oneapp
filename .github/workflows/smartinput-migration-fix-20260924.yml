@@ -1,0 +1,51 @@
+name: SmartInput migration isolated verification
+on:
+  push:
+    branches: [fix/smartinput-estimate-migration-feedback-20260924]
+    paths:
+      - '.github/workflows/smartinput-migration-fix-20260924.yml'
+      - '.github/smartinput-migration-fix.patch'
+permissions:
+  contents: read
+concurrency:
+  group: smartinput-migration-fix-20260924
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Archive isolated source and Git metadata
+        run: |
+          git archive --format=tar HEAD > /tmp/smartinput-migration-source.tar
+          git bundle create /tmp/smartinput-migration-source.bundle HEAD refs/remotes/origin/main
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smartinput-migration-source
+          path: /tmp/smartinput-migration-source.*
+          retention-days: 3
+      - name: Apply and verify reviewed patch on the isolated branch only
+        if: hashFiles('.github/smartinput-migration-fix.patch') != ''
+        run: |
+          test "$GITHUB_REF_NAME" = 'fix/smartinput-estimate-migration-feedback-20260924'
+          git apply --check .github/smartinput-migration-fix.patch
+          git apply .github/smartinput-migration-fix.patch
+          node --check smartinput/smartinput.js
+          node --check smartinput/estimate-migration.js
+          node scripts/test-smartinput-estimate-migration-feedback.mjs
+          node scripts/test-smartinput-estimate-migration-feedback-browser.mjs
+          git diff --check
+          git add smartinput scripts/test-smartinput-estimate-migration-feedback.mjs scripts/test-smartinput-estimate-migration-feedback-browser.mjs
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(SmartInput): make estimate migration actionable and verifiable'
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
