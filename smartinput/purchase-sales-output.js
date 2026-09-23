@@ -1,6 +1,6 @@
-export { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS } from './stage5-compute-runner.js?v=0.1.1';
+export { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS } from './stage5-compute-runner.js?v=0.1.3';
 
-const CHECK_HEADERS = Object.freeze(['그룹', '거래처', '품목코드', '품명', '수량', '확인사항']);
+const CHECK_HEADERS = Object.freeze(['이슈', '그룹', '거래처', '품목코드', '품명', '수량', '확인사항']);
 const SALES_HEADERS = Object.freeze([
   '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항',
   '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시',
@@ -26,7 +26,7 @@ const SALES_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 14, 14, 34, 14, 10
 const OUTBOUND_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10]);
 const PURCHASE_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10, 12, 10, 14, 18, 18, 12, 18, 10]);
 const PREVIEW_WIDTHS = Object.freeze([16, 14, 14, 14, 34, 9, 10, 12, 14, 14, 14, 18, 10, 12, 10, 12, 10]);
-const CHECK_WIDTHS = Object.freeze([14, 16, 14, 34, 10, 42]);
+const CHECK_WIDTHS = Object.freeze([12, 14, 16, 14, 34, 10, 42]);
 const PURCHASE_UPLOAD_WIDTHS = Object.freeze([10, 8, 14, 18, 10, 10, 12, 20, 14, 34, 16, 10, 12, 12, 14, 20, 18, 14, 10, 10]);
 
 const GROUP_PRESETS = Object.freeze([
@@ -316,6 +316,46 @@ function sortPurchaseUploadRows(rows = []) {
     .map(entry => entry.row);
 }
 
+// Classify existing diagnostics only; never change price selection or validation policy.
+function purchaseCheckIssue(reason = '') {
+  if (reason.includes('역마진')) return '역마진';
+  if (reason.includes('도매A과대의심')) return '도매A';
+  if (reason.includes('수량')) return '수량';
+  if (reason.includes('입고가 없음')) return '입고가';
+  if (reason.includes('단가그룹')) return '단가그룹';
+  if (reason.includes('판매단가')) return '판매단가';
+  if (reason.includes('거래처명 없음')) return '거래처';
+  if (reason.includes('품목코드 없음')) return '품목코드';
+  if (reason.includes('품명 없음')) return '품명';
+  return '기타';
+}
+
+function purchaseIssueRows(entry, fatal = false) {
+  // Keep structured reasons: splitting a comma-delimited string would corrupt prices.
+  const reasons = entry.reasons?.length ? entry.reasons : [entry.reason || '확인필요'];
+  const byIssue = new Map();
+  reasons.forEach(reason => {
+    const issue = purchaseCheckIssue(reason);
+    byIssue.set(issue, [...(byIssue.get(issue) || []), reason]);
+  });
+  return [...byIssue].map(([issue, details]) => ({
+    '이슈': issue,
+    '그룹': entry.customer || '', '거래처': entry.spec || entry.outputCustomer || '',
+    '품목코드': entry.code || '', '품명': entry.name || '', '수량': entry.qty || 0,
+    '확인사항': `${fatal ? '업로드불가: ' : ''}${details.join(', ')}`
+  }));
+}
+
+function sortPurchaseIssueRows(rows) {
+  const compare = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' }).compare;
+  // Numeric collation equates 001 and 1; retain exact SKU identity before sorting customers.
+  const compareCode = (left, right) => compare(left, right) || (left < right ? -1 : left > right ? 1 : 0);
+  return rows.sort((left, right) => compare(left['이슈'], right['이슈'])
+    || compareCode(left['품목코드'], right['품목코드'])
+    || compare(left['그룹'], right['그룹'])
+    || compare(left['거래처'], right['거래처']));
+}
+
 export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date() } = {}) {
   const groups = priceGroups();
   const rows = [];
@@ -336,7 +376,7 @@ export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date()
     if (!fields.code) fatalReasons.push('품목코드 없음');
     if (fields.qtyInvalid) fatalReasons.push('수량 형식 확인');
     if (fatalReasons.length) {
-      fatalErrors.push({ ...rowBase, reason: fatalReasons.join(', '), level: '업로드불가' });
+      fatalErrors.push({ ...rowBase, reason: fatalReasons.join(', '), reasons: [...fatalReasons], level: '업로드불가' });
       return;
     }
     purchaseUploadRows.push(purchaseUploadRow(fields));
@@ -373,7 +413,7 @@ export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date()
         }
       }
     }
-    if (reasons.length) warnings.push({ ...rowBase, outputCustomer: customer, reason: reasons.join(', '), groupName: resolved.groupName || '' });
+    if (reasons.length) warnings.push({ ...rowBase, outputCustomer: customer, reason: reasons.join(', '), reasons: [...reasons], groupName: resolved.groupName || '' });
     const supply = zeroQuantity ? 0 : (price === '' ? '' : fields.qty * price);
     rows.push({
       '일자': '', '순번': '', '거래처코드': '', '거래처명': customer, '출하창고': '02',
@@ -416,19 +456,11 @@ export function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date()
       '수수료': qty === 0 ? 0 : (fee !== 0 ? fee : '')
     };
   });
-  const checkRows = [
-    ...fatalErrors.map(error => ({
-      '그룹': error.customer || '', '거래처': error.spec || error.outputCustomer || '',
-      '품목코드': error.code || '', '품명': error.name || '', '수량': error.qty || 0,
-      '확인사항': `업로드불가: ${error.reason || '필수값 확인'}`
-    })),
-    ...warnings.map(warning => ({
-      '그룹': warning.customer || '', '거래처': warning.spec || warning.outputCustomer || '',
-      '품목코드': warning.code || '', '품명': warning.name || '', '수량': warning.qty || 0,
-      '확인사항': warning.reason || '확인필요'
-    }))
-  ];
-  if (!checkRows.length) checkRows.push({ '그룹': '', '거래처': '', '품목코드': '', '품명': '', '수량': '', '확인사항': '확인필요 항목 없음' });
+  const checkRows = sortPurchaseIssueRows([
+    ...fatalErrors.flatMap(error => purchaseIssueRows(error, true)),
+    ...warnings.flatMap(warning => purchaseIssueRows(warning))
+  ]);
+  if (!checkRows.length) checkRows.push({ '이슈': '', '그룹': '', '거래처': '', '품목코드': '', '품명': '', '수량': '', '확인사항': '확인필요 항목 없음' });
   const settingRows = [...groups.values()].map(group => ({
     '거래처명': group.customer, '단가그룹': group.groupName, '단가적용순서': group.rule.join(' > '),
     '수수료모드': group.feeMode, '수익모드': group.profitMode,
