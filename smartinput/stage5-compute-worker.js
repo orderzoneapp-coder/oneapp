@@ -3,7 +3,7 @@ import {
   buildEstimateDuplicateGroups,
   validateEstimateRows
 } from './estimate-output.js?v=0.2.10';
-import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.2';
+import { buildPurchaseSalesUploadData } from './purchase-sales-output.js?v=0.1.3';
 
 const now = () => globalThis.performance?.now?.() ?? Date.now();
 

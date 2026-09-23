@@ -47,7 +47,7 @@ export async function runStage5Compute({
   try {
     worker = workerFactory
       ? workerFactory()
-      : new WorkerConstructor(new URL('./stage5-compute-worker.js?v=0.1.2', import.meta.url), { type: 'module', name: 'smartinput-stage5-compute' });
+      : new WorkerConstructor(new URL('./stage5-compute-worker.js?v=0.1.3', import.meta.url), { type: 'module', name: 'smartinput-stage5-compute' });
     const result = await new Promise((resolve, reject) => {
       let settled = false;
       const finish = callback => value => {

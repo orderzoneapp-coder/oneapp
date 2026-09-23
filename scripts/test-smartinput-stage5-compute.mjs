@@ -116,3 +116,21 @@ assert.equal(promotionOutput.shopData.length, 601);
 assert.equal(promotionOutput.shopData.slice(1).every(row => row[3] === 15800 && row[14] === '1' && row[15] === 999), true);
 assert.equal(promotionOutput.erpData.slice(1).every(row => row[3] === ''), true);
 console.log('PASS: 600 promotion-only rows use Worker and retain ERP/stock policy');
+
+const purchaseIssueRows = Array.from({length:600},(_,index)=>({
+  거래처:index%2?'4연산':'1마산', 거래처명:`검증거래처${index%7}`,
+  코드:`ITEM-${index}`, 품명:`검증상품${index}`, 수량: index%3?2:0,
+  입고가:index%2?20000:1000, 도매A:index%2?3000:4000
+}));
+const purchaseIssueMetrics=[];
+const purchaseIssueOutput=await runStage5Compute({
+  feature:'purchase-sales-report',phase:'PURCHASE_SALES_BUILD',
+  payload:{rows:purchaseIssueRows},rowCount:purchaseIssueRows.length,
+  direct:()=>buildPurchaseSalesUploadData(purchaseIssueRows),
+  workerFactory:()=>new InlineModuleWorker(),onMetric:m=>purchaseIssueMetrics.push(m)
+});
+assert.equal(purchaseIssueMetrics.at(-1).path,'worker');
+assert.deepEqual(purchaseIssueOutput,buildPurchaseSalesUploadData(purchaseIssueRows));
+assert.equal(purchaseIssueOutput.matrices['확인요청'][0][0],'이슈');
+assert.equal(purchaseIssueOutput.matrices['판매입력'].length,601);
+console.log('PASS: 600 purchase issue rows retain Worker/direct parity');

@@ -75,7 +75,7 @@ assert.equal(previewByCode['FRUIT-1'][16], 900, '청과상장 수수료는 공�
 assert.deepEqual(previewByCode['ZERO-1'].slice(5, 8), [0, 0, 0]);
 assert.deepEqual(previewByCode['ZERO-1'].slice(14, 17), [0, 0, 0]);
 
-const checkText = output.matrices['확인요청'].slice(1).map(values => values[5]).join('\n');
+const checkText = output.matrices['확인요청'].slice(1).map(values => values[6]).join('\n');
 for (const expected of ['수량 형식 확인', '거래처명 없음', '품목코드 없음', '거래처 단가그룹 없음', '수량 없음/0', '역마진/입고가초과', '도매A과대의심']) {
   assert.match(checkText, new RegExp(expected));
 }
@@ -174,3 +174,42 @@ if (process.env.SMARTINPUT_PURCHASE_SOURCE) {
 }
 
 console.log('SmartInput 구매전표 DataOps 판매업로드 7시트 및 XLSX 재열기 검증이 통과했습니다.');
+
+// Confirmation presentation only: all transaction matrices and price policies stay intact.
+assert.deepEqual(PURCHASE_SALES_UPLOAD_HEADERS.check, ['이슈','그룹','거래처','품목코드','품명','수량','확인사항']);
+const issueFixtures = [
+  row('5온산','5온산','104560112',2,{입고가:20000,식자재:3000}),
+  row('3우리','마산99번','104550112',2,{입고가:1000,도매A:4000}),
+  row('1마산','마산75번','104014110',0,{입고가:1000,청과:2000}),
+  row('4연산','4연산','104560112',3,{입고가:20000,식자재:3000}),
+  row('1마산','마산99번','104550112',2,{입고가:1000,도매A:4000}),
+  row('3우리','중앙170','103044110',1,{입고가:75000,도매A:51000}),
+  row('2중앙','중앙170','103044110',1,{입고가:75000,도매A:51000}),
+  row('3우리','내부입고가없음','000123',1,{입고가:0}),
+  row('미등록','혼합이슈','MIXED',1,{'품목명(규격)':''}),
+  row('4연산','복합필수값','', '잘못된수량',{식자재:6000})
+];
+const beforeIssues = structuredClone(issueFixtures);
+const issueOutput = buildPurchaseSalesUploadData(issueFixtures);
+const issueRows = issueOutput.matrices['확인요청'].slice(1);
+const compareIssue = new Intl.Collator('ko-KR',{numeric:true,sensitivity:'base'}).compare;
+const issueComparator = (a,b) => compareIssue(a[0],b[0]) || compareIssue(a[3],b[3]) || compareIssue(a[1],b[1]) || compareIssue(a[2],b[2]);
+assert.deepEqual(issueRows, [...issueRows].sort(issueComparator));
+assert.deepEqual(issueFixtures,beforeIssues,'Sorting diagnostics must not mutate source records.');
+assert.deepEqual(issueRows.filter(r=>r[0]==='도매A').map(r=>[r[1],r[3],r[5]]),[
+  ['1마산','104550112',2],['3우리','104550112',2]
+]);
+assert.deepEqual(issueRows.filter(r=>r[0]==='역마진').map(r=>[r[3],r[1],r[5]]),[
+  ['103044110','2중앙',1],['103044110','3우리',1],['104560112','4연산',3],['104560112','5온산',2]
+]);
+assert.equal(issueRows.some(r=>r[0]==='입고가' && r[3]==='000123'),true,'Leading-zero product codes must stay text.');
+assert.deepEqual(issueRows.filter(r=>r[3]==='MIXED').map(r=>r[0]),['단가그룹','품명'],'Different issues in one source row must remain separately discoverable.');
+assert.equal(issueRows.filter(r=>r[2]==='복합필수값').every(r=>r[6].startsWith('업로드불가: ')),true);
+assert.equal(issueRows.filter(r=>r[0]==='도매A').every(r=>r[6].includes('1,000') && r[6].includes('4,000')),true,'Do not split number thousands separators.');
+const duplicateIssues = buildPurchaseSalesUploadData([issueFixtures[0],issueFixtures[0]]).matrices['확인요청'];
+assert.equal(duplicateIssues.length,3,'Identical transaction rows must not be merged or dropped.');
+const noIssues = buildPurchaseSalesUploadData([row('4연산','정상','NORMAL',1,{식자재:6000})]).matrices['확인요청'];
+assert.deepEqual(noIssues[1],['','','','','','','확인필요 항목 없음']);
+const confirmationReopened = XLSX.utils.sheet_to_json(reopened.Sheets['확인요청'],{header:1,raw:true,defval:'',blankrows:false});
+assert.deepEqual(JSON.parse(JSON.stringify(confirmationReopened)),output.matrices['확인요청'],'The emitted XLSX must retain the sorted issue matrix.');
+console.log('PASS: issue/product/group/customer order, multi-issue rows, duplicate preservation, zero/negative quantities, unchanged reasons, and XLSX round trip');
