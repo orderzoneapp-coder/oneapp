@@ -1,0 +1,119 @@
+name: SmartInput phase1 branch-only preparation
+on:
+  push:
+    branches: [chat/smartinput-source-phase1-20260924]
+    paths: [.github/workflows/smartinput-phase1-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/chat/smartinput-source-phase1-20260924'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chat/smartinput-source-phase1-20260924
+          fetch-depth: 2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Apply exact locally tested source consolidation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = f65512230d1ca6414aaa475d45b5798a96be14cd
+          python3 - . --apply <<'PYAPPLY'
+          from pathlib import Path
+          import hashlib, re, json, sys
+
+          ROOT = Path(sys.argv[1]).resolve()
+          changes = {}
+          def read(name): return (ROOT / name).read_text(encoding='utf-8')
+          def put(name, text): changes[name] = text
+
+          def replace_once(text, before, after):
+              if text.count(before) != 1:
+                  raise RuntimeError(f'Unexpected source contract: {before[:100]}')
+              return text.replace(before, after, 1)
+
+          # Preserve both normalizers: source parsing normalizes NFKC; clipboard strings do not.
+          parser = read('smartinput/structured-sheet-parser.js')
+          clipboard = read('smartinput/grid-clipboard.js')
+          clipboard = replace_once(clipboard, "import {\n  buildStructuredFieldIndex,\n  normalizeStructuredFieldName\n} from './structured-sheet-parser.js?v=0.1.2';\n", '')
+          clipboard = replace_once(clipboard, "import {\n  hasMeaningfulSourceValue,\n  sourceRowHasMeaningfulValue\n} from './input-template-mapper.js?v=0.3.0';\n", '')
+          clipboard = re.sub(r'\bcellText\b', 'clipboardCellText', clipboard)
+          put('smartinput/grid-clipboard.js', parser.rstrip() + '\n\n// Clipboard input keeps original text; do not use source-header normalization here.\n' + clipboard.lstrip())
+          changes['smartinput/structured-sheet-parser.js'] = None
+
+          viewport = read('smartinput/table-viewport.js')
+          virtual = replace_once(read('smartinput/virtual-table-body.js'), "import { createTableViewport, createViewportFrameScheduler } from './table-viewport.js?v=0.1.0';\n", '')
+          put('smartinput/virtual-table-body.js', viewport.rstrip() + '\n\n// Native table rendering uses the same row-window model above.\n' + virtual.lstrip())
+          changes['smartinput/table-viewport.js'] = None
+
+          preset = read('smartinput/estimate-report-preset.js')
+          selector = replace_once(read('smartinput/estimate-workbook-selector.js'), "import { isEstimateReportHeaders, isEstimateReportMetadataRow } from './estimate-report-preset.js?v=0.1.0';\n", '')
+          put('smartinput/estimate-report-preset.js', preset.rstrip() + '\n\n// Workbook selection and its built-in report fields share one input contract.\n' + selector.lstrip())
+          changes['smartinput/estimate-workbook-selector.js'] = None
+
+          # Change application import URLs together. Keep DB keys, schemas and business rules intact.
+          files = ['smartinput/smartinput.js','smartinput/input.js','smartinput/input-template-mapper.js',
+                   'smartinput/xlsx-source-reader.js','smartinput/grid-clipboard.js','smartinput/index.html']
+          replacements = {
+              'virtual-table-body.js?v=0.2.0':'virtual-table-body.js?v=0.3.0',
+              'grid-clipboard.js?v=0.1.2':'grid-clipboard.js?v=0.2.0',
+              'estimate-workbook-selector.js?v=0.1.2':'estimate-report-preset.js?v=0.2.0',
+              'estimate-report-preset.js?v=0.1.0':'estimate-report-preset.js?v=0.2.0',
+              'input-template-mapper.js?v=0.3.0':'input-template-mapper.js?v=0.3.2',
+              'input-template-mapper.js?v=0.3.1':'input-template-mapper.js?v=0.3.2',
+              "from './input.js?v=0.1.0'":"from './input.js?v=0.1.1'",
+              'smartinput.js?v=0.15.3':'smartinput.js?v=0.16.0',
+              "feature: 'file-intake-module', assetVersion: '0.2.1', specifier: './xlsx-source-reader.js?v=0.2.1'":
+              "feature: 'file-intake-module', assetVersion: '0.2.2', specifier: './xlsx-source-reader.js?v=0.2.2'",
+          }
+          for name in files:
+              old = changes.get(name, read(name))
+              new = old
+              for before, after in replacements.items(): new = new.replace(before, after)
+              if new != read(name): put(name, new)
+
+          # Existing assertions remain unchanged; only import locations move.
+          for name in ['test-smartinput-multivoucher-stage1.mjs','test-smartinput-structured-sheet-parser.mjs',
+                       'test-smartinput-empty-source-rows.mjs','test-smartinput-table-viewport.mjs',
+                       'test-smartinput-estimate-report-preset.mjs','test-smartinput-estimate-workbook-selection.mjs']:
+              path = f'scripts/{name}'
+              text = read(path)
+              for old,new in [('structured-sheet-parser.js','grid-clipboard.js'),('table-viewport.js','virtual-table-body.js'),('estimate-workbook-selector.js','estimate-report-preset.js')]:
+                  text = text.replace(f"../smartinput/{old}",f"../smartinput/{new}")
+              if text != read(path): put(path,text)
+
+          manifest = {name:{'before': hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),
+                            'after': hashlib.sha256(text.encode()).hexdigest() if text is not None else None}
+                      for name,text in sorted(changes.items())}
+          if hashlib.sha256(json.dumps(manifest,sort_keys=True,separators=(',',':')).encode()).hexdigest() != '4de4898fc21408494e438545dc116ffc84db34233d1be65dfaa14b8ed37b593e':
+              raise RuntimeError('Source or resulting bytes differ from the locally tested patch; no files changed')
+          if '--apply' in sys.argv:
+              for name,text in changes.items():
+                  if text is None: (ROOT/name).unlink()
+                  else: (ROOT/name).write_text(text,encoding='utf-8')
+          print(json.dumps(manifest,ensure_ascii=False,indent=2))
+          PYAPPLY
+      - name: Check source and existing regression assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          for test in grid-clipboard structured-sheet-parser empty-source-rows multivoucher-stage1 table-viewport estimate-report-preset estimate-workbook-selection input-template-mapping mapped-row-sync estimate-f8 purchase-sales-output draft-save-coordinator stage5-compute boundary stage5-feature-loading table-view-toggle initial-input-layout independent-recovery estimate-save-lifecycle; do
+            node "scripts/test-smartinput-${test}.mjs"
+          done
+          node scripts/validate-repository.mjs
+      - name: Commit only application and regression import changes to the work branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- smartinput scripts/test-smartinput-empty-source-rows.mjs scripts/test-smartinput-estimate-report-preset.mjs scripts/test-smartinput-estimate-workbook-selection.mjs scripts/test-smartinput-multivoucher-stage1.mjs scripts/test-smartinput-structured-sheet-parser.mjs scripts/test-smartinput-table-viewport.mjs
+          test "$(git diff --cached --name-only | wc -l)" -eq 17
+          git commit -m 'refactor(SmartInput): consolidate parsing, viewport and estimate input modules'
+          git push origin HEAD:refs/heads/chat/smartinput-source-phase1-20260924
