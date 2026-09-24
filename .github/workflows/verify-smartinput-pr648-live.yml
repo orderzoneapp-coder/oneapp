@@ -22,7 +22,45 @@ jobs:
           node-version: 24
       - name: Install Korean font for readable verification screenshots
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
-      - name: Check exact merged runtime and syntax
+      - name: Correct only the verification harness reload race and strengthen selection checks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.github/scripts/verify-smartinput-pr648-live.mjs')
+          s=p.read_text()
+          old="await cdp.send('Page.reload',{ignoreCache:false});await ready();await mode('estimate');"
+          new="""const previousTimeOrigin=await cdp.eval('performance.timeOrigin');
+          await cdp.send('Page.reload',{ignoreCache:false});
+          await until(()=>cdp.eval(`performance.timeOrigin!==${previousTimeOrigin}&&document.readyState==='complete'`),'new document after reload');
+          await ready();await mode('estimate');"""
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="const has=await cdp.eval(`Boolean(document.querySelector('#inputRows [data-field=\"itemCode\"]')?.value==='PR648-0001')`);"
+          new="const has=await cdp.eval(`document.querySelector('#catalogPickerList [data-select-estimate-card]')?.getAttribute('aria-pressed')==='true'`);"
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="await until(()=>cdp.eval(`document.querySelector('#inputRows [data-field=\"unitPrice\"]')?.value==='1750'`),'saved price recovered');"
+          new="""await until(()=>cdp.eval(`document.querySelector('#catalogPickerList [data-select-estimate-card]')?.getAttribute('aria-pressed')==='true'&&document.querySelector('#inputRows [data-field="unitPrice"]')?.value==='1750'&&!document.querySelector('#completeButton').disabled`),'saved selection and price recovered');"""
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          anchor="const writes=result.blocked.filter(x=>!['GET','HEAD'].includes(x.method));"
+          extra="""const compute=await cdp.eval(`(async()=>{
+            const m=await import('/smartinput/report.js?v=0.17.0');
+            const rows=Array.from({length:600},(_,i)=>({'거래처':'1마산','거래처명':'격리검증거래처','코드':'WC-'+String(i).padStart(5,'0'),'품목명(규격)':'격리상품','수량':2,'입고가':3200,'청과':5000,'구매처':'우리농산','일자':'2026-09-24'}));
+            const expected=m.buildPurchaseSalesUploadData(rows);const metrics=[];
+            const actual=await m.runStage5Compute({feature:'purchase-sales-report',phase:'PURCHASE_SALES_BUILD',payload:{rows},rowCount:rows.length,direct:()=>m.buildPurchaseSalesUploadData(rows),onMetric:v=>metrics.push(v)});
+            return {same:JSON.stringify(actual)===JSON.stringify(expected),paths:metrics.map(m=>m.path),count:actual.matrices['판매입력'].length-1,price:actual.matrices['판매입력'][1][12],amount:actual.matrices['판매입력'][1][14]};
+          })()`);
+          assert.equal(compute.same,true);assert.ok(compute.paths.includes('worker'));assert.equal(compute.count,600);assert.equal(compute.price,5000);assert.equal(compute.amount,10000);
+          result.checks.push({name:'production report Worker, 600 sales rows and price/amount parity',status:'PASS',...compute});
+          """
+          assert s.count(anchor)==1
+          s=s.replace(anchor,extra+anchor)
+          p.write_text(s)
+          out=Path('evidence/pr648-production');out.mkdir(parents=True,exist_ok=True)
+          (out/'harness-correction.txt').write_text('The first verification run checked the old document immediately after Page.reload and could toggle off the already selected estimate. This run waits for a new timeOrigin and actual selected-card state before asserting the recovered value and exporting. Runtime source and business assertions are not relaxed. Added real deployed Worker price/amount comparison for 600 synthetic rows.\n')
+          PY
+      - name: Check exact merged runtime and verification syntax
         run: |
           git merge-base --is-ancestor 5e9673a7da0170f9fbee02cc0f5bf1d125c955ef HEAD
           git diff --exit-code 5e9673a7da0170f9fbee02cc0f5bf1d125c955ef -- smartinput nexus orderq reference-data app-manifest.json
