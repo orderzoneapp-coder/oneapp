@@ -12,7 +12,7 @@ import {
   resolveSmartInputCompanyId,
   resolveSmartInputActor,
   validateFieldCatalog
-} from '../smartinput/field-registry.js';
+} from '../smartinput/reference-refresh-controller.js';
 
 // Definition labels/settings normalize NFKC; session scope and actor retain their original characters.
 assert.equal(defaultCompanyVoucherFieldSettings(' Ｃ００１ ', 'sale')[0].companyId, 'C001');

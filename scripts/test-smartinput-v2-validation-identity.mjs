@@ -14,9 +14,9 @@ globalThis.fetch = async (url, options = {}) => {
 
 const contract = await import('../orderq/official-voucher-v2-contract.js');
 const core = await import('../orderq/official-voucher-core.js');
-const purchaseModule = await import('../smartinput/purchase-official-stage3.js');
-const saleModule = await import('../smartinput/sale-official-stage4.js');
-const purchaseFinalizeModule = await import('../smartinput/purchase-finalize-service.js');
+const purchaseModule = await import('../smartinput/official-voucher-feature.js');
+const saleModule = await import('../smartinput/official-voucher-feature.js');
+const purchaseFinalizeModule = await import('../smartinput/official-voucher-feature.js');
 const gatewayModule = await import('../orderq/official-command-gateway.js');
 
 const {

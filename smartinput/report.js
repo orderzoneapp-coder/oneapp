@@ -1,4 +1,102 @@
-export { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS } from './stage5-compute-runner.js?v=0.1.2';
+// SmartInput role consolidation. No data migration or business-policy change.
+// Edit implementations in the named sections below; former files are removed.
+import * as estimatePriceSnapshotDependency0 from "./estimate-price-snapshot.js?v=0.1.0";
+
+// ============================================================================
+// stage5-compute-runner.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const stage5ComputeRunnerSection = (() => {
+
+
+const DEFAULT_WORKER_THRESHOLD_ROWS = 500;
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+const now = () => globalThis.performance?.now?.() ?? Date.now();
+
+function abortError() {
+  const error = new Error('계산 작업이 취소되었습니다.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function runDirect({ feature, phase, direct, path = 'direct', onMetric }) {
+  const startedAt = now();
+  try {
+    const value = direct();
+    onMetric?.({ feature, phase, path, durationMs: now() - startedAt });
+    return value;
+  } catch (error) {
+    onMetric?.({ feature, phase, path, status: 'ERROR', durationMs: now() - startedAt });
+    throw error;
+  }
+}
+
+async function runStage5Compute({
+  feature,
+  phase,
+  payload,
+  rowCount = 0,
+  direct,
+  signal = null,
+  thresholdRows = DEFAULT_WORKER_THRESHOLD_ROWS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  workerFactory = null,
+  onMetric = null
+} = {}) {
+  if (typeof direct !== 'function') throw new TypeError('direct 계산 함수가 필요합니다.');
+  if (signal?.aborted) throw abortError();
+  const WorkerConstructor = globalThis.Worker;
+  if (Number(rowCount) < Number(thresholdRows)
+    || (!workerFactory && typeof WorkerConstructor !== 'function')) {
+    return runDirect({ feature, phase, direct, onMetric });
+  }
+
+  let worker;
+  const jobId = globalThis.crypto?.randomUUID?.() || `stage5-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const queuedAt = now();
+  try {
+    worker = workerFactory
+      ? workerFactory()
+      : new WorkerConstructor(new URL('./stage5-compute-worker.js?v=0.17.0', import.meta.url), { type: 'module', name: 'smartinput-stage5-compute' });
+    const result = await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = callback => value => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout?.(timer);
+        signal?.removeEventListener?.('abort', onAbort);
+        callback(value);
+      };
+      const onAbort = () => finish(reject)(abortError());
+      const timer = globalThis.setTimeout?.(() => finish(reject)(new Error('계산 작업 시간이 초과되었습니다.')), timeoutMs);
+      signal?.addEventListener?.('abort', onAbort, { once: true });
+      worker.onmessage = event => {
+        const message = event.data || {};
+        if (message.jobId !== jobId || message.status === 'PROGRESS') return;
+        if (message.status === 'READY') finish(resolve)(message);
+        else finish(reject)(new Error(message.message || 'Worker 계산에 실패했습니다.'));
+      };
+      worker.onerror = event => finish(reject)(event.error || new Error(event.message || 'Worker를 실행하지 못했습니다.'));
+      worker.postMessage({ jobId, feature, phase, payload });
+    });
+    onMetric?.({ feature, phase, path: 'worker', durationMs: now() - queuedAt, computeMs: result.metrics?.computeMs ?? null });
+    return result.payload;
+  } catch (error) {
+    if (error?.name === 'AbortError' || signal?.aborted) throw error;
+    return runDirect({ feature, phase, direct, path: 'fallback-direct', onMetric });
+  } finally {
+    worker?.terminate?.();
+  }
+}
+
+return { runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS };
+})();
+
+// ============================================================================
+// estimate-output.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const estimateOutputSection = (() => {
+
 
 const SHOP_HEADERS = Object.freeze([
   '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
@@ -26,16 +124,16 @@ const MERCHOPS_DEFAULT_MARGIN_RULES = Object.freeze([
   Object.freeze({ id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }),
   Object.freeze({ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' })
 ]);
-export const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
+const KAKAO_NOTICE_ROWS_PER_PAGE = 40;
 
-export function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
+function paginateKakaoNoticeRows(rows = [], maxRowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE) {
   const source = Array.isArray(rows) ? rows : [];
   if (!source.length) return [[]];
   const maximum = Math.max(1, Math.min(KAKAO_NOTICE_ROWS_PER_PAGE, Math.floor(Number(maxRowsPerPage)) || KAKAO_NOTICE_ROWS_PER_PAGE));
   return Array.from({ length: Math.ceil(source.length / maximum) }, (_, pageIndex) => source.slice(pageIndex * maximum, (pageIndex + 1) * maximum));
 }
 
-export function splitKakaoNoticeColumns(rows = []) {
+function splitKakaoNoticeColumns(rows = []) {
   const source = Array.isArray(rows) ? rows.slice(0, KAKAO_NOTICE_ROWS_PER_PAGE) : [];
   return source.length <= 20 ? [source] : [source.slice(0, 20), source.slice(20)];
 }
@@ -166,7 +264,7 @@ function mappingSourceFields(row = {}, mappingSession = null) {
   return fields;
 }
 
-export function buildEstimateF8RowsFromDraft(draft = {}) {
+function buildEstimateF8RowsFromDraft(draft = {}) {
   const rows = Array.isArray(draft?.rows) ? draft.rows : [];
   const header = draft?.header || {};
   const mappingBacked = Boolean(
@@ -254,7 +352,7 @@ function derivedPlanRows(entry = {}) {
   return [...restored, ...buildEstimateF8RowsFromDraft({ rows: manualRows })];
 }
 
-export function buildEstimateF8RowsFromPlan(plan = {}) {
+function buildEstimateF8RowsFromPlan(plan = {}) {
   return (plan.entries || []).flatMap(entry => (
     entry?.kind === 'DERIVED'
       ? derivedPlanRows(entry)
@@ -277,7 +375,7 @@ function priceKey(row = {}, index = 0) {
   return code ? `CODE:${code}` : `ROW:${index}`;
 }
 
-export { buildCatalogPriceSnapshot, priceSnapshotsEqual } from './estimate-price-snapshot.js?v=0.1.0';
+
 
 function normalizeNoticePriceFields(priceFields = []) {
   const normalized = (Array.isArray(priceFields) ? priceFields : []).map(field => ({
@@ -287,7 +385,7 @@ function normalizeNoticePriceFields(priceFields = []) {
   return normalized.length ? normalized : [{ id: 'noticePrice', label: '공지단가' }];
 }
 
-export function buildKakaoNoticeRows(rows = [], previousPrices = {}, priceFields = []) {
+function buildKakaoNoticeRows(rows = [], previousPrices = {}, priceFields = []) {
   const selectedPriceFields = normalizeNoticePriceFields(priceFields);
   return (Array.isArray(rows) ? rows : []).map((row, index) => {
     const prices = selectedPriceFields.map(field => ({
@@ -321,7 +419,7 @@ function estimateOutputCandidates(rows = []) {
     ));
 }
 
-export function validateEstimateRows(rows = []) {
+function validateEstimateRows(rows = []) {
   const candidates = estimateOutputCandidates(rows);
   const errors = [];
   if (!candidates.length) errors.push({
@@ -369,7 +467,7 @@ function duplicateCandidate(row, rowIndex, product, marginRules) {
   };
 }
 
-export function buildEstimateDuplicateGroups(rows = [], { productCatalog = [], marginRules = [] } = {}) {
+function buildEstimateDuplicateGroups(rows = [], { productCatalog = [], marginRules = [] } = {}) {
   const catalog = productCatalogIndex(productCatalog);
   const grouped = new Map();
   estimateOutputCandidates(rows).forEach(({ row, rowIndex }) => {
@@ -384,7 +482,7 @@ export function buildEstimateDuplicateGroups(rows = [], { productCatalog = [], m
     .map(([code, candidates]) => ({ code, candidates }));
 }
 
-export function calculateEstimateResolvedPrice(row = {}, inboundPrice = '', {
+function calculateEstimateResolvedPrice(row = {}, inboundPrice = '', {
   productCatalog = [], marginRules = [], pricingProduct = null
 } = {}) {
   const code = outputCode(row);
@@ -404,7 +502,7 @@ export function calculateEstimateResolvedPrice(row = {}, inboundPrice = '', {
   };
 }
 
-export function resolveEstimateDuplicateRows(rows = [], resolutions = new Map()) {
+function resolveEstimateDuplicateRows(rows = [], resolutions = new Map()) {
   const source = estimateOutputCandidates(rows);
   const grouped = new Map();
   source.forEach(({ row, rowIndex }) => {
@@ -675,7 +773,7 @@ function compareUploadText(left, right) {
   return text(left).localeCompare(text(right), 'ko-KR', { numeric: true, sensitivity: 'base' });
 }
 
-export function sortEstimateUploadRows(rows = []) {
+function sortEstimateUploadRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).map((row, index) => ({ row, index }))
     .sort((left, right) => compareUploadText(left.row?.[3], right.row?.[3])
       || compareUploadText(left.row?.[8], right.row?.[8])
@@ -683,7 +781,7 @@ export function sortEstimateUploadRows(rows = []) {
     .map(entry => entry.row);
 }
 
-export function buildEstimateF8Data(rows = [], {
+function buildEstimateF8Data(rows = [], {
   productCatalog = [], marginRules = [], estimateMappings = {}, duplicateResolutions = new Map()
 } = {}) {
   const validation = validateEstimateRows(rows);
@@ -870,7 +968,7 @@ function formatAmount(value) {
   return Number(value || 0).toLocaleString('ko-KR');
 }
 
-export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단가 안내', rowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE } = {}) {
+function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단가 안내', rowsPerPage = KAKAO_NOTICE_ROWS_PER_PAGE } = {}) {
   if (typeof document === 'undefined') return [];
   const rows = Array.isArray(noticeRows) ? noticeRows : [];
   const requestedPageSize = Math.floor(Number(rowsPerPage));
@@ -957,10 +1055,543 @@ export function renderKakaoNoticeCanvases(noticeRows = [], { title = '견적 단
   return pages;
 }
 
-export const ESTIMATE_F8_HEADERS = Object.freeze({
+const ESTIMATE_F8_HEADERS = Object.freeze({
   confirm: CONFIRM_HEADERS,
   error: CONFIRM_HEADERS,
   shop: SHOP_HEADERS,
   erp: ERP_HEADERS,
   upload: ESTIMATE_UPLOAD_HEADERS
 });
+
+return { runStage5Compute: stage5ComputeRunnerSection.runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS: stage5ComputeRunnerSection.DEFAULT_WORKER_THRESHOLD_ROWS, KAKAO_NOTICE_ROWS_PER_PAGE, paginateKakaoNoticeRows, splitKakaoNoticeColumns, buildEstimateF8RowsFromDraft, buildEstimateF8RowsFromPlan, buildCatalogPriceSnapshot: estimatePriceSnapshotDependency0.buildCatalogPriceSnapshot, priceSnapshotsEqual: estimatePriceSnapshotDependency0.priceSnapshotsEqual, buildKakaoNoticeRows, validateEstimateRows, buildEstimateDuplicateGroups, calculateEstimateResolvedPrice, resolveEstimateDuplicateRows, sortEstimateUploadRows, buildEstimateF8Data, renderKakaoNoticeCanvases, ESTIMATE_F8_HEADERS };
+})();
+
+// ============================================================================
+// purchase-sales-output.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const purchaseSalesOutputSection = (() => {
+
+
+const CHECK_HEADERS = Object.freeze(['이슈', '그룹', '거래처', '품목코드', '품명', '수량', '확인사항']);
+const SALES_HEADERS = Object.freeze([
+  '일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항',
+  '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시',
+  '공지', '구매처', '날짜', '구매'
+]);
+const OUTBOUND_HEADERS = Object.freeze(SALES_HEADERS.slice(0, 12));
+const PURCHASE_HEADERS = Object.freeze(SALES_HEADERS.slice(0, 20));
+const PREVIEW_HEADERS = Object.freeze([
+  '일자', '거래처명', 'no.', '품목코드', '품명', '수량', '단가', '공급가', '적요',
+  '출고지시', '출고가 (공지)', '구매처', '구매', '구매합계', '정리', '정산', '수수료'
+]);
+const SETTINGS_HEADERS = Object.freeze([
+  '거래처명', '단가그룹', '단가적용순서', '수수료모드', '수익모드',
+  '출력거래처명모드', '설정출처', '정확일치'
+]);
+const PURCHASE_UPLOAD_HEADERS = Object.freeze([
+  '일자', '순번', '거래처코드', '거래처명', '입고창고', '거래유형', '전잔액', '전달사항',
+  '코드', '품명', '규격(기본)', '수량', '단가', '외화금액', '공급가', '간단설명(품위)',
+  '지시사항', '출고가 (공지)', '판매', 'no.'
+]);
+
+const SALES_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 14, 14, 34, 14, 10, 12, 10, 14, 18, 18, 12, 18, 10, 12]);
+const OUTBOUND_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10]);
+const PURCHASE_WIDTHS = Object.freeze([10, 8, 12, 16, 8, 10, 10, 20, 14, 34, 18, 10, 12, 10, 14, 18, 18, 12, 18, 10]);
+const PREVIEW_WIDTHS = Object.freeze([16, 14, 14, 14, 34, 9, 10, 12, 14, 14, 14, 18, 10, 12, 10, 12, 10]);
+const CHECK_WIDTHS = Object.freeze([12, 14, 16, 14, 34, 10, 42]);
+const PURCHASE_UPLOAD_WIDTHS = Object.freeze([10, 8, 14, 18, 10, 10, 12, 20, 14, 34, 16, 10, 12, 12, 14, 20, 18, 14, 10, 10]);
+
+const GROUP_PRESETS = Object.freeze([
+  Object.freeze({
+    groupName: '청과상장',
+    customers: Object.freeze(['1마산', '2중앙']),
+    rule: Object.freeze(['출고가(공지)', '청과', '도매A/0.91', '상장가']),
+    feeMode: 'LISTING_FEE', profitMode: 'NORMAL', outputCustomerMode: 'GROUP_NAME'
+  }),
+  Object.freeze({
+    groupName: '식자재',
+    customers: Object.freeze(['4연산', '5온산', '6진주', '7초전', '7남해', '8통영', '9구미']),
+    rule: Object.freeze(['출고가(공지)', '식자재', '도매A', '출고(외노)']),
+    feeMode: 'NONE', profitMode: 'NORMAL', outputCustomerMode: 'ORIGINAL_CUSTOMER'
+  }),
+  Object.freeze({
+    groupName: '창고출고',
+    customers: Object.freeze([
+      '9부산', '금양', '상남식자재', '삼진', '진영상회',
+      '농협114번', '농협123번', '농협12번', '농협15번', '농협19번', '농협30번', '농협33번',
+      '농협35번', '농협37번', '농협38번', '농협44번', '농협45번', '농협62번', '농협65번',
+      '농협666', '농협67', '농협67번', '농협69번', '농협6번', '농협70번', '농협77번',
+      '농협78번', '농협81번', '농협888번', '농협89번', '창원100번', '창원118번', '창원153번',
+      '창원24번', '창원38번', '창원39번', '창원48번', '창원56번', '창원59번', '창원88번',
+      '대구구매', '마산구매', '부산현금', '현금구매', '현금판매'
+    ]),
+    rule: Object.freeze(['출고가(공지)', '도매A', '출고(외노)']),
+    feeMode: 'NONE', profitMode: 'NORMAL', outputCustomerMode: 'ORIGINAL_CUSTOMER'
+  }),
+  Object.freeze({
+    groupName: '내부이동',
+    customers: Object.freeze(['3우리']),
+    rule: Object.freeze(['단가']),
+    feeMode: 'NONE', profitMode: 'ZERO_PROFIT', outputCustomerMode: 'GROUP_NAME'
+  })
+]);
+
+const SUMMARY_TOKENS = Object.freeze(['총합계', '총계', '합계', '소계', '월계', '일계', 'subtotal', 'total']);
+
+function text(value, fallback = '') {
+  if (value === undefined || value === null || value === '') return fallback;
+  return String(value).trim() || fallback;
+}
+
+function normalizedHeader(value) {
+  return text(value).normalize('NFKC').replace(/\s/g, '').toLowerCase();
+}
+
+function strictNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const source = text(value).replace(/,/g, '');
+  if (!source || !/^-?\d+(?:\.\d+)?$/.test(source)) return 0;
+  const parsed = Number(source);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function quantityValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const source = text(value).replace(/,/g, '');
+  if (!source) return 0;
+  const wrappedNegative = source.startsWith('(') && source.endsWith(')');
+  const numericText = wrappedNegative ? source.slice(1, -1) : source;
+  const parsed = Number(numericText);
+  if (!Number.isFinite(parsed)) return 0;
+  return wrappedNegative ? -parsed : parsed;
+}
+
+function rawCell(raw = {}, aliases = [], { allowBlank = false } = {}) {
+  const keys = Object.keys(raw || {});
+  for (const alias of aliases) {
+    const target = normalizedHeader(alias);
+    const found = keys.find(key => normalizedHeader(key) === target);
+    if (found === undefined) continue;
+    const value = raw[found];
+    if (allowBlank || (value !== undefined && value !== null && text(value) !== '')) return value;
+  }
+  return null;
+}
+
+function transferRawValue(raw = {}, columnName = '') {
+  const target = normalizedHeader(columnName);
+  const keys = Object.keys(raw || {});
+  if (!target) return null;
+  if (target === normalizedHeader('청과')) {
+    const duplicated = keys.find(key => ['청과_1', '청과.1'].includes(normalizedHeader(key)));
+    if (duplicated !== undefined) return raw[duplicated];
+    const exact = keys.find(key => normalizedHeader(key) === target);
+    return exact !== undefined && strictNumber(raw[exact]) > 0 ? raw[exact] : null;
+  }
+  if (target === normalizedHeader('출고가(공지)')) {
+    const found = keys.find(key => ['출고가(공지)', '출고가 （공지）'].some(alias => normalizedHeader(key) === normalizedHeader(alias)));
+    return found === undefined ? null : raw[found];
+  }
+  const exact = keys.find(key => normalizedHeader(key) === target);
+  return exact === undefined ? null : raw[exact];
+}
+
+function priceByKey(raw = {}, priceKey = '') {
+  const aliases = {
+    '출고가(공지)': ['출고가(공지)', '출고가 (공지)'],
+    '청과': ['청과'],
+    '상장가': ['상장가'],
+    '출고(외노)': ['출고(외노)'],
+    '식자재': ['식자재'],
+    '도매A': ['도매A'],
+    '단가': ['단가', '입고가', '매입단가']
+  };
+  for (const column of aliases[priceKey] || [priceKey]) {
+    const price = strictNumber(transferRawValue(raw, column));
+    if (price > 0) return { price, columnName: column };
+  }
+  return { price: 0, columnName: '' };
+}
+
+function priceGroups() {
+  const groups = new Map();
+  GROUP_PRESETS.forEach(preset => preset.customers.forEach(customer => groups.set(customer, {
+    customer, groupName: preset.groupName, rule: [...preset.rule], feeMode: preset.feeMode,
+    profitMode: preset.profitMode, outputCustomerMode: preset.outputCustomerMode
+  })));
+  return groups;
+}
+
+function baseFields(input = {}) {
+  const raw = input?._raw && typeof input._raw === 'object' ? input._raw : input;
+  const code = text(rawCell(raw, ['품목코드', '상품코드', '코드'])).replace(/\.0$/, '').trim();
+  const name = text(rawCell(raw, ['품목명(규격)', '품명', '품목명', '상품명']));
+  const groupCustomer = text(rawCell(raw, ['거래처', '거래처명']));
+  let detailCustomer = text(rawCell(raw, ['거래처명']));
+  if (!detailCustomer) {
+    const legacyCheonggwa = rawCell(raw, ['청과']);
+    if (legacyCheonggwa !== null && strictNumber(legacyCheonggwa) <= 0) detailCustomer = text(legacyCheonggwa);
+  }
+  const spec = text(rawCell(raw, ['거래처명', '규격', '규격명', '포장규격', '상품규격', '옵션', '사이즈'])) || detailCustomer;
+  const quantityKeys = Object.keys(raw || {}).filter(key => ['수량', '입고수량', '구매수량', '매입수량'].some(alias => normalizedHeader(key) === normalizedHeader(alias)));
+  const populatedQuantityKey = quantityKeys.find(key => raw[key] !== undefined && raw[key] !== null && text(raw[key]) !== '');
+  const qtyRaw = populatedQuantityKey !== undefined ? raw[populatedQuantityKey] : (quantityKeys.length ? raw[quantityKeys[0]] : undefined);
+  const qtyMissing = qtyRaw === undefined || qtyRaw === null || text(qtyRaw) === '';
+  let qtyInvalid = false;
+  if (!qtyMissing) {
+    if (typeof qtyRaw === 'number') qtyInvalid = !Number.isFinite(qtyRaw);
+    else {
+      const source = text(qtyRaw).replace(/,/g, '');
+      const wrappedNegative = source.startsWith('(') && source.endsWith(')');
+      const numericText = wrappedNegative ? source.slice(1, -1) : source;
+      qtyInvalid = (!wrappedNegative && (source.startsWith('(') || source.endsWith(')')))
+        || !/^[+-]?\d+(?:\.\d+)?$/.test(numericText);
+    }
+  }
+  const qty = qtyMissing || qtyInvalid ? 0 : quantityValue(qtyRaw);
+  const cost = strictNumber(transferRawValue(raw, '단가'))
+    || strictNumber(transferRawValue(raw, '입고가'))
+    || strictNumber(rawCell(raw, ['매입단가']));
+  return {
+    raw, code, name, groupCustomer, detailCustomer, spec, qty, qtyRaw, qtyMissing, qtyInvalid,
+    dateValue: text(rawCell(raw, ['일자', '날짜', '매입일자'])),
+    purchaseVendor: text(rawCell(raw, ['구매처', '원구매처', '매입처'])),
+    cost,
+    wholesaleA: strictNumber(transferRawValue(raw, '도매A')),
+    memo: text(rawCell(raw, ['적요', '비고'])),
+    orderNote: text(rawCell(raw, ['출고지시'])),
+    deliveryMessage: text(rawCell(raw, ['전달사항', '전달 사항', '메모', '비고'])),
+    notice: transferRawValue(raw, '출고가(공지)')
+  };
+}
+
+function exactSummaryToken(value) {
+  return SUMMARY_TOKENS.includes(text(value).replace(/\s/g, '').toLowerCase());
+}
+
+function summaryLike(fields) {
+  const { raw, code, name, groupCustomer, detailCustomer } = fields;
+  const codeNormalized = text(code).replace(/\s/g, '').toLowerCase();
+  const nameNormalized = text(name).replace(/\s/g, '').toLowerCase();
+  const noRealCode = !codeNormalized || ['no_code', '-', '미상', '없음'].includes(codeNormalized);
+  if ([groupCustomer, detailCustomer, code, name].some(exactSummaryToken)) return true;
+  if (noRealCode && [rawCell(raw, ['거래처', '거래처명', '매입처', '구매처', '판매처'])].some(exactSummaryToken)) return true;
+  if (noRealCode && (/^[+-]?[\d,.]+$/.test(nameNormalized) || ['', '이름없음', '미상', '기록없음'].includes(nameNormalized))) return true;
+  return /^[+-]?[\d,.]+$/.test(nameNormalized) && codeNormalized && codeNormalized === nameNormalized;
+}
+
+function resolvePrice(fields, group) {
+  if (!group) return { status: 'CUSTOMER_GROUP_MISSING', price: 0, priceKey: '', groupName: '', feeMode: 'NONE', profitMode: 'NORMAL', outputCustomerMode: 'GROUP_NAME' };
+  if (group.groupName === '청과상장') {
+    const notice = priceByKey(fields.raw, '출고가(공지)');
+    if (notice.price > 0) return { status: 'MATCHED', ...notice, priceKey: '출고가(공지)', ...group };
+    const cheonggwa = priceByKey(fields.raw, '청과');
+    if (cheonggwa.price > 0) return { status: 'MATCHED', ...cheonggwa, priceKey: '청과', ...group };
+    if (fields.wholesaleA > 0) return {
+      status: 'MATCHED', price: Math.round((fields.wholesaleA / 0.91) / 100) * 100,
+      priceKey: '도매A/0.91', columnName: '도매A / 0.91 / 100단위 반올림', ...group
+    };
+    const listing = priceByKey(fields.raw, '상장가');
+    if (listing.price > 0) return { status: 'MATCHED', ...listing, priceKey: '상장가', ...group };
+    return { status: 'PRICE_MISSING', price: 0, priceKey: '', columnName: '', ...group };
+  }
+  for (const priceKey of group.rule) {
+    const found = priceByKey(fields.raw, priceKey);
+    if (found.price > 0) return { status: 'MATCHED', ...found, priceKey, ...group };
+  }
+  return { status: 'PRICE_MISSING', price: 0, priceKey: '', columnName: '', ...group };
+}
+
+function missingPriceReason(groupName = '') {
+  if (groupName === '청과상장') return '청과상장 판매단가 없음(청과/도매A/상장가)';
+  if (groupName === '식자재') return '식자재 판매단가 없음(식자재/도매A/출고(외노))';
+  if (groupName === '창고출고') return '창고출고 판매단가 없음(도매A/출고(외노))';
+  if (groupName === '내부이동') return '내부이동 입고가 없음';
+  return '판매단가 기준 없음';
+}
+
+function outputCustomer(fields, resolved) {
+  return resolved.outputCustomerMode === 'ORIGINAL_CUSTOMER'
+    ? text(fields.detailCustomer || fields.groupCustomer)
+    : text(fields.groupCustomer || resolved.groupName);
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString('ko-KR');
+}
+
+function rowValues(row, headers) {
+  return headers.map(header => row?.[header] ?? '');
+}
+
+function wooriVendor(value) {
+  return ['우리농산', '우리', '3우리'].includes(text(value).replace(/\s/g, ''));
+}
+
+function previewDate(value, now) {
+  const source = text(value);
+  const year = now.getFullYear();
+  if (!source) return `${year}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+  const numbers = source.match(/\d+/g) || [];
+  if (numbers.length >= 3) {
+    const normalizedYear = numbers[0].length === 2 ? `20${numbers[0]}` : numbers[0];
+    return `${normalizedYear}/${numbers[1].padStart(2, '0')}/${numbers[2].padStart(2, '0')}`;
+  }
+  if (numbers.length === 2) return `${year}/${numbers[0].padStart(2, '0')}/${numbers[1].padStart(2, '0')}`;
+  return source;
+}
+
+function purchaseSequence(raw = {}) {
+  const explicit = rawCell(raw, ['순번', 'No.', '번호']);
+  if (explicit !== null) return explicit;
+  const dateNo = text(rawCell(raw, ['일자-No.', '일자-No', '일자No']));
+  const match = dateNo.match(/-\s*([^\s-]+)\s*$/);
+  return match?.[1] || '';
+}
+
+function purchaseUploadRow(fields) {
+  const raw = fields.raw || {};
+  const rawSupply = rawCell(raw, ['공급가', '공급가액', '합계'], { allowBlank: true });
+  const supply = rawSupply === null || text(rawSupply) === ''
+    ? fields.qty * fields.cost
+    : quantityValue(rawSupply);
+  return [
+    fields.dateValue,
+    purchaseSequence(raw),
+    rawCell(raw, ['거래처코드', '구매처코드'], { allowBlank: true }) ?? '',
+    rawCell(raw, ['거래처명', '매입처명'], { allowBlank: true }) ?? fields.groupCustomer,
+    rawCell(raw, ['입고창고', '창고코드', '창고'], { allowBlank: true }) ?? '',
+    rawCell(raw, ['거래유형'], { allowBlank: true }) ?? '',
+    rawCell(raw, ['전잔액'], { allowBlank: true }) ?? '',
+    fields.deliveryMessage || fields.memo,
+    fields.code,
+    rawCell(raw, ['품명', '품목명', '상품명'], { allowBlank: true }) ?? fields.name,
+    rawCell(raw, ['규격(기본)', '규격', '규격명', '포장규격', '상품규격'], { allowBlank: true }) ?? fields.spec,
+    fields.qty,
+    fields.cost,
+    rawCell(raw, ['외화금액'], { allowBlank: true }) ?? '',
+    supply,
+    rawCell(raw, ['간단설명(품위)', '간단설명', '품위'], { allowBlank: true }) ?? '',
+    rawCell(raw, ['지시사항', '출고지시'], { allowBlank: true }) ?? fields.orderNote,
+    fields.notice ?? '',
+    rawCell(raw, ['판매'], { allowBlank: true }) ?? '',
+    rawCell(raw, ['no.', 'no', 'No.'], { allowBlank: true }) ?? ''
+  ];
+}
+
+function sortPurchaseUploadRows(rows = []) {
+  const compare = (left, right) => text(left).localeCompare(text(right), 'ko-KR', { numeric: true, sensitivity: 'base' });
+  return rows.map((row, index) => ({ row, index }))
+    .sort((left, right) => compare(left.row?.[3], right.row?.[3])
+      || compare(left.row?.[8], right.row?.[8])
+      || left.index - right.index)
+    .map(entry => entry.row);
+}
+
+// Classify existing diagnostics only; never change price selection or validation policy.
+function purchaseCheckIssue(reason = '') {
+  if (reason.includes('역마진')) return '역마진';
+  if (reason.includes('도매A과대의심')) return '도매A';
+  if (reason.includes('수량')) return '수량';
+  if (reason.includes('입고가 없음')) return '입고가';
+  if (reason.includes('단가그룹')) return '단가그룹';
+  if (reason.includes('판매단가')) return '판매단가';
+  if (reason.includes('거래처명 없음')) return '거래처';
+  if (reason.includes('품목코드 없음')) return '품목코드';
+  if (reason.includes('품명 없음')) return '품명';
+  return '기타';
+}
+
+function purchaseIssueRows(entry, fatal = false) {
+  // Keep structured reasons: splitting a comma-delimited string would corrupt prices.
+  const reasons = entry.reasons?.length ? entry.reasons : [entry.reason || '확인필요'];
+  const byIssue = new Map();
+  reasons.forEach(reason => {
+    const issue = purchaseCheckIssue(reason);
+    byIssue.set(issue, [...(byIssue.get(issue) || []), reason]);
+  });
+  return [...byIssue].map(([issue, details]) => ({
+    '이슈': issue,
+    '그룹': entry.customer || '', '거래처': entry.spec || entry.outputCustomer || '',
+    '품목코드': entry.code || '', '품명': entry.name || '', '수량': entry.qty || 0,
+    '확인사항': `${fatal ? '업로드불가: ' : ''}${details.join(', ')}`
+  }));
+}
+
+function sortPurchaseIssueRows(rows) {
+  const compare = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' }).compare;
+  // Numeric collation equates 001 and 1; retain exact SKU identity before sorting customers.
+  const compareCode = (left, right) => compare(left, right) || (left < right ? -1 : left > right ? 1 : 0);
+  return rows.sort((left, right) => compare(left['이슈'], right['이슈'])
+    || compareCode(left['품목코드'], right['품목코드'])
+    || compare(left['그룹'], right['그룹'])
+    || compare(left['거래처'], right['거래처']));
+}
+
+function buildPurchaseSalesUploadData(sourceRows = [], { now = new Date() } = {}) {
+  const groups = priceGroups();
+  const rows = [];
+  const purchaseUploadRows = [];
+  const fatalErrors = [];
+  const warnings = [];
+
+  (Array.isArray(sourceRows) ? sourceRows : []).forEach((input, index) => {
+    const fields = baseFields(input);
+    if (summaryLike(fields)) return;
+    const rowBase = {
+      rowNo: index + 1, customer: fields.groupCustomer, spec: fields.spec,
+      outputCustomer: fields.detailCustomer || fields.groupCustomer,
+      code: fields.code, name: fields.name, qty: fields.qty
+    };
+    const fatalReasons = [];
+    if (!text(fields.groupCustomer || fields.detailCustomer)) fatalReasons.push('거래처명 없음');
+    if (!fields.code) fatalReasons.push('품목코드 없음');
+    if (fields.qtyInvalid) fatalReasons.push('수량 형식 확인');
+    if (fatalReasons.length) {
+      fatalErrors.push({ ...rowBase, reason: fatalReasons.join(', '), reasons: [...fatalReasons], level: '업로드불가' });
+      return;
+    }
+    purchaseUploadRows.push(purchaseUploadRow(fields));
+
+    const zeroQuantity = Number(fields.qty) === 0;
+    const group = groups.get(fields.groupCustomer);
+    const resolved = zeroQuantity
+      ? {
+        status: 'ZERO_QUANTITY', price: 0, priceKey: '', columnName: '',
+        groupName: group?.groupName || '', feeMode: group?.feeMode || 'NONE',
+        profitMode: group?.profitMode || 'NORMAL', outputCustomerMode: group?.outputCustomerMode || 'GROUP_NAME',
+        rule: group?.rule || []
+      }
+      : resolvePrice(fields, group);
+    const customer = outputCustomer(fields, resolved) || fields.detailCustomer || fields.groupCustomer;
+    const reasons = [];
+    if (zeroQuantity) reasons.push('수량 없음/0: 수량 0, 판매가 0으로 업로드');
+    else {
+      if (resolved.status === 'CUSTOMER_GROUP_MISSING') reasons.push('거래처 단가그룹 없음');
+      if (resolved.status === 'PRICE_MISSING') reasons.push(missingPriceReason(resolved.groupName));
+    }
+    if (!fields.name) reasons.push('품명 없음');
+    const price = zeroQuantity ? 0 : (resolved.status === 'MATCHED' ? strictNumber(resolved.price) : '');
+    if (!zeroQuantity) {
+      if (price !== '' && price > 0 && fields.cost > 0 && price < fields.cost) {
+        reasons.push(`역마진/입고가초과: 입고가 ${money(fields.cost)} > 판매가 ${money(price)} (${resolved.priceKey || resolved.columnName || '판매가'})`);
+      }
+      if (fields.cost > 0 && fields.wholesaleA > 0) {
+        if (fields.wholesaleA < fields.cost && !reasons.some(reason => reason.includes('역마진/입고가초과'))) {
+          reasons.push(`역마진/입고가초과: 입고가 ${money(fields.cost)} > 도매A ${money(fields.wholesaleA)}`);
+        }
+        if (fields.wholesaleA >= fields.cost * 4) {
+          reasons.push(`도매A과대의심: 입고가 ${money(fields.cost)} / 도매A ${money(fields.wholesaleA)} (${(fields.wholesaleA / fields.cost).toFixed(1)}배, 수기입력 오류 확인)`);
+        }
+      }
+    }
+    if (reasons.length) warnings.push({ ...rowBase, outputCustomer: customer, reason: reasons.join(', '), reasons: [...reasons], groupName: resolved.groupName || '' });
+    const supply = zeroQuantity ? 0 : (price === '' ? '' : fields.qty * price);
+    rows.push({
+      '일자': '', '순번': '', '거래처코드': '', '거래처명': customer, '출하창고': '02',
+      '거래유형': '', '전잔액': '', '전달사항': fields.deliveryMessage || '', '품목코드': fields.code,
+      '품목명': fields.name, '규격': fields.spec, '수량': fields.qty, '단가': price, '외화금액': '',
+      '공급가액': supply, '적요': fields.memo, '출고지시': fields.orderNote, '공지': text(fields.notice),
+      '구매처': fields.purchaseVendor, '날짜': fields.dateValue, '구매': fields.cost,
+      '_적용그룹': resolved.groupName || '', '_구매처보정전': fields.purchaseVendor
+    });
+  });
+
+  rows.sort((left, right) => text(left['거래처명']).localeCompare(text(right['거래처명']), 'ko')
+    || text(left['규격']).localeCompare(text(right['규격']), 'ko')
+    || text(left['품목코드']).localeCompare(text(right['품목코드']), 'ko'));
+
+  const outboundRows = rows.filter(row => wooriVendor(row['_구매처보정전'] || row['구매처'])).map(row => ({
+    ...row, '일자': '', '순번': '', '거래처코드': '', '거래처명': '1전송', '출하창고': '40',
+    '거래유형': '', '전잔액': ''
+  }));
+  const purchaseRows = rows.filter(row => text(row['거래처명']).replace(/\s/g, '') === '3우리').map(row => ({
+    ...row, '일자': '', '순번': '', '거래처코드': '', '거래처명': '3우리', '출하창고': '03',
+    '거래유형': '', '전잔액': '', '전달사항': '', '출고지시': '', '공지': ''
+  }));
+  const previewRows = rows.map(row => {
+    const qty = strictNumber(row['수량']);
+    const price = strictNumber(row['단가']);
+    const cost = strictNumber(row['구매']);
+    const supply = qty === 0 ? 0 : (strictNumber(row['공급가액']) || qty * price);
+    const unitProfit = price - cost;
+    const fee = row['_적용그룹'] === '청과상장' ? Math.round(supply * 0.09) : 0;
+    return {
+      '일자': previewDate(row['날짜'] || row['일자'], now), '거래처명': row['거래처명'] || '',
+      'no.': row['규격'] || '', '품목코드': row['품목코드'] || '', '품명': row['품목명'] || '',
+      '수량': qty, '단가': qty === 0 ? 0 : (price > 0 ? price : ''),
+      '공급가': qty === 0 ? 0 : (supply !== 0 ? supply : ''), '적요': row['적요'] || '',
+      '출고지시': row['출고지시'] || '', '출고가 (공지)': row['공지'] || '', '구매처': row['구매처'] || '',
+      '구매': cost || '', '구매합계': cost ? qty * cost : '',
+      '정리': qty === 0 ? 0 : (price && cost ? unitProfit : ''),
+      '정산': qty === 0 ? 0 : (price && cost ? unitProfit * qty : ''),
+      '수수료': qty === 0 ? 0 : (fee !== 0 ? fee : '')
+    };
+  });
+  const checkRows = sortPurchaseIssueRows([
+    ...fatalErrors.flatMap(error => purchaseIssueRows(error, true)),
+    ...warnings.flatMap(warning => purchaseIssueRows(warning))
+  ]);
+  if (!checkRows.length) checkRows.push({ '이슈': '', '그룹': '', '거래처': '', '품목코드': '', '품명': '', '수량': '', '확인사항': '확인필요 항목 없음' });
+  const settingRows = [...groups.values()].map(group => ({
+    '거래처명': group.customer, '단가그룹': group.groupName, '단가적용순서': group.rule.join(' > '),
+    '수수료모드': group.feeMode, '수익모드': group.profitMode,
+    '출력거래처명모드': group.outputCustomerMode, '설정출처': '기본값', '정확일치': 'Y'
+  }));
+
+  const matrices = {
+    '확인요청': [CHECK_HEADERS, ...checkRows.map(row => rowValues(row, CHECK_HEADERS))],
+    '판매입력': [SALES_HEADERS, ...rows.map(row => rowValues(row, SALES_HEADERS))],
+    '전송출고': [OUTBOUND_HEADERS, ...outboundRows.map(row => rowValues(row, OUTBOUND_HEADERS))],
+    '전송구매': [PURCHASE_HEADERS, ...purchaseRows.map(row => rowValues(row, PURCHASE_HEADERS))],
+    '거래처별': [PREVIEW_HEADERS, ...previewRows.map(row => rowValues(row, PREVIEW_HEADERS))],
+    '단가설정': [SETTINGS_HEADERS, ...settingRows.map(row => rowValues(row, SETTINGS_HEADERS))],
+    '구매 업로드': [PURCHASE_UPLOAD_HEADERS, ...sortPurchaseUploadRows(purchaseUploadRows)]
+  };
+  const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  return {
+    sheetNames: ['확인요청', '판매입력', '전송출고', '전송구매', '거래처별', '단가설정', '구매 업로드'],
+    matrices,
+    widths: {
+      '확인요청': CHECK_WIDTHS, '판매입력': SALES_WIDTHS, '전송출고': OUTBOUND_WIDTHS,
+      '전송구매': PURCHASE_WIDTHS, '거래처별': PREVIEW_WIDTHS, '단가설정': SETTINGS_HEADERS.map(() => 18),
+      '구매 업로드': PURCHASE_UPLOAD_WIDTHS
+    },
+    fileName: `2전송_판매업로드_생성_${ymd}.xlsx`,
+    stats: { outputRows: rows.length, fatalErrors: fatalErrors.length, warnings: warnings.length }
+  };
+}
+
+const PURCHASE_SALES_UPLOAD_HEADERS = Object.freeze({
+  check: CHECK_HEADERS, sales: SALES_HEADERS, outbound: OUTBOUND_HEADERS,
+  purchase: PURCHASE_HEADERS, preview: PREVIEW_HEADERS, settings: SETTINGS_HEADERS,
+  upload: PURCHASE_UPLOAD_HEADERS
+});
+
+const PURCHASE_SALES_UPLOAD_GROUPS = GROUP_PRESETS;
+
+return { runStage5Compute: stage5ComputeRunnerSection.runStage5Compute, DEFAULT_WORKER_THRESHOLD_ROWS: stage5ComputeRunnerSection.DEFAULT_WORKER_THRESHOLD_ROWS, buildPurchaseSalesUploadData, PURCHASE_SALES_UPLOAD_HEADERS, PURCHASE_SALES_UPLOAD_GROUPS };
+})();
+
+// Public API (same functions and constants; no additional command layer).
+export const runStage5Compute = stage5ComputeRunnerSection.runStage5Compute;
+export const DEFAULT_WORKER_THRESHOLD_ROWS = stage5ComputeRunnerSection.DEFAULT_WORKER_THRESHOLD_ROWS;
+export const KAKAO_NOTICE_ROWS_PER_PAGE = estimateOutputSection.KAKAO_NOTICE_ROWS_PER_PAGE;
+export const paginateKakaoNoticeRows = estimateOutputSection.paginateKakaoNoticeRows;
+export const splitKakaoNoticeColumns = estimateOutputSection.splitKakaoNoticeColumns;
+export const buildEstimateF8RowsFromDraft = estimateOutputSection.buildEstimateF8RowsFromDraft;
+export const buildEstimateF8RowsFromPlan = estimateOutputSection.buildEstimateF8RowsFromPlan;
+export const buildCatalogPriceSnapshot = estimateOutputSection.buildCatalogPriceSnapshot;
+export const priceSnapshotsEqual = estimateOutputSection.priceSnapshotsEqual;
+export const buildKakaoNoticeRows = estimateOutputSection.buildKakaoNoticeRows;
+export const validateEstimateRows = estimateOutputSection.validateEstimateRows;
+export const buildEstimateDuplicateGroups = estimateOutputSection.buildEstimateDuplicateGroups;
+export const calculateEstimateResolvedPrice = estimateOutputSection.calculateEstimateResolvedPrice;
+export const resolveEstimateDuplicateRows = estimateOutputSection.resolveEstimateDuplicateRows;
+export const sortEstimateUploadRows = estimateOutputSection.sortEstimateUploadRows;
+export const buildEstimateF8Data = estimateOutputSection.buildEstimateF8Data;
+export const renderKakaoNoticeCanvases = estimateOutputSection.renderKakaoNoticeCanvases;
+export const ESTIMATE_F8_HEADERS = estimateOutputSection.ESTIMATE_F8_HEADERS;
+export const buildPurchaseSalesUploadData = purchaseSalesOutputSection.buildPurchaseSalesUploadData;
+export const PURCHASE_SALES_UPLOAD_HEADERS = purchaseSalesOutputSection.PURCHASE_SALES_UPLOAD_HEADERS;
+export const PURCHASE_SALES_UPLOAD_GROUPS = purchaseSalesOutputSection.PURCHASE_SALES_UPLOAD_GROUPS;

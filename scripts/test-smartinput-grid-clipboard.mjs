@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import {
   buildGridPastePlan,
   parseClipboardMatrix
-} from '../smartinput/grid-clipboard.js';
+} from '../smartinput/input.js';
 import '../smartinput/smartinput-contract.js';
 
 const contract = globalThis.SMART_INPUT_CONTRACT;

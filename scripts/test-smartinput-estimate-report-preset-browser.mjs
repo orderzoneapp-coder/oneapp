@@ -128,7 +128,7 @@ try {
   await expr(client,'window.__presetTest.snapshot().mode==="estimate" && !window.__presetTest.snapshot().busy && ["READY","EMPTY"].includes(window.__presetTest.snapshot().templatesStatus)','estimate templates ready',60000);
   assert.equal(await evaluate(client,'(()=>{const c=document.querySelector("#tableViewSwitch");return !c.hidden && getComputedStyle(c).display!=="none" && c.getBoundingClientRect().height>0;})()'),true,'input/source view switch must be visible');
   assert.equal(await evaluate(client,'document.querySelector("[data-table-view=source]").disabled'),true,'no original source means source view is unavailable');
-  const { ESTIMATE_REPORT_HEADERS:H }=await import('../smartinput/estimate-report-preset.js');
+  const { ESTIMATE_REPORT_HEADERS:H }=await import('../smartinput/input.js');
   const source={일자:'2026/09/02',창고:'01',거래처명:'테스트 거래처',품목명:'테스트 상품',규격:'EA',품목코드:'001234',입고가:2800,출고가:3800,입고B:'',도매A:3300,도매B:0,행사가:'21500',적요2:'0012',간단설명:'참조',단위:'소분','1종연산':'8.5',외주비:200,경비:100,노무비:200,재료비:0,'1종규격':'','1종코드':'','1입고':'','1출고':200};
   const data=Array.from({length:273},(_,i)=>H.map(h=>h==='품목코드'?'00'+String(i).padStart(5,'0'):source[h]));
   const matrix=[['회사명 / 테스트 출력'],[...H],...data,['2026/09/21 (월) 오후 12:22:12']];

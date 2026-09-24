@@ -6,8 +6,8 @@ import vm from 'node:vm';
 import {
   normalizeStructuredFieldName,
   parseStructuredSheet
-} from '../smartinput/grid-clipboard.js';
-import { buildEstimateF8Data } from '../smartinput/estimate-output.js';
+} from '../smartinput/input.js';
+import { buildEstimateF8Data } from '../smartinput/report.js';
 import { decorateStructuredRows } from '../smartinput/multivoucher-stage1.js';
 
 const contractSource = fs.readFileSync(new URL('../smartinput/smartinput-contract.js', import.meta.url), 'utf8');

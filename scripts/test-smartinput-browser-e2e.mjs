@@ -924,7 +924,7 @@ try {
       footer:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id),
       app:{x:app.x,y:app.y,width:app.width,height:app.height}};
   })()`);
-  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=1');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/official-voucher-feature.js?ui-e2e=1');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
     companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-UI',sourceLineId:'PL-UI-1',checkpointId:'CP-UI',
     productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
   },{
@@ -966,7 +966,7 @@ try {
 
   await click(client, '[data-nexus-ui-theme-toggle]');
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='dark'`, 'dark stocktake popup theme');
-  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-DARK',sourceLineId:'PL-DARK',checkpointId:'CP-DARK',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/official-voucher-feature.js?ui-e2e=2');window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{companyId:'V2-STAGE5-COMPANY',voucherMode:'purchase',documentId:'PD-DARK',sourceLineId:'PL-DARK',checkpointId:'CP-DARK',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10}]);return true;})()`);
   await expr(client, `Boolean(document.querySelector('dialog.stocktake-conflict-dialog[open]'))`, 'dark stocktake popup');
   const stocktakeDarkShot = await capture(client, 'smartinput-stocktake-conflict-dark.png');
   baselineScreenshots.push(stocktakeDarkShot);
@@ -976,7 +976,7 @@ try {
   await expr(client, `document.documentElement.dataset.nexusUiTheme==='light'`, 'restore light theme after stocktake popup');
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await evaluate(client, `(async()=>{const popup=await import('/smartinput/stocktake-conflict-dialog.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
+  await evaluate(client, `(async()=>{const popup=await import('/smartinput/official-voucher-feature.js?ui-e2e=3');window.__stage5DialogResult='PENDING';window.__stage5DialogPromise=popup.showStocktakeConflictDialog([{
     companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-1',checkpointId:'CP-MOBILE',productCode:'0007',productName:'실사 충돌 상품',warehouseName:'단계5창고',quantity:10
   },{
     companyId:'V2-STAGE5-COMPANY',voucherMode:'sale',documentId:'SD-MOBILE',sourceLineId:'SL-MOBILE-2',checkpointId:'CP-MOBILE',productCode:'0008',productName:'혼합결정 상품',warehouseName:'단계5창고',quantity:4

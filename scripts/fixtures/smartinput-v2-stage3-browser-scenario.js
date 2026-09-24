@@ -5,8 +5,8 @@ import {
   withOfficialCommandIdentityV2
 } from '../../orderq/official-voucher-v2-contract.js?v=stage3-browser';
 import { openOrderQDb, transactionDone } from '../../orderq/orderq-db.js?v=stage3-browser';
-import { buildPurchasePostDraft } from '../../smartinput/purchase-official-stage3.js?v=stage3-browser';
-import { buildSalePostDraft } from '../../smartinput/sale-official-stage4.js?v=stage3-browser';
+import { buildPurchasePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage3-browser';
+import { buildSalePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage3-browser';
 
 const clone = value => structuredClone(value);
 const errorText = error => `${error?.name || 'Error'}:${error?.message || String(error)}`;

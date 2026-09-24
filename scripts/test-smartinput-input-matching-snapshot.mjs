@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { readInputMatchingSnapshot } from '../orderq/input-matching-read-adapter.js';
-import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, validateInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from '../smartinput/input-matching-snapshot.js';
+import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, validateInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from '../smartinput/reference-refresh-controller.js';
 import { generateInputProductCandidates, analyzeSingleOrderDocument } from '../smartinput/input.js';
 import { matchParsedLine } from '../orderq/smartparser/matching-engine.js';
-import { createProductMatchIndex, classifyProductMatch } from '../smartinput/reference-data-controller.js';
+import { createProductMatchIndex, classifyProductMatch } from '../smartinput/reference-refresh-controller.js';
 
 const scope = { companyId: 'ONEAPP', actorId: 'A1' };
 const records = {

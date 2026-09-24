@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { buildEstimateF8Data, buildEstimateDuplicateGroups, resolveEstimateDuplicateRows, validateEstimateRows } from '../smartinput/estimate-output.js';
-import { runStage5Compute } from '../smartinput/stage5-compute-runner.js';
+import { buildEstimateF8Data, buildEstimateDuplicateGroups, resolveEstimateDuplicateRows, validateEstimateRows } from '../smartinput/report.js';
+import { runStage5Compute } from '../smartinput/report.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const context = vm.createContext({ console, Date, Math, Number, String, Object, Array, Map, Set, Uint8Array, ArrayBuffer, setTimeout, clearTimeout });
@@ -151,5 +151,5 @@ await verify('W01-real-worker-and-fallback-parity', async () => {
   } finally { if (previousSelf === undefined) delete globalThis.self; else globalThis.self = previousSelf; }
 });
 
-if (evidenceDir) fs.writeFileSync(path.join(evidenceDir, 'results.json'), JSON.stringify({ passed: results, failed: [], source: 'actual estimate-output.js and actual worker module', scope: 'synthetic regressions, not user 344-product replay' }, null, 2));
+if (evidenceDir) fs.writeFileSync(path.join(evidenceDir, 'results.json'), JSON.stringify({ passed: results, failed: [], source: 'actual report.js and actual worker module', scope: 'synthetic regressions, not user 344-product replay' }, null, 2));
 console.log(`SmartInput F8 upload contract passed (${results.length} cases).`);

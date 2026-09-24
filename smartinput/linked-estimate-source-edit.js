@@ -1,7 +1,17 @@
-export const LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA = 'ONEAPP_LINKED_ESTIMATE_SOURCE_EVIDENCE_V1';
-export const LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA = 'ONEAPP_LINKED_ESTIMATE_SOURCE_EDIT_PLAN_V1';
+// SmartInput role consolidation. No data migration or business-policy change.
+// Edit implementations in the named sections below; former files are removed.
 
-export const LINKED_ESTIMATE_SOURCE_EDIT_FIELDS = Object.freeze([
+
+// ============================================================================
+// linked-estimate-source-edit.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const linkedEstimateSourceEditSection = (() => {
+
+
+const LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA = 'ONEAPP_LINKED_ESTIMATE_SOURCE_EVIDENCE_V1';
+const LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA = 'ONEAPP_LINKED_ESTIMATE_SOURCE_EDIT_PLAN_V1';
+
+const LINKED_ESTIMATE_SOURCE_EDIT_FIELDS = Object.freeze([
   'masterProductId', 'productId', 'itemCode', 'itemName', 'secondaryName', 'searchInfo',
   'specification', 'boxQuantity', 'quantity', 'unit', 'unitPrice', 'sourceUnitPrice',
   'outPrice', 'wholesaleA', 'wholesaleB', 'listingPrice', 'marketPrice', 'promoPrice',
@@ -10,7 +20,7 @@ export const LINKED_ESTIMATE_SOURCE_EDIT_FIELDS = Object.freeze([
   'productIdentityStatus', 'matchSource', 'referenceResolution'
 ]);
 
-export const LINKED_ESTIMATE_FIELD_LABELS = Object.freeze({
+const LINKED_ESTIMATE_FIELD_LABELS = Object.freeze({
   masterProductId: '마스터 ID',
   productId: '상품 ID',
   itemCode: '품목코드',
@@ -71,7 +81,7 @@ function normalizedProductKey(value) {
   return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[\s()[\]{}<>,.:;·_-]+/g, '');
 }
 
-export function numericInputState(value) {
+function numericInputState(value) {
   if (value === '' || value === null || value === undefined) return 'BLANK';
   const parsed = typeof value === 'number'
     ? value
@@ -210,7 +220,7 @@ function sourceCandidate(record, sourceRow = null, ref = null) {
   };
 }
 
-export function inspectLinkedEstimateSourceEdits({ linkedRecord, baselineLinkedRecord = null, currentDraft, sourceRecords = [] } = {}) {
+function inspectLinkedEstimateSourceEdits({ linkedRecord, baselineLinkedRecord = null, currentDraft, sourceRecords = [] } = {}) {
   const issues = [];
   if (linkedRecord?.estimateKind !== 'LINKED_GROUP') {
     issues.push({ code: 'LINKED_ESTIMATE_RECORD_REQUIRED', message: '연동견적서만 원본별 수정할 수 있습니다.' });
@@ -331,7 +341,7 @@ function requiredSelection(row, selections) {
   throw error;
 }
 
-export function createLinkedEstimateSourceEditPlan({ evidence, selections = {}, actor, occurredAt, planId } = {}) {
+function createLinkedEstimateSourceEditPlan({ evidence, selections = {}, actor, occurredAt, planId } = {}) {
   if (evidence?.schemaVersion !== LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA) throw new Error('LINKED_ESTIMATE_SOURCE_EVIDENCE_INVALID');
   if (evidence.issues?.length) {
     const error = new Error(evidence.issues[0].code || 'LINKED_ESTIMATE_SOURCE_EVIDENCE_INVALID');
@@ -398,11 +408,11 @@ function comparableWorkingDraft(input) {
   return draft;
 }
 
-export function linkedEstimateWorkingDraftsEquivalent(left, right) {
+function linkedEstimateWorkingDraftsEquivalent(left, right) {
   return same(comparableWorkingDraft(left), comparableWorkingDraft(right));
 }
 
-export function inspectLinkedEstimateSourceWorkingCopyConflicts({ plan, sourceRecords = [], workingCopies = [] } = {}) {
+function inspectLinkedEstimateSourceWorkingCopyConflicts({ plan, sourceRecords = [], workingCopies = [] } = {}) {
   if (plan?.schemaVersion !== LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA) throw new Error('LINKED_ESTIMATE_SOURCE_EDIT_PLAN_INVALID');
   const selectedIds = new Set(plan.operations.flatMap(operation => (
     operation.operation === 'DELETE' ? (operation.targets || []) : [operation.target]
@@ -426,7 +436,7 @@ function linkedRefSignature(row = {}) {
   return normalizedSourceRefs(row).map(ref => `${ref.estimateId}:${ref.rowId}`).sort().join('|');
 }
 
-export function restoreLinkedEstimateWorkingRowEdits({ materializedRows = [], workingRows = [] } = {}) {
+function restoreLinkedEstimateWorkingRowEdits({ materializedRows = [], workingRows = [] } = {}) {
   const workingByRefs = new Map(workingRows.map(row => [linkedRefSignature(row), row]).filter(([signature]) => signature));
   return materializedRows.map(row => {
     const working = workingByRefs.get(linkedRefSignature(row));
@@ -450,7 +460,7 @@ export function restoreLinkedEstimateWorkingRowEdits({ materializedRows = [], wo
   });
 }
 
-export function rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord } = {}) {
+function rebaseLinkedEstimateWorkingDraft({ baselineDraft, workingDraft, rebuiltRecord } = {}) {
   if (!baselineDraft || !workingDraft || rebuiltRecord?.estimateKind !== 'LINKED_GROUP' || !rebuiltRecord.draft) {
     throw new Error('LINKED_ESTIMATE_WORKING_REBASE_INPUT_REQUIRED');
   }
@@ -594,7 +604,7 @@ function materializeLinkedRows(target, recordsById) {
   return [...uniqueRows.values(), ...manualRows];
 }
 
-export function removeLinkedEstimateSources({ linkedRecord, sourceRecords = [], removedEstimateIds = [], occurredAt } = {}) {
+function removeLinkedEstimateSources({ linkedRecord, sourceRecords = [], removedEstimateIds = [], occurredAt } = {}) {
   if (linkedRecord?.estimateKind !== 'LINKED_GROUP') throw new Error('LINKED_ESTIMATE_RECORD_REQUIRED');
   const removedIds = new Set(removedEstimateIds.map(text).filter(Boolean));
   const target = clone(linkedRecord);
@@ -612,7 +622,7 @@ export function removeLinkedEstimateSources({ linkedRecord, sourceRecords = [], 
   return target;
 }
 
-export function rebuildLinkedEstimateRecord({ linkedRecord, sourceRecords = [], occurredAt, operationId = '' } = {}) {
+function rebuildLinkedEstimateRecord({ linkedRecord, sourceRecords = [], occurredAt, operationId = '' } = {}) {
   if (linkedRecord?.estimateKind !== 'LINKED_GROUP') throw new Error('LINKED_ESTIMATE_RECORD_REQUIRED');
   const timestamp = text(occurredAt) || new Date().toISOString();
   const recordsById = new Map((sourceRecords || [])
@@ -682,7 +692,7 @@ function sanitizeNewSourceRow(row, target, plan) {
   return next;
 }
 
-export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRecords = [] } = {}) {
+function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRecords = [] } = {}) {
   if (plan?.schemaVersion !== LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA) throw new Error('LINKED_ESTIMATE_SOURCE_EDIT_PLAN_INVALID');
   if (text(linkedRecord?.estimateId) !== plan.linkedEstimateId || linkedRecord?.estimateKind !== 'LINKED_GROUP') {
     throw new Error('LINKED_ESTIMATE_SOURCE_TARGET_MISMATCH');
@@ -812,3 +822,714 @@ export function applyLinkedEstimateSourceEditPlan({ plan, linkedRecord, sourceRe
     audit
   };
 }
+
+return { LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA, LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA, LINKED_ESTIMATE_SOURCE_EDIT_FIELDS, LINKED_ESTIMATE_FIELD_LABELS, numericInputState, inspectLinkedEstimateSourceEdits, createLinkedEstimateSourceEditPlan, linkedEstimateWorkingDraftsEquivalent, inspectLinkedEstimateSourceWorkingCopyConflicts, restoreLinkedEstimateWorkingRowEdits, rebaseLinkedEstimateWorkingDraft, removeLinkedEstimateSources, rebuildLinkedEstimateRecord, applyLinkedEstimateSourceEditPlan };
+})();
+
+// ============================================================================
+// estimate-f8-source-plan.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const estimateF8SourcePlanSection = (() => {
+
+
+const text = value => String(value ?? '').trim();
+const unique = values => [...new Set((values || []).map(text).filter(Boolean))];
+
+function sameIds(left = [], right = []) {
+  const a = unique(left).sort();
+  const b = unique(right).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function workingDraftFor(workingDrafts, estimateId) {
+  if (!estimateId) return null;
+  if (workingDrafts instanceof Map) return workingDrafts.get(estimateId) || null;
+  if (Array.isArray(workingDrafts)) {
+    return workingDrafts.find(entry => text(entry?.estimateId) === estimateId)?.draft || null;
+  }
+  return workingDrafts && typeof workingDrafts === 'object'
+    ? (workingDrafts[estimateId] || null)
+    : null;
+}
+
+function draftForRecord(record, currentDraft, workingDrafts) {
+  const estimateId = text(record?.estimateId);
+  if (estimateId && text(currentDraft?.catalogRecordId) === estimateId) {
+    return { draft: currentDraft, error: '' };
+  }
+  const workingDraft = workingDraftFor(workingDrafts, estimateId);
+  if (workingDraft && text(workingDraft.catalogRecordId) !== estimateId) {
+    return { draft: null, error: `견적서 ${estimateId}의 작업본 식별자가 일치하지 않습니다.` };
+  }
+  const storedDraft = record?.draft || null;
+  if (!workingDraft && storedDraft && text(storedDraft.catalogRecordId) && text(storedDraft.catalogRecordId) !== estimateId) {
+    return { draft: null, error: `견적서 ${estimateId}의 저장 식별자가 일치하지 않습니다.` };
+  }
+  return { draft: workingDraft || storedDraft, error: '' };
+}
+
+function metadataSourceIds(value = null) {
+  return unique((value?.linkedEstimateSources || []).map(source => source?.estimateId));
+}
+
+function rowSourceIds(draft = null) {
+  const ids = [];
+  (draft?.rows || []).forEach(row => {
+    (row?.linkedSourceEstimateIds || []).forEach(id => ids.push(id));
+    (row?.linkedSourceRefs || []).forEach(source => ids.push(source?.estimateId));
+    ids.push(row?.linkedSourceEstimateId);
+  });
+  return unique(ids);
+}
+
+function normalizedRowRefs(row = null) {
+  if (Array.isArray(row?.linkedSourceRefs) && row.linkedSourceRefs.length) {
+    return row.linkedSourceRefs.map(ref => ({ estimateId: text(ref?.estimateId), rowId: text(ref?.rowId) }));
+  }
+  return row?.linkedSourceEstimateId && row?.linkedSourceRowId
+    ? [{ estimateId: text(row.linkedSourceEstimateId), rowId: text(row.linkedSourceRowId) }]
+    : [];
+}
+
+function invalidLinkedRefStructure(draft = null) {
+  for (let rowIndex = 0; rowIndex < (draft?.rows || []).length; rowIndex += 1) {
+    const row = draft.rows[rowIndex];
+    const explicitRefs = Array.isArray(row?.linkedSourceRefs) && row.linkedSourceRefs.length > 0;
+    const refs = normalizedRowRefs(row);
+    const legacyEstimateId = text(row?.linkedSourceEstimateId);
+    const legacyRowId = text(row?.linkedSourceRowId);
+    const listedEstimateIds = unique(row?.linkedSourceEstimateIds);
+    if (explicitRefs && refs.some(ref => !ref.estimateId || !ref.rowId)) {
+      return `${rowIndex + 1}행의 원본 참조에 견적서 ID 또는 행 ID가 없습니다.`;
+    }
+    if (Boolean(legacyEstimateId) !== Boolean(legacyRowId)) {
+      return `${rowIndex + 1}행의 단일 원본 참조가 완전하지 않습니다.`;
+    }
+    if (!explicitRefs && listedEstimateIds.length && !refs.length) {
+      return `${rowIndex + 1}행에 원본 견적서만 있고 원본 행 참조가 없습니다.`;
+    }
+    const signatures = refs.map(ref => `${ref.estimateId}:${ref.rowId}`);
+    if (new Set(signatures).size !== signatures.length) {
+      return `${rowIndex + 1}행에 같은 원본 행 참조가 중복되어 있습니다.`;
+    }
+    if (explicitRefs && listedEstimateIds.length && !sameIds(listedEstimateIds, refs.map(ref => ref.estimateId))) {
+      return `${rowIndex + 1}행의 원본 견적서 목록과 원본 행 참조가 일치하지 않습니다.`;
+    }
+    if (explicitRefs && legacyEstimateId && !signatures.includes(`${legacyEstimateId}:${legacyRowId}`)) {
+      return `${rowIndex + 1}행의 단일 원본 참조와 원본 행 목록이 일치하지 않습니다.`;
+    }
+    if (!explicitRefs && refs.length && listedEstimateIds.length && !sameIds(listedEstimateIds, refs.map(ref => ref.estimateId))) {
+      return `${rowIndex + 1}행의 원본 견적서 목록과 단일 원본 참조가 일치하지 않습니다.`;
+    }
+  }
+  return '';
+}
+
+function linkedRowRefs(draft = null) {
+  return (draft?.rows || []).flatMap(normalizedRowRefs).filter(ref => ref.estimateId && ref.rowId);
+}
+
+function duplicateLinkedRowRef(draft = null) {
+  const rowCountByRef = new Map();
+  for (const row of draft?.rows || []) {
+    const refs = normalizedRowRefs(row);
+    const uniqueRowRefs = new Set(refs
+      .map(ref => `${text(ref?.estimateId)}:${text(ref?.rowId)}`)
+      .filter(signature => signature !== ':'));
+    for (const signature of uniqueRowRefs) {
+      const count = (rowCountByRef.get(signature) || 0) + 1;
+      if (count > 1) return signature;
+      rowCountByRef.set(signature, count);
+    }
+  }
+  return '';
+}
+
+function ambiguousEditedMultiRef(draft = null) {
+  for (const row of draft?.rows || []) {
+    const refs = normalizedRowRefs(row);
+    const signatures = unique(refs.map(ref => `${text(ref?.estimateId)}:${text(ref?.rowId)}`));
+    const edited = Object.values(row?.editedFields || {}).some(Boolean)
+      || (Array.isArray(row?.linkedSyncFields) && row.linkedSyncFields.length > 0);
+    if (signatures.length > 1 && edited) return signatures.join(', ');
+  }
+  return '';
+}
+
+function missingLinkedRowRef(workingDraft, sourceIds, sourceDrafts) {
+  const rowIdsByEstimate = new Map(sourceIds.map((estimateId, index) => [
+    estimateId,
+    new Set((sourceDrafts[index]?.rows || []).map(row => text(row?.rowId)).filter(Boolean))
+  ]));
+  return linkedRowRefs(workingDraft).find(ref => !rowIdsByEstimate.get(ref.estimateId)?.has(ref.rowId)) || null;
+}
+
+function invalidSourceRowIdentity(sourceIds, sourceDrafts) {
+  for (let sourceIndex = 0; sourceIndex < sourceDrafts.length; sourceIndex += 1) {
+    const estimateId = sourceIds[sourceIndex];
+    const seen = new Set();
+    for (const row of sourceDrafts[sourceIndex]?.rows || []) {
+      const rowId = text(row?.rowId);
+      if (!rowId) return `${estimateId}:행ID없음`;
+      if (seen.has(rowId)) return `${estimateId}:${rowId}`;
+      seen.add(rowId);
+    }
+  }
+  return '';
+}
+
+function resolveSourceDrafts(sourceIds, individualsById, currentDraft, workingDrafts) {
+  const drafts = [];
+  for (const estimateId of sourceIds) {
+    const sourceRecord = individualsById.get(estimateId);
+    const resolved = sourceRecord ? draftForRecord(sourceRecord, currentDraft, workingDrafts) : { draft: null, error: '' };
+    if (resolved.error) return { ok: false, error: resolved.error, drafts: [] };
+    if (!resolved.draft) return { ok: false, error: `연결된 원본 견적서 ${estimateId}을(를) 확인할 수 없습니다.`, drafts: [] };
+    const recordKind = text(sourceRecord?.estimateKind);
+    const draftKind = text(resolved.draft?.estimateKind);
+    if (recordKind && draftKind && recordKind !== draftKind) {
+      return { ok: false, error: `연결된 원본 견적서 ${estimateId}의 유형이 저장 정보와 작업표에서 일치하지 않습니다.`, drafts: [] };
+    }
+    if ([recordKind, draftKind].some(kind => ['LINKED_GROUP', 'COMPOSITION_PREVIEW'].includes(kind))) {
+      return { ok: false, error: `연결된 원본 견적서 ${estimateId}이(가) 개별 견적서가 아닙니다.`, drafts: [] };
+    }
+    drafts.push(resolved.draft);
+  }
+  return { ok: true, error: '', drafts };
+}
+
+function fail(error, selectionCount = 1) {
+  return { ok: false, error, entries: [], validationDrafts: [], selectionCount };
+}
+
+function derivedEntry({ workingDraft, sourceIds, sourceDrafts, record = null }) {
+  return {
+    kind: 'DERIVED',
+    recordId: text(record?.estimateId || workingDraft?.catalogRecordId),
+    workingDraft,
+    sourceIds: [...sourceIds],
+    sourceDrafts: [...sourceDrafts]
+  };
+}
+
+/**
+ * F8 출력용 작업표와 중복 검사용 원본을 분리한다.
+ *
+ * DIRECT는 개별 견적 작업표를 그대로 출력한다.
+ * DERIVED는 최신 개별 원본으로 행을 다시 만든 뒤 workingDraft의 명시적 편집만 덮어쓴다.
+ */
+function buildEstimateF8DraftPlan({
+  creation = null,
+  selectedRecords = [],
+  currentDraft = null,
+  individualRecords = [],
+  allRecords = [],
+  workingDrafts = new Map()
+} = {}) {
+  const individualsById = new Map((individualRecords || []).map(record => [text(record?.estimateId), record]));
+  const recordsById = new Map((allRecords || []).map(record => [text(record?.estimateId), record]));
+  (selectedRecords || []).forEach(record => recordsById.set(text(record?.estimateId), record));
+  (individualRecords || []).forEach(record => recordsById.set(text(record?.estimateId), record));
+
+  const selectedSourceIds = unique(creation?.selectedIds);
+  const entries = [];
+  let selectionCount = 1;
+
+  if (creation && !selectedSourceIds.length) return fail('조합할 원본 견적서를 선택하세요.', 0);
+  if (selectedSourceIds.length) {
+    selectionCount = selectedSourceIds.length;
+    if (!currentDraft || currentDraft.estimateKind !== 'COMPOSITION_PREVIEW') {
+      return fail('현재 조합 미리보기 상태가 일치하지 않습니다.', selectionCount);
+    }
+    const previewSourceIds = metadataSourceIds(currentDraft);
+    if (!sameIds(previewSourceIds, selectedSourceIds)) {
+      return fail('조합 미리보기의 원본 견적서 구성이 현재 선택과 일치하지 않습니다.', selectionCount);
+    }
+    const invalidRefs = invalidLinkedRefStructure(currentDraft);
+    if (invalidRefs) return fail(`조합 미리보기의 원본 연결이 올바르지 않습니다. ${invalidRefs}`, selectionCount);
+    const unknownRowIds = rowSourceIds(currentDraft).filter(id => !selectedSourceIds.includes(id));
+    if (unknownRowIds.length) return fail(`조합 미리보기에 알 수 없는 원본 견적서 ${unknownRowIds[0]}이(가) 포함되어 있습니다.`, selectionCount);
+    const duplicateRef = duplicateLinkedRowRef(currentDraft);
+    if (duplicateRef) return fail(`조합 미리보기에서 원본 행 ${duplicateRef}이(가) 여러 작업행에 중복 연결되어 있습니다.`, selectionCount);
+    const ambiguousRefs = ambiguousEditedMultiRef(currentDraft);
+    if (ambiguousRefs) return fail(`조합 미리보기의 편집값이 여러 원본 행(${ambiguousRefs})에 연결되어 있어 적용 대상을 결정할 수 없습니다.`, selectionCount);
+    const sources = resolveSourceDrafts(selectedSourceIds, individualsById, currentDraft, workingDrafts);
+    if (!sources.ok) return fail(sources.error, selectionCount);
+    const invalidIdentity = invalidSourceRowIdentity(selectedSourceIds, sources.drafts);
+    if (invalidIdentity) return fail(`조합 원본 행 식별자가 유일하지 않습니다(${invalidIdentity}).`, selectionCount);
+    const missingRef = missingLinkedRowRef(currentDraft, selectedSourceIds, sources.drafts);
+    if (missingRef) return fail(`조합 미리보기의 원본 행 ${missingRef.estimateId}:${missingRef.rowId}을(를) 확인할 수 없습니다.`, selectionCount);
+    entries.push(derivedEntry({ workingDraft: currentDraft, sourceIds: selectedSourceIds, sourceDrafts: sources.drafts }));
+  } else {
+    const targets = Array.isArray(selectedRecords) && selectedRecords.length
+      ? selectedRecords.map(record => ({ record, useCurrent: text(currentDraft?.catalogRecordId) === text(record?.estimateId) }))
+      : (currentDraft ? [{ record: recordsById.get(text(currentDraft.catalogRecordId)) || null, useCurrent: true }] : []);
+    selectionCount = Array.isArray(selectedRecords) && selectedRecords.length ? selectedRecords.length : 1;
+    if (!targets.length) return fail('출력할 견적서 작업표를 확인할 수 없습니다.', selectionCount);
+
+    for (const target of targets) {
+      const resolved = target.record
+        ? draftForRecord(target.record, target.useCurrent ? currentDraft : null, workingDrafts)
+        : { draft: currentDraft, error: '' };
+      if (resolved.error) return fail(resolved.error, selectionCount);
+      if (!resolved.draft) return fail('출력할 견적서 작업표를 확인할 수 없습니다.', selectionCount);
+      if (resolved.draft.estimateKind === 'COMPOSITION_PREVIEW') return fail('조합 미리보기 선택 상태를 다시 확인하세요.', selectionCount);
+
+      const recordKind = text(target.record?.estimateKind);
+      const draftKind = text(resolved.draft.estimateKind);
+      if (recordKind && draftKind && recordKind !== draftKind) {
+        return fail('견적서의 저장 유형과 작업표 유형이 일치하지 않습니다.', selectionCount);
+      }
+
+      if (resolved.draft.schemaVersion === 'ONEAPP_SMARTINPUT_INDEPENDENT_ESTIMATE_V1') {
+        if (!Array.isArray(resolved.draft.ownedRows)) return fail('독립 견적서의 전체 거래행을 확인할 수 없습니다.', selectionCount);
+        entries.push({ kind: 'DIRECT', recordId: text(target.record?.estimateId || resolved.draft.catalogRecordId),
+          draft: { ...resolved.draft, inputMapping: null, rows: resolved.draft.ownedRows } });
+        continue;
+      }
+      const linked = recordKind === 'LINKED_GROUP' || draftKind === 'LINKED_GROUP';
+      if (!linked) {
+        entries.push({ kind: 'DIRECT', recordId: text(target.record?.estimateId || resolved.draft.catalogRecordId), draft: resolved.draft });
+        continue;
+      }
+
+      const recordSourceIds = metadataSourceIds(target.record);
+      const draftSourceIds = metadataSourceIds(resolved.draft);
+      if (!recordSourceIds.length || !draftSourceIds.length) return fail('연동견적서의 원본 견적서 구성을 확인할 수 없습니다.', selectionCount);
+      if (!sameIds(recordSourceIds, draftSourceIds)) return fail('연동견적서의 저장 정보와 작업표 원본 구성이 일치하지 않습니다.', selectionCount);
+      const invalidRefs = invalidLinkedRefStructure(resolved.draft);
+      if (invalidRefs) return fail(`연동견적서의 원본 연결이 올바르지 않습니다. ${invalidRefs}`, selectionCount);
+      const unknownRowIds = rowSourceIds(resolved.draft).filter(id => !recordSourceIds.includes(id));
+      if (unknownRowIds.length) return fail(`연동견적서에 알 수 없는 원본 견적서 ${unknownRowIds[0]}이(가) 포함되어 있습니다.`, selectionCount);
+      const duplicateRef = duplicateLinkedRowRef(resolved.draft);
+      if (duplicateRef) return fail(`연동견적서에서 원본 행 ${duplicateRef}이(가) 여러 작업행에 중복 연결되어 있습니다.`, selectionCount);
+      const ambiguousRefs = ambiguousEditedMultiRef(resolved.draft);
+      if (ambiguousRefs) return fail(`연동견적서의 편집값이 여러 원본 행(${ambiguousRefs})에 연결되어 있어 적용 대상을 결정할 수 없습니다.`, selectionCount);
+      const sources = resolveSourceDrafts(recordSourceIds, individualsById, currentDraft, workingDrafts);
+      if (!sources.ok) return fail(sources.error, selectionCount);
+      const invalidIdentity = invalidSourceRowIdentity(recordSourceIds, sources.drafts);
+      if (invalidIdentity) return fail(`연동견적서 원본 행 식별자가 유일하지 않습니다(${invalidIdentity}).`, selectionCount);
+      const missingRef = missingLinkedRowRef(resolved.draft, recordSourceIds, sources.drafts);
+      if (missingRef) return fail(`연동견적서의 원본 행 ${missingRef.estimateId}:${missingRef.rowId}을(를) 확인할 수 없습니다.`, selectionCount);
+      entries.push(derivedEntry({
+        record: target.record,
+        workingDraft: resolved.draft,
+        sourceIds: recordSourceIds,
+        sourceDrafts: sources.drafts
+      }));
+    }
+  }
+
+  return {
+    ok: true,
+    error: '',
+    entries,
+    validationDrafts: entries.flatMap(entry => entry.kind === 'DERIVED' ? entry.sourceDrafts : [entry.draft]),
+    selectionCount
+  };
+}
+
+return { buildEstimateF8DraftPlan };
+})();
+
+// ============================================================================
+// estimate-f8-recovery.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const estimateF8RecoverySection = (() => {
+const { removeLinkedEstimateSources } = linkedEstimateSourceEditSection;
+
+const ESTIMATE_F8_RECOVERY_SCHEMA = 'ONEAPP_SMARTINPUT_ESTIMATE_F8_RECOVERY_V1';
+
+const text = value => String(value ?? '').trim();
+
+function clone(value) {
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function unique(values = []) {
+  return [...new Set(values.map(text).filter(Boolean))];
+}
+
+function sameIds(left = [], right = []) {
+  const a = unique(left).sort();
+  const b = unique(right).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function fingerprint(value) {
+  const source = canonical(value);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `F8I-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function meaningful(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.some(meaningful);
+  if (typeof value === 'object') return Object.values(value).some(meaningful);
+  return Boolean(value);
+}
+
+function meaningfulRow(row = {}) {
+  return ['itemCode', 'itemName', 'specification', 'quantity', 'unit', 'unitPrice', 'memo', 'description', 'noticePrice']
+    .some(field => meaningful(row[field])) || Object.values(row.customValues || {}).some(meaningful);
+}
+
+function normalizedRowRefs(row = {}) {
+  if (Array.isArray(row.linkedSourceRefs) && row.linkedSourceRefs.length) {
+    return row.linkedSourceRefs.map(ref => ({ estimateId: text(ref?.estimateId), rowId: text(ref?.rowId) }));
+  }
+  return row.linkedSourceEstimateId && row.linkedSourceRowId
+    ? [{ estimateId: text(row.linkedSourceEstimateId), rowId: text(row.linkedSourceRowId) }]
+    : [];
+}
+
+function rowLabel(row = {}) {
+  return text(row.itemName) || text(row.itemCode) || text(row.rowId) || '품목';
+}
+
+function normalizedProductKey(value) {
+  return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[\s()[\]{}<>,.:;·_-]+/g, '');
+}
+
+function linkedProductKey(row = {}) {
+  const code = normalizedProductKey(row.itemCode);
+  if (code) return `CODE:${code}`;
+  return `NAME:${normalizedProductKey(row.itemName)}|${normalizedProductKey(row.specification)}|${normalizedProductKey(row.unit)}`;
+}
+
+function invalidResult(record, message, errorCode = 'ESTIMATE_F8_SOURCE_INVALID') {
+  return {
+    status: 'INVALID',
+    targetEstimateId: text(record?.estimateId),
+    targetEstimateName: text(record?.catalogName),
+    missingSourceIds: [],
+    missingRowRefs: [],
+    availableSourceIds: [],
+    removedRows: [],
+    keptRows: [],
+    manualRows: [],
+    sourceReferenceCounts: [],
+    impactFingerprint: '',
+    errorCode,
+    message
+  };
+}
+
+function validateLinkedSnapshot(record, sourceIds) {
+  const draft = record?.draft;
+  if (!draft || !Array.isArray(draft.rows)) return '저장된 연동견적서 Snapshot을 확인할 수 없습니다.';
+  const draftSourceIds = unique((draft.linkedEstimateSources || []).map(source => source?.estimateId));
+  if (!draftSourceIds.length || !sameIds(sourceIds, draftSourceIds)) {
+    return '연동견적서의 저장 정보와 Snapshot 원본 구성이 일치하지 않습니다.';
+  }
+  const seenRefs = new Set();
+  for (let rowIndex = 0; rowIndex < draft.rows.length; rowIndex += 1) {
+    const row = draft.rows[rowIndex];
+    const explicitRefs = Array.isArray(row?.linkedSourceRefs) && row.linkedSourceRefs.length > 0;
+    const refs = normalizedRowRefs(row);
+    const listedIds = unique(row?.linkedSourceEstimateIds || []);
+    const legacyId = text(row?.linkedSourceEstimateId);
+    const legacyRowId = text(row?.linkedSourceRowId);
+    if (explicitRefs && refs.some(ref => !ref.estimateId || !ref.rowId)) return `${rowIndex + 1}행 원본 참조에 견적서 ID 또는 행 ID가 없습니다.`;
+    if (Boolean(legacyId) !== Boolean(legacyRowId)) return `${rowIndex + 1}행 단일 원본 참조가 완전하지 않습니다.`;
+    const signatures = refs.map(ref => `${ref.estimateId}:${ref.rowId}`);
+    if (new Set(signatures).size !== signatures.length) return `${rowIndex + 1}행에 같은 원본 참조가 중복되어 있습니다.`;
+    if (listedIds.length && refs.length && !sameIds(listedIds, refs.map(ref => ref.estimateId))) {
+      return `${rowIndex + 1}행 원본 목록과 행 참조가 일치하지 않습니다.`;
+    }
+    if (refs.some(ref => !sourceIds.includes(ref.estimateId))) return `${rowIndex + 1}행에 등록되지 않은 원본 참조가 있습니다.`;
+    for (const signature of new Set(signatures)) {
+      if (seenRefs.has(signature)) return `원본 행 ${signature}이(가) 여러 작업행에 중복 연결되어 있습니다.`;
+      seenRefs.add(signature);
+    }
+  }
+  return '';
+}
+
+function sourceReferenceCounts(record, sourceIds) {
+  return sourceIds.map(estimateId => {
+    const refs = (record?.draft?.rows || []).flatMap(normalizedRowRefs)
+      .filter(ref => ref.estimateId === estimateId);
+    const sourceMeta = (record?.linkedEstimateSources || []).find(source => text(source?.estimateId) === estimateId) || {};
+    return {
+      estimateId,
+      estimateName: text(sourceMeta.catalogName),
+      customerName: text(sourceMeta.customerName),
+      referencedRowCount: new Set(refs.map(ref => ref.rowId)).size
+    };
+  });
+}
+
+function inspectEstimateF8Integrity({ record = null, allRecords = [] } = {}) {
+  if (record?.estimateKind !== 'LINKED_GROUP') {
+    return invalidResult(record, '연동견적서만 F8 연결 복구를 실행할 수 있습니다.');
+  }
+  const sourceIds = unique((record.linkedEstimateSources || []).map(source => source?.estimateId));
+  if (!sourceIds.length) return invalidResult(record, '연동견적서의 원본 견적서 구성을 확인할 수 없습니다.');
+  const recordsById = new Map((allRecords || []).map(item => [text(item?.estimateId), item]));
+  const availableRecords = sourceIds.map(estimateId => recordsById.get(estimateId))
+    .filter(record => record?.draft && Array.isArray(record.draft.rows));
+  const availableIds = new Set(availableRecords.map(record => text(record.estimateId)));
+  const missingSourceIds = sourceIds.filter(estimateId => !availableIds.has(estimateId));
+
+  const snapshotError = validateLinkedSnapshot(record, sourceIds);
+  if (snapshotError) return invalidResult(record, snapshotError);
+
+  for (const source of availableRecords) {
+    if (source.estimateKind === 'LINKED_GROUP' || source?.draft?.estimateKind === 'LINKED_GROUP') {
+      return invalidResult(record, `원본 ${source.estimateId}이(가) 개별 견적서가 아닙니다.`);
+    }
+    const seenRowIds = new Set();
+    for (const row of source?.draft?.rows || []) {
+      const rowId = text(row?.rowId);
+      if (!rowId || seenRowIds.has(rowId)) return invalidResult(record, `원본 ${source.estimateId}의 행 식별자가 유일하지 않습니다.`);
+      seenRowIds.add(rowId);
+    }
+  }
+
+  const rowIdsBySource = new Map(availableRecords.map(source => [
+    text(source.estimateId),
+    new Set((source?.draft?.rows || []).map(row => text(row?.rowId)).filter(Boolean))
+  ]));
+  const missingRowRefs = [];
+  const removedRows = [];
+  const keptSnapshotRows = [];
+  const manualRows = [];
+  for (const row of record?.draft?.rows || []) {
+    const refs = normalizedRowRefs(row);
+    if (!refs.length) {
+      if (meaningfulRow(row)) manualRows.push(clone(row));
+      continue;
+    }
+    const missingRefs = refs.filter(ref => !rowIdsBySource.get(ref.estimateId)?.has(ref.rowId));
+    missingRowRefs.push(...missingRefs.map(ref => ({ ...ref, targetRowId: text(row.rowId), itemLabel: rowLabel(row) })));
+    const availableRefs = refs.filter(ref => rowIdsBySource.get(ref.estimateId)?.has(ref.rowId));
+    if (missingRefs.length && !availableRefs.length) removedRows.push(clone(row));
+    else keptSnapshotRows.push(clone(row));
+  }
+  const keptByProduct = new Map();
+  availableRecords.forEach(source => (source?.draft?.rows || []).filter(meaningfulRow).forEach(row => {
+    const key = linkedProductKey(row);
+    if (!keptByProduct.has(key)) keptByProduct.set(key, clone(row));
+  }));
+  const keptRows = [...keptByProduct.values(), ...manualRows.map(clone)];
+  const status = missingSourceIds.length === sourceIds.length
+    ? 'ALL_MISSING'
+    : (missingSourceIds.length || missingRowRefs.length ? 'PARTIAL_MISSING' : 'READY');
+  const errorCode = status === 'ALL_MISSING'
+    ? 'ESTIMATE_F8_SOURCE_ALL_MISSING'
+    : (status === 'PARTIAL_MISSING' ? 'ESTIMATE_F8_SOURCE_PARTIAL_MISSING' : '');
+  const impactFingerprint = fingerprint({
+    targetEstimateId: text(record.estimateId),
+    sourceIds,
+    missingSourceIds,
+    missingRowRefs,
+    removedRows,
+    keptSnapshotRows,
+    manualRows,
+    availableSources: availableRecords.map(source => ({
+      estimateId: text(source.estimateId),
+      estimateKind: text(source.estimateKind),
+      draftKind: text(source?.draft?.estimateKind),
+      rows: source?.draft?.rows || []
+    }))
+  });
+  return {
+    status,
+    targetEstimateId: text(record.estimateId),
+    targetEstimateName: text(record.catalogName),
+    missingSourceIds,
+    missingRowRefs,
+    availableSourceIds: availableRecords.map(source => text(source.estimateId)),
+    removedRows,
+    keptRows,
+    manualRows,
+    sourceReferenceCounts: sourceReferenceCounts(record, sourceIds),
+    snapshotRowCount: (record?.draft?.rows || []).filter(meaningfulRow).length,
+    snapshotAmount: Number(record.amount || 0),
+    snapshotUpdatedAt: text(record.updatedAt || record.createdAt),
+    impactFingerprint,
+    errorCode,
+    message: status === 'READY'
+      ? '연동 원본 무결성이 정상입니다.'
+      : (status === 'ALL_MISSING'
+        ? `연결된 원본 ${missingSourceIds.length}개를 모두 확인할 수 없습니다.`
+        : `원본 ${missingSourceIds.length}개와 행 참조 ${missingRowRefs.length}건을 정리해야 합니다.`)
+  };
+}
+
+function recoveryAudit({ diagnosis, action, operationId, actorId, occurredAt, afterSourceIds = [] }) {
+  return {
+    schemaVersion: ESTIMATE_F8_RECOVERY_SCHEMA,
+    operationId: text(operationId),
+    action,
+    reasonCode: action === 'CREATE_INDEPENDENT_COPY' ? 'F8_INDEPENDENT_RECOVERY' : 'F8_INTEGRITY_CLEANUP',
+    targetEstimateId: text(diagnosis?.targetEstimateId),
+    missingSourceIds: clone(diagnosis?.missingSourceIds || []),
+    missingRowRefs: clone(diagnosis?.missingRowRefs || []),
+    sourceEstimateIdsAfter: clone(afterSourceIds),
+    impactFingerprint: text(diagnosis?.impactFingerprint),
+    actorId: text(actorId),
+    occurredAt: text(occurredAt)
+  };
+}
+
+function appendAudit(record, audit) {
+  record.estimateAutomationHistory = [...(record.estimateAutomationHistory || []), clone(audit)];
+  record.estimateLinkHistory = [...(record.estimateLinkHistory || []), clone(audit)];
+  record.draft ||= { rows: [] };
+  record.draft.estimateAutomationHistory = [...(record.draft.estimateAutomationHistory || []), clone(audit)];
+  record.draft.estimateLinkHistory = [...(record.draft.estimateLinkHistory || []), clone(audit)];
+  return record;
+}
+
+function applyEstimateF8PartialRecovery({
+  linkedRecord,
+  allRecords = [],
+  diagnosis,
+  operationId,
+  actorId,
+  occurredAt
+} = {}) {
+  if (diagnosis?.status !== 'PARTIAL_MISSING' || text(linkedRecord?.estimateId) !== text(diagnosis?.targetEstimateId)) {
+    throw new Error('ESTIMATE_F8_PARTIAL_RECOVERY_PLAN_INVALID');
+  }
+  const sourceRecords = (allRecords || []).filter(record => record?.estimateKind !== 'LINKED_GROUP');
+  const target = removeLinkedEstimateSources({
+    linkedRecord,
+    sourceRecords,
+    removedEstimateIds: diagnosis.missingSourceIds,
+    occurredAt
+  });
+  const audit = recoveryAudit({
+    diagnosis,
+    action: 'REMOVE_MISSING_LINKS_AND_REBUILD',
+    operationId,
+    actorId,
+    occurredAt,
+    afterSourceIds: (target.linkedEstimateSources || []).map(source => text(source?.estimateId))
+  });
+  return appendAudit(target, audit);
+}
+
+function standaloneRow(row = {}) {
+  const target = clone(row);
+  [
+    'linkedSourceEstimateId', 'linkedSourceEstimateName', 'linkedSourceRowId', 'linkedSourceEstimateIds',
+    'linkedSourceRefs', 'linkedFieldConflicts', 'linkedConflictResolvedFields', 'linkedPriceConflict',
+    'linkedSyncFields', 'linkedEstimateSourceEditHistory'
+  ].forEach(key => { delete target[key]; });
+  target.inputOwnership = 'USER';
+  target.editedFields = {};
+  return target;
+}
+
+function numeric(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/[,\s₩원]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function createEstimateF8IndependentCopy({
+  linkedRecord,
+  diagnosis,
+  estimateId,
+  catalogName,
+  sortOrder,
+  operationId,
+  actorId,
+  occurredAt
+} = {}) {
+  if (diagnosis?.status !== 'ALL_MISSING' || text(linkedRecord?.estimateId) !== text(diagnosis?.targetEstimateId)) {
+    throw new Error('ESTIMATE_F8_INDEPENDENT_RECOVERY_PLAN_INVALID');
+  }
+  if (!text(estimateId) || !text(catalogName) || !text(occurredAt)) throw new Error('ESTIMATE_F8_INDEPENDENT_RECOVERY_IDENTITY_REQUIRED');
+  const timestamp = text(occurredAt);
+  const draft = clone(linkedRecord.draft || {});
+  draft.catalogRecordId = text(estimateId);
+  draft.estimateKind = 'INDIVIDUAL';
+  draft.linkedEstimateSources = [];
+  draft.rows = (draft.rows || []).filter(meaningfulRow).map(standaloneRow);
+  draft.updatedAt = timestamp;
+  draft.delivery = {
+    status: 'SAVED',
+    targetId: 'smart-input-estimates',
+    targetRecordId: text(estimateId),
+    deliveredAt: timestamp
+  };
+  const recoveryOrigin = {
+    type: 'LINKED_SNAPSHOT_WITHOUT_SOURCES',
+    sourceLinkedEstimateId: text(linkedRecord.estimateId),
+    missingSourceIds: clone(diagnosis.missingSourceIds || []),
+    impactFingerprint: text(diagnosis.impactFingerprint),
+    confirmedBy: text(actorId),
+    confirmedAt: timestamp,
+    operationId: text(operationId)
+  };
+  draft.recoveryOrigin = clone(recoveryOrigin);
+  const amount = draft.rows.reduce((sum, row) => {
+    const quantity = numeric(row.quantity);
+    const unitPrice = numeric(row.unitPrice);
+    return sum + (quantity === null || unitPrice === null ? 0 : quantity * unitPrice);
+  }, 0);
+  const record = {
+    estimateId: text(estimateId),
+    catalogName: text(catalogName),
+    estimateKind: 'INDIVIDUAL',
+    linkedEstimateSources: [],
+    customerId: text(draft?.header?.customerId),
+    customerCode: text(draft?.header?.customerCode),
+    customerName: text(draft?.header?.customerName),
+    rowCount: draft.rows.length,
+    amount,
+    previousPrices: clone(linkedRecord.previousPrices || {}),
+    sortOrder: Number(sortOrder || 1),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    recoveryOrigin,
+    draft
+  };
+  const audit = recoveryAudit({ diagnosis, action: 'CREATE_INDEPENDENT_COPY', operationId, actorId, occurredAt: timestamp });
+  audit.sourceLinkedEstimateId = text(linkedRecord.estimateId);
+  return appendAudit(record, audit);
+}
+
+return { ESTIMATE_F8_RECOVERY_SCHEMA, inspectEstimateF8Integrity, applyEstimateF8PartialRecovery, createEstimateF8IndependentCopy };
+})();
+
+// Public API (same functions and constants; no additional command layer).
+export const LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA = linkedEstimateSourceEditSection.LINKED_ESTIMATE_SOURCE_EVIDENCE_SCHEMA;
+export const LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA = linkedEstimateSourceEditSection.LINKED_ESTIMATE_SOURCE_EDIT_PLAN_SCHEMA;
+export const LINKED_ESTIMATE_SOURCE_EDIT_FIELDS = linkedEstimateSourceEditSection.LINKED_ESTIMATE_SOURCE_EDIT_FIELDS;
+export const LINKED_ESTIMATE_FIELD_LABELS = linkedEstimateSourceEditSection.LINKED_ESTIMATE_FIELD_LABELS;
+export const numericInputState = linkedEstimateSourceEditSection.numericInputState;
+export const inspectLinkedEstimateSourceEdits = linkedEstimateSourceEditSection.inspectLinkedEstimateSourceEdits;
+export const createLinkedEstimateSourceEditPlan = linkedEstimateSourceEditSection.createLinkedEstimateSourceEditPlan;
+export const linkedEstimateWorkingDraftsEquivalent = linkedEstimateSourceEditSection.linkedEstimateWorkingDraftsEquivalent;
+export const inspectLinkedEstimateSourceWorkingCopyConflicts = linkedEstimateSourceEditSection.inspectLinkedEstimateSourceWorkingCopyConflicts;
+export const restoreLinkedEstimateWorkingRowEdits = linkedEstimateSourceEditSection.restoreLinkedEstimateWorkingRowEdits;
+export const rebaseLinkedEstimateWorkingDraft = linkedEstimateSourceEditSection.rebaseLinkedEstimateWorkingDraft;
+export const removeLinkedEstimateSources = linkedEstimateSourceEditSection.removeLinkedEstimateSources;
+export const rebuildLinkedEstimateRecord = linkedEstimateSourceEditSection.rebuildLinkedEstimateRecord;
+export const applyLinkedEstimateSourceEditPlan = linkedEstimateSourceEditSection.applyLinkedEstimateSourceEditPlan;
+export const buildEstimateF8DraftPlan = estimateF8SourcePlanSection.buildEstimateF8DraftPlan;
+export const ESTIMATE_F8_RECOVERY_SCHEMA = estimateF8RecoverySection.ESTIMATE_F8_RECOVERY_SCHEMA;
+export const inspectEstimateF8Integrity = estimateF8RecoverySection.inspectEstimateF8Integrity;
+export const applyEstimateF8PartialRecovery = estimateF8RecoverySection.applyEstimateF8PartialRecovery;
+export const createEstimateF8IndependentCopy = estimateF8RecoverySection.createEstimateF8IndependentCopy;

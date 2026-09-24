@@ -1,4 +1,4 @@
-import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-edit.js?v=0.1.2';
+import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-edit.js?v=0.17.0';
 
 const text = value => String(value ?? '').trim();
 const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));

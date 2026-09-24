@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createIndependentEstimateCandidate, hashEstimatePlan } from '../smartinput/independent-estimate.js';
-import { buildEstimateF8DraftPlan } from '../smartinput/estimate-f8-source-plan.js';
-import { buildEstimateF8Data, buildEstimateF8RowsFromPlan } from '../smartinput/estimate-output.js';
+import { buildEstimateF8DraftPlan } from '../smartinput/linked-estimate-source-edit.js';
+import { buildEstimateF8Data, buildEstimateF8RowsFromPlan } from '../smartinput/report.js';
 
 // This validates candidate construction against the existing real F8 algorithms.
 // It does NOT pretend the candidate is already wired to production load/save/F8 paths.

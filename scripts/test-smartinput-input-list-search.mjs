@@ -13,7 +13,7 @@ import {
   inputListSelectionScopeRowIds,
   reduceInputListSearchState,
   updateInputListSearchIndex
-} from '../smartinput/input-list-search.js';
+} from '../smartinput/virtual-table-body.js';
 
 const rows = [
   { rowId: 'CODE', itemCode: 'A125', itemName: '사과', specification: 'BOX', quantity: 0, memo: '' },

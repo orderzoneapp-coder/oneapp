@@ -6,8 +6,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createOfficialCommandAdapter } from '../orderq/official-command-adapter.js';
 import { createOfficialCommandGateway } from '../orderq/official-command-gateway.js';
-import { createPurchaseFinalizeService } from '../smartinput/purchase-finalize-service.js';
-import { createSaleFinalizeService } from '../smartinput/sale-finalize-service.js';
+import { createPurchaseFinalizeService } from '../smartinput/official-voucher-feature.js';
+import { createSaleFinalizeService } from '../smartinput/official-voucher-feature.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = relative => readFileSync(join(root, relative), 'utf8');
@@ -34,7 +34,7 @@ assert.match(purchaseHandler, /PurchaseFinalizeService\.finalize\s*\(/);
 assert.doesNotMatch(saleHandler, /postSaleGroup|commitSaleCommand|beginSaleCommand|official-voucher-repository/);
 assert.doesNotMatch(purchaseHandler, /postPurchaseGroup|commitPurchaseCommand|beginPurchaseCommand|official-voucher-repository/);
 
-for (const stageModule of ['smartinput/purchase-official-stage3.js', 'smartinput/sale-official-stage4.js']) {
+for (const stageModule of ['smartinput/official-voucher-feature.js', 'smartinput/official-voucher-feature.js']) {
   const stageSource = source(stageModule);
   assert.match(stageSource, /from ['"]\.\.\/orderq\/official-command-adapter\.js/,
     `${stageModule} must consume the ORDER Q command Adapter`);
@@ -145,7 +145,9 @@ const runtimeDependencyUrls = new Map([
   ['../orderq/official-command-adapter.js?v=0.6.0', fakeOfficialCommandAdapterUrl],
   ['../orderq/official-voucher-core.js?v=0.24.0', pathToFileURL(join(root, 'orderq', 'official-voucher-core.js')).href],
   ['../orderq/official-voucher-v2-contract.js?v=0.5.0', pathToFileURL(join(root, 'orderq', 'official-voucher-v2-contract.js')).href],
-  ['./optional-operation-loader.js?v=0.1.0', pathToFileURL(join(root, 'smartinput', 'optional-operation-loader.js')).href]
+  ['./optional-operation-loader.js?v=0.1.0', pathToFileURL(join(root, 'smartinput', 'optional-operation-loader.js')).href],
+  ['./legacy-integration-adapter.js?v=0.17.0', pathToFileURL(join(root, 'smartinput', 'legacy-integration-adapter.js')).href],
+  ['../orderq/stocktake-conflict-v2.js?v=0.2.0', pathToFileURL(join(root, 'orderq', 'stocktake-conflict-v2.js')).href]
 ]);
 const runtimeStageUrl = relativePath => dataModuleUrl([...runtimeDependencyUrls].reduce(
   (body, [specifier, replacement]) => body.replace(specifier, replacement),
@@ -180,8 +182,8 @@ try {
   globalThis.setTimeout = writeTimers.schedule;
   globalThis.clearTimeout = writeTimers.cancel;
   [purchaseStageRuntime, saleStageRuntime] = await Promise.all([
-    import(runtimeStageUrl('smartinput/purchase-official-stage3.js')),
-    import(runtimeStageUrl('smartinput/sale-official-stage4.js'))
+    import(runtimeStageUrl('smartinput/official-voucher-feature.js')),
+    import(runtimeStageUrl('smartinput/official-voucher-feature.js'))
   ]);
 } finally {
   globalThis.setTimeout = nativeSetTimeout;

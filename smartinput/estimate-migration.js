@@ -1,7 +1,7 @@
 import { INDEPENDENT_ESTIMATE_SCHEMA, createIndependentEstimateCandidate, estimateIdentityFromRow,
   estimateValuesEqual, hashEstimatePlan } from './independent-estimate.js';
-import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.1';
-import { buildEstimateF8RowsFromPlan, buildEstimateF8Data } from './estimate-output.js?v=0.2.10';
+import { buildEstimateF8DraftPlan } from './linked-estimate-source-edit.js?v=0.17.0';
+import { buildEstimateF8RowsFromPlan, buildEstimateF8Data } from './report.js?v=0.17.0';
 
 const clone = value => structuredClone(value);
 const fail = code => { const error = new Error(code); error.code = code; throw error; };

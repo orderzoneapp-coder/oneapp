@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { applyBulkUnitPrice, parseBulkUnitPrice } from '../smartinput/input-template-mapper.js';
+import { applyBulkUnitPrice, parseBulkUnitPrice } from '../smartinput/input.js';
 
 assert.equal(parseBulkUnitPrice('1,300원'), 1300);
 assert.equal(parseBulkUnitPrice('0'), 0);

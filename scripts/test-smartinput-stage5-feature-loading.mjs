@@ -9,19 +9,19 @@ import {
 import {
   buildCatalogPriceSnapshot as buildReportSnapshot,
   priceSnapshotsEqual as reportSnapshotsEqual
-} from '../smartinput/estimate-output.js';
+} from '../smartinput/report.js';
 
 const appSource = fs.readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');
 const themeSource = fs.readFileSync(new URL('../nexus/common/nexus-ui-theme-init.js', import.meta.url), 'utf8');
 const smartInputHtml = fs.readFileSync(new URL('../smartinput/index.html', import.meta.url), 'utf8');
 const staticImports = [...appSource.matchAll(/^import[\s\S]*?from\s+['"]([^'"]+)['"];$/gm)].map(match => match[1]);
 const deferredModules = [
-  'estimate-output.js',
-  'purchase-sales-output.js',
+  'report.js',
+  'report.js',
   'ocr-document-parser.js',
-  'purchase-finalize-service.js',
-  'sale-finalize-service.js',
-  'stocktake-conflict-dialog.js',
+  'official-voucher-feature.js',
+  'official-voucher-feature.js',
+  'official-voucher-feature.js',
   'xlsx-source-reader.js',
   'estimate-migration.js',
   'estimate-bulk-update.js'
@@ -58,8 +58,8 @@ assert.equal(reportSnapshotsEqual(buildReportSnapshot(rows), buildReportSnapshot
 const [fileFeature, ocrFeature, reportFeature, voucherFeature, officialFeature, estimateBulkFeature] = await Promise.all([
   import('../smartinput/xlsx-source-reader.js'),
   import('../smartinput/ocr-document-parser.js'),
-  import('../smartinput/estimate-output.js'),
-  import('../smartinput/purchase-sales-output.js'),
+  import('../smartinput/report.js'),
+  import('../smartinput/report.js'),
   import('../smartinput/official-voucher-feature.js'),
   import('../smartinput/estimate-bulk-update.js')
 ]);

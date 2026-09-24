@@ -22,7 +22,7 @@ import {
   updateWorkingCell,
   updateWorkingCells,
   validateTemplateDraft
-} from '../smartinput/input-template-mapper.js';
+} from '../smartinput/input.js';
 import { structuredFieldsForMode } from '../smartinput/multivoucher-stage1.js';
 
 const targets = [

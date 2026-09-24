@@ -1,6 +1,6 @@
-import { createVirtualTableBody } from './virtual-table-body.js?v=0.3.0';
+import { createVirtualTableBody } from './virtual-table-body.js?v=0.17.0';
 import * as estimateStore from './smartinput-data-store.js?v=0.15.0';
-import { createEstimateWorkspace } from './estimate-workspace.js?v=0.1.0';
+import { createEstimateWorkspace } from './estimate-workspace.js?v=0.17.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, projectIndependentEstimateDraft, estimateIdentityFromRow,
   estimateValuesEqual, estimateUpdateFieldDefinitions, estimateTechnicalKey, DIRECT_ROW_KEY_VERSION, hashEstimatePlan } from './independent-estimate.js?v=0.2.0';
 import { readSmartInputEstimateContext, prepareSmartInputEstimateContext, createProductMasterCommandAdapter } from '../reference-data/product-master-command-adapter.js?v=0.3.0';
@@ -14,9 +14,9 @@ import {
   warehouseDisplayName,
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
-} from './legacy-integration-adapter.js?v=0.4.0';
-import { captureTextIntake, analyzeSingleOrderDocument, rematchExtractedLinesForCustomer, extractOrderProductLines, isSelectableMasterProduct, hasEnteredValue, rowHasMeaningfulInput, rowHasLinkedSource, compactRowBlankValues, pruneEmptyWorkRows, manualLinkedRows } from './input.js?v=0.1.1';
-import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from './input-matching-snapshot.js?v=0.1.0';
+} from './legacy-integration-adapter.js?v=0.17.0';
+import { captureTextIntake, analyzeSingleOrderDocument, rematchExtractedLinesForCustomer, extractOrderProductLines, isSelectableMasterProduct, hasEnteredValue, rowHasMeaningfulInput, rowHasLinkedSource, compactRowBlankValues, pruneEmptyWorkRows, manualLinkedRows } from './input.js?v=0.17.0';
+import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from './reference-refresh-controller.js?v=0.17.0';
 import {
   OPTIONAL_OPERATION_TIMEOUT_MS,
   createHydrationWriteGate,
@@ -24,7 +24,7 @@ import {
   isOptionalOperationStale,
   mergeHydratedSnapshotPreservingLiveChanges
 } from './optional-operation-loader.js?v=0.1.0';
-import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.2.0';
+import { buildGridPastePlan, parseClipboardMatrix } from './input.js?v=0.17.0';
 import {
   AUTOSAVE_JOURNAL_SCHEMA,
   createAutosaveDocumentKey,
@@ -51,16 +51,16 @@ import {
   updateWorkingCell,
   updateWorkingCells,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.3.2';
-import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
+} from './input.js?v=0.17.0';
+import { applyOrderDocumentNumberDerivation } from './multivoucher-stage1.js?v=0.17.0';
 import {
   isPurchaseMetaSheet,
   joinPurchaseMeta,
   readPurchaseMeta,
   stableDirectDocumentKey,
   detachOrderQPurchaseLink
-} from './purchase-stage3.js?v=0.1.0';
-import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './sale-stage4.js?v=0.1.0';
+} from './multivoucher-stage1.js?v=0.17.0';
+import { isSalesMetaSheet, joinSalesMeta, readSalesMeta } from './multivoucher-stage1.js?v=0.17.0';
 import {
   buildOrderGroupPayload,
   captureOrderHeaderSubmission,
@@ -76,7 +76,7 @@ import {
   stage1RowFieldDefinitions,
   structuredFieldsForMode,
   summarizeVoucherGroups
-} from './multivoucher-stage1.js?v=0.2.3';
+} from './multivoucher-stage1.js?v=0.17.0';
 import {
   INPUT_LIST_SEARCH_ACTION,
   constrainInputListSelection,
@@ -88,17 +88,17 @@ import {
   removeInputListSearchIndexRow,
   reduceInputListSearchState,
   updateInputListSearchIndex
-} from './input-list-search.js?v=0.1.3';
+} from './virtual-table-body.js?v=0.17.0';
 import { buildCatalogPriceSnapshot, priceSnapshotsEqual } from './estimate-price-snapshot.js?v=0.1.0';
-import { buildEstimateF8DraftPlan } from './estimate-f8-source-plan.js?v=0.1.1';
+import { buildEstimateF8DraftPlan } from './linked-estimate-source-edit.js?v=0.17.0';
 import {
   applyEstimateF8PartialRecovery,
   createEstimateF8IndependentCopy,
   inspectEstimateF8Integrity
-} from './estimate-f8-recovery.js?v=0.1.1';
+} from './linked-estimate-source-edit.js?v=0.17.0';
 import {
   isEstimateWorkbookItemRow
-} from './estimate-report-preset.js?v=0.2.0';
+} from './input.js?v=0.17.0';
 import {
   createRecordId,
   commitEstimateBundle,
@@ -137,22 +137,22 @@ import {
   sameReferenceRevision,
   searchProductMatchIndex,
   submitRegistrationChangeRequest
-} from './reference-data-controller.js?v=0.1.1';
+} from './reference-refresh-controller.js?v=0.17.0';
 import { getMerchOpsSettingsSnapshotResult } from '../reference-data/merchops-settings-read-adapter.js?v=0.1.0';
-import { coreFieldByProjection } from './field-registry.js?v=0.3.0';
+import { coreFieldByProjection } from './reference-refresh-controller.js?v=0.17.0';
 import {
   ensureFieldCatalogSeed,
   loadVoucherFieldRegistry,
   resolveSmartInputActor,
   resolveSmartInputCompanyId,
   updateVoucherFieldSettings
-} from './field-registry.js?v=0.3.0';
-import { refreshAllReferenceData, loadLocalWarehouseCatalog } from './reference-refresh-controller.js?v=0.2.0';
+} from './reference-refresh-controller.js?v=0.17.0';
+import { refreshAllReferenceData, loadLocalWarehouseCatalog } from './reference-refresh-controller.js?v=0.17.0';
 import {
   applyRelatedVoucherImportPlan,
   createRelatedVoucherImportPlan,
   relatedImportConflicts
-} from './related-voucher-import.js?v=0.1.0';
+} from './multivoucher-stage1.js?v=0.17.0';
 import {
   LINKED_ESTIMATE_FIELD_LABELS,
   LINKED_ESTIMATE_SOURCE_EDIT_FIELDS,
@@ -165,7 +165,7 @@ import {
   rebuildLinkedEstimateRecord,
   removeLinkedEstimateSources,
   restoreLinkedEstimateWorkingRowEdits
-} from './linked-estimate-source-edit.js?v=0.1.2';
+} from './linked-estimate-source-edit.js?v=0.17.0';
 import {
   SETTINGS_FIELD_GROUPS,
   compactSettingsInputOrder,
@@ -174,7 +174,7 @@ import {
   settingsFieldGroupId,
   settingsInputOrderPreview,
   sortSettingsFields
-} from './field-registry.js?v=0.3.0';
+} from './reference-refresh-controller.js?v=0.17.0';
 import {
   TABLE_VIEW_MODE,
   createTableViewPreferences,
@@ -183,7 +183,7 @@ import {
   selectTableView,
   sourceViewColumns,
   tableViewFor
-} from './table-view-state.js?v=0.1.0';
+} from './virtual-table-body.js?v=0.17.0';
 import {
   SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA,
   buildShoppingOrderUploadRequest,
@@ -229,14 +229,14 @@ const OPTIONAL_OPERATION_FEATURES = Object.freeze([
 const referenceOperationFeature = domain => `${OPTIONAL_OPERATION_FEATURE.REFERENCE_READ}:${domain}`;
 const optionalOperationLoader = createOptionalOperationLoader({ globalScope: window, documentRef: document });
 const OPTIONAL_FEATURE_MODULES = Object.freeze({
-  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.2.2', specifier: './xlsx-source-reader.js?v=0.2.2', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
+  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.17.0', specifier: './xlsx-source-reader.js?v=0.17.0', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
   ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.1', specifier: './ocr-document-parser.js?v=0.1.1', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
-  estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.2.10', specifier: './estimate-output.js?v=0.2.10', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
-  estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.1.3', specifier: './estimate-migration.js?v=0.1.3', unavailableMessage: '기존 견적서 전환 기능을 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),
-  voucherOutput: Object.freeze({ feature: 'voucher-output-module', assetVersion: '0.1.3', specifier: './purchase-sales-output.js?v=0.1.3', unavailableMessage: '구매 보고서 기능을 불러오지 못했습니다. 현재 입력은 유지됩니다.' }),
+  estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.17.0', specifier: './report.js?v=0.17.0', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
+  estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.17.0', specifier: './estimate-migration.js?v=0.17.0', unavailableMessage: '기존 견적서 전환 기능을 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),
+  voucherOutput: Object.freeze({ feature: 'voucher-output-module', assetVersion: '0.17.0', specifier: './report.js?v=0.17.0', unavailableMessage: '구매 보고서 기능을 불러오지 못했습니다. 현재 입력은 유지됩니다.' }),
   voucherActivity: Object.freeze({ feature: 'voucher-activity-module', assetVersion: '0.3.0', specifier: '../orderq/voucher-activity-read-adapter.js?v=0.3.0', unavailableMessage: '연동 전표를 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
-  officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.1.1', specifier: './official-voucher-feature.js?v=0.1.1', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
-  estimateBulk: Object.freeze({ feature: 'estimate-bulk-module', assetVersion: '0.3.1', specifier: './estimate-bulk-update.js?v=0.3.1', unavailableMessage: '다건 견적 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' })
+  officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.17.0', specifier: './official-voucher-feature.js?v=0.17.0', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
+  estimateBulk: Object.freeze({ feature: 'estimate-bulk-module', assetVersion: '0.17.0', specifier: './estimate-bulk-update.js?v=0.17.0', unavailableMessage: '다건 견적 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' })
 });
 const optionalFeatureLoaded = new Set();
 const optionalFeatureMetrics = [];

@@ -6,11 +6,11 @@ import {
   officialStocktakeConflictKeyV2
 } from '../../orderq/stocktake-conflict-v2.js?v=stage5-browser';
 import { openOrderQDb, transactionDone } from '../../orderq/orderq-db.js?v=stage5-browser';
-import { createPurchaseFinalizeService } from '../../smartinput/purchase-finalize-service.js?v=stage5-browser';
-import { createSaleFinalizeService } from '../../smartinput/sale-finalize-service.js?v=stage5-browser';
-import { buildPurchasePostDraft } from '../../smartinput/purchase-official-stage3.js?v=stage5-browser';
-import { buildSalePostDraft } from '../../smartinput/sale-official-stage4.js?v=stage5-browser';
-import { resolveOfficialVoucherReferencesV2 } from '../../smartinput/official-voucher-reference-resolver.js?v=stage5-browser';
+import { createPurchaseFinalizeService } from '../../smartinput/official-voucher-feature.js?v=stage5-browser';
+import { createSaleFinalizeService } from '../../smartinput/official-voucher-feature.js?v=stage5-browser';
+import { buildPurchasePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage5-browser';
+import { buildSalePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage5-browser';
+import { resolveOfficialVoucherReferencesV2 } from '../../smartinput/official-voucher-feature.js?v=stage5-browser';
 
 const companyId = 'V2-STAGE5-COMPANY';
 const actor = 'STAGE5-BROWSER';

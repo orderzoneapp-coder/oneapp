@@ -12,13 +12,13 @@ import {
   buildEstimateF8RowsFromDraft,
   calculateEstimateResolvedPrice,
   ESTIMATE_F8_HEADERS
-} from '../smartinput/estimate-output.js';
-import { buildEstimateF8DraftPlan } from '../smartinput/estimate-f8-source-plan.js';
+} from '../smartinput/report.js';
+import { buildEstimateF8DraftPlan } from '../smartinput/linked-estimate-source-edit.js';
 import {
   applyEstimateF8PartialRecovery,
   createEstimateF8IndependentCopy,
   inspectEstimateF8Integrity
-} from '../smartinput/estimate-f8-recovery.js';
+} from '../smartinput/linked-estimate-source-edit.js';
 import { splitEstimateBulkInputMapping } from '../smartinput/estimate-bulk-update.js';
 
 const ERP_SOURCE_HEADERS = [

@@ -138,8 +138,8 @@ try {
     const store=await import('/smartinput/smartinput-data-store.js?v=0.6.4');
     const pure=await import('/smartinput/independent-estimate.js?v=0.2.0');
     const migration=await import('/smartinput/estimate-migration.js');
-    const {buildEstimateF8DraftPlan}=await import('/smartinput/estimate-f8-source-plan.js?v=0.1.1');
-    const {buildEstimateF8RowsFromPlan,buildEstimateF8Data}=await import('/smartinput/estimate-output.js?v=0.2.6');
+    const {buildEstimateF8DraftPlan}=await import('/smartinput/linked-estimate-source-edit.js?v=0.1.1');
+    const {buildEstimateF8RowsFromPlan,buildEstimateF8Data}=await import('/smartinput/report.js?v=0.2.6');
     const passed=[], check=(value,message)=>{if(!value)throw new Error(message);};
     const row={rowId:'SOURCE-ROW',itemCode:'0001',itemName:'상품',rowCustomerCode:'C1',unit:'개',quantity:0,unitPrice:100,purchasePriceB:100,memo:'수기 메모'};
     const source={estimateId:'SOURCE',companyId:'ONEAPP',estimateKind:'INDIVIDUAL',catalogName:'원본',createdAt:'CREATED',updatedAt:'UPDATED',sortOrder:1,

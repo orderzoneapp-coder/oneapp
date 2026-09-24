@@ -6,7 +6,7 @@ import {
   REFERENCE_DOMAINS,
   buildReferenceGeneration,
   normalizeReferenceDomainSnapshot
-} from '../smartinput/reference-generation-repository.js';
+} from '../smartinput/reference-refresh-controller.js';
 
 const snapshots = {
   customer: { status: 'READY', revision: 3, rows: [{ customerId: 'C1', customerCode: '001', customerName: '거래처' }] },

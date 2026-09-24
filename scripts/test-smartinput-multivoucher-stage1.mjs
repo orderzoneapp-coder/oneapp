@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { parseStructuredSheet } from '../smartinput/grid-clipboard.js';
+import { parseStructuredSheet } from '../smartinput/input.js';
 import {
   buildMinimumUploadMatrix,
   buildOrderGroupPayload,

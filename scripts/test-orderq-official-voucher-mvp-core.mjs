@@ -7,8 +7,8 @@ import {
   resolveOfficialLineAmounts,
   unresolvedProductStableId
 } from '../orderq/official-voucher-core.js';
-import { buildPurchasePostDraft } from '../smartinput/purchase-official-stage3.js';
-import { buildSalePostDraft } from '../smartinput/sale-official-stage4.js';
+import { buildPurchasePostDraft } from '../smartinput/official-voucher-feature.js';
+import { buildSalePostDraft } from '../smartinput/official-voucher-feature.js';
 
 const at = '2026-09-01T09:00:00.000Z';
 

@@ -1,3 +1,228 @@
+// SmartInput role consolidation. No data migration or business-policy change.
+// Edit implementations in the named sections below; former files are removed.
+
+
+// ============================================================================
+// table-view-state.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const tableViewStateSection = (() => {
+
+
+const TABLE_VIEW_MODE = Object.freeze({
+  SOURCE: 'source',
+  INPUT: 'input'
+});
+
+function createTableViewPreferences(modes = []) {
+  return Object.fromEntries(modes.map(mode => [mode, TABLE_VIEW_MODE.INPUT]));
+}
+
+function tableViewFor(preferences, mode, hasSource) {
+  if (!hasSource) return TABLE_VIEW_MODE.INPUT;
+  return preferences?.[mode] === TABLE_VIEW_MODE.INPUT
+    ? TABLE_VIEW_MODE.INPUT
+    : TABLE_VIEW_MODE.SOURCE;
+}
+
+function selectTableView(preferences, mode, view, { hasSource = true } = {}) {
+  if (!Object.values(TABLE_VIEW_MODE).includes(view)) throw new Error('SMARTINPUT_TABLE_VIEW_INVALID');
+  return {
+    ...(preferences || {}),
+    [mode]: hasSource ? view : TABLE_VIEW_MODE.INPUT
+  };
+}
+
+function resetTableViewForSource(preferences, mode) {
+  return {
+    ...(preferences || {}),
+    [mode]: TABLE_VIEW_MODE.INPUT
+  };
+}
+
+function sourceViewColumns(session = {}) {
+  const mappingByIndex = new Map((session.mappings || []).map(mapping => [Number(mapping.columnIndex), mapping]));
+  return (session.headers || []).map((header, columnIndex) => {
+    const mapping = mappingByIndex.get(columnIndex);
+    return {
+      id: `source:${columnIndex}`,
+      columnIndex,
+      label: String(header ?? ''),
+      mappingState: String(mapping?.state || 'UNDECIDED'),
+      targetFieldId: String(mapping?.targetFieldId || '')
+    };
+  });
+}
+
+function inputViewColumns(fieldIds = [], definitions = []) {
+  const definitionById = new Map(definitions.map(definition => [definition.id, definition]));
+  return fieldIds.map((fieldId, columnIndex) => {
+    const definition = definitionById.get(fieldId);
+    return {
+      id: fieldId,
+      columnIndex,
+      label: String(definition?.label || fieldId),
+      definition: definition || null
+    };
+  });
+}
+
+return { TABLE_VIEW_MODE, createTableViewPreferences, tableViewFor, selectTableView, resetTableViewForSource, sourceViewColumns, inputViewColumns };
+})();
+
+// ============================================================================
+// input-list-search.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const inputListSearchSection = (() => {
+
+
+const INPUT_LIST_SEARCH_ACTION = Object.freeze({
+  OPEN: 'OPEN',
+  QUERY: 'QUERY',
+  CLOSE: 'CLOSE',
+  CONTEXT_CHANGE: 'CONTEXT_CHANGE'
+});
+
+const SEARCHABLE_ROW_FIELDS = Object.freeze([
+  'itemCode', 'itemName', 'secondaryName', 'searchInfo', 'specification',
+  'quantity', 'unit', 'unitPrice', 'supplyAmount',
+  'memo', 'description',
+  'rowCustomerCode', 'rowCustomerName',
+  'deliveryCustomerCode', 'deliveryCustomerName',
+  'billingCustomerCode', 'billingCustomerName',
+  'supplierCustomerCode', 'supplierCustomerName',
+  'salesCustomerCode', 'salesCustomerName',
+  'rowWarehouseId', 'rowWarehouseCode', 'rowVoucherNo'
+]);
+
+const INVISIBLE_WHITESPACE_PATTERN = /[\s\u00a0\u200b\u200c\u200d\ufeff]+/g;
+
+function searchableValue(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  if (typeof value === 'boolean') return String(value);
+  return String(value).replace(INVISIBLE_WHITESPACE_PATTERN, '');
+}
+
+function normalizeSearchValue(value) {
+  return searchableValue(value).normalize('NFKC').toLocaleLowerCase('ko-KR');
+}
+
+function rowSearchValues(row = {}, sourceRow = null) {
+  const fieldValues = Object.values(row.fieldValues || {}).map(value => (
+    value && typeof value === 'object' ? value.currentDisplayValue ?? value.parsedValue : value
+  ));
+  const explicitNoticePrice = Number(row.noticePrice) !== 0 || row.editedFields?.noticePrice
+    ? [row.noticePrice]
+    : [];
+  return [
+    ...SEARCHABLE_ROW_FIELDS.map(field => row[field]),
+    ...explicitNoticePrice,
+    ...Object.values(row.customValues || {}),
+    ...fieldValues,
+    ...(sourceRow?.cells || [])
+  ];
+}
+
+function indexedSearchRow(row = {}, sourceRow = null) {
+  const values = rowSearchValues(row, sourceRow);
+  return Object.freeze({
+    row,
+    sourceRow,
+    actual: values.some(value => searchableValue(value) !== ''),
+    haystack: values.map(normalizeSearchValue).filter(Boolean).join('|')
+  });
+}
+
+function createInputListSearchIndex(rows = [], { sourceRows = [] } = {}) {
+  const sourceByRowId = new Map(sourceRows.map(row => [String(row?.rowId || ''), row]));
+  const entries = new Map();
+  rows.forEach(row => {
+    const rowId = String(row?.rowId || '');
+    if (rowId) entries.set(rowId, indexedSearchRow(row, sourceByRowId.get(rowId) || null));
+  });
+  return { entries, sourceByRowId };
+}
+
+function updateInputListSearchIndex(index, row, sourceRow = null) {
+  const target = index?.entries instanceof Map ? index : createInputListSearchIndex();
+  const rowId = String(row?.rowId || '');
+  if (!rowId) return target;
+  if (sourceRow) target.sourceByRowId.set(rowId, sourceRow);
+  target.entries.set(rowId, indexedSearchRow(row, sourceRow || target.sourceByRowId.get(rowId) || null));
+  return target;
+}
+
+function removeInputListSearchIndexRow(index, rowId) {
+  const stableRowId = String(rowId || '');
+  index?.entries?.delete(stableRowId);
+  index?.sourceByRowId?.delete(stableRowId);
+  return index;
+}
+
+function createInputListSearchState() {
+  return Object.freeze({ open: false, query: '' });
+}
+
+function reduceInputListSearchState(current, action = {}) {
+  const state = current || createInputListSearchState();
+  if (action.type === INPUT_LIST_SEARCH_ACTION.OPEN) {
+    return Object.freeze({ open: true, query: String(state.query || '') });
+  }
+  if (action.type === INPUT_LIST_SEARCH_ACTION.QUERY) {
+    return Object.freeze({ open: true, query: String(action.query ?? '') });
+  }
+  if ([INPUT_LIST_SEARCH_ACTION.CLOSE, INPUT_LIST_SEARCH_ACTION.CONTEXT_CHANGE].includes(action.type)) {
+    return createInputListSearchState();
+  }
+  return state;
+}
+
+function isActualInputListRow(row = {}, sourceRow = null) {
+  return rowSearchValues(row, sourceRow).some(value => searchableValue(value) !== '');
+}
+
+function filterInputListRows(rows = [], query = '', { sourceRows = [], searchIndex = null } = {}) {
+  const index = searchIndex?.entries instanceof Map
+    ? searchIndex
+    : createInputListSearchIndex(rows, { sourceRows });
+  const terms = String(query || '').split(/\s+/).map(normalizeSearchValue).filter(Boolean);
+  return rows.filter(row => {
+    const rowId = String(row?.rowId || '');
+    const sourceRow = index.sourceByRowId.get(rowId) || null;
+    let entry = index.entries.get(rowId);
+    if (!entry || entry.row !== row || entry.sourceRow !== sourceRow) {
+      updateInputListSearchIndex(index, row, sourceRow);
+      entry = index.entries.get(rowId);
+    }
+    if (!entry?.actual) return false;
+    if (!terms.length) return true;
+    return terms.every(term => entry.haystack.includes(term));
+  });
+}
+
+function inputListDisplayRows(allRows = [], visibleRows = [], { searchOpen = false } = {}) {
+  return searchOpen ? visibleRows : allRows;
+}
+
+function inputListSelectionScopeRowIds(allRows = [], visibleRows = [], { searchOpen = false } = {}) {
+  const rows = inputListDisplayRows(allRows, visibleRows, { searchOpen });
+  return [...new Set(rows.map(row => String(row?.rowId || '')).filter(Boolean))];
+}
+
+function constrainInputListSelection(selectedRowIds = [], allowedRowIds = []) {
+  const allowed = new Set(allowedRowIds.map(rowId => String(rowId || '')).filter(Boolean));
+  return [...new Set([...selectedRowIds].map(rowId => String(rowId || '')).filter(rowId => allowed.has(rowId)))];
+}
+
+return { INPUT_LIST_SEARCH_ACTION, createInputListSearchIndex, updateInputListSearchIndex, removeInputListSearchIndexRow, createInputListSearchState, reduceInputListSearchState, isActualInputListRow, filterInputListRows, inputListDisplayRows, inputListSelectionScopeRowIds, constrainInputListSelection };
+})();
+
+// ============================================================================
+// virtual-table-body.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const virtualTableBodySection = (() => {
+
+
 /* Stage 4 row-window mathematics only. No DOM, editing, storage, or app boot.
    Supply ALL filtered/sorted logical keys; never feed this model only DOM rows. */
 const keyOf = key => {
@@ -45,7 +270,7 @@ class HeightIndex {
   }
 }
 
-export function createTableViewport({ threshold = 200, overscan = 10, estimatedRowHeight = 32 } = {}) {
+function createTableViewport({ threshold = 200, overscan = 10, estimatedRowHeight = 32 } = {}) {
   if (!Number.isInteger(threshold) || threshold < 0 || !Number.isInteger(overscan) || overscan < 0) {
     throw new TypeError('Invalid viewport limits');
   }
@@ -153,7 +378,7 @@ export function createTableViewport({ threshold = 200, overscan = 10, estimatedR
 }
 
 /** Coalesces scroll/resize preparation; caller owns listeners and observers. */
-export function createViewportFrameScheduler(render, { requestFrame = globalThis.requestAnimationFrame,
+function createViewportFrameScheduler(render, { requestFrame = globalThis.requestAnimationFrame,
   cancelFrame = globalThis.cancelAnimationFrame } = {}) {
   if ([render, requestFrame, cancelFrame].some(fn => typeof fn !== 'function')) throw new TypeError('Frame callbacks required');
   let pending = null, payload, disposed = false;
@@ -170,7 +395,7 @@ export function createViewportFrameScheduler(render, { requestFrame = globalThis
 
 // Native table rendering uses the same row-window model above.
 // Keep the native table and the full application model. Only its body has a window.
-export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, decorate = () => {}, onRender = () => {} }) {
+function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, decorate = () => {}, onRender = () => {} }) {
   const viewport = createTableViewport({ threshold: 200, overscan: 10, estimatedRowHeight: 34 });
   let rows = [], records = new Map(), indices = new Map(), rowRenderer, columns = 1, composing = false, deferred = null;
   let focusKey = null, painting = false, lastWindow = null;
@@ -295,3 +520,29 @@ export function createVirtualTableBody({ body, scroller, rowAttribute, keyOf, de
   });
   return api;
 }
+
+return { createTableViewport, createViewportFrameScheduler, createVirtualTableBody };
+})();
+
+// Public API (same functions and constants; no additional command layer).
+export const TABLE_VIEW_MODE = tableViewStateSection.TABLE_VIEW_MODE;
+export const createTableViewPreferences = tableViewStateSection.createTableViewPreferences;
+export const tableViewFor = tableViewStateSection.tableViewFor;
+export const selectTableView = tableViewStateSection.selectTableView;
+export const resetTableViewForSource = tableViewStateSection.resetTableViewForSource;
+export const sourceViewColumns = tableViewStateSection.sourceViewColumns;
+export const inputViewColumns = tableViewStateSection.inputViewColumns;
+export const INPUT_LIST_SEARCH_ACTION = inputListSearchSection.INPUT_LIST_SEARCH_ACTION;
+export const createInputListSearchIndex = inputListSearchSection.createInputListSearchIndex;
+export const updateInputListSearchIndex = inputListSearchSection.updateInputListSearchIndex;
+export const removeInputListSearchIndexRow = inputListSearchSection.removeInputListSearchIndexRow;
+export const createInputListSearchState = inputListSearchSection.createInputListSearchState;
+export const reduceInputListSearchState = inputListSearchSection.reduceInputListSearchState;
+export const isActualInputListRow = inputListSearchSection.isActualInputListRow;
+export const filterInputListRows = inputListSearchSection.filterInputListRows;
+export const inputListDisplayRows = inputListSearchSection.inputListDisplayRows;
+export const inputListSelectionScopeRowIds = inputListSearchSection.inputListSelectionScopeRowIds;
+export const constrainInputListSelection = inputListSearchSection.constrainInputListSelection;
+export const createTableViewport = virtualTableBodySection.createTableViewport;
+export const createViewportFrameScheduler = virtualTableBodySection.createViewportFrameScheduler;
+export const createVirtualTableBody = virtualTableBodySection.createVirtualTableBody;

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { ESTIMATE_REPORT_HEADERS as H, ESTIMATE_REPORT_FIELDS, isEstimateReportHeaders } from '../smartinput/estimate-report-preset.js';
-import { createMappingSession, projectMappedRows, validateTemplateDraft, createTemplateRecord, setColumnDecision, updateWorkingCell, deleteWorkingRows, reassignHeaderRow } from '../smartinput/input-template-mapper.js';
-import { inspectEstimateWorkbookCandidate, ERP_ESTIMATE_HEADERS } from '../smartinput/estimate-report-preset.js';
-import { buildEstimateF8RowsFromDraft } from '../smartinput/estimate-output.js';
+import { ESTIMATE_REPORT_HEADERS as H, ESTIMATE_REPORT_FIELDS, isEstimateReportHeaders } from '../smartinput/input.js';
+import { createMappingSession, projectMappedRows, validateTemplateDraft, createTemplateRecord, setColumnDecision, updateWorkingCell, deleteWorkingRows, reassignHeaderRow } from '../smartinput/input.js';
+import { inspectEstimateWorkbookCandidate, ERP_ESTIMATE_HEADERS } from '../smartinput/input.js';
+import { buildEstimateF8RowsFromDraft } from '../smartinput/report.js';
 const sandbox = { console, Date, Math, crypto: globalThis.crypto };
 vm.runInNewContext(fs.readFileSync('smartinput/smartinput-contract.js','utf8'), sandbox);
 const contract = sandbox.SMART_INPUT_CONTRACT;

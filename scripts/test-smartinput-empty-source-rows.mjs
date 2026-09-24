@@ -4,15 +4,15 @@ import assert from 'node:assert/strict';
 import {
   buildGridPastePlan,
   parseClipboardMatrix
-} from '../smartinput/grid-clipboard.js';
+} from '../smartinput/input.js';
 import {
   DECISION,
   createMappingSession,
   createTemplateRecord,
   projectMappedRows,
   setColumnDecision
-} from '../smartinput/input-template-mapper.js';
-import { parseStructuredSheet } from '../smartinput/grid-clipboard.js';
+} from '../smartinput/input.js';
+import { parseStructuredSheet } from '../smartinput/input.js';
 import { readWorksheetSource } from '../smartinput/xlsx-source-reader.js';
 import '../smartinput/smartinput-contract.js';
 
