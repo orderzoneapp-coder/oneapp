@@ -1,4 +1,4 @@
-import { createVirtualTableBody } from './virtual-table-body.js?v=0.2.0';
+import { createVirtualTableBody } from './virtual-table-body.js?v=0.3.0';
 import * as estimateStore from './smartinput-data-store.js?v=0.15.0';
 import { createEstimateWorkspace } from './estimate-workspace.js?v=0.1.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, projectIndependentEstimateDraft, estimateIdentityFromRow,
@@ -15,7 +15,7 @@ import {
   loadPurchaseStage3Capability,
   loadSaleStage4Capability
 } from './legacy-integration-adapter.js?v=0.4.0';
-import { captureTextIntake, analyzeSingleOrderDocument, rematchExtractedLinesForCustomer, extractOrderProductLines, isSelectableMasterProduct, hasEnteredValue, rowHasMeaningfulInput, rowHasLinkedSource, compactRowBlankValues, pruneEmptyWorkRows, manualLinkedRows } from './input.js?v=0.1.0';
+import { captureTextIntake, analyzeSingleOrderDocument, rematchExtractedLinesForCustomer, extractOrderProductLines, isSelectableMasterProduct, hasEnteredValue, rowHasMeaningfulInput, rowHasLinkedSource, compactRowBlankValues, pruneEmptyWorkRows, manualLinkedRows } from './input.js?v=0.1.1';
 import { loadLocalInputMatchingSnapshot, refreshInputMatchingSnapshot, inputContextFromMatchingSnapshot, inputMatchingAnalysisRevision, canReuseInputAnalysis } from './input-matching-snapshot.js?v=0.1.0';
 import {
   OPTIONAL_OPERATION_TIMEOUT_MS,
@@ -24,7 +24,7 @@ import {
   isOptionalOperationStale,
   mergeHydratedSnapshotPreservingLiveChanges
 } from './optional-operation-loader.js?v=0.1.0';
-import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.1.2';
+import { buildGridPastePlan, parseClipboardMatrix } from './grid-clipboard.js?v=0.2.0';
 import {
   AUTOSAVE_JOURNAL_SCHEMA,
   createAutosaveDocumentKey,
@@ -51,7 +51,7 @@ import {
   updateWorkingCell,
   updateWorkingCells,
   validateTemplateDraft
-} from './input-template-mapper.js?v=0.3.1';
+} from './input-template-mapper.js?v=0.3.2';
 import { applyOrderDocumentNumberDerivation } from './order-document-number.js?v=0.1.0';
 import {
   isPurchaseMetaSheet,
@@ -98,7 +98,7 @@ import {
 } from './estimate-f8-recovery.js?v=0.1.1';
 import {
   isEstimateWorkbookItemRow
-} from './estimate-workbook-selector.js?v=0.1.2';
+} from './estimate-report-preset.js?v=0.2.0';
 import {
   createRecordId,
   commitEstimateBundle,
@@ -229,7 +229,7 @@ const OPTIONAL_OPERATION_FEATURES = Object.freeze([
 const referenceOperationFeature = domain => `${OPTIONAL_OPERATION_FEATURE.REFERENCE_READ}:${domain}`;
 const optionalOperationLoader = createOptionalOperationLoader({ globalScope: window, documentRef: document });
 const OPTIONAL_FEATURE_MODULES = Object.freeze({
-  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.2.1', specifier: './xlsx-source-reader.js?v=0.2.1', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
+  fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.2.2', specifier: './xlsx-source-reader.js?v=0.2.2', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
   ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.1', specifier: './ocr-document-parser.js?v=0.1.1', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
   estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.2.10', specifier: './estimate-output.js?v=0.2.10', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
   estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.1.3', specifier: './estimate-migration.js?v=0.1.3', unavailableMessage: '기존 견적서 전환 기능을 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),

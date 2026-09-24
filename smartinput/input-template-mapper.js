@@ -1,4 +1,4 @@
-import { createEstimateReportPreset, isEstimateReportHeaders, isEstimateReportMetadataRow, estimateReportField } from './estimate-report-preset.js?v=0.1.0';
+import { createEstimateReportPreset, isEstimateReportHeaders, isEstimateReportMetadataRow, estimateReportField } from './estimate-report-preset.js?v=0.2.0';
 
 const SOURCE_WHITESPACE = /[\s\u00a0\u200b\u200c\u200d\u2060\ufeff]+/gu;
 

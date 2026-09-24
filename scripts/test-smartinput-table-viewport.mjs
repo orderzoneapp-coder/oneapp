@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTableViewport, createViewportFrameScheduler } from '../smartinput/table-viewport.js';
+import { createTableViewport, createViewportFrameScheduler } from '../smartinput/virtual-table-body.js';
 import { createVirtualTableBody } from '../smartinput/virtual-table-body.js';
 const keys = count => Array.from({ length: count }, (_, i) => `r${i}`);
 const rendered = view => view.segments.filter(s => s.kind === 'rows').flatMap(s => s.keys);

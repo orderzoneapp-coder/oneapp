@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import {
   normalizeStructuredFieldName,
   parseStructuredSheet
-} from '../smartinput/structured-sheet-parser.js';
+} from '../smartinput/grid-clipboard.js';
 import { buildEstimateF8Data } from '../smartinput/estimate-output.js';
 import { decorateStructuredRows } from '../smartinput/multivoucher-stage1.js';
 

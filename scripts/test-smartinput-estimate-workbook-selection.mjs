@@ -6,7 +6,7 @@ import {
   chooseEstimateWorkbookCandidate,
   inspectEstimateWorkbookCandidate,
   isEstimateWorkbookItemRow
-} from '../smartinput/estimate-workbook-selector.js';
+} from '../smartinput/estimate-report-preset.js';
 
 const distribution = [72, 51, 32, 25, 22, 20, 18, 18, 12, 7];
 const rows = [];

@@ -12,7 +12,7 @@ import {
   projectMappedRows,
   setColumnDecision
 } from '../smartinput/input-template-mapper.js';
-import { parseStructuredSheet } from '../smartinput/structured-sheet-parser.js';
+import { parseStructuredSheet } from '../smartinput/grid-clipboard.js';
 import { readWorksheetSource } from '../smartinput/xlsx-source-reader.js';
 import '../smartinput/smartinput-contract.js';
 

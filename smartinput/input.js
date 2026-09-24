@@ -1,4 +1,4 @@
-import { hasMeaningfulSourceValue } from './input-template-mapper.js?v=0.3.0';
+import { hasMeaningfulSourceValue } from './input-template-mapper.js?v=0.3.2';
 
 // SmartInput owns text intake and pure parsing. No repository, network, or other app engine is loaded here.
 const text = value => String(value ?? '').normalize('NFKC').trim();
