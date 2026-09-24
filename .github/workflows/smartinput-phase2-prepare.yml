@@ -1,0 +1,232 @@
+name: SmartInput phase2 branch-only preparation
+on:
+  push:
+    branches: [chat/smartinput-source-phase1-20260924]
+    paths: [.github/workflows/smartinput-phase2-prepare.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/chat/smartinput-source-phase1-20260924'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chat/smartinput-source-phase1-20260924
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Apply locally verified source relocation only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 422641134deac95b6f2f6f3114724bc7f6630c63
+          cat > "$RUNNER_TEMP/groups.json" <<'JSON'
+          {
+           "input.js": ["estimate-report-preset.js", "input-template-mapper.js", "grid-clipboard.js", "input.js"],
+           "multivoucher-stage1.js": ["order-document-number.js", "purchase-stage3.js", "sale-stage4.js", "related-voucher-import.js", "multivoucher-stage1.js"],
+           "virtual-table-body.js": ["table-view-state.js", "input-list-search.js", "virtual-table-body.js"],
+           "linked-estimate-source-edit.js": ["linked-estimate-source-edit.js", "estimate-f8-source-plan.js", "estimate-f8-recovery.js"],
+           "estimate-workspace.js": ["estimate-master-apply.js", "estimate-workspace.js"],
+           "reference-refresh-controller.js": ["field-registry.js", "reference-data-controller.js", "reference-generation-repository.js", "input-matching-snapshot.js", "reference-refresh-controller.js"],
+           "official-voucher-feature.js": ["official-voucher-reference-resolver.js", "purchase-official-stage3.js", "sale-official-stage4.js", "purchase-finalize-service.js", "sale-finalize-service.js", "stocktake-conflict-dialog.js", "official-voucher-feature.js"],
+           "report.js": ["stage5-compute-runner.js", "estimate-output.js", "purchase-sales-output.js"]
+          }
+          JSON
+          cat > "$RUNNER_TEMP/consolidate.cjs" <<'JS'
+          'use strict';
+          const fs=require('fs'),path=require('path'),crypto=require('crypto');
+          const acorn=require('internal/deps/acorn/acorn/dist/acorn');
+          const root=path.resolve(process.argv[2]);
+          const groups=JSON.parse(fs.readFileSync(path.join(__dirname,'groups.json'),'utf8'));
+          const version='0.17.0';
+          const appRoot=path.join(root,'smartinput');
+          const originals=Object.fromEntries(fs.readdirSync(appRoot).filter(x=>x.endsWith('.js')).map(n=>[n,fs.readFileSync(path.join(appRoot,n),'utf8')]));
+          const fileMap=Object.fromEntries(Object.entries(groups).flatMap(([target,files])=>files.map(f=>[f,target])));
+          const info={};
+          for(const name of Object.keys(fileMap)){
+           const s=originals[name]; const ast=acorn.parse(s,{sourceType:'module',ecmaVersion:'latest'});
+           const exports=[],imports=[],patches=[];
+           for(const n of ast.body){
+            if(n.type==='ImportDeclaration'){imports.push(n);patches.push([n.start,n.end,'']);}
+            if(n.type==='ExportAllDeclaration'||n.type==='ExportDefaultDeclaration') throw new Error('Unsupported export '+name);
+            if(n.type==='ExportNamedDeclaration'){
+             if(n.declaration){
+              const d=n.declaration;
+              if(d.type==='VariableDeclaration'){
+               if(d.kind!=='const') throw new Error('Mutable export '+name);
+               for(const v of d.declarations){if(v.id.type!=='Identifier')throw new Error('Destructured export '+name);exports.push({name:v.id.name,local:v.id.name});}
+              }else if(['FunctionDeclaration','ClassDeclaration'].includes(d.type)) exports.push({name:d.id.name,local:d.id.name});
+              else throw new Error('Unsupported declaration '+name);
+              patches.push([n.start,d.start,'']);
+             }else{
+              for(const e of n.specifiers) exports.push({name:e.exported.name,local:e.local.name,source:n.source?.value});
+              patches.push([n.start,n.end,'']);
+             }
+            }
+           }
+           let body=s;for(const [a,b,t] of patches.sort((a,b)=>b[0]-a[0]))body=body.slice(0,a)+t+body.slice(b);
+           info[name]={body:body.trim(),exports,imports};
+          }
+          const relocated=[];
+          for(const [target,files] of Object.entries(groups)){
+           const sectionName=f=>f.replace(/\.js$/, '').replace(/-([a-z])/g,(_,c)=>c.toUpperCase())+'Section';
+           const nsNames=new Map(files.map(f=>[f,sectionName(f)]));
+           const externals=new Map();const exOut=new Map();const sections=[];
+           function sourceName(spec){
+            const bare=spec.split('?')[0]; const old=path.posix.basename(bare);
+            if(bare.startsWith('./')&&files.includes(old)) return nsNames.get(old);
+            let renamed=spec;
+            if(bare.startsWith('./')&&fileMap[old]) renamed='./'+fileMap[old]+'?v='+version;
+            if(!externals.has(renamed))externals.set(renamed,sectionName(old).replace(/Section$/, 'Dependency')+externals.size);
+            return externals.get(renamed);
+           }
+           for(const name of files){
+            const item=info[name];const ns=nsNames.get(name); const localBindings=[];
+            for(const n of item.imports){
+             const from=sourceName(n.source.value);
+             const pairs=[];
+             for(const p of n.specifiers){
+              if(p.type==='ImportSpecifier')pairs.push(p.imported.name===p.local.name?p.local.name:`${p.imported.name}: ${p.local.name}`);
+              else if(p.type==='ImportNamespaceSpecifier')localBindings.push(`const ${p.local.name} = ${from};`);
+              else if(p.type==='ImportDefaultSpecifier')localBindings.push(`const ${p.local.name} = ${from}.default;`);
+             }
+             if(pairs.length)localBindings.push(`const { ${pairs.join(', ')} } = ${from};`);
+            }
+            const exported=item.exports.map(e=>{
+             if(e.source){const from=sourceName(e.source);return `${e.name}: ${from}.${e.local}`;}
+             return e.name===e.local?e.name:`${e.name}: ${e.local}`;
+            });
+            sections.push(`// ============================================================================\n// ${name} — implementation moved here; private helpers remain scoped.\n// ============================================================================\nconst ${ns} = (() => {\n${localBindings.join('\n')}\n\n${item.body}\n\nreturn { ${exported.join(', ')} };\n})();\n`);
+            for(const e of item.exports){
+             let origin=e.source?sourceName(e.source)+'.'+e.local:ns+'.'+e.local;
+             if(exOut.has(e.name)){
+              if(e.source && exOut.get(e.name).origin===origin)continue;
+              throw new Error('Ambiguous export '+target+':'+e.name);
+             }
+             exOut.set(e.name,{origin,value:ns+'.'+e.name});
+            }
+            relocated.push({source:name,target,exports:item.exports.map(e=>e.name),bodySha256:crypto.createHash('sha256').update(item.body).digest('hex')});
+           }
+           const exportCode=[...exOut].map(([name,obj])=>`export const ${name} = ${obj.value};`).join('\n');
+           let output=`// SmartInput role consolidation. No data migration or business-policy change.\n// Edit implementations in the named sections below; former files are removed.\n`+[...externals].map(([src,n])=>`import * as ${n} from ${JSON.stringify(src)};`).join('\n')+'\n\n'+sections.join('\n')+'\n// Public API (same functions and constants; no additional command layer).\n'+exportCode+'\n';
+           acorn.parse(output,{sourceType:'module',ecmaVersion:'latest'});
+           fs.writeFileSync(path.join(appRoot,target),output);
+          }
+          for(const [name,target] of Object.entries(fileMap))if(name!==target)fs.unlinkSync(path.join(appRoot,name));
+          function replaceNames(s){
+           for(const old of Object.keys(fileMap).sort((a,b)=>b.length-a.length)){
+            const to=fileMap[old]; if(old===to)continue;
+            s=s.replace(new RegExp('(?<![\\w.-])'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![\\w.-])','g'),to);
+           }
+           return s;
+          }
+          function allFiles(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?(e.name==='.git'||e.name==='node_modules'?[]:allFiles(path.join(dir,e.name))):[path.join(dir,e.name)]);}
+          const paths=allFiles(appRoot).concat(allFiles(path.join(root,'scripts')),path.join(root,'app-manifest.json')).filter(p=>/\.(js|mjs|html|json)$/.test(p));
+          for(const p of paths){let s=fs.readFileSync(p,'utf8');let next=replaceNames(s);if(next!==s)fs.writeFileSync(p,next);}
+          for(const [target,files] of Object.entries(groups)){
+           const p=path.join(appRoot,target);let s=fs.readFileSync(p,'utf8');let idx=0;
+           s=s.replace(/\/\/ [^\n]+ — implementation moved here; private helpers remain scoped\./g,()=>`// ${files[idx++]} — implementation moved here; private helpers remain scoped.`);
+           if(idx!==files.length)throw new Error('Section count '+target);
+           fs.writeFileSync(p,s);
+          }
+          const changed=new Set(Object.keys(groups));
+          for(let pass=0;pass<10;pass++){
+           let added=false;
+           for(const p of allFiles(appRoot).filter(p=>p.endsWith('.js'))){
+            let s=fs.readFileSync(p,'utf8');let next=s;
+            for(const n of changed){
+             const esc=n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+             next=next.replace(new RegExp('(\\./'+esc+')\\?v=[^\\s\'"`]+','g'),'$1?v='+version);
+            }
+            if(next!==s)fs.writeFileSync(p,next);
+            const name=path.basename(p);
+            if((!originals[name]||next!==originals[name])&&!changed.has(name)){changed.add(name);added=true;}
+           }
+           if(!added)break;
+          }
+          let main=fs.readFileSync(path.join(appRoot,'smartinput.js'),'utf8');
+          main=main.replace(/assetVersion: '[^']+', specifier: '([^']+\?v=0\.17\.0)'/g,"assetVersion: '0.17.0', specifier: '$1'");
+          fs.writeFileSync(path.join(appRoot,'smartinput.js'),main);
+          for(const p of allFiles(appRoot).filter(p=>p.endsWith('.html'))){let s=fs.readFileSync(p,'utf8');for(const n of changed){const esc=n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');s=s.replace(new RegExp('(\\./'+esc+')\\?v=[^"\']+','g'),'$1?v='+version);}fs.writeFileSync(p,s);}
+          for(const p of allFiles(appRoot).filter(p=>p.endsWith('.js'))) acorn.parse(fs.readFileSync(p,'utf8'),{sourceType:'module',ecmaVersion:'latest'});
+          const boundaryTestPath=path.join(root,'scripts/test-smartinput-official-write-boundary.mjs');
+          let boundaryTest=fs.readFileSync(boundaryTestPath,'utf8');
+          const oldBoundaryDependency="  ['./optional-operation-loader.js?v=0.1.0', pathToFileURL(join(root, 'smartinput', 'optional-operation-loader.js')).href]";
+          if(boundaryTest.split(oldBoundaryDependency).length!==2)throw new Error('Boundary harness dependency anchor');
+          boundaryTest=boundaryTest.replace(oldBoundaryDependency, oldBoundaryDependency+",\n  ['./legacy-integration-adapter.js?v=0.17.0', pathToFileURL(join(root, 'smartinput', 'legacy-integration-adapter.js')).href],\n  ['../orderq/stocktake-conflict-v2.js?v=0.2.0', pathToFileURL(join(root, 'orderq', 'stocktake-conflict-v2.js')).href]");
+          fs.writeFileSync(boundaryTestPath,boundaryTest);
+          fs.writeFileSync(path.join(__dirname,'relocation.json'),JSON.stringify({groups,fileMap,version,changed:[...changed],relocated},null,2));
+          console.log('Final JavaScript files:',fs.readdirSync(appRoot).filter(x=>x.endsWith('.js')).length);
+          JS
+          node --expose-internals "$RUNNER_TEMP/consolidate.cjs" .
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('smartinput/README.md')
+          section='''## 소스 통합 현황 — 2026-09-24
+
+          PR #648의 후속 소스 정리다. 스마트입력 직속 JavaScript는 1차 49개에서 25개로 정리했다(최초 52개). 구현을 아래 파일로 옮기고 이전 파일 24개를 제거했으며, 별도 배포 번들로 감추거나 DB 형식을 변경하지 않았다.
+
+          | 관리 파일 | 통합한 책임 |
+          |---|---|
+          | `input.js` | 견적 입력 양식, 표 매핑, 붙여넣기, 텍스트 입력 |
+          | `multivoucher-stage1.js` | 주문번호 해석, 구매·판매 메타데이터, 관련자료 반입, 다중 전표 구성 |
+          | `virtual-table-body.js` | 보기 상태, 입력목록 검색, 가상 행·테이블 표시 |
+          | `linked-estimate-source-edit.js` | 구형 견적 편집 근거, 보고서 원본 계획, 무결성 복구 |
+          | `estimate-workspace.js` | 견적 작업 관리와 선택적 마스터 반영 계획 |
+          | `reference-refresh-controller.js` | 필드 설정, 기준정보 조회·세대 갱신, 매칭용 캐시 |
+          | `official-voucher-feature.js` | 구매·판매 확정 요청과 실사 충돌 확인; 기존 담당 앱 경계 유지 |
+          | `report.js` | 견적·구매·판매·내부이동 보고서 계산과 Worker 요청 |
+
+          각 파일의 이름별 구역에 실제 함수가 있다. 서로 다른 정규화 규칙과 내부 상태는 구역별 범위로 유지한다. 새 업무 엔진이나 새 저장·전환 절차를 추가하지 않았다. 단가·수량 계산, DB·권한·공식 전표 활성화 조건은 기존 그대로다. 보고서·공식 전표·OCR·Excel 해석은 필요한 동작에서만 로딩한다.
+
+          이번 소스 정리는 기존자료전환 버튼 오류 수정, 화면 재설계 또는 공통 변경 진입점 전환 완료를 의미하지 않는다. 본체·저장·독립견적·선택 로더 등 남은 파일은 검증 없이 개수에 맞춰 합치지 않는다.
+
+          '''
+          p.write_text(section+p.read_text(encoding='utf-8'),encoding='utf-8')
+          PY
+          cat > "$RUNNER_TEMP/verify_manifest.py" <<'PY'
+          from pathlib import Path
+          import subprocess,json,hashlib
+          r=Path('.');files=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          files+=subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+          assert all(p.startswith(('smartinput/','scripts/')) or p=='app-manifest.json' for p in files),files
+          m={}
+          for p in sorted(set(files)):
+              try: old=subprocess.check_output(['git','show','HEAD:'+p],stderr=subprocess.DEVNULL)
+              except subprocess.CalledProcessError:old=None
+              new=(r/p).read_bytes() if (r/p).exists() else None
+              m[p]={'before':hashlib.sha256(old).hexdigest() if old is not None else None,'after':hashlib.sha256(new).hexdigest() if new is not None else None}
+          digest=hashlib.sha256(json.dumps(m,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          assert len(m)==86,(len(m),digest)
+          assert digest=='c0bc771645026f05a8de23728f8157a8d29b3a9b5d5f9a8f449844aba74d2b4c',digest
+          print('PASS exact 86-path before/after manifest',digest)
+          PY
+          python3 "$RUNNER_TEMP/verify_manifest.py"
+      - name: Run unchanged regression assertions with relocated imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          count=0
+          for test in scripts/test-smartinput-*.mjs; do
+            case "$test" in *browser*) continue;; esac
+            node "$test"
+            count=$((count+1))
+          done
+          node scripts/validate-repository.mjs
+          node scripts/test-orderq-official-voucher-mvp-core.mjs
+          echo "PASS $count SmartInput scripts plus repository and ORDER Q consumer checks"
+          python3 "$RUNNER_TEMP/verify_manifest.py"
+      - name: Commit verified source to the existing work branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- smartinput scripts app-manifest.json
+          test "$(git diff --cached --name-only | wc -l)" -eq 86
+          git commit -m 'refactor(SmartInput): consolidate eight responsibility groups, JS 49 to 25'
+          git push origin HEAD:refs/heads/chat/smartinput-source-phase1-20260924
