@@ -1,0 +1,43 @@
+name: SmartInput PR648 production verification
+on:
+  push:
+    branches: [verify/smartinput-pr648-live-20260924]
+    paths:
+      - .github/workflows/verify-smartinput-pr648-live.yml
+      - .github/scripts/verify-smartinput-pr648-live.mjs
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/verify/smartinput-pr648-live-20260924'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install Korean font for readable verification screenshots
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+      - name: Check exact merged runtime and syntax
+        run: |
+          git merge-base --is-ancestor 5e9673a7da0170f9fbee02cc0f5bf1d125c955ef HEAD
+          git diff --exit-code 5e9673a7da0170f9fbee02cc0f5bf1d125c955ef -- smartinput nexus orderq reference-data app-manifest.json
+          node --check .github/scripts/verify-smartinput-pr648-live.mjs
+      - name: Compare all deployed SmartInput assets and exercise real production UI with isolated synthetic data
+        run: node .github/scripts/verify-smartinput-pr648-live.mjs
+      - name: Verify real NEXUS host navigation and before-leave persistence with synthetic local rows
+        if: always()
+        run: node scripts/measure-smartinput-host-navigation.mjs --base-url https://oneapp.orderz.co.kr/ --samples 3 --label pr648-production
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartinput-pr648-production-verification
+          path: |
+            evidence/pr648-production/
+            evidence/si-boundary-20260920-01/pr648-production-navigation.json
+          retention-days: 7
