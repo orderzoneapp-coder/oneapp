@@ -51,7 +51,7 @@ jobs:
           import os, pathlib, hashlib, time, urllib.request
           domain=pathlib.Path('CNAME').read_text().strip()
           if domain != 'oneapp.orderz.co.kr': raise SystemExit('Unexpected deployment domain')
-          for name in ['smartinput/index.html','smartinput/source-preparation-ui-v2.js','smartinput/table-view-state.js','smartinput/smartinput.js']:
+          for name in ['smartinput/index.html','smartinput/source-preparation-ui-v2.js','smartinput/virtual-table-body.js','smartinput/smartinput.js']:
               expected=pathlib.Path(name).read_bytes()
               for attempt in range(12):
                   try:

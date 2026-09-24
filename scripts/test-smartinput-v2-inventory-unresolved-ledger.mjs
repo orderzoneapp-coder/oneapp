@@ -10,9 +10,9 @@ globalThis.fetch = async (url, options = {}) => {
   throw new Error('STAGE4_TEST_NETWORK_DISABLED');
 };
 
-const resolverModule = await import('../smartinput/official-voucher-reference-resolver.js');
-const purchaseModule = await import('../smartinput/purchase-official-stage3.js');
-const saleModule = await import('../smartinput/sale-official-stage4.js');
+const resolverModule = await import('../smartinput/official-voucher-feature.js');
+const purchaseModule = await import('../smartinput/official-voucher-feature.js');
+const saleModule = await import('../smartinput/official-voucher-feature.js');
 const core = await import('../orderq/official-voucher-core.js');
 const contract = await import('../orderq/official-voucher-v2-contract.js');
 const gateway = await import('../orderq/official-command-gateway.js');
@@ -286,7 +286,7 @@ await assert.rejects(
 );
 
 assert.deepEqual(gateway.OFFICIAL_VOUCHER_V2_FEATURE_GATES, { PURCHASE: false, SALE: false });
-const resolverSource = readFileSync(new URL('../smartinput/official-voucher-reference-resolver.js', import.meta.url), 'utf8');
+const resolverSource = readFileSync(new URL('../smartinput/official-voucher-feature.js', import.meta.url), 'utf8');
 assert.doesNotMatch(resolverSource, /indexedDB|\.put\s*\(|\.add\s*\(|saveProduct|saveCustomer|commitMasterState/,
   'SmartInput resolver must remain a read-only consumer of reference snapshots');
 const repositorySource = readFileSync(new URL('../orderq/official-voucher-repository.js', import.meta.url), 'utf8');

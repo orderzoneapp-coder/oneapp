@@ -132,7 +132,7 @@ try {
   await loaded;
   await expr(client, `Boolean(document.querySelector('#inputRows tr'))`, 'SmartInput shell');
   await evaluate(client, String.raw`(async()=>{
-    const mapper=await import('/smartinput/input-template-mapper.js?input-list-search-e2e=1');
+    const mapper=await import('/smartinput/input.js?input-list-search-e2e=1');
     const contract=window.SMART_INPUT_CONTRACT;
     const draft=contract.createDraft({activeMode:'order'});
     const matrix=[

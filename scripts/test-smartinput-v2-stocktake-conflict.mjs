@@ -10,11 +10,11 @@ globalThis.fetch = async (url, options = {}) => {
   throw new Error('STAGE5_TEST_NETWORK_DISABLED');
 };
 
-const { resolveOfficialVoucherReferencesV2 } = await import('../smartinput/official-voucher-reference-resolver.js');
-const { buildPurchasePostDraft } = await import('../smartinput/purchase-official-stage3.js');
-const { buildSalePostDraft } = await import('../smartinput/sale-official-stage4.js');
-const { createPurchaseFinalizeService } = await import('../smartinput/purchase-finalize-service.js');
-const { createSaleFinalizeService } = await import('../smartinput/sale-finalize-service.js');
+const { resolveOfficialVoucherReferencesV2 } = await import('../smartinput/official-voucher-feature.js');
+const { buildPurchasePostDraft } = await import('../smartinput/official-voucher-feature.js');
+const { buildSalePostDraft } = await import('../smartinput/official-voucher-feature.js');
+const { createPurchaseFinalizeService } = await import('../smartinput/official-voucher-feature.js');
+const { createSaleFinalizeService } = await import('../smartinput/official-voucher-feature.js');
 const { createOfficialCommandGateway } = await import('../orderq/official-command-gateway.js');
 const { planOfficialVoucherCommand } = await import('../orderq/official-voucher-core.js');
 const {
@@ -411,7 +411,7 @@ assert.deepEqual(await missingInspectionGateway.execute({ commandType: 'POST_PUR
   'Gateway V1 execute must preserve the existing Repository call');
 assert.equal(missingGatewayCommandRuns, 1, 'only the V1 compatibility execute may reach the incomplete Repository port');
 
-const dialogSource = readFileSync(new URL('../smartinput/stocktake-conflict-dialog.js', import.meta.url), 'utf8');
+const dialogSource = readFileSync(new URL('../smartinput/official-voucher-feature.js', import.meta.url), 'utf8');
 for (const phrase of [
   '이 전표는 최근 재고실사 이전의 거래입니다.',
   '이 수량이 실사 결과에 이미 포함되어 있습니까?',

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const importRepo = path => import(`${pathToFileURL(join(root, path)).href}?test=${Date.now()}-${Math.random()}`);
-const controller = await importRepo('smartinput/reference-data-controller.js');
+const controller = await importRepo('smartinput/reference-refresh-controller.js');
 const changeContract = await importRepo('reference-data/change-request-contract.js');
 
 const products = [
@@ -124,7 +124,7 @@ assert.ok(performanceElapsed < 2500, `25k snapshot indexing + 120 exact searches
 const [smartInputSource, dataStoreSource, controllerSource, refreshControllerSource, html] = await Promise.all([
   readFile(join(root, 'smartinput/smartinput.js'), 'utf8'),
   readFile(join(root, 'smartinput/smartinput-data-store.js'), 'utf8'),
-  readFile(join(root, 'smartinput/reference-data-controller.js'), 'utf8'),
+  readFile(join(root, 'smartinput/reference-refresh-controller.js'), 'utf8'),
   readFile(join(root, 'smartinput/reference-refresh-controller.js'), 'utf8'),
   readFile(join(root, 'smartinput/index.html'), 'utf8'),
 ]);

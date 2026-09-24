@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {
   applyOrderDocumentNumberDerivation,
   parseOrderDocumentNumber
-} from '../smartinput/order-document-number.js';
+} from '../smartinput/multivoucher-stage1.js';
 import {
   createTemplateRecord,
   createMappingSession,
   DECISION,
   projectMappedRows,
   setColumnDecision
-} from '../smartinput/input-template-mapper.js';
+} from '../smartinput/input.js';
 import {
   buildOrderGroupPayload,
   groupVoucherRows,

@@ -105,7 +105,7 @@ export const SMARTINPUT_SALE_ACTOR_ID = 'SMART_INPUT_ADMIN';
 
 export async function loadPurchaseStage3Capability() {
   try {
-    const module = await load('./purchase-official-stage3.js?v=0.9.1');
+    const module = await load('./official-voucher-feature.js?v=0.17.0');
     return await module.loadPurchaseStage3Capability();
   } catch (error) {
     return { ready: false, code: 'PURCHASE_FINALIZE_UNAVAILABLE', detail: text(error?.message || error) };
@@ -114,7 +114,7 @@ export async function loadPurchaseStage3Capability() {
 
 export async function loadSaleStage4Capability() {
   try {
-    const module = await load('./sale-official-stage4.js?v=1.1.1');
+    const module = await load('./official-voucher-feature.js?v=0.17.0');
     return await module.loadSaleStage4Capability();
   } catch (error) {
     return { ready: false, code: 'SALE_FINALIZE_UNAVAILABLE', detail: text(error?.message || error) };
@@ -134,7 +134,7 @@ export function validatePurchaseGroup(group = {}) {
 
 export async function postPurchaseGroup(group, context = {}) {
   try {
-    const module = await load('./purchase-official-stage3.js?v=0.9.1');
+    const module = await load('./official-voucher-feature.js?v=0.17.0');
     return await module.postPurchaseGroup(group, context);
   } catch (error) {
     if ([OPTIONAL_OPERATION_ERROR_CODE.RESULT_UNKNOWN, OPTIONAL_OPERATION_ERROR_CODE.RESULT_LOOKUP_FAILED].includes(error?.code)) throw error;
@@ -144,7 +144,7 @@ export async function postPurchaseGroup(group, context = {}) {
 
 export async function postSaleGroup(group, context = {}) {
   try {
-    const module = await load('./sale-official-stage4.js?v=1.1.1');
+    const module = await load('./official-voucher-feature.js?v=0.17.0');
     return await module.postSaleGroup(group, context);
   } catch (error) {
     if ([OPTIONAL_OPERATION_ERROR_CODE.RESULT_UNKNOWN, OPTIONAL_OPERATION_ERROR_CODE.RESULT_LOOKUP_FAILED].includes(error?.code)) throw error;

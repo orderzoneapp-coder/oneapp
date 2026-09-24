@@ -4,7 +4,7 @@ import { createIndependentEstimateCandidate, createSelectedEstimateUpdatePlan, c
   estimateDirectRowKey, hashEstimatePlan, validateIndependentEstimate, INDEPENDENT_ESTIMATE_SCHEMA, DIRECT_ROW_MAPPING_TYPE, DIRECT_ROW_KEY_VERSION }
   from '../smartinput/independent-estimate.js';
 import { createEstimateMasterIntent, executeEstimateMasterIntent, resumeEstimateMasterPublication }
-  from '../smartinput/estimate-master-apply.js';
+  from '../smartinput/estimate-workspace.js';
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);

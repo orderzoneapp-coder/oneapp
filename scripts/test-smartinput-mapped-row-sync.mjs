@@ -7,8 +7,8 @@ import {
   applyMappedFieldUpdates,
   mappedRowMutationPlan,
   projectedRowValue
-} from '../smartinput/input-template-mapper.js';
-import { synchronizeWorkingRow } from '../smartinput/input-template-mapper.js';
+} from '../smartinput/input.js';
+import { synchronizeWorkingRow } from '../smartinput/input.js';
 
 const targets = [
   { id: 'memo', projectionFieldId: 'memo', scope: 'voucher' },

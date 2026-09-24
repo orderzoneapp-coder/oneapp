@@ -1,3 +1,641 @@
+// SmartInput role consolidation. No data migration or business-policy change.
+// Edit implementations in the named sections below; former files are removed.
+import * as canonicalHashCompatDependency0 from "./canonical-hash-compat.js?v=0.1.0";
+
+// ============================================================================
+// order-document-number.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const orderDocumentNumberSection = (() => {
+
+
+const ORDER_DOCUMENT_NUMBER_HEADER = '\uC77C\uC790-No.';
+
+const text = value => String(value ?? '');
+
+function dateResult(value) {
+  const match = /^(\d{4})([./-])(\d{2})\2(\d{2})$/.exec(value);
+  if (!match) return { valid: false, code: 'ORDER_DOCUMENT_NO_DATE_FORMAT_INVALID' };
+  const year = Number(match[1]);
+  const month = Number(match[3]);
+  const day = Number(match[4]);
+  const leapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const monthDays = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > monthDays[month - 1]) {
+    return { valid: false, code: 'ORDER_DOCUMENT_NO_DATE_INVALID' };
+  }
+  return {
+    valid: true,
+    date: `${match[1]}-${match[3]}-${match[4]}`
+  };
+}
+
+function parseOrderDocumentNumber(value) {
+  const originalValue = text(value);
+  const boundary = originalValue.lastIndexOf('-');
+  if (boundary < 0) {
+    return {
+      valid: false,
+      originalValue,
+      code: 'ORDER_DOCUMENT_NO_FORMAT_INVALID',
+      message: '\uC77C\uC790-No.\uB294 YYYY/MM/DD-N, YYYY.MM.DD-N, YYYY-MM-DD-N \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.'
+    };
+  }
+  const datePart = originalValue.slice(0, boundary);
+  const numberPart = originalValue.slice(boundary + 1);
+  if (!numberPart) {
+    return {
+      valid: false,
+      originalValue,
+      code: 'ORDER_DOCUMENT_NO_NUMBER_REQUIRED',
+      message: '\uC77C\uC790-No. \uB05D\uC758 \uBC88\uD638\uB97C \uC785\uB825\uD558\uC138\uC694.'
+    };
+  }
+  if (!/^\d+$/.test(numberPart)) {
+    return {
+      valid: false,
+      originalValue,
+      code: 'ORDER_DOCUMENT_NO_NUMBER_INVALID',
+      message: '\uC77C\uC790-No. \uB05D\uC758 \uBC88\uD638\uB294 \uC22B\uC790\uB85C\uB9CC \uC785\uB825\uD558\uC138\uC694.'
+    };
+  }
+  const parsedDate = dateResult(datePart);
+  if (!parsedDate.valid) {
+    return {
+      valid: false,
+      originalValue,
+      code: parsedDate.code,
+      message: parsedDate.code === 'ORDER_DOCUMENT_NO_DATE_INVALID'
+        ? '\uC77C\uC790-No.\uC758 \uB0A0\uC9DC\uAC00 \uC2E4\uC81C \uB2EC\uB825\uC5D0 \uC5C6\uB294 \uB0A0\uC9DC\uC785\uB2C8\uB2E4.'
+        : '\uC77C\uC790-No.\uB294 YYYY/MM/DD-N, YYYY.MM.DD-N, YYYY-MM-DD-N \uD615\uC2DD\uC774\uC5B4\uC57C \uD569\uB2C8\uB2E4.'
+    };
+  }
+  return {
+    valid: true,
+    originalValue,
+    date: parsedDate.date
+  };
+}
+
+function projectionField(target) {
+  return text(target?.projectionFieldId || target?.id);
+}
+
+function activeMapping(session, targetDefinitions, projectionFieldId) {
+  const targets = new Map((targetDefinitions || []).map(target => [target.id, target]));
+  return (session?.mappings || []).find(mapping => {
+    if (!['MAPPED', 'RECOMMENDED'].includes(mapping?.state)) return false;
+    const target = targets.get(mapping.targetFieldId);
+    return projectionField(target) === projectionFieldId;
+  });
+}
+
+function normalizeSeparateDate(value) {
+  const originalValue = text(value);
+  if (!originalValue) return { valid: true, empty: true, date: '' };
+  const parsed = dateResult(originalValue);
+  if (!parsed.valid) return { valid: false, originalValue, code: parsed.code };
+  return { valid: true, empty: false, originalValue, date: parsed.date };
+}
+
+function derivedFieldValue(fieldId, date, sourceFieldValue) {
+  const sourceEvidence = sourceFieldValue?.evidence;
+  return {
+    fieldId,
+    sourceDisplayValue: text(sourceFieldValue?.sourceDisplayValue),
+    currentDisplayValue: date,
+    parsedValue: date,
+    edited: false,
+    evidence: {
+      ...(sourceEvidence || {}),
+      derivation: 'ORDER_DOCUMENT_NUMBER_DATE',
+      sourceHeader: ORDER_DOCUMENT_NUMBER_HEADER,
+      sourceFieldId: text(sourceFieldValue?.fieldId)
+    }
+  };
+}
+
+function separateDateError(label, parsed, derivedDate) {
+  if (!parsed.valid) return `${label}\uC758 \uB0A0\uC9DC \uD615\uC2DD\uC744 \uD655\uC778\uD558\uC138\uC694.`;
+  if (!parsed.empty && parsed.date !== derivedDate) {
+    return `\uBCC4\uB3C4 ${label} ${parsed.originalValue}\uC774(\uAC00) \uC77C\uC790-No.\uC5D0\uC11C \uD30C\uC0DD\uD55C ${derivedDate}\uC640 \uB2E4\uB985\uB2C8\uB2E4.`;
+  }
+  return '';
+}
+
+function applyOrderDocumentNumberDerivation({
+  rows = [],
+  session,
+  targetDefinitions = []
+} = {}) {
+  if (text(session?.voucherMode).toLowerCase() !== 'order') return rows;
+  const documentMapping = activeMapping(session, targetDefinitions, 'rowVoucherNo');
+  if (!documentMapping || documentMapping.sourceHeader !== ORDER_DOCUMENT_NUMBER_HEADER) return rows;
+
+  const dateTargets = ['rowVoucherDate', 'rowDeliveryDate'].map(projectionFieldId => ({
+    projectionFieldId,
+    target: (targetDefinitions || []).find(target => projectionField(target) === projectionFieldId),
+    mapping: activeMapping(session, targetDefinitions, projectionFieldId)
+  }));
+
+  return (rows || []).map(row => {
+    const sourceFieldValue = row?.fieldValues?.[documentMapping.targetFieldId];
+    const parsed = parseOrderDocumentNumber(sourceFieldValue?.currentDisplayValue ?? row?.rowVoucherNo);
+    const next = {
+      ...row,
+      rowVoucherNo: parsed.originalValue,
+      fieldValues: { ...(row?.fieldValues || {}) }
+    };
+    delete next.orderDocumentNoError;
+    delete next.orderDocumentNoErrorCode;
+
+    if (!parsed.valid) {
+      next.orderDocumentNoError = parsed.message;
+      next.orderDocumentNoErrorCode = parsed.code;
+      return next;
+    }
+
+    for (const { projectionFieldId, target, mapping } of dateTargets) {
+      const label = projectionFieldId === 'rowVoucherDate' ? '\uC8FC\uBB38\uC77C\uC790' : '\uB0A9\uAE30\uC77C\uC790';
+      const separateValue = mapping
+        ? (next.fieldValues?.[mapping.targetFieldId]?.currentDisplayValue ?? next[projectionFieldId])
+        : next[projectionFieldId];
+      const separateDate = normalizeSeparateDate(separateValue);
+      const error = separateDateError(label, separateDate, parsed.date);
+      if (error) {
+        next.orderDocumentNoError = error;
+        next.orderDocumentNoErrorCode = separateDate.valid
+          ? 'ORDER_DOCUMENT_NO_DATE_CONFLICT'
+          : 'ORDER_DOCUMENT_NO_SEPARATE_DATE_INVALID';
+        return next;
+      }
+      next[projectionFieldId] = parsed.date;
+      if (!mapping && target?.id) {
+        next.fieldValues[target.id] = derivedFieldValue(target.id, parsed.date, sourceFieldValue);
+      } else if (mapping?.targetFieldId) {
+        const fieldValue = next.fieldValues[mapping.targetFieldId];
+        next.fieldValues[mapping.targetFieldId] = {
+          ...fieldValue,
+          parsedValue: parsed.date
+        };
+      }
+    }
+    return next;
+  });
+}
+
+return { ORDER_DOCUMENT_NUMBER_HEADER, parseOrderDocumentNumber, applyOrderDocumentNumberDerivation };
+})();
+
+// ============================================================================
+// purchase-stage3.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const purchaseStage3Section = (() => {
+
+
+const PURCHASE_META_SCHEMA = 'ORDERQ_PURCHASE_META_V2';
+const PURCHASE_META_SHEET = '_NEXUS_META';
+const PURCHASE_UNIT_RULE = 'PURCHASE_UNIT_RULE_V1';
+const hashApi = globalThis.ORDERQ_CANONICAL_HASH;
+
+function text(value) { return String(value ?? '').replace(/\r\n?/g, '\n').normalize('NFC').trim(); }
+function upper(value) { return text(value).toUpperCase(); }
+function number(value, code = 'ORDERQ_PURCHASE_META_NUMBER_INVALID') {
+  if (value === '' || value === null || value === undefined) throw new Error(code);
+  const result = Number(value);
+  if (!Number.isFinite(result)) throw new Error(code);
+  return Object.is(result, -0) ? 0 : result;
+}
+function integer(value) {
+  const result = number(value);
+  if (!Number.isSafeInteger(result)) throw new Error('ORDERQ_PURCHASE_META_INTEGER_INVALID');
+  return String(result);
+}
+
+function purchaseMetaDigestPairs(meta = {}) {
+  return [
+    ['schemaVersion', text(meta.schemaVersion)], ['ruleVersion', text(meta.ruleVersion)],
+    ['originSystem', upper(meta.originSystem)], ['originTransactionId', text(meta.originTransactionId)],
+    ['planId', text(meta.planId)], ['sourceShortageKey', text(meta.sourceShortageKey)], ['sourceFingerprint', text(meta.sourceFingerprint)],
+    ['basisDate', text(meta.basisDate)], ['sourceRowKey', text(meta.sourceRowKey)],
+    ['sourceVoucherIndex', integer(meta.sourceVoucherIndex)], ['documentSuffix', text(meta.documentSuffix)],
+    ['documentOrdinal', integer(meta.documentOrdinal)], ['purchasePlanId', text(meta.purchasePlanId)],
+    ['sourceDocumentKey', text(meta.sourceDocumentKey)], ['sourceLineKey', text(meta.sourceLineKey)],
+    ['visibleSheetName', text(meta.visibleSheetName)], ['visibleRowNo', integer(meta.visibleRowNo)],
+    ['supplierCustomerId', text(meta.supplierCustomerId)], ['supplierCustomerCode', upper(meta.supplierCustomerCode)],
+    ['productId', text(meta.productId)], ['productCode', upper(meta.productCode)],
+    ['warehouseId', text(meta.warehouseId)], ['warehouseCode', upper(meta.warehouseCode)],
+    ['productMasterRevision', number(meta.productMasterRevision)], ['warehouseMasterRevision', number(meta.warehouseMasterRevision)],
+    ['suggestedQuantity', number(meta.suggestedQuantity)], ['suggestedUnit', upper(meta.suggestedUnit)],
+    ['suggestedBaseQuantity', number(meta.suggestedBaseQuantity)], ['suggestedBaseUnit', upper(meta.suggestedBaseUnit)],
+    ['unit', upper(meta.unit)], ['baseUnit', upper(meta.baseUnit)],
+    ['conversionFactor', number(meta.conversionFactor)], ['conversionSource', upper(meta.conversionSource)],
+    ['conversionRuleVersion', text(meta.conversionRuleVersion)],
+  ];
+}
+
+function purchaseMetaRowDigest(meta) {
+  if (!hashApi?.canonicalSha256) throw new Error('ORDERQ_CANONICAL_HASH_NOT_LOADED');
+  return hashApi.canonicalSha256(purchaseMetaDigestPairs(meta));
+}
+
+function isPurchaseMetaSheet(sheetName, matrix = []) {
+  if (text(sheetName) === PURCHASE_META_SHEET) return true;
+  const headers = new Set((matrix[0] || []).map(text));
+  const schemaIndex = (matrix[0] || []).findIndex(value => text(value) === 'schemaVersion');
+  return headers.has('rowDigest') && schemaIndex >= 0
+    && matrix.slice(1, 6).some(row => text(row?.[schemaIndex]) === PURCHASE_META_SCHEMA);
+}
+
+function readPurchaseMeta(matrix = []) {
+  const headers = (matrix[0] || []).map(text);
+  const index = new Map(headers.map((header, column) => [header, column]));
+  if (!index.has('schemaVersion') || !index.has('rowDigest')) throw new Error('ORDERQ_PURCHASE_META_JOIN_INVALID');
+  return matrix.slice(1).filter(row => (row || []).some(cell => text(cell))).map((row, offset) => {
+    const record = Object.fromEntries(headers.map((header, column) => [header, row?.[column] ?? '']));
+    if (text(record.schemaVersion) !== PURCHASE_META_SCHEMA || text(record.ruleVersion) !== PURCHASE_UNIT_RULE) {
+      throw new Error(`ORDERQ_PURCHASE_META_SCHEMA_INVALID:${offset + 2}`);
+    }
+    if (!(number(record.conversionFactor) > 0)) throw new Error(`ORDERQ_PURCHASE_META_CONVERSION_INVALID:${offset + 2}`);
+    const digest = purchaseMetaRowDigest(record);
+    if (digest !== text(record.rowDigest).toLowerCase()) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${offset + 2}`);
+    return { ...record, sourceVoucherIndex: Number(record.sourceVoucherIndex), documentOrdinal: Number(record.documentOrdinal), visibleRowNo: Number(record.visibleRowNo), productMasterRevision: Number(record.productMasterRevision), warehouseMasterRevision: Number(record.warehouseMasterRevision), suggestedQuantity: Number(record.suggestedQuantity), suggestedBaseQuantity: Number(record.suggestedBaseQuantity), conversionFactor: Number(record.conversionFactor) };
+  });
+}
+
+function joinPurchaseMeta({ visibleSheetName, visibleRows = [], metaRows = [] } = {}) {
+  const metaByKey = new Map();
+  metaRows.forEach(meta => {
+    const key = `${text(meta.visibleSheetName)}\u001f${Number(meta.visibleRowNo)}`;
+    if (metaByKey.has(key)) throw new Error(`ORDERQ_PURCHASE_META_JOIN_INVALID:${key}`);
+    metaByKey.set(key, meta);
+  });
+  const joined = visibleRows.map(row => {
+    const sourceRowNo = Number(row.sourceRowNo || row.sourceLineNo || 0);
+    const key = `${text(visibleSheetName)}\u001f${sourceRowNo}`;
+    const meta = metaByKey.get(key);
+    if (!meta) throw new Error(`ORDERQ_PURCHASE_META_JOIN_INVALID:${key}`);
+    metaByKey.delete(key);
+    const visibleCode = upper(row.itemCode || row.productCode);
+    if (visibleCode && visibleCode !== upper(meta.productCode)) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${key}:PRODUCT`);
+    const visibleUnit = upper(row.unit);
+    if (visibleUnit && visibleUnit !== upper(meta.unit)) throw new Error(`ORDERQ_PURCHASE_META_MUTATED:${key}:UNIT`);
+    return {
+      ...row, ...meta,
+      // Keep the immutable workbook link beside the mutable/current master
+      // selection.  The official adapter must prove that an ORDER Q line was
+      // not silently rebound to another product after export.
+      metaProductId: text(meta.productId),
+      metaProductCode: upper(meta.productCode),
+      quantity: row.quantity,
+      unitPrice: row.unitPrice,
+      unit: text(row.unit || meta.unit || meta.suggestedUnit),
+      rawQuantity: row.quantity,
+      rawUnit: text(row.unit || meta.suggestedUnit),
+      baseQuantity: number(row.quantity, 'ORDERQ_PURCHASE_QUANTITY_REQUIRED') * number(meta.conversionFactor),
+      baseUnit: text(meta.baseUnit),
+      unitConversionFactor: number(meta.conversionFactor),
+      unitConversionSource: text(meta.conversionSource),
+      unitConversionStatus: 'CONFIRMED',
+      sourceType: 'ORDER_Q',
+      contractKind: 'PURCHASE_STAGE3_V1',
+      metaStatus: 'VERIFIED'
+    };
+  });
+  if (metaByKey.size) throw new Error(`ORDERQ_PURCHASE_META_JOIN_INVALID:ORPHAN:${metaByKey.size}`);
+  return joined;
+}
+
+function stableDirectRunIdentity(kind, digestOrSession) {
+  const type = upper(kind);
+  if (!['SMARTINPUT_FILE', 'SMARTINPUT_CLIPBOARD', 'SMARTINPUT_MANUAL'].includes(type)) throw new Error('ORDERQ_PURCHASE_ORIGIN_SYSTEM_INVALID');
+  return `RUN:${type}:${text(digestOrSession)}`;
+}
+
+function stableDirectDocumentKey({ originSystem, originTransactionId, externalDocumentNo = '', sourceVoucherIndex = 1 } = {}) {
+  const system = upper(originSystem);
+  if (!['SMARTINPUT_FILE', 'SMARTINPUT_CLIPBOARD', 'SMARTINPUT_MANUAL'].includes(system)) throw new Error('ORDERQ_PURCHASE_ORIGIN_SYSTEM_INVALID');
+  if (!text(originTransactionId)) throw new Error('ORDERQ_PURCHASE_ORIGIN_TRANSACTION_REQUIRED');
+  return `PURCHASE:${hashApi.canonicalSha256({
+    contractKind: 'PURCHASE_STAGE3_V1', originSystem: system, originTransactionId: text(originTransactionId),
+    externalDocumentNo: text(externalDocumentNo), sourceVoucherIndex: Number(sourceVoucherIndex || 1)
+  })}`;
+}
+
+function detachOrderQPurchaseLink(row = {}, { originSystem = 'SMARTINPUT_FILE', originTransactionId } = {}) {
+  const system = upper(originSystem);
+  const transactionId = text(originTransactionId || row.directOriginTransactionId);
+  if (upper(row.sourceType) !== 'ORDER_Q') throw new Error('ORDERQ_PURCHASE_LINK_NOT_ATTACHED');
+  if (!['SMARTINPUT_FILE', 'SMARTINPUT_CLIPBOARD', 'SMARTINPUT_MANUAL'].includes(system) || !transactionId) {
+    throw new Error('ORDERQ_PURCHASE_DIRECT_IDENTITY_REQUIRED');
+  }
+  return {
+    ...row,
+    sourceType: 'DIRECT', contractKind: 'PURCHASE_STAGE3_V1', originSystem: system,
+    originTransactionId: transactionId, sourceFingerprint: transactionId,
+    sourceDocumentKey: '', sourceLineKey: '', purchasePlanId: '', planId: '',
+    sourceShortageKey: '', sourceRowKey: '', documentSuffix: '', documentOrdinal: null,
+    metaProductId: '', metaProductCode: '', metaStatus: 'DIRECT_DETACHED',
+    directOriginSystem: system, directOriginTransactionId: transactionId
+  };
+}
+
+return { PURCHASE_META_SCHEMA, PURCHASE_META_SHEET, PURCHASE_UNIT_RULE, purchaseMetaDigestPairs, purchaseMetaRowDigest, isPurchaseMetaSheet, readPurchaseMeta, joinPurchaseMeta, stableDirectRunIdentity, stableDirectDocumentKey, detachOrderQPurchaseLink };
+})();
+
+// ============================================================================
+// sale-stage4.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const saleStage4Section = (() => {
+
+
+const SALES_META_SCHEMA = 'ORDERQ_SALES_META_V1';
+const SALES_META_SHEET = '_NEXUS_SALES_META';
+const SALES_QUANTITY_RULE = 'SALE_QUANTITY_RULE_V1';
+const hashApi = globalThis.ORDERQ_CANONICAL_HASH;
+const text = value => String(value ?? '').replace(/\r\n?/g, '\n').normalize('NFC').trim();
+const upper = value => text(value).toUpperCase();
+const finite = (value, code = 'ORDERQ_SALE_NUMBER_INVALID') => {
+  if (value === '' || value === null || value === undefined || !Number.isFinite(Number(value))) throw new Error(code);
+  const result = Number(value); return Object.is(result, -0) ? 0 : result;
+};
+const numericHeaders = new Set(['sourceRowNumber','sourceOccurrence','visibleRowNo','sourceVoucherIndex','salesCustomerRevision','deliveryCustomerRevision','billingCustomerRevision',
+  'productMasterRevision','warehouseMasterRevision','sourceOrderRevision','sourceOrderItemRevision','sourceDispatchRevision','sourceDispatchLineRevision',
+  'suggestedActualQuantity','suggestedBaseQuantity','suggestedRecognizedOrderQuantity','suggestedActualToBaseFactor','suggestedActualToRecognizedFactor']);
+const digestHeaders = ['schemaVersion','ruleVersion','planId','sourceFingerprint','basisDate','sourceRowKey','sourceRowNumber','sourceOccurrence','visibleSheetName','visibleRowNo','sourceVoucherIndex',
+  'originSystem','originTransactionId','sourceDocumentKey','sourceLineKey','stableGroupKey','salesCustomerId','salesCustomerRevision','deliveryCustomerId','deliveryCustomerRevision',
+  'billingCustomerId','billingCustomerRevision','productId','productCode','productMasterRevision','warehouseId','warehouseCode','warehouseMasterRevision','sourceOrderId','sourceOrderRevision',
+  'sourceOrderItemId','sourceOrderItemRevision','sourceDispatchId','sourceDispatchRevision','sourceDispatchLineId','sourceDispatchLineRevision','suggestedActualQuantity','suggestedActualUnit',
+  'suggestedBaseQuantity','suggestedBaseUnit','suggestedRecognizedOrderQuantity','suggestedRecognizedUnit','suggestedActualToBaseFactor','suggestedActualToRecognizedFactor','conversionSource',
+  'conversionRuleId','conversionRuleVersion','priorAllocationRefs'];
+
+function isSalesMetaSheet(sheetName, matrix = []) {
+  if (text(sheetName) === SALES_META_SHEET) return true;
+  const headers = (matrix[0] || []).map(text); const schema = headers.indexOf('schemaVersion');
+  return schema >= 0 && headers.includes('rowDigest') && matrix.slice(1, 6).some(row => text(row?.[schema]) === SALES_META_SCHEMA);
+}
+
+function salesMetaDigestPairs(meta = {}) {
+  return digestHeaders.map(key => [key, numericHeaders.has(key) && meta[key] !== '' ? finite(meta[key]) : text(meta[key])]);
+}
+
+function salesMetaRowDigest(meta = {}) { return hashApi.canonicalSha256(salesMetaDigestPairs(meta)); }
+
+function readSalesMeta(matrix = []) {
+  const headers = (matrix[0] || []).map(text);
+  if (!headers.includes('schemaVersion') || !headers.includes('rowDigest')) throw new Error('ORDERQ_SALE_META_INVALID');
+  const occurrences = new Set(); const sourceKeys = new Set();
+  return matrix.slice(1).filter(row => (row || []).some(cell => text(cell))).map((row, offset) => {
+    const meta = Object.fromEntries(headers.map((header, index) => [header, row?.[index] ?? '']));
+    if (text(meta.schemaVersion) !== SALES_META_SCHEMA || text(meta.ruleVersion) !== SALES_QUANTITY_RULE) throw new Error(`ORDERQ_SALE_META_SCHEMA_INVALID:${offset + 2}`);
+    if (salesMetaRowDigest(meta) !== text(meta.rowDigest).toLowerCase()) throw new Error(`ORDERQ_SALE_META_MUTATED:${offset + 2}`);
+    numericHeaders.forEach(key => { if (meta[key] !== '') meta[key] = finite(meta[key]); });
+    const occurrenceKey = `${Number(meta.sourceRowNumber)}:${Number(meta.sourceOccurrence)}`;
+    if (!Number.isInteger(Number(meta.sourceRowNumber)) || Number(meta.sourceRowNumber) < 1
+      || !Number.isInteger(Number(meta.sourceOccurrence)) || Number(meta.sourceOccurrence) < 1 || !text(meta.sourceRowKey)) {
+      throw new Error(`ORDERQ_SALE_META_IDENTITY_REQUIRED:${offset + 2}`);
+    }
+    if (occurrences.has(occurrenceKey) || sourceKeys.has(text(meta.sourceRowKey))) throw new Error(`ORDERQ_SALE_META_IDENTITY_DUPLICATE:${offset + 2}`);
+    occurrences.add(occurrenceKey); sourceKeys.add(text(meta.sourceRowKey));
+    if (!(Number(meta.suggestedActualToBaseFactor) > 0) || Number(meta.suggestedActualToRecognizedFactor) < 0
+      || !text(meta.conversionSource) || !text(meta.conversionRuleVersion)) throw new Error(`ORDERQ_SALE_META_CONVERSION_INVALID:${offset + 2}`);
+    try { meta.priorAllocationRefs = JSON.parse(text(meta.priorAllocationRefs) || '[]'); } catch { throw new Error(`ORDERQ_SALE_META_INVALID:${offset + 2}:ALLOCATIONS`); }
+    return meta;
+  });
+}
+
+function recomputeSaleLine(row = {}, meta = {}) {
+  const actualQuantity = finite(row.quantity ?? row.actualQuantity, 'ORDERQ_SALE_QUANTITY_REQUIRED');
+  const unitPrice = finite(row.unitPrice, 'ORDERQ_SALE_UNIT_PRICE_REQUIRED');
+  const actualToBaseFactor = finite(meta.suggestedActualToBaseFactor ?? row.actualToBaseFactor, 'ORDERQ_SALE_BASE_FACTOR_REQUIRED');
+  const direct = upper(row.sourceType || meta.sourceType) === 'DIRECT';
+  const actualToRecognizedFactor = direct ? 0 : finite(meta.suggestedActualToRecognizedFactor ?? row.actualToRecognizedFactor, 'ORDERQ_SALE_RECOGNIZED_FACTOR_REQUIRED');
+  if (!(actualToBaseFactor > 0) || !(actualToRecognizedFactor >= 0)) throw new Error('ORDERQ_SALE_CONVERSION_INVALID');
+  const baseQuantity = actualQuantity * actualToBaseFactor;
+  const recognizedOrderQuantity = direct ? 0 : actualQuantity * actualToRecognizedFactor;
+  const rawAmount = actualQuantity * unitPrice;
+  const supplyAmount = Math.sign(rawAmount) * Math.floor(Math.abs(rawAmount) + 0.5);
+  return { ...row, actualQuantity, quantity:actualQuantity, unitPrice, actualToBaseFactor, actualToRecognizedFactor, baseQuantity,
+    recognizedOrderQuantity, supplyAmount, totalAmount:supplyAmount, vatAmount:null, taxType:'VAT_INCLUDED_IN_SUPPLY', currency:'KRW' };
+}
+
+function joinSalesMeta({ visibleSheetName, visibleRows = [], metaRows = [] } = {}) {
+  const lookup = new Map();
+  metaRows.forEach(meta => {
+    const key = `${text(meta.visibleSheetName)}\u001f${Number(meta.visibleRowNo)}`;
+    if (lookup.has(key)) throw new Error(`ORDERQ_SALE_META_INVALID:DUPLICATE:${key}`);
+    lookup.set(key, meta);
+  });
+  const joined = visibleRows.map(row => {
+    const key = `${text(visibleSheetName)}\u001f${Number(row.sourceRowNo || row.sourceLineNo)}`;
+    const meta = lookup.get(key); if (!meta) throw new Error(`ORDERQ_SALE_META_INVALID:MISSING:${key}`); lookup.delete(key);
+    if (upper(row.itemCode || row.productCode) !== upper(meta.productCode)) throw new Error(`ORDERQ_SALE_META_MUTATED:${key}:PRODUCT`);
+    if (upper(row.unit || row.actualUnit) !== upper(meta.suggestedActualUnit)) throw new Error(`ORDERQ_SALE_META_MUTATED:${key}:UNIT`);
+    const merged = { ...row, ...meta, quantity:row.quantity, unitPrice:row.unitPrice, sourceType:meta.sourceOrderId ? 'ORDER_Q' : 'DIRECT',
+      contractKind:'SALE_STAGE4_V1', orderLinkMode:meta.sourceOrderId ? 'ORDER_Q' : 'DIRECT', metaStatus:'VERIFIED' };
+    return recomputeSaleLine(merged, meta);
+  });
+  if (lookup.size) throw new Error(`ORDERQ_SALE_META_INVALID:ORPHAN:${lookup.size}`);
+  return joined;
+}
+
+function detachOrderQSaleLink(row = {}, { originSystem = 'SMARTINPUT_FILE', originTransactionId } = {}) {
+  const system = upper(originSystem); const tx = text(originTransactionId || row.directOriginTransactionId);
+  if (!tx) throw new Error('ORDERQ_SALE_DIRECT_IDENTITY_REQUIRED');
+  const sourceDocumentKey = `SALE:${hashApi.canonicalSha256({ contractKind:'SALE_STAGE4_V1', originSystem:system, originTransactionId:tx,
+    externalDocumentNo:text(row.externalDocumentNo), sourceVoucherIndex:Number(row.sourceVoucherIndex || 1) })}`;
+  return recomputeSaleLine({ ...row, sourceType:'DIRECT', orderLinkMode:'DIRECT', originSystem:system, originTransactionId:tx,
+    sourceDocumentKey, sourceOrderId:'', sourceOrderItemId:'', sourceDispatchId:'', sourceDispatchLineId:'', priorAllocationRefs:[],
+    sourceOrderRevision:'', sourceOrderItemRevision:'', sourceDispatchRevision:'', sourceDispatchLineRevision:'',
+    reversalSourceAllocations:[], restorationSourceReversals:[], recognizedOrderQuantity:0, actualToRecognizedFactor:0,
+    actualToBaseFactor:1, baseUnit:text(row.actualUnit || row.unit).toUpperCase(),
+    conversionSource:'DIRECT_SAME_UNIT', conversionRuleId:'DIRECT_1_TO_1', conversionRuleVersion:'DIRECT_1_TO_1_V1', metaStatus:'DIRECT_DETACHED' },
+  { suggestedActualToBaseFactor:1, suggestedActualToRecognizedFactor:0 });
+}
+
+return { SALES_META_SCHEMA, SALES_META_SHEET, SALES_QUANTITY_RULE, isSalesMetaSheet, salesMetaDigestPairs, salesMetaRowDigest, readSalesMeta, recomputeSaleLine, joinSalesMeta, detachOrderQSaleLink };
+})();
+
+// ============================================================================
+// related-voucher-import.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const relatedVoucherImportSection = (() => {
+
+
+const text = value => String(value ?? '');
+const numberOrNull = value => {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = Number(text(value).replace(/[,원₩\s]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const TARGET_FIELDS = Object.freeze({
+  estimate: Object.freeze({ quantity: 'voucher.estimate.line.quantity', unitPrice: 'voucher.estimate.line.unitPrice' }),
+  order: Object.freeze({ quantity: 'voucher.order.line.quantity', unitPrice: 'voucher.order.line.unitPrice' }),
+  purchase: Object.freeze({ quantity: 'voucher.purchase.line.quantity', unitPrice: 'voucher.purchase.line.unitPrice' }),
+  sale: Object.freeze({ quantity: 'voucher.sale.line.quantity', unitPrice: 'voucher.sale.line.unitPrice' })
+});
+
+const RELATED_VOUCHER_IMPORT_SCHEMA = 'ONEAPP_RELATED_VOUCHER_IMPORT_PLAN_V1';
+
+function trackedValue(fieldId, displayValue, parsedValue, evidence) {
+  return {
+    fieldId,
+    sourceDisplayValue: text(displayValue),
+    currentDisplayValue: text(displayValue),
+    parsedValue,
+    edited: false,
+    evidence: { ...evidence }
+  };
+}
+function identity(value = {}) {
+  return text(value.id || value.code || value.name);
+}
+
+function createRelatedVoucherImportPlan({
+  companyId,
+  targetVoucherMode,
+  sourceVoucherMode,
+  sourceVoucher,
+  selectedLineIds = []
+} = {}) {
+  const targetFields = TARGET_FIELDS[targetVoucherMode];
+  if (!text(companyId)) throw new Error('RELATED_IMPORT_COMPANY_REQUIRED');
+  if (!targetFields) throw new Error('RELATED_IMPORT_TARGET_MODE_INVALID');
+  if (!TARGET_FIELDS[sourceVoucherMode]) throw new Error('RELATED_IMPORT_SOURCE_MODE_INVALID');
+  if (!sourceVoucher?.id) throw new Error('RELATED_IMPORT_SOURCE_REQUIRED');
+  if (sourceVoucher.companyId && sourceVoucher.companyId !== companyId) throw new Error('RELATED_IMPORT_COMPANY_MISMATCH');
+  const selected = new Set((selectedLineIds || []).map(text).filter(Boolean));
+  const sourceLines = Array.isArray(sourceVoucher.items) ? sourceVoucher.items : [];
+  const lines = selected.size ? sourceLines.filter(line => selected.has(text(line.lineId || line.id))) : sourceLines;
+  if (!lines.length) throw new Error('RELATED_IMPORT_LINES_REQUIRED');
+  const sourceKey = `RELATED:${sourceVoucherMode}:${sourceVoucher.id}`;
+  const evidenceBase = {
+    kind: 'RELATED_VOUCHER',
+    companyId,
+    sourceVoucherMode,
+    sourceVoucherId: sourceVoucher.id,
+    sourceVoucherNo: sourceVoucher.voucherNo || ''
+  };
+  const rows = lines.map((line, index) => {
+    const quantityDisplay = text(line.quantityDisplay ?? line.quantity);
+    const unitPriceDisplay = text(line.unitPriceDisplay ?? line.unitPrice);
+    const quantity = numberOrNull(line.quantity);
+    const unitPrice = numberOrNull(line.unitPrice);
+    const lineId = text(line.lineId || line.id || index + 1);
+    return {
+      rowId: `SIROW-RELATED-${sourceVoucherMode}-${sourceVoucher.id}-${lineId}`,
+      sourceType: 'RELATED_VOUCHER',
+      inputOwnership: 'SOURCE',
+      sourceBatchId: sourceKey,
+      sourceDocumentKey: sourceKey,
+      sourceRowKey: lineId,
+      sourceRowNo: index + 1,
+      originSystem: 'ONEAPP_OFFICIAL_VOUCHER',
+      originTransactionId: sourceVoucher.id,
+      relatedSource: { ...evidenceBase, sourceLineId: lineId },
+      productId: text(line.productId),
+      masterProductId: text(line.masterProductId || line.productId),
+      itemCode: text(line.code || line.itemCode),
+      itemName: text(line.name || line.itemName),
+      specification: text(line.specification),
+      quantity,
+      rawQuantity: quantity,
+      unit: text(line.unit),
+      rawUnit: text(line.unit),
+      unitPrice,
+      sourceUnitPrice: unitPriceDisplay,
+      rowCustomerId: text(sourceVoucher.customerId),
+      rowCustomerCode: text(sourceVoucher.customerCode),
+      rowCustomerName: text(sourceVoucher.customerName),
+      rowVoucherDate: text(sourceVoucher.date),
+      rowWarehouseId: text(sourceVoucher.warehouseId),
+      rowWarehouseCode: text(sourceVoucher.warehouseCode),
+      rowVoucherNo: text(sourceVoucher.voucherNo),
+      memo: text(line.memo),
+      matchStatus: line.productId ? 'MATCHED' : 'UNRESOLVED',
+      fieldValues: {
+        [targetFields.quantity]: trackedValue(targetFields.quantity, quantityDisplay, quantity, { ...evidenceBase, sourceLineId: lineId, sourceField: 'quantity' }),
+        [targetFields.unitPrice]: trackedValue(targetFields.unitPrice, unitPriceDisplay, unitPrice, { ...evidenceBase, sourceLineId: lineId, sourceField: 'unitPrice' })
+      }
+    };
+  });
+  return {
+    schemaVersion: RELATED_VOUCHER_IMPORT_SCHEMA,
+    planId: `SIRVI-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    companyId,
+    targetVoucherMode,
+    sourceVoucherMode,
+    sourceVoucherId: sourceVoucher.id,
+    sourceVoucherNo: text(sourceVoucher.voucherNo),
+    sourceSnapshot: JSON.parse(JSON.stringify(sourceVoucher)),
+    headerSuggestion: {
+      customerId: text(sourceVoucher.customerId),
+      customerCode: text(sourceVoucher.customerCode),
+      customerName: text(sourceVoucher.customerName),
+      warehouseId: text(sourceVoucher.warehouseId),
+      warehouseCode: text(sourceVoucher.warehouseCode),
+      warehouseName: text(sourceVoucher.warehouseName)
+    },
+    rows,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function relatedImportConflicts(plan, targetHeader = {}) {
+  const suggestion = plan?.headerSuggestion || {};
+  const conflicts = [];
+  const compare = (kind, current, incoming) => {
+    if (identity(current) && identity(incoming) && identity(current) !== identity(incoming)) {
+      conflicts.push({ kind, current: { ...current }, incoming: { ...incoming } });
+    }
+  };
+  compare('CUSTOMER',
+    { id: targetHeader.customerId, code: targetHeader.customerCode, name: targetHeader.customerName },
+    { id: suggestion.customerId, code: suggestion.customerCode, name: suggestion.customerName });
+  compare('WAREHOUSE',
+    { id: targetHeader.warehouseId, code: targetHeader.warehouseCode, name: targetHeader.warehouseName },
+    { id: suggestion.warehouseId, code: suggestion.warehouseCode, name: suggestion.warehouseName });
+  return conflicts;
+}
+
+function applyRelatedVoucherImportPlan(plan, targetDraft = {}, { acceptConflicts = false } = {}) {
+  if (plan?.schemaVersion !== RELATED_VOUCHER_IMPORT_SCHEMA) throw new Error('RELATED_IMPORT_PLAN_INVALID');
+  const conflicts = relatedImportConflicts(plan, targetDraft.header || {});
+  if (conflicts.length && !acceptConflicts) {
+    const error = new Error('RELATED_IMPORT_CONFIRMATION_REQUIRED');
+    error.conflicts = conflicts;
+    throw error;
+  }
+  const header = { ...(targetDraft.header || {}) };
+  const suggestion = plan.headerSuggestion || {};
+  ['customerId', 'customerCode', 'customerName', 'warehouseId', 'warehouseCode', 'warehouseName']
+    .forEach(field => { if (!header[field]) header[field] = suggestion[field] || ''; });
+  const existingRowIds = new Set((targetDraft.rows || []).map(row => row.rowId));
+  const imported = plan.rows.filter(row => !existingRowIds.has(row.rowId));
+  return {
+    ...targetDraft,
+    header,
+    rows: [...(targetDraft.rows || []), ...imported],
+    relatedImportHistory: [...(targetDraft.relatedImportHistory || []), {
+      planId: plan.planId,
+      sourceVoucherMode: plan.sourceVoucherMode,
+      sourceVoucherId: plan.sourceVoucherId,
+      rowCount: imported.length,
+      conflictsAccepted: conflicts.map(item => item.kind),
+      appliedAt: new Date().toISOString()
+    }]
+  };
+}
+
+return { RELATED_VOUCHER_IMPORT_SCHEMA, createRelatedVoucherImportPlan, relatedImportConflicts, applyRelatedVoucherImportPlan };
+})();
+
+// ============================================================================
+// multivoucher-stage1.js — implementation moved here; private helpers remain scoped.
+// ============================================================================
+const multivoucherStage1Section = (() => {
+
+
 const MODE_CONFIG = Object.freeze({
   order: Object.freeze({
     customerLabel: '거래처명',
@@ -122,11 +760,11 @@ function roleFieldDefinitions(mode) {
   return [...delivery, ...billing];
 }
 
-export function modeConfig(mode) {
+function modeConfig(mode) {
   return MODE_CONFIG[mode] || MODE_CONFIG.order;
 }
 
-export function stage1RowFieldDefinitions(mode = 'order') {
+function stage1RowFieldDefinitions(mode = 'order') {
   const config = modeConfig(mode);
   const sourcePartitionFields = mode === 'order' ? [] : [
     field('sourceDocumentKey', '원본문서키', ['원본문서키', '문서키']),
@@ -150,7 +788,7 @@ export function stage1RowFieldDefinitions(mode = 'order') {
   ]);
 }
 
-export function structuredFieldsForMode(mode, productFieldDefinitions = []) {
+function structuredFieldsForMode(mode, productFieldDefinitions = []) {
   const config = modeConfig(mode);
   const overrides = [
     ...stage1RowFieldDefinitions(mode),
@@ -167,7 +805,7 @@ export function structuredFieldsForMode(mode, productFieldDefinitions = []) {
   ];
 }
 
-export function normalizeStage1Row(row = {}, context = {}) {
+function normalizeStage1Row(row = {}, context = {}) {
   const rawQuantity = Object.prototype.hasOwnProperty.call(row, 'rawQuantity')
     ? numberOrNull(row.rawQuantity)
     : numberOrNull(row.quantity);
@@ -223,7 +861,7 @@ export function normalizeStage1Row(row = {}, context = {}) {
   };
 }
 
-export function decorateStructuredRows(rows = [], context = {}) {
+function decorateStructuredRows(rows = [], context = {}) {
   return rows.map((row, index) => normalizeStage1Row(row, {
     ...context,
     sourceVoucherIndex: row.sourceVoucherIndex ?? context.sourceVoucherIndex ?? 1,
@@ -301,7 +939,7 @@ function sourcePartition(row) {
   return `INDEX:${numberOrNull(row.sourceVoucherIndex) ?? 1}`;
 }
 
-export function buildVoucherGroupKey(mode, row, header = {}) {
+function buildVoucherGroupKey(mode, row, header = {}) {
   const role = groupRoleSnapshot(mode, row, header);
   if (mode === 'order') {
     const customerBusinessKey = role.deliveryCustomerCode
@@ -328,7 +966,7 @@ export function buildVoucherGroupKey(mode, row, header = {}) {
   return `${mode.toUpperCase()}|${parts.map(part => encodeURIComponent(part)).join('|')}`;
 }
 
-export function groupVoucherRows(mode, rows = [], header = {}) {
+function groupVoucherRows(mode, rows = [], header = {}) {
   const groups = new Map();
   rows.forEach((input, index) => {
     const row = normalizeStage1Row(input, { sourceBatchId: input.batchId, sourceRowNo: input.sourceLineNo || index + 1 });
@@ -408,7 +1046,7 @@ export function groupVoucherRows(mode, rows = [], header = {}) {
   }));
 }
 
-export function orderGroupValidationErrors(group = {}) {
+function orderGroupValidationErrors(group = {}) {
   const errors = [...(group.validationErrors || [])];
   if (!group.deliveryCustomerName) errors.push('등록 거래처');
   if (!group.voucherDate) errors.push('주문일자');
@@ -423,7 +1061,7 @@ export function orderGroupValidationErrors(group = {}) {
   return [...new Set(errors)];
 }
 
-export function partitionOrderGroups(groups = []) {
+function partitionOrderGroups(groups = []) {
   const readyGroups = [];
   const reviewRequiredGroups = [];
   (groups || []).forEach(group => {
@@ -447,12 +1085,12 @@ const ORDER_GROUP_ROW_HEADER_FIELDS = Object.freeze([
   'billingCustomerId', 'billingCustomerCode', 'billingCustomerName'
 ]);
 
-export function requiresOrderGroupSavePath(groups = [], rows = []) {
+function requiresOrderGroupSavePath(groups = [], rows = []) {
   return (groups || []).length > 1
     || (rows || []).some(row => ORDER_GROUP_ROW_HEADER_FIELDS.some(fieldName => text(row?.[fieldName])));
 }
 
-export async function executeOrderGroupSavePlan(groupPlan = {}, saveReadyGroup) {
+async function executeOrderGroupSavePlan(groupPlan = {}, saveReadyGroup) {
   if (typeof saveReadyGroup !== 'function') throw new Error('ORDER_GROUP_SAVE_HANDLER_REQUIRED');
   const readyGroups = groupPlan?.readyGroups || [];
   const reviewRequiredGroups = groupPlan?.reviewRequiredGroups || [];
@@ -491,7 +1129,7 @@ function orderRowSaveIdentity(row = {}, header = {}) {
   return `BUSINESS_KEY:${buildVoucherGroupKey('order', row, header)}`;
 }
 
-export function captureOrderRowSubmission(rows = [], header = {}) {
+function captureOrderRowSubmission(rows = [], header = {}) {
   return (rows || []).map(row => ({
     groupKey: buildVoucherGroupKey('order', row, header),
     identity: orderRowSaveIdentity(row, header),
@@ -499,16 +1137,16 @@ export function captureOrderRowSubmission(rows = [], header = {}) {
   }));
 }
 
-export function captureOrderHeaderSubmission(header = {}) {
+function captureOrderHeaderSubmission(header = {}) {
   const { submittedAt: _submittedAt, ...businessHeader } = header || {};
   return stableRowSnapshot(businessHeader);
 }
 
-export function orderHeaderChangedSinceSubmission(header = {}, submission = '') {
+function orderHeaderChangedSinceSubmission(header = {}, submission = '') {
   return captureOrderHeaderSubmission(header) !== submission;
 }
 
-export function retainUnsavedOrderRows(rows = [], submission = [], succeededGroups = [], header = {}) {
+function retainUnsavedOrderRows(rows = [], submission = [], succeededGroups = [], header = {}) {
   const succeededKeys = new Set((succeededGroups || []).map(group => group?.voucherGroupKey).filter(Boolean));
   const removals = new Map();
   (submission || []).filter(row => succeededKeys.has(row?.groupKey)).forEach(row => {
@@ -525,7 +1163,7 @@ export function retainUnsavedOrderRows(rows = [], submission = [], succeededGrou
   });
 }
 
-export function summarizeVoucherGroups(groups = []) {
+function summarizeVoucherGroups(groups = []) {
   const customerKeys = new Set();
   let rowCount = 0;
   let reviewRequired = 0;
@@ -553,7 +1191,7 @@ export function summarizeVoucherGroups(groups = []) {
   };
 }
 
-export function filterVoucherRows(rows = [], query = '') {
+function filterVoucherRows(rows = [], query = '') {
   const terms = text(query).toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return [...rows];
   return rows.filter(row => {
@@ -570,17 +1208,17 @@ export function filterVoucherRows(rows = [], query = '') {
   });
 }
 
-export function minimumUploadHeaders(mode = 'order') {
+function minimumUploadHeaders(mode = 'order') {
   if (mode === 'purchase') return ['구매처명', '구매일자', '품목코드', '품목명', '규격', '수량', '단위', '입고가', '메모'];
   if (mode === 'sale') return ['판매처명', '판매일자', '품목코드', '품목명', '규격', '수량', '단위', '판매가', '메모'];
   return ['거래처명', '배송일자', '품목코드', '품목명', '규격', '수량', '단위', '단가', '메모'];
 }
 
-export function buildMinimumUploadMatrix(mode = 'order') {
+function buildMinimumUploadMatrix(mode = 'order') {
   return [minimumUploadHeaders(mode), []];
 }
 
-export function buildOrderGroupPayload(group, common = {}) {
+function buildOrderGroupPayload(group, common = {}) {
   const groupAssigneeName = text(group.assigneeName);
   const commonAssigneeName = text(common.assigneeName);
   return {
@@ -612,4 +1250,56 @@ export function buildOrderGroupPayload(group, common = {}) {
   };
 }
 
-export { MODE_CONFIG };
+return { modeConfig, stage1RowFieldDefinitions, structuredFieldsForMode, normalizeStage1Row, decorateStructuredRows, buildVoucherGroupKey, groupVoucherRows, orderGroupValidationErrors, partitionOrderGroups, requiresOrderGroupSavePath, executeOrderGroupSavePlan, captureOrderRowSubmission, captureOrderHeaderSubmission, orderHeaderChangedSinceSubmission, retainUnsavedOrderRows, summarizeVoucherGroups, filterVoucherRows, minimumUploadHeaders, buildMinimumUploadMatrix, buildOrderGroupPayload, MODE_CONFIG };
+})();
+
+// Public API (same functions and constants; no additional command layer).
+export const ORDER_DOCUMENT_NUMBER_HEADER = orderDocumentNumberSection.ORDER_DOCUMENT_NUMBER_HEADER;
+export const parseOrderDocumentNumber = orderDocumentNumberSection.parseOrderDocumentNumber;
+export const applyOrderDocumentNumberDerivation = orderDocumentNumberSection.applyOrderDocumentNumberDerivation;
+export const PURCHASE_META_SCHEMA = purchaseStage3Section.PURCHASE_META_SCHEMA;
+export const PURCHASE_META_SHEET = purchaseStage3Section.PURCHASE_META_SHEET;
+export const PURCHASE_UNIT_RULE = purchaseStage3Section.PURCHASE_UNIT_RULE;
+export const purchaseMetaDigestPairs = purchaseStage3Section.purchaseMetaDigestPairs;
+export const purchaseMetaRowDigest = purchaseStage3Section.purchaseMetaRowDigest;
+export const isPurchaseMetaSheet = purchaseStage3Section.isPurchaseMetaSheet;
+export const readPurchaseMeta = purchaseStage3Section.readPurchaseMeta;
+export const joinPurchaseMeta = purchaseStage3Section.joinPurchaseMeta;
+export const stableDirectRunIdentity = purchaseStage3Section.stableDirectRunIdentity;
+export const stableDirectDocumentKey = purchaseStage3Section.stableDirectDocumentKey;
+export const detachOrderQPurchaseLink = purchaseStage3Section.detachOrderQPurchaseLink;
+export const SALES_META_SCHEMA = saleStage4Section.SALES_META_SCHEMA;
+export const SALES_META_SHEET = saleStage4Section.SALES_META_SHEET;
+export const SALES_QUANTITY_RULE = saleStage4Section.SALES_QUANTITY_RULE;
+export const isSalesMetaSheet = saleStage4Section.isSalesMetaSheet;
+export const salesMetaDigestPairs = saleStage4Section.salesMetaDigestPairs;
+export const salesMetaRowDigest = saleStage4Section.salesMetaRowDigest;
+export const readSalesMeta = saleStage4Section.readSalesMeta;
+export const recomputeSaleLine = saleStage4Section.recomputeSaleLine;
+export const joinSalesMeta = saleStage4Section.joinSalesMeta;
+export const detachOrderQSaleLink = saleStage4Section.detachOrderQSaleLink;
+export const RELATED_VOUCHER_IMPORT_SCHEMA = relatedVoucherImportSection.RELATED_VOUCHER_IMPORT_SCHEMA;
+export const createRelatedVoucherImportPlan = relatedVoucherImportSection.createRelatedVoucherImportPlan;
+export const relatedImportConflicts = relatedVoucherImportSection.relatedImportConflicts;
+export const applyRelatedVoucherImportPlan = relatedVoucherImportSection.applyRelatedVoucherImportPlan;
+export const modeConfig = multivoucherStage1Section.modeConfig;
+export const stage1RowFieldDefinitions = multivoucherStage1Section.stage1RowFieldDefinitions;
+export const structuredFieldsForMode = multivoucherStage1Section.structuredFieldsForMode;
+export const normalizeStage1Row = multivoucherStage1Section.normalizeStage1Row;
+export const decorateStructuredRows = multivoucherStage1Section.decorateStructuredRows;
+export const buildVoucherGroupKey = multivoucherStage1Section.buildVoucherGroupKey;
+export const groupVoucherRows = multivoucherStage1Section.groupVoucherRows;
+export const orderGroupValidationErrors = multivoucherStage1Section.orderGroupValidationErrors;
+export const partitionOrderGroups = multivoucherStage1Section.partitionOrderGroups;
+export const requiresOrderGroupSavePath = multivoucherStage1Section.requiresOrderGroupSavePath;
+export const executeOrderGroupSavePlan = multivoucherStage1Section.executeOrderGroupSavePlan;
+export const captureOrderRowSubmission = multivoucherStage1Section.captureOrderRowSubmission;
+export const captureOrderHeaderSubmission = multivoucherStage1Section.captureOrderHeaderSubmission;
+export const orderHeaderChangedSinceSubmission = multivoucherStage1Section.orderHeaderChangedSinceSubmission;
+export const retainUnsavedOrderRows = multivoucherStage1Section.retainUnsavedOrderRows;
+export const summarizeVoucherGroups = multivoucherStage1Section.summarizeVoucherGroups;
+export const filterVoucherRows = multivoucherStage1Section.filterVoucherRows;
+export const minimumUploadHeaders = multivoucherStage1Section.minimumUploadHeaders;
+export const buildMinimumUploadMatrix = multivoucherStage1Section.buildMinimumUploadMatrix;
+export const buildOrderGroupPayload = multivoucherStage1Section.buildOrderGroupPayload;
+export const MODE_CONFIG = multivoucherStage1Section.MODE_CONFIG;

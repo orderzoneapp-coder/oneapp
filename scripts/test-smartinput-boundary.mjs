@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { buildReferenceGeneration, REFERENCE_DOMAINS } from '../smartinput/reference-generation-repository.js';
+import { buildReferenceGeneration, REFERENCE_DOMAINS } from '../smartinput/reference-refresh-controller.js';
 import { loadLocalWarehouseCatalog } from '../smartinput/reference-refresh-controller.js';
 
 const snapshots = Object.fromEntries(REFERENCE_DOMAINS.map(domain => [domain, { status: 'EMPTY', rows: [], revision: '1' }]));

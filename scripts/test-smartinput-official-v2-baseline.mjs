@@ -13,12 +13,12 @@ import {
   buildPurchasePostDraft,
   derivePurchaseDraftIdentity,
   validatePurchaseGroup as validatePurchaseGroupAgainstMasters
-} from '../smartinput/purchase-official-stage3.js';
+} from '../smartinput/official-voucher-feature.js';
 import {
   buildSalePostDraft,
   deriveSaleDraftIdentity,
   validateSaleGroup
-} from '../smartinput/sale-official-stage4.js';
+} from '../smartinput/official-voucher-feature.js';
 import { validatePurchaseGroup as validatePurchaseGroupFromSmartInput } from '../smartinput/legacy-integration-adapter.js';
 import { planOfficialVoucherCommand } from '../orderq/official-voucher-core.js';
 import { createInventoryCheckpoint, planPendingInventoryResolution } from '../orderq/inventory-rematch-core.js';

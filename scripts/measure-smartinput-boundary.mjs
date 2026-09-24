@@ -8,8 +8,8 @@ import { tmpdir, cpus, totalmem } from 'node:os';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { buildEstimateF8Data } from '../smartinput/estimate-output.js';
-import { buildPurchaseSalesUploadData } from '../smartinput/purchase-sales-output.js';
+import { buildEstimateF8Data } from '../smartinput/report.js';
+import { buildPurchaseSalesUploadData } from '../smartinput/report.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const label = process.argv[2] || 'baseline';

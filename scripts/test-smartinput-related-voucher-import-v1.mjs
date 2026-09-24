@@ -5,7 +5,7 @@ import {
   applyRelatedVoucherImportPlan,
   createRelatedVoucherImportPlan,
   relatedImportConflicts
-} from '../smartinput/related-voucher-import.js';
+} from '../smartinput/multivoucher-stage1.js';
 
 const source = {
   id: 'PUR-1',

@@ -11,7 +11,7 @@ import {
   selectTableView,
   sourceViewColumns,
   tableViewFor
-} from '../smartinput/table-view-state.js';
+} from '../smartinput/virtual-table-body.js';
 
 const modes = ['order', 'purchase', 'sale', 'estimate'];
 const preferences = createTableViewPreferences(modes);

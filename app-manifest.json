@@ -860,7 +860,7 @@
       "activationPolicy": "Only explicit full reference refresh invokes the owner reader. Startup and ordinary input read the validated local copy. Legacy records without companyId are eligible only for ONEAPP, matching the existing owner compatibility rule. No cross-company inference or new matching policy is introduced.",
       "resources": {
         "adapterAsset": "orderq/input-matching-read-adapter.js",
-        "consumerAsset": "smartinput/input-matching-snapshot.js",
+        "consumerAsset": "smartinput/reference-refresh-controller.js",
         "localDatabase": "oneapp-orderq-pre-m1-v6",
         "readOnlyStores": ["products", "productMappings", "orders", "orderItems"],
         "cacheDatabase": "oneapp-smartinput",

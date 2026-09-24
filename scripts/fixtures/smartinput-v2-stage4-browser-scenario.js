@@ -2,10 +2,10 @@ import * as repository from '../../orderq/official-voucher-repository.js?v=stage
 import { createOfficialCommandGateway } from '../../orderq/official-command-gateway.js?v=stage4-browser';
 import { OFFICIAL_VOUCHER_IDENTITY_VERSION_V2 } from '../../orderq/official-voucher-v2-contract.js?v=stage4-browser';
 import { openOrderQDb, transactionDone } from '../../orderq/orderq-db.js?v=stage4-browser';
-import { createPurchaseFinalizeService } from '../../smartinput/purchase-finalize-service.js?v=stage4-browser';
-import { createSaleFinalizeService } from '../../smartinput/sale-finalize-service.js?v=stage4-browser';
-import { buildPurchasePostDraft } from '../../smartinput/purchase-official-stage3.js?v=stage4-browser';
-import { buildSalePostDraft } from '../../smartinput/sale-official-stage4.js?v=stage4-browser';
+import { createPurchaseFinalizeService } from '../../smartinput/official-voucher-feature.js?v=stage4-browser';
+import { createSaleFinalizeService } from '../../smartinput/official-voucher-feature.js?v=stage4-browser';
+import { buildPurchasePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage4-browser';
+import { buildSalePostDraft } from '../../smartinput/official-voucher-feature.js?v=stage4-browser';
 
 const text = value => String(value ?? '').trim();
 const errorText = error => `${error?.name || 'Error'}:${error?.message || String(error)}`;

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { runStage5Compute } from '../smartinput/stage5-compute-runner.js';
+import { runStage5Compute } from '../smartinput/report.js';
 import {
   buildEstimateF8Data,
   buildEstimateDuplicateGroups,
   validateEstimateRows
-} from '../smartinput/estimate-output.js';
-import { buildPurchaseSalesUploadData } from '../smartinput/purchase-sales-output.js';
+} from '../smartinput/report.js';
+import { buildPurchaseSalesUploadData } from '../smartinput/report.js';
 
 const workerScope = { postMessage: () => {} };
 globalThis.self = workerScope;

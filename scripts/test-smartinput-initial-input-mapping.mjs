@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { coreFieldByProjection } from '../smartinput/field-registry.js';
+import { coreFieldByProjection } from '../smartinput/reference-refresh-controller.js';
 import { stage1RowFieldDefinitions, structuredFieldsForMode } from '../smartinput/multivoucher-stage1.js';
 import {
   DECISION,
@@ -14,7 +14,7 @@ import {
   recommendMappings,
   setColumnDecision,
   validateTemplateDraft
-} from '../smartinput/input-template-mapper.js';
+} from '../smartinput/input.js';
 
 const plain = value => JSON.parse(JSON.stringify(value));
 const source = readFileSync(new URL('../smartinput/smartinput.js', import.meta.url), 'utf8');

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildPurchaseSalesUploadData,
   PURCHASE_SALES_UPLOAD_HEADERS
-} from '../smartinput/purchase-sales-output.js';
+} from '../smartinput/report.js';
 
 const row = (customer, detailCustomer, code, quantity, extra = {}) => ({
   거래처: customer,

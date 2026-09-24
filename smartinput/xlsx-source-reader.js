@@ -2,7 +2,7 @@ export {
   chooseEstimateWorkbookCandidate,
   inspectEstimateWorkbookCandidate,
   isEstimateWorkbookItemRow
-} from './estimate-workbook-selector.js?v=0.1.2';
+} from './input.js?v=0.17.0';
 
 const text = value => String(value ?? '');
 
