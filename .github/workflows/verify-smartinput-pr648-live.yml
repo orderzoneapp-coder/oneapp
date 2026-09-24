@@ -22,7 +22,7 @@ jobs:
           node-version: 24
       - name: Install Korean font for readable verification screenshots
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
-      - name: Correct only the verification harness reload race and strengthen selection checks
+      - name: Correct verification timing and provide complete synthetic report inputs
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -43,6 +43,22 @@ jobs:
           new="""await until(()=>cdp.eval(`document.querySelector('#catalogPickerList [data-select-estimate-card]')?.getAttribute('aria-pressed')==='true'&&document.querySelector('#inputRows [data-field="unitPrice"]')?.value==='1750'&&!document.querySelector('#completeButton').disabled`),'saved selection and price recovered');"""
           assert s.count(old)==1
           s=s.replace(old,new)
+          old="await mode('purchase');await click('#addRowButton');"
+          new="await mode('purchase');await input('#customerInput','1마산');await click('#addRowButton');"
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="const purchaseFile=await downloadReport('purchase');const pb=readBook(purchaseFile);"
+          new="""await input('#inputRows [data-field="noticePrice"]','5000');
+          const purchaseFile=await downloadReport('purchase');const pb=readBook(purchaseFile);"""
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          anchor="result.checks.push({name:'purchase report button, seven sheets and XLSX reopen'"
+          extra="""assert.equal(pb.rows['구매 업로드'].length,2);assert.equal(pb.rows['판매입력'].length,2);
+          assert.equal(pb.rows['구매 업로드'][1][11],2);assert.equal(pb.rows['구매 업로드'][1][12],3200);assert.equal(pb.rows['구매 업로드'][1][14],6400);
+          assert.equal(pb.rows['판매입력'][1][11],2);assert.equal(pb.rows['판매입력'][1][12],5000);assert.equal(pb.rows['판매입력'][1][14],10000);
+          """
+          assert s.count(anchor)==1
+          s=s.replace(anchor,extra+anchor)
           anchor="const writes=result.blocked.filter(x=>!['GET','HEAD'].includes(x.method));"
           extra="""const compute=await cdp.eval(`(async()=>{
             const m=await import('/smartinput/report.js?v=0.17.0');
@@ -58,7 +74,7 @@ jobs:
           s=s.replace(anchor,extra+anchor)
           p.write_text(s)
           out=Path('evidence/pr648-production');out.mkdir(parents=True,exist_ok=True)
-          (out/'harness-correction.txt').write_text('The first verification run checked the old document immediately after Page.reload and could toggle off the already selected estimate. This run waits for a new timeOrigin and actual selected-card state before asserting the recovered value and exporting. Runtime source and business assertions are not relaxed. Added real deployed Worker price/amount comparison for 600 synthetic rows.\n')
+          (out/'harness-correction.txt').write_text('Attempt 1 had a reload/selection timing race; wait for a new timeOrigin and selected-card state. Attempt 2 reached both downloads but its purchase fixture omitted the required customer, so the existing report correctly excluded it. This attempt provides customer 1마산 and notice price 5000 through the existing UI and adds exact purchase/sale quantity, price and amount assertions. Runtime source and validation rules are unchanged. Added real deployed Worker price/amount parity for 600 synthetic rows.\n')
           PY
       - name: Check exact merged runtime and verification syntax
         run: |
