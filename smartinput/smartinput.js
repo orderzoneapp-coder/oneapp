@@ -2170,13 +2170,31 @@ function sourcePreparationSnapshot() {
   const selected=new Set(session.mappings.map(mapping=>mapping.targetFieldId));
   const targets=inputMappingDefinitions().filter(target=>selected.has(target.id)
     || (target.pickerVisible !== false && !target.registryField));
+  const mappedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.MAPPED && mapping.targetFieldId && mapping.reviewed===true).length;
+  const recommendedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.RECOMMENDED).length;
+  const unmappedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.UNMAPPED).length;
+  const confirmationRequired=session.mappings.some(mapping=>mapping.state===MAPPING_DECISION.RECOMMENDED
+    || (mapping.state===MAPPING_DECISION.MAPPED && mapping.reviewed!==true)
+    || ![MAPPING_DECISION.MAPPED, MAPPING_DECISION.UNMAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping.state));
   return {
     key: [state.draft.activeMode,current.documentId,session.sessionId].join(':'),
     fileName: session.fileName, templateName: session.templateName,
     headers: [...session.headers], mappings: session.mappings.map(mapping=>({...mapping})),
     targets: targets.map(target=>({id:target.id,label:target.label,projectionFieldId:target.projectionFieldId||target.id,
       scope:target.scope,advancedLabel:target.advancedLabel})),
-    busy: Boolean(state.busy || state.activeFileInputAttemptId)
+    busy: Boolean(state.busy || state.activeFileInputAttemptId),
+    sessionStatus: session.status,
+    templateId: session.templateId || '',
+    templateDirty: Boolean(session.templateDirty),
+    builtinPresetId: session.builtinPresetId || '',
+    mappingSummary: {
+      mapped: mappedCount,
+      recommended: recommendedCount,
+      unmapped: unmappedCount,
+      total: session.mappings.length
+    },
+    confirmationRequired,
+    autoProjected: session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && !confirmationRequired
   };
 }
 
@@ -2216,6 +2234,7 @@ function applySourcePreparationMappings(key, decisions) {
   }
   renderRows({restoreFocus:false});
   saveDraftNow();
+  window.dispatchEvent(new Event('smartinput:source-preparation-changed'));
   return {applied:true,changed:true};
 }
 
@@ -8384,13 +8403,17 @@ async function handleFile(file) {
       saveDraftNow();
       renderMode();
       const applied = mapping.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED;
-      const estimateSummary = mapping.estimateErpSummary?.recognized
-        ? ` · ${mapping.sheetName} · 거래처 ${mapping.estimateErpSummary.customerCount.toLocaleString('ko-KR')}곳 · 품목 ${mapping.estimateErpSummary.itemCount.toLocaleString('ko-KR')}개`
+      const erpRecognized = Boolean(mapping.estimateErpSummary?.recognized);
+      const estimateSummary = erpRecognized
+        ? ` · 거래처 ${mapping.estimateErpSummary.customerCount.toLocaleString('ko-KR')}곳 · 품목 ${mapping.estimateErpSummary.itemCount.toLocaleString('ko-KR')}건 · 중앙 작업표 반영 완료`
         : '';
+      const appliedLabel = erpRecognized
+        ? 'ERP 견적서현황 입력 양식을 자동 적용했습니다.'
+        : `${mapping.templateName} 입력 양식을 자동 적용했습니다.`;
       setAppStatus(applied
-        ? `${mapping.templateName} 양식을 적용했습니다${estimateSummary}. 원본과 매핑 결과를 확인하세요.`
-        : `${file.name}의 ${mapping.headerRowIndex + 1}행을 필드명 후보로 표시했습니다${estimateSummary}. 신규 양식을 확인하세요.`, applied ? '' : 'warn');
-      toast(applied ? `${mapping.templateName} 양식을 완벽 일치로 적용했습니다.` : '기존 양식과 완벽 일치하지 않아 신규 양식 설정을 시작합니다.', applied ? 'success' : 'warn');
+        ? `${appliedLabel.replace(/\.$/, '')}${estimateSummary || ' · 중앙 작업표 반영 완료'}`
+        : `${file.name}의 ${mapping.headerRowIndex + 1}행을 필드명 후보로 표시했습니다${erpRecognized ? ` · ${mapping.sheetName}` : ''}. 신규 양식을 확인하세요.`, applied ? '' : 'warn');
+      toast(applied ? appliedLabel : '기존 양식과 완벽 일치하지 않아 신규 양식 설정을 시작합니다.', applied ? 'success' : 'warn');
       return;
     } else {
       const rawText = await file.text();

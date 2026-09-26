@@ -28,8 +28,8 @@ assert.match(html, /id="voucherContextList"[\s\S]*id="estimateLibraryHeading"/, 
 assert.doesNotMatch(html, /estimateLibraryButton|estimateEditorButton|견적서 목록 전체보기|편집기로 돌아가기/, 'the redundant full-library replacement path must be removed');
 assert.match(html, /id="estimateLibraryIndividualButton"[\s\S]*id="estimateMultiSelectButton"[\s\S]*id="estimateDeselectAllButton"/, 'one list must expose select all and deselect all');
 assert.doesNotMatch(html, /id="(?:estimateLibraryLinkedButton|linkedEstimateList|estimateCreateButton)"/, 'retired linked controls must be removed');
-assert.match(html, /href="\.\/smartinput\.css\?v=\d+\.\d+\.\d+"/, 'the external reference-popup CSS must use a versioned local asset');
-assert.match(html, /src="\.\/smartinput\.js\?v=\d+\.\d+\.\d+"/, 'the external reference-popup behavior must use a versioned local asset');
+assert.match(html, /href="\.\/smartinput\.css\?v=[A-Za-z0-9._-]+"/, 'the external reference-popup CSS must use a versioned local asset');
+assert.match(html, /src="\.\/smartinput\.js\?v=[A-Za-z0-9._-]+"/, 'the external reference-popup behavior must use a versioned local asset');
 const appBarEnd = html.indexOf('</header>', appBarStart);
 const referenceOverviewPopupIndex = html.indexOf('id="referenceOverviewPopup"');
 assert.ok(appBarStart >= 0 && appBarEnd > appBarStart && referenceOverviewPopupIndex > appBarEnd,

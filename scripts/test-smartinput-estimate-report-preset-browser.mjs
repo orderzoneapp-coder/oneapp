@@ -134,7 +134,7 @@ try {
   const matrix=[['회사명 / 테스트 출력'],[...H],...data,['2026/09/21 (월) 오후 12:22:12']];
   await evaluate(client,'window.__presetTest.upload('+JSON.stringify(matrix)+')');
   await expr(client,'window.__presetTest.snapshot().draft.rows.length===273','273 uploaded rows',60000);
-  await expr(client,'document.querySelectorAll("#sourcePreparationList select").length===24 && !document.querySelector("#sourcePreparationApply").disabled','24 exact mappings enabled',60000);
+  await expr(client,'document.querySelectorAll("#sourcePreparationList select").length===24 && document.querySelector("#sourcePreparationApply")?.hidden===true','24 exact mappings auto-applied without apply button',60000);
   let snapshot=await evaluate(client,'window.__presetTest.snapshot()');
   assert.equal(snapshot.draft.inputMapping.templateName,'견적서현황');
   assert.equal(snapshot.draft.inputMapping.mappings.filter(m=>m.state==='MAPPED').length,24);
@@ -177,8 +177,7 @@ try {
   assert.equal(await evaluate(client,'window.__presetTest.snapshot().draft.rows[0].unitPrice'),3100);
   assert.equal(await evaluate(client,'JSON.stringify(window.__presetTest.snapshot().draft.inputMapping.sourceMatrix)'),JSON.stringify(snapshot.draft.inputMapping.sourceMatrix),'original evidence remains immutable');
   await visibleClick('[data-table-view="source"]');
-  await click(client,'#sourcePreparationApply');
-  assert.equal(await evaluate(client,'document.querySelector("#tableScroll").dataset.tableView'),'source','mapping apply does not change selected view');
+  assert.equal(await evaluate(client,'document.querySelector("#tableScroll").dataset.tableView'),'source','source view remains after auto-applied mapping');
   await click(client,'#inputTemplateReloadButton');
   await expr(client,'["READY","EMPTY"].includes(window.__presetTest.snapshot().templatesStatus)','template reload completed',60000);
   assert.equal(await evaluate(client,'document.querySelector("#tableScroll").dataset.tableView'),'source','template reload preserves selected source view');
@@ -187,16 +186,17 @@ try {
   await visibleClick('[data-table-view="input"]');
   await expr(client,'!document.querySelector("#voucherInputTable").hidden','return to input for preset regression');
 
-  await click(client,'#sourcePreparationApply');
-  await expr(client,'!document.querySelector("#sourcePreparationApply").disabled','apply unchanged preset');
+  assert.equal(await evaluate(client,'document.querySelector("#sourcePreparationApply")?.hidden===true'),true,'unchanged preset keeps apply hidden');
   const priorSource=JSON.stringify(snapshot.draft.inputMapping.sourceMatrix);
   await evaluate(client,'window.__presetTest.manager()');
   await expr(client,'Boolean(document.querySelector("[data-builtin-template]"))','built-in in template manager');
   await click(client,'.field-mapping-dialog[open] [data-close]');
   // Customize one reference column; saving creates a user override, never edits the built-in.
   await evaluate(client,'(()=>{const s=document.querySelectorAll("#sourcePreparationList select")[7];s.value="__UNMAPPED__";s.dispatchEvent(new Event("change",{bubbles:true}));})()');
+  await expr(client,'document.querySelector("#sourcePreparationApply")?.hidden===false && document.querySelector("#sourcePreparationApply strong")?.textContent==="매핑 변경 반영"','changed mapping reveals apply');
   await click(client,'#sourcePreparationApply');
   await expr(client,'window.__presetTest.snapshot().draft.inputMapping.mappings[7].state==="UNMAPPED"','explicit exclusion',60000);
+  await expr(client,'document.querySelector("#sourcePreparationApply")?.hidden===true','apply hides after successful remapping');
   await evaluate(client,'window.__presetTest.saveTemplate()');
   await expr(client,'window.__presetTest.snapshot().templates.length===1','custom override saved',60000);
   snapshot=await evaluate(client,'window.__presetTest.snapshot()');
@@ -211,4 +211,9 @@ try {
   console.error('BROWSER FAILURE',error.stack);
   if(client) console.error('BROWSER DIAGNOSTIC',JSON.stringify(await evaluate(client,'(()=>{const s=window.__presetTest?.snapshot();return {ready:s?.ready,mode:s?.mode,rowCount:s?.draft.rows.length,firstRow:s?.draft.rows[0],mappings:s?.draft.inputMapping?.mappings,preparation:document.querySelector("#sourcePreparationMapping")?.innerText,headers:document.querySelectorAll("#mappingTableHeaders th").length};})()').catch(()=>null)));
   throw error;
-} finally { client?.close(); browser?.kill(); server.close(); rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:200}); }
+} finally {
+  try { client?.close(); } catch {}
+  try { browser?.kill(); } catch {}
+  try { server.close(); } catch {}
+  try { rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:200}); } catch {}
+}

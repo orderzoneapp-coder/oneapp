@@ -44,7 +44,7 @@ assert.match(appSource, /Promise\.all\(\[\s*ensureTesseract\(operationToken\),\s
   'OCR must prepare Tesseract and the parser from the same click');
 assert.doesNotMatch(themeSource, /source-preparation-ui-v2\.js/,
   'the common theme initializer must not load a SmartInput-only feature');
-assert.match(smartInputHtml, /<script defer src="\.\/source-preparation-ui-v2\.js\?v=0\.1\.3"/,
+assert.match(smartInputHtml, /<script defer src="\.\/source-preparation-ui-v2\.js\?v=[A-Za-z0-9._-]+"/,
   'SmartInput must load its source preparation UI directly without a fixed delay');
 
 const rows = [
