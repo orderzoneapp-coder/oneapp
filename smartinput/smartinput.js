@@ -692,6 +692,7 @@ const mappingViewport = createVirtualTableBody({ body: $('mappingInputRows'), sc
 const sourceViewport = createVirtualTableBody({ body: $('sourceSheetRows'), scroller: $('sourceSheetScroll'), rowAttribute: 'data-source-row-index', keyOf: row => String(row.index) });
 const inputFrameSamples = [];
 const longTaskSamples = [];
+const renderMetrics = { mode: 0, catalogBuilds: 0, catalogAdoptions: 0, workContextBuilds: 0 };
 if (typeof PerformanceObserver === 'function') {
   try {
     const longTaskObserver = new PerformanceObserver(list => {
@@ -708,6 +709,7 @@ $('tableScroll').addEventListener('input', () => {
   requestAnimationFrame(() => { inputFrameSamples.push(performance.now() - started); if (inputFrameSamples.length > 30) inputFrameSamples.shift(); });
 }, true);
 window.ONEAPP_SMARTINPUT_PERFORMANCE = { snapshot: () => ({ reads: estimateStore.smartInputReadStats(), input: inputViewport.stats(), mapping: mappingViewport.stats(), source: sourceViewport.stats(),
+  renders: { ...renderMetrics },
   inputToNextFrameMs: [...inputFrameSamples], p95InputToNextFrameMs: inputFrameSamples.length ? [...inputFrameSamples].sort((a,b) => a-b)[Math.ceil(inputFrameSamples.length * .95) - 1] : null,
   autosaveCheckpoints: (state.autosaveCheckpointSamples || []).map(metric => ({ ...metric })),
   optionalFeatures: optionalFeatureMetrics.map(metric => ({ ...metric })), optionalComputes: optionalComputeMetrics.map(metric => ({ ...metric })),
@@ -4921,10 +4923,11 @@ function estimateTitle(record) {
   return String(record?.catalogName || '').trim() || catalogCustomerName(record) || '견적서명 미지정';
 }
 
+const estimateDateFormatter = new Intl.DateTimeFormat('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
 function formatEstimateDate(value) {
   const timestamp = Date.parse(value || '');
   if (!Number.isFinite(timestamp)) return '—';
-  return new Intl.DateTimeFormat('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' }).format(timestamp);
+  return estimateDateFormatter.format(timestamp);
 }
 
 function catalogCustomerId(record) {
@@ -5455,9 +5458,19 @@ function buildWorkContextView({ mode, current = {}, companyId = '', selectedIds 
   return view(names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}개`, 'ready', names.join(' · '));
 }
 
+let workContextProjection = null;
 function renderWorkContext() {
-  const view = buildWorkContextView({ mode: state.draft.activeMode, current: modeDraft(),
-    companyId: state.companyId, selectedIds: estimateWorkspace.selected(), records: state.estimates,
+  const current = modeDraft();
+  const selectedIds = estimateWorkspace.selected();
+  // Delivery/input updates still reach this guard, but only target changes rebuild the projection.
+  const key = JSON.stringify([state.draft.activeMode, state.companyId, selectedIds,
+    current.savedWorkDocumentId, current.catalogRecordId, Boolean(current.stage3SelectedTable),
+    Boolean(current.inputMapping), Boolean(current.stage3LegacyPreview), state.smartDataReady,
+    Boolean(state.smartDataError), Boolean(state.activeFileInputAttemptId)]);
+  if (workContextProjection?.key === key && workContextProjection.records === state.estimates
+    && workContextProjection.savedRecords === state.savedWorkDocuments.records) return;
+  const view = buildWorkContextView({ mode: state.draft.activeMode, current,
+    companyId: state.companyId, selectedIds, records: state.estimates,
     savedRecords: state.savedWorkDocuments.records, ready: state.smartDataReady,
     error: Boolean(state.smartDataError), filePending: Boolean(state.activeFileInputAttemptId) });
   for (const id of ['sourceWorkContext', 'centerWorkContext']) {
@@ -5470,10 +5483,11 @@ function renderWorkContext() {
     if (element.dataset.state !== view.status) element.dataset.state = view.status;
     if (element.title !== view.detail) element.title = view.detail;
   }
+  workContextProjection = { key, records: state.estimates, savedRecords: state.savedWorkDocuments.records };
+  renderMetrics.workContextBuilds += 1;
 }
 
 function renderEstimateWorkspace() {
-  renderWorkContext();
   const estimateMode = state.draft.activeMode === 'estimate';
   $('estimateLibraryView').hidden = false;
   $('voucherContextView').hidden = estimateMode;
@@ -5518,7 +5532,9 @@ function syncEstimateLibraryCardSelection() {
     const kind = card.dataset.estimateKind === 'LINKED_GROUP' ? 'linked' : 'individual';
     const selected = selections[kind].has(card.dataset.estimateId);
     card.classList.toggle('is-selected', selected);
-    card.querySelector('[data-select-estimate-card]')?.setAttribute('aria-pressed', String(selected));
+    const button = card.querySelector('[data-select-estimate-card]');
+    button?.setAttribute('aria-pressed', String(selected));
+    if (button) button.title = selected ? '선택 해제' : '업데이트 대상 선택';
     card.querySelector('.estimate-card__selection-order')?.remove();
   });
 }
@@ -5541,16 +5557,36 @@ function syncEstimateLibraryView() {
   syncEstimateLibraryActionState();
 }
 
+let catalogMarkupKey = null;
+const catalogAdoptedRecords = new WeakSet();
 function renderCatalogControls() {
   const list = $('catalogPickerList');
   if (!state.smartDataReady) {
+    catalogMarkupKey = null;
     list.setAttribute('aria-busy', String(!state.smartDataError));
-    list.textContent = state.smartDataError ? '견적서 조회 실패 · 현재 입력은 유지됩니다.' : '견적서 목록을 불러오는 중입니다.';
+    const message = state.smartDataError ? '견적서 조회 실패 · 현재 입력은 유지됩니다.' : '견적서 목록을 불러오는 중입니다.';
+    if (list.textContent !== message) list.textContent = message;
   } else {
     list.removeAttribute('aria-busy');
     const records = availableCatalogs().filter(record => !record.companyId || record.companyId === state.companyId);
-    list.innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
-    for (const record of records) if (record.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA) estimateWorkspace.adopt(record);
+    // Include every field displayed on a card and its order, but not selection or draft rows.
+    const key = JSON.stringify([state.companyId, records.map(record => [record.estimateId,
+      estimateTitle(record), record.schemaVersion, record.createdAt, record.updatedAt])]);
+    if (key !== catalogMarkupKey) {
+      list.innerHTML = records.length ? records.map(estimateCardMarkup).join('') : '<div class="smart-dialog__empty">저장된 견적서가 없습니다.</div>';
+      catalogMarkupKey = key;
+      renderMetrics.catalogBuilds += 1;
+    }
+    syncEstimateLibraryCardSelection();
+    // normalizeEstimateOrder returns copies; deduplicate adoption by the actual source record.
+    for (const record of state.estimates) {
+      if ((!record.companyId || record.companyId === state.companyId)
+        && record.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA && !catalogAdoptedRecords.has(record)) {
+        estimateWorkspace.adopt(record);
+        catalogAdoptedRecords.add(record);
+        renderMetrics.catalogAdoptions += 1;
+      }
+    }
   }
   syncEstimateLibraryActionState(); renderEstimateWorkspace();
 }
@@ -7309,6 +7345,7 @@ function renderDelivery() {
 }
 
 function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
+  renderMetrics.mode += 1;
   const selected = contract.MODES[state.draft.activeMode];
   tabs.forEach(tab => {
     const active = tab.dataset.mode === selected.id;
@@ -7351,7 +7388,6 @@ function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
   renderRows({ deferLayout: true });
   renderShoppingOrderPanel();
   renderCatalogControls();
-  renderEstimateWorkspace();
   renderDelivery();
   renderReferenceControls();
   resizeSource();
@@ -12122,7 +12158,10 @@ async function hydrateEstimateLibrary() {
     state.smartDataError = error || new Error('견적서 목록 로드 실패');
   } finally {
     if (optionalOperationIsLatest(operationToken)) {
-      renderMode();
+      // Summary readiness does not change the active rows, mapping, headers or settings.
+      renderCatalogControls();
+      renderDelivery();
+      if (modeDraft().activeMethod === 'photo') renderSourceSurface();
       performance.mark?.('smartinput-estimate-library-rendered');
       try {
         performance.measure?.('smartinput-estimate-library-ready', 'smartinput-estimate-library-load-start', 'smartinput-estimate-library-rendered');
