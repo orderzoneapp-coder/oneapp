@@ -537,7 +537,7 @@
       "path": "smartinput/index.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Independently complete input documents, estimates, local recovery, and Excel output using validated local reference Snapshots. Explicit delivery and result-query actions prepare the existing owner integration; normal entry, input, autosave, and Excel output do not query ledgers or start synchronization. Preserve host ready, beforeLeave, theme, and print contracts separately from optional business integration.",
+      "purpose": "Independently complete input documents, estimates, locally saved purchase, sale, and order work documents, local recovery, and Excel output using validated local reference Snapshots. Explicit delivery and result-query actions prepare the existing owner integration; normal entry, input, autosave, local document save, and Excel output do not query ledgers or start synchronization. Preserve host ready, beforeLeave, theme, and print contracts separately from optional business integration.",
       "owner": "voucher-input",
       "productionWrites": true,
       "coreCapabilities": [
@@ -552,6 +552,7 @@
         "selected-row bulk unit-price editing",
         "editable local work table",
         "latest-work autosave recovery",
+        "company-scoped saved purchase, sale, regular-order, and shopping-source work documents with same-ID revisioned reopen and edit",
         "local estimate catalog",
         "MerchOps-compatible estimate report pricing from Settings-owned margin rules and mappings, including grouped duplicate-code price resolution",
         "revisioned purchase and sale official command-adapter requests to the ORDER Q owner boundary",
@@ -585,10 +586,11 @@
       ],
       "dependencyMode": {
         "localAutosaveAndEstimate": "LOCAL_OPERATION",
+        "savedSmartInputWorkDocuments": "LOCAL_OPERATION in SmartInput DB v5 draftVouchersV2 for purchase, sale, regular-order, and shopping-source work; save, list, reopen, and same-ID revisioned edit do not invoke official voucher capabilities or owner writes",
         "cachedReferenceSnapshot": "LOCAL_OPERATION",
         "referenceRevisionCheck": "BACKGROUND_SYNC",
-        "orderSaveThenSync": "BACKGROUND_SYNC",
-        "purchaseAndSaleFinalize": "LOCAL_OPERATION",
+        "orderDelivery": "EXPLICIT_USER_DELIVERY after separate SmartInput local-work save; only the existing owner finalize path schedules its current sync",
+        "purchaseAndSaleFinalize": "EXPLICIT_USER_DELIVERY after separate SmartInput local-work save",
         "shoppingOrderActualLedgerDedupe": "Explicit delivery action through ONEAPP_ORDERQ_SHOPPING_ORDER_COMMAND_ADAPTER_V1; local file preparation does not inspect ledgers, candidate inspection is advisory and every save rechecks the actual ORDER Q count in the owner transaction",
         "inputMatching": "LOCAL_OPERATION from a company-and-actor scoped validated SmartInput cache; explicit full reference refresh invokes the owner read-only publication, without changing existing candidate scoring or automatically reanalyzing active rows",
         "estimateReportPricing": "LOCAL_OPERATION through ONEAPP_MERCHOPS_SETTINGS_READ_ADAPTER_V1; SmartInput reads current margin rules and estimate mappings without writing Settings-owned keys, groups duplicate product codes for an explicit representative inbound-price decision, and preserves every customer transaction row in the estimate-upload sheet",
@@ -786,6 +788,7 @@
         "smartinput/index.html"
       ],
       "schemaVersion": "ONEAPP_SMART_INPUT_DRAFT_V1",
+      "savedWorkDocumentSchemaVersion": "ONEAPP_SMARTINPUT_SAVED_WORK_DOCUMENT_V1",
       "autosaveSchemaVersion": "ONEAPP_SMART_INPUT_AUTOSAVE_V1",
       "inputTemplateSchemaVersion": "ONEAPP_SMARTINPUT_INPUT_TEMPLATE_V2",
       "mappingSessionSchemaVersion": "ONEAPP_SMARTINPUT_MAPPING_SESSION_V2",

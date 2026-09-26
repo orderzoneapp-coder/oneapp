@@ -1,9 +1,9 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 2.3.11
+- Architecture document version: 2.3.12
 - Previous detailed review: 2026-09-04
-- Documentation updated: 2026-09-16
+- Documentation updated: 2026-09-26
 - Previous detailed source baseline: `c4292db2f6147b5f83fca675f71106490740887b`
 - Documentation revision baseline: `8ba1a0b5f52f27a6291ee9c01754c43b2d879a9e`
 - Review scope: NEXUS 공통 UI·호스트와 다른 앱의 기존 계약은 유지한다. 2026-09-16 승인 ORDER Q 기본단계 롤백은 `orderops/list.html`, `orderops_list.html`, `orderFulfillmentEngine.js`, `orderFulfillmentWorkbook.js`를 API/source workbench 확장 전인 `a596cbbdc1f8df52ee2b7f8f0dcf094cc372a8ab` (2026-09-07)로 복원하며 최소 NEXUS host adapter만 유지한다.
@@ -194,7 +194,7 @@ SmartInput은 초기 UI가 `oneapp.smartinput.draft.v1`을 읽어 파싱한 결�
 | ItemMaster (`ItemMaster.html`) | 폐기·호환 | 중복 앱 기능 없이 `Master.html`을 안내하는 정적 호환 주소 | 레거시 주소 호환만 유지하고 운영 쓰기 금지 |
 | SKU 관리 (`Item_manager.html`) | 파일럿·유지 | 상품 분류를 참조해 SKU 후보·BOM 작업본을 만들고 상품 등록 요청을 전달하는 보조 화면 | 공식 상품 Master를 직접 쓰지 않는 SKU 후보 생성·등록 요청 도구 |
 | 거래처관리 (`customer-master/index.html`) | 파일럿 | 독립 DB에서 거래처 원본·매핑·변경이력·Excel 작업을 로컬 우선으로 운영하며 v17 원본을 읽기 전용으로 이전하고 Snapshot·변경요청 inbox를 제공 | 거래처 기준정보 단일 소유자, Read Adapter와 요청 수신 경계 제공 |
-| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. 견적 보고서는 Settings의 마진룰·매핑과 상품 기준단위를 읽기 전용으로 소비해 MerchOps 가격을 재현하고, 구매·판매 UI는 업무별 Finalize Service만 호출하고 ORDER Q command Adapter를 거쳐 공식 Gateway를 소비하며 Repository나 공식 Store를 직접 열지 않음 | 전표 작성 작업본·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot과 ORDER Q 공식 command Adapter 소비 |
+| SmartInput (`smartinput/index.html`) | 파일럿 | 네 전표 작업본·DB v5의 최신 자동저장·회사/전표별 필드 설정·V2 입력 양식·불변 기준정보 세대를 로컬 우선으로 운영. 견적은 기존 자체 저장을 사용하고 구매·판매·일반 주문·쇼핑몰 원본은 `draftVouchersV2`의 별도 자체 문서로 저장·조회·재열기·수정·출력한다. 공식 전표 전달은 사용자가 별도 실행하며 기존 Finalize Service 또는 ORDER Q command Adapter를 사용하고 공식 Repository나 Store를 직접 열지 않음 | 전표 작업본·자체 저장 문서·필드 등록부·입력 양식·견적 원본 소유, owner Snapshot과 ORDER Q 공식 command Adapter 소비 |
 | ORDER Q (`orderops`, `orderq-vnext`) | 파일럿 | 출고·주문 계약과 DB v7의 공식 문서·Revision·재고/미매칭·기본 채권채무·공식 sync queue Repository를 운영 전 검증 중 | 공식전표 `OfficialCommandGateway`·Repository와 공식 데이터의 단일 쓰기 소유자 |
 | MerchOps | 운영 | Product Snapshot 소비, 가격·프로모션·Excel 작업, F7 reviewed-patch command, 관리자 명시 미등록 상품 owner-command 등록 | 작업표는 로컬에 보존하고 소유 설정·SmartParser 상태를 read-only로 소비 |
 | DataOps | 운영 | 재고·매입·매출·원가 분석과 승인된 일부 상품 상태 갱신 | 분석 결과와 승인된 현행 master writer 경계 유지 |
@@ -1089,3 +1089,7 @@ SmartInput 파일럿은 5단계 기본 복구와 상품·거래처 Snapshot 소�
 - 같은 환경 30회 계측에서 100행은 50ms 아래였고 1,000행 F8과 구매 출력 행렬은 50ms를 넘었다. 500행 이상 F8 검증·중복·행렬 생성과 구매 판매업로드 행렬 생성만 module Worker로 실행한다. 작은 자료, Worker 생성·로딩·실행 실패는 기존 순수 함수를 direct fallback으로 실행하며 결과를 바꾸지 않는다.
 - XLSX workbook 생성·파일 저장, 카톡 canvas·Clipboard, OCR의 기존 Tesseract Worker, IndexedDB, 견적·마스터·ORDER Q owner command는 main의 기존 소유 경계에 남는다. DB v5, store, ID, Revision, 자동저장 journal, 선택 견적 범위와 command receipt 형식은 변경하지 않는다.
 - `ONEAPP_SMARTINPUT_PERFORMANCE.snapshot()`은 기능 cold/warm 로딩, direct/worker/fallback 계산 시간과 브라우저 Long Task 표본을 추가로 제공하며 원문 업무값은 기록하지 않는다.
+
+### SmartInput 독립 업무 문서 저장 (2026-09-26)
+- 구매·판매·일반 주문·쇼핑몰 원본의 1차 저장은 기존 SmartInput DB v5 `draftVouchersV2`에 회사·업무별 `ONEAPP_SMARTINPUT_SAVED_WORK_DOCUMENT_V1` 문서로 기록한다. 자체 문서 ID와 Revision을 유지하고 저장 요청은 멱등 키와 이전 Revision 검사로 확정한다. 최신 자동저장과 공식 전표 ID는 각각 별도 계약이다.
+- 자체 문서 목록·재열기·같은 ID 수정 저장·보고서는 공식 원장 조회나 쓰기에 의존하지 않는다. 주문·구매·판매의 공식 전달은 별도 버튼에서 현재 자체 문서를 먼저 저장한 뒤 기존 owner 경로를 호출하며, 전달 결과로 편집 화면이 정리되더라도 원래 자체 문서는 보존한다. 쇼핑몰 자료를 다시 열면 과거 중복 판정을 신뢰하지 않고 명시적 전달 때 실제 ORDER Q 원장을 다시 확인한다.

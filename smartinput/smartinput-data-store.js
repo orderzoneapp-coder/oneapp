@@ -4,6 +4,7 @@ import { INDEPENDENT_ESTIMATE_SCHEMA, LAST_ESTIMATE_EXCEL_RESULT_SCHEMA, estimat
 
 // Local autosave journal and save coordination.
 export const AUTOSAVE_JOURNAL_SCHEMA = 'ONEAPP_SMART_INPUT_AUTOSAVE_JOURNAL_V2';
+export const SMARTINPUT_SAVED_WORK_DOCUMENT_SCHEMA = 'ONEAPP_SMARTINPUT_SAVED_WORK_DOCUMENT_V1';
 
 const clone = value => globalThis.structuredClone
   ? globalThis.structuredClone(value)
@@ -691,6 +692,257 @@ async function remove(storeName, key) {
   transaction.objectStore(storeName).delete(key);
   await transactionDone(transaction);
   db.close();
+}
+
+function savedWorkDocumentError(code, message = code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function savedWorkSourceImageSnapshot(sourceImage, { companyId, voucherMode, documentId, updatedAt }) {
+  if (sourceImage == null) return null;
+  const dataUrl = String(sourceImage.dataUrl || '');
+  const sourceImageId = String(sourceImage.sourceImageId || '').trim();
+  if (!sourceImage || typeof sourceImage !== 'object' || Array.isArray(sourceImage)
+    || !sourceImageId || !/^data:image\/[^,]+;base64,/i.test(dataUrl)) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_INVALID');
+  }
+  if (!globalThis.crypto?.subtle) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_HASH_UNAVAILABLE', '원본 사진의 무결성을 확인할 수 없어 자료를 저장하지 않았습니다.');
+  }
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(dataUrl));
+  const sourceImageFingerprint = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  // The original capture already keeps the base64 in dataUrl. Do not store it twice.
+  return {
+    documentId, companyId, mode: voucherMode, sourceImageId,
+    sourceImageFingerprint,
+    fileName: String(sourceImage.fileName || ''),
+    mimeType: String(sourceImage.mimeType || ''),
+    byteLength: Number(sourceImage.byteLength || 0),
+    contentHash: String(sourceImage.contentHash || ''),
+    dataUrl,
+    notice: String(sourceImage.notice || ''),
+    updatedAt
+  };
+}
+
+function assertSavedWorkDocumentRequest({ companyId, voucherMode, documentId, expectedRevision, operationId, payload } = {}) {
+  if (!String(companyId || '').trim() || !['purchase', 'sale', 'order'].includes(String(voucherMode || '').trim())) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SCOPE_INVALID');
+  }
+  if (!String(documentId || '').trim() || !String(operationId || '').trim()
+    || !Number.isInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_IDENTITY_INVALID');
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || String(payload.mode || '') !== String(voucherMode)) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_PAYLOAD_INVALID');
+  }
+}
+
+function nextSavedWorkDocument({ current, companyId, voucherMode, documentId, expectedRevision, operationId, title, actorId, payload, summary, updatedAt, sourceImage }) {
+  const expected = Number(expectedRevision);
+  const operationFingerprint = canonicalRecord({ companyId, voucherMode, documentId, expectedRevision: expected, payload,
+    sourceImageId: sourceImage?.sourceImageId || '', sourceImageFingerprint: sourceImage?.sourceImageFingerprint || '' });
+  if (current?.companyId && current.companyId !== companyId) throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_ID_COLLISION');
+  if (current && (current.voucherMode !== voucherMode || current.schemaVersion !== SMARTINPUT_SAVED_WORK_DOCUMENT_SCHEMA)) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_ID_COLLISION');
+  }
+  if (current?.lastOperationId === operationId) {
+    if (current.lastOperationFingerprint !== operationFingerprint) {
+      throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_OPERATION_CONFLICT', '같은 저장 요청 ID에 서로 다른 입력 내용이 연결되어 저장하지 않았습니다.');
+    }
+    return { record: current, idempotent: true };
+  }
+  const currentRevision = Number(current?.revision || 0);
+  if (currentRevision !== expected || (!current && expected !== 0)) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_REVISION_CONFLICT', '이 자료가 다른 화면에서 먼저 변경되었습니다. 최신 자료를 다시 연 뒤 수정하세요.');
+  }
+  const timestamp = String(updatedAt || new Date().toISOString());
+  return {
+    idempotent: false,
+    record: {
+      draftId: documentId,
+      schemaVersion: SMARTINPUT_SAVED_WORK_DOCUMENT_SCHEMA,
+      companyId,
+      voucherMode,
+      documentId,
+      status: 'SAVED',
+      revision: currentRevision + 1,
+      title: String(title || '').trim(),
+      actorId: String(actorId || '').trim(),
+      summary: summary && typeof summary === 'object' ? clone(summary) : {},
+      createdAt: current?.createdAt || timestamp,
+      updatedAt: timestamp,
+      lastOperationId: operationId,
+      idempotencyKey: operationId,
+      lastOperationFingerprint: operationFingerprint,
+      sourceImageId: sourceImage?.sourceImageId || '',
+      sourceImageFingerprint: sourceImage?.sourceImageFingerprint || '',
+      payload: clone(payload)
+    }
+  };
+}
+
+/** Saves a SmartInput-owned work document without touching an official voucher owner. */
+export async function commitSmartInputWorkDocument(request = {}) {
+  const normalized = {
+    ...request,
+    companyId: String(request.companyId || '').trim(),
+    voucherMode: String(request.voucherMode || '').trim(),
+    documentId: String(request.documentId || '').trim(),
+    operationId: String(request.operationId || '').trim(),
+    expectedRevision: Number(request.expectedRevision || 0),
+    updatedAt: String(request.updatedAt || new Date().toISOString())
+  };
+  assertSavedWorkDocumentRequest(normalized);
+  normalized.sourceImage = await savedWorkSourceImageSnapshot(request.sourceImage, normalized);
+  if (normalized.payload.activeMethod === 'photo' && !normalized.sourceImage) {
+    throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_MISSING', '원본 사진을 확인할 수 없어 자료를 저장하지 않았습니다.');
+  }
+  const db = await openDatabase();
+  if (!db) {
+    const value = readFallback();
+    value[DATA_STORES.DRAFT_VOUCHERS_V2] ||= {};
+    value[DATA_STORES.SOURCE_IMAGES] ||= {};
+    const current = value[DATA_STORES.DRAFT_VOUCHERS_V2][normalized.documentId] || null;
+    const currentImage = value[DATA_STORES.SOURCE_IMAGES][normalized.documentId] || null;
+    if (currentImage && (!current || currentImage.companyId !== normalized.companyId
+      || currentImage.mode !== normalized.voucherMode)) throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_ID_COLLISION');
+    const result = nextSavedWorkDocument({ ...normalized, current });
+    if (result.idempotent) {
+      if (result.record.sourceImageFingerprint && (!currentImage
+        || currentImage.sourceImageFingerprint !== result.record.sourceImageFingerprint
+        || currentImage.dataUrl !== normalized.sourceImage?.dataUrl)) {
+        throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_MISSING');
+      }
+      return { ...result, record: clone(result.record) };
+    }
+    value[DATA_STORES.DRAFT_VOUCHERS_V2][normalized.documentId] = result.record;
+    if (normalized.sourceImage) value[DATA_STORES.SOURCE_IMAGES][normalized.documentId] = normalized.sourceImage;
+    else delete value[DATA_STORES.SOURCE_IMAGES][normalized.documentId];
+    writeFallback(value);
+    invalidateCachedRead(normalized.documentId);
+    return { ...result, record: clone(result.record) };
+  }
+  const transaction = db.transaction([DATA_STORES.DRAFT_VOUCHERS_V2, DATA_STORES.SOURCE_IMAGES], 'readwrite');
+  const store = transaction.objectStore(DATA_STORES.DRAFT_VOUCHERS_V2);
+  const imageStore = transaction.objectStore(DATA_STORES.SOURCE_IMAGES);
+  const completed = transactionDone(transaction);
+  try {
+    const [current, currentImage] = await Promise.all([
+      requestResult(store.get(normalized.documentId)),
+      requestResult(imageStore.get(normalized.documentId))
+    ]);
+    if (currentImage && (!current || currentImage.companyId !== normalized.companyId
+      || currentImage.mode !== normalized.voucherMode)) throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_ID_COLLISION');
+    const result = nextSavedWorkDocument({ ...normalized, current: current || null });
+    if (result.idempotent) {
+      if (result.record.sourceImageFingerprint && (!currentImage
+        || currentImage.sourceImageFingerprint !== result.record.sourceImageFingerprint
+        || currentImage.dataUrl !== normalized.sourceImage?.dataUrl)) {
+        throw savedWorkDocumentError('SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_MISSING');
+      }
+    } else {
+      if (normalized.sourceImage) imageStore.put(normalized.sourceImage);
+      else if (currentImage) imageStore.delete(normalized.documentId);
+      store.put(result.record);
+      transaction.addEventListener('complete', () => invalidateCachedRead(normalized.documentId), { once: true });
+    }
+    await completed;
+    return { ...result, record: clone(result.record) };
+  } catch (error) {
+    try { transaction.abort(); } catch (_) {}
+    await completed.catch(() => {});
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
+export async function listSmartInputWorkDocuments({ companyId = '', voucherMode = '', limit = 200 } = {}) {
+  const company = String(companyId || '').trim();
+  const mode = String(voucherMode || '').trim();
+  if (!company || !['purchase', 'sale', 'order'].includes(mode)) return [];
+  const maximum = Math.min(500, Math.max(1, Number(limit) || 200));
+  const db = await openDatabase();
+  let records;
+  if (!db) {
+    records = Object.values(readFallback()[DATA_STORES.DRAFT_VOUCHERS_V2] || {});
+  } else {
+    const transaction = db.transaction(DATA_STORES.DRAFT_VOUCHERS_V2, 'readonly');
+    const completed = transactionDone(transaction);
+    try {
+      const store = transaction.objectStore(DATA_STORES.DRAFT_VOUCHERS_V2);
+      const keyRange = globalThis.IDBKeyRange?.only?.([company, mode, 'SAVED']);
+      records = keyRange ? await requestResult(store.index('byCompanyModeStatus').getAll(keyRange)) : await requestResult(store.getAll());
+      await completed;
+    } catch (error) {
+      await completed.catch(() => {});
+      throw error;
+    } finally {
+      db.close();
+    }
+  }
+  return records
+    .filter(record => record?.schemaVersion === SMARTINPUT_SAVED_WORK_DOCUMENT_SCHEMA
+      && record.companyId === company && record.voucherMode === mode && record.status === 'SAVED')
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, maximum)
+    .map(({ payload, ...summary }) => clone(summary));
+}
+
+export async function loadSmartInputWorkDocument({ companyId = '', documentId = '' } = {}) {
+  const company = String(companyId || '').trim();
+  const id = String(documentId || '').trim();
+  if (!company || !id) return { status: 'MISSING', record: null };
+  const db = await openDatabase();
+  let record, sourceImage;
+  if (!db) {
+    const fallback = readFallback();
+    record = fallback[DATA_STORES.DRAFT_VOUCHERS_V2]?.[id] || null;
+    sourceImage = fallback[DATA_STORES.SOURCE_IMAGES]?.[id] || null;
+  } else {
+    const transaction = db.transaction([DATA_STORES.DRAFT_VOUCHERS_V2, DATA_STORES.SOURCE_IMAGES], 'readonly');
+    const completed = transactionDone(transaction);
+    try {
+      [record, sourceImage] = await Promise.all([
+        requestResult(transaction.objectStore(DATA_STORES.DRAFT_VOUCHERS_V2).get(id)),
+        requestResult(transaction.objectStore(DATA_STORES.SOURCE_IMAGES).get(id))
+      ]);
+      await completed;
+    } catch (error) {
+      await completed.catch(() => {});
+      throw error;
+    } finally {
+      db.close();
+    }
+  }
+  if (!record || record.schemaVersion !== SMARTINPUT_SAVED_WORK_DOCUMENT_SCHEMA || record.status !== 'SAVED') {
+    return { status: 'MISSING', record: null };
+  }
+  if (record.companyId !== company) return { status: 'COMPANY_MISMATCH', record: null };
+  if (!record.payload || record.payload.mode !== record.voucherMode) {
+    return { status: 'INVALID', record: null };
+  }
+  if (record.payload.activeMethod === 'photo' && !record.sourceImageFingerprint) {
+    return { status: 'INVALID', record: null };
+  }
+  if (record.sourceImageFingerprint) {
+    if (!sourceImage || sourceImage.companyId !== company || sourceImage.mode !== record.voucherMode
+      || sourceImage.sourceImageId !== record.sourceImageId
+      || sourceImage.sourceImageFingerprint !== record.sourceImageFingerprint) {
+      return { status: 'INVALID', record: null };
+    }
+    const verified = await savedWorkSourceImageSnapshot(sourceImage, {
+      companyId: company, voucherMode: record.voucherMode, documentId: id, updatedAt: sourceImage.updatedAt
+    });
+    if (verified.sourceImageFingerprint !== record.sourceImageFingerprint) return { status: 'INVALID', record: null };
+  } else if (sourceImage) {
+    return { status: 'INVALID', record: null };
+  }
+  return { status: 'READY', record: clone(record), sourceImage: sourceImage ? clone(sourceImage) : null };
 }
 
 export function normalizeAliasName(value) {

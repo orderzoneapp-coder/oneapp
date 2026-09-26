@@ -677,6 +677,10 @@
   function createModeDraft(mode, date = businessDate(), recordedAt = new Date().toISOString()) {
     return {
       documentId: createId('SIDOC'),
+      savedWorkDocumentId: '',
+      savedWorkRevision: 0,
+      pendingSavedWorkDocumentId: '',
+      localSaveOperationId: '',
       catalogRecordId: '',
       catalogBaselinePrices: {},
       catalogPreviousPrices: {},
@@ -957,6 +961,10 @@
       ...fallback,
       ...input,
       documentId: text(input.documentId) || fallback.documentId,
+      savedWorkDocumentId: text(input.savedWorkDocumentId),
+      savedWorkRevision: Math.max(0, Number(input.savedWorkRevision) || 0),
+      pendingSavedWorkDocumentId: text(input.pendingSavedWorkDocumentId),
+      localSaveOperationId: text(input.localSaveOperationId),
       catalogRecordId: text(input.catalogRecordId),
       catalogBaselinePrices: input.catalogBaselinePrices && typeof input.catalogBaselinePrices === 'object'
         ? { ...input.catalogBaselinePrices }
