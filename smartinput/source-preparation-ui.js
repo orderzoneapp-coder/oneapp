@@ -62,7 +62,11 @@
     panel.className = 'source-preparation-mapping';
     panel.hidden = true;
     panel.setAttribute('aria-label', '원본 열 항목 매핑');
-    panel.innerHTML='<header class="source-preparation-mapping__head"><div><strong>원본 열 → 사용할 항목</strong><small id="sourcePreparationMeta">Excel·불러온 데이터의 항목을 좌측에서 확정합니다.</small></div></header><div class="source-preparation-mapping__list" id="sourcePreparationList"></div><div class="source-preparation-mapping__status" id="sourcePreparationStatus" role="status" aria-live="polite"></div><button class="source-preparation-mapping__apply" id="sourcePreparationApply" type="button" hidden><strong>매핑 변경 반영</strong><small>변경한 연결을 중앙 작업표에 반영</small></button>';
+    panel.innerHTML = `
+      <header class="source-preparation-mapping__head"><div><strong>원본 열 → 사용할 항목</strong><small id="sourcePreparationMeta">Excel·불러온 데이터의 항목을 좌측에서 확정합니다.</small></div></header>
+      <div class="source-preparation-mapping__list" id="sourcePreparationList"></div>
+      <div class="source-preparation-mapping__status" id="sourcePreparationStatus" role="status" aria-live="polite"></div>
+      <button class="source-preparation-mapping__apply" id="sourcePreparationApply" type="button"><strong>준비한 자료 적용</strong><small>매핑 완료 후 중앙 작업표에 한 번에 반영</small></button>`;
     const progress = byId('parserProgress');
     if (progress?.parentNode === parser) progress.insertAdjacentElement('afterend', panel);
     else parser.appendChild(panel);

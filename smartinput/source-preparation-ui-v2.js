@@ -79,10 +79,32 @@
   }
 
   function currentDecision(mapping) {
-    return {
-      state: mapping?.state === 'UNMAPPED' ? 'UNMAPPED' : (mapping?.targetFieldId ? 'MAPPED' : 'UNDECIDED'),
-      targetFieldId: mapping?.state === 'UNMAPPED' ? '' : String(mapping?.targetFieldId || '')
-    };
+    if (!mapping) return { state: 'UNDECIDED', targetFieldId: '', reviewed: false };
+    if (mapping.state === 'UNMAPPED') {
+      return { state: 'UNMAPPED', targetFieldId: '', reviewed: mapping.reviewed === true };
+    }
+    if (mapping.state === 'RECOMMENDED') {
+      return {
+        state: 'RECOMMENDED',
+        targetFieldId: String(mapping.targetFieldId || ''),
+        reviewed: false
+      };
+    }
+    if (mapping.state === 'MAPPED' && mapping.targetFieldId) {
+      return {
+        state: 'MAPPED',
+        targetFieldId: String(mapping.targetFieldId),
+        reviewed: mapping.reviewed === true
+      };
+    }
+    return { state: 'UNDECIDED', targetFieldId: '', reviewed: false };
+  }
+
+  function needsMappingConfirmation() {
+    if (model?.confirmationRequired === true) return true;
+    return (model?.mappings || []).some(mapping => mapping.state === 'RECOMMENDED'
+      || (mapping.state === 'MAPPED' && mapping.reviewed !== true)
+      || !['MAPPED', 'UNMAPPED', 'RECOMMENDED'].includes(mapping.state));
   }
 
   function hasStagedMappingChanges() {
@@ -91,8 +113,13 @@
     return model.headers.some((_, columnIndex) => {
       const stagedChoice = stagedDecision(columnIndex);
       const current = currentDecision(byColumn.get(columnIndex));
-      if (stagedChoice.state === 'UNDECIDED' || current.state === 'UNDECIDED') {
-        return stagedChoice.state !== current.state || stagedChoice.targetFieldId !== current.targetFieldId;
+      if (current.state === 'RECOMMENDED') {
+        // Accepting the recommendation as MAPPED/reviewed is always a confirm change,
+        // even when the staged targetFieldId is unchanged.
+        return stagedChoice.state !== 'RECOMMENDED';
+      }
+      if (current.state === 'MAPPED' && current.reviewed !== true) {
+        return stagedChoice.state !== 'UNDECIDED';
       }
       return stagedChoice.state !== current.state || stagedChoice.targetFieldId !== current.targetFieldId;
     });
@@ -103,8 +130,16 @@
     staged = new Map();
     (model.headers || []).forEach((_, index) => {
       const mapping = current.get(index);
-      staged.set(index, mapping?.state === 'UNMAPPED' ? '__UNMAPPED__' : mapping?.targetFieldId || '');
+      if (mapping?.state === 'UNMAPPED') staged.set(index, '__UNMAPPED__');
+      else staged.set(index, mapping?.targetFieldId || '');
     });
+  }
+
+  function rowDisplayState(mapping, value) {
+    if (value === '__UNMAPPED__') return 'UNMAPPED';
+    if (!value) return 'UNDECIDED';
+    if (mapping?.state === 'RECOMMENDED' && String(mapping.targetFieldId || '') === value) return 'RECOMMENDED';
+    return 'MAPPED';
   }
 
   function refresh() {
@@ -127,7 +162,8 @@
       model.headers.forEach((_, index) => {
         if (staged.has(index)) return;
         const mapping = current.get(index);
-        staged.set(index, mapping?.state === 'UNMAPPED' ? '__UNMAPPED__' : mapping?.targetFieldId || '');
+        if (mapping?.state === 'UNMAPPED') staged.set(index, '__UNMAPPED__');
+        else staged.set(index, mapping?.targetFieldId || '');
       });
     }
     panel.hidden = false;
@@ -136,8 +172,10 @@
     byId('sourcePreparationList').innerHTML = model.headers.map((header, column) => {
       const mapping = current.get(column);
       const value = staged.get(column) || '';
-      const state = value === '__UNMAPPED__' ? 'UNMAPPED' : value ? 'MAPPED' : 'UNDECIDED';
-      const detail = mapping?.informationGroup || (model.targets.find(target => target.id === value)?.scope === 'header' ? '전표정보' : '입력·참조정보');
+      const state = rowDisplayState(mapping, value);
+      const detail = state === 'RECOMMENDED'
+        ? '추천 · 확정 필요'
+        : (mapping?.informationGroup || (model.targets.find(target => target.id === value)?.scope === 'header' ? '전표정보' : '입력·참조정보'));
       const options = '<option value=""' + (!value ? ' selected' : '') + '>항목 선택</option>'
         + '<option value="__UNMAPPED__"' + (value === '__UNMAPPED__' ? ' selected' : '') + '>사용 안 함</option>'
         + model.targets.map(target => '<option value="' + esc(target.id) + '"' + (target.id === value ? ' selected' : '') + '>' + esc(target.label) + '</option>').join('');
@@ -157,10 +195,10 @@
     const projections = mapped.map(id => model.targets.find(target => target.id === id)?.projectionFieldId || id);
     const duplicate = new Set(projections).size !== projections.length;
     const changed = hasStagedMappingChanges();
+    const confirmationNeeded = needsMappingConfirmation();
     const templateApplied = model?.sessionStatus === 'TEMPLATE_APPLIED';
-    const newTemplate = model?.sessionStatus === 'NEW_TEMPLATE';
-    const autoComplete = !changed && !missing && !duplicate && values.length
-      && (templateApplied || Boolean(model?.autoProjected));
+    const actionable = changed || confirmationNeeded;
+    const autoComplete = templateApplied && !actionable && !missing && !duplicate && values.length;
     const title = button.querySelector('strong');
     const hint = button.querySelector('small');
 
@@ -172,26 +210,30 @@
     }
 
     button.hidden = false;
-    if (newTemplate || !templateApplied) {
+    if (!templateApplied || confirmationNeeded) {
       if (title) title.textContent = '매핑 확정 반영';
       if (hint) hint.textContent = '확정한 연결을 중앙 작업표에 반영';
     } else {
       if (title) title.textContent = '매핑 변경 반영';
       if (hint) hint.textContent = '변경한 연결을 중앙 작업표에 반영';
     }
+    const recommendedCount = Number(model?.mappingSummary?.recommended || 0);
     status.textContent = message || (duplicate
       ? '같은 사용할 항목이 중복 지정되었습니다.'
       : (missing
         ? `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 확인 필요 ${missing}`
-        : (changed
-          ? `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 변경 ${values.length}열 확인`
-          : `매핑 ${mapped.length} · 사용 안 함 ${excluded} · ${values.length}열 확인 완료`)));
-    button.disabled = applying || Boolean(model?.busy) || !values.length || duplicate || missing > 0 || !changed;
+        : (confirmationNeeded
+          ? `추천 ${recommendedCount || mapped.length} · 사용 안 함 ${excluded} · 확정 필요`
+          : (changed
+            ? `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 변경 ${values.length}열 확인`
+            : `매핑 ${mapped.length} · 사용 안 함 ${excluded} · ${values.length}열 확인 완료`))));
+    button.disabled = applying || Boolean(model?.busy) || !values.length || duplicate || missing > 0 || !actionable;
   }
 
   function applyStaged() {
     if (applying || !model) return;
-    if (!hasStagedMappingChanges()) {
+    const confirmationNeeded = needsMappingConfirmation();
+    if (!hasStagedMappingChanges() && !confirmationNeeded) {
       updateStatus('현재 매핑이 이미 반영되어 있습니다.');
       return;
     }
@@ -206,7 +248,9 @@
       });
       const result = window.SMARTINPUT_SOURCE_PREPARATION.apply(modelKey, decisions);
       if (!result?.changed) message = '현재 매핑이 이미 반영되어 있습니다.';
-      else message = '매핑 변경 반영 완료';
+      else message = confirmationNeeded || model.sessionStatus !== 'TEMPLATE_APPLIED'
+        ? '매핑 확정 반영 완료'
+        : '매핑 변경 반영 완료';
     } catch (error) {
       message = '반영 중단 · ' + (error.message || '매핑을 반영하지 못했습니다.');
     } finally {

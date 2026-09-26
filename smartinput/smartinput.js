@@ -2170,8 +2170,12 @@ function sourcePreparationSnapshot() {
   const selected=new Set(session.mappings.map(mapping=>mapping.targetFieldId));
   const targets=inputMappingDefinitions().filter(target=>selected.has(target.id)
     || (target.pickerVisible !== false && !target.registryField));
-  const mappedCount=session.mappings.filter(mapping=>mapping.state!=='UNMAPPED' && mapping.targetFieldId).length;
-  const unmappedCount=session.mappings.filter(mapping=>mapping.state==='UNMAPPED' || !mapping.targetFieldId).length;
+  const mappedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.MAPPED && mapping.targetFieldId && mapping.reviewed===true).length;
+  const recommendedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.RECOMMENDED).length;
+  const unmappedCount=session.mappings.filter(mapping=>mapping.state===MAPPING_DECISION.UNMAPPED).length;
+  const confirmationRequired=session.mappings.some(mapping=>mapping.state===MAPPING_DECISION.RECOMMENDED
+    || (mapping.state===MAPPING_DECISION.MAPPED && mapping.reviewed!==true)
+    || ![MAPPING_DECISION.MAPPED, MAPPING_DECISION.UNMAPPED, MAPPING_DECISION.RECOMMENDED].includes(mapping.state));
   return {
     key: [state.draft.activeMode,current.documentId,session.sessionId].join(':'),
     fileName: session.fileName, templateName: session.templateName,
@@ -2185,10 +2189,12 @@ function sourcePreparationSnapshot() {
     builtinPresetId: session.builtinPresetId || '',
     mappingSummary: {
       mapped: mappedCount,
+      recommended: recommendedCount,
       unmapped: unmappedCount,
       total: session.mappings.length
     },
-    autoProjected: Boolean(session.sessionId)
+    confirmationRequired,
+    autoProjected: session.status === MAPPING_SESSION_STATUS.TEMPLATE_APPLIED && !confirmationRequired
   };
 }
 

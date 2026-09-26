@@ -45,9 +45,24 @@ window.__sourcePrepTest={
   rows:()=>modeDraft().rows.filter(row=>String(row.itemCode||row.itemName||'').trim()),
   documentId:()=>modeDraft().documentId,
   rowFingerprint:()=>JSON.stringify(modeDraft().rows),
-  upload:async(base64)=>{
+  validateTemplate:()=>validateTemplateDraft(inputMappingSession(),inputMappingDefinitions()),
+  upload:async(base64,fileName='견적서현황.xlsx')=>{
     const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
-    await handleFile(new File([bytes],'견적서현황.xlsx'));
+    await handleFile(new File([bytes],fileName));
+    return true;
+  },
+  uploadCsv:async(text,fileName='신규양식.csv')=>{
+    // UTF-8 BOM so XLSX does not misread Korean headers as Latin-1.
+    const payload='\uFEFF'+String(text||'');
+    await handleFile(new File([payload],fileName,{type:'text/csv;charset=utf-8'}));
+    return true;
+  },
+  uploadMatrix:async(matrix,fileName='신규양식.xlsx')=>{
+    const xlsxRuntime=window.XLSX || await ensureXlsx(null);
+    const workbook=xlsxRuntime.utils.book_new();
+    xlsxRuntime.utils.book_append_sheet(workbook,xlsxRuntime.utils.aoa_to_sheet(matrix),'Sheet1');
+    const bytes=xlsxRuntime.write(workbook,{type:'array',bookType:'xlsx'});
+    await handleFile(new File([bytes],fileName,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
     return true;
   }
 };`);
@@ -176,6 +191,86 @@ try {
   assert.deepEqual(noop.result, { applied: true, changed: false });
   assert.equal(noop.unchanged, true);
   assert.equal(noop.doc, afterChange.doc);
+
+  // NEW_TEMPLATE + RECOMMENDED must require explicit confirmation, not look like TEMPLATE_APPLIED.
+  await evaluate(client, `document.querySelector('.mode-tab[data-mode="order"]').click()`);
+  await waitFor(() => evaluate(client, 'window.__sourcePrepTest.mode()==="order" && !window.__sourcePrepTest.busy()'), 'order mode', 60_000);
+  const newTemplateMatrix = [['품목코드','품목명','수량'],['N001','신규사과',2],['N002','신규배',0]];
+  await evaluate(client, `window.__sourcePrepTest.uploadMatrix(${JSON.stringify(newTemplateMatrix)},'신규양식-추천.xlsx')`);
+  await waitFor(() => evaluate(client, `(()=>{const snap=window.__sourcePrepTest.snapshot();return snap?.sessionStatus==='NEW_TEMPLATE' && snap.mappings?.length>=3 && snap.mappings.every(m=>m.state==='RECOMMENDED');})()`), 'NEW_TEMPLATE all RECOMMENDED', 60_000);
+
+  const recommendedUi = await evaluate(client, `(()=>{
+    const snap=window.__sourcePrepTest.snapshot();
+    const apply=document.querySelector('#sourcePreparationApply');
+    return {
+      sessionStatus:snap.sessionStatus,
+      autoProjected:snap.autoProjected,
+      confirmationRequired:snap.confirmationRequired,
+      recommended:snap.mappingSummary.recommended,
+      mapped:snap.mappingSummary.mapped,
+      states:snap.mappings.map(m=>m.state),
+      applyHidden:apply?.hidden===true,
+      applyDisabled:apply?.disabled===true,
+      applyTitle:apply?.querySelector('strong')?.textContent||'',
+      status:document.querySelector('#sourcePreparationStatus')?.textContent||'',
+      rowCount:window.__sourcePrepTest.rows().length,
+      validation:window.__sourcePrepTest.validateTemplate()
+    };
+  })()`);
+  assert.equal(recommendedUi.sessionStatus, 'NEW_TEMPLATE');
+  assert.equal(recommendedUi.autoProjected, false, 'NEW_TEMPLATE must not claim autoProjected');
+  assert.equal(recommendedUi.confirmationRequired, true);
+  assert.equal(recommendedUi.recommended, 3);
+  assert.equal(recommendedUi.mapped, 0);
+  assert.deepEqual(recommendedUi.states, ['RECOMMENDED', 'RECOMMENDED', 'RECOMMENDED']);
+  assert.equal(recommendedUi.applyHidden, false, 'RECOMMENDED must show 매핑 확정 반영');
+  assert.equal(recommendedUi.applyDisabled, false);
+  assert.equal(recommendedUi.applyTitle, '매핑 확정 반영');
+  assert.match(recommendedUi.status, /확정 필요/);
+  assert.equal(recommendedUi.validation.valid, false);
+  assert.equal(recommendedUi.validation.issues.some(issue => issue.code === 'RECOMMENDATION_APPROVAL_REQUIRED'), true);
+  assert.equal(recommendedUi.rowCount >= 2, true, 'central projection rows must already exist');
+
+  await evaluate(client, `(()=>{const select=document.querySelectorAll('#sourcePreparationList select')[2];select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#sourcePreparationApply')?.disabled===true`), 'UNDECIDED disables confirm');
+  await evaluate(client, `(()=>{const snap=window.__sourcePrepTest.snapshot();const select=document.querySelectorAll('#sourcePreparationList select')[2];select.value=snap.mappings[2].targetFieldId;select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await waitFor(() => evaluate(client, `document.querySelector('#sourcePreparationApply')?.disabled===false && document.querySelector('#sourcePreparationApply strong')?.textContent==='매핑 확정 반영'`), 'restored RECOMMENDED re-enables confirm');
+
+  const beforeConfirm = await evaluate(client, `({rows:window.__sourcePrepTest.rowFingerprint(),doc:window.__sourcePrepTest.documentId()})`);
+  await evaluate(client, `document.querySelector('#sourcePreparationApply').click()`);
+  await waitFor(() => evaluate(client, `(()=>{const snap=window.__sourcePrepTest.snapshot();return snap.mappings.every(m=>m.state==='MAPPED'&&m.reviewed===true) && (document.querySelector('#sourcePreparationStatus')?.textContent||'').includes('매핑 확정 반영 완료');})()`), 'confirm recommendations');
+
+  const afterConfirm = await evaluate(client, `(()=>{
+    const snap=window.__sourcePrepTest.snapshot();
+    return {
+      states:snap.mappings.map(m=>m.state),
+      reviewed:snap.mappings.map(m=>m.reviewed===true),
+      confirmationRequired:snap.confirmationRequired,
+      autoProjected:snap.autoProjected,
+      mapped:snap.mappingSummary.mapped,
+      recommended:snap.mappingSummary.recommended,
+      validation:window.__sourcePrepTest.validateTemplate(),
+      rows:window.__sourcePrepTest.rowFingerprint(),
+      doc:window.__sourcePrepTest.documentId(),
+      applyTitle:document.querySelector('#sourcePreparationApply strong')?.textContent||'',
+      templateAppliedHidden:false
+    };
+  })()`);
+  assert.deepEqual(afterConfirm.states, ['MAPPED', 'MAPPED', 'MAPPED']);
+  assert.deepEqual(afterConfirm.reviewed, [true, true, true]);
+  assert.equal(afterConfirm.confirmationRequired, false);
+  assert.equal(afterConfirm.autoProjected, false, 'confirmed NEW_TEMPLATE is still not TEMPLATE_APPLIED auto-complete');
+  assert.equal(afterConfirm.mapped, 3);
+  assert.equal(afterConfirm.recommended, 0);
+  assert.equal(afterConfirm.validation.valid, true, 'template validation must pass after confirmation');
+  assert.equal(afterConfirm.rows, beforeConfirm.rows, 'central projection must remain after confirmation');
+  assert.equal(afterConfirm.doc, beforeConfirm.doc);
+
+  // TEMPLATE_APPLIED path must still hide apply when unchanged.
+  await evaluate(client, `document.querySelector('.mode-tab[data-mode="estimate"]').click()`);
+  await waitFor(() => evaluate(client, 'window.__sourcePrepTest.mode()==="estimate" && !window.__sourcePrepTest.busy()'), 'estimate mode again', 60_000);
+  await evaluate(client, `window.__sourcePrepTest.upload(${JSON.stringify(readFileSync(fixture).toString('base64'))})`);
+  await waitFor(() => evaluate(client, `(()=>{const snap=window.__sourcePrepTest.snapshot();return snap?.sessionStatus==='TEMPLATE_APPLIED' && snap.autoProjected && document.querySelector('#sourcePreparationApply')?.hidden===true;})()`), 'TEMPLATE_APPLIED still hides apply', 60_000);
 
   console.log('SmartInput source preparation reliability browser PASS');
 } finally {
