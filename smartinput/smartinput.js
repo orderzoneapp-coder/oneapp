@@ -1,5 +1,5 @@
 import { createVirtualTableBody } from './virtual-table-body.js?v=0.17.0';
-import * as estimateStore from './smartinput-data-store.js?v=0.15.0';
+import * as estimateStore from './smartinput-data-store.js?v=0.18.0';
 import { createEstimateWorkspace } from './estimate-workspace.js?v=0.17.0';
 import { INDEPENDENT_ESTIMATE_SCHEMA, projectIndependentEstimateDraft, estimateIdentityFromRow,
   estimateValuesEqual, estimateUpdateFieldDefinitions, estimateTechnicalKey, DIRECT_ROW_KEY_VERSION, hashEstimatePlan } from './independent-estimate.js?v=0.2.0';
@@ -30,7 +30,7 @@ import {
   createAutosaveDocumentKey,
   createDraftSaveCoordinator,
   recoverAutosaveDocuments
-} from './smartinput-data-store.js?v=0.15.0';
+} from './smartinput-data-store.js?v=0.18.0';
 import {
   hasMeaningfulSourceValue,
   applyMappedFieldUpdates,
@@ -116,13 +116,16 @@ import {
   saveTemporaryCustomer,
   loadLatestAutosave,
   loadAutosaveJournalRecords,
+  commitSmartInputWorkDocument,
+  listSmartInputWorkDocuments,
+  loadSmartInputWorkDocument,
   commitAutosaveJournal,
   deleteAutosaveJournalRecords,
   saveLatestAutosave,
   loadInputTemplates,
   saveInputTemplates,
   saveMappingSessionV2
-} from './smartinput-data-store.js?v=0.15.0';
+} from './smartinput-data-store.js?v=0.18.0';
 import {
   REFERENCE_CACHE_SCHEMA,
   REFERENCE_DOMAIN_STATUS,
@@ -477,6 +480,8 @@ const state = {
   estimateTouchDrag: null,
   estimateSelectionQueue: Promise.resolve(),
   voucherActivity: { requestId: 0, status: 'IDLE', mode: '', sourceMode: '', date: '', rows: [], error: null, checkedAt: '' },
+  voucherContextSource: 'activity',
+  savedWorkDocuments: { requestId: 0, status: 'IDLE', companyId: '', voucherMode: '', records: [], error: null },
   purchaseCapability: { ready: false, deferred: true, code: 'ORDERQ_PURCHASE_STAGE3_CAPABILITY_DEFERRED', detail: '저장 시 확인' },
   saleCapability: { ready: false, deferred: true, code: 'ORDERQ_SALE_STAGE4_CAPABILITY_DEFERRED', detail: '저장 시 확인' },
   shoppingInspectionRequestId: 0,
@@ -592,6 +597,7 @@ function hasMeaningfulDraftContent(draft) {
     String(draft?.sourceText || '').trim()
     || Number(draft?.rows?.length || 0)
     || Number(draft?.batches?.length || 0)
+    || Number(draft?.shoppingOrderImport?.sourceRows?.length || 0)
     || String(header.customerId || header.customerName || '').trim()
     || String(header.taxCustomerId || header.taxCustomerName || '').trim()
     || String(header.warehouseId || header.warehouseName || '').trim()
@@ -1148,6 +1154,7 @@ function scheduleSave({ invalidateOperations = true, dirtyRowId = '' } = {}) {
   }
   state.draftDirty = true;
   state.draftMutationVersion += 1;
+  if (modeDraft()?.localSaveOperationId) modeDraft().localSaveOperationId = '';
   rememberAutosaveMutation(state.draft.activeMode, dirtyRowId);
   setSaveState('자동저장 중…', 'saving');
   clearTimeout(state.saveTimer);
@@ -5267,6 +5274,72 @@ function renderVoucherActivitySnapshot() {
   $('voucherContextDelivery').textContent = `READY · ${activity.source || '공식 Read Adapter'}`;
 }
 
+function savedWorkDocumentCard(record) {
+  const summary = record.summary || {};
+  const modeLabel = contract.MODES[record.voucherMode]?.label || '전표';
+  return `<article class="voucher-context-item voucher-activity-item saved-work-document-item" data-saved-work-document="${esc(record.documentId)}">
+    <div class="voucher-activity-item__content">
+      <time>${esc(voucherActivityTime(record.updatedAt))} · ${esc(modeLabel)}</time>
+      <span class="voucher-context-item__copy"><strong>${esc(record.title || '이름 없는 자료')}</strong><small>${Number(summary.rowCount || 0).toLocaleString('ko-KR')}품목 · ${Number(summary.totalAmount || 0).toLocaleString('ko-KR')}원 · v${Number(record.revision || 0)}</small></span>
+      <em class="voucher-context-item__state">${esc(record.deliverySummary || '자체 저장')}</em>
+    </div>
+    <button class="button button--quiet button--small" type="button" data-open-saved-work-document="${esc(record.documentId)}" ${state.busy ? 'disabled' : ''}>열기</button>
+  </article>`;
+}
+
+function renderSavedWorkDocuments() {
+  const saved = state.savedWorkDocuments;
+  const mode = state.draft.activeMode;
+  $('voucherContextEyebrow').textContent = 'SMARTINPUT SAVED WORK';
+  $('voucherContextTitle').textContent = `${contract.MODES[mode]?.label || '전표'} 내 자료`;
+  $('voucherActivityOpenAll').hidden = true;
+  if (saved.status === 'LOADING') {
+    $('voucherContextSummary').textContent = 'SmartInput 자체 저장 자료를 불러오는 중입니다.';
+    $('voucherContextList').innerHTML = '<div class="voucher-activity-state"><strong>내 자료 조회 중</strong><span>공식 원장 조회 없이 이 기기의 SmartInput 저장 자료만 확인합니다.</span></div>';
+    $('voucherContextDelivery').textContent = '로컬 조회 중';
+    return;
+  }
+  if (saved.status === 'ERROR') {
+    $('voucherContextSummary').textContent = '내 자료 목록을 읽지 못했습니다. 0건으로 처리하지 않았습니다.';
+    $('voucherContextList').innerHTML = `<div class="voucher-activity-state is-error"><strong>목록 조회 실패</strong><span>${esc(saved.error?.message || '다시 불러오기를 실행하세요.')}</span></div>`;
+    $('voucherContextDelivery').textContent = 'ERROR · 현재 작업 유지';
+    return;
+  }
+  if (!saved.records.length) {
+    $('voucherContextSummary').textContent = 'SmartInput 자체 저장 자료 0건';
+    $('voucherContextList').innerHTML = '<div class="voucher-activity-state"><strong>저장 자료가 없습니다.</strong><span>작성 후 “내 자료 저장”을 누르면 이 목록에서 다시 열 수 있습니다.</span></div>';
+    $('voucherContextDelivery').textContent = 'EMPTY · 로컬 자료';
+    return;
+  }
+  $('voucherContextSummary').textContent = `${saved.records.length.toLocaleString('ko-KR')}건 · SmartInput 자체 저장`;
+  $('voucherContextList').innerHTML = saved.records.map(savedWorkDocumentCard).join('');
+  $('voucherContextDelivery').textContent = `READY · 회사 ${esc(state.companyId)} · 로컬 자료`;
+}
+
+async function loadSavedWorkDocuments({ force = false } = {}) {
+  const mode = state.draft.activeMode;
+  const companyId = state.companyId;
+  const saved = state.savedWorkDocuments;
+  if (!['purchase', 'sale', 'order'].includes(mode)) return;
+  if (!force && saved.companyId === companyId && saved.voucherMode === mode && ['READY', 'EMPTY'].includes(saved.status)) {
+    renderSavedWorkDocuments();
+    return;
+  }
+  const requestId = saved.requestId + 1;
+  state.savedWorkDocuments = { ...saved, requestId, companyId, voucherMode: mode, status: 'LOADING', records: [], error: null };
+  renderSavedWorkDocuments();
+  try {
+    const records = await listSmartInputWorkDocuments({ companyId, voucherMode: mode });
+    if (requestId !== state.savedWorkDocuments.requestId || companyId !== state.companyId
+      || mode !== state.draft.activeMode || state.voucherContextSource !== 'saved') return;
+    state.savedWorkDocuments = { ...state.savedWorkDocuments, status: records.length ? 'READY' : 'EMPTY', records, error: null };
+  } catch (error) {
+    if (requestId !== state.savedWorkDocuments.requestId || companyId !== state.companyId) return;
+    state.savedWorkDocuments = { ...state.savedWorkDocuments, status: 'ERROR', records: [], error };
+  }
+  renderSavedWorkDocuments();
+}
+
 async function loadVoucherActivity({ force = false } = {}) {
   const mode = state.voucherActivity.sourceMode || state.draft.activeMode;
   const date = voucherActivityDate(state.draft.activeMode);
@@ -5287,7 +5360,7 @@ async function loadVoucherActivity({ force = false } = {}) {
   }
   if (companyId !== state.companyId || requestId !== state.voucherActivity.requestId || mode !== state.voucherActivity.sourceMode || date !== voucherActivityDate(state.draft.activeMode)) return;
   state.voucherActivity = { ...state.voucherActivity, ...snapshot, requestId };
-  renderVoucherActivitySnapshot();
+  renderVoucherContext();
 }
 
 function renderVoucherContext() {
@@ -5295,7 +5368,17 @@ function renderVoucherContext() {
   if (activity.companyId && (activity.companyId !== state.companyId || activity.date !== voucherActivityDate(state.draft.activeMode))) {
     state.voucherActivity = { ...activity, requestId: activity.requestId + 1, status: 'IDLE', rows: [], error: null, companyId: state.companyId, date: voucherActivityDate(state.draft.activeMode) };
   }
-  renderVoucherActivitySnapshot();
+  const localDocumentsAvailable = ['purchase', 'sale', 'order'].includes(state.draft.activeMode);
+  if (!localDocumentsAvailable && state.voucherContextSource === 'saved') state.voucherContextSource = 'activity';
+  const showingSavedDocuments = localDocumentsAvailable && state.voucherContextSource === 'saved';
+  $('voucherSavedDocumentsTab').hidden = !localDocumentsAvailable;
+  $('voucherActivityTab').setAttribute('aria-pressed', String(!showingSavedDocuments));
+  $('voucherSavedDocumentsTab').setAttribute('aria-pressed', String(showingSavedDocuments));
+  $('voucherActivitySourceMode').hidden = showingSavedDocuments;
+  $('voucherActivityOpenAll').hidden = showingSavedDocuments;
+  $('voucherActivityReload').textContent = showingSavedDocuments ? '목록 새로고침' : '다시 불러오기';
+  if (showingSavedDocuments) renderSavedWorkDocuments();
+  else renderVoucherActivitySnapshot();
 }
 
 function relatedPanelButtonLabel(open = false) {
@@ -5333,7 +5416,10 @@ function applyRelatedPanelState() {
 function setRelatedPanelOpen(open) {
   state.draft.ui.relatedOpen = Boolean(open);
   applyRelatedPanelState();
-  if (open && state.draft.activeMode !== 'estimate') void loadVoucherActivity();
+  if (open && state.draft.activeMode !== 'estimate') {
+    if (state.voucherContextSource === 'saved' && ['purchase', 'sale', 'order'].includes(state.draft.activeMode)) void loadSavedWorkDocuments();
+    else void loadVoucherActivity();
+  }
   scheduleSave({ invalidateOperations: false });
 }
 
@@ -6892,6 +6978,7 @@ async function completeShoppingOrderImport() {
       upload.commitResult = result;
       upload.committedAt = committedAt;
       upload.delivery = delivery;
+      if (created.length) detachSavedWorkDocument(state.draft.modes.order);
     } else if (liveUpload) {
       clearShoppingCommitEvidence(liveUpload);
     }
@@ -7100,13 +7187,12 @@ function renderDelivery() {
       ? state.draft.ui.lastDeliveries
       : (lastDelivery ? [lastDelivery] : []))
     : [];
-  $('deliveryTarget').textContent = shopping ? 'ORDER Q 실제 주문서' : (isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : (isPurchase ? '공식 구매전표 원장' : (isSale ? '공식 판매전표 원장' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`))));
+  $('deliveryTarget').textContent = shopping ? 'ORDER Q 실제 주문서' : (isOrder ? '공통 주문서 원장' : (isEstimate ? '저장 견적서' : ((isPurchase || isSale) ? 'SmartInput 자체 저장 자료' : `${contract.MODES[state.draft.activeMode].label} 전달 계약 준비 중`)));
   $('deliveryDescription').textContent = isOrder
-    ? (shopping ? '실제 ORDER Q 원장의 동일 주문 개수를 다시 확인한 뒤 초과 신규 후보만 저장합니다.' : 'ORDER Q vNext 저장소에 먼저 기록합니다.')
-    : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : (isPurchase
-      ? (state.purchaseCapability.ready ? '중앙 공식 구매전표로 저장합니다.' : (state.purchaseCapability.deferred ? '저장 시 중앙 배포 계약을 확인합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.'))
-      : (isSale ? (state.saleCapability.ready ? '중앙 공식 판매전표로 저장합니다.' : (state.saleCapability.deferred ? '저장 시 중앙 배포 계약을 확인합니다.' : '중앙 배포 계약 확인 후 활성화됩니다.'))
-        : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.')));
+    ? (shopping ? '내 자료 저장은 원본과 판정을 보존합니다. 명시적 전달 때 실제 ORDER Q 중복을 다시 확인합니다.' : '내 자료를 SmartInput에 저장한 뒤, 명시적 전달에서만 ORDER Q에 기록합니다.')
+    : (isEstimate ? '견적서 저장·불러오기·삭제를 관리합니다.' : ((isPurchase || isSale)
+      ? '내 자료는 SmartInput 로컬 저장소에 저장합니다. 공식 전표 생성은 별도 전달 동작입니다.'
+        : '확정된 DataOps 연결만 이후 단계에서 활성화합니다.'));
   const visibleDelivery = delivery.status === 'SAVED' ? delivery : lastDelivery;
   $('deliveryState').textContent = visibleDelivery
     ? `최근 ${visibleDelivery.orderNo || visibleDelivery.targetRecordId || '저장 완료'}${visibleDelivery.deliveredAt ? ` · ${new Date(visibleDelivery.deliveredAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
@@ -7128,19 +7214,35 @@ function renderDelivery() {
   const mappingBlocksVoucher = Boolean(inputMappingSession()) && !inputMappingTemplateReady();
   const shoppingNewCount = Number(shopping?.inspection?.summary?.newCount || 0);
   const fileInputPending = Boolean(state.activeFileInputAttemptId);
-  $('completeButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId) || Boolean(creation) || mappingBlocksVoucher
-    || Boolean(shopping && (shopping.status === 'ANALYZING' || (shopping.status === 'READY' && shoppingNewCount < 1)));
-  $('completeButton').title = shopping
-    ? (shopping.status !== 'READY' ? '실행하면 수신 앱에서 중복 여부를 확인하고 전달합니다.' : (shoppingNewCount < 1 ? '새로 저장할 주문 후보가 없습니다.' : ''))
-    : (fileInputPending
-      ? '파일 불러오기가 끝난 뒤 저장할 수 있습니다.'
-      : (state.activeCustomerRematchAttemptId
+  $('completeButton').title = fileInputPending
+    ? '파일 불러오기가 끝난 뒤 저장할 수 있습니다.'
+    : (state.activeCustomerRematchAttemptId
       ? '거래처 기준 상품 재매칭이 끝난 뒤 저장할 수 있습니다.'
-      : (mappingBlocksVoucher ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '')));
+      : (shopping
+        ? '쇼핑몰 원본과 입력자료를 SmartInput 내 자료에 저장합니다. ORDER Q 확인·전달은 별도 버튼에서 실행합니다.'
+        : (mappingBlocksVoucher && !['purchase', 'sale'].includes(state.draft.activeMode) ? '입력 양식을 확인하고 저장한 뒤 전표를 저장할 수 있습니다.' : '')));
   $('completeButton').hidden = false;
+  const savesLocally = isPurchase || isSale || isOrder;
+  $('completeButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId) || Boolean(creation)
+    || (mappingBlocksVoucher && !savesLocally)
+    || Boolean(shopping && shopping.status === 'ANALYZING');
   $('completeButton').textContent = shopping
-    ? (shopping.status === 'READY' ? `신규 주문 전달 ${shoppingNewCount}건` : '주문 확인·전달')
-    : (isEstimate ? '견적서 저장' : 'NEXUS 전달');
+    ? '내 자료 저장'
+    : (isEstimate ? '견적서 저장' : (savesLocally ? '내 자료 저장' : 'NEXUS 전달'));
+  $('officialDeliveryButton').hidden = !savesLocally;
+  const officialRowsReady = shopping
+    ? shopping.status !== 'ANALYZING' && !(shopping.status === 'READY' && shoppingNewCount < 1)
+    : (modeDraft().rows || []).some(rowHasMeaningfulInput);
+  $('officialDeliveryButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId)
+    || (mappingBlocksVoucher && !shopping) || !officialRowsReady;
+  $('officialDeliveryButton').textContent = isPurchase ? '공식 구매전표로 전달'
+    : (isSale ? '공식 판매전표로 전달' : (shopping ? 'ORDER Q 신규 주문 전달' : 'ORDER Q로 전달'));
+  $('officialDeliveryButton').title = shopping
+    ? (shopping.status !== 'READY' ? '실행하면 ORDER Q에서 중복을 확인한 뒤 신규 주문만 전달합니다.'
+      : (shoppingNewCount < 1 ? '새로 전달할 주문 후보가 없습니다.' : 'ORDER Q 실제 원장을 다시 확인하고 신규 주문을 전달합니다.'))
+    : 'SmartInput 내 자료 저장과 별도로 공식 전표를 생성합니다.';
+  $('saveWorkDocumentAsButton').hidden = !savesLocally || !(modeDraft().savedWorkDocumentId || modeDraft().pendingSavedWorkDocumentId);
+  $('saveWorkDocumentAsButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId);
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
   $('saveEstimateAsButton').hidden = !isEstimate;
   $('estimateUpdateMenu').hidden = !isEstimate;
@@ -7239,6 +7341,8 @@ function setMode(mode) {
   state.gridPasteUndo = null;
   resetInputListSearchForContextChange();
   state.draft.activeMode = mode;
+  state.voucherContextSource = 'activity';
+  state.savedWorkDocuments = { ...state.savedWorkDocuments, status: 'IDLE', records: [], error: null };
   state.voucherActivity = { ...state.voucherActivity, status: 'IDLE', mode: '', sourceMode: mode === 'estimate' ? 'order' : mode, date: '', rows: [], error: null };
   state.inputTemplates = [];
   state.inputTemplatesStatus = 'LOADING';
@@ -8079,6 +8183,7 @@ async function handleFile(file) {
         });
         if (!upload) throw new Error('쇼핑몰 주문내역 17열 원본을 구성하지 못했습니다.');
         const fresh = contract.createDraft({ activeMode: 'order' }).modes.order;
+        detachSavedWorkDocument(current);
         current.header = {
           ...cloneGridValue(fresh.header),
           orderDate: upload.selectedDeliveryDate,
@@ -8125,6 +8230,7 @@ async function handleFile(file) {
       captureGridPasteUndo();
       const current = state.draft.modes[modeId];
       const fresh = contract.createDraft({ activeMode: modeId }).modes[modeId];
+      detachSavedWorkDocument(current);
       current.header = cloneGridValue(fresh.header);
       current.sourceText = selected.matrix.map(row => row.map(cell => String(cell ?? '')).join('\t')).join('\n');
       current.activeMethod = 'excel';
@@ -10080,6 +10186,35 @@ async function shareCurrentVoucher() {
   }
 }
 
+async function exportShoppingOrderEvidenceExcel() {
+  const upload = shoppingOrderImport();
+  if (!upload || state.activeFileInputAttemptId) {
+    toast('쇼핑몰 주문 원본을 준비한 뒤 보고서를 생성하세요.', 'warn');
+    return;
+  }
+  const sourceMatrix = Array.isArray(upload.sourceMatrix) && upload.sourceMatrix.length
+    ? upload.sourceMatrix.map(row => [...row])
+    : [Array.isArray(upload.headers) ? [...upload.headers] : [], ...(upload.sourceRows || []).map(row => [...(row.sourceCells || [])])];
+  if (sourceMatrix.length < 2) return toast('Excel로 출력할 쇼핑몰 주문 원본이 없습니다.', 'error');
+  const operationToken = beginOptionalOperation(OPTIONAL_OPERATION_FEATURE.VOUCHER_EXPORT, { assetVersion: 'xlsx-js-style-1.2.0' });
+  try {
+    await ensureXlsx(operationToken);
+    if (!optionalOperationIsCurrent(operationToken) || shoppingOrderImport() !== upload) {
+      return toast('쇼핑몰 주문 자료가 변경되어 이전 보고서 생성을 중단했습니다. 다시 실행하세요.', 'warn');
+    }
+    const workbook = window.XLSX.utils.book_new();
+    const sheet = window.XLSX.utils.aoa_to_sheet(sourceMatrix);
+    window.XLSX.utils.book_append_sheet(workbook, sheet, '쇼핑몰 원본');
+    const dateStamp = upload.selectedDeliveryDate || new Date().toLocaleDateString('sv-SE');
+    const sourceName = String(upload.fileName || '쇼핑몰주문').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').trim() || '쇼핑몰주문';
+    window.XLSX.writeFile(workbook, `스마트입력_쇼핑몰원본_${sourceName}_${dateStamp}.xlsx`);
+    setAppStatus(`쇼핑몰 주문 원본 보고서 생성 완료 · ${sourceMatrix.length - 1}행`);
+    toast('쇼핑몰 주문 원본 보고서를 생성했습니다.', 'success');
+  } catch (error) {
+    toast(error.message || '쇼핑몰 주문 보고서를 생성하지 못했습니다.', 'error');
+  }
+}
+
 async function exportCurrentVoucherExcel() {
   if (state.activeFileInputAttemptId) {
     toast('파일 불러오기가 끝난 뒤 보고서를 생성하세요.', 'warn');
@@ -10087,6 +10222,7 @@ async function exportCurrentVoucherExcel() {
   }
   if (state.draft.activeMode === 'estimate') return exportEstimateExcel();
   if (state.draft.activeMode === 'purchase') return exportPurchaseSalesExcel();
+  if (state.draft.activeMode === 'order' && shoppingOrderImport()) return exportShoppingOrderEvidenceExcel();
   const rows = voucherOutputRows();
   if (!rows.length) return toast('Excel로 출력할 전표 품목이 없습니다.', 'error');
   const mode = state.draft.activeMode;
@@ -11022,6 +11158,7 @@ async function completeOrder() {
     toast('거래처 기준 상품 재매칭이 끝난 뒤 저장하세요.', 'warn');
     return;
   }
+  if (['purchase', 'sale', 'order'].includes(state.draft.activeMode)) return saveCurrentWorkDocument();
   if (shoppingOrderImport()) {
     invalidateOptionalOperations();
     return completeShoppingOrderImport();
@@ -11062,9 +11199,263 @@ async function completeOrder() {
     const assignedName = String(loadedRecord?.catalogName || '').trim();
     return assignedName ? saveEstimateDocument(assignedName) : openEstimateSaveDialog();
   }
-  if (state.draft.activeMode === 'purchase') return completePurchaseOfficial();
-  if (state.draft.activeMode === 'sale') return completeSaleOfficial();
   return completeOrderLegacy();
+}
+
+function localWorkDocumentTitle(mode, current) {
+  const header = current?.header || {};
+  const date = header.voucherDate || header.orderDate || header.deliveryDate || '일자 미지정';
+  const customer = header.customerName || header.customerCode || '거래처 미지정';
+  const uploadName = mode === 'order' ? String(current?.shoppingOrderImport?.fileName || '').trim() : '';
+  if (uploadName) return `${date} · ${uploadName} · 쇼핑몰 주문`;
+  return `${date} · ${customer} · ${contract.MODES[mode]?.label || '전표'}`;
+}
+
+function localWorkDocumentSummary(current) {
+  const rows = (current?.rows || []).filter(rowHasMeaningfulInput);
+  const totals = contract.summarizeRows(rows);
+  const shoppingRows = current?.mode === 'order' ? Number(current?.shoppingOrderImport?.sourceRows?.length || 0) : 0;
+  return {
+    rowCount: shoppingRows || rows.length,
+    totalAmount: Number(totals.amount || 0),
+    businessDate: String(current?.header?.voucherDate || current?.header?.orderDate || current?.header?.deliveryDate || ''),
+    customerName: String(current?.header?.customerName || ''),
+    warehouseName: String(current?.header?.warehouseName || '')
+  };
+}
+
+function detachSavedWorkDocument(current) {
+  current.savedWorkDocumentId = '';
+  current.savedWorkRevision = 0;
+  current.pendingSavedWorkDocumentId = '';
+  current.localSaveOperationId = '';
+}
+
+async function currentWorkSourceImage(mode, current) {
+  const documentId = current?.documentId;
+  if (!documentId) return null;
+  await state.sourceImageWriteQueues.get(documentId)?.catch(() => {});
+  if (state.clearedSourceImageDocumentIds.has(documentId)) return null;
+  const memory = state.sourceImages[mode];
+  if (memory?.dataUrl && (!memory.documentId || memory.documentId === documentId)) return memory;
+  const cached = state.sourceImageRecords.get(documentId);
+  if (cached?.dataUrl) return cached;
+  const loaded = await estimateStore.loadSourceImageForDocument({ companyId: state.companyId, documentId });
+  if (loaded.status === 'ERROR') throw loaded.error || new Error('현재 원본 사진을 확인하지 못했습니다. 자료를 전환하지 않았습니다.');
+  return loaded.status === 'READY' && loaded.value?.dataUrl ? loaded.value : null;
+}
+
+function hasMeaningfulSavedWorkContent(current, sourceImage) {
+  const header = current?.header || {};
+  const seed = current?.savedWorkSeedHeader || {};
+  const workHeader = { ...header };
+  for (const field of ['warehouseId', 'warehouseCode', 'warehouseName']) {
+    if (Object.hasOwn(seed, field) && workHeader[field] === seed[field]) workHeader[field] = '';
+  }
+  const initialDate = contract.businessDate(header.recordedAt);
+  return hasMeaningfulDraftContent({ ...current, header: workHeader })
+    || Boolean(sourceImage?.dataUrl)
+    || Boolean(header.manualDeliveryOverride || (header.deliveryDate && !header.deliveryPolicySnapshot)
+      || header.assigneeId || header.assigneeName
+      || header.rawOrdererName || header.customerCode || header.taxCustomerId || header.taxCustomerName
+      || (header.transactionType && header.transactionType !== (seed.transactionType || '기타')))
+    || Boolean((header.orderDate && header.orderDate !== initialDate)
+      || (header.voucherDate && header.voucherDate !== initialDate))
+    || Object.values(header.customValues || {}).some(value => String(value ?? '').trim());
+}
+
+async function saveCurrentWorkDocument({ quiet = false, asNew = false } = {}) {
+  const mode = state.draft.activeMode;
+  if (!['purchase', 'sale', 'order'].includes(mode) || state.busy) return false;
+  if (state.activeFileInputAttemptId || state.activeCustomerRematchAttemptId) {
+    if (!quiet) toast('진행 중인 입력 작업이 끝난 뒤 내 자료를 저장하세요.', 'warn');
+    return false;
+  }
+  const current = modeDraft();
+  state.busy = true;
+  renderDelivery();
+  renderReferenceControls();
+  setAppStatus('SmartInput 자체 자료를 저장하고 있습니다. 공식 전표 원장에는 쓰지 않습니다.');
+  try {
+    const sourceImage = await currentWorkSourceImage(mode, current);
+    pruneEmptyWorkRows(current);
+    if (!hasMeaningfulSavedWorkContent(current, sourceImage)) {
+      if (!quiet) toast('내 자료로 저장할 입력 내용이 없습니다.', 'warn');
+      return false;
+    }
+    if (asNew) detachSavedWorkDocument(current);
+    const documentId = current.savedWorkDocumentId || current.pendingSavedWorkDocumentId || createRecordId('SIWORK');
+    const expectedRevision = current.savedWorkDocumentId ? Number(current.savedWorkRevision || 0) : 0;
+    current.pendingSavedWorkDocumentId = documentId;
+    current.localSaveOperationId ||= createRecordId('SIWORKOP');
+    const operationId = current.localSaveOperationId;
+    const nextRevision = expectedRevision + 1;
+    const payload = cloneGridValue(current);
+    payload.savedWorkDocumentId = documentId;
+    payload.savedWorkRevision = nextRevision;
+    payload.pendingSavedWorkDocumentId = '';
+    payload.localSaveOperationId = '';
+    const result = await commitSmartInputWorkDocument({
+      companyId: state.companyId,
+      voucherMode: mode,
+      documentId,
+      expectedRevision,
+      operationId,
+      title: localWorkDocumentTitle(mode, current),
+      actorId: resolveSmartInputActor(),
+      summary: localWorkDocumentSummary(current),
+      payload,
+      sourceImage,
+      updatedAt: new Date().toISOString()
+    });
+    current.savedWorkDocumentId = result.record.documentId;
+    current.savedWorkRevision = result.record.revision;
+    current.pendingSavedWorkDocumentId = '';
+    current.localSaveOperationId = '';
+    state.savedWorkDocuments = { ...state.savedWorkDocuments, status: 'IDLE' };
+    saveDraftNow();
+    setAppStatus(`${contract.MODES[mode].label} 내 자료 저장 완료 · v${result.record.revision}`);
+    if (!quiet) toast('SmartInput 내 자료에 저장했습니다. 공식 전표는 생성되지 않았습니다.', 'success');
+    if (state.voucherContextSource === 'saved') void loadSavedWorkDocuments({ force: true });
+    return result.record;
+  } catch (error) {
+    saveDraftNow();
+    setAppStatus(`내 자료 저장 실패 · 현재 입력과 원본은 유지됩니다. ${error.code || error.message}`, 'error');
+    if (!quiet) toast(error.message || 'SmartInput 내 자료를 저장하지 못했습니다.', 'error');
+    return false;
+  } finally {
+    state.busy = false;
+    renderDelivery();
+    renderReferenceControls();
+  }
+}
+
+async function flushWorkspaceBeforeSavedDocumentOpen() {
+  document.activeElement?.blur?.();
+  clearTimeout(state.saveTimer);
+  clearTimeout(state.compatibilitySaveTimer);
+  await autosaveWriteQueue;
+  while (state.sourceImageWriteQueues.size) await Promise.all([...state.sourceImageWriteQueues.values()]);
+  Object.keys(state.draft.modes || {}).forEach(mode => queueDocumentCheckpoint(mode, { trackDirty: false, bypassLoading: true }));
+  await draftSaveCoordinator.flushWorkspace();
+  if (!writeCompatibilityDraft({ queueDatabaseCopy: false })) throw new Error('현재 작성 중인 작업을 자동저장하지 못했습니다. 자료를 열지 않았습니다.');
+  const expected = JSON.parse(JSON.stringify(state.draft));
+  await queueAutosaveSnapshot(expected);
+  const stored = await loadLatestAutosave();
+  if (!stored?.draft || JSON.stringify(stored.draft) !== JSON.stringify(expected)) {
+    throw new Error('현재 작업의 자동저장 검산이 일치하지 않아 선택 자료를 열지 않았습니다.');
+  }
+  state.draftDirty = false;
+}
+
+function savedWorkContentFingerprint(draft) {
+  const content = cloneGridValue(draft);
+  delete content.updatedAt;
+  delete content.voucherGroups;
+  delete content.savedWorkDocumentId;
+  delete content.savedWorkRevision;
+  delete content.pendingSavedWorkDocumentId;
+  delete content.localSaveOperationId;
+  const canonical = value => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+    if (value && typeof value === 'object') {
+      return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+  };
+  return canonical(content);
+}
+
+async function currentWorkNeedsExplicitSave(mode, current, targetRecord) {
+  const sourceImage = await currentWorkSourceImage(mode, current);
+  if (!current.savedWorkDocumentId) {
+    return hasMeaningfulSavedWorkContent(current, sourceImage);
+  }
+  const saved = current.savedWorkDocumentId === targetRecord.documentId
+    ? await loadSmartInputWorkDocument({ companyId: state.companyId, documentId: targetRecord.documentId })
+    : await loadSmartInputWorkDocument({ companyId: state.companyId, documentId: current.savedWorkDocumentId });
+  if (saved.status !== 'READY' || Number(saved.record.revision || 0) !== Number(current.savedWorkRevision || 0)) return true;
+  return savedWorkContentFingerprint(current) !== savedWorkContentFingerprint(saved.record.payload)
+    || String(sourceImage?.dataUrl || '') !== String(saved.sourceImage?.dataUrl || '');
+}
+
+async function reopenSavedWorkDocument(documentId) {
+  if (state.busy) return;
+  state.busy = true;
+  renderDelivery();
+  try {
+    const loaded = await loadSmartInputWorkDocument({ companyId: state.companyId, documentId });
+    if (loaded.status !== 'READY') throw new Error(loaded.status === 'COMPANY_MISMATCH'
+      ? '다른 회사의 자료는 열 수 없습니다.'
+      : '저장 자료가 없거나 형식이 올바르지 않습니다.');
+    const record = loaded.record;
+    if (!['purchase', 'sale', 'order'].includes(record.voucherMode)) throw new Error('현재 자료 종류는 이 목록에서 열 수 없습니다.');
+    const current = state.draft.modes[record.voucherMode];
+    document.activeElement?.blur?.();
+    if (await currentWorkNeedsExplicitSave(record.voucherMode, current, record)) {
+      throw new Error('현재 작성 중인 내용이 내 자료에 저장되지 않았습니다. “내 자료 저장”을 누른 뒤 선택한 자료를 다시 여세요.');
+    }
+    await flushWorkspaceBeforeSavedDocumentOpen();
+    const restored = contract.normalizeModeDraft(record.voucherMode, record.payload);
+    if (record.voucherMode === 'order') resetResumedShoppingInspection({ modes: { order: restored } });
+    restored.savedWorkDocumentId = record.documentId;
+    restored.savedWorkRevision = Number(record.revision || 0);
+    restored.pendingSavedWorkDocumentId = '';
+    restored.localSaveOperationId = '';
+    const restoredImage = loaded.sourceImage ? { ...loaded.sourceImage, documentId: restored.documentId } : null;
+    const imageIntent = beginSourceImageMutationIntent(restored.documentId,
+      restoredImage ? 'save' : 'delete', { mode: record.voucherMode, sourceImageId: restoredImage?.sourceImageId || '' });
+    try {
+      await queueSourceImageMutation(restored.documentId,
+        () => restoredImage ? saveSourceImage(restoredImage) : deleteSourceImage(restored.documentId));
+      if (restoredImage) state.sourceImageRecords.set(restored.documentId, restoredImage);
+      else state.sourceImageRecords.delete(restored.documentId);
+      state.clearedSourceImageDocumentIds.delete(restored.documentId);
+      setPendingSourceImageDelete(restored.documentId, false);
+    } finally {
+      finishSourceImageMutationIntent(restored.documentId, imageIntent);
+    }
+    state.draft.modes[record.voucherMode] = restored;
+    state.draft.activeMode = record.voucherMode;
+    state.voucherContextSource = 'saved';
+    state.voucherActivity = { ...state.voucherActivity, status: 'IDLE', rows: [], error: null };
+    state.selectedRowIds.clear();
+    state.gridPasteUndo = null;
+    resetInputListSearchForContextChange();
+    restoreSourceImageForMode(record.voucherMode);
+    saveDraftNow();
+    renderMode();
+    setAppStatus(`${record.title || 'SmartInput 자료'} 열기 완료 · 같은 ID로 수정 저장할 수 있습니다.`);
+    toast('SmartInput 저장 자료를 열었습니다.', 'success');
+  } catch (error) {
+    setAppStatus(error.message || '저장 자료를 열지 못했습니다.', 'error');
+    toast(error.message || '저장 자료를 열지 못했습니다.', 'error');
+  } finally {
+    state.busy = false;
+    renderDelivery();
+    renderReferenceControls();
+  }
+}
+
+async function deliverCurrentOfficialVoucher() {
+  const mode = state.draft.activeMode;
+  if (!['purchase', 'sale', 'order'].includes(mode) || state.busy) return;
+  const shopping = mode === 'order' ? shoppingOrderImport() : null;
+  if (state.activeFileInputAttemptId || state.activeCustomerRematchAttemptId
+    || (!shopping && inputMappingSession() && !inputMappingTemplateReady())
+    || (!shopping && !(modeDraft().rows || []).some(rowHasMeaningfulInput))) {
+    toast('입력 양식과 필수 항목을 확인하고 진행 중인 입력 작업이 끝난 뒤 공식 전표로 전달하세요.', 'warn');
+    return;
+  }
+  const saved = await saveCurrentWorkDocument({ quiet: true });
+  if (!saved || mode !== state.draft.activeMode) return;
+  if (mode === 'order') {
+    invalidateOptionalOperations();
+    if (shoppingOrderImport()) return completeShoppingOrderImport();
+    return completeOrderLegacy();
+  }
+  if (mode === 'purchase') return completePurchaseOfficial();
+  return completeSaleOfficial();
 }
 
 function scheduleOfficialVoucherSync(afterLocalMutation = false) {
@@ -11213,6 +11604,7 @@ async function completeSaleOfficial() {
       current.rows = current.rows.filter(row => failedKeys.has(groupVoucherRows('sale', [row], current.header)[0]?.voucherGroupKey));
       current.voucherGroups = failed.map(row => row.group);
       current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'official-sale-voucher', targetRecordId: '', deliveredAt: '' };
+      if (succeeded.length) detachSavedWorkDocument(current);
       saveDraftNow(); renderMode();
       setAppStatus(`판매 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
       return toast(failed[0].error?.message || '판매전표 저장 실패', 'error');
@@ -11220,6 +11612,7 @@ async function completeSaleOfficial() {
     current.rows = []; current.voucherGroups = [];
     clearCustomerAfterSave(current.header);
     current.delivery = { status: 'SAVED', targetId: 'official-sale-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
+    detachSavedWorkDocument(current);
     state.voucherActivity.status = 'IDLE';
     saveDraftNow(); renderMode(); setAppStatus(`공식 판매전표 ${succeeded.length}건 저장 완료`);
     toast(`판매전표 ${succeeded.length}건을 저장했습니다.`, 'success');
@@ -11266,6 +11659,7 @@ async function completePurchaseOfficial() {
       current.rows = current.rows.filter(row => failedKeys.has(groupVoucherRows('purchase', [row], current.header)[0]?.voucherGroupKey));
       current.voucherGroups = failed.map(row => row.group);
       current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'official-purchase-voucher', targetRecordId: '', deliveredAt: '' };
+      if (succeeded.length) detachSavedWorkDocument(current);
       saveDraftNow();
       renderMode();
       setAppStatus(`구매 ${succeeded.length}건 저장 완료 · 실패 ${failed.length}건은 입력표에 유지됩니다.`, 'warn');
@@ -11275,6 +11669,7 @@ async function completePurchaseOfficial() {
     current.voucherGroups = [];
     clearCustomerAfterSave(current.header);
     current.delivery = { status: 'SAVED', targetId: 'official-purchase-voucher', targetRecordId: '', deliveredAt: new Date().toISOString() };
+    detachSavedWorkDocument(current);
     state.voucherActivity.status = 'IDLE';
     saveDraftNow();
     renderMode();
@@ -11390,6 +11785,7 @@ async function saveOrderGroups(current, groupPlan, submittedAt) {
   const remainingRows = retainUnsavedOrderRows(current.rows, rowSubmission, succeeded.map(result => result.group), current.header);
   const headerChanged = orderHeaderChangedSinceSubmission(current.header, headerSubmission);
   if (failed.length || remainingRows.length || headerChanged) {
+    if (succeeded.length) detachSavedWorkDocument(current);
     current.rows = remainingRows;
     current.voucherGroups = groupVoucherRows('order', remainingRows, current.header);
     current.delivery = { status: succeeded.length ? 'PARTIAL' : 'FAILED', targetId: 'orderq-vnext', targetRecordId: '', deliveredAt: '' };
@@ -11624,6 +12020,12 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   fallback.header.warehouseCode = current.header.warehouseCode;
   fallback.header.warehouseName = current.header.warehouseName;
   fallback.header.transactionType = current.header.transactionType;
+  fallback.savedWorkSeedHeader = {
+    warehouseId: fallback.header.warehouseId,
+    warehouseCode: fallback.header.warehouseCode,
+    warehouseName: fallback.header.warehouseName,
+    transactionType: fallback.header.transactionType
+  };
   state.draft.modes[state.draft.activeMode] = fallback;
   if (state.draft.activeMode === 'estimate') {
     estimateWorkspace.select([]);
@@ -12463,6 +12865,8 @@ $('warehouseInput').addEventListener('input', applyWarehouseMatch);
 $('warehouseInput').addEventListener('change', applyWarehouseMatch);
 $('transactionTypeInput').addEventListener('change', event => { modeDraft().header.transactionType = event.target.value; renderVoucherContext(); scheduleSave(); });
 $('completeButton').addEventListener('click', completeOrder);
+$('saveWorkDocumentAsButton').addEventListener('click', () => { void saveCurrentWorkDocument({ asNew: true }); });
+$('officialDeliveryButton').addEventListener('click', () => { void deliverCurrentOfficialVoucher(); });
 $('cancelComputeButton').addEventListener('click', () => cancelActiveStage5Compute({ notifyUser: true }));
 $('saveEstimateAsButton').addEventListener('click', () => openEstimateSaveDialog({ saveAs: true }));
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
@@ -12557,8 +12961,22 @@ $('estimateExcludedToggle').addEventListener('click', () => {
   state.selectedRowIds.clear(); renderRows({ restoreFocus: false }); renderEstimateExclusions();
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
-$('voucherActivityReload').addEventListener('click', () => { void loadVoucherActivity({ force: true }); });
+$('voucherActivityTab').addEventListener('click', () => {
+  state.voucherContextSource = 'activity';
+  renderVoucherContext();
+  void loadVoucherActivity({ force: true });
+});
+$('voucherSavedDocumentsTab').addEventListener('click', () => {
+  state.voucherContextSource = 'saved';
+  renderVoucherContext();
+  void loadSavedWorkDocuments({ force: true });
+});
+$('voucherActivityReload').addEventListener('click', () => {
+  if (state.voucherContextSource === 'saved') void loadSavedWorkDocuments({ force: true });
+  else void loadVoucherActivity({ force: true });
+});
 $('voucherActivitySourceMode').addEventListener('change', event => {
+  state.voucherContextSource = 'activity';
   state.voucherActivity.sourceMode = event.target.value;
   state.voucherActivity.status = 'IDLE';
   void loadVoucherActivity({ force: true });
@@ -12566,6 +12984,8 @@ $('voucherActivitySourceMode').addEventListener('change', event => {
 $('voucherContextList').addEventListener('click', event => {
   const button = event.target.closest('[data-import-related-voucher]');
   if (button) importRelatedVoucher(button.dataset.importRelatedVoucher);
+  const savedButton = event.target.closest('[data-open-saved-work-document]');
+  if (savedButton) void reopenSavedWorkDocument(savedButton.dataset.openSavedWorkDocument);
 });
 $('voucherActivityOpenAll').addEventListener('click', event => {
   const href = event.currentTarget.dataset.href;

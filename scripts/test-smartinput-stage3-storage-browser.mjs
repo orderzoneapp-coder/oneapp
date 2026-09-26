@@ -134,7 +134,7 @@ try {
   if (process.env.STAGE3_DEBUG) console.error('NAVIGATION', navigation);
   await loaded;
   const result = await evaluate(client, String.raw`(async () => {
-    const store = await import('/smartinput/smartinput-data-store.js?v=0.6.4');
+    const store = await import('/smartinput/smartinput-data-store.js?v=0.18.0');
     const pure = await import('/smartinput/independent-estimate.js?v=0.2.0');
     const passed = [], failed = [];
     const check = (condition, label) => { if (!condition) throw new Error(label); };
@@ -153,9 +153,10 @@ try {
       selectedEstimateIds,estimates:records,sourceIndex:pure.createEstimateSourceIndex({companyId:'C1',rows:inputs}),templateId:'T1',templateSignature:'SIG',templateRevision:1,mappingRevision:1,
       fileGeneration:operationId,fileFingerprint:'F-'+operationId,sourceDocumentId:'UP1',sourceRevision:1,allowedFieldIds:['purchasePriceB'],confirmedMappings:(await store.loadSmartInputData()).aliasMappings});
     const logs=[], nativePut=IDBObjectStore.prototype.put;
-    let failLatest=false;
+    let failLatest=false, failWorkDocument=false, failWorkDocumentId='WORK-ABORT';
     IDBObjectStore.prototype.put=function(value,...args){
       if (failLatest && this.name==='settings' && value.key?.includes(':latestExcelResult:')) throw new DOMException('INJECTED_LATEST_ABORT','AbortError');
+      if (failWorkDocument && this.name==='draftVouchersV2' && value.draftId===failWorkDocumentId) throw new DOMException('INJECTED_WORK_DOCUMENT_ABORT','AbortError');
       logs.push({store:this.name,id:value.estimateId||value.aliasMappingId||value.key}); return nativePut.call(this,value,...args);
     };
     const latest = async estimateId => (await store.loadLastEstimateExcelResult({companyId:'C1',estimateId})).result;
@@ -224,6 +225,69 @@ try {
       IDBObjectStore.prototype.getAll=function(...args){reads.push(this.name);return original.apply(this,args);};
       try {await store.loadSmartInputData();} finally {IDBObjectStore.prototype.getAll=original;}
       check(!reads.includes('settings'),'startup scans technical settings');
+    });
+    await test('purchase work documents commit atomically, isolate by company/mode, and revise same ID',async()=>{
+      const payload={documentId:'SESSION-1',mode:'purchase',header:{customerName:'거래처 A'},inputMapping:{headers:['품명','숨은 원본'],sourceMatrix:[['사과','근거']],workingRows:[{rowId:'ROW-1',cells:['사과','근거']}]},rows:[{rowId:'ROW-1',quantity:'0',unitPrice:''}]};
+      const start=logs.length;
+      const first=await store.commitSmartInputWorkDocument({companyId:'C1',voucherMode:'purchase',documentId:'WORK-1',expectedRevision:0,operationId:'WORK-OP-1',title:'구매 A',actorId:'A1',summary:{rowCount:1,totalAmount:0},payload});
+      check(first.record.revision===1 && first.record.schemaVersion==='ONEAPP_SMARTINPUT_SAVED_WORK_DOCUMENT_V1','first local revision missing');
+      check(first.record.idempotencyKey==='WORK-OP-1','saved work must expose the existing idempotency index key');
+      check(logs.slice(start).filter(row=>row.store==='draftVouchersV2').length===1 && logs.slice(start).every(row=>row.store==='draftVouchersV2'),'own save wrote outside SmartInput Store');
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result;resolve({version:db.version,hasStore:db.objectStoreNames.contains('draftVouchersV2')});db.close();};});
+      check(db.version===5 && db.hasStore,'local document storage must reuse DB v5 draftVouchersV2');
+      const opened=await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-1'});
+      check(opened.status==='READY' && equal(opened.record.payload,payload),'native indexedDB failed to preserve full input evidence');
+      check((await store.loadSmartInputWorkDocument({companyId:'C2',documentId:'WORK-1'})).status==='COMPANY_MISMATCH','company mismatch was not isolated');
+      const list=await store.listSmartInputWorkDocuments({companyId:'C1',voucherMode:'purchase'});
+      check(list.length===1 && !Object.hasOwn(list[0],'payload') && list[0].summary.totalAmount===0,'list must be a payload-free scoped summary');
+      check((await store.listSmartInputWorkDocuments({companyId:'C1',voucherMode:'sale'})).length===0,'purchase leaked into sale list');
+      const changed=structuredClone(payload); changed.rows[0].quantity='5';
+      const beforeUpdates=logs.length;
+      const updated=await Promise.all([1,2].map(()=>store.commitSmartInputWorkDocument({companyId:'C1',voucherMode:'purchase',documentId:'WORK-1',expectedRevision:1,operationId:'WORK-OP-2',title:'구매 A',actorId:'A1',summary:{rowCount:1,totalAmount:0},payload:changed})));
+      check(updated.every(result=>result.record.revision===2 && equal(result.record.payload,changed)),'same-operation concurrent retry must return the same committed document');
+      check(logs.slice(beforeUpdates).filter(row=>row.store==='draftVouchersV2').length===1,'same operation wrote more than one revision');
+      let operationConflict; try{await store.commitSmartInputWorkDocument({companyId:'C1',voucherMode:'purchase',documentId:'WORK-1',expectedRevision:1,operationId:'WORK-OP-2',title:'구매 A',actorId:'A1',summary:{rowCount:1,totalAmount:0},payload:{...changed,rows:[{...changed.rows[0],quantity:'999'}]}});}catch(error){operationConflict=error;}
+      check(operationConflict?.code==='SMARTINPUT_WORK_DOCUMENT_OPERATION_CONFLICT' && (await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-1'})).record.revision===2,'same operation ID with a different payload must not reuse a false success receipt');
+      let stale; try{await store.commitSmartInputWorkDocument({companyId:'C1',voucherMode:'purchase',documentId:'WORK-1',expectedRevision:1,operationId:'WORK-STALE',title:'stale',actorId:'A1',summary:{},payload});}catch(error){stale=error;}
+      check(stale?.code==='SMARTINPUT_WORK_DOCUMENT_REVISION_CONFLICT' && (await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-1'})).record.revision===2,'stale preimage overwrote the latest revision');
+      failWorkDocument=true; let aborted; try{await store.commitSmartInputWorkDocument({companyId:'C1',voucherMode:'purchase',documentId:'WORK-ABORT',expectedRevision:0,operationId:'WORK-ABORT-OP',title:'abort',actorId:'A1',summary:{},payload});}catch(error){aborted=error;}finally{failWorkDocument=false;}
+      check(aborted?.name==='AbortError' && (await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-ABORT'})).status==='MISSING','aborted write left a partial saved document');
+    });
+    await test('saved work photo survives source clear and failed photo revision',async()=>{
+      const payload={documentId:'SESSION-PHOTO',mode:'purchase',activeMethod:'photo',rows:[{rowId:'PHOTO-ROW',itemName:'사진 상품',quantity:1}]};
+      const photo={sourceImageId:'IMAGE-1',fileName:'proof.png',mimeType:'image/png',byteLength:3,contentHash:'photo-1',dataUrl:'data:image/png;base64,YWJj',binaryBase64:'YWJj'};
+      await store.saveSourceImage({...photo,documentId:'SESSION-PHOTO',companyId:'C1',mode:'purchase'});
+      const request={companyId:'C1',voucherMode:'purchase',documentId:'WORK-PHOTO',expectedRevision:0,operationId:'PHOTO-OP-1',title:'사진 구매',actorId:'A1',summary:{rowCount:1},payload,sourceImage:photo};
+      const first=await store.commitSmartInputWorkDocument(request);
+      check(first.record.revision===1 && first.record.sourceImageId==='IMAGE-1' && Boolean(first.record.sourceImageFingerprint),'photo identity was not bound to work revision');
+      await store.deleteSourceImage('SESSION-PHOTO');
+      const opened=await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO'});
+      check(opened.status==='READY' && opened.sourceImage?.dataUrl===photo.dataUrl && opened.sourceImage.documentId==='WORK-PHOTO','saved photo depended on cleared working source');
+      check(!Object.hasOwn(opened.sourceImage,'binaryBase64') && !Object.hasOwn(opened.record,'sourceImage'),'photo bytes were duplicated in saved work');
+      const replay=await store.commitSmartInputWorkDocument(request);
+      check(replay.idempotent && replay.record.revision===1,'same photo retry did not reuse committed operation');
+      let imageConflict; try {await store.commitSmartInputWorkDocument({...request,sourceImage:{...photo,dataUrl:'data:image/png;base64,ZGVm'}});} catch(error) {imageConflict=error;}
+      check(imageConflict?.code==='SMARTINPUT_WORK_DOCUMENT_OPERATION_CONFLICT','changed photo reused same operation ID');
+      await store.commitSmartInputWorkDocument({...request,documentId:'WORK-PHOTO-COPY',operationId:'PHOTO-OP-COPY'});
+      const copy=await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO-COPY'});
+      check(copy.status==='READY' && copy.sourceImage?.dataUrl===photo.dataUrl,'save as new did not get independent photo');
+      const changedPhoto={...photo,sourceImageId:'IMAGE-2',contentHash:'photo-2',dataUrl:'data:image/png;base64,ZGVm'};
+      failWorkDocumentId='WORK-PHOTO'; failWorkDocument=true;
+      let aborted; try {await store.commitSmartInputWorkDocument({...request,expectedRevision:1,operationId:'PHOTO-OP-2',sourceImage:changedPhoto});} catch(error) {aborted=error;} finally {failWorkDocument=false;}
+      const unchanged=await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO'});
+      check(aborted?.name==='AbortError' && unchanged.status==='READY' && unchanged.record.revision===1 && unchanged.sourceImage?.dataUrl===photo.dataUrl,'failed revision changed saved photo or work record');
+      const revised=await store.commitSmartInputWorkDocument({...request,expectedRevision:1,operationId:'PHOTO-OP-2',sourceImage:changedPhoto});
+      const reopened=await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO'});
+      check(revised.record.revision===2 && reopened.sourceImage?.sourceImageId==='IMAGE-2' && reopened.sourceImage.dataUrl===changedPhoto.dataUrl,'successful revision did not replace photo with work record');
+      check((await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO-COPY'})).sourceImage?.dataUrl===photo.dataUrl,'revising original mutated save-as-new photo');
+      let missing; try {await store.commitSmartInputWorkDocument({...request,documentId:'WORK-PHOTO-MISSING',operationId:'PHOTO-OP-MISSING',sourceImage:null});} catch(error) {missing=error;}
+      check(missing?.code==='SMARTINPUT_WORK_DOCUMENT_SOURCE_IMAGE_MISSING','photo mode saved without source evidence');
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});
+      await new Promise((resolve,reject)=>{const transaction=db.transaction('sourceImages','readwrite');transaction.objectStore('sourceImages').delete('WORK-PHOTO-COPY');transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);}); db.close();
+      check((await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO-COPY'})).status==='INVALID','missing saved photo was silently accepted');
+      const corruptDb=await new Promise((resolve,reject)=>{const request=indexedDB.open('oneapp-smartinput',5);request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result);});
+      await new Promise((resolve,reject)=>{const transaction=corruptDb.transaction('sourceImages','readwrite');const images=transaction.objectStore('sourceImages');const request=images.get('WORK-PHOTO');request.onsuccess=()=>images.put({...request.result,dataUrl:'data:image/png;base64,Y29ycnVwdA=='});transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);}); corruptDb.close();
+      check((await store.loadSmartInputWorkDocument({companyId:'C1',documentId:'WORK-PHOTO'})).status==='INVALID','changed saved photo content bypassed integrity check');
     });
     IDBObjectStore.prototype.put=nativePut;
     return {passed,failed};

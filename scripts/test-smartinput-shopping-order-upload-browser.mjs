@@ -271,7 +271,12 @@ try {
   await upload(client, issueFile);
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 'five local candidates wait for explicit owner inspection', 30_000);
   assert.match(await evaluate(client, `document.querySelector('#shoppingOrderCandidates').textContent`), /금액/);
-  assert.match(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), /주문 확인/);
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').textContent.trim()`), '내 자료 저장');
+  assert.equal(await evaluate(client, `document.querySelector('#officialDeliveryButton').textContent.trim()`), 'ORDER Q 신규 주문 전달');
+  assert.equal(await evaluate(client, `document.querySelector('#completeButton').title.includes('SmartInput 내 자료에 저장')&&!document.querySelector('#completeButton').title.includes('중복 여부를 확인')`),true,
+    'local save help must not claim it checks or delivers through the owner ledger');
+  assert.equal(await evaluate(client, `document.querySelector('#officialDeliveryButton').title.includes('ORDER Q')&&document.querySelector('#officialDeliveryButton').title.includes('중복')`),true,
+    'actual ledger inspection instructions must belong to the explicit delivery action');
   assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeFirstUpload,
     'ordinary shopping upload must not read the owner ledger');
   const pickerRefresh = {
@@ -307,7 +312,13 @@ try {
     expectSuccess: false, counterKey: '__productRefreshFailureClicks'
   });
   await evaluate(client, `localStorage.setItem('merchMaster_v870',${JSON.stringify(validProductSnapshot)});true`);
+  const readsBeforeFirstLocalSave = await evaluate(client, 'window.__shoppingLedgerReads');
   await click(client, '#completeButton');
+  await expr(client, `document.querySelector('#appStatusMessage').textContent.includes('내 자료 저장 완료')`, 'first shopping source saved without touching ORDER Q');
+  await expr(client, `!document.querySelector('#officialDeliveryButton').disabled`, 'first SmartInput save finished before explicit delivery');
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeFirstLocalSave,
+    'SmartInput local save must not inspect the ORDER Q ledger');
+  await click(client, '#officialDeliveryButton');
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=1');return (await db.getAll(db.STORE.ORDERS)).length===4;})()`, 'four isolated normal candidates saved', 30_000);
 
   const readsBeforeSecondUpload = await evaluate(client, 'window.__shoppingLedgerReads');
@@ -315,6 +326,11 @@ try {
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 're-upload prepares local candidates without automatic dedupe', 30_000);
   assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeSecondUpload,
     're-upload must not read the owner ledger');
+  await click(client, '#completeButton');
+  await expr(client, `document.querySelector('#appStatusMessage').textContent.includes('내 자료 저장 완료')`, 'second shopping source saved before external delivery');
+  await expr(client, `!document.querySelector('#officialDeliveryButton').disabled`, 'second SmartInput save finished before explicit delivery');
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeSecondUpload,
+    'second local shopping save must not inspect the ORDER Q ledger');
   const screenshots = [];
   for (const [width, height, mobile] of [[1920, 1080, false], [1440, 1000, false], [390, 844, true]]) {
     await client.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
@@ -341,7 +357,7 @@ try {
   }
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
-  await click(client, '#completeButton');
+  await click(client, '#officialDeliveryButton');
   await expr(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-count=2');return (await db.getAll(db.STORE.ORDERS)).length===5;})()`, 'fifth surplus saved', 30_000);
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="CREATED"]').length===1&&document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===4`, 'explicit transfer isolates the one surplus from four duplicates');
   const readsBeforeThirdUpload = await evaluate(client, 'window.__shoppingLedgerReads');
@@ -349,7 +365,12 @@ try {
   await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="PENDING"]').length===5`, 'third upload waits for explicit inspection');
   assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeThirdUpload);
   await click(client, '#completeButton');
-  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===5&&document.querySelector('#completeButton').disabled`, 'all existing orders excluded with zero-write action', 30_000);
+  await expr(client, `document.querySelector('#appStatusMessage').textContent.includes('내 자료 저장 완료')`, 'third shopping source saved before duplicate inspection');
+  await expr(client, `!document.querySelector('#officialDeliveryButton').disabled`, 'third SmartInput save finished before explicit delivery');
+  assert.equal(await evaluate(client, 'window.__shoppingLedgerReads'), readsBeforeThirdUpload,
+    'third local shopping save must not inspect the ORDER Q ledger');
+  await click(client, '#officialDeliveryButton');
+  await expr(client, `document.querySelectorAll('.shopping-order-candidate[data-status="DUPLICATE"]').length===5&&document.querySelector('#officialDeliveryButton').disabled`, 'all existing orders excluded with zero-write action', 30_000);
   const finalEvidence = await evaluate(client, `(async()=>{const db=await import('/orderq/orderq-db.js?shopping-ui-final=1');const orders=await db.getAll(db.STORE.ORDERS);const items=await db.getAll(db.STORE.ORDER_ITEMS);const events=await db.getAll(db.STORE.ORDER_EVENTS);const queue=await db.getAll(db.STORE.SYNC_QUEUE);return {orders:orders.length,items:items.length,events:events.length,queue:queue.length,externalOrderNos:orders.map(order=>order.externalOrderNo),sourceType:[...new Set(orders.map(order=>order.sourceType))],assignees:orders.map(order=>({assigneeId:order.assigneeId,assigneeName:order.assigneeName})),eventAssignees:events.map(event=>event.detail?.assignee),firstEvidence:orders[0].shoppingSourceEvidence.rows[0]};})()`);
   assert.equal(finalEvidence.orders, 5);
   assert.equal(finalEvidence.items, 14);
