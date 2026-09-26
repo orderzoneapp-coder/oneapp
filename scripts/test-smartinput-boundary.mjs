@@ -60,8 +60,13 @@ settingsResult = { status: 'READY', snapshot: { values: { marginRules: [{ rate: 
 assert.deepEqual(JSON.parse(JSON.stringify(settingsContext.merchOpsEstimateOutputConfig())), { marginRules: [{ rate: 0 }], estimateMappings: { A: 0 } });
 
 let rendered = 0;
+const voucherContextControls = Object.fromEntries([
+  'voucherSavedDocumentsTab', 'voucherActivityTab', 'voucherActivitySourceMode',
+  'voucherActivityOpenAll', 'voucherActivityReload'
+].map(id => [id, { hidden: false, textContent: '', attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } }]));
 const renderContext = vm.createContext({
   state: { companyId: 'C1', draft: { activeMode: 'order' }, voucherActivity: { companyId: 'C1', date: '2026-09-20', status: 'READY', requestId: 1, rows: [{ id: 'O1' }] } },
+  $: id => { assert.ok(voucherContextControls[id], `unexpected voucher context control ${id}`); return voucherContextControls[id]; },
   voucherActivityDate: () => '2026-09-21',
   renderVoucherActivitySnapshot: () => { rendered += 1; },
   loadVoucherActivity: () => { throw new Error('render started owner read'); }
@@ -72,6 +77,8 @@ assert.equal(rendered, 1);
 assert.equal(renderContext.state.voucherActivity.status, 'IDLE');
 assert.equal(renderContext.state.voucherActivity.rows.length, 0);
 assert.equal(renderContext.state.voucherActivity.requestId, 2);
+assert.equal(voucherContextControls.voucherSavedDocumentsTab.hidden, false);
+assert.equal(voucherContextControls.voucherActivityTab.attributes['aria-pressed'], 'true');
 const resumeContext = vm.createContext({ SMARTINPUT_SHOPPING_ORDER_UPLOAD_SCHEMA: 'ONEAPP_SMARTINPUT_SHOPPING_ORDER_UPLOAD_V1' });
 vm.runInContext(functionSource('resetResumedShoppingInspection', 'inputMatchingContext'), resumeContext);
 for (const status of ['ANALYZING', 'READY', 'ERROR']) {
