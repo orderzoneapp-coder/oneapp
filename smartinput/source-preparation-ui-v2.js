@@ -1,9 +1,14 @@
 (() => {
   'use strict';
   if ((document.documentElement.dataset.nexusUiApp || '') !== 'smart-input') return;
-  const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  const byId=id=>document.getElementById(id);
-  let model=null, modelKey='', staged=new Map(), applying=false, refreshQueued=false;
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const byId = id => document.getElementById(id);
+  let model = null;
+  let modelKey = '';
+  let staged = new Map();
+  let applying = false;
+  let refreshQueued = false;
+
   function installStyle() {
     if (byId('smartInputSourcePreparationStyle')) return;
     const style = document.createElement('style');
@@ -26,6 +31,7 @@
       .source-preparation-mapping__row[data-state="RECOMMENDED"] { border-color:color-mix(in srgb,var(--warning) 48%,var(--border)); }
       .source-preparation-mapping__status { min-height:28px; padding:7px 10px; color:var(--text-soft); border-top:1px solid var(--border); font-size:9px; }
       .source-preparation-mapping__apply { margin:0 7px 7px; min-height:46px; display:grid; place-content:center; gap:1px; border:0; border-radius:7px; color:#fff; background:var(--accent-fill); }
+      .source-preparation-mapping__apply[hidden] { display:none !important; }
       .source-preparation-mapping__apply strong { font-size:11px; }
       .source-preparation-mapping__apply small { color:#cce9e5; font-size:8px; }
       .source-preparation-mapping__apply:disabled { opacity:.48; cursor:not-allowed; }
@@ -39,91 +45,190 @@
     document.head.appendChild(style);
   }
 
-
   function ensurePanel() {
-    let panel=byId('sourcePreparationMapping');
-    if(panel) return panel;
-    const parser=byId('sourceInputPanel');
-    if(!parser) return null;
-    panel=document.createElement('section');
-    panel.id='sourcePreparationMapping'; panel.className='source-preparation-mapping'; panel.hidden=true;
-    panel.setAttribute('aria-label','원본 열 항목 매핑');
-    panel.innerHTML='<header class="source-preparation-mapping__head"><div><strong>원본 열 → 사용할 항목</strong><small id="sourcePreparationMeta"></small></div></header><div class="source-preparation-mapping__list" id="sourcePreparationList"></div><div class="source-preparation-mapping__status" id="sourcePreparationStatus" role="status" aria-live="polite"></div><button class="source-preparation-mapping__apply" id="sourcePreparationApply" type="button"><strong>준비한 자료 적용</strong><small>매핑 완료 후 중앙 작업표에 한 번에 반영</small></button>';
-    const progress=byId('parserProgress');
-    if(progress?.parentNode===parser) progress.insertAdjacentElement('afterend',panel); else parser.appendChild(panel);
-    byId('sourcePreparationList').addEventListener('change',event=>{
-      const select=event.target.closest('[data-source-column]');
-      if(!select) return;
-      staged.set(Number(select.dataset.sourceColumn),select.value);
-      const row=select.closest('.source-preparation-mapping__row');
-      row.dataset.state=select.value==='__UNMAPPED__'?'UNMAPPED':select.value?'MAPPED':'UNDECIDED';
+    let panel = byId('sourcePreparationMapping');
+    if (panel) return panel;
+    const parser = byId('sourceInputPanel');
+    if (!parser) return null;
+    panel = document.createElement('section');
+    panel.id = 'sourcePreparationMapping';
+    panel.className = 'source-preparation-mapping';
+    panel.hidden = true;
+    panel.setAttribute('aria-label', '원본 열 항목 매핑');
+    panel.innerHTML = '<header class="source-preparation-mapping__head"><div><strong>원본 열 → 사용할 항목</strong><small id="sourcePreparationMeta"></small></div></header><div class="source-preparation-mapping__list" id="sourcePreparationList"></div><div class="source-preparation-mapping__status" id="sourcePreparationStatus" role="status" aria-live="polite"></div><button class="source-preparation-mapping__apply" id="sourcePreparationApply" type="button" hidden><strong></strong><small></small></button>';
+    const progress = byId('parserProgress');
+    if (progress?.parentNode === parser) progress.insertAdjacentElement('afterend', panel);
+    else parser.appendChild(panel);
+    byId('sourcePreparationList').addEventListener('change', event => {
+      const select = event.target.closest('[data-source-column]');
+      if (!select) return;
+      staged.set(Number(select.dataset.sourceColumn), select.value);
+      const row = select.closest('.source-preparation-mapping__row');
+      row.dataset.state = select.value === '__UNMAPPED__' ? 'UNMAPPED' : select.value ? 'MAPPED' : 'UNDECIDED';
       updateStatus();
     });
-    byId('sourcePreparationApply').addEventListener('click',applyStaged);
+    byId('sourcePreparationApply').addEventListener('click', applyStaged);
     return panel;
   }
 
-  function refresh() {
-    refreshQueued=false;
-    if(applying) return;
-    const panel=ensurePanel(); if(!panel) return;
-    model=window.SMARTINPUT_SOURCE_PREPARATION?.snapshot()||null;
-    if(!model) {panel.hidden=true;modelKey='';staged=new Map();return;}
-    if(model.key!==modelKey) {modelKey=model.key;staged=new Map();}
-    panel.hidden=false;
-    const current=new Map(model.mappings.map(mapping=>[mapping.columnIndex,mapping]));
-    model.headers.forEach((header,index)=>{
-      if(staged.has(index))return;
-      const mapping=current.get(index);
-      staged.set(index,mapping?.state==='UNMAPPED'?'__UNMAPPED__':mapping?.targetFieldId||'');
+  function stagedDecision(columnIndex) {
+    const value = staged.get(columnIndex) || '';
+    if (value === '__UNMAPPED__') return { state: 'UNMAPPED', targetFieldId: '' };
+    if (!value) return { state: 'UNDECIDED', targetFieldId: '' };
+    return { state: 'MAPPED', targetFieldId: String(value) };
+  }
+
+  function currentDecision(mapping) {
+    return {
+      state: mapping?.state === 'UNMAPPED' ? 'UNMAPPED' : (mapping?.targetFieldId ? 'MAPPED' : 'UNDECIDED'),
+      targetFieldId: mapping?.state === 'UNMAPPED' ? '' : String(mapping?.targetFieldId || '')
+    };
+  }
+
+  function hasStagedMappingChanges() {
+    if (!model?.headers?.length) return false;
+    const byColumn = new Map((model.mappings || []).map(mapping => [mapping.columnIndex, mapping]));
+    return model.headers.some((_, columnIndex) => {
+      const stagedChoice = stagedDecision(columnIndex);
+      const current = currentDecision(byColumn.get(columnIndex));
+      if (stagedChoice.state === 'UNDECIDED' || current.state === 'UNDECIDED') {
+        return stagedChoice.state !== current.state || stagedChoice.targetFieldId !== current.targetFieldId;
+      }
+      return stagedChoice.state !== current.state || stagedChoice.targetFieldId !== current.targetFieldId;
     });
-    byId('sourcePreparationMeta').textContent=[model.templateName,model.fileName,model.headers.length+'열'].filter(Boolean).join(' · ');
-    byId('sourcePreparationList').innerHTML=model.headers.map((header,column)=>{
-      const mapping=current.get(column), value=staged.get(column)||'';
-      const state=value==='__UNMAPPED__'?'UNMAPPED':value?'MAPPED':'UNDECIDED';
-      const detail=mapping?.informationGroup||(model.targets.find(target=>target.id===value)?.scope==='header'?'전표정보':'입력·참조정보');
-      const options='<option value=""'+(!value?' selected':'')+'>항목 선택</option>'
-        +'<option value="__UNMAPPED__"'+(value==='__UNMAPPED__'?' selected':'')+'>사용 안 함</option>'
-        +model.targets.map(target=>'<option value="'+esc(target.id)+'"'+(target.id===value?' selected':'')+'>'+esc(target.label)+'</option>').join('');
-      return '<label class="source-preparation-mapping__row" data-state="'+state+'"><span><b>'+String(column+1)+'. '+esc(header)+'</b><small>'+esc(detail)+'</small></span><select data-source-column="'+column+'">'+options+'</select></label>';
+  }
+
+  function syncStagedFromModel() {
+    const current = new Map((model.mappings || []).map(mapping => [mapping.columnIndex, mapping]));
+    staged = new Map();
+    (model.headers || []).forEach((_, index) => {
+      const mapping = current.get(index);
+      staged.set(index, mapping?.state === 'UNMAPPED' ? '__UNMAPPED__' : mapping?.targetFieldId || '');
+    });
+  }
+
+  function refresh() {
+    refreshQueued = false;
+    if (applying) return;
+    const panel = ensurePanel();
+    if (!panel) return;
+    model = window.SMARTINPUT_SOURCE_PREPARATION?.snapshot() || null;
+    if (!model) {
+      panel.hidden = true;
+      modelKey = '';
+      staged = new Map();
+      return;
+    }
+    if (model.key !== modelKey) {
+      modelKey = model.key;
+      syncStagedFromModel();
+    } else {
+      const current = new Map(model.mappings.map(mapping => [mapping.columnIndex, mapping]));
+      model.headers.forEach((_, index) => {
+        if (staged.has(index)) return;
+        const mapping = current.get(index);
+        staged.set(index, mapping?.state === 'UNMAPPED' ? '__UNMAPPED__' : mapping?.targetFieldId || '');
+      });
+    }
+    panel.hidden = false;
+    const current = new Map(model.mappings.map(mapping => [mapping.columnIndex, mapping]));
+    byId('sourcePreparationMeta').textContent = [model.templateName, model.fileName, model.headers.length + '열'].filter(Boolean).join(' · ');
+    byId('sourcePreparationList').innerHTML = model.headers.map((header, column) => {
+      const mapping = current.get(column);
+      const value = staged.get(column) || '';
+      const state = value === '__UNMAPPED__' ? 'UNMAPPED' : value ? 'MAPPED' : 'UNDECIDED';
+      const detail = mapping?.informationGroup || (model.targets.find(target => target.id === value)?.scope === 'header' ? '전표정보' : '입력·참조정보');
+      const options = '<option value=""' + (!value ? ' selected' : '') + '>항목 선택</option>'
+        + '<option value="__UNMAPPED__"' + (value === '__UNMAPPED__' ? ' selected' : '') + '>사용 안 함</option>'
+        + model.targets.map(target => '<option value="' + esc(target.id) + '"' + (target.id === value ? ' selected' : '') + '>' + esc(target.label) + '</option>').join('');
+      return '<label class="source-preparation-mapping__row" data-state="' + state + '"><span><b>' + String(column + 1) + '. ' + esc(header) + '</b><small>' + esc(detail) + '</small></span><select data-source-column="' + column + '">' + options + '</select></label>';
     }).join('');
     updateStatus();
   }
 
-  function updateStatus(message='') {
-    const button=byId('sourcePreparationApply'),status=byId('sourcePreparationStatus');
-    if(!button||!status)return;
-    const values=(model?.headers||[]).map((_,index)=>staged.get(index)||'');
-    const mapped=values.filter(value=>value&&value!=='__UNMAPPED__');
-    const excluded=values.filter(value=>value==='__UNMAPPED__').length;
-    const missing=values.filter(value=>!value).length;
-    const projections=mapped.map(id=>model.targets.find(target=>target.id===id)?.projectionFieldId||id);
-    const duplicate=new Set(projections).size!==projections.length;
-    status.textContent=message||(duplicate?'같은 사용할 항목이 중복 지정되었습니다.':missing?'매핑 '+mapped.length+' · 사용 안 함 '+excluded+' · 확인 필요 '+missing:'매핑 '+mapped.length+' · 사용 안 함 '+excluded+' · '+values.length+'열 확인 완료');
-    button.disabled=applying||Boolean(model?.busy)||!values.length||duplicate||missing>0;
+  function updateStatus(message = '') {
+    const button = byId('sourcePreparationApply');
+    const status = byId('sourcePreparationStatus');
+    if (!button || !status) return;
+    const values = (model?.headers || []).map((_, index) => staged.get(index) || '');
+    const mapped = values.filter(value => value && value !== '__UNMAPPED__');
+    const excluded = values.filter(value => value === '__UNMAPPED__').length;
+    const missing = values.filter(value => !value).length;
+    const projections = mapped.map(id => model.targets.find(target => target.id === id)?.projectionFieldId || id);
+    const duplicate = new Set(projections).size !== projections.length;
+    const changed = hasStagedMappingChanges();
+    const templateApplied = model?.sessionStatus === 'TEMPLATE_APPLIED';
+    const newTemplate = model?.sessionStatus === 'NEW_TEMPLATE';
+    const autoComplete = !changed && !missing && !duplicate && values.length
+      && (templateApplied || Boolean(model?.autoProjected));
+    const title = button.querySelector('strong');
+    const hint = button.querySelector('small');
+
+    if (autoComplete) {
+      button.hidden = true;
+      button.disabled = true;
+      status.textContent = message || `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 자동 반영 완료`;
+      return;
+    }
+
+    button.hidden = false;
+    if (newTemplate || !templateApplied) {
+      if (title) title.textContent = '매핑 확정 반영';
+      if (hint) hint.textContent = '확정한 연결을 중앙 작업표에 반영';
+    } else {
+      if (title) title.textContent = '매핑 변경 반영';
+      if (hint) hint.textContent = '변경한 연결을 중앙 작업표에 반영';
+    }
+    status.textContent = message || (duplicate
+      ? '같은 사용할 항목이 중복 지정되었습니다.'
+      : (missing
+        ? `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 확인 필요 ${missing}`
+        : (changed
+          ? `매핑 ${mapped.length} · 사용 안 함 ${excluded} · 변경 ${values.length}열 확인`
+          : `매핑 ${mapped.length} · 사용 안 함 ${excluded} · ${values.length}열 확인 완료`)));
+    button.disabled = applying || Boolean(model?.busy) || !values.length || duplicate || missing > 0 || !changed;
   }
 
   function applyStaged() {
-    if(applying||!model)return;
-    applying=true; updateStatus('매핑 적용 중');
-    let message='';
+    if (applying || !model) return;
+    if (!hasStagedMappingChanges()) {
+      updateStatus('현재 매핑이 이미 반영되어 있습니다.');
+      return;
+    }
+    applying = true;
+    updateStatus('매핑 반영 중');
+    let message = '';
     try {
-      const decisions=model.headers.map((_,columnIndex)=>{
-        const value=staged.get(columnIndex)||'';
-        return {columnIndex,state:value==='__UNMAPPED__'?'UNMAPPED':'MAPPED',targetFieldId:value==='__UNMAPPED__'?'':value};
+      const decisions = model.headers.map((_, columnIndex) => {
+        const choice = stagedDecision(columnIndex);
+        if (choice.state === 'UNDECIDED') throw new Error('사용할 항목 또는 사용 안 함을 선택하세요.');
+        return { columnIndex, state: choice.state, targetFieldId: choice.targetFieldId };
       });
-      window.SMARTINPUT_SOURCE_PREPARATION.apply(modelKey,decisions);
-      staged=new Map();
-      message='중앙 작업표에 적용했습니다.';
-    } catch(error) {message='적용 중단 · '+(error.message||'매핑을 적용하지 못했습니다.');}
-    finally {applying=false;refresh();updateStatus(message);}
+      const result = window.SMARTINPUT_SOURCE_PREPARATION.apply(modelKey, decisions);
+      if (!result?.changed) message = '현재 매핑이 이미 반영되어 있습니다.';
+      else message = '매핑 변경 반영 완료';
+    } catch (error) {
+      message = '반영 중단 · ' + (error.message || '매핑을 반영하지 못했습니다.');
+    } finally {
+      applying = false;
+      refresh();
+      updateStatus(message);
+    }
   }
 
   function queueRefresh() {
-    if(refreshQueued)return;
-    refreshQueued=true;setTimeout(refresh,50);
+    if (refreshQueued) return;
+    refreshQueued = true;
+    setTimeout(refresh, 50);
   }
-  function boot() {installStyle();ensurePanel();queueRefresh();}
-  window.addEventListener('smartinput:source-preparation-changed',queueRefresh);
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+
+  function boot() {
+    installStyle();
+    ensurePanel();
+    queueRefresh();
+  }
+
+  window.addEventListener('smartinput:source-preparation-changed', queueRefresh);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
 })();
