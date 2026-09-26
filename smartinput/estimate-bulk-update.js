@@ -566,11 +566,17 @@ function retainEstimateBulkSplitRows(split, retainedRowIds) {
 
 function mergeEstimateBulkPatchedRow(existing, incoming) {
   const next = clone(existing);
+  const editedFields = { ...(existing.editedFields || {}) };
   ESTIMATE_ERP_ITEM_INPUT_FIELDS.forEach(field => {
     const envelope = estimateIncomingFieldEnvelope(incoming, field);
-    if (envelope.kind !== 'VALUE') return;
-    next[field] = envelope.parsedValue;
+    if (envelope.kind === 'VALUE') {
+      next[field] = envelope.parsedValue;
+      editedFields[field] = true;
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(existing, field)) editedFields[field] = true;
   });
+  next.editedFields = editedFields;
   next.rowId = incoming.rowId;
   return next;
 }
@@ -582,6 +588,10 @@ function appendPreservedEstimateBulkRows(split, rows) {
     const rowId = text(row?.rowId);
     if (!rowId || present.has(rowId)) return;
     const preserved = clone(row);
+    preserved.editedFields = { ...(preserved.editedFields || {}) };
+    ESTIMATE_ERP_ITEM_INPUT_FIELDS.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(preserved, field)) preserved.editedFields[field] = true;
+    });
     next.rows.push(preserved);
     next.session.manualRows = [...(next.session.manualRows || []), clone(preserved)];
     next.session.workingRows = [...(next.session.workingRows || []), { ...clone(preserved), sourceRowIndex: null, manual: true }];
@@ -741,7 +751,7 @@ export function reconcileEstimateBulkRows({ targetRows = [], split, groupId = ''
     nextIdsByOldId.set(splitRowId, nextId);
   });
 
-  const remapped = remapSplitRowIds(split, nextIdsByOldId);
+  const remapped = remapSplitRowIds({ ...split, rows: incoming }, nextIdsByOldId);
   const retainedRowIds = incoming.flatMap((row, index) => excludedIncoming.has(index)
     ? []
     : [nextIdsByOldId.get(text(row.rowId)) || text(row.rowId)]);

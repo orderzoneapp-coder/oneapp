@@ -126,6 +126,8 @@ assert.match(appSource, /async function recoverEstimateF8Integrity[\s\S]*보고�
 assert.doesNotMatch(appSource + html, /전환 확인|기존 자료 전환|estimateMigrationButton/, 'estimate conversion must stay an internal save compatibility path');
 assert.match(appSource, /async function completeOrder\(\)[\s\S]*estimateErpSummary\?\.recognized === true[\s\S]*runAutomaticEstimateBulkUpdates[\s\S]*if \(estimateExcelFile\(\)\) return runSelectedEstimateUpdate\(\)/,
   'ERP 견적서현황은 선택 견적 Excel 업데이트보다 먼저 거래처별 bulk로 가야 한다');
+assert.match(appSource, /function createCatalogOnlyDraft[\s\S]*const editedFields = row\.editedFields[\s\S]*editedFields/,
+  'catalog-only 저장은 bulk가 표시한 editedFields를 비우면 안 된다');
 assert.match(appSource, /erpSummary \? '견적서 업데이트'/, 'ERP 통합현황의 기본 저장 버튼은 견적서 업데이트여야 한다');
 assert.match(appSource, /erpSummary\?\.recognized[\s\S]*ERP 견적서현황/, 'ERP 통합현황은 견적서 미리 선택 없이 작업 대상을 표시해야 한다');
 const erpBulkFn = appSource.slice(appSource.indexOf('async function runAutomaticEstimateBulkUpdates'), appSource.indexOf('function openEstimateSaveDialog'));

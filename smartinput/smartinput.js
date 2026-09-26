@@ -6122,18 +6122,24 @@ resumePendingSourceImageDeletes();
 
 function createCatalogOnlyDraft(source = {}, catalogRecordId = '') {
   const fallback = contract.createDraft().modes.estimate;
-  const rows = (source.rows || []).map(row => contract.normalizeRow({
-    ...row,
-    batchId: '',
-    batchSequence: 0,
-    sourceLineNo: 0,
-    sourceLineKey: '',
-    intakeLineId: '',
-    sourceRegion: null,
-    rawText: '',
-    candidateProducts: [],
-    editedFields: {}
-  }));
+  const rows = (source.rows || []).map(row => {
+    const editedFields = row.editedFields && typeof row.editedFields === 'object' ? { ...row.editedFields } : {};
+    return {
+      ...contract.normalizeRow({
+        ...row,
+        batchId: '',
+        batchSequence: 0,
+        sourceLineNo: 0,
+        sourceLineKey: '',
+        intakeLineId: '',
+        sourceRegion: null,
+        rawText: '',
+        candidateProducts: [],
+        editedFields: {}
+      }),
+      editedFields
+    };
+  });
   return contract.normalizeModeDraft('estimate', {
     ...source,
     documentId: fallback.documentId,

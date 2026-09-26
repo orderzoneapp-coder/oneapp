@@ -216,7 +216,7 @@ export function estimateIncomingFieldEnvelope(row, field, { valueType } = {}) {
   const present = Boolean(row) && Object.prototype.hasOwnProperty.call(row, field);
   if (!present) return { kind: 'ABSENT' };
   const raw = row[field];
-  if (raw === null || raw === undefined || raw === '') return { kind: 'BLANK' };
+  if (raw === null || raw === undefined || String(raw).trim() === '') return { kind: 'BLANK' };
   const numeric = valueType === 'NUMBER' || numericFields.has(field);
   if (numeric) {
     const parsed = typeof raw === 'number' ? raw : Number(String(raw).replace(/[,원₩\s]/g, ''));
