@@ -7,9 +7,17 @@ const html = await readFile('smartinput/index.html', 'utf8');
 const css = await readFile('smartinput/smartinput.css', 'utf8');
 const js = await readFile('smartinput/smartinput.js', 'utf8');
 
-assert.match(html, /<header class="app-bar">/, '0a SmartInput app bar must be restored');
+assert.match(html, /<header class="app-bar"/, '0a SmartInput app bar must be restored');
 assert.match(html, /<div class="workspace" id="smartInputWorkspace"[^>]*>/, 'the protected desktop workspace must remain');
-assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must be raised into the app header');
+const appBarStart = html.indexOf('<header class="app-bar"');
+const appBarMarkup = html.slice(appBarStart, html.indexOf('</header>', appBarStart) + 9);
+assert.doesNotMatch(appBarMarkup, /class="brand"|brand__logo|id="customerInput"|id="appStatusMessage"|id="saveState"/, 'app header must keep the old logo, customer, and autosave text out of the 56px row');
+assert.match(appBarMarkup, /data-nexus-app-identity[\s\S]*data-nexus-app-title[\s\S]*스마트입력/, 'left-aligned SmartInput identity must remain as the shared text name without a logo');
+assert.match(appBarMarkup, /id="sourceHeaderActions"[\s\S]*id="sourceFileButton"[\s\S]*data-method="voice"[\s\S]*id="clearParserButton"/, 'existing Excel, voice, and clear actions must occupy the app-header left slot');
+assert.match(appBarMarkup, /data-mode="order"[\s\S]*data-mode="purchase"[\s\S]*data-mode="sale"[\s\S]*data-mode="estimate"/, 'the four voucher buttons must remain centered in the app header');
+assert.match(appBarMarkup, /id="restoreAutosaveButton"[\s\S]*id="referenceOverview"[\s\S]*id="settingsButton"/, 'restore, reference, and settings must remain on the app-header right');
+assert.match(html, /id="workbenchHeading"[\s\S]*id="customerInput"[\s\S]*class="header-fields"/, 'customer and voucher header fields must sit above the work table');
+assert.match(html, /id="sourceWorkContext"[\s\S]*id="centerWorkContext"/, 'left and center work-context labels must remain');
 assert.match(html, /class="parser-card"[^>]*id="sourceInputPanel"/, 'the independent source parser must remain');
 assert.doesNotMatch(html, /id="sourcePanelToggleButton"/, 'the source parser must not be hidden by a work-table toggle');
 assert.match(html, /class="workbench"/, 'the work table must remain');
@@ -22,7 +30,6 @@ assert.match(html, /id="estimateLibraryIndividualButton"[\s\S]*id="estimateMulti
 assert.doesNotMatch(html, /id="(?:estimateLibraryLinkedButton|linkedEstimateList|estimateCreateButton)"/, 'retired linked controls must be removed');
 assert.match(html, /href="\.\/smartinput\.css\?v=\d+\.\d+\.\d+"/, 'the external reference-popup CSS must use a versioned local asset');
 assert.match(html, /src="\.\/smartinput\.js\?v=\d+\.\d+\.\d+"/, 'the external reference-popup behavior must use a versioned local asset');
-const appBarStart = html.indexOf('<header class="app-bar">');
 const appBarEnd = html.indexOf('</header>', appBarStart);
 const referenceOverviewPopupIndex = html.indexOf('id="referenceOverviewPopup"');
 assert.ok(appBarStart >= 0 && appBarEnd > appBarStart && referenceOverviewPopupIndex > appBarEnd,
