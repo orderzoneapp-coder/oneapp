@@ -17,6 +17,41 @@ export async function prepareEstimateMigration({ store, companyId, actor, loadId
     outputOptions: clone(outputOptions) };
 }
 
+/**
+ * Save one selected legacy estimate through the current structure. The caller supplies the records it
+ * already loaded for this estimate and its sources; nothing else is read, converted or written, and a
+ * rejected candidate leaves the stored estimate untouched.
+ */
+export async function saveLegacyEstimateCompatibly({ store, companyId, actor, estimateId, operationId, records = [], outputOptions }) {
+  if (!companyId || !estimateId || !operationId) fail('ESTIMATE_COMPAT_SAVE_SCOPE_INVALID');
+  const live = await store.loadEstimateForUpdate({ companyId, estimateId });
+  if (live.status === 'READY') return { estimateId, status: 'ALREADY_INDEPENDENT', record: live.record };
+  // An estimate without a recorded company is never adopted on the operator's behalf.
+  if (live.status === 'CONTEXT_REQUIRED' || live.status === 'COMPANY_MISMATCH') return { estimateId, status: 'COMPANY_REVIEW_REQUIRED' };
+  if (live.status !== 'MIGRATION_REQUIRED' || !live.record) return { estimateId, status: live.status };
+  const before = live.record;
+  if (before.companyId !== companyId) return { estimateId, status: 'COMPANY_REVIEW_REQUIRED' };
+  const all = [before, ...records.filter(record => record.estimateId !== estimateId)];
+  const plan = buildEstimateF8DraftPlan({ selectedRecords: [before], individualRecords: all.filter(record => record.estimateKind !== 'LINKED_GROUP'), allRecords: all });
+  if (!plan.ok) return { estimateId, status: 'SOURCE_REVIEW_REQUIRED', message: plan.error };
+  const rows = buildEstimateF8RowsFromPlan(plan);
+  // The evidence is this estimate's own preimage, not a backup snapshot of the whole library.
+  const preimageHash = await hashEstimatePlan(before);
+  const conversion = createIndependentEstimateCandidate({ record: clone(before), companyId, sourcePlan: plan, reportRows: rows,
+    migrationId: operationId, snapshotId: operationId, snapshotHash: preimageHash });
+  if (conversion.status !== 'CANDIDATE_READY') return { estimateId, ...conversion };
+  const candidate = clone(conversion.candidate);
+  for (const row of candidate.ownedRows) row.matchIdentity = estimateIdentityFromRow(row, candidate.draft.header);
+  candidate.draft.ownedRows = clone(candidate.ownedRows);
+  candidate.provenance = { ...candidate.provenance, compatibilitySave: { operationId, preimageHash } };
+  const oldOutput = outputs(buildEstimateF8Data(rows, outputOptions));
+  const newOutput = outputs(buildEstimateF8Data(candidate.ownedRows, outputOptions));
+  if (!estimateValuesEqual(oldOutput, newOutput)) return { estimateId, status: 'OUTPUT_REVIEW_REQUIRED', code: 'ESTIMATE_MIGRATION_OUTPUT_CHANGED' };
+  const receipt = await store.commitLegacyEstimateCompatibilitySave({ companyId, actor, operationId, estimateId,
+    expectedPreimage: before, candidate, verifiedOutputHash: await hashEstimatePlan(newOutput) });
+  return { ...receipt, record: candidate };
+}
+
 export async function convertPreservedEstimates({ store, backup, companyId, actor, currentLoadId,
   oldTabsConfirmedClosed, backupExported, selectedEstimateIds, confirmedCompanyEstimateIds = [], customerlessConfirmedIds = [] }) {
   if (backup?.schemaVersion !== 'SMARTINPUT_ESTIMATE_MIGRATION_BACKUP_V1' || backup.companyId !== companyId) fail('ESTIMATE_BACKUP_SCOPE_INVALID');

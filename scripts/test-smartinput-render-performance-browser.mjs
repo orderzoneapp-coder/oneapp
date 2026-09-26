@@ -12,6 +12,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const baselineSha = '5315b63ef8b4ae443a7b01ee35687f3314fd57f0';
 const baseline = execFileSync('git', ['show', `${baselineSha}:smartinput/smartinput.js`], { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
 const current = readFileSync(join(root, 'smartinput/smartinput.js'), 'utf8');
+// Each variant needs the entry document it was written against; a mixed pair fails to boot at all.
+const baselineHtml = execFileSync('git', ['show', `${baselineSha}:smartinput/index.html`], { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
 let variant = 'before';
 const hook = `
 window.__renderTest={
@@ -58,7 +60,9 @@ const server = createServer((req,res)=>{
   const path = resolve(root, pathname.replace(/^\/+/, '') + (pathname.endsWith('/')?'index.html':''));
   if (!path.startsWith(root+sep) || !existsSync(path) || !statSync(path).isFile()) return res.writeHead(404).end();
   res.writeHead(200, {'Content-Type':mime[extname(path)]||'application/octet-stream','Cache-Control':'no-store'});
-  res.end(path===join(root,'smartinput','smartinput.js')?instrument(variant==='before'?baseline:current):readFileSync(path));
+  if (path===join(root,'smartinput','smartinput.js')) return res.end(instrument(variant==='before'?baseline:current));
+  if (path===join(root,'smartinput','index.html') && variant==='before') return res.end(baselineHtml);
+  res.end(readFileSync(path));
 });
 const delay = ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,label){const deadline=Date.now()+30000;while(Date.now()<deadline){if(await fn())return;await delay(50);}throw new Error('Timeout: '+label);}

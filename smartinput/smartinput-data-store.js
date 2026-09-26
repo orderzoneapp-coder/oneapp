@@ -1766,6 +1766,40 @@ export async function commitIndependentEstimateMigration({ companyId, actor, mig
   });
 }
 
+/**
+ * One explicitly selected estimate, made compatible while saving it.
+ * This is not the bulk backup migration, so it must never claim exported-backup, closed-tab or
+ * new-load evidence. The legacy record survives any failure because the write only happens while the
+ * whole preimage still matches inside this transaction; a concurrent tab loses CAS instead of this one.
+ */
+export async function commitLegacyEstimateCompatibilitySave({ companyId, actor, operationId, estimateId, expectedPreimage, candidate, verifiedOutputHash }) {
+  stage3Context(companyId, actor); validateIndependentEstimate(candidate);
+  if (!stage3Required(operationId) || !stage3Required(estimateId) || !stage3Required(verifiedOutputHash)
+    || candidate.companyId !== companyId || candidate.estimateId !== estimateId
+    || expectedPreimage?.estimateId !== estimateId) throw stage3Error('ESTIMATE_COMPAT_SAVE_SCOPE_INVALID');
+  if (expectedPreimage.companyId !== companyId) throw stage3Error('ESTIMATE_COMPANY_MISMATCH');
+  if (expectedPreimage.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA) throw stage3Error('ESTIMATE_COMPAT_SAVE_NOT_LEGACY');
+  if (candidate.createdAt !== expectedPreimage.createdAt || candidate.updatedAt !== expectedPreimage.updatedAt
+    || candidate.sortOrder !== expectedPreimage.sortOrder) throw stage3Error('ESTIMATE_MIGRATION_BUSINESS_METADATA_CHANGED');
+  const receiptKey = estimateTechnicalKey('compatSaveReceipt', companyId, operationId, estimateId);
+  const payloadHash = await hashEstimatePlan({ companyId, operationId, estimateId, expectedPreimage, candidate, verifiedOutputHash });
+  return stage3Transaction([DATA_STORES.ESTIMATES, DATA_STORES.SETTINGS], 'readwrite', ({ transaction, requests, finish }) => {
+    requests([[DATA_STORES.SETTINGS, receiptKey], [DATA_STORES.ESTIMATES, estimateId]], ([prior, current]) => {
+      if (prior) {
+        if (prior.value.payloadHash !== payloadHash) throw stage3Error('ESTIMATE_OPERATION_PAYLOAD_CONFLICT');
+        return finish(prior.value);
+      }
+      if (!estimateValuesEqual(current, expectedPreimage)) throw stage3Error('ESTIMATE_PREIMAGE_CONFLICT');
+      const receipt = { status: 'COMMITTED', companyId, estimateId, operationId, payloadHash, verifiedOutputHash,
+        committedAt: new Date().toISOString() };
+      updateEstimateProjection(transaction, candidate, estimateId);
+      transaction.objectStore(DATA_STORES.ESTIMATES).put({ ...candidate,
+        history: [...(current.history || []), { operationId, actor, action: 'COMPATIBILITY_SAVE', occurredAt: receipt.committedAt }] });
+      stage3Setting(transaction, receiptKey, receipt, receipt.committedAt); finish(receipt);
+    });
+  });
+}
+
 // Bounded unresolved-work pointers; normal reads never scan historical receipts.
 function registerStage3Pending(transaction, key, previous, kind, id, timestamp) {
   const entries = Array.isArray(previous) ? previous : [];

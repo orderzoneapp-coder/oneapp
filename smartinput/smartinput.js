@@ -929,35 +929,28 @@ const LEGACY_ESTIMATE_SAVE_FAILURE = '기존 견적 자료를 안전하게 갱�
 async function commitSelectedLegacyEstimate(estimateId) {
   const current = state.estimates.find(item => item.estimateId === estimateId);
   if (!current || current.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA) return current || null;
-  if (!current.companyId || current.companyId !== state.companyId) {
+  try {
+    const { saveLegacyEstimateCompatibly } = await loadOptionalFeature('estimateMigration');
+    await ensureEstimateBodies([estimateId], { sources: true });
+    const productSnapshot = await getProductSnapshot();
+    const settingsResult = await getMerchOpsSettingsSnapshotResult();
+    if (settingsResult.status === 'ERROR') throw new Error('보고서 설정을 읽지 못했습니다.');
+    const result = await saveLegacyEstimateCompatibly({ store: estimateStore, companyId: state.companyId,
+      actor: { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' }, estimateId,
+      operationId: createRecordId('SICOMPAT'), records: state.estimates.filter(record => record.draft),
+      outputOptions: { productCatalog: productSnapshot.data.products, ...merchOpsEstimateOutputConfig() } });
+    if (!['COMMITTED', 'ALREADY_INDEPENDENT'].includes(result.status)) throw new Error(result.code || result.message || result.status);
+    const saved = await estimateStore.loadEstimateForUpdate({ companyId: state.companyId, estimateId });
+    if (saved.status !== 'READY') throw new Error(saved.status);
+    estimateWorkspace.adopt(saved.record);
+    invalidateEstimateLibraryRead();
+    const index = state.estimates.findIndex(item => item.estimateId === estimateId);
+    if (index >= 0) state.estimates[index] = saved.record;
+    return saved.record;
+  } catch (_) {
     toast(LEGACY_ESTIMATE_SAVE_FAILURE, 'warn');
     return null;
   }
-  const { prepareEstimateMigration, convertPreservedEstimates } = await loadOptionalFeature('estimateMigration');
-  await flushDraftBeforeWorkspaceChange();
-  const productSnapshot = await getProductSnapshot();
-  const settingsResult = await getMerchOpsSettingsSnapshotResult();
-  if (settingsResult.status === 'ERROR') throw new Error(LEGACY_ESTIMATE_SAVE_FAILURE);
-  const actor = { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' };
-  const backup = await prepareEstimateMigration({ store: estimateStore, companyId: state.companyId, actor,
-    loadId: estimateLoadId, outputOptions: { productCatalog: productSnapshot.data.products, ...merchOpsEstimateOutputConfig() } });
-  const converted = await convertPreservedEstimates({ store: estimateStore, backup, companyId: state.companyId, actor,
-    currentLoadId: `${estimateLoadId}:compat-save`, oldTabsConfirmedClosed: true, backupExported: true,
-    selectedEstimateIds: [estimateId] });
-  const receipt = converted.find(item => item.estimateId === estimateId);
-  if (!receipt || !['COMMITTED', 'ALREADY_INDEPENDENT'].includes(receipt.status)) {
-    toast(LEGACY_ESTIMATE_SAVE_FAILURE, 'warn');
-    return null;
-  }
-  const saved = await estimateStore.loadEstimateForUpdate({ companyId: state.companyId, estimateId });
-  if (saved.status !== 'READY') {
-    toast(LEGACY_ESTIMATE_SAVE_FAILURE, 'warn');
-    return null;
-  }
-  estimateWorkspace.adopt(saved.record);
-  const index = state.estimates.findIndex(item => item.estimateId === estimateId);
-  if (index >= 0) state.estimates[index] = saved.record;
-  return saved.record;
 }
 
 let autosaveWriteQueue = Promise.resolve();
