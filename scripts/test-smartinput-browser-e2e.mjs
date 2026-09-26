@@ -320,7 +320,7 @@ try {
   assert.deepEqual(domBaseline.tableColumns.map(column => column.label), [
     'No.', '품목코드', '품목명', '규격', '수량', '단가', '공급가액', '메모', '적요(직원)', '공지단가'
   ], 'first-use order mode must show its approved initial field labels and order');
-  assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'saveEstimateAsButton', 'estimateMasterApplyButton', 'estimateMigrationButton', 'estimateRetryButton', 'estimateMasterRetryButton', 'estimateNoticeButton', 'estimateExcelButton']);
+  assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'saveEstimateAsButton', 'estimateMasterApplyButton', 'estimateRetryButton', 'estimateMasterRetryButton', 'estimateNoticeButton', 'estimateExcelButton']);
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
   assert.deepEqual({ fixedColumns: mergedSelectionColumn.fixedColumns, headerHasSelectAll: mergedSelectionColumn.headerHasSelectAll, rowNumber: mergedSelectionColumn.rowNumber, sameCell: mergedSelectionColumn.sameCell }, { fixedColumns: 1, headerHasSelectAll: true, rowNumber: '1', sameCell: true }, 'No. and selection must share one fixed column');
   assert.ok(mergedSelectionColumn.checkboxWidth >= 20, 'row selection checkbox must be enlarged');

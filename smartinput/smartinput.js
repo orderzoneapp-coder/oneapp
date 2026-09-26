@@ -235,7 +235,7 @@ const OPTIONAL_FEATURE_MODULES = Object.freeze({
   fileIntake: Object.freeze({ feature: 'file-intake-module', assetVersion: '0.17.0', specifier: './xlsx-source-reader.js?v=0.17.0', unavailableMessage: '파일 해석 기능을 불러오지 못했습니다. 현재 입력과 견적 선택은 유지됩니다.' }),
   ocr: Object.freeze({ feature: 'ocr-module', assetVersion: '0.1.1', specifier: './ocr-document-parser.js?v=0.1.1', unavailableMessage: '사진 OCR 기능을 불러오지 못했습니다. 원본 사진 확인과 직접 입력은 계속 사용할 수 있습니다.' }),
   estimateReport: Object.freeze({ feature: 'estimate-report-module', assetVersion: '0.17.0', specifier: './report.js?v=0.17.0', unavailableMessage: '견적 보고서 기능을 불러오지 못했습니다. 견적서와 미저장 작업은 유지됩니다.' }),
-  estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.17.0', specifier: './estimate-migration.js?v=0.17.0', unavailableMessage: '기존 견적서 전환 기능을 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),
+  estimateMigration: Object.freeze({ feature: 'estimate-migration-module', assetVersion: '0.17.0', specifier: './estimate-migration.js?v=0.17.0', unavailableMessage: '기존 견적 자료를 갱신할 준비를 불러오지 못했습니다. 원본과 현재 작업은 유지됩니다.' }),
   voucherOutput: Object.freeze({ feature: 'voucher-output-module', assetVersion: '0.17.0', specifier: './report.js?v=0.17.0', unavailableMessage: '구매 보고서 기능을 불러오지 못했습니다. 현재 입력은 유지됩니다.' }),
   voucherActivity: Object.freeze({ feature: 'voucher-activity-module', assetVersion: '0.3.0', specifier: '../orderq/voucher-activity-read-adapter.js?v=0.3.0', unavailableMessage: '연동 전표를 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
   officialVoucher: Object.freeze({ feature: 'official-voucher-module', assetVersion: '0.17.0', specifier: './official-voucher-feature.js?v=0.17.0', unavailableMessage: '공식 전표 저장 기능을 불러오지 못했습니다. 현재 입력과 자동저장은 유지됩니다.' }),
@@ -834,7 +834,7 @@ async function changeEstimateSelection(ids) {
     const loaded = await estimateWorkspace.loadSelection();
     if (loaded.status === 'STALE') return;
     if (loaded.issues.length) {
-      setAppStatus('선택한 기존 자료는 보존 중입니다. 기존 자료 전환에서 백업과 소속을 확인하세요.', 'warn');
+      setAppStatus('선택한 견적을 열었습니다. 저장 전까지 기존 저장본은 유지됩니다.', 'warn');
     }
     const legacy = loaded.issues.flatMap(issue => {
       const record = state.estimates.find(item => item.estimateId === issue.estimateId);
@@ -889,6 +889,13 @@ async function runSelectedEstimateUpdate() {
   if (!file || !inputMappingTemplateReady()) return toast('엑셀 입력 양식을 먼저 확정하세요.', 'warn');
   state.busy = true; renderDelivery();
   try {
+    for (const estimateId of estimateWorkspace.selected()) {
+      const record = state.estimates.find(item => item.estimateId === estimateId);
+      if (record && record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) {
+        const converted = await commitSelectedLegacyEstimate(estimateId);
+        if (!converted) return;
+      }
+    }
     const targets = new Map(inputMappingDefinitions().map(target => [target.id, target]));
     const mapped = current.inputMapping.mappings.map(mapping => targets.get(mapping.targetFieldId)).filter(Boolean);
     const custom = mapped.filter(target => target.custom).map(target => ({ id: target.projectionFieldId || target.id,
@@ -917,40 +924,33 @@ async function runSelectedMasterUpdate() {
   finally { state.busy = false; saveDraftNow(); renderDelivery(); }
 }
 
-async function openEstimateMigration() {
-  if (state.busy) return;
-  const key = `smartinput:estimate:v1:migrationPreparation:${encodeURIComponent(state.companyId)}`;
+const LEGACY_ESTIMATE_SAVE_FAILURE = '기존 견적 자료를 안전하게 갱신하지 못했습니다. 현재 편집 내용과 기존 저장본은 유지했습니다.';
+
+async function commitSelectedLegacyEstimate(estimateId) {
+  const current = state.estimates.find(item => item.estimateId === estimateId);
+  if (!current || current.schemaVersion === INDEPENDENT_ESTIMATE_SCHEMA) return current || null;
   try {
-    const { prepareEstimateMigration, convertPreservedEstimates } = await loadOptionalFeature('estimateMigration');
-    await flushDraftBeforeWorkspaceChange();
-    const pending = await estimateStore.loadSettingValue(key);
-    if (!pending || pending.previousLoadId === estimateLoadId) {
-      const productSnapshot = await getProductSnapshot();
-      const settingsResult = await getMerchOpsSettingsSnapshotResult();
-      if (settingsResult.status === 'ERROR') throw new Error('보고서 설정을 읽지 못했습니다.');
-      const backup = pending || await prepareEstimateMigration({ store: estimateStore, companyId: state.companyId,
-        actor: { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' }, loadId: estimateLoadId,
-        outputOptions: { productCatalog: productSnapshot.data.products, ...merchOpsEstimateOutputConfig() } });
-      const text = JSON.stringify(backup);
-      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      const link = document.createElement('a'); link.href = url; link.download = `SmartInput-견적백업-${backup.manifest.createdAt.slice(0, 10)}.json`;
-      link.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
-      await estimateStore.saveSettingValue(key, backup);
-      if (window.confirm('백업 파일이 저장되었는지 확인하세요. 다른 스마트입력 탭을 닫고, 이 화면을 새로고침한 뒤 기존 자료 전환을 다시 누르면 전환합니다. 지금 새로고침할까요?')) location.reload();
-      return;
-    }
-    const ids = estimateWorkspace.selected().length ? estimateWorkspace.selected() : availableCatalogs().map(record => record.estimateId);
-    const legacy = pending.snapshot.estimates.filter(record => ids.includes(record.estimateId) && record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA);
-    const unknown = legacy.filter(record => !record.companyId);
-    if (!window.confirm(`백업 파일 저장과 다른 스마트입력 탭 종료를 확인했습니까?\n${legacy.length}개 견적서를 같은 ID와 값으로 독립 전환합니다.${unknown.length ? '\n소속 미기록 자료: ' + unknown.map(estimateTitle).join(', ') + '\n이 자료가 현재 회사 자료임을 확인하는 경우만 진행하세요.' : ''}`)) return;
-    const converted = await convertPreservedEstimates({ store: estimateStore, backup: pending, companyId: state.companyId,
-      actor: { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' }, currentLoadId: estimateLoadId,
-      oldTabsConfirmedClosed: true, backupExported: true, selectedEstimateIds: ids,
-      confirmedCompanyEstimateIds: unknown.map(record => record.estimateId) });
-    await hydrateEstimateLibrary();
-    setAppStatus(`기존 자료 전환: ${converted.filter(item => item.status === 'COMMITTED').length}개 완료 · ${converted.filter(item => !['COMMITTED', 'ALREADY_INDEPENDENT'].includes(item.status)).length}개 확인 필요`);
-    await changeEstimateSelection(estimateWorkspace.selected());
-  } catch (error) { toast(error.code || error.message, 'error'); }
+    const { saveLegacyEstimateCompatibly } = await loadOptionalFeature('estimateMigration');
+    await ensureEstimateBodies([estimateId], { sources: true });
+    const productSnapshot = await getProductSnapshot();
+    const settingsResult = await getMerchOpsSettingsSnapshotResult();
+    if (settingsResult.status === 'ERROR') throw new Error('보고서 설정을 읽지 못했습니다.');
+    const result = await saveLegacyEstimateCompatibly({ store: estimateStore, companyId: state.companyId,
+      actor: { actorId: resolveSmartInputActor(), actorState: 'LOCAL_EDITOR' }, estimateId,
+      operationId: createRecordId('SICOMPAT'), records: state.estimates.filter(record => record.draft),
+      outputOptions: { productCatalog: productSnapshot.data.products, ...merchOpsEstimateOutputConfig() } });
+    if (!['COMMITTED', 'ALREADY_INDEPENDENT'].includes(result.status)) throw new Error(result.code || result.message || result.status);
+    const saved = await estimateStore.loadEstimateForUpdate({ companyId: state.companyId, estimateId });
+    if (saved.status !== 'READY') throw new Error(saved.status);
+    estimateWorkspace.adopt(saved.record);
+    invalidateEstimateLibraryRead();
+    const index = state.estimates.findIndex(item => item.estimateId === estimateId);
+    if (index >= 0) state.estimates[index] = saved.record;
+    return saved.record;
+  } catch (_) {
+    toast(LEGACY_ESTIMATE_SAVE_FAILURE, 'warn');
+    return null;
+  }
 }
 
 let autosaveWriteQueue = Promise.resolve();
@@ -5504,9 +5504,8 @@ function renderEstimateWorkspace() {
 
 function estimateCardMarkup(record) {
   const selected = state.noticeEstimateIds.includes(record.estimateId);
-  const needsConversion = record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA;
   return `<article class="catalog-picker__row estimate-card ${selected ? 'is-selected' : ''}" data-estimate-kind="INDIVIDUAL" data-estimate-id="${esc(record.estimateId)}">
-    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${selected ? '선택 해제' : '업데이트 대상 선택'}"><strong>${esc(estimateTitle(record))}${needsConversion ? ' · 전환 확인' : ''}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
+    <button class="catalog-picker__load" type="button" data-select-estimate-card aria-pressed="${selected}" title="${selected ? '선택 해제' : '업데이트 대상 선택'}"><strong>${esc(estimateTitle(record))}</strong><small>작성 ${esc(formatEstimateDate(record.createdAt))} · 수정 ${esc(formatEstimateDate(record.updatedAt))}</small></button>
     <button class="estimate-card__drag-handle" type="button" draggable="true" data-estimate-drag-handle aria-label="${esc(estimateTitle(record))} 순서 이동"><span aria-hidden="true">⠿</span></button>
   </article>`;
 }
@@ -5728,7 +5727,7 @@ function renameEstimateSourceMetadata(draft, estimateId, catalogName) {
 }
 
 function updatedEstimateInformationBundle(record, { catalogName, customer }, timestamp) {
-  if (record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) throw new Error('기존 자료 전환이 필요합니다.');
+  if (record.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) throw new Error(LEGACY_ESTIMATE_SAVE_FAILURE);
   const next = structuredClone(record);
   next.catalogName = catalogName;
   if (customer) {
@@ -5877,7 +5876,7 @@ async function persistEstimateLibrary(records = state.estimates) {
     if (estimateValuesEqual(summary, candidate)) continue;
     await ensureEstimateBodies([candidate.estimateId]);
     const before = state.estimates.find(record => record.estimateId === candidate.estimateId);
-    if (!before || before.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) throw new Error('기존 자료 전환이 필요합니다.');
+    if (!before || before.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) throw new Error(LEGACY_ESTIMATE_SAVE_FAILURE);
     const next = { ...structuredClone(before), sortOrder: candidate.sortOrder, dataRevision: before.dataRevision + 1 };
     const operationId = createRecordId('SIEDIT');
     await estimateStore.commitIndependentEstimateEdit({ companyId: state.companyId,
@@ -9740,7 +9739,7 @@ function applyEstimateF8RecoveredPostimages({
 }
 
 async function recoverEstimateF8Integrity() {
-  return { status: 'FAILED', error: '기존 자료 전환에서 원본과 백업을 확인하세요. 보고서 출력은 저장 자료를 변경하지 않습니다.' };
+  return { status: 'FAILED', error: '보고서 출력은 저장 자료를 변경하지 않습니다. 현재 편집 내용과 기존 저장본은 유지됩니다.' };
 }
 
 async function exportEstimateExcel() {
@@ -11075,7 +11074,12 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
 }
 
 async function saveSelectedEstimateTable() {
-  if (modeDraft().stage3LegacyPreview) return toast('기존 자료를 전환한 뒤 저장하세요. 입력 작업은 자동저장으로 보존됩니다.', 'warn');
+  if (modeDraft().stage3LegacyPreview) {
+    const record = state.estimates.find(item => item.estimateId === modeDraft().catalogRecordId);
+    const name = String(record?.catalogName || '').trim();
+    if (!name) return toast(LEGACY_ESTIMATE_SAVE_FAILURE, 'warn');
+    return saveEstimateDocument(name);
+  }
   const selected = estimateWorkspace.selected();
   if (!selected.length) return toast('저장할 견적서를 선택하세요.', 'warn');
   const newRows = modeDraft().rows.filter(row => !row.estimateOwner && rowHasMeaningfulInput(row));
@@ -11125,9 +11129,10 @@ async function saveEstimateDocument(catalogName) {
     const loaded = state.estimates.find(record => record.estimateId === current.catalogRecordId && estimateTitle(record) === requestedName);
     const collision = state.estimates.find(record => estimateTitle(record) === requestedName && record.estimateId !== loaded?.estimateId);
     if (collision && !window.confirm(`“${requestedName}” 견적서만 현재 내용으로 변경할까요?`)) return false;
-    const previous = loaded || collision || null;
+    let previous = loaded || collision || null;
     if (previous && previous.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) {
-      toast('기존 자료 전환에서 백업과 소속을 확인한 뒤 저장하세요.', 'warn'); return false;
+      previous = await commitSelectedLegacyEstimate(previous.estimateId);
+      if (!previous) return false;
     }
     if ((await estimateWorkspace.pending()).some(entry => entry.kind !== 'master')) throw new Error('이전 저장 결과를 견적서 재시도로 확인한 뒤 저장하세요.');
     const timestamp = new Date().toISOString();
@@ -13035,7 +13040,6 @@ $('catalogPickerList').addEventListener('click', handleEstimateCardSelection);
 });
 $('estimateDeselectAllButton').addEventListener('click', () => { void cancelEstimateMultiSelect(); });
 $('estimateMasterApplyButton').addEventListener('click', () => { void runSelectedMasterUpdate(); });
-$('estimateMigrationButton').addEventListener('click', () => { void openEstimateMigration(); });
 $('estimateRetryButton').addEventListener('click', async () => {
   try {
     const result = await estimateWorkspace.resumePending('estimate');

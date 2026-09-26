@@ -177,6 +177,58 @@ try {
     check(replay[0].status==='ALREADY_INDEPENDENT','completed migration replayed');
     check((await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'OLD-LINKED'})).record.ownedRows[0].memo==='전환 후 새 편집','retry restored old backup over new edits');
     passed.push('restart skips completed conversion and preserves post-conversion edits');
+
+    // Saving one selected legacy estimate: no backup export, no closed-tab claim, no new load id.
+    const legacy={...structuredClone(source),estimateId:'SAVE-COMPAT',catalogName:'경매',
+      draft:{...structuredClone(source.draft),catalogRecordId:'SAVE-COMPAT'}};
+    await store.saveEstimate(legacy);
+    const foreign={...structuredClone(source),estimateId:'NO-COMPANY',catalogName:'소속 미기록',
+      draft:{...structuredClone(source.draft),catalogRecordId:'NO-COMPANY'}};
+    delete foreign.companyId;
+    await store.saveEstimate(foreign);
+    const compat=await migration.saveLegacyEstimateCompatibly({store,companyId:'ONEAPP',actor,estimateId:'SAVE-COMPAT',
+      operationId:'COMPAT-1',records:[legacy],outputOptions:{}});
+    check(compat.status==='COMMITTED','compatibility save did not commit: '+JSON.stringify(compat));
+    const compatSaved=(await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'SAVE-COMPAT'})).record;
+    check(compatSaved.estimateId===legacy.estimateId&&compatSaved.createdAt===legacy.createdAt
+      &&compatSaved.updatedAt===legacy.updatedAt&&compatSaved.sortOrder===legacy.sortOrder,'compatibility save changed identity or business metadata');
+    check(compatSaved.ownedRows.length===1&&compatSaved.ownedRows[0].memo==='수기 메모'&&compatSaved.ownedRows[0].quantity===0,'compatibility save lost manual value or explicit zero');
+    const legacyPlan=buildEstimateF8DraftPlan({selectedRecords:[legacy],allRecords:[legacy],individualRecords:[legacy]});
+    const compatBefore=buildEstimateF8Data(buildEstimateF8RowsFromPlan(legacyPlan),{}),compatAfter=buildEstimateF8Data(compatSaved.ownedRows,{});
+    for(const key of ['shopData','erpData','estimateUploadData','confirmData','errors'])check(pure.estimateValuesEqual(compatBefore[key],compatAfter[key]),'compatibility save changed '+key);
+    passed.push('one selected legacy estimate saves compatibly with the same ID, dates, manual values and F8 output');
+
+    const edit=structuredClone(compatSaved);edit.ownedRows[0].memo='저장 후 수정';edit.dataRevision++;edit.draft=pure.projectIndependentEstimateDraft(edit);
+    await store.commitIndependentEstimateEdit({companyId:'ONEAPP',actor,operationId:'COMPAT-EDIT',estimateId:'SAVE-COMPAT',expectedPreimage:compatSaved,candidate:edit});
+    const replayCompat=await migration.saveLegacyEstimateCompatibly({store,companyId:'ONEAPP',actor,estimateId:'SAVE-COMPAT',
+      operationId:'COMPAT-2',records:[legacy],outputOptions:{}});
+    check(replayCompat.status==='ALREADY_INDEPENDENT','second save reconverted an already compatible estimate');
+    check((await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'SAVE-COMPAT'})).record.ownedRows[0].memo==='저장 후 수정','re-save replaced the edit with the legacy values');
+    passed.push('re-saving keeps the stored edit and never converts twice');
+
+    const unowned=await migration.saveLegacyEstimateCompatibly({store,companyId:'ONEAPP',actor,estimateId:'NO-COMPANY',
+      operationId:'COMPAT-3',records:[foreign],outputOptions:{}});
+    check(unowned.status==='COMPANY_REVIEW_REQUIRED','estimate without a company was adopted');
+    check((await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'NO-COMPANY'})).status==='CONTEXT_REQUIRED','blocked estimate was still rewritten');
+    passed.push('an estimate without a recorded company is left unchanged');
+
+    const conflictLegacy={...structuredClone(source),estimateId:'COMPAT-CONFLICT',catalogName:'충돌',
+      draft:{...structuredClone(source.draft),catalogRecordId:'COMPAT-CONFLICT'}};
+    await store.saveEstimate(conflictLegacy);
+    const stalePlan=buildEstimateF8DraftPlan({selectedRecords:[conflictLegacy],allRecords:[conflictLegacy],individualRecords:[conflictLegacy]});
+    const staleConversion=pure.createIndependentEstimateCandidate({record:structuredClone(conflictLegacy),companyId:'ONEAPP',
+      sourcePlan:stalePlan,reportRows:buildEstimateF8RowsFromPlan(stalePlan),migrationId:'COMPAT-4',snapshotId:'COMPAT-4',snapshotHash:'STALE'});
+    check(staleConversion.status==='CANDIDATE_READY','conflict fixture candidate unusable: '+JSON.stringify(staleConversion));
+    const staleCandidate=structuredClone(staleConversion.candidate);
+    const changedLegacy={...structuredClone(conflictLegacy),draft:{...structuredClone(conflictLegacy.draft),rows:[{...row,rowId:'SOURCE-ROW',memo:'다른 탭 수정'}]}};
+    await store.saveEstimate(changedLegacy);
+    let conflicted='';
+    try{await store.commitLegacyEstimateCompatibilitySave({companyId:'ONEAPP',actor,operationId:'COMPAT-4',estimateId:'COMPAT-CONFLICT',
+      expectedPreimage:conflictLegacy,candidate:staleCandidate,verifiedOutputHash:'HASH'});}catch(error){conflicted=error.code||error.message;}
+    check(conflicted==='ESTIMATE_PREIMAGE_CONFLICT','a concurrently changed legacy estimate was overwritten');
+    const preserved=await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'COMPAT-CONFLICT'});
+    check(preserved.status==='MIGRATION_REQUIRED'&&preserved.record.draft.rows[0].memo==='다른 탭 수정','failed compatibility save changed the stored estimate');
+    passed.push('a failed compatibility save leaves the stored legacy estimate exactly as it was');
     return {passed};
   })()`);
   console.log(JSON.stringify(result,null,2));
