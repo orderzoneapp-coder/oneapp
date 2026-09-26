@@ -157,7 +157,8 @@ assert.doesNotMatch(appSource, /65000|최초 연결은 최대 1분/);
 for (const marker of ['parser-card', 'photoResizer', 'workbench', 'related-panel', 'tableScroll', 'estimateLibraryView', 'catalogPickerList']) {
   assert.match(html, new RegExp(marker), `${marker} must remain in the protected SmartInput workspace`);
 }
-assert.match(html, /class="header-customer-group"[\s\S]*id="customerInput"/, 'customer entry must live in the app header');
+assert.match(html, /id="workbenchHeading"[\s\S]*id="customerInput"/, 'customer entry must live above the work table');
+assert.doesNotMatch(html.slice(html.indexOf('<header class="app-bar"'), html.indexOf('</header>', html.indexOf('<header class="app-bar"'))), /id="customerInput"/, 'customer entry must not remain in the app header');
 assert.doesNotMatch(html, /workspace workspace--single|id="sourcePanelToggleButton"/, 'the desktop parser must not be collapsed into the grid work flow');
 assert.doesNotMatch(html, /estimateEditorButton|estimateLibraryButton|견적서 목록 전체보기/, 'the right list must coexist with the editor without a replacement view');
 assert.doesNotMatch(html + appSource, /추가 예정|양식 생성 모드|source-staging|input-template-core|workflow-core/i);

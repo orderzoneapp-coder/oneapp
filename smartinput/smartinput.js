@@ -5288,6 +5288,7 @@ function savedWorkDocumentCard(record) {
 }
 
 function renderSavedWorkDocuments() {
+  renderWorkContext();
   const saved = state.savedWorkDocuments;
   const mode = state.draft.activeMode;
   $('voucherContextEyebrow').textContent = 'SMARTINPUT SAVED WORK';
@@ -5423,7 +5424,56 @@ function setRelatedPanelOpen(open) {
   scheduleSave({ invalidateOperations: false });
 }
 
+// Display-only projection. Never infer a destination from a source filename or an input template.
+function buildWorkContextView({ mode, current = {}, companyId = '', selectedIds = [], records = [],
+  savedRecords = [], ready = false, error = false, filePending = false } = {}) {
+  const labels = { order: '주문서', purchase: '구매', sale: '판매', estimate: '견적서' };
+  const modeLabel = labels[mode] || '전표';
+  const view = (target, status = 'ready', detail = target) => ({ modeLabel, target, status, detail });
+  if (filePending) return view('대상 확인 중', 'loading', '파일 불러오기가 끝나면 실제 작업 대상을 표시합니다.');
+  if (mode !== 'estimate') {
+    const documentId = String(current.savedWorkDocumentId || '');
+    if (!documentId) return view(mode === 'order' ? '새 주문서' : `새 ${modeLabel} 자료`, 'new');
+    const record = savedRecords.find(item => item.documentId === documentId
+      && item.companyId === companyId && item.voucherMode === mode);
+    const title = String(record?.title || '').trim();
+    return view(title || '저장 자료', 'ready', title ? `${title} · ${documentId}` : `현재 저장 자료 ID: ${documentId}`);
+  }
+  if (!ready) return view(error ? '대상 조회 실패' : '대상 확인 중', error ? 'error' : 'loading');
+  const ids = [...new Set(selectedIds.filter(Boolean))];
+  const selectedTable = Boolean(current.stage3SelectedTable);
+  const fileUpdate = Boolean(current.inputMapping) && !current.stage3LegacyPreview;
+  // File updates / selected work tables use the same selection as their existing save path.
+  const targetIds = fileUpdate || selectedTable ? ids : (current.catalogRecordId ? [current.catalogRecordId] : []);
+  if (!targetIds.length) return view(fileUpdate || selectedTable ? '대상 선택 필요' : '새 견적서', fileUpdate || selectedTable ? 'required' : 'new');
+  const byId = new Map(records.filter(record => !record.companyId || record.companyId === companyId)
+    .map(record => [record.estimateId, record]));
+  const targets = targetIds.map(id => byId.get(id));
+  if (targets.some(record => !record)) return view('대상 확인 필요', 'required', '선택한 견적서가 현재 회사의 목록에 없습니다.');
+  // The customer and catalog are different concepts: an absent catalog name is not replaced with a customer name.
+  const names = targets.map(record => String(record.catalogName || '').trim() || '견적서명 미지정');
+  return view(names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}개`, 'ready', names.join(' · '));
+}
+
+function renderWorkContext() {
+  const view = buildWorkContextView({ mode: state.draft.activeMode, current: modeDraft(),
+    companyId: state.companyId, selectedIds: estimateWorkspace.selected(), records: state.estimates,
+    savedRecords: state.savedWorkDocuments.records, ready: state.smartDataReady,
+    error: Boolean(state.smartDataError), filePending: Boolean(state.activeFileInputAttemptId) });
+  for (const id of ['sourceWorkContext', 'centerWorkContext']) {
+    const element = $(id);
+    if (!element) continue;
+    const mode = element.querySelector('[data-work-context-mode]');
+    const target = element.querySelector('[data-work-context-target]');
+    if (mode && mode.textContent !== view.modeLabel) mode.textContent = view.modeLabel;
+    if (target && target.textContent !== view.target) target.textContent = view.target;
+    if (element.dataset.state !== view.status) element.dataset.state = view.status;
+    if (element.title !== view.detail) element.title = view.detail;
+  }
+}
+
 function renderEstimateWorkspace() {
+  renderWorkContext();
   const estimateMode = state.draft.activeMode === 'estimate';
   $('estimateLibraryView').hidden = false;
   $('voucherContextView').hidden = estimateMode;
@@ -5474,6 +5524,7 @@ function syncEstimateLibraryCardSelection() {
 }
 
 function syncEstimateLibraryActionState() {
+  renderWorkContext();
   const count = estimateWorkspace.selected().length;
   $('estimateSelectionSummary').textContent = `${count}개 선택`;
   $('estimateLibraryIndividualButton').textContent = count ? `견적서 목록 · ${count}개 선택` : '견적서 목록';
@@ -7175,6 +7226,7 @@ function renderInlineValidation(precomputedSummary = null) {
 }
 
 function renderDelivery() {
+  renderWorkContext();
   const isOrder = state.draft.activeMode === 'order';
   const isPurchase = state.draft.activeMode === 'purchase';
   const isSale = state.draft.activeMode === 'sale';
@@ -13087,7 +13139,7 @@ voucherTableHead.addEventListener('dragover', moveColumnDrag);
 voucherTableHead.addEventListener('drop', finishColumnDrop);
 voucherTableHead.addEventListener('dragend', finishColumnDrag);
 
-document.querySelector('.app-bar').addEventListener('input', event => {
+document.querySelector('.header-fields').addEventListener('input', event => {
   const input = event.target.closest('[data-custom-header-input]');
   if (!input) return;
   modeDraft().header.customValues ||= {};
