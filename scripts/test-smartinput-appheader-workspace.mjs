@@ -85,8 +85,10 @@ assert.match(css, /\.related-panel \.estimate-library-actions\s*\{[^}]*max-heigh
   'the right-panel footer must stay at or below 44px with two horizontal actions');
 assert.match(css, /\.estimate-info-customer__value\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
   'the estimate information dialog must keep the matched customer and rematch action together');
-assert.match(html, /id="completeButton"[^>]*>저장<\/button>[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/,
-  'the table footer must keep Save left and approved estimate/output actions right in order');
+assert.match(html, /id="tableViewSwitch"[\s\S]*id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateSaveMenu"[\s\S]*id="saveEstimateAsButton"[^>]*>복사본으로 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/,
+  'the table footer must keep table-view + Save left and approved estimate/output actions right in order');
+assert.equal((html.match(/id="tableViewSwitch"/g) || []).length, 1, 'table view switch must exist once');
+assert.doesNotMatch(html, /id="estimateExcludedToggle"|id="addRowButton"|id="undoGridPasteButton"/);
 assert.match(css, /\.product-picker-dialog[\s\S]*\.product-picker-results[\s\S]*\.product-picker-result\.is-selected[^}]*var\(--focus\)/,
   'the product candidate dialog must use the shared modal surface and a non-green keyboard selection marker');
 assert.doesNotMatch(html + css, /reference-overview__coachmark/, 'reference status must not use a coachmark surface');

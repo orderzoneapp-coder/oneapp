@@ -195,7 +195,7 @@ try {
   await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?v=0.6.4');const a=await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'EST-A'});return a.record.ownedRows[0].quantity===7;})()`, 'selected general edit committed');
   const after=await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?v=0.6.4');return (await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'EST-B'})).record;})()`);
   assert.deepEqual(after,before,'unselected estimate must remain byte-equivalent');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateExcludedCount').textContent`),'업데이트 제외: 0건');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr.is-update-excluded').length`),0,'no excluded rows before unmatched Excel');
   await evaluate(client, String.raw`(()=>{const data=new DataTransfer();data.items.add(new File(['\ufeff거래처코드,품목코드,품목명,단위,수량,입고B\r\nC1,P1,상품,개,7,30\r\nC1,EXTRA,추가상품,개,1,5'],'선택 업데이트.csv',{type:'text/csv'}));const input=document.querySelector('#fileInput');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
   await expr(client, `document.querySelector('#sourceTextInput').value.includes('EXTRA') && !document.querySelector('#completeButton').disabled`, 'real CSV loaded with confirmed template');
   assert.equal(await evaluate(client, `document.querySelectorAll('.estimate-card.is-selected').length`),1,'selection survives file load');
@@ -208,16 +208,13 @@ try {
   await click(client,'#completeButton');
   await expr(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?v=0.6.4');const a=await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'EST-A'});return a.record.ownedRows[0].purchasePriceB===30;})()`, 'selected Excel update committed');
   assert.deepEqual(await evaluate(client, `(async()=>{const store=await import('/smartinput/smartinput-data-store.js?v=0.6.4');return (await store.loadEstimateForUpdate({companyId:'ONEAPP',estimateId:'EST-B'})).record;})()`),before);
-  await expr(client, `document.querySelector('#estimateExcludedCount').textContent==='업데이트 제외: 1건'`, 'Excel unmatched row count');
-  await click(client,'#estimateExcludedToggle');
-  await expr(client, `document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])').length===1`, 'same table exclusion filter');
+  await expr(client, `document.querySelectorAll('#inputRows tr.is-update-excluded').length===1`, 'Excel unmatched row remains marked excluded');
   await click(client,'#resetDraftButton');
   await expr(client, `document.querySelectorAll('.estimate-card.is-selected').length===0`, 'reset clears explicit selection');
   await click(client,'#estimateMultiSelectButton');
   await expr(client, `document.querySelectorAll('.estimate-card.is-selected').length===2 && document.querySelectorAll('#inputRows tr[data-row-id]:not([data-default-row])').length===3`, 'all estimates after reset');
-  assert.equal(await evaluate(client, `document.querySelector('#estimateExcludedCount').textContent`),'업데이트 제외: 1건','last round excludes missing target, no-history estimate does not add exclusions');
-  await click(client,'#estimateExcludedToggle');
-  await expr(client, `document.querySelector('#inputRows input[data-field="itemCode"]')?.value==='P2'`, 'last Excel exclusion joined to owner row');
+  assert.equal(await evaluate(client, `document.querySelectorAll('#inputRows tr.is-update-excluded').length`),1,'last round excludes missing target, no-history estimate does not add exclusions');
+  await expr(client, `document.querySelector('#inputRows tr.is-update-excluded')!=null`, 'exclusion marker stays on problem rows without a filter UI');
   await click(client,'.mode-tab[data-mode="purchase"]');
   await expr(client, `document.querySelector('.mode-tab[data-mode="purchase"]').getAttribute('aria-selected')==='true' && document.querySelector('#inputRows tr[data-default-row="true"] input[data-field="itemName"]')`, 'purchase mode ready');
   await evaluate(client, `(()=>{const input=document.querySelector('#inputRows tr[data-default-row="true"] input[data-field="itemName"]');input.value='SmartInput 독립 저장 검증';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);

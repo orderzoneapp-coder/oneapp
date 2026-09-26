@@ -107,6 +107,7 @@ jobs:
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
           node scripts/test-smartinput-v2-official-revision-browser.mjs
           node scripts/test-smartinput-erp-estimate-status-xlsx-browser.mjs
+          node scripts/test-smartinput-estimate-footer-ux-browser.mjs
 
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs

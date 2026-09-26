@@ -407,7 +407,7 @@ try {
   await expr(client, `document.querySelector('[data-mapping-row-id="source-2"] [data-mapping-column="0"] input').value==='009'`, 'existing mapping-row paste');
   assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('[data-mapping-row-id="source-2"]');return [...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value);})()`),
     ['009', '', '0', ''], 'mapping-worktable paste must retain its existing whole-range overwrite contract, including blank cells');
-  await click(client, '#undoGridPasteButton');
+  await evaluate(client, `(() => {document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',code:'KeyZ',ctrlKey:true,bubbles:true,cancelable:true}));return true;})()`);
   assert.deepEqual(await evaluate(client, `(() => {const row=document.querySelector('[data-mapping-row-id="source-2"]');return [...row.querySelectorAll('input[data-mapping-cell]')].map(input=>input.value);})()`),
     existingRowBeforePaste, 'mapping-worktable paste undo must restore the overwritten row');
 
