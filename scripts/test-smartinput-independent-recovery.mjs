@@ -36,7 +36,17 @@ assert.doesNotMatch(appSource, /downloadMinimumUploadTemplate|uploadTemplateButt
 assert.doesNotMatch(appSource, /DRAFT_LIST_STORAGE_KEY|openDraftListDialog|saveModeDraftSnapshot/);
 assert.match(html, /id="restoreAutosaveButton"[^>]*>자동저장 복구<\/button>/);
 assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="completeButton"[^>]*>저장<\/button>/);
-assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="saveEstimateAsButton"[^>]*>새 견적서 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/);
+assert.match(html, /<footer class="voucher-footer-actions"[\s\S]*id="tableViewSwitch"[\s\S]*id="completeButton"[^>]*>저장<\/button>[\s\S]*id="estimateSaveMenu"[\s\S]*id="saveEstimateAsButton"[^>]*>복사본으로 저장<\/button>[\s\S]*id="estimateNoticeButton"[^>]*>카톡 공유<\/button>[\s\S]*id="estimateExcelButton"[^>]*>보고서<\/button>/);
+assert.equal((html.match(/id="tableViewSwitch"/g) || []).length, 1, 'table view switch must exist once in the footer');
+assert.doesNotMatch(html, /id="estimateExcludedControls"|id="estimateExcludedToggle"|id="addRowButton"|id="undoGridPasteButton"/,
+  'top-bar exclusion filter, blank-row, and paste-undo buttons must be removed');
+assert.doesNotMatch(html, /모아 보기|빈 행 추가|붙여넣기 취소/);
+assert.doesNotMatch(appSource, /estimateExclusionOnly|estimateExcludedToggle|addRowButton|undoGridPasteButton/);
+assert.match(appSource, /forceNew:\s*saveAs|forceNew\s*=\s*false/, 'copy-save must force a new estimateId');
+assert.match(appSource, /같은 이름의 견적서가 있습니다\. 다른 이름을 입력하세요/, 'copy and rename collisions must block instead of overwriting');
+assert.match(appSource, /같은 이름의 견적서가 있습니다\. 기존 견적서를 불러와 수정하거나 다른 이름을 입력하세요/, 'new drafts must not overwrite by name');
+assert.match(appSource, /handleGridPasteUndoShortcut|Ctrl\+Z로 취소/, 'grid paste undo must use Ctrl\/Cmd+Z with a post-paste hint');
+assert.match(appSource, /erpSummary \? '견적서 업데이트'/, 'ERP summary mode must keep the update primary action');
 assert.doesNotMatch(html, /id="linkedEstimateList"/);
 assert.match(html, /id="catalogPickerList"/);
 assert.match(html, /id="voucherContextView"[\s\S]*id="voucherContextList"/, 'voucher modes must use the right rail for date-scoped activity');
@@ -62,12 +72,13 @@ assert.match(appSource, /estimateKind === 'LINKED_GROUP'/);
 assert.doesNotMatch(appSource, /flushLinkedRowsToSources|flushLinkedIndividualToLibrary|queueLinkedRowsWriteThrough/,
   'autosave must never write through to linked estimate originals');
 assert.match(appSource, /estimateWorkspace.edit/, 'general save must use target-only CAS');
-assert.match(appSource, /collision && !window.confirm/, 'name collisions need explicit overwrite confirmation');
+assert.match(appSource, /forceNew/, 'name collisions must create a new estimate only when Save As is explicit');
+assert.doesNotMatch(appSource, /collision && !window\.confirm/, 'name collisions must no longer offer overwrite confirmation');
 assert.match(appSource, /touchstart', beginEstimateTouchDrag/, 'estimate card handles must support touch reordering as well as desktop drag');
 assert.match(appSource, /data-select-estimate-card[\s\S]*data-estimate-drag-handle/, 'estimate cards must separate body selection from handle-only reordering');
 assert.doesNotMatch(appSource + html, /data-estimate-select|estimate-card__check/, 'estimate cards must not use checkboxes');
 assert.match(html, /id="selectedEstimateDeleteButton"[\s\S]*id="estimateRenameButton"[^>]*>정보 변경</, 'the estimate library must expose only selected deletion and information actions');
-assert.match(html, /id="saveEstimateAsButton"[^>]*>새 견적서 저장</, 'a loaded estimate must use Save As instead of in-place rename');
+assert.match(html, /id="saveEstimateAsButton"[^>]*>복사본으로 저장</, 'a loaded estimate must expose Save As as a copy action');
 assert.match(appSource, /function openSelectedEstimateInformationDialog[\s\S]*commitIndependentEstimateEdit/, 'information changes use target-only CAS');
 assert.match(appSource, /function updatedEstimateInformationBundle[\s\S]*customerId:[\s\S]*customerCode:[\s\S]*customerName:[\s\S]*next\[target\] = value; next\.draft\.header\[target\] = value/,
   'estimate information changes must persist the same customer identity on the record and draft header');

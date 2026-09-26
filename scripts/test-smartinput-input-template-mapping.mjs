@@ -411,13 +411,17 @@ assert.match(smartInputHtml, /id="mappingValidationPrevious"[\s\S]*id="mappingVa
   'guided validation must expose previous and next issue navigation');
 assert.match(smartInputHtml, /class="sr-only" id="gridValidation"/,
   'inline text to the right of voucher reset must remain accessible without consuming toolbar space');
-assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*id="inputTemplateSaveButton"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="addRowButton"[\s\S]*id="undoGridPasteButton"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/,
-  'template save must stay left while blank row, paste undo and selection delete use the fixed right-side order');
+assert.match(smartInputHtml, /class="basic-action-scroll"[\s\S]*id="inputTemplateSaveButton"[\s\S]*<\/div>\s*<small class="sr-only" id="gridValidation"[\s\S]*id="deleteSelectedRows"[\s\S]*id="resetDraftButton"/,
+  'template save must stay left while selection delete and voucher reset use the fixed right-side order');
+assert.doesNotMatch(smartInputHtml, /id="addRowButton"|id="undoGridPasteButton"|id="estimateExcludedToggle"/);
+assert.match(smartInputHtml, /<footer class="voucher-footer-actions"[\s\S]*id="tableViewSwitch"/,
+  'table view switch must live in the footer completion bar');
+assert.equal((smartInputHtml.match(/id="tableViewSwitch"/g) || []).length, 1);
 assert.match(smartInputCss, /\.grid-card > \.work-action-bar \.basic-action-scroll \{ flex: 1 1 auto; \}/,
   'the basic actions must scroll within their own fixed slot while voucher reset remains visible');
 assert.match(smartInputCss, /\.mapping-column-heading\.is-validation-error/,
   'problem mapping headers must receive a visible validation highlight');
-assert.match(smartInputHtml, /id="tableViewSwitch"[\s\S]*id="inputMappingStatus"[\s\S]*id="mappingValidationNav"[\s\S]*id="inputTemplateReloadButton"[\s\S]*id="pendingPasteToSourceButton"/,
+assert.match(smartInputHtml, /id="inputMappingStatus"[\s\S]*id="mappingValidationNav"[\s\S]*id="inputTemplateReloadButton"[\s\S]*id="pendingPasteToSourceButton"/,
   'mapping notice, validation, and temporary mapping actions must use the upper fixed toolbar');
 assert.doesNotMatch(smartInputHtml, /id="subWorkBar"|class="sub-work-bar"/,
   'a new-template notice must not reserve a dedicated row above the table');

@@ -135,8 +135,7 @@ const recordDiagnostic = async phase => {
 };
 const runEstimateSaveSequence = async () => {
   await click(client, '[data-mode="estimate"]');
-  await click(client, '#addRowButton');
-  await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
+  await input(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', 'EST-1');
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '1');
   await input(client, '#inputRows [data-field="unitPrice"]', '1500');
@@ -155,7 +154,6 @@ const runEstimateSaveSequence = async () => {
   await recordDiagnostic('after-in-place-save-wait');
   await click(client, '#resetDraftButton');
   await recordDiagnostic('after-estimate-reset');
-  await click(client, '#addRowButton');
   await typeTrailingProductQuery(client, 'EST-2');
   await input(client, '#inputRows [data-field="itemName"]', '행사 견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '3');
@@ -302,10 +300,12 @@ try {
     title:document.title,
     modeTabs:[...document.querySelectorAll('.mode-tab')].map(button=>({mode:button.dataset.mode,label:button.textContent.trim()})),
     sourceMethods:[...document.querySelectorAll('.parser-toolbar [data-method]')].map(button=>({method:button.dataset.method,label:button.textContent.replace(/^[＋●]\s*/, '').trim()})),
-    actionButtons:['restoreAutosaveButton','analyzeButton','addRowButton','resetDraftButton','completeButton','estimateNoticeButton','estimateExcelButton'].map(id=>({id,label:document.getElementById(id).textContent.replace(/✦|↻/g,'').replace(/\s+/g,' ').trim()})),
+    actionButtons:['restoreAutosaveButton','analyzeButton','resetDraftButton','completeButton','estimateNoticeButton','estimateExcelButton'].map(id=>({id,label:document.getElementById(id).textContent.replace(/✦|↻/g,'').replace(/\s+/g,' ').trim()})),
     tableColumns:[...document.querySelectorAll('#voucherInputTable thead th:not(.is-column-hidden)')].map(cell=>({id:cell.dataset.column||'sequence',label:cell.textContent.trim()})),
     regions:{appBar:rect('.app-bar'),parser:rect('.parser-card'),workbench:rect('.workbench'),grid:rect('.grid-card'),related:rect('.related-panel')},
-    footerOrder:[...document.querySelectorAll('.voucher-footer-actions button')].map(button=>button.id)
+    footerOrder:[...document.querySelectorAll('.voucher-footer-actions button[id]')].map(button=>button.id),
+    tableViewInFooter:Boolean(document.querySelector('.voucher-footer-actions #tableViewSwitch')),
+    tableViewCount:document.querySelectorAll('#tableViewSwitch').length
   };})()`);
   assert.deepEqual(domBaseline.modeTabs, [
     { mode: 'order', label: '주문서' },
@@ -321,6 +321,8 @@ try {
     'No.', '품목코드', '품목명', '규격', '수량', '단가', '공급가액', '메모', '적요(직원)', '공지단가'
   ], 'first-use order mode must show its approved initial field labels and order');
   assert.deepEqual(domBaseline.footerOrder, ['completeButton', 'saveEstimateAsButton', 'estimateMasterApplyButton', 'estimateRetryButton', 'estimateMasterRetryButton', 'estimateNoticeButton', 'estimateExcelButton']);
+  assert.equal(domBaseline.tableViewInFooter, true, 'table view switch must live in the footer');
+  assert.equal(domBaseline.tableViewCount, 1, 'table view switch must exist once');
   const mergedSelectionColumn = await evaluate(client, `(() => {const heading=document.querySelector('#voucherInputTable thead th:first-child');const row=document.querySelector('#inputRows tr');const checkbox=row?.querySelector('[data-select-row]');return {fixedColumns:document.querySelectorAll('#voucherInputTable colgroup col:not([data-column])').length,headerHasSelectAll:Boolean(heading?.querySelector('#selectAllRows')),rowNumber:row?.querySelector('.row-sequence-number')?.textContent.trim(),sameCell:checkbox?.closest('td')===row?.cells[0],checkboxWidth:checkbox?.getBoundingClientRect().width||0};})()`);
   assert.deepEqual({ fixedColumns: mergedSelectionColumn.fixedColumns, headerHasSelectAll: mergedSelectionColumn.headerHasSelectAll, rowNumber: mergedSelectionColumn.rowNumber, sameCell: mergedSelectionColumn.sameCell }, { fixedColumns: 1, headerHasSelectAll: true, rowNumber: '1', sameCell: true }, 'No. and selection must share one fixed column');
   assert.ok(mergedSelectionColumn.checkboxWidth >= 20, 'row selection checkbox must be enlarged');
@@ -491,13 +493,13 @@ try {
     unitPrices: [1500, 0, 1600],
     units: ['EA', beforeGridPaste.units[1], 'BOX']
   }, 'blank and invisible-whitespace rows must not create work rows; explicit zero and negative values must survive; blank cells keep the existing direct-grid overwrite contract');
-  await click(client, '#undoGridPasteButton');
+  await evaluate(client, `(() => {document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',code:'KeyZ',ctrlKey:true,bubbles:true,cancelable:true}));return true;})()`);
   assert.deepEqual(await evaluate(client, `(() => ({
     quantities:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="quantity"]')].map(input=>input.value),
     units:[...document.querySelectorAll('#inputRows tr:not([data-default-row="true"]) [data-field="unit"]')].map(input=>input.value)
   }))()`), beforeGridPaste, 'reordered grid paste undo must restore the prior rows without retaining a fake blank row');
   await evaluate(client, String.raw`(() => {const row=document.querySelector('#inputRows tr:not([data-default-row="true"])');const fields=[...document.querySelectorAll('#voucherInputTable thead th[data-column]')].filter(th=>!th.classList.contains('is-column-hidden')).map(th=>th.dataset.column).filter(field=>row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]'));const headers=fields.map(field=>document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').childNodes[0]?.textContent?.trim()||document.querySelector('#voucherInputTable thead th[data-column="'+CSS.escape(field)+'"]').textContent.trim());const values=fields.map(field=>{const input=row.querySelector('[data-field="'+CSS.escape(field)+'"],[data-custom-row-field="'+CSS.escape(field)+'"]');return field==='quantity'?'8':input.value;});const target=row.querySelector('[data-field="'+CSS.escape(fields[0])+'"],[data-custom-row-field="'+CSS.escape(fields[0])+'"]');const text=headers.join('\t')+'\n'+values.join('\t');const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:type=>type==='text/plain'?text:''}});target.dispatchEvent(event);})()`);
-  const exactStructureUndo = await expr(client, `(() => {const quantity=document.querySelector(${JSON.stringify(firstQuantity)});const undo=document.querySelector('#undoGridPasteButton');const pending=document.querySelector('#pendingPasteToSourceButton');if(quantity?.value!=='8'||undo?.disabled||!pending?.hidden)return null;const before={quantity:quantity.value,undoDisabled:undo.disabled,pendingHidden:pending.hidden};undo.click();return {...before,afterQuantity:document.querySelector(${JSON.stringify(firstQuantity)})?.value,afterDisabled:undo.disabled,toast:document.querySelector('#toast')?.textContent};})()`, 'exact-structure grid paste and atomic undo');
+  const exactStructureUndo = await expr(client, `(() => {const quantity=document.querySelector(${JSON.stringify(firstQuantity)});const pending=document.querySelector('#pendingPasteToSourceButton');if(quantity?.value!=='8'||!pending?.hidden)return null;const before={quantity:quantity.value,pendingHidden:pending.hidden};document.dispatchEvent(new KeyboardEvent('keydown',{key:'z',code:'KeyZ',ctrlKey:true,bubbles:true,cancelable:true}));return {...before,afterQuantity:document.querySelector(${JSON.stringify(firstQuantity)})?.value,toast:document.querySelector('#toast')?.textContent};})()`, 'exact-structure grid paste and atomic undo');
   assert.equal(exactStructureUndo.afterQuantity, '2', `grid paste undo must restore the prior row: ${JSON.stringify(exactStructureUndo)}`);
   await click(client, '#inputRows [data-select-row]');
   assert.equal(await evaluate(client, `!document.querySelector('#deleteSelectedRows').disabled`), true, 'row selection must enable bulk delete');
@@ -1056,7 +1058,6 @@ try {
     const modeFlowStartedAt = performance.now();
     let dateDeleteEvidence = null;
     await click(client, `[data-mode="${mode}"]`);
-    await click(client, '#addRowButton');
     await click(client, '#customerSearchButton');
     await expr(client, `Boolean(document.querySelector('.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]'))`, `${mode} customer fixture in chooser`);
     await click(client, '.smart-customer-dialog [data-customer-id="E2E-CUSTOMER"] input[type="checkbox"]');
@@ -1142,11 +1143,11 @@ try {
   assert.deepEqual(estimateRailFooter.buttons.map(button => button.id), ['selectedEstimateDeleteButton', 'estimateRenameButton'], 'right rail footer must contain only deletion and information change');
   assert.equal(await evaluate(client, `document.querySelector('#estimateRenameButton').textContent.trim()`), '정보 변경', 'the selected-estimate action must be labeled information change');
   assert.equal(new Set(estimateRailFooter.buttons.map(button => button.y)).size, 1, 'right rail actions must remain horizontal');
-  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#estimateOutputActions .button[id]')].map(button=>button.id)`), domBaseline.footerOrder.filter(id => id !== 'completeButton'), 'estimate table footer must preserve the independent estimate actions and output order');
-  assert.deepEqual(await evaluate(client, `[...document.querySelector('#estimateOutputActions').children].map(element=>element.id)`), ['saveEstimateAsButton', 'estimateUpdateMenu', 'estimateNoticeButton', 'estimateExcelButton'], 'primary estimate actions must keep Save As, update menu, Kakao, and report in order');
+  assert.deepEqual(await evaluate(client, `[...document.querySelectorAll('#estimateOutputActions .button[id]')].map(button=>button.id)`), ['estimateMasterApplyButton', 'estimateRetryButton', 'estimateMasterRetryButton', 'estimateNoticeButton', 'estimateExcelButton'], 'estimate output actions must keep update menu, Kakao, and report');
+  assert.deepEqual(await evaluate(client, `[...document.querySelector('#estimateOutputActions').children].map(element=>element.id)`), ['estimateUpdateMenu', 'estimateNoticeButton', 'estimateExcelButton'], 'primary estimate output actions must keep update menu, Kakao, and report in order');
+  assert.equal(await evaluate(client, `document.querySelector('#saveEstimateAsButton')?.closest('.estimate-save-cluster')!=null&&document.querySelector('#estimateSaveMenu')?.hidden===true`), true, 'copy-save must live beside the primary save and stay hidden on a new draft');
   assert.equal(await evaluate(client, `(() => {const buttons=[...document.querySelectorAll('#estimateOutputActions > button')].filter(button=>button.getClientRects().length);return buttons.every((button,index)=>index===0||buttons[index-1].getBoundingClientRect().right<=button.getBoundingClientRect().left);})()`), true, 'visible primary estimate buttons must retain their visual left-to-right order');
-  await click(client, '#addRowButton');
-  await input(client, '#inputRows [data-field="itemCode"]', 'EST-1');
+  await input(client, '#inputRows tr[data-default-row="true"] [data-field="itemCode"]', 'EST-1');
   await input(client, '#inputRows [data-field="itemName"]', '견적 상품');
   await input(client, '#inputRows [data-field="quantity"]', '1');
   await input(client, '#inputRows [data-field="unitPrice"]', '1500');
@@ -1161,6 +1162,7 @@ try {
   assert.equal(await evaluate(client, `document.querySelector('#customerInput').value`), '', 'successful voucher save must clear the customer field');
   const savedEstimateId = await evaluate(client, `document.querySelector('#catalogPickerList [data-estimate-id]').dataset.estimateId`);
   assert.equal(await evaluate(client, `document.querySelector('#catalogPickerList [data-estimate-id]').classList.contains('is-selected')`), true, 'a saved estimate must remain the one lit active card');
+  assert.equal(await evaluate(client, `document.querySelector('#estimateSaveMenu')?.hidden===false&&document.querySelector('#saveEstimateAsButton')?.textContent.trim()==='복사본으로 저장'`), true, 'a loaded estimate must expose copy-save beside the primary save');
   await input(client, '#inputRows [data-field="unitPrice"]', '1750');
   await click(client, '#completeButton');
   await expr(client, `!document.querySelector('#completeButton').disabled&&!document.querySelector('[data-estimate-name]')&&document.querySelector('#catalogPickerList [data-estimate-id="${savedEstimateId}"]')?.classList.contains('is-selected')`, 'existing estimate in-place save without a new-name dialog');
@@ -1168,7 +1170,6 @@ try {
   assert.equal(await evaluate(client, `document.querySelectorAll('#catalogPickerList [data-estimate-id]').length`), 1, 'in-place estimate save must not create a duplicate record');
   await click(client, '#resetDraftButton');
   await recordDiagnostic('full-after-estimate-reset');
-  await click(client, '#addRowButton');
   await evaluate(client, `(() => {const element=document.querySelector('#inputRows tr[data-default-row="true"] [data-field="itemCode"]');element.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(element,'EST-2');element.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);
   assert.equal(await evaluate(client, `document.activeElement?.dataset?.field==='itemCode'&&document.activeElement?.closest('tr')?.dataset.defaultRow!=='true'&&document.querySelectorAll('#inputRows tr[data-default-row="true"]').length===1`), true, 'materializing the trailing row must preserve keyboard focus and append one new manual row without rerendering the active cell');
   await input(client, '#inputRows [data-field="itemName"]', '행사 견적 상품');

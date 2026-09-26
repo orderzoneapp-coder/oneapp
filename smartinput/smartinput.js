@@ -781,7 +781,6 @@ const estimateWorkspace = createEstimateWorkspace({
 estimateWorkspace.setCompany(state.companyId);
 estimateWorkspace.restore(initialEstimateWorkspace);
 state.estimateTableBaseline = initialEstimateWorkspace?.tableBaseline || [];
-state.estimateExclusionOnly = false;
 
 function estimateExcelFile(current = modeDraft()) {
   if (current.stage3LegacyPreview) return null;
@@ -867,18 +866,20 @@ async function flushDraftBeforeWorkspaceChange() {
 }
 
 function renderEstimateExclusions() {
-  const box = $('estimateExcludedControls');
-  box.hidden = state.draft.activeMode !== 'estimate';
-  if (box.hidden) return;
+  if (state.draft.activeMode !== 'estimate') {
+    for (const row of document.querySelectorAll('tr.is-update-excluded')) {
+      row.classList.remove('is-update-excluded');
+      row.removeAttribute('title');
+    }
+    return;
+  }
   const current = modeDraft();
   const index = estimateWorkspace.exclusions(current.rows, estimateExcelFile() ? 'EXCEL' : 'ESTIMATES', estimateExcelFile());
-  $('estimateExcludedCount').textContent = `업데이트 제외: ${index.count}건`;
-  $('estimateExcludedToggle').textContent = state.estimateExclusionOnly ? '전체 보기' : '모아 보기';
-  $('estimateExcludedToggle').setAttribute('aria-pressed', String(state.estimateExclusionOnly));
   for (const row of document.querySelectorAll('tr[data-row-id], tr[data-mapping-row-id]')) {
     const reasons = index.byRow.get(row.dataset.rowId || row.dataset.mappingRowId);
     row.classList.toggle('is-update-excluded', Boolean(reasons));
     if (reasons) row.title = reasons.map(item => `${item.estimateId}: ${item.reasons.join(', ')}`).join('\n');
+    else row.removeAttribute('title');
   }
 }
 
@@ -1817,12 +1818,9 @@ function refreshInputListSearchRows(rows, changedRowIds, session = inputMappingS
 }
 
 function visibleInputListRows(session = inputMappingSession(), query = state.inputListSearch.query) {
-  const rows = filterInputListRows(modeDraft().rows, query, {
+  return filterInputListRows(modeDraft().rows, query, {
     sourceRows: inputListSourceRows(session), searchIndex: inputListSearchIndex(session)
   });
-  if (state.draft.activeMode !== 'estimate' || !state.estimateExclusionOnly) return rows;
-  const index = estimateWorkspace.exclusions(modeDraft().rows, estimateExcelFile() ? 'EXCEL' : 'ESTIMATES', estimateExcelFile());
-  return rows.filter(row => index.byRow.has(row.rowId));
 }
 
 function selectionScopeRows() {
@@ -1831,7 +1829,7 @@ function selectionScopeRows() {
     const keys = new Set(viewport.visibleKeys());
     return (sourceTableViewActive() ? visibleMappingRows() : visibleInputListRows()).filter(row => keys.has(row.rowId));
   }
-  if (!state.inputListSearch.open && !state.estimateExclusionOnly) {
+  if (!state.inputListSearch.open) {
     return sourceTableViewActive()
       ? visibleMappingRows(inputMappingSession(), '')
       : modeDraft().rows;
@@ -1844,7 +1842,7 @@ function selectionScopeRowIds() {
     ? visibleMappingRows(inputMappingSession(), '')
     : modeDraft().rows;
   return inputListSelectionScopeRowIds(allRows, selectionScopeRows(), {
-    searchOpen: state.inputListSearch.open || state.estimateExclusionOnly || (sourceTableViewActive() ? mappingViewport : inputViewport).stats().filterActive
+    searchOpen: state.inputListSearch.open || (sourceTableViewActive() ? mappingViewport : inputViewport).stats().filterActive
   });
 }
 
@@ -6365,16 +6363,9 @@ function cloneGridValue(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function syncGridPasteUndoButton() {
-  const button = $('undoGridPasteButton');
-  if (!button) return;
-  button.disabled = state.gridPasteUndo?.mode !== state.draft.activeMode;
-}
-
 function invalidateGridPasteUndo() {
   if (state.applyingGridPaste || !state.gridPasteUndo) return;
   state.gridPasteUndo = null;
-  syncGridPasteUndoButton();
 }
 
 function captureGridPasteUndo() {
@@ -6391,12 +6382,15 @@ function captureGridPasteUndo() {
     selectedRowIds: [...state.selectedRowIds],
     activeCellId: modeUi().activeCellId || ''
   };
-  syncGridPasteUndoButton();
+}
+
+function gridPasteUndoAvailable() {
+  return Boolean(state.gridPasteUndo && state.gridPasteUndo.mode === state.draft.activeMode);
 }
 
 function undoGridPaste() {
   const snapshot = state.gridPasteUndo;
-  if (!snapshot || snapshot.mode !== state.draft.activeMode) return;
+  if (!snapshot || snapshot.mode !== state.draft.activeMode) return false;
   invalidateOptionalOperations();
   const current = modeDraft();
   current.rows = snapshot.rows.map(row => contract.normalizeRow(row));
@@ -6415,8 +6409,19 @@ function undoGridPaste() {
   mappingViewport.invalidate();
   renderMode();
   saveDraftNow();
-  syncGridPasteUndoButton();
   toast('Excel 붙여넣기를 취소했습니다.', 'success');
+  return true;
+}
+
+function handleGridPasteUndoShortcut(event) {
+  if (event.isComposing) return;
+  if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
+  if (event.getModifierState?.('Alt')) return;
+  if (String(event.key || '').toLowerCase() !== 'z') return;
+  if (document.querySelector('dialog[open]')) return;
+  if (!gridPasteUndoAvailable()) return;
+  event.preventDefault();
+  undoGridPaste();
 }
 
 function syncRowSelectionControls() {
@@ -7182,7 +7187,6 @@ function renderRows({ restoreFocus = true, deferLayout = false } = {}) {
     return field === 'supplyAmount' ? Number(row.quantity || 0) * Number(row.unitPrice || 0) : row[field] ?? row.customValues?.[field] ?? '';
   });
   syncRowSelectionControls();
-  syncGridPasteUndoButton();
   updateSummaries();
   if (!deferLayout) {
     applyFormLayout();
@@ -7350,9 +7354,18 @@ function renderDelivery() {
   $('saveWorkDocumentAsButton').hidden = !savesLocally || !(modeDraft().savedWorkDocumentId || modeDraft().pendingSavedWorkDocumentId);
   $('saveWorkDocumentAsButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId);
   const loadedEstimate = isEstimate && state.estimates.some(record => record.estimateId === modeDraft().catalogRecordId);
-  $('saveEstimateAsButton').hidden = !isEstimate;
+  const showEstimateSaveAs = loadedEstimate && !erpSummary && !creation;
+  const saveEstimateAsButton = $('saveEstimateAsButton');
+  const estimateSaveMenu = $('estimateSaveMenu');
+  if (saveEstimateAsButton) {
+    saveEstimateAsButton.hidden = !showEstimateSaveAs;
+    saveEstimateAsButton.disabled = state.busy || fileInputPending || !showEstimateSaveAs;
+  }
+  if (estimateSaveMenu) {
+    estimateSaveMenu.hidden = !showEstimateSaveAs;
+    if (!showEstimateSaveAs) estimateSaveMenu.open = false;
+  }
   $('estimateUpdateMenu').hidden = !isEstimate;
-  $('saveEstimateAsButton').disabled = state.busy || fileInputPending || !loadedEstimate || Boolean(creation);
 
 
   $('selectedEstimateDeleteButton').disabled = state.busy || state.noticeEstimateIds.length < 1;
@@ -7394,8 +7407,6 @@ function renderMode({ persistCleanup = true, scheduleAnalysis = true } = {}) {
   $('customerInput').placeholder = shopping ? '후보별 거래처 선택' : (estimateMode ? '선택 입력' : '거래처명 또는 코드');
   $('customerRequiredMark').hidden = estimateMode || Boolean(shopping);
   $('deliveryDateInput').disabled = Boolean(shopping);
-  $('addRowButton').disabled = false;
-  $('addRowButton').title = '항상 유지되는 마지막 수기입력 행으로 이동합니다.';
   hydrateHeader();
   renderEstimateHeaderFields();
   renderInputListSearch();
@@ -7789,9 +7800,9 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
         plan.invalidCells.length ? `숫자 확인 ${plan.invalidCells.length}셀` : '',
         plan.ignoredColumnCount ? `범위 밖 ${plan.ignoredColumnCount}열 제외` : ''
       ].filter(Boolean).join(' · ');
-      toast(`${message} ${details}`, 'warn');
+      toast(`${message} ${details} · Ctrl+Z로 취소`, 'warn');
     } else {
-      toast(`${message}${plan.kind === 'HEADER' ? ' 필드명으로 열을 매칭했습니다.' : ''}`, 'success');
+      toast(`Excel 붙여넣기 완료 · Ctrl+Z로 취소${plan.kind === 'HEADER' ? ' · 필드명으로 열을 매칭했습니다.' : ''}`, 'success');
     }
     return true;
   } catch (error) {
@@ -7809,7 +7820,6 @@ function applyGridPaste(rawText, startRowId, startFieldId) {
     return false;
   } finally {
     state.applyingGridPaste = false;
-    syncGridPasteUndoButton();
   }
 }
 
@@ -11063,17 +11073,17 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
   const defaultName = saveAs
     ? `${loadedName} 복사본`
     : (estimateCreation()?.kind === 'LINKED_GROUP' || current.estimateKind === 'LINKED_GROUP' ? '새 연동견적서' : (current.header.customerName || '새 견적서'));
-  const dialogTitle = saveAs ? '새 견적서 저장' : '견적서 저장';
+  const dialogTitle = saveAs ? '복사본으로 저장' : '견적서 저장';
   const dialogMessage = saveAs
-    ? '현재 내용으로 새 견적서를 만듭니다. 기존 견적서는 이름과 내용이 그대로 유지됩니다.'
-    : '새 견적서명을 입력하면 견적서 목록에 저장됩니다.';
+    ? '현재 내용을 새 견적서로 저장합니다.\n기존 견적서는 변경하지 않습니다.'
+    : '견적서명을 입력하면 새 견적서로 저장합니다.';
   const dialog = document.createElement('dialog');
   dialog.className = 'smart-dialog estimate-save-dialog';
   dialog.innerHTML = `<div class="smart-dialog__shell">
     <header><div><small>${saveAs ? 'Save As' : 'Estimate Save'}</small><h2>${dialogTitle}</h2></div><button type="button" data-close aria-label="닫기">×</button></header>
-    <div class="smart-dialog__message">${dialogMessage}</div>
+    <div class="smart-dialog__message">${dialogMessage.replace(/\n/g, '<br>')}</div>
     <div class="estimate-dialog-form"><label><span>견적서명</span><input type="text" data-estimate-name maxlength="80" value="${esc(defaultName)}" placeholder="견적서명을 입력하세요" autocomplete="off" enterkeyhint="done" autofocus></label></div>
-    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '새 견적서 저장' : '저장'}</button></footer>
+    <footer><button type="button" class="button button--quiet" data-close>취소</button><button type="button" class="button button--primary" data-confirm-save>${saveAs ? '복사본으로 저장' : '저장'}</button></footer>
   </div>`;
   document.body.append(dialog);
   const finish = () => {
@@ -11101,7 +11111,7 @@ function openEstimateSaveDialog({ saveAs = false } = {}) {
       return toast('기존 견적서와 다른 새 양식명을 입력하세요.', 'warn');
     }
     dialog.querySelector('[data-confirm-save]').disabled = true;
-    const saved = await saveEstimateDocument(catalogName);
+    const saved = await saveEstimateDocument(catalogName, { forceNew: saveAs });
     if (saved) finish();
     else dialog.querySelector('[data-confirm-save]').disabled = false;
   };
@@ -11166,7 +11176,7 @@ async function saveSelectedEstimateTable() {
   finally { state.busy = false; saveDraftNow(); renderDelivery(); }
 }
 
-async function saveEstimateDocument(catalogName) {
+async function saveEstimateDocument(catalogName, { forceNew = false } = {}) {
   if (state.busy) return false;
   if (!validateEstimateDocument()) return false;
   const current = modeDraft();
@@ -11175,10 +11185,24 @@ async function saveEstimateDocument(catalogName) {
   state.busy = true; renderDelivery();
   try {
     await ensureEstimateBodies(state.estimates.filter(record => record.estimateId === current.catalogRecordId || estimateTitle(record) === requestedName).map(record => record.estimateId));
-    const loaded = state.estimates.find(record => record.estimateId === current.catalogRecordId && estimateTitle(record) === requestedName);
-    const collision = state.estimates.find(record => estimateTitle(record) === requestedName && record.estimateId !== loaded?.estimateId);
-    if (collision && !window.confirm(`“${requestedName}” 견적서만 현재 내용으로 변경할까요?`)) return false;
-    let previous = loaded || collision || null;
+    const loadedById = !forceNew
+      ? state.estimates.find(record => record.estimateId === current.catalogRecordId)
+      : null;
+    const nameCollision = state.estimates.find(record => estimateTitle(record) === requestedName
+      && record.estimateId !== loadedById?.estimateId);
+    if (forceNew && nameCollision) {
+      toast('같은 이름의 견적서가 있습니다. 다른 이름을 입력하세요.', 'warn');
+      return false;
+    }
+    if (!forceNew && !loadedById && nameCollision) {
+      toast('같은 이름의 견적서가 있습니다. 기존 견적서를 불러와 수정하거나 다른 이름을 입력하세요.', 'warn');
+      return false;
+    }
+    if (!forceNew && loadedById && nameCollision) {
+      toast('같은 이름의 견적서가 있습니다. 다른 이름을 입력하세요.', 'warn');
+      return false;
+    }
+    let previous = loadedById || null;
     if (previous && previous.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA) {
       previous = await commitSelectedLegacyEstimate(previous.estimateId);
       if (!previous) return false;
@@ -12181,7 +12205,6 @@ function resetCurrentMode(requireConfirmation = true, successMessage = '새 입�
   if (state.draft.activeMode === 'estimate') {
     estimateWorkspace.select([]);
     state.estimateTableBaseline = [];
-    state.estimateExclusionOnly = false;
     state.noticeEstimateIds = [];
     state.estimateSelectionReturnDraft = null;
     state.estimateMultiSelectKind = '';
@@ -12932,7 +12955,6 @@ photoResizer.addEventListener('keydown', event => {
 });
 $('analyzeButton').addEventListener('click', () => analyzeSource({ automatic: false }));
 $('clearParserButton').addEventListener('click', clearParserWorkspace);
-$('undoGridPasteButton').addEventListener('click', undoGridPaste);
 $('inputListSearchButton').addEventListener('click', openInputListSearch);
 $('inputListSearchCloseButton').addEventListener('click', () => closeInputListSearch());
 $('gridSearchInput').addEventListener('input', event => {
@@ -12942,14 +12964,6 @@ $('gridSearchInput').addEventListener('input', event => {
   });
   reconcileRowSelectionToScope();
   renderRows({ restoreFocus: false });
-});
-$('addRowButton').addEventListener('click', () => {
-  if (inputMappingSession()) {
-    mappingCell(MAPPING_DEFAULT_ROW_ID, mappingVisibleColumns()[0])?.focus();
-    return;
-  }
-  if (modeDraft().activeMethod !== 'photo') updateMethod('direct');
-  addDirectRow();
 });
 $('customerSearchButton').addEventListener('click', chooseCustomer);
 $('customerInput').addEventListener('input', event => {
@@ -13022,7 +13036,10 @@ $('completeButton').addEventListener('click', completeOrder);
 $('saveWorkDocumentAsButton').addEventListener('click', () => { void saveCurrentWorkDocument({ asNew: true }); });
 $('officialDeliveryButton').addEventListener('click', () => { void deliverCurrentOfficialVoucher(); });
 $('cancelComputeButton').addEventListener('click', () => cancelActiveStage5Compute({ notifyUser: true }));
-$('saveEstimateAsButton').addEventListener('click', () => openEstimateSaveDialog({ saveAs: true }));
+$('saveEstimateAsButton').addEventListener('click', () => {
+  $('estimateSaveMenu').open = false;
+  openEstimateSaveDialog({ saveAs: true });
+});
 $('restoreAutosaveButton').addEventListener('click', restoreLatestAutosave);
 $('estimateNoticeButton').addEventListener('click', shareCurrentVoucher);
 $('estimateExcelButton').addEventListener('click', exportCurrentVoucherExcel);
@@ -13108,10 +13125,6 @@ $('estimateRetryButton').addEventListener('click', async () => {
 $('estimateMasterRetryButton').addEventListener('click', async () => {
   try { const result = await estimateWorkspace.resumePending('master'); setAppStatus(result.status === 'NO_PENDING_OPERATION' ? '재시도할 마스터 작업이 없습니다.' : `마스터 재시도: ${result.outcomes.map(item => `${item.status} / ${item.publicationState || "-"}`).join(", ")}`); saveDraftNow(); }
   catch (error) { toast(error.code || error.message, 'error'); }
-});
-$('estimateExcludedToggle').addEventListener('click', () => {
-  state.estimateExclusionOnly = !state.estimateExclusionOnly;
-  state.selectedRowIds.clear(); renderRows({ restoreFocus: false }); renderEstimateExclusions();
 });
 $('settingsButton').addEventListener('click', openSettingsDialog);
 $('voucherActivityTab').addEventListener('click', () => {
@@ -13212,6 +13225,7 @@ function handleEstimateF8Shortcut(event) {
 
 document.addEventListener('keydown', handleInputListSearchShortcut, true);
 document.addEventListener('keydown', handleEstimateF8Shortcut, true);
+document.addEventListener('keydown', handleGridPasteUndoShortcut, true);
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || !estimateCreationActive() || document.querySelector('dialog[open]')) return;
   event.preventDefault();
