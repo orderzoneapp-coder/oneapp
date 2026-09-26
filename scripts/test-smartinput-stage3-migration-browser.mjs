@@ -182,8 +182,9 @@ try {
     const legacy={...structuredClone(source),estimateId:'SAVE-COMPAT',catalogName:'경매',
       draft:{...structuredClone(source.draft),catalogRecordId:'SAVE-COMPAT'}};
     await store.saveEstimate(legacy);
-    const foreign={...structuredClone(source),estimateId:'NO-COMPANY',catalogName:'소속 미기록',companyId:undefined,
+    const foreign={...structuredClone(source),estimateId:'NO-COMPANY',catalogName:'소속 미기록',
       draft:{...structuredClone(source.draft),catalogRecordId:'NO-COMPANY'}};
+    delete foreign.companyId;
     await store.saveEstimate(foreign);
     const compat=await migration.saveLegacyEstimateCompatibly({store,companyId:'ONEAPP',actor,estimateId:'SAVE-COMPAT',
       operationId:'COMPAT-1',records:[legacy],outputOptions:{}});
@@ -215,8 +216,10 @@ try {
       draft:{...structuredClone(source.draft),catalogRecordId:'COMPAT-CONFLICT'}};
     await store.saveEstimate(conflictLegacy);
     const stalePlan=buildEstimateF8DraftPlan({selectedRecords:[conflictLegacy],allRecords:[conflictLegacy],individualRecords:[conflictLegacy]});
-    const staleCandidate=structuredClone(pure.createIndependentEstimateCandidate({record:structuredClone(conflictLegacy),companyId:'ONEAPP',
-      sourcePlan:stalePlan,reportRows:buildEstimateF8RowsFromPlan(stalePlan),migrationId:'COMPAT-4',snapshotId:'COMPAT-4',snapshotHash:'STALE'}).candidate);
+    const staleConversion=pure.createIndependentEstimateCandidate({record:structuredClone(conflictLegacy),companyId:'ONEAPP',
+      sourcePlan:stalePlan,reportRows:buildEstimateF8RowsFromPlan(stalePlan),migrationId:'COMPAT-4',snapshotId:'COMPAT-4',snapshotHash:'STALE'});
+    check(staleConversion.status==='CANDIDATE_READY','conflict fixture candidate unusable: '+JSON.stringify(staleConversion));
+    const staleCandidate=structuredClone(staleConversion.candidate);
     const changedLegacy={...structuredClone(conflictLegacy),draft:{...structuredClone(conflictLegacy.draft),rows:[{...row,rowId:'SOURCE-ROW',memo:'다른 탭 수정'}]}};
     await store.saveEstimate(changedLegacy);
     let conflicted='';
