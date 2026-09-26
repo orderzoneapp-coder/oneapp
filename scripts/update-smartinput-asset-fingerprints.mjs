@@ -15,7 +15,8 @@ export const SMARTINPUT_RUNTIME_ASSETS = Object.freeze([
 ]);
 
 export function fileFingerprint(absolutePath) {
-  return createHash('sha256').update(readFileSync(absolutePath)).digest('hex').slice(0, 12);
+  const normalized = readFileSync(absolutePath, 'utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 12);
 }
 
 export function computeSmartInputAssetSet(base = root) {
@@ -69,8 +70,9 @@ export function updateSmartInputAssetFingerprints(base = root) {
   const target = join(base, 'smartinput/index.html');
   const before = readFileSync(target, 'utf8');
   const { html, assetSet } = applySmartInputAssetFingerprints(before, computeSmartInputAssetSet(base));
-  writeFileSync(target, html);
-  return { changed: before !== html, assetSet };
+  const normalized = html.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  writeFileSync(target, normalized);
+  return { changed: before.replace(/\r\n/g, '\n').replace(/\r/g, '\n') !== normalized, assetSet };
 }
 
 if (resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
