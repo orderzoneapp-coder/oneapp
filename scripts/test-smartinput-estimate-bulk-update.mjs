@@ -7,12 +7,16 @@ import {
   createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
   createEstimateBulkConnectedComponents,
+  enrichEstimateBulkCustomerIdentities,
   inspectEstimateBulkWorkingCopyConflicts,
   reconcileEstimateBulkRows,
   resolveEstimateBulkTargets,
   splitEstimateBulkInputMapping
 } from '../smartinput/estimate-bulk-update.js';
+import { estimateIncomingFieldEnvelope } from '../smartinput/independent-estimate.js';
 import { rebuildLinkedEstimateRecord, rebaseLinkedEstimateWorkingDraft } from '../smartinput/linked-estimate-source-edit.js';
+import { buildEstimateF8Data, buildEstimateF8RowsFromDraft } from '../smartinput/report.js';
+import { ESTIMATE_REPORT_HEADERS } from '../smartinput/input.js';
 
 const distribution = [72, 51, 32, 25, 22, 20, 18, 18, 12, 7];
 const headers = ['거래처명', '품목코드', '품목명', '수량', '출고가', '적요'];
@@ -463,5 +467,179 @@ const protectedPlan = createEstimatePerCustomerPlan({
 assert.equal(protectedPlan.entries[0].status, 'PENDING',
   '현재 작업본이 아닌 다른 연동견적서의 미저장 편집은 계속 보호해야 한다.');
 assert.equal(protectedPlan.entries[0].firstIssue.code, 'ESTIMATE_BULK_LINKED_WORKING_COPY_CONFLICT');
+
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: '' }, 'purchasePriceB').kind, 'BLANK');
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: '   ' }, 'purchasePriceB').kind, 'BLANK',
+  '공백만 있는 문자열도 공란으로 보고 기존값을 덮어쓰면 안 된다.');
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: 0 }, 'purchasePriceB').kind, 'VALUE');
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: 0 }, 'purchasePriceB').parsedValue, 0);
+assert.equal(estimateIncomingFieldEnvelope({ promoPrice: '26800' }, 'promoPrice').parsedValue, 26800);
+assert.equal(estimateIncomingFieldEnvelope({}, 'purchasePriceB').kind, 'ABSENT');
+
+const uniqueEnriched = enrichEstimateBulkCustomerIdentities(
+  [{ groupId: 'NAME:농협', customerName: '농협', customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME', issues: [] }],
+  [{ customerId: 'CUS-NH', customerCode: 'NH', customerName: '농협' }, { customerId: 'CUS-CC', customerCode: 'CC', customerName: '창창' }]
+);
+assert.equal(uniqueEnriched[0].customerId, 'CUS-NH');
+assert.equal(uniqueEnriched[0].customerCode, 'NH');
+const ambiguousEnriched = enrichEstimateBulkCustomerIdentities(
+  [{ groupId: 'NAME:가락', customerName: '가락', customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME', issues: [] }],
+  [{ customerId: 'CUS-1', customerCode: 'A', customerName: '가락' }, { customerId: 'CUS-2', customerCode: 'B', customerName: '가락' }]
+);
+assert.equal(ambiguousEnriched[0].customerId, '');
+assert.equal(ambiguousEnriched[0].issues[0].code, 'ESTIMATE_BULK_CUSTOMER_NAME_AMBIGUOUS');
+
+const patchSplit = splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 2) });
+patchSplit.rows[0].purchasePriceB = '';
+patchSplit.rows[0].wholesaleA = 0;
+patchSplit.rows[0].promoPrice = '26800';
+patchSplit.rows[1].purchasePriceB = 90;
+const patched = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: patchSplit,
+  targetRows: [
+    { rowId: 'KEEP-SHARED', itemCode: 'SHARED-CODE', itemName: '이전 공유 품목', purchasePriceB: 500, wholesaleA: 12, promoPrice: 1 },
+    { rowId: 'KEEP-CODE-2', itemCode: 'C1-2', itemName: '이전 이름', purchasePriceB: 80 },
+    { rowId: 'KEEP-MANUAL', itemCode: 'MANUAL-KEEP', itemName: 'ERP에 없는 기존 품목', purchasePriceB: 77 }
+  ]
+});
+assert.deepEqual(patched.removedRowIds, []);
+assert.equal(patched.preservedRowCount, 1);
+assert.equal(patched.split.rows.some(row => row.rowId === 'KEEP-MANUAL' && row.purchasePriceB === 77), true,
+  'ERP에 없는 기존 품목은 삭제하지 않고 값을 유지해야 한다.');
+const shared = patched.split.rows.find(row => row.rowId === 'KEEP-SHARED');
+assert.equal(shared.purchasePriceB, 500, '공란 입고B는 기존값을 덮어쓰지 않아야 한다.');
+assert.equal(shared.wholesaleA, 0, '숫자 0은 유효값으로 적용해야 한다.');
+assert.equal(shared.promoPrice, 26800, '문자열 숫자는 숫자로 적용해야 한다.');
+assert.equal(patched.split.rows.find(row => row.rowId === 'KEEP-CODE-2').purchasePriceB, 90);
+assert.equal(shared.editedFields?.purchasePriceB, true, '공란 보존 입고B는 F8에서 mapping 원본보다 저장값을 써야 한다.');
+assert.equal(shared.editedFields?.wholesaleA, true);
+assert.equal(shared.editedFields?.promoPrice, true);
+assert.equal(patched.split.rows.find(row => row.rowId === 'KEEP-MANUAL')?.editedFields?.purchasePriceB, true,
+  'ERP에 없는 기존 품목도 F8에서 저장값을 유지해야 한다.');
+const catalogLikeDraft = {
+  header: {},
+  rows: patched.split.rows.map(row => ({
+    ...row,
+    editedFields: row.editedFields && typeof row.editedFields === 'object' ? { ...row.editedFields } : {}
+  })),
+  inputMapping: patched.split.session
+};
+const patchedF8 = buildEstimateF8Data(buildEstimateF8RowsFromDraft(catalogLikeDraft));
+const f8ByCode = Object.fromEntries(patchedF8.estimateUploadData.slice(1).map(row => [row[8], row]));
+assert.equal(f8ByCode['SHARED-CODE']?.[13], 500, 'F8: ERP 공란 입고B는 기존 500을 유지해야 한다.');
+assert.equal(f8ByCode['SHARED-CODE']?.[14], 0, 'F8: ERP VALUE 0은 그대로 출력해야 한다.');
+assert.equal(f8ByCode['MANUAL-KEEP']?.[13], 77, 'F8: ERP에 없는 기존 품목의 입고B를 유지해야 한다.');
+assert.equal(f8ByCode['C1-2']?.[13], 90, 'F8: ERP VALUE로 갱신된 입고B를 출력해야 한다.');
+const shopByCode = Object.fromEntries(patchedF8.shopData.slice(1).map(row => [row[0], row]));
+assert.equal(shopByCode['SHARED-CODE']?.[3], 26800, 'F8 쇼핑몰: ERP VALUE 행사가는 판매가로 출력해야 한다.');
+const wipedF8 = buildEstimateF8Data(buildEstimateF8RowsFromDraft({
+  ...catalogLikeDraft,
+  rows: catalogLikeDraft.rows.map(row => ({ ...row, editedFields: {} }))
+}));
+assert.equal(wipedF8.estimateUploadData.slice(1).find(row => row[8] === 'SHARED-CODE')?.[13], '',
+  'editedFields가 사라지면 mapping 원본 우선으로 공란이 다시 살아난다.');
+
+const erpHeaders = [...ESTIMATE_REPORT_HEADERS];
+const erpHeaderIndex = erpHeaders.indexOf('입고B');
+const erpPromoIndex = erpHeaders.indexOf('행사가');
+const erpCodeIndex = erpHeaders.indexOf('품목코드');
+const erpNameIndex = erpHeaders.indexOf('품목명');
+const erpCustomerIndex = erpHeaders.indexOf('거래처명');
+const erpMatrix = [
+  ['회사명 / 출력일시'],
+  erpHeaders,
+  erpHeaders.map((header, columnIndex) => {
+    if (columnIndex === erpCustomerIndex) return '거래처 1';
+    if (columnIndex === erpNameIndex) return '이전 공유 품목';
+    if (columnIndex === erpCodeIndex) return 'SHARED-CODE';
+    if (columnIndex === erpHeaderIndex) return '';
+    if (columnIndex === erpPromoIndex) return '26800';
+    return header === '일자' ? '2026/09/26' : '';
+  }),
+  erpHeaders.map((header, columnIndex) => {
+    if (columnIndex === erpCustomerIndex) return '거래처 1';
+    if (columnIndex === erpNameIndex) return '이전 이름';
+    if (columnIndex === erpCodeIndex) return 'C1-2';
+    if (columnIndex === erpHeaderIndex) return '90';
+    return header === '일자' ? '2026/09/26' : '';
+  })
+];
+const erpWorking = [
+  { rowId: 'erp-blank', sourceRowIndex: 2, cells: [...erpMatrix[2]], manual: false },
+  { rowId: 'erp-value', sourceRowIndex: 3, cells: [...erpMatrix[3]], manual: false }
+];
+const erpSession = {
+  schemaVersion: 'ONEAPP_SMARTINPUT_MAPPING_SESSION_V2',
+  sessionId: 'ERP-F8-SESSION',
+  companyId: 'COMPANY',
+  voucherMode: 'estimate',
+  fileName: '견적서현황.xlsx',
+  sheetName: '견적서현황내역',
+  headerRowIndex: 1,
+  headers: erpHeaders,
+  sourceMatrix: erpMatrix,
+  sourceCellMatrix: erpMatrix.map(row => row.map(displayValue => ({ displayValue }))),
+  mappings: erpHeaders.map((sourceHeader, columnIndex) => ({
+    columnIndex, sourceHeader, state: 'MAPPED', targetFieldId: sourceHeader
+  })),
+  workingRows: erpWorking,
+  manualRows: [],
+  editJournal: {},
+  estimateErpSummary: { recognized: true, preferred: true, sheetName: '견적서현황내역', itemCount: 2, customerCount: 1 }
+};
+const erpSplit = splitEstimateBulkInputMapping({
+  session: erpSession,
+  rows: [
+    { rowId: 'erp-blank', itemCode: 'SHARED-CODE', itemName: '이전 공유 품목', purchasePriceB: '', promoPrice: '26800' },
+    { rowId: 'erp-value', itemCode: 'C1-2', itemName: '이전 이름', purchasePriceB: '90' }
+  ]
+});
+const erpPatched = reconcileEstimateBulkRows({
+  groupId: 'NAME:거래처 1',
+  split: erpSplit,
+  targetRows: [
+    { rowId: 'KEEP-SHARED', itemCode: 'SHARED-CODE', itemName: '이전 공유 품목', purchasePriceB: 500, promoPrice: 1 },
+    { rowId: 'KEEP-CODE-2', itemCode: 'C1-2', itemName: '이전 이름', purchasePriceB: 80 },
+    { rowId: 'KEEP-MANUAL', itemCode: 'MANUAL-KEEP', itemName: 'ERP에 없는 기존 품목', purchasePriceB: 77 }
+  ]
+});
+const erpCatalogDraft = {
+  header: {},
+  rows: erpPatched.split.rows.map(row => ({
+    ...row,
+    editedFields: row.editedFields && typeof row.editedFields === 'object' ? { ...row.editedFields } : {}
+  })),
+  inputMapping: erpPatched.split.session
+};
+const erpF8 = buildEstimateF8Data(buildEstimateF8RowsFromDraft(erpCatalogDraft));
+const erpUpload = Object.fromEntries(erpF8.estimateUploadData.slice(1).map(row => [row[8], row]));
+assert.equal(erpUpload['SHARED-CODE']?.[13], 500, '새 ERP mapping의 공란 입고B는 기존 500을 F8에 유지해야 한다.');
+assert.equal(erpUpload['C1-2']?.[13], 90, '새 ERP mapping의 VALUE 입고B는 F8에 90으로 나와야 한다.');
+assert.equal(erpUpload['MANUAL-KEEP']?.[13], 77, 'ERP mapping에 없는 기존 품목도 F8 입고B를 유지해야 한다.');
+const replay = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 3) }),
+  targetRows: patched.split.rows
+});
+assert.equal(replay.addedRowCount, 1);
+assert.equal(replay.split.rows.filter(row => row.rowId === replay.split.rows[2].rowId).length, 1);
+const replayAgain = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 3) }),
+  targetRows: replay.split.rows
+});
+assert.equal(replayAgain.addedRowCount, 0, '같은 ERP 품목을 다시 적용해도 신규 행이 중복되면 안 된다.');
+assert.equal(replayAgain.split.rows.find(row => row.itemCode === 'C1-3').rowId, replay.split.rows.find(row => row.itemCode === 'C1-3').rowId);
+
+const masterLinkedPlan = createEstimatePerCustomerPlan({
+  classification: { groups: [{ ...firstGroup, customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME' }] },
+  estimates: [{ estimateId: 'EST-NH', estimateKind: 'INDIVIDUAL', customerId: 'CUS-NH', customerName: '다른 표시명', catalogName: '농협 견적', draft: { header: {}, rows: [] } }],
+  session,
+  companyId: 'COMPANY',
+  customers: [{ customerId: 'CUS-NH', customerCode: 'NH', customerName: firstGroup.customerName }]
+});
+assert.equal(masterLinkedPlan.entries[0].targetEstimateId, 'EST-NH');
+assert.equal(masterLinkedPlan.entries[0].status, 'READY');
 
 console.log('SmartInput estimate bulk grouping, exact target matching, evidence split, record replacement, and working-copy guards passed.');

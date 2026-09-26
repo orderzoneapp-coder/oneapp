@@ -71,6 +71,8 @@ jobs:
           node scripts/test-smartinput-draft-save-coordinator.mjs
           node scripts/test-smartinput-structured-sheet-parser.mjs
           node scripts/test-smartinput-estimate-workbook-selection.mjs
+          node scripts/test-smartinput-erp-estimate-status-xlsx.mjs
+          node scripts/test-smartinput-estimate-bulk-update.mjs
           node scripts/test-smartinput-estimate-f8.mjs
           node scripts/test-smartinput-purchase-sales-output.mjs
           node scripts/test-smartinput-multivoucher-stage1.mjs
@@ -104,6 +106,7 @@ jobs:
           node scripts/test-smartinput-stage3-migration-browser.mjs
           node scripts/test-smartinput-v2-inventory-rematch-browser.mjs
           node scripts/test-smartinput-v2-official-revision-browser.mjs
+          node scripts/test-smartinput-erp-estimate-status-xlsx-browser.mjs
 
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
