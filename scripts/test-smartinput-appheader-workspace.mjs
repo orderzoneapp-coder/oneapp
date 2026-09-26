@@ -11,7 +11,8 @@ assert.match(html, /<header class="app-bar"/, '0a SmartInput app bar must be res
 assert.match(html, /<div class="workspace" id="smartInputWorkspace"[^>]*>/, 'the protected desktop workspace must remain');
 const appBarStart = html.indexOf('<header class="app-bar"');
 const appBarMarkup = html.slice(appBarStart, html.indexOf('</header>', appBarStart) + 9);
-assert.doesNotMatch(appBarMarkup, /class="brand"|id="customerInput"|id="appStatusMessage"|id="saveState"/, 'app header must keep identity, customer, and autosave text out of the 56px row');
+assert.doesNotMatch(appBarMarkup, /class="brand"|brand__logo|id="customerInput"|id="appStatusMessage"|id="saveState"/, 'app header must keep the old logo, customer, and autosave text out of the 56px row');
+assert.match(appBarMarkup, /data-nexus-app-identity[\s\S]*data-nexus-app-title[\s\S]*스마트입력/, 'left-aligned SmartInput identity must remain as the shared text name without a logo');
 assert.match(appBarMarkup, /id="sourceHeaderActions"[\s\S]*id="sourceFileButton"[\s\S]*data-method="voice"[\s\S]*id="clearParserButton"/, 'existing Excel, voice, and clear actions must occupy the app-header left slot');
 assert.match(appBarMarkup, /data-mode="order"[\s\S]*data-mode="purchase"[\s\S]*data-mode="sale"[\s\S]*data-mode="estimate"/, 'the four voucher buttons must remain centered in the app header');
 assert.match(appBarMarkup, /id="restoreAutosaveButton"[\s\S]*id="referenceOverview"[\s\S]*id="settingsButton"/, 'restore, reference, and settings must remain on the app-header right');

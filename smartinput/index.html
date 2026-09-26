@@ -216,10 +216,15 @@
     #smartInputAppBar { color: #e5edf7; background: #0b1021; }
     #smartInputAppHeader {
       /* The shared stylesheet enforces flex !important: override only this app's layout, not its palette/56px height. */
-      display: grid !important; grid-template-columns: clamp(280px, 26vw, 760px) minmax(300px, 1fr) 264px;
+      display: grid !important; grid-template-columns: minmax(0, max-content) minmax(280px, 1fr) 264px;
       align-items: center; gap: 12px !important; min-width: 920px; min-height: 56px; height: 56px; padding-block: 0;
     }
-    #smartInputAppHeader > .source-header-actions { grid-column: 1; grid-row: 1; }
+    #smartInputAppHeader > .app-bar__leading {
+      grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0;
+    }
+    #smartInputAppHeader [data-nexus-app-identity] {
+      flex: 0 0 auto; color: #f7f9ff; text-decoration: none;
+    }
     #smartInputAppHeader > .app-bar__primary { grid-column: 2; grid-row: 1; margin: 0; justify-content: center; }
     #smartInputAppHeader > .app-bar__actions {
       grid-column: 3; grid-row: 1; order: 0; min-width: 0; margin: 0; gap: 6px;
@@ -311,10 +316,13 @@
 <body>
   <header class="app-bar" id="smartInputAppBar">
     <div class="app-bar__inner" id="smartInputAppHeader" data-nexus-app-header="smart-input">
-      <div class="source-header-actions" id="sourceHeaderActions" role="toolbar" aria-label="원본 입력 작업">
-        <button class="button button--quiet button--small parser-file-button" id="sourceFileButton" type="button" data-method="excel"><span aria-hidden="true">＋</span> Excel 파일</button>
-        <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
-        <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
+      <div class="app-bar__leading">
+        <a href="./" aria-label="스마트입력 처음으로" data-nexus-app-identity data-nexus-app-title>스마트입력</a>
+        <div class="source-header-actions" id="sourceHeaderActions" role="toolbar" aria-label="원본 입력 작업">
+          <button class="button button--quiet button--small parser-file-button" id="sourceFileButton" type="button" data-method="excel"><span aria-hidden="true">＋</span> Excel 파일</button>
+          <button class="button button--quiet button--small parser-voice-button" type="button" data-method="voice"><span aria-hidden="true">●</span> 음성</button>
+          <button class="button button--quiet button--small parser-clear-button" id="clearParserButton" type="button" title="파서 원문과 분석 결과 지우기"><span aria-hidden="true">↻</span> 지우기</button>
+        </div>
       </div>
       <div class="app-bar__primary">
         <div class="app-voucher-switcher">
