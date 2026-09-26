@@ -7,11 +7,13 @@ import {
   createEstimatePerCustomerPlan,
   createEstimateBulkReplacementRecord,
   createEstimateBulkConnectedComponents,
+  enrichEstimateBulkCustomerIdentities,
   inspectEstimateBulkWorkingCopyConflicts,
   reconcileEstimateBulkRows,
   resolveEstimateBulkTargets,
   splitEstimateBulkInputMapping
 } from '../smartinput/estimate-bulk-update.js';
+import { estimateIncomingFieldEnvelope } from '../smartinput/independent-estimate.js';
 import { rebuildLinkedEstimateRecord, rebaseLinkedEstimateWorkingDraft } from '../smartinput/linked-estimate-source-edit.js';
 
 const distribution = [72, 51, 32, 25, 22, 20, 18, 18, 12, 7];
@@ -463,5 +465,72 @@ const protectedPlan = createEstimatePerCustomerPlan({
 assert.equal(protectedPlan.entries[0].status, 'PENDING',
   '현재 작업본이 아닌 다른 연동견적서의 미저장 편집은 계속 보호해야 한다.');
 assert.equal(protectedPlan.entries[0].firstIssue.code, 'ESTIMATE_BULK_LINKED_WORKING_COPY_CONFLICT');
+
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: '' }, 'purchasePriceB').kind, 'BLANK');
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: 0 }, 'purchasePriceB').kind, 'VALUE');
+assert.equal(estimateIncomingFieldEnvelope({ purchasePriceB: 0 }, 'purchasePriceB').parsedValue, 0);
+assert.equal(estimateIncomingFieldEnvelope({ promoPrice: '26800' }, 'promoPrice').parsedValue, 26800);
+assert.equal(estimateIncomingFieldEnvelope({}, 'purchasePriceB').kind, 'ABSENT');
+
+const uniqueEnriched = enrichEstimateBulkCustomerIdentities(
+  [{ groupId: 'NAME:농협', customerName: '농협', customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME', issues: [] }],
+  [{ customerId: 'CUS-NH', customerCode: 'NH', customerName: '농협' }, { customerId: 'CUS-CC', customerCode: 'CC', customerName: '창창' }]
+);
+assert.equal(uniqueEnriched[0].customerId, 'CUS-NH');
+assert.equal(uniqueEnriched[0].customerCode, 'NH');
+const ambiguousEnriched = enrichEstimateBulkCustomerIdentities(
+  [{ groupId: 'NAME:가락', customerName: '가락', customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME', issues: [] }],
+  [{ customerId: 'CUS-1', customerCode: 'A', customerName: '가락' }, { customerId: 'CUS-2', customerCode: 'B', customerName: '가락' }]
+);
+assert.equal(ambiguousEnriched[0].customerId, '');
+assert.equal(ambiguousEnriched[0].issues[0].code, 'ESTIMATE_BULK_CUSTOMER_NAME_AMBIGUOUS');
+
+const patchSplit = splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 2) });
+patchSplit.rows[0].purchasePriceB = '';
+patchSplit.rows[0].wholesaleA = 0;
+patchSplit.rows[0].promoPrice = '26800';
+patchSplit.rows[1].purchasePriceB = 90;
+const patched = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: patchSplit,
+  targetRows: [
+    { rowId: 'KEEP-SHARED', itemCode: 'SHARED-CODE', itemName: '이전 공유 품목', purchasePriceB: 500, wholesaleA: 12, promoPrice: 1 },
+    { rowId: 'KEEP-CODE-2', itemCode: 'C1-2', itemName: '이전 이름', purchasePriceB: 80 },
+    { rowId: 'KEEP-MANUAL', itemCode: 'MANUAL-KEEP', itemName: 'ERP에 없는 기존 품목', purchasePriceB: 77 }
+  ]
+});
+assert.deepEqual(patched.removedRowIds, []);
+assert.equal(patched.preservedRowCount, 1);
+assert.equal(patched.split.rows.some(row => row.rowId === 'KEEP-MANUAL' && row.purchasePriceB === 77), true,
+  'ERP에 없는 기존 품목은 삭제하지 않고 값을 유지해야 한다.');
+const shared = patched.split.rows.find(row => row.rowId === 'KEEP-SHARED');
+assert.equal(shared.purchasePriceB, 500, '공란 입고B는 기존값을 덮어쓰지 않아야 한다.');
+assert.equal(shared.wholesaleA, 0, '숫자 0은 유효값으로 적용해야 한다.');
+assert.equal(shared.promoPrice, 26800, '문자열 숫자는 숫자로 적용해야 한다.');
+assert.equal(patched.split.rows.find(row => row.rowId === 'KEEP-CODE-2').purchasePriceB, 90);
+const replay = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 3) }),
+  targetRows: patched.split.rows
+});
+assert.equal(replay.addedRowCount, 1);
+assert.equal(replay.split.rows.filter(row => row.rowId === replay.split.rows[2].rowId).length, 1);
+const replayAgain = reconcileEstimateBulkRows({
+  groupId: firstGroup.groupId,
+  split: splitEstimateBulkInputMapping({ session, rows: firstGroup.rows.slice(0, 3) }),
+  targetRows: replay.split.rows
+});
+assert.equal(replayAgain.addedRowCount, 0, '같은 ERP 품목을 다시 적용해도 신규 행이 중복되면 안 된다.');
+assert.equal(replayAgain.split.rows.find(row => row.itemCode === 'C1-3').rowId, replay.split.rows.find(row => row.itemCode === 'C1-3').rowId);
+
+const masterLinkedPlan = createEstimatePerCustomerPlan({
+  classification: { groups: [{ ...firstGroup, customerId: '', customerCode: '', identityKind: 'CUSTOMER_NAME' }] },
+  estimates: [{ estimateId: 'EST-NH', estimateKind: 'INDIVIDUAL', customerId: 'CUS-NH', customerName: '다른 표시명', catalogName: '농협 견적', draft: { header: {}, rows: [] } }],
+  session,
+  companyId: 'COMPANY',
+  customers: [{ customerId: 'CUS-NH', customerCode: 'NH', customerName: firstGroup.customerName }]
+});
+assert.equal(masterLinkedPlan.entries[0].targetEstimateId, 'EST-NH');
+assert.equal(masterLinkedPlan.entries[0].status, 'READY');
 
 console.log('SmartInput estimate bulk grouping, exact target matching, evidence split, record replacement, and working-copy guards passed.');

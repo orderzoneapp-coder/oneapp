@@ -71,6 +71,7 @@ jobs:
           node scripts/test-smartinput-draft-save-coordinator.mjs
           node scripts/test-smartinput-structured-sheet-parser.mjs
           node scripts/test-smartinput-estimate-workbook-selection.mjs
+          node scripts/test-smartinput-estimate-bulk-update.mjs
           node scripts/test-smartinput-estimate-f8.mjs
           node scripts/test-smartinput-purchase-sales-output.mjs
           node scripts/test-smartinput-multivoucher-stage1.mjs

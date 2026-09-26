@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   ERP_ESTIMATE_HEADERS,
+  ESTIMATE_REPORT_HEADERS,
   chooseEstimateWorkbookCandidate,
   inspectEstimateWorkbookCandidate,
   isEstimateWorkbookItemRow
@@ -80,5 +81,35 @@ assert.equal(chooseEstimateWorkbookCandidate(subset, extraColumnNamed, 'estimate
 const strongerGeneric = makeCandidate('일반자료', [['품목코드', '품목명'], ['A', '상품']], 24000);
 assert.equal(chooseEstimateWorkbookCandidate(subset, strongerGeneric, 'estimate')?.sheetName, '일반자료',
   'ERP 우선 시트가 없으면 기존 최고 헤더 점수 계약을 유지해야 한다.');
+
+const specDistribution = [71, 51, 30, 25, 22, 20, 19, 18, 12, 7];
+const specNames = ['농협', '창창', '가락(고창)', '가락(경복농산)', '초원', '가락(청산유통)', '가락(호진농산)', '남경', '마니', '랑희'];
+const specRows = [];
+specDistribution.forEach((count, customerIndex) => {
+  for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
+    specRows.push(ESTIMATE_REPORT_HEADERS.map(header => {
+      if (header === '거래처명') return specNames[customerIndex];
+      if (header === '품목명') return `${specNames[customerIndex]}-${itemIndex + 1}`;
+      if (header === '품목코드') return `C${customerIndex + 1}-${itemIndex + 1}`;
+      if (header === '입고가') return itemIndex === 0 ? 0 : 1000;
+      if (header === '입고B') return '';
+      if (header === '도매B') return 0;
+      if (header === '행사가') return itemIndex === 1 ? '26800' : '';
+      return header === '일자' ? '2026/09/26' : '';
+    }));
+  }
+});
+const specCandidate = {
+  sheetName: '견적서현황내역',
+  matrix: [['회사명 / 출력일시'], [...ESTIMATE_REPORT_HEADERS], ...specRows, ['2026/09/26 (토) 오후 10:00:00']],
+  detection: { rowIndex: 1, rowNumber: 2, score: 24000 }
+};
+const specSummary = inspectEstimateWorkbookCandidate(specCandidate, 'estimate');
+assert.equal(specSummary.recognized, true);
+assert.equal(specSummary.preferred, true);
+assert.equal(specSummary.customerCount, 10);
+assert.equal(specSummary.itemCount, 275);
+assert.equal(isEstimateWorkbookItemRow(specCandidate.matrix.at(-1), ESTIMATE_REPORT_HEADERS), false,
+  '출력시각 정보행은 품목에서 제외해야 한다.');
 
 console.log('SmartInput ERP estimate workbook selection tests passed.');

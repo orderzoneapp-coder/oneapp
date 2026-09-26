@@ -212,6 +212,20 @@ export function setEstimateFieldValue(row, field, value, definition = {}, source
   // Existing F8 prioritizes explicit edits over immutable source cells.
   return row;
 }
+export function estimateIncomingFieldEnvelope(row, field, { valueType } = {}) {
+  const present = Boolean(row) && Object.prototype.hasOwnProperty.call(row, field);
+  if (!present) return { kind: 'ABSENT' };
+  const raw = row[field];
+  if (raw === null || raw === undefined || raw === '') return { kind: 'BLANK' };
+  const numeric = valueType === 'NUMBER' || numericFields.has(field);
+  if (numeric) {
+    const parsed = typeof raw === 'number' ? raw : Number(String(raw).replace(/[,원₩\s]/g, ''));
+    if (!Number.isFinite(parsed)) return { kind: 'BLANK' };
+    return { kind: 'VALUE', parsedValue: parsed, reviewed: true };
+  }
+  return { kind: 'VALUE', parsedValue: String(raw), reviewed: true };
+}
+
 function patchValue(field, envelope, allowClear, definitions) {
   if (!envelope || ['ABSENT', 'BLANK'].includes(envelope.kind)) return { skip: true };
   const definition = definitions.get(field);

@@ -124,6 +124,13 @@ assert.match(appSource, /function scheduleMappingProjection[\s\S]*invalidateOpti
 assert.match(appSource, /function invalidateEstimateLibraryRead[\s\S]*ESTIMATE_LIBRARY_READ[\s\S]*commitIndependentEstimateEdit[\s\S]*invalidateEstimateLibraryRead\(\);[\s\S]*state\.estimates =/, 'a late estimate-library read must not replace a successfully committed in-memory library');
 assert.match(appSource, /async function recoverEstimateF8Integrity[\s\S]*보고서 출력은 저장 자료를 변경하지 않습니다/, 'F8 must keep report output from rewriting stored estimates');
 assert.doesNotMatch(appSource + html, /전환 확인|기존 자료 전환|estimateMigrationButton/, 'estimate conversion must stay an internal save compatibility path');
+assert.match(appSource, /async function completeOrder\(\)[\s\S]*estimateErpSummary\?\.recognized === true[\s\S]*runAutomaticEstimateBulkUpdates[\s\S]*if \(estimateExcelFile\(\)\) return runSelectedEstimateUpdate\(\)/,
+  'ERP 견적서현황은 선택 견적 Excel 업데이트보다 먼저 거래처별 bulk로 가야 한다');
+assert.match(appSource, /erpSummary \? '견적서 업데이트'/, 'ERP 통합현황의 기본 저장 버튼은 견적서 업데이트여야 한다');
+assert.match(appSource, /erpSummary\?\.recognized[\s\S]*ERP 견적서현황/, 'ERP 통합현황은 견적서 미리 선택 없이 작업 대상을 표시해야 한다');
+const erpBulkFn = appSource.slice(appSource.indexOf('async function runAutomaticEstimateBulkUpdates'), appSource.indexOf('function openEstimateSaveDialog'));
+assert.doesNotMatch(erpBulkFn, /applyMaster|deliverCurrentOfficial/,
+  'ERP 통합현황 견적 갱신은 상품 Master나 공식 전표를 쓰지 않아야 한다');
 assert.match(appSource, /activeFileInputAttemptId[\s\S]*async function handleFile[\s\S]*state\.activeFileInputAttemptId = operationToken\.attemptId[\s\S]*async function completeOrder\(\)[\s\S]*state\.activeFileInputAttemptId/, 'save must not overlap a pending file read even when another activity changes the visible activity label');
 assert.match(appSource, /function openEstimateSaveDialog[\s\S]*state\.activeFileInputAttemptId/, 'Save As must not bypass the pending-file write boundary');
 assert.match(appSource, /async function waitForSmartInputIdle[\s\S]*state\.activeFileInputAttemptId/, 'workspace leave must wait for a pending file read');

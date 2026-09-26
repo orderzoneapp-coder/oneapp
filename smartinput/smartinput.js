@@ -5445,6 +5445,11 @@ function buildWorkContextView({ mode, current = {}, companyId = '', selectedIds 
   if (!ready) return view(error ? '대상 조회 실패' : '대상 확인 중', error ? 'error' : 'loading');
   const ids = [...new Set(selectedIds.filter(Boolean))];
   const selectedTable = Boolean(current.stage3SelectedTable);
+  const erpSummary = current.inputMapping?.estimateErpSummary;
+  if (erpSummary?.recognized) {
+    return view('ERP 견적서현황', 'ready',
+      `거래처 ${Number(erpSummary.customerCount || 0).toLocaleString('ko-KR')}곳 · 품목 ${Number(erpSummary.itemCount || 0).toLocaleString('ko-KR')}건`);
+  }
   const fileUpdate = Boolean(current.inputMapping) && !current.stage3LegacyPreview;
   // File updates / selected work tables use the same selection as their existing save path.
   const targetIds = fileUpdate || selectedTable ? ids : (current.catalogRecordId ? [current.catalogRecordId] : []);
@@ -5465,7 +5470,10 @@ function renderWorkContext() {
   // Delivery/input updates still reach this guard, but only target changes rebuild the projection.
   const key = JSON.stringify([state.draft.activeMode, state.companyId, selectedIds,
     current.savedWorkDocumentId, current.catalogRecordId, Boolean(current.stage3SelectedTable),
-    Boolean(current.inputMapping), Boolean(current.stage3LegacyPreview), state.smartDataReady,
+    Boolean(current.inputMapping), Boolean(current.inputMapping?.estimateErpSummary?.recognized),
+    Number(current.inputMapping?.estimateErpSummary?.customerCount || 0),
+    Number(current.inputMapping?.estimateErpSummary?.itemCount || 0),
+    Boolean(current.stage3LegacyPreview), state.smartDataReady,
     Boolean(state.smartDataError), Boolean(state.activeFileInputAttemptId)]);
   if (workContextProjection?.key === key && workContextProjection.records === state.estimates
     && workContextProjection.savedRecords === state.savedWorkDocuments.records) return;
@@ -7313,9 +7321,14 @@ function renderDelivery() {
   $('completeButton').disabled = state.busy || fileInputPending || Boolean(state.activeCustomerRematchAttemptId) || Boolean(creation)
     || (mappingBlocksVoucher && !savesLocally)
     || Boolean(shopping && shopping.status === 'ANALYZING');
+  const erpSummary = isEstimate && modeDraft().inputMapping?.estimateErpSummary?.recognized
+    ? modeDraft().inputMapping.estimateErpSummary : null;
   $('completeButton').textContent = shopping
     ? '내 자료 저장'
-    : (isEstimate ? '견적서 저장' : (savesLocally ? '내 자료 저장' : 'NEXUS 전달'));
+    : (erpSummary ? '견적서 업데이트' : (isEstimate ? '견적서 저장' : (savesLocally ? '내 자료 저장' : 'NEXUS 전달')));
+  if (erpSummary && !fileInputPending && !state.activeCustomerRematchAttemptId) {
+    $('completeButton').title = `ERP 견적서현황 · 거래처 ${Number(erpSummary.customerCount || 0).toLocaleString('ko-KR')}곳 · 품목 ${Number(erpSummary.itemCount || 0).toLocaleString('ko-KR')}건`;
+  }
   $('officialDeliveryButton').hidden = !savesLocally;
   const officialRowsReady = shopping
     ? shopping.status !== 'ANALYZING' && !(shopping.status === 'READY' && shoppingNewCount < 1)
@@ -10532,7 +10545,8 @@ function createEstimatePerCustomerPlanForCurrent(classification, selections = {}
     activeEstimateId,
     progress: current.estimateBulkProgress,
     matchMappings: state.aliasMappings,
-    companyId: state.companyId
+    companyId: state.companyId,
+    customers: state.customers
   });
 }
 
@@ -10577,9 +10591,19 @@ function createEstimateBulkRecord(entry, timestamp, operationId = createRecordId
     operationId,
     action: target ? 'AUTO_UPDATE_EXISTING_ESTIMATE' : 'AUTO_CREATE_ESTIMATE',
     matchMethod: entry.matchMethod || entry.candidate.matchMethod || '',
+    fileFingerprint: String(entry.candidate?.split?.session?.fileFingerprint || current.inputMapping?.fileFingerprint || ''),
+    erpCustomerName: String(entry.group?.customerName || ''),
+    customerId: String(entry.group?.customerId || ''),
+    customerCode: String(entry.group?.customerCode || ''),
+    targetEstimateId: String(estimateId || ''),
+    targetRevisionBefore: target?.dataRevision ?? null,
+    targetRevisionAfter: record.dataRevision ?? null,
     retainedRowCount: Number(entry.rowReconciliation?.retainedRowCount || 0),
     addedRowCount: Number(entry.rowReconciliation?.addedRowCount || replacementDraft.rows.length),
+    preservedRowCount: Number(entry.rowReconciliation?.preservedRowCount || 0),
+    reviewIssueCount: Number(entry.issues?.length || 0),
     removedRowIds: cloneGridValue(entry.rowReconciliation?.removedRowIds || []),
+    actorId: resolveSmartInputActor(),
     occurredAt: timestamp
   };
   record.estimateLinkHistory = [...(record.estimateLinkHistory || []), audit];
@@ -10750,9 +10774,9 @@ async function applyEstimatePerCustomerUpdates(plan, selectedGroupIds, onProgres
         results.push({ groupId: entry.groupId, status, record: changed ? record : null, targetEstimateId: record.estimateId });
       });
     } catch (error) {
-      const stale = String(error?.message || '').includes('STALE') || String(error?.message || '').includes('EXPECTED_MISSING');
+      const stale = String(error?.code || error?.message || '').includes('STALE') || String(error?.message || '').includes('EXPECTED_MISSING');
       const message = stale
-        ? '확인 후 연결 묶음이 변경되었습니다. 이 묶음을 다시 확인하세요.'
+        ? '최신 견적서가 먼저 변경되었습니다. 이 거래처만 다시 확인하세요.'
         : (error?.message || '이 연결 묶음을 저장하지 못했습니다.');
       component.forEach(entry => {
         statusOverrides[entry.groupId] = {
@@ -10972,6 +10996,23 @@ async function runAutomaticEstimateBulkUpdates(classification) {
     .filter(entry => ['READY', 'FAILED'].includes(entry.status) && entry.candidate)
     .map(entry => entry.groupId));
   if (executableIds.size) {
+    const legacyTargets = [...new Set(plan.entries
+      .filter(entry => executableIds.has(entry.groupId) && entry.candidate?.target
+        && entry.candidate.target.schemaVersion !== INDEPENDENT_ESTIMATE_SCHEMA)
+      .map(entry => entry.candidate.target.estimateId))];
+    for (const estimateId of legacyTargets) {
+      const converted = await commitSelectedLegacyEstimate(estimateId);
+      if (converted) continue;
+      plan.entries.filter(entry => entry.candidate?.target?.estimateId === estimateId)
+        .forEach(entry => executableIds.delete(entry.groupId));
+    }
+    plan = createEstimatePerCustomerPlanForCurrent(classification);
+    executableIds.forEach(groupId => {
+      const entry = plan.entries.find(item => item.groupId === groupId);
+      if (!entry || !['READY', 'FAILED'].includes(entry.status) || !entry.candidate) executableIds.delete(groupId);
+    });
+  }
+  if (executableIds.size) {
     state.busy = true;
     renderDelivery();
     setAppStatus(`정확히 연결된 견적서 ${executableIds.size.toLocaleString('ko-KR')}건을 자동 업데이트하고 있습니다.`);
@@ -10984,14 +11025,16 @@ async function runAutomaticEstimateBulkUpdates(classification) {
     plan = createEstimatePerCustomerPlanForCurrent(classification);
   }
   const attention = plan.entries.filter(entry => ['PENDING', 'FAILED'].includes(entry.status));
+  const completed = plan.summary.completed;
+  const unchanged = plan.summary.unchanged;
   if (attention.length) {
-    setAppStatus(`자동 처리 완료 · 확인이 필요한 연결 ${attention.length.toLocaleString('ko-KR')}건`, 'warn');
+    setAppStatus(`견적서 업데이트 완료 · 갱신 ${completed.toLocaleString('ko-KR')}개 · 변경 없음 ${unchanged.toLocaleString('ko-KR')}개 · 확인 필요 ${attention.length.toLocaleString('ko-KR')}개`, 'warn');
     showEstimateBulkUpdateDialog(classification);
     return;
   }
-  const completed = plan.summary.completed;
-  const unchanged = plan.summary.unchanged;
-  const message = `견적서 자동 업데이트 완료 · 저장 ${completed.toLocaleString('ko-KR')}건 · 변경 없음 ${unchanged.toLocaleString('ko-KR')}건`;
+  const message = unchanged
+    ? `견적서 업데이트 완료 · 갱신 ${completed.toLocaleString('ko-KR')}개 · 변경 없음 ${unchanged.toLocaleString('ko-KR')}개`
+    : `견적서 ${completed.toLocaleString('ko-KR')}개 업데이트 완료`;
   setAppStatus(message);
   toast(message, 'success');
 }
@@ -11268,6 +11311,15 @@ async function completeOrder() {
     saveDraftNow();
   }
   if (state.draft.activeMode === 'estimate') {
+    if (current.inputMapping?.estimateErpSummary?.recognized === true) {
+      try {
+        await ensureEstimateBulkFeature();
+        await runAutomaticEstimateBulkUpdates(classifyEstimateBulkRows(current.rows));
+      } catch (error) {
+        toast(error.message, 'error');
+      }
+      return;
+    }
     if (estimateExcelFile()) return runSelectedEstimateUpdate();
     if (modeDraft().stage3SelectedTable) return saveSelectedEstimateTable();
     const creation = estimateCreation();

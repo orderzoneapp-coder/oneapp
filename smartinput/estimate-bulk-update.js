@@ -1,4 +1,9 @@
+import { estimateIncomingFieldEnvelope } from './independent-estimate.js';
 import { linkedEstimateWorkingDraftsEquivalent } from './linked-estimate-source-edit.js?v=0.17.0';
+
+const ESTIMATE_ERP_ITEM_INPUT_FIELDS = Object.freeze([
+  'itemName', 'specification', 'itemCode', 'unitPrice', 'purchasePriceB', 'wholesaleA', 'wholesaleB', 'promoPrice', 'memo2'
+]);
 
 const text = value => String(value ?? '').trim();
 const clone = value => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
@@ -64,6 +69,49 @@ function createCustomerGroup(identity, key) {
     itemRows: [],
     issues: []
   };
+}
+
+export function enrichEstimateBulkCustomerIdentities(groups = [], customers = []) {
+  const masters = Array.isArray(customers) ? customers : [];
+  return (Array.isArray(groups) ? groups : []).map(group => {
+    const next = { ...clone(group), issues: clone(group.issues || []) };
+    if (text(next.customerId)) {
+      const byId = masters.filter(customer => text(customer.customerId) === text(next.customerId));
+      if (byId.length === 1 && !text(next.customerCode)) next.customerCode = text(byId[0].customerCode);
+      return next;
+    }
+    if (text(next.customerCode)) {
+      const byCode = masters.filter(customer => text(customer.customerCode) === text(next.customerCode));
+      if (byCode.length === 1) {
+        next.customerId = text(byCode[0].customerId);
+        if (!text(next.customerName)) next.customerName = text(byCode[0].customerName || byCode[0].name);
+      } else if (byCode.length > 1) {
+        next.issues.push({
+          code: 'ESTIMATE_BULK_CUSTOMER_CODE_AMBIGUOUS',
+          groupId: next.groupId,
+          message: `${next.customerName || next.customerCode}의 거래처 코드가 여러 기준정보에 있습니다.`
+        });
+      }
+      return next;
+    }
+    const name = normalizeEstimateBulkCustomerName(next.customerName);
+    if (!name) return next;
+    const byName = masters.filter(customer => normalizeEstimateBulkCustomerName(customer.customerName || customer.name) === name);
+    if (byName.length === 1) {
+      next.customerId = text(byName[0].customerId);
+      next.customerCode = text(byName[0].customerCode);
+      if (next.customerId) next.identityKind = 'CUSTOMER_ID';
+      return next;
+    }
+    if (byName.length > 1) {
+      next.issues.push({
+        code: 'ESTIMATE_BULK_CUSTOMER_NAME_AMBIGUOUS',
+        groupId: next.groupId,
+        message: `${next.customerName}과 이름이 같은 거래처가 여러 개입니다. 사용할 거래처를 확인하세요.`
+      });
+    }
+    return next;
+  });
 }
 
 export function classifyEstimateBulkRows(rows = []) {
@@ -516,6 +564,17 @@ function retainEstimateBulkSplitRows(split, retainedRowIds) {
   return next;
 }
 
+function mergeEstimateBulkPatchedRow(existing, incoming) {
+  const next = clone(existing);
+  ESTIMATE_ERP_ITEM_INPUT_FIELDS.forEach(field => {
+    const envelope = estimateIncomingFieldEnvelope(incoming, field);
+    if (envelope.kind !== 'VALUE') return;
+    next[field] = envelope.parsedValue;
+  });
+  next.rowId = incoming.rowId;
+  return next;
+}
+
 function appendPreservedEstimateBulkRows(split, rows) {
   const next = clone(split);
   const present = new Set(next.rows.map(row => text(row.rowId)));
@@ -630,6 +689,15 @@ export function reconcileEstimateBulkRows({ targetRows = [], split, groupId = ''
     });
   });
 
+  incoming.forEach((row, index) => {
+    const existingIndex = matchedIncoming.get(index);
+    if (existingIndex === undefined) return;
+    incoming[index] = mergeEstimateBulkPatchedRow(existing[existingIndex], row);
+  });
+  existing.forEach((unused, index) => {
+    if (!matchedExisting.has(index)) preservedExisting.add(index);
+  });
+
   const oldIds = new Set(existing.map(row => text(row.rowId)).filter(Boolean));
   const usedIds = new Set();
   const nextIdsByOldId = new Map();
@@ -685,7 +753,8 @@ export function reconcileEstimateBulkRows({ targetRows = [], split, groupId = ''
     retainedRowCount: matchedIncoming.size,
     addedRowCount: incoming.length - matchedIncoming.size - blockedIncoming.size - excludedIncoming.size,
     excludedRowCount: excludedIncoming.size,
-    removedRowIds: existing.filter((unused, index) => !matchedExisting.has(index) && !preservedExisting.has(index)).map(row => text(row.rowId)).filter(Boolean),
+    preservedRowCount: existing.filter((unused, index) => !matchedExisting.has(index)).length,
+    removedRowIds: [],
     rowMatches: incoming.flatMap((row, index) => matchedIncoming.has(index) ? [{
       sourceRowId: text(row.rowId),
       targetRowId: text(existing[matchedIncoming.get(index)].rowId),
@@ -1061,8 +1130,8 @@ function planSummary(entries) {
   return summary;
 }
 
-export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], activeEstimateId = '', progress, matchMappings = [], companyId = '' } = {}) {
-  const groups = Array.isArray(classification?.groups) ? classification.groups : [];
+export function createEstimatePerCustomerPlan({ classification, estimates = [], selections = {}, session, workingCopies = [], activeEstimateId = '', progress, matchMappings = [], companyId = '', customers = [] } = {}) {
+  const groups = enrichEstimateBulkCustomerIdentities(Array.isArray(classification?.groups) ? classification.groups : [], customers);
   const allRecords = (Array.isArray(estimates) ? estimates : []).filter(record => record?.estimateId);
   const individualRecords = allRecords.filter(record => record.estimateKind !== 'LINKED_GROUP');
   const recordsById = new Map(allRecords.map(record => [text(record.estimateId), record]));
